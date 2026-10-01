@@ -52,7 +52,8 @@ export type BenchScene = (typeof BENCH_SCENES)[number];
 
 /**
  * Why the parity checks leave a scene out: a feature that its three.js twin draws and null3D does
- * not draw yet, or a twin page that cannot draw the scene. Such a scene runs and has image
+ * not draw yet, a twin page that cannot draw the scene, or a tier whose frame differs from the
+ * twin's by more than the checks allow. Such a scene runs and has image
  * references of its own. The pull request that builds a feature takes it off here, and makes the
  * scene's references again.
  */
@@ -64,7 +65,9 @@ export const LEFT_OUT_OF_PARITY: Readonly<Record<BenchScene, readonly string[]>>
 	// Every check compares with WebGLRenderer's frame, on its tier and in the baseline between
 	// three.js's renderers.
 	s3: ["WebGLRenderer's shader for 256 point lights, which most GPUs cannot build"],
-	s4: ['shadows of the sun, in cascades on both GPU paths'],
+	s4: [
+		"on WebGL2, more pixels that differ from WebGLRenderer's frame than three.js's two renderers differ by",
+	],
 };
 
 /** The benchmark scenes whose hold frames the parity checks compare with three.js's. */

@@ -51,11 +51,10 @@ fn recording_steady_frames_allocates_nothing() {
     assert_eq!(CountingAllocator::disarm(), 0);
 }
 
-#[test]
-fn recording_frames_with_shadows_allocates_nothing() {
-    let _only = CountingAllocator::exclusive();
-    CountingAllocator::track_this_thread();
-    let mut world = World::new();
+/// Records warm-up frames of `world` with every object casting and receiving the sun's shadows
+/// in four cascades, then steady frames and frames whose structure changes, and returns what
+/// those allocated.
+fn shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     let casts = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
     let commands: Vec<Command> = world
         .objects
@@ -79,7 +78,18 @@ fn recording_frames_with_shadows_allocates_nothing() {
     CountingAllocator::arm();
     record_until(&mut world, 100, false);
     record_until(&mut world, 120, true);
-    assert_eq!(CountingAllocator::disarm(), 0);
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn recording_frames_with_shadows_allocates_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(shadow_allocations(World::new()), 0);
+    for multi_draw in [true, false] {
+        let allocated = shadow_allocations(webgl2_world(multi_draw));
+        assert_eq!(allocated, 0, "WebGL2, multi-draw {multi_draw}");
+    }
 }
 
 /// Records warm-up frames of a world with a second view, then steady frames and frames whose

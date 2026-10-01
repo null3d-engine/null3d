@@ -52,20 +52,36 @@ fn a_surface_function_builds_into_every_variant_of_the_template() {
         [
             "webgl2",
             "webgl2_alpha_mask",
+            "webgl2_alpha_mask_receive_shadows",
             "webgl2_draw_index",
             "webgl2_draw_index_alpha_mask",
+            "webgl2_draw_index_alpha_mask_receive_shadows",
+            "webgl2_draw_index_receive_shadows",
             "webgl2_draw_index_tone_map",
             "webgl2_draw_index_tone_map_alpha_mask",
+            "webgl2_draw_index_tone_map_alpha_mask_receive_shadows",
+            "webgl2_draw_index_tone_map_receive_shadows",
             "webgl2_draw_index_tone_map_vertex_color",
             "webgl2_draw_index_tone_map_vertex_color_alpha_mask",
+            "webgl2_draw_index_tone_map_vertex_color_alpha_mask_receive_shadows",
+            "webgl2_draw_index_tone_map_vertex_color_receive_shadows",
             "webgl2_draw_index_vertex_color",
             "webgl2_draw_index_vertex_color_alpha_mask",
+            "webgl2_draw_index_vertex_color_alpha_mask_receive_shadows",
+            "webgl2_draw_index_vertex_color_receive_shadows",
+            "webgl2_receive_shadows",
             "webgl2_tone_map",
             "webgl2_tone_map_alpha_mask",
+            "webgl2_tone_map_alpha_mask_receive_shadows",
+            "webgl2_tone_map_receive_shadows",
             "webgl2_tone_map_vertex_color",
             "webgl2_tone_map_vertex_color_alpha_mask",
+            "webgl2_tone_map_vertex_color_alpha_mask_receive_shadows",
+            "webgl2_tone_map_vertex_color_receive_shadows",
             "webgl2_vertex_color",
             "webgl2_vertex_color_alpha_mask",
+            "webgl2_vertex_color_alpha_mask_receive_shadows",
+            "webgl2_vertex_color_receive_shadows",
             "webgpu",
             "webgpu_alpha_mask",
             "webgpu_alpha_mask_receive_shadows",
@@ -114,7 +130,7 @@ fn a_problem_in_the_wgsl_names_its_own_line_and_column() {
     let line = broken.lines().nth(4).expect("the broken line");
     let column = line.find("2.0;").expect("the extra value") as u32 + 1;
     assert_eq!((problem.line, problem.column), (Some(5), Some(column)));
-    assert_eq!(problem.variants.len(), 32, "{problem}");
+    assert_eq!(problem.variants.len(), 48, "{problem}");
 }
 
 #[test]
@@ -252,7 +268,7 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 fn a_vertex_offset_moves_the_vertex_in_every_variant_and_reads_the_uniforms() {
     let built = compile(WAVE).expect("the vertex offset builds");
     assert_eq!(built.functions, ["vertexOffset"]);
-    assert_eq!(built.variants.len(), 32);
+    assert_eq!(built.variants.len(), 48);
     let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
     assert!(wgsl.contains("fn vertexOffset("), "{wgsl}");
     assert!(!wgsl.contains("fn surface("), "{wgsl}");
