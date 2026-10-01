@@ -68,12 +68,20 @@ fn a_surface_function_builds_into_every_variant_of_the_template() {
             "webgl2_vertex_color_alpha_mask",
             "webgpu",
             "webgpu_alpha_mask",
+            "webgpu_alpha_mask_receive_shadows",
+            "webgpu_receive_shadows",
             "webgpu_tone_map",
             "webgpu_tone_map_alpha_mask",
+            "webgpu_tone_map_alpha_mask_receive_shadows",
+            "webgpu_tone_map_receive_shadows",
             "webgpu_tone_map_vertex_color",
             "webgpu_tone_map_vertex_color_alpha_mask",
+            "webgpu_tone_map_vertex_color_alpha_mask_receive_shadows",
+            "webgpu_tone_map_vertex_color_receive_shadows",
             "webgpu_vertex_color",
             "webgpu_vertex_color_alpha_mask",
+            "webgpu_vertex_color_alpha_mask_receive_shadows",
+            "webgpu_vertex_color_receive_shadows",
         ]
     );
     let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
@@ -106,7 +114,7 @@ fn a_problem_in_the_wgsl_names_its_own_line_and_column() {
     let line = broken.lines().nth(4).expect("the broken line");
     let column = line.find("2.0;").expect("the extra value") as u32 + 1;
     assert_eq!((problem.line, problem.column), (Some(5), Some(column)));
-    assert_eq!(problem.variants.len(), 24, "{problem}");
+    assert_eq!(problem.variants.len(), 32, "{problem}");
 }
 
 #[test]

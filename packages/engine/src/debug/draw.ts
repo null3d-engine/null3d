@@ -488,8 +488,7 @@ export class DebugDraw implements Debug {
 		}
 		const capacity = Math.min(MAX_POINTS, Math.max(needed, FIRST_POINTS, this.capacity * 2));
 		const { core } = this;
-		core.check(core.glue.reserveDebugLines(capacity), 'debug drawing', undefined, true);
-		core.refresh();
+		core.checkGrowth(core.glue.reserveDebugLines(capacity), 'debug drawing', undefined, true);
 		this.capacity = capacity;
 		this.makeViews();
 		return true;
