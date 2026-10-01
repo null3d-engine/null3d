@@ -152,8 +152,8 @@ const DOCS = {
 	E1217: {
 		title: 'Invalid material option',
 		cause:
-			'A material factory received a value that one of its options does not take, such as an alpha mode that the engine does not know.',
-		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque' or 'mask'.`,
+			'A material factory received an option value that it does not take, such as an unknown alpha mode or blending.',
+		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		since: '0.1',
 	},
 	E1301: {

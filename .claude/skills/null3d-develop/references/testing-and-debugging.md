@@ -153,7 +153,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | Shadows missing | Shadows draw later in 0.1; then a light or object not casting, a receiver not receiving, or out of range | `castShadows` on light and caster, `receiveShadows` on the receiver | `concepts/shadows` |
 | Shadow acne or peter-panning (later in 0.1) | Bias | Adjust `shadow.bias` and `normalBias` in small steps | `concepts/shadows` |
 | Flicker between overlapping surfaces | Z-fighting | Separate the surfaces; raise the near plane | `api/cameras` |
-| Transparent objects in the wrong order (later in 0.1) | Sorting by object center | `setRenderOrder`; split large transparent meshes | `api/objects` |
+| Blended objects in the wrong order | Sorting by the center of each object's bounds; surfaces that cross have no right order | `setRenderOrder`; split large blended meshes; `depthWrite: false` on surfaces that cross | `concepts/materials` |
 | Works on WebGPU, broken on WebGL2 | A feature without a fallback | Check capabilities; test with `?gpu=webgl2` | `concepts/backends` |
 | Shader works in Chrome, fails in Safari or Firefox | A WGSL feature or limit they lack | Follow the portable WGSL rules | `shaders/wgsl-rules` |
 | A console warning that the browser took the GPU away, then the scene draws again | A driver reset or a GPU crash; the engine started a new device and drew the whole scene again | Nothing, unless it repeats. Test your page's handling with `engine.simulateGpuLoss()` | `api/engine` |

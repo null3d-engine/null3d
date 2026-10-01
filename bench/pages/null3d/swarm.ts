@@ -9,18 +9,28 @@ export interface Swarm {
 	pose(t: number): void;
 }
 
-/** Makes S1's instances as one batch, each placed at a time by `instanceAt`: S1's own by default. */
+/** The opacity of S1's boxes when they blend, so the transparent pass sorts every row. */
+const BLENDED_OPACITY = 0.6;
+
+/**
+ * Makes S1's instances as one batch, each placed at a time by `instanceAt`: S1's own by default.
+ * With `blend`, the boxes see through, so each frame sorts every visible row back to front.
+ */
 export function createSwarm(
 	{ scene, materials, geometry }: SketchContext,
 	count: number,
 	dynamic: boolean,
 	instanceAt = s1InstanceAt,
+	blend = false,
 ): Swarm {
 	const data = createS1(count);
+	const material = blend
+		? materials.standard({ color: S1_COLOR, opacity: BLENDED_OPACITY, alphaMode: 'blend' })
+		: materials.standard({ color: S1_COLOR });
 	const batch = scene.createInstances(
 		geometry.box({ width: S1_BOX_SIZE, height: S1_BOX_SIZE, depth: S1_BOX_SIZE }),
 		count,
-		{ material: materials.standard({ color: S1_COLOR }), dynamic },
+		{ material, dynamic },
 	);
 	const position = new Float64Array(3);
 	const rotation = new Float64Array(4);

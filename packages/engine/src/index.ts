@@ -74,6 +74,7 @@ export type { Exp2FogOptions, FogOptions, LinearFogOptions } from './scene/fog';
 export type { Post, PostSettings, ToneMapping } from './scene/post';
 export type {
 	AlphaMode,
+	Blending,
 	BoxOptions,
 	CapsuleOptions,
 	CircleOptions,

@@ -149,12 +149,12 @@ obj.on('click', fn); obj.off('click', fn);  // (0.2) 'pointerenter', 'pointerlea
 obj.animator();                      // (0.2) section 12
 ```
 
-Meshes also have these calls:
+Meshes also have these calls. `setCastShadows` and `setReceiveShadows` are stored until shadows draw. `setRenderOrder` orders blended objects before their depth.
 
 ```ts
 mesh.setMaterial(material);          mesh.setMesh(geometry);       // setMesh brings back the mesh's bounds
 mesh.setCastShadows(true);           mesh.setReceiveShadows(true); // false by default, as in three.js
-mesh.setRenderOrder(n);                                             // transparent objects, lower first
+mesh.setRenderOrder(n);                                             // blended objects, lower first
 mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center relative to the origin, before scale
 ```
 
@@ -162,7 +162,7 @@ mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center 
 - Use a setter for static objects; direct array writes are for dynamic objects and batches.
 - A parent change with `keepWorld: true` works out the new local transform when the frame applies it, so set the object's transform first.
 - These calls rebuild the draw tables, so make them at setup: `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows`.
-- Every material draws opaque until transparency comes later in 0.1, so `setRenderOrder` has no effect yet.
+- Blended objects draw after the opaque ones, farthest first by the center of their bounds. `setRenderOrder` comes before depth, and an instance batch's rows sort one by one.
 
 ## 5. Instance batches (`concepts/instances`)
 
@@ -261,8 +261,12 @@ const paint = materials.standard({
   color: '#e8554e',                            // base color (sRGB), converted to linear once
   metalness: 0, roughness: 1,                  // glTF metallic-roughness, three.js's defaults
   emissive: '#000000', emissiveIntensity: 1,   // light the surface gives off itself
-  opacity: 1,                                  // stored; every material draws opaque for now
+  opacity: 1,                                  // part of the alpha that 'mask' tests and 'blend' blends
   doubleSided: false, vertexColors: false, flatShading: false,  // fixed at creation
+  alphaMode: 'opaque', alphaCutoff: 0.5,       // 'mask' cuts out below the cutoff; 'blend' shows through
+  blending: 'normal',                          // with 'blend': 'normal', 'additive' or 'multiply'
+  depthWrite: true, depthTest: true,           // fixed at creation
+  depthBias: { constant: 0, slopeScale: 0 },   // three.js's polygonOffset, for decals
 });
 const glow = materials.unlit({ color: '#ffcc00' });      // ignores lights, like three.js's MeshBasicMaterial
 paint.set({ roughness: 0.4 });  // changes only the options you pass; converting a color allocates
@@ -285,10 +289,10 @@ const stripes = materials.shader({ ...anyStandardOption, wgsl });  // later in 0
 - `fog: false` keeps a material's color out of the scene's fog (`scene.setFog`).
 - Later in 0.1, `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option feeds `defaultSurface()`. `references/shaders.md` has the contract.
 - A map reads the texture coordinates that its texture's `uvSet` names, and a mesh without a second set gives its first. A mesh without texture coordinates draws the material without its maps. A normal map takes its frame from the mesh's tangents (`computeTangents: true`) where the mesh has them, and otherwise from the pixels around it, as three.js does.
-- `alphaMode: 'mask'` with `alphaCutoff` draws nothing where the alpha falls below the cutoff, as three.js's `alphaTest`. `depthWrite`, `depthTest` and `depthBias: { constant, slopeScale }` set the depth state.
-- Later in 0.1: the `blend` alpha mode, `blending`, and in `materials.shader` uniforms, textures, vertex offsets and full shaders.
+- `alphaMode: 'mask'` with `alphaCutoff` draws nothing where the alpha falls below the cutoff, as three.js's `alphaTest`. `alphaMode: 'blend'` is three.js's `transparent: true`, and `blending` picks `'normal'`, `'additive'` or `'multiply'`. Blended objects cost culling and sorting in every frame, so use `'mask'` for cut-out shapes. `depthWrite`, `depthTest` and `depthBias: { constant, slopeScale }` set the depth state.
+- Later in 0.1: in `materials.shader` uniforms, textures, vertex offsets and full shaders.
 - `envIntensity` (0.2) comes with environment lighting, and `materials.shadowCatcher` in 0.2.
-- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
+- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `blending`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
 

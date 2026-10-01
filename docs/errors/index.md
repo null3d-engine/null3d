@@ -30,7 +30,7 @@ Every error the engine throws is an `EngineError` with a code. Its message names
 | [E1208](E1208.md) | Invalid texture | A call that makes or updates a texture received something it cannot use. It can be an option the engine does not know, or an image without pixels or larger than the device takes. It can also be data that does not fit the texture's size and format. |
 | [E1213](E1213.md) | Invalid setting | A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, and a negative exposure. |
 | [E1214](E1214.md) | Invalid sketch option | defineSketch() received an option out of its range. fixedRate must be a number above 0, and maxFixedSteps a whole number of 1 or more. The engine checks the options before it runs the setup function. |
-| [E1217](E1217.md) | Invalid material option | A material factory received a value that one of its options does not take, such as an alpha mode that the engine does not know. |
+| [E1217](E1217.md) | Invalid material option | A material factory received an option value that it does not take, such as an unknown alpha mode or blending. |
 | [E1301](E1301.md) | No usable GPU path | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. |
 | [E1302](E1302.md) | GPU lost | The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash, and the engine could not carry on. No new GPU device started, or the GPU was lost more than twice within a minute. The engine stopped drawing. |
 | [E1303](E1303.md) | WebAssembly SIMD missing | The browser runs WebAssembly without SIMD, which the engine's core needs. |

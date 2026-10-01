@@ -4,8 +4,9 @@ enable draw_index;
 // with the formulas of three.js's MeshStandardMaterial. null3d::mesh finds each instance on both
 // GPU paths, and null3d::lighting holds the formulas. `light_surface` gathers the scene's lights,
 // so the rest of the shader does not change with where the lights come from. The ALPHA_MASK builds
-// draw nothing where the surface's alpha falls below the material's cutoff. The RECEIVE_SHADOWS
-// builds dim the sun's light where the main directional light's shadows fall.
+// draw nothing where the surface's alpha falls below the material's cutoff, and a material that
+// blends writes premultiplied color. The RECEIVE_SHADOWS builds dim the sun's light where the main
+// directional light's shadows fall.
 //
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive and light maps, each a layer of a texture array with a sampler of its own. A map reads
@@ -15,8 +16,9 @@ enable draw_index;
 // tangents with VERTEX_TANGENT, and otherwise from how the position and the texture coordinates
 // change between pixels, as three.js's getTangentFrame makes it.
 #import null3d::lighting
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, frame, material_of}
-#import null3d::mesh::{map_layer, map_ready, relative_position, world_direction, world_normal}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color, frame}
+#import null3d::mesh::{map_layer, map_ready, material_of, relative_position, straight_texel}
+#import null3d::mesh::{world_direction, world_normal}
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{sun_shadow}
 #endif
@@ -220,7 +222,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     let position_dx = dpdx(in.relative);
     if map_ready(m.maps.x) {
         let at = map_uv(flags, 0u, first, second);
-        let texel = textureSampleGrad(
+        let sampled = textureSampleGrad(
             base_color_map,
             base_color_sampler,
             at.uv,
@@ -228,6 +230,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
             at.dx,
             at.dy,
         );
+        let texel = straight_texel(m, sampled);
         base *= texel.rgb;
         alpha *= texel.a;
     }
@@ -290,5 +293,6 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
         discard;
     }
 #endif
-    return finish(fogged(outgoing, in.relative, m), in.clip.xy);
+    let finished = finish(fogged(outgoing, in.relative, m), in.clip.xy);
+    return fragment_color(m, finished.rgb, alpha);
 }

@@ -539,8 +539,19 @@ pub mod state_flags {
     pub const NO_DEPTH_WRITE: u32 = 8;
     /// Draws every fragment whatever the depth target holds, and writes no depth.
     pub const NO_DEPTH_TEST: u32 = 16;
+    /// The blend field: how the fragment's color, premultiplied by its alpha, meets the target's.
+    /// Without it the fragment replaces the target's color.
+    pub const BLEND: u32 = 96;
+    /// Blending over the target: `src + dst * (1 - src alpha)`, for color and alpha.
+    pub const BLEND_NORMAL: u32 = 32;
+    /// Light added to the target: `src + dst`, for color and alpha.
+    pub const BLEND_ADDITIVE: u32 = 64;
+    /// The target tinted by the fragment: `src * dst + dst * (1 - src alpha)`, as three.js's
+    /// premultiplied multiply blending; the target's alpha stays.
+    pub const BLEND_MULTIPLY: u32 = 96;
     /// Every flag.
-    pub const ALL: u32 = CULL_NONE | LINE_LIST | CULL_FRONT | NO_DEPTH_WRITE | NO_DEPTH_TEST;
+    pub const ALL: u32 =
+        CULL_NONE | LINE_LIST | CULL_FRONT | NO_DEPTH_WRITE | NO_DEPTH_TEST | BLEND;
 }
 
 /// Vertex formats. Every vertex has a position and a normal, three floats each. A format adds
@@ -753,6 +764,14 @@ impl DrawList {
         Self {
             words: vec![0; words],
             len: 0,
+        }
+    }
+
+    /// Grows the list so it holds at least `words` words, keeping what it holds. Growing moves the
+    /// words, so the thread that replays the list must read its address again.
+    pub fn reserve_words(&mut self, words: usize) {
+        if self.words.len() < words {
+            self.words.resize(words, 0);
         }
     }
 
@@ -969,6 +988,10 @@ pub fn typescript_constants() -> String {
                 ("CULL_FRONT", state_flags::CULL_FRONT),
                 ("NO_DEPTH_WRITE", state_flags::NO_DEPTH_WRITE),
                 ("NO_DEPTH_TEST", state_flags::NO_DEPTH_TEST),
+                ("BLEND", state_flags::BLEND),
+                ("BLEND_NORMAL", state_flags::BLEND_NORMAL),
+                ("BLEND_ADDITIVE", state_flags::BLEND_ADDITIVE),
+                ("BLEND_MULTIPLY", state_flags::BLEND_MULTIPLY),
             ],
         ),
         (
