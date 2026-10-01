@@ -841,6 +841,9 @@ pub mod template {
     pub const BACKGROUND: u32 = 9;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;
+    /// The first template of custom materials: each compiled custom material's WGSL has its own
+    /// template from here up, which the thread that draws receives from the sketch.
+    pub const CUSTOM_FIRST: u32 = 64;
 }
 
 /// Why recording failed.
@@ -1113,6 +1116,7 @@ pub fn typescript_constants() -> String {
                 ("SHADOW_DEPTH", template::SHADOW_DEPTH),
                 ("BACKGROUND", template::BACKGROUND),
                 ("CULL", template::CULL),
+                ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),
         (

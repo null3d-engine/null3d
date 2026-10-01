@@ -732,10 +732,11 @@ impl SceneSettings {
     }
 
     /// The pipeline that draws an object with `pipeline` where it receives shadows: the same one,
-    /// reading the shadow maps where its shading reflects the lights.
+    /// reading the shadow maps where its shading reflects the lights. Custom materials light their
+    /// surfaces as the standard material does, so they receive shadows too.
     pub fn receiving(&self, pipeline: DrawKey) -> DrawKey {
         let lit = [template::INSTANCED_LIT, template::INSTANCED_STANDARD_MAPS];
-        if lit.contains(&pipeline.template) {
+        if lit.contains(&pipeline.template) || pipeline.template >= template::CUSTOM_FIRST {
             DrawKey {
                 permutation: pipeline.permutation | permutation::RECEIVE_SHADOWS,
                 ..pipeline

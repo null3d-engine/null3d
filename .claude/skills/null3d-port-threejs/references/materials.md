@@ -2,7 +2,7 @@
 
 Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `concepts/color-management`, `shaders/surface-functions`.
 
-Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness`, `emissive`, `emissiveIntensity` and the texture maps of section 1 now, and shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity` and `map`. Both take `uvTransform`, `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending` and the depth options, and the standard material takes `flatShading`. The other options below come later in 0.1 unless a row gives another version, and so do `materials.shader` and surface functions.
+Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness`, `emissive`, `emissiveIntensity` and the texture maps of section 1 now, and shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity` and `map`. Both take `uvTransform`, `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending` and the depth options, and the standard material takes `flatShading`. The other options below come later in 0.1 unless a row gives another version. Custom materials with a surface function (`materials.shader`) are built; their texture maps, uniforms and textures come later in 0.1.
 
 ## Contents
 
@@ -96,8 +96,8 @@ Both become surface-function recipes (section 8), later in 0.1. Toon shading nee
 | `PointsMaterial` | Options of `scene.createPoints`: `size`, `sizeAttenuation`, `texture`, `colors` (0.2) |
 | `LineBasicMaterial`, `LineDashedMaterial`, `LineMaterial` | Options of `scene.createLines`: `width`, `widthUnits`, `dashed`, `colors` (0.2) |
 | `SpriteMaterial` | Options of `scene.createSprites`: `texture` or `atlas`, `sizeMode`, `rotation` (0.2) |
-| `ShaderMaterial`, `RawShaderMaterial` | `materials.shader` (later in 0.1) in WGSL (`references/shaders.md`) |
-| `NodeMaterial` and TSL materials | `materials.shader` (later in 0.1) with a surface function (`references/shaders.md`) |
+| `ShaderMaterial`, `RawShaderMaterial` | `materials.shader` in WGSL: a surface function now, a full shader later in 0.1 (`references/shaders.md`) |
+| `NodeMaterial` and TSL materials | `materials.shader` with a surface function (`references/shaders.md`) |
 
 ## 7. Texture settings
 

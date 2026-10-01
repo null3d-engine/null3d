@@ -2,12 +2,12 @@
 
 All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so one source serves both backends. The null3D Vite plugin compiles the WGSL in your code: `.wgsl` files that you import, and template literals tagged `/* wgsl */`. The WebGL2 build sets the shader def `WEBGL2`. Engine docs: `guides/custom-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`.
 
-Custom materials come later in 0.1. Until then, the plugin compiles your WGSL, checks it against the portable rules and resolves library imports, but the engine cannot draw with it. Sections 8 to 10 apply now. Sections 1 to 5 describe the planned contract: do not ship code that uses it until `api/materials` lists `materials.shader`.
+Custom materials with surface functions are built: sections 1 and 2 and 8 to 10 apply now. Sections 3 to 5 describe parts that come later in 0.1: do not ship code that uses them until their docs pages say they are built.
 
 ## Contents
 
-1. Choose the kind of shader (later in 0.1)
-2. Surface functions (later in 0.1)
+1. Choose the kind of shader
+2. Surface functions
 3. Built-in values (later in 0.1)
 4. Uniforms, textures and per-instance data (later in 0.1)
 5. Vertex offsets and full shaders (later in 0.1)
@@ -17,7 +17,7 @@ Custom materials come later in 0.1. Until then, the plugin compiles your WGSL, c
 9. Imports from the shader library
 10. Debugging shaders
 
-## 1. Choose the kind of shader (later in 0.1)
+## 1. Choose the kind of shader
 
 | Goal | Kind | Keeps lights, shadows, fog and instancing |
 | --- | --- | --- |
@@ -31,7 +31,7 @@ Choose the first row that works. Surface functions keep working when the engine'
 
 A custom material takes one `wgsl` option: WGSL that the Vite plugin compiled, from a template literal right after a `/* wgsl */` comment or from a `.wgsl` import. That one WGSL holds every function of the material (`fn surface`, and later `fn vertexOffset`), because the plugin compiles each literal on its own at build time. WGSL as plain text throws E1215.
 
-## 2. Surface functions (later in 0.1)
+## 2. Surface functions
 
 The engine calls your function once per pixel and lights the result.
 
@@ -39,7 +39,7 @@ The engine calls your function once per pixel and lights the result.
 // Declared by the engine (do not declare these yourself):
 struct SurfaceInput {
   relativePosition: vec3f, // position relative to the camera; always precise
-  normal: vec3f,           // unit normal, facing the camera on double-sided back faces
+  normal: vec3f,           // unit normal, or the face's with flatShading; faces the camera on double-sided back faces
   viewDirection: vec3f,    // unit direction from the surface toward the camera
   vertexColor: vec4f,      // vertex color with vertexColors on a mesh that has colors, else (1, 1, 1, 1)
   uv: vec2f,               // first UV set; meshes need UVs to draw with a custom material
@@ -47,12 +47,13 @@ struct SurfaceInput {
 };
 struct Surface {
   baseColor: vec3f,        // linear RGB
-  alpha: f32,              // drawn opaque until alpha modes exist
+  alpha: f32,              // with alphaMode: 'mask', pixels below alphaCutoff draw nothing
   metalness: f32,
   roughness: f32,          // perceptual roughness, as in glTF and three.js
   normal: vec3f,           // world space, unit length
   emissive: vec3f,         // linear RGB, added after lighting
-  occlusion: f32,          // ambient occlusion, 0 to 1
+  occlusion: f32,          // ambient occlusion, 0 to 1; darkens the ambient light and irradiance
+  irradiance: vec3f,       // baked light added to the ambient light, zero by default
 };
 fn defaultSurface(input: SurfaceInput) -> Surface;  // the material's own options
 ```
@@ -244,6 +245,7 @@ Importing a module whole reserves its name. After `#import null3d::color`, no va
 ## 10. Debugging shaders
 
 - A shader error stops Vite with the file, line and column. It shows in Vite's overlay and the terminal on the dev server, and in the output of `vite build`. Fix the WGSL; never edit generated GLSL. (`guides/custom-shaders`)
+- A surface function's error names its own line in your file. An error that says it is in the engine's standard material usually comes from a name clash or a whole-module import.
 - Output an intermediate value as color: `s.emissive = vec3f(n); s.baseColor = vec3f(0.0);` shows `n` directly.
 - `debug.view('normals')` and `debug.view('overdraw')` (later in 0.1) show normals and overdraw for the whole scene.
 - Shader hot reload: the null3D Vite plugin reloads WGSL files and inline WGSL strings without reloading the page (0.2). Until then, editing a shader reloads the page.

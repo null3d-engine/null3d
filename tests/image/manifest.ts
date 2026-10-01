@@ -363,6 +363,16 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		size: [480, 270] as const,
 		tiers: ['webgpu', 'compat'] as const,
 	})),
+	// The same scene with custom materials on the ground and the red boxes, whose surface function
+	// keeps the standard look: they cast and receive shadows as the standard material does, so the
+	// references are copies of the shadows test's.
+	{
+		name: 'shadows-custom',
+		sketch: 'tests/pages/sketches/shadows-sketch.ts?custom',
+		hold: 0,
+		size: [480, 270],
+		tiers: ['webgpu', 'compat'],
+	},
 	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the
 	// slab's front corner and the far plane cutting the bar at the back. The parity test compares
 	// the image with three.js's OrthographicCamera.
@@ -450,6 +460,16 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// Custom materials with surface functions: pairs of a standard material and a surface function
+	// that keeps its look, which must match, then surface functions that change the look. Each
+	// thread mode sends the shaders to the thread that draws in its own way.
+	{
+		name: 'custom-surface',
+		sketch: 'tests/pages/sketches/custom-material-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
 	// Each texture map of the standard material, made in code: base color, metal-rough, normal maps
 	// on quads with and without tangents, occlusion, emissive, a light map on the second texture
 	// coordinates, and base color maps through a texture coordinate transform, standard and unlit.
@@ -493,6 +513,15 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'transparency',
 		sketch: 'tests/pages/sketches/transparency-sketch.ts',
+		hold: 0,
+		size: [GLASS_IMAGE.width, GLASS_IMAGE.height],
+	},
+	// The same scene with custom materials on the lit planes and the sphere, whose surface function
+	// keeps the standard look: they blend as the standard material does, so the references are
+	// copies of the transparency test's.
+	{
+		name: 'transparency-custom',
+		sketch: 'tests/pages/sketches/transparency-sketch.ts?custom',
 		hold: 0,
 		size: [GLASS_IMAGE.width, GLASS_IMAGE.height],
 	},

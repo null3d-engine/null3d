@@ -2,7 +2,9 @@
 
 null3D shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so you write each shader once. The null3d-develop skill's `references/shaders.md` defines the surface-function contract used below. Engine docs: `porting/threejs-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`, `guides/custom-shaders`.
 
-Versions: custom materials come later in 0.1. That covers `materials.shader`, surface functions, `vertexOffset`, full shaders, and the built-in values `frame`, `camera`, `object` and `material`. Post effects come in 0.2. Until then, the null3D Vite plugin compiles WGSL in sketch code and the engine's library modules, but the engine cannot draw with custom shaders (`guides/custom-shaders`). The GLSL to WGSL table, the conventions in section 4 and the `null3d::` library modules apply now. Tell the user that a port which depends on custom shaders must wait for them.
+A custom material takes its WGSL in one `wgsl` option: a template literal tagged `/* wgsl */`, or a `.wgsl` import. That WGSL holds `fn surface`, `fn vertexOffset`, or both. It declares its uniforms once, as `struct Uniforms`, and reads them from `material`.
+
+Versions: `materials.shader({ wgsl })` with a surface function is built. Uniforms, textures, `vertexOffset`, full shaders and the built-in values `frame`, `camera`, `object` and `material` come later in 0.1, and post effects in 0.2. The GLSL to WGSL table, the conventions in section 4 and the `null3d::` library modules apply now. A port that needs the later parts waits for them, or keeps its values in the standard options.
 
 ## Contents
 
@@ -23,9 +25,9 @@ Read what the original shader does, then pick the smallest null3D form that can 
 
 | The original shader... | Port it as |
 | --- | --- |
-| Changes color, roughness, emission or alpha of a lit surface | Surface function (later in 0.1) |
+| Changes color, roughness, emission or alpha of a lit surface | Surface function (alpha later in 0.1) |
 | Moves vertices | `vertexOffset` (later in 0.1), plus a surface function if needed |
-| Ignores lighting (unlit effects, holograms, fresnel glows) | Surface function (later in 0.1) that writes `emissive` and sets `baseColor` to zero |
+| Ignores lighting (unlit effects, holograms, fresnel glows) | Surface function that writes `emissive` and sets `baseColor` to zero |
 | Replaces three.js lighting | Full shader (later in 0.1) with `null3d::lighting` helpers; rare, so confirm it is needed |
 | Is a full-screen pass | `post.addEffect` (0.2, `references/post-processing.md`) |
 | Renders to a texture for another material | Custom pass (`render.addPass`, 0.2) |
@@ -68,7 +70,7 @@ Surface functions keep instancing, skinning, shadows, fog and both backends work
 
 ## 3. three.js built-ins and their null3D equivalents
 
-The inputs and built-in values in this table come with custom materials, later in 0.1. The `null3d::` library modules exist now.
+The surface input's `normal`, `viewDirection`, `relativePosition`, `uv` and `vertexColor` exist now, and so do the `null3d::` library modules. The other inputs and built-in values in this table come later in 0.1: the surface input's `uv1`, `worldPosition` and `fragCoord`, `vertexOffset`'s `VertexInput`, and `frame`, `camera` and `object`.
 
 | three.js (ShaderMaterial adds these) | null3D |
 | --- | --- |
@@ -260,4 +262,4 @@ The null3D version is the dissolve example in the null3d-develop skill's `refere
 - Avoid `mat3x3f` uniforms: their layout pads each column. Pass three `vec3f` values or a `mat4x4f`.
 - Use only the three WGSL language features every browser shares, and `@interpolate(flat, either)` for flat values (null3d-develop `references/shaders.md`, section 8).
 - Test on WebGL2 (`?gpu=webgl2`): the translated GLSL can hit limits the WGSL did not.
-- Until custom materials come later in 0.1, the build checks a ported shader, but no material can draw it.
+- Until full shaders come later in 0.1, the build checks a ported whole shader, but no material can draw it. A port that fits a surface function draws now.
