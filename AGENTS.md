@@ -16,7 +16,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `tools/` | The WebAssembly build, the docs generator, the skills check and the commit hooks |
 | `examples/` | Feature demos: one sketch of under 150 lines each, listed in `examples/demos.ts`. The examples page runs each demo live, and the image test manifest draws each one in hold mode |
 | `bench/`, `templates/`, `porting-corpus/` | Benchmarks, starter projects and the three.js porting corpus, as the milestones add them |
-| `.dev/` | Maintainer guides: [benchmarks](.dev/benchmarks.md), [device sessions](.dev/devices.md), [image tests](.dev/image-tests.md), [implementation notes](.dev/implementation-notes.md) and [releases](.dev/releases.md) |
+| `.dev/` | Maintainer guides: [benchmarks](.dev/benchmarks.md), [device sessions](.dev/devices.md), [image tests](.dev/image-tests.md), [implementation notes](.dev/implementation-notes.md), [pull requests and parallel work](.dev/pull-requests.md) and [releases](.dev/releases.md) |
 | `.dev/decisions/` | [Decision records](.dev/decisions/README.md): the data behind measured design choices. Read the record before you change a choice it settled |
 
 ## Commands
@@ -106,6 +106,7 @@ The benchmarks compare null3D with three.js in the same browser. [Benchmarks](.d
 - The benchmarks measure a production build of the benchmark pages, as developers ship the engine, so the development checks do not count. The tools take `--dev` for the dev server's pages.
 - Every tool finds the dev server on port 5173, and uses the one that already answers there. A second copy of the repository, such as a git worktree, would test the first copy's code. Give each copy its own ports with `NULL3D_PORT`, for example `NULL3D_PORT=6173 bun run test:browser`. Its dev server takes that port, the HTTPS server the next one, and the production preview the one after. Tools that drive Chrome through its debugging protocol take the one after that.
 - The benchmark job in CI compares main with the last commit on main that it passed, one job at a time. With the `benchmark` label, it compares a pull request with its merge base. It fails when a page gets slower than its rule allows. [Benchmarks](.dev/benchmarks.md#the-benchmark-job-in-ci) says how to read it.
+- After a pull that changes the Vite plugin or the Vite config, run `bun run build` and restart the dev server before a browser run. The dev server keeps the plugin it started with, as [Device sessions](.dev/devices.md#the-runner) says.
 - Run one device runner at a time. Runs share one file that tells waiting runner pages which run to start.
 - Keep hot paths free of allocation with the habits in the implementation notes, and check them with `bun run bench:allocation`.
 
@@ -169,4 +170,4 @@ Maintainers also add a `Task:` footer with the milestone task ID.
 
 ## Releases
 
-Pull requests merge through GitHub's merge queue, by squash only. The queue runs CI on each pull request on top of main and the pull requests ahead of it. Two changes that pass alone therefore cannot break main together. A pull request joins the queue once its own checks pass, even when it is behind main. The squash writes one line on main: the pull request's title, or the commit's subject when the pull request has one commit. That line becomes a changelog entry, so the PR title workflow checks it with commitlint and the docs style check. [Releases](.dev/releases.md) covers how a release is made.
+Pull requests merge through GitHub's merge queue, by squash only. The queue runs CI on each pull request on top of main and the pull requests ahead of it. Two changes that pass alone therefore cannot break main together. A pull request joins the queue once its own checks pass, even when it is behind main. The squash writes one line on main: the pull request's title, or the commit's subject when the pull request has one commit. That line becomes a changelog entry, so the PR title workflow checks it with commitlint and the docs style check. [Pull requests and parallel work](.dev/pull-requests.md) covers merging main into a branch and a pull request that the queue removes. It also covers several copies of the repository on one machine. [Releases](.dev/releases.md) covers how a release is made.

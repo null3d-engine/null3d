@@ -27,7 +27,7 @@ use crate::camera::Lens;
 use crate::debug_lines::DebugLines;
 use crate::fog::Fog;
 use crate::frame_data::{FrameUniform, normalized_direction};
-use crate::graph::GraphError;
+use crate::graph::{GraphError, RenderScale, Size};
 use crate::materials::{
     MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, blend_state, feature,
 };
@@ -160,6 +160,8 @@ pub struct FrameInput<'a> {
     pub snapshot: &'a FrameSnapshot,
     /// The canvas size in device pixels.
     pub canvas: (u32, u32),
+    /// The render scale: the part of the canvas's width and height that the scene draws at.
+    pub render_scale: RenderScale,
     /// True when the scene's structure changed this frame: objects created or destroyed, meshes
     /// or materials changed, batches created or destroyed.
     pub structure_changed: bool,
@@ -469,6 +471,8 @@ pub struct SceneSettings {
     /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
     /// the bits of a `u32`, as the frame uniform holds them.
     clock: [f32; 4],
+    /// True when the render scale may drop below the whole canvas.
+    render_scaling: bool,
 }
 
 impl SceneSettings {
@@ -496,6 +500,7 @@ impl SceneSettings {
             canvas,
             output: Output::default(),
             clock: [0.0; 4],
+            render_scaling: false,
         }
     }
 
@@ -518,6 +523,18 @@ impl SceneSettings {
     /// Sets the exposure and the tone mapping, from the next recorded frame on.
     pub fn set_output(&mut self, output: Output) {
         self.output = output;
+    }
+
+    /// True when the render scale may drop below the whole canvas.
+    pub fn render_scaling(&self) -> bool {
+        self.render_scaling
+    }
+
+    /// Says whether the render scale may drop below the whole canvas. Where the scene color holds
+    /// 8-bit display color, a scale below it needs the final pass, which then replaces the
+    /// resolve into the canvas. Frames at a lower scale while this is off draw the whole canvas.
+    pub fn set_render_scaling(&mut self, scaling: bool) {
+        self.render_scaling = scaling;
     }
 
     pub fn meshes(&self) -> &MeshStorage {
@@ -694,7 +711,7 @@ impl SceneSettings {
         canvas: (u32, u32),
     ) {
         let view = self
-            .view_frame(ViewId::CAMERA, scene, parity, canvas)
+            .view_frame(ViewId::CAMERA, scene, parity, canvas, RenderScale::FULL)
             .map(|frame| LightView {
                 camera: frame.camera,
                 frustum: frame.frustum,
@@ -845,22 +862,25 @@ impl SceneSettings {
         })
     }
 
-    /// A view's values for a frame whose targets have the canvas's size, or `None` when the view
-    /// has no camera to draw from. Shaders work in positions relative to the camera, so the
-    /// constants put a perspective camera at the origin, and an orthographic camera at infinity
-    /// behind its view.
+    /// A view's values for a frame on a canvas of `canvas` device pixels that the scene draws at
+    /// render scale `scale`, or `None` when the view has no camera to draw from. The projection
+    /// takes the canvas's shape, and the target size is the render size, which fragment positions
+    /// count in. Shaders work in positions relative to the camera, so the constants put a
+    /// perspective camera at the origin, and an orthographic camera at infinity behind its view.
     pub fn view_frame(
         &self,
         view: ViewId,
         scene: &SceneStorage,
         parity: usize,
         canvas: (u32, u32),
+        scale: RenderScale,
     ) -> Option<ViewFrame> {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
         let view = self.views.get(view.index())?;
         let (view_proj, eye, forward, camera) = view.transform(scene, parity, aspect)?;
         let [x, y, z] = camera.absolute().map(|v| v as f32);
-        let (width, height) = (canvas.0.max(1) as f32, canvas.1.max(1) as f32);
+        let (width, height) = Size::Full.viewport(canvas, scale);
+        let (width, height) = (width as f32, height as f32);
         let uniform = FrameUniform {
             view_proj,
             camera_position: eye,

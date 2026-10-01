@@ -100,7 +100,7 @@ Globals that the vertex offset and the surface function both read (`shaders/buil
 
 | Name | Fields | Notes |
 | --- | --- | --- |
-| `frame` | `time`, `deltaTime` (seconds), `index` (u32, from 1), `resolution` (vec2f, render-target pixels) | The sketch's `time`; the held time in hold mode |
+| `frame` | `time`, `deltaTime` (seconds), `index` (u32, from 1), `resolution` (vec2f, pixels at the render scale, as `@builtin(position)` counts them) | The sketch's `time`; the held time in hold mode |
 | `camera` | `position` (absolute world position), `viewProjection` (`mat4x4f`, from positions relative to the camera to clip space) | |
 | `object` | `position` (the object's or instance's origin in the world) | Gives each object a look of its own from one material |
 | `material` | Your uniforms, as `struct Uniforms` declares them | See section 4 |

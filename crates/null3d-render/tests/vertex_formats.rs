@@ -35,11 +35,11 @@ fn formats_world<B: FrameBuilder>(world: &mut World<B>) {
     world.scene.apply_commands(&commands, world.frame).unwrap();
 }
 
-/// Each render pipeline a list creates: its template and its vertex format.
+/// Each render pipeline of meshes that a list creates: its template and its vertex format.
 fn pipelines(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32)> {
     commands
         .iter()
-        .filter(|(op, _)| *op == Op::CreateRenderPipeline)
+        .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[1] != template::FINAL)
         .map(|(_, o)| (o[1], o[7]))
         .collect()
 }

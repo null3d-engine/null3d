@@ -189,17 +189,11 @@ impl Size {
         }
     }
 
-    /// The part of such a texture that a pass draws into at render scale `scale`, which is
-    /// clamped to 0 to 1: a top-left corner for relative sizes, and the whole texture otherwise.
-    pub fn viewport(self, canvas: (u32, u32), scale: f32) -> (u32, u32) {
-        let scale = if scale.is_finite() {
-            scale.clamp(0.0, 1.0)
-        } else {
-            1.0
-        };
+    /// The part of such a texture that a pass draws into at render scale `scale`: a top-left
+    /// corner for relative sizes, and the whole texture otherwise.
+    pub fn viewport(self, canvas: (u32, u32), scale: RenderScale) -> (u32, u32) {
         let canvas = (canvas.0.max(1), canvas.1.max(1));
-        let scaled = |pixels: u32| ((pixels as f32 * scale).ceil() as u32).clamp(1, pixels);
-        let render = (scaled(canvas.0), scaled(canvas.1));
+        let render = (scale.of(canvas.0), scale.of(canvas.1));
         match self {
             Self::Full => render,
             Self::Half => Self::divide(render, 2),
@@ -221,6 +215,45 @@ impl Size {
             Self::Canvas => "canvas size".into(),
             Self::Fixed { width, height } => format!("{width} x {height}"),
         }
+    }
+}
+
+/// The render scale: the part of the canvas's width and height that passes of a relative size
+/// draw at, in thousandths, from 1 to 1000. Whole thousandths keep the render size exact: the
+/// pixels at a scale are the same on every device and in every language that computes them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RenderScale(u32);
+
+impl RenderScale {
+    /// The whole canvas.
+    pub const FULL: Self = Self(1000);
+
+    /// The scale of `thousandths`, clamped to 1 to 1000.
+    pub const fn from_thousandths(thousandths: u32) -> Self {
+        Self(if thousandths < 1 {
+            1
+        } else if thousandths > 1000 {
+            1000
+        } else {
+            thousandths
+        })
+    }
+
+    /// The scale in thousandths.
+    pub const fn thousandths(self) -> u32 {
+        self.0
+    }
+
+    /// `pixels` at this scale, rounded up, from 1 to `pixels`.
+    pub const fn of(self, pixels: u32) -> u32 {
+        let scaled = (pixels as u64 * self.0 as u64).div_ceil(1000) as u32;
+        if scaled < 1 { 1 } else { scaled }
+    }
+}
+
+impl Default for RenderScale {
+    fn default() -> Self {
+        Self::FULL
     }
 }
 

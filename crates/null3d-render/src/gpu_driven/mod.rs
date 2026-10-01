@@ -490,7 +490,8 @@ impl GpuDrivenRenderer {
         self.graph.sync_views(self.settings.views());
         self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.set_transparent(!self.sorted.is_empty());
-        self.graph.prepare(list, input.canvas)?;
+        self.graph.set_scaling(self.settings.render_scaling());
+        self.graph.prepare(list, input.canvas, input.render_scale)?;
         let shadow_map = self
             .graph
             .shadow_map()
@@ -581,9 +582,13 @@ impl GpuDrivenRenderer {
         self.frames.clear();
         for index in 0..views {
             let view = ViewId::from_index(index);
-            let frame = self
-                .settings
-                .view_frame(view, input.scene, parity, input.canvas);
+            let frame = self.settings.view_frame(
+                view,
+                input.scene,
+                parity,
+                input.canvas,
+                input.render_scale,
+            );
             if let Some(frame) = &frame {
                 opaque::upload(list, arena, view, frame)?;
                 let (layout, cells) = (&self.layout, &self.cells);

@@ -34,6 +34,7 @@ use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
+use null3d_render::graph::RenderScale;
 use null3d_render::materials::{self, MapSlot, MaterialError, Shading};
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
@@ -119,6 +120,7 @@ impl Engine {
         &mut self,
         frame: u32,
         canvas: (u32, u32),
+        render_scale: RenderScale,
         jobs: &'static JobSystem,
     ) -> (&mut dyn FrameBuilder, FrameInput<'_>) {
         if self.snapshot.frame() != frame {
@@ -136,6 +138,7 @@ impl Engine {
             batches: &self.batches,
             snapshot: &self.snapshot,
             canvas,
+            render_scale,
             structure_changed: self.structure_changed,
             jobs,
             lines: self.lines.lines(),
@@ -522,7 +525,7 @@ pub fn cull_frame(frame: u32, width: u32, height: u32) -> u32 {
         return fail(codes::NOT_READY, [0, 0]);
     };
     with_engine(|e| {
-        let (renderer, input) = e.frame(frame, (width, height), jobs);
+        let (renderer, input) = e.frame(frame, (width, height), RenderScale::FULL, jobs);
         match renderer.cull(&input) {
             Ok(()) => 0,
             Err(error) => record_failure(error),
@@ -532,13 +535,16 @@ pub fn cull_frame(frame: u32, width: u32, height: u32) -> u32 {
 
 // The frame draws the debug lines that `drawDebugLines` gave it, and then forgets them.
 /// Records the frame's upload list and its draw list for a canvas of this size in device pixels.
+/// The scene draws at a render scale of `scale` thousandths of the canvas's width and height, from
+/// 1 to 1000.
 #[wasm_bindgen(js_name = recordFrame)]
-pub fn record_frame(frame: u32, width: u32, height: u32) -> u32 {
+pub fn record_frame(frame: u32, width: u32, height: u32, scale: u32) -> u32 {
     let Some(jobs) = JOBS.get() else {
         return fail(codes::NOT_READY, [0, 0]);
     };
     with_engine(|e| {
-        let (renderer, input) = e.frame(frame, (width, height), jobs);
+        let scale = RenderScale::from_thousandths(scale);
+        let (renderer, input) = e.frame(frame, (width, height), scale, jobs);
         let recorded = renderer.record(&input);
         e.lines.clear();
         match recorded {
@@ -1293,6 +1299,15 @@ pub fn set_light_value(light: u32, which: u32, value: f32) -> u32 {
 pub fn set_background(r: f32, g: f32, b: f32) -> u32 {
     with_engine(|e| {
         e.renderer.settings_mut().set_background([r, g, b]);
+        0
+    })
+}
+
+/// Says whether the render scale may drop below the whole canvas, as the quality settings allow.
+#[wasm_bindgen(js_name = setRenderScaling)]
+pub fn set_render_scaling(scaling: bool) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_render_scaling(scaling);
         0
     })
 }
