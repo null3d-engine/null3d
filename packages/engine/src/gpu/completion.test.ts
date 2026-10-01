@@ -112,29 +112,34 @@ describe('the WebGL2 completion tracker', () => {
 		completions.afterSubmit(1);
 		now = 100;
 		completions.afterSubmit(2);
-		now = 600;
+		now = 200;
 		finish(1);
 		expect(completions.unfinished()).toBe(1);
-		now = 1500;
+		now = 1199;
 		expect(completions.unfinished()).toBe(1);
-		now = 1601;
+		now = 1201;
 		expect(completions.unfinished()).toBe(0);
 	});
 
-	it('waits twice the time between completions for a GPU slower than a second a frame', () => {
+	it('waits four of the slowest recent frame times for a GPU slower than a second a frame', () => {
 		const { gl, finish } = fakeGl();
 		const completions = new FenceCompletion(gl, createMetricsBuffer(false, 0));
-		for (let frame = 1; frame <= 3; frame++) completions.afterSubmit(frame);
+		for (let frame = 1; frame <= 4; frame++) completions.afterSubmit(frame);
 		now = 1500;
+		finish(1);
+		expect(completions.unfinished()).toBe(3);
+		// A quick frame after a slow one leaves the slow one's time as the measure.
+		now = 1700;
 		finish(1);
 		expect(completions.unfinished()).toBe(2);
 		now = 3000;
 		finish(1);
 		expect(completions.unfinished()).toBe(1);
-		// The browser reports no more completions: the frame counts until twice the interval passes.
-		now = 5999;
+		// The browser reports no more completions: the frame counts until four of the slowest frame
+		// times, 1.5 s each, pass.
+		now = 8999;
 		expect(completions.unfinished()).toBe(1);
-		now = 6001;
+		now = 9001;
 		expect(completions.unfinished()).toBe(0);
 	});
 
@@ -168,12 +173,14 @@ describe('the WebGPU completion tracker', () => {
 
 describe('the frame windows that the quality governor reads', () => {
 	/**
-	 * A GPU that finishes one frame every `gpuMs`, fed by a thread that submits a frame whenever
-	 * fewer than two are unfinished, at each callback of a 60 Hz display. Returns the frames
-	 * submitted and completed, the completed rate, and the mean and longest time from submit to
-	 * completion in each one-second window.
+	 * A GPU that needs `gpuMs` for each frame, fed by a thread that submits a frame whenever fewer
+	 * than two are unfinished, at each callback of a 60 Hz display. A list of frame times repeats,
+	 * one entry a frame. Returns, for each one-second window, the frames submitted and completed,
+	 * the completed rate, the mean and longest time from submit to completion, and the most frames
+	 * that waited on the GPU at once.
 	 */
-	async function windows(gpuMs: number, seconds: number) {
+	async function windows(gpuMs: number | readonly number[], seconds: number) {
+		const frameMs = typeof gpuMs === 'number' ? [gpuMs] : gpuMs;
 		const metrics = createMetricsBuffer(false, 0);
 		const sums = new RingSums(metrics, Role.Completion);
 		const { queue, finish } = fakeQueue();
@@ -185,22 +192,29 @@ describe('the frame windows that the quality governor reads', () => {
 			fps: number;
 			latencyMs: number;
 			longestMs: number;
+			mostInFlight: number;
 		}[] = [];
 		let frame = 0;
+		let done = 0;
 		let submittedBefore = 0;
+		let mostInFlight = 0;
 		let nextDone = Number.POSITIVE_INFINITY;
+		/** When the GPU, starting at `at`, finishes the oldest frame that it has not finished. */
+		const doneAfter = (at: number) => at + (frameMs[done % frameMs.length] as number);
 		for (let callback = 1; callback <= seconds * 60; callback++) {
 			const at = callback * callbackMs;
-			// The GPU finishes its queued frames up to this callback, one every gpuMs.
+			// The GPU finishes its queued frames up to this callback, one after another.
 			while (nextDone <= at) {
 				now = nextDone;
 				await finish(1);
-				nextDone = completions.unfinished() > 0 ? nextDone + gpuMs : Number.POSITIVE_INFINITY;
+				done++;
+				nextDone = frame > done ? doneAfter(nextDone) : Number.POSITIVE_INFINITY;
 			}
 			now = at;
 			if (completions.unfinished() < 2) {
 				completions.afterSubmit(++frame);
-				if (nextDone === Number.POSITIVE_INFINITY) nextDone = at + gpuMs;
+				if (nextDone === Number.POSITIVE_INFINITY) nextDone = doneAfter(at);
+				mostInFlight = Math.max(mostInFlight, frame - done);
 			}
 			sums.add();
 			if (callback % 60 === 0) {
@@ -211,8 +225,10 @@ describe('the frame windows that the quality governor reads', () => {
 					fps: (1000 * (s[SUM_RECORDS] as number)) / (s[SUM_INTERVAL_MS] as number),
 					latencyMs: (s[SUM_BUSY_MS] as number) / (s[SUM_RECORDS] as number),
 					longestMs: s[SUM_LONGEST_BUSY_MS] as number,
+					mostInFlight,
 				});
 				submittedBefore = frame;
+				mostInFlight = 0;
 				sums.clear();
 			}
 		}
@@ -237,24 +253,42 @@ describe('the frame windows that the quality governor reads', () => {
 	});
 
 	/**
-	 * Checks that after the first windows, each frame waits at most two of the GPU's frame times, and
-	 * the thread submits frames no faster than the GPU finishes them.
+	 * Checks that after the first windows, at most two frames wait on the GPU at once, so each frame
+	 * waits at most two of the GPU's frame times, and the thread submits frames no faster than the
+	 * GPU finishes them.
 	 */
-	async function holdsTwo(gpuMs: number, seconds: number, skip: number) {
+	async function holdsTwo(gpuMs: number | readonly number[], seconds: number, skip: number) {
+		const slowestMs = typeof gpuMs === 'number' ? gpuMs : Math.max(...gpuMs);
 		const results = (await windows(gpuMs, seconds)).slice(skip);
 		let submitted = 0;
 		let completed = 0;
 		for (const window of results) {
 			submitted += window.submitted;
 			completed += window.completed;
-			expect(window.longestMs).toBeLessThanOrEqual(2 * gpuMs);
+			expect(window.mostInFlight).toBeLessThanOrEqual(2);
+			expect(window.longestMs).toBeLessThanOrEqual(2 * slowestMs);
 		}
-		expect(Math.abs(submitted - completed)).toBeLessThanOrEqual(1);
+		expect(Math.abs(submitted - completed)).toBeLessThanOrEqual(2);
+		return results;
 	}
 
 	it('holds two frames in flight when each takes most of a second', () => holdsTwo(600, 10, 1));
 
-	// Until the second completion, the tracker cannot tell a slow GPU from a lost completion, so
+	// Until the first completion, the tracker cannot tell a slow GPU from a lost completion, so
 	// a few frames go in at first and take some windows to finish.
 	it('holds two frames in flight when each takes more than a second', () => holdsTwo(1200, 30, 10));
+
+	it('holds two frames in flight when a quick frame comes before a slow one', () =>
+		holdsTwo([700, 700, 150, 1150], 30, 1));
+
+	it("holds two frames in flight on a GPU whose frame times vary as CI's software GPU's", async () => {
+		// A completion about every 0.72 s, as CI's software GPU gives at the GPU-bound page's first
+		// step, with frame times from 0.3 to 1.2 s.
+		const results = await holdsTwo([640, 780, 420, 1160, 700, 560, 980, 300, 1050, 710], 60, 1);
+		const completed = results.reduce((sum, window) => sum + window.completed, 0);
+		expect(completed / results.length).toBeCloseTo(1000 / 730, 1);
+	});
+
+	it('holds two frames in flight when a frame takes almost four times as long as those before', () =>
+		holdsTwo([400, 400, 400, 400, 400, 400, 400, 1550], 60, 1));
 });

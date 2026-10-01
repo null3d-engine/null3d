@@ -12,23 +12,26 @@ import { FrameRecorder, Role } from '../shared/metrics';
 /** Frames whose completion can be awaited at once; a frame that finds none free goes untracked. */
 const SLOTS = 8;
 /**
- * How long a frame may stay unfinished and still count as in flight, in ms, from its submit or from
- * the latest completion, whichever came later. A completion that the browser never reports then
- * slows the drawing without stopping it, and a frame that waits behind others keeps counting while
- * the GPU finishes frames.
+ * The GPU works on the oldest unfinished frame from its submit or from the latest completion,
+ * whichever came later. That frame, and every frame behind it, counts as in flight for at least
+ * this long from then, in ms. A completion that the browser never reports then slows the drawing
+ * without stopping it.
  */
 const STALLED_MS = 1000;
 /**
- * On a GPU that needs longer than that for each frame, a frame counts as in flight for this many of
- * the intervals between the latest two completions instead, so the limit holds however slow the GPU.
+ * On a GPU that needs longer for a frame, the oldest frame counts as in flight for this many of
+ * the GPU's slowest recent frame times instead, so the limit holds however slow the GPU, and
+ * however much its frame times vary.
  */
-const STALLED_INTERVALS = 2;
+const STALLED_FRAME_TIMES = 4;
+/** The completions whose GPU frame times set that limit. */
+const RECENT_FRAME_TIMES = 8;
 
 // The completion times that `InFlight` keeps, by index, in ms.
 /** The latest completion, or -1 before the first. */
 const LAST_DONE = 0;
-/** The time between the latest two completions, or 0 before the second. */
-const DONE_INTERVAL = 1;
+/** The slowest of the recent GPU frame times, or 0 before the first completion. */
+const SLOWEST = 1;
 
 /** Submit times and frame numbers of the tracked frames in flight, in submit order, and their records. */
 class InFlight {
@@ -38,6 +41,12 @@ class InFlight {
 	private readonly submits = new Float64Array(SLOTS);
 	/** Completion times, in a typed array, as a fraction in a property would allocate. */
 	private readonly times = new Float64Array([-1, 0]);
+	/**
+	 * The GPU's recent frame times: for each completion, the time from when the GPU took the oldest
+	 * frame that it finished to the completion. A ring, which `frameTimes` counts into.
+	 */
+	private readonly recentFrameTimes = new Float64Array(RECENT_FRAME_TIMES);
+	private frameTimes = 0;
 	private head = 0;
 	private tail = 0;
 	private lastSubmits = 0;
@@ -61,7 +70,7 @@ class InFlight {
 	unfinished(): number {
 		if (this.head === this.tail) return 0;
 		const { times } = this;
-		const slowest = STALLED_INTERVALS * (times[DONE_INTERVAL] as number);
+		const slowest = STALLED_FRAME_TIMES * (times[SLOWEST] as number);
 		const stalledBefore = performance.now() - (slowest > STALLED_MS ? slowest : STALLED_MS);
 		if ((times[LAST_DONE] as number) >= stalledBefore) return this.head - this.tail;
 		let oldest = this.tail;
@@ -82,6 +91,10 @@ class InFlight {
 		const now = performance.now();
 		const { times } = this;
 		const lastDone = times[LAST_DONE] as number;
+		const submitted = this.submitted[this.tail % SLOTS] as number;
+		this.recentFrameTimes[this.frameTimes++ % RECENT_FRAME_TIMES] =
+			now - (lastDone > submitted ? lastDone : submitted);
+		this.keepSlowest();
 		const submits = this.submits[(this.tail + done - 1) % SLOTS] as number;
 		const interval = (now - lastDone) / (submits - this.lastSubmits);
 		const recorded = lastDone >= 0;
@@ -92,9 +105,20 @@ class InFlight {
 			this.recorder.interval(interval);
 			this.recorder.commit(now - (this.submitted[slot] as number));
 		}
-		if (recorded) times[DONE_INTERVAL] = now - lastDone;
 		times[LAST_DONE] = now;
 		this.lastSubmits = submits;
+	}
+
+	/**
+	 * Keeps the slowest of the recent GPU frame times. It takes them from the ring, as a fraction
+	 * passed to a call that the browser does not inline would allocate.
+	 */
+	private keepSlowest(): void {
+		const recent = this.recentFrameTimes;
+		let slowest = 0;
+		for (let i = 0; i < RECENT_FRAME_TIMES; i++)
+			if ((recent[i] as number) > slowest) slowest = recent[i] as number;
+		this.times[SLOWEST] = slowest;
 	}
 }
 
