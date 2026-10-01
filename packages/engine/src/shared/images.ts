@@ -5,6 +5,7 @@
 // a new device can upload the images that it still holds.
 
 import { Slot } from './control';
+import { notifySlot, slotChange, type WakeTarget, wakeFrom } from './wake';
 
 /** The images that the thread that draws holds, by id. */
 export class ImageTable {
@@ -49,14 +50,21 @@ interface ImageMessage {
 	image: ImageBitmap;
 }
 
-/** Counts an image that the thread that draws received, and wakes a thread that waits for it. */
-function countArrival(slots: Int32Array): void {
+/**
+ * Counts an image that the thread that draws received, and wakes a thread that waits for it, through
+ * `to` where another thread runs the sketch.
+ */
+function countArrival(slots: Int32Array, to?: WakeTarget): void {
 	Atomics.add(slots, Slot.ImagesArrived, 1);
-	Atomics.notify(slots, Slot.ImagesArrived);
+	notifySlot(slots, Slot.ImagesArrived, to);
 }
 
-/** Sends images through a port to another thread, which receives them with `receiveImages`. */
+/**
+ * Sends images through a port to the thread that draws, which receives them with `receiveImages`.
+ * That thread's wake messages come back through the port and end this thread's waits.
+ */
 export function sendThrough(port: MessagePort): ImageSender {
+	wakeFrom(port);
 	return (id, image) => port.postMessage({ id, image } satisfies ImageMessage, [image]);
 }
 
@@ -68,11 +76,14 @@ export function sendToTable(table: ImageTable, slots: Int32Array): ImageSender {
 	};
 }
 
-/** Keeps the images that arrive through a port in the table, and counts each one. */
+/**
+ * Keeps the images that arrive through a port in the table, and counts each one. The sketch thread
+ * at the port's other end hears of each through the same port, where it waits for wake messages.
+ */
 export function receiveImages(port: MessagePort, table: ImageTable, slots: Int32Array): void {
 	port.onmessage = (event: MessageEvent<ImageMessage>) => {
 		table.set(event.data.id, event.data.image);
-		countArrival(slots);
+		countArrival(slots, port);
 	};
 }
 
@@ -80,8 +91,8 @@ export function receiveImages(port: MessagePort, table: ImageTable, slots: Int32
 export async function imagesArrived(slots: Int32Array, sent: number): Promise<void> {
 	let count = Atomics.load(slots, Slot.ImagesArrived);
 	while (count < sent) {
-		const wait = Atomics.waitAsync(slots, Slot.ImagesArrived, count);
-		if (wait.async) await wait.value;
+		const change = slotChange(slots, Slot.ImagesArrived, count);
+		if (change) await change;
 		count = Atomics.load(slots, Slot.ImagesArrived);
 	}
 }

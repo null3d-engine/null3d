@@ -8,6 +8,7 @@
 
 import { controlViews, Slot } from '../shared/control';
 import { FrameRecorder, Role } from '../shared/metrics';
+import { notifySlot, type WakeTarget } from '../shared/wake';
 import { FramePacer } from './pacer';
 import { RefreshMeter } from './refresh';
 import type { FrameInput, Renderer } from './renderer';
@@ -67,7 +68,11 @@ export function emptySceneInput(frame: number, out?: ReusableInput): FrameInput 
 /** Resize, pacing and presentation bookkeeping for the thread that owns the canvas. */
 export class Presenter {
 	private resizeSerial = 0;
-	private lastPresented = -1;
+	/**
+	 * The timestamp of the callback that presented the last frame, or -1 before the first. It lives
+	 * in a typed array: some browsers make a new object for each fraction stored in a property.
+	 */
+	private readonly lastPresented = Float64Array.of(-1);
 	/** The newest frame whose pipelines the presenter reported built to the sketch thread. */
 	private builtFrame = 0;
 	private readonly input: ReusableInput = { frame: 0, background: [0, 0, 0] };
@@ -83,7 +88,8 @@ export class Presenter {
 
 	/**
 	 * `fps` is the frame rate that ?fps= holds, or undefined to draw at the display's rate. `queue`
-	 * is the most frames that may wait unfinished on the GPU.
+	 * is the most frames that may wait unfinished on the GPU. `wake` carries wake messages to the
+	 * sketch thread, where another thread runs the sketch.
 	 */
 	constructor(
 		private readonly slots: Int32Array,
@@ -91,6 +97,7 @@ export class Presenter {
 		metrics: ArrayBufferLike,
 		fps: number | undefined,
 		private readonly queue = MAX_FRAMES_IN_FLIGHT,
+		private readonly wake?: WakeTarget,
 	) {
 		this.record = new FrameRecorder(metrics, Role.Render);
 		this.pacer = new FramePacer(fps);
@@ -162,11 +169,11 @@ export class Presenter {
 	ready(frame: number): boolean {
 		if (this.stale(frame)) return true;
 		const ready = this.renderer.prepare(frame);
-		if (this.lastPresented < 0) this.record.markWarmUp(this.renderer.building);
+		if ((this.lastPresented[0] as number) < 0) this.record.markWarmUp(this.renderer.building);
 		if (!this.renderer.building && frame > this.builtFrame) {
 			this.builtFrame = frame;
 			Atomics.store(this.slots, Slot.PipelinesBuilt, frame);
-			Atomics.notify(this.slots, Slot.PipelinesBuilt);
+			notifySlot(this.slots, Slot.PipelinesBuilt, this.wake);
 		}
 		return ready;
 	}
@@ -182,13 +189,21 @@ export class Presenter {
 		this.record.begin(frame);
 		this.renderer.drawFrame(emptySceneInput(frame, this.input), this.record);
 		Atomics.store(this.slots, Slot.FramePresented, frame);
-		if (this.lastPresented < 0) {
-			this.record.markFirstFrame();
-			// Once, so the page learns when the first frame is on screen.
-			void this.renderer.finished().then(() => this.record.markFirstFrameDone());
-		} else this.record.interval(timestamp - this.lastPresented);
-		this.lastPresented = timestamp;
+		const lastPresented = this.lastPresented[0] as number;
+		if (lastPresented < 0) this.markFirstFrame();
+		else this.record.interval(timestamp - lastPresented);
+		this.lastPresented[0] = timestamp;
 		this.record.commit(performance.now() - start);
+	}
+
+	/**
+	 * Records the first frame, and when the GPU has finished it, so the page learns when it reached
+	 * the screen. Its closure stays out of `draw`, which would otherwise allocate the closure's
+	 * variables on every frame until the browser optimizes it.
+	 */
+	private markFirstFrame(): void {
+		this.record.markFirstFrame();
+		void this.renderer.finished().then(() => this.record.markFirstFrameDone());
 	}
 }
 
@@ -246,9 +261,10 @@ export function runRenderLoop(
 	metrics: ArrayBufferLike,
 	fps: number | undefined,
 	queue?: number,
+	wake?: WakeTarget,
 ): RenderLoop {
 	const { slots } = controlViews(control);
-	const presenter = new Presenter(slots, renderer, metrics, fps, queue);
+	const presenter = new Presenter(slots, renderer, metrics, fps, queue, wake);
 	let taken = 0;
 	let stopped = false;
 
@@ -261,7 +277,7 @@ export function runRenderLoop(
 		if (published > taken && presenter.ready(published) && presenter.due(timestamp)) {
 			taken = published;
 			Atomics.store(slots, Slot.FramesTaken, taken);
-			Atomics.notify(slots, Slot.FramesTaken);
+			notifySlot(slots, Slot.FramesTaken, wake);
 			presenter.draw(taken, timestamp);
 		}
 		requestAnimationFrame(frame);
