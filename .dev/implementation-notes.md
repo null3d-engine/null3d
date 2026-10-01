@@ -20,6 +20,7 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 ## Allocation in Rust
 
 - Rust tests that count allocations use `null3d_core::testing::CountingAllocator`, from the core crate's `testing` feature. It counts only the threads a test marks, so the test runner's own threads cannot reach the count.
+- A marked thread counts only while the test that marked it holds the counter. `std::thread::scope` returns when each thread's closure ends. The thread can still free memory after that, as it exits. Such a free once made the next test count 1 call, in CI.
 - The frame recorder sizes a frame's upload arena for the most that any frame can copy for the scene as it stands. It keeps its layout tables and scratch space between rebuilds. Only the frames right after the scene grows allocate.
 - Pipelined frames keep one arena per frame parity, so the allocation tests change the structure on both parities after warm-up.
 - A thread can run any number of a parallel loop's chunks, from none to all of them. The calling thread runs every chunk that no job worker claims, for example while the workers wake. Storage that one thread fills across chunks therefore needs room for the whole loop. Give each thread's list in the parallel draw-list recorder room for a whole recording. Tests reach this case with a job system whose workers never start.
