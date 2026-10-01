@@ -29,8 +29,15 @@
 //! scene color and draws the canvas: it applies the exposure and the tone mapping, and encodes the
 //! color. On the 8-bit path the scene shaders did that already. With MSAA the resolve pass runs
 //! instead: the render pass that draws the scene resolves its multisampled color straight into
-//! the canvas, with no pass, copy or target of its own. With one sample the final pass copies the
-//! scene color into the canvas. In the FXAA mode the final pass smooths edges on either path.
+//! the canvas, with no pass, copy or target of its own. With one sample, or while the render scale
+//! can drop below the whole canvas, the final pass copies the scene color into the canvas. In the
+//! FXAA mode the final pass smooths edges on either path.
+//!
+//! # Render scale
+//!
+//! Passes of a relative size draw into the top-left corner of their targets at the render scale,
+//! through the viewport and the scissor. The targets keep the canvas's size, so a new scale makes
+//! no texture. The final pass scales the corner up to the whole canvas.
 //!
 //! Targets that live within one render pass, such as the multisampled color and the depth, take
 //! the transient attachment usage where the device offers it, so a tile-based GPU can keep them in
@@ -55,8 +62,8 @@ use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_
 use crate::final_pass::{FinalIds, FinalPass};
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
 use crate::graph::{
-    CANVAS, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph, Size, Step,
-    StepKind, StoreOp, Surface, Target,
+    CANVAS, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph, RenderScale, Size,
+    Step, StepKind, StoreOp, Surface, Target,
 };
 use crate::output::{Antialias, Output, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache};
@@ -175,9 +182,16 @@ pub(crate) struct FrameGraph {
     gpu_culling: bool,
     /// The format of the scene's color targets.
     scene_color: SceneColor,
-    /// True when the final pass takes the scene color to the canvas, and false when the resolve
-    /// pass does.
-    final_runs: bool,
+    /// True when the scene's render pass can resolve its color into the canvas: on the 8-bit path
+    /// with MSAA.
+    resolves: bool,
+    /// True when the render scale may drop below the whole canvas, so the final pass runs to scale
+    /// the image up even where the scene could resolve into the canvas.
+    scales: bool,
+    /// The render scale of the frame being recorded.
+    scale: RenderScale,
+    /// The resolve pass and the final pass, once declared.
+    outputs: Option<(PassId, PassId)>,
     /// The number of views the declarations cover.
     views: usize,
     /// The debug lines pass, once the passes are declared.
@@ -235,7 +249,10 @@ impl FrameGraph {
             samples: antialias.samples(),
             gpu_culling,
             scene_color,
-            final_runs: scene_color.is_hdr() || antialias != Antialias::Msaa,
+            resolves: !scene_color.is_hdr() && antialias == Antialias::Msaa,
+            scales: false,
+            scale: RenderScale::FULL,
+            outputs: None,
             views: 0,
             debug_lines: None,
             transparent: Vec::new(),
@@ -297,12 +314,32 @@ impl FrameGraph {
         }
     }
 
-    /// Bytes that one frame may copy into its arena for the graph's own passes.
+    /// Bytes that one frame may copy into its arena for the graph's own passes. The final pass can
+    /// start to run in any frame, once the render scale can drop.
     pub(crate) fn upload_bound(&self) -> usize {
-        if self.final_runs {
-            FinalPass::UPLOAD_BYTES
-        } else {
-            0
+        FinalPass::UPLOAD_BYTES
+    }
+
+    /// True when the final pass takes the scene color to the canvas, and false when the resolve
+    /// pass does.
+    fn final_runs(&self) -> bool {
+        !self.resolves || self.scales
+    }
+
+    /// Says whether the render scale may drop below the whole canvas. Where the scene could
+    /// resolve into the canvas, that switches the final pass on in place of the resolve pass, and
+    /// the graph compiles again.
+    pub(crate) fn set_scaling(&mut self, scales: bool) {
+        self.scales = scales;
+        self.enable_outputs();
+    }
+
+    /// Switches on the pass that takes the scene color to the canvas, and off the other.
+    fn enable_outputs(&mut self) {
+        if let Some((resolve, final_pass)) = self.outputs {
+            let final_runs = self.final_runs();
+            self.graph.set_enabled(resolve, !final_runs);
+            self.graph.set_enabled(final_pass, final_runs);
         }
     }
 
@@ -412,8 +449,8 @@ impl FrameGraph {
             .reads(SCENE_COLOR)
             .writes(CANVAS);
         let final_pass = self.add(final_pass, Role::Final);
-        self.graph.set_enabled(resolve, !self.final_runs);
-        self.graph.set_enabled(final_pass, self.final_runs);
+        self.outputs = Some((resolve, final_pass));
+        self.enable_outputs();
         self.views = views.len();
         self.declared = true;
     }
@@ -444,12 +481,19 @@ impl FrameGraph {
     }
 
     /// Compiles the graph if its passes changed, then sets the canvas size and makes the plan's
-    /// textures where the canvas or the plan changed, so the frame's targets match the canvas.
+    /// textures where the canvas or the plan changed, so the frame's targets match the canvas. The
+    /// frame draws at render scale `scale`, which makes no texture.
     pub(crate) fn prepare(
         &mut self,
         list: &mut DrawList,
         canvas: (u32, u32),
+        scale: RenderScale,
     ) -> Result<(), RecordError> {
+        self.scale = if self.final_runs() {
+            scale
+        } else {
+            RenderScale::FULL
+        };
         let compiled = self.graph.compile().map_err(RecordError::Graph)?;
         let canvas = (canvas.0.max(1), canvas.1.max(1));
         let resized = canvas != self.canvas;
@@ -461,12 +505,11 @@ impl FrameGraph {
         Ok(())
     }
 
-    /// Asks `pipelines` for the pipelines of the graph's own passes: the final pass's, when it
-    /// runs. A builder asks before it records the pipelines that its frame creates.
+    /// Asks `pipelines` for the pipelines of the graph's own passes: the final pass's. A builder
+    /// asks before it records the pipelines that its frame creates. Frames that resolve into the
+    /// canvas ask too, so the pipeline is ready once the render scale can drop.
     pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) {
-        if self.final_runs {
-            self.final_pass.request_pipeline(pipelines);
-        }
+        self.final_pass.request_pipeline(pipelines);
     }
 
     /// Records what the graph's own passes need before the frame's passes, from copies in the
@@ -479,7 +522,7 @@ impl FrameGraph {
         arena: &mut UploadArena,
         output: Output,
     ) -> Result<(), RecordError> {
-        if !self.final_runs {
+        if !self.final_runs() {
             return Ok(());
         }
         let plan = self
@@ -492,8 +535,15 @@ impl FrameGraph {
             .and_then(|resource| plan.sampled_texture_of(resource))
             .map(|surface| self.texture_id(surface))
             .expect("the final pass samples the scene color");
-        self.final_pass
-            .prepare(list, arena, output, scene_color, self.textures_made)
+        let render_size = Size::Full.viewport(self.canvas, self.scale);
+        self.final_pass.prepare(
+            list,
+            arena,
+            output,
+            render_size,
+            scene_color,
+            self.textures_made,
+        )
     }
 
     /// Makes each texture of the plan whose shape or size differs from what the draw lists made,
@@ -586,8 +636,9 @@ impl FrameGraph {
                         list.push(Op::EndComputePass, &[])?;
                     }
                 }
-                StepKind::Render { .. } => {
+                StepKind::Render { size, .. } => {
                     self.begin_render_pass(list, plan, step, clear)?;
+                    self.set_render_area(list, size)?;
                     for &pass in plan.passes(step) {
                         match self.roles[pass.index()] {
                             Role::Final => self.final_pass.record(list)?,
@@ -650,6 +701,22 @@ impl FrameGraph {
                 flags,
             ],
         )?;
+        Ok(())
+    }
+
+    /// Limits the render pass to the corner of its targets that a step of `size` draws into at the
+    /// frame's render scale. A render pass starts with its whole targets, so a step that draws
+    /// into all of them records nothing.
+    fn set_render_area(&self, list: &mut DrawList, size: Size) -> Result<(), RecordError> {
+        let (width, height) = size.viewport(self.canvas, self.scale);
+        if (width, height) == size.extent(self.canvas) {
+            return Ok(());
+        }
+        list.push(
+            Op::SetViewport,
+            &[0, 0, width, height, 0f32.to_bits(), 1f32.to_bits()],
+        )?;
+        list.push(Op::SetScissor, &[0, 0, width, height])?;
         Ok(())
     }
 
@@ -809,7 +876,12 @@ mod tests {
             assert!(!graph.is_enabled(graph.find_pass(off).unwrap()), "{off}");
         }
         assert!(graph.is_enabled(graph.find_pass("Resolve").unwrap()));
-        assert_eq!(frames.upload_bound(), 0);
+
+        // A render scale that can drop needs the final pass to scale the image up.
+        frames.set_scaling(true);
+        let graph = frames.graph();
+        assert!(graph.is_enabled(graph.find_pass("Final").unwrap()));
+        assert!(!graph.is_enabled(graph.find_pass("Resolve").unwrap()));
 
         // The WebGL2 path culls on the job workers, so its graph has no culling passes.
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
@@ -925,7 +997,9 @@ mod tests {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
         frames.sync_views(&[View::default(), View::default()]);
         let mut list = DrawList::with_capacity(256);
-        frames.prepare(&mut list, (64, 64)).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         let without = steps(&frames);
         assert_eq!(
             without,
@@ -937,7 +1011,9 @@ mod tests {
         );
 
         frames.set_debug_lines(true);
-        frames.prepare(&mut list, (64, 64)).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         assert_eq!(
             steps(&frames)[1],
             ["Opaque", "DebugLines", "Resolve"],
@@ -946,7 +1022,9 @@ mod tests {
         // The lines change no texture of the plan.
         list.clear();
         frames.set_debug_lines(false);
-        frames.prepare(&mut list, (64, 64)).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         assert_eq!(steps(&frames), without);
         assert!(list.is_empty(), "switching the lines makes no texture");
     }
@@ -989,7 +1067,9 @@ mod tests {
     fn passes_draw_into_views_of_the_layers_of_array_targets() {
         let mut frames = layered(3);
         let mut list = DrawList::with_capacity(512);
-        frames.prepare(&mut list, (64, 64)).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         // The kept array comes first, bound as an array, with a view of each layer after the ids
         // of the plan's textures.
         let usage = texture_usage::RENDER_ATTACHMENT | texture_usage::TEXTURE_BINDING;
@@ -1014,7 +1094,9 @@ mod tests {
 
         // Nothing changed: nothing is made again.
         list.clear();
-        frames.prepare(&mut list, (64, 64)).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         assert!(list.is_empty());
     }
 
@@ -1022,7 +1104,9 @@ mod tests {
     fn an_array_of_one_layer_is_still_an_array_and_fewer_layers_release_their_views() {
         let mut frames = layered(2);
         let mut list = DrawList::with_capacity(512);
-        frames.prepare(&mut list, (64, 64)).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         assert_eq!(operands(&list, Op::CreateTextureView).len(), 2);
 
         // The array shrinks to one layer: the texture and its one view are made again, bound as
@@ -1035,7 +1119,9 @@ mod tests {
             ..layered(1)
         };
         list.clear();
-        frames.prepare(&mut list, (64, 64)).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         let created = operands(&list, Op::CreateTexture);
         assert_eq!(created.len(), 1);
         assert_eq!(created[0][3], 1);
@@ -1046,7 +1132,9 @@ mod tests {
         // A new device has none of them.
         frames.reset_gpu();
         list.clear();
-        frames.prepare(&mut list, (64, 64)).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         assert_eq!(operands(&list, Op::CreateTextureView), [[129, 1, 0, 0]]);
     }
 
@@ -1057,7 +1145,9 @@ mod tests {
         let mut list = DrawList::with_capacity(256);
         frames.set_debug_lines(true);
         frames.set_transparent(true);
-        frames.prepare(&mut list, (64, 64)).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         assert_eq!(
             steps(&frames),
             [
@@ -1069,17 +1159,23 @@ mod tests {
         );
         // Views declared later take the passes' state.
         frames.sync_views(&[View::default(); 3]);
-        frames.prepare(&mut list, (64, 64)).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         assert_eq!(steps(&frames)[3], ["Opaque2", "Transparent2"]);
         frames.set_transparent(false);
-        frames.prepare(&mut list, (64, 64)).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         assert_eq!(steps(&frames)[3], ["Opaque2"]);
 
         // On the HDR path the final pass reads the scene color after the blended objects.
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
         frames.sync_views(&[View::default()]);
         frames.set_transparent(true);
-        frames.prepare(&mut list, (64, 64)).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         assert_eq!(
             &steps(&frames)[1..],
             [vec!["Opaque", "Transparent"], vec!["Final"]]

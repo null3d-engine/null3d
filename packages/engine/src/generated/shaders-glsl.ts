@@ -23,7 +23,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -90,7 +90,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -183,7 +183,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
 const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
@@ -284,6 +284,10 @@ vec3 encode(vec3 c_5, vec2 pixel_1) {
     return (_e7 + vec3(dither));
 }
 
+ivec2 corner_texel(vec2 place, vec2 size) {
+    return ivec2(int(place.x), int(((size.y - 1.0) - place.y)));
+}
+
 void main() {
     uint vertex = uint(gl_VertexID);
     float x_2 = ((float(((vertex << 1u) & 2u)) * 2.0) - 1.0);
@@ -306,7 +310,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
 const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
@@ -417,24 +421,70 @@ vec4 pixel_color(vec2 position_1) {
     return _e4;
 }
 
+vec4 display(vec4 texel, vec2 pixel_2) {
+    uint _e2 = _group_0_binding_0_fs.flags;
+    if (((_e2 & DISPLAY_COLOR) != 0u)) {
+        return texel;
+    }
+    float coverage = texel.w;
+    if ((coverage <= 0.0)) {
+        return vec4(0.0);
+    }
+    Output _e17 = _group_0_binding_0_fs;
+    vec3 _e18 = tone_map((texel.xyz / vec3(coverage)), _e17);
+    vec3 _e20 = encode(_e18, pixel_2);
+    vec3 encoded = clamp(_e20, vec3(0.0), vec3(1.0));
+    return vec4((encoded * coverage), coverage);
+}
+
+ivec2 corner_texel(vec2 place, vec2 size) {
+    return ivec2(int(place.x), int(((size.y - 1.0) - place.y)));
+}
+
 void main() {
     vec4 position = gl_FragCoord;
-    vec4 _e2 = pixel_color(position.xy);
-    uint _e5 = _group_0_binding_0_fs.flags;
-    if (((_e5 & DISPLAY_COLOR) != 0u)) {
-        _fs2p_location0 = _e2;
-        return;
+    vec4 color = vec4(0.0);
+    uint tap = 0u;
+    vec2 size_1 = vec2(uvec2(textureSize(_group_0_binding_1_fs, 0).xy));
+    uint packed_ = _group_0_binding_0_fs.render_size;
+    vec2 render = vec2(float((packed_ & 65535u)), float((packed_ >> 16u)));
+    bool whole = all(equal(render, size_1));
+    if (whole) {
+        vec4 _e20 = pixel_color(position.xy);
+        vec4 _e22 = display(_e20, position.xy);
+        color = _e22;
     }
-    float coverage = _e2.w;
-    if ((coverage <= 0.0)) {
-        _fs2p_location0 = vec4(0.0);
-        return;
+    vec2 from_top = vec2(position.x, (size_1.y - position.y));
+    vec2 place_1 = clamp((((from_top / size_1) * render) - vec2(0.5)), vec2(0.0), (render - vec2(1.0)));
+    vec2 first = floor(place_1);
+    vec2 share = (place_1 - first);
+    uint taps = (whole ? 0u : 4u);
+    bool loop_init = true;
+    while(true) {
+        if (!loop_init) {
+            uint _e79 = tap;
+            tap = (_e79 + 1u);
+        }
+        loop_init = false;
+        uint _e46 = tap;
+        if ((_e46 < taps)) {
+        } else {
+            break;
+        }
+        {
+            uint _e48 = tap;
+            uint _e52 = tap;
+            vec2 corner = vec2(float((_e48 & 1u)), float((_e52 >> 1u)));
+            vec2 weights = mix((vec2(1.0) - share), share, corner);
+            ivec2 _e66 = corner_texel(min((first + corner), (render - vec2(1.0))), size_1);
+            vec4 _e67 = color;
+            vec4 _e73 = texelFetch(_group_0_binding_1_fs, _e66, 0);
+            vec4 _e75 = display(_e73, position.xy);
+            color = (_e67 + ((weights.x * weights.y) * _e75));
+        }
     }
-    Output _e19 = _group_0_binding_0_fs;
-    vec3 _e20 = tone_map((_e2.xyz / vec3(coverage)), _e19);
-    vec3 _e22 = encode(_e20, position.xy);
-    vec3 encoded = clamp(_e22, vec3(0.0), vec3(1.0));
-    _fs2p_location0 = vec4((encoded * coverage), coverage);
+    vec4 _e81 = color;
+    _fs2p_location0 = _e81;
     return;
 }
 `,
@@ -473,7 +523,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
 const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
@@ -580,6 +630,10 @@ vec3 encode(vec3 c_5, vec2 pixel_1) {
     return (_e7 + vec3(dither));
 }
 
+ivec2 corner_texel(vec2 place, vec2 size) {
+    return ivec2(int(place.x), int(((size.y - 1.0) - place.y)));
+}
+
 void main() {
     uint vertex = uint(gl_VertexID);
     float x_2 = ((float(((vertex << 1u) & 2u)) * 2.0) - 1.0);
@@ -602,7 +656,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
 const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
@@ -744,7 +798,7 @@ vec4 texel_at(ivec2 pixel_2, ivec2 last) {
     return _e8;
 }
 
-vec4 tap(vec2 point, ivec2 last_1) {
+vec4 tap_1(vec2 point, ivec2 last_1) {
     vec2 corner = (point - vec2(0.5));
     ivec2 base = ivec2(floor(corner));
     vec2 f = fract(corner);
@@ -767,32 +821,32 @@ float luma(vec4 c_7) {
 vec4 pixel_color(vec2 position_1) {
     bool local = false;
     ivec2 last_2 = (ivec2(uvec2(textureSize(_group_0_binding_1_fs, 0).xy)) - ivec2(1));
-    ivec2 pixel_3 = ivec2(position_1);
-    vec4 texel_1 = texelFetch(_group_0_binding_1_fs, pixel_3, 0);
-    vec4 _e11 = squeeze(texel_1);
+    ivec2 pixel_4 = ivec2(position_1);
+    vec4 texel_2 = texelFetch(_group_0_binding_1_fs, pixel_4, 0);
+    vec4 _e11 = squeeze(texel_2);
     float _e12 = luma(_e11);
-    vec4 _e17 = texel_at((pixel_3 + ivec2(-1, -1)), last_2);
+    vec4 _e17 = texel_at((pixel_4 + ivec2(-1, -1)), last_2);
     float _e18 = luma(_e17);
-    vec4 _e23 = texel_at((pixel_3 + ivec2(1, -1)), last_2);
+    vec4 _e23 = texel_at((pixel_4 + ivec2(1, -1)), last_2);
     float _e24 = luma(_e23);
-    vec4 _e29 = texel_at((pixel_3 + ivec2(-1, 1)), last_2);
+    vec4 _e29 = texel_at((pixel_4 + ivec2(-1, 1)), last_2);
     float _e30 = luma(_e29);
-    vec4 _e35 = texel_at((pixel_3 + ivec2(1, 1)), last_2);
+    vec4 _e35 = texel_at((pixel_4 + ivec2(1, 1)), last_2);
     float _e36 = luma(_e35);
     float lowest = min(_e12, min(min(_e18, _e24), min(_e30, _e36)));
     float highest = max(_e12, max(max(_e18, _e24), max(_e30, _e36)));
     if (((highest - lowest) < max(EDGE_THRESHOLD_MIN, (highest * EDGE_THRESHOLD)))) {
-        return texel_1;
+        return texel_2;
     }
     vec2 along = vec2(((_e30 + _e36) - (_e18 + _e24)), ((_e18 + _e30) - (_e24 + _e36)));
     float reduce = max(((((_e18 + _e24) + _e30) + _e36) * 0.03125), REDUCE_MIN);
     float scale = (1.0 / (min(abs(along.x), abs(along.y)) + reduce));
     vec2 span = clamp((along * scale), vec2(-8.0), vec2(8.0));
-    vec4 _e83 = tap((position_1 - (span / vec2(6.0))), last_2);
-    vec4 _e88 = tap((position_1 + (span / vec2(6.0))), last_2);
+    vec4 _e83 = tap_1((position_1 - (span / vec2(6.0))), last_2);
+    vec4 _e88 = tap_1((position_1 + (span / vec2(6.0))), last_2);
     vec4 inner = (0.5 * (_e83 + _e88));
-    vec4 _e97 = tap((position_1 - (span * 0.5)), last_2);
-    vec4 _e101 = tap((position_1 + (span * 0.5)), last_2);
+    vec4 _e97 = tap_1((position_1 - (span * 0.5)), last_2);
+    vec4 _e101 = tap_1((position_1 + (span * 0.5)), last_2);
     vec4 outer = ((0.5 * inner) + (0.25 * (_e97 + _e101)));
     float _e106 = luma(outer);
     if (!((_e106 < lowest))) {
@@ -805,24 +859,70 @@ vec4 pixel_color(vec2 position_1) {
     return _e115;
 }
 
+vec4 display(vec4 texel_1, vec2 pixel_3) {
+    uint _e2 = _group_0_binding_0_fs.flags;
+    if (((_e2 & DISPLAY_COLOR) != 0u)) {
+        return texel_1;
+    }
+    float coverage = texel_1.w;
+    if ((coverage <= 0.0)) {
+        return vec4(0.0);
+    }
+    Output _e17 = _group_0_binding_0_fs;
+    vec3 _e18 = tone_map((texel_1.xyz / vec3(coverage)), _e17);
+    vec3 _e20 = encode(_e18, pixel_3);
+    vec3 encoded = clamp(_e20, vec3(0.0), vec3(1.0));
+    return vec4((encoded * coverage), coverage);
+}
+
+ivec2 corner_texel(vec2 place, vec2 size) {
+    return ivec2(int(place.x), int(((size.y - 1.0) - place.y)));
+}
+
 void main() {
     vec4 position = gl_FragCoord;
-    vec4 _e2 = pixel_color(position.xy);
-    uint _e5 = _group_0_binding_0_fs.flags;
-    if (((_e5 & DISPLAY_COLOR) != 0u)) {
-        _fs2p_location0 = _e2;
-        return;
+    vec4 color = vec4(0.0);
+    uint tap = 0u;
+    vec2 size_1 = vec2(uvec2(textureSize(_group_0_binding_1_fs, 0).xy));
+    uint packed_ = _group_0_binding_0_fs.render_size;
+    vec2 render = vec2(float((packed_ & 65535u)), float((packed_ >> 16u)));
+    bool whole = all(equal(render, size_1));
+    if (whole) {
+        vec4 _e20 = pixel_color(position.xy);
+        vec4 _e22 = display(_e20, position.xy);
+        color = _e22;
     }
-    float coverage = _e2.w;
-    if ((coverage <= 0.0)) {
-        _fs2p_location0 = vec4(0.0);
-        return;
+    vec2 from_top = vec2(position.x, (size_1.y - position.y));
+    vec2 place_1 = clamp((((from_top / size_1) * render) - vec2(0.5)), vec2(0.0), (render - vec2(1.0)));
+    vec2 first = floor(place_1);
+    vec2 share = (place_1 - first);
+    uint taps = (whole ? 0u : 4u);
+    bool loop_init = true;
+    while(true) {
+        if (!loop_init) {
+            uint _e79 = tap;
+            tap = (_e79 + 1u);
+        }
+        loop_init = false;
+        uint _e46 = tap;
+        if ((_e46 < taps)) {
+        } else {
+            break;
+        }
+        {
+            uint _e48 = tap;
+            uint _e52 = tap;
+            vec2 corner_1 = vec2(float((_e48 & 1u)), float((_e52 >> 1u)));
+            vec2 weights = mix((vec2(1.0) - share), share, corner_1);
+            ivec2 _e66 = corner_texel(min((first + corner_1), (render - vec2(1.0))), size_1);
+            vec4 _e67 = color;
+            vec4 _e73 = texelFetch(_group_0_binding_1_fs, _e66, 0);
+            vec4 _e75 = display(_e73, position.xy);
+            color = (_e67 + ((weights.x * weights.y) * _e75));
+        }
     }
-    Output _e19 = _group_0_binding_0_fs;
-    vec3 _e20 = tone_map((_e2.xyz / vec3(coverage)), _e19);
-    vec3 _e22 = encode(_e20, position.xy);
-    vec3 encoded = clamp(_e22, vec3(0.0), vec3(1.0));
-    _fs2p_location0 = vec4((encoded * coverage), coverage);
+    vec4 _e81 = color;
+    _fs2p_location0 = _e81;
     return;
 }
 `,
@@ -865,7 +965,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -1311,7 +1411,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -1765,7 +1865,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -2211,7 +2311,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -2669,7 +2769,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -3109,7 +3209,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -3645,7 +3745,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -4085,7 +4185,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -4617,7 +4717,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -5069,7 +5169,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -5527,7 +5627,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -5979,7 +6079,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -6441,7 +6541,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -6887,7 +6987,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -7427,7 +7527,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -7873,7 +7973,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -8490,7 +8590,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -8720,7 +8820,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -8827,7 +8927,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -9339,7 +9439,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -10019,7 +10119,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -10531,7 +10631,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -11215,7 +11315,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -11721,7 +11821,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -12483,7 +12583,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -13015,7 +13115,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -13780,7 +13880,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -14318,7 +14418,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -15005,7 +15105,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -15511,7 +15611,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -16269,7 +16369,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -16801,7 +16901,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -17562,7 +17662,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -18080,7 +18180,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -18764,7 +18864,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -19282,7 +19382,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -19970,7 +20070,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -20482,7 +20582,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -21248,7 +21348,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -21786,7 +21886,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -22555,7 +22655,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -23099,7 +23199,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -23790,7 +23890,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -24302,7 +24402,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -25064,7 +25164,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -25602,7 +25702,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -26367,7 +26467,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -26911,7 +27011,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -27598,7 +27698,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -28136,7 +28236,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -28821,7 +28921,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -29067,7 +29167,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -29217,7 +29317,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -29511,7 +29611,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -29744,7 +29844,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -30038,7 +30138,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -30275,7 +30375,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -30575,7 +30675,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -30815,7 +30915,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -31115,7 +31215,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -31361,7 +31461,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -31706,7 +31806,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -32005,7 +32105,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -32350,7 +32450,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -32653,7 +32753,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -33004,7 +33104,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -33310,7 +33410,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -33661,7 +33761,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;

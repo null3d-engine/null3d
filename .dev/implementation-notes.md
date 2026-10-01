@@ -57,6 +57,15 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - The check reads the render and completion rings with `RingSums`, from the thread that runs the sketch. Only a preset that the engine chose, above Low, gets a check, so pages that name a preset never download its code.
 - Tests that assert a preset-dependent value on a live engine fix the preset with `?preset=`, or compare the preset that the engine chose (`presetCheck.from`). The check of a busy machine can lower the preset of any scene.
 
+## Render scale
+
+- The render scale crosses into the core as whole thousandths, an argument of `recordFrame`. Whole numbers never become number objects, and the core turns them into sizes in pixels with integer math, the same on every device.
+- The controller (`quality/resolution.ts`) runs in the frame loop of the thread that records frames, before the sketch's update. It reads the render and completion rings with `RingSums`. The loop writes the frame's clock reading into its typed array, so it allocates nothing. Hold mode has no controller and draws at the highest scale.
+- Scene passes of a relative size set the viewport and the scissor after `BeginRenderPass`. A pass at the whole canvas records neither, so its draw list is the same as without a render scale.
+- The final pass filters by hand: four `textureLoad` reads, each tone mapped, then blended. A sampler would blend HDR color first, and a small share of a very bright texel turns its neighbors almost white. A WebGL2 program also cannot read one texture both with `textureLoad` and through a sampler.
+- The 8-bit path resolves straight into the canvas only while the lowest scale is 1. Hold mode keeps that rule, so its images show the passes that play draws. Every path builds the final pass's pipeline with its first frame, so a change of range draws at once.
+- Below a scale of 1, a fragment's position covers only the drawn corner. A scene shader that turns the position into a place on the view, such as a light grid tile, divides it by the render size. The target's size is wrong there. The frame graph knows the render size after its `prepare`.
+
 ## Start order
 
 The page starts every download that the start needs while the core downloads. On Slow 4G each download that waits for the core adds a round trip of at least 562 ms.

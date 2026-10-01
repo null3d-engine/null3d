@@ -38,6 +38,7 @@ function medium(start: Partial<QualityStart> = {}) {
 	const applied: QualityUpdate[] = [];
 	const changes: (readonly QualitySettingName[])[] = [];
 	const settled = { count: 0 };
+	let scale = 0.8;
 	const quality = new SketchQuality(
 		{ preset: 'medium', settings: MEDIUM, options: {}, highest: 'ultra', ...start },
 		(update, changed) => {
@@ -47,8 +48,9 @@ function medium(start: Partial<QualityStart> = {}) {
 		async () => {
 			settled.count++;
 		},
+		() => scale,
 	);
-	return { quality, applied, changes, settled };
+	return { quality, applied, changes, settled, setScale: (to: number) => (scale = to) };
 }
 
 /**
@@ -130,6 +132,8 @@ describe('SketchQuality', () => {
 		expect(() => quality.set({ maxAnisotropy: 32 })).toThrow('E1213');
 		expect(() => quality.set({ maxPixelRatio: 1, uploadBytesPerFrame: 1024 })).toThrow('E1213');
 		// The anti-aliasing mode is fixed when the engine starts, and the memory maximum before it loads.
+		expect(() => quality.set({ minRenderScale: 0.2 })).toThrow('E1213');
+		expect(() => quality.set({ maxRenderScale: 1.5 })).toThrow('E1213');
 		expect(() => quality.set({ antialias: 'fxaa' })).toThrow('fixed when the engine starts');
 		expect(() => quality.set({ memoryMaximumMiB: 512 } as Partial<QualitySettings>)).toThrow(
 			'E1213',
@@ -163,6 +167,24 @@ describe('SketchQuality', () => {
 		expect(quality.settings.antialias).toBe(MEDIUM.antialias);
 	});
 
+	it('keeps the lowest render scale at or below the highest', async () => {
+		const { quality, applied } = medium();
+		expect(() => quality.set({ maxRenderScale: 0.5 })).toThrow(
+			'quality.set() would give minRenderScale 0.6, above maxRenderScale 0.5.',
+		);
+		expect(() => quality.set({ minRenderScale: 0.9, maxRenderScale: 0.8 })).toThrow('E1213');
+		expect(applied).toEqual([]);
+		await quality.set({ minRenderScale: 0.5, maxRenderScale: 0.5 });
+		expect(quality.settings).toEqual({ ...MEDIUM, minRenderScale: 0.5, maxRenderScale: 0.5 });
+	});
+
+	it('reads the render scale that the engine draws at', () => {
+		const { quality, setScale } = medium();
+		expect(quality.renderScale).toBe(0.8);
+		setScale(0.65);
+		expect(quality.renderScale).toBe(0.65);
+	});
+
 	it('keeps the change handlers until their remover runs', () => {
 		const { quality } = medium();
 		const handler = () => {};
@@ -193,14 +215,17 @@ describe('SketchQuality.lower', () => {
 		quality.own('uploadBytesPerFrame');
 		await quality.lower();
 		expect(quality.preset).toBe('low');
+		const low = presetSettings('low');
 		expect(quality.settings).toEqual({
 			maxPixelRatio: 1,
+			minRenderScale: low.minRenderScale,
+			maxRenderScale: low.maxRenderScale,
 			maxAnisotropy: 16,
 			uploadBytesPerFrame: MEDIUM.uploadBytesPerFrame,
 			antialias: MEDIUM.antialias,
 		});
-		// The preset changed, and none of the settings did.
-		expect(changes.at(-1)).toEqual([]);
+		// The preset changed, and of the settings only the lowest render scale did.
+		expect(changes.at(-1)).toEqual(['minRenderScale']);
 	});
 });
 
@@ -214,7 +239,8 @@ describe('SketchQuality.setPreset', () => {
 		expect(quality.settings).toEqual(fromMedium('low'));
 		expect(Object.keys(quality.settings)).toEqual([...SKETCH_SETTINGS]);
 		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
-		expect(changes.at(-1)).toEqual(LIVE_SETTINGS);
+		// Every preset has the same highest render scale.
+		expect(changes.at(-1)).toEqual(LIVE_SETTINGS.filter((name) => name !== 'maxRenderScale'));
 		expect(settled.count).toBe(1);
 		// The next frame holds for its pipelines, and its handlers hear of a new preset.
 		expect(quality.takeRestart()).toBe(true);

@@ -224,6 +224,7 @@ fn a_view_added_after_the_frame_culled_draws_from_the_next_frame() {
         batches: &world.batches,
         snapshot: &world.snapshot,
         canvas: world.canvas,
+        render_scale: world.render_scale,
         structure_changed: false,
         jobs: &world.jobs,
         lines: DebugLines::NONE,
@@ -296,7 +297,9 @@ fn the_first_frame_creates_everything_and_replays_on_both_draw_paths() {
         let mut mock = MockBackend::default();
         mock.replay(world.renderer.list(1).words()).unwrap();
 
-        assert_eq!(count(&commands, Op::CreateRenderPipeline), 2);
+        // The two meshes' pipelines, and the final pass's, made for frames whose render scale
+        // drops.
+        assert_eq!(count(&commands, Op::CreateRenderPipeline), 3);
         // The color and depth targets, the shadow map (one texel while no light casts shadows),
         // the resident texture, the two rings of three, the cluster texture, the material table
         // and the table of specular terms.

@@ -8,7 +8,8 @@
 // textures that wait for uploads and the bytes that the frame before uploaded, so a run that stalls
 // shows where. Once every image is on the GPU, it sends the page `loaded` with its settings, the
 // frames it took, the most bytes that any frame uploaded, the GPU memory of the textures, and the
-// bytes of one texture.
+// bytes of one texture. The scene keeps the whole canvas, so a slow GPU's frames do not lower the
+// render scale of the image that the test compares.
 import { defineSketch, type MeshArrays, type Texture } from '@null3d/engine';
 
 /** The bytes that one frame may upload: half of one image. */
@@ -44,7 +45,8 @@ function image(k: number): Promise<ImageBitmap> {
 }
 
 export default defineSketch(async (ctx) => {
-	const { scene, materials, geometry, page, time, textures } = ctx;
+	const { scene, materials, geometry, page, time, textures, quality } = ctx;
+	quality.set({ minRenderScale: 1 });
 	textures.setUploadBudget(UPLOAD_BUDGET);
 	scene.setBackground('#181c20');
 	const camera = scene.createPerspectiveCamera({

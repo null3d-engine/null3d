@@ -5,8 +5,6 @@
 /** What the warm-up page publishes. */
 export interface WarmUpResult {
 	tier: string;
-	/** True when the scene drew HDR color, whose final pass has a pipeline of its own. */
-	hdr: boolean;
 	/** Pipelines that the first frame built. */
 	firstFramePipelines: number | null;
 	/** Time from the first build's start until none was building. */
@@ -29,11 +27,12 @@ const ADDED_PIXELS = 100;
 
 /**
  * What is wrong with a warm-up page's result on a GPU path; empty when nothing is. WebGPU also
- * builds the culling pass's compute pipeline in the first frame, and HDR color the final pass's.
+ * builds the culling pass's compute pipeline in the first frame, and every path the final pass's,
+ * which the 8-bit path runs while the render scale can drop.
  */
 export function warmUpProblems(result: WarmUpResult, gpu: 'webgpu' | 'webgl2'): string[] {
 	const problems = result.failures.map((code) => `the engine failed with ${code}`);
-	const expected = SCENE_PIPELINES + (gpu === 'webgpu' ? 1 : 0) + (result.hdr ? 1 : 0);
+	const expected = SCENE_PIPELINES + (gpu === 'webgpu' ? 1 : 0) + 1;
 	if (result.firstFramePipelines !== expected)
 		problems.push(`the first frame built ${result.firstFramePipelines} pipelines, not ${expected}`);
 	if (result.warmUpMs === null || result.warmUpMs < 0)

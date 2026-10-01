@@ -39,6 +39,8 @@ interface SceneBackend {
 		dispatches?: number;
 		pipelines: number;
 		skippedDraws: number;
+		/** GPU objects other than pipelines that the replays made. */
+		objects: number;
 	};
 	resetCounts(): void;
 }
@@ -51,6 +53,7 @@ function recordCounts(record: FrameRecorder, backend: SceneBackend): void {
 	record.count(Counter.Dispatches, counts.dispatches ?? 0);
 	record.count(Counter.Pipelines, counts.pipelines);
 	record.count(Counter.SkippedDraws, counts.skippedDraws);
+	record.count(Counter.GpuObjects, counts.objects);
 	backend.resetCounts();
 }
 

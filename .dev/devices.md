@@ -14,6 +14,8 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 - Before a run on a phone or tablet, the runner prints a checklist. The display needs a fixed refresh rate and fixed brightness. Low Power Mode and battery saver must be off, and the device must be rested and cool.
 - The runner cannot read Brave's Shields. Run Brave once with Shields on and once with them off for the dev server's site, and pass `--shields on` or `--shields off` to match. The runner records the state in each Brave result and in the run's summary.
 - Do not edit engine or benchmark page files, or `vite.config.ts`, during a run. The dev server reloads the pages being measured, and restarts when its config changes.
+- The dev server loads the Vite plugin, and the shader compiler that the plugin runs, once when it starts. It never loads a new copy of them while it runs.
+- After a pull that changes `packages/vite-plugin` or the Vite config, run `bun run build`, then restart the dev server before a run. Restart it before the browser tests too, because they use a dev server that already answers on their port. The build also brings the engine core that the server serves up to date. On 1 October 2026, a stale server rejected new custom material sketches with "the WGSL has no entry point".
 - Do not add or move files in the tree that the dev server watches during a run. A new HTML file anywhere in it reloads every open page, and a page reloaded while it measures reports 0 frames.
 - Close the browser tabs that testing opens as soon as each test ends. Old tabs keep pages running, which costs heat and skews later runs.
 
@@ -103,6 +105,7 @@ The team's phone is a Galaxy S24+ (SM-S926B, Exynos 2400, Android 16).
 - During a run, the runner reads the phone's heat every 10 seconds: the temperatures, each core group's speed cap and Samsung's throttle level. Each result records the heat it ran in.
 - Do not touch the phone during a run, because a tap can close the runner's tab. A runner page that goes quiet counts as stopped after its slowest page's timeout and 30 more seconds.
 - Close stale pages through Chrome's debugging protocol: `adb forward tcp:5176 localabstract:chrome_devtools_remote` (the main checkout's debugging port: the dev server's port plus 3), then `Target.closeTarget` for each page on `localhost`.
+- When Chrome's debugging socket does not answer, the request for its page list (`/json/list` on the forwarded port) hangs. Then stop both browsers, which ends the runner's stale pages: `adb shell am force-stop com.android.chrome` and `adb shell am force-stop com.brave.browser`.
 - The `scale` plan finds phone scale: the largest S1 count at which three.js holds 30 frames per second. Run `bun tests/real-browsers.ts --plan scale --allow-no-webgpu --android chrome`. In Chrome 154 on 29 September 2026, it was 300,000 from a cool start and 250,000 on a warm phone.
 
 ## iPad
