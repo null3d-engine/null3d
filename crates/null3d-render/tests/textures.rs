@@ -4,7 +4,7 @@
 mod common;
 
 use common::{World, count, map_desc};
-use null3d_gpu::drawlist::{Op, layout, template, vertex};
+use null3d_gpu::drawlist::{Op, compare, layout, template, vertex};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
@@ -225,7 +225,11 @@ fn after_a_gpu_reset_the_maps_upload_again_and_the_frame_replays_on_a_new_device
     device.provide_image(1, SIZE, SIZE);
     let commands = world.step(&mut device, false);
     assert_eq!(count(&commands, Op::UploadImage), 1);
-    assert_eq!(count(&commands, Op::CreateSampler), 1);
+    // The map's sampler is made again, beside the shadow map's comparison sampler.
+    let samplers = commands
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateSampler && o[9] == compare::NONE);
+    assert_eq!(samplers.count(), 1);
     assert_eq!(
         world.renderer.settings().textures().ready_layer(texture),
         Some(0)
