@@ -231,7 +231,10 @@ jobs:
     needs: build
     if: github.event_name == 'merge_group'
     runs-on: macos-15
-    timeout-minutes: 15
+    # A full run in one job takes about 14 minutes, and a runner page that goes quiet costs about a
+    # minute more each time the runner replaces it. The limit stays at a full run's, with that
+    # margin, until the shards' own times are known.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

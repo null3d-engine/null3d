@@ -49,7 +49,15 @@
 // Before a run on a phone or tablet, the runner prints a checklist of the device settings that
 // results depend on.
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+	copyFileSync,
+	existsSync,
+	readdirSync,
+	readFileSync,
+	statSync,
+	writeFileSync,
+} from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
 	BENCH_PAGE_KINDS,
@@ -85,7 +93,9 @@ import { RUNS_DIR } from './lib/report-collector.ts';
 import {
 	addToResult,
 	type ItemResult,
+	type Plan,
 	type PlanItem,
+	type PlanPlace,
 	type Runner,
 	readDevice,
 	readResult,
@@ -334,6 +344,10 @@ function openApp(app: string, url: string): boolean {
 	}
 }
 
+/** The address of a run's runner page for one runner, from the plan item at `from` when given. */
+const runnerUrl = (baseUrl: string, run: string, runner: string, from?: number) =>
+	`${baseUrl}/tests/pages/runner.html?run=${run}&runner=${runner}${from ? `&from=${from}` : ''}`;
+
 /** Opens a run's runner page for each of these runners, and returns the ones that opened. */
 function openRunners(
 	names: readonly string[],
@@ -344,7 +358,7 @@ function openRunners(
 	const opened: string[] = [];
 	for (const name of names) {
 		const launch = launches.get(name) as Launch;
-		const url = `${baseUrl}/tests/pages/runner.html?run=${run}&runner=${name}`;
+		const url = runnerUrl(baseUrl, run, name);
 		if (launch.kind === 'mac') {
 			if (openApp(launch.app, url)) opened.push(name);
 		} else {
@@ -356,9 +370,183 @@ function openRunners(
 	return opened;
 }
 
-/** Reports a runner page that stopped sending results, as when its tab closes. */
-const reportQuiet = (name: string, seconds: number) =>
-	console.log(`${name}: sent nothing for ${seconds} s, so its runner page has stopped`);
+/** Reports a runner page that stopped sending results, as when its tab closes, and its page. */
+function reportQuiet(name: string, seconds: number, at?: PlanPlace): false {
+	const where = at ? ` on page ${at.index + 1}, ${at.item.id}` : '';
+	console.log(`${name}: sent nothing for ${seconds} s${where}, so its runner page has stopped`);
+	return false;
+}
+
+/** How many new runner pages the runner tool opens for one runner in one run. */
+const MAX_REOPENS = 2;
+
+/** Runs a command and returns its output, or a line that says why it failed. */
+function output(command: string, args: string[], timeout = 10_000): string {
+	try {
+		return execFileSync(command, args, { timeout, encoding: 'utf8', maxBuffer: 256 << 20 });
+	} catch (e) {
+		return `(${command} failed: ${(e as Error).message.split('\n')[0]})`;
+	}
+}
+
+/** How far back the Mac's log goes in the evidence of a quiet runner page. */
+const QUIET_LOG_MINUTES = 6;
+/** The most lines of the Mac's log that the evidence keeps, the newest ones. */
+const QUIET_LOG_LINES = 20_000;
+
+/**
+ * Looks at the Mac when a runner page in one of its apps goes quiet, and returns what it found as
+ * one line. It saves the evidence beside the run's results: a picture of the screen, the newest
+ * lines of the log from WebKit, Safari and the kernel, and the crash reports written during the
+ * run.
+ */
+function inspectMac(run: string, runner: string, count: number, since: number): string {
+	const locked = /"CGSSessionScreenIsLocked"\s*=\s*Yes/.test(
+		output('ioreg', ['-n', 'Root', '-d1']),
+	);
+	const pressure = output('memory_pressure', []).trim().split('\n').at(-1);
+	const webContent = output('ps', ['-axo', 'rss=,command='])
+		.split('\n')
+		.filter((line) => line.includes('WebContent'))
+		.map((line) => `${Math.round(Number.parseInt(line.trim(), 10) / 1024)} MB`);
+	const prefix = join(RUNS_DIR, run, `${runner}-quiet-${count}`);
+	output('screencapture', ['-x', `${prefix}.png`]);
+	const log = output(
+		'/usr/bin/log',
+		[
+			'show',
+			'--last',
+			`${QUIET_LOG_MINUTES}m`,
+			'--style',
+			'compact',
+			'--predicate',
+			'subsystem BEGINSWITH "com.apple.WebKit" OR process BEGINSWITH "com.apple.WebKit" OR process == "Safari" OR process == "kernel" OR process == "ReportCrash"',
+		],
+		60_000,
+	);
+	writeFileSync(`${prefix}-log.txt`, log.split('\n').slice(-QUIET_LOG_LINES).join('\n'));
+	const crashes: string[] = [];
+	for (const dir of [
+		join(homedir(), 'Library/Logs/DiagnosticReports'),
+		'/Library/Logs/DiagnosticReports',
+	])
+		try {
+			for (const name of readdirSync(dir)) {
+				const path = join(dir, name);
+				const file = statSync(path);
+				if (!file.isFile() || file.mtimeMs < since) continue;
+				copyFileSync(path, `${prefix}-${name}`);
+				crashes.push(name);
+			}
+		} catch {
+			// Reports that the tool cannot read stay where they are.
+		}
+	return `screen ${locked ? 'locked' : 'not locked'}; ${pressure}; web content processes: ${webContent.join(', ') || 'none'}; crash reports: ${crashes.join(', ') || 'none'}; evidence in ${prefix}*`;
+}
+
+/**
+ * Closes a run's runner page in Safari through AppleScript. Not in CI: there macOS asks whether the
+ * tool may control Safari, and nobody can answer.
+ */
+function closeSafariRunner(run: string, runner: string): void {
+	if (process.env.CI) return;
+	const match = `run=${run}&runner=${runner}`;
+	output('osascript', [
+		'-e',
+		`tell application "Safari" to close (every tab of every window whose URL contains "${match}")`,
+	]);
+}
+
+/** How the runner tool replaces a quiet runner page, where it can. */
+export interface Reopener {
+	/** True when the tool can open a new runner page for this runner itself. */
+	canReopen(runner: string): boolean;
+	/**
+	 * Looks at the device when a runner page goes quiet for the `count`-th time in the run, and
+	 * returns what it found as one line.
+	 */
+	inspect(runner: string, count: number): string;
+	/** Opens a new runner page at the plan's item `from`, and says whether it opened. */
+	reopen(runner: string, from: number): boolean;
+}
+
+/**
+ * Replaces a runner page that goes quiet on a page, and keeps the facts for the summary. A new
+ * runner page starts at the page where the last one went quiet, so that page runs once more. A
+ * page where a runner page goes quiet twice fails, and the new runner page starts at the page after
+ * it. Each runner gets a few new runner pages per run; after that, a quiet runner page ends the
+ * runner's turn. Runners that the tool cannot open itself are never replaced.
+ */
+export class QuietRecovery {
+	private readonly reopens = new Map<string, number>();
+	/** For each runner, how often its runner page went quiet on each page, by item ID. */
+	private readonly stalls = new Map<string, Map<string, number>>();
+
+	constructor(
+		private readonly plan: Plan<unknown>,
+		private readonly reopener: Reopener,
+	) {}
+
+	/** Handles a quiet runner page, and says whether a new one took its place. */
+	readonly onQuiet = (name: string, seconds: number, at: PlanPlace | undefined): boolean => {
+		reportQuiet(name, seconds, at);
+		if (!at || !this.reopener.canReopen(name)) return false;
+		const reopens = this.reopens.get(name) ?? 0;
+		console.log(`${name}: ${this.reopener.inspect(name, reopens + 1)}`);
+		if (reopens >= MAX_REOPENS) {
+			console.log(`${name}: its runner page stopped ${reopens + 1} times, so its turn ends`);
+			return false;
+		}
+		const stalls = this.stalls.get(name) ?? new Map<string, number>();
+		this.stalls.set(name, stalls);
+		const times = (stalls.get(at.item.id) ?? 0) + 1;
+		stalls.set(at.item.id, times);
+		let from = at.index;
+		if (times > 1) {
+			writeRunnerFile(this.plan.run, name, at.item.id, {
+				ok: false,
+				error: `the runner page stopped answering on this page ${times} times, for ${seconds} s the last time`,
+				receivedAt: new Date().toISOString(),
+			});
+			from++;
+		}
+		if (from >= this.plan.items.length) return false;
+		this.reopens.set(name, reopens + 1);
+		if (!this.reopener.reopen(name, from)) return false;
+		console.log(
+			`${name}: opened a new runner page at page ${from + 1}, ${this.plan.items[from]?.id}`,
+		);
+		return true;
+	};
+
+	/** The note for a page where a runner page went quiet once and a new one ran it again. */
+	noteFor(name: string, id: string): string | undefined {
+		return this.stalls.get(name)?.get(id) === 1
+			? 'the runner page stopped answering on this page, and a new runner page ran it again'
+			: undefined;
+	}
+}
+
+/**
+ * Replaces runner pages in macOS apps: it closes a quiet runner page in Safari, then opens a new one
+ * in the app. Runners on phones and tablets are never replaced.
+ */
+function macReopener(run: string, launches: Launches, baseUrl: string): Reopener {
+	const startedAt = Date.now();
+	const appOf = (runner: string) => {
+		const launch = launches.get(runner);
+		return launch?.kind === 'mac' ? launch.app : undefined;
+	};
+	return {
+		canReopen: (runner) => appOf(runner) !== undefined,
+		inspect: (runner, count) => inspectMac(run, runner, count, startedAt),
+		reopen: (runner, from) => {
+			const app = appOf(runner) as string;
+			if (app === 'Safari') closeSafariRunner(run, runner);
+			return openApp(app, runnerUrl(baseUrl, run, runner, from));
+		},
+	};
+}
 
 /** The runner among these that runs on the Android phone, whose heat the run reads. */
 const phoneRunner = (names: readonly string[], launches: Launches) =>
@@ -434,6 +622,7 @@ async function runPlan(
 ): Promise<number> {
 	const run = runName(options.plan);
 	const plan = writePlan(run, items);
+	const recovery = new QuietRecovery(plan, macReopener(run, launches, local.url));
 	const heatReadings = new Map<string, HeatSample[]>();
 	try {
 		for (const batch of turnBatches(runners)) {
@@ -444,7 +633,7 @@ async function runPlan(
 			try {
 				await waitForRunners(plan, openRunners(batch, launches, run, local.url), {
 					onFinish: (name) => console.log(`${name}: finished`),
-					onQuiet: reportQuiet,
+					onQuiet: recovery.onQuiet,
 				});
 			} finally {
 				if (phone !== undefined && log) heatReadings.set(phone, await log.stop());
@@ -502,7 +691,8 @@ async function runPlan(
 		clearCandidates({ runner: name, device: runner.device });
 		for (const item of plan.items) {
 			const result = readResult(run, name, item.id);
-			const notes: string[] = [];
+			const stall = recovery.noteFor(name, item.id);
+			const notes: string[] = stall ? [stall] : [];
 			const note = (text: string) => notes.push(text);
 			const verdict = result
 				? judge(item.check, result, options.missing, { ...context, note })

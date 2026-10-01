@@ -271,8 +271,12 @@ test.describe('touch', () => {
 for (const mode of ENGINE_MODES)
 	test(`hold mode keeps input out of the sketch, ${mode.name}`, async ({ page }) => {
 		// The page presses W, the main button and the wheel during the sketch's setup. A live sketch
-		// sees them in its first frame.
-		const live = await (await open(page, mode, 'setupInput'))();
+		// sees them in its first frame. That frame can come after the engine starts: the preset
+		// check's frames run none of the sketch's code, and a slow GPU holds the next frame back
+		// until it finishes them.
+		const read = await open(page, mode, 'setupInput');
+		await expect.poll(async () => (await read()).frames).toBeGreaterThan(0);
+		const live = await read();
 		expect([live.pressed.KeyW, live.pressed.Mouse0, live.moved.wheel]).toEqual([1, 1, 50]);
 		// A held sketch, stepped through its 31 frames, sees none of them.
 		const held = await (await open(page, mode, 'setupInput&hold=0.5'))();
