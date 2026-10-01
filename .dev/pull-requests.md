@@ -29,6 +29,7 @@ This guide covers how to merge main into a branch, and what to do when the merge
 
 [AGENTS.md](../AGENTS.md#releases) says how the queue runs CI on each pull request on top of main and the pull requests ahead of it.
 
+- CI's last job, `ci-passed`, waits for every other CI job, and it passes only when each one passed. Outside the queue, it also accepts a job that its own condition skipped, such as a job that runs only in the queue. In the queue, every job must pass.
 - When the queue's run fails, the queue removes the pull request. It does not join the queue again with the same commit, so fix the cause and push.
 - `gh run list --event merge_group` lists the queue's runs. Each run's branch is `gh-readonly-queue/main/pr-<number>-<commit>`, so look for your pull request's number. The pull request's timeline also links the failed run, and `gh run view <run> --log-failed` prints its failed steps.
 - The most common cause is two pull requests that change shaders in one queue run. Each one committed shader modules built from its own sources, so the second one's modules lack the first one's change. In the second one's run, the Rust test `the_committed_modules_match_a_fresh_build` fails. The shader compiler test "gives the native build's output for the engine's shaders" (`bun run test:shader-compiler`) fails too.
