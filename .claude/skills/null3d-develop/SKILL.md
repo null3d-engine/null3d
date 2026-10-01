@@ -130,7 +130,7 @@ Materials:
 | Lit surfaces, which is most things | `materials.standard` | `api/materials` |
 | Flat color or texture without lighting | `materials.unlit` | `api/materials` |
 | A ground plane that only shows shadows | `materials.shadowCatcher` (0.2) | `api/materials` |
-| A custom look that still gets lights, shadows and fog | `materials.shader({ wgsl })` with `fn surface` in the WGSL (later in 0.1) | `shaders/surface-functions` |
+| A custom look that still gets lights, shadows and fog | `materials.shader({ wgsl })` with `fn surface` in the WGSL | `shaders/surface-functions` |
 | A fully custom effect, such as a hologram | `materials.shader({ wgsl })` with `@vertex` and `@fragment` entry points (later in 0.1) | `guides/custom-shaders` |
 
 Lighting and shadows: for now, surfaces show one directional light and the ambient lights. Point, spot and hemisphere lights exist, and they light surfaces later in 0.1, when shadows come too. Then one directional light with shadows, plus a hemisphere light, covers most outdoor scenes. Point and spot lights are cheap without shadows, because lighting is clustered, and expensive with them. Shadow quality follows the preset. Environment maps come in 0.2. (`api/lights`, `concepts/lighting`, `concepts/shadows`)
@@ -158,9 +158,7 @@ Effects:
 | Render to a texture, or add a pass | `render.addPass({ ... })` (0.2) | `guides/custom-passes` |
 | Fog or sky | `scene.setFog` with the fog's color in `scene.setBackground`; `scene.setBackground({ sky })` (0.2) | `api/scene` |
 
-## 6. Custom shaders in brief (later in 0.1)
-
-Custom materials come later in 0.1. Until then, the Vite plugin compiles WGSL in sketch code, but the engine cannot draw with it (`guides/custom-shaders`).
+## 6. Custom shaders in brief
 
 Prefer surface functions. You describe the surface; the engine adds lighting, shadows, fog and instancing, on both backends. The material's WGSL goes in one `wgsl` option, tagged so the Vite plugin compiles it, and the material takes every `materials.standard` option.
 

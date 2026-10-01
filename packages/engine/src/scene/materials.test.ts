@@ -27,9 +27,12 @@ import {
 	MATERIAL_PARAM_ROUGHNESS,
 	MATERIAL_PARAM_UV_U,
 	MATERIAL_PARAM_UV_V,
+	SHADING_CUSTOM_FIRST,
+	SHADING_LIT,
 	SHADING_UNLIT,
 	SHADING_UNLIT_MAP,
 } from '../generated/core';
+import type { ShaderVariants } from '../generated/shaders';
 import { fromHex } from '../math/color';
 import type { CoreGlue } from '../shared/core';
 import { CoreMemory } from './memory';
@@ -68,6 +71,7 @@ function fakeCore() {
 	const table: number[][] = [];
 	const features: number[] = [];
 	const shadings: number[] = [];
+	const sent: [number, ShaderVariants][] = [];
 	/** Each map a material got: its material, slot, texture handle and coordinate set. */
 	const maps: number[][] = [];
 	const biases: [number, number][] = [];
@@ -116,14 +120,21 @@ function fakeCore() {
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
 	const memory = new WebAssembly.Memory({ initial: 1 });
+	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
 	return {
 		table,
 		features,
 		shadings,
+		sent,
 		maps,
 		biases,
-		materials: new Materials(new CoreMemory(glue as unknown as CoreGlue, memory)),
+		materials: new Materials(core, (template, shader) => sent.push([template, shader])),
 	};
+}
+
+/** A custom material's WGSL as the Vite plugin compiles it, with a stand-in for its variants. */
+function compiledMaterial() {
+	return { kind: 'material', functions: ['surface'], variants: {} } as const;
 }
 
 /** The first four values of a material's row: its linear color and opacity. */
@@ -359,5 +370,66 @@ describe('Material.set', () => {
 		expect(error.message).toStartWith(
 			'E1103: materials.unlit.set() got a material that is not from this engine.',
 		);
+	});
+});
+
+describe('materials.shader', () => {
+	test('gives each compiled WGSL its own template, sent to the thread that draws once', () => {
+		const { shadings, sent, materials } = fakeCore();
+		const stripes = compiledMaterial();
+		const rings = compiledMaterial();
+		materials.standard();
+		materials.shader({ wgsl: stripes, color: '#ff0000' });
+		materials.shader({ wgsl: rings });
+		materials.shader({ wgsl: stripes, color: '#0000ff' });
+		expect(shadings).toEqual([
+			SHADING_LIT,
+			SHADING_CUSTOM_FIRST,
+			SHADING_CUSTOM_FIRST + 1,
+			SHADING_CUSTOM_FIRST,
+		]);
+		expect(sent).toEqual([
+			[SHADING_CUSTOM_FIRST, stripes.variants],
+			[SHADING_CUSTOM_FIRST + 1, rings.variants],
+		]);
+	});
+
+	test('takes every standard option, and set changes the standard values', () => {
+		const { table, features, materials } = fakeCore();
+		const custom = materials.shader({
+			wgsl: compiledMaterial(),
+			color: 0x888888,
+			metalness: 1,
+			roughness: 0.25,
+			doubleSided: true,
+			flatShading: true,
+		});
+		const row = () => table[0] as number[];
+		expect(colorOf(row())).toEqual([...linear(0x888888), 1]);
+		expect([row()[MATERIAL_PARAM_METALNESS], row()[MATERIAL_PARAM_ROUGHNESS]]).toEqual([1, 0.25]);
+		expect(features).toEqual([MATERIAL_FEATURE_DOUBLE_SIDED | MATERIAL_FEATURE_FLAT_SHADING]);
+		custom.set({ roughness: 0.75 });
+		expect(row()[MATERIAL_PARAM_ROUGHNESS]).toBe(0.75);
+		const error = thrown(() => custom.set({ roughness: 2 }));
+		expect(error.message).toStartWith('E1108: materials.shader.set() got the roughness 2');
+	});
+
+	test('refuses WGSL that the Vite plugin did not compile, and whole shaders', () => {
+		const { table, sent, materials } = fakeCore();
+		const text = thrown(() => materials.shader({ wgsl: 'fn surface() {}' }));
+		expect(text.code).toBe('E1215');
+		expect(text.message).toStartWith(
+			'E1215: materials.shader() got WGSL as text, which the null3D Vite plugin did not compile.',
+		);
+		const whole = thrown(() => materials.shader({ wgsl: { kind: 'shader' } }));
+		expect(whole.message).toStartWith(
+			'E1215: materials.shader() got a whole shader with entry points.',
+		);
+		const missing = thrown(() =>
+			materials.shader({} as unknown as Parameters<typeof materials.shader>[0]),
+		);
+		expect(missing.message).toStartWith('E1215: materials.shader() got WGSL as undefined');
+		expect(table).toHaveLength(0);
+		expect(sent).toHaveLength(0);
 	});
 });

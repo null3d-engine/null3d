@@ -30,7 +30,7 @@ import type { Renderer, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
-import { ImageTable, sendThrough, sendToTable } from '../shared/images';
+import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
@@ -1026,15 +1026,17 @@ async function startEngine(
 			const memory = started.memory as WebAssembly.Memory;
 			wasmMemory = memory;
 			const imageTable = new ImageTable();
-			let sendImage = sendToTable(imageTable, slots);
 			const render = threads?.render;
 			if (threads) startJobs(threads.jobs);
+			let imagePort: MessagePort | undefined;
 			if (render) {
-				// Texture images go from the page straight to the render worker.
+				// Texture images and custom materials' shaders go from the page straight to the render
+				// worker.
 				const images = new MessageChannel();
-				sendImage = sendThrough(images.port1);
+				imagePort = images.port1;
 				startRenderWorker(render, images.port2);
 			}
+			const senders = drawingSenders(imageTable, slots, imagePort);
 			const { SketchRunner, runPipelined } = await (runnerModule ?? loadRunnerModule());
 			localRunner = new SketchRunner(
 				(name, data) => onSketchMessage(name, data),
@@ -1049,7 +1051,7 @@ async function startEngine(
 					quality,
 					applyQuality: events.quality,
 					capabilities,
-					sendImage,
+					...senders,
 					pageUrl: pageUrl ?? sketchUrl,
 				},
 				hold,

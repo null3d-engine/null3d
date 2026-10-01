@@ -38,6 +38,10 @@ pub enum Shading {
     /// The standard material with its texture maps. A standard material draws with it when it
     /// has a live map and its mesh has texture coordinates; nothing creates it.
     StandardMaps,
+    /// A custom material: the standard material's template with the sketch's own WGSL, under its
+    /// own template id, from [`template::CUSTOM_FIRST`] up. Its surface function reads the first
+    /// texture coordinates.
+    Custom(u32),
 }
 
 impl Shading {
@@ -49,6 +53,7 @@ impl Shading {
             Shading::TexCoords => template::INSTANCED_TEXCOORDS,
             Shading::UnlitMap => template::INSTANCED_UNLIT_MAP,
             Shading::StandardMaps => template::INSTANCED_STANDARD_MAPS,
+            Shading::Custom(template) => template,
         }
     }
 
@@ -57,7 +62,9 @@ impl Shading {
     pub const fn attributes(self) -> u32 {
         match self {
             Shading::Lit | Shading::Unlit => 0,
-            Shading::TexCoords | Shading::UnlitMap | Shading::StandardMaps => vertex::UV0,
+            Shading::TexCoords | Shading::UnlitMap | Shading::StandardMaps | Shading::Custom(_) => {
+                vertex::UV0
+            }
         }
     }
 
