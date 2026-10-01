@@ -1,27 +1,32 @@
 // The sketch's loading calls, `ctx.assets`: files downloaded with fetch and decoded by the browser,
-// outside the sketch's frames, and a count of the downloads for loading screens. Relative
-// addresses resolve against the page's address, in every thread mode. Files that `preload`
-// downloaded wait in memory until a load takes them, and loads of one address at the same time
-// share one download; the HTTP cache keeps everything else.
+// or by the KTX2 transcoder (ktx2.ts), outside the sketch's frames, and a count of the downloads
+// for loading screens. Relative addresses resolve against the page's address, in every thread
+// mode. Files that `preload` downloaded wait in memory until a load takes them, and loads of one
+// address at the same time share one download; the HTTP cache keeps everything else.
 
+import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import type { Texture, TextureColorSpace, TextureOptions, Textures } from './textures';
 
 /**
- * The options of `assets.loadTexture`: how the image decodes, and the texture's options.
+ * The options of `assets.loadTexture`: how the image decodes, and the texture's options. A KTX2
+ * file takes its color space from the file unless `colorSpace` gives one, and its mip levels from
+ * the file unless `mipmaps` is false.
  *
  * @category api/assets
  */
 export interface LoadTextureOptions extends TextureOptions {
 	/**
 	 * True to put the image's top row at v = 1, the top of a plane, as three.js's `TextureLoader`
-	 * does. The default is true. glTF textures use false.
+	 * does. The default is true. glTF textures use false. A KTX2 file keeps the rows as it holds
+	 * them, its first row at v = 0, as three.js's `KTX2Loader` does: encode it flipped, as
+	 * `basisu -y_flip` does, for a plane. It takes no `flipY: true`.
 	 */
 	flipY?: boolean;
 	/**
 	 * True to store each color multiplied by its alpha, as three.js's `premultiplyAlpha` does. The
-	 * default is false.
+	 * default is false. A KTX2 file takes no `premultipliedAlpha: true`.
 	 */
 	premultipliedAlpha?: boolean;
 }
@@ -79,16 +84,19 @@ export class Assets {
 	}
 
 	/**
-	 * Downloads an image file, decodes it off the sketch's frames, and makes a texture from it.
-	 * The browser decodes PNG, JPEG and WebP files, and AVIF files where it supports them. Throws
-	 * E1411 when the file does not download, E1413 when a server of another origin does not allow
-	 * the page to read it, E1412 when the browser cannot decode it, and E1208 for options the
-	 * engine does not know.
+	 * Downloads an image file or a KTX2 file, decodes it off the sketch's frames, and makes a
+	 * texture from it. The browser decodes PNG, JPEG and WebP files, and AVIF files where it
+	 * supports them. A KTX2 file of ETC1S or UASTC data becomes the compressed format that the
+	 * device supports, with the file's mip levels, and the first KTX2 file loads the transcoder.
+	 * Throws E1411 when the file does not download, E1413 when a server of another origin does not
+	 * allow the page to read it, E1412 when the file does not decode, E1406 when the transcoder does
+	 * not load, and E1208 for options the engine does not know.
 	 */
 	async loadTexture(url: string | URL, options: LoadTextureOptions = {}): Promise<Texture> {
 		const call = 'assets.loadTexture';
 		const address = this.resolve(url);
 		const blob = await this.file(address, call);
+		if (await isKtx2(blob)) return loadKtx2(this.textures, blob, address, options, call);
 		const image = await decode(blob, address, options, call);
 		return this.textures.fromImage(image, options, options.premultipliedAlpha ? 1 : 0, call);
 	}
@@ -240,6 +248,61 @@ export class Assets {
 /** A failure's message without its closing period. */
 function reason(error: unknown): string {
 	return messageOf(error).replace(/\.$/, '');
+}
+
+/** The identifier that starts every KTX2 file. */
+const KTX2_IDENTIFIER = [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/** True for a file that starts with the KTX2 identifier. */
+async function isKtx2(blob: Blob): Promise<boolean> {
+	if (blob.size < KTX2_IDENTIFIER.length) return false;
+	const head = new Uint8Array(await blob.slice(0, KTX2_IDENTIFIER.length).arrayBuffer());
+	return KTX2_IDENTIFIER.every((byte, k) => head[k] === byte);
+}
+
+/**
+ * Makes a texture from a KTX2 file with the KTX2 loader, which this imports the first time, so a
+ * page without KTX2 files never downloads it. Throws E1406 when the loader does not download, and
+ * E1208 for options that a KTX2 file cannot take.
+ */
+async function loadKtx2(
+	textures: Textures,
+	blob: Blob,
+	address: URL,
+	options: LoadTextureOptions,
+	call: string,
+): Promise<Texture> {
+	if (DEV) {
+		const refuse = (option: string, why: string) =>
+			new EngineError('E1208', `${call}() got ${option}: true for ${address}, a KTX2 file. ${why}`);
+		if (options.flipY === true)
+			throw refuse(
+				'flipY',
+				'Its compressed rows cannot turn over: encode the file flipped, as basisu -y_flip does.',
+			);
+		if (options.premultipliedAlpha === true)
+			throw refuse(
+				'premultipliedAlpha',
+				'Its compressed colors cannot change: encode the file from colors multiplied by alpha.',
+			);
+	}
+	let ktx2: typeof import('./ktx2');
+	try {
+		ktx2 = await import('./ktx2');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the KTX2 loader did not download for ${call}() of ${address}: ${reason(error)}.`,
+		);
+	}
+	return ktx2.loadKtx2(
+		textures,
+		await blob.arrayBuffer(),
+		address,
+		options,
+		call,
+		(code, message) => new EngineError(code, message),
+	);
 }
 
 /** Decodes an image file as `options` ask, or throws E1412. */

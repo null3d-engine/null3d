@@ -46,7 +46,7 @@ const HDR_TARGETS = {
 	rgba16f: { complete: true, readsBack: true, samples: C.LIMIT_MSAA_SAMPLES },
 };
 
-/** A report whose WebGL2 part has these fields, from a device with no optional WebGPU feature. */
+/** A report whose WebGL2 part has these fields, and whose WebGPU adapter has these features. */
 function report(webgl2: Partial<DeviceReport['webgl2']>, features: string[] = []): DeviceReport {
 	return {
 		webgpu: { limits: {}, features, transientAttachments: false },
@@ -65,6 +65,7 @@ const PLAIN: DeviceOptions = {
 	copyUploads: false,
 	depth: undefined,
 	parallelCompile: true,
+	compression: undefined,
 	cells: true,
 	hdr: true,
 	antialias: 'msaa',
@@ -145,6 +146,27 @@ describe('sceneColorFormat', () => {
 	});
 });
 
+describe('coreDevice on WebGPU', () => {
+	it("flags each compressed texture family among the adapter's features", () => {
+		const features = ['texture-compression-bc', 'timestamp-query', 'texture-compression-astc'];
+		expect(coreDevice('webgpu', report({}, features), PLAIN).capabilities).toBe(
+			C.CAPABILITY_TEXTURE_BC | C.CAPABILITY_TEXTURE_ASTC,
+		);
+		expect(coreDevice('webgpu', report({}), PLAIN).capabilities).toBe(0);
+	});
+
+	it('keeps only the families that ?compression= names', () => {
+		const all = ['texture-compression-bc', 'texture-compression-etc2', 'texture-compression-astc'];
+		const limited = (compression: ('astc' | 'bc' | 'etc2')[]) =>
+			coreDevice('webgpu', report({}, all), { ...PLAIN, compression }).capabilities;
+		expect(limited(['bc'])).toBe(C.CAPABILITY_TEXTURE_BC);
+		expect(limited(['etc2', 'astc'])).toBe(C.CAPABILITY_TEXTURE_ETC2 | C.CAPABILITY_TEXTURE_ASTC);
+		expect(limited([])).toBe(0);
+		const bcOnly = report({}, ['texture-compression-bc']);
+		expect(coreDevice('webgpu', bcOnly, { ...PLAIN, compression: ['astc'] }).capabilities).toBe(0);
+	});
+});
+
 describe('storageBindingBytes', () => {
 	it('keeps WebGPU default where the adapter offers no more, or reports nothing', () => {
 		const portable = C.LIMIT_PORTABLE_STORAGE_BINDING_BYTES;
@@ -195,6 +217,18 @@ describe('coreDevice on WebGL2', () => {
 		const withIt = report({ extensions: { WEBGL_multi_draw: true } });
 		expect(coreDevice('webgl2', withIt, PLAIN).capabilities).toBe(C.CAPABILITY_MULTI_DRAW);
 		expect(coreDevice('webgl2', report({}), PLAIN).capabilities).toBe(0);
+	});
+
+	it('flags each compressed texture family whose extension the context turned on', () => {
+		const extensions = {
+			WEBGL_compressed_texture_astc: true,
+			WEBGL_compressed_texture_etc: true,
+			EXT_texture_compression_bptc: false,
+			WEBGL_compressed_texture_s3tc: true,
+		};
+		expect(coreDevice('webgl2', report({ extensions }), PLAIN).capabilities).toBe(
+			C.CAPABILITY_TEXTURE_ASTC | C.CAPABILITY_TEXTURE_ETC2,
+		);
 	});
 
 	it('reads shared memory only where WebGL accepts it for both kinds of upload', () => {

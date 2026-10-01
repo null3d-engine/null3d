@@ -307,6 +307,10 @@ const tex = await assets.loadTexture('/tex/bricks.png', {  // PNG, JPEG, WebP, A
   uvSet: 0,                  // which UV set the map uses (three.js texture.channel)
   premultipliedAlpha: false, // true to store color multiplied by alpha
 });
+// KTX2 of ETC1S or UASTC data (basisu, toktx): the device's compressed format, with the file's mip levels
+const floor = await assets.loadTexture('/tex/floor.ktx2', { wrap: 'repeat' }); // color space from the file
+floor.format;              // 'astc-4x4-unorm' | 'bc7-rgba-unorm' | 'etc2-rgb8unorm' | 'etc2-rgba8unorm' | 'rgba8unorm'
+// KTX2 rows stay as the file holds them (first row at v = 0): encode with basisu -y_flip for planes; no flipY
 textures.fromData({ width, height, depth: 1, format: 'rgba8unorm', colorSpace: 'linear', data }); // 4 numbers per texel
 textures.fromData({ width, height, format: 'rgba16float', data: new Float32Array(width * height * 4) });
 // fromImageBitmap uploads the bitmap as it is: decode with imageOrientation: 'flipY' to stand upright
@@ -320,7 +324,9 @@ textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the larg
 - Data rows go from the bottom up: the first row is at v = 0. `rgba8unorm` takes a `Uint8Array` or `Uint8ClampedArray`, and `rgba16float` a `Float32Array` or a `Uint16Array` of half floats. Bad data or options throw E1208.
 - Textures return at once and upload over the next frames, within each frame's upload budget.
 - `scene.setBackground(tex)` shows a texture behind every object. The color set before it shows until its texels are on the GPU.
-- Later in 0.1: KTX2 files through `loadTexture`. `textures.fromPass` (0.2) and cube maps (0.2) follow.
+- Later: `textures.fromPass` (0.2) and cube maps (0.2).
+
+Use KTX2 for large textures, above all on phones: a compressed texel takes a quarter or an eighth of the GPU memory of RGBA8. Encode mip levels into the file (`basisu -mipmap`), since the GPU cannot make them for compressed texels. UASTC keeps more detail, and ETC1S makes smaller files. The first KTX2 file downloads the transcoder, about 365 KB after Brotli. A page without KTX2 files downloads none of it. A texture from a KTX2 file takes no `update`.
 
 ## 11. Assets (`api/assets`)
 

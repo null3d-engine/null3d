@@ -363,6 +363,7 @@ pub fn map_desc(size: u32) -> TextureDesc {
         depth: 1,
         format: format::RGBA8_UNORM_SRGB,
         mipmaps: true,
+        levels: 1,
         sampling: Sampling::default(),
     }
 }

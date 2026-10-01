@@ -1065,11 +1065,22 @@
       "category": "Textures",
       "three": "KTX2Loader + setTranscoderPath + detectSupport",
       "status": "direct",
-      "since": "0.2",
+      "since": "0.1",
       "target": "assets.loadTexture('x.ktx2')",
-      "notes": "Built in; delete the setup.",
+      "notes": "Built in: delete the setup. The engine loads the transcoder with the first KTX2 file and picks the device's format. The file's first row is at v = 0, as with KTX2Loader.",
       "docs": "api/textures",
       "detect": "\\bKTX2Loader\\b|setTranscoderPath|\\.detectSupport\\s*\\("
+    },
+    {
+      "id": "tex-compressed",
+      "category": "Textures",
+      "three": "CompressedTexture / CompressedArrayTexture",
+      "status": "changed",
+      "since": "0.1",
+      "target": "assets.loadTexture('x.ktx2'); texture.format names the compressed format",
+      "notes": "Compressed textures come from KTX2 files of ETC1S or UASTC data, with the file's mip levels. No call takes compressed blocks from code.",
+      "docs": "api/textures",
+      "detect": "\\bCompressed(Array)?Texture\\b"
     },
     {
       "id": "texture-channel",

@@ -223,8 +223,12 @@ export class SketchRunner {
 		this.core = new CoreMemory(glue, sketch.memory);
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
-		const textures = new Textures(this.core, sketch.sendImage, this.recorded, () =>
-			this.quality.own('uploadBytesPerFrame'),
+		const textures = new Textures(
+			this.core,
+			sketch.sendImage,
+			this.recorded,
+			device.capabilities,
+			() => this.quality.own('uploadBytesPerFrame'),
 		);
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
