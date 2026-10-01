@@ -23,12 +23,14 @@ enable draw_index;
 // change between pixels, as three.js's getTangentFrame makes it.
 //
 // Custom materials build this template with their WGSL added after its last line, and with the
-// shader def CUSTOM_SURFACE when that WGSL declares `fn surface`. When it declares
-// `struct Uniforms`, the build adds `load_material_uniforms` after it, and CUSTOM_UNIFORMS makes the
-// template fill `material` with the uniforms. Their WGSL shares this file's names, so the template
-// imports library items by name and keeps its own names few. It never imports a module whole,
-// which would reserve the module's name in their WGSL too. Names that only the MAPS builds declare
-// stay free for custom materials, which build without maps.
+// shader def CUSTOM, which reads the first texture coordinates. CUSTOM_SURFACE makes the fragment
+// shader call their `fn surface`, and CUSTOM_VERTEX_OFFSET makes the vertex shader move each vertex
+// by their `fn vertexOffset`. When their WGSL declares `struct Uniforms`, the build adds
+// `load_material_uniforms` after it, and CUSTOM_UNIFORMS makes each stage fill `material` with the
+// uniforms. Their WGSL shares this file's names, so the template imports library items by name and
+// keeps its own names few. It never imports a module whole, which would reserve the module's name
+// in their WGSL too. Names that only the MAPS builds declare stay free for custom materials, which
+// build without maps.
 #import null3d::lighting::{PbrMaterial, dfg_lut, direct_light, indirect_diffuse}
 #import null3d::lighting::{multiscatter_compensation, pbr_material}
 #import null3d::globals::{Material}
@@ -48,7 +50,7 @@ const FLAT_SHADING: u32 = 1u;
 var<private> material_row: Material;
 
 #ifdef CUSTOM_UNIFORMS
-/// The custom material's uniforms, which the fragment shader reads once.
+/// The custom material's uniforms, which each stage reads once.
 var<private> material: Uniforms;
 #endif
 
@@ -125,7 +127,7 @@ struct VertexIn {
     @location(2) uv0: vec2f,
     /// The second texture coordinates, or the first on a mesh without a second set.
     @location(3) uv1: vec2f,
-#else ifdef CUSTOM_SURFACE
+#else ifdef CUSTOM
     @location(2) uv0: vec2f,
 #endif
 #ifdef VERTEX_TANGENT
@@ -148,7 +150,7 @@ struct VertexOut {
 #ifdef MAPS
     /// The first texture coordinates, then the second.
     @location(4) uv: vec4f,
-#else ifdef CUSTOM_SURFACE
+#else ifdef CUSTOM
     /// The first texture coordinates.
     @location(4) uv: vec2f,
 #endif
@@ -157,6 +159,19 @@ struct VertexOut {
     @location(6) bitangent: vec3f,
 #endif
 }
+
+#ifdef CUSTOM
+/// What a vertex offset function knows of a vertex of the mesh, in the mesh's own space, before
+/// the object's transform and instancing move it.
+struct VertexInput {
+    /// The vertex's position.
+    position: vec3f,
+    /// The vertex's unit normal.
+    normal: vec3f,
+    /// The vertex's first texture coordinates.
+    uv: vec2f,
+}
+#endif
 
 /// What a surface function knows of the point of the surface that a pixel shows. Positions and
 /// directions are in world space, relative to the camera.
@@ -176,7 +191,7 @@ struct SurfaceInput {
     uv: vec2f,
     /// The mesh's second texture coordinates, or the first on a mesh without a second set.
     uv1: vec2f,
-#else ifdef CUSTOM_SURFACE
+#else ifdef CUSTOM
     /// The mesh's first texture coordinates.
     uv: vec2f,
 #endif
@@ -312,8 +327,16 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
+#ifdef CUSTOM_UNIFORMS
+    material = load_material_uniforms(found.material);
+#endif
     var out: VertexOut;
+#ifdef CUSTOM_VERTEX_OFFSET
+    let offset = vertexOffset(VertexInput(v.position, v.normal, v.uv0));
+    out.relative = relative_position(found, v.position + offset);
+#else
     out.relative = relative_position(found, v.position);
+#endif
     out.clip = clip_of(found, out.relative);
     out.normal = world_normal(found, v.normal);
     out.material = found.material;
@@ -322,7 +345,7 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #endif
 #ifdef MAPS
     out.uv = vec4f(v.uv0, v.uv1);
-#else ifdef CUSTOM_SURFACE
+#else ifdef CUSTOM
     out.uv = v.uv0;
 #endif
 #ifdef VERTEX_TANGENT
@@ -427,7 +450,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef MAPS
     input.uv = in.uv.xy;
     input.uv1 = in.uv.zw;
-#else ifdef CUSTOM_SURFACE
+#else ifdef CUSTOM
     input.uv = in.uv;
 #endif
 #ifdef VERTEX_TANGENT
