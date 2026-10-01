@@ -206,6 +206,11 @@ pub fn typescript() -> String {
                 ("DECAY", light_value::DECAY),
                 ("ANGLE", light_value::ANGLE),
                 ("PENUMBRA", light_value::PENUMBRA),
+                ("SHADOW_BIAS", light_value::SHADOW_BIAS),
+                ("SHADOW_NORMAL_BIAS", light_value::SHADOW_NORMAL_BIAS),
+                ("SHADOW_CASCADES", light_value::SHADOW_CASCADES),
+                ("SHADOW_MAP_SIZE", light_value::SHADOW_MAP_SIZE),
+                ("SHADOW_DISTANCE", light_value::SHADOW_DISTANCE),
             ],
         ),
         (

@@ -275,12 +275,20 @@ describe.skipIf(!ENABLED)('compileWgsl', () => {
 			'webgl2_vertex_color_alpha_mask',
 			'webgpu',
 			'webgpu_alpha_mask',
+			'webgpu_alpha_mask_receive_shadows',
+			'webgpu_receive_shadows',
 			'webgpu_tone_map',
 			'webgpu_tone_map_alpha_mask',
+			'webgpu_tone_map_alpha_mask_receive_shadows',
+			'webgpu_tone_map_receive_shadows',
 			'webgpu_tone_map_vertex_color',
 			'webgpu_tone_map_vertex_color_alpha_mask',
+			'webgpu_tone_map_vertex_color_alpha_mask_receive_shadows',
+			'webgpu_tone_map_vertex_color_receive_shadows',
 			'webgpu_vertex_color',
 			'webgpu_vertex_color_alpha_mask',
+			'webgpu_vertex_color_alpha_mask_receive_shadows',
+			'webgpu_vertex_color_receive_shadows',
 		]);
 		const webgpu = built.variants.webgpu;
 		expect(webgpu?.wgsl?.source).toMatch(/fn surface\(\w+: SurfaceInput\) -> Surface/);

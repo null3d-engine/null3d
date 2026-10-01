@@ -14,22 +14,28 @@ pub struct CountingAllocator;
 static ARMED: AtomicBool = AtomicBool::new(false);
 static ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
 static EXCLUSIVE: Mutex<()> = Mutex::new(());
+/// The number of the current hold on the counter. Each hold takes a new one, so a thread marked
+/// during an earlier hold no longer counts.
+static HOLD: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
-    static TRACKED: Cell<bool> = const { Cell::new(false) };
+    /// The hold during which this thread was marked, or 0 while it is not marked. Holds count
+    /// from 1.
+    static TRACKED: Cell<u64> = const { Cell::new(0) };
 }
 
 /// A counting test's hold on the shared counter, from [`CountingAllocator::exclusive`]. When it
 /// drops, at the end of the test, it stops counting the current thread before it lets the next
 /// test take the counter. The test runner's own work on the thread after the test then cannot
-/// reach the next test's count.
+/// reach the next test's count. The next hold also stops counting every other thread that this
+/// test marked: a thread that a scope has joined can still free memory as it exits.
 pub struct Exclusive {
     _lock: MutexGuard<'static, ()>,
 }
 
 impl Drop for Exclusive {
     fn drop(&mut self) {
-        TRACKED.with(|t| t.set(false));
+        TRACKED.with(|t| t.set(0));
     }
 }
 
@@ -37,16 +43,18 @@ impl CountingAllocator {
     /// Runs counting tests one at a time: they share one counter. Take it before tracking, and
     /// keep it until the test ends.
     pub fn exclusive() -> Exclusive {
-        Exclusive {
-            _lock: EXCLUSIVE
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner()),
-        }
+        let lock = EXCLUSIVE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        HOLD.fetch_add(1, Ordering::SeqCst);
+        Exclusive { _lock: lock }
     }
 
-    /// Counts allocations made from now on by the current thread.
+    /// Counts allocations made from now on by the current thread, until the current hold on the
+    /// counter ends.
     pub fn track_this_thread() {
-        TRACKED.with(|t| t.set(true));
+        let hold = HOLD.load(Ordering::SeqCst);
+        TRACKED.with(|t| t.set(hold));
     }
 
     /// Starts counting from zero.
@@ -62,7 +70,12 @@ impl CountingAllocator {
     }
 
     fn count() {
-        if ARMED.load(Ordering::Relaxed) && TRACKED.with(Cell::get) {
+        // Acquire: a thread that sees counting armed also sees the hold that armed it.
+        if !ARMED.load(Ordering::Acquire) {
+            return;
+        }
+        let tracked = TRACKED.with(Cell::get);
+        if tracked != 0 && tracked == HOLD.load(Ordering::Relaxed) {
             ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
         }
     }

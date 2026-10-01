@@ -449,3 +449,25 @@ fn frames_allocate_nothing_when_one_thread_runs_every_chunk() {
     let allocations = frame_allocations(&JobSystem::new(4));
     assert_eq!(allocations, 0, "frames made {allocations} allocator calls");
 }
+
+#[test]
+fn threads_that_an_earlier_test_tracked_never_count_in_a_later_one() {
+    // A scoped thread can still free memory as it exits after its scope has returned, and so
+    // after its test has let the counter go. Each round ends one test that tracks such a thread,
+    // then counts at once, as the next test would.
+    for round in 0..500 {
+        {
+            let _earlier = CountingAllocator::exclusive();
+            std::thread::scope(|scope| {
+                scope.spawn(CountingAllocator::track_this_thread);
+            });
+        }
+        let _later = CountingAllocator::exclusive();
+        CountingAllocator::arm();
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_micros(200) {
+            std::hint::spin_loop();
+        }
+        assert_eq!(CountingAllocator::disarm(), 0, "round {round}");
+    }
+}

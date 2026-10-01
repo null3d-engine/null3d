@@ -10,7 +10,7 @@ summary: "The surface record; vertex-offset functions; per-instance attributes."
 
 > Ships in null3D 0.1. The API is experimental, so it can still change between versions. Uniforms, textures, vertex offsets, per-instance attributes and the built-in values `frame`, `camera` and `object` are not built yet. Coding agents must not use them in a surface function.
 
-A surface function changes how a material's surface looks, and keeps the engine's lighting. You write it in WGSL. For each pixel, the engine gives it a `SurfaceInput`, and it returns a `Surface`: the base color, roughness, metalness, normal and light of that point. The engine then lights the surface with the scene's lights, as it lights a standard material. The function works on every GPU path, because the null3D Vite plugin builds it into the standard material's shader for WebGPU and WebGL2.
+A surface function changes how a material's surface looks, and keeps the engine's lighting. You write it in WGSL. For each pixel, the engine gives it a `SurfaceInput`, and it returns a `Surface`: the base color, roughness, metalness, normal and light of that point. The engine then lights the surface with the scene's lights and shadows, as it lights a standard material. The function works on every GPU path, because the null3D Vite plugin builds it into the standard material's shader for WebGPU and WebGL2.
 
 ```ts
 // sketch.ts

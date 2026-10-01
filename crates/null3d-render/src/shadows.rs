@@ -4,8 +4,9 @@
 //! # Cascades
 //!
 //! The camera's view, from its near plane out to the shadow distance, splits into slices along its
-//! view axis. Near slices are short and far slices long, so each slice covers about the same share
-//! of the screen: the split distances blend a logarithmic spread with an even one. Each slice is a
+//! view axis. A perspective camera's near slices are short and its far slices long, so each slice
+//! covers about the same share of the screen: the split distances blend a logarithmic spread with
+//! an even one. An orthographic camera's slices are even, as each covers the same width. Each slice is a
 //! cascade: an orthographic view along the light's direction whose box holds the slice's eight
 //! corners. The box fits the slice again every frame, so its texels change size as the camera
 //! turns.
@@ -29,9 +30,16 @@
 //! [`ShadowSettings::bias`] texels, then compares its depth with the shadow map's. Past the shadow
 //! distance nothing is shadowed, and shadows fade out over the last tenth of the distance.
 
+use null3d_core::cells::CellPosition;
 use null3d_core::culling::Frustum;
+use null3d_gpu::drawlist::sizes::SHADOW_UNIFORM_BYTES;
+use null3d_gpu::drawlist::{DrawList, Op, address, buffer_usage, compare, filter, format};
 
-use crate::camera::{Affine, Mat4, Perspective};
+use crate::camera::{Affine, Lens, Mat4};
+use crate::frame::{RecordError, UploadArena};
+use crate::frame_data::FrameUniform;
+use crate::pipelines::PassTargets;
+use crate::view::ViewFrame;
 
 /// The most cascades a directional light's shadow map has.
 pub const MAX_CASCADES: usize = 4;
@@ -144,25 +152,48 @@ fn light_axes(direction: [f32; 3]) -> [[f32; 3]; 3] {
     [x, y, z]
 }
 
-/// The distances along the camera's view where each of `count` slices from `near` to `end` ends.
-pub fn split_distances(near: f32, end: f32, count: usize) -> [f32; MAX_CASCADES] {
+/// The distances along a perspective camera's view where each of `count` slices from `near` to
+/// `end` ends. `near` is above 0. `lambda` leans them from an even spread, at 0, toward a
+/// logarithmic one, at 1.
+pub fn split_distances(near: f32, end: f32, count: usize, lambda: f32) -> [f32; MAX_CASCADES] {
     let mut splits = [end; MAX_CASCADES];
     for (i, split) in splits.iter_mut().enumerate().take(count) {
         let share = (i + 1) as f32 / count as f32;
-        let logarithmic = near * (end / near).powf(share);
         let even = near + (end - near) * share;
-        *split = SPLIT_LAMBDA * logarithmic + (1.0 - SPLIT_LAMBDA) * even;
+        let logarithmic = if lambda > 0.0 {
+            near * (end / near).powf(share)
+        } else {
+            even
+        };
+        *split = lambda * logarithmic + (1.0 - lambda) * even;
     }
     // The last slice ends exactly at the shadow distance, whatever the rounding.
     splits[count - 1] = end;
     splits
 }
 
+/// The view-space x and y of the corner (`sx`, `sy`) of a lens's view at `distance` along it, for
+/// a target of `aspect`: -1 and 1 are the view's edges.
+fn view_corner(lens: &Lens, aspect: f32, distance: f32, sx: f32, sy: f32) -> (f32, f32) {
+    match lens {
+        Lens::Perspective(lens) => {
+            let tan_y = (lens.fov_degrees.to_radians() / 2.0).tan();
+            (sx * tan_y * aspect * distance, sy * tan_y * distance)
+        }
+        Lens::Orthographic(lens) => {
+            let half_height = lens.height / 2.0;
+            let half_width = lens.width.unwrap_or(lens.height * aspect) / 2.0;
+            let [x, y] = lens.center;
+            (x + sx * half_width, y + sy * half_height)
+        }
+    }
+}
+
 /// The cascades of a camera with world transform `camera` and `lens`, drawing into a target of
 /// `aspect`, for a directional light whose light travels along `direction`, which has length 1.
 pub fn fit_cascades(
     camera: &Affine,
-    lens: &Perspective,
+    lens: &Lens,
     aspect: f32,
     direction: [f32; 3],
     settings: &ShadowSettings,
@@ -178,11 +209,18 @@ pub fn fit_cascades(
     let determinant = dot(normal, back);
     let forward = normal.map(|v| -v / determinant);
 
-    let near = lens.near.max(f32::MIN_POSITIVE);
-    let end = settings.distance.min(lens.far).max(near * 1.001);
-    let ends = split_distances(near, end, count);
-    let tan_y = (lens.fov_degrees.to_radians() / 2.0).tan();
-    let tan_x = tan_y * aspect;
+    let (near, ends) = match lens {
+        Lens::Perspective(lens) => {
+            let near = lens.near.max(f32::MIN_POSITIVE);
+            let end = settings.distance.min(lens.far).max(near * 1.001);
+            (near, split_distances(near, end, count, SPLIT_LAMBDA))
+        }
+        Lens::Orthographic(lens) => {
+            let end = settings.distance.min(lens.far);
+            let end = end.max(lens.near + (lens.far - lens.near).abs() * 1e-3);
+            (lens.near, split_distances(lens.near, end, count, 0.0))
+        }
+    };
     let axes = light_axes(direction);
     let map_size = settings.map_size.max(1) as f32;
 
@@ -196,7 +234,7 @@ pub fn fit_cascades(
         let (mut low, mut high) = ([f32::MAX; 3], [f32::MIN; 3]);
         for distance in [start, end] {
             for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
-                let (x, y) = (sx * tan_x * distance, sy * tan_y * distance);
+                let (x, y) = view_corner(lens, aspect, distance, sx, sy);
                 let corner: [f32; 3] =
                     std::array::from_fn(|k| x * right[k] + y * up[k] - distance * back[k]);
                 for (axis, (low, high)) in axes.iter().zip(low.iter_mut().zip(&mut high)) {
@@ -267,6 +305,100 @@ fn cascade_of(
     }
 }
 
+/// The main directional light's shadows in one frame: its cascades, fitted to the camera's view,
+/// and what its shadow passes need.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShadowFrame {
+    pub cascades: Cascades,
+    pub settings: ShadowSettings,
+    /// The camera's cell, and its position in the cell: the cascades' matrices take positions
+    /// relative to it.
+    pub camera: CellPosition,
+    /// The light's layer mask, which selects the casters.
+    pub layers: u32,
+}
+
+impl ShadowFrame {
+    /// The values of a cascade's view: its matrix, and its culling frustum, which has no plane on
+    /// the light's side. Its culling moves sources by the offsets from the camera, as the camera's
+    /// view does.
+    pub fn view_frame(&self, cascade: usize) -> ViewFrame {
+        let cascade = &self.cascades.cascades[cascade];
+        ViewFrame {
+            uniform: FrameUniform {
+                view_proj: cascade.view_proj,
+                camera_position: [0.0, 0.0, 0.0, 1.0],
+                ..FrameUniform::default()
+            },
+            frustum: cascade.frustum,
+            camera: self.camera,
+            layers: self.layers,
+        }
+    }
+
+    /// The uniform block that receivers read.
+    pub fn uniform(&self) -> ShadowUniform {
+        ShadowUniform::new(&self.cascades, &self.settings)
+    }
+}
+
+/// What the shadow passes draw into: a depth texture of one sample, with no color.
+pub const TARGETS: PassTargets = PassTargets {
+    color_format: format::NONE,
+    depth_format: format::DEPTH32_FLOAT,
+    samples: 1,
+    permutation: 0,
+};
+
+/// Records the creation of the cascades' uniform block under `uniform`, and of the comparison
+/// sampler that reads the shadow map under `sampler`. Every scene view's frame group binds both.
+pub(crate) fn create_objects(
+    list: &mut DrawList,
+    uniform: u32,
+    sampler: u32,
+) -> Result<(), RecordError> {
+    list.push(
+        Op::CreateBuffer,
+        &[
+            uniform,
+            SHADOW_UNIFORM_BYTES,
+            buffer_usage::UNIFORM | buffer_usage::COPY_DST,
+        ],
+    )?;
+    // Reversed depth: a point is lit where its depth is at least the caster's, nearer the light.
+    // The linear filters blend the comparisons of the four nearest texels.
+    let clamp = address::CLAMP_TO_EDGE;
+    list.push(
+        Op::CreateSampler,
+        &[
+            sampler,
+            clamp,
+            clamp,
+            clamp,
+            filter::LINEAR,
+            filter::LINEAR,
+            filter::NEAREST,
+            0f32.to_bits(),
+            0f32.to_bits(),
+            compare::GREATER_EQUAL,
+            1,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Uploads a frame's cascades into the uniform block `uniform`.
+pub(crate) fn upload(
+    list: &mut DrawList,
+    arena: &mut UploadArena,
+    uniform: u32,
+    shadow: &ShadowFrame,
+) -> Result<(), RecordError> {
+    let (at, bytes) = arena.push(shadow.uniform().as_bytes())?;
+    list.push(Op::WriteBuffer, &[uniform, 0, at, bytes])?;
+    Ok(())
+}
+
 /// The share of the shadow distance over which shadows fade out.
 pub const FADE_SHARE: f32 = 0.1;
 
@@ -287,10 +419,7 @@ pub struct ShadowUniform {
     pub depth_biases: [f32; MAX_CASCADES],
 }
 
-/// Bytes of [`ShadowUniform`].
-pub const SHADOW_UNIFORM_BYTES: usize = 320;
-
-const _: () = assert!(std::mem::size_of::<ShadowUniform>() == SHADOW_UNIFORM_BYTES);
+const _: () = assert!(std::mem::size_of::<ShadowUniform>() == SHADOW_UNIFORM_BYTES as usize);
 
 impl ShadowUniform {
     /// The uniform of a frame's cascades, with the biases of `settings`.
@@ -331,12 +460,14 @@ impl ShadowUniform {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::camera::{Orthographic, Perspective};
 
-    const LENS: Perspective = Perspective {
+    const PERSPECTIVE: Perspective = Perspective {
         fov_degrees: 60.0,
         near: 0.1,
         far: 1000.0,
     };
+    const LENS: Lens = Lens::Perspective(PERSPECTIVE);
 
     const SETTINGS: ShadowSettings = ShadowSettings {
         cascades: 3,
@@ -363,8 +494,19 @@ mod tests {
     /// A point of the camera's view at `distance` along it, at (`sx`, `sy`) across the view,
     /// where -1 and 1 are the view's edges.
     fn view_point(camera: &Affine, aspect: f32, distance: f32, sx: f32, sy: f32) -> [f32; 3] {
-        let tan_y = (LENS.fov_degrees.to_radians() / 2.0).tan();
-        let (x, y) = (sx * tan_y * aspect * distance, sy * tan_y * distance);
+        view_point_of(&LENS, camera, aspect, distance, sx, sy)
+    }
+
+    /// The same point of a view through `lens`.
+    fn view_point_of(
+        lens: &Lens,
+        camera: &Affine,
+        aspect: f32,
+        distance: f32,
+        sx: f32,
+        sy: f32,
+    ) -> [f32; 3] {
+        let (x, y) = view_corner(lens, aspect, distance, sx, sy);
         std::array::from_fn(|k| {
             x * camera[k * 4] + y * camera[k * 4 + 1] - distance * camera[k * 4 + 2]
         })
@@ -375,7 +517,7 @@ mod tests {
     #[test]
     fn splits_grow_with_distance_and_the_last_ends_at_the_shadow_distance() {
         for count in 1..=MAX_CASCADES {
-            let splits = split_distances(0.1, 200.0, count);
+            let splits = split_distances(0.1, 200.0, count, SPLIT_LAMBDA);
             assert_eq!(splits[count - 1], 200.0);
             let mut before = 0.1;
             for &split in &splits[..count] {
@@ -384,23 +526,38 @@ mod tests {
             }
         }
         // Near slices are much shorter than far ones.
-        let splits = split_distances(0.1, 200.0, 3);
+        let splits = split_distances(0.1, 200.0, 3, SPLIT_LAMBDA);
         assert!(splits[0] < 20.0 && splits[1] < 60.0, "{splits:?}");
     }
 
     #[test]
     fn every_point_of_each_slice_lands_inside_its_cascade() {
+        let orthographic = Lens::Orthographic(Orthographic {
+            height: 30.0,
+            width: None,
+            center: [2.0, -1.0],
+            near: -10.0,
+            far: 300.0,
+        });
+        for (lens, near) in [(LENS, PERSPECTIVE.near), (orthographic, -10.0)] {
+            slices_land_inside(&lens, near);
+        }
+    }
+
+    /// Checks that every point of each slice of a view through `lens`, from `near` on, lands
+    /// inside its cascade.
+    fn slices_land_inside(lens: &Lens, near: f32) {
         let camera = camera();
         let aspect = 16.0 / 9.0;
-        let cascades = fit_cascades(&camera, &LENS, aspect, DOWN_AND_ACROSS, &SETTINGS);
+        let cascades = fit_cascades(&camera, lens, aspect, DOWN_AND_ACROSS, &SETTINGS);
         assert_eq!(cascades.count, 3);
-        let mut start = LENS.near;
+        let mut start = near;
         for cascade in cascades.used() {
             for step in 0..=4 {
                 let distance = start + (cascade.end - start) * step as f32 / 4.0;
                 for sx in [-1.0, -0.3, 0.0, 1.0] {
                     for sy in [-1.0, 0.5, 1.0] {
-                        let p = view_point(&camera, aspect, distance, sx, sy);
+                        let p = view_point_of(lens, &camera, aspect, distance, sx, sy);
                         let [x, y, depth] = project(&cascade.view_proj, p);
                         let inside = |v: f32| (-1.0 - 1e-4..=1.0 + 1e-4).contains(&v);
                         assert!(inside(x) && inside(y), "{p:?} -> ({x}, {y})");
@@ -408,7 +565,7 @@ mod tests {
                         assert!(cascade.frustum.contains_sphere(p[0], p[1], p[2], 1e-3));
                         // The forward axis gives the distance along the view.
                         let along = dot(p, cascades.forward);
-                        assert!((along - distance).abs() < distance * 1e-4 + 1e-4);
+                        assert!((along - distance).abs() < distance.abs() * 1e-4 + 1e-4);
                     }
                 }
             }
@@ -455,7 +612,10 @@ mod tests {
     #[test]
     fn the_shadow_distance_and_the_far_plane_end_the_last_cascade() {
         let camera = camera();
-        let near_far = Perspective { far: 50.0, ..LENS };
+        let near_far = Lens::Perspective(Perspective {
+            far: 50.0,
+            ..PERSPECTIVE
+        });
         for (lens, end) in [(LENS, 200.0), (near_far, 50.0)] {
             let cascades = fit_cascades(&camera, &lens, 1.0, DOWN_AND_ACROSS, &SETTINGS);
             assert_eq!(cascades.used().last().unwrap().end, end);
@@ -494,7 +654,7 @@ mod tests {
         };
         let uniform = ShadowUniform::new(&cascades, &settings);
         assert_eq!(uniform.forward[3], 3.0);
-        assert_eq!(uniform.as_bytes().len(), SHADOW_UNIFORM_BYTES);
+        assert_eq!(uniform.as_bytes().len(), SHADOW_UNIFORM_BYTES as usize);
         for (k, cascade) in cascades.used().iter().enumerate() {
             assert_eq!(uniform.view_proj[k], cascade.view_proj);
             assert_eq!(uniform.ends[k], cascade.end);
