@@ -312,6 +312,16 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		size: [480, 270] as const,
 		tiers: ['webgpu', 'compat'] as const,
 	})),
+	// The same scene with custom materials on the ground and the red boxes, whose surface function
+	// keeps the standard look: they cast and receive shadows as the standard material does, so the
+	// references are copies of the shadows test's.
+	{
+		name: 'shadows-custom',
+		sketch: 'tests/pages/sketches/shadows-sketch.ts?custom',
+		hold: 0,
+		size: [480, 270],
+		tiers: ['webgpu', 'compat'],
+	},
 	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the
 	// slab's front corner and the far plane cutting the bar at the back. The parity test compares
 	// the image with three.js's OrthographicCamera.
