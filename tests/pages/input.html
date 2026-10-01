@@ -4,6 +4,8 @@
 		<meta charset="utf-8" />
 		<title>null3d test: input</title>
 		<style>
+			/* The page never scrolls, so a key such as Space cannot move the canvas under the mouse. */
+			html { overflow: hidden; }
 			body { margin: 0; }
 			canvas { width: 320px; height: 180px; display: block; touch-action: none; }
 		</style>
