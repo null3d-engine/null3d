@@ -60,6 +60,7 @@ export type Three = Pick<
 	| 'Scene'
 	| 'SphereGeometry'
 	| 'SRGBColorSpace'
+	| 'TextureLoader'
 	| 'TorusGeometry'
 	| 'Vector3'
 >;

@@ -114,7 +114,7 @@ export default defineSketch(async (ctx) => {
 | `scene.createOrthographicCamera({ height, near, far, position, target, layers })` | OrthographicCamera | Or left, right, top, bottom in place of height |
 | `scene.setActiveCamera(camera)` | | The camera the canvas shows |
 | `scene.createDirectionalLight(opts)`, `createPointLight`, `createSpotLight`, `createHemisphereLight`, `createAmbientLight` | Light | Section 7 |
-| `scene.setBackground('#rrggbb')` | | Any color input (section 20); a texture later in 0.1 |
+| `scene.setBackground('#rrggbb')` or `scene.setBackground(texture)` | | Any color input (section 20), or a texture that fills the view behind every object, as three.js's `scene.background` |
 | `scene.setBackground({ sky: { turbidity, rayleigh, sunDirection } })` (0.2) | | Sky backgrounds |
 | `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment` |
 | `scene.setBackground(env, { blur, intensity, rotation })` (0.2) | | Blurred environment backgrounds |
@@ -315,7 +315,8 @@ textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the larg
 
 - Data rows go from the bottom up: the first row is at v = 0. `rgba8unorm` takes a `Uint8Array` or `Uint8ClampedArray`, and `rgba16float` a `Float32Array` or a `Uint16Array` of half floats. Bad data or options throw E1208.
 - Textures return at once and upload over the next frames, within each frame's upload budget.
-- Later in 0.1: texture backgrounds, and KTX2 files through `loadTexture`. `textures.fromPass` (0.2) and cube maps (0.2) follow.
+- `scene.setBackground(tex)` shows a texture behind every object. The color set before it shows until its texels are on the GPU.
+- Later in 0.1: KTX2 files through `loadTexture`. `textures.fromPass` (0.2) and cube maps (0.2) follow.
 
 ## 11. Assets (`api/assets`)
 
@@ -444,13 +445,15 @@ quality.set({ maxPixelRatio: 1.5 });    // from the next frame; E1213 for anothe
 quality.set({ maxAnisotropy: 4, uploadBytesPerFrame: 2 * 1024 * 1024 });  // texture sampling cap, upload bytes per frame
 quality.settings.antialias;             // 'msaa' | 'fxaa' | 'none', fixed at the start; set it with createEngine's option
 quality.set({ shadowCascades: 2 });     // planned: the preset table gives each setting's status
+await quality.setPreset('low');         // the live settings take Low's values; start-time ones stay; resolves once its frame is on screen
 const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
 quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });
 quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => { aiRate = scale; } });  // (0.2)
 engine.mode.preset;                     // on the page: the preset, crashedStarts and memoryMaximumMiB
+engine.mode.presetCheck;                // what the preset check measured: { from, targetFps, rounds }, or null
 ```
 
-The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
+The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. When the engine chose the preset itself, it checks it with the scene that the setup built. It lowers the preset until the GPU holds the frame rate, before `createEngine` resolves, and keeps the settings that the setup changed with `quality.set`. The `setPreset` call keeps the last frame on screen until the new preset's pipelines are built. So call it from a menu or a loading screen. The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
 
 ## 18. Messages and UI (`api/page`, `api/ui`)
 

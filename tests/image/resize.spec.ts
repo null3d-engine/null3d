@@ -26,9 +26,13 @@ const canvasSize = () => (globalThis as { canvasSize?: () => Promise<unknown> })
 const setMaxPixelRatio = (ratio: number) =>
 	(globalThis as { setMaxPixelRatio?: (ratio: number) => Promise<void> }).setMaxPixelRatio?.(ratio);
 
-/** Opens the resize page with these switches, and returns the screen's device pixel ratio. */
+/**
+ * Opens the resize page with these switches, and returns the screen's device pixel ratio. The page
+ * fixes a preset whose pixel ratio cap is the screen's ratio, so the preset check of a busy machine
+ * cannot lower the cap.
+ */
 async function openPage(page: Page, query: string): Promise<number> {
-	await page.goto(`resize.html?${query}`);
+	await page.goto(`resize.html?preset=high&${query}`);
 	expect((await pageResult<{ error?: string }>(page, 30_000)).error).toBeUndefined();
 	const ratio = await page.evaluate(
 		() => (globalThis as { devicePixelRatio?: number }).devicePixelRatio ?? 1,
