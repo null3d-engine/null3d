@@ -1,6 +1,6 @@
 // The sketch worker: runs the sketch's code and the engine core. In pipelined mode it computes frame
-// N+1 while the render worker draws frame N, and waits for the render worker's signal with
-// Atomics.waitAsync, so its event loop stays alive for promises and messages. In low-latency mode it
+// N+1 while the render worker draws frame N, and waits for the render worker's signal without
+// blocking, so its event loop stays alive for promises and messages. In low-latency mode it
 // also owns the canvas and draws each frame itself; only then does it load the renderer.
 
 import { messageOf } from '../errors/message';
@@ -10,6 +10,7 @@ import type { Renderer } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews } from '../shared/control';
 import { drawingSenders, ImageTable } from '../shared/images';
+import { setWakeByMessage, wakeWaiters } from '../shared/wake';
 import { loadSketch } from '../sketch/define-sketch';
 import { runPipelined, SketchRunner } from '../sketch/runner';
 import {
@@ -42,6 +43,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			const drawModule = message.renderer && drawLoad;
 			const control = controlViews(message.control);
 			controlSlots = control.slots;
+			setWakeByMessage(message.wakeByMessage);
 			const started = await startWorkerCore(message, step);
 			const core = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
@@ -102,6 +104,8 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 				message: messageOf(e),
 			});
 		}
+	} else if (message.type === 'wake') {
+		wakeWaiters();
 	} else if (message.type === 'post') {
 		runner?.receive(message.name, message.data);
 	} else if (message.type === 'capture' && draw && drawing && controlSlots) {

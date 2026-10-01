@@ -19,8 +19,8 @@ import {
 	S3_VIEW_LIGHTS,
 	s3BoxAt,
 	s3Camera,
-	s3LightAt,
 	s3LightColor,
+	s3LightsAt,
 } from '../../scenes/spec';
 import { runThreePage } from './harness';
 
@@ -69,14 +69,15 @@ runThreePage(
 			lights.push(light);
 			scene.add(light);
 		}
-		const lightPosition = new Float64Array(3);
+		const clock = new Float64Array(1);
+		const lightPositions = new Float64Array(S3_LIGHT_COUNT * 3);
 		return {
 			n: data.count,
 			update(t) {
-				for (let i = 0; i < S3_LIGHT_COUNT; i++) {
-					s3LightAt(data, i, t, lightPosition);
-					lights[i]?.position.fromArray(lightPosition);
-				}
+				clock[0] = t;
+				s3LightsAt(data, clock, lightPositions);
+				for (let i = 0; i < S3_LIGHT_COUNT; i++)
+					lights[i]?.position.fromArray(lightPositions, i * 3);
 			},
 			camera: s3Camera,
 		};

@@ -61,6 +61,13 @@ for (let s = 0; s <= CIRCLE_SEGMENTS; s++) {
 /** One sRGB component from 0 to 1 as a byte. */
 const toByte = (c: number) => Math.round(Math.min(1, Math.max(0, c)) * 255);
 
+/** A linear color as a line's packed sRGB color, opaque. */
+const packLinear = (r: number, g: number, b: number): number =>
+	toByte(linearToSrgb(r)) +
+	toByte(linearToSrgb(g)) * 0x100 +
+	toByte(linearToSrgb(b)) * 0x10000 +
+	0xff000000;
+
 /**
  * A color as the core stores it for a line's point, packed into one number. It throws E1204 for a
  * color that material colors do not take either.
@@ -77,7 +84,7 @@ export function packedColor(color: ColorInput, call: string): number {
 		isComponent(color[1]) &&
 		isComponent(color[2])
 	)
-		return toByte(color[0]) + toByte(color[1]) * 0x100 + toByte(color[2]) * 0x10000 + 0xff000000;
+		return packLinear(color[0], color[1], color[2]);
 	throw invalidColor(color, call);
 }
 
@@ -522,10 +529,5 @@ function across(out: Float64Array, fx: number, fy: number, fz: number): void {
 /** A directional light's color as a line's color: its sRGB color before its intensity. */
 function lightColor(light: DirectionalLight): number {
 	const c = light.linear;
-	return (
-		toByte(linearToSrgb(c[0] as number)) +
-		toByte(linearToSrgb(c[1] as number)) * 0x100 +
-		toByte(linearToSrgb(c[2] as number)) * 0x10000 +
-		0xff000000
-	);
+	return packLinear(c[0] as number, c[1] as number, c[2] as number);
 }

@@ -1,8 +1,8 @@
 // A job worker: runs the engine core's parallel loops over scene data. It loads the core with the
-// shared memory, reports that it is ready, and waits without blocking until the sketch thread has
-// created the job system. Then it serves the job system until the engine stops, and reports that it
-// has stopped. Serving blocks this worker's thread, which a job worker may do; the sketch worker
-// never blocks.
+// shared memory, reports that it is ready, and waits until the sketch thread has created the job
+// system, without blocking where the browser has Atomics.waitAsync. Then it serves the job system
+// until the engine stops, and reports that it has stopped. Serving blocks this worker's thread,
+// which a job worker may do; the sketch worker never blocks.
 
 import { messageOf } from '../errors/message';
 import { controlViews, Slot } from '../shared/control';
@@ -29,8 +29,13 @@ startWorker('job', step, async (event: MessageEvent<JobWorkerInit>) => {
 		});
 		const { slots } = controlViews(message.control);
 		while (Atomics.load(slots, Slot.JobsReady) === 0 && Atomics.load(slots, Slot.Running) !== 0) {
-			const wait = Atomics.waitAsync(slots, Slot.JobsReady, 0);
-			if (wait.async) await wait.value;
+			// Where the threads wake each other with messages, this worker blocks until the job system
+			// exists: nothing sends it a wake message, and a job worker may block.
+			if (message.wakeByMessage) Atomics.wait(slots, Slot.JobsReady, 0);
+			else {
+				const wait = Atomics.waitAsync(slots, Slot.JobsReady, 0);
+				if (wait.async) await wait.value;
+			}
 		}
 		if (Atomics.load(slots, Slot.Running) !== 0) core.jobWorkerLoop(message.index);
 		replyToPage({ type: 'stopped', role: 'job', index: message.index });

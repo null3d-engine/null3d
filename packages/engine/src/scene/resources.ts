@@ -480,7 +480,7 @@ export class Geometry {
  * @category api/materials
  */
 export interface MaterialOptions {
-	/** The base color: a hex string, a number, or three sRGB components from 0 to 1. */
+	/** The base color: a hex string or a number in sRGB, or three linear components from 0 to 1. */
 	color?: ColorInput;
 	/**
 	 * How opaque the surface is, from 0 to 1. The default is 1. With the `mask` alpha mode, it is
@@ -537,8 +537,8 @@ export interface StandardValues extends MaterialOptions {
 	/** How rough the surface is, from 0 (a mirror) to 1 (fully matte). The default is 1. */
 	roughness?: number;
 	/**
-	 * The color the surface gives off without any light, in sRGB as `color` takes it. The default
-	 * is black, which gives off nothing.
+	 * The color the surface gives off without any light, in the forms that `color` takes. The
+	 * default is black, which gives off nothing.
 	 */
 	emissive?: ColorInput;
 	/** The factor of the emissive color: 0 or more. The default is 1. */
@@ -953,8 +953,9 @@ export class Materials {
 	}
 
 	/**
-	 * A material that ignores lights and shows its color as it is, like three.js's
-	 * `MeshBasicMaterial`.
+	 * A material that ignores lights and shows its color unlit, like three.js's
+	 * `MeshBasicMaterial`. The exposure and the tone mapping still apply to it, as three.js applies
+	 * them to that material.
 	 */
 	unlit(options: UnlitOptions = {}): Material<UnlitValues> {
 		const shading = options.map ? SHADING_UNLIT_MAP : SHADING_UNLIT;

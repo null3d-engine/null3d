@@ -52,6 +52,7 @@ export const FORMAT_DEPTH32_FLOAT = 6;
 export const FORMAT_RGBA32_FLOAT = 7;
 export const FORMAT_R32_UINT = 8;
 export const FORMAT_RGBA8_UNORM_SRGB = 9;
+export const FORMAT_RG11B10_UFLOAT = 10;
 
 export const VIEW_2D = 0;
 export const VIEW_2D_ARRAY = 1;
@@ -92,6 +93,7 @@ export const LAYOUT_FRAME = 0;
 export const LAYOUT_CULL = 1;
 export const LAYOUT_DRAWS = 2;
 export const LAYOUT_INSTANCES = 3;
+export const LAYOUT_FINAL = 4;
 export const LAYOUT_TEXTURES = 5;
 export const LAYOUT_MATERIAL_MAPS = 6;
 
@@ -123,6 +125,7 @@ export const TEMPLATE_INSTANCED_TEXCOORDS = 3;
 export const TEMPLATE_DEBUG_LINES = 4;
 export const TEMPLATE_INSTANCED_UNLIT_MAP = 5;
 export const TEMPLATE_INSTANCED_STANDARD_MAPS = 6;
+export const TEMPLATE_FINAL = 7;
 export const TEMPLATE_CULL = 16;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
@@ -143,7 +146,8 @@ export const TEXTURE_USAGE_RENDER_ATTACHMENT = 16;
 export const TEXTURE_USAGE_TRANSIENT_ATTACHMENT = 32;
 
 export const SIZE_INSTANCE_STRIDE = 64;
-export const SIZE_FRAME_UNIFORM_BYTES = 176;
+export const SIZE_FRAME_UNIFORM_BYTES = 192;
+export const SIZE_OUTPUT_UNIFORM_BYTES = 16;
 export const SIZE_CULL_WORKGROUP_SIZE = 128;
 export const SIZE_INDIRECT_WORDS = 5;
 export const SIZE_MATRIX_TEXELS = 3;
@@ -159,6 +163,6 @@ export const SIZE_MAX_CULL_RANGES = 257;
 export const SIZE_LINE_VERTEX_BYTES = 16;
 
 /** Bytes per texel of each format, by format code. */
-export const FORMAT_TEXEL_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4];
+export const FORMAT_TEXEL_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4];
 /** Each vertex attribute in vertex order: its format bit (0 for one every format has), its floats and its shader location. */
 export const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, floats: number, location: number])[] = [[0, 3, 0], [0, 3, 1], [1, 2, 2], [2, 2, 3], [4, 4, 4], [8, 4, 5]];

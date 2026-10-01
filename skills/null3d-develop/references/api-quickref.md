@@ -43,7 +43,7 @@ const engine = await createEngine({
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
-  transparent: false,    // later in 0.1: true for a see-through canvas
+  transparent: false,    // true for a see-through canvas, with premultiplied alpha
   sketchThread: 'worker',  // or 'main': sketch code on the page's thread, for DOM-heavy apps and debugging
   largeWorld: false,     // (0.2) planet-scale scenes: cell-relative positions, batch origins
 });
@@ -397,12 +397,12 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping` and `exposure` come later in 0.1; everything else from 0.2. The planned default tone mapping is ACES, while three.js defaults to none.
+`toneMapping` and `exposure` are built; everything else comes in 0.2. The default tone mapping is ACES, while three.js defaults to none.
 
 ```ts
 post.set({
-  toneMapping: 'aces',      // later in 0.1: 'aces' | 'agx' | 'neutral' | 'none'
-  exposure: 1,              // later in 0.1
+  toneMapping: 'aces',      // 'aces' | 'agx' | 'neutral' | 'none'
+  exposure: 1,
   bloom: { strength: 0.8, radius: 0.4, threshold: 0.9 },
   ao: { radius: 0.5, intensity: 1 },     // High and Ultra presets only
   fxaa: false,                           // forces FXAA; otherwise the preset decides
@@ -511,4 +511,4 @@ time.now; time.dt; time.frame;            // seconds, the frame's step in second
 - Angles are in radians. `quat.fromEuler` takes three.js's axis orders; gl-matrix's function of that name takes degrees.
 - `quat.lookAt` gives a mesh's rotation. For a camera or a light, which looks down -Z, swap `eye` and `target`.
 - `math.random` draws from one generator per thread. `math.seed(n)` makes a run repeatable. Hold mode seeds it and routes `Math.random` to it.
-- Color options take `'#rrggbb'` or `'#rgb'` strings, `0xrrggbb` numbers and `[r, g, b]` arrays from 0 to 1, all in sRGB. The engine converts them to linear, as three.js does for hex colors. The `color` helpers give linear RGB, which instance colors take.
+- Color options take `'#rrggbb'` or `'#rgb'` strings and `0xrrggbb` numbers, which are sRGB, and `[r, g, b]` arrays from 0 to 1, which are linear, as three.js's `setRGB` reads them. The engine converts hex colors to linear, as three.js does. The `color` helpers give linear RGB, which color options and instance colors take.

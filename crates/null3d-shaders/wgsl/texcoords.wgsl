@@ -3,7 +3,7 @@ enable draw_index;
 // Meshes drawn by instance and colored by their first texture coordinates, red for u and green for
 // v, for the engine's own tests of vertex formats. null3d::mesh finds each instance on both GPU
 // paths.
-#import null3d::mesh::{InstanceIn, clip_position, find_instance}
+#import null3d::mesh::{InstanceIn, clip_position, find_instance, finish}
 
 /// The vertex attributes that the template reads.
 struct VertexIn {
@@ -25,8 +25,8 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     return out;
 }
 
-/// The coordinates as they are, with no color encoding, so a coordinate of 0.5 reads back as 128.
+/// The coordinates as linear color, red for u and green for v.
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4f {
-    return vec4f(in.uv0, 0.0, 1.0);
+    return finish(vec3f(in.uv0, 0.0), in.clip.xy);
 }
