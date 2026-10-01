@@ -337,9 +337,11 @@ export interface Engine {
 	 */
 	simulateGpuLoss(): void;
 	/**
-	 * Stops the engine and its workers. The engine cannot start again. The promise resolves once
-	 * every worker has stopped, when the browser can free the engine's memory. Wait for it before
-	 * you start another engine on the same page: an iPad has room for only a few engines' memory.
+	 * Stops the engine and its workers. The engine cannot start again. The thread that draws first
+	 * destroys the engine's GPU textures and buffers and its GPU device, so the GPU's memory comes
+	 * back at once. The promise resolves once every worker has stopped, when the browser can free
+	 * the engine's memory. Wait for it before you start another engine on the same page: an iPad has
+	 * room for only a few engines' memory.
 	 */
 	destroy(): Promise<void>;
 }
@@ -354,7 +356,7 @@ const RESERVED_CORES = 2;
 const DRAIN_INTERVAL_MS = 250;
 /** How many sketch messages the page keeps while no handler listens. */
 const MAX_EARLY_MESSAGES = 256;
-/** How long stopping the engine waits for its job workers to leave the job system. */
+/** How long stopping the engine waits for its job workers and the worker that draws to stop. */
 const STOP_TIMEOUT_MS = 2_000;
 
 interface TierChoice {
@@ -495,7 +497,10 @@ class EngineWorker {
 		return this.readyPromise;
 	}
 
-	/** Settles once a job worker has left the job system, or once the worker has failed. */
+	/**
+	 * Settles once a job worker has left the job system, once the worker that draws has destroyed
+	 * its GPU objects, or once the worker has failed.
+	 */
 	stopped(): Promise<void> {
 		return this.stoppedPromise;
 	}
@@ -515,14 +520,16 @@ class EngineWorker {
 }
 
 /**
- * Stops the workers once every job worker has left the job system, or after a timeout. A job
+ * Stops the workers once each worker in `waitFor` reports that it stopped, or after a timeout. A job
  * worker without work blocks its thread in a wait. When Safari stops a thread inside such a wait,
- * it keeps the thread's shared memory until the tab closes, even across reloads.
+ * it keeps the thread's shared memory until the tab closes, even across reloads. The worker that
+ * draws destroys its GPU objects first, because a browser frees what a stopped worker held only
+ * when it collects the worker's objects, and Safari does that late.
  */
-async function stopWorkers(workers: readonly EngineWorker[], jobs: readonly EngineWorker[]) {
+async function stopWorkers(workers: readonly EngineWorker[], waitFor: readonly EngineWorker[]) {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	await Promise.race([
-		Promise.all(jobs.map((job) => job.stopped())),
+		Promise.all(waitFor.map((worker) => worker.stopped())),
 		new Promise((resolve) => {
 			timer = setTimeout(resolve, STOP_TIMEOUT_MS);
 		}),
@@ -1007,7 +1014,9 @@ async function startEngine(
 			stopDisplay?.();
 			// A start that fails or stops has not crashed the tab.
 			marker?.end();
-			await stopWorkers(allWorkers(threads), threads?.jobs ?? []);
+			rendererHost?.worker.postMessage({ type: 'stop-drawing' } satisfies RendererRequest);
+			const waitFor = threads?.jobs ?? [];
+			await stopWorkers(allWorkers(threads), rendererHost ? [...waitFor, rendererHost] : waitFor);
 			// The job workers have left the job system, so the page's threaded core has no more work,
 			// and the browser can free the engine's memory once the page lets go of the core.
 			localCore?.releaseInstance?.();

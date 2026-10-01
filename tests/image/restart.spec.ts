@@ -1,6 +1,7 @@
 import { type CDPSession, expect, test } from '@playwright/test';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { prefixEngineScripts, restoreEngineScripts } from '../lib/engine-scripts.ts';
+import { gpuObjectsHeld, watchGpuObjects } from '../lib/gpu-ledger.ts';
 import { pageResult } from '../lib/page-result.ts';
 import type { RestartResult } from '../lib/plans.ts';
 
@@ -23,14 +24,20 @@ async function reachable(cdp: CDPSession, prototype: string): Promise<number> {
 
 // A page starts the engine again after it stops it, and after a collection it reaches none of a
 // stopped engine's memory, except the single-threaded build's core, which the page keeps for the
-// next engine.
+// next engine. Each stop destroys every GPU object that the engine made, with its device or its
+// WebGL2 context, on whichever thread drew: a browser frees what a stopped worker still holds only
+// when it collects the worker's objects. The count of GPU objects is exact, so a few starts show an
+// object that any start leaves behind.
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {
-		test(`the engine starts again after it stops, and lets go of its memory, ${mode.name} on ${gpu}`, async ({
+		test(`the engine starts again after it stops, and lets go of its memory and its GPU objects, ${mode.name} on ${gpu}`, async ({
 			page,
 		}) => {
+			await watchGpuObjects(page);
 			await page.goto(`shared-memory.html?room=off&cycles=${CYCLES}&gpu=${gpu}&${mode.query}`);
 			const result = await pageResult<RestartResult & { error?: string }>(page, 60_000);
+			await restoreEngineScripts(page);
+			await expect.poll(() => gpuObjectsHeld(page)).toEqual({});
 			expect(result.error).toBeUndefined();
 			expect(result.kinds.engine?.error).toBeUndefined();
 			expect(result.kinds.engine?.cycles).toBe(CYCLES);
