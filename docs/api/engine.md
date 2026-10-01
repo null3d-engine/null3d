@@ -258,7 +258,8 @@ How the engine runs on this device: its build, its latency mode and its threads.
 | `renderThread: 'render-worker' \| 'sketch-worker' \| 'main'` | The thread that owns the canvas and draws. |
 | `jobWorkers: number` | The job workers that share the engine's parallel work. |
 | `hold: number \| null` | The sketch time in seconds that hold mode holds the sketch at, or null for a live engine. |
-| `preset: QualityPreset` | The quality preset that the engine runs. |
+| `preset: QualityPreset` | The quality preset that the engine runs. The preset check can lower it before `createEngine` resolves, and `ctx.quality.setPreset` in the sketch changes it later. |
+| `presetCheck: PresetCheck \| null` | What the preset check measured, or null when no check ran. The engine checks the preset when it chose it from the device: after the first frame, it measures the frame rate of the scene that the setup built, and lowers the preset until one holds the target. |
 | `crashedStarts: number` | The starts of this sketch before this one that crashed the tab, one after another, as the engine's note in `localStorage` records them. After one, the engine starts a preset lower, and after two at `low`. |
 | `memoryMaximumMiB: number \| null` | The shared memory's maximum in MiB, or null for the single-threaded build, whose memory is not shared. |
 
@@ -276,7 +277,7 @@ Options for `createEngine`.
 | `maxPixelRatio?: number` | Cap for the device pixel ratio, a number from 0.5 up. Without it, the quality preset sets the cap. `ctx.quality.set` changes it during play. |
 | `gpu?: 'auto' \| 'webgpu' \| 'webgl2'` | Forces a GPU tier, for testing only. |
 | `powerPreference?: 'high-performance' \| 'low-power'` | Which GPU to draw with on a device that has two, such as a laptop with a separate graphics chip: `high-performance`, the default, for the faster one, or `low-power` to save battery. The browser treats it as a request. A device with one GPU ignores it. |
-| `latency?: LatencyMode` | The latency mode. The default is `pipelined`. |
+| `latency?: LatencyMode` | The latency mode. The default is `pipelined`. Low latency needs a worker that draws: where no worker can draw, the engine runs in pipelined mode, and `engine.mode` says so. |
 | `antialias?: 'msaa' \| 'fxaa' \| 'none'` | How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa` smooths edges in the final pass, and `none` leaves them sharp. Without it, the quality preset sets the mode: FXAA on Low, MSAA from Medium up. Each mode works on every GPU path, and the mode stays fixed while the engine runs. Another value fails with E1213. |
 | `transparent?: boolean` | True for a see-through canvas: the page shows through wherever no object draws, until the sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites it. The default is false, an opaque canvas. |
 | `sketchThread?: SketchThread` | The thread that runs the sketch's code and the engine core: `worker`, the default, or `main` for the page's main thread, where the sketch can reach the DOM. Use `main` for apps that work mostly with the DOM, and for debugging. The render worker still draws in pipelined mode, and the page draws in low-latency mode. The sketch's frames then share the page's thread with the page's own work, so each can slow the other. The single-threaded build always runs the sketch on the page's thread. The `?sketch-thread=` switch wins over this option. |

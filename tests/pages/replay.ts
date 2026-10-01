@@ -128,9 +128,11 @@ run('replay', async () => {
 		[11, instanceLayers.byteLength, U.STORAGE | U.COPY_DST, blobs.instanceLayers],
 		// The cell order, which a dispatch with no runs never reads.
 		[12, 4, U.STORAGE | U.COPY_DST, -1],
+		// The shadow cascades' uniform, which the frame group binds; no light casts shadows here.
+		[13, G.SIZE_SHADOW_UNIFORM_BYTES, U.UNIFORM | U.COPY_DST, -1],
 		// The light grid and the light list, which the frame group binds and the shader skips.
-		[13, 16, U.STORAGE, -1],
-		[14, G.SIZE_LIGHT_RECORD_BYTES, U.STORAGE, -1],
+		[14, 16, U.STORAGE, -1],
+		[15, G.SIZE_LIGHT_RECORD_BYTES, U.STORAGE, -1],
 	];
 	for (const [id, size, usage] of buffers) memory.push(G.OP_CREATE_BUFFER, id, size, usage);
 	for (const [id, size, , source] of buffers)
@@ -158,6 +160,37 @@ run('replay', async () => {
 		SAMPLES,
 		1,
 		G.VIEW_2D,
+	);
+	// The frame group's shadow map: one texel of one layer, which no light draws into, and the
+	// sampler that compares depths in it.
+	memory.push(
+		G.OP_CREATE_TEXTURE,
+		4,
+		1,
+		1,
+		1,
+		G.FORMAT_DEPTH32_FLOAT,
+		GPUTextureUsage.TEXTURE_BINDING,
+		1,
+		1,
+		G.VIEW_2D_ARRAY,
+	);
+	const clamp = G.ADDRESS_CLAMP_TO_EDGE;
+	const [linear, nearest] = [G.FILTER_LINEAR, G.FILTER_NEAREST];
+	const compare = G.COMPARE_GREATER_EQUAL;
+	memory.push(
+		G.OP_CREATE_SAMPLER,
+		1,
+		clamp,
+		clamp,
+		clamp,
+		linear,
+		linear,
+		nearest,
+		0,
+		0,
+		compare,
+		1,
 	);
 	memory.push(
 		G.OP_CREATE_TEXTURE,
@@ -190,12 +223,15 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		1,
 		G.LAYOUT_FRAME,
-		5,
+		8,
 		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
 		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
 		...[3, G.RESOURCE_TEXTURE, 3, 0, 0],
-		...[7, G.RESOURCE_BUFFER, 13, 0, 0],
-		...[8, G.RESOURCE_BUFFER, 14, 0, 0],
+		...[4, G.RESOURCE_TEXTURE, 4, 0, 0],
+		...[5, G.RESOURCE_SAMPLER, 1, 0, 0],
+		...[6, G.RESOURCE_BUFFER, 13, 0, 0],
+		...[7, G.RESOURCE_BUFFER, 14, 0, 0],
+		...[8, G.RESOURCE_BUFFER, 15, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,

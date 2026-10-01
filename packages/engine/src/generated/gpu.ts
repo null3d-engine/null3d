@@ -96,6 +96,7 @@ export const LAYOUT_INSTANCES = 3;
 export const LAYOUT_FINAL = 4;
 export const LAYOUT_TEXTURES = 5;
 export const LAYOUT_MATERIAL_MAPS = 6;
+export const LAYOUT_DEPTH = 7;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -117,6 +118,7 @@ export const VERTEX_INSTANCE_LOCATION = 8;
 
 export const STATE_CULL_NONE = 1;
 export const STATE_LINE_LIST = 2;
+export const STATE_CULL_FRONT = 4;
 export const STATE_NO_DEPTH_WRITE = 8;
 export const STATE_NO_DEPTH_TEST = 16;
 
@@ -127,6 +129,8 @@ export const TEMPLATE_DEBUG_LINES = 4;
 export const TEMPLATE_INSTANCED_UNLIT_MAP = 5;
 export const TEMPLATE_INSTANCED_STANDARD_MAPS = 6;
 export const TEMPLATE_FINAL = 7;
+export const TEMPLATE_SHADOW_DEPTH = 8;
+export const TEMPLATE_BACKGROUND = 9;
 export const TEMPLATE_CULL = 16;
 
 export const BUFFER_USAGE_MAP_READ = 1;
@@ -163,6 +167,7 @@ export const SIZE_MAX_CELLS = 512;
 export const SIZE_CELL_SHIFT = 23;
 export const SIZE_MAX_CULL_RANGES = 257;
 export const SIZE_LINE_VERTEX_BYTES = 16;
+export const SIZE_SHADOW_UNIFORM_BYTES = 320;
 
 /** Bytes per texel of each format, by format code. */
 export const FORMAT_TEXEL_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4];

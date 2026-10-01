@@ -5,7 +5,8 @@ enable draw_index;
 // GPU paths, and null3d::lighting holds the formulas. `light_surface` gathers the scene's lights,
 // so the rest of the shader does not change with where the lights come from. null3d::lights finds
 // the point and spot lights of each surface's cluster. The ALPHA_MASK builds draw nothing where
-// the surface's alpha falls below the material's cutoff.
+// the surface's alpha falls below the material's cutoff. The RECEIVE_SHADOWS builds dim the sun's
+// light where the main directional light's shadows fall.
 //
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive and light maps, each a layer of a texture array with a sampler of its own. A map reads
@@ -18,6 +19,9 @@ enable draw_index;
 #import null3d::lights::{clustered_light}
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, frame, material_of}
 #import null3d::mesh::{map_layer, map_ready, relative_position, world_direction, world_normal}
+#ifdef RECEIVE_SHADOWS
+#import null3d::shadows::{sun_shadow}
+#endif
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
 const FLAT_SHADING: u32 = 1u;
@@ -147,11 +151,12 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     return out;
 }
 
-/// The light that a surface reflects toward the camera from the scene's lights: the sun, the
-/// point and spot lights of the surface's cluster, the ambient light, and `extra` irradiance such
-/// as a light map's, which `occlusion` darkens with the ambient light. `relative` is the surface's
-/// position relative to the camera, `to_view` points from it toward the camera, and `dfg` holds
-/// the split-sum terms at the surface's roughness and view angle.
+/// The light that a surface reflects toward the camera from the scene's lights: the sun, less
+/// where its shadows fall, the point and spot lights of the surface's cluster, the ambient light,
+/// and `extra` irradiance such as a light map's, which `occlusion` darkens with the ambient light.
+/// `relative` is the surface's position relative to the camera, `to_view` points from the surface
+/// toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and view
+/// angle.
 fn light_surface(
     m: null3d::lighting::PbrMaterial,
     relative: vec3f,
@@ -162,12 +167,16 @@ fn light_surface(
     occlusion: f32,
 ) -> vec3f {
     let compensation = null3d::lighting::multiscatter_compensation(m.specular_blended, dfg);
+    var sun_color = frame.sun_color.rgb;
+#ifdef RECEIVE_SHADOWS
+    sun_color *= sun_shadow(relative, normal);
+#endif
     let sun = null3d::lighting::direct_light(
         m,
         normal,
         to_view,
         -frame.sun_direction.xyz,
-        frame.sun_color.rgb,
+        sun_color,
         compensation,
     );
     let clustered = clustered_light(m, relative, normal, to_view, compensation);
@@ -278,7 +287,8 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     let pbr = null3d::lighting::pbr_material(base, metalness, roughness, geometry_roughness);
     let n_dot_v = saturate(dot(normal, to_view));
     let dfg = null3d::lighting::dfg_lut(n_dot_v, pbr.roughness);
-    let outgoing = light_surface(pbr, in.relative, normal, to_view, dfg, extra, occlusion) + emitted;
+    let outgoing =
+        light_surface(pbr, in.relative, normal, to_view, dfg, extra, occlusion) + emitted;
     // The test comes last, after every derivative, which a discarded fragment still helps compute.
 #ifdef ALPHA_MASK
     if alpha < m.emissive.w {

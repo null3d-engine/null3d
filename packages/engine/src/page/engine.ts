@@ -3,18 +3,25 @@
 // page loads the renderer only when it draws itself, and the sketch runner and the scene API only
 // when it runs the sketch itself: in the single-threaded build, and with sketchThread: 'main'.
 
+import { DEV } from '../errors/checks';
 import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS } from '../generated/gpu';
-import { choosePreset, crashTier, memoryPreset, type PresetRequest } from '../quality/chooser';
+import type { PresetCheck } from '../quality/check';
+import {
+	choosePreset,
+	crashTier,
+	memoryPreset,
+	type PresetRequest,
+	withinTier,
+} from '../quality/chooser';
 import {
 	checkSettings,
 	presetOption,
 	presetSettings,
 	presetValue,
 	type QualityPreset,
-	type QualitySettings,
 } from '../quality/presets';
 import type { DrawingSetup } from '../render/draw';
 import { type DrawModule, loadDrawModule } from '../render/load-draw';
@@ -28,7 +35,7 @@ import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { loadSketch } from '../sketch/define-sketch';
-import type { QualityStart } from '../sketch/quality';
+import type { QualityStart, QualityUpdate } from '../sketch/quality';
 import type { SketchRunner } from '../sketch/runner';
 import type {
 	CapturedFrame,
@@ -101,7 +108,10 @@ export interface EngineOptions {
 	 * The browser treats it as a request. A device with one GPU ignores it.
 	 */
 	powerPreference?: 'high-performance' | 'low-power';
-	/** The latency mode. The default is `pipelined`. */
+	/**
+	 * The latency mode. The default is `pipelined`. Low latency needs a worker that draws: where
+	 * no worker can draw, the engine runs in pipelined mode, and `engine.mode` says so.
+	 */
 	latency?: LatencyMode;
 	/**
 	 * How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa`
@@ -230,8 +240,17 @@ export interface EngineMode {
 	jobWorkers: number;
 	/** The sketch time in seconds that hold mode holds the sketch at, or null for a live engine. */
 	hold: number | null;
-	/** The quality preset that the engine runs. */
+	/**
+	 * The quality preset that the engine runs. The preset check can lower it before `createEngine`
+	 * resolves, and `ctx.quality.setPreset` in the sketch changes it later.
+	 */
 	preset: QualityPreset;
+	/**
+	 * What the preset check measured, or null when no check ran. The engine checks the preset when
+	 * it chose it from the device: after the first frame, it measures the frame rate of the scene
+	 * that the setup built, and lowers the preset until one holds the target.
+	 */
+	presetCheck: PresetCheck | null;
 	/**
 	 * The starts of this sketch before this one that crashed the tab, one after another, as the
 	 * engine's note in `localStorage` records them. After one, the engine starts a preset lower, and
@@ -408,8 +427,8 @@ interface WorkerEvents {
 	sketchMessage(name: string, data: unknown): void;
 	/** A failure after the engine started. */
 	failure(error: EngineError): void;
-	/** The quality settings after the sketch changed them. */
-	quality(settings: QualitySettings): void;
+	/** The quality preset and settings after a change, and the preset check's result. */
+	quality(update: QualityUpdate): void;
 }
 
 /** A worker whose replies are routed: events to the page's handlers, answers to the oldest request. */
@@ -444,7 +463,7 @@ class EngineWorker {
 				return;
 			}
 			if (reply.type === 'quality') {
-				events.quality(reply.settings);
+				events.quality(reply.update);
 				return;
 			}
 			if (reply.type === 'lost') {
@@ -686,7 +705,9 @@ async function startEngine(
 	if (!WebAssembly.validate(SIMD_PROBE))
 		throw new EngineError('E1303', 'this browser runs WebAssembly without SIMD.');
 	const build: Build = threaded ? 'threaded' : 'single';
-	const latency = threaded ? (switches.latency ?? options.latency ?? 'pipelined') : 'single';
+	let latency: EngineMode['latency'] = threaded
+		? (switches.latency ?? options.latency ?? 'pipelined')
+		: 'single';
 	const sketchOnPage = sketchThread === 'main';
 	let coreMs = 0;
 	const coreLoad = awaitLater(
@@ -729,8 +750,13 @@ async function startEngine(
 	const events: WorkerEvents = {
 		sketchMessage: onSketchMessage,
 		failure: onFailure,
-		// The page applies the settings that it owns: the pixel ratio cap sizes the canvas.
-		quality: (settings) => canvasWatch.setMaxPixelRatio(settings.maxPixelRatio),
+		// The page applies the settings that it owns: the pixel ratio cap sizes the canvas. The
+		// engine's mode reports the preset and the preset check.
+		quality: (update) => {
+			canvasWatch.setMaxPixelRatio(update.settings.maxPixelRatio);
+			mode.preset = update.preset;
+			if (update.check) mode.presetCheck = update.check;
+		},
 	};
 
 	const jobWorkers = threaded
@@ -789,8 +815,14 @@ async function startEngine(
 		(safeGpu && chooseTier(report, safeGpu, inWorker)) || chooseTier(report, requested, inWorker);
 
 	let choice = pickTier(renderThread !== 'main');
-	if (!choice && renderThread === 'render-worker') {
-		// Worker rendering is unavailable here, so the page draws while the sketch thread computes.
+	if (!choice && renderThread !== 'main') {
+		// Worker rendering is unavailable here, so the page draws while the sketch worker computes
+		// the frames, in pipelined mode. Low latency needs the sketch worker to draw.
+		if (DEV && latency === 'low')
+			console.warn(
+				'null3D: low latency needs a worker that draws, and this browser cannot draw in a worker. The engine runs in pipelined mode, and the page draws.',
+			);
+		latency = 'pipelined';
 		renderThread = 'main';
 		choice = pickTier(false);
 		threads?.render?.terminate();
@@ -805,6 +837,29 @@ async function startEngine(
 	const quality: QualityStart = {
 		preset,
 		settings: presetSettings(preset, pageSettings),
+		options: pageSettings,
+		highest: withinTier('ultra', tier),
+		// The engine checks a preset that it chose itself, when a lighter one exists. A preset that
+		// the page, a switch or hold mode fixes stays as it is.
+		check:
+			optionPreset === 'auto' &&
+			switches.preset === undefined &&
+			hold === undefined &&
+			preset !== 'low'
+				? { fps: switches.fps }
+				: undefined,
+	};
+	const mode: EngineMode = {
+		build,
+		latency: latency === 'pipelined' && sketchOnPage && renderThread === 'main' ? 'low' : latency,
+		sketchThread,
+		renderThread,
+		jobWorkers,
+		hold: hold ?? null,
+		preset,
+		presetCheck: null,
+		crashedStarts: history.crashed,
+		memoryMaximumMiB: threaded ? maximumMiB : null,
 	};
 	// What the thread that draws needs besides its canvas, whichever thread that is.
 	const rendererSetup: Omit<RendererSetup, 'canvas'> = {
@@ -1045,17 +1100,6 @@ async function startEngine(
 	}
 
 	const engineStartMs = performance.now() - startedAt;
-	const mode: EngineMode = {
-		build,
-		latency: latency === 'pipelined' && sketchOnPage && renderThread === 'main' ? 'low' : latency,
-		sketchThread,
-		renderThread,
-		jobWorkers,
-		hold: hold ?? null,
-		preset,
-		crashedStarts: history.crashed,
-		memoryMaximumMiB: threaded ? maximumMiB : null,
-	};
 	onProgress?.('sketch');
 	// The thread that draws writes the time the GPU finished the first frame; the page checks for
 	// it once per animation frame until it appears.

@@ -1,7 +1,8 @@
 //! The opaque passes: one scene pass per view, which replays the view's bundle. The bundle binds
 //! the view's frame uniform and draws every bucket from the view's compacted instances with the
 //! view's indirect draws, so the draws' first instance stays 0. It is recorded again only when the
-//! layout or the mesh buffers change.
+//! layout or the mesh buffers change. The shadow passes record and replay their bundles the same
+//! way (see [`super::shadow`]).
 
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, index_format, layout as bind_layout, resource_kind, sizes,
@@ -17,10 +18,8 @@ use crate::view::{ViewFrame, ViewId};
 /// The group index of the maps' bind group in the mesh pipelines that sample a map.
 const TEXTURES_GROUP: u32 = 1;
 
-/// Records the creation of a view's frame uniform buffer, and of the group that binds it with the
-/// material table, three.js's table of the split-sum terms of specular light, and the camera's
-/// light grid and light records.
-pub(super) fn create_view(list: &mut DrawList, view: ViewId) -> Result<(), RecordError> {
+/// Records the creation of a view's frame uniform buffer.
+pub(super) fn create_frame_buffer(list: &mut DrawList, view: ViewId) -> Result<(), RecordError> {
     list.push(
         Op::CreateBuffer,
         &[
@@ -29,39 +28,33 @@ pub(super) fn create_view(list: &mut DrawList, view: ViewId) -> Result<(), Recor
             usage::UNIFORM | usage::COPY_DST,
         ],
     )?;
-    list.push(
-        Op::CreateBindGroup,
-        &[
-            ids::frame_group(view),
-            bind_layout::FRAME,
-            5,
-            0,
-            resource_kind::BUFFER,
-            ids::frame(view),
-            0,
-            0,
-            1,
-            resource_kind::BUFFER,
-            ids::MATERIALS,
-            0,
-            0,
-            3,
-            resource_kind::TEXTURE,
-            ids::DFG,
-            0,
-            0,
-            7,
-            resource_kind::BUFFER,
-            ids::LIGHT_GRID,
-            0,
-            0,
-            8,
-            resource_kind::BUFFER,
-            ids::LIGHTS,
-            0,
-            0,
-        ],
-    )?;
+    Ok(())
+}
+
+/// Records the creation of a camera view's frame group: its frame uniform, the material table,
+/// three.js's table of the split-sum terms of specular light, the main directional light's
+/// shadow map, which is `shadow_map`, with its comparison sampler and its cascades, and the
+/// camera's light grid and light records. A new shadow map needs the group again.
+pub(super) fn bind_frame(
+    list: &mut DrawList,
+    view: ViewId,
+    shadow_map: u32,
+) -> Result<(), RecordError> {
+    let entry = |binding: u32, kind: u32, id: u32| [binding, kind, id, 0, 0];
+    let entries = [
+        entry(0, resource_kind::BUFFER, ids::frame(view)),
+        entry(1, resource_kind::BUFFER, ids::MATERIALS),
+        entry(3, resource_kind::TEXTURE, ids::DFG),
+        entry(4, resource_kind::TEXTURE, shadow_map),
+        entry(5, resource_kind::SAMPLER, ids::SHADOW_SAMPLER),
+        entry(6, resource_kind::BUFFER, ids::SHADOWS),
+        entry(7, resource_kind::BUFFER, ids::LIGHT_GRID),
+        entry(8, resource_kind::BUFFER, ids::LIGHTS),
+    ];
+    let mut words = [0u32; 3 + 5 * 8];
+    words[..3].copy_from_slice(&[ids::frame_group(view), bind_layout::FRAME, 8]);
+    words[3..].copy_from_slice(entries.as_flattened());
+    list.push(Op::CreateBindGroup, &words)?;
     Ok(())
 }
 
@@ -79,7 +72,7 @@ pub(super) fn upload(
 
 /// Records a view's bundle: each draw of every bucket of the layout, with the bucket's slice of
 /// the view's compacted instances and the bind group of its material's map, from its mesh page's
-/// buffers in `meshes`, into the scene's targets.
+/// buffers in `meshes`, into `targets`.
 pub(super) fn record_bundle(
     list: &mut DrawList,
     view: ViewId,
@@ -134,7 +127,7 @@ pub(super) fn record_bundle(
     Ok(())
 }
 
-/// Records a view's opaque pass: its bundle, inside the render pass that the render graph began.
+/// Records a view's pass: its bundle, inside the render pass that the render graph began.
 pub(super) fn record(list: &mut DrawList, view: ViewId) -> Result<(), RecordError> {
     list.push(Op::ExecuteBundles, &[1, ids::bundle(view)])?;
     Ok(())
