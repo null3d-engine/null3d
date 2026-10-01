@@ -142,7 +142,7 @@ A change of preset can change pipelines and render targets, and building them ta
 
 ## The settings of each preset
 
-Each value is a starting point, which measurements on phones, tablets and desktops tune from release to release. A setting that changes "during play" takes a new value at any time. One that changes "at the start" is fixed while the engine runs: the preset that the engine starts with, or the page's option, gives its value, and `quality.setPreset` keeps it. The memory maximum is fixed before the engine loads. "Planned" settings belong to features that are not built yet.
+Each value is a starting point, which measurements on phones, tablets and desktops tune from release to release. A setting that changes "during play" takes a new value at any time. One that changes "at the start" is fixed while the engine runs. The preset that the engine starts with, or the page's option, gives its value, and `quality.setPreset` keeps it. The memory maximum is fixed before the engine loads. "Planned" settings belong to features that are not built yet.
 
 <!-- null3d:preset-settings:start -->
 
