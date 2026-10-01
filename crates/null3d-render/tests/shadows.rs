@@ -451,7 +451,7 @@ fn a_double_sided_caster_draws_both_faces_and_no_material_draws_its_depth_bias()
 }
 
 #[test]
-fn standard_materials_with_and_without_maps_receive_shadows_and_unlit_ones_do_not() {
+fn standard_and_custom_materials_receive_shadows_and_unlit_ones_do_not() {
     let world = shadowed(SUN);
     let key = |template: u32| DrawKey {
         template,
@@ -461,7 +461,11 @@ fn standard_materials_with_and_without_maps_receive_shadows_and_unlit_ones_do_no
         bias: DepthBias::NONE,
     };
     let settings = world.renderer.settings();
-    for lit in [template::INSTANCED_LIT, template::INSTANCED_STANDARD_MAPS] {
+    for lit in [
+        template::INSTANCED_LIT,
+        template::INSTANCED_STANDARD_MAPS,
+        template::CUSTOM_FIRST,
+    ] {
         let receiving = settings.receiving(key(lit));
         assert_eq!(
             receiving.permutation,

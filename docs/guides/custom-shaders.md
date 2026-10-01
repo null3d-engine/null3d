@@ -8,7 +8,7 @@ summary: "WGSL in sketch code; shader errors; surface functions; full shaders; u
 
 # Custom shaders
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The Vite plugin compiles WGSL in sketch code, but the engine cannot draw with it yet. Custom materials are not built, so `materials.shader`, surface functions, full shaders and uniforms do not exist. Coding agents must not write custom shaders. Hot reload that keeps the page running comes in 0.2.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Custom materials with surface functions and uniforms are built. Full shaders, textures and vertex offsets in custom materials are not built yet, so coding agents must not use them. Hot reload that keeps the page running comes in 0.2.
 
 ```mermaid
 flowchart LR
@@ -20,6 +20,27 @@ flowchart LR
 ```
 
 You write each null3D shader once, in WGSL. The null3D Vite plugin compiles the WGSL in your code while Vite serves or builds the project. Each shader becomes WGSL for WebGPU and GLSL ES 3.00 for WebGL2, so the page never downloads a shader translator.
+
+## Custom materials
+
+A custom material keeps the engine's lighting and changes how its surface looks. Its WGSL declares a surface function, which fills a surface record for each pixel. `materials.shader` takes the compiled WGSL and every option of `materials.standard`:
+
+```ts
+// sketch.ts
+const rings = /* wgsl */ `
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let ring = step(0.5, fract(input.uv.y * 6.0));
+    s.baseColor = mix(s.baseColor, vec3f(1.0), ring);
+    return s;
+}
+`;
+
+// In the setup:
+const red = materials.shader({ wgsl: rings, color: '#e04040', roughness: 0.5 });
+```
+
+The WGSL can declare uniforms as `struct Uniforms`, which `set()` changes at any time. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface` and uniforms.
 
 ## WGSL in sketch code
 
@@ -60,7 +81,12 @@ The plugin puts the compiled shader where the literal was. Your code therefore r
 
 ## What the plugin compiles
 
-The plugin compiles whole shaders. A shader has one `@vertex` entry point and one or more `@fragment` entry points. Each `@fragment` entry point makes one render pipeline, named after it, with the `@vertex` entry point. A shader with only `@compute` entry points builds for WebGPU alone, because WebGL2 has no compute shaders.
+The plugin compiles two kinds of WGSL:
+
+- WGSL without entry points that declares `fn surface` is a custom material's WGSL. The plugin builds it into the standard material's shader, once for each of that shader's variants.
+- WGSL with entry points is a whole shader. It has one `@vertex` entry point and one or more `@fragment` entry points. Each `@fragment` entry point makes one render pipeline, named after it, with the `@vertex` entry point. A shader with only `@compute` entry points builds for WebGPU alone, because WebGL2 has no compute shaders.
+
+WGSL that is neither stops the build with an error that says how to fix it.
 
 A shader can import the engine's library modules, such as `#import null3d::math`. The plugin resolves each import. [Shader library and imports](../shaders/library.md) lists the modules.
 
@@ -104,6 +130,7 @@ The plugin's client types tell TypeScript what a `.wgsl` import gives. Add them 
 
 ## Related pages
 
+- [Surface functions](../shaders/surface-functions.md): custom materials that keep the engine's lighting.
 - [WGSL rules for portable shaders](../shaders/wgsl-rules.md): what the build rejects, and what it cannot check.
 - [Shader library and imports](../shaders/library.md): the engine's modules that a shader can import.
 - [Install null3D](../getting-started/install.md): the Vite plugin and its other jobs.

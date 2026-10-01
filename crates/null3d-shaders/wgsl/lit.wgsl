@@ -4,10 +4,16 @@ enable draw_index;
 // with the formulas of three.js's MeshStandardMaterial. null3d::mesh finds each instance on both
 // GPU paths, and null3d::lighting holds the formulas. `light_surface` gathers the scene's lights,
 // so the rest of the shader does not change with where the lights come from. null3d::lights finds
-// the point and spot lights of each surface's cluster. The ALPHA_MASK builds draw nothing where
-// the surface's alpha falls below the material's cutoff, and a material that blends writes
-// premultiplied color. The RECEIVE_SHADOWS builds dim the sun's light where the main directional
-// light's shadows fall.
+// the point and spot lights of each surface's cluster.
+//
+// The fragment shader works in two steps. First a surface function fills a `Surface` from a
+// `SurfaceInput`: `defaultSurface` reads the material's own values and maps, and a custom
+// material's surface function starts from it. Then `shade` lights the surface with the scene's
+// lights. Code that reads the material's options belongs in `defaultSurface`, and code that
+// lights, shadows, fogs or blends the surface belongs in `shade`, so custom materials get all of
+// it. The ALPHA_MASK builds draw nothing where the surface's alpha falls below the material's
+// cutoff, and a material that blends writes premultiplied color. The RECEIVE_SHADOWS builds dim the
+// sun's light where the main directional light's shadows fall.
 //
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive and light maps, each a layer of a texture array with a sampler of its own. A map reads
@@ -16,17 +22,37 @@ enable draw_index;
 // and the material draws as without it. The normal map bends the normal in a frame from the mesh's
 // tangents with VERTEX_TANGENT, and otherwise from how the position and the texture coordinates
 // change between pixels, as three.js's getTangentFrame makes it.
-#import null3d::lighting
+//
+// Custom materials build this template with their WGSL added after its last line, and with the
+// shader def CUSTOM_SURFACE when that WGSL declares `fn surface`. When it declares
+// `struct Uniforms`, the build adds `load_material_uniforms` after it, and CUSTOM_UNIFORMS makes the
+// template fill `material` with the uniforms. Their WGSL shares this file's names, so the template
+// imports library items by name and keeps its own names few. It never imports a module whole,
+// which would reserve the module's name in their WGSL too. Names that only the MAPS builds declare
+// stay free for custom materials, which build without maps.
+#import null3d::lighting::{PbrMaterial, dfg_lut, direct_light, indirect_diffuse}
+#import null3d::lighting::{multiscatter_compensation, pbr_material}
+#import null3d::globals::{Material}
 #import null3d::lights::{clustered_light}
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color, frame}
-#import null3d::mesh::{map_layer, map_ready, material_of, relative_position, straight_texel}
-#import null3d::mesh::{world_direction, world_normal}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
+#import null3d::mesh::{custom_value, frame, material_of, relative_position, world_normal}
+#ifdef MAPS
+#import null3d::mesh::{map_layer, map_ready, straight_texel, world_direction}
+#endif
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{sun_shadow}
 #endif
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
 const FLAT_SHADING: u32 = 1u;
+
+/// The row of the material that the pixel shows, which the fragment shader reads once.
+var<private> material_row: Material;
+
+#ifdef CUSTOM_UNIFORMS
+/// The custom material's uniforms, which the fragment shader reads once.
+var<private> material: Uniforms;
+#endif
 
 #ifdef MAPS
 /// The bit of a material's flags for the map of slot 0 on the second texture coordinates; the
@@ -101,6 +127,8 @@ struct VertexIn {
     @location(2) uv0: vec2f,
     /// The second texture coordinates, or the first on a mesh without a second set.
     @location(3) uv1: vec2f,
+#else ifdef CUSTOM_SURFACE
+    @location(2) uv0: vec2f,
 #endif
 #ifdef VERTEX_TANGENT
     @location(4) tangent: vec4f,
@@ -122,11 +150,165 @@ struct VertexOut {
 #ifdef MAPS
     /// The first texture coordinates, then the second.
     @location(4) uv: vec4f,
+#else ifdef CUSTOM_SURFACE
+    /// The first texture coordinates.
+    @location(4) uv: vec2f,
 #endif
 #ifdef VERTEX_TANGENT
     @location(5) tangent: vec3f,
     @location(6) bitangent: vec3f,
 #endif
+}
+
+/// What a surface function knows of the point of the surface that a pixel shows. Positions and
+/// directions are in world space, relative to the camera.
+struct SurfaceInput {
+    /// The position relative to the camera, which stays precise far from the world's origin.
+    relativePosition: vec3f,
+    /// The unit normal of the mesh, or of the triangle's face with flat shading, turned toward the
+    /// camera on the back faces of double-sided materials.
+    normal: vec3f,
+    /// The unit direction from the surface toward the camera.
+    viewDirection: vec3f,
+    /// The mesh's vertex color when the material takes vertex colors and the mesh has them, else
+    /// white.
+    vertexColor: vec4f,
+#ifdef MAPS
+    /// The mesh's first texture coordinates.
+    uv: vec2f,
+    /// The mesh's second texture coordinates, or the first on a mesh without a second set.
+    uv1: vec2f,
+#else ifdef CUSTOM_SURFACE
+    /// The mesh's first texture coordinates.
+    uv: vec2f,
+#endif
+#ifdef VERTEX_TANGENT
+    /// The mesh's tangent and bitangent in world space, as the vertices give them.
+    tangent: vec3f,
+    bitangent: vec3f,
+#endif
+    /// True on the front face of a triangle.
+    frontFacing: bool,
+}
+
+/// A point of a surface, ready to light. Colors are linear.
+struct Surface {
+    /// The base color, which the surface reflects.
+    baseColor: vec3f,
+    /// The opacity, from 0 to 1.
+    alpha: f32,
+    /// How much the surface acts like a metal, from 0 to 1.
+    metalness: f32,
+    /// The perceptual roughness, from 0 (a mirror) to 1 (fully matte).
+    roughness: f32,
+    /// The unit normal that lights the surface, in world space.
+    normal: vec3f,
+    /// The light that the surface gives off, added after lighting.
+    emissive: vec3f,
+    /// How much light from all directions reaches the surface, from 0 (none) to 1 (all).
+    occlusion: f32,
+    /// Baked light that reaches the surface, such as a light map's, added to the ambient light.
+    irradiance: vec3f,
+}
+
+#ifdef MAPS
+/// The surface with the material's texture maps: each map that has an image multiplies or
+/// replaces the values that it holds, and the normal map bends the normal last.
+fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
+    let m = material_row;
+    let flags = u32(m.strengths.z);
+    var s = surface;
+    // The coordinates' derivatives come first, where every pixel of the quad runs them; each map
+    // then samples with them inside its branch.
+    let first = transformed_uv(input.uv, m.uv_u, m.uv_v);
+    let second = transformed_uv(input.uv1, m.uv_u, m.uv_v);
+    let position_dy = dpdy(input.relativePosition) * ROWS_UP;
+    let position_dx = dpdx(input.relativePosition);
+    if map_ready(m.maps.x) {
+        let at = map_uv(flags, 0u, first, second);
+        let sampled = textureSampleGrad(
+            base_color_map,
+            base_color_sampler,
+            at.uv,
+            map_layer(m.maps.x),
+            at.dx,
+            at.dy,
+        );
+        let texel = straight_texel(m, sampled);
+        s.baseColor *= texel.rgb;
+        s.alpha *= texel.a;
+    }
+    if map_ready(m.maps.y) {
+        let at = map_uv(flags, 1u, first, second);
+        let layer = map_layer(m.maps.y);
+        let texel = textureSampleGrad(metal_rough_map, metal_rough_sampler, at.uv, layer, at.dx, at.dy);
+        s.roughness *= texel.g;
+        s.metalness *= texel.b;
+    }
+    if map_ready(m.maps.w) {
+        let at = map_uv(flags, 3u, first, second);
+        let layer = map_layer(m.maps.w);
+        let texel = textureSampleGrad(occlusion_map, occlusion_sampler, at.uv, layer, at.dx, at.dy);
+        s.occlusion = (texel.r - 1.0) * m.strengths.x + 1.0;
+    }
+    if map_ready(m.more_maps.x) {
+        let at = map_uv(flags, 4u, first, second);
+        let layer = map_layer(m.more_maps.x);
+        let texel = textureSampleGrad(emissive_map, emissive_sampler, at.uv, layer, at.dx, at.dy);
+        s.emissive *= texel.rgb;
+    }
+    if map_ready(m.more_maps.y) {
+        let at = map_uv(flags, 5u, first, second);
+        let layer = map_layer(m.more_maps.y);
+        let texel = textureSampleGrad(light_map, light_sampler, at.uv, layer, at.dx, at.dy);
+        s.irradiance = texel.rgb * m.strengths.y;
+    }
+    if map_ready(m.maps.z) {
+        let at = map_uv(flags, 2u, first, second);
+        let layer = map_layer(m.maps.z);
+        let texel = textureSampleGrad(normal_map, normal_sampler, at.uv, layer, at.dx, at.dy);
+        let bent = vec3f((texel.xy * 2.0 - 1.0) * m.surface.zw, texel.z * 2.0 - 1.0);
+        let normal = input.normal;
+        let facing = select(-1.0, 1.0, input.frontFacing);
+#ifdef VERTEX_TANGENT
+        let tangent = normalize(input.tangent) * facing;
+        let bitangent = normalize(input.bitangent) * facing;
+#else
+        // three.js's getTangentFrame, with rows counted upward.
+        let q1perp = cross(position_dy, normal);
+        let q0perp = cross(normal, position_dx);
+        let st_dy = at.dy * ROWS_UP;
+        var tangent = q1perp * at.dx.x + q0perp * st_dy.x;
+        var bitangent = q1perp * at.dx.y + q0perp * st_dy.y;
+        let det = max(dot(tangent, tangent), dot(bitangent, bitangent));
+        let scale = select(inverseSqrt(det), 0.0, det == 0.0);
+        tangent *= scale * facing;
+        bitangent *= scale * facing;
+#endif
+        s.normal = normalize(tangent * bent.x + bitangent * bent.y + normal * bent.z);
+    }
+    return s;
+}
+#endif
+
+/// The surface as the material's own values make it: its base color times the vertex color, its
+/// metalness, roughness and emissive light, and the normal of the input, with the material's
+/// texture maps in the builds that have them.
+fn defaultSurface(input: SurfaceInput) -> Surface {
+    let m = material_row;
+    var s: Surface;
+    s.baseColor = m.color.rgb * input.vertexColor.rgb;
+    s.alpha = m.color.a * input.vertexColor.a;
+    s.metalness = m.surface.x;
+    s.roughness = m.surface.y;
+    s.normal = input.normal;
+    s.emissive = m.emissive.rgb * m.strengths.w;
+    s.occlusion = 1.0;
+    s.irradiance = vec3f(0.0);
+#ifdef MAPS
+    s = with_maps(s, input);
+#endif
+    return s;
 }
 
 @vertex
@@ -142,6 +324,8 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #endif
 #ifdef MAPS
     out.uv = vec4f(v.uv0, v.uv1);
+#else ifdef CUSTOM_SURFACE
+    out.uv = v.uv0;
 #endif
 #ifdef VERTEX_TANGENT
     // As three.js does: the tangent through the world matrix, and the bitangent at right angles
@@ -160,7 +344,7 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 /// toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and view
 /// angle.
 fn light_surface(
-    m: null3d::lighting::PbrMaterial,
+    m: PbrMaterial,
     relative: vec3f,
     normal: vec3f,
     to_view: vec3f,
@@ -168,12 +352,12 @@ fn light_surface(
     extra: vec3f,
     occlusion: f32,
 ) -> vec3f {
-    let compensation = null3d::lighting::multiscatter_compensation(m.specular_blended, dfg);
+    let compensation = multiscatter_compensation(m.specular_blended, dfg);
     var sun_color = frame.sun_color.rgb;
 #ifdef RECEIVE_SHADOWS
     sun_color *= sun_shadow(relative, normal);
 #endif
-    let sun = null3d::lighting::direct_light(
+    let sun = direct_light(
         m,
         normal,
         to_view,
@@ -182,122 +366,84 @@ fn light_surface(
         compensation,
     );
     let clustered = clustered_light(m, relative, normal, to_view, compensation);
-    let ambient = null3d::lighting::indirect_diffuse(m, frame.ambient.rgb + extra, dfg);
+    let ambient = indirect_diffuse(m, frame.ambient.rgb + extra, dfg);
     let direct = sun.diffuse + sun.specular + clustered.diffuse + clustered.specular;
     return direct + ambient * occlusion;
 }
 
+/// The color of a pixel that shows the surface: the light it reflects and the light it gives off,
+/// in the scene's fog, finished for the screen at the pixel's position, and premultiplied by its
+/// alpha when the material blends.
+fn shade(s: Surface, input: SurfaceInput, pixel: vec2f) -> vec4f {
+    let normal = normalize(s.normal);
+    // Where the mesh's normal changes fast between pixels, highlights soften, as three.js softens
+    // them. As in three.js, the normal is the mesh's own, before a map or a surface function bends
+    // it.
+    let change = max(abs(dpdx(input.normal)), abs(dpdy(input.normal)));
+    let geometry_roughness = max(max(change.x, change.y), change.z);
+    let pbr = pbr_material(s.baseColor, s.metalness, s.roughness, geometry_roughness);
+    let n_dot_v = saturate(dot(normal, input.viewDirection));
+    let dfg = dfg_lut(n_dot_v, pbr.roughness);
+    let reflected = light_surface(
+        pbr,
+        input.relativePosition,
+        normal,
+        input.viewDirection,
+        dfg,
+        s.irradiance,
+        s.occlusion,
+    );
+    let outgoing = reflected + s.emissive;
+    // The test comes last, after every derivative, which a discarded fragment still helps compute.
+#ifdef ALPHA_MASK
+    if s.alpha < material_row.emissive.w {
+        discard;
+    }
+#endif
+    let finished = finish(fogged(outgoing, input.relativePosition, material_row), pixel);
+    return fragment_color(material_row, finished.rgb, s.alpha);
+}
+
 @fragment
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
-    let m = material_of(in.material);
-    let flags = u32(m.strengths.z);
-    var base = m.color.rgb;
-    var alpha = m.color.a;
-#ifdef VERTEX_COLOR
-    base *= in.vertex_color.rgb;
-    alpha *= in.vertex_color.a;
+    material_row = material_of(in.material);
+#ifdef CUSTOM_UNIFORMS
+    material = load_material_uniforms(in.material);
 #endif
-    var metalness = m.surface.x;
-    var roughness = m.surface.y;
-    var emitted = m.emissive.rgb * m.strengths.w;
-    var extra = vec3f(0.0);
-    var occlusion = 1.0;
+    var input: SurfaceInput;
+    input.relativePosition = in.relative;
     // Toward the camera: from the point for a perspective camera, and one direction for an
     // orthographic camera, whose view rays are parallel.
-    let to_view = normalize(frame.camera_position.xyz - in.relative * frame.camera_position.w);
+    let eye = frame.camera_position;
+    input.viewDirection = normalize(eye.xyz - in.relative * eye.w);
     // A face's normal comes from how the position changes between pixels. The two GPU paths count
     // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
     // flat normals face it.
     let face = normalize(cross(dpdx(in.relative), dpdy(in.relative)));
-    let face_normal = select(-face, face, dot(face, to_view) >= 0.0);
+    let face_normal = select(-face, face, dot(face, input.viewDirection) >= 0.0);
     // Back faces draw only for double-sided materials, and light as front faces do.
-    let facing = select(-1.0, 1.0, front);
-    let smooth_normal = normalize(in.normal) * facing;
-    let use_face = (flags & FLAT_SHADING) != 0u;
-    var normal = select(smooth_normal, face_normal, use_face);
-    // Where the normal changes fast between pixels, highlights soften, as three.js softens them.
-    let change = max(abs(dpdx(normal)), abs(dpdy(normal)));
-    let geometry_roughness = max(max(change.x, change.y), change.z);
+    let smooth_normal = normalize(in.normal) * select(-1.0, 1.0, front);
+    let flat_shading = (u32(material_row.strengths.z) & FLAT_SHADING) != 0u;
+    input.normal = select(smooth_normal, face_normal, flat_shading);
+    input.vertexColor = vec4f(1.0);
+#ifdef VERTEX_COLOR
+    input.vertexColor = in.vertex_color;
+#endif
 #ifdef MAPS
-    // The coordinates' derivatives come first, where every pixel of the quad runs them; each map
-    // then samples with them inside its branch.
-    let first = transformed_uv(in.uv.xy, m.uv_u, m.uv_v);
-    let second = transformed_uv(in.uv.zw, m.uv_u, m.uv_v);
-    let position_dy = dpdy(in.relative) * ROWS_UP;
-    let position_dx = dpdx(in.relative);
-    if map_ready(m.maps.x) {
-        let at = map_uv(flags, 0u, first, second);
-        let sampled = textureSampleGrad(
-            base_color_map,
-            base_color_sampler,
-            at.uv,
-            map_layer(m.maps.x),
-            at.dx,
-            at.dy,
-        );
-        let texel = straight_texel(m, sampled);
-        base *= texel.rgb;
-        alpha *= texel.a;
-    }
-    if map_ready(m.maps.y) {
-        let at = map_uv(flags, 1u, first, second);
-        let layer = map_layer(m.maps.y);
-        let texel = textureSampleGrad(metal_rough_map, metal_rough_sampler, at.uv, layer, at.dx, at.dy);
-        roughness *= texel.g;
-        metalness *= texel.b;
-    }
-    if map_ready(m.maps.w) {
-        let at = map_uv(flags, 3u, first, second);
-        let layer = map_layer(m.maps.w);
-        let texel = textureSampleGrad(occlusion_map, occlusion_sampler, at.uv, layer, at.dx, at.dy);
-        occlusion = (texel.r - 1.0) * m.strengths.x + 1.0;
-    }
-    if map_ready(m.more_maps.x) {
-        let at = map_uv(flags, 4u, first, second);
-        let layer = map_layer(m.more_maps.x);
-        let texel = textureSampleGrad(emissive_map, emissive_sampler, at.uv, layer, at.dx, at.dy);
-        emitted *= texel.rgb;
-    }
-    if map_ready(m.more_maps.y) {
-        let at = map_uv(flags, 5u, first, second);
-        let layer = map_layer(m.more_maps.y);
-        let texel = textureSampleGrad(light_map, light_sampler, at.uv, layer, at.dx, at.dy);
-        extra = texel.rgb * m.strengths.y;
-    }
-    if map_ready(m.maps.z) {
-        let at = map_uv(flags, 2u, first, second);
-        let layer = map_layer(m.maps.z);
-        let texel = textureSampleGrad(normal_map, normal_sampler, at.uv, layer, at.dx, at.dy);
-        let bent = vec3f((texel.xy * 2.0 - 1.0) * m.surface.zw, texel.z * 2.0 - 1.0);
+    input.uv = in.uv.xy;
+    input.uv1 = in.uv.zw;
+#else ifdef CUSTOM_SURFACE
+    input.uv = in.uv;
+#endif
 #ifdef VERTEX_TANGENT
-        let tangent = normalize(in.tangent) * facing;
-        let bitangent = normalize(in.bitangent) * facing;
+    input.tangent = in.tangent;
+    input.bitangent = in.bitangent;
+#endif
+    input.frontFacing = front;
+#ifdef CUSTOM_SURFACE
+    let s = surface(input);
 #else
-        // three.js's getTangentFrame, with rows counted upward.
-        let q1perp = cross(position_dy, normal);
-        let q0perp = cross(normal, position_dx);
-        let st_dy = at.dy * ROWS_UP;
-        var tangent = q1perp * at.dx.x + q0perp * st_dy.x;
-        var bitangent = q1perp * at.dx.y + q0perp * st_dy.y;
-        let det = max(dot(tangent, tangent), dot(bitangent, bitangent));
-        let scale = select(inverseSqrt(det), 0.0, det == 0.0);
-        tangent *= scale * facing;
-        bitangent *= scale * facing;
+    let s = defaultSurface(input);
 #endif
-        normal = normalize(tangent * bent.x + bitangent * bent.y + normal * bent.z);
-    }
-#endif
-    let pbr = null3d::lighting::pbr_material(base, metalness, roughness, geometry_roughness);
-    let n_dot_v = saturate(dot(normal, to_view));
-    let dfg = null3d::lighting::dfg_lut(n_dot_v, pbr.roughness);
-    let outgoing =
-        light_surface(pbr, in.relative, normal, to_view, dfg, extra, occlusion) + emitted;
-    // The test comes last, after every derivative, which a discarded fragment still helps compute.
-#ifdef ALPHA_MASK
-    if alpha < m.emissive.w {
-        discard;
-    }
-#endif
-    let finished = finish(fogged(outgoing, in.relative, m), in.clip.xy);
-    return fragment_color(m, finished.rgb, alpha);
+    return shade(s, input, in.clip.xy);
 }

@@ -154,6 +154,19 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setMaterialValue(material: number, param: number, x: number, y: number, z: number): number;
 	/**
+	 * Changes `count` custom values of a material, from float `at` of its row of custom values:
+	 * a custom material's uniform, as the shader compiler placed it.
+	 */
+	setMaterialValues(
+		material: number,
+		at: number,
+		count: number,
+		x: number,
+		y: number,
+		z: number,
+		w: number,
+	): number;
+	/**
 	 * Gives a material a map in `slot` (a `MAP_SLOT_*` code): a texture's handle, or none with 0.
 	 * The shader reads it at the second texture coordinates when `secondUv` is 1.
 	 */
@@ -295,6 +308,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'meshRadius',
 	'createMaterial',
 	'setMaterialValue',
+	'setMaterialValues',
 	'setMaterialMap',
 	'createTexture',
 	'setTextureImage',

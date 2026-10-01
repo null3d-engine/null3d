@@ -178,10 +178,15 @@ export class Pipelines {
 			{ binding: 1, visibility: fragment, buffer: { type: 'read-only-storage' } },
 		];
 		this.defineLayout(LAYOUT_DEPTH, 'depth', frameEntries);
-		// The table of specular terms, then the shadow map, the sampler that compares depths in
-		// it, its cascades, and the camera's light grid and light list.
+		// The materials' custom values, the table of specular terms, then the shadow map, the
+		// sampler that compares depths in it, its cascades, and the camera's light grid and light list.
 		this.defineLayout(LAYOUT_FRAME, 'frame', [
 			...frameEntries,
+			{
+				binding: 2,
+				visibility: GPUShaderStage.VERTEX | fragment,
+				texture: { sampleType: 'unfilterable-float' },
+			},
 			{ binding: 3, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
 			{
 				binding: 4,
@@ -294,6 +299,26 @@ export class Pipelines {
 	defineLayout(id: number, label: string, entries: GPUBindGroupLayoutEntry[]): void {
 		if (this.layouts[id]) throw new Error(`bind group layout ${id} already exists`);
 		this.layouts[id] = this.device.createBindGroupLayout({ label, entries });
+	}
+
+	/**
+	 * Adds a custom material's template: the standard material's template with the material's WGSL,
+	 * in the shader variants that the plugin built, which also read the first texture coordinates.
+	 */
+	defineCustom(id: number, shader: ShaderVariants): void {
+		this.defineTemplate(id, {
+			label: `custom material ${id}`,
+			shader,
+			pipeline: 'main',
+			layouts: [LAYOUT_FRAME],
+			meshLocations: [0, 1, 2],
+			vertexBuffers: INSTANCE_BUFFERS,
+		});
+	}
+
+	/** True when a template has this id. */
+	has(id: number): boolean {
+		return this.templates[id] !== undefined;
 	}
 
 	/** Adds a render pipeline template under an id that no other template has. */

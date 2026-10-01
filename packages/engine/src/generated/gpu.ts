@@ -144,6 +144,7 @@ export const TEMPLATE_FINAL = 7;
 export const TEMPLATE_SHADOW_DEPTH = 8;
 export const TEMPLATE_BACKGROUND = 9;
 export const TEMPLATE_CULL = 16;
+export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;
 export const BUFFER_USAGE_COPY_SRC = 4;

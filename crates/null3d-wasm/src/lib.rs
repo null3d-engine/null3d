@@ -918,9 +918,10 @@ pub fn mesh_radius(mesh: u32) -> f32 {
 /// Creates a material with a linear color and opacity, and returns its id, counting from 1. Its
 /// shading (`constants::shading`) is the standard material, like three.js's
 /// `MeshStandardMaterial`, unlit, like its `MeshBasicMaterial`, or the first texture coordinates as
-/// colors, for the engine's own tests. Its features (`constants::material_feature`) and its depth
-/// bias are fixed from now on. The bias takes three.js's `polygonOffsetUnits` as `bias_constant`
-/// and its `polygonOffsetFactor` as `bias_slope`, whose positive values push the surface away.
+/// colors, for the engine's own tests. A shading from `shading::CUSTOM_FIRST` up is a custom
+/// material's template. Its features (`constants::material_feature`) and its depth bias are fixed
+/// from now on. The bias takes three.js's `polygonOffsetUnits` as `bias_constant` and its
+/// `polygonOffsetFactor` as `bias_slope`, whose positive values push the surface away.
 #[wasm_bindgen(js_name = createMaterial)]
 #[allow(clippy::too_many_arguments)]
 pub fn create_material(
@@ -937,6 +938,7 @@ pub fn create_material(
         shading::UNLIT => Shading::Unlit,
         shading::TEXCOORDS => Shading::TexCoords,
         shading::UNLIT_MAP => Shading::UnlitMap,
+        custom if custom >= shading::CUSTOM_FIRST => Shading::Custom(custom),
         _ => Shading::Lit,
     };
     let bias = DepthBias::from_polygon_offset(bias_constant, bias_slope);
@@ -961,6 +963,30 @@ pub fn set_material_value(material: u32, param: u32, x: f32, y: f32, z: f32) -> 
         let values = [x, y, z];
         let width = materials::param::width(at).unwrap_or(0);
         match table.set(material.wrapping_sub(1), at, &values[..width]) {
+            Ok(()) => 0,
+            Err(error) => material_failure(error),
+        }
+    })
+}
+
+/// Changes `count` custom values of a material, 1 to 4 of `x`, `y`, `z` and `w`, from float `at`
+/// of its row of custom values, and keeps the others: a custom material's uniform, as the shader
+/// compiler placed it.
+#[wasm_bindgen(js_name = setMaterialValues)]
+pub fn set_material_values(
+    material: u32,
+    at: u32,
+    count: u32,
+    x: f32,
+    y: f32,
+    z: f32,
+    w: f32,
+) -> u32 {
+    with_engine(|e| {
+        let table = e.renderer.settings_mut().materials_mut();
+        let values = [x, y, z, w];
+        let width = (count as usize).min(values.len());
+        match table.set_values(material.wrapping_sub(1), at as usize, &values[..width]) {
             Ok(()) => 0,
             Err(error) => material_failure(error),
         }

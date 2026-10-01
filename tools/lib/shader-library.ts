@@ -216,6 +216,7 @@ Imported names follow two rules:
 const RELATED = `## Related pages
 
 - [Custom shaders](../guides/custom-shaders.md): WGSL in sketch code, and how the Vite plugin compiles it.
+- [Surface functions](surface-functions.md): custom materials, which call these modules.
 - [WGSL rules for portable shaders](wgsl-rules.md): what the build rejects, and what it cannot check.
 `;
 
@@ -257,7 +258,7 @@ export function libraryPage(
 
 # ${title}
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The Vite plugin compiles shaders that import these modules, but custom materials are not built yet, so the engine cannot draw with such shaders.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. A custom material's surface function can call these modules. Full shaders are not built yet, so the engine cannot draw with a whole shader of your own.
 
 ${INTRO}
 ${rows.join('\n')}

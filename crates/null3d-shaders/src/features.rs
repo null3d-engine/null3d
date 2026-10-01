@@ -473,6 +473,16 @@ pub(crate) fn check_directive_placement(path: &str, source: &str) -> Vec<Problem
     problems
 }
 
+/// The 1-based lines of the whole-line directives in a source.
+pub(crate) fn directive_lines(source: &str) -> Vec<u32> {
+    source
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| is_directive(line.trim()))
+        .map(|(index, _)| to_u32(index + 1))
+        .collect()
+}
+
 /// True for a whole-line `enable`, `requires` or `diagnostic` directive.
 fn is_directive(line: &str) -> bool {
     let code = line.split("//").next().unwrap_or_default().trim_end();

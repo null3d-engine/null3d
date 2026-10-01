@@ -2,12 +2,23 @@
 // posts that cast and receive them, from next to the camera out past 40 m, so each cascade holds
 // some. The sun shines low across the scene, so the shadows are long. A box on the left receives
 // shadows but casts none, a post on the right casts but receives none, and an unlit box shows no
-// shadow on itself. ?cascades=<n> sets the cascade count, from 1 to 4.
-import { defineSketch } from '@null3d/engine';
+// shadow on itself. ?cascades=<n> sets the cascade count, from 1 to 4. ?custom draws the ground and
+// the red boxes with custom materials whose surface function keeps the standard look, so the image
+// must match the one without it.
+import { defineSketch, type StandardOptions } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
 /** The cascade count, from the sketch module's ?cascades switch. */
 const CASCADES = Number(params.get('cascades') ?? 3);
+/** True when the sketch module's ?custom switch draws some objects with custom materials. */
+const CUSTOM = params.has('custom');
+
+/** A surface function that keeps the material's own look. */
+const plain = /* wgsl */ `
+fn surface(input: SurfaceInput) -> Surface {
+    return defaultSurface(input);
+}
+`;
 
 export default defineSketch(({ scene, materials, geometry }) => {
 	scene.setBackground('#101418');
@@ -26,8 +37,10 @@ export default defineSketch(({ scene, materials, geometry }) => {
 	});
 	scene.createAmbientLight({ intensity: 0.4 });
 
-	const ground = materials.standard({ color: '#9aa0a8' });
-	const red = materials.standard({ color: '#e8554e' });
+	const lit = (options: StandardOptions) =>
+		CUSTOM ? materials.shader({ ...options, wgsl: plain }) : materials.standard(options);
+	const ground = lit({ color: '#9aa0a8' });
+	const red = lit({ color: '#e8554e' });
 	const yellow = materials.standard({ color: '#f2c14e' });
 	const green = materials.standard({ color: '#5bc27a' });
 	const blue = materials.standard({ color: '#4a8cff' });

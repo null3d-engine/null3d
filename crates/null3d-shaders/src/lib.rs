@@ -18,12 +18,14 @@ mod features;
 mod glsl;
 mod library;
 mod manifest;
+mod material;
 mod names;
 mod output;
 mod position;
 mod problem;
 mod scan;
 mod typescript;
+mod uniforms;
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -36,12 +38,14 @@ use serde::{Deserialize, Serialize};
 
 pub use features::ALLOWED_LANGUAGE_FEATURES;
 pub use manifest::{Pipeline, Target, Variant};
+pub use material::{MaterialOutput, MaterialSource, MaterialTemplate};
 pub use output::{
     Binding, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Output, Response,
     VariantOutput, WgslOutput,
 };
 pub use position::Position;
 pub use problem::{BuildError, Problem};
+pub use uniforms::Uniform;
 
 use library::{Composers, Library, View};
 use manifest::{Build, Manifest};

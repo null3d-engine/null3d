@@ -25,6 +25,10 @@
 #                              order, such as `webgl2_draw_index`. Each build records its bits as
 #                              its permutation word, which the backends pick it by.
 #                targets       "wgsl" for WebGPU, "glsl" for WebGL2 (GLSL ES 3.00), or both.
+#   custom_materials  True for the one template that custom materials build with: the shader
+#              compiler adds a material's WGSL after the file's last line, and builds every variant
+#              with the shader def of each function that the WGSL declares (CUSTOM_SURFACE for
+#              `fn surface`). The shader compiler holds this manifest and the entry shaders.
 #
 # Names of shaders, variants and pipelines use letters, digits and underscores and do not start
 # with a digit, because they become TypeScript property names.
@@ -56,9 +60,11 @@
 # below the material's cutoff, as glTF's alpha mode MASK and three.js's alphaTest do. Only masked
 # materials pay for the discard, which keeps the GPU's early depth test for the others.
 # RECEIVE_SHADOWS reads the main directional light's shadow maps; WebGL2 draws no shadows yet.
+# Custom materials build this template.
 [shaders.lit]
 file = "lit.wgsl"
 by_device = true
+custom_materials = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["glsl"] }

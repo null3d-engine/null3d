@@ -27,9 +27,12 @@ import {
 	MATERIAL_PARAM_ROUGHNESS,
 	MATERIAL_PARAM_UV_U,
 	MATERIAL_PARAM_UV_V,
+	SHADING_CUSTOM_FIRST,
+	SHADING_LIT,
 	SHADING_UNLIT,
 	SHADING_UNLIT_MAP,
 } from '../generated/core';
+import type { ShaderVariants } from '../generated/shaders';
 import { fromHex } from '../math/color';
 import type { CoreGlue } from '../shared/core';
 import { CoreMemory } from './memory';
@@ -68,6 +71,9 @@ function fakeCore() {
 	const table: number[][] = [];
 	const features: number[] = [];
 	const shadings: number[] = [];
+	const sent: [number, ShaderVariants][] = [];
+	/** Each material's row of custom values. */
+	const custom: number[][] = [];
 	/** Each map a material got: its material, slot, texture handle and coordinate set. */
 	const maps: number[][] = [];
 	const biases: [number, number][] = [];
@@ -100,6 +106,7 @@ function fakeCore() {
 			row[MATERIAL_PARAM_EMISSIVE_INTENSITY] = 1;
 			features.push(bits);
 			shadings.push(shading);
+			custom.push(new Array<number>(32).fill(0));
 			biases.push([biasConstant, biasSlope]);
 			return table.push(row);
 		},
@@ -112,19 +119,39 @@ function fakeCore() {
 			change(material, () => {
 				maps.push([material, slot, handle, second]);
 			}),
+		setMaterialValues: (material: number, at: number, count: number, ...xyzw: number[]) => {
+			custom[material - 1]?.splice(at, count, ...xyzw.slice(0, count));
+			return 0;
+		},
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
 	const memory = new WebAssembly.Memory({ initial: 1 });
+	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
 	return {
 		table,
 		features,
 		shadings,
+		sent,
+		custom,
 		maps,
 		biases,
-		materials: new Materials(new CoreMemory(glue as unknown as CoreGlue, memory)),
+		materials: new Materials(core, (template, shader) => sent.push([template, shader])),
 	};
 }
+
+/** A custom material's WGSL as the Vite plugin compiles it, with a stand-in for its variants. */
+function compiledMaterial(uniforms: { name: string; type: string; offset: number }[] = []) {
+	return { kind: 'material', functions: ['surface'], variants: {}, uniforms } as const;
+}
+
+/** The uniforms of a WGSL `struct Uniforms { speed: f32, tint: vec3f, scale: vec2f, count: u32 }`. */
+const UNIFORMS = [
+	{ name: 'speed', type: 'f32', offset: 0 },
+	{ name: 'tint', type: 'vec3f', offset: 4 },
+	{ name: 'scale', type: 'vec2f', offset: 8 },
+	{ name: 'count', type: 'u32', offset: 10 },
+];
 
 /** The first four values of a material's row: its linear color and opacity. */
 const colorOf = (row: number[] | undefined) => row?.slice(0, 4);
@@ -359,5 +386,125 @@ describe('Material.set', () => {
 		expect(error.message).toStartWith(
 			'E1103: materials.unlit.set() got a material that is not from this engine.',
 		);
+	});
+});
+
+describe('materials.shader', () => {
+	test('gives each compiled WGSL its own template, sent to the thread that draws once', () => {
+		const { shadings, sent, materials } = fakeCore();
+		const stripes = compiledMaterial();
+		const rings = compiledMaterial();
+		materials.standard();
+		materials.shader({ wgsl: stripes, color: '#ff0000' });
+		materials.shader({ wgsl: rings });
+		materials.shader({ wgsl: stripes, color: '#0000ff' });
+		expect(shadings).toEqual([
+			SHADING_LIT,
+			SHADING_CUSTOM_FIRST,
+			SHADING_CUSTOM_FIRST + 1,
+			SHADING_CUSTOM_FIRST,
+		]);
+		expect(sent).toEqual([
+			[SHADING_CUSTOM_FIRST, stripes.variants],
+			[SHADING_CUSTOM_FIRST + 1, rings.variants],
+		]);
+	});
+
+	test('takes every standard option, and set changes the standard values', () => {
+		const { table, features, materials } = fakeCore();
+		const custom = materials.shader({
+			wgsl: compiledMaterial(),
+			color: 0x888888,
+			metalness: 1,
+			roughness: 0.25,
+			doubleSided: true,
+			flatShading: true,
+		});
+		const row = () => table[0] as number[];
+		expect(colorOf(row())).toEqual([...linear(0x888888), 1]);
+		expect([row()[MATERIAL_PARAM_METALNESS], row()[MATERIAL_PARAM_ROUGHNESS]]).toEqual([1, 0.25]);
+		expect(features).toEqual([MATERIAL_FEATURE_DOUBLE_SIDED | MATERIAL_FEATURE_FLAT_SHADING]);
+		custom.set({ roughness: 0.75 });
+		expect(row()[MATERIAL_PARAM_ROUGHNESS]).toBe(0.75);
+		const error = thrown(() => custom.set({ roughness: 2 }));
+		expect(error.message).toStartWith('E1108: materials.shader.set() got the roughness 2');
+	});
+
+	test('refuses WGSL that the Vite plugin did not compile, and whole shaders', () => {
+		const { table, sent, materials } = fakeCore();
+		const text = thrown(() => materials.shader({ wgsl: 'fn surface() {}' }));
+		expect(text.code).toBe('E1215');
+		expect(text.message).toStartWith(
+			'E1215: materials.shader() got WGSL as text, which the null3D Vite plugin did not compile.',
+		);
+		const whole = thrown(() => materials.shader({ wgsl: { kind: 'shader' } }));
+		expect(whole.message).toStartWith(
+			'E1215: materials.shader() got a whole shader with entry points.',
+		);
+		const missing = thrown(() =>
+			materials.shader({} as unknown as Parameters<typeof materials.shader>[0]),
+		);
+		expect(missing.message).toStartWith('E1215: materials.shader() got WGSL as undefined');
+		expect(table).toHaveLength(0);
+		expect(sent).toHaveLength(0);
+	});
+});
+
+describe('uniforms of materials.shader', () => {
+	test('start at their first values or 0, and set changes them with the standard values', () => {
+		const { table, custom, materials } = fakeCore();
+		const water = materials.shader({
+			wgsl: compiledMaterial(UNIFORMS),
+			roughness: 0.5,
+			uniforms: { speed: 1.5, tint: '#ff8000', scale: [2, 3] },
+		});
+		const row = () => custom[0] as number[];
+		expect(row().slice(0, 12)).toEqual([1.5, 0, 0, 0, ...linear(0xff8000), 0, 2, 3, 0, 0]);
+		water.set({ speed: 2, tint: [0.1, 0.2, 0.3], count: 8, roughness: 0.25 });
+		expect(row().slice(0, 12)).toEqual([2, 0, 0, 0, 0.1, 0.2, 0.3, 0, 2, 3, 8, 0]);
+		expect((table[0] as number[])[MATERIAL_PARAM_ROUGHNESS]).toBe(0.25);
+	});
+
+	test('checks every value before it changes any', () => {
+		const { table, custom, materials } = fakeCore();
+		const water = materials.shader({ wgsl: compiledMaterial(UNIFORMS), uniforms: { speed: 1 } });
+		const before = [[...(table[0] as number[])], [...(custom[0] as number[])]];
+		for (const [values, message] of [
+			[
+				{ speeed: 2 },
+				"got speeed, which is not a uniform of the material's WGSL. Its uniforms: speed, tint, scale, count.",
+			],
+			[{ speed: 'fast' }, 'got "fast" for the f32 uniform speed; it takes a number.'],
+			[{ count: 2.5 }, 'got 2.5 for the u32 uniform count; it takes a whole number.'],
+			[
+				{ scale: [1, 2, 3] },
+				'got [1,2,3] for the vec2f uniform scale; it takes an array of 2 numbers.',
+			],
+			[
+				{ roughness: 0.5, tint: [1, 2] },
+				'got [1,2] for the vec3f uniform tint; it takes an array of 3 numbers, or a color.',
+			],
+		] as const) {
+			const error = thrown(() => water.set(values));
+			expect(error.code).toBe('E1216');
+			expect(error.message).toStartWith(`E1216: materials.shader.set() ${message}`);
+		}
+		expect([table[0], custom[0]]).toEqual(before);
+	});
+
+	test('refuses unknown first values and uniforms named as standard values', () => {
+		const { table, sent, materials } = fakeCore();
+		const unknown = thrown(() =>
+			materials.shader({ wgsl: compiledMaterial(UNIFORMS), uniforms: { speeed: 1 } }),
+		);
+		expect(unknown.message).toStartWith('E1216: materials.shader() got speeed, which is not');
+		const named = thrown(() =>
+			materials.shader({ wgsl: compiledMaterial([{ name: 'roughness', type: 'f32', offset: 0 }]) }),
+		);
+		expect(named.message).toStartWith(
+			'E1216: materials.shader() got WGSL whose uniform roughness has the name of a standard value.',
+		);
+		expect(table).toHaveLength(0);
+		expect(sent).toHaveLength(0);
 	});
 });

@@ -438,7 +438,7 @@ impl CpuCulledRenderer {
     fn upload_bound_without_clusters(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         let materials =
-            self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 + dfg::BYTES;
+            self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2 + dfg::BYTES;
         let per_view = (sizes::FRAME_UNIFORM_BYTES + OFFSETS_BYTES) as usize
             + self.layout.draws_slot_bytes as usize
             + self.layout.draws.len() * 12;
@@ -452,14 +452,15 @@ impl CpuCulledRenderer {
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
-    /// material it holds, and of three.js's table of specular terms.
+    /// material it holds and one for each material's custom values, and of three.js's table of
+    /// specular terms.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
         list.push(
             Op::CreateTexture,
             &[
                 ids::MATERIALS,
                 MATERIAL_TEXELS,
-                self.config.max_materials.max(1),
+                self.config.max_materials.max(1) * 2,
                 1,
                 format::RGBA32_FLOAT,
                 texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,

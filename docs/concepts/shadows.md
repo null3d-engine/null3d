@@ -87,7 +87,7 @@ Raise them in small steps if a surface shows acne. Values that are too large mak
 - The first directional light created casts the shadows, if it has `castShadows`. Other directional lights light surfaces, and cast none.
 - A caster draws into every cascade whose box it reaches, however far toward the light it stands.
 - The light's layers choose the casters: an object casts only when its layer mask shares a bit with the light's. [Render layers](render-layers.md) explains masks.
-- The standard material shows shadows. The unlit material shows none, but unlit objects still cast them.
+- The standard material and [custom materials](../shaders/surface-functions.md) show shadows. The unlit material shows none, but unlit objects still cast them.
 - `setCastShadows` and `setReceiveShadows` rebuild the engine's tables of what it draws, as `setMaterial` does. Set them at setup rather than in every frame.
 
 ## What shadows cost

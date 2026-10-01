@@ -88,7 +88,9 @@ mod transparent;
 use std::collections::TryReserveError;
 
 use null3d_gpu::caps::{BUDGET, Limit};
-use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
+use null3d_gpu::drawlist::{
+    DrawList, Op, buffer_usage as usage, format, sizes, texture_usage, view,
+};
 
 use crate::background::BackgroundPass;
 use crate::cells::CellCulling;
@@ -102,7 +104,7 @@ use crate::frame::{
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses};
 use crate::graph::RenderGraph;
 use crate::light_grid::{CameraLights, LightLimits};
-use crate::materials::MATERIAL_FLOATS;
+use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
 use crate::pipelines::PipelineCache;
 use crate::shadows::{self, MAX_CASCADES};
@@ -203,8 +205,10 @@ mod ids {
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
+    /// The custom values of materials: one row of texels per material.
+    pub const CUSTOM_VALUES: u32 = DFG + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = DFG + 1;
+    pub const TARGETS: u32 = CUSTOM_VALUES + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow map.
@@ -546,7 +550,10 @@ impl GpuDrivenRenderer {
         let pages_remade = self
             .meshes
             .upload(list, arena, self.settings.meshes().pages())?;
-        let table = MaterialStorage::Buffer(ids::MATERIALS);
+        let table = MaterialStorage::Buffer {
+            table: ids::MATERIALS,
+            values: ids::CUSTOM_VALUES,
+        };
         let groups_remade = self
             .settings
             .record_materials(list, arena, table, input.frame)?;
@@ -694,8 +701,9 @@ impl GpuDrivenRenderer {
         Ok(upload_everything)
     }
 
-    /// Records the creation of the material table and three.js's table of specular terms, whose
-    /// sizes never change, and of the shadows' uniform block and sampler.
+    /// Records the creation of the material table, the data texture of materials' custom values,
+    /// and three.js's table of specular terms, whose sizes never change, and of the shadows'
+    /// uniform block and sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
         shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER)?;
         let materials = self.config.max_materials.max(1);
@@ -705,6 +713,20 @@ impl GpuDrivenRenderer {
                 ids::MATERIALS,
                 materials * MATERIAL_FLOATS as u32 * 4,
                 usage::STORAGE | usage::COPY_DST,
+            ],
+        )?;
+        list.push(
+            Op::CreateTexture,
+            &[
+                ids::CUSTOM_VALUES,
+                MATERIAL_TEXELS,
+                materials,
+                1,
+                format::RGBA32_FLOAT,
+                texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
+                1,
+                1,
+                view::D2,
             ],
         )?;
         dfg::create(list, ids::DFG)?;
@@ -721,7 +743,7 @@ impl GpuDrivenRenderer {
     fn upload_bound(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         let materials =
-            self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 + dfg::BYTES;
+            self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2 + dfg::BYTES;
         let per_view = |layout: &Layout| {
             (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
                 + layout.draws.len() * INDIRECT_BYTES as usize

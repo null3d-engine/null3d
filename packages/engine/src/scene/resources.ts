@@ -32,6 +32,7 @@ import {
 	MATERIAL_PARAM_ROUGHNESS,
 	MATERIAL_PARAM_UV_U,
 	MATERIAL_PARAM_UV_V,
+	SHADING_CUSTOM_FIRST,
 	SHADING_LIT,
 	SHADING_TEXCOORDS,
 	SHADING_UNLIT,
@@ -45,6 +46,8 @@ import {
 	SHAPE_SPHERE,
 	SHAPE_TORUS,
 } from '../generated/core';
+import type { ShaderVariants } from '../generated/shaders';
+import type { ShaderSender } from '../shared/images';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import { arraysProblem, meshFromArrays } from './mesh-arrays';
@@ -638,17 +641,24 @@ export interface MaterialFeatures {
 }
 
 /**
- * Options of `materials.standard`.
+ * The options of `materials.standard` besides its texture maps. Custom materials take them too.
  *
  * @category api/materials
  */
-export interface StandardOptions extends StandardValues, MaterialFeatures, StandardMaps {
+export interface StandardBaseOptions extends StandardValues, MaterialFeatures {
 	/**
 	 * Lights each triangle with one normal, the normal of its face, so the mesh looks faceted. It
 	 * is fixed when the material is created. The default is false.
 	 */
 	flatShading?: boolean;
 }
+
+/**
+ * Options of `materials.standard`.
+ *
+ * @category api/materials
+ */
+export interface StandardOptions extends StandardBaseOptions, StandardMaps {}
 
 /**
  * The values of an unlit material, which `set` changes at any time.
@@ -671,6 +681,72 @@ export interface UnlitOptions extends UnlitValues, MaterialFeatures {
 	 * created, and meshes need texture coordinates to show it.
 	 */
 	map?: Texture;
+}
+
+/**
+ * WGSL that the null3D Vite plugin compiled: a template literal that a `wgsl` block comment tags,
+ * or a `.wgsl` file that a module imports. TypeScript sees a tagged literal as a string, and the
+ * plugin puts the compiled WGSL in its place.
+ *
+ * @category api/materials
+ */
+export interface CompiledWgsl {
+	/** `'material'` for the functions of a custom material, and `'shader'` for a whole shader. */
+	readonly kind: 'material' | 'shader';
+}
+
+/**
+ * The value of a custom material's uniform. An `f32`, `i32` or `u32` uniform takes a number, and a
+ * `vec2f`, `vec3f` or `vec4f` uniform takes an array of 2, 3 or 4 numbers. A `vec3f` uniform also
+ * takes an sRGB color as `color` takes it, which the engine converts to linear.
+ *
+ * @category api/materials
+ */
+export type UniformValue = number | string | readonly number[];
+
+/**
+ * The values of a custom material, which `set` changes at any time: the standard values but the
+ * texture coordinate transform of maps, and the uniforms that its WGSL's `struct Uniforms`
+ * declares, by name.
+ *
+ * @category api/materials
+ */
+export interface ShaderValues extends Omit<StandardValues, 'uvTransform'> {
+	[uniform: string]: UniformValue | undefined;
+}
+
+/**
+ * Options of `materials.shader`: the material's WGSL, the first values of its uniforms, and every
+ * option of `materials.standard` but its texture maps, which `defaultSurface` applies. Custom
+ * materials take no texture maps in this version, so the values of maps have no effect on them.
+ *
+ * @category api/materials
+ */
+export interface ShaderOptions extends StandardBaseOptions {
+	/**
+	 * The material's WGSL, compiled by the null3D Vite plugin. It declares
+	 * `fn surface(input: SurfaceInput) -> Surface`, which the engine calls for each pixel, and
+	 * which can start from `defaultSurface(input)`. The engine lights the surface that it returns.
+	 * It can declare `struct Uniforms`, whose fields the surface function reads from `material`.
+	 * Materials made from the same WGSL share their shader.
+	 */
+	wgsl: string | CompiledWgsl;
+	/** The first value of each uniform, by name. A uniform without one starts at 0. */
+	uniforms?: Readonly<Record<string, UniformValue | undefined>>;
+}
+
+/** A uniform of a custom material: its type, and the float of the row of custom values it starts at. */
+interface CompiledUniform {
+	readonly name: string;
+	readonly type: 'f32' | 'i32' | 'u32' | 'vec2f' | 'vec3f' | 'vec4f';
+	readonly offset: number;
+}
+
+/** A custom material's WGSL as the plugin compiles it: the standard material's variants with it. */
+interface CompiledMaterial extends CompiledWgsl {
+	readonly kind: 'material';
+	readonly variants: ShaderVariants;
+	readonly uniforms: readonly CompiledUniform[];
 }
 
 /** Every value of either material, which `set` writes. */
@@ -846,6 +922,84 @@ function featureBits(options: StandardOptions): number {
 	);
 }
 
+/** The numbers each type of uniform takes. */
+const UNIFORM_FLOATS: Readonly<Record<CompiledUniform['type'], number>> = {
+	f32: 1,
+	i32: 1,
+	u32: 1,
+	vec2f: 2,
+	vec3f: 3,
+	vec4f: 4,
+};
+
+/** The values that `set` changes on every standard material, which no uniform may be named. */
+const STANDARD_VALUES: ReadonlySet<string> = new Set([
+	'color',
+	'emissive',
+	...RANGED.map(([key]) => key),
+]);
+
+/**
+ * The numbers of a uniform's value, or throws E1216 for a value of another kind. A `vec3f` takes
+ * an sRGB color too, converted to linear.
+ */
+function uniformNumbers(uniform: CompiledUniform, value: UniformValue, call: string): number[] {
+	const count = UNIFORM_FLOATS[uniform.type];
+	const numbers =
+		uniform.type === 'vec3f' && !Array.isArray(value)
+			? [...linearColor(value as ColorInput, call)]
+			: Array.isArray(value)
+				? [...value]
+				: [value];
+	const fits =
+		numbers.length === count &&
+		numbers.every((n) => typeof n === 'number' && Number.isFinite(n)) &&
+		(uniform.type === 'f32' || uniform.type.startsWith('vec') || Number.isInteger(numbers[0]));
+	if (!fits) {
+		const takes =
+			count === 1
+				? uniform.type === 'f32'
+					? 'a number'
+					: 'a whole number'
+				: `an array of ${count} numbers${count === 3 ? ', or a color' : ''}`;
+		throw new EngineError(
+			'E1216',
+			`${call}() got ${JSON.stringify(value)} for the ${uniform.type} uniform ${uniform.name}; it takes ${takes}.`,
+		);
+	}
+	return numbers;
+}
+
+/** A uniform and the numbers of its new value. */
+type UniformWrite = readonly [CompiledUniform, readonly number[]];
+
+/**
+ * The uniforms of `values` with their numbers, each checked, so a caller can check every value
+ * before it writes any. `set` calls skip the standard values, which `set` writes itself. Throws
+ * E1216 for a name that is not a uniform.
+ */
+function uniformWrites(
+	uniforms: ReadonlyMap<string, CompiledUniform>,
+	values: Readonly<Record<string, UniformValue | undefined>>,
+	call: string,
+): UniformWrite[] {
+	const writes: UniformWrite[] = [];
+	for (const name in values) {
+		const value = values[name];
+		if (value === undefined || (STANDARD_VALUES.has(name) && call.endsWith('.set'))) continue;
+		const uniform = uniforms.get(name);
+		if (!uniform) {
+			const names = [...uniforms.keys()].join(', ') || 'none';
+			throw new EngineError(
+				'E1216',
+				`${call}() got ${name}, which is not a uniform of the material's WGSL. Its uniforms: ${names}.`,
+			);
+		}
+		writes.push([uniform, uniformNumbers(uniform, value, call)]);
+	}
+	return writes;
+}
+
 /**
  * A material: how the surfaces of the objects that use it look. `Values` are the options that
  * `set` changes.
@@ -857,7 +1011,7 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		/** @internal */ readonly id: number,
 		/** @internal */ readonly core: CoreMemory,
 		/** The name that errors from `set` give the call, such as 'materials.standard.set'. */
-		private readonly call: string,
+		protected readonly call: string,
 	) {}
 
 	/**
@@ -874,6 +1028,39 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	}
 }
 
+/** A custom material, whose `set` changes its uniforms too. */
+class ShaderMaterial extends Material<ShaderValues> {
+	constructor(
+		id: number,
+		core: CoreMemory,
+		call: string,
+		/** The uniforms that the material's WGSL declares, by name. */
+		private readonly uniforms: ReadonlyMap<string, CompiledUniform>,
+	) {
+		super(id, core, call);
+	}
+
+	/**
+	 * Changes the standard values and the uniforms that it gets, and keeps the others. It checks
+	 * every value before it changes any. Converting a color or an array allocates.
+	 */
+	override set(options: ShaderValues): void {
+		const writes = uniformWrites(this.uniforms, options, this.call);
+		super.set(options);
+		this.write(writes);
+	}
+
+	/** Writes checked uniforms into the material's row of custom values. */
+	write(writes: readonly UniformWrite[]): void {
+		const { core } = this;
+		for (const [uniform, [x = 0, y = 0, z = 0, w = 0]] of writes) {
+			const count = UNIFORM_FLOATS[uniform.type];
+			const status = core.glue.setMaterialValues(this.id, uniform.offset, count, x, y, z, w);
+			core.check(status, this.call, undefined, true);
+		}
+	}
+}
+
 /**
  * Material factories. The standard material follows glTF's metallic-roughness model and shades
  * with the formulas of three.js's `MeshStandardMaterial`. The unlit material shows its color as
@@ -882,7 +1069,15 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
  * @category api/materials
  */
 export class Materials {
-	constructor(private readonly core: CoreMemory) {}
+	/** The render pipeline template of each custom material's compiled WGSL. */
+	private readonly templates = new WeakMap<CompiledWgsl, number>();
+	private nextTemplate = SHADING_CUSTOM_FIRST;
+
+	constructor(
+		private readonly core: CoreMemory,
+		/** Sends each custom material's shader to the thread that draws, once. */
+		private readonly sendShader: ShaderSender = () => {},
+	) {}
 
 	/**
 	 * @internal Creates a material that shades as the engine core's shading code says, with the
@@ -893,6 +1088,11 @@ export class Materials {
 		options: StandardOptions & UnlitOptions,
 		call: string,
 	): Material<Values> {
+		return new Material<Values>(this.createId(shading, options, call), this.core, `${call}.set`);
+	}
+
+	/** Creates a material in the engine core, with its standard options, and returns its id. */
+	private createId(shading: number, options: StandardOptions, call: string): number {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
 		const emissive = linearOrNone(options.emissive, call);
 		if (DEV) {
@@ -920,7 +1120,7 @@ export class Materials {
 				true,
 			);
 		}
-		return new Material<Values>(id, core, `${call}.set`);
+		return id;
 	}
 
 	/**
@@ -939,6 +1139,59 @@ export class Materials {
 	unlit(options: UnlitOptions = {}): Material<UnlitValues> {
 		const shading = options.map ? SHADING_UNLIT_MAP : SHADING_UNLIT;
 		return this.create<UnlitValues>(shading, options, 'materials.unlit');
+	}
+
+	/**
+	 * A custom material: the standard material with a surface function in WGSL, which changes how
+	 * each pixel of the surface looks before the engine lights it. It takes every option of
+	 * `materials.standard` but the texture maps, and the first values of the uniforms that its WGSL
+	 * declares. `set` changes the standard values and the uniforms. Meshes need texture coordinates
+	 * to draw with it. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a
+	 * whole shader with entry points. Throws E1216 for a uniform that the WGSL does not declare, for
+	 * a value of the wrong kind, and for a uniform named as a standard value, such as `color`.
+	 */
+	shader(options: ShaderOptions): Material<ShaderValues> {
+		const call = 'materials.shader';
+		const compiled = this.compiledMaterial(options.wgsl, call);
+		const uniforms = new Map(compiled.uniforms.map((u) => [u.name, u]));
+		for (const name of uniforms.keys())
+			if (STANDARD_VALUES.has(name))
+				throw new EngineError(
+					'E1216',
+					`${call}() got WGSL whose uniform ${name} has the name of a standard value. Rename the field of struct Uniforms.`,
+				);
+		const writes = uniformWrites(uniforms, options.uniforms ?? {}, call);
+		const id = this.createId(this.templateOf(compiled), options, call);
+		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms);
+		material.write(writes);
+		return material;
+	}
+
+	/**
+	 * A custom material's compiled WGSL, or throws E1215 for WGSL that the plugin did not compile
+	 * and for a whole shader.
+	 */
+	private compiledMaterial(wgsl: string | CompiledWgsl, call: string): CompiledMaterial {
+		if (typeof wgsl !== 'object' || wgsl?.kind !== 'material') {
+			throw new EngineError(
+				'E1215',
+				typeof wgsl === 'object' && wgsl?.kind === 'shader'
+					? `${call}() got a whole shader with entry points. Custom materials take a surface function, without entry points.`
+					: `${call}() got WGSL as ${typeof wgsl === 'string' ? 'text' : String(wgsl)}, which the null3D Vite plugin did not compile.`,
+			);
+		}
+		return wgsl as CompiledMaterial;
+	}
+
+	/** The template of a custom material's WGSL, which goes to the thread that draws once. */
+	private templateOf(compiled: CompiledMaterial): number {
+		let template = this.templates.get(compiled);
+		if (template === undefined) {
+			template = this.nextTemplate++;
+			this.templates.set(compiled, template);
+			this.sendShader(template, compiled.variants);
+		}
+		return template;
 	}
 }
 
