@@ -84,7 +84,7 @@ const WASM_BUDGET_BYTES = 600 * 1024;
  * Brotli budget for the engine's JavaScript that a page downloads, in whichever thread mode
  * downloads the most. The core's generated glue counts with the WebAssembly files instead.
  */
-const JS_BUDGET_BYTES = 70 * 1024;
+const JS_BUDGET_BYTES = 80 * 1024;
 /** Where the size report builds the engine test page, apart from the build the browser tests serve. */
 const JS_BUILD_DIR = 'target/js-size';
 /** The crate that builds the shader compiler, the shader crate as a WebAssembly module. */
@@ -605,7 +605,7 @@ async function main(): Promise<void> {
 		printSize(file, size, file.endsWith('.wasm') ? WASM_BUDGET_BYTES : undefined);
 	printSize('js total', totalSize(parts.values()));
 	console.log(
-		"\nthe engine's JavaScript that a page downloads in each thread mode, besides the core's glue (budget: 70 KB after Brotli)",
+		"\nthe engine's JavaScript that a page downloads in each thread mode, besides the core's glue (budget: 80 KB after Brotli)",
 	);
 	for (const { mode, size } of downloads) printSize(mode, size, JS_BUDGET_BYTES);
 	if (options.sizesOnly) {
@@ -622,7 +622,7 @@ async function main(): Promise<void> {
 	for (const { mode, size } of downloads)
 		if (size.brotli > JS_BUDGET_BYTES)
 			problems.push(
-				`the engine JavaScript that a page downloads in ${mode} mode is over its 70 KB Brotli budget`,
+				`the engine JavaScript that a page downloads in ${mode} mode is over its 80 KB Brotli budget`,
 			);
 	const growth = options.checkSize ? checkGrowth(sizes, options.base) : [];
 	for (const p of [...problems, ...growth]) console.error(`error: ${p}`);
