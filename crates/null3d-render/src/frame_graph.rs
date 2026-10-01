@@ -20,6 +20,10 @@
 //! scene color and depth, after the camera's opaque pass and in its render pass. It is on only in
 //! frames with lines, so the plan of a frame without them has no such pass.
 //!
+//! Each view has a transparent pass too, which draws the view's blended objects back to front
+//! (see [`crate::sorted`]) over its opaque objects and the debug lines, in the same render pass.
+//! The transparent passes are on only while some object blends.
+//!
 //! Two passes can take the scene color to the canvas, and the scene color's format and the
 //! anti-aliasing mode pick one (see [`crate::output`]). On the HDR path the final pass samples the
 //! scene color and draws the canvas: it applies the exposure and the tone mapping, and encodes the
@@ -125,6 +129,8 @@ pub(crate) enum Role {
     Shadow(ViewId),
     /// Draws the frame's debug lines into the camera's view.
     DebugLines,
+    /// Draws a view's blended objects, back to front, over its opaque ones.
+    Transparent(ViewId),
     /// Resolves the scene color into the canvas on the 8-bit path. It records nothing: the color
     /// attachment of its render pass resolves.
     Resolve,
@@ -176,6 +182,10 @@ pub(crate) struct FrameGraph {
     views: usize,
     /// The debug lines pass, once the passes are declared.
     debug_lines: Option<PassId>,
+    /// Each view's transparent pass, by view.
+    transparent: Vec<PassId>,
+    /// True while the transparent passes are on.
+    transparent_on: bool,
     /// The id of the texture that holds the plan's first texture. The others follow it.
     first_texture: u32,
     /// Each texture of the plan that the draw lists made, with the size it was made at.
@@ -228,6 +238,8 @@ impl FrameGraph {
             final_runs: scene_color.is_hdr() || antialias != Antialias::Msaa,
             views: 0,
             debug_lines: None,
+            transparent: Vec::new(),
+            transparent_on: false,
             first_texture: ids.first_texture,
             made: Vec::new(),
             textures_made: false,
@@ -313,6 +325,15 @@ impl FrameGraph {
         }
     }
 
+    /// Switches the views' transparent passes on while some object blends, and off otherwise. The
+    /// graph compiles again only when that changes.
+    pub(crate) fn set_transparent(&mut self, on: bool) {
+        self.transparent_on = on;
+        for &pass in &self.transparent {
+            self.graph.set_enabled(pass, on);
+        }
+    }
+
     fn add(&mut self, pass: Pass, role: Role) -> PassId {
         self.roles.push(role);
         self.graph.add_pass(pass)
@@ -320,11 +341,13 @@ impl FrameGraph {
 
     /// Declares the engine's passes for `views`: each view's culling pass on WebGPU, each shadow
     /// cascade's culling and shadow passes, each view's opaque pass, the debug lines pass, which
-    /// is off, then the resolve pass and the final pass, of which one runs.
+    /// is off, each view's transparent pass, then the resolve pass and the final pass, of which one
+    /// runs.
     fn declare(&mut self, views: &[View]) {
         self.graph.clear();
         self.roles.clear();
         self.opaque.clear();
+        self.transparent.clear();
         self.shadow_passes.clear();
         let color = Target::color(self.scene_color.format()).samples(self.samples);
         let depth = Target::depth(DEPTH_FORMAT).samples(self.samples);
@@ -369,6 +392,17 @@ impl FrameGraph {
         let lines = self.add(lines, Role::DebugLines);
         self.graph.set_enabled(lines, false);
         self.debug_lines = Some(lines);
+        for index in 0..views.len() {
+            let pass = Pass::new(
+                view_name(index, "Transparent", "Transparent"),
+                PassKind::Scene,
+            )
+            .writes(view_name(index, SCENE_COLOR, "color"))
+            .writes(view_name(index, SCENE_DEPTH, "depth"));
+            let pass = self.add(pass, Role::Transparent(ViewId::from_index(index)));
+            self.graph.set_enabled(pass, self.transparent_on);
+            self.transparent.push(pass);
+        }
         let resolve = Pass::new("Resolve", PassKind::Resolve)
             .reads(SCENE_COLOR)
             .writes(CANVAS);
@@ -748,6 +782,8 @@ mod tests {
             "Opaque",
             "Opaque1",
             "DebugLines",
+            "Transparent",
+            "Transparent1",
             "Resolve",
             "Final",
         ];
@@ -763,11 +799,13 @@ mod tests {
                 Role::Opaque(ViewId::CAMERA),
                 Role::Opaque(ViewId::from_index(1)),
                 Role::DebugLines,
+                Role::Transparent(ViewId::CAMERA),
+                Role::Transparent(ViewId::from_index(1)),
                 Role::Resolve,
                 Role::Final,
             ]
         );
-        for off in ["DebugLines", "Final"] {
+        for off in ["DebugLines", "Transparent", "Transparent1", "Final"] {
             assert!(!graph.is_enabled(graph.find_pass(off).unwrap()), "{off}");
         }
         assert!(graph.is_enabled(graph.find_pass("Resolve").unwrap()));
@@ -776,7 +814,7 @@ mod tests {
         // The WebGL2 path culls on the job workers, so its graph has no culling passes.
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
         frames.sync_views(&[View::default()]);
-        assert_eq!(frames.graph().pass_count(), 4);
+        assert_eq!(frames.graph().pass_count(), 5);
         assert_eq!(frames.roles[0], Role::Opaque(ViewId::CAMERA));
     }
 
@@ -1010,5 +1048,41 @@ mod tests {
         list.clear();
         frames.prepare(&mut list, (64, 64)).unwrap();
         assert_eq!(operands(&list, Op::CreateTextureView), [[129, 1, 0, 0]]);
+    }
+
+    #[test]
+    fn transparent_passes_draw_last_in_each_view_render_pass_while_something_blends() {
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
+        frames.sync_views(&[View::default(), View::default()]);
+        let mut list = DrawList::with_capacity(256);
+        frames.set_debug_lines(true);
+        frames.set_transparent(true);
+        frames.prepare(&mut list, (64, 64)).unwrap();
+        assert_eq!(
+            steps(&frames),
+            [
+                vec!["Culling", "Culling1"],
+                vec!["Opaque", "DebugLines", "Transparent", "Resolve"],
+                vec!["Opaque1", "Transparent1"]
+            ],
+            "blended objects draw over the opaque ones and the lines, before the color resolves"
+        );
+        // Views declared later take the passes' state.
+        frames.sync_views(&[View::default(); 3]);
+        frames.prepare(&mut list, (64, 64)).unwrap();
+        assert_eq!(steps(&frames)[3], ["Opaque2", "Transparent2"]);
+        frames.set_transparent(false);
+        frames.prepare(&mut list, (64, 64)).unwrap();
+        assert_eq!(steps(&frames)[3], ["Opaque2"]);
+
+        // On the HDR path the final pass reads the scene color after the blended objects.
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync_views(&[View::default()]);
+        frames.set_transparent(true);
+        frames.prepare(&mut list, (64, 64)).unwrap();
+        assert_eq!(
+            &steps(&frames)[1..],
+            [vec!["Opaque", "Transparent"], vec!["Final"]]
+        );
     }
 }

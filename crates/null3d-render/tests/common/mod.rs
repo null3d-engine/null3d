@@ -3,6 +3,7 @@
 //! `graph` module declares the engine's render passes for the render graph tests.
 #![allow(dead_code)]
 
+pub mod blended;
 pub mod graph;
 
 use std::f64::consts::{PI, TAU};
@@ -367,6 +368,7 @@ pub fn map_desc(size: u32) -> TextureDesc {
         depth: 1,
         format: format::RGBA8_UNORM_SRGB,
         mipmaps: true,
+        levels: 1,
         sampling: Sampling::default(),
     }
 }

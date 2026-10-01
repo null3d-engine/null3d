@@ -8,15 +8,17 @@
 // start to the end of the samples, it moves the mouse over the canvas and presses a key and the
 // mouse button, so the samples cover the sketch's reading of input. It draws with WebGPU, or with
 // WebGL2 when `--gpu webgl2` asks for it. `--scene s1-cells` runs S1-cells, whose views skip whole
-// grid cells, and `--scene s3` runs S3, whose 256 point lights move every frame. It samples the
-// production build of the benchmark pages, as a developer ships the engine, and names the build's
-// functions through its source maps; `--dev`
-// samples the dev server's pages, with the engine's development checks. From the repository root:
+// grid cells, and `--scene s3` runs S3, whose 256 point lights move every frame. `--blend` makes
+// S1's boxes see through, so each frame sorts every visible row for the transparent pass. It
+// samples the production build of the benchmark pages, as a developer ships the engine, and names
+// the build's functions through its source maps; `--dev` samples the dev server's pages, with the
+// engine's development checks. From the repository root:
 //   bun run bench:allocation
 //   bun run bench:allocation --n 30000 --seconds 5 --warmup 30
 //   bun run bench:allocation --gpu webgl2
 //   bun run bench:allocation --scene s1-cells --gpu webgl2
 //   bun run bench:allocation --scene s3
+//   bun run bench:allocation --blend --n 30000 --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
@@ -157,7 +159,8 @@ async function main(): Promise<void> {
 		// The page's own measurement starts after the sampling ends, so its timers stay off.
 		const pageSeconds = warmup + seconds * SAMPLES + 60;
 		const kind = gpu === 'webgl2' ? 'null3d-webgl2' : 'null3d-webgpu';
-		const url = `${server.url}${pagePath(scene, kind, `seconds=${pageSeconds}&n=${n}`)}`;
+		const blend = args.includes('--blend') ? '&blend' : '';
+		const url = `${server.url}${pagePath(scene, kind, `seconds=${pageSeconds}&n=${n}${blend}`)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
 		await page.evaluate(() => {

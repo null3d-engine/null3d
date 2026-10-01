@@ -15,9 +15,10 @@
 use std::ops::Range;
 
 use null3d_core::handle::Handle;
-use null3d_gpu::drawlist::{sizes, template, vertex};
+use null3d_gpu::drawlist::{sizes, state_flags, template, vertex};
 
 use crate::pipelines::DepthBias;
+use crate::textures::Premultiplied;
 
 /// How a material shades.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -77,10 +78,17 @@ pub mod feature {
     pub const FLAT_SHADING: u32 = 4;
     /// Fragments whose alpha is below the material's cutoff draw nothing: glTF's alpha mode `MASK`.
     pub const ALPHA_MASK: u32 = 8;
+    /// The surface blends over what lies behind it, in the transparent pass that draws such
+    /// surfaces back to front: glTF's alpha mode `BLEND`. It wins over [`ALPHA_MASK`].
+    pub const BLEND: u32 = 16;
     /// The surface writes no depth.
     pub const NO_DEPTH_WRITE: u32 = 32;
     /// The surface draws whatever the depth target holds, and writes no depth.
     pub const NO_DEPTH_TEST: u32 = 64;
+    /// With [`BLEND`], the surface's light adds to what lies behind it.
+    pub const ADDITIVE: u32 = 128;
+    /// With [`BLEND`], the surface tints what lies behind it. It wins over [`ADDITIVE`].
+    pub const MULTIPLY: u32 = 256;
     /// The scene's fog leaves the material's color as it is.
     pub const NO_FOG: u32 = 1024;
     /// Every feature.
@@ -88,26 +96,56 @@ pub mod feature {
         | VERTEX_COLORS
         | FLAT_SHADING
         | ALPHA_MASK
+        | BLEND
         | NO_DEPTH_WRITE
         | NO_DEPTH_TEST
+        | ADDITIVE
+        | MULTIPLY
         | NO_FOG;
+}
+
+/// The blend state of a material's features (`state_flags::BLEND_*`), or 0 for a material that
+/// does not blend.
+pub const fn blend_state(features: u32) -> u32 {
+    if features & feature::BLEND == 0 {
+        0
+    } else if features & feature::MULTIPLY != 0 {
+        state_flags::BLEND_MULTIPLY
+    } else if features & feature::ADDITIVE != 0 {
+        state_flags::BLEND_ADDITIVE
+    } else {
+        state_flags::BLEND_NORMAL
+    }
 }
 
 /// Bits of a row's flags, which shaders test with no cost worth a shader variant.
 pub mod flag {
     /// The shader lights each triangle with its face's normal.
     pub const FLAT_SHADING: u32 = 1;
+    /// The shader writes its color times its alpha, beside the alpha, as premultiplied blending
+    /// reads them. Other shaders write an alpha of 1.
+    pub const BLEND: u32 = 2;
     /// The shader skips the scene's fog.
     pub const NO_FOG: u32 = 4;
+    /// The base color map holds sRGB colors that were multiplied by their alpha while encoded, so
+    /// a material that blends divides them by it again before it uses them.
+    pub const MAP_PREMULTIPLIED: u32 = 8;
+    /// With `MAP_PREMULTIPLIED`, the base color map holds linear colors instead, multiplied by
+    /// their alpha.
+    pub const MAP_LINEAR: u32 = 16;
     /// The map of slot `s` reads the second texture coordinates when bit `SECOND_UV << s` is set.
     pub const SECOND_UV: u32 = 256;
 }
 
-/// The row flags (`flag::*` bits) of a material with `features` (`feature::*` bits).
+/// The row flags (`flag::*` bits) of a material with `features` (`feature::*` bits). The base
+/// color map's flag comes later, from its texels.
 const fn row_flags(features: u32) -> u32 {
     let mut flags = 0;
     if features & feature::FLAT_SHADING != 0 {
         flags |= flag::FLAT_SHADING;
+    }
+    if features & feature::BLEND != 0 {
+        flags |= flag::BLEND;
     }
     if features & feature::NO_FOG != 0 {
         flags |= flag::NO_FOG;
@@ -413,20 +451,24 @@ impl MaterialTable {
 
     /// Writes each map's layer into its row when a map changed, or when `layers_changed` says
     /// that a texture's layer became ready or stopped drawing. `ready_layer` gives the layer of a
-    /// texture whose image is on the GPU. Only rows whose layers differ count as changed.
+    /// texture whose image is on the GPU, and `premultiplied` says whether that image holds colors
+    /// multiplied by their alpha, which the row's flags then say for the base color map. Only rows
+    /// whose layers or flags differ count as changed.
     pub fn update_map_layers(
         &mut self,
         layers_changed: bool,
         ready_layer: impl Fn(Handle) -> Option<u32>,
+        premultiplied: impl Fn(Handle) -> Premultiplied,
     ) {
         if !std::mem::take(&mut self.maps_changed) && !layers_changed {
             return;
         }
         for id in 0..self.len() {
             let maps = self.maps[id as usize];
-            let at = id as usize * MATERIAL_FLOATS + param::MAP_LAYERS;
+            let row = &mut self.rows[id as usize * MATERIAL_FLOATS..][..MATERIAL_FLOATS];
             let mut changed = false;
-            for (layer, map) in self.rows[at..at + MAP_SLOTS].iter_mut().zip(maps) {
+            let layers = &mut row[param::MAP_LAYERS..param::MAP_LAYERS + MAP_SLOTS];
+            for (layer, map) in layers.iter_mut().zip(maps) {
                 let ready = if map.is_none() {
                     None
                 } else {
@@ -436,6 +478,21 @@ impl MaterialTable {
                 changed |= *layer != value;
                 *layer = value;
             }
+            // The base color map's texels decide whether its colors are premultiplied.
+            let base = maps[MapSlot::BaseColor as usize];
+            let base_flags = if row[param::MAP_LAYERS] == NO_MAP {
+                0
+            } else {
+                match premultiplied(base) {
+                    Premultiplied::No => 0,
+                    Premultiplied::Srgb => flag::MAP_PREMULTIPLIED,
+                    Premultiplied::Linear => flag::MAP_PREMULTIPLIED | flag::MAP_LINEAR,
+                }
+            };
+            let map_flags = flag::MAP_PREMULTIPLIED | flag::MAP_LINEAR;
+            let flags = ((row[param::FLAGS] as u32 & !map_flags) | base_flags) as f32;
+            changed |= row[param::FLAGS] != flags;
+            row[param::FLAGS] = flags;
             if changed {
                 self.mark_row(id);
             }
@@ -684,7 +741,7 @@ mod tests {
         );
         assert_eq!(table.maps(waiting)[MapSlot::Emissive as usize], on_its_way);
         table.take_changed();
-        table.update_map_layers(false, layer);
+        table.update_map_layers(false, layer, |_| Premultiplied::No);
         assert_eq!(
             table.take_changed(),
             Some(mapped..mapped + 1),
@@ -692,13 +749,29 @@ mod tests {
         );
         assert_eq!(layers(&table, mapped), [7.0, -1.0, -1.0, -1.0, -1.0, -1.0]);
         assert_eq!(layers(&table, waiting), [NO_MAP; MAP_SLOTS]);
-        table.update_map_layers(false, layer);
+        table.update_map_layers(false, layer, |_| Premultiplied::No);
         assert_eq!(table.take_changed(), None, "nothing changed");
         // A texture whose layer became ready writes the layers again.
         let both = |_: Handle| Some(3);
-        table.update_map_layers(true, both);
+        table.update_map_layers(true, both, |_| Premultiplied::No);
         assert_eq!(table.take_changed(), Some(mapped..waiting + 1));
         assert_eq!(layers(&table, waiting)[MapSlot::Emissive as usize], 3.0);
+        // A premultiplied base color map's encoding sets the flags; an emissive map's does not.
+        let map_flags = |table: &MaterialTable, id| {
+            row(table, id)[param::FLAGS] as u32 & (flag::MAP_PREMULTIPLIED | flag::MAP_LINEAR)
+        };
+        for (premultiplied, flags) in [
+            (Premultiplied::Srgb, flag::MAP_PREMULTIPLIED),
+            (
+                Premultiplied::Linear,
+                flag::MAP_PREMULTIPLIED | flag::MAP_LINEAR,
+            ),
+            (Premultiplied::No, 0),
+        ] {
+            table.update_map_layers(true, both, |_| premultiplied);
+            assert_eq!(map_flags(&table, mapped), flags, "{premultiplied:?}");
+            assert_eq!(map_flags(&table, waiting), 0);
+        }
         assert_eq!(
             table.set_map(9, MapSlot::BaseColor, ready, false),
             Err(MaterialError::Unknown(9))

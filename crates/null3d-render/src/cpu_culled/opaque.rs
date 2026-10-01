@@ -404,6 +404,29 @@ impl Opaque {
         Ok(())
     }
 
+    /// Binds a view's frame group, with the light textures of the ring slot `light_slot`, and its
+    /// instance textures for the frame being recorded, as the view's scene passes draw from them.
+    pub(super) fn bind_view(
+        &self,
+        list: &mut DrawList,
+        view: ViewId,
+        light_slot: u32,
+    ) -> Result<(), RecordError> {
+        let slots = self.views[view.index()].slots;
+        let frame_slot = self.frame_slot(view);
+        let group = ids::frame_group(view) + light_slot;
+        list.push(Op::SetBindGroup, &[0, group, 2, frame_slot, frame_slot])?;
+        let instances = ids::instances_group(view) + slots.streamed * RING + slots.listed;
+        list.push(Op::SetBindGroup, &[2, instances, 0])?;
+        Ok(())
+    }
+
+    /// Where the transparent pass's draw records start in the buffer of a view's draw records,
+    /// for the frame being recorded.
+    pub(super) fn sorted_records_at(&self, view: ViewId, layout: &Layout) -> u32 {
+        self.views[view.index()].slots.listed * layout.draws_slot_bytes + layout.sorted_records_at
+    }
+
     /// Records a view's opaque pass inside the render pass that the render graph began: every
     /// draw whose bucket has visible instances, where the index list of bucket `b` starts at
     /// `starts[b]`, from its mesh page's buffers in `meshes`, the ring slots that
@@ -425,19 +448,7 @@ impl Opaque {
         let shift = |d: usize| buckets[draws[d].bucket as usize].shift;
         let stride = record_stride(multi_draw);
         let slot = slots.listed * layout.draws_slot_bytes;
-        let frame_slot = self.frame_slot(view);
-        list.push(
-            Op::SetBindGroup,
-            &[
-                0,
-                ids::frame_group(view) + light_slot,
-                2,
-                frame_slot,
-                frame_slot,
-            ],
-        )?;
-        let instances = ids::instances_group(view) + slots.streamed * RING + slots.listed;
-        list.push(Op::SetBindGroup, &[2, instances, 0])?;
+        self.bind_view(list, view, light_slot)?;
         let mut pipeline = None;
         let mut textures = 0;
         let mut run = usize::MAX;

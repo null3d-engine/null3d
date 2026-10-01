@@ -2,14 +2,15 @@
 //! frame builder records frames of a scene whose batch moves every frame. It counts only the test
 //! thread, so the test runner's own work on other threads cannot reach the count. Frames whose
 //! structure changes allocate nothing either, on either frame parity, until the scene grows, and
-//! neither do frames that draw debug lines or stop drawing them, or that draw a texture background.
-//! The render graph allocates nothing while it stays the same, nor when passes switch on and off
-//! after it has compiled once. The job workers and the calling thread assign moving lights to the
-//! light grid without allocating.
+//! neither do frames that draw debug lines or stop drawing them, that draw a texture background,
+//! or that sort blended objects whose order changes. The render graph allocates nothing while it
+//! stays the same, nor when passes switch on and off after it has compiled once. The job workers
+//! and the calling thread assign moving lights to the light grid without allocating.
 #![allow(clippy::disallowed_methods)] // Native job workers are threads.
 
 mod common;
 
+use common::blended::add_scene;
 use common::graph::{CASCADES, engine_passes};
 use common::{World, base_sphere, grid};
 use null3d_core::jobs::JobSystem;
@@ -268,6 +269,33 @@ fn webgl2_static_batches_coming_to_rest_allocate_nothing() {
     }
 }
 
+/// Records warm-up frames of a world with blended objects and a second view, then frames in
+/// which the blended rows pass each other and a blended object moves, so the sorted order and
+/// its runs change, and frames whose structure changes. Returns what those allocated.
+fn sorted_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    let blended = add_scene(&mut world);
+    world.add_view([5.0, 0.0, 6.0]);
+    world.record(true);
+    let sort_frames = |world: &mut World<B>, last: u32| {
+        while world.frame < last {
+            world.frame += 1;
+            let frame = world.frame;
+            let rows = world.batches.get_mut(blended.batch).unwrap();
+            rows.positions_mut()[2] = (frame % 11) as f32 - 5.0;
+            rows.mark_dirty(0, 1).unwrap();
+            world
+                .scene
+                .set_position(blended.box_object, [0.0, 0.0, (frame % 7) as f32 - 3.0])
+                .unwrap();
+            world.record(frame.is_multiple_of(9));
+        }
+    };
+    sort_frames(&mut world, 20);
+    CountingAllocator::arm();
+    sort_frames(&mut world, 120);
+    CountingAllocator::disarm()
+}
+
 /// Records frames of a world spread over grid cells whose camera turns and moves, so each frame
 /// sees other cells. Every eighth frame a still object and a still row move into another cell and
 /// back, which builds the cell order again. The camera's path repeats every 24 frames, so the
@@ -303,6 +331,20 @@ fn spread_allocations<B: FrameBuilder>(renderer: B) -> u64 {
         step(&mut world);
     }
     CountingAllocator::disarm()
+}
+
+#[test]
+fn sorting_blended_objects_allocates_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(sorted_allocations(World::new()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        assert_eq!(
+            sorted_allocations(webgl2_world(multi_draw)),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
+    }
 }
 
 #[test]
