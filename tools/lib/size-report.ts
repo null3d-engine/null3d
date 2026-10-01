@@ -52,15 +52,27 @@ export interface EnginePart {
  * worker, so a page downloads it only for the thread that draws. The sketch runner and the scene API
  * load on demand on the page, which runs the sketch only in single-threaded mode. The KTX2 loader
  * loads on demand in the thread that runs the sketch, when the sketch loads its first KTX2 file.
+ * The preset check loads after the first frame, in the thread that runs the sketch, so no download
+ * before the first frame counts it.
  */
 export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page.js', module: 'page/engine.ts' },
 	{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
+	{
+		name: 'page-preset-check.js',
+		module: 'sketch/preset-check.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
 	{ name: 'sketch-worker.js', module: 'workers/sketch-worker.ts' },
 	{ name: 'sketch-worker-renderer.js', module: 'render/draw.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
+	{
+		name: 'sketch-worker-preset-check.js',
+		module: 'sketch/preset-check.ts',
+		loadedBy: 'sketch-worker.js',
+	},
 	{ name: 'render-worker.js', module: 'workers/render-worker.ts' },
 	{ name: 'job-worker.js', module: 'workers/job-worker.ts' },
 	{ name: 'probe-worker.js', module: 'workers/probe-worker.ts' },

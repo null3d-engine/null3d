@@ -1,9 +1,12 @@
 // The GPU-bound page's scene: layers of detailed spheres in a grid that fills the view. The page's
-// `load` message shows the first n spheres, and the sketch answers once it has. The spheres never
-// move, so a frame's CPU work stays small at every count, and a large count leaves the GPU the
-// slowest part of each frame.
+// `load` message shows the first n spheres, and the sketch answers once it has. `?spheres=` in the
+// sketch's address shows that many from the setup on. The spheres never move, so a frame's CPU
+// work stays small at every count, and a large count leaves the GPU the slowest part of each frame.
 import { defineSketch } from '@null3d/engine';
 import { OVERLOAD_SCENE, OVERLOAD_SPHERES } from '../lib/overload';
+
+/** The spheres that the setup shows. */
+const SHOWN = Number(new URL(import.meta.url).searchParams.get('spheres') ?? 0);
 
 export default defineSketch(({ scene, materials, geometry, page }) => {
 	const { side, layers, widthSegments, heightSegments } = OVERLOAD_SCENE;
@@ -34,7 +37,7 @@ export default defineSketch(({ scene, materials, geometry, page }) => {
 		scales.fill(1, i * 3, i * 3 + 3);
 	}
 	spheres.markDirty();
-	spheres.setActiveCount(0);
+	spheres.setActiveCount(Math.min(SHOWN, OVERLOAD_SPHERES));
 	page.onMessage((name, data) => {
 		if (name !== 'load') return;
 		spheres.setActiveCount(Math.min(Number(data), OVERLOAD_SPHERES));

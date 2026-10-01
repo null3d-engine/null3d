@@ -89,6 +89,8 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 - Pixel ratio is the largest GPU lever: a ratio of 3 draws 2.25 times the pixels of a ratio of 2. Presets cap it; do not raise the cap on phones.
 - The engine starts phones and tablets on lighter presets than desktops. WebGL2 and WebGPU's compatibility mode run at most Medium. The page reads the preset in `engine.mode.preset`, and `?preset=low` fixes one for a test (`concepts/quality-presets`).
 - After a start that crashed the tab, the engine starts one preset lower, and at Low after two. A phone that ran out of memory shows it in `engine.mode.crashedStarts`.
+- The preset check measures the scene that the setup built, then lowers the preset where the GPU misses the frame rate. Build the first view and load its textures in the setup, or the check measures an empty scene. `engine.mode.presetCheck` shows what it measured (`concepts/quality-presets`).
+- A player's preset choice goes through `quality.setPreset`. It waits for the new preset's pipelines behind the last frame, so call it from a menu or a loading screen. The `skippedDraws` figure of `engine.measure()` counts draws that a building pipeline kept from drawing. It stays at 0 when warm-ups come first.
 - Shadows (later in 0.1): one cascade on Low, two on Medium. Each shadowed point light draws the scene six times; avoid them on phones.
 - Transparent and additive effects covering the screen (smoke, glass) cost the most on phone GPUs.
 - Memory is tight: a 4 GB iPad reports a 256 MB largest buffer and closes tabs that use too much. Share materials, destroy textures you no longer need, and load large textures from KTX2 files, which stay compressed on the GPU. Prefabs to free with `destroy()` come in 0.2.

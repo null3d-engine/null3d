@@ -300,6 +300,7 @@ export class Textures {
 		private readonly time: { readonly frame: number },
 		/** @internal The device's capability flags, which say what compressed formats it has. */
 		readonly capabilities: number,
+		private readonly ownBudget: () => void = () => {},
 	) {}
 
 	/**
@@ -576,10 +577,12 @@ export class Textures {
 
 	/**
 	 * @internal Sets the texel bytes that one frame may upload, in place of the quality setting's
-	 * value until the setting changes. Tests take budgets below the setting's range.
+	 * value until the sketch changes the setting or the preset. Tests take budgets below the
+	 * setting's range.
 	 */
 	setUploadBudget(bytes: number): void {
 		this.core.glue.setTextureOption(TEXTURE_OPTION_UPLOAD_BUDGET, bytes);
+		this.ownBudget();
 	}
 
 	/** @internal The texel bytes that one frame may upload, as the core holds it. */

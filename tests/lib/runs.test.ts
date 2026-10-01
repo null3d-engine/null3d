@@ -27,6 +27,7 @@ import {
 	memorySummary,
 	NO_RESULT,
 	NONE_MISSING,
+	overloadPlan,
 	PLANS,
 	parityPlan,
 	STARTUP_RUNS,
@@ -197,9 +198,18 @@ describe('the checks plan', () => {
 		if (!quality) throw new Error('the plan lacks the quality page');
 		expect(quality.path).toBe('/tests/pages/quality.html');
 		const tablet = { coarsePointer: true, screenMinEdge: 834, deviceMemoryGB: null };
-		const result = (preset: string) => ({
+		const round = (preset: string, fps: number) => ({
+			preset,
+			presentedFps: 60,
+			completedFps: fps,
+		});
+		const result = (preset: string, rounds = [round(preset, 60)]) => ({
 			ok: true,
-			mode: { preset, crashedStarts: 0 },
+			mode: {
+				preset: rounds.at(-1)?.preset,
+				presetCheck: { from: preset, targetFps: 60, rounds },
+				crashedStarts: 0,
+			},
 			tier: 'webgpu',
 			hints: tablet,
 		});
@@ -211,11 +221,28 @@ describe('the checks plan', () => {
 		};
 		expect(judge(quality.check, result('medium'), NONE_MISSING, context)).toEqual([]);
 		expect(notes).toEqual([
-			'quality preset medium on webgpu for a tablet (coarse pointer, smaller screen edge 834 px, no memory reading, 0 crashed starts)',
+			'quality preset medium on webgpu for a tablet (coarse pointer, smaller screen edge 834 px, no memory reading, 0 crashed starts); the preset check measured medium at 60 frames per second, against a target of 60; medium runs',
 		]);
 		expect(judge(quality.check, result('high'), NONE_MISSING, context)).toEqual([
-			'the engine ran the high preset, where the chooser gives medium',
+			'the engine chose the high preset, where the chooser gives medium',
 		]);
+
+		// The heavy scene's page: the check must lower the chosen preset.
+		const heavy = overloadPlan().find((item) => item.id === 'preset-check');
+		if (!heavy) throw new Error('the plan lacks the preset check page');
+		expect(heavy.path).toBe('/tests/pages/quality.html?spheres=32768');
+		const lowered = result('medium', [round('medium', 20), round('low', 25)]);
+		expect(judge(heavy.check, lowered, NONE_MISSING, context)).toEqual([]);
+		expect(judge(heavy.check, result('medium'), NONE_MISSING, context)).toEqual([
+			'the check kept medium for a scene too heavy for the GPU',
+		]);
+		// A phone starts at Low, which the engine does not check.
+		const phone = {
+			...result('low'),
+			mode: { preset: 'low', presetCheck: null, crashedStarts: 0 },
+			hints: { ...tablet, screenMinEdge: 412 },
+		};
+		expect(judge(heavy.check, phone, NONE_MISSING, context)).toEqual([]);
 	});
 
 	it('checks the formats of KTX2 files on both GPU paths, and notes what each device got', () => {
