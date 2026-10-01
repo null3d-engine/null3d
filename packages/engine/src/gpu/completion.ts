@@ -12,8 +12,10 @@ import { FrameRecorder, Role } from '../shared/metrics';
 /** Frames whose completion can be awaited at once; a frame that finds none free goes untracked. */
 const SLOTS = 8;
 /**
- * How long a frame may stay unfinished and still count as in flight, in ms. A completion that the
- * browser never reports then slows the drawing without stopping it.
+ * How long a frame may stay unfinished and still count as in flight, in ms, from its submit or from
+ * the latest completion, whichever came later. A frame that waits behind others on a slow GPU so
+ * keeps counting while the GPU finishes frames, and a completion that the browser never reports
+ * slows the drawing without stopping it.
  */
 const STALLED_MS = 1000;
 
@@ -47,6 +49,7 @@ class InFlight {
 	unfinished(): number {
 		if (this.head === this.tail) return 0;
 		const stalledBefore = performance.now() - STALLED_MS;
+		if (this.lastDone >= stalledBefore) return this.head - this.tail;
 		let oldest = this.tail;
 		while (oldest < this.head && (this.submitted[oldest % SLOTS] as number) < stalledBefore)
 			oldest++;

@@ -106,6 +106,21 @@ describe('the WebGL2 completion tracker', () => {
 		expect(completions.unfinished()).toBe(0);
 	});
 
+	it('counts the frames behind a completion for a second after it, however long they waited', () => {
+		const { gl, finish } = fakeGl();
+		const completions = new FenceCompletion(gl, createMetricsBuffer(false, 0));
+		completions.afterSubmit(1);
+		now = 100;
+		completions.afterSubmit(2);
+		now = 600;
+		finish(1);
+		expect(completions.unfinished()).toBe(1);
+		now = 1500;
+		expect(completions.unfinished()).toBe(1);
+		now = 1601;
+		expect(completions.unfinished()).toBe(0);
+	});
+
 	it('leaves a frame untracked when every slot holds an unfinished one', () => {
 		const { gl, fences } = fakeGl();
 		const completions = new FenceCompletion(gl, createMetricsBuffer(false, 0));
@@ -137,8 +152,9 @@ describe('the WebGPU completion tracker', () => {
 describe('the frame windows that the quality governor reads', () => {
 	/**
 	 * A GPU that finishes one frame every `gpuMs`, fed by a thread that submits a frame whenever
-	 * fewer than two are unfinished, at each callback of a 60 Hz display. Returns the completed rate
-	 * and the mean time from submit to completion in each one-second window.
+	 * fewer than two are unfinished, at each callback of a 60 Hz display. Returns the frames
+	 * submitted, the completed rate, and the mean and longest time from submit to completion in each
+	 * one-second window.
 	 */
 	async function windows(gpuMs: number, seconds: number) {
 		const metrics = createMetricsBuffer(false, 0);
@@ -146,8 +162,9 @@ describe('the frame windows that the quality governor reads', () => {
 		const { queue, finish } = fakeQueue();
 		const completions = new QueueCompletion(queue, metrics);
 		const callbackMs = 1000 / 60;
-		const results: { fps: number; latencyMs: number }[] = [];
+		const results: { submitted: number; fps: number; latencyMs: number; longestMs: number }[] = [];
 		let frame = 0;
+		let submittedBefore = 0;
 		let nextDone = Number.POSITIVE_INFINITY;
 		for (let callback = 1; callback <= seconds * 60; callback++) {
 			const at = callback * callbackMs;
@@ -166,9 +183,12 @@ describe('the frame windows that the quality governor reads', () => {
 			if (callback % 60 === 0) {
 				const s = sums.sums;
 				results.push({
+					submitted: frame - submittedBefore,
 					fps: (1000 * (s[SUM_RECORDS] as number)) / (s[SUM_INTERVAL_MS] as number),
 					latencyMs: (s[SUM_BUSY_MS] as number) / (s[SUM_RECORDS] as number),
+					longestMs: s[SUM_LONGEST_BUSY_MS] as number,
 				});
+				submittedBefore = frame;
 				sums.clear();
 			}
 		}
@@ -190,5 +210,19 @@ describe('the frame windows that the quality governor reads', () => {
 			expect(latencyMs).toBeGreaterThan(40);
 			expect(latencyMs).toBeLessThan(80);
 		}
+	});
+
+	it('holds two frames in flight when each takes most of a second', async () => {
+		const gpuMs = 600;
+		const results = (await windows(gpuMs, 10)).slice(1);
+		let submitted = 0;
+		let completed = 0;
+		for (const { submitted: frames, fps, longestMs } of results) {
+			submitted += frames;
+			completed += fps;
+			expect(longestMs).toBeLessThanOrEqual(2 * gpuMs);
+		}
+		// The thread submits frames no faster than the GPU finishes them.
+		expect(Math.abs(submitted - completed)).toBeLessThan(1);
 	});
 });
