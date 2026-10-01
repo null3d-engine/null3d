@@ -248,6 +248,8 @@ export interface CoreGlue extends CoreErrors {
 	setBackground(r: number, g: number, b: number): number;
 	/** The tone mapping, by code, and the exposure, from the next frame on. */
 	setOutput(toneMapping: number, exposure: number): number;
+	/** Draws the texture `texture` behind every object in the camera's view, or none with 0. */
+	setBackgroundTexture(texture: number): number;
 	/**
 	 * The scene's fog: its kind (`FOG_KIND_*`), its linear color, the near and far distances of
 	 * linear fog, and the density of exponential squared fog.
@@ -324,6 +326,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setLightValue',
 	'setBackground',
 	'setOutput',
+	'setBackgroundTexture',
 	'setFog',
 ];
 

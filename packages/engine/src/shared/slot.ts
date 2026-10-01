@@ -73,3 +73,9 @@ export const PipelinesBuilt = 24;
  * capped by the `maxPixelRatio` quality setting.
  */
 export const PixelRatio = 25;
+/**
+ * The first frame of a quality preset change, whose pipelines and targets may all be new. From
+ * that frame on, the thread that draws holds each frame until its pipelines are built, as it does
+ * the first frame, and the previous frame stays on screen meanwhile.
+ */
+export const PipelineHold = 26;

@@ -386,8 +386,7 @@ export class Geometry {
 	constructor(private readonly core: CoreMemory) {}
 
 	private mesh(id: number, call: string): MeshGeometry {
-		this.core.check(id, call);
-		this.core.refresh();
+		this.core.checkGrowth(id, call);
 		return new MeshGeometry(id, this.core.glue.meshRadius(id), this.core);
 	}
 
@@ -1076,7 +1075,7 @@ export class Materials {
 		const features = featureBits(options);
 		const { constant = 0, slopeScale = 0 } = options.depthBias ?? {};
 		const { core } = this;
-		const id = core.check(
+		const id = core.checkGrowth(
 			core.glue.createMaterial(shading, features, r, g, b, opacity, constant, slopeScale),
 			call,
 		);
@@ -1086,7 +1085,12 @@ export class Materials {
 			const map = options[key];
 			if (!map) continue;
 			const second = map.uvSet === 1 ? 1 : 0;
-			core.check(core.glue.setMaterialMap(id, slot, map.handle, second), call, undefined, true);
+			core.checkGrowth(
+				core.glue.setMaterialMap(id, slot, map.handle, second),
+				call,
+				undefined,
+				true,
+			);
 		}
 		return id;
 	}

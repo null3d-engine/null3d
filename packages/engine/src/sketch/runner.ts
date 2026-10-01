@@ -10,7 +10,12 @@
 // Math.random to it, steps the sketch to the held time in fixed steps after the setup, and publishes
 // the last frame alone. Hold mode reads no input, so the held frame never depends on it. In
 // development builds, the frame's debug drawing reaches the core just before the frame records;
-// release builds give the sketch calls that do nothing.
+// release builds give the sketch calls that do nothing. Each core step of the frame can grow the
+// engine's memory, so the views of it are made again after each step that sketch code or a
+// development check follows, and at the end of the frame, for code that runs between frames. When
+// the engine chose the preset itself, the setup ends with the preset check (preset-check.ts), which
+// loads after the first frame. The first frame after a change of preset, and the first frame whose
+// handlers hear of it, wait for their pipelines on the thread that draws.
 
 import { type Debug, RELEASE_DEBUG } from '../debug/debug';
 import { DebugDraw } from '../debug/draw';
@@ -18,10 +23,14 @@ import { DEV } from '../errors/checks';
 import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
-import { TEXTURE_OPTION_UPLOAD_ALL, TEXTURE_STAT_IMAGES_SENT } from '../generated/core';
+import {
+	TEXTURE_OPTION_UPLOAD_ALL,
+	TEXTURE_STAT_IMAGES_SENT,
+	TEXTURE_STAT_WAITING,
+} from '../generated/core';
 import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
-import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
+import { SKETCH_SETTINGS } from '../quality/presets';
 import { Assets } from '../scene/assets';
 import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
@@ -36,7 +45,7 @@ import { slotChange } from '../shared/wake';
 import { FixedClock, FrameClock, holdSteps } from './clock';
 import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-sketch';
 import { InputReader } from './input';
-import { type QualityStart, SketchQuality } from './quality';
+import { type QualityStart, type QualityUpdate, RESTART_CHANGE, SketchQuality } from './quality';
 import { HOLD_SEED, seedMathRandom } from './random';
 
 export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]) => void;
@@ -58,8 +67,8 @@ export interface SketchCore {
 	device: CoreDevice;
 	/** The quality preset and settings that the page chose. */
 	quality: QualityStart;
-	/** Gives the page the quality settings after the sketch changes them. */
-	applyQuality(settings: QualitySettings): void;
+	/** Gives the page the quality preset and settings after each change. */
+	applyQuality(update: QualityUpdate): void;
 	/** The GPU path the engine chose, and what it offers, as the page reports it. */
 	capabilities: EngineCapabilities;
 	/** Sends texture images to the thread that draws. */
@@ -145,8 +154,14 @@ export class SketchRunner {
 	private readonly clock = new FrameClock();
 	/** The fixed steps' clock, which the sketch's options set up. */
 	private fixed = new FixedClock();
-	/** The sketch's `time`, which each frame updates in place. */
+	/** The sketch's `time`, which each frame updates in place. Its frames are those that run the sketch. */
 	private readonly time = { now: 0, dt: 0, frame: 0 };
+	/**
+	 * The engine's number of the frame it recorded last. The setup's frames, for warm-ups and the
+	 * preset check, count here but not in `time.frame`. The core, the draw lists and the thread that
+	 * draws use these numbers.
+	 */
+	private readonly recorded = { frame: 0 };
 	/** The sketch's `engine.viewport`, which each frame updates in place when the canvas changed. */
 	private readonly viewport = { width: 0, height: 0, pixelRatio: 1 };
 	/** The page's count of canvas size changes when the viewport last read them. */
@@ -176,7 +191,7 @@ export class SketchRunner {
 	 */
 	constructor(
 		post: PagePoster,
-		metrics: ArrayBufferLike,
+		private readonly metrics: ArrayBufferLike,
 		private readonly sketch: SketchCore,
 		private readonly holdSeconds?: number,
 	) {
@@ -212,21 +227,27 @@ export class SketchRunner {
 		Atomics.store(slots, Slot.DrawListAddress1, glue.drawListAddress(1));
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
-		const textures = new Textures(this.core, sketch.sendImage, this.time);
+		const textures = new Textures(this.core, sketch.sendImage, this.recorded, () =>
+			this.quality.own('uploadBytesPerFrame'),
+		);
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
 		textures.applyQuality(sketch.quality.settings, SKETCH_SETTINGS);
-		this.quality = new SketchQuality(sketch.quality, (settings, changed) => {
-			textures.applyQuality(settings, changed);
-			sketch.applyQuality(settings);
-		});
+		this.quality = new SketchQuality(
+			sketch.quality,
+			(update, changed) => {
+				textures.applyQuality(update.settings, changed);
+				sketch.applyQuality(update);
+			},
+			() => this.settle(true),
+		);
 		this.readViewport();
 		this.debugDraw = DEV ? new DebugDraw(this.core) : undefined;
 		const debug: Debug = this.debugDraw ?? RELEASE_DEBUG;
 		this.context = {
 			time: this.time,
 			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
-			scene: new Scene(this.core, this.time, device.webgl2, () => this.warmUp()),
+			scene: new Scene(this.core, this.recorded, device.webgl2, () => this.warmUp()),
 			materials: new Materials(this.core, sketch.sendShader),
 			geometry: new Geometry(this.core),
 			textures,
@@ -257,15 +278,55 @@ export class SketchRunner {
 	}
 
 	/**
-	 * Runs the sketch's setup function, which returns the sketch's callbacks. In hold mode, it then
-	 * steps the sketch to the held time (see `hold`). Options out of range fail with E1214 before
-	 * the setup function runs.
+	 * Runs the sketch's setup function, which returns the sketch's callbacks. When the page asks for
+	 * it, the preset check follows. In hold mode, it then steps the sketch to the held time (see
+	 * `hold`). Options out of range fail with E1214 before the setup function runs.
 	 */
 	async setup(sketch: SketchDefinition): Promise<void> {
 		this.fixed = new FixedClock(sketch.options.fixedRate, sketch.options.maxFixedSteps);
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
+		const { check } = this.sketch.quality;
+		if (check && this.holdSeconds === undefined) await this.checkPreset(check.fps);
 		this.setUp = true;
 		if (this.holdSeconds !== undefined) await this.hold(this.holdSeconds);
+	}
+
+	/**
+	 * The preset check, after the setup: the first frame draws with every pipeline built, then the
+	 * check measures the scene as the setup built it, and lowers the preset where the device cannot
+	 * hold its frame rate. Its code loads after the first frame, while the scene keeps drawing. A
+	 * check that cannot load leaves the preset as it is.
+	 */
+	private async checkPreset(fps: number | undefined): Promise<void> {
+		if (!(await this.drawSetupFrame())) return;
+		const loading = import('./preset-check');
+		let loaded = false;
+		const settled = () => {
+			loaded = true;
+		};
+		loading.then(settled, settled);
+		const graceStart = performance.now();
+		while (!loaded) if (!(await this.drawSetupFrame())) return;
+		const { glue } = this.sketch;
+		const { quality } = this;
+		try {
+			const check = await (await loading).checkPreset(
+				{
+					metrics: this.metrics,
+					get preset() {
+						return quality.preset;
+					},
+					lower: () => quality.lower(),
+					drawFrame: () => this.drawSetupFrame(),
+					uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
+					maxFps: fps,
+				},
+				graceStart,
+			);
+			if (check) this.quality.report(check);
+		} catch (error) {
+			console.warn(`null3D could not check the quality preset: ${messageOf(error)}`);
+		}
 	}
 
 	/** True once the setup function has returned, so the frame loop may step the sketch. */
@@ -280,18 +341,37 @@ export class SketchRunner {
 	 * so there a warm-up records that frame itself. Hold mode draws one frame, which waits for its
 	 * pipelines, so there a warm-up resolves at once.
 	 */
-	async warmUp(): Promise<void> {
+	warmUp(): Promise<void> {
+		return this.settle(false);
+	}
+
+	/**
+	 * Resolves once the next frame's pipelines are built, as `warmUp` describes, and with `drawn`,
+	 * once the thread that draws has taken that frame too, so the targets it makes exist.
+	 */
+	private async settle(drawn: boolean): Promise<void> {
 		if (this.holdSeconds !== undefined) return;
 		const { slots } = this.sketch.control;
-		let target = this.context.time.frame + 1;
-		if (!this.setUp) {
-			this.setupFrames = this.setupFrames.then(() => this.publishSetupFrame());
-			target = await this.setupFrames;
-		}
+		const target = this.setUp ? this.recorded.frame + 1 : await this.queueSetupFrame();
 		await reached(slots, Slot.PipelinesBuilt, target);
-		// The sketch's code carries on between frames, after frames that may have grown engine
-		// memory, so its views of that memory are made again first.
-		this.core.refresh();
+		if (drawn) await reached(slots, Slot.FramesTaken, target);
+	}
+
+	/** Publishes a setup frame after those already queued, and resolves with its number. */
+	private queueSetupFrame(): Promise<number> {
+		this.setupFrames = this.setupFrames.then(() => this.publishSetupFrame());
+		return this.setupFrames;
+	}
+
+	/**
+	 * Publishes a setup frame and waits until the thread that draws has taken it. Resolves with
+	 * false when the engine stopped first.
+	 */
+	private async drawSetupFrame(): Promise<boolean> {
+		const { slots } = this.sketch.control;
+		if (Atomics.load(slots, Slot.Running) === 0) return false;
+		await reached(slots, Slot.FramesTaken, await this.queueSetupFrame());
+		return Atomics.load(slots, Slot.Running) !== 0;
 	}
 
 	/**
@@ -301,7 +381,7 @@ export class SketchRunner {
 	 */
 	private async publishSetupFrame(): Promise<number> {
 		const { slots } = this.sketch.control;
-		await reached(slots, Slot.FramesTaken, this.context.time.frame - 1);
+		await reached(slots, Slot.FramesTaken, this.recorded.frame - 1);
 		const frame = this.frame(false);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);
@@ -314,12 +394,8 @@ export class SketchRunner {
 		this.restoreRandom = undefined;
 	}
 
-	/**
-	 * Delivers a message the page sent with engine.postToSketch. It arrives between frames, after
-	 * any frame that grew engine memory, so the sketch's views of that memory are made again first.
-	 */
+	/** Delivers a message the page sent with engine.postToSketch. It arrives between frames. */
 	receive(type: string, data: unknown): void {
-		this.core.refresh();
 		for (const handler of this.messageHandlers) handler(type, data);
 	}
 
@@ -427,6 +503,7 @@ export class SketchRunner {
 		const { glue } = this.sketch;
 		if (late) glue.updateLateTransforms();
 		else glue.updateTransforms();
+		this.core.refresh();
 		this.endPhase(Phase.Transforms);
 	}
 
@@ -442,23 +519,29 @@ export class SketchRunner {
 		const dt = this.clock.dt;
 		time.now = this.clock.now;
 		time.dt = dt;
-		time.frame++;
-		const frame = time.frame;
+		const frame = ++this.recorded.frame;
+		if (play) time.frame++;
 		this.record.begin(frame);
-		this.core.refresh();
 		this.phaseStart = start;
 		this.readViewport();
+		// Handlers that hear of a restart may create objects with new pipelines, so their frame
+		// waits for them.
+		let restart = false;
 		// The sketch's part of the frame: the input the page wrote, preference changes, the fixed
 		// steps and the update. It stays in this function: a call that passed the step on would
 		// allocate a number for it in every frame.
 		if (play) {
-			if (this.holdSeconds === undefined) this.input.beginFrame(frame);
+			if (this.holdSeconds === undefined) this.input.beginFrame(frame, frame - time.frame);
 			const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 			if (reducedMotion !== this.reducedMotion) {
 				this.reducedMotion = reducedMotion;
 				this.notify(this.preferenceHandlers, undefined);
 			}
-			if (this.quality.takeChange()) this.notify(this.quality.handlers, this.quality);
+			const change = this.quality.takeChange();
+			if (change !== 0) {
+				if (change === RESTART_CHANGE) restart = true;
+				this.notify(this.quality.handlers, this.quality);
+			}
 			// Steps that fall due count even when the sketch has no fixed update, so none pile up.
 			const steps = this.fixed.stepsAt(time.now);
 			if (callbacks.onFixedUpdate) {
@@ -484,6 +567,7 @@ export class SketchRunner {
 		const timeMs = Math.round(time.now * 1000);
 		const stepUs = Math.round(dt * 1_000_000);
 		if (glue.beginFrame(frame, timeMs, stepUs) !== 0) this.report(coreFailure(glue, QUEUED_CHANGE));
+		this.core.refresh();
 		this.endPhase(Phase.Commands);
 		this.updateTransforms(false);
 		if (play && callbacks.onLateUpdate) {
@@ -515,6 +599,7 @@ export class SketchRunner {
 		if (glue.cullFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);
 		if (DEV && this.debugDraw) {
+			this.core.refresh();
 			try {
 				this.debugDraw.flush(width, height);
 			} catch (error) {
@@ -526,6 +611,11 @@ export class SketchRunner {
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		Atomics.store(slots, Slot.DrawListWords0 + (frame & 1), glue.drawListWords(frame));
 		Atomics.store(slots, Slot.FrameEpoch0 + (frame & 1), epoch);
+		// The first frame that records after a restart, whether the sketch asked for it between
+		// frames or in this frame's own code, has the new settings, so the thread that draws holds it
+		// until its pipelines are built.
+		if (this.quality.takeRestart() || restart) Atomics.store(slots, Slot.PipelineHold, frame);
+		this.core.refresh();
 		this.endPhase(Phase.Record);
 		this.record.commit(performance.now() - start);
 		for (let k = 0; k < this.jobRecords.length; k++) {

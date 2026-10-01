@@ -24,8 +24,10 @@
 //!
 //! Each part has a module: `layout` keeps the sources, buckets and clusters, `data` the data
 //! textures and their rings, `cull` culls each view on the job workers, and `opaque` records the
-//! opaque passes. The debug lines pass, which both builders share, is [`crate::debug_lines`]. The
-//! render graph ([`crate::frame_graph`]) orders the passes and begins their render passes.
+//! opaque passes. The debug lines pass, which both builders share, is [`crate::debug_lines`], and
+//! the background texture that the camera's opaque pass draws before its buckets is
+//! [`crate::background`]. The render graph ([`crate::frame_graph`]) orders the passes and begins
+//! their render passes.
 //!
 //! # Cells
 //!
@@ -58,6 +60,7 @@ use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{DrawList, Op, format, permutation, sizes, texture_usage, view};
 
+use crate::background::BackgroundPass;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
@@ -204,6 +207,7 @@ pub struct CpuCulledRenderer {
     culling: Culling,
     opaque: Opaque,
     lines: LinesPass,
+    background: BackgroundPass,
     /// The vertex pages' vertex and index buffers.
     meshes: MeshBuffers,
     pipelines: PipelineCache,
@@ -261,6 +265,7 @@ impl CpuCulledRenderer {
             culling: Culling::default(),
             opaque: Opaque::new(config.multi_draw),
             lines: LinesPass::new(ids::LINES),
+            background: BackgroundPass::default(),
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
             textures: SharedTextures::default(),
@@ -554,6 +559,11 @@ impl CpuCulledRenderer {
             self.graph.scene_targets(),
         );
         self.graph.request_pipelines(&mut self.pipelines);
+        self.background.request_pipeline(
+            &self.settings,
+            &mut self.pipelines,
+            self.graph.scene_targets(),
+        );
         self.pipelines.create_new(list)?;
         if !self.created {
             self.create_fixed(list)?;
@@ -576,6 +586,7 @@ impl CpuCulledRenderer {
         let table = MaterialStorage::Texture(ids::MATERIALS);
         self.settings
             .record_materials(list, arena, table, input.frame)?;
+        self.background.prepare(&self.settings);
         let new_texture = if rebuilt || first_new < views {
             self.size_resources(list, first_new, rebuilt)?
         } else {
@@ -623,10 +634,14 @@ impl CpuCulledRenderer {
         )?;
 
         let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
-        let (layout, meshes) = (&self.layout, &self.meshes);
+        let (layout, meshes, background) = (&self.layout, &self.meshes, &self.background);
         self.graph
             .record(list, self.settings.clear_color(), |list, role| match role {
                 Role::Opaque(view) if culling.frame(view).is_some() => {
+                    if view == ViewId::CAMERA {
+                        let slot = opaque.frame_slot(view);
+                        background.record(list, ids::frame_group(view), &[slot, slot])?;
+                    }
                     let starts = culling.culled(frame, view).bucket_starts();
                     opaque.record(list, arena, view, starts, layout, meshes)
                 }

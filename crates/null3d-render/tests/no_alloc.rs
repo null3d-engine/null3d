@@ -2,9 +2,10 @@
 //! frame builder records frames of a scene whose batch moves every frame. It counts only the test
 //! thread, so the test runner's own work on other threads cannot reach the count. Frames whose
 //! structure changes allocate nothing either, on either frame parity, until the scene grows, and
-//! neither do frames that draw debug lines or stop drawing them. The render graph allocates nothing
-//! while it stays the same, nor when passes switch on and off after it has compiled once. The job
-//! workers and the calling thread assign moving lights to the light grid without allocating.
+//! neither do frames that draw debug lines or stop drawing them, or that draw a texture background.
+//! The render graph allocates nothing while it stays the same, nor when passes switch on and off
+//! after it has compiled once. The job workers and the calling thread assign moving lights to the
+//! light grid without allocating.
 #![allow(clippy::disallowed_methods)] // Native job workers are threads.
 
 mod common;
@@ -12,8 +13,8 @@ mod common;
 use common::graph::{CASCADES, engine_passes};
 use common::{World, base_sphere, grid};
 use null3d_core::jobs::JobSystem;
-use null3d_core::lights::{POINT_CONE, VisibleLight, kind};
-use null3d_core::scene::Command;
+use null3d_core::lights::{POINT_CONE, SunShadow, VisibleLight, kind};
+use null3d_core::scene::{Command, flags};
 use null3d_core::testing::CountingAllocator;
 use null3d_gpu::drawlist::{DrawList, Op, format};
 use null3d_render::camera::{Lens, Perspective};
@@ -44,6 +45,37 @@ fn recording_steady_frames_allocates_nothing() {
         world.frame = frame;
         world.record(false);
     }
+    assert_eq!(CountingAllocator::disarm(), 0);
+}
+
+#[test]
+fn recording_frames_with_shadows_allocates_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    let mut world = World::new();
+    let casts = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
+    let commands: Vec<Command> = world
+        .objects
+        .iter()
+        .map(|&object| Command::set_flags(object, casts, casts))
+        .collect();
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    let shadow = SunShadow {
+        cascades: 4,
+        map_size: 1024,
+        bias: 0.5,
+        normal_bias: 1.0,
+        distance: 60.0,
+        layers: 1,
+    };
+    world.renderer.settings_mut().set_sun_shadow(Some(shadow));
+    world.record(true);
+    // Frames of both parities, and a rebuild on each parity, warm up.
+    record_until(&mut world, 6, false);
+    record_until(&mut world, 8, true);
+    CountingAllocator::arm();
+    record_until(&mut world, 100, false);
+    record_until(&mut world, 120, true);
     assert_eq!(CountingAllocator::disarm(), 0);
 }
 
@@ -292,10 +324,15 @@ fn culling_by_grid_cell_allocates_nothing_in_steady_frames() {
     }
 }
 
-/// Records warm-up frames of a world with a map that uploads, then frames that upload a larger
-/// map in bands, and steady frames, and returns what those allocated.
+/// Records warm-up frames of a world with a map that uploads and that the background shows too,
+/// then frames that upload a larger map in bands, and steady frames, and returns what those
+/// allocated.
 fn map_upload_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
-    world.add_mapped(16);
+    let (background, _, _) = world.add_mapped(16);
+    world
+        .renderer
+        .settings_mut()
+        .set_background_texture(background);
     world.record(true);
     let textures = world.renderer.settings_mut().textures_mut();
     textures.set_budget(16 * 1024);
@@ -313,14 +350,9 @@ fn map_upload_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     CountingAllocator::arm();
     record_until(&mut world, 60, false);
     let allocated = CountingAllocator::disarm();
-    assert!(
-        world
-            .renderer
-            .settings()
-            .textures()
-            .ready_layer(texture)
-            .is_some()
-    );
+    let textures = world.renderer.settings().textures();
+    assert!(textures.ready_layer(texture).is_some());
+    assert!(textures.ready_layer(background).is_some());
     allocated
 }
 

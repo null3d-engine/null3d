@@ -6,7 +6,7 @@
 // call them with any device.
 
 import type { Tier } from '../shared/tier';
-import { presetIndex, QUALITY_PRESETS, type QualityPreset } from './presets';
+import { lowered, presetIndex, type QualityPreset } from './presets';
 
 /**
  * The facts about the device that the engine chooses a quality preset from. The page reads them
@@ -73,9 +73,10 @@ export function deviceKind(hints: DeviceHints): DeviceKind {
 	return hints.screenMinEdge < TABLET_MIN_EDGE ? 'phone' : 'tablet';
 }
 
-/** `preset` lowered by `steps`, down to Low at most. */
-function lowered(preset: QualityPreset, steps: number): QualityPreset {
-	return QUALITY_PRESETS[Math.max(0, presetIndex(preset) - steps)] ?? 'low';
+/** `preset`, or the GPU path's highest preset when `preset` is heavier. */
+export function withinTier(preset: QualityPreset, tier: Tier): QualityPreset {
+	const ceiling = TIER_CEILINGS[tier];
+	return presetIndex(preset) <= presetIndex(ceiling) ? preset : ceiling;
 }
 
 /** The preset that the hints give: the device's own, one lower when its memory reads under 4 GB. */
@@ -109,10 +110,7 @@ export function memoryPreset(request: PresetRequest): QualityPreset {
  * lowered after crashed starts.
  */
 export function choosePreset(request: PresetRequest, tier: Tier): QualityPreset {
-	const wanted = wantedPreset(request);
-	const ceiling = TIER_CEILINGS[tier];
-	const capped = presetIndex(wanted) <= presetIndex(ceiling) ? wanted : ceiling;
-	return afterCrashes(capped, request.crashedStarts);
+	return afterCrashes(withinTier(wantedPreset(request), tier), request.crashedStarts);
 }
 
 /**
