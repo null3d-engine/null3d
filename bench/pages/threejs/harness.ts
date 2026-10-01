@@ -38,6 +38,7 @@ export type Three = Pick<
 	| 'CylinderGeometry'
 	| 'DataTexture'
 	| 'DirectionalLight'
+	| 'DoubleSide'
 	| 'DynamicDrawUsage'
 	| 'Float32BufferAttribute'
 	| 'Fog'
