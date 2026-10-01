@@ -48,6 +48,8 @@ To use less memory, share meshes and materials, draw many copies with instance b
 
 Textures take GPU memory too. A texture of 1024 x 1024 texels takes about 5.3 MiB with its mip levels. The sketch reads the GPU memory of every texture in `textures.memoryBytes`, and frees a texture that it no longer needs with `texture.destroy()`. The engine keeps no copy of an image once its upload is done. [Textures](../api/textures.md#gpu-memory) gives the sizes.
 
+Load large textures from KTX2 files. Phones and tablets have the ASTC and ETC2 formats, so a KTX2 texture stays compressed on the GPU. The same 1024 x 1024 texture then takes about 1.3 MiB, or 0.7 MiB in ETC2 without alpha. Encode its mip levels into the file, as `basisu -mipmap` does, because the GPU cannot make them for compressed texels. Use UASTC for normal maps and detailed color maps, and ETC1S where the download must stay small. `texture.format` tells which format the device got. [Textures](../api/textures.md#ktx2-files) covers KTX2 files.
+
 A page that starts a second engine, for example in a single-page app, waits for the first engine's `destroy()` promise. The browser frees the first engine's memory only then.
 
 When the tab crashes during a start, the next start of the sketch runs one preset lower. A second crash in a row starts it at Low. [Quality presets](../concepts/quality-presets.md#starts-that-crashed-the-tab) explains the note that the engine keeps for this. The page reads the count in `engine.mode.crashedStarts`.

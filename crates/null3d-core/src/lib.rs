@@ -17,6 +17,7 @@
 //! | [`layers`] | Render layers: the masks that choose which views draw which sources |
 //! | [`lights`] | The light table, and the lights each frame finds for a view |
 //! | [`culling`] | Frustum planes and SIMD sphere culling, serial and parallel |
+//! | [`depth_sort`] | Culling and back-to-front sorting of blended rows, for the transparent pass |
 //! | [`clusters`] | Groups of nearby rows that culling tests as one sphere each |
 //! | [`arena`] | Per-thread bump allocators reset each frame |
 //! | [`alloc`] | Allocation that reports running out of memory instead of aborting |
@@ -40,6 +41,7 @@ pub mod bitset;
 pub mod cells;
 pub mod clusters;
 pub mod culling;
+pub mod depth_sort;
 pub mod error;
 pub mod handle;
 pub mod instances;

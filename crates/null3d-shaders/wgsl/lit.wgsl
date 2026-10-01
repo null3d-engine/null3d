@@ -11,8 +11,8 @@ enable draw_index;
 // lights. Code that reads the material's options belongs in `defaultSurface`, and code that
 // lights, shadows, fogs or blends the surface belongs in `shade`, so custom materials get all of
 // it. The ALPHA_MASK builds draw nothing where the surface's alpha falls below the material's
-// cutoff. The RECEIVE_SHADOWS builds dim the sun's light where the main directional light's
-// shadows fall.
+// cutoff, and a material that blends writes premultiplied color. The RECEIVE_SHADOWS builds dim the
+// sun's light where the main directional light's shadows fall.
 //
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive and light maps, each a layer of a texture array with a sampler of its own. A map reads
@@ -30,10 +30,10 @@ enable draw_index;
 #import null3d::lighting::{PbrMaterial, dfg_lut, direct_light, indirect_diffuse}
 #import null3d::lighting::{multiscatter_compensation, pbr_material}
 #import null3d::globals::{Material}
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, frame, material_of}
-#import null3d::mesh::{relative_position, world_normal}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
+#import null3d::mesh::{frame, material_of, relative_position, world_normal}
 #ifdef MAPS
-#import null3d::mesh::{map_layer, map_ready, world_direction}
+#import null3d::mesh::{map_layer, map_ready, straight_texel, world_direction}
 #endif
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{sun_shadow}
@@ -217,7 +217,7 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     let position_dx = dpdx(input.relativePosition);
     if map_ready(m.maps.x) {
         let at = map_uv(flags, 0u, first, second);
-        let texel = textureSampleGrad(
+        let sampled = textureSampleGrad(
             base_color_map,
             base_color_sampler,
             at.uv,
@@ -225,6 +225,7 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
             at.dx,
             at.dy,
         );
+        let texel = straight_texel(m, sampled);
         s.baseColor *= texel.rgb;
         s.alpha *= texel.a;
     }
@@ -359,7 +360,8 @@ fn light_surface(
 }
 
 /// The color of a pixel that shows the surface: the light it reflects and the light it gives off,
-/// in the scene's fog, finished for the screen at the pixel's position.
+/// in the scene's fog, finished for the screen at the pixel's position, and premultiplied by its
+/// alpha when the material blends.
 fn shade(s: Surface, input: SurfaceInput, pixel: vec2f) -> vec4f {
     let normal = normalize(s.normal);
     // Where the mesh's normal changes fast between pixels, highlights soften, as three.js softens
@@ -386,7 +388,8 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec2f) -> vec4f {
         discard;
     }
 #endif
-    return finish(fogged(outgoing, input.relativePosition, material_row), pixel);
+    let finished = finish(fogged(outgoing, input.relativePosition, material_row), pixel);
+    return fragment_color(material_row, finished.rgb, s.alpha);
 }
 
 @fragment
