@@ -141,7 +141,7 @@ function blankComments(source: string): string {
 }
 
 /** The functions that a custom material's WGSL may declare for the engine to call. */
-const MATERIAL_FUNCTIONS: ReadonlySet<string> = new Set(['surface']);
+const MATERIAL_FUNCTIONS: ReadonlySet<string> = new Set(['surface', 'vertexOffset']);
 
 /** True when WGSL declares a function of a custom material, such as `fn surface`. */
 function declaresMaterialFunction(source: string): boolean {
@@ -194,7 +194,7 @@ function pipelinesOf(
 	if (entries.length === 0) {
 		return problem(
 			0,
-			`the WGSL has no entry point and no function of a custom material. For a custom material, declare \`fn surface(input: SurfaceInput) -> Surface\`. For a shader of your own, give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
+			`the WGSL has no entry point and no function of a custom material. For a custom material, declare \`fn surface(input: SurfaceInput) -> Surface\`, \`fn vertexOffset(input: VertexInput) -> vec3f\`, or both. For a shader of your own, give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
 		);
 	}
 	if (secondVertex) {
