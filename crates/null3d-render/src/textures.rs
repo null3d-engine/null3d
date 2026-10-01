@@ -10,7 +10,8 @@
 //! fills: the draw list makes the larger texture, copies every mip level of the old one into it,
 //! and the next frame's list releases the old one. An array holds at most [`MAX_LAYERS`] layers,
 //! the iPad's limit, and a key with more textures starts another array. A texture of several
-//! layers has an array of its own, with exactly its layers.
+//! layers has an array of its own, with exactly its layers. So does a texture in a compressed
+//! format: compatibility mode copies no compressed texels, so its array could never grow.
 //!
 //! # Images, data and uploads
 //!
@@ -19,9 +20,11 @@
 //! count in the order they were sent, so every id up to the count has arrived. Data lives in
 //! engine memory, in a slot of the store, and is ready at once. Uploads take turns in the order
 //! the textures got their texels. Each frame uploads at most its byte budget: a large texture goes
-//! up a band of rows per frame. After a frame's uploads, each texture that finished makes its mip
-//! levels on the GPU. A material draws without its map until the map's texels are on the GPU, so a
-//! texture on its way looks like no texture.
+//! up a band of rows per frame, or of rows of blocks in a compressed format. Texels that bring
+//! their own mip levels, as a KTX2 file's do, upload each level in turn. After a frame's uploads,
+//! each texture that finished and asked for mip levels makes them on the GPU. A material draws
+//! without its map until the map's texels are on the GPU, so a texture on its way looks like no
+//! texture.
 //!
 //! A capture replays a frame's list a second time. A list therefore never releases what it uses
 //! itself, and replaying it again gives the same textures. An image is released by a later
@@ -41,7 +44,8 @@
 use null3d_core::error::CoreError;
 use null3d_core::handle::{Handle, SlotAllocator};
 use null3d_gpu::drawlist::{
-    DrawList, Op, address, compare, filter, format, layout, resource_kind, texture_usage, view,
+    DrawList, Op, address, compare, filter, format, layout, resource_kind, texture_usage,
+    upload_flags, view,
 };
 
 use crate::frame::{RecordError, address as memory_address, words_as_bytes};
@@ -95,6 +99,18 @@ impl Default for Sampling {
     }
 }
 
+/// How a texture's colors hold its alpha. The browser multiplies an image's stored colors by
+/// their alpha as it decodes the image, so an sRGB texture's colors are multiplied while encoded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Premultiplied {
+    /// The colors are straight, or the texture has no image.
+    No,
+    /// The colors were multiplied by their alpha in sRGB encoding, before sampling decodes them.
+    Srgb,
+    /// The colors are linear values multiplied by their alpha.
+    Linear,
+}
+
 /// A texture as its creator describes it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TextureDesc {
@@ -103,11 +119,14 @@ pub struct TextureDesc {
     /// Its layers: 1 for a texture that shares an array with others of its key, and up to
     /// [`MAX_LAYERS`] for a texture with an array of its own.
     pub depth: u32,
-    /// `format::RGBA8_UNORM_SRGB` for colors, `format::RGBA8_UNORM` for data, or
-    /// `format::RGBA16_FLOAT` for data in half floats, which has no mip levels and takes no images.
+    /// `format::RGBA8_UNORM_SRGB` for colors, `format::RGBA8_UNORM` for data,
+    /// `format::RGBA16_FLOAT` for data in half floats, which has no mip levels and takes no images,
+    /// or a compressed format, whose texels come as data with all their mip levels.
     pub format: u32,
     /// True for a whole chain of mip levels, which the GPU makes from each upload.
     pub mipmaps: bool,
+    /// The mip levels that the texture's data brings: 1, or more without `mipmaps`.
+    pub levels: u32,
     pub sampling: Sampling,
 }
 
@@ -176,7 +195,28 @@ struct TextureSlot {
     sampler: u32,
     /// True for a whole chain of mip levels, at any size the texture takes.
     mipmaps: bool,
+    /// The mip levels that the texels bring, at most the whole chain of the texture's size.
+    levels: u32,
     state: State,
+}
+
+impl TextureSlot {
+    /// The mip levels of the texture at `width` x `height`: a whole chain that the GPU makes, or
+    /// the levels that the texels bring, at most the chain of that size.
+    fn mips(&self, width: u32, height: u32) -> u32 {
+        let chain = format::full_chain(width, height);
+        if self.mipmaps {
+            chain
+        } else {
+            self.levels.min(chain)
+        }
+    }
+
+    /// The mip levels that the texels of an array of `key` hold: level 0 alone when the GPU makes
+    /// the rest, and every level otherwise.
+    fn source_levels(&self, key: ArrayKey) -> u32 {
+        if self.mipmaps { 1 } else { key.mips }
+    }
 }
 
 /// What makes textures share an array.
@@ -190,14 +230,60 @@ struct ArrayKey {
     depth: u32,
 }
 
+/// Where a band of texels starts: a row of blocks of one layer of one mip level.
+#[derive(Clone, Copy, Debug)]
+struct Band {
+    level: u32,
+    layer: u32,
+    /// The first row of blocks.
+    row: u32,
+    /// The rows of blocks from `row` to the end of the layer.
+    rows_left: u32,
+    row_bytes: u64,
+    /// The first row's place in the texels, which hold each level's layers in turn.
+    offset: u64,
+}
+
 impl ArrayKey {
     fn layer_bytes(&self) -> u64 {
         format::layer_bytes(self.format, self.width, self.height, self.mips)
     }
 
-    /// The bytes of one row of level 0.
-    fn row_bytes(&self) -> u64 {
-        format::level_bytes(self.format, self.width, 1, 0)
+    /// True when textures share the array. A texture of several layers or of a compressed format
+    /// has an array of its own.
+    fn shared(&self) -> bool {
+        self.depth == 1 && !format::is_compressed(self.format)
+    }
+
+    /// The rows of blocks of the first `levels` mip levels, through every layer.
+    fn rows(&self, levels: u32) -> u32 {
+        (0..levels)
+            .map(|level| format::blocks(self.format, self.height, level) * self.depth)
+            .sum()
+    }
+
+    /// Where row `rows` falls in texels of `levels` mip levels, which hold the rows of blocks of
+    /// each layer of each level in turn. `rows` is below [`Self::rows`] of `levels`.
+    fn band(&self, rows: u32, levels: u32) -> Band {
+        let (mut first, mut offset) = (0, 0);
+        for level in 0..levels {
+            let per_layer = format::blocks(self.format, self.height, level);
+            let row_bytes = format::row_bytes(self.format, self.width, level);
+            if rows < first + per_layer * self.depth {
+                let within = rows - first;
+                return Band {
+                    level,
+                    layer: within / per_layer,
+                    row: within % per_layer,
+                    rows_left: per_layer - within % per_layer,
+                    row_bytes,
+                    offset: offset + u64::from(within) * row_bytes,
+                };
+            }
+            first += per_layer * self.depth;
+            offset += u64::from(per_layer * self.depth) * row_bytes;
+        }
+        unreachable!("row {rows} is past the texels of {levels} mip levels")
     }
 }
 
@@ -232,7 +318,7 @@ impl TextureArray {
 
     /// The lowest free layer for another texture, or `None` when the array takes no more.
     fn free_layer(&self) -> Option<u32> {
-        if self.key.depth > 1 && self.live > 0 {
+        if !self.key.shared() && self.live > 0 {
             return None;
         }
         let (word, bits) = self
@@ -259,10 +345,10 @@ impl TextureArray {
     /// exactly its texture's layers for an array of one texture.
     fn layers_needed(&self) -> u32 {
         let needed = self.layers_in_use();
-        if self.key.depth > 1 {
-            needed
-        } else {
+        if self.key.shared() {
             needed.next_power_of_two().clamp(FIRST_LAYERS, MAX_LAYERS)
+        } else {
+            needed
         }
     }
 }
@@ -396,13 +482,19 @@ impl TextureStore {
         self.ids.first_texture + 2 * array + self.arrays[array as usize].generation
     }
 
-    /// Checks a size against the store's limit.
-    fn check_size(&self, width: u32, height: u32) -> Result<(), TextureError> {
+    /// Checks a size of a format against the store's limit. A compressed texture holds whole
+    /// blocks, as WebGPU requires.
+    fn check_size(&self, format: u32, width: u32, height: u32) -> Result<(), TextureError> {
         let limit = self.max_size;
         if width > limit || height > limit {
             return Err(TextureError::TooLarge { limit });
         }
-        if width == 0 || height == 0 {
+        let block = format::block_size(format);
+        if width == 0
+            || height == 0
+            || !width.is_multiple_of(block)
+            || !height.is_multiple_of(block)
+        {
             return Err(TextureError::Unsupported);
         }
         Ok(())
@@ -410,14 +502,17 @@ impl TextureStore {
 
     /// Creates a texture with no texels yet, in a free layer of an array of its key.
     pub fn create(&mut self, desc: TextureDesc) -> Result<Handle, TextureError> {
-        self.check_size(desc.width, desc.height)?;
+        self.check_size(desc.format, desc.width, desc.height)?;
         let sampling = desc.sampling;
         let known = |code: u32, last: u32| code <= last;
+        let levels = (1..=format::full_chain(desc.width, desc.height)).contains(&desc.levels)
+            && !(desc.mipmaps && desc.levels > 1);
         let supported = (1..=MAX_LAYERS).contains(&desc.depth)
+            && levels
             && match desc.format {
                 format::RGBA8_UNORM | format::RGBA8_UNORM_SRGB => true,
                 format::RGBA16_FLOAT => !desc.mipmaps,
-                _ => false,
+                code => format::is_compressed(code) && !desc.mipmaps,
             }
             && sampling
                 .wrap
@@ -442,13 +537,14 @@ impl TextureStore {
             group: 0,
             sampler,
             mipmaps: desc.mipmaps,
+            levels: desc.levels,
             state: State::Empty,
         };
         let key = ArrayKey {
             width: desc.width,
             height: desc.height,
             format: desc.format,
-            mips: mips_of(desc.mipmaps, desc.width, desc.height),
+            mips: slot.mips(desc.width, desc.height),
             depth: desc.depth,
         };
         self.settle(&mut slot, key);
@@ -529,6 +625,7 @@ impl TextureStore {
                 depth: 1,
                 format: format::RGBA8_UNORM,
                 mipmaps: false,
+                levels: 1,
                 sampling: Sampling::default(),
             })?;
             let (texels, _) = self.set_data(self.placeholder, 1, 1)?;
@@ -555,8 +652,9 @@ impl TextureStore {
         height: u32,
         flags: u32,
     ) -> Result<(u32, bool), TextureError> {
-        let key = self.arrays[self.slot(texture)?.array as usize].key;
-        if key.depth > 1 || !format::makes_mipmaps(key.format) {
+        let slot = *self.slot(texture)?;
+        let key = self.arrays[slot.array as usize].key;
+        if key.depth > 1 || !format::makes_mipmaps(key.format) || slot.levels > 1 {
             return Err(TextureError::Unsupported);
         }
         let moved = self.resize(texture, width, height)?;
@@ -567,17 +665,25 @@ impl TextureStore {
     }
 
     /// Gives a texture new texels of `width` x `height` in each of its layers, and returns the
-    /// words that the caller fills with them, as tightly packed rows, layer after layer, with true
-    /// when the texture moved to an array of that size. Texels that were waiting are released
-    /// unused.
+    /// words that the caller fills with them, with true when the texture moved to an array of that
+    /// size. The texels are tightly packed rows, of blocks in a compressed format, layer after
+    /// layer, and level after level when they bring their own mip levels. Texels that were waiting
+    /// are released unused.
     pub fn set_data(
         &mut self,
         texture: Handle,
         width: u32,
         height: u32,
     ) -> Result<(&mut [u32], bool), TextureError> {
-        let key = self.arrays[self.slot(texture)?.array as usize].key;
-        let bytes = format::level_bytes(key.format, width, height, 0) * u64::from(key.depth);
+        let slot = *self.slot(texture)?;
+        let key = self.arrays[slot.array as usize].key;
+        self.check_size(key.format, width, height)?;
+        let levels = if slot.mipmaps {
+            1
+        } else {
+            slot.mips(width, height)
+        };
+        let bytes = format::layer_bytes(key.format, width, height, levels) * u64::from(key.depth);
         let words = usize::try_from(bytes.div_ceil(4)).map_err(|_| out_of_memory(bytes))?;
         let mut data = Vec::new();
         data.try_reserve_exact(words)
@@ -604,12 +710,12 @@ impl TextureStore {
         if (width, height) == (key.width, key.height) {
             return Ok(false);
         }
-        self.check_size(width, height)?;
+        self.check_size(key.format, width, height)?;
         self.arrays[slot.array as usize].mark(slot.layer, false);
         let key = ArrayKey {
             width,
             height,
-            mips: mips_of(slot.mipmaps, width, height),
+            mips: slot.mips(width, height),
             ..key
         };
         self.settle(&mut slot, key);
@@ -676,6 +782,27 @@ impl TextureStore {
     pub fn ready_layer(&self, texture: Handle) -> Option<u32> {
         let slot = self.slot(texture).ok()?;
         matches!(slot.state, State::Uploaded { .. }).then_some(slot.layer)
+    }
+
+    /// Whether a texture's texels on the GPU come from an image that holds colors multiplied by
+    /// their alpha, and in which encoding the colors were multiplied.
+    pub fn premultiplied(&self, texture: Handle) -> Premultiplied {
+        let Ok(slot) = self.slot(texture) else {
+            return Premultiplied::No;
+        };
+        match slot.state {
+            State::Uploaded {
+                source: Source::Image { flags, .. },
+                ..
+            } if flags & upload_flags::PREMULTIPLIED_ALPHA != 0 => {
+                if self.arrays[slot.array as usize].key.format == format::RGBA8_UNORM_SRGB {
+                    Premultiplied::Srgb
+                } else {
+                    Premultiplied::Linear
+                }
+            }
+            _ => Premultiplied::No,
+        }
     }
 
     /// The GPU id of the bind group that samples a live texture: its array with its sampler.
@@ -810,6 +937,16 @@ impl TextureStore {
             } else {
                 old_id
             };
+            // Images upload into and mip levels draw into a texture that textures share, and a
+            // larger one copies its layers. A compressed texture takes writes only.
+            let usage = if format::is_compressed(key.format) {
+                texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST
+            } else {
+                texture_usage::TEXTURE_BINDING
+                    | texture_usage::COPY_DST
+                    | texture_usage::COPY_SRC
+                    | texture_usage::RENDER_ATTACHMENT
+            };
             list.push(
                 Op::CreateTexture,
                 &[
@@ -818,10 +955,7 @@ impl TextureStore {
                     key.height,
                     capacity,
                     key.format,
-                    texture_usage::TEXTURE_BINDING
-                        | texture_usage::COPY_DST
-                        | texture_usage::COPY_SRC
-                        | texture_usage::RENDER_ATTACHMENT,
+                    usage,
                     1,
                     key.mips,
                     view::D2_ARRAY,
@@ -897,9 +1031,9 @@ impl TextureStore {
     }
 
     /// Uploads waiting texels in the order the textures got them, until the frame's budget is
-    /// spent: a band of rows of one layer at a time. Each frame uploads at least one row, so a
-    /// budget below a row still makes progress. Notes each layer of a texture whose last rows
-    /// went up in [`Self::finished`].
+    /// spent: a band of rows of blocks of one layer of one mip level at a time. Each frame uploads
+    /// at least one row, so a budget below a row still makes progress. Notes each layer of a
+    /// texture whose last rows went up, and whose GPU makes its mip levels, in [`Self::finished`].
     fn upload(&mut self, list: &mut DrawList, frame: u32) -> Result<(), RecordError> {
         self.finished.clear();
         let budget = if self.unbudgeted {
@@ -928,13 +1062,14 @@ impl TextureStore {
                 continue;
             }
             let key = self.arrays[slot.array as usize].key;
-            let row_bytes = key.row_bytes();
             let id = self.array_id(slot.array);
-            let total = key.height * key.depth;
+            let levels = slot.source_levels(key);
+            let total = key.rows(levels);
+            let block = format::block_size(key.format);
             while rows < total {
-                let (layer, y) = (rows / key.height, rows % key.height);
+                let band = key.band(rows, levels);
                 let left = budget.saturating_sub(spent);
-                let mut take = u64::from(key.height - y).min(left / row_bytes) as u32;
+                let mut take = u64::from(band.rows_left).min(left / band.row_bytes) as u32;
                 if take == 0 {
                     if spent > 0 {
                         spent_all = true;
@@ -942,7 +1077,8 @@ impl TextureStore {
                     }
                     take = 1;
                 }
-                let layer = slot.layer + layer;
+                let layer = slot.layer + band.layer;
+                let y = band.row * block;
                 match source {
                     Source::Image { id: image, flags } => list.push(
                         Op::UploadImage,
@@ -950,31 +1086,32 @@ impl TextureStore {
                     )?,
                     Source::Data { slot: data } => {
                         let bytes = words_as_bytes(&self.data[data as usize]);
-                        let start = u64::from(rows) * row_bytes;
-                        let length = u64::from(take) * row_bytes;
-                        let band = &bytes[start as usize..(start + length) as usize];
+                        let length = u64::from(take) * band.row_bytes;
+                        let texels = &bytes[band.offset as usize..(band.offset + length) as usize];
+                        // The last row of blocks may reach past the level's edge.
+                        let level_height = format::level_size(key.height, band.level);
                         list.push(
                             Op::WriteTexture,
                             &[
                                 id,
-                                0,
+                                band.level,
                                 0,
                                 y,
                                 layer,
-                                key.width,
-                                take,
+                                format::level_size(key.width, band.level),
+                                (take * block).min(level_height - y),
                                 1,
-                                memory_address(band),
+                                memory_address(texels),
                                 length as u32,
                             ],
                         )?;
                     }
                 }
-                spent += u64::from(take) * row_bytes;
+                spent += u64::from(take) * band.row_bytes;
                 rows += take;
             }
             self.textures[index as usize].state = if rows == total {
-                if key.mips > 1 {
+                if slot.mipmaps && key.mips > 1 {
                     for layer in slot.layer..slot.layer + key.depth {
                         self.finished.push((id, layer));
                     }
@@ -1152,15 +1289,6 @@ impl TextureStore {
     }
 }
 
-/// The mip levels of a texture of `width` x `height`: a whole chain, or level 0 alone.
-fn mips_of(mipmaps: bool, width: u32, height: u32) -> u32 {
-    if mipmaps {
-        format::full_chain(width, height)
-    } else {
-        1
-    }
-}
-
 fn out_of_memory(bytes: u64) -> TextureError {
     TextureError::Core(CoreError::OutOfMemory {
         bytes: u32::try_from(bytes).unwrap_or(u32::MAX),
@@ -1170,6 +1298,7 @@ fn out_of_memory(bytes: u64) -> TextureError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use null3d_gpu::caps::Capabilities;
     use null3d_gpu::drawlist::{Command, decode, upload_flags};
     use null3d_gpu::mock::MockBackend;
 
@@ -1186,6 +1315,7 @@ mod tests {
             depth: 1,
             format: format::RGBA8_UNORM_SRGB,
             mipmaps: true,
+            levels: 1,
             sampling: Sampling::default(),
         }
     }
@@ -1209,9 +1339,14 @@ mod tests {
 
     impl Harness {
         fn new() -> Self {
+            Self::with_capabilities(Capabilities::empty())
+        }
+
+        /// A harness whose mock GPU offers `caps`, such as a compressed format's family.
+        fn with_capabilities(caps: Capabilities) -> Self {
             Self {
                 store: TextureStore::new(IDS, 4096),
-                gpu: MockBackend::default(),
+                gpu: MockBackend::with_capabilities(caps),
                 list: DrawList::with_capacity(4096),
                 frame: 0,
                 images: Vec::new(),
@@ -1768,6 +1903,167 @@ mod tests {
             h.frame();
         }
         assert_eq!(data_held(&h.store), 0);
+    }
+
+    /// A texture in ASTC with the mip levels that its data brings, as a KTX2 file's.
+    fn astc_desc(width: u32, height: u32, levels: u32) -> TextureDesc {
+        TextureDesc {
+            format: format::ASTC_4X4_UNORM_SRGB,
+            mipmaps: false,
+            levels,
+            ..desc(width, height)
+        }
+    }
+
+    #[test]
+    fn compressed_textures_upload_every_level_of_their_data_in_rows_of_blocks() {
+        let mut h = Harness::with_capabilities(Capabilities::TEXTURE_ASTC);
+        let texture = h.store.create(astc_desc(16, 8, 5)).unwrap();
+        let other = h.store.create(astc_desc(16, 8, 5)).unwrap();
+        let array = |h: &Harness, t: Handle| h.store.slot(t).unwrap().array;
+        assert_ne!(
+            array(&h, texture),
+            array(&h, other),
+            "compressed textures never share an array, which could not grow"
+        );
+        h.store.destroy(other, 0).unwrap();
+        // Levels of 16 x 8, 8 x 4, 4 x 2, 2 x 1 and 1 x 1 texels: 4 x 2, 2 x 1 and then single
+        // blocks of 16 bytes.
+        let bytes = (8 + 2 + 1 + 1 + 1) * 16;
+        assert_eq!(h.store.bytes(texture), Ok(bytes));
+        let at = fill(&mut h.store, texture, 16, 8);
+        assert_eq!(h.store.data[0].len() as u64 * 4, bytes);
+        // A row of blocks of level 0 takes 64 bytes, so a budget of 100 bytes takes one row, then
+        // the rows of the smaller levels that fit.
+        h.store.set_budget(100);
+        let (commands, _) = h.frame();
+        let created = ops(&commands, Op::CreateTexture);
+        let id = created[0][0];
+        assert_eq!(
+            created[0][1..],
+            [
+                16,
+                8,
+                1,
+                format::ASTC_4X4_UNORM_SRGB,
+                texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
+                1,
+                5,
+                view::D2_ARRAY
+            ],
+            "a compressed texture is sampled and written, never drawn into or copied"
+        );
+        assert_eq!(
+            ops(&commands, Op::WriteTexture),
+            [vec![id, 0, 0, 0, 0, 16, 4, 1, at, 64]]
+        );
+        let (commands, _) = h.frame();
+        assert_eq!(
+            ops(&commands, Op::WriteTexture),
+            [
+                vec![id, 0, 0, 4, 0, 16, 4, 1, at + 64, 64],
+                vec![id, 1, 0, 0, 0, 8, 4, 1, at + 128, 32]
+            ],
+        );
+        assert_eq!(h.store.ready_layer(texture), None);
+        let (commands, _) = h.frame();
+        assert_eq!(
+            ops(&commands, Op::WriteTexture),
+            [
+                vec![id, 2, 0, 0, 0, 4, 2, 1, at + 160, 16],
+                vec![id, 3, 0, 0, 0, 2, 1, 1, at + 176, 16],
+                vec![id, 4, 0, 0, 0, 1, 1, 1, at + 192, 16]
+            ],
+            "a level smaller than a block writes one block"
+        );
+        assert!(
+            ops(&commands, Op::GenerateMipmaps).is_empty(),
+            "the data brought its mip levels"
+        );
+        assert_eq!(h.store.ready_layer(texture), Some(0));
+        assert_eq!(h.store.memory_bytes(), bytes);
+    }
+
+    #[test]
+    fn data_with_its_own_mip_levels_shares_an_array_and_makes_none() {
+        let mut h = Harness::new();
+        let made = h.texture(4, 4);
+        let brought = h
+            .store
+            .create(TextureDesc {
+                mipmaps: false,
+                levels: 3,
+                ..desc(4, 4)
+            })
+            .unwrap();
+        let slot = |h: &Harness, t: Handle| *h.store.slot(t).unwrap();
+        assert_eq!(
+            slot(&h, made).array,
+            slot(&h, brought).array,
+            "one key: 4 x 4 in 3 levels"
+        );
+        let image = h.image(made, 4, 4);
+        h.arrive(image);
+        let at = fill(&mut h.store, brought, 4, 4);
+        assert_eq!(
+            h.store.set_image(brought, 4, 4, 0),
+            Err(TextureError::Unsupported),
+            "an image brings level 0 alone"
+        );
+        let (commands, _) = h.frame();
+        let id = ops(&commands, Op::CreateTexture)[0][0];
+        assert_eq!(
+            ops(&commands, Op::WriteTexture),
+            [
+                vec![id, 0, 0, 0, 1, 4, 4, 1, at, 64],
+                vec![id, 1, 0, 0, 1, 2, 2, 1, at + 64, 16],
+                vec![id, 2, 0, 0, 1, 1, 1, 1, at + 80, 4]
+            ]
+        );
+        assert_eq!(
+            ops(&commands, Op::GenerateMipmaps),
+            [vec![id, 0]],
+            "only the texture from an image makes its levels"
+        );
+    }
+
+    #[test]
+    fn the_store_refuses_compressed_textures_it_cannot_hold() {
+        let mut store = TextureStore::new(IDS, 4096);
+        for (desc, why) in [
+            (astc_desc(6, 8, 1), "WebGPU needs whole blocks at level 0"),
+            (
+                TextureDesc {
+                    mipmaps: true,
+                    ..astc_desc(8, 8, 1)
+                },
+                "the GPU draws no mip levels of compressed texels",
+            ),
+            (
+                astc_desc(8, 8, 5),
+                "an 8 x 8 texture has at most 4 mip levels",
+            ),
+            (
+                TextureDesc {
+                    levels: 2,
+                    ..desc(8, 8)
+                },
+                "levels that the GPU makes come from level 0 alone",
+            ),
+        ] {
+            assert_eq!(store.create(desc), Err(TextureError::Unsupported), "{why}");
+        }
+        let astc = store.create(astc_desc(8, 8, 4)).unwrap();
+        assert_eq!(
+            store.set_image(astc, 8, 8, 0),
+            Err(TextureError::Unsupported),
+            "images upload into RGBA8 textures only"
+        );
+        assert_eq!(
+            store.set_data(astc, 10, 8).err(),
+            Some(TextureError::Unsupported),
+            "new data keeps whole blocks"
+        );
     }
 
     #[test]

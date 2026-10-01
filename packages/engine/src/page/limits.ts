@@ -1,11 +1,11 @@
 // What the engine core and the thread that draws need to know about the device and the canvas: on
 // WebGPU, the storage binding size the engine asks the GPU for; on WebGL2, multi-draw, the texture
-// size, whether WebGL reads shared memory and how depth is stored; on both, the target that scene
-// passes draw into, the anti-aliasing mode and whether the canvas is transparent. On WebGPU the
-// core also learns whether the device has transient attachments. The permutation bits that the
-// device fixes pick the shader module that the thread that draws loads. They also set how many
-// objects and instance rows a scene can draw, and past how many development builds warn that other
-// devices of the same GPU path draw fewer.
+// size, whether WebGL reads shared memory and how depth is stored; on both, the compressed texture
+// formats that KTX2 files can become, the target that scene passes draw into, the anti-aliasing
+// mode and whether the canvas is transparent. On WebGPU the core also learns whether the device has
+// transient attachments. The permutation bits that the device fixes pick the shader module that
+// the thread that draws loads. They also set how many objects and instance rows a scene can draw,
+// and past how many development builds warn that other devices of the same GPU path draw fewer.
 
 import * as C from '../generated/core';
 import {
@@ -17,7 +17,7 @@ import {
 } from '../generated/gpu';
 import type { QualitySettings } from '../quality/presets';
 import type { Tier } from '../render/renderer';
-import type { DepthMode, Switches } from './switches';
+import type { CompressionFamily, DepthMode, Switches } from './switches';
 
 /** The anti-aliasing mode, as the quality settings name it. */
 export type AntialiasMode = QualitySettings['antialias'];
@@ -55,7 +55,10 @@ export interface CoreDevice {
 	webgl2: boolean;
 	/** WebGPU: the largest storage binding to request, which sizes the scene the core can draw. */
 	storageBindingBytes: number;
-	/** The core's capability flags: multi-draw on WebGL2, transient attachments on WebGPU. */
+	/**
+	 * The core's capability flags: the compressed texture families on both paths, multi-draw on
+	 * WebGL2 and transient attachments on WebGPU.
+	 */
 	capabilities: number;
 	/** WebGL2: the largest texture width and height in texels. */
 	maxTextureSize: number;
@@ -91,12 +94,43 @@ export interface CoreDevice {
 }
 
 /**
- * How the page asks the engine to use the device: the test switches that force a route or turn
- * cell culling off for benchmarks, the anti-aliasing mode and the canvas's transparency.
+ * Each compressed texture family that KTX2 files become: its capability flag, the WebGPU feature
+ * that the renderer asks the device for, the WebGL2 extension, which each context asks for by
+ * name, and the family's name in the ?compression= switch.
+ */
+export const TEXTURE_COMPRESSION: readonly (readonly [
+	flag: number,
+	feature: GPUFeatureName,
+	extension: string,
+	family: CompressionFamily,
+])[] = [
+	[C.CAPABILITY_TEXTURE_ASTC, 'texture-compression-astc', 'WEBGL_compressed_texture_astc', 'astc'],
+	[C.CAPABILITY_TEXTURE_BC, 'texture-compression-bc', 'EXT_texture_compression_bptc', 'bc'],
+	[C.CAPABILITY_TEXTURE_ETC2, 'texture-compression-etc2', 'WEBGL_compressed_texture_etc', 'etc2'],
+];
+
+/**
+ * The capability flags of the compressed texture families that `has` finds, by feature or
+ * extension, among those that `allowed` names when it names any.
+ */
+function compression(
+	has: (feature: GPUFeatureName, extension: string) => boolean,
+	allowed: readonly CompressionFamily[] | undefined,
+): number {
+	let flags = 0;
+	for (const [flag, feature, extension, family] of TEXTURE_COMPRESSION)
+		if (has(feature, extension) && (!allowed || allowed.includes(family))) flags |= flag;
+	return flags;
+}
+
+/**
+ * How the page asks the engine to use the device: the test switches that force a route, limit the
+ * compressed texture families or turn cell culling off for benchmarks, the anti-aliasing mode and
+ * the canvas's transparency.
  */
 export type DeviceOptions = Pick<
 	Switches,
-	'copyUploads' | 'depth' | 'hdr' | 'parallelCompile' | 'cells'
+	'copyUploads' | 'depth' | 'hdr' | 'parallelCompile' | 'compression' | 'cells'
 > & {
 	/** The anti-aliasing mode. */
 	antialias: AntialiasMode;
@@ -166,8 +200,8 @@ export function sceneColorFormat(
  * The device and the canvas as the engine uses them on a tier, from the capability report and the
  * options. The test switches make the WebGL2 path copy uploads out of shared memory even where
  * WebGL reads it, force a WebGL2 depth mode, make WebGL2 wait for each program's compile, or force
- * the 8-bit path, so tests reach every route. `cells` off makes the core cull without grid cells,
- * for benchmarks.
+ * the 8-bit path, so tests reach every route. `compression` limits the compressed texture families,
+ * as on a device with fewer. `cells` off makes the core cull without grid cells, for benchmarks.
  */
 export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOptions): CoreDevice {
 	const sceneColor = sceneColorFormat(tier, report, options);
@@ -183,7 +217,9 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		return {
 			webgl2: false,
 			storageBindingBytes: storageBindingBytes(report.webgpu.limits),
-			capabilities: report.webgpu.transientAttachments ? C.CAPABILITY_TRANSIENT_ATTACHMENTS : 0,
+			capabilities:
+				compression((feature) => report.webgpu.features.includes(feature), options.compression) |
+				(report.webgpu.transientAttachments ? C.CAPABILITY_TRANSIENT_ATTACHMENTS : 0),
 			maxTextureSize: 0,
 			sharedUploads: true,
 			depth: 'reversed',
@@ -197,7 +233,9 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 	return {
 		webgl2: true,
 		storageBindingBytes: C.LIMIT_PORTABLE_STORAGE_BINDING_BYTES,
-		capabilities: multiDraw ? C.CAPABILITY_MULTI_DRAW : 0,
+		capabilities:
+			(multiDraw ? C.CAPABILITY_MULTI_DRAW : 0) |
+			compression((_, extension) => gl.extensions[extension] === true, options.compression),
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),
 		sharedUploads:
 			!options.copyUploads && uploads !== null && uploads.bufferSubData && uploads.texSubImage2D,

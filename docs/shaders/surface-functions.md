@@ -63,7 +63,7 @@ A `Surface` holds the values that the engine lights. Colors are linear, as the e
 | Field | Type | What it holds |
 | --- | --- | --- |
 | `baseColor` | `vec3f` | The base color: the color of diffuse light, and of a metal's reflections |
-| `alpha` | `f32` | The opacity, from 0 to 1. With `alphaMode: 'mask'`, the point draws only where it reaches `alphaCutoff`. This version blends no materials, so other alpha modes draw opaque |
+| `alpha` | `f32` | The opacity, from 0 to 1. With `alphaMode: 'mask'`, the point draws only where it reaches `alphaCutoff`, and with `alphaMode: 'blend'`, it blends with what lies behind |
 | `metalness` | `f32` | 0 for a surface such as paint or plastic, and 1 for a metal |
 | `roughness` | `f32` | The perceptual roughness: 0 is a mirror, and 1 is fully matte |
 | `normal` | `vec3f` | The unit normal that lights the point, in world space |

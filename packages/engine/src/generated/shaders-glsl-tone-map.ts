@@ -1156,6 +1156,7 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -1331,6 +1332,11 @@ vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
     return _e20;
 }
 
+vec4 fragment_color(Material m_2, vec3 color, float alpha) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
+}
+
 Instance instance_of(uvec4 record, uint instance) {
     uint source = 0u;
     Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
@@ -1420,16 +1426,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_3 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_3.base_color = base_color;
+    m_3.diffuse = (base_color * (1.0 - metalness));
+    m_3.specular = vec3(0.04);
+    vec3 _e13 = m_3.specular;
+    m_3.specular_blended = mix(_e13, base_color, metalness);
+    m_3.specular_grazing = 1.0;
+    m_3.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_3.metalness = metalness;
+    PbrMaterial _e26 = m_3;
     return _e26;
 }
 
@@ -1438,29 +1444,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -1468,12 +1474,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_4, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_4.specular_blended, m_4.specular_grazing, m_4.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_4.specular, m_4.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_4.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -1486,22 +1492,22 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_5, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_5.specular, m_5.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_5.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_6, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_vs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_6, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_vs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_6, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -1688,6 +1694,7 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -1878,6 +1885,11 @@ vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
     return _e20;
 }
 
+vec4 fragment_color(Material m_2, vec3 color, float alpha) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
+}
+
 vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
@@ -1931,16 +1943,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_3 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_3.base_color = base_color;
+    m_3.diffuse = (base_color * (1.0 - metalness));
+    m_3.specular = vec3(0.04);
+    vec3 _e13 = m_3.specular;
+    m_3.specular_blended = mix(_e13, base_color, metalness);
+    m_3.specular_grazing = 1.0;
+    m_3.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_3.metalness = metalness;
+    PbrMaterial _e26 = m_3;
     return _e26;
 }
 
@@ -1949,29 +1961,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -1979,12 +1991,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_4, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_4.specular_blended, m_4.specular_grazing, m_4.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_4.specular, m_4.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_4.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -1997,37 +2009,37 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_5, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_5.specular, m_5.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_5.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
 Surface defaultSurface(SurfaceInput input_1) {
     Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
-    Material m_6 = material_row;
-    s.baseColor = (m_6.color.xyz * input_1.vertexColor.xyz);
-    s.alpha = (m_6.color.w * input_1.vertexColor.w);
-    s.metalness = m_6.surface.x;
-    s.roughness = m_6.surface.y;
+    Material m_7 = material_row;
+    s.baseColor = (m_7.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_7.color.w * input_1.vertexColor.w);
+    s.metalness = m_7.surface.x;
+    s.roughness = m_7.surface.y;
     s.normal = input_1.normal;
-    s.emissive = (m_6.emissive.xyz * m_6.strengths.w);
+    s.emissive = (m_7.emissive.xyz * m_7.strengths.w);
     s.occlusion = 1.0;
     s.irradiance = vec3(0.0);
     Surface _e35 = s;
     return _e35;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_6, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_fs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_6, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_fs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_6, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -2045,7 +2057,9 @@ vec4 shade(Surface s_1, SurfaceInput input_2, vec2 pixel_4) {
     Material _e34 = material_row;
     vec3 _e35 = fogged(outgoing, input_2.relativePosition, _e34);
     vec4 _e37 = finish_null3d_mesh(_e35, pixel_4);
-    return _e37;
+    Material _e39 = material_row;
+    vec4 _e42 = fragment_color(_e39, _e37.xyz, s_1.alpha);
+    return _e42;
 }
 
 void main() {
@@ -2226,6 +2240,7 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -2401,6 +2416,11 @@ vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
     return _e20;
 }
 
+vec4 fragment_color(Material m_2, vec3 color, float alpha) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
+}
+
 Instance instance_of(uvec4 record, uint instance) {
     uint source = 0u;
     Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
@@ -2490,16 +2510,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_3 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_3.base_color = base_color;
+    m_3.diffuse = (base_color * (1.0 - metalness));
+    m_3.specular = vec3(0.04);
+    vec3 _e13 = m_3.specular;
+    m_3.specular_blended = mix(_e13, base_color, metalness);
+    m_3.specular_grazing = 1.0;
+    m_3.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_3.metalness = metalness;
+    PbrMaterial _e26 = m_3;
     return _e26;
 }
 
@@ -2508,29 +2528,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -2538,12 +2558,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_4, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_4.specular_blended, m_4.specular_grazing, m_4.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_4.specular, m_4.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_4.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -2556,22 +2576,22 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_5, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_5.specular, m_5.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_5.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_6, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_vs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_6, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_vs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_6, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -2758,6 +2778,7 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -2948,6 +2969,11 @@ vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
     return _e20;
 }
 
+vec4 fragment_color(Material m_2, vec3 color, float alpha) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
+}
+
 vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
@@ -3001,16 +3027,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_3 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_3.base_color = base_color;
+    m_3.diffuse = (base_color * (1.0 - metalness));
+    m_3.specular = vec3(0.04);
+    vec3 _e13 = m_3.specular;
+    m_3.specular_blended = mix(_e13, base_color, metalness);
+    m_3.specular_grazing = 1.0;
+    m_3.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_3.metalness = metalness;
+    PbrMaterial _e26 = m_3;
     return _e26;
 }
 
@@ -3019,29 +3045,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -3049,12 +3075,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_4, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_4.specular_blended, m_4.specular_grazing, m_4.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_4.specular, m_4.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_4.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -3067,37 +3093,37 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_5, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_5.specular, m_5.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_5.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
 Surface defaultSurface(SurfaceInput input_1) {
     Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
-    Material m_6 = material_row;
-    s.baseColor = (m_6.color.xyz * input_1.vertexColor.xyz);
-    s.alpha = (m_6.color.w * input_1.vertexColor.w);
-    s.metalness = m_6.surface.x;
-    s.roughness = m_6.surface.y;
+    Material m_7 = material_row;
+    s.baseColor = (m_7.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_7.color.w * input_1.vertexColor.w);
+    s.metalness = m_7.surface.x;
+    s.roughness = m_7.surface.y;
     s.normal = input_1.normal;
-    s.emissive = (m_6.emissive.xyz * m_6.strengths.w);
+    s.emissive = (m_7.emissive.xyz * m_7.strengths.w);
     s.occlusion = 1.0;
     s.irradiance = vec3(0.0);
     Surface _e35 = s;
     return _e35;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_6, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_fs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_6, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_fs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_6, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -3119,7 +3145,9 @@ vec4 shade(Surface s_1, SurfaceInput input_2, vec2 pixel_4) {
     Material _e40 = material_row;
     vec3 _e41 = fogged(outgoing, input_2.relativePosition, _e40);
     vec4 _e43 = finish_null3d_mesh(_e41, pixel_4);
-    return _e43;
+    Material _e45 = material_row;
+    vec4 _e48 = fragment_color(_e45, _e43.xyz, s_1.alpha);
+    return _e48;
 }
 
 void main() {
@@ -3302,6 +3330,7 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -3479,6 +3508,11 @@ vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
     return _e20;
 }
 
+vec4 fragment_color(Material m_2, vec3 color, float alpha) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
+}
+
 Instance instance_of(uvec4 record, uint instance) {
     uint source = 0u;
     Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
@@ -3568,16 +3602,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_3 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_3.base_color = base_color;
+    m_3.diffuse = (base_color * (1.0 - metalness));
+    m_3.specular = vec3(0.04);
+    vec3 _e13 = m_3.specular;
+    m_3.specular_blended = mix(_e13, base_color, metalness);
+    m_3.specular_grazing = 1.0;
+    m_3.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_3.metalness = metalness;
+    PbrMaterial _e26 = m_3;
     return _e26;
 }
 
@@ -3586,29 +3620,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -3616,12 +3650,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_4, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_4.specular_blended, m_4.specular_grazing, m_4.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_4.specular, m_4.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_4.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -3634,22 +3668,22 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_5, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_5.specular, m_5.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_5.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_6, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_vs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_6, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_vs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_6, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -3840,6 +3874,7 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -4031,6 +4066,11 @@ vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
     return _e20;
 }
 
+vec4 fragment_color(Material m_2, vec3 color, float alpha) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
+}
+
 vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
@@ -4084,16 +4124,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_3 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_3.base_color = base_color;
+    m_3.diffuse = (base_color * (1.0 - metalness));
+    m_3.specular = vec3(0.04);
+    vec3 _e13 = m_3.specular;
+    m_3.specular_blended = mix(_e13, base_color, metalness);
+    m_3.specular_grazing = 1.0;
+    m_3.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_3.metalness = metalness;
+    PbrMaterial _e26 = m_3;
     return _e26;
 }
 
@@ -4102,29 +4142,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -4132,12 +4172,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_4, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_4.specular_blended, m_4.specular_grazing, m_4.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_4.specular, m_4.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_4.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -4150,37 +4190,37 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_5, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_5.specular, m_5.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_5.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
 Surface defaultSurface(SurfaceInput input_1) {
     Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
-    Material m_6 = material_row;
-    s.baseColor = (m_6.color.xyz * input_1.vertexColor.xyz);
-    s.alpha = (m_6.color.w * input_1.vertexColor.w);
-    s.metalness = m_6.surface.x;
-    s.roughness = m_6.surface.y;
+    Material m_7 = material_row;
+    s.baseColor = (m_7.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_7.color.w * input_1.vertexColor.w);
+    s.metalness = m_7.surface.x;
+    s.roughness = m_7.surface.y;
     s.normal = input_1.normal;
-    s.emissive = (m_6.emissive.xyz * m_6.strengths.w);
+    s.emissive = (m_7.emissive.xyz * m_7.strengths.w);
     s.occlusion = 1.0;
     s.irradiance = vec3(0.0);
     Surface _e35 = s;
     return _e35;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_6, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_fs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_6, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_fs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_6, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -4198,7 +4238,9 @@ vec4 shade(Surface s_1, SurfaceInput input_2, vec2 pixel_4) {
     Material _e34 = material_row;
     vec3 _e35 = fogged(outgoing, input_2.relativePosition, _e34);
     vec4 _e37 = finish_null3d_mesh(_e35, pixel_4);
-    return _e37;
+    Material _e39 = material_row;
+    vec4 _e42 = fragment_color(_e39, _e37.xyz, s_1.alpha);
+    return _e42;
 }
 
 void main() {
@@ -4382,6 +4424,7 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -4559,6 +4602,11 @@ vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
     return _e20;
 }
 
+vec4 fragment_color(Material m_2, vec3 color, float alpha) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
+}
+
 Instance instance_of(uvec4 record, uint instance) {
     uint source = 0u;
     Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
@@ -4648,16 +4696,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_3 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_3.base_color = base_color;
+    m_3.diffuse = (base_color * (1.0 - metalness));
+    m_3.specular = vec3(0.04);
+    vec3 _e13 = m_3.specular;
+    m_3.specular_blended = mix(_e13, base_color, metalness);
+    m_3.specular_grazing = 1.0;
+    m_3.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_3.metalness = metalness;
+    PbrMaterial _e26 = m_3;
     return _e26;
 }
 
@@ -4666,29 +4714,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -4696,12 +4744,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_4, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_4.specular_blended, m_4.specular_grazing, m_4.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_4.specular, m_4.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_4.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -4714,22 +4762,22 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_5, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_5.specular, m_5.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_5.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_6, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_vs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_6, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_vs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_6, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -4920,6 +4968,7 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -5111,6 +5160,11 @@ vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
     return _e20;
 }
 
+vec4 fragment_color(Material m_2, vec3 color, float alpha) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
+}
+
 vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
@@ -5164,16 +5218,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_3 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_3.base_color = base_color;
+    m_3.diffuse = (base_color * (1.0 - metalness));
+    m_3.specular = vec3(0.04);
+    vec3 _e13 = m_3.specular;
+    m_3.specular_blended = mix(_e13, base_color, metalness);
+    m_3.specular_grazing = 1.0;
+    m_3.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_3.metalness = metalness;
+    PbrMaterial _e26 = m_3;
     return _e26;
 }
 
@@ -5182,29 +5236,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -5212,12 +5266,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_4, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_4.specular_blended, m_4.specular_grazing, m_4.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_4.specular, m_4.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_4.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -5230,37 +5284,37 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_5, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_5.specular, m_5.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_5.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
 Surface defaultSurface(SurfaceInput input_1) {
     Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
-    Material m_6 = material_row;
-    s.baseColor = (m_6.color.xyz * input_1.vertexColor.xyz);
-    s.alpha = (m_6.color.w * input_1.vertexColor.w);
-    s.metalness = m_6.surface.x;
-    s.roughness = m_6.surface.y;
+    Material m_7 = material_row;
+    s.baseColor = (m_7.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_7.color.w * input_1.vertexColor.w);
+    s.metalness = m_7.surface.x;
+    s.roughness = m_7.surface.y;
     s.normal = input_1.normal;
-    s.emissive = (m_6.emissive.xyz * m_6.strengths.w);
+    s.emissive = (m_7.emissive.xyz * m_7.strengths.w);
     s.occlusion = 1.0;
     s.irradiance = vec3(0.0);
     Surface _e35 = s;
     return _e35;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_6, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_fs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_6, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_fs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_6, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -5282,7 +5336,9 @@ vec4 shade(Surface s_1, SurfaceInput input_2, vec2 pixel_4) {
     Material _e40 = material_row;
     vec3 _e41 = fogged(outgoing, input_2.relativePosition, _e40);
     vec4 _e43 = finish_null3d_mesh(_e41, pixel_4);
-    return _e43;
+    Material _e45 = material_row;
+    vec4 _e48 = fragment_color(_e45, _e43.xyz, s_1.alpha);
+    return _e48;
 }
 
 void main() {
@@ -5556,6 +5612,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -5670,6 +5728,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -5678,9 +5742,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a_1 = t_1.x.xyz;
     vec3 b_1 = t_1.y.xyz;
-    vec3 c_10 = t_1.z.xyz;
-    vec3 bc = cross(b_1, c_10);
-    vec3 ca = cross(c_10, a_1);
+    vec3 c_11 = t_1.z.xyz;
+    vec3 bc = cross(b_1, c_11);
+    vec3 ca = cross(c_11, a_1);
     vec3 ab = cross(a_1, b_1);
     float facing = ((dot(a_1, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -5690,8 +5754,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -5714,25 +5778,25 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -5742,6 +5806,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags_1 = uint(m_2.strengths.z);
+    if (!(((flags_1 & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -5822,9 +5912,9 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_vs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -5833,16 +5923,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_4 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_4.base_color = base_color;
+    m_4.diffuse = (base_color * (1.0 - metalness));
+    m_4.specular = vec3(0.04);
+    vec3 _e13 = m_4.specular;
+    m_4.specular_blended = mix(_e13, base_color, metalness);
+    m_4.specular_grazing = 1.0;
+    m_4.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_4.metalness = metalness;
+    PbrMaterial _e26 = m_4;
     return _e26;
 }
 
@@ -5851,29 +5941,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -5881,12 +5971,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_5, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_5.specular_blended, m_5.specular_grazing, m_5.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_5.specular, m_5.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_5.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -5899,9 +5989,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_6, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_6.specular, m_6.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_6.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -5912,16 +6002,16 @@ MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
     return first;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_7, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_vs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_7, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_vs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_7, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -6120,6 +6210,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -6237,6 +6329,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -6245,9 +6343,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a_1 = t_1.x.xyz;
     vec3 b_1 = t_1.y.xyz;
-    vec3 c_10 = t_1.z.xyz;
-    vec3 bc = cross(b_1, c_10);
-    vec3 ca = cross(c_10, a_1);
+    vec3 c_11 = t_1.z.xyz;
+    vec3 bc = cross(b_1, c_11);
+    vec3 ca = cross(c_11, a_1);
     vec3 ab = cross(a_1, b_1);
     float facing = ((dot(a_1, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -6257,8 +6355,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -6281,15 +6379,15 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
@@ -6316,12 +6414,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -6331,6 +6429,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags_1 = uint(m_2.strengths.z);
+    if (!(((flags_1 & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
 }
 
 vec4 clip_of(Instance found, vec3 relative_1) {
@@ -6358,27 +6482,27 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_fs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
-    uvec2 low_1 = uvec2(floor(at));
-    uvec2 high_1 = min((low_1 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
+    uvec2 low_2 = uvec2(floor(at));
+    uvec2 high_2 = min((low_2 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
     vec2 t_2 = fract(at);
-    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_1), 0);
+    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_2), 0);
     vec2 a_2 = _e29.xy;
-    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_1.x, low_1.y)), 0);
+    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_2.x, low_2.y)), 0);
     vec2 b_2 = _e36.xy;
-    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_1.x, high_1.y)), 0);
-    vec2 c_11 = _e43.xy;
-    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_1), 0);
+    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_2.x, high_2.y)), 0);
+    vec2 c_12 = _e43.xy;
+    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_2), 0);
     vec2 d_1 = _e47.xy;
-    return mix(mix(a_2, b_2, t_2.x), mix(c_11, d_1, t_2.x), t_2.y);
+    return mix(mix(a_2, b_2, t_2.x), mix(c_12, d_1, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -6386,16 +6510,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_4 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_4.base_color = base_color;
+    m_4.diffuse = (base_color * (1.0 - metalness));
+    m_4.specular = vec3(0.04);
+    vec3 _e13 = m_4.specular;
+    m_4.specular_blended = mix(_e13, base_color, metalness);
+    m_4.specular_grazing = 1.0;
+    m_4.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_4.metalness = metalness;
+    PbrMaterial _e26 = m_4;
     return _e26;
 }
 
@@ -6404,29 +6528,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -6434,12 +6558,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_5, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_5.specular_blended, m_5.specular_grazing, m_5.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_5.specular, m_5.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_5.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -6452,9 +6576,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_6, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_6.specular, m_6.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_6.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -6476,96 +6600,97 @@ Surface with_maps(Surface surface, SurfaceInput input_1) {
     Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
     vec3 tangent = vec3(0.0);
     vec3 bitangent = vec3(0.0);
-    Material m_6 = material_row;
-    uint flags_1 = uint(m_6.strengths.z);
+    Material m_8 = material_row;
+    uint flags_2 = uint(m_8.strengths.z);
     s = surface;
-    MapUv _e11 = transformed_uv(input_1.uv, m_6.uv_u, m_6.uv_v);
-    MapUv _e15 = transformed_uv(input_1.uv1_, m_6.uv_u, m_6.uv_v);
+    MapUv _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    MapUv _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     vec3 _e17 = dFdy(input_1.relativePosition);
     vec3 position_dy = (_e17 * ROWS_UP);
     vec3 position_dx = dFdx(input_1.relativePosition);
-    bool _e24 = map_ready(m_6.maps.x);
+    bool _e24 = map_ready(m_8.maps.x);
     if (_e24) {
-        MapUv _e26 = map_uv(flags_1, 0u, _e11, _e15);
-        uint _e30 = map_layer(m_6.maps.x);
-        vec4 texel = textureGrad(_group_3_binding_0_fs, vec3(_e26.uv, _e30), _e26.dx, _e26.dy);
-        vec3 _e37 = s.baseColor;
-        s.baseColor = (_e37 * texel.xyz);
-        float _e41 = s.alpha;
-        s.alpha = (_e41 * texel.w);
+        MapUv _e26 = map_uv(flags_2, 0u, _e11, _e15);
+        uint _e30 = map_layer(m_8.maps.x);
+        vec4 sampled = textureGrad(_group_3_binding_0_fs, vec3(_e26.uv, _e30), _e26.dx, _e26.dy);
+        vec4 _e36 = straight_texel(m_8, sampled);
+        vec3 _e38 = s.baseColor;
+        s.baseColor = (_e38 * _e36.xyz);
+        float _e42 = s.alpha;
+        s.alpha = (_e42 * _e36.w);
     }
-    bool _e46 = map_ready(m_6.maps.y);
-    if (_e46) {
-        MapUv _e48 = map_uv(flags_1, 1u, _e11, _e15);
-        uint _e51 = map_layer(m_6.maps.y);
-        vec4 texel_1 = textureGrad(_group_3_binding_1_fs, vec3(_e48.uv, _e51), _e48.dx, _e48.dy);
-        float _e59 = s.roughness;
-        s.roughness = (_e59 * texel_1.y);
-        float _e63 = s.metalness;
-        s.metalness = (_e63 * texel_1.z);
+    bool _e47 = map_ready(m_8.maps.y);
+    if (_e47) {
+        MapUv _e49 = map_uv(flags_2, 1u, _e11, _e15);
+        uint _e52 = map_layer(m_8.maps.y);
+        vec4 texel_1 = textureGrad(_group_3_binding_1_fs, vec3(_e49.uv, _e52), _e49.dx, _e49.dy);
+        float _e60 = s.roughness;
+        s.roughness = (_e60 * texel_1.y);
+        float _e64 = s.metalness;
+        s.metalness = (_e64 * texel_1.z);
     }
-    bool _e68 = map_ready(m_6.maps.w);
-    if (_e68) {
-        MapUv _e70 = map_uv(flags_1, 3u, _e11, _e15);
-        uint _e73 = map_layer(m_6.maps.w);
-        vec4 texel_2 = textureGrad(_group_3_binding_3_fs, vec3(_e70.uv, _e73), _e70.dx, _e70.dy);
-        s.occlusion = (((texel_2.x - 1.0) * m_6.strengths.x) + 1.0);
+    bool _e69 = map_ready(m_8.maps.w);
+    if (_e69) {
+        MapUv _e71 = map_uv(flags_2, 3u, _e11, _e15);
+        uint _e74 = map_layer(m_8.maps.w);
+        vec4 texel_2 = textureGrad(_group_3_binding_3_fs, vec3(_e71.uv, _e74), _e71.dx, _e71.dy);
+        s.occlusion = (((texel_2.x - 1.0) * m_8.strengths.x) + 1.0);
     }
-    bool _e91 = map_ready(m_6.more_maps.x);
-    if (_e91) {
-        MapUv _e93 = map_uv(flags_1, 4u, _e11, _e15);
-        uint _e96 = map_layer(m_6.more_maps.x);
-        vec4 texel_3 = textureGrad(_group_3_binding_4_fs, vec3(_e93.uv, _e96), _e93.dx, _e93.dy);
-        vec3 _e104 = s.emissive;
-        s.emissive = (_e104 * texel_3.xyz);
+    bool _e92 = map_ready(m_8.more_maps.x);
+    if (_e92) {
+        MapUv _e94 = map_uv(flags_2, 4u, _e11, _e15);
+        uint _e97 = map_layer(m_8.more_maps.x);
+        vec4 texel_3 = textureGrad(_group_3_binding_4_fs, vec3(_e94.uv, _e97), _e94.dx, _e94.dy);
+        vec3 _e105 = s.emissive;
+        s.emissive = (_e105 * texel_3.xyz);
     }
-    bool _e109 = map_ready(m_6.more_maps.y);
-    if (_e109) {
-        MapUv _e111 = map_uv(flags_1, 5u, _e11, _e15);
-        uint _e114 = map_layer(m_6.more_maps.y);
-        vec4 texel_4 = textureGrad(_group_3_binding_5_fs, vec3(_e111.uv, _e114), _e111.dx, _e111.dy);
-        s.irradiance = (texel_4.xyz * m_6.strengths.y);
+    bool _e110 = map_ready(m_8.more_maps.y);
+    if (_e110) {
+        MapUv _e112 = map_uv(flags_2, 5u, _e11, _e15);
+        uint _e115 = map_layer(m_8.more_maps.y);
+        vec4 texel_4 = textureGrad(_group_3_binding_5_fs, vec3(_e112.uv, _e115), _e112.dx, _e112.dy);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    bool _e128 = map_ready(m_6.maps.z);
-    if (_e128) {
-        MapUv _e130 = map_uv(flags_1, 2u, _e11, _e15);
-        uint _e133 = map_layer(m_6.maps.z);
-        vec4 texel_5 = textureGrad(_group_3_binding_2_fs, vec3(_e130.uv, _e133), _e130.dx, _e130.dy);
-        vec3 bent = vec3((((texel_5.xy * 2.0) - vec2(1.0)) * m_6.surface.zw), ((texel_5.z * 2.0) - 1.0));
+    bool _e129 = map_ready(m_8.maps.z);
+    if (_e129) {
+        MapUv _e131 = map_uv(flags_2, 2u, _e11, _e15);
+        uint _e134 = map_layer(m_8.maps.z);
+        vec4 texel_5 = textureGrad(_group_3_binding_2_fs, vec3(_e131.uv, _e134), _e131.dx, _e131.dy);
+        vec3 bent = vec3((((texel_5.xy * 2.0) - vec2(1.0)) * m_8.surface.zw), ((texel_5.z * 2.0) - 1.0));
         vec3 normal_4 = input_1.normal;
         float facing_1 = (input_1.frontFacing ? 1.0 : -1.0);
         vec3 q1perp = cross(position_dy, normal_4);
         vec3 q0perp = cross(normal_4, position_dx);
-        vec2 st_dy = (_e130.dy * ROWS_UP);
-        tangent = ((q1perp * _e130.dx.x) + (q0perp * st_dy.x));
-        bitangent = ((q1perp * _e130.dx.y) + (q0perp * st_dy.y));
-        vec3 _e179 = tangent;
+        vec2 st_dy = (_e131.dy * ROWS_UP);
+        tangent = ((q1perp * _e131.dx.x) + (q0perp * st_dy.x));
+        bitangent = ((q1perp * _e131.dx.y) + (q0perp * st_dy.y));
         vec3 _e180 = tangent;
-        vec3 _e182 = bitangent;
+        vec3 _e181 = tangent;
         vec3 _e183 = bitangent;
-        float det = max(dot(_e179, _e180), dot(_e182, _e183));
+        vec3 _e184 = bitangent;
+        float det = max(dot(_e180, _e181), dot(_e183, _e184));
         float scale = ((det == 0.0) ? 0.0 : inversesqrt(det));
-        vec3 _e191 = tangent;
-        tangent = (_e191 * (scale * facing_1));
-        vec3 _e194 = bitangent;
-        bitangent = (_e194 * (scale * facing_1));
-        vec3 _e198 = tangent;
-        vec3 _e201 = bitangent;
-        s.normal = normalize((((_e198 * bent.x) + (_e201 * bent.y)) + (normal_4 * bent.z)));
+        vec3 _e192 = tangent;
+        tangent = (_e192 * (scale * facing_1));
+        vec3 _e195 = bitangent;
+        bitangent = (_e195 * (scale * facing_1));
+        vec3 _e199 = tangent;
+        vec3 _e202 = bitangent;
+        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_4 * bent.z)));
     }
-    Surface _e209 = s;
-    return _e209;
+    Surface _e210 = s;
+    return _e210;
 }
 
 Surface defaultSurface(SurfaceInput input_2) {
     Surface s_1 = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
-    Material m_7 = material_row;
-    s_1.baseColor = (m_7.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_7.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_7.surface.x;
-    s_1.roughness = m_7.surface.y;
+    Material m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_7.emissive.xyz * m_7.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1.0;
     s_1.irradiance = vec3(0.0);
     Surface _e35 = s_1;
@@ -6575,16 +6700,16 @@ Surface defaultSurface(SurfaceInput input_2) {
     return _e37;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_7, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_fs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_7, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_fs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_7, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -6602,7 +6727,9 @@ vec4 shade(Surface s_2, SurfaceInput input_3, vec2 pixel_4) {
     Material _e34 = material_row;
     vec3 _e35 = fogged(outgoing, input_3.relativePosition, _e34);
     vec4 _e37 = finish_null3d_mesh(_e35, pixel_4);
-    return _e37;
+    Material _e39 = material_row;
+    vec4 _e42 = fragment_color(_e39, _e37.xyz, s_2.alpha);
+    return _e42;
 }
 
 void main() {
@@ -6849,6 +6976,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -6963,6 +7092,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -6971,9 +7106,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a_1 = t_1.x.xyz;
     vec3 b_1 = t_1.y.xyz;
-    vec3 c_10 = t_1.z.xyz;
-    vec3 bc = cross(b_1, c_10);
-    vec3 ca = cross(c_10, a_1);
+    vec3 c_11 = t_1.z.xyz;
+    vec3 bc = cross(b_1, c_11);
+    vec3 ca = cross(c_11, a_1);
     vec3 ab = cross(a_1, b_1);
     float facing = ((dot(a_1, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -6983,8 +7118,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -7007,25 +7142,25 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -7035,6 +7170,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags_1 = uint(m_2.strengths.z);
+    if (!(((flags_1 & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -7115,9 +7276,9 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_vs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -7126,16 +7287,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_4 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_4.base_color = base_color;
+    m_4.diffuse = (base_color * (1.0 - metalness));
+    m_4.specular = vec3(0.04);
+    vec3 _e13 = m_4.specular;
+    m_4.specular_blended = mix(_e13, base_color, metalness);
+    m_4.specular_grazing = 1.0;
+    m_4.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_4.metalness = metalness;
+    PbrMaterial _e26 = m_4;
     return _e26;
 }
 
@@ -7144,29 +7305,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -7174,12 +7335,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_5, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_5.specular_blended, m_5.specular_grazing, m_5.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_5.specular, m_5.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_5.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -7192,9 +7353,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_6, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_6.specular, m_6.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_6.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -7205,16 +7366,16 @@ MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
     return first;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_7, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_vs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_7, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_vs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_7, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -7413,6 +7574,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -7530,6 +7693,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -7538,9 +7707,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a_1 = t_1.x.xyz;
     vec3 b_1 = t_1.y.xyz;
-    vec3 c_10 = t_1.z.xyz;
-    vec3 bc = cross(b_1, c_10);
-    vec3 ca = cross(c_10, a_1);
+    vec3 c_11 = t_1.z.xyz;
+    vec3 bc = cross(b_1, c_11);
+    vec3 ca = cross(c_11, a_1);
     vec3 ab = cross(a_1, b_1);
     float facing = ((dot(a_1, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -7550,8 +7719,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -7574,15 +7743,15 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
@@ -7609,12 +7778,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -7624,6 +7793,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags_1 = uint(m_2.strengths.z);
+    if (!(((flags_1 & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
 }
 
 vec4 clip_of(Instance found, vec3 relative_1) {
@@ -7651,27 +7846,27 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_fs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
-    uvec2 low_1 = uvec2(floor(at));
-    uvec2 high_1 = min((low_1 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
+    uvec2 low_2 = uvec2(floor(at));
+    uvec2 high_2 = min((low_2 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
     vec2 t_2 = fract(at);
-    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_1), 0);
+    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_2), 0);
     vec2 a_2 = _e29.xy;
-    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_1.x, low_1.y)), 0);
+    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_2.x, low_2.y)), 0);
     vec2 b_2 = _e36.xy;
-    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_1.x, high_1.y)), 0);
-    vec2 c_11 = _e43.xy;
-    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_1), 0);
+    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_2.x, high_2.y)), 0);
+    vec2 c_12 = _e43.xy;
+    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_2), 0);
     vec2 d_1 = _e47.xy;
-    return mix(mix(a_2, b_2, t_2.x), mix(c_11, d_1, t_2.x), t_2.y);
+    return mix(mix(a_2, b_2, t_2.x), mix(c_12, d_1, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -7679,16 +7874,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_4 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_4.base_color = base_color;
+    m_4.diffuse = (base_color * (1.0 - metalness));
+    m_4.specular = vec3(0.04);
+    vec3 _e13 = m_4.specular;
+    m_4.specular_blended = mix(_e13, base_color, metalness);
+    m_4.specular_grazing = 1.0;
+    m_4.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_4.metalness = metalness;
+    PbrMaterial _e26 = m_4;
     return _e26;
 }
 
@@ -7697,29 +7892,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -7727,12 +7922,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_5, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_5.specular_blended, m_5.specular_grazing, m_5.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_5.specular, m_5.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_5.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -7745,9 +7940,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_6, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_6.specular, m_6.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_6.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -7769,96 +7964,97 @@ Surface with_maps(Surface surface, SurfaceInput input_1) {
     Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
     vec3 tangent = vec3(0.0);
     vec3 bitangent = vec3(0.0);
-    Material m_6 = material_row;
-    uint flags_1 = uint(m_6.strengths.z);
+    Material m_8 = material_row;
+    uint flags_2 = uint(m_8.strengths.z);
     s = surface;
-    MapUv _e11 = transformed_uv(input_1.uv, m_6.uv_u, m_6.uv_v);
-    MapUv _e15 = transformed_uv(input_1.uv1_, m_6.uv_u, m_6.uv_v);
+    MapUv _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    MapUv _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     vec3 _e17 = dFdy(input_1.relativePosition);
     vec3 position_dy = (_e17 * ROWS_UP);
     vec3 position_dx = dFdx(input_1.relativePosition);
-    bool _e24 = map_ready(m_6.maps.x);
+    bool _e24 = map_ready(m_8.maps.x);
     if (_e24) {
-        MapUv _e26 = map_uv(flags_1, 0u, _e11, _e15);
-        uint _e30 = map_layer(m_6.maps.x);
-        vec4 texel = textureGrad(_group_3_binding_0_fs, vec3(_e26.uv, _e30), _e26.dx, _e26.dy);
-        vec3 _e37 = s.baseColor;
-        s.baseColor = (_e37 * texel.xyz);
-        float _e41 = s.alpha;
-        s.alpha = (_e41 * texel.w);
+        MapUv _e26 = map_uv(flags_2, 0u, _e11, _e15);
+        uint _e30 = map_layer(m_8.maps.x);
+        vec4 sampled = textureGrad(_group_3_binding_0_fs, vec3(_e26.uv, _e30), _e26.dx, _e26.dy);
+        vec4 _e36 = straight_texel(m_8, sampled);
+        vec3 _e38 = s.baseColor;
+        s.baseColor = (_e38 * _e36.xyz);
+        float _e42 = s.alpha;
+        s.alpha = (_e42 * _e36.w);
     }
-    bool _e46 = map_ready(m_6.maps.y);
-    if (_e46) {
-        MapUv _e48 = map_uv(flags_1, 1u, _e11, _e15);
-        uint _e51 = map_layer(m_6.maps.y);
-        vec4 texel_1 = textureGrad(_group_3_binding_1_fs, vec3(_e48.uv, _e51), _e48.dx, _e48.dy);
-        float _e59 = s.roughness;
-        s.roughness = (_e59 * texel_1.y);
-        float _e63 = s.metalness;
-        s.metalness = (_e63 * texel_1.z);
+    bool _e47 = map_ready(m_8.maps.y);
+    if (_e47) {
+        MapUv _e49 = map_uv(flags_2, 1u, _e11, _e15);
+        uint _e52 = map_layer(m_8.maps.y);
+        vec4 texel_1 = textureGrad(_group_3_binding_1_fs, vec3(_e49.uv, _e52), _e49.dx, _e49.dy);
+        float _e60 = s.roughness;
+        s.roughness = (_e60 * texel_1.y);
+        float _e64 = s.metalness;
+        s.metalness = (_e64 * texel_1.z);
     }
-    bool _e68 = map_ready(m_6.maps.w);
-    if (_e68) {
-        MapUv _e70 = map_uv(flags_1, 3u, _e11, _e15);
-        uint _e73 = map_layer(m_6.maps.w);
-        vec4 texel_2 = textureGrad(_group_3_binding_3_fs, vec3(_e70.uv, _e73), _e70.dx, _e70.dy);
-        s.occlusion = (((texel_2.x - 1.0) * m_6.strengths.x) + 1.0);
+    bool _e69 = map_ready(m_8.maps.w);
+    if (_e69) {
+        MapUv _e71 = map_uv(flags_2, 3u, _e11, _e15);
+        uint _e74 = map_layer(m_8.maps.w);
+        vec4 texel_2 = textureGrad(_group_3_binding_3_fs, vec3(_e71.uv, _e74), _e71.dx, _e71.dy);
+        s.occlusion = (((texel_2.x - 1.0) * m_8.strengths.x) + 1.0);
     }
-    bool _e91 = map_ready(m_6.more_maps.x);
-    if (_e91) {
-        MapUv _e93 = map_uv(flags_1, 4u, _e11, _e15);
-        uint _e96 = map_layer(m_6.more_maps.x);
-        vec4 texel_3 = textureGrad(_group_3_binding_4_fs, vec3(_e93.uv, _e96), _e93.dx, _e93.dy);
-        vec3 _e104 = s.emissive;
-        s.emissive = (_e104 * texel_3.xyz);
+    bool _e92 = map_ready(m_8.more_maps.x);
+    if (_e92) {
+        MapUv _e94 = map_uv(flags_2, 4u, _e11, _e15);
+        uint _e97 = map_layer(m_8.more_maps.x);
+        vec4 texel_3 = textureGrad(_group_3_binding_4_fs, vec3(_e94.uv, _e97), _e94.dx, _e94.dy);
+        vec3 _e105 = s.emissive;
+        s.emissive = (_e105 * texel_3.xyz);
     }
-    bool _e109 = map_ready(m_6.more_maps.y);
-    if (_e109) {
-        MapUv _e111 = map_uv(flags_1, 5u, _e11, _e15);
-        uint _e114 = map_layer(m_6.more_maps.y);
-        vec4 texel_4 = textureGrad(_group_3_binding_5_fs, vec3(_e111.uv, _e114), _e111.dx, _e111.dy);
-        s.irradiance = (texel_4.xyz * m_6.strengths.y);
+    bool _e110 = map_ready(m_8.more_maps.y);
+    if (_e110) {
+        MapUv _e112 = map_uv(flags_2, 5u, _e11, _e15);
+        uint _e115 = map_layer(m_8.more_maps.y);
+        vec4 texel_4 = textureGrad(_group_3_binding_5_fs, vec3(_e112.uv, _e115), _e112.dx, _e112.dy);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    bool _e128 = map_ready(m_6.maps.z);
-    if (_e128) {
-        MapUv _e130 = map_uv(flags_1, 2u, _e11, _e15);
-        uint _e133 = map_layer(m_6.maps.z);
-        vec4 texel_5 = textureGrad(_group_3_binding_2_fs, vec3(_e130.uv, _e133), _e130.dx, _e130.dy);
-        vec3 bent = vec3((((texel_5.xy * 2.0) - vec2(1.0)) * m_6.surface.zw), ((texel_5.z * 2.0) - 1.0));
+    bool _e129 = map_ready(m_8.maps.z);
+    if (_e129) {
+        MapUv _e131 = map_uv(flags_2, 2u, _e11, _e15);
+        uint _e134 = map_layer(m_8.maps.z);
+        vec4 texel_5 = textureGrad(_group_3_binding_2_fs, vec3(_e131.uv, _e134), _e131.dx, _e131.dy);
+        vec3 bent = vec3((((texel_5.xy * 2.0) - vec2(1.0)) * m_8.surface.zw), ((texel_5.z * 2.0) - 1.0));
         vec3 normal_4 = input_1.normal;
         float facing_1 = (input_1.frontFacing ? 1.0 : -1.0);
         vec3 q1perp = cross(position_dy, normal_4);
         vec3 q0perp = cross(normal_4, position_dx);
-        vec2 st_dy = (_e130.dy * ROWS_UP);
-        tangent = ((q1perp * _e130.dx.x) + (q0perp * st_dy.x));
-        bitangent = ((q1perp * _e130.dx.y) + (q0perp * st_dy.y));
-        vec3 _e179 = tangent;
+        vec2 st_dy = (_e131.dy * ROWS_UP);
+        tangent = ((q1perp * _e131.dx.x) + (q0perp * st_dy.x));
+        bitangent = ((q1perp * _e131.dx.y) + (q0perp * st_dy.y));
         vec3 _e180 = tangent;
-        vec3 _e182 = bitangent;
+        vec3 _e181 = tangent;
         vec3 _e183 = bitangent;
-        float det = max(dot(_e179, _e180), dot(_e182, _e183));
+        vec3 _e184 = bitangent;
+        float det = max(dot(_e180, _e181), dot(_e183, _e184));
         float scale = ((det == 0.0) ? 0.0 : inversesqrt(det));
-        vec3 _e191 = tangent;
-        tangent = (_e191 * (scale * facing_1));
-        vec3 _e194 = bitangent;
-        bitangent = (_e194 * (scale * facing_1));
-        vec3 _e198 = tangent;
-        vec3 _e201 = bitangent;
-        s.normal = normalize((((_e198 * bent.x) + (_e201 * bent.y)) + (normal_4 * bent.z)));
+        vec3 _e192 = tangent;
+        tangent = (_e192 * (scale * facing_1));
+        vec3 _e195 = bitangent;
+        bitangent = (_e195 * (scale * facing_1));
+        vec3 _e199 = tangent;
+        vec3 _e202 = bitangent;
+        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_4 * bent.z)));
     }
-    Surface _e209 = s;
-    return _e209;
+    Surface _e210 = s;
+    return _e210;
 }
 
 Surface defaultSurface(SurfaceInput input_2) {
     Surface s_1 = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
-    Material m_7 = material_row;
-    s_1.baseColor = (m_7.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_7.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_7.surface.x;
-    s_1.roughness = m_7.surface.y;
+    Material m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_7.emissive.xyz * m_7.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1.0;
     s_1.irradiance = vec3(0.0);
     Surface _e35 = s_1;
@@ -7868,16 +8064,16 @@ Surface defaultSurface(SurfaceInput input_2) {
     return _e37;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_7, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_fs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_7, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_fs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_7, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -7899,7 +8095,9 @@ vec4 shade(Surface s_2, SurfaceInput input_3, vec2 pixel_4) {
     Material _e40 = material_row;
     vec3 _e41 = fogged(outgoing, input_3.relativePosition, _e40);
     vec4 _e43 = finish_null3d_mesh(_e41, pixel_4);
-    return _e43;
+    Material _e45 = material_row;
+    vec4 _e48 = fragment_color(_e45, _e43.xyz, s_2.alpha);
+    return _e48;
 }
 
 void main() {
@@ -8151,6 +8349,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -8268,6 +8468,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -8281,9 +8487,9 @@ vec3 transform_direction(Transform t_1, vec3 d) {
 vec3 transform_normal(Transform t_2, vec3 n) {
     vec3 a_1 = t_2.x.xyz;
     vec3 b_1 = t_2.y.xyz;
-    vec3 c_10 = t_2.z.xyz;
-    vec3 bc = cross(b_1, c_10);
-    vec3 ca = cross(c_10, a_1);
+    vec3 c_11 = t_2.z.xyz;
+    vec3 bc = cross(b_1, c_11);
+    vec3 ca = cross(c_11, a_1);
     vec3 ab = cross(a_1, b_1);
     float facing = ((dot(a_1, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -8293,8 +8499,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -8317,25 +8523,25 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -8345,6 +8551,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags_1 = uint(m_2.strengths.z);
+    if (!(((flags_1 & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -8425,9 +8657,9 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_vs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -8442,16 +8674,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_4 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_4.base_color = base_color;
+    m_4.diffuse = (base_color * (1.0 - metalness));
+    m_4.specular = vec3(0.04);
+    vec3 _e13 = m_4.specular;
+    m_4.specular_blended = mix(_e13, base_color, metalness);
+    m_4.specular_grazing = 1.0;
+    m_4.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_4.metalness = metalness;
+    PbrMaterial _e26 = m_4;
     return _e26;
 }
 
@@ -8460,29 +8692,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -8490,12 +8722,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_5, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_5.specular_blended, m_5.specular_grazing, m_5.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_5.specular, m_5.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_5.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -8508,9 +8740,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_6, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_6.specular, m_6.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_6.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -8521,16 +8753,16 @@ MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
     return first;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_7, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_vs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_7, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_vs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_7, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -8741,6 +8973,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -8860,6 +9094,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -8873,9 +9113,9 @@ vec3 transform_direction(Transform t_1, vec3 d) {
 vec3 transform_normal(Transform t_2, vec3 n) {
     vec3 a_1 = t_2.x.xyz;
     vec3 b_1 = t_2.y.xyz;
-    vec3 c_10 = t_2.z.xyz;
-    vec3 bc = cross(b_1, c_10);
-    vec3 ca = cross(c_10, a_1);
+    vec3 c_11 = t_2.z.xyz;
+    vec3 bc = cross(b_1, c_11);
+    vec3 ca = cross(c_11, a_1);
     vec3 ab = cross(a_1, b_1);
     float facing = ((dot(a_1, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -8885,8 +9125,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -8909,15 +9149,15 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
@@ -8944,12 +9184,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -8959,6 +9199,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags_1 = uint(m_2.strengths.z);
+    if (!(((flags_1 & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
 }
 
 vec4 clip_of(Instance found, vec3 relative_1) {
@@ -8986,9 +9252,9 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_fs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -9001,18 +9267,18 @@ vec3 world_direction(Instance found_4, vec3 direction) {
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
-    uvec2 low_1 = uvec2(floor(at));
-    uvec2 high_1 = min((low_1 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
+    uvec2 low_2 = uvec2(floor(at));
+    uvec2 high_2 = min((low_2 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
     vec2 t_3 = fract(at);
-    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_1), 0);
+    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_2), 0);
     vec2 a_2 = _e29.xy;
-    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_1.x, low_1.y)), 0);
+    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_2.x, low_2.y)), 0);
     vec2 b_2 = _e36.xy;
-    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_1.x, high_1.y)), 0);
-    vec2 c_11 = _e43.xy;
-    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_1), 0);
+    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_2.x, high_2.y)), 0);
+    vec2 c_12 = _e43.xy;
+    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_2), 0);
     vec2 d_2 = _e47.xy;
-    return mix(mix(a_2, b_2, t_3.x), mix(c_11, d_2, t_3.x), t_3.y);
+    return mix(mix(a_2, b_2, t_3.x), mix(c_12, d_2, t_3.x), t_3.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -9020,16 +9286,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_4 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_4.base_color = base_color;
+    m_4.diffuse = (base_color * (1.0 - metalness));
+    m_4.specular = vec3(0.04);
+    vec3 _e13 = m_4.specular;
+    m_4.specular_blended = mix(_e13, base_color, metalness);
+    m_4.specular_grazing = 1.0;
+    m_4.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_4.metalness = metalness;
+    PbrMaterial _e26 = m_4;
     return _e26;
 }
 
@@ -9038,29 +9304,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -9068,12 +9334,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_5, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_5.specular_blended, m_5.specular_grazing, m_5.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_5.specular, m_5.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_5.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -9086,9 +9352,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_6, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_6.specular, m_6.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_6.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -9108,81 +9374,82 @@ MapUv transformed_uv(vec2 uv, vec4 uv_u, vec4 uv_v) {
 
 Surface with_maps(Surface surface, SurfaceInput input_1) {
     Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
-    Material m_6 = material_row;
-    uint flags_1 = uint(m_6.strengths.z);
+    Material m_8 = material_row;
+    uint flags_2 = uint(m_8.strengths.z);
     s = surface;
-    MapUv _e11 = transformed_uv(input_1.uv, m_6.uv_u, m_6.uv_v);
-    MapUv _e15 = transformed_uv(input_1.uv1_, m_6.uv_u, m_6.uv_v);
+    MapUv _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    MapUv _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     vec3 _e17 = dFdy(input_1.relativePosition);
     vec3 position_dy = (_e17 * ROWS_UP);
     vec3 position_dx = dFdx(input_1.relativePosition);
-    bool _e24 = map_ready(m_6.maps.x);
+    bool _e24 = map_ready(m_8.maps.x);
     if (_e24) {
-        MapUv _e26 = map_uv(flags_1, 0u, _e11, _e15);
-        uint _e30 = map_layer(m_6.maps.x);
-        vec4 texel = textureGrad(_group_3_binding_0_fs, vec3(_e26.uv, _e30), _e26.dx, _e26.dy);
-        vec3 _e37 = s.baseColor;
-        s.baseColor = (_e37 * texel.xyz);
-        float _e41 = s.alpha;
-        s.alpha = (_e41 * texel.w);
+        MapUv _e26 = map_uv(flags_2, 0u, _e11, _e15);
+        uint _e30 = map_layer(m_8.maps.x);
+        vec4 sampled = textureGrad(_group_3_binding_0_fs, vec3(_e26.uv, _e30), _e26.dx, _e26.dy);
+        vec4 _e36 = straight_texel(m_8, sampled);
+        vec3 _e38 = s.baseColor;
+        s.baseColor = (_e38 * _e36.xyz);
+        float _e42 = s.alpha;
+        s.alpha = (_e42 * _e36.w);
     }
-    bool _e46 = map_ready(m_6.maps.y);
-    if (_e46) {
-        MapUv _e48 = map_uv(flags_1, 1u, _e11, _e15);
-        uint _e51 = map_layer(m_6.maps.y);
-        vec4 texel_1 = textureGrad(_group_3_binding_1_fs, vec3(_e48.uv, _e51), _e48.dx, _e48.dy);
-        float _e59 = s.roughness;
-        s.roughness = (_e59 * texel_1.y);
-        float _e63 = s.metalness;
-        s.metalness = (_e63 * texel_1.z);
+    bool _e47 = map_ready(m_8.maps.y);
+    if (_e47) {
+        MapUv _e49 = map_uv(flags_2, 1u, _e11, _e15);
+        uint _e52 = map_layer(m_8.maps.y);
+        vec4 texel_1 = textureGrad(_group_3_binding_1_fs, vec3(_e49.uv, _e52), _e49.dx, _e49.dy);
+        float _e60 = s.roughness;
+        s.roughness = (_e60 * texel_1.y);
+        float _e64 = s.metalness;
+        s.metalness = (_e64 * texel_1.z);
     }
-    bool _e68 = map_ready(m_6.maps.w);
-    if (_e68) {
-        MapUv _e70 = map_uv(flags_1, 3u, _e11, _e15);
-        uint _e73 = map_layer(m_6.maps.w);
-        vec4 texel_2 = textureGrad(_group_3_binding_3_fs, vec3(_e70.uv, _e73), _e70.dx, _e70.dy);
-        s.occlusion = (((texel_2.x - 1.0) * m_6.strengths.x) + 1.0);
+    bool _e69 = map_ready(m_8.maps.w);
+    if (_e69) {
+        MapUv _e71 = map_uv(flags_2, 3u, _e11, _e15);
+        uint _e74 = map_layer(m_8.maps.w);
+        vec4 texel_2 = textureGrad(_group_3_binding_3_fs, vec3(_e71.uv, _e74), _e71.dx, _e71.dy);
+        s.occlusion = (((texel_2.x - 1.0) * m_8.strengths.x) + 1.0);
     }
-    bool _e91 = map_ready(m_6.more_maps.x);
-    if (_e91) {
-        MapUv _e93 = map_uv(flags_1, 4u, _e11, _e15);
-        uint _e96 = map_layer(m_6.more_maps.x);
-        vec4 texel_3 = textureGrad(_group_3_binding_4_fs, vec3(_e93.uv, _e96), _e93.dx, _e93.dy);
-        vec3 _e104 = s.emissive;
-        s.emissive = (_e104 * texel_3.xyz);
+    bool _e92 = map_ready(m_8.more_maps.x);
+    if (_e92) {
+        MapUv _e94 = map_uv(flags_2, 4u, _e11, _e15);
+        uint _e97 = map_layer(m_8.more_maps.x);
+        vec4 texel_3 = textureGrad(_group_3_binding_4_fs, vec3(_e94.uv, _e97), _e94.dx, _e94.dy);
+        vec3 _e105 = s.emissive;
+        s.emissive = (_e105 * texel_3.xyz);
     }
-    bool _e109 = map_ready(m_6.more_maps.y);
-    if (_e109) {
-        MapUv _e111 = map_uv(flags_1, 5u, _e11, _e15);
-        uint _e114 = map_layer(m_6.more_maps.y);
-        vec4 texel_4 = textureGrad(_group_3_binding_5_fs, vec3(_e111.uv, _e114), _e111.dx, _e111.dy);
-        s.irradiance = (texel_4.xyz * m_6.strengths.y);
+    bool _e110 = map_ready(m_8.more_maps.y);
+    if (_e110) {
+        MapUv _e112 = map_uv(flags_2, 5u, _e11, _e15);
+        uint _e115 = map_layer(m_8.more_maps.y);
+        vec4 texel_4 = textureGrad(_group_3_binding_5_fs, vec3(_e112.uv, _e115), _e112.dx, _e112.dy);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    bool _e128 = map_ready(m_6.maps.z);
-    if (_e128) {
-        MapUv _e130 = map_uv(flags_1, 2u, _e11, _e15);
-        uint _e133 = map_layer(m_6.maps.z);
-        vec4 texel_5 = textureGrad(_group_3_binding_2_fs, vec3(_e130.uv, _e133), _e130.dx, _e130.dy);
-        vec3 bent = vec3((((texel_5.xy * 2.0) - vec2(1.0)) * m_6.surface.zw), ((texel_5.z * 2.0) - 1.0));
+    bool _e129 = map_ready(m_8.maps.z);
+    if (_e129) {
+        MapUv _e131 = map_uv(flags_2, 2u, _e11, _e15);
+        uint _e134 = map_layer(m_8.maps.z);
+        vec4 texel_5 = textureGrad(_group_3_binding_2_fs, vec3(_e131.uv, _e134), _e131.dx, _e131.dy);
+        vec3 bent = vec3((((texel_5.xy * 2.0) - vec2(1.0)) * m_8.surface.zw), ((texel_5.z * 2.0) - 1.0));
         vec3 normal_4 = input_1.normal;
         float facing_1 = (input_1.frontFacing ? 1.0 : -1.0);
         vec3 tangent = (normalize(input_1.tangent) * facing_1);
         vec3 bitangent = (normalize(input_1.bitangent) * facing_1);
         s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_4 * bent.z)));
     }
-    Surface _e176 = s;
-    return _e176;
+    Surface _e177 = s;
+    return _e177;
 }
 
 Surface defaultSurface(SurfaceInput input_2) {
     Surface s_1 = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
-    Material m_7 = material_row;
-    s_1.baseColor = (m_7.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_7.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_7.surface.x;
-    s_1.roughness = m_7.surface.y;
+    Material m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_7.emissive.xyz * m_7.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1.0;
     s_1.irradiance = vec3(0.0);
     Surface _e35 = s_1;
@@ -9192,16 +9459,16 @@ Surface defaultSurface(SurfaceInput input_2) {
     return _e37;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_7, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_fs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_7, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_fs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_7, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -9223,7 +9490,9 @@ vec4 shade(Surface s_2, SurfaceInput input_3, vec2 pixel_4) {
     Material _e40 = material_row;
     vec3 _e41 = fogged(outgoing, input_3.relativePosition, _e40);
     vec4 _e43 = finish_null3d_mesh(_e41, pixel_4);
-    return _e43;
+    Material _e45 = material_row;
+    vec4 _e48 = fragment_color(_e45, _e43.xyz, s_2.alpha);
+    return _e48;
 }
 
 void main() {
@@ -9474,6 +9743,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -9590,6 +9861,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -9598,9 +9875,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a_1 = t_1.x.xyz;
     vec3 b_1 = t_1.y.xyz;
-    vec3 c_10 = t_1.z.xyz;
-    vec3 bc = cross(b_1, c_10);
-    vec3 ca = cross(c_10, a_1);
+    vec3 c_11 = t_1.z.xyz;
+    vec3 bc = cross(b_1, c_11);
+    vec3 ca = cross(c_11, a_1);
     vec3 ab = cross(a_1, b_1);
     float facing = ((dot(a_1, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -9610,8 +9887,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -9634,25 +9911,25 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -9662,6 +9939,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags_1 = uint(m_2.strengths.z);
+    if (!(((flags_1 & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -9742,9 +10045,9 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_vs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -9753,16 +10056,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_4 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_4.base_color = base_color;
+    m_4.diffuse = (base_color * (1.0 - metalness));
+    m_4.specular = vec3(0.04);
+    vec3 _e13 = m_4.specular;
+    m_4.specular_blended = mix(_e13, base_color, metalness);
+    m_4.specular_grazing = 1.0;
+    m_4.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_4.metalness = metalness;
+    PbrMaterial _e26 = m_4;
     return _e26;
 }
 
@@ -9771,29 +10074,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -9801,12 +10104,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_5, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_5.specular_blended, m_5.specular_grazing, m_5.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_5.specular, m_5.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_5.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -9819,9 +10122,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_6, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_6.specular, m_6.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_6.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -9832,16 +10135,16 @@ MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
     return first;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_7, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_vs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_7, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_vs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_7, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -10044,6 +10347,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -10162,6 +10467,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -10170,9 +10481,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a_1 = t_1.x.xyz;
     vec3 b_1 = t_1.y.xyz;
-    vec3 c_10 = t_1.z.xyz;
-    vec3 bc = cross(b_1, c_10);
-    vec3 ca = cross(c_10, a_1);
+    vec3 c_11 = t_1.z.xyz;
+    vec3 bc = cross(b_1, c_11);
+    vec3 ca = cross(c_11, a_1);
     vec3 ab = cross(a_1, b_1);
     float facing = ((dot(a_1, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -10182,8 +10493,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -10206,15 +10517,15 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
@@ -10241,12 +10552,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -10256,6 +10567,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags_1 = uint(m_2.strengths.z);
+    if (!(((flags_1 & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
 }
 
 vec4 clip_of(Instance found, vec3 relative_1) {
@@ -10283,27 +10620,27 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_fs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
-    uvec2 low_1 = uvec2(floor(at));
-    uvec2 high_1 = min((low_1 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
+    uvec2 low_2 = uvec2(floor(at));
+    uvec2 high_2 = min((low_2 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
     vec2 t_2 = fract(at);
-    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_1), 0);
+    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_2), 0);
     vec2 a_2 = _e29.xy;
-    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_1.x, low_1.y)), 0);
+    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_2.x, low_2.y)), 0);
     vec2 b_2 = _e36.xy;
-    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_1.x, high_1.y)), 0);
-    vec2 c_11 = _e43.xy;
-    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_1), 0);
+    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_2.x, high_2.y)), 0);
+    vec2 c_12 = _e43.xy;
+    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_2), 0);
     vec2 d_1 = _e47.xy;
-    return mix(mix(a_2, b_2, t_2.x), mix(c_11, d_1, t_2.x), t_2.y);
+    return mix(mix(a_2, b_2, t_2.x), mix(c_12, d_1, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -10311,16 +10648,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_4 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_4.base_color = base_color;
+    m_4.diffuse = (base_color * (1.0 - metalness));
+    m_4.specular = vec3(0.04);
+    vec3 _e13 = m_4.specular;
+    m_4.specular_blended = mix(_e13, base_color, metalness);
+    m_4.specular_grazing = 1.0;
+    m_4.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_4.metalness = metalness;
+    PbrMaterial _e26 = m_4;
     return _e26;
 }
 
@@ -10329,29 +10666,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -10359,12 +10696,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_5, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_5.specular_blended, m_5.specular_grazing, m_5.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_5.specular, m_5.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_5.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -10377,9 +10714,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_6, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_6.specular, m_6.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_6.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -10401,96 +10738,97 @@ Surface with_maps(Surface surface, SurfaceInput input_1) {
     Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
     vec3 tangent = vec3(0.0);
     vec3 bitangent = vec3(0.0);
-    Material m_6 = material_row;
-    uint flags_1 = uint(m_6.strengths.z);
+    Material m_8 = material_row;
+    uint flags_2 = uint(m_8.strengths.z);
     s = surface;
-    MapUv _e11 = transformed_uv(input_1.uv, m_6.uv_u, m_6.uv_v);
-    MapUv _e15 = transformed_uv(input_1.uv1_, m_6.uv_u, m_6.uv_v);
+    MapUv _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    MapUv _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     vec3 _e17 = dFdy(input_1.relativePosition);
     vec3 position_dy = (_e17 * ROWS_UP);
     vec3 position_dx = dFdx(input_1.relativePosition);
-    bool _e24 = map_ready(m_6.maps.x);
+    bool _e24 = map_ready(m_8.maps.x);
     if (_e24) {
-        MapUv _e26 = map_uv(flags_1, 0u, _e11, _e15);
-        uint _e30 = map_layer(m_6.maps.x);
-        vec4 texel = textureGrad(_group_3_binding_0_fs, vec3(_e26.uv, _e30), _e26.dx, _e26.dy);
-        vec3 _e37 = s.baseColor;
-        s.baseColor = (_e37 * texel.xyz);
-        float _e41 = s.alpha;
-        s.alpha = (_e41 * texel.w);
+        MapUv _e26 = map_uv(flags_2, 0u, _e11, _e15);
+        uint _e30 = map_layer(m_8.maps.x);
+        vec4 sampled = textureGrad(_group_3_binding_0_fs, vec3(_e26.uv, _e30), _e26.dx, _e26.dy);
+        vec4 _e36 = straight_texel(m_8, sampled);
+        vec3 _e38 = s.baseColor;
+        s.baseColor = (_e38 * _e36.xyz);
+        float _e42 = s.alpha;
+        s.alpha = (_e42 * _e36.w);
     }
-    bool _e46 = map_ready(m_6.maps.y);
-    if (_e46) {
-        MapUv _e48 = map_uv(flags_1, 1u, _e11, _e15);
-        uint _e51 = map_layer(m_6.maps.y);
-        vec4 texel_1 = textureGrad(_group_3_binding_1_fs, vec3(_e48.uv, _e51), _e48.dx, _e48.dy);
-        float _e59 = s.roughness;
-        s.roughness = (_e59 * texel_1.y);
-        float _e63 = s.metalness;
-        s.metalness = (_e63 * texel_1.z);
+    bool _e47 = map_ready(m_8.maps.y);
+    if (_e47) {
+        MapUv _e49 = map_uv(flags_2, 1u, _e11, _e15);
+        uint _e52 = map_layer(m_8.maps.y);
+        vec4 texel_1 = textureGrad(_group_3_binding_1_fs, vec3(_e49.uv, _e52), _e49.dx, _e49.dy);
+        float _e60 = s.roughness;
+        s.roughness = (_e60 * texel_1.y);
+        float _e64 = s.metalness;
+        s.metalness = (_e64 * texel_1.z);
     }
-    bool _e68 = map_ready(m_6.maps.w);
-    if (_e68) {
-        MapUv _e70 = map_uv(flags_1, 3u, _e11, _e15);
-        uint _e73 = map_layer(m_6.maps.w);
-        vec4 texel_2 = textureGrad(_group_3_binding_3_fs, vec3(_e70.uv, _e73), _e70.dx, _e70.dy);
-        s.occlusion = (((texel_2.x - 1.0) * m_6.strengths.x) + 1.0);
+    bool _e69 = map_ready(m_8.maps.w);
+    if (_e69) {
+        MapUv _e71 = map_uv(flags_2, 3u, _e11, _e15);
+        uint _e74 = map_layer(m_8.maps.w);
+        vec4 texel_2 = textureGrad(_group_3_binding_3_fs, vec3(_e71.uv, _e74), _e71.dx, _e71.dy);
+        s.occlusion = (((texel_2.x - 1.0) * m_8.strengths.x) + 1.0);
     }
-    bool _e91 = map_ready(m_6.more_maps.x);
-    if (_e91) {
-        MapUv _e93 = map_uv(flags_1, 4u, _e11, _e15);
-        uint _e96 = map_layer(m_6.more_maps.x);
-        vec4 texel_3 = textureGrad(_group_3_binding_4_fs, vec3(_e93.uv, _e96), _e93.dx, _e93.dy);
-        vec3 _e104 = s.emissive;
-        s.emissive = (_e104 * texel_3.xyz);
+    bool _e92 = map_ready(m_8.more_maps.x);
+    if (_e92) {
+        MapUv _e94 = map_uv(flags_2, 4u, _e11, _e15);
+        uint _e97 = map_layer(m_8.more_maps.x);
+        vec4 texel_3 = textureGrad(_group_3_binding_4_fs, vec3(_e94.uv, _e97), _e94.dx, _e94.dy);
+        vec3 _e105 = s.emissive;
+        s.emissive = (_e105 * texel_3.xyz);
     }
-    bool _e109 = map_ready(m_6.more_maps.y);
-    if (_e109) {
-        MapUv _e111 = map_uv(flags_1, 5u, _e11, _e15);
-        uint _e114 = map_layer(m_6.more_maps.y);
-        vec4 texel_4 = textureGrad(_group_3_binding_5_fs, vec3(_e111.uv, _e114), _e111.dx, _e111.dy);
-        s.irradiance = (texel_4.xyz * m_6.strengths.y);
+    bool _e110 = map_ready(m_8.more_maps.y);
+    if (_e110) {
+        MapUv _e112 = map_uv(flags_2, 5u, _e11, _e15);
+        uint _e115 = map_layer(m_8.more_maps.y);
+        vec4 texel_4 = textureGrad(_group_3_binding_5_fs, vec3(_e112.uv, _e115), _e112.dx, _e112.dy);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    bool _e128 = map_ready(m_6.maps.z);
-    if (_e128) {
-        MapUv _e130 = map_uv(flags_1, 2u, _e11, _e15);
-        uint _e133 = map_layer(m_6.maps.z);
-        vec4 texel_5 = textureGrad(_group_3_binding_2_fs, vec3(_e130.uv, _e133), _e130.dx, _e130.dy);
-        vec3 bent = vec3((((texel_5.xy * 2.0) - vec2(1.0)) * m_6.surface.zw), ((texel_5.z * 2.0) - 1.0));
+    bool _e129 = map_ready(m_8.maps.z);
+    if (_e129) {
+        MapUv _e131 = map_uv(flags_2, 2u, _e11, _e15);
+        uint _e134 = map_layer(m_8.maps.z);
+        vec4 texel_5 = textureGrad(_group_3_binding_2_fs, vec3(_e131.uv, _e134), _e131.dx, _e131.dy);
+        vec3 bent = vec3((((texel_5.xy * 2.0) - vec2(1.0)) * m_8.surface.zw), ((texel_5.z * 2.0) - 1.0));
         vec3 normal_4 = input_1.normal;
         float facing_1 = (input_1.frontFacing ? 1.0 : -1.0);
         vec3 q1perp = cross(position_dy, normal_4);
         vec3 q0perp = cross(normal_4, position_dx);
-        vec2 st_dy = (_e130.dy * ROWS_UP);
-        tangent = ((q1perp * _e130.dx.x) + (q0perp * st_dy.x));
-        bitangent = ((q1perp * _e130.dx.y) + (q0perp * st_dy.y));
-        vec3 _e179 = tangent;
+        vec2 st_dy = (_e131.dy * ROWS_UP);
+        tangent = ((q1perp * _e131.dx.x) + (q0perp * st_dy.x));
+        bitangent = ((q1perp * _e131.dx.y) + (q0perp * st_dy.y));
         vec3 _e180 = tangent;
-        vec3 _e182 = bitangent;
+        vec3 _e181 = tangent;
         vec3 _e183 = bitangent;
-        float det = max(dot(_e179, _e180), dot(_e182, _e183));
+        vec3 _e184 = bitangent;
+        float det = max(dot(_e180, _e181), dot(_e183, _e184));
         float scale = ((det == 0.0) ? 0.0 : inversesqrt(det));
-        vec3 _e191 = tangent;
-        tangent = (_e191 * (scale * facing_1));
-        vec3 _e194 = bitangent;
-        bitangent = (_e194 * (scale * facing_1));
-        vec3 _e198 = tangent;
-        vec3 _e201 = bitangent;
-        s.normal = normalize((((_e198 * bent.x) + (_e201 * bent.y)) + (normal_4 * bent.z)));
+        vec3 _e192 = tangent;
+        tangent = (_e192 * (scale * facing_1));
+        vec3 _e195 = bitangent;
+        bitangent = (_e195 * (scale * facing_1));
+        vec3 _e199 = tangent;
+        vec3 _e202 = bitangent;
+        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_4 * bent.z)));
     }
-    Surface _e209 = s;
-    return _e209;
+    Surface _e210 = s;
+    return _e210;
 }
 
 Surface defaultSurface(SurfaceInput input_2) {
     Surface s_1 = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
-    Material m_7 = material_row;
-    s_1.baseColor = (m_7.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_7.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_7.surface.x;
-    s_1.roughness = m_7.surface.y;
+    Material m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_7.emissive.xyz * m_7.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1.0;
     s_1.irradiance = vec3(0.0);
     Surface _e35 = s_1;
@@ -10500,16 +10838,16 @@ Surface defaultSurface(SurfaceInput input_2) {
     return _e37;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_7, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_fs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_7, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_fs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_7, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -10527,7 +10865,9 @@ vec4 shade(Surface s_2, SurfaceInput input_3, vec2 pixel_4) {
     Material _e34 = material_row;
     vec3 _e35 = fogged(outgoing, input_3.relativePosition, _e34);
     vec4 _e37 = finish_null3d_mesh(_e35, pixel_4);
-    return _e37;
+    Material _e39 = material_row;
+    vec4 _e42 = fragment_color(_e39, _e37.xyz, s_2.alpha);
+    return _e42;
 }
 
 void main() {
@@ -10777,6 +11117,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -10893,6 +11235,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -10901,9 +11249,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a_1 = t_1.x.xyz;
     vec3 b_1 = t_1.y.xyz;
-    vec3 c_10 = t_1.z.xyz;
-    vec3 bc = cross(b_1, c_10);
-    vec3 ca = cross(c_10, a_1);
+    vec3 c_11 = t_1.z.xyz;
+    vec3 bc = cross(b_1, c_11);
+    vec3 ca = cross(c_11, a_1);
     vec3 ab = cross(a_1, b_1);
     float facing = ((dot(a_1, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -10913,8 +11261,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -10937,25 +11285,25 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -10965,6 +11313,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags_1 = uint(m_2.strengths.z);
+    if (!(((flags_1 & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -11045,9 +11419,9 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_vs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -11056,16 +11430,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_4 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_4.base_color = base_color;
+    m_4.diffuse = (base_color * (1.0 - metalness));
+    m_4.specular = vec3(0.04);
+    vec3 _e13 = m_4.specular;
+    m_4.specular_blended = mix(_e13, base_color, metalness);
+    m_4.specular_grazing = 1.0;
+    m_4.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_4.metalness = metalness;
+    PbrMaterial _e26 = m_4;
     return _e26;
 }
 
@@ -11074,29 +11448,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -11104,12 +11478,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_5, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_5.specular_blended, m_5.specular_grazing, m_5.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_5.specular, m_5.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_5.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -11122,9 +11496,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_6, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_6.specular, m_6.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_6.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -11135,16 +11509,16 @@ MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
     return first;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_7, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_vs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_7, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_vs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_7, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -11347,6 +11721,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -11465,6 +11841,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -11473,9 +11855,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a_1 = t_1.x.xyz;
     vec3 b_1 = t_1.y.xyz;
-    vec3 c_10 = t_1.z.xyz;
-    vec3 bc = cross(b_1, c_10);
-    vec3 ca = cross(c_10, a_1);
+    vec3 c_11 = t_1.z.xyz;
+    vec3 bc = cross(b_1, c_11);
+    vec3 ca = cross(c_11, a_1);
     vec3 ab = cross(a_1, b_1);
     float facing = ((dot(a_1, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -11485,8 +11867,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -11509,15 +11891,15 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
@@ -11544,12 +11926,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -11559,6 +11941,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags_1 = uint(m_2.strengths.z);
+    if (!(((flags_1 & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
 }
 
 vec4 clip_of(Instance found, vec3 relative_1) {
@@ -11586,27 +11994,27 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_fs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
-    uvec2 low_1 = uvec2(floor(at));
-    uvec2 high_1 = min((low_1 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
+    uvec2 low_2 = uvec2(floor(at));
+    uvec2 high_2 = min((low_2 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
     vec2 t_2 = fract(at);
-    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_1), 0);
+    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_2), 0);
     vec2 a_2 = _e29.xy;
-    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_1.x, low_1.y)), 0);
+    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_2.x, low_2.y)), 0);
     vec2 b_2 = _e36.xy;
-    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_1.x, high_1.y)), 0);
-    vec2 c_11 = _e43.xy;
-    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_1), 0);
+    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_2.x, high_2.y)), 0);
+    vec2 c_12 = _e43.xy;
+    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_2), 0);
     vec2 d_1 = _e47.xy;
-    return mix(mix(a_2, b_2, t_2.x), mix(c_11, d_1, t_2.x), t_2.y);
+    return mix(mix(a_2, b_2, t_2.x), mix(c_12, d_1, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -11614,16 +12022,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_4 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_4.base_color = base_color;
+    m_4.diffuse = (base_color * (1.0 - metalness));
+    m_4.specular = vec3(0.04);
+    vec3 _e13 = m_4.specular;
+    m_4.specular_blended = mix(_e13, base_color, metalness);
+    m_4.specular_grazing = 1.0;
+    m_4.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_4.metalness = metalness;
+    PbrMaterial _e26 = m_4;
     return _e26;
 }
 
@@ -11632,29 +12040,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -11662,12 +12070,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_5, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_5.specular_blended, m_5.specular_grazing, m_5.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_5.specular, m_5.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_5.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -11680,9 +12088,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_6, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_6.specular, m_6.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_6.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -11704,96 +12112,97 @@ Surface with_maps(Surface surface, SurfaceInput input_1) {
     Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
     vec3 tangent = vec3(0.0);
     vec3 bitangent = vec3(0.0);
-    Material m_6 = material_row;
-    uint flags_1 = uint(m_6.strengths.z);
+    Material m_8 = material_row;
+    uint flags_2 = uint(m_8.strengths.z);
     s = surface;
-    MapUv _e11 = transformed_uv(input_1.uv, m_6.uv_u, m_6.uv_v);
-    MapUv _e15 = transformed_uv(input_1.uv1_, m_6.uv_u, m_6.uv_v);
+    MapUv _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    MapUv _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     vec3 _e17 = dFdy(input_1.relativePosition);
     vec3 position_dy = (_e17 * ROWS_UP);
     vec3 position_dx = dFdx(input_1.relativePosition);
-    bool _e24 = map_ready(m_6.maps.x);
+    bool _e24 = map_ready(m_8.maps.x);
     if (_e24) {
-        MapUv _e26 = map_uv(flags_1, 0u, _e11, _e15);
-        uint _e30 = map_layer(m_6.maps.x);
-        vec4 texel = textureGrad(_group_3_binding_0_fs, vec3(_e26.uv, _e30), _e26.dx, _e26.dy);
-        vec3 _e37 = s.baseColor;
-        s.baseColor = (_e37 * texel.xyz);
-        float _e41 = s.alpha;
-        s.alpha = (_e41 * texel.w);
+        MapUv _e26 = map_uv(flags_2, 0u, _e11, _e15);
+        uint _e30 = map_layer(m_8.maps.x);
+        vec4 sampled = textureGrad(_group_3_binding_0_fs, vec3(_e26.uv, _e30), _e26.dx, _e26.dy);
+        vec4 _e36 = straight_texel(m_8, sampled);
+        vec3 _e38 = s.baseColor;
+        s.baseColor = (_e38 * _e36.xyz);
+        float _e42 = s.alpha;
+        s.alpha = (_e42 * _e36.w);
     }
-    bool _e46 = map_ready(m_6.maps.y);
-    if (_e46) {
-        MapUv _e48 = map_uv(flags_1, 1u, _e11, _e15);
-        uint _e51 = map_layer(m_6.maps.y);
-        vec4 texel_1 = textureGrad(_group_3_binding_1_fs, vec3(_e48.uv, _e51), _e48.dx, _e48.dy);
-        float _e59 = s.roughness;
-        s.roughness = (_e59 * texel_1.y);
-        float _e63 = s.metalness;
-        s.metalness = (_e63 * texel_1.z);
+    bool _e47 = map_ready(m_8.maps.y);
+    if (_e47) {
+        MapUv _e49 = map_uv(flags_2, 1u, _e11, _e15);
+        uint _e52 = map_layer(m_8.maps.y);
+        vec4 texel_1 = textureGrad(_group_3_binding_1_fs, vec3(_e49.uv, _e52), _e49.dx, _e49.dy);
+        float _e60 = s.roughness;
+        s.roughness = (_e60 * texel_1.y);
+        float _e64 = s.metalness;
+        s.metalness = (_e64 * texel_1.z);
     }
-    bool _e68 = map_ready(m_6.maps.w);
-    if (_e68) {
-        MapUv _e70 = map_uv(flags_1, 3u, _e11, _e15);
-        uint _e73 = map_layer(m_6.maps.w);
-        vec4 texel_2 = textureGrad(_group_3_binding_3_fs, vec3(_e70.uv, _e73), _e70.dx, _e70.dy);
-        s.occlusion = (((texel_2.x - 1.0) * m_6.strengths.x) + 1.0);
+    bool _e69 = map_ready(m_8.maps.w);
+    if (_e69) {
+        MapUv _e71 = map_uv(flags_2, 3u, _e11, _e15);
+        uint _e74 = map_layer(m_8.maps.w);
+        vec4 texel_2 = textureGrad(_group_3_binding_3_fs, vec3(_e71.uv, _e74), _e71.dx, _e71.dy);
+        s.occlusion = (((texel_2.x - 1.0) * m_8.strengths.x) + 1.0);
     }
-    bool _e91 = map_ready(m_6.more_maps.x);
-    if (_e91) {
-        MapUv _e93 = map_uv(flags_1, 4u, _e11, _e15);
-        uint _e96 = map_layer(m_6.more_maps.x);
-        vec4 texel_3 = textureGrad(_group_3_binding_4_fs, vec3(_e93.uv, _e96), _e93.dx, _e93.dy);
-        vec3 _e104 = s.emissive;
-        s.emissive = (_e104 * texel_3.xyz);
+    bool _e92 = map_ready(m_8.more_maps.x);
+    if (_e92) {
+        MapUv _e94 = map_uv(flags_2, 4u, _e11, _e15);
+        uint _e97 = map_layer(m_8.more_maps.x);
+        vec4 texel_3 = textureGrad(_group_3_binding_4_fs, vec3(_e94.uv, _e97), _e94.dx, _e94.dy);
+        vec3 _e105 = s.emissive;
+        s.emissive = (_e105 * texel_3.xyz);
     }
-    bool _e109 = map_ready(m_6.more_maps.y);
-    if (_e109) {
-        MapUv _e111 = map_uv(flags_1, 5u, _e11, _e15);
-        uint _e114 = map_layer(m_6.more_maps.y);
-        vec4 texel_4 = textureGrad(_group_3_binding_5_fs, vec3(_e111.uv, _e114), _e111.dx, _e111.dy);
-        s.irradiance = (texel_4.xyz * m_6.strengths.y);
+    bool _e110 = map_ready(m_8.more_maps.y);
+    if (_e110) {
+        MapUv _e112 = map_uv(flags_2, 5u, _e11, _e15);
+        uint _e115 = map_layer(m_8.more_maps.y);
+        vec4 texel_4 = textureGrad(_group_3_binding_5_fs, vec3(_e112.uv, _e115), _e112.dx, _e112.dy);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    bool _e128 = map_ready(m_6.maps.z);
-    if (_e128) {
-        MapUv _e130 = map_uv(flags_1, 2u, _e11, _e15);
-        uint _e133 = map_layer(m_6.maps.z);
-        vec4 texel_5 = textureGrad(_group_3_binding_2_fs, vec3(_e130.uv, _e133), _e130.dx, _e130.dy);
-        vec3 bent = vec3((((texel_5.xy * 2.0) - vec2(1.0)) * m_6.surface.zw), ((texel_5.z * 2.0) - 1.0));
+    bool _e129 = map_ready(m_8.maps.z);
+    if (_e129) {
+        MapUv _e131 = map_uv(flags_2, 2u, _e11, _e15);
+        uint _e134 = map_layer(m_8.maps.z);
+        vec4 texel_5 = textureGrad(_group_3_binding_2_fs, vec3(_e131.uv, _e134), _e131.dx, _e131.dy);
+        vec3 bent = vec3((((texel_5.xy * 2.0) - vec2(1.0)) * m_8.surface.zw), ((texel_5.z * 2.0) - 1.0));
         vec3 normal_4 = input_1.normal;
         float facing_1 = (input_1.frontFacing ? 1.0 : -1.0);
         vec3 q1perp = cross(position_dy, normal_4);
         vec3 q0perp = cross(normal_4, position_dx);
-        vec2 st_dy = (_e130.dy * ROWS_UP);
-        tangent = ((q1perp * _e130.dx.x) + (q0perp * st_dy.x));
-        bitangent = ((q1perp * _e130.dx.y) + (q0perp * st_dy.y));
-        vec3 _e179 = tangent;
+        vec2 st_dy = (_e131.dy * ROWS_UP);
+        tangent = ((q1perp * _e131.dx.x) + (q0perp * st_dy.x));
+        bitangent = ((q1perp * _e131.dx.y) + (q0perp * st_dy.y));
         vec3 _e180 = tangent;
-        vec3 _e182 = bitangent;
+        vec3 _e181 = tangent;
         vec3 _e183 = bitangent;
-        float det = max(dot(_e179, _e180), dot(_e182, _e183));
+        vec3 _e184 = bitangent;
+        float det = max(dot(_e180, _e181), dot(_e183, _e184));
         float scale = ((det == 0.0) ? 0.0 : inversesqrt(det));
-        vec3 _e191 = tangent;
-        tangent = (_e191 * (scale * facing_1));
-        vec3 _e194 = bitangent;
-        bitangent = (_e194 * (scale * facing_1));
-        vec3 _e198 = tangent;
-        vec3 _e201 = bitangent;
-        s.normal = normalize((((_e198 * bent.x) + (_e201 * bent.y)) + (normal_4 * bent.z)));
+        vec3 _e192 = tangent;
+        tangent = (_e192 * (scale * facing_1));
+        vec3 _e195 = bitangent;
+        bitangent = (_e195 * (scale * facing_1));
+        vec3 _e199 = tangent;
+        vec3 _e202 = bitangent;
+        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_4 * bent.z)));
     }
-    Surface _e209 = s;
-    return _e209;
+    Surface _e210 = s;
+    return _e210;
 }
 
 Surface defaultSurface(SurfaceInput input_2) {
     Surface s_1 = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
-    Material m_7 = material_row;
-    s_1.baseColor = (m_7.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_7.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_7.surface.x;
-    s_1.roughness = m_7.surface.y;
+    Material m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_7.emissive.xyz * m_7.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1.0;
     s_1.irradiance = vec3(0.0);
     Surface _e35 = s_1;
@@ -11803,16 +12212,16 @@ Surface defaultSurface(SurfaceInput input_2) {
     return _e37;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_7, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_fs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_7, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_fs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_7, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -11834,7 +12243,9 @@ vec4 shade(Surface s_2, SurfaceInput input_3, vec2 pixel_4) {
     Material _e40 = material_row;
     vec3 _e41 = fogged(outgoing, input_3.relativePosition, _e40);
     vec4 _e43 = finish_null3d_mesh(_e41, pixel_4);
-    return _e43;
+    Material _e45 = material_row;
+    vec4 _e48 = fragment_color(_e45, _e43.xyz, s_2.alpha);
+    return _e48;
 }
 
 void main() {
@@ -12089,6 +12500,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -12208,6 +12621,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -12221,9 +12640,9 @@ vec3 transform_direction(Transform t_1, vec3 d) {
 vec3 transform_normal(Transform t_2, vec3 n) {
     vec3 a_1 = t_2.x.xyz;
     vec3 b_1 = t_2.y.xyz;
-    vec3 c_10 = t_2.z.xyz;
-    vec3 bc = cross(b_1, c_10);
-    vec3 ca = cross(c_10, a_1);
+    vec3 c_11 = t_2.z.xyz;
+    vec3 bc = cross(b_1, c_11);
+    vec3 ca = cross(c_11, a_1);
     vec3 ab = cross(a_1, b_1);
     float facing = ((dot(a_1, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -12233,8 +12652,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -12257,25 +12676,25 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -12285,6 +12704,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags_1 = uint(m_2.strengths.z);
+    if (!(((flags_1 & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -12365,9 +12810,9 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_vs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -12382,16 +12827,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_4 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_4.base_color = base_color;
+    m_4.diffuse = (base_color * (1.0 - metalness));
+    m_4.specular = vec3(0.04);
+    vec3 _e13 = m_4.specular;
+    m_4.specular_blended = mix(_e13, base_color, metalness);
+    m_4.specular_grazing = 1.0;
+    m_4.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_4.metalness = metalness;
+    PbrMaterial _e26 = m_4;
     return _e26;
 }
 
@@ -12400,29 +12845,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -12430,12 +12875,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_5, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_5.specular_blended, m_5.specular_grazing, m_5.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_5.specular, m_5.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_5.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -12448,9 +12893,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_6, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_6.specular, m_6.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_6.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -12461,16 +12906,16 @@ MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
     return first;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_7, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_vs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_7, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_vs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_7, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -12685,6 +13130,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -12805,6 +13252,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -12818,9 +13271,9 @@ vec3 transform_direction(Transform t_1, vec3 d) {
 vec3 transform_normal(Transform t_2, vec3 n) {
     vec3 a_1 = t_2.x.xyz;
     vec3 b_1 = t_2.y.xyz;
-    vec3 c_10 = t_2.z.xyz;
-    vec3 bc = cross(b_1, c_10);
-    vec3 ca = cross(c_10, a_1);
+    vec3 c_11 = t_2.z.xyz;
+    vec3 bc = cross(b_1, c_11);
+    vec3 ca = cross(c_11, a_1);
     vec3 ab = cross(a_1, b_1);
     float facing = ((dot(a_1, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -12830,8 +13283,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -12854,15 +13307,15 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
@@ -12889,12 +13342,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -12904,6 +13357,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags_1 = uint(m_2.strengths.z);
+    if (!(((flags_1 & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
 }
 
 vec4 clip_of(Instance found, vec3 relative_1) {
@@ -12931,9 +13410,9 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_fs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -12946,18 +13425,18 @@ vec3 world_direction(Instance found_4, vec3 direction) {
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
-    uvec2 low_1 = uvec2(floor(at));
-    uvec2 high_1 = min((low_1 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
+    uvec2 low_2 = uvec2(floor(at));
+    uvec2 high_2 = min((low_2 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
     vec2 t_3 = fract(at);
-    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_1), 0);
+    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_2), 0);
     vec2 a_2 = _e29.xy;
-    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_1.x, low_1.y)), 0);
+    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_2.x, low_2.y)), 0);
     vec2 b_2 = _e36.xy;
-    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_1.x, high_1.y)), 0);
-    vec2 c_11 = _e43.xy;
-    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_1), 0);
+    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_2.x, high_2.y)), 0);
+    vec2 c_12 = _e43.xy;
+    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_2), 0);
     vec2 d_2 = _e47.xy;
-    return mix(mix(a_2, b_2, t_3.x), mix(c_11, d_2, t_3.x), t_3.y);
+    return mix(mix(a_2, b_2, t_3.x), mix(c_12, d_2, t_3.x), t_3.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -12965,16 +13444,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_4 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_4.base_color = base_color;
+    m_4.diffuse = (base_color * (1.0 - metalness));
+    m_4.specular = vec3(0.04);
+    vec3 _e13 = m_4.specular;
+    m_4.specular_blended = mix(_e13, base_color, metalness);
+    m_4.specular_grazing = 1.0;
+    m_4.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_4.metalness = metalness;
+    PbrMaterial _e26 = m_4;
     return _e26;
 }
 
@@ -12983,29 +13462,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -13013,12 +13492,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_5, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_5.specular_blended, m_5.specular_grazing, m_5.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_5.specular, m_5.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_5.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -13031,9 +13510,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_6, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_6.specular, m_6.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_6.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -13053,81 +13532,82 @@ MapUv transformed_uv(vec2 uv, vec4 uv_u, vec4 uv_v) {
 
 Surface with_maps(Surface surface, SurfaceInput input_1) {
     Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
-    Material m_6 = material_row;
-    uint flags_1 = uint(m_6.strengths.z);
+    Material m_8 = material_row;
+    uint flags_2 = uint(m_8.strengths.z);
     s = surface;
-    MapUv _e11 = transformed_uv(input_1.uv, m_6.uv_u, m_6.uv_v);
-    MapUv _e15 = transformed_uv(input_1.uv1_, m_6.uv_u, m_6.uv_v);
+    MapUv _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    MapUv _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     vec3 _e17 = dFdy(input_1.relativePosition);
     vec3 position_dy = (_e17 * ROWS_UP);
     vec3 position_dx = dFdx(input_1.relativePosition);
-    bool _e24 = map_ready(m_6.maps.x);
+    bool _e24 = map_ready(m_8.maps.x);
     if (_e24) {
-        MapUv _e26 = map_uv(flags_1, 0u, _e11, _e15);
-        uint _e30 = map_layer(m_6.maps.x);
-        vec4 texel = textureGrad(_group_3_binding_0_fs, vec3(_e26.uv, _e30), _e26.dx, _e26.dy);
-        vec3 _e37 = s.baseColor;
-        s.baseColor = (_e37 * texel.xyz);
-        float _e41 = s.alpha;
-        s.alpha = (_e41 * texel.w);
+        MapUv _e26 = map_uv(flags_2, 0u, _e11, _e15);
+        uint _e30 = map_layer(m_8.maps.x);
+        vec4 sampled = textureGrad(_group_3_binding_0_fs, vec3(_e26.uv, _e30), _e26.dx, _e26.dy);
+        vec4 _e36 = straight_texel(m_8, sampled);
+        vec3 _e38 = s.baseColor;
+        s.baseColor = (_e38 * _e36.xyz);
+        float _e42 = s.alpha;
+        s.alpha = (_e42 * _e36.w);
     }
-    bool _e46 = map_ready(m_6.maps.y);
-    if (_e46) {
-        MapUv _e48 = map_uv(flags_1, 1u, _e11, _e15);
-        uint _e51 = map_layer(m_6.maps.y);
-        vec4 texel_1 = textureGrad(_group_3_binding_1_fs, vec3(_e48.uv, _e51), _e48.dx, _e48.dy);
-        float _e59 = s.roughness;
-        s.roughness = (_e59 * texel_1.y);
-        float _e63 = s.metalness;
-        s.metalness = (_e63 * texel_1.z);
+    bool _e47 = map_ready(m_8.maps.y);
+    if (_e47) {
+        MapUv _e49 = map_uv(flags_2, 1u, _e11, _e15);
+        uint _e52 = map_layer(m_8.maps.y);
+        vec4 texel_1 = textureGrad(_group_3_binding_1_fs, vec3(_e49.uv, _e52), _e49.dx, _e49.dy);
+        float _e60 = s.roughness;
+        s.roughness = (_e60 * texel_1.y);
+        float _e64 = s.metalness;
+        s.metalness = (_e64 * texel_1.z);
     }
-    bool _e68 = map_ready(m_6.maps.w);
-    if (_e68) {
-        MapUv _e70 = map_uv(flags_1, 3u, _e11, _e15);
-        uint _e73 = map_layer(m_6.maps.w);
-        vec4 texel_2 = textureGrad(_group_3_binding_3_fs, vec3(_e70.uv, _e73), _e70.dx, _e70.dy);
-        s.occlusion = (((texel_2.x - 1.0) * m_6.strengths.x) + 1.0);
+    bool _e69 = map_ready(m_8.maps.w);
+    if (_e69) {
+        MapUv _e71 = map_uv(flags_2, 3u, _e11, _e15);
+        uint _e74 = map_layer(m_8.maps.w);
+        vec4 texel_2 = textureGrad(_group_3_binding_3_fs, vec3(_e71.uv, _e74), _e71.dx, _e71.dy);
+        s.occlusion = (((texel_2.x - 1.0) * m_8.strengths.x) + 1.0);
     }
-    bool _e91 = map_ready(m_6.more_maps.x);
-    if (_e91) {
-        MapUv _e93 = map_uv(flags_1, 4u, _e11, _e15);
-        uint _e96 = map_layer(m_6.more_maps.x);
-        vec4 texel_3 = textureGrad(_group_3_binding_4_fs, vec3(_e93.uv, _e96), _e93.dx, _e93.dy);
-        vec3 _e104 = s.emissive;
-        s.emissive = (_e104 * texel_3.xyz);
+    bool _e92 = map_ready(m_8.more_maps.x);
+    if (_e92) {
+        MapUv _e94 = map_uv(flags_2, 4u, _e11, _e15);
+        uint _e97 = map_layer(m_8.more_maps.x);
+        vec4 texel_3 = textureGrad(_group_3_binding_4_fs, vec3(_e94.uv, _e97), _e94.dx, _e94.dy);
+        vec3 _e105 = s.emissive;
+        s.emissive = (_e105 * texel_3.xyz);
     }
-    bool _e109 = map_ready(m_6.more_maps.y);
-    if (_e109) {
-        MapUv _e111 = map_uv(flags_1, 5u, _e11, _e15);
-        uint _e114 = map_layer(m_6.more_maps.y);
-        vec4 texel_4 = textureGrad(_group_3_binding_5_fs, vec3(_e111.uv, _e114), _e111.dx, _e111.dy);
-        s.irradiance = (texel_4.xyz * m_6.strengths.y);
+    bool _e110 = map_ready(m_8.more_maps.y);
+    if (_e110) {
+        MapUv _e112 = map_uv(flags_2, 5u, _e11, _e15);
+        uint _e115 = map_layer(m_8.more_maps.y);
+        vec4 texel_4 = textureGrad(_group_3_binding_5_fs, vec3(_e112.uv, _e115), _e112.dx, _e112.dy);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    bool _e128 = map_ready(m_6.maps.z);
-    if (_e128) {
-        MapUv _e130 = map_uv(flags_1, 2u, _e11, _e15);
-        uint _e133 = map_layer(m_6.maps.z);
-        vec4 texel_5 = textureGrad(_group_3_binding_2_fs, vec3(_e130.uv, _e133), _e130.dx, _e130.dy);
-        vec3 bent = vec3((((texel_5.xy * 2.0) - vec2(1.0)) * m_6.surface.zw), ((texel_5.z * 2.0) - 1.0));
+    bool _e129 = map_ready(m_8.maps.z);
+    if (_e129) {
+        MapUv _e131 = map_uv(flags_2, 2u, _e11, _e15);
+        uint _e134 = map_layer(m_8.maps.z);
+        vec4 texel_5 = textureGrad(_group_3_binding_2_fs, vec3(_e131.uv, _e134), _e131.dx, _e131.dy);
+        vec3 bent = vec3((((texel_5.xy * 2.0) - vec2(1.0)) * m_8.surface.zw), ((texel_5.z * 2.0) - 1.0));
         vec3 normal_4 = input_1.normal;
         float facing_1 = (input_1.frontFacing ? 1.0 : -1.0);
         vec3 tangent = (normalize(input_1.tangent) * facing_1);
         vec3 bitangent = (normalize(input_1.bitangent) * facing_1);
         s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_4 * bent.z)));
     }
-    Surface _e176 = s;
-    return _e176;
+    Surface _e177 = s;
+    return _e177;
 }
 
 Surface defaultSurface(SurfaceInput input_2) {
     Surface s_1 = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
-    Material m_7 = material_row;
-    s_1.baseColor = (m_7.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_7.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_7.surface.x;
-    s_1.roughness = m_7.surface.y;
+    Material m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_7.emissive.xyz * m_7.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1.0;
     s_1.irradiance = vec3(0.0);
     Surface _e35 = s_1;
@@ -13137,16 +13617,16 @@ Surface defaultSurface(SurfaceInput input_2) {
     return _e37;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_7, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_fs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_7, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_fs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_7, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -13168,7 +13648,9 @@ vec4 shade(Surface s_2, SurfaceInput input_3, vec2 pixel_4) {
     Material _e40 = material_row;
     vec3 _e41 = fogged(outgoing, input_3.relativePosition, _e40);
     vec4 _e43 = finish_null3d_mesh(_e41, pixel_4);
-    return _e43;
+    Material _e45 = material_row;
+    vec4 _e48 = fragment_color(_e45, _e43.xyz, s_2.alpha);
+    return _e48;
 }
 
 void main() {
@@ -13425,6 +13907,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -13544,6 +14028,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -13557,9 +14047,9 @@ vec3 transform_direction(Transform t_1, vec3 d) {
 vec3 transform_normal(Transform t_2, vec3 n) {
     vec3 a_1 = t_2.x.xyz;
     vec3 b_1 = t_2.y.xyz;
-    vec3 c_10 = t_2.z.xyz;
-    vec3 bc = cross(b_1, c_10);
-    vec3 ca = cross(c_10, a_1);
+    vec3 c_11 = t_2.z.xyz;
+    vec3 bc = cross(b_1, c_11);
+    vec3 ca = cross(c_11, a_1);
     vec3 ab = cross(a_1, b_1);
     float facing = ((dot(a_1, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -13569,8 +14059,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -13593,25 +14083,25 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -13621,6 +14111,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags_1 = uint(m_2.strengths.z);
+    if (!(((flags_1 & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -13701,9 +14217,9 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_vs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -13718,16 +14234,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_4 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_4.base_color = base_color;
+    m_4.diffuse = (base_color * (1.0 - metalness));
+    m_4.specular = vec3(0.04);
+    vec3 _e13 = m_4.specular;
+    m_4.specular_blended = mix(_e13, base_color, metalness);
+    m_4.specular_grazing = 1.0;
+    m_4.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_4.metalness = metalness;
+    PbrMaterial _e26 = m_4;
     return _e26;
 }
 
@@ -13736,29 +14252,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -13766,12 +14282,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_5, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_5.specular_blended, m_5.specular_grazing, m_5.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_5.specular, m_5.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_5.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -13784,9 +14300,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_6, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_6.specular, m_6.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_6.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -13797,16 +14313,16 @@ MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
     return first;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_7, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_vs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_7, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_vs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_7, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -14021,6 +14537,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -14141,6 +14659,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -14154,9 +14678,9 @@ vec3 transform_direction(Transform t_1, vec3 d) {
 vec3 transform_normal(Transform t_2, vec3 n) {
     vec3 a_1 = t_2.x.xyz;
     vec3 b_1 = t_2.y.xyz;
-    vec3 c_10 = t_2.z.xyz;
-    vec3 bc = cross(b_1, c_10);
-    vec3 ca = cross(c_10, a_1);
+    vec3 c_11 = t_2.z.xyz;
+    vec3 bc = cross(b_1, c_11);
+    vec3 ca = cross(c_11, a_1);
     vec3 ab = cross(a_1, b_1);
     float facing = ((dot(a_1, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -14166,8 +14690,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -14190,15 +14714,15 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
@@ -14225,12 +14749,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -14240,6 +14764,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags_1 = uint(m_2.strengths.z);
+    if (!(((flags_1 & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
 }
 
 vec4 clip_of(Instance found, vec3 relative_1) {
@@ -14267,9 +14817,9 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_fs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -14282,18 +14832,18 @@ vec3 world_direction(Instance found_4, vec3 direction) {
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
-    uvec2 low_1 = uvec2(floor(at));
-    uvec2 high_1 = min((low_1 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
+    uvec2 low_2 = uvec2(floor(at));
+    uvec2 high_2 = min((low_2 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
     vec2 t_3 = fract(at);
-    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_1), 0);
+    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_2), 0);
     vec2 a_2 = _e29.xy;
-    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_1.x, low_1.y)), 0);
+    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_2.x, low_2.y)), 0);
     vec2 b_2 = _e36.xy;
-    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_1.x, high_1.y)), 0);
-    vec2 c_11 = _e43.xy;
-    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_1), 0);
+    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_2.x, high_2.y)), 0);
+    vec2 c_12 = _e43.xy;
+    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_2), 0);
     vec2 d_2 = _e47.xy;
-    return mix(mix(a_2, b_2, t_3.x), mix(c_11, d_2, t_3.x), t_3.y);
+    return mix(mix(a_2, b_2, t_3.x), mix(c_12, d_2, t_3.x), t_3.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -14301,16 +14851,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_4 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_4.base_color = base_color;
+    m_4.diffuse = (base_color * (1.0 - metalness));
+    m_4.specular = vec3(0.04);
+    vec3 _e13 = m_4.specular;
+    m_4.specular_blended = mix(_e13, base_color, metalness);
+    m_4.specular_grazing = 1.0;
+    m_4.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_4.metalness = metalness;
+    PbrMaterial _e26 = m_4;
     return _e26;
 }
 
@@ -14319,29 +14869,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -14349,12 +14899,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_5, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_5.specular_blended, m_5.specular_grazing, m_5.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_5.specular, m_5.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_5.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -14367,9 +14917,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_6, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_6.specular, m_6.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_6.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -14389,81 +14939,82 @@ MapUv transformed_uv(vec2 uv, vec4 uv_u, vec4 uv_v) {
 
 Surface with_maps(Surface surface, SurfaceInput input_1) {
     Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
-    Material m_6 = material_row;
-    uint flags_1 = uint(m_6.strengths.z);
+    Material m_8 = material_row;
+    uint flags_2 = uint(m_8.strengths.z);
     s = surface;
-    MapUv _e11 = transformed_uv(input_1.uv, m_6.uv_u, m_6.uv_v);
-    MapUv _e15 = transformed_uv(input_1.uv1_, m_6.uv_u, m_6.uv_v);
+    MapUv _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    MapUv _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     vec3 _e17 = dFdy(input_1.relativePosition);
     vec3 position_dy = (_e17 * ROWS_UP);
     vec3 position_dx = dFdx(input_1.relativePosition);
-    bool _e24 = map_ready(m_6.maps.x);
+    bool _e24 = map_ready(m_8.maps.x);
     if (_e24) {
-        MapUv _e26 = map_uv(flags_1, 0u, _e11, _e15);
-        uint _e30 = map_layer(m_6.maps.x);
-        vec4 texel = textureGrad(_group_3_binding_0_fs, vec3(_e26.uv, _e30), _e26.dx, _e26.dy);
-        vec3 _e37 = s.baseColor;
-        s.baseColor = (_e37 * texel.xyz);
-        float _e41 = s.alpha;
-        s.alpha = (_e41 * texel.w);
+        MapUv _e26 = map_uv(flags_2, 0u, _e11, _e15);
+        uint _e30 = map_layer(m_8.maps.x);
+        vec4 sampled = textureGrad(_group_3_binding_0_fs, vec3(_e26.uv, _e30), _e26.dx, _e26.dy);
+        vec4 _e36 = straight_texel(m_8, sampled);
+        vec3 _e38 = s.baseColor;
+        s.baseColor = (_e38 * _e36.xyz);
+        float _e42 = s.alpha;
+        s.alpha = (_e42 * _e36.w);
     }
-    bool _e46 = map_ready(m_6.maps.y);
-    if (_e46) {
-        MapUv _e48 = map_uv(flags_1, 1u, _e11, _e15);
-        uint _e51 = map_layer(m_6.maps.y);
-        vec4 texel_1 = textureGrad(_group_3_binding_1_fs, vec3(_e48.uv, _e51), _e48.dx, _e48.dy);
-        float _e59 = s.roughness;
-        s.roughness = (_e59 * texel_1.y);
-        float _e63 = s.metalness;
-        s.metalness = (_e63 * texel_1.z);
+    bool _e47 = map_ready(m_8.maps.y);
+    if (_e47) {
+        MapUv _e49 = map_uv(flags_2, 1u, _e11, _e15);
+        uint _e52 = map_layer(m_8.maps.y);
+        vec4 texel_1 = textureGrad(_group_3_binding_1_fs, vec3(_e49.uv, _e52), _e49.dx, _e49.dy);
+        float _e60 = s.roughness;
+        s.roughness = (_e60 * texel_1.y);
+        float _e64 = s.metalness;
+        s.metalness = (_e64 * texel_1.z);
     }
-    bool _e68 = map_ready(m_6.maps.w);
-    if (_e68) {
-        MapUv _e70 = map_uv(flags_1, 3u, _e11, _e15);
-        uint _e73 = map_layer(m_6.maps.w);
-        vec4 texel_2 = textureGrad(_group_3_binding_3_fs, vec3(_e70.uv, _e73), _e70.dx, _e70.dy);
-        s.occlusion = (((texel_2.x - 1.0) * m_6.strengths.x) + 1.0);
+    bool _e69 = map_ready(m_8.maps.w);
+    if (_e69) {
+        MapUv _e71 = map_uv(flags_2, 3u, _e11, _e15);
+        uint _e74 = map_layer(m_8.maps.w);
+        vec4 texel_2 = textureGrad(_group_3_binding_3_fs, vec3(_e71.uv, _e74), _e71.dx, _e71.dy);
+        s.occlusion = (((texel_2.x - 1.0) * m_8.strengths.x) + 1.0);
     }
-    bool _e91 = map_ready(m_6.more_maps.x);
-    if (_e91) {
-        MapUv _e93 = map_uv(flags_1, 4u, _e11, _e15);
-        uint _e96 = map_layer(m_6.more_maps.x);
-        vec4 texel_3 = textureGrad(_group_3_binding_4_fs, vec3(_e93.uv, _e96), _e93.dx, _e93.dy);
-        vec3 _e104 = s.emissive;
-        s.emissive = (_e104 * texel_3.xyz);
+    bool _e92 = map_ready(m_8.more_maps.x);
+    if (_e92) {
+        MapUv _e94 = map_uv(flags_2, 4u, _e11, _e15);
+        uint _e97 = map_layer(m_8.more_maps.x);
+        vec4 texel_3 = textureGrad(_group_3_binding_4_fs, vec3(_e94.uv, _e97), _e94.dx, _e94.dy);
+        vec3 _e105 = s.emissive;
+        s.emissive = (_e105 * texel_3.xyz);
     }
-    bool _e109 = map_ready(m_6.more_maps.y);
-    if (_e109) {
-        MapUv _e111 = map_uv(flags_1, 5u, _e11, _e15);
-        uint _e114 = map_layer(m_6.more_maps.y);
-        vec4 texel_4 = textureGrad(_group_3_binding_5_fs, vec3(_e111.uv, _e114), _e111.dx, _e111.dy);
-        s.irradiance = (texel_4.xyz * m_6.strengths.y);
+    bool _e110 = map_ready(m_8.more_maps.y);
+    if (_e110) {
+        MapUv _e112 = map_uv(flags_2, 5u, _e11, _e15);
+        uint _e115 = map_layer(m_8.more_maps.y);
+        vec4 texel_4 = textureGrad(_group_3_binding_5_fs, vec3(_e112.uv, _e115), _e112.dx, _e112.dy);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    bool _e128 = map_ready(m_6.maps.z);
-    if (_e128) {
-        MapUv _e130 = map_uv(flags_1, 2u, _e11, _e15);
-        uint _e133 = map_layer(m_6.maps.z);
-        vec4 texel_5 = textureGrad(_group_3_binding_2_fs, vec3(_e130.uv, _e133), _e130.dx, _e130.dy);
-        vec3 bent = vec3((((texel_5.xy * 2.0) - vec2(1.0)) * m_6.surface.zw), ((texel_5.z * 2.0) - 1.0));
+    bool _e129 = map_ready(m_8.maps.z);
+    if (_e129) {
+        MapUv _e131 = map_uv(flags_2, 2u, _e11, _e15);
+        uint _e134 = map_layer(m_8.maps.z);
+        vec4 texel_5 = textureGrad(_group_3_binding_2_fs, vec3(_e131.uv, _e134), _e131.dx, _e131.dy);
+        vec3 bent = vec3((((texel_5.xy * 2.0) - vec2(1.0)) * m_8.surface.zw), ((texel_5.z * 2.0) - 1.0));
         vec3 normal_4 = input_1.normal;
         float facing_1 = (input_1.frontFacing ? 1.0 : -1.0);
         vec3 tangent = (normalize(input_1.tangent) * facing_1);
         vec3 bitangent = (normalize(input_1.bitangent) * facing_1);
         s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_4 * bent.z)));
     }
-    Surface _e176 = s;
-    return _e176;
+    Surface _e177 = s;
+    return _e177;
 }
 
 Surface defaultSurface(SurfaceInput input_2) {
     Surface s_1 = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
-    Material m_7 = material_row;
-    s_1.baseColor = (m_7.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_7.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_7.surface.x;
-    s_1.roughness = m_7.surface.y;
+    Material m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_7.emissive.xyz * m_7.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1.0;
     s_1.irradiance = vec3(0.0);
     Surface _e35 = s_1;
@@ -14473,16 +15024,16 @@ Surface defaultSurface(SurfaceInput input_2) {
     return _e37;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_7, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_fs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_7, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_fs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_7, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -14500,7 +15051,9 @@ vec4 shade(Surface s_2, SurfaceInput input_3, vec2 pixel_4) {
     Material _e34 = material_row;
     vec3 _e35 = fogged(outgoing, input_3.relativePosition, _e34);
     vec4 _e37 = finish_null3d_mesh(_e35, pixel_4);
-    return _e37;
+    Material _e39 = material_row;
+    vec4 _e42 = fragment_color(_e39, _e37.xyz, s_2.alpha);
+    return _e42;
 }
 
 void main() {
@@ -14755,6 +15308,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -14872,6 +15427,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -14885,9 +15446,9 @@ vec3 transform_direction(Transform t_1, vec3 d) {
 vec3 transform_normal(Transform t_2, vec3 n) {
     vec3 a_1 = t_2.x.xyz;
     vec3 b_1 = t_2.y.xyz;
-    vec3 c_10 = t_2.z.xyz;
-    vec3 bc = cross(b_1, c_10);
-    vec3 ca = cross(c_10, a_1);
+    vec3 c_11 = t_2.z.xyz;
+    vec3 bc = cross(b_1, c_11);
+    vec3 ca = cross(c_11, a_1);
     vec3 ab = cross(a_1, b_1);
     float facing = ((dot(a_1, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -14897,8 +15458,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -14921,25 +15482,25 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -14949,6 +15510,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags_1 = uint(m_2.strengths.z);
+    if (!(((flags_1 & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -15029,9 +15616,9 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_vs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -15046,16 +15633,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_4 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_4.base_color = base_color;
+    m_4.diffuse = (base_color * (1.0 - metalness));
+    m_4.specular = vec3(0.04);
+    vec3 _e13 = m_4.specular;
+    m_4.specular_blended = mix(_e13, base_color, metalness);
+    m_4.specular_grazing = 1.0;
+    m_4.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_4.metalness = metalness;
+    PbrMaterial _e26 = m_4;
     return _e26;
 }
 
@@ -15064,29 +15651,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -15094,12 +15681,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_5, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_5.specular_blended, m_5.specular_grazing, m_5.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_5.specular, m_5.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_5.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -15112,9 +15699,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_6, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_6.specular, m_6.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_6.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -15125,16 +15712,16 @@ MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
     return first;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_7, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_vs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_7, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_vs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_7, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -15345,6 +15932,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -15464,6 +16053,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -15477,9 +16072,9 @@ vec3 transform_direction(Transform t_1, vec3 d) {
 vec3 transform_normal(Transform t_2, vec3 n) {
     vec3 a_1 = t_2.x.xyz;
     vec3 b_1 = t_2.y.xyz;
-    vec3 c_10 = t_2.z.xyz;
-    vec3 bc = cross(b_1, c_10);
-    vec3 ca = cross(c_10, a_1);
+    vec3 c_11 = t_2.z.xyz;
+    vec3 bc = cross(b_1, c_11);
+    vec3 ca = cross(c_11, a_1);
     vec3 ab = cross(a_1, b_1);
     float facing = ((dot(a_1, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -15489,8 +16084,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -15513,15 +16108,15 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
@@ -15548,12 +16143,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -15563,6 +16158,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags_1 = uint(m_2.strengths.z);
+    if (!(((flags_1 & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha), alpha) : vec4(color, 1.0));
 }
 
 vec4 clip_of(Instance found, vec3 relative_1) {
@@ -15590,9 +16211,9 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_fs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -15605,18 +16226,18 @@ vec3 world_direction(Instance found_4, vec3 direction) {
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
-    uvec2 low_1 = uvec2(floor(at));
-    uvec2 high_1 = min((low_1 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
+    uvec2 low_2 = uvec2(floor(at));
+    uvec2 high_2 = min((low_2 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
     vec2 t_3 = fract(at);
-    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_1), 0);
+    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_2), 0);
     vec2 a_2 = _e29.xy;
-    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_1.x, low_1.y)), 0);
+    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_2.x, low_2.y)), 0);
     vec2 b_2 = _e36.xy;
-    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_1.x, high_1.y)), 0);
-    vec2 c_11 = _e43.xy;
-    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_1), 0);
+    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_2.x, high_2.y)), 0);
+    vec2 c_12 = _e43.xy;
+    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_2), 0);
     vec2 d_2 = _e47.xy;
-    return mix(mix(a_2, b_2, t_3.x), mix(c_11, d_2, t_3.x), t_3.y);
+    return mix(mix(a_2, b_2, t_3.x), mix(c_12, d_2, t_3.x), t_3.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -15624,16 +16245,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_2.base_color = base_color;
-    m_2.diffuse = (base_color * (1.0 - metalness));
-    m_2.specular = vec3(0.04);
-    vec3 _e13 = m_2.specular;
-    m_2.specular_blended = mix(_e13, base_color, metalness);
-    m_2.specular_grazing = 1.0;
-    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_2.metalness = metalness;
-    PbrMaterial _e26 = m_2;
+    PbrMaterial m_4 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_4.base_color = base_color;
+    m_4.diffuse = (base_color * (1.0 - metalness));
+    m_4.specular = vec3(0.04);
+    vec3 _e13 = m_4.specular;
+    m_4.specular_blended = mix(_e13, base_color, metalness);
+    m_4.specular_grazing = 1.0;
+    m_4.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_4.metalness = metalness;
+    PbrMaterial _e26 = m_4;
     return _e26;
 }
 
@@ -15642,29 +16263,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha * alpha);
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_1 * alpha_1);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_1, float n_dot_h) {
-    float a2_1 = (alpha_1 * alpha_1);
+float d_ggx(float alpha_2, float n_dot_h) {
+    float a2_1 = (alpha_2 * alpha_2);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_2 = (roughness_2 * roughness_2);
+    float alpha_3 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_3, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -15672,12 +16293,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_5, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_5.specular_blended, m_5.specular_grazing, m_5.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_3.diffuse);
+    vec3 _e18 = f_schlick(m_5.specular, m_5.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_5.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -15690,9 +16311,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_4.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_6, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_6.specular, m_6.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_6.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -15712,81 +16333,82 @@ MapUv transformed_uv(vec2 uv, vec4 uv_u, vec4 uv_v) {
 
 Surface with_maps(Surface surface, SurfaceInput input_1) {
     Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
-    Material m_6 = material_row;
-    uint flags_1 = uint(m_6.strengths.z);
+    Material m_8 = material_row;
+    uint flags_2 = uint(m_8.strengths.z);
     s = surface;
-    MapUv _e11 = transformed_uv(input_1.uv, m_6.uv_u, m_6.uv_v);
-    MapUv _e15 = transformed_uv(input_1.uv1_, m_6.uv_u, m_6.uv_v);
+    MapUv _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    MapUv _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     vec3 _e17 = dFdy(input_1.relativePosition);
     vec3 position_dy = (_e17 * ROWS_UP);
     vec3 position_dx = dFdx(input_1.relativePosition);
-    bool _e24 = map_ready(m_6.maps.x);
+    bool _e24 = map_ready(m_8.maps.x);
     if (_e24) {
-        MapUv _e26 = map_uv(flags_1, 0u, _e11, _e15);
-        uint _e30 = map_layer(m_6.maps.x);
-        vec4 texel = textureGrad(_group_3_binding_0_fs, vec3(_e26.uv, _e30), _e26.dx, _e26.dy);
-        vec3 _e37 = s.baseColor;
-        s.baseColor = (_e37 * texel.xyz);
-        float _e41 = s.alpha;
-        s.alpha = (_e41 * texel.w);
+        MapUv _e26 = map_uv(flags_2, 0u, _e11, _e15);
+        uint _e30 = map_layer(m_8.maps.x);
+        vec4 sampled = textureGrad(_group_3_binding_0_fs, vec3(_e26.uv, _e30), _e26.dx, _e26.dy);
+        vec4 _e36 = straight_texel(m_8, sampled);
+        vec3 _e38 = s.baseColor;
+        s.baseColor = (_e38 * _e36.xyz);
+        float _e42 = s.alpha;
+        s.alpha = (_e42 * _e36.w);
     }
-    bool _e46 = map_ready(m_6.maps.y);
-    if (_e46) {
-        MapUv _e48 = map_uv(flags_1, 1u, _e11, _e15);
-        uint _e51 = map_layer(m_6.maps.y);
-        vec4 texel_1 = textureGrad(_group_3_binding_1_fs, vec3(_e48.uv, _e51), _e48.dx, _e48.dy);
-        float _e59 = s.roughness;
-        s.roughness = (_e59 * texel_1.y);
-        float _e63 = s.metalness;
-        s.metalness = (_e63 * texel_1.z);
+    bool _e47 = map_ready(m_8.maps.y);
+    if (_e47) {
+        MapUv _e49 = map_uv(flags_2, 1u, _e11, _e15);
+        uint _e52 = map_layer(m_8.maps.y);
+        vec4 texel_1 = textureGrad(_group_3_binding_1_fs, vec3(_e49.uv, _e52), _e49.dx, _e49.dy);
+        float _e60 = s.roughness;
+        s.roughness = (_e60 * texel_1.y);
+        float _e64 = s.metalness;
+        s.metalness = (_e64 * texel_1.z);
     }
-    bool _e68 = map_ready(m_6.maps.w);
-    if (_e68) {
-        MapUv _e70 = map_uv(flags_1, 3u, _e11, _e15);
-        uint _e73 = map_layer(m_6.maps.w);
-        vec4 texel_2 = textureGrad(_group_3_binding_3_fs, vec3(_e70.uv, _e73), _e70.dx, _e70.dy);
-        s.occlusion = (((texel_2.x - 1.0) * m_6.strengths.x) + 1.0);
+    bool _e69 = map_ready(m_8.maps.w);
+    if (_e69) {
+        MapUv _e71 = map_uv(flags_2, 3u, _e11, _e15);
+        uint _e74 = map_layer(m_8.maps.w);
+        vec4 texel_2 = textureGrad(_group_3_binding_3_fs, vec3(_e71.uv, _e74), _e71.dx, _e71.dy);
+        s.occlusion = (((texel_2.x - 1.0) * m_8.strengths.x) + 1.0);
     }
-    bool _e91 = map_ready(m_6.more_maps.x);
-    if (_e91) {
-        MapUv _e93 = map_uv(flags_1, 4u, _e11, _e15);
-        uint _e96 = map_layer(m_6.more_maps.x);
-        vec4 texel_3 = textureGrad(_group_3_binding_4_fs, vec3(_e93.uv, _e96), _e93.dx, _e93.dy);
-        vec3 _e104 = s.emissive;
-        s.emissive = (_e104 * texel_3.xyz);
+    bool _e92 = map_ready(m_8.more_maps.x);
+    if (_e92) {
+        MapUv _e94 = map_uv(flags_2, 4u, _e11, _e15);
+        uint _e97 = map_layer(m_8.more_maps.x);
+        vec4 texel_3 = textureGrad(_group_3_binding_4_fs, vec3(_e94.uv, _e97), _e94.dx, _e94.dy);
+        vec3 _e105 = s.emissive;
+        s.emissive = (_e105 * texel_3.xyz);
     }
-    bool _e109 = map_ready(m_6.more_maps.y);
-    if (_e109) {
-        MapUv _e111 = map_uv(flags_1, 5u, _e11, _e15);
-        uint _e114 = map_layer(m_6.more_maps.y);
-        vec4 texel_4 = textureGrad(_group_3_binding_5_fs, vec3(_e111.uv, _e114), _e111.dx, _e111.dy);
-        s.irradiance = (texel_4.xyz * m_6.strengths.y);
+    bool _e110 = map_ready(m_8.more_maps.y);
+    if (_e110) {
+        MapUv _e112 = map_uv(flags_2, 5u, _e11, _e15);
+        uint _e115 = map_layer(m_8.more_maps.y);
+        vec4 texel_4 = textureGrad(_group_3_binding_5_fs, vec3(_e112.uv, _e115), _e112.dx, _e112.dy);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    bool _e128 = map_ready(m_6.maps.z);
-    if (_e128) {
-        MapUv _e130 = map_uv(flags_1, 2u, _e11, _e15);
-        uint _e133 = map_layer(m_6.maps.z);
-        vec4 texel_5 = textureGrad(_group_3_binding_2_fs, vec3(_e130.uv, _e133), _e130.dx, _e130.dy);
-        vec3 bent = vec3((((texel_5.xy * 2.0) - vec2(1.0)) * m_6.surface.zw), ((texel_5.z * 2.0) - 1.0));
+    bool _e129 = map_ready(m_8.maps.z);
+    if (_e129) {
+        MapUv _e131 = map_uv(flags_2, 2u, _e11, _e15);
+        uint _e134 = map_layer(m_8.maps.z);
+        vec4 texel_5 = textureGrad(_group_3_binding_2_fs, vec3(_e131.uv, _e134), _e131.dx, _e131.dy);
+        vec3 bent = vec3((((texel_5.xy * 2.0) - vec2(1.0)) * m_8.surface.zw), ((texel_5.z * 2.0) - 1.0));
         vec3 normal_4 = input_1.normal;
         float facing_1 = (input_1.frontFacing ? 1.0 : -1.0);
         vec3 tangent = (normalize(input_1.tangent) * facing_1);
         vec3 bitangent = (normalize(input_1.bitangent) * facing_1);
         s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_4 * bent.z)));
     }
-    Surface _e176 = s;
-    return _e176;
+    Surface _e177 = s;
+    return _e177;
 }
 
 Surface defaultSurface(SurfaceInput input_2) {
     Surface s_1 = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
-    Material m_7 = material_row;
-    s_1.baseColor = (m_7.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_7.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_7.surface.x;
-    s_1.roughness = m_7.surface.y;
+    Material m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_7.emissive.xyz * m_7.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1.0;
     s_1.irradiance = vec3(0.0);
     Surface _e35 = s_1;
@@ -15796,16 +16418,16 @@ Surface defaultSurface(SurfaceInput input_2) {
     return _e37;
 }
 
-vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
+vec3 light_surface(PbrMaterial m_7, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_fs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_7, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e21 = _group_0_binding_0_fs.ambient;
-    vec3 _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
+    vec3 _e24 = indirect_diffuse(m_7, (_e21.xyz + extra), dfg_3);
     return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
 }
 
@@ -15823,7 +16445,9 @@ vec4 shade(Surface s_2, SurfaceInput input_3, vec2 pixel_4) {
     Material _e34 = material_row;
     vec3 _e35 = fogged(outgoing, input_3.relativePosition, _e34);
     vec4 _e37 = finish_null3d_mesh(_e35, pixel_4);
-    return _e37;
+    Material _e39 = material_row;
+    vec4 _e42 = fragment_color(_e39, _e37.xyz, s_2.alpha);
+    return _e42;
 }
 
 void main() {
@@ -16608,6 +17232,7 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -16764,6 +17389,11 @@ vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
     float _e16 = fog_factor(_e14, relative);
     vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
+}
+
+vec4 fragment_color(Material m_2, vec3 color, float alpha_1) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha_1), alpha_1) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -16988,6 +17618,7 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -17158,6 +17789,11 @@ vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
     return _e20;
 }
 
+vec4 fragment_color(Material m_2, vec3 color, float alpha_1) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha_1), alpha_1) : vec4(color, 1.0));
+}
+
 vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
@@ -17193,7 +17829,9 @@ void main() {
     vec3 _e9 = base;
     vec3 _e11 = fogged(_e9, in_.relative, _e2);
     vec4 _e14 = finish_null3d_mesh(_e11, in_.clip.xy);
-    _fs2p_location0 = _e14;
+    float _e16 = alpha;
+    vec4 _e17 = fragment_color(_e2, _e14.xyz, _e16);
+    _fs2p_location0 = _e17;
     return;
 }
 `,
@@ -17305,6 +17943,7 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -17461,6 +18100,11 @@ vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
     float _e16 = fog_factor(_e14, relative);
     vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
+}
+
+vec4 fragment_color(Material m_2, vec3 color, float alpha_1) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha_1), alpha_1) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -17685,6 +18329,7 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -17855,6 +18500,11 @@ vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
     return _e20;
 }
 
+vec4 fragment_color(Material m_2, vec3 color, float alpha_1) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha_1), alpha_1) : vec4(color, 1.0));
+}
+
 vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
@@ -17894,7 +18544,9 @@ void main() {
     vec3 _e13 = base;
     vec3 _e15 = fogged(_e13, in_.relative, _e2);
     vec4 _e18 = finish_null3d_mesh(_e15, in_.clip.xy);
-    _fs2p_location0 = _e18;
+    float _e20 = alpha;
+    vec4 _e21 = fragment_color(_e2, _e18.xyz, _e20);
+    _fs2p_location0 = _e21;
     return;
 }
 `,
@@ -18008,6 +18660,7 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -18166,6 +18819,11 @@ vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
     float _e16 = fog_factor(_e14, relative);
     vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
+}
+
+vec4 fragment_color(Material m_2, vec3 color, float alpha_1) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha_1), alpha_1) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -18394,6 +19052,7 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -18565,6 +19224,11 @@ vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
     return _e20;
 }
 
+vec4 fragment_color(Material m_2, vec3 color, float alpha_1) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha_1), alpha_1) : vec4(color, 1.0));
+}
+
 vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
@@ -18604,7 +19268,9 @@ void main() {
     vec3 _e17 = base;
     vec3 _e19 = fogged(_e17, in_.relative, _e2);
     vec4 _e22 = finish_null3d_mesh(_e19, in_.clip.xy);
-    _fs2p_location0 = _e22;
+    float _e24 = alpha;
+    vec4 _e25 = fragment_color(_e2, _e22.xyz, _e24);
+    _fs2p_location0 = _e25;
     return;
 }
 `,
@@ -18718,6 +19384,7 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -18876,6 +19543,11 @@ vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
     float _e16 = fog_factor(_e14, relative);
     vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
+}
+
+vec4 fragment_color(Material m_2, vec3 color, float alpha_1) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha_1), alpha_1) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -19104,6 +19776,7 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -19275,6 +19948,11 @@ vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
     return _e20;
 }
 
+vec4 fragment_color(Material m_2, vec3 color, float alpha_1) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha_1), alpha_1) : vec4(color, 1.0));
+}
+
 vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
@@ -19318,7 +19996,9 @@ void main() {
     vec3 _e21 = base;
     vec3 _e23 = fogged(_e21, in_.relative, _e2);
     vec4 _e26 = finish_null3d_mesh(_e23, in_.clip.xy);
-    _fs2p_location0 = _e26;
+    float _e28 = alpha;
+    vec4 _e29 = fragment_color(_e2, _e26.xyz, _e28);
+    _fs2p_location0 = _e29;
     return;
 }
 `,
@@ -19435,6 +20115,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -19542,6 +20224,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -19551,8 +20239,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -19575,25 +20263,25 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -19603,6 +20291,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags = uint(m_2.strengths.z);
+    if (!(((flags & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha_1), alpha_1) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -19677,9 +20391,9 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_vs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -19832,6 +20546,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -19929,6 +20645,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -19938,8 +20660,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -19962,15 +20684,15 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
@@ -19997,12 +20719,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -20012,6 +20734,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags = uint(m_2.strengths.z);
+    if (!(((flags & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha_1), alpha_1) : vec4(color, 1.0));
 }
 
 vec4 clip_of(Instance found, vec3 relative_1) {
@@ -20033,9 +20781,9 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_fs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -20048,15 +20796,18 @@ void main() {
     vec3 raw = vec3((second ? in_.uv.zw : in_.uv.xy), 1.0);
     vec2 uv = vec2(dot(_e2.uv_u.xyz, raw), dot(_e2.uv_v.xyz, raw));
     uint _e26 = map_layer(_e2.maps.x);
-    vec4 texel = texture(_group_3_binding_0_fs, vec3(uv, _e26));
-    bool _e34 = map_ready(_e2.maps.x);
-    vec4 map = (_e34 ? texel : vec4(1.0));
+    vec4 texel_1 = texture(_group_3_binding_0_fs, vec3(uv, _e26));
+    vec4 _e32 = straight_texel(_e2, texel_1);
+    bool _e35 = map_ready(_e2.maps.x);
+    vec4 map = (_e35 ? _e32 : vec4(1.0));
     base = (_e2.color.xyz * map.xyz);
     alpha = (_e2.color.w * map.w);
-    vec3 _e46 = base;
-    vec3 _e48 = fogged(_e46, in_.relative, _e2);
-    vec4 _e51 = finish_null3d_mesh(_e48, in_.clip.xy);
-    _fs2p_location0 = _e51;
+    vec3 _e47 = base;
+    vec3 _e49 = fogged(_e47, in_.relative, _e2);
+    vec4 _e52 = finish_null3d_mesh(_e49, in_.clip.xy);
+    float _e54 = alpha;
+    vec4 _e55 = fragment_color(_e2, _e52.xyz, _e54);
+    _fs2p_location0 = _e55;
     return;
 }
 `,
@@ -20180,6 +20931,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -20287,6 +21040,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -20296,8 +21055,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -20320,25 +21079,25 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -20348,6 +21107,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags = uint(m_2.strengths.z);
+    if (!(((flags & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha_1), alpha_1) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -20422,9 +21207,9 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_vs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -20577,6 +21362,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -20674,6 +21461,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -20683,8 +21476,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -20707,15 +21500,15 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
@@ -20742,12 +21535,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -20757,6 +21550,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags = uint(m_2.strengths.z);
+    if (!(((flags & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha_1), alpha_1) : vec4(color, 1.0));
 }
 
 vec4 clip_of(Instance found, vec3 relative_1) {
@@ -20778,9 +21597,9 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_fs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -20793,19 +21612,22 @@ void main() {
     vec3 raw = vec3((second ? in_.uv.zw : in_.uv.xy), 1.0);
     vec2 uv = vec2(dot(_e2.uv_u.xyz, raw), dot(_e2.uv_v.xyz, raw));
     uint _e26 = map_layer(_e2.maps.x);
-    vec4 texel = texture(_group_3_binding_0_fs, vec3(uv, _e26));
-    bool _e34 = map_ready(_e2.maps.x);
-    vec4 map = (_e34 ? texel : vec4(1.0));
+    vec4 texel_1 = texture(_group_3_binding_0_fs, vec3(uv, _e26));
+    vec4 _e32 = straight_texel(_e2, texel_1);
+    bool _e35 = map_ready(_e2.maps.x);
+    vec4 map = (_e35 ? _e32 : vec4(1.0));
     base = (_e2.color.xyz * map.xyz);
     alpha = (_e2.color.w * map.w);
-    float _e46 = alpha;
-    if ((_e46 < _e2.emissive.w)) {
+    float _e47 = alpha;
+    if ((_e47 < _e2.emissive.w)) {
         discard;
     }
-    vec3 _e50 = base;
-    vec3 _e52 = fogged(_e50, in_.relative, _e2);
-    vec4 _e55 = finish_null3d_mesh(_e52, in_.clip.xy);
-    _fs2p_location0 = _e55;
+    vec3 _e51 = base;
+    vec3 _e53 = fogged(_e51, in_.relative, _e2);
+    vec4 _e56 = finish_null3d_mesh(_e53, in_.clip.xy);
+    float _e58 = alpha;
+    vec4 _e59 = fragment_color(_e2, _e56.xyz, _e58);
+    _fs2p_location0 = _e59;
     return;
 }
 `,
@@ -20931,6 +21753,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -21040,6 +21864,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -21049,8 +21879,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -21073,25 +21903,25 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -21101,6 +21931,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags = uint(m_2.strengths.z);
+    if (!(((flags & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha_1), alpha_1) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -21175,9 +22031,9 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_vs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -21334,6 +22190,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -21432,6 +22290,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -21441,8 +22305,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -21465,15 +22329,15 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
@@ -21500,12 +22364,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -21515,6 +22379,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags = uint(m_2.strengths.z);
+    if (!(((flags & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha_1), alpha_1) : vec4(color, 1.0));
 }
 
 vec4 clip_of(Instance found, vec3 relative_1) {
@@ -21536,9 +22426,9 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_fs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -21551,19 +22441,22 @@ void main() {
     vec3 raw = vec3((second ? in_.uv.zw : in_.uv.xy), 1.0);
     vec2 uv = vec2(dot(_e2.uv_u.xyz, raw), dot(_e2.uv_v.xyz, raw));
     uint _e26 = map_layer(_e2.maps.x);
-    vec4 texel = texture(_group_3_binding_0_fs, vec3(uv, _e26));
-    bool _e34 = map_ready(_e2.maps.x);
-    vec4 map = (_e34 ? texel : vec4(1.0));
+    vec4 texel_1 = texture(_group_3_binding_0_fs, vec3(uv, _e26));
+    vec4 _e32 = straight_texel(_e2, texel_1);
+    bool _e35 = map_ready(_e2.maps.x);
+    vec4 map = (_e35 ? _e32 : vec4(1.0));
     base = (_e2.color.xyz * map.xyz);
     alpha = (_e2.color.w * map.w);
-    vec3 _e46 = base;
-    base = (_e46 * in_.vertex_color.xyz);
-    float _e50 = alpha;
-    alpha = (_e50 * in_.vertex_color.w);
-    vec3 _e54 = base;
-    vec3 _e56 = fogged(_e54, in_.relative, _e2);
-    vec4 _e59 = finish_null3d_mesh(_e56, in_.clip.xy);
-    _fs2p_location0 = _e59;
+    vec3 _e47 = base;
+    base = (_e47 * in_.vertex_color.xyz);
+    float _e51 = alpha;
+    alpha = (_e51 * in_.vertex_color.w);
+    vec3 _e55 = base;
+    vec3 _e57 = fogged(_e55, in_.relative, _e2);
+    vec4 _e60 = finish_null3d_mesh(_e57, in_.clip.xy);
+    float _e62 = alpha;
+    vec4 _e63 = fragment_color(_e2, _e60.xyz, _e62);
+    _fs2p_location0 = _e63;
     return;
 }
 `,
@@ -21689,6 +22582,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -21798,6 +22693,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -21807,8 +22708,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -21831,25 +22732,25 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -21859,6 +22760,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags = uint(m_2.strengths.z);
+    if (!(((flags & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha_1), alpha_1) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -21933,9 +22860,9 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_vs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -22092,6 +23019,8 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
+const uint MAP_LINEAR_FLAG = 16u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -22190,6 +23119,12 @@ float fog_factor(Fog fog, vec3 relative_position_1) {
     return ((fog.kind == EXP2_) ? _e13 : linear);
 }
 
+vec3 srgb_to_linear(vec3 c_5) {
+    vec3 low_1 = (c_5 / vec3(12.92));
+    vec3 high_1 = pow(((c_5 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_5, vec3(0.04045)));
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -22199,8 +23134,8 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 tone_map(vec3 c_5, Output settings) {
-    vec3 exposed = (c_5 * settings.exposure);
+vec3 tone_map(vec3 c_6, Output settings) {
+    vec3 exposed = (c_6 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
         vec3 _e7 = tone_map_agx(exposed);
         return _e7;
@@ -22223,15 +23158,15 @@ float pixel_noise(vec2 pixel) {
     return _e8;
 }
 
-vec3 encode(vec3 c_6, vec2 pixel_1) {
+vec3 encode(vec3 c_7, vec2 pixel_1) {
     float _e1 = pixel_noise(pixel_1);
     float dither = ((_e1 - 0.5) / 255.0);
-    vec3 _e7 = linear_to_srgb(c_6);
+    vec3 _e7 = linear_to_srgb(c_7);
     return (_e7 + vec3(dither));
 }
 
-vec4 finish_null3d_tonemap(vec3 c_7, vec2 pixel_2, Output settings_1) {
-    vec3 _e2 = tone_map(c_7, settings_1);
+vec4 finish_null3d_tonemap(vec3 c_8, vec2 pixel_2, Output settings_1) {
+    vec3 _e2 = tone_map(c_8, settings_1);
     vec3 _e4 = encode(_e2, pixel_2);
     return vec4(_e4, 1.0);
 }
@@ -22258,12 +23193,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_8, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_9, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_8, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_9, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -22273,6 +23208,32 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+vec4 straight_texel(Material m_2, vec4 texel) {
+    bool local = false;
+    uint flags = uint(m_2.strengths.z);
+    if (!(((flags & 10u) != 10u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    if (((flags & MAP_LINEAR_FLAG) != 0u)) {
+        return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
+    }
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
+}
+
+vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
+    bool blended = ((uint(m_3.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * alpha_1), alpha_1) : vec4(color, 1.0));
 }
 
 vec4 clip_of(Instance found, vec3 relative_1) {
@@ -22294,9 +23255,9 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec4 finish_null3d_mesh(vec3 c_9, vec2 pixel_3) {
+vec4 finish_null3d_mesh(vec3 c_10, vec2 pixel_3) {
     Output _e2 = _group_0_binding_0_fs.output_;
-    vec4 _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
+    vec4 _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
 }
 
@@ -22309,23 +23270,26 @@ void main() {
     vec3 raw = vec3((second ? in_.uv.zw : in_.uv.xy), 1.0);
     vec2 uv = vec2(dot(_e2.uv_u.xyz, raw), dot(_e2.uv_v.xyz, raw));
     uint _e26 = map_layer(_e2.maps.x);
-    vec4 texel = texture(_group_3_binding_0_fs, vec3(uv, _e26));
-    bool _e34 = map_ready(_e2.maps.x);
-    vec4 map = (_e34 ? texel : vec4(1.0));
+    vec4 texel_1 = texture(_group_3_binding_0_fs, vec3(uv, _e26));
+    vec4 _e32 = straight_texel(_e2, texel_1);
+    bool _e35 = map_ready(_e2.maps.x);
+    vec4 map = (_e35 ? _e32 : vec4(1.0));
     base = (_e2.color.xyz * map.xyz);
     alpha = (_e2.color.w * map.w);
-    vec3 _e46 = base;
-    base = (_e46 * in_.vertex_color.xyz);
-    float _e50 = alpha;
-    alpha = (_e50 * in_.vertex_color.w);
-    float _e54 = alpha;
-    if ((_e54 < _e2.emissive.w)) {
+    vec3 _e47 = base;
+    base = (_e47 * in_.vertex_color.xyz);
+    float _e51 = alpha;
+    alpha = (_e51 * in_.vertex_color.w);
+    float _e55 = alpha;
+    if ((_e55 < _e2.emissive.w)) {
         discard;
     }
-    vec3 _e58 = base;
-    vec3 _e60 = fogged(_e58, in_.relative, _e2);
-    vec4 _e63 = finish_null3d_mesh(_e60, in_.clip.xy);
-    _fs2p_location0 = _e63;
+    vec3 _e59 = base;
+    vec3 _e61 = fogged(_e59, in_.relative, _e2);
+    vec4 _e64 = finish_null3d_mesh(_e61, in_.clip.xy);
+    float _e66 = alpha;
+    vec4 _e67 = fragment_color(_e2, _e64.xyz, _e66);
+    _fs2p_location0 = _e67;
     return;
 }
 `,
