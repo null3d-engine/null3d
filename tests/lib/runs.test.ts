@@ -335,7 +335,7 @@ describe('the checks plan', () => {
 		expect(images.map((item) => item.id)).toEqual(IMAGE_RUNS.map((run) => `image-${run.id}`));
 		const compat = items.find((item) => item.id === 'image-replay-textures-compat');
 		if (!compat) throw new Error('the plan lacks the texture pages');
-		expect(compat.path).toBe('/tests/pages/replay-textures.html?gpu=compat');
+		expect(compat.path).toBe('/tests/pages/replay-textures.html?gpu=compat&preset=high');
 		expect(judge(compat.check, { ok: false, error: 'no WebGPU adapter' }, NO_WEBGPU)).toBe('skip');
 		const failed = { ok: true, errors: ['a view is invalid'], pixels: '', width: 0, height: 0 };
 		expect(judge(compat.check, failed, NONE_MISSING)).toEqual([
@@ -1267,7 +1267,7 @@ describe('the depth plan', () => {
 			'image-depth-precision-reversed-webgl2',
 		]);
 		expect(items.find((item) => item.id.endsWith('reversed-gl-webgl2'))?.path).toBe(
-			'/tests/pages/depth-precision.html?gpu=webgl2&hold=0&depth=reversed-gl',
+			'/tests/pages/depth-precision.html?gpu=webgl2&hold=0&preset=high&depth=reversed-gl',
 		);
 		expect(items.every((item) => item.check.kind === 'image')).toBe(true);
 	});
