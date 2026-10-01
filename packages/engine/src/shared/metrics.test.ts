@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 import { CORE_NOT_COUNTED } from '../generated/core';
-import { gpuPassStats, summarizeFrames, threadRoles, timerStep } from '../page/frame-stats';
+import {
+	gpuPassStats,
+	secondRates,
+	summarizeFrames,
+	threadRoles,
+	timerStep,
+} from '../page/frame-stats';
 import {
 	Counter,
 	createMetricsBuffer,
@@ -360,6 +366,50 @@ describe('gpuPassStats', () => {
 			'between passes',
 		]);
 		expect(gpuPassStats(gpuRecords([]))).toBeNull();
+	});
+});
+
+describe('secondRates', () => {
+	/** Records presented frames and completions `intervals` apart, each list in its own ring. */
+	function rates(presented: readonly number[], completed: readonly number[]) {
+		const buffer = createMetricsBuffer(true, 1);
+		const reader = new MetricsReader(buffer);
+		reader.begin();
+		const render = new FrameRecorder(buffer, Role.Render);
+		const completion = new FrameRecorder(buffer, Role.Completion);
+		presented.forEach((ms, frame) => {
+			render.begin(frame);
+			render.interval(ms);
+			render.commit(1);
+		});
+		completed.forEach((ms, frame) => {
+			completion.begin(frame);
+			completion.interval(ms);
+			completion.commit(1);
+		});
+		reader.end();
+		return secondRates(reader.records);
+	}
+
+	it('counts the frames of each whole second, and leaves out the second that has not ended', () => {
+		// 50 frames a second for 2 s, then 25 a second: frames at 10, 30 ... 1990, then 2030 ... 4030.
+		const presented = [10, ...new Array(99).fill(20), ...new Array(51).fill(40)];
+		// The GPU finishes the first second's frames in pairs: an interval of 0 joins the one before.
+		const pairs = new Array(50).fill(0).map((_, i) => (i === 0 ? 20 : i % 2 === 0 ? 40 : 0));
+		const seconds = rates(presented, [...pairs, ...new Array(151).fill(20)]);
+		expect(seconds.map((s) => s.presentedFps)).toEqual([50, 50, 25, 25]);
+		expect(seconds.map((s) => s.completedFps)).toEqual([50, 50, 50, 50]);
+	});
+
+	it('stops where the completions stop, and gives null rates without any', () => {
+		const presented = [10, ...new Array(199).fill(20)];
+		expect(rates(presented, [10, ...new Array(74).fill(20)])).toEqual([
+			{ presentedFps: 50, completedFps: 50 },
+		]);
+		expect(rates(presented, [])).toEqual(
+			new Array(3).fill({ presentedFps: 50, completedFps: null }),
+		);
+		expect(rates([], [])).toEqual([]);
 	});
 });
 

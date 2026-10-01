@@ -9,6 +9,7 @@ import type { CoreDevice } from '../page/limits';
 import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { type Build, loadGlue, type StartedCore, startCore } from '../shared/core';
+import type { WAKE } from '../shared/wake';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
 
 export interface CoreHandoff {
@@ -23,6 +24,11 @@ export interface CoreHandoff {
 	device: CoreDevice;
 	/** The page's table of error fixes, so a worker's errors carry the same messages as the page's. */
 	errorFixes: ErrorFixes;
+	/**
+	 * True when the threads wake each other with messages, where the browser lacks
+	 * `Atomics.waitAsync` or ?wake=message acts that out.
+	 */
+	wakeByMessage: boolean;
 }
 
 /**
@@ -131,7 +137,9 @@ export type SketchWorkerMessage =
 	/** Sent before the core in low-latency mode, where the sketch worker draws: load the renderer. */
 	| { type: 'load-renderer' }
 	| RendererRequest
-	| { type: 'post'; name: string; data: unknown };
+	| { type: 'post'; name: string; data: unknown }
+	/** Ends the sketch worker's waits, where the threads wake each other with messages. */
+	| typeof WAKE;
 
 /** Sends a reply from a worker to the page, moving the `transfer` objects instead of copying them. */
 export function replyToPage(message: WorkerReply, transfer: Transferable[] = []): void {

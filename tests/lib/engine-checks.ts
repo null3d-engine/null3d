@@ -56,6 +56,9 @@ export const ENGINE_MODES = [
 	},
 ] as const satisfies readonly EngineMode[];
 
+/** The thread modes with worker threads, whose threads wait for each other. */
+export const THREADED_MODES = ENGINE_MODES.filter(({ build }) => build === 'threaded');
+
 /** The name of a thread mode, as the image test manifest lists it. */
 export type EngineModeName = (typeof ENGINE_MODES)[number]['name'];
 
@@ -93,7 +96,7 @@ export interface FrameCounts {
 export interface EngineResult {
 	mode: ReportedMode & { jobWorkers: number };
 	capabilities: { tier: string; threaded: boolean; features: string[] };
-	report: { crossOriginIsolated: boolean };
+	report: { crossOriginIsolated: boolean; atomicsWaitAsync: boolean };
 	stats: {
 		frames: number;
 		cpuMs: Spread;

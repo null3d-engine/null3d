@@ -30,7 +30,7 @@ import {
 	type BenchResult,
 	benchReport,
 	type SummaryRow,
-	summarizeRuns,
+	summaryRow,
 } from '../../bench/lib/report.ts';
 import {
 	groupSamples,
@@ -64,6 +64,7 @@ import {
 	type EngineResult,
 	engineProblems,
 	jobWorkersProblem,
+	THREADED_MODES,
 } from './engine-checks.ts';
 import { type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
@@ -244,7 +245,8 @@ const PRODUCTION_BUILD: Load = { kind: 'warm', key: runnerKey('production') };
 /**
  * The browser checks: the capability report, isolation, the shader library's values on both GPU
  * paths, every run of the image test manifest, the engine in every mode on both GPU paths, and
- * again on the production build, a frame captured as a PNG file in every mode on both GPU paths,
+ * again on the production build, the threaded modes with wake messages in place of
+ * Atomics.waitAsync, a frame captured as a PNG file in every mode on both GPU paths,
  * and the engine started and stopped again and again in every mode. The capabilities page loads
  * again last, so its extension answers can be compared across loads.
  */
@@ -301,6 +303,13 @@ export function checksPlan(): PlanItem<Check>[] {
 				['gpu=webgl2', mode.query],
 				{ kind: 'engine', tier: 'webgl2', mode },
 				PRODUCTION_BUILD,
+			),
+		),
+		...THREADED_MODES.map((mode) =>
+			engineItem(
+				`engine-wake-message-${slug(mode.name)}`,
+				['gpu=webgl2', 'wake=message', mode.query],
+				{ kind: 'engine', tier: 'webgl2', mode },
 			),
 		),
 		...TIERS.flatMap((tier) =>
@@ -985,7 +994,7 @@ export function benchSummary(
 	if (groups.size === 0) return undefined;
 	const rows: SummaryRow[] = [...groups.values()]
 		.filter((group) => group.results.length > 0)
-		.map(({ results, ...row }) => ({ ...row, summary: summarizeRuns(results) }));
+		.map(({ results, ...row }) => summaryRow(row, results));
 	return benchReport(rows).join('\n');
 }
 
