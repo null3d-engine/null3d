@@ -559,7 +559,7 @@ export class WebGL2Backend {
 			const header = words[i] as number;
 			const op = header & 0xff;
 			const length = header >>> 8;
-			if (length === 0 || i + length > end) throw new Error(`draw list is truncated at word ${i}`);
+			if (length === 0 || i + length > end) throw new Error(`draw list is truncated at word ${i} header ${header} op ${op} prev ${words[i - 1]} start ${start} end ${end}`);
 			const a = i + 1;
 			switch (op) {
 				case G.OP_CREATE_BUFFER:

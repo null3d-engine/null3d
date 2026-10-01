@@ -100,7 +100,11 @@ export class FrameReplay {
 	/** Replays a frame's list, apart from the pipelines it creates, which are building already. */
 	replay(frame: number): void {
 		const from = this.restOf(frame);
-		this.backend.replay(this.words, this.floats, from, this.end, this.viewsOf);
+		try {
+			this.backend.replay(this.words, this.floats, from, this.end, this.viewsOf);
+		} catch (e) {
+			throw new Error(`${String(e)} DEBUG replay ${this.debugState(frame, from)}`);
+		}
 		if (!this.backend.building) this.complete = true;
 	}
 
@@ -134,10 +138,55 @@ export class FrameReplay {
 		const start = Atomics.load(this.slots, Slot.DrawListAddress0 + parity) / 4;
 		this.end = start + Atomics.load(this.slots, Slot.DrawListWords0 + parity);
 		if (frame !== this.prepared) {
-			this.rest = this.backend.prepare(this.words, start, this.end);
+			this.debugStart = start;
+			this.debugEnd = this.end;
+			this.debugSum = this.checksum(start, this.end);
+			this.debugTaken = Atomics.load(this.slots, Slot.FramesTaken);
+			this.debugPublished = Atomics.load(this.slots, Slot.FramesPublished);
+			try {
+				this.rest = this.backend.prepare(this.words, start, this.end);
+			} catch (e) {
+				throw new Error(`${String(e)} DEBUG prepare ${this.debugState(frame, 0)}`);
+			}
 			this.prepared = frame;
 		}
 		return this.rest;
+	}
+
+	private debugStart = 0;
+	private debugEnd = 0;
+	private debugSum = 0;
+	private debugTaken = 0;
+	private debugPublished = 0;
+
+	private checksum(start: number, end: number): number {
+		let sum = 0;
+		for (let k = start; k < end && k < this.words.length; k++) sum = (sum * 31 + (this.words[k] as number)) | 0;
+		return sum;
+	}
+
+	private debugState(frame: number, from: number): string {
+		const parity = frame & 1;
+		const start = Atomics.load(this.slots, Slot.DrawListAddress0 + parity) / 4;
+		const words = Atomics.load(this.slots, Slot.DrawListWords0 + parity);
+		const other = Atomics.load(this.slots, Slot.DrawListAddress0 + (parity ^ 1)) / 4;
+		const otherWords = Atomics.load(this.slots, Slot.DrawListWords0 + (parity ^ 1));
+		return JSON.stringify({
+			frame,
+			prepared: this.prepared,
+			from,
+			start,
+			end: start + words,
+			atPrepare: { start: this.debugStart, end: this.debugEnd, taken: this.debugTaken, published: this.debugPublished },
+			sumThen: this.debugSum,
+			sumNow: this.checksum(this.debugStart, this.debugEnd),
+			taken: Atomics.load(this.slots, Slot.FramesTaken),
+			published: Atomics.load(this.slots, Slot.FramesPublished),
+			other: { start: other, end: other + otherWords },
+			memoryWords: this.words.length,
+			bufferWords: this.memory.buffer.byteLength / 4,
+			head: Array.from(this.words.subarray(this.debugStart, this.debugStart + 12)),
+		});
 	}
 }
 
