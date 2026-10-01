@@ -10,9 +10,12 @@ import {
 	MAP_SLOT_METAL_ROUGH,
 	MAP_SLOT_NORMAL,
 	MAP_SLOT_OCCLUSION,
+	MATERIAL_FEATURE_ADDITIVE,
 	MATERIAL_FEATURE_ALPHA_MASK,
+	MATERIAL_FEATURE_BLEND,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
+	MATERIAL_FEATURE_MULTIPLY,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
@@ -479,9 +482,9 @@ export interface MaterialOptions {
 	/** The base color: a hex string or a number in sRGB, or three linear components from 0 to 1. */
 	color?: ColorInput;
 	/**
-	 * How opaque the surface is, from 0 to 1. The default is 1. With the `mask` alpha mode, it is
-	 * part of the alpha that the cutoff tests. This version draws no blended materials, so it has
-	 * no other effect yet.
+	 * How opaque the surface is, from 0 to 1. The default is 1. It is part of the alpha, which the
+	 * `mask` alpha mode tests and the `blend` alpha mode blends with. The `opaque` alpha mode
+	 * ignores it.
 	 */
 	opacity?: number;
 	/**
@@ -493,14 +496,23 @@ export interface MaterialOptions {
 
 /**
  * How a material uses its alpha: its opacity, times its base color map's alpha, and times its
- * mesh's vertex alpha with `vertexColors`.
- * The `opaque` mode ignores the alpha. The `mask` mode draws nothing where the alpha falls below
- * `alphaCutoff`, and draws the rest opaque. It works as glTF's alpha mode `MASK` and three.js's
- * `alphaTest` do.
+ * mesh's vertex alpha with `vertexColors`. The `opaque` mode ignores the alpha. The `mask` mode
+ * draws nothing where the alpha falls below `alphaCutoff`, and draws the rest opaque, as three.js's
+ * `alphaTest` does. The `blend` mode blends the surface over what lies behind it, as three.js's
+ * `transparent: true` does. Blended objects draw after the opaque ones, farthest first.
  *
  * @category api/materials
  */
-export type AlphaMode = 'opaque' | 'mask';
+export type AlphaMode = 'opaque' | 'mask' | 'blend';
+
+/**
+ * How a blended surface meets what lies behind it. The `normal` blending covers it as far as the
+ * alpha says. The `additive` blending adds the surface's light, for glows and fire. The `multiply`
+ * blending tints it, for stains and tinted glass.
+ *
+ * @category api/materials
+ */
+export type Blending = 'normal' | 'additive' | 'multiply';
 
 /**
  * A depth bias, as three.js's polygon offset gives. It moves a surface's depth, so a decal on a
@@ -612,6 +624,8 @@ export interface MaterialFeatures {
 	fog?: boolean;
 	/** How the material uses its alpha. The default is `opaque`. */
 	alphaMode?: AlphaMode;
+	/** With the `blend` alpha mode, how the surface meets what lies behind it. The default is `normal`. */
+	blending?: Blending;
 	/** False to write no depth, so the surface hides nothing behind it. The default is true. */
 	depthWrite?: boolean;
 	/**
@@ -785,6 +799,14 @@ function linearOrNone(color: ColorInput | undefined, call: string): readonly num
 const ALPHA_MODES: Readonly<Record<AlphaMode, number>> = {
 	opaque: 0,
 	mask: MATERIAL_FEATURE_ALPHA_MASK,
+	blend: MATERIAL_FEATURE_BLEND,
+};
+
+/** The blendings, each with the core's feature bit that draws it. */
+const BLENDINGS: Readonly<Record<Blending, number>> = {
+	normal: 0,
+	additive: MATERIAL_FEATURE_ADDITIVE,
+	multiply: MATERIAL_FEATURE_MULTIPLY,
 };
 
 /**
@@ -792,11 +814,16 @@ const ALPHA_MODES: Readonly<Record<AlphaMode, number>> = {
  * E1203 for a depth bias that is not a finite number. Call it inside `if (DEV)`.
  */
 function checkFeatures(options: StandardOptions, call: string): void {
-	const { alphaMode, depthBias } = options;
+	const { alphaMode, blending, depthBias } = options;
 	if (alphaMode !== undefined && !Object.hasOwn(ALPHA_MODES, alphaMode))
 		throw new EngineError(
 			'E1217',
-			`${call}() got the alpha mode ${JSON.stringify(alphaMode)}; it takes 'opaque' or 'mask'.`,
+			`${call}() got the alpha mode ${JSON.stringify(alphaMode)}; it takes 'opaque', 'mask' or 'blend'.`,
+		);
+	if (blending !== undefined && !Object.hasOwn(BLENDINGS, blending))
+		throw new EngineError(
+			'E1217',
+			`${call}() got the blending ${JSON.stringify(blending)}; it takes 'normal', 'additive' or 'multiply'.`,
 		);
 	for (const key of ['constant', 'slopeScale'] as const) {
 		const value = depthBias?.[key] ?? 0;
@@ -812,6 +839,7 @@ function featureBits(options: StandardOptions): number {
 		(options.vertexColors ? MATERIAL_FEATURE_VERTEX_COLORS : 0) |
 		(options.flatShading ? MATERIAL_FEATURE_FLAT_SHADING : 0) |
 		ALPHA_MODES[options.alphaMode ?? 'opaque'] |
+		BLENDINGS[options.blending ?? 'normal'] |
 		(options.depthWrite === false ? MATERIAL_FEATURE_NO_DEPTH_WRITE : 0) |
 		(options.depthTest === false ? MATERIAL_FEATURE_NO_DEPTH_TEST : 0) |
 		(options.fog === false ? MATERIAL_FEATURE_NO_FOG : 0)

@@ -579,7 +579,8 @@ pub fn reset_gpu() -> u32 {
     })
 }
 
-/// The address of the draw list of a frame parity. It never moves.
+/// The address of the draw list of a frame parity. It moves when a frame needs more room than any
+/// before, so the thread that draws reads it with each frame.
 #[wasm_bindgen(js_name = drawListAddress)]
 pub fn draw_list_address(parity: u32) -> u32 {
     value_with_engine(|e| Ok(address(e.renderer.list(parity).words())))
@@ -998,9 +999,10 @@ pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) 
 
 // Creates a texture of `width` x `height` texels in `depth` layers, with no texels yet, in a
 // texture array, and returns its handle. `format` is the engine's format code: sRGB for colors,
-// linear for data, or half floats. `mipmaps` asks for a whole chain of mip levels, which the GPU
-// makes from each upload. The rest set its sampler: the address modes along u and v, the filters
-// of magnified and minified texels and between mip levels, and the anisotropy.
+// linear for data, half floats, or a compressed format. `mipmaps` asks for a whole chain of mip
+// levels, which the GPU makes from each upload. Without it, `levels` is the mip levels that the
+// texture's data brings, as a KTX2 file's do. The rest set its sampler: the address modes along u
+// and v, the filters of magnified and minified texels and between mip levels, and the anisotropy.
 /// Creates a texture and returns its handle.
 #[wasm_bindgen(js_name = createTexture)]
 #[allow(clippy::too_many_arguments)]
@@ -1010,6 +1012,7 @@ pub fn create_texture(
     depth: u32,
     format: u32,
     mipmaps: bool,
+    levels: u32,
     wrap_u: u32,
     wrap_v: u32,
     mag_filter: u32,
@@ -1024,6 +1027,7 @@ pub fn create_texture(
             depth,
             format,
             mipmaps,
+            levels,
             sampling: Sampling {
                 wrap: [wrap_u, wrap_v],
                 mag_filter,
@@ -1058,7 +1062,9 @@ pub fn set_texture_image(texture: u32, width: u32, height: u32, flags: u32) -> u
 }
 
 // Gives a texture new texels of `width` x `height` in each of its layers, and returns the address
-// of the memory that TypeScript fills with them at once: tightly packed rows, layer after layer.
+// of the memory that TypeScript fills with them at once: tightly packed rows, of blocks in a
+// compressed format, layer after layer, and level after level for a texture whose data brings its
+// mip levels.
 // The texels upload in the texture's turn, and the store frees the memory once no list reads it.
 // Texels of another size move the texture to another array, which changes the draw tables.
 /// Gives a texture new texels and returns the address to write them at.

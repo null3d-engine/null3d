@@ -759,9 +759,9 @@ export class Mesh extends Object3D {
 	}
 
 	/**
-	 * Sets the order in which the mesh draws among transparent objects, lower first, as three.js's
-	 * `renderOrder`. The default is 0. The engine orders opaque objects itself, and this version
-	 * draws every material opaque, so the order has no effect yet.
+	 * Sets the order in which the mesh draws among blended objects, lower first, as three.js's
+	 * `renderOrder`. Objects of one order draw farthest first. The default is 0. The engine orders
+	 * opaque and masked objects itself.
 	 */
 	setRenderOrder(order: number): void {
 		if (DEV) {

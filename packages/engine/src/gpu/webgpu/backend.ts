@@ -22,6 +22,14 @@ TEXTURE_FORMATS[G.FORMAT_DEPTH24_PLUS] = 'depth24plus';
 TEXTURE_FORMATS[G.FORMAT_DEPTH32_FLOAT] = 'depth32float';
 TEXTURE_FORMATS[G.FORMAT_RGBA32_FLOAT] = 'rgba32float';
 TEXTURE_FORMATS[G.FORMAT_R32_UINT] = 'r32uint';
+TEXTURE_FORMATS[G.FORMAT_ASTC_4X4_UNORM] = 'astc-4x4-unorm';
+TEXTURE_FORMATS[G.FORMAT_ASTC_4X4_UNORM_SRGB] = 'astc-4x4-unorm-srgb';
+TEXTURE_FORMATS[G.FORMAT_BC7_RGBA_UNORM] = 'bc7-rgba-unorm';
+TEXTURE_FORMATS[G.FORMAT_BC7_RGBA_UNORM_SRGB] = 'bc7-rgba-unorm-srgb';
+TEXTURE_FORMATS[G.FORMAT_ETC2_RGB8_UNORM] = 'etc2-rgb8unorm';
+TEXTURE_FORMATS[G.FORMAT_ETC2_RGB8_UNORM_SRGB] = 'etc2-rgb8unorm-srgb';
+TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM] = 'etc2-rgba8unorm';
+TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM_SRGB] = 'etc2-rgba8unorm-srgb';
 
 const VIEW_DIMENSIONS: (GPUTextureViewDimension | undefined)[] = [];
 VIEW_DIMENSIONS[G.VIEW_2D] = '2d';
@@ -57,7 +65,7 @@ function lookUp<T>(table: (T | undefined)[], code: number, what: string): T {
 export class WebGPUBackend {
 	private readonly buffers: (GPUBuffer | undefined)[] = [];
 	private readonly textures: (GPUTexture | undefined)[] = [];
-	/** Each texture's format code, for the bytes per texel of its writes. */
+	/** Each texture's format code, for the blocks of texels of its writes. */
 	private readonly formats: number[] = [];
 	/** Each texture's view for bind groups: the whole texture, in the dimension it was made with. */
 	private readonly bindingViews: (GPUTextureView | undefined)[] = [];
@@ -237,9 +245,9 @@ export class WebGPUBackend {
 		this.targetViews[id] = undefined;
 	}
 
-	/** Bytes per texel of a texture. */
-	private texelBytes(id: number): number {
-		return G.FORMAT_TEXEL_BYTES[this.formats[id] as number] ?? 0;
+	/** Bytes of one block of texels of a texture: one texel unless its format is compressed. */
+	private blockBytes(id: number): number {
+		return G.FORMAT_BLOCK_BYTES[this.formats[id] as number] ?? 0;
 	}
 
 	/**
@@ -492,14 +500,16 @@ export class WebGPUBackend {
 					break;
 				case G.OP_WRITE_TEXTURE: {
 					// A texel write lands when the queue receives it, as writeBuffer does, before the
-					// commands recorded since the last submit.
+					// commands recorded since the last submit. WebGPU counts a compressed write in
+					// whole blocks, which may reach past a small mip level's edge.
 					const copy = this.copy;
 					const id = words[a] as number;
-					const width = words[a + 5] as number;
-					const height = words[a + 6] as number;
+					const block = G.FORMAT_BLOCK_SIZE[this.formats[id] as number] ?? 1;
+					const blocksWide = Math.ceil((words[a + 5] as number) / block);
+					const blocksHigh = Math.ceil((words[a + 6] as number) / block);
 					copy.setDestination(this.need(this.textures, id, 'texture'), words, a);
-					copy.setSize(width, height, words[a + 7] as number);
-					copy.setLayout(words[a + 8] as number, width * this.texelBytes(id), height);
+					copy.setSize(blocksWide * block, blocksHigh * block, words[a + 7] as number);
+					copy.setLayout(words[a + 8] as number, blocksWide * this.blockBytes(id), blocksHigh);
 					device.queue.writeTexture(copy.destination, memory, copy.layout, copy.size);
 					this.counts.uploadBytes += words[a + 9] as number;
 					break;
@@ -517,7 +527,7 @@ export class WebGPUBackend {
 					copy.setImage(image, words[a + 9] as number, words[a + 10] as number);
 					copy.setSize(width, height, 1);
 					device.queue.copyExternalImageToTexture(copy.image, copy.destination, copy.size);
-					this.counts.uploadBytes += width * height * this.texelBytes(id);
+					this.counts.uploadBytes += width * height * this.blockBytes(id);
 					if (flags & G.UPLOAD_RELEASE) this.images.release(imageId);
 					break;
 				}

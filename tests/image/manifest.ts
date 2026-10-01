@@ -18,6 +18,7 @@ import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
+import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
@@ -208,6 +209,34 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		size: [480, 270],
 		modes: ALL_MODES,
 	},
+	// KTX2 files of ETC1S and UASTC data, which the transcoder turns into the compressed format that
+	// each device supports, with the files' mip levels, beside the same picture from a PNG file. A
+	// ramp whose size takes no compressed format becomes RGBA8. Every thread mode starts the
+	// transcoder from its own thread, and must draw the same image.
+	{
+		name: 'ktx2',
+		sketch: 'tests/pages/sketches/ktx2-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
+	// The same files where the device keeps to one family of compressed formats, or has none, as
+	// ?compression= makes it: BC7 as on a desktop GPU, ASTC alone, and RGBA8. Every format draws the
+	// image of the device's own formats, so each borrows its references.
+	...(
+		[
+			['ktx2-bc7', 'bc'],
+			['ktx2-astc', 'astc'],
+			['ktx2-rgba8', 'none'],
+		] as const
+	).map(([name, family]) => ({
+		name,
+		sketch: 'tests/pages/sketches/ktx2-sketch.ts',
+		hold: 0,
+		size: [480, 270] as const,
+		switches: [`compression=${family}`],
+		reference: 'ktx2',
+	})),
 	// A picture behind a lit box and an unlit box, as three.js draws a texture background: it fills
 	// the view, upright, and every object draws over it. The parity test compares it with its
 	// three.js twin.
@@ -463,6 +492,22 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 			reference: 'depth-bias',
 		}),
 	),
+	// See-through planes and a sphere, created nearest first, which must draw farthest first with
+	// normal blending. The parity test compares it with three.js's transparent materials.
+	{
+		name: 'transparency',
+		sketch: 'tests/pages/sketches/transparency-sketch.ts',
+		hold: 0,
+		size: [GLASS_IMAGE.width, GLASS_IMAGE.height],
+	},
+	// Additive and multiply blending, a batch of blended quads sorted row by row, render order,
+	// a surface without the depth test, and a glow map with straight and premultiplied colors.
+	{
+		name: 'blending',
+		sketch: 'tests/pages/sketches/blending-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
 	// Orbit controls after the controls test's drags, made through the controls' own calls. The
 	// controls test must draw this image after it makes the drags with Playwright.
 	{ name: 'controls', sketch: 'tests/pages/sketches/controls-sketch.ts?moved', hold: 0 },

@@ -129,12 +129,19 @@ pub(super) struct Layout {
     /// of their mesh's first part, so the draws of one pipeline and page sit together, apart from
     /// the later parts of meshes split over several pages.
     pub(super) draws: Vec<Draw>,
-    /// Each scene slot's bucket, shown or hidden, or `NO_BUCKET` for a slot that draws nowhere.
+    /// Each scene slot's bucket, shown or hidden, or `NO_BUCKET` for a slot that draws nowhere
+    /// or draws in the transparent pass.
     pub(super) scene_buckets: Vec<u32>,
+    /// Each scene slot's bucket, with 0 for the slots that draw in the transparent pass: the rows
+    /// whose matrices the resident texture needs.
+    pub(super) drawn_slots: Vec<u32>,
     /// Scratch for rebuilds: every bucket key with its source count, sorted and merged.
     key_counts: Vec<(BucketKey, u32)>,
-    /// Bytes of one ring slot of draw records.
+    /// Bytes of one ring slot of draw records: the opaque draws' records, then room for the
+    /// records of the transparent pass's draws, from [`Layout::sorted_records_at`] on.
     pub(super) draws_slot_bytes: u32,
+    /// Where the transparent pass's records start in a ring slot.
+    pub(super) sorted_records_at: u32,
     /// The room each view's culling output needs.
     pub(super) room: CullRoom,
     /// The capacity of the largest static batch, for the scratch space its clusters need.
@@ -225,6 +232,10 @@ impl Layout {
             if drawn == Drawn::Casters {
                 let caster = settings.caster_of(pipeline);
                 return Some((caster, 0, page, mesh, CASTER_MATERIAL, group));
+            }
+            // Blended pairs draw in the transparent pass, which sorts them on the job workers.
+            if pipeline.blends() {
+                return None;
             }
             let pipeline = if shadows && object & flags::RECEIVE_SHADOWS != 0 {
                 settings.receiving(pipeline)
@@ -319,6 +330,7 @@ impl Layout {
         } else {
             (self.draws.len() as u32).max(1) * OFFSET_ALIGNMENT
         };
+        self.sorted_records_at = self.draws_slot_bytes;
         // Only the scene's objects cast shadows, so a cascade lists at most the scene's rows.
         let listed = match drawn {
             Drawn::Scene => resident.saturating_add(streamed),
@@ -332,6 +344,19 @@ impl Layout {
             batches: self.batches.len() as u32,
         };
         Ok(())
+    }
+}
+
+impl Layout {
+    /// Makes room in each ring slot of draw records for `bytes` bytes of the transparent pass's
+    /// records, after the opaque draws' records, and marks the scene slots in `sorted` as rows
+    /// that draw.
+    pub(super) fn add_sorted(&mut self, bytes: u32, sorted: &[u32]) {
+        self.draws_slot_bytes = self.sorted_records_at + bytes;
+        self.drawn_slots.clone_from(&self.scene_buckets);
+        for &slot in sorted {
+            self.drawn_slots[slot as usize] = 0;
+        }
     }
 }
 
