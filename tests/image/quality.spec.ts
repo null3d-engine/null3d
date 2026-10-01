@@ -252,10 +252,24 @@ test("a sketch's own upload budget stays until the setting changes", async ({ pa
 });
 
 test('a sketch that changes a setting the engine does not take gets E1213', async ({ page }) => {
-	const result = await openQuality(page, `gpu=webgpu&set=${JSON.stringify({ antialias: 'fxaa' })}`);
+	const result = await openQuality(page, `gpu=webgpu&set=${JSON.stringify({ shadows: 2 })}`);
 	expect(result.changed).toBeUndefined();
 	expect(result.refused).toContain(
-		'E1213: quality.set() got "antialias", which is not a setting it takes. It takes maxPixelRatio, maxAnisotropy or uploadBytesPerFrame.',
+		'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, maxAnisotropy or uploadBytesPerFrame.',
+	);
+});
+
+test("the page's antialias option replaces the preset's mode, which a sketch cannot change", async ({
+	page,
+}) => {
+	const result = await openQuality(
+		page,
+		`gpu=webgpu&preset=low&antialias=msaa&set=${JSON.stringify({ antialias: 'fxaa' })}`,
+	);
+	expect([result.mode.preset, result.sketch.settings.antialias]).toEqual(['low', 'msaa']);
+	expect(result.changed).toBeUndefined();
+	expect(result.refused).toContain(
+		'E1213: quality.set() got antialias, which is fixed when the engine starts. Set it with the antialias option of createEngine().',
 	);
 });
 
@@ -289,9 +303,7 @@ for (const gpu of ['webgpu', 'compat', 'webgl2'] as const) {
 			page,
 		}) => {
 			const result = await openPresetChange(page, `gpu=${gpu}&from=medium&to=low&${mode.query}`);
-			// Every setting takes the new preset's value, apart from the page's pixel ratio cap.
-			const settings = presetSettings('low', { maxPixelRatio: 1 });
-			expect(presetChangeProblems(result, 'low', { ...settings })).toEqual([]);
+			expect(presetChangeProblems(result, 'medium', 'low')).toEqual([]);
 		});
 	}
 

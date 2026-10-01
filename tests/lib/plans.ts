@@ -46,7 +46,6 @@ import {
 	type DeviceHints,
 	deviceKind,
 } from '../../packages/engine/src/quality/chooser.ts';
-import { presetSettings } from '../../packages/engine/src/quality/presets.ts';
 import type { Tier as GpuPath } from '../../packages/engine/src/shared/tier.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { distanceLabel, PRECISION, type PrecisionFacts } from '../pages/lib/depth-precision.ts';
@@ -904,9 +903,7 @@ export function judge(
 				: heavyCheckProblems(quality.mode, chosenPreset(quality));
 		}
 		case 'preset-change':
-			return presetChangeProblems(result as unknown as PresetChangeResult, 'low', {
-				...presetSettings('low', { maxPixelRatio: 1 }),
-			});
+			return presetChangeProblems(result as unknown as PresetChangeResult, 'medium', 'low');
 		case 'bench': {
 			const frames = Number(result.frames ?? 0);
 			const cpu = (result.cpuMs as { median?: number } | undefined)?.median ?? 0;

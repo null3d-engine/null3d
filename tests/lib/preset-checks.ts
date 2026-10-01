@@ -7,7 +7,11 @@ import {
 	type PresetCheck,
 	type PresetCheckRound,
 } from '../../packages/engine/src/quality/check.ts';
-import { presetIndex, type QualityPreset } from '../../packages/engine/src/quality/presets.ts';
+import {
+	presetIndex,
+	presetSettings,
+	type QualityPreset,
+} from '../../packages/engine/src/quality/presets.ts';
 
 /**
  * Spheres of the GPU-bound page's scene that no GPU of the tests draws at 60 frames per second:
@@ -60,7 +64,7 @@ export interface PresetChangeResult {
 	tier: string;
 	mode: { preset: QualityPreset };
 	/** The preset and settings that the sketch reports once its change resolved. */
-	sketch?: { preset: QualityPreset; settings: Record<string, number | null> };
+	sketch?: { preset: QualityPreset; settings: Record<string, number | string | null> };
 	skippedDraws: number;
 	pipelines: number;
 	frames: number;
@@ -75,17 +79,22 @@ export interface PresetChangeResult {
 const BOXES_COVER = 0.05;
 
 /**
- * What is wrong with a change of preset that needs a new pipeline; empty when nothing is.
- * `settings` are the new preset's settings as the sketch should report them.
+ * What is wrong with the preset change page's change from the preset `from` to `to`, which needs a
+ * new pipeline; empty when nothing is. Every setting takes the new preset's value, apart from the
+ * page's pixel ratio cap and the settings fixed when the engine starts.
  */
 export function presetChangeProblems(
 	result: PresetChangeResult,
-	preset: QualityPreset,
-	settings: Record<string, number>,
+	from: QualityPreset,
+	to: QualityPreset,
 ): string[] {
 	const problems: string[] = [];
-	if (result.sketch?.preset !== preset || result.mode.preset !== preset)
-		problems.push(`the engine runs ${result.mode.preset}, not ${preset}`);
+	if (result.sketch?.preset !== to || result.mode.preset !== to)
+		problems.push(`the engine runs ${result.mode.preset}, not ${to}`);
+	const settings = presetSettings(to, {
+		maxPixelRatio: 1,
+		antialias: presetSettings(from).antialias,
+	});
 	for (const [name, value] of Object.entries(settings)) {
 		// JSON gives Infinity as null.
 		const reported = result.sketch?.settings[name] ?? Number.POSITIVE_INFINITY;

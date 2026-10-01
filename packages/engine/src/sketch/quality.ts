@@ -3,8 +3,10 @@
 // settings their first values. A change of a setting that can change during play applies from the
 // next frame on. A change of preset, or of a setting fixed while a preset runs, restarts the
 // preset: the first frame after it waits for its new pipelines, as the first frame of the engine
-// does, and the change resolves once the thread that draws has taken that frame. A setting that the
-// sketch chose itself keeps its value when the engine's preset check lowers the preset.
+// does, and the change resolves once the thread that draws has taken that frame. The settings fixed
+// while a preset runs keep the values that the engine started with, as the page's options do, until
+// the thread that draws can change them. A setting that the sketch chose itself keeps its value
+// when the engine's preset check lowers the preset.
 
 import type { PresetCheck } from '../quality/check';
 import {
@@ -17,6 +19,7 @@ import {
 	type QualityPreset,
 	type QualitySettingName,
 	type QualitySettings,
+	SKETCH_SETTINGS,
 } from '../quality/presets';
 
 /** The preset and the settings that the page starts a sketch with. */
@@ -61,19 +64,17 @@ export interface Quality {
 	 */
 	readonly settings: Readonly<QualitySettings>;
 	/**
-	 * Changes settings. It takes the settings that `settings` lists, each with a value that the
-	 * setting takes, and throws E1213 for any other setting or value. A setting that it does not
-	 * get keeps its value. A setting that changes during play applies from the next frame on, and
-	 * the promise resolves at once. A setting fixed while a preset runs makes the change wait as
-	 * `setPreset` does: the last frame stays on screen until the engine has drawn a frame with
-	 * the new settings and all of its pipelines built, and then the promise resolves.
+	 * Changes settings from the next frame on, and resolves at once. It takes the settings that
+	 * change during play, each with a value that the setting takes, and throws E1213 for any other
+	 * setting or value. A setting that it does not get keeps its value.
 	 */
 	set(settings: Partial<QualitySettings>): Promise<void>;
 	/**
 	 * Switches to another preset at a point that the sketch picks, such as a menu or a loading
-	 * screen. Every setting takes the new preset's value, apart from those that the page's options
-	 * give, including the settings that `set` changed. The GPU path caps the preset, as it caps the
-	 * page's choice. The promise resolves once
+	 * screen. Every setting that changes during play takes the new preset's value, including the
+	 * settings that `set` changed, apart from those that the page's options give. The settings
+	 * fixed when the engine starts, such as `antialias`, keep their values. The GPU path caps the
+	 * preset, as it caps the page's choice. The promise resolves once
 	 * the engine has drawn a frame at the new preset with all of its pipelines built. Until then
 	 * the last frame stays on screen, and the sketch's frames wait. A name that is no preset throws
 	 * E1213.
@@ -107,6 +108,10 @@ export class SketchQuality implements Quality {
 	private restart = false;
 	/** The settings that the sketch chose itself since the preset it last asked for. */
 	private readonly owned = new Set<QualitySettingName>();
+	/**
+	 * The settings that every preset keeps: those that the page's options give, and those fixed
+	 * when the engine starts, at their start values.
+	 */
 	private readonly options: Partial<QualitySettings>;
 	private readonly highest: QualityPreset;
 
@@ -117,12 +122,16 @@ export class SketchQuality implements Quality {
 	) {
 		this.preset = start.preset;
 		this.settings = { ...start.settings };
-		this.options = start.options;
+		const kept: Record<string, unknown> = { ...start.options };
+		const first = start.settings as unknown as Record<string, unknown>;
+		for (const name of SKETCH_SETTINGS)
+			if (!LIVE_SETTINGS.includes(name)) kept[name] ??= first[name];
+		this.options = kept as Partial<QualitySettings>;
 		this.highest = start.highest;
 	}
 
 	set(settings: Partial<QualitySettings>): Promise<void> {
-		checkSettings('quality.set()', settings);
+		checkSettings('quality.set()', settings, LIVE_SETTINGS);
 		for (const [name, value] of Object.entries(settings))
 			if (value !== undefined) this.owned.add(name as QualitySettingName);
 		return this.update(this.preset, settings);

@@ -82,6 +82,11 @@ export class UnmarkedWrites {
 		return views;
 	}
 
+	/** The hash of a slot's bounding sphere: its center and radius. */
+	private sphere(slot: number): number {
+		return hash3(this.centers, slot * 3) ^ Math.imul(this.radii[slot] as number, K3);
+	}
+
 	/** Stores the hashes of a slot's fields, and returns the first field that changed, or -1. */
 	private record(slot: number): number {
 		const { seen, rotations: r } = this;
@@ -90,7 +95,7 @@ export class UnmarkedWrites {
 		const position = hash3(this.positions, slot * 3);
 		const rotation = hash3(r, q) ^ Math.imul(r[q + 3] as number, K3);
 		const scale = hash3(this.scales, slot * 3);
-		const sphere = hash3(this.centers, slot * 3) ^ Math.imul(this.radii[slot] as number, K3);
+		const sphere = this.sphere(slot);
 		const changed =
 			position !== seen[at]
 				? 0
@@ -124,6 +129,18 @@ export class UnmarkedWrites {
 		this.refresh();
 		this.statics[object.slot] = object;
 		this.record(object.slot);
+	}
+
+	/**
+	 * Takes a watched object's bounding sphere as it is now, after a call wrote it and queued a
+	 * change that marks the object. The engine applies that change when the next frame starts, so
+	 * after a call in the late update, the late check comes first. Only the sphere is taken, so
+	 * the check still reports another field that changed without a setter.
+	 */
+	boundsWritten(object: Watched): void {
+		if (this.statics[object.slot] !== object) return;
+		this.refresh();
+		this.seen[object.slot * FIELDS.length + 3] = this.sphere(object.slot);
 	}
 
 	/**

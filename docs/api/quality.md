@@ -8,7 +8,7 @@ summary: "quality.preset, quality.set, quality.setPreset, the preset check, fram
 
 # Quality API
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `maxAnisotropy` and `uploadBytesPerFrame`: the other settings of the preset table are not built yet. Neither are the frame-budget governor and its budgets (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `maxAnisotropy` and `uploadBytesPerFrame`, and `quality.settings` also holds `antialias`. The other settings of the preset table are not built yet. Neither are the frame-budget governor and its budgets (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
 
 `ctx.quality` gives a sketch the quality preset that the engine runs and its settings. The sketch can change the settings that change during play, switch to another preset, and hear when either changes. [Quality presets](../concepts/quality-presets.md) explains how the engine chooses and checks the preset, and lists each preset's values.
 
@@ -18,6 +18,7 @@ import { defineSketch } from '@null3d/engine';
 export default defineSketch(({ quality, page }) => {
   console.log(quality.preset); // 'low', 'medium', 'high' or 'ultra'
   console.log(quality.settings.maxPixelRatio); // 1.5 on Low, Infinity on Ultra
+  console.log(quality.settings.antialias); // 'fxaa' on Low, 'msaa' from Medium up
 
   // A menu on the page asks for a sharper or a faster picture.
   page.onMessage((type, data) => {
@@ -42,24 +43,28 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `preset: 'auto'` | The engine chooses the preset for the device, then checks it with the sketch's scene and lowers it where the GPU cannot hold the frame rate. |
 | `preset: 'low'` to `'ultra'` | Names the preset. The GPU path still caps it, and a crashed start lowers it. |
 | `maxPixelRatio` | Replaces the preset's pixel ratio cap. |
+| `antialias: 'msaa'`, `'fxaa'` or `'none'` | Replaces the preset's anti-aliasing mode. |
 | `memory: { maximumMiB }` | Replaces the preset's memory maximum: [Page API](engine.md#memory). |
 | `?preset=low` to `?preset=ultra` | Fixes the preset for tests. It wins over the option, and the engine ignores earlier crashes and checks no preset. |
 
 ## Settings
 
-`quality.settings` holds the settings that a sketch can read and change. Each starts at the preset's value, or at the value of the page's option for it.
+`quality.settings` holds the settings that a sketch can read. Each starts at the preset's value, or at the value of the page's option for it.
 
 | Setting | Takes | Changes |
 | --- | --- | --- |
 | `maxPixelRatio` | A number from 0.5 up. `Infinity` draws at the screen's full pixel ratio. | During play. The canvas takes its new size within a frame or two. |
 | `maxAnisotropy` | A whole number from 1 to 16. A texture whose `anisotropy` option is higher samples at this value. | During play. Textures sample with the new cap from the next frame. |
 | `uploadBytesPerFrame` | A whole number of texel bytes from 65,536 (64 KiB) to 67,108,864 (64 MiB). | During play, from the next frame. |
+| `antialias` | `'msaa'`: 4 samples per pixel. `'fxaa'`: the final pass smooths edges. `'none'`: no smoothing. | At the start only. The scene's targets and pipelines depend on it, so the page's `antialias` option sets it. |
 
-`quality.set(settings)` changes the settings it gets and keeps the others, and returns a promise. A setting that changes during play applies from the next frame on, and the promise resolves at once. A setting that the preset fixes at the start changes as a preset switch does, below. The promise then resolves once the change is on screen. Every setting built so far changes during play. A setting that `set` does not take, or a value outside the setting's range, throws [E1213](../errors/E1213.md) and changes nothing. So does a preset name that `createEngine` does not know.
+[GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) compares the anti-aliasing modes on each GPU path.
+
+`quality.set(settings)` changes the settings it gets and keeps the others. It takes the settings that change during play, applies them from the next frame on, and returns a promise that resolves at once. Another setting, or a value outside the setting's range, throws [E1213](../errors/E1213.md) and changes nothing. So does an option of `createEngine` with a value that its setting does not take, or a preset name that `createEngine` does not know.
 
 ## Switching presets
 
-`quality.setPreset(preset)` switches to another preset at a point that the sketch picks, such as a menu or a loading screen. Every setting takes the new preset's value, including the settings that change only at the start, apart from those that the page's options give. The values that `set` gave end with the switch too. The preset check is different: when it lowers the preset after the setup, the settings that the setup changed with `set` keep their values. The GPU path caps the preset: `setPreset('ultra')` on WebGL2 runs Medium.
+`quality.setPreset(preset)` switches to another preset at a point that the sketch picks, such as a menu or a loading screen. Every setting that changes during play takes the new preset's value, apart from those that the page's options give. The values that `set` gave end with the switch too. The settings fixed at the start, such as `antialias`, keep their values. The preset check is different: when it lowers the preset after the setup, the settings that the setup changed with `set` keep their values. The GPU path caps the preset: `setPreset('ultra')` on WebGL2 runs Medium.
 
 ```ts
 export default defineSketch(({ quality, page }) => {
@@ -71,7 +76,7 @@ export default defineSketch(({ quality, page }) => {
 });
 ```
 
-The new preset can need new pipelines and render targets. The engine keeps the last frame on screen until the new preset's first frame has all of its pipelines built. The sketch's frames wait meanwhile. The promise resolves once that frame is on screen. A name that is no preset, such as `'auto'`, throws [E1213](../errors/E1213.md). A call that names the preset that runs gives each setting back the preset's value. It waits only when a setting fixed at the start changes.
+The new preset can need new pipelines, for objects that the sketch's `quality.onChange` handlers create. The engine keeps the last frame on screen until the new preset's first frame has all of its pipelines built. The sketch's frames wait meanwhile. The promise resolves once that frame is on screen. A name that is no preset, such as `'auto'`, throws [E1213](../errors/E1213.md). A call that names the preset that runs gives each setting back the preset's value, and resolves at once.
 
 ## Quality events
 
@@ -133,8 +138,8 @@ The quality preset and settings, as a sketch reads and changes them through `ctx
 | --- | --- |
 | `readonly preset: QualityPreset` | The preset that the engine runs. |
 | `readonly settings: Readonly<QualitySettings>` | The settings in use: the preset's values, with the values of the page's options and the changes that `set` made. |
-| `set(settings: Partial<QualitySettings>): Promise<void>` | Changes settings. It takes the settings that `settings` lists, each with a value that the setting takes, and throws E1213 for any other setting or value. A setting that it does not get keeps its value. A setting that changes during play applies from the next frame on, and the promise resolves at once. A setting fixed while a preset runs makes the change wait as `setPreset` does: the last frame stays on screen until the engine has drawn a frame with the new settings and all of its pipelines built, and then the promise resolves. |
-| `setPreset(preset: QualityPreset): Promise<void>` | Switches to another preset at a point that the sketch picks, such as a menu or a loading screen. Every setting takes the new preset's value, apart from those that the page's options give, including the settings that `set` changed. The GPU path caps the preset, as it caps the page's choice. The promise resolves once the engine has drawn a frame at the new preset with all of its pipelines built. Until then the last frame stays on screen, and the sketch's frames wait. A name that is no preset throws E1213. |
+| `set(settings: Partial<QualitySettings>): Promise<void>` | Changes settings from the next frame on, and resolves at once. It takes the settings that change during play, each with a value that the setting takes, and throws E1213 for any other setting or value. A setting that it does not get keeps its value. |
+| `setPreset(preset: QualityPreset): Promise<void>` | Switches to another preset at a point that the sketch picks, such as a menu or a loading screen. Every setting that changes during play takes the new preset's value, including the settings that `set` changed, apart from those that the page's options give. The settings fixed when the engine starts, such as `antialias`, keep their values. The GPU path caps the preset, as it caps the page's choice. The promise resolves once the engine has drawn a frame at the new preset with all of its pipelines built. Until then the last frame stays on screen, and the sketch's frames wait. A name that is no preset throws E1213. |
 | `onChange(handler: (quality: Quality) => void): () => void` | Calls `handler` at the start of the first frame after the settings change. Returns a function that removes the handler. |
 
 ### `QualityPreset`
@@ -156,5 +161,6 @@ The quality settings that a sketch reads and changes through `ctx.quality`. Each
 | `maxPixelRatio: number` | The highest device pixel ratio that the engine draws at. The canvas's drawing buffer is its CSS size times the lower of this and the screen's pixel ratio. `Infinity` draws at the screen's full ratio. It takes a number from 0.5 up, and changes during play: the canvas takes its new size within a frame or two. |
 | `maxAnisotropy: number` | The highest anisotropy that textures sample with. A texture whose own `anisotropy` option is higher samples at this value. It takes a whole number from 1 to 16, and changes during play. |
 | `uploadBytesPerFrame: number` | The texel bytes that one frame may upload, so that loading many textures does not make one frame slow. A larger texture goes up in bands of rows over several frames. It takes a whole number from 65,536 (64 KiB) to 67,108,864 (64 MiB), and changes during play. |
+| `antialias: 'none' \| 'fxaa' \| 'msaa'` | How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa` smooths edges in the final pass, and `none` leaves them sharp. The mode is fixed when the engine starts: the page's `antialias` option of `createEngine` sets it, and `set` does not take it. |
 
 <!-- null3d:api:end -->

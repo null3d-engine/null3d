@@ -154,6 +154,7 @@ async function start(
 			depth: 'reversed',
 			parallelCompile: true,
 			sceneColor: FORMAT_RGBA16_FLOAT,
+			antialias: C.ANTIALIAS_MSAA,
 			transparent: false,
 			shaderBits: 0,
 			cellCulling: true,
@@ -325,7 +326,7 @@ describe('SketchRunner', () => {
 		expect(log).toEqual([
 			textureOption(C.TEXTURE_OPTION_UPLOAD_BUDGET, 65_536),
 			textureOption(C.TEXTURE_OPTION_MAX_ANISOTROPY, 2),
-			`page ${JSON.stringify({ maxPixelRatio: 1, maxAnisotropy: 2, uploadBytesPerFrame: 65_536 })}`,
+			`page ${JSON.stringify({ ...medium, maxPixelRatio: 1, maxAnisotropy: 2, uploadBytesPerFrame: 65_536 })}`,
 		]);
 	});
 

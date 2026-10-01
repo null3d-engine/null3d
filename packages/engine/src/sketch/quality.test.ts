@@ -24,6 +24,11 @@ beforeEach(() => setErrorFixes(ERROR_FIXES));
 /** Medium's settings. */
 const MEDIUM = presetSettings('medium');
 
+/** A preset's settings after a switch from Medium, which keeps the settings fixed at the start. */
+function fromMedium(preset: QualityPreset): QualitySettings {
+	return presetSettings(preset, { antialias: MEDIUM.antialias });
+}
+
 /**
  * A sketch's quality API on Medium, with the page's options and highest preset from `start`, the
  * updates that it applied, the names that changed in each, and the times that it waited for a
@@ -94,7 +99,7 @@ describe('SketchQuality', () => {
 		});
 		expect(changes).toEqual([['maxAnisotropy', 'uploadBytesPerFrame']]);
 		expect(quality.settings).toEqual({
-			maxPixelRatio: MEDIUM.maxPixelRatio,
+			...MEDIUM,
 			maxAnisotropy: 2,
 			uploadBytesPerFrame: 1_048_576,
 		});
@@ -124,7 +129,8 @@ describe('SketchQuality', () => {
 		expect(() => quality.set({ maxPixelRatio: 0 })).toThrow('E1213');
 		expect(() => quality.set({ maxAnisotropy: 32 })).toThrow('E1213');
 		expect(() => quality.set({ maxPixelRatio: 1, uploadBytesPerFrame: 1024 })).toThrow('E1213');
-		expect(() => quality.set({ antialias: 'fxaa' } as Partial<QualitySettings>)).toThrow('E1213');
+		// The anti-aliasing mode is fixed when the engine starts, and the memory maximum before it loads.
+		expect(() => quality.set({ antialias: 'fxaa' })).toThrow('fixed when the engine starts');
 		expect(() => quality.set({ memoryMaximumMiB: 512 } as Partial<QualitySettings>)).toThrow(
 			'E1213',
 		);
@@ -133,16 +139,29 @@ describe('SketchQuality', () => {
 		expect(quality.takeChange()).toBe(NO_CHANGE);
 	});
 
-	it('waits as a new preset does when a setting fixed at the start changes', () =>
-		asStartSetting('maxAnisotropy', async () => {
-			const { quality, changes, settled } = medium();
-			await quality.set({ maxAnisotropy: 2, maxPixelRatio: 1 });
-			expect(quality.preset).toBe('medium');
-			expect(changes).toEqual([['maxAnisotropy', 'maxPixelRatio']]);
-			expect(settled.count).toBe(1);
-			expect(quality.takeRestart()).toBe(true);
-			expect(quality.takeChange()).toBe(RESTART_CHANGE);
-		}));
+	it('restarts the preset when a setting fixed while a preset runs changes', async () => {
+		const { quality, changes, settled } = medium();
+		quality.set({ maxAnisotropy: 2 });
+		quality.takeChange();
+		// The same preset gives the setting back its value, which counts as a start-time change.
+		await asStartSetting('maxAnisotropy', () => quality.setPreset('medium'));
+		expect(quality.settings.maxAnisotropy).toBe(MEDIUM.maxAnisotropy);
+		expect(changes.at(-1)).toEqual(['maxAnisotropy']);
+		expect(settled.count).toBe(1);
+		expect(quality.takeRestart()).toBe(true);
+		expect(quality.takeChange()).toBe(RESTART_CHANGE);
+	});
+
+	it('keeps the settings fixed when the engine starts through setPreset and the check', async () => {
+		const { quality } = medium();
+		await quality.setPreset('ultra');
+		expect(quality.settings.antialias).toBe(MEDIUM.antialias);
+		await quality.lower();
+		await quality.lower();
+		await quality.lower();
+		expect(quality.preset).toBe('low');
+		expect(quality.settings.antialias).toBe(MEDIUM.antialias);
+	});
 
 	it('keeps the change handlers until their remover runs', () => {
 		const { quality } = medium();
@@ -159,7 +178,7 @@ describe('SketchQuality.lower', () => {
 		const { quality, applied, settled } = medium();
 		await quality.lower();
 		expect(quality.preset).toBe('low');
-		expect(quality.settings).toEqual(presetSettings('low'));
+		expect(quality.settings).toEqual(fromMedium('low'));
 		expect(applied.at(-1)?.preset).toBe('low');
 		expect(settled.count).toBe(1);
 		expect(quality.takeRestart()).toBe(true);
@@ -178,6 +197,7 @@ describe('SketchQuality.lower', () => {
 			maxPixelRatio: 1,
 			maxAnisotropy: 16,
 			uploadBytesPerFrame: MEDIUM.uploadBytesPerFrame,
+			antialias: MEDIUM.antialias,
 		});
 		// The preset changed, and none of the settings did.
 		expect(changes.at(-1)).toEqual([]);
@@ -191,10 +211,10 @@ describe('SketchQuality.setPreset', () => {
 		quality.takeChange();
 		await quality.setPreset('low');
 		expect(quality.preset).toBe('low');
-		expect(quality.settings).toEqual(presetSettings('low'));
+		expect(quality.settings).toEqual(fromMedium('low'));
 		expect(Object.keys(quality.settings)).toEqual([...SKETCH_SETTINGS]);
-		expect(applied.at(-1)).toEqual({ preset: 'low', settings: presetSettings('low') });
-		expect(changes.at(-1)).toEqual(SKETCH_SETTINGS);
+		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
+		expect(changes.at(-1)).toEqual(LIVE_SETTINGS);
 		expect(settled.count).toBe(1);
 		// The next frame holds for its pipelines, and its handlers hear of a new preset.
 		expect(quality.takeRestart()).toBe(true);
@@ -253,7 +273,7 @@ describe('SketchQuality.setPreset', () => {
 		const { quality } = medium();
 		quality.set({ maxAnisotropy: 16 });
 		await quality.setPreset('low');
-		expect(quality.settings).toEqual(presetSettings('low'));
+		expect(quality.settings).toEqual(fromMedium('low'));
 		// The sketch's choice ended with the preset change, so the check's lower preset applies.
 		await quality.lower();
 		expect(quality.settings.maxAnisotropy).toBe(presetSettings('low').maxAnisotropy);

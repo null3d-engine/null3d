@@ -110,6 +110,13 @@ export interface EngineOptions {
 	/** The latency mode. The default is `pipelined`. */
 	latency?: LatencyMode;
 	/**
+	 * How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa`
+	 * smooths edges in the final pass, and `none` leaves them sharp. Without it, the quality preset
+	 * sets the mode: FXAA on Low, MSAA from Medium up. Each mode works on every GPU path, and the
+	 * mode stays fixed while the engine runs. Another value fails with E1213.
+	 */
+	antialias?: 'msaa' | 'fxaa' | 'none';
+	/**
 	 * True for a see-through canvas: the page shows through wherever no object draws, until the
 	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
 	 * it. The default is false, an opaque canvas.
@@ -185,9 +192,9 @@ export interface EngineCapabilities {
 	/**
 	 * True when the scene draws high dynamic range color, which the final pass tone maps into the
 	 * canvas. False on the 8-bit path, where each shader tone maps its own output: in WebGPU's
-	 * compatibility mode, and on WebGL2 devices that cannot draw float targets with antialiasing.
-	 * Both paths show the same colors. Antialiased edges differ a little, because the 8-bit path
-	 * averages them after the tone mapping.
+	 * compatibility mode with MSAA, and on WebGL2 devices whose float targets fail the engine's
+	 * test. Both paths show the same colors. Edges differ a little with MSAA, because the 8-bit path
+	 * averages the samples after the tone mapping.
 	 */
 	hdr: boolean;
 	/**
@@ -678,7 +685,8 @@ async function startEngine(
 		hold === undefined && switches.preset === undefined ? new StartMarker(sketchUrl) : undefined;
 	const history = marker?.read() ?? NO_HISTORY;
 	const optionPreset = presetOption(options.preset);
-	checkSettings('createEngine()', { maxPixelRatio: options.maxPixelRatio });
+	const pageSettings = { maxPixelRatio: options.maxPixelRatio, antialias: options.antialias };
+	checkSettings('createEngine()', pageSettings);
 	const presetRequest: PresetRequest = {
 		wanted: switches.preset ?? optionPreset,
 		hints: readDeviceHints(),
@@ -814,7 +822,6 @@ async function startEngine(
 		);
 	const { tier, forceCompat } = choice;
 	const preset = choosePreset(presetRequest, tier);
-	const pageSettings = { maxPixelRatio: options.maxPixelRatio };
 	const quality: QualityStart = {
 		preset,
 		settings: presetSettings(preset, pageSettings),
@@ -859,6 +866,7 @@ async function startEngine(
 	let wasmMemory = core.memory;
 	const device = coreDevice(tier, report, {
 		...switches,
+		antialias: quality.settings.antialias,
 		transparent: options.transparent === true,
 	});
 	const capabilities: EngineCapabilities = {

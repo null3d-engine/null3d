@@ -227,7 +227,7 @@ describe('the quality presets page', () => {
 			'| Pixel ratio cap (`maxPixelRatio`) | 1.5 | 2 | 2 | none | during play | built |',
 		);
 		expect(page).toContain(
-			'| Anti-aliasing (`antialias`) | FXAA | MSAA 4x | MSAA 4x | MSAA 4x | at the start | planned |',
+			'| Anti-aliasing (`antialias`) | FXAA | MSAA 4x | MSAA 4x | MSAA 4x | at the start | built |',
 		);
 		expect(page).toContain(
 			'| Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame |',

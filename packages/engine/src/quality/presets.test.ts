@@ -71,7 +71,7 @@ describe('the preset table', () => {
 	});
 
 	it('orders each list of choices from the lightest to the heaviest', () => {
-		expect(PLANNED_SETTINGS.antialias.values).toEqual(['none', 'fxaa', 'msaa']);
+		expect(QUALITY_SETTINGS.antialias.values).toEqual(['none', 'fxaa', 'msaa']);
 		expect(PLANNED_SETTINGS.shadowMapSize.values).toEqual([512, 1024, 2048, 4096]);
 		expect(PLANNED_SETTINGS.shadowFilter.values).toEqual([3, 5]);
 	});
@@ -92,6 +92,7 @@ describe('the preset table', () => {
 		for (const name of Object.keys(PLANNED_SETTINGS)) expect(name in QUALITY_SETTINGS).toBe(false);
 		expect(ROWS.filter((row) => row.built).map((row) => row.name)).toEqual([
 			'maxPixelRatio',
+			'antialias',
 			'maxAnisotropy',
 			'uploadBytesPerFrame',
 			'memoryMaximumMiB',
@@ -108,9 +109,20 @@ describe('the preset table', () => {
 			expect(mib).toBeLessThanOrEqual(DEFAULT_MAXIMUM_MIB);
 	});
 
-	it('lets a sketch read and change the settings that can change after the load', () => {
+	it('lets a sketch read the settings that are fixed after the load, and change the live ones', () => {
 		expect(sameNames).toBe(true);
-		expect(SKETCH_SETTINGS).toEqual(['maxPixelRatio', 'maxAnisotropy', 'uploadBytesPerFrame']);
+		expect(SKETCH_SETTINGS).toEqual([
+			'maxPixelRatio',
+			'maxAnisotropy',
+			'uploadBytesPerFrame',
+			'antialias',
+		]);
+		expect(LIVE_SETTINGS).toEqual(['maxPixelRatio', 'maxAnisotropy', 'uploadBytesPerFrame']);
+	});
+
+	it('takes FXAA on Low, which phones draw, and MSAA from Medium up', () => {
+		expect(QUALITY_SETTINGS.antialias.presets).toEqual(['fxaa', 'msaa', 'msaa', 'msaa']);
+		expect(QUALITY_SETTINGS.antialias.changes).toBe('start');
 	});
 
 	it('names every setting and prints every value in the docs', () => {
@@ -131,27 +143,32 @@ describe('presetSettings', () => {
 			maxPixelRatio: 1.5,
 			maxAnisotropy: 2,
 			uploadBytesPerFrame: 2 * MIB,
+			antialias: 'fxaa',
 		});
 		expect(presetSettings('medium')).toEqual({
 			maxPixelRatio: 2,
 			maxAnisotropy: 4,
 			uploadBytesPerFrame: 4 * MIB,
+			antialias: 'msaa',
 		});
 		expect(presetSettings('high')).toEqual({
 			maxPixelRatio: 2,
 			maxAnisotropy: 8,
 			uploadBytesPerFrame: 8 * MIB,
+			antialias: 'msaa',
 		});
 		expect(presetSettings('ultra')).toEqual({
 			maxPixelRatio: Number.POSITIVE_INFINITY,
 			maxAnisotropy: 16,
 			uploadBytesPerFrame: 16 * MIB,
+			antialias: 'msaa',
 		});
 	});
 
 	it("takes the page's option over the preset's value", () => {
 		expect(presetSettings('low', { maxPixelRatio: 3 }).maxPixelRatio).toBe(3);
 		expect(presetSettings('high', { maxPixelRatio: undefined }).maxPixelRatio).toBe(2);
+		expect(presetSettings('high', { antialias: 'none' }).antialias).toBe('none');
 	});
 
 	it("reads one setting's value on a preset", () => {
@@ -196,12 +213,28 @@ describe('checkSettings', () => {
 	});
 
 	it('refuses a setting that the call does not take, with E1213, and names those it takes', () => {
-		expect(() => checkSettings('quality.set()', { shadows: { cascades: 2 } })).toThrow(
+		expect(() =>
+			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
+		).toThrow(
 			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, maxAnisotropy or uploadBytesPerFrame.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
-		expect(() => checkSettings('quality.set()', { antialias: 'fxaa' })).toThrow('E1213');
+		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(
+			'E1213',
+		);
 		expect(() => checkSettings('quality.set()', { memoryMaximumMiB: 512 })).toThrow('E1213');
+	});
+
+	it('says where a setting that is fixed at the start comes from', () => {
+		expect(() => checkSettings('quality.set()', { antialias: 'fxaa' }, LIVE_SETTINGS)).toThrow(
+			'E1213: quality.set() got antialias, which is fixed when the engine starts. Set it with the antialias option of createEngine().',
+		);
+		// The page's options take it, each mode and nothing else.
+		for (const antialias of ['none', 'fxaa', 'msaa'])
+			expect(() => checkSettings('createEngine()', { antialias })).not.toThrow();
+		expect(() => checkSettings('createEngine()', { antialias: 'smaa' })).toThrow(
+			`E1213: createEngine() got antialias "smaa", which is not 'none', 'fxaa' or 'msaa'.`,
+		);
 	});
 
 	it('refuses a call that gets no object of settings, with E1213', () => {
