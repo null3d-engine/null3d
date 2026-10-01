@@ -8,7 +8,7 @@ summary: "WGSL in sketch code; shader errors; surface functions; full shaders; u
 
 # Custom shaders
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Custom materials with surface functions are built. Full shaders, uniforms, textures and vertex offsets in custom materials are not built yet, so coding agents must not use them. Hot reload that keeps the page running comes in 0.2.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Custom materials with surface functions and uniforms are built. Full shaders, textures and vertex offsets in custom materials are not built yet, so coding agents must not use them. Hot reload that keeps the page running comes in 0.2.
 
 ```mermaid
 flowchart LR
@@ -40,7 +40,7 @@ fn surface(input: SurfaceInput) -> Surface {
 const red = materials.shader({ wgsl: rings, color: '#e04040', roughness: 0.5 });
 ```
 
-[Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record and `defaultSurface`.
+The WGSL can declare uniforms as `struct Uniforms`, which `set()` changes at any time. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface` and uniforms.
 
 ## WGSL in sketch code
 

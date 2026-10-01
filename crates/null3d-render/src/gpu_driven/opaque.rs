@@ -32,7 +32,7 @@ pub(super) fn create_frame_buffer(list: &mut DrawList, view: ViewId) -> Result<(
 }
 
 /// Records the creation of a camera view's frame group: its frame uniform, the material table,
-/// three.js's table of the split-sum terms of specular light, and the main directional light's
+/// the materials' custom values, three.js's table of the split-sum terms of specular light, and the main directional light's
 /// shadow map, which is `shadow_map`, with its comparison sampler and its cascades. A new shadow
 /// map needs the group again.
 pub(super) fn bind_frame(
@@ -44,13 +44,14 @@ pub(super) fn bind_frame(
     let entries = [
         entry(0, resource_kind::BUFFER, ids::frame(view)),
         entry(1, resource_kind::BUFFER, ids::MATERIALS),
+        entry(2, resource_kind::TEXTURE, ids::CUSTOM_VALUES),
         entry(3, resource_kind::TEXTURE, ids::DFG),
         entry(4, resource_kind::TEXTURE, shadow_map),
         entry(5, resource_kind::SAMPLER, ids::SHADOW_SAMPLER),
         entry(6, resource_kind::BUFFER, ids::SHADOWS),
     ];
-    let mut words = [0u32; 3 + 5 * 6];
-    words[..3].copy_from_slice(&[ids::frame_group(view), bind_layout::FRAME, 6]);
+    let mut words = [0u32; 3 + 5 * 7];
+    words[..3].copy_from_slice(&[ids::frame_group(view), bind_layout::FRAME, 7]);
     words[3..].copy_from_slice(entries.as_flattened());
     list.push(Op::CreateBindGroup, &words)?;
     Ok(())
