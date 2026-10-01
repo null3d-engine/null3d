@@ -23,15 +23,17 @@ enable draw_index;
 // change between pixels, as three.js's getTangentFrame makes it.
 //
 // Custom materials build this template with their WGSL added after its last line, and with the
-// shader def CUSTOM_SURFACE when that WGSL declares `fn surface`. Their WGSL shares this file's
-// names, so the template imports library items by name and keeps its own names few. It never
-// imports a module whole, which would reserve the module's name in their WGSL too. Names that only
-// the MAPS builds declare stay free for custom materials, which build without maps.
+// shader def CUSTOM_SURFACE when that WGSL declares `fn surface`. When it declares
+// `struct Uniforms`, the build adds `load_material_uniforms` after it, and CUSTOM_UNIFORMS makes the
+// template fill `material` with the uniforms. Their WGSL shares this file's names, so the template
+// imports library items by name and keeps its own names few. It never imports a module whole,
+// which would reserve the module's name in their WGSL too. Names that only the MAPS builds declare
+// stay free for custom materials, which build without maps.
 #import null3d::lighting::{PbrMaterial, dfg_lut, direct_light, indirect_diffuse}
 #import null3d::lighting::{multiscatter_compensation, pbr_material}
 #import null3d::globals::{Material}
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
-#import null3d::mesh::{frame, material_of, relative_position, world_normal}
+#import null3d::mesh::{custom_value, frame, material_of, relative_position, world_normal}
 #ifdef MAPS
 #import null3d::mesh::{map_layer, map_ready, straight_texel, world_direction}
 #endif
@@ -44,6 +46,11 @@ const FLAT_SHADING: u32 = 1u;
 
 /// The row of the material that the pixel shows, which the fragment shader reads once.
 var<private> material_row: Material;
+
+#ifdef CUSTOM_UNIFORMS
+/// The custom material's uniforms, which the fragment shader reads once.
+var<private> material: Uniforms;
+#endif
 
 #ifdef MAPS
 /// The bit of a material's flags for the map of slot 0 on the second texture coordinates; the
@@ -395,6 +402,9 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec2f) -> vec4f {
 @fragment
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     material_row = material_of(in.material);
+#ifdef CUSTOM_UNIFORMS
+    material = load_material_uniforms(in.material);
+#endif
     var input: SurfaceInput;
     input.relativePosition = in.relative;
     // Toward the camera: from the point for a perspective camera, and one direction for an

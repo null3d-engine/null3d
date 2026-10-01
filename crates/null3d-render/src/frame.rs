@@ -219,6 +219,30 @@ pub fn address(bytes: &[u8]) -> u32 {
     bytes.as_ptr() as usize as u32
 }
 
+/// Records the upload of whole rows of the material table, from row `first` on: a range of the
+/// buffer on WebGPU, or rows of texels of the data texture on WebGL2.
+fn write_table_rows(
+    list: &mut DrawList,
+    arena: &mut UploadArena,
+    table: MaterialStorage,
+    first: u32,
+    floats: &[f32],
+) -> Result<(), RecordError> {
+    let (at, bytes) = arena.push(floats_as_bytes(floats))?;
+    match table {
+        MaterialStorage::Buffer { table: buffer, .. } => {
+            let offset = first * MATERIAL_FLOATS as u32 * 4;
+            list.push(Op::WriteBuffer, &[buffer, offset, at, bytes])?;
+        }
+        MaterialStorage::Texture(texture) => {
+            let rows = (floats.len() / MATERIAL_FLOATS) as u32;
+            let region = [texture, 0, 0, first, 0, MATERIAL_TEXELS, rows, 1, at, bytes];
+            list.push(Op::WriteTexture, &region)?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn floats_as_bytes(floats: &[f32]) -> &[u8] {
     // SAFETY: any `f32` is four initialized bytes, and `u8` has no alignment requirement.
     unsafe {
@@ -395,9 +419,11 @@ impl ParityLists {
 /// Where a frame builder keeps the material table on the GPU.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum MaterialStorage {
-    /// A storage buffer of rows, by buffer id: the WebGPU path.
-    Buffer(u32),
-    /// A data texture with one row of texels per material, by texture id: the WebGL2 path.
+    /// A storage buffer of rows, and a data texture of the custom values with one row of texels
+    /// per material, by their ids: the WebGPU path.
+    Buffer { table: u32, values: u32 },
+    /// A data texture with one row of texels per material, then one per material's custom
+    /// values, by texture id: the WebGL2 path.
     Texture(u32),
 }
 
@@ -559,31 +585,24 @@ impl SceneSettings {
             |map| textures.premultiplied(map),
         );
         if let Some(ids) = self.materials.take_changed() {
-            let (at, bytes) = arena.push(floats_as_bytes(self.materials.rows(ids.clone())))?;
-            match table {
-                MaterialStorage::Buffer(buffer) => {
-                    let offset = ids.start * MATERIAL_FLOATS as u32 * 4;
-                    list.push(Op::WriteBuffer, &[buffer, offset, at, bytes])?;
-                }
+            let rows = self.materials.rows(ids.clone());
+            write_table_rows(list, arena, table, ids.start, rows)?;
+        }
+        if let Some(ids) = self.materials.take_values_changed() {
+            let values = self.materials.values(ids.clone());
+            let (texture, first) = match table {
+                MaterialStorage::Buffer { values, .. } => (values, ids.start),
                 MaterialStorage::Texture(texture) => {
-                    let rows = ids.end - ids.start;
-                    list.push(
-                        Op::WriteTexture,
-                        &[
-                            texture,
-                            0,
-                            0,
-                            ids.start,
-                            0,
-                            MATERIAL_TEXELS,
-                            rows,
-                            1,
-                            at,
-                            bytes,
-                        ],
-                    )?;
+                    (texture, self.materials.capacity() + ids.start)
                 }
-            }
+            };
+            write_table_rows(
+                list,
+                arena,
+                MaterialStorage::Texture(texture),
+                first,
+                values,
+            )?;
         }
         Ok(remade)
     }

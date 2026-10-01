@@ -160,3 +160,82 @@ fn a_name_that_the_template_declares_clashes_at_the_line_of_the_wgsl() {
         "{problem}"
     );
 }
+
+/// A surface function that reads uniforms of every kind.
+const TINTED: &str = "struct Uniforms {
+    strength: f32,
+    tint: vec3f,
+    scale: vec2<f32>,
+    count: u32,
+    offset: i32,
+    extra: vec4f,
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor = material.tint * material.strength * f32(material.count + u32(material.offset));
+    s.roughness = material.scale.x + material.extra.w;
+    return s;
+}
+";
+
+#[test]
+fn uniforms_are_packed_into_the_row_of_custom_values_and_loaded_from_it() {
+    let built = compile(TINTED).expect("the surface function with uniforms builds");
+    let places: Vec<(&str, &str, u32)> = built
+        .uniforms
+        .iter()
+        .map(|u| (u.name.as_str(), u.ty.as_str(), u.offset))
+        .collect();
+    assert_eq!(
+        places,
+        [
+            ("strength", "f32", 0),
+            ("tint", "vec3f", 4),
+            ("scale", "vec2f", 8),
+            ("count", "u32", 10),
+            ("offset", "i32", 11),
+            ("extra", "vec4f", 12),
+        ]
+    );
+    let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
+    assert!(wgsl.contains("fn load_material_uniforms("), "{wgsl}");
+    let glsl = &built.variants["webgl2"].glsl.as_ref().expect("GLSL")["main"]
+        .fragment
+        .source;
+    assert!(glsl.contains("texelFetch("), "{glsl}");
+}
+
+#[test]
+fn a_surface_function_without_uniforms_has_none() {
+    let built = compile(STRIPES).expect("the surface function builds");
+    assert!(built.uniforms.is_empty());
+    let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
+    assert!(!wgsl.contains("load_material_uniforms"), "{wgsl}");
+}
+
+#[test]
+fn a_uniform_of_another_type_is_refused_at_its_name() {
+    let source = TINTED.replace("count: u32", "count: mat2x2f");
+    let problem = only_problem(&source);
+    assert_eq!((problem.line, problem.column), (Some(5), Some(5)));
+    assert_eq!(
+        problem.message,
+        "the uniform `count` has the type `mat2x2f`. Uniforms take `f32`, `i32`, `u32`, `vec2f`, `vec3f` and `vec4f`."
+    );
+}
+
+#[test]
+fn uniforms_past_the_row_are_refused_at_the_first_that_does_not_fit() {
+    let fields: String = (0..9).map(|k| format!("    v{k}: vec4f,\n")).collect();
+    let source = STRIPES.replace(
+        "fn surface",
+        &format!("struct Uniforms {{\n{fields}}}\n\nfn surface"),
+    );
+    let problem = only_problem(&source);
+    assert_eq!(problem.line, Some(12));
+    assert!(
+        problem.message.starts_with("the uniform `v8` does not fit"),
+        "{problem}"
+    );
+}

@@ -499,6 +499,22 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		size: [480, 270],
 		modes: ALL_MODES,
 	},
+	// Custom materials with uniforms: one WGSL whose uniforms take their first values, or change
+	// through set() after creation, with a standard value beside them.
+	{
+		name: 'custom-uniforms',
+		sketch: 'tests/pages/sketches/custom-uniforms-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	// The README's dissolve: a surface function with uniforms and the mask alpha mode, at four
+	// stages of its progress.
+	{
+		name: 'custom-dissolve',
+		sketch: 'tests/pages/sketches/custom-dissolve-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
 	// Each texture map of the standard material, made in code: base color, metal-rough, normal maps
 	// on quads with and without tangents, occlusion, emissive, a light map on the second texture
 	// coordinates, and base color maps through a texture coordinate transform, standard and unlit.

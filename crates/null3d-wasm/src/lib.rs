@@ -974,6 +974,30 @@ pub fn set_material_value(material: u32, param: u32, x: f32, y: f32, z: f32) -> 
     })
 }
 
+/// Changes `count` custom values of a material, 1 to 4 of `x`, `y`, `z` and `w`, from float `at`
+/// of its row of custom values, and keeps the others: a custom material's uniform, as the shader
+/// compiler placed it.
+#[wasm_bindgen(js_name = setMaterialValues)]
+pub fn set_material_values(
+    material: u32,
+    at: u32,
+    count: u32,
+    x: f32,
+    y: f32,
+    z: f32,
+    w: f32,
+) -> u32 {
+    with_engine(|e| {
+        let table = e.renderer.settings_mut().materials_mut();
+        let values = [x, y, z, w];
+        let width = (count as usize).min(values.len());
+        match table.set_values(material.wrapping_sub(1), at as usize, &values[..width]) {
+            Ok(()) => 0,
+            Err(error) => material_failure(error),
+        }
+    })
+}
+
 // Gives a material a map in a slot, a texture's handle, or none with 0. Which objects draw with a
 // map changes the draw tables, as a new material does.
 /// Gives a material a map in a slot (`constants::map_slot`), which the shader reads at the second

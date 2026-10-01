@@ -262,3 +262,44 @@ fn masks_and_depth_options_choose_the_pipeline_on_webgl2() {
         check_mask_and_depth(World::build(CpuCulledRenderer::new(config)));
     }
 }
+
+/// A change of custom values uploads their row of texels alone: `row_of` finds the row that a
+/// command writes into the texture that holds them, or `None` for another command, and `row`
+/// gives the row that material 1's values have, from the table's capacity.
+fn check_custom_values<B: FrameBuilder>(
+    mut world: World<B>,
+    row_of: impl Fn(&(Op, Vec<u32>)) -> Option<u32>,
+    row: impl Fn(u32) -> u32,
+) {
+    for _ in 0..2 {
+        let custom = Shading::Custom(template::CUSTOM_FIRST);
+        add(&mut world, &mapped_triangle(), custom, 0);
+    }
+    world.record(true);
+    let capacity = world.renderer.settings().materials().capacity();
+    let materials = world.renderer.settings_mut().materials_mut();
+    materials.set_values(1, 4, &[0.5, 0.25, 0.125]).unwrap();
+    world.record(false);
+    let rows: Vec<u32> = world.commands().iter().filter_map(row_of).collect();
+    assert_eq!(rows, vec![row(capacity)]);
+}
+
+#[test]
+fn custom_values_upload_to_a_texture_of_their_own_on_webgpu() {
+    // The custom values' texture is the builder's texture 2, after three.js's table of terms.
+    check_custom_values(
+        World::new(),
+        |(op, o)| (*op == Op::WriteTexture && o[0] == 2).then(|| o[3]),
+        |_| 1,
+    );
+}
+
+#[test]
+fn custom_values_upload_after_the_rows_on_webgl2() {
+    let world = World::build(CpuCulledRenderer::new(CpuCulledConfig::default()));
+    check_custom_values(
+        world,
+        |(op, o)| (*op == Op::WriteTexture && o[5] == 8).then(|| o[3]),
+        |capacity| capacity + 1,
+    );
+}

@@ -178,10 +178,15 @@ export class Pipelines {
 			{ binding: 1, visibility: fragment, buffer: { type: 'read-only-storage' } },
 		];
 		this.defineLayout(LAYOUT_DEPTH, 'depth', frameEntries);
-		// The table of specular terms, then the shadow map, the sampler that compares depths in
-		// it, and its cascades.
+		// The materials' custom values, the table of specular terms, then the shadow map, the
+		// sampler that compares depths in it, and its cascades.
 		this.defineLayout(LAYOUT_FRAME, 'frame', [
 			...frameEntries,
+			{
+				binding: 2,
+				visibility: GPUShaderStage.VERTEX | fragment,
+				texture: { sampleType: 'unfilterable-float' },
+			},
 			{ binding: 3, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
 			{
 				binding: 4,

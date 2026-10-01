@@ -8,7 +8,7 @@ summary: "The surface record; vertex-offset functions; per-instance attributes."
 
 # Surface functions
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Uniforms, textures, vertex offsets, per-instance attributes and the built-in values `frame`, `camera` and `object` are not built yet. Coding agents must not use them in a surface function.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Textures, vertex offsets, per-instance attributes and the built-in values `frame`, `camera` and `object` are not built yet. Coding agents must not use them in a surface function.
 
 A surface function changes how a material's surface looks, and keeps the engine's lighting. You write it in WGSL. For each pixel, the engine gives it a `SurfaceInput`, and it returns a `Surface`: the base color, roughness, metalness, normal and light of that point. The engine then lights the surface with the scene's lights and shadows, as it lights a standard material. The function works on every GPU path, because the null3D Vite plugin builds it into the standard material's shader for WebGPU and WebGL2.
 
@@ -85,6 +85,46 @@ fn surface(input: SurfaceInput) -> Surface {
 
 To show a value while you work on a function, put it in the emissive light and make the base color black: `s.emissive = vec3f(value); s.baseColor = vec3f(0.0);`.
 
+## Uniforms
+
+Uniforms are values of your own that a surface function reads, and that `set()` changes at any time. Declare them once in the WGSL, as the fields of `struct Uniforms`, and read them from `material`:
+
+```ts
+// sketch.ts
+const rings = /* wgsl */ `
+struct Uniforms {
+    tint: vec3f,
+    width: f32,
+    count: u32,
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let t = fract(input.uv.y * f32(material.count));
+    s.baseColor = mix(s.baseColor, material.tint, step(1.0 - material.width, t));
+    return s;
+}
+`;
+
+// In the setup:
+const banded = materials.shader({
+  wgsl: rings,
+  roughness: 0.6,
+  uniforms: { tint: '#ff6a00', width: 0.5, count: 4 },
+});
+// Later, from any frame: a cheap change.
+banded.set({ count: 6, roughness: 0.3 });
+```
+
+- The `uniforms` option gives each uniform its first value. A uniform without one starts at 0.
+- `set()` takes uniforms and standard values in one call. It changes only what you pass, and it checks every value before it changes any.
+- A field can be an `f32`, an `i32` or a `u32`, which take a number, or a `vec2f`, `vec3f` or `vec4f`, which take an array of numbers. A `vec3f` also takes a color, as `color` takes it, and converts it from sRGB to linear. An `i32` or a `u32` holds whole numbers up to 16,777,216 in size.
+- The uniforms fit in 32 numbers. Each `vec3f` and `vec4f` starts a group of four, and each `vec2f` starts at an even place, so order small fields after large ones to fit more.
+- A field cannot have the name of a standard value, such as `color` or `roughness`, because `set()` takes those too.
+- Each material made from the WGSL has its own values, so one WGSL serves many looks.
+
+`set()` throws E1216 for a name that is not a uniform, and for a value of the wrong kind. The build stops at a field of another type, or at the first field past the 32 numbers.
+
 ## Library functions
 
 A surface function can import the engine's [shader library](library.md), such as its noise and color functions. Import the items that you use by name:
@@ -104,7 +144,7 @@ fn surface(input: SurfaceInput) -> Surface {
 
 Your WGSL shares one file with the engine's standard material, so a few rules apply besides the [WGSL rules for portable shaders](wgsl-rules.md):
 
-- Do not declare the names that the engine declares: `SurfaceInput`, `Surface`, `defaultSurface`, `shade`, `light_surface`, `material_row`, `VertexIn`, `VertexOut`, `vs` and `fs`. The build stops at your line when a name clashes.
+- Do not declare the names that the engine declares: `SurfaceInput`, `Surface`, `defaultSurface`, `shade`, `light_surface`, `material`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs` and `fs`. The build stops at your line when a name clashes.
 - Import library items by name, as in `#import null3d::noise::{fbm3}`. An import of a whole module reserves the module's name. After `#import null3d::color`, no name in the file can be `color`.
 - The WGSL cannot hold directives such as `enable`.
 - Call `dpdx`, `dpdy`, `fwidth` and `textureSample` in uniform control flow, outside branches that differ between pixels. Chrome rejects the shader otherwise.

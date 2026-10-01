@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes only a surface function, without texture maps. Coding agents must not use the parts that are not built.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes only a surface function and its uniforms, without texture maps. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -199,7 +199,23 @@ const red = materials.shader({ wgsl: rings, color: '#e04040', roughness: 0.5 });
 red.set({ roughness: 0.2 });
 ```
 
-`set` changes the standard values, as it does for a standard material. With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls below `alphaCutoff` draw nothing. Materials made from the same WGSL share one shader. A mesh needs texture coordinates to draw with a custom material. WGSL as plain text, which the plugin did not compile, throws E1215, and so does a whole shader with entry points. [Surface functions](../shaders/surface-functions.md) describes the WGSL.
+The WGSL can declare uniforms as the fields of `struct Uniforms`. The `uniforms` option gives their first values, and `set` changes them with the standard values:
+
+```ts
+const tinted = /* wgsl */ `
+struct Uniforms { tint: vec3f, strength: f32 }
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor = mix(s.baseColor, material.tint, material.strength);
+    return s;
+}
+`;
+const paint = materials.shader({ wgsl: tinted, uniforms: { tint: '#ff6a00', strength: 0.5 } });
+paint.set({ strength: 0.8, roughness: 0.3 });
+```
+
+With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls below `alphaCutoff` draw nothing. Materials made from the same WGSL share one shader, and each has its own uniforms. A mesh needs texture coordinates to draw with a custom material. WGSL as plain text, which the plugin did not compile, throws E1215, and so does a whole shader with entry points. A uniform that the WGSL does not declare, or a value of the wrong kind, throws E1216. [Surface functions](../shaders/surface-functions.md) describes the WGSL.
 
 ## Ranges
 
@@ -315,17 +331,24 @@ Material factories. The standard material follows glTF's metallic-roughness mode
 | --- | --- |
 | `standard(options: StandardOptions = {}): Material<StandardValues>` | A lit material with glTF's metallic-roughness model, like three.js's `MeshStandardMaterial`. |
 | `unlit(options: UnlitOptions = {}): Material<UnlitValues>` | A material that ignores lights and shows its color unlit, like three.js's `MeshBasicMaterial`. The exposure and the tone mapping still apply to it, as three.js applies them to that material. |
-| `shader(options: ShaderOptions): Material<StandardValues>` | A custom material: the standard material with a surface function in WGSL, which changes how each pixel of the surface looks before the engine lights it. It takes every option of `materials.standard` but the texture maps, and `set` changes the same values. Meshes need texture coordinates to draw with it. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole shader with entry points. |
+| `shader(options: ShaderOptions): Material<ShaderValues>` | A custom material: the standard material with a surface function in WGSL, which changes how each pixel of the surface looks before the engine lights it. It takes every option of `materials.standard` but the texture maps, and the first values of the uniforms that its WGSL declares. `set` changes the standard values and the uniforms. Meshes need texture coordinates to draw with it. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole shader with entry points. Throws E1216 for a uniform that the WGSL does not declare, for a value of the wrong kind, and for a uniform named as a standard value, such as `color`. |
 
 ### `ShaderOptions`
 
 Interface `ShaderOptions`, which extends `StandardBaseOptions`.
 
-Options of `materials.shader`: the material's WGSL, and every option of `materials.standard` but its texture maps, which `defaultSurface` applies. Custom materials take no texture maps in this version, so the values of maps have no effect on them.
+Options of `materials.shader`: the material's WGSL, the first values of its uniforms, and every option of `materials.standard` but its texture maps, which `defaultSurface` applies. Custom materials take no texture maps in this version, so the values of maps have no effect on them.
 
 | Member | Description |
 | --- | --- |
-| `wgsl: string \| CompiledWgsl` | The material's WGSL, compiled by the null3D Vite plugin. It declares `fn surface(input: SurfaceInput) -> Surface`, which the engine calls for each pixel, and which can start from `defaultSurface(input)`. The engine lights the surface that it returns. Materials made from the same WGSL share their shader. |
+| `wgsl: string \| CompiledWgsl` | The material's WGSL, compiled by the null3D Vite plugin. It declares `fn surface(input: SurfaceInput) -> Surface`, which the engine calls for each pixel, and which can start from `defaultSurface(input)`. The engine lights the surface that it returns. It can declare `struct Uniforms`, whose fields the surface function reads from `material`. Materials made from the same WGSL share their shader. |
+| `uniforms?: Readonly<Record<string, UniformValue \| undefined>>` | The first value of each uniform, by name. A uniform without one starts at 0. |
+
+### `ShaderValues`
+
+Interface `ShaderValues`, which extends `Omit`.
+
+The values of a custom material, which `set` changes at any time: the standard values but the texture coordinate transform of maps, and the uniforms that its WGSL's `struct Uniforms` declares, by name.
 
 ### `StandardBaseOptions`
 
@@ -374,6 +397,14 @@ The values of a standard material, which `set` changes at any time.
 | `aoMapIntensity?: number` | How much the occlusion map darkens ambient light, from 0 to 1. The default is 1. |
 | `lightMapIntensity?: number` | The factor of the light map's light: 0 or more. The default is 1. |
 | `uvTransform?: UvTransform` | Where the maps sit on the texture coordinates. The default leaves them as they are. |
+
+### `UniformValue`
+
+```ts
+type UniformValue = number | string | readonly number[];
+```
+
+The value of a custom material's uniform. An `f32`, `i32` or `u32` uniform takes a number, and a `vec2f`, `vec3f` or `vec4f` uniform takes an array of 2, 3 or 4 numbers. A `vec3f` uniform also takes an sRGB color as `color` takes it, which the engine converts to linear.
 
 ### `UnlitOptions`
 

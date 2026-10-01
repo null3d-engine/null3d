@@ -84,6 +84,9 @@ struct CellOffsets {
 @group(2) @binding(3) var cluster_rows: texture_2d<u32>;
 #else
 @group(0) @binding(1) var<storage, read> materials: array<Material>;
+/// The materials' custom values: row `id` holds material `id`'s, one texel per `vec4f`. Vertex
+/// shaders read them too, and read no storage buffers, so they have a data texture of their own.
+@group(0) @binding(2) var custom_values: texture_2d<f32>;
 #endif
 
 /// What a vertex shader invocation learns of its instance. On WebGPU: the three rows of the
@@ -131,6 +134,18 @@ fn material_of(id: u32) -> Material {
     return m;
 #else
     return materials[id];
+#endif
+}
+
+/// Value `k` of a material's custom values: the `k`-th `vec4f` of its row of custom values, which
+/// holds a custom material's uniforms. Vertex and fragment shaders can both read it. On WebGL2 the
+/// material table's data texture holds a row of custom values for each material after every
+/// material's row, so it has twice as many rows as materials.
+fn custom_value(id: u32, k: u32) -> vec4f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(k, textureDimensions(materials).y / 2u + id), 0);
+#else
+    return textureLoad(custom_values, vec2u(k, id), 0);
 #endif
 }
 
