@@ -17,7 +17,7 @@ three.js apps usually run everything on the main thread: DOM, input, scene updat
 | Piece of the three.js app | null3D location | How |
 | --- | --- | --- |
 | `<canvas>` or `renderer.domElement` | `index.html` and `page.ts` | Put the canvas in HTML; pass it to `createEngine` |
-| Renderer options (antialias, alpha, pixel ratio, tone mapping) | `createEngine` options, `post.set` (later in 0.1) | Mapping table, "Renderer and loop" |
+| Renderer options (antialias, alpha, pixel ratio, tone mapping) | `createEngine` options, `post.set` | Mapping table, "Renderer and loop" |
 | Resize handling | Nowhere | The engine follows the canvas's CSS size |
 | Scene, cameras, lights, meshes, loaders | `sketch.ts` | `defineSketch` setup code |
 | The animation loop | `sketch.ts` | `onUpdate`, `onFixedUpdate`, `onLateUpdate` |
@@ -160,14 +160,14 @@ Pointer events that land on HTML UI elements above the canvas do not reach the e
 | cannon-es, Rapier, Ammo | Run in the sketch worker; copy transforms into dynamic objects or batches after each step |
 | three-mesh-bvh | Delete; raycasting uses built-in acceleration structures (0.2) |
 | troika-three-text | Not available: use HTML labels, pre-rendered text textures, or text meshes baked into glTF |
-| postprocessing (pmndrs) | Map effects to `post.set`: tone mapping later in 0.1, effects in 0.2 (`references/post-processing.md`) |
+| postprocessing (pmndrs) | Map effects to `post.set`: tone mapping now, effects in 0.2 (`references/post-processing.md`) |
 | three-stdlib, three/addons utilities | Check each import in the mapping table; many become built-in features |
 
 ## 7. The two-step route for large apps
 
-Large apps mix DOM and scene code everywhere, which makes a direct move to the worker slow and risky. Split the work. The first step needs `createEngine({ sketchThread: 'main' })`, which comes later in 0.1. Until then, do the second step first, then port straight into the worker.
+Large apps mix DOM and scene code everywhere, which makes a direct move to the worker slow and risky. Split the work.
 
-1. Port with `createEngine({ sketchThread: 'main' })` (later in 0.1). Sketch code runs on the main thread, so DOM access keeps working while you replace three.js calls. Reach parity here.
+1. Port with `createEngine({ sketchThread: 'main' })`. Sketch code runs on the main thread, so DOM access keeps working while you replace three.js calls. Reach parity here.
 2. Move the DOM-touching code into `page.ts` and messages, then switch to the default worker mode. The scanner's "DOM access" warning lists the files to fix.
 
 Main-thread mode keeps the render and job workers. But sketch code then shares the main thread with the page, so layout work and page scripts can delay frames. Treat it as a stage of the port, not the destination.

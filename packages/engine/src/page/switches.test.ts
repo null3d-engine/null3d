@@ -7,10 +7,13 @@ describe('parseSwitches', () => {
 			gpu: 'auto',
 			threads: true,
 			renderOnMain: false,
+			sketchThread: undefined,
 			latency: undefined,
 			copyUploads: false,
 			depth: undefined,
 			parallelCompile: true,
+			wakeByMessage: false,
+			hdr: true,
 			cells: true,
 			fps: undefined,
 			queue: undefined,
@@ -51,6 +54,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?jobs=256').jobs).toBeUndefined();
 	});
 
+	it('turns HDR color off only for ?hdr=off', () => {
+		expect(parseSwitches('?hdr=off').hdr).toBe(false);
+		expect(parseSwitches('?hdr=on').hdr).toBe(true);
+		expect(parseSwitches('?gpu=webgl2').hdr).toBe(true);
+	});
+
 	it('reads a frame rate above 0, with decimals', () => {
 		expect(parseSwitches('?fps=59.94').fps).toBe(59.94);
 		expect(parseSwitches('?fps=0').fps).toBeUndefined();
@@ -60,9 +69,20 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?queue=1.5').queue).toBeUndefined();
 	});
 
+	it('reads the thread that runs the sketch, and ignores a thread it does not know', () => {
+		expect(parseSwitches('?sketch-thread=main').sketchThread).toBe('main');
+		expect(parseSwitches('?latency=low&sketch-thread=worker').sketchThread).toBe('worker');
+		expect(parseSwitches('?sketch-thread=page').sketchThread).toBeUndefined();
+	});
+
 	it('turns background compiles off with ?compile=wait only', () => {
 		expect(parseSwitches('?gpu=webgl2&compile=wait').parallelCompile).toBe(false);
 		expect(parseSwitches('?compile=later').parallelCompile).toBe(true);
+	});
+
+	it('makes the threads wake each other with messages with ?wake=message only', () => {
+		expect(parseSwitches('?wake=message').wakeByMessage).toBe(true);
+		expect(parseSwitches('?wake=atomics').wakeByMessage).toBe(false);
 	});
 
 	it('reads the WebGL2 depth mode, and ignores a mode it does not know', () => {

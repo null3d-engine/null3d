@@ -7,7 +7,9 @@
 
 import {
 	TEMPLATE_DEBUG_LINES,
+	TEMPLATE_FINAL,
 	TEMPLATE_INSTANCED_LIT,
+	TEMPLATE_INSTANCED_STANDARD_MAPS,
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
@@ -80,6 +82,8 @@ export interface Program {
 	 * the sampler of each pair to the pair's unit.
 	 */
 	samplerUnits: readonly number[];
+	/** True when the program samples a texture with a sampler, so the units' samplers matter to it. */
+	sampled: boolean;
 	/** True once the link result was checked and the blocks and textures were bound. */
 	ready: boolean;
 	/**
@@ -118,6 +122,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_INSTANCED_UNLIT] = { shader: shaders.unlit, pipeline: 'main' };
 	templates[TEMPLATE_INSTANCED_TEXCOORDS] = { shader: shaders.texcoords, pipeline: 'main' };
 	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = { shader: shaders.unlit_map, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_STANDARD_MAPS] = { shader: shaders.standard_maps, pipeline: 'main' };
+	templates[TEMPLATE_FINAL] = { shader: shaders.final, pipeline: 'main' };
 	templates[TEMPLATE_SHADOW_DEPTH] = { shader: shaders.shadow_depth, pipeline: 'main' };
 	if (DEV)
 		templates[TEMPLATE_DEBUG_LINES] = {
@@ -171,6 +177,7 @@ export function createProgram(
 		firstInstance: null,
 		firstInstanceValue: 0,
 		samplerUnits: [],
+		sampled: false,
 		ready: false,
 		background: false,
 	};
@@ -214,6 +221,7 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: De
 			} else if (samplerUnits[known + 1] !== slot) {
 				throw new Error('a WebGL2 program samples one texture with two samplers');
 			}
+			if (slot !== NO_SAMPLER) p.sampled = true;
 		}
 	}
 	p.samplerUnits = samplerUnits;

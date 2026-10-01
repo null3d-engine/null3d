@@ -2,7 +2,9 @@ enable draw_index;
 #define_import_path null3d::mesh
 #import null3d::fog::{apply_fog, fog_factor}
 #import null3d::globals::{Frame, Material}
-#import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_normal, transform_point}
+#import null3d::tonemap
+#import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction}
+#import null3d::vertex::{transform_normal, transform_point}
 
 // What every template for meshes drawn by instance shares: the frame's bindings, where each
 // instance's world matrix and material come from, and positions in clip space. A template's vertex
@@ -32,6 +34,10 @@ enable draw_index;
 // takes the material from its draw's record. The DRAW_INDEX builds draw many buckets in one
 // multi-draw call and read each draw's record by `gl_DrawID`; the other builds get one record per
 // draw.
+//
+// The fragment shaders write linear color into the HDR scene color, which the final pass tone maps.
+// On the 8-bit path (the TONE_MAP builds) `finish` applies the frame's exposure and tone mapping,
+// and encodes sRGB, into a target that resolves straight into the canvas.
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 
@@ -228,4 +234,15 @@ fn relative_position(found: Instance, position: vec3f) -> vec3f {
 /// stays at right angles to its surface under uneven scale.
 fn world_normal(found: Instance, normal: vec3f) -> vec3f {
     return transform_normal(transform_of(found), normal);
+}
+
+/// The color a fragment writes for linear color `c` at framebuffer position `pixel`: `c` itself for
+/// the final pass, or on the 8-bit path, `c` tone mapped and encoded for the canvas.
+fn finish(c: vec3f, pixel: vec2f) -> vec4f {
+    return null3d::tonemap::finish(c, pixel, frame.output);
+}
+
+/// A direction from the mesh into the world: the instance's world matrix without its translation.
+fn world_direction(found: Instance, direction: vec3f) -> vec3f {
+    return transform_direction(transform_of(found), direction);
 }

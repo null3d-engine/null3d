@@ -4,6 +4,12 @@
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import {
+	MAP_SLOT_BASE_COLOR,
+	MAP_SLOT_EMISSIVE,
+	MAP_SLOT_LIGHT,
+	MAP_SLOT_METAL_ROUGH,
+	MAP_SLOT_NORMAL,
+	MAP_SLOT_OCCLUSION,
 	MATERIAL_FEATURE_ALPHA_MASK,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
@@ -15,12 +21,18 @@ import {
 	MATERIAL_PARAM_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
+	MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
 	MATERIAL_PARAM_METALNESS,
+	MATERIAL_PARAM_NORMAL_SCALE,
+	MATERIAL_PARAM_OCCLUSION_STRENGTH,
 	MATERIAL_PARAM_OPACITY,
 	MATERIAL_PARAM_ROUGHNESS,
+	MATERIAL_PARAM_UV_U,
+	MATERIAL_PARAM_UV_V,
 	SHADING_LIT,
 	SHADING_TEXCOORDS,
 	SHADING_UNLIT,
+	SHADING_UNLIT_MAP,
 	SHAPE_BOX,
 	SHAPE_CAPSULE,
 	SHAPE_CIRCLE,
@@ -465,7 +477,7 @@ export class Geometry {
  * @category api/materials
  */
 export interface MaterialOptions {
-	/** The base color: a hex string, a number, or three sRGB components from 0 to 1. */
+	/** The base color: a hex string or a number in sRGB, or three linear components from 0 to 1. */
 	color?: ColorInput;
 	/**
 	 * How opaque the surface is, from 0 to 1. The default is 1. With the `mask` alpha mode, it is
@@ -481,7 +493,8 @@ export interface MaterialOptions {
 }
 
 /**
- * How a material uses its alpha: its opacity, times its mesh's vertex alpha with `vertexColors`.
+ * How a material uses its alpha: its opacity, times its base color map's alpha, and times its
+ * mesh's vertex alpha with `vertexColors`.
  * The `opaque` mode ignores the alpha. The `mask` mode draws nothing where the alpha falls below
  * `alphaCutoff`, and draws the rest opaque. It works as glTF's alpha mode `MASK` and three.js's
  * `alphaTest` do.
@@ -521,12 +534,65 @@ export interface StandardValues extends MaterialOptions {
 	/** How rough the surface is, from 0 (a mirror) to 1 (fully matte). The default is 1. */
 	roughness?: number;
 	/**
-	 * The color the surface gives off without any light, in sRGB as `color` takes it. The default
-	 * is black, which gives off nothing.
+	 * The color the surface gives off without any light, in the forms that `color` takes. The
+	 * default is black, which gives off nothing.
 	 */
 	emissive?: ColorInput;
 	/** The factor of the emissive color: 0 or more. The default is 1. */
 	emissiveIntensity?: number;
+	/**
+	 * How strongly the normal map bends normals along u and along v. The default is `[1, 1]`, and
+	 * negative values flip a direction.
+	 */
+	normalScale?: readonly [number, number];
+	/** How much the occlusion map darkens ambient light, from 0 to 1. The default is 1. */
+	aoMapIntensity?: number;
+	/** The factor of the light map's light: 0 or more. The default is 1. */
+	lightMapIntensity?: number;
+	/** Where the maps sit on the texture coordinates. The default leaves them as they are. */
+	uvTransform?: UvTransform;
+}
+
+/**
+ * Where a material's maps sit on the texture coordinates, as three.js's texture `offset`, `repeat`
+ * and `rotation` place a texture, with its `center` at the coordinates' origin. A transform that
+ * leaves a value out takes its default.
+ *
+ * @category api/materials
+ */
+export interface UvTransform {
+	/** The shift along u and v. The default is `[0, 0]`. */
+	offset?: readonly [number, number];
+	/** How many times the maps repeat along u and v. The default is `[1, 1]`. */
+	repeat?: readonly [number, number];
+	/** The turn in radians, about the coordinates' origin. The default is 0. */
+	rotation?: number;
+}
+
+/**
+ * The texture maps of a standard material. They are fixed when the material is created, because
+ * each set of maps draws with a pipeline of its own. A map reads the texture coordinates that its
+ * texture's `uvSet` names, through the material's `uvTransform`. Meshes need texture coordinates to
+ * show maps, and the material draws without a map until its texture's image is on the GPU.
+ *
+ * @category api/materials
+ */
+export interface StandardMaps {
+	/** The base color map, in sRGB. Its color multiplies `color`. */
+	map?: Texture;
+	/**
+	 * Roughness in green and metalness in blue, as glTF packs them, in linear color. They multiply
+	 * `roughness` and `metalness`.
+	 */
+	metalnessRoughnessMap?: Texture;
+	/** Normals in tangent space, in linear color, which `normalScale` scales. */
+	normalMap?: Texture;
+	/** Ambient occlusion in red, in linear color, which darkens ambient light. */
+	aoMap?: Texture;
+	/** The emissive color map, in sRGB. Its color multiplies `emissive`. */
+	emissiveMap?: Texture;
+	/** Baked light, added to the ambient light. Light maps usually use the second coordinates. */
+	lightMap?: Texture;
 }
 
 /**
@@ -563,7 +629,7 @@ export interface MaterialFeatures {
  *
  * @category api/materials
  */
-export interface StandardOptions extends StandardValues, MaterialFeatures {
+export interface StandardOptions extends StandardValues, MaterialFeatures, StandardMaps {
 	/**
 	 * Lights each triangle with one normal, the normal of its face, so the mesh looks faceted. It
 	 * is fixed when the material is created. The default is false.
@@ -572,14 +638,40 @@ export interface StandardOptions extends StandardValues, MaterialFeatures {
 }
 
 /**
+ * The values of an unlit material, which `set` changes at any time.
+ *
+ * @category api/materials
+ */
+export interface UnlitValues extends MaterialOptions {
+	/** Where the map sits on the texture coordinates. The default leaves it as it is. */
+	uvTransform?: UvTransform;
+}
+
+/**
  * Options of `materials.unlit`.
  *
  * @category api/materials
  */
-export interface UnlitOptions extends MaterialOptions, MaterialFeatures {}
+export interface UnlitOptions extends UnlitValues, MaterialFeatures {
+	/**
+	 * A color map, in sRGB, whose color multiplies `color`. It is fixed when the material is
+	 * created, and meshes need texture coordinates to show it.
+	 */
+	map?: Texture;
+}
 
-/** The options of the standard values that are numbers, with the range each takes. */
-type Ranged = 'opacity' | 'alphaCutoff' | 'metalness' | 'roughness' | 'emissiveIntensity';
+/** Every value of either material, which `set` writes. */
+type AnyValues = StandardValues & UnlitValues;
+
+/** The options of the values that are numbers, with the range each takes. */
+type Ranged =
+	| 'opacity'
+	| 'alphaCutoff'
+	| 'metalness'
+	| 'roughness'
+	| 'emissiveIntensity'
+	| 'aoMapIntensity'
+	| 'lightMapIntensity';
 
 /** The core's code for each value that is a number, and the most it takes, or none above 0. */
 const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
@@ -593,10 +685,44 @@ const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
 		Number.POSITIVE_INFINITY,
 		'emissive intensity',
 	],
+	['aoMapIntensity', MATERIAL_PARAM_OCCLUSION_STRENGTH, 1, 'aoMapIntensity'],
+	[
+		'lightMapIntensity',
+		MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
+		Number.POSITIVE_INFINITY,
+		'lightMapIntensity',
+	],
 ];
 
+/** The core's slot of each map option. */
+const MAP_OPTIONS: readonly (readonly [keyof StandardMaps, number])[] = [
+	['map', MAP_SLOT_BASE_COLOR],
+	['metalnessRoughnessMap', MAP_SLOT_METAL_ROUGH],
+	['normalMap', MAP_SLOT_NORMAL],
+	['aoMap', MAP_SLOT_OCCLUSION],
+	['emissiveMap', MAP_SLOT_EMISSIVE],
+	['lightMap', MAP_SLOT_LIGHT],
+];
+
+/** Throws E1108 for a pair or a transform with a number that is not finite. */
+function checkNumbers(values: AnyValues, call: string): void {
+	const { normalScale, uvTransform } = values;
+	const numbers = [
+		...(normalScale ?? []),
+		...(uvTransform?.offset ?? []),
+		...(uvTransform?.repeat ?? []),
+		uvTransform?.rotation ?? 0,
+	];
+	if (!numbers.every(Number.isFinite))
+		throw new EngineError(
+			'E1108',
+			`${call}() got a normalScale or uvTransform that is not finite.`,
+		);
+}
+
 /** Throws E1108 for each number of `values` outside its range. Call it inside `if (DEV)`. */
-function checkValues(values: StandardValues, call: string): void {
+function checkValues(values: AnyValues, call: string): void {
+	checkNumbers(values, call);
 	for (const [key, , most, name] of RANGED) {
 		const value = values[key];
 		if (value === undefined) continue;
@@ -619,7 +745,7 @@ function writeValues(
 	core: CoreMemory,
 	id: number,
 	call: string,
-	values: StandardValues,
+	values: AnyValues,
 	color: readonly number[] | undefined,
 	emissive: readonly number[] | undefined,
 ): void {
@@ -637,6 +763,17 @@ function writeValues(
 	for (const [key, param] of RANGED) {
 		const value = values[key];
 		if (value !== undefined) write(param, value, 0, 0);
+	}
+	const { normalScale, uvTransform } = values;
+	if (normalScale) write(MATERIAL_PARAM_NORMAL_SCALE, normalScale[0], normalScale[1], 0);
+	if (uvTransform) {
+		// three.js's texture matrix with its center at the origin, by rows.
+		const [x, y] = uvTransform.offset ?? [0, 0];
+		const [u, v] = uvTransform.repeat ?? [1, 1];
+		const angle = uvTransform.rotation ?? 0;
+		const [c, s] = [Math.cos(angle), Math.sin(angle)];
+		write(MATERIAL_PARAM_UV_U, u * c, u * s, x);
+		write(MATERIAL_PARAM_UV_V, -v * s, v * c, y);
 	}
 }
 
@@ -702,7 +839,7 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	 */
 	set(options: Values): void {
 		const { core, call } = this;
-		const values = options as StandardValues;
+		const values = options as AnyValues;
 		if (DEV) checkValues(values, call);
 		const color = linearOrNone(values.color, call);
 		const emissive = linearOrNone(values.emissive, call);
@@ -726,7 +863,7 @@ export class Materials {
 	 */
 	create<Values extends MaterialOptions>(
 		shading: number,
-		options: StandardOptions,
+		options: StandardOptions & UnlitOptions,
 		call: string,
 	): Material<Values> {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
@@ -743,16 +880,15 @@ export class Materials {
 			core.glue.createMaterial(shading, features, r, g, b, opacity, constant, slopeScale),
 			call,
 		);
-		const { alphaCutoff, metalness, roughness, emissiveIntensity } = options;
-		const values = { alphaCutoff, metalness, roughness, emissiveIntensity };
+		const values = { ...options, color: undefined, opacity: undefined };
 		writeValues(core, id, call, values, undefined, emissive);
+		for (const [key, slot] of MAP_OPTIONS) {
+			const map = options[key];
+			if (!map) continue;
+			const second = map.uvSet === 1 ? 1 : 0;
+			core.check(core.glue.setMaterialMap(id, slot, map.handle, second), call, undefined, true);
+		}
 		return new Material<Values>(id, core, `${call}.set`);
-	}
-
-	/** @internal Gives a material a map, or none. */
-	setMap(material: Material, map: Texture | undefined, call: string): void {
-		const status = this.core.glue.setMaterialMap(material.id, map?.handle ?? 0);
-		this.core.check(status, call, undefined, true);
 	}
 
 	/**
@@ -764,11 +900,13 @@ export class Materials {
 	}
 
 	/**
-	 * A material that ignores lights and shows its color as it is, like three.js's
-	 * `MeshBasicMaterial`.
+	 * A material that ignores lights and shows its color unlit, like three.js's
+	 * `MeshBasicMaterial`. The exposure and the tone mapping still apply to it, as three.js applies
+	 * them to that material.
 	 */
-	unlit(options: UnlitOptions = {}): Material {
-		return this.create(SHADING_UNLIT, options, 'materials.unlit');
+	unlit(options: UnlitOptions = {}): Material<UnlitValues> {
+		const shading = options.map ? SHADING_UNLIT_MAP : SHADING_UNLIT;
+		return this.create<UnlitValues>(shading, options, 'materials.unlit');
 	}
 }
 

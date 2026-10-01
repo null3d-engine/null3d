@@ -19,8 +19,8 @@
 //   bun run bench:run -- --compare ../baseline,. --runs 3 --seconds 10
 //   bun run bench:run -- --dev --scenes s2 --pages null3d-webgpu
 // Options:
-//   --scenes <list>   s1, s1-static, s1-cells, s2; the default is s1, and every scene with --sweep or
-//                     --compare
+//   --scenes <list>   s1, s1-static, s1-cells, s2, s3, s4; the default is s1, and every scene with
+//                     --sweep or --compare
 //   --pages <list>    page kinds; the default is null3d-webgpu, threejs-webgpu, threejs-webgl and
 //                     scene-code. With --jobs or --compare it is null3d-webgpu and null3d-webgl2,
 //                     and with --sweep every kind but null3d-compat. The kinds that end in -low run
@@ -65,11 +65,11 @@ import {
 } from './lib/compare';
 import {
 	BENCH_PAGE_KINDS,
+	BENCH_SCENES,
 	type BenchPageKind,
+	type BenchScene,
 	isNull3dPage,
 	JOBS_PAGES,
-	PARITY_SCENES,
-	type ParityScene,
 	pagePath,
 	readJobCounts,
 	SCENE_CODE,
@@ -83,21 +83,33 @@ import {
 	type SummaryRow,
 	type SweepPoint,
 	summarizeRuns,
+	summaryRow,
 	sweepReport,
 } from './lib/report';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
-import { MEASURE_SECONDS, S2_NODES_PER_TREE, S2_ROOTS, WARMUP_SECONDS } from './scenes/spec';
+import {
+	createS4,
+	MEASURE_SECONDS,
+	S2_NODES_PER_TREE,
+	S2_ROOTS,
+	S3_DEFAULT_COUNT,
+	WARMUP_SECONDS,
+} from './scenes/spec';
 
 const BRAVE = '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser';
 /**
  * Object counts of a sweep, per scene: from one object, where each engine's fixed cost per frame
  * shows, to far more than the protocol's count. S2's counts are whole trees: 1, 3, 14 and 42.
  */
-const SWEEP_COUNTS: Record<ParityScene, readonly number[]> = {
+const SWEEP_COUNTS: Record<BenchScene, readonly number[]> = {
 	s1: [1, 10, 100, 1_000, 10_000, 100_000],
 	's1-static': [1, 10, 100, 1_000, 10_000, 100_000],
 	's1-cells': [1, 10, 100, 1_000, 10_000, 100_000],
 	s2: [1, 3, S2_ROOTS, 3 * S2_ROOTS].map((trees) => trees * S2_NODES_PER_TREE),
+	// S3's counts are boxes; every count has the same 256 point lights.
+	s3: [1, 100, 1_000, 5_000, S3_DEFAULT_COUNT, 4 * S3_DEFAULT_COUNT],
+	// S4 is one town, which ignores the count.
+	s4: [createS4().count],
 };
 const DEFAULT_PAGES: BenchPageKind[] = [
 	'null3d-webgpu',
@@ -114,7 +126,7 @@ const MIN_COMPARE_RUNS = 3;
 
 export interface BenchOptions {
 	/** The scenes and page kinds to run; null takes the default of the run's kind. */
-	scenes: ParityScene[] | null;
+	scenes: BenchScene[] | null;
 	pages: BenchPageKind[] | null;
 	runs: number;
 	seconds: number | null;
@@ -167,7 +179,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
 		const value = () => args[++i];
-		if (arg === '--scenes') options.scenes = list(value(), PARITY_SCENES, '--scenes');
+		if (arg === '--scenes') options.scenes = list(value(), BENCH_SCENES, '--scenes');
 		else if (arg === '--pages') options.pages = list(value(), BENCH_PAGE_KINDS, '--pages');
 		else if (arg === '--runs') options.runs = Number(value());
 		else if (arg === '--seconds') options.seconds = Number(value());
@@ -265,7 +277,7 @@ async function runProtocol(
 						`${name} run ${run}: ${problem === undefined ? `${ms(result.cpuMs.median)} ms` : `failed: ${problem}`}`,
 					);
 				}
-				if (results.length > 0) rows.push({ scene, kind, jobs, summary: summarizeRuns(results) });
+				if (results.length > 0) rows.push(summaryRow({ scene, kind, jobs }, results));
 			}
 		}
 	}
@@ -319,7 +331,7 @@ async function runSweep(
 	const report: string[] = [];
 	// A window larger than the charts; each picture is of its chart alone.
 	const chartPage = await browser.newPage({ viewport: { width: 1200, height: 800 } });
-	for (const scene of options.scenes ?? PARITY_SCENES) {
+	for (const scene of options.scenes ?? BENCH_SCENES) {
 		const points: SweepPoint[] = [];
 		const series: Record<string, { x: number; y: number }[]> = {};
 		for (const n of SWEEP_COUNTS[scene]) {
@@ -428,12 +440,12 @@ async function runComparison(
 			throw new Error(`${root} holds no built engine: run bun run build there first`);
 	// A scene that one checkout lacks, such as a benchmark that the new build adds, has nothing to
 	// compare with, so it runs in neither.
-	const scenes = (options.scenes ?? PARITY_SCENES).filter((scene) =>
+	const scenes = (options.scenes ?? BENCH_SCENES).filter((scene) =>
 		Object.values(roots).every((root) =>
 			existsSync(join(root, pagePath(scene, 'null3d-webgpu').split('?')[0] as string)),
 		),
 	);
-	for (const scene of options.scenes ?? PARITY_SCENES)
+	for (const scene of options.scenes ?? BENCH_SCENES)
 		if (!scenes.includes(scene))
 			console.log(`${scene}: skipped, because one of the checkouts has no page for it`);
 	const pages = options.pages ?? JOBS_PAGES;
@@ -475,7 +487,7 @@ async function runComparison(
 	}
 	const { labels, messages } = commitsOf(roots);
 	const trailers = readExpectedChanges(messages, {
-		scenes: PARITY_SCENES,
+		scenes: BENCH_SCENES,
 		kinds: BENCH_PAGE_KINDS,
 	});
 	const selection = selectRuns(runs);

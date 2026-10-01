@@ -55,10 +55,11 @@ export type {
 	GpuPassStats,
 	MainThreadStats,
 	MemoryStats,
+	SecondRates,
 	ThreadStats,
 } from './page/frame-stats';
 export type { HeldFrame, HoldFailure, HoldResult } from './page/hold';
-export type { DepthMode, LatencyMode } from './page/switches';
+export type { DepthMode, LatencyMode, SketchThread } from './page/switches';
 export type { DeviceHints } from './quality/chooser';
 export type { QualityPreset, QualitySettings } from './quality/presets';
 export type {
@@ -69,6 +70,7 @@ export type {
 } from './scene/assets';
 export type { ColorInput } from './scene/color';
 export type { Exp2FogOptions, FogOptions, LinearFogOptions } from './scene/fog';
+export type { Post, PostSettings, ToneMapping } from './scene/post';
 export type {
 	AlphaMode,
 	BoxOptions,
@@ -87,10 +89,13 @@ export type {
 	PlaneOptions,
 	RingOptions,
 	SphereOptions,
+	StandardMaps,
 	StandardOptions,
 	StandardValues,
 	TorusOptions,
 	UnlitOptions,
+	UnlitValues,
+	UvTransform,
 } from './scene/resources';
 export type {
 	AmbientLight,

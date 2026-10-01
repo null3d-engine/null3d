@@ -77,7 +77,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "post.set({ toneMapping: 'aces' | 'agx' | 'neutral' | 'none', exposure })",
-      "notes": "The engine default is ACES; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". Reinhard and Cineon have no built-in equivalent: use \"neutral\", or a custom final effect (0.2).",
+      "notes": "The engine default is ACES; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Reinhard and Cineon have no built-in equivalent: use \"neutral\", or a custom final effect (0.2).",
       "docs": "api/post",
       "detect": "\\b\\w+ToneMapping\\b|\\.toneMapping(Exposure)?\\s*="
     },
@@ -88,7 +88,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "Nothing to do",
-      "notes": "Output is sRGB with a linear working space, as in three.js r152+ defaults. Hex colors are read as sRGB, as three.js does. Delete these lines.",
+      "notes": "Output is sRGB with a linear working space, as in three.js r152+ defaults: the final pass encodes sRGB and dithers. Hex colors are sRGB and [r, g, b] arrays are linear, as three.js reads them. Delete these lines.",
       "docs": "concepts/color-management",
       "detect": "\\.output(ColorSpace|Encoding)\\b|\\bColorManagement\\b"
     },
@@ -121,7 +121,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.setBackground('#rrggbb' | texture | environment)",
-      "notes": "",
+      "notes": "Exposure and tone mapping change the background, as in three.js's WebGPURenderer; WebGLRenderer draws a background color without them. For an exact page color, set toneMapping: \"none\", or use createEngine({ transparent: true }) over a CSS background. setClearColor(color, 0) on an alpha canvas becomes transparent: true with no background.",
       "docs": "api/scene",
       "detect": "\\.setClearColor\\s*\\(|\\.background\\s*="
     },
@@ -726,7 +726,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "materials.standard({ color, map, metalness, roughness, normalMap, aoMap, emissive, ... })",
-      "notes": "Both follow glTF's metallic-roughness model with the same formulas, so color, metalness, roughness and emissive values carry over. Texture maps are not built yet.",
+      "notes": "Both follow glTF's metallic-roughness model with the same formulas, so color, metalness, roughness and emissive values carry over. roughnessMap and metalnessMap become one metalnessRoughnessMap, and a texture's repeat, offset and rotation become the material's uvTransform.",
       "docs": "api/materials",
       "detect": "\\bMeshStandardMaterial\\b"
     },
@@ -748,7 +748,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "materials.unlit({ color, map, opacity, alphaMode, vertexColors })",
-      "notes": "Texture maps and alpha modes are not built yet.",
+      "notes": "Alpha modes are not built yet.",
       "docs": "api/materials",
       "detect": "\\bMeshBasicMaterial\\b"
     },
@@ -858,7 +858,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "Nothing to do",
-      "notes": "Options that change the shader or the pipeline, such as vertexColors, doubleSided and flatShading, are fixed when a material is created. Create each variant during loading: a new one compiles a pipeline, which can make a frame late.",
+      "notes": "Options that change the shader or the pipeline, such as texture maps, vertexColors, doubleSided and flatShading, are fixed when a material is created. Create each variant during loading: a new one compiles a pipeline, which can make a frame late.",
       "docs": "concepts/materials",
       "detect": "\\bmaterial\\w*\\.needsUpdate\\b"
     },
@@ -990,7 +990,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "wrap: 'repeat' | 'clamp' | 'mirror' in the texture options; repeat, offset and rotation go in the material's uvTransform",
-      "notes": "uvTransform follows glTF's KHR_texture_transform.",
+      "notes": "uvTransform takes three.js's repeat, offset and rotation with the default center, and every map of the material shares it. three.js keeps one transform per texture.",
       "docs": "api/textures",
       "detect": "\\.(wrapS|wrapT)\\s*=|\\.repeat\\.set\\s*\\(|\\.offset\\.set\\s*\\(|\\b(Repeat|ClampToEdge|MirroredRepeat)Wrapping\\b"
     },
@@ -1077,8 +1077,8 @@
       "three": "texture.channel (which UV set a map uses)",
       "status": "direct",
       "since": "0.1",
-      "target": "uvSet: 0 or 1 in loadTexture options, or per map in the material",
-      "notes": "glTF files carry this per texture, so loaded models need nothing.",
+      "target": "uvSet: 0 or 1 in the texture's options",
+      "notes": "Each map of a material reads the set that its texture names. glTF files carry this per texture, so loaded models need nothing.",
       "docs": "api/textures",
       "detect": "\\.channel\\s*="
     },
@@ -1363,9 +1363,9 @@
       "three": "Color.set / setHex / setHSL / setRGB / lerp",
       "status": "changed",
       "since": "0.1",
-      "target": "'#rrggbb' or '#rgb' strings, 0xrrggbb numbers, or [r, g, b] sRGB arrays from 0 to 1; color.fromHex, color.fromSrgb and color.fromHsl give linear RGB",
-      "notes": "Color options take sRGB, and the engine converts them to linear, as three.js does for hex colors. Instance colors are linear, so fill them with the color helpers. three.js's setRGB takes linear values, so convert them with color.linearToSrgb for a color option. color.fromHsl gives what setHSL gives, and vec3.lerp blends two colors.",
-      "docs": "api/math",
+      "target": "'#rrggbb' or '#rgb' strings, 0xrrggbb numbers, or [r, g, b] linear arrays from 0 to 1; color.fromHex, color.fromSrgb and color.fromHsl give linear RGB",
+      "notes": "Hex values are sRGB, as setHex and setStyle read them, and the engine converts them to linear. [r, g, b] arrays are linear, as setRGB reads them, so the color helpers' results go straight into color options and instance colors. color.fromSrgb converts sRGB components, color.fromHsl gives what setHSL gives, and vec3.lerp blends two colors.",
+      "docs": "concepts/color-management",
       "detect": "\\.set(Hex|HSL|RGB|Style)\\s*\\("
     },
     {

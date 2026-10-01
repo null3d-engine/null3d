@@ -1,6 +1,6 @@
 // The sketch worker: runs the sketch's code and the engine core. In pipelined mode it computes frame
-// N+1 while the render worker draws frame N, and waits for the render worker's signal with
-// Atomics.waitAsync, so its event loop stays alive for promises and messages. In low-latency mode it
+// N+1 while the render worker draws frame N, and waits for the render worker's signal without
+// blocking, so its event loop stays alive for promises and messages. In low-latency mode it
 // also owns the canvas and draws each frame itself; only then does it load the renderer.
 
 import { messageOf } from '../errors/message';
@@ -8,10 +8,11 @@ import { type DrawModule, loadDrawModule } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
-import { controlViews, Slot } from '../shared/control';
+import { controlViews } from '../shared/control';
 import { ImageTable, sendThrough, sendToTable } from '../shared/images';
+import { setWakeByMessage, wakeWaiters } from '../shared/wake';
 import { loadSketch } from '../sketch/define-sketch';
-import { SketchRunner } from '../sketch/runner';
+import { runPipelined, SketchRunner } from '../sketch/runner';
 import {
 	replyToPage,
 	replyWithCapture,
@@ -28,38 +29,6 @@ let draw: DrawModule | undefined;
 let drawing: Drawing<Renderer> | undefined;
 let controlSlots: Int32Array | undefined;
 
-/**
- * A promise that settles when the slot no longer holds `value`, or undefined when it already
- * holds another value. A plain function, so a wait makes no promise beyond the browser's own.
- */
-function changeOf(slots: Int32Array, slot: number, value: number): Promise<unknown> | undefined {
-	const wait = Atomics.waitAsync(slots, slot, value);
-	return wait.async ? wait.value : undefined;
-}
-
-async function runPipelined(sketch: SketchRunner, control: ArrayBufferLike): Promise<void> {
-	const { slots } = controlViews(control);
-	// A warm-up during the setup may have published a frame that the render worker has not taken.
-	let published = Atomics.load(slots, Slot.FramesPublished);
-	while (Atomics.load(slots, Slot.Running) !== 0) {
-		const paused = Atomics.load(slots, Slot.Paused);
-		if (paused !== 0) {
-			const change = changeOf(slots, Slot.Paused, paused);
-			if (change) await change;
-			continue;
-		}
-		const taken = Atomics.load(slots, Slot.FramesTaken);
-		if (taken < published) {
-			const change = changeOf(slots, Slot.FramesTaken, taken);
-			if (change) await change;
-			continue;
-		}
-		published = sketch.step(performance.now());
-		Atomics.store(slots, Slot.FramesPublished, published);
-		Atomics.notify(slots, Slot.FramesPublished);
-	}
-}
-
 const step = startSteps('sketch');
 
 startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => {
@@ -74,6 +43,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			const drawModule = message.renderer && drawLoad;
 			const control = controlViews(message.control);
 			controlSlots = control.slots;
+			setWakeByMessage(message.wakeByMessage);
 			const started = await startWorkerCore(message, step);
 			const core = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
@@ -135,6 +105,8 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 				message: messageOf(e),
 			});
 		}
+	} else if (message.type === 'wake') {
+		wakeWaiters();
 	} else if (message.type === 'post') {
 		runner?.receive(message.name, message.data);
 	} else if (message.type === 'capture' && draw && drawing && controlSlots) {

@@ -5,7 +5,6 @@
 // decode with their first row at the bottom, as three.js flips them, so the picture stands upright.
 // Every image reaches the thread that draws before the held frame, which uploads them all.
 import { defineSketch, type MeshArrays, type TextureOptions } from '@null3d/engine';
-import { unlitMapMaterial } from '@null3d/engine/internal';
 
 const DECODE: ImageBitmapOptions = {
 	imageOrientation: 'flipY',
@@ -69,7 +68,7 @@ export default defineSketch(async (ctx) => {
 		mesh = plain,
 	) => {
 		const map = textures.fromImageBitmap(image, options);
-		scene.createMesh({ mesh, material: unlitMapMaterial(materials, map), position: [x, y, 0] });
+		scene.createMesh({ mesh, material: materials.unlit({ map }), position: [x, y, 0] });
 	};
 
 	const decoded = await Promise.all(FORMATS.map(picture));
@@ -89,6 +88,6 @@ export default defineSketch(async (ctx) => {
 	show(await made(4, 4, tiny), 3, -1, flat);
 	// A white map times the material's color: the square draws in the material's gray.
 	const tinted = textures.fromImageBitmap(await made(2, 2, () => [255, 255, 255]), flat);
-	const material = unlitMapMaterial(materials, tinted, { color: '#aaaaaa' });
+	const material = materials.unlit({ map: tinted, color: '#aaaaaa' });
 	scene.createMesh({ mesh: plain, material, position: [5, -1, 0] });
 });

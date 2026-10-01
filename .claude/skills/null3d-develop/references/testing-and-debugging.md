@@ -91,6 +91,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?gpu=webgpu`, `?gpu=compat`, `?gpu=webgl2` | Force a GPU tier, if the device supports it |
 | `?threads=off` | Single-threaded build |
 | `?render=main` | Render on the main thread |
+| `?sketch-thread=main` | Run the sketch on the main thread, over the `sketchThread` option |
 | `?uploads=copy` | On WebGL2, copy each upload out of shared memory first, as browsers that refuse shared memory need |
 | `?depth=reversed-gl` | On WebGL2, force a depth mode: `reversed`, `reversed-gl` (as in browsers without `EXT_clip_control`, such as Firefox) or `standard` (`concepts/backends`) |
 | `?latency=pipelined`, `?latency=low` | Latency mode |
@@ -147,7 +148,8 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | A row of an instance batch does not move | A static batch's row written without `markDirty` | `markDirty(start, count)`, or `dynamic: true` on the batch | `concepts/static-dynamic` |
 | Error: stale handle | The object was destroyed earlier | Drop your reference when you destroy; check the frame number in the message | `concepts/handles` |
 | Colors too dark or washed out | Texture color space | `'srgb'` for color maps, `'linear'` for data maps | `concepts/color-management` |
-| Lighting much brighter or darker than expected | Light units (physical, like three.js r155+) or exposure | Retune intensities; check `post.set({ exposure })` (later in 0.1) | `concepts/lighting` |
+| Lighting much brighter or darker than expected | Light units (physical, like three.js r155+) or exposure | Retune intensities; check `post.set({ exposure })` | `concepts/lighting` |
+| The background differs from the page's CSS color | Exposure and tone mapping change the background too | `post.set({ toneMapping: 'none' })`, or `createEngine({ transparent: true })` over a CSS background | `concepts/color-management` |
 | Shadows missing | Shadows draw later in 0.1; then a light or object not casting, a receiver not receiving, or out of range | `castShadows` on light and caster, `receiveShadows` on the receiver | `concepts/shadows` |
 | Shadow acne or peter-panning (later in 0.1) | Bias | Adjust `shadow.bias` and `normalBias` in small steps | `concepts/shadows` |
 | Flicker between overlapping surfaces | Z-fighting | Separate the surfaces; raise the near plane | `api/cameras` |
@@ -159,7 +161,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | Stutter every few seconds | Garbage collection | Remove per-frame allocations | `guides/performance` |
 | Something appears late, or a hitch when it appears | Its pipeline was building | Create it hidden, `await scene.warmUp()`, then show it | `guides/loading-screens` |
 | Tab reloads or crashes on a phone | Memory limit | Fewer and smaller assets, and textures destroyed when unused. The next start runs one preset lower (`engine.mode.crashedStarts`) | `guides/phones` |
-| `document is not defined` or `window is not defined` | DOM code in `sketch.ts` | Move it to `page.ts`; send data with messages | `api/page` |
+| `document is not defined` or `window is not defined` | DOM code in `sketch.ts` | Move it to `page.ts`; send data with messages. A DOM-heavy app can run the sketch on the main thread with `sketchThread: 'main'` | `api/page`, `concepts/architecture` |
 | `createEngine` rejects with E1410 | The sketch module did not load: a wrong address, or an error that its top-level code threw | Pass `sketch: new URL('./sketch.ts', import.meta.url)`; fix the error that the message quotes | `errors/E1410` |
 | Pointer position off by a factor | Mixing CSS pixels and render pixels | `input.pointer.x` and `y` are CSS pixels, as `ctx.engine.viewport` gives the canvas size | `api/input` |
 

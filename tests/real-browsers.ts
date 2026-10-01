@@ -34,7 +34,8 @@
 //   --jobs <list>       job worker counts, such as 2,4,6,8: the bench plan then runs null3D's two
 //                       GPU paths at each count instead of its usual pages
 //   --pages <list>      the bench plan's page kinds, such as null3d-webgl2,null3d-webgl2-low
-//   --scenes <list>     the bench plan's scenes: s1, s1-static, s1-cells, s2; the default is s1
+//   --scenes <list>     the bench plan's scenes: s1, s1-static, s1-cells, s2, s3, s4; the default
+//                       is s1
 //   --seconds <n>       the bench plan's warm-up and measured seconds, each, instead of the
 //                       protocol's 5 and 30; 300 gives the protocol's 10-minute sustained run
 //   --shard <i>/<n>     run only the i-th of n shards of a fixed plan, as CI does on each of its
@@ -52,10 +53,10 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
 	BENCH_PAGE_KINDS,
+	BENCH_SCENES,
 	type BenchPageKind,
+	type BenchScene,
 	isNull3dPage,
-	PARITY_SCENES,
-	type ParityScene,
 	parseStoredBaselines,
 	readJobCounts,
 	STORED_BASELINES_FILE,
@@ -126,7 +127,7 @@ export interface Options {
 	/** The bench plan's page kinds, when given. */
 	pages?: BenchPageKind[];
 	/** The bench plan's scenes, when given. */
-	scenes?: ParityScene[];
+	scenes?: BenchScene[];
 	/** The bench plan's warm-up and measured seconds, each, when given. */
 	seconds?: number;
 	/** The state of Brave's Shields for the dev server's site, when given. */
@@ -188,7 +189,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--runs') options.runs = wholeNumber(arg, args[++i], 0);
 		else if (arg === '--jobs') options.jobs = readJobCounts(args[++i]);
 		else if (arg === '--pages') options.pages = known(arg, list(args[++i]), BENCH_PAGE_KINDS);
-		else if (arg === '--scenes') options.scenes = known(arg, list(args[++i]), PARITY_SCENES);
+		else if (arg === '--scenes') options.scenes = known(arg, list(args[++i]), BENCH_SCENES);
 		else if (arg === '--seconds') options.seconds = wholeNumber(arg, args[++i]);
 		else if (arg === '--shard') options.shard = shard(args[++i]);
 		else if (arg === '--shields') options.shields = oneOf(arg, args[++i], SHIELDS_STATES);

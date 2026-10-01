@@ -46,7 +46,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 1. Measure the running page with `await engine.measure(5)`. It returns CPU time per thread and phase, GPU time where the device has timers, the frame rates, draw calls, uploaded bytes, rebuilds and pipelines. The phase `update` is your code, and `commands`, `transforms`, `batches`, `cull`, `record`, `upload` and `replay` are the engine's. The preset is in `engine.mode.preset`. Later in 0.1, the overlay `debug.stats(true)` shows these figures on the canvas.
 2. Run the repeatable benchmark: `bunx @null3d/cli bench --gpu webgpu,webgl2`. It builds the project for production and runs the page 5 times for 30 seconds, each after a warm-up. It prints the median and the spread of CPU time per frame by thread, GPU time and frame rates, and saves each run's phases in `bench.json`. Use it before and after a change, on the same computer.
 3. Read numbers in the sketch: `debug.frameStats()` returns the same values later in 0.1. Until then, measure on the page and send what the sketch needs as a message.
-4. Profile JavaScript in the browser's performance panel. Sketch code runs in the worker named `null3d-sketch`; look there, not on the main thread.
+4. Profile JavaScript in the browser's performance panel. Sketch code runs in the worker named `null3d-sketch`; look there, not on the main thread. With `sketchThread: 'main'` it runs on the main thread.
 5. Check the WebGL2 path: add `?gpu=webgl2` to the URL. Phones without WebGPU use this path, and it does more CPU work (culling on job workers).
 6. On phones, GPU timers are rare: under 1% of Android and iOS reports have them on WebGL2. Judge the GPU there by the completed rate, `completedFps`, and by `gpuLatencyMs`.
 7. Warm up, keep the page visible and the screen unlocked, and compare runs at the same `refreshHz`. The `guides/performance` page explains each figure and how to measure fairly.
@@ -58,6 +58,7 @@ Read three frame rates together:
 | `refreshHz` | The display's refresh rate, as the engine measured it |
 | `presentedFps` | Frames the renderer presented. It can look healthy while the GPU falls behind |
 | `completedFps` | Frames the GPU finished. The engine tracks every frame |
+| `perSecond` | Both rates for each whole second, which show when a long run's rate fell |
 
 The lower of `presentedFps` and `completedFps` is the rate users see. The engine lets at most two frames wait on the GPU. When the GPU is the bottleneck, both rates fall below `refreshHz` together, and `gpuLatencyMs` stays near two frame intervals. When the sketch or the engine's CPU work is the bottleneck, the busiest thread's `cpuMs` is near the frame interval instead.
 
@@ -100,7 +101,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | 2048 x 2048 RGBA8 texture with mipmaps | about 22 MB on the GPU | KTX2 compression (later in 0.1), 4 to 8 times smaller |
 | Same texture as ASTC or ETC2 | about 4 to 6 MB | `bunx @null3d/cli assets optimize` (0.2) |
 | One static object | a few hundred bytes of engine data | Instances for many copies |
-| One instance row | About 180 bytes of engine memory, 230 with per-row colors, plus your own arrays | Only the columns you need; colors only where the batch needs them |
+| One instance row | About 210 bytes of engine memory, 260 with per-row colors, plus your own arrays | Only the columns you need; colors only where the batch needs them |
 | A new mesh, instance batch, or mesh drawn with a new material, during play | A one-time growth of engine memory in the next frame | Create them during setup; size a batch for its most rows and show fewer with `setActiveCount` |
 | Shadow map 2048 x 2048, depth 32-bit (later in 0.1) | about 16 MB | Smaller maps on Low and Medium presets |
 

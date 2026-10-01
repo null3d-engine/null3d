@@ -31,7 +31,7 @@ export const ERROR_FIXES = {
 	E1203:
 		'Check the value computed before this call. NaN often comes from dividing zero by zero, or from normalizing a zero-length vector.',
 	E1204:
-		"Pass a hex string such as '#4a8cff', a number such as 0x4a8cff, or three sRGB components from 0 to 1, such as [0.29, 0.55, 1].",
+		"Pass a hex string such as '#4a8cff', a number such as 0x4a8cff, or three linear components from 0 to 1, such as [0.07, 0.26, 1].",
 	E1205:
 		"Use a KeyboardEvent.code name such as 'KeyW' or 'ArrowLeft', or a mouse button from 'Mouse0' to 'Mouse4'. Gamepad names start with 'Gamepad', such as 'GamepadA' or 'GamepadLeftStickUp'. Define an action with input.actions.define() before you use it, and give it a name that no key or button has.",
 	E1206:
@@ -80,6 +80,8 @@ export const ERROR_FIXES = {
 		"Serve the file from the same origin as the page, or have its server send Access-Control-Allow-Origin with the page's origin or *. On a page with Cross-Origin-Embedder-Policy: require-corp, the file needs that header too.",
 	E1414:
 		'Call engine.capture() while the engine runs, before destroy(). When the message names a GPU failure, wait for the engine to recover from it and call capture() again.',
+	E1415:
+		"Stop the other engine with destroy() and wait for its promise before you start this one. To run both at once, leave out sketchThread: 'main' on one of them, so that its sketch runs in a worker.",
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses.',
 	E1502: RENDER_GRAPH_FIX,

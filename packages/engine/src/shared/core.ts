@@ -35,6 +35,8 @@ export interface CoreGlue extends CoreErrors {
 		webgl2: boolean,
 		capabilities: number,
 		maxTextureSize: number,
+		sceneColor: number,
+		transparent: boolean,
 		cellCulling: boolean,
 	): number;
 	jobWorkerLoop(index: number): void;
@@ -43,6 +45,12 @@ export interface CoreGlue extends CoreErrors {
 	shutdownJobs(): void;
 	/** Drops the engine, so this instance can create another; the page's own instance needs it. */
 	destroyEngine(): void;
+	/**
+	 * Drops the instance that the threaded build's glue keeps for this thread, so the browser can
+	 * free its memory, and the next start makes a new instance. The single-threaded build lacks it:
+	 * the page keeps that instance for the next engine.
+	 */
+	releaseInstance?(): void;
 	sceneCapacity(): number;
 	sceneArrays(field: number): number;
 	reserveObject(): number;
@@ -144,8 +152,11 @@ export interface CoreGlue extends CoreErrors {
 	 * The value takes as many of `x`, `y` and `z` as it has numbers. Colors are linear.
 	 */
 	setMaterialValue(material: number, param: number, x: number, y: number, z: number): number;
-	/** Gives a material a map, a texture's handle, or none with 0. */
-	setMaterialMap(material: number, texture: number): number;
+	/**
+	 * Gives a material a map in `slot` (a `MAP_SLOT_*` code): a texture's handle, or none with 0.
+	 * The shader reads it at the second texture coordinates when `secondUv` is 1.
+	 */
+	setMaterialMap(material: number, slot: number, texture: number, secondUv: number): number;
 	/**
 	 * A texture with no texels yet, in `depth` layers of a texture array. `format` is a `FORMAT_*` code;
 	 * the rest set its sampler with `ADDRESS_*` and `FILTER_*` codes. Returns its handle.
@@ -217,6 +228,8 @@ export interface CoreGlue extends CoreErrors {
 	/** Sets one of a light's numbers: `which` is one of the `LIGHT_VALUE_*` codes. */
 	setLightValue(light: number, which: number, value: number): number;
 	setBackground(r: number, g: number, b: number): number;
+	/** The tone mapping, by code, and the exposure, from the next frame on. */
+	setOutput(toneMapping: number, exposure: number): number;
 	/**
 	 * The scene's fog: its kind (`FOG_KIND_*`), its linear color, the near and far distances of
 	 * linear fog, and the density of exponential squared fog.
@@ -291,6 +304,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setLightColor',
 	'setLightValue',
 	'setBackground',
+	'setOutput',
 	'setFog',
 ];
 

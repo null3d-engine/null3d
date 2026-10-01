@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture maps, the `blend` alpha mode, `blending`, `materials.shader` and `materials.shadowCatcher` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The `blend` alpha mode, `blending`, `materials.shader` and `materials.shadowCatcher` are not built yet, so coding agents must not use them.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -36,7 +36,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 | Factory | How it looks |
 | --- | --- |
 | `materials.standard(options)` | Lit by the scene's lights with glTF's metallic-roughness model and the formulas of three.js's `MeshStandardMaterial` |
-| `materials.unlit(options)` | Its color as it is, whatever the lights, like three.js's `MeshBasicMaterial` |
+| `materials.unlit(options)` | Its color as it is, whatever the lights, like three.js's `MeshBasicMaterial`. The exposure and the tone mapping still apply to it. |
 
 Without lights, a standard material draws black, apart from its emissive color. [Lights](lights.md) explains how light colors and intensities shade it.
 
@@ -44,23 +44,66 @@ Without lights, a standard material draws black, apart from its emissive color. 
 
 | Option | Range | Default | What it does |
 | --- | --- | --- | --- |
-| `color` | An sRGB color | White | The base color: the color of diffuse light, and of a metal's reflections |
+| `color` | A [color](#color) | White | The base color: the color of diffuse light, and of a metal's reflections |
 | `opacity` | 0 to 1 | 1 | How opaque the surface is. The `mask` alpha mode tests it |
 | `alphaCutoff` | 0 to 1 | 0.5 | With the `mask` alpha mode, the alpha below which the surface draws nothing |
 | `metalness` | 0 to 1 | 0 | 0 is a surface such as paint or plastic, and 1 is a metal |
 | `roughness` | 0 to 1 | 1 | 0 is a mirror finish with a small, sharp highlight, and 1 is fully matte |
-| `emissive` | An sRGB color | Black | Light that the surface gives off itself, whatever the lights |
+| `emissive` | A [color](#color) | Black | Light that the surface gives off itself, whatever the lights |
 | `emissiveIntensity` | 0 or more | 1 | The factor of the emissive color |
+| `normalScale` | Two numbers | `[1, 1]` | How strongly the normal map bends normals along u and v |
+| `aoMapIntensity` | 0 to 1 | 1 | How much the occlusion map darkens ambient light |
+| `lightMapIntensity` | 0 or more | 1 | The factor of the light map's light |
+| `uvTransform` | An offset, a repeat and a rotation | None | Where the maps sit on the texture coordinates |
 
 The values have the meaning and the defaults of three.js's `MeshStandardMaterial`. A metal takes its color from what it reflects. The scene has no environment map yet, so a smooth metal shows little more than its highlights.
 
+## Texture maps
+
+Maps are textures that vary a material across a surface. `assets.loadTexture` and the `textures` calls make them, as [Textures](textures.md) explains. Give color maps the `srgb` color space and data maps the `linear` one.
+
+```ts
+// sketch.ts
+const [color, packed, bumps] = await Promise.all([
+  assets.loadTexture('/brick-color.png'),
+  assets.loadTexture('/brick-orm.png', { colorSpace: 'linear' }),
+  assets.loadTexture('/brick-normal.png', { colorSpace: 'linear' }),
+]);
+const brick = materials.standard({
+  map: color,
+  metalnessRoughnessMap: packed,
+  aoMap: packed,
+  normalMap: bumps,
+  uvTransform: { repeat: [4, 2] },
+});
+```
+
+| Option | Material | Channels | What it does |
+| --- | --- | --- | --- |
+| `map` | Both | RGBA, sRGB | Multiplies `color`, and its alpha multiplies `opacity` |
+| `metalnessRoughnessMap` | Standard | G and B, linear | Green multiplies `roughness`, and blue multiplies `metalness`, as glTF packs them |
+| `normalMap` | Standard | RGB, linear | Bends normals in tangent space, scaled by `normalScale` |
+| `aoMap` | Standard | R, linear | Darkens ambient light, by `aoMapIntensity` |
+| `emissiveMap` | Standard | RGB, sRGB | Multiplies `emissive` times `emissiveIntensity` |
+| `lightMap` | Standard | RGB | Adds baked light to the ambient light, times `lightMapIntensity` |
+
+The maps of a material are fixed when you create it. A mesh needs texture coordinates to show them, and a mesh without them draws the material without its maps. A map reads the set of coordinates that its texture's `uvSet` names. Light maps usually use the second set, so load them with `uvSet: 1`. A mesh without a second set gives its first set to such a map.
+
+A normal map takes its frame from the mesh's tangents when the mesh has them, as `geometry.fromArrays` with `computeTangents` makes them. Otherwise the shader finds the frame from how the positions and the coordinates change between pixels, as three.js does.
+
+Until a map's image reaches the GPU, the material draws as without that map.
+
+## Texture coordinate transform
+
+`uvTransform` places every map of a material on the texture coordinates: `offset`, `repeat` and `rotation` in radians. They act as three.js's texture `offset`, `repeat` and `rotation` with the default `center`. A transform that leaves a value out takes its default. `set` changes the transform at any time.
+
 ## Color
 
-`color` and `emissive` take an sRGB color, as three.js does: a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three components from 0 to 1. The engine converts the color to linear once, when the call receives it. Any other value, such as the name `'red'`, throws E1204.
+`color` and `emissive` take a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three components from 0 to 1. Hex values are sRGB, as three.js reads them, and the engine converts them to linear once, when the call receives them. Three components are linear, as three.js's `Color.setRGB` reads them. Any other value, such as the name `'red'`, throws E1204. [Color management](../concepts/color-management.md) covers both color spaces.
 
 ## Changing a material
 
-`set(options)` changes a material's values at any time, and every object that uses the material changes with it. It changes only the options that you pass. The others keep their values, so `set({ roughness: 0.5 })` keeps the color. A standard material's `set` takes every value in the table above, and an unlit material's `set` takes `color`, `opacity` and `alphaCutoff`.
+`set(options)` changes a material's values at any time, and every object that uses the material changes with it. It changes only the options that you pass. The others keep their values, so `set({ roughness: 0.5 })` keeps the color. A standard material's `set` takes every value in the table above, and an unlit material's `set` takes `color`, `opacity`, `alphaCutoff` and `uvTransform`.
 
 `set` checks every value before it changes any, so a call that throws changes nothing. Converting a new color allocates a little, as a light's `setColor` does, so do not change a color in every frame. To change one object alone, give it another material with `mesh.setMaterial(material)`.
 
@@ -83,7 +126,7 @@ A material with `vertexColors` draws a mesh without colors in its base color alo
 
 ## Alpha modes
 
-A surface's alpha is its `opacity`. With `vertexColors`, the alpha of the mesh's vertex colors multiplies it. `alphaMode` says how the material uses the alpha:
+A surface's alpha is its `opacity`, times the alpha of its base color map. With `vertexColors`, the alpha of the mesh's vertex colors multiplies it too. `alphaMode` says how the material uses the alpha:
 
 | Mode | What it draws | three.js |
 | --- | --- | --- |
@@ -117,7 +160,7 @@ const poster = materials.standard({ color: '#e8554e', depthBias: { constant: -4,
 
 ## Ranges
 
-`opacity`, `alphaCutoff`, `metalness` and `roughness` go from 0 to 1, and `emissiveIntensity` takes 0 or more. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. This version draws no blended materials, so outside the `mask` mode the opacity has no effect.
+`opacity`, `alphaCutoff`, `metalness`, `roughness` and `aoMapIntensity` go from 0 to 1, and `emissiveIntensity` and `lightMapIntensity` take 0 or more. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. This version draws no blended materials, so outside the `mask` mode the opacity has no effect.
 
 ## Limits
 
@@ -140,7 +183,7 @@ One engine holds up to 1,024 materials, and a material lasts as long as the engi
 type AlphaMode = 'opaque' | 'mask';
 ```
 
-How a material uses its alpha: its opacity, times its mesh's vertex alpha with `vertexColors`. The `opaque` mode ignores the alpha. The `mask` mode draws nothing where the alpha falls below `alphaCutoff`, and draws the rest opaque. It works as glTF's alpha mode `MASK` and three.js's `alphaTest` do.
+How a material uses its alpha: its opacity, times its base color map's alpha, and times its mesh's vertex alpha with `vertexColors`. The `opaque` mode ignores the alpha. The `mask` mode draws nothing where the alpha falls below `alphaCutoff`, and draws the rest opaque. It works as glTF's alpha mode `MASK` and three.js's `alphaTest` do.
 
 ### `ColorInput`
 
@@ -148,7 +191,7 @@ How a material uses its alpha: its opacity, times its mesh's vertex alpha with `
 type ColorInput = string | number | readonly [number, number, number];
 ```
 
-A color: a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three sRGB components from 0 to 1.
+A color: a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three linear components from 0 to 1, such as `[1, 0.26, 0.05]`. Hex values are sRGB, as on the web and in three.js, and the engine converts them to linear values. The color helpers, such as `color.fromHsl`, give linear components.
 
 ### `DepthBias`
 
@@ -195,7 +238,7 @@ Options every material takes.
 
 | Member | Description |
 | --- | --- |
-| `color?: ColorInput` | The base color: a hex string, a number, or three sRGB components from 0 to 1. |
+| `color?: ColorInput` | The base color: a hex string or a number in sRGB, or three linear components from 0 to 1. |
 | `opacity?: number` | How opaque the surface is, from 0 to 1. The default is 1. With the `mask` alpha mode, it is part of the alpha that the cutoff tests. This version draws no blended materials, so it has no other effect yet. |
 | `alphaCutoff?: number` | With the `mask` alpha mode, the alpha below which the surface draws nothing, from 0 to 1. The default is 0.5, as in glTF. |
 
@@ -208,11 +251,26 @@ Material factories. The standard material follows glTF's metallic-roughness mode
 | Member | Description |
 | --- | --- |
 | `standard(options: StandardOptions = {}): Material<StandardValues>` | A lit material with glTF's metallic-roughness model, like three.js's `MeshStandardMaterial`. |
-| `unlit(options: UnlitOptions = {}): Material` | A material that ignores lights and shows its color as it is, like three.js's `MeshBasicMaterial`. |
+| `unlit(options: UnlitOptions = {}): Material<UnlitValues>` | A material that ignores lights and shows its color unlit, like three.js's `MeshBasicMaterial`. The exposure and the tone mapping still apply to it, as three.js applies them to that material. |
+
+### `StandardMaps`
+
+Interface `StandardMaps`.
+
+The texture maps of a standard material. They are fixed when the material is created, because each set of maps draws with a pipeline of its own. A map reads the texture coordinates that its texture's `uvSet` names, through the material's `uvTransform`. Meshes need texture coordinates to show maps, and the material draws without a map until its texture's image is on the GPU.
+
+| Member | Description |
+| --- | --- |
+| `map?: Texture` | The base color map, in sRGB. Its color multiplies `color`. |
+| `metalnessRoughnessMap?: Texture` | Roughness in green and metalness in blue, as glTF packs them, in linear color. They multiply `roughness` and `metalness`. |
+| `normalMap?: Texture` | Normals in tangent space, in linear color, which `normalScale` scales. |
+| `aoMap?: Texture` | Ambient occlusion in red, in linear color, which darkens ambient light. |
+| `emissiveMap?: Texture` | The emissive color map, in sRGB. Its color multiplies `emissive`. |
+| `lightMap?: Texture` | Baked light, added to the ambient light. Light maps usually use the second coordinates. |
 
 ### `StandardOptions`
 
-Interface `StandardOptions`, which extends `StandardValues`, `MaterialFeatures`.
+Interface `StandardOptions`, which extends `StandardValues`, `MaterialFeatures`, `StandardMaps`.
 
 Options of `materials.standard`.
 
@@ -230,13 +288,43 @@ The values of a standard material, which `set` changes at any time.
 | --- | --- |
 | `metalness?: number` | How much the surface acts like a metal, from 0 to 1. The default is 0. |
 | `roughness?: number` | How rough the surface is, from 0 (a mirror) to 1 (fully matte). The default is 1. |
-| `emissive?: ColorInput` | The color the surface gives off without any light, in sRGB as `color` takes it. The default is black, which gives off nothing. |
+| `emissive?: ColorInput` | The color the surface gives off without any light, in the forms that `color` takes. The default is black, which gives off nothing. |
 | `emissiveIntensity?: number` | The factor of the emissive color: 0 or more. The default is 1. |
+| `normalScale?: readonly [number, number]` | How strongly the normal map bends normals along u and along v. The default is `[1, 1]`, and negative values flip a direction. |
+| `aoMapIntensity?: number` | How much the occlusion map darkens ambient light, from 0 to 1. The default is 1. |
+| `lightMapIntensity?: number` | The factor of the light map's light: 0 or more. The default is 1. |
+| `uvTransform?: UvTransform` | Where the maps sit on the texture coordinates. The default leaves them as they are. |
 
 ### `UnlitOptions`
 
-Interface `UnlitOptions`, which extends `MaterialOptions`, `MaterialFeatures`.
+Interface `UnlitOptions`, which extends `UnlitValues`, `MaterialFeatures`.
 
 Options of `materials.unlit`.
+
+| Member | Description |
+| --- | --- |
+| `map?: Texture` | A color map, in sRGB, whose color multiplies `color`. It is fixed when the material is created, and meshes need texture coordinates to show it. |
+
+### `UnlitValues`
+
+Interface `UnlitValues`, which extends `MaterialOptions`.
+
+The values of an unlit material, which `set` changes at any time.
+
+| Member | Description |
+| --- | --- |
+| `uvTransform?: UvTransform` | Where the map sits on the texture coordinates. The default leaves it as it is. |
+
+### `UvTransform`
+
+Interface `UvTransform`.
+
+Where a material's maps sit on the texture coordinates, as three.js's texture `offset`, `repeat` and `rotation` place a texture, with its `center` at the coordinates' origin. A transform that leaves a value out takes its default.
+
+| Member | Description |
+| --- | --- |
+| `offset?: readonly [number, number]` | The shift along u and v. The default is `[0, 0]`. |
+| `repeat?: readonly [number, number]` | How many times the maps repeat along u and v. The default is `[1, 1]`. |
+| `rotation?: number` | The turn in radians, about the coordinates' origin. The default is 0. |
 
 <!-- null3d:api:end -->

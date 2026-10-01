@@ -30,6 +30,7 @@ use crate::materials::{
     MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, feature,
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
+use crate::output::{Output, SceneColor};
 use crate::pipelines::{DepthBias, DrawKey};
 use crate::shadows::{ShadowFrame, ShadowSettings, fit_cascades};
 use crate::textures::TextureStore;
@@ -329,38 +330,76 @@ struct Lighting {
     ambient: [f32; 4],
     /// The main directional light's shadows, or `None` when it casts none.
     sun_shadow: Option<SunShadow>,
-    /// Linear background color.
-    background: [f32; 3],
+    /// Linear background color, or `None` before the sketch sets one.
+    background: Option<[f32; 3]>,
     fog: Fog,
 }
 
-/// What the sketch sets and changes rarely: meshes, materials, textures, the views, the lights
-/// and the fog.
+/// How frames reach the canvas, fixed when the builder starts: the target that scene passes draw
+/// into, and whether the canvas is transparent.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CanvasOutput {
+    pub scene_color: SceneColor,
+    /// True when the canvas shows the page behind it where nothing draws: it holds premultiplied
+    /// alpha, and it stays clear until the sketch sets a background.
+    pub transparent: bool,
+}
+
+/// What the sketch sets and changes rarely: meshes, materials, textures, the views, the lights, the
+/// fog and the output settings.
 pub struct SceneSettings {
     meshes: MeshStorage,
     materials: MaterialTable,
     textures: TextureStore,
+    /// The bind group of each material's maps, by material id, for the standard materials with a
+    /// live map, and 0 for the others.
+    map_groups: Vec<u32>,
     /// The views, the camera's first.
     views: Vec<View>,
     lighting: Lighting,
+    canvas: CanvasOutput,
+    output: Output,
 }
 
 impl SceneSettings {
-    pub fn new(meshes: MeshStorage, max_materials: u32, textures: TextureStore) -> Self {
+    pub fn new(
+        meshes: MeshStorage,
+        max_materials: u32,
+        textures: TextureStore,
+        canvas: CanvasOutput,
+    ) -> Self {
         Self {
             meshes,
             materials: MaterialTable::with_capacity(max_materials),
             textures,
+            map_groups: Vec::new(),
             views: vec![View::default()],
             lighting: Lighting {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
                 sun_color: [0.0; 4],
                 ambient: [0.0; 4],
                 sun_shadow: None,
-                background: [0.0; 3],
+                background: None,
                 fog: Fog::None,
             },
+            canvas,
+            output: Output::default(),
         }
+    }
+
+    /// How frames reach the canvas.
+    pub fn canvas(&self) -> CanvasOutput {
+        self.canvas
+    }
+
+    /// The exposure and the tone mapping.
+    pub fn output(&self) -> Output {
+        self.output
+    }
+
+    /// Sets the exposure and the tone mapping, from the next recorded frame on.
+    pub fn set_output(&mut self, output: Output) {
+        self.output = output;
     }
 
     pub fn meshes(&self) -> &MeshStorage {
@@ -435,14 +474,46 @@ impl SceneSettings {
         Ok(remade)
     }
 
-    /// The bind group of the map that a material draws with through `pipeline`, as
+    /// The bind group of the maps that a material draws with through `pipeline`, as
     /// [`SceneSettings::pipeline_of`] chose it, or 0 when that pipeline reads no map.
     pub fn texture_group(&self, material: u32, pipeline: DrawKey) -> u32 {
-        if pipeline.template != Shading::UnlitMap.template() {
-            return 0;
+        match pipeline.template {
+            template::INSTANCED_UNLIT_MAP => {
+                let map = self.materials.map(material - 1, MapSlot::BaseColor);
+                self.textures.group_id(map).unwrap_or(0)
+            }
+            template::INSTANCED_STANDARD_MAPS => self
+                .map_groups
+                .get(material as usize - 1)
+                .copied()
+                .unwrap_or(0),
+            _ => 0,
         }
-        let map = self.materials.map(material - 1, MapSlot::BaseColor);
-        self.textures.group_id(map).unwrap_or(0)
+    }
+
+    /// True when a material has a map in any slot whose texture lives.
+    fn has_live_map(&self, id: u32) -> bool {
+        self.materials
+            .maps(id)
+            .iter()
+            .any(|&map| self.textures.is_live(map))
+    }
+
+    /// Finds the bind group of each standard material's maps, before the draw tables are built
+    /// again. A texture that moves to another array changes its material's group, and such a move
+    /// comes with a rebuild.
+    pub(crate) fn update_map_groups(&mut self) {
+        let count = self.materials.len();
+        self.map_groups.resize(count as usize, 0);
+        for id in 0..count {
+            let standard = self.materials.shading(id) == Ok(Shading::Lit);
+            self.map_groups[id as usize] = if standard && self.has_live_map(id) {
+                let maps = self.materials.maps(id);
+                self.textures.map_set_group(&maps).unwrap_or(0)
+            } else {
+                0
+            };
+        }
     }
 
     /// The camera the canvas shows the scene from: a scene object, and its lens.
@@ -566,7 +637,8 @@ impl SceneSettings {
     /// The pipeline that draws an object with `pipeline` where it receives shadows: the same one,
     /// reading the shadow maps where its shading reflects the lights.
     pub fn receiving(&self, pipeline: DrawKey) -> DrawKey {
-        if pipeline.template == Shading::Lit.template() {
+        let lit = [template::INSTANCED_LIT, template::INSTANCED_STANDARD_MAPS];
+        if lit.contains(&pipeline.template) {
             DrawKey {
                 permutation: pipeline.permutation | permutation::RECEIVE_SHADOWS,
                 ..pipeline
@@ -576,9 +648,10 @@ impl SceneSettings {
         }
     }
 
-    /// The linear color behind every object.
+    /// The linear color behind every object. Exposure and tone mapping change it as they change
+    /// the objects.
     pub fn set_background(&mut self, color: [f32; 3]) {
-        self.lighting.background = color;
+        self.lighting.background = Some(color);
     }
 
     /// The fog that every view's objects take, apart from materials that opt out. The background
@@ -587,17 +660,21 @@ impl SceneSettings {
         self.lighting.fog = fog;
     }
 
-    /// The color that clears the color targets, as the scene's render passes hold it: the
-    /// background, encoded as sRGB as the shaders write their colors, and opaque.
+    /// The color that clears the color targets, as the scene's render passes hold it.
     pub(crate) fn clear_color(&self) -> [f32; 4] {
-        let [r, g, b] = self.lighting.background.map(linear_to_srgb);
-        [r, g, b, 1.0]
+        self.canvas.scene_color.clear_color(
+            self.lighting.background,
+            self.canvas.transparent,
+            self.output,
+        )
     }
 
     /// What a mesh and material pair, by engine ids, asks of the pipeline that draws it, or `None`
     /// when the pair draws nowhere: no mesh, no material, an id that names nothing, or a mesh
     /// without the vertex attributes that the material's shading reads. A material whose map is
     /// gone, or whose mesh has no texture coordinates for it, draws with its color alone. A
+    /// standard material with a live map draws with the maps template, whose normal map takes its
+    /// frame from the mesh's tangents where the mesh has them. A
     /// material with vertex colors reads them only from a mesh that has them, a masked material
     /// draws with the shader variant that discards fragments, and a double-sided material culls no
     /// faces. The material's depth options and depth bias set the pipeline's depth state.
@@ -606,21 +683,24 @@ impl SceneSettings {
             return None;
         }
         let format = self.meshes.mesh(mesh - 1)?.format;
-        let mut shading = self.materials.shading(material - 1).ok()?;
-        let needs = shading.attributes();
-        if shading == Shading::UnlitMap
-            && ((format & needs) != needs
-                || !self
-                    .textures
-                    .is_live(self.materials.map(material - 1, MapSlot::BaseColor)))
-        {
+        let id = material - 1;
+        let mut shading = self.materials.shading(id).ok()?;
+        let uv0 = format & vertex::UV0 != 0;
+        let live = |slot: MapSlot| self.textures.is_live(self.materials.map(id, slot));
+        if shading == Shading::UnlitMap && !(uv0 && live(MapSlot::BaseColor)) {
             shading = Shading::Unlit;
         }
+        if shading == Shading::Lit && uv0 && self.has_live_map(id) {
+            shading = Shading::StandardMaps;
+        }
         let needs = shading.attributes();
-        let features = self.materials.features(material - 1);
+        let features = self.materials.features(id);
         let has = |bit: u32| features & bit != 0;
         let base_color = shading.reads_base_color();
         let vertex_colors = has(feature::VERTEX_COLORS) && format & vertex::COLOR != 0;
+        let tangents = shading == Shading::StandardMaps
+            && live(MapSlot::Normal)
+            && format & vertex::TANGENT != 0;
         let bit = |on: bool, bit: u32| if on { bit } else { 0 };
         ((format & needs) == needs).then_some(DrawKey {
             template: shading.template(),
@@ -628,12 +708,13 @@ impl SceneSettings {
                 | bit(
                     base_color && has(feature::ALPHA_MASK),
                     permutation::ALPHA_MASK,
-                ),
+                )
+                | bit(tangents, permutation::VERTEX_TANGENT),
             vertex_format: format,
             state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
                 | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)
                 | bit(has(feature::NO_DEPTH_TEST), state_flags::NO_DEPTH_TEST),
-            bias: self.materials.depth_bias(material - 1),
+            bias: self.materials.depth_bias(id),
         })
     }
 
@@ -657,6 +738,7 @@ impl SceneSettings {
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
+            output: self.output.uniform(),
             fog: self.lighting.fog.uniform(forward),
         };
         Some(ViewFrame::new(uniform, camera, view.layers()))

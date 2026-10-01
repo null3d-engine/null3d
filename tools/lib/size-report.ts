@@ -71,8 +71,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
  */
 export const SHADER_PARTS: readonly string[] = [
 	'shaders-wgsl.js',
+	'shaders-wgsl-tone-map.js',
 	'shaders-glsl.js',
+	'shaders-glsl-tone-map.js',
 	'shaders-glsl-draw-index.js',
+	'shaders-glsl-draw-index-tone-map.js',
 ];
 
 /** Every file that the size report measures, by the name that the report prints. */
@@ -121,6 +124,17 @@ export const DOWNLOADS: readonly Download[] = [
 		mode: 'single-threaded',
 		shaders: 'shaders-',
 		parts: ['page.js', 'page-sketch-runner.js', 'page-renderer.js', 'probe-worker.js'],
+	},
+	{
+		mode: 'sketch on the main thread',
+		shaders: 'shaders-',
+		parts: [
+			'page.js',
+			'page-sketch-runner.js',
+			'probe-worker.js',
+			'render-worker.js',
+			'job-worker.js',
+		],
 	},
 ];
 

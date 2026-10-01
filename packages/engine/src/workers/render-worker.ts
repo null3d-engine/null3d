@@ -6,6 +6,7 @@ import { captureFrame, captureImage, startDrawing } from '../render/draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer } from '../render/renderer';
 import { controlViews } from '../shared/control';
+import { setWakeByMessage } from '../shared/wake';
 import {
 	type RendererRequest,
 	type RenderWorkerInit,
@@ -26,6 +27,7 @@ startWorker('render', step, async (event: MessageEvent<RenderWorkerInit | Render
 	if (message.type === 'init') {
 		try {
 			controlSlots = controlViews(message.control).slots;
+			setWakeByMessage(message.wakeByMessage);
 			const { glue: core } = await startWorkerCore(message, step);
 			drawing = await startDrawing({
 				...message,
