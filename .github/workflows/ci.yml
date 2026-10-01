@@ -200,9 +200,7 @@ jobs:
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/1)
     needs: real-browsers-build
     runs-on: ${{ github.event_name == 'merge_group' && 'macos-15' || 'ubuntu-latest' }}
-    # A full run takes about 14 minutes, and a runner page that goes quiet costs about a minute more
-    # each time the runner replaces it.
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
