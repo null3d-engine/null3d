@@ -25,6 +25,7 @@ mod position;
 mod problem;
 mod scan;
 mod typescript;
+mod uniforms;
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -44,6 +45,7 @@ pub use output::{
 };
 pub use position::Position;
 pub use problem::{BuildError, Problem};
+pub use uniforms::Uniform;
 
 use library::{Composers, Library, View};
 use manifest::{Build, Manifest};

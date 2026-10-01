@@ -2,6 +2,8 @@
 //! surface function. The build adds the functions after the template's last line and builds every
 //! variant of the template, each with the shader def of every function the WGSL declares. The
 //! functions then share the template's lighting, and every GPU path, with the standard material.
+//! A `struct Uniforms` in the WGSL declares the material's uniforms: the build then adds the
+//! function that loads them after the WGSL, and builds with the shader def CUSTOM_UNIFORMS.
 
 use std::collections::BTreeMap;
 
@@ -10,9 +12,13 @@ use serde::{Deserialize, Serialize};
 use crate::manifest::{Manifest, Pipeline, Variant};
 use crate::position::locate;
 use crate::scan::{Token, find_function, tokenize};
+use crate::uniforms::{self, Uniform};
 use crate::{
     BuildError, Compiler, Inputs, MANIFEST_PATH, Position, Problem, VariantOutput, features,
 };
+
+/// The shader def that makes the template load a custom material's uniforms.
+const UNIFORMS_DEF: &str = "CUSTOM_UNIFORMS";
 
 /// A function that a custom material's WGSL may declare for the template to call.
 struct Hook {
@@ -129,6 +135,9 @@ pub struct MaterialSource {
 pub struct MaterialOutput {
     /// The functions that the WGSL declares for the template to call, such as `surface`.
     pub functions: Vec<String>,
+    /// The fields of the WGSL's `struct Uniforms`, where the engine writes each: none without
+    /// the struct.
+    pub uniforms: Vec<Uniform>,
     /// The template's variants with the WGSL, by name.
     pub variants: BTreeMap<String, VariantOutput>,
 }
@@ -171,6 +180,10 @@ impl Compiler {
                     "a custom material's WGSL cannot hold directives such as `enable`, because the engine adds it after the lines of its own shader. Remove the line: custom materials use no optional WGSL features.",
                 )
             }));
+        let uniforms = uniforms::read(&tokens, &material.source, path).unwrap_or_else(|found| {
+            problems.extend(found);
+            None
+        });
         if declared.is_empty() {
             problems.push(Problem::at(
                 path,
@@ -188,6 +201,7 @@ impl Compiler {
             .map(|(name, variant)| {
                 let mut defs = variant.defs.clone();
                 defs.extend(declared.iter().map(|hook| hook.def.to_owned()));
+                defs.extend(uniforms.as_ref().map(|_| UNIFORMS_DEF.to_owned()));
                 defs.sort();
                 let variant = Variant {
                     defs,
@@ -197,7 +211,8 @@ impl Compiler {
                 (name.clone(), variant)
             })
             .collect();
-        let source = format!("{}{}", template.source, material.source);
+        let loader = uniforms.as_ref().map_or("", |found| found.loader.as_str());
+        let source = format!("{}{}{loader}", template.source, material.source);
         let mut errors = BuildError::default();
         let built = self.variants(
             path,
@@ -208,12 +223,20 @@ impl Compiler {
             &mut errors,
         );
         let before = template.lines();
+        let own = material
+            .source
+            .bytes()
+            .filter(|&byte| byte == b'\n')
+            .count() as u32
+            + 1;
         for problem in &mut errors.problems {
             if problem.file.as_deref() != Some(path) {
                 continue;
             }
             match problem.line {
-                Some(line) if line > before => problem.line = Some(line - before),
+                Some(line) if line > before && line - before <= own => {
+                    problem.line = Some(line - before);
+                }
                 _ => {
                     problem.line = None;
                     problem.column = None;
@@ -223,6 +246,7 @@ impl Compiler {
         }
         errors.or(MaterialOutput {
             functions: declared.iter().map(|hook| hook.name.to_owned()).collect(),
+            uniforms: uniforms.map_or_else(Vec::new, |found| found.fields),
             variants: built,
         })
     }

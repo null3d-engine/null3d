@@ -11,6 +11,16 @@
 //!
 //! A change marks its rows, and the next frame uploads the rows from the first changed one to the
 //! last, not the whole table.
+//!
+//! # Custom values
+//!
+//! Each material also has a row of [`MATERIAL_FLOATS`] custom values: the uniforms of a custom
+//! material's WGSL, as the shader compiler packs them. Vertex shaders read them too, so on WebGPU,
+//! where vertex shaders read no storage buffers, they live in a data texture of their own, one row
+//! of texels per material. On WebGL2 the table's data texture holds them after every material's
+//! row: it has twice [`MaterialTable::capacity`] rows, and the custom values of material `id` sit
+//! in row `capacity + id`. They start at zero, as a new GPU texture does, and change and upload as
+//! the rows do.
 
 use std::ops::Range;
 
@@ -210,6 +220,15 @@ pub mod param {
     }
 }
 
+/// A range of ids grown to hold `id`.
+fn marked(range: &Range<u32>, id: u32) -> Range<u32> {
+    if range.is_empty() {
+        id..id + 1
+    } else {
+        range.start.min(id)..range.end.max(id + 1)
+    }
+}
+
 /// A map layer in a row for a map that draws nothing: none is set, or its image is not on the
 /// GPU yet. Shaders test for a layer of 0 or more.
 pub const NO_MAP: f32 = -1.0;
@@ -283,11 +302,15 @@ pub struct MaterialTable {
     features: Vec<u32>,
     /// Each material's maps by slot, `Handle::NONE` where it has none.
     maps: Vec<[Handle; MAP_SLOTS]>,
+    /// Each material's custom values, in id order: zero until a custom material sets them.
+    values: Vec<f32>,
     /// Each material's depth bias.
     biases: Vec<DepthBias>,
     capacity: u32,
     /// The ids whose rows changed since the last upload; empty when none did.
     changed: Range<u32>,
+    /// The ids whose custom values changed since the last upload; empty when none did.
+    values_changed: Range<u32>,
     /// True when a map changed since its layer was last written.
     maps_changed: bool,
 }
@@ -310,9 +333,11 @@ impl MaterialTable {
             shading: Vec::with_capacity(capacity as usize),
             features: Vec::with_capacity(capacity as usize),
             maps: Vec::with_capacity(capacity as usize),
+            values: Vec::with_capacity(capacity as usize * MATERIAL_FLOATS),
             biases: Vec::with_capacity(capacity as usize),
             capacity,
             changed: 0..0,
+            values_changed: 0..0,
             maps_changed: false,
         }
     }
@@ -337,9 +362,35 @@ impl MaterialTable {
         self.shading.push(shading);
         self.features.push(features);
         self.maps.push([Handle::NONE; MAP_SLOTS]);
+        self.values.extend_from_slice(&[0.0; MATERIAL_FLOATS]);
         self.biases.push(DepthBias::NONE);
         self.mark_row(id);
         Ok(id)
+    }
+
+    /// Changes 1 to 4 custom values of a material, from float `at` of its row of custom values,
+    /// and keeps the others.
+    pub fn set_values(&mut self, id: u32, at: usize, values: &[f32]) -> Result<(), MaterialError> {
+        if values.is_empty() || values.len() > 4 || at + values.len() > MATERIAL_FLOATS {
+            return Err(MaterialError::Value(at as u32));
+        }
+        let start = id as usize * MATERIAL_FLOATS + at;
+        let row = self.values.get_mut(start..start + values.len());
+        row.ok_or(MaterialError::Unknown(id))?
+            .copy_from_slice(values);
+        self.values_changed = marked(&self.values_changed, id);
+        Ok(())
+    }
+
+    /// The custom values of the materials in `ids`, one row after another.
+    pub fn values(&self, ids: Range<u32>) -> &[f32] {
+        &self.values[ids.start as usize * MATERIAL_FLOATS..ids.end as usize * MATERIAL_FLOATS]
+    }
+
+    /// The ids whose custom values changed since the last call, once, or `None` when none did.
+    pub fn take_values_changed(&mut self) -> Option<Range<u32>> {
+        let changed = std::mem::replace(&mut self.values_changed, 0..0);
+        (!changed.is_empty()).then_some(changed)
     }
 
     /// Gives a material a depth bias. It is part of the material's pipeline, so it is set once,
@@ -377,11 +428,7 @@ impl MaterialTable {
 
     /// Adds a row to the range that the next frame uploads.
     fn mark_row(&mut self, id: u32) {
-        self.changed = if self.changed.is_empty() {
-            id..id + 1
-        } else {
-            self.changed.start.min(id)..self.changed.end.max(id + 1)
-        };
+        self.changed = marked(&self.changed, id);
     }
 
     /// Gives a material a map in `slot`: a texture, or none with `Handle::NONE`, which the
@@ -454,6 +501,7 @@ impl MaterialTable {
     /// Marks every row changed, so the next frame uploads the whole table.
     pub fn mark_changed(&mut self) {
         self.changed = 0..self.len();
+        self.values_changed = 0..self.len();
     }
 
     /// Writes each map's layer into its row when a map changed, or when `layers_changed` says
@@ -523,6 +571,37 @@ mod tests {
 
     fn layers(table: &MaterialTable, id: u32) -> Vec<f32> {
         row(table, id)[param::MAP_LAYERS..][..MAP_SLOTS].to_vec()
+    }
+
+    #[test]
+    fn custom_values_start_at_zero_and_change_apart_from_the_rows() {
+        let mut table = MaterialTable::with_capacity(3);
+        for _ in 0..3 {
+            table.create(Shading::Custom(64), 0, [1.0; 4]).unwrap();
+        }
+        assert_eq!(
+            table.take_values_changed(),
+            None,
+            "new tables start at zero"
+        );
+        assert!(table.values(0..3).iter().all(|&v| v == 0.0));
+        table.take_changed();
+        table.set_values(2, 4, &[0.5, 0.25, 0.125]).unwrap();
+        table.set_values(1, 31, &[7.0]).unwrap();
+        assert_eq!(table.take_changed(), None, "the rows did not change");
+        assert_eq!(table.take_values_changed(), Some(1..3));
+        assert_eq!(table.values(1..2)[31], 7.0);
+        assert_eq!(&table.values(2..3)[4..8], &[0.5, 0.25, 0.125, 0.0]);
+        for (at, count) in [(30, 3), (0, 0), (0, 5)] {
+            assert_eq!(
+                table.set_values(0, at, &[1.0; 5][..count]),
+                Err(MaterialError::Value(at as u32))
+            );
+        }
+        assert_eq!(
+            table.set_values(3, 0, &[1.0]),
+            Err(MaterialError::Unknown(3))
+        );
     }
 
     #[test]

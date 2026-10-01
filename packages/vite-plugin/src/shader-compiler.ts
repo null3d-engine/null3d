@@ -84,7 +84,7 @@ export function compileShader(shader: ShaderSource): CompileResult {
 export interface MaterialSource {
 	/** The file that the WGSL comes from, as problems name it. */
 	readonly path: string;
-	/** The WGSL, which declares `fn surface` and anything it uses. */
+	/** The WGSL, which declares `fn surface`, `struct Uniforms`, and anything they use. */
 	readonly source: string;
 }
 
@@ -92,8 +92,20 @@ export interface MaterialSource {
 export interface MaterialBuild {
 	/** The functions that the WGSL declares for the engine to call, such as `surface`. */
 	readonly functions: readonly string[];
+	/** The fields of the WGSL's `struct Uniforms`, where the engine writes each. */
+	readonly uniforms: readonly MaterialUniform[];
 	/** The standard material's variants with the WGSL's functions, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
+}
+
+/** A uniform of a custom material, and where the engine writes its value. */
+export interface MaterialUniform {
+	/** The field's name in `struct Uniforms`. */
+	readonly name: string;
+	/** Its type. */
+	readonly type: 'f32' | 'i32' | 'u32' | 'vec2f' | 'vec3f' | 'vec4f';
+	/** The float of the material's row of custom values where it starts. */
+	readonly offset: number;
 }
 
 /** The result of a custom material's compile. */

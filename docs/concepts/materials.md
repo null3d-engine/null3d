@@ -8,7 +8,7 @@ summary: "Built-in materials; permutations; pipeline warm-up; why changing shade
 
 # Materials and pipelines
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Custom materials take only a surface function, without texture maps. Coding agents must not use the parts that are not built.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Custom materials take only a surface function and its uniforms, without texture maps. Coding agents must not use the parts that are not built.
 
 ```mermaid
 flowchart LR
@@ -96,7 +96,7 @@ Blended objects cost more than opaque ones. The job workers cull and sort them i
 
 ## Custom materials share shaders
 
-A custom material's WGSL becomes a shader of its own: the standard material's shader with the surface function in it. Every material made from the same WGSL shares that shader, and its pipelines, whatever its values. The fixed options above choose its variants and states, as they do for a standard material. Each new WGSL therefore costs its own pipeline compiles, so reuse one WGSL for materials that differ only in their values.
+A custom material's WGSL becomes a shader of its own: the standard material's shader with the surface function in it. Every material made from the same WGSL shares that shader, and its pipelines, whatever its values. Its uniforms are values too: they sit beside the material's row, so `set()` changes them without a compile. The fixed options above choose its variants and states, as they do for a standard material. Each new WGSL therefore costs its own pipeline compiles, so reuse one WGSL for materials that differ only in their values.
 
 ## Why a new combination can make a frame late
 
