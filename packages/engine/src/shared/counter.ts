@@ -14,3 +14,8 @@ export const Pipelines = 4;
  * GPU culls.
  */
 export const VisibleEntries = 5;
+/**
+ * Draw commands that the frame skipped because their pipeline was still building, so the objects
+ * they draw were missing from it.
+ */
+export const SkippedDraws = 6;
