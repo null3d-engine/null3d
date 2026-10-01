@@ -14,13 +14,13 @@ const NEUTRAL: u32 = 2u;
 const NONE: u32 = 3u;
 
 /// How the output maps scene color to the display: the exposure that scales the scene color, and
-/// the tone mapping, by code. Flags that only the final pass reads follow, and a spare word fills
-/// the block to 16 bytes.
+/// the tone mapping, by code. Only the final pass reads the last two words: its flags, and the
+/// size the scene drew at in pixels, the width in the low 16 bits and the height in the high 16.
 struct Output {
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 /// Linear scene color after the exposure and the tone mapping: linear color from 0 to 1. Without

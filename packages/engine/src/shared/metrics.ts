@@ -45,6 +45,7 @@ export const COUNTER_NAMES = [
 	'pipelines',
 	'visibleEntries',
 	'skippedDraws',
+	'gpuObjects',
 ] as const;
 
 export type CounterName = (typeof COUNTER_NAMES)[number];
@@ -388,6 +389,23 @@ export const SUM_BUSY_MS = 1;
 export const SUM_LONGEST_BUSY_MS = 2;
 /** Their intervals, summed. */
 export const SUM_INTERVAL_MS = 3;
+
+/**
+ * The display's refresh rate that the thread that draws measured, for code on any thread that
+ * holds the metrics buffer, such as dynamic resolution.
+ */
+export class RefreshRate {
+	private readonly times: Float64Array;
+
+	constructor(buffer: ArrayBufferLike) {
+		this.times = new Float64Array(buffer, 0, HEADER_WORDS / 2);
+	}
+
+	/** The refresh rate in hertz, or 0 before the thread that draws has measured it. */
+	get hz(): number {
+		return this.times[REFRESH_HZ] as number;
+	}
+}
 
 /**
  * Sums the records that one ring receives, for code that judges the frames during play, such as

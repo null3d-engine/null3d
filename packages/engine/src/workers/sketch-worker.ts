@@ -5,14 +5,14 @@
 
 import { messageOf } from '../errors/message';
 import { type DrawModule, loadDrawModule } from '../render/load-draw';
-import type { Drawing } from '../render/recovery';
-import type { Renderer } from '../render/renderer';
+import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews } from '../shared/control';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { setWakeByMessage, wakeWaiters } from '../shared/wake';
 import { loadSketch } from '../sketch/define-sketch';
 import { runPipelined, SketchRunner } from '../sketch/runner';
+import { DrawingHost } from './drawing-host';
 import {
 	replyToPage,
 	replyWithCapture,
@@ -26,7 +26,7 @@ let runner: SketchRunner | undefined;
 /** The renderer, which this worker loads only in low-latency mode, where it draws. */
 let drawLoad: Promise<DrawModule> | undefined;
 let draw: DrawModule | undefined;
-let drawing: Drawing<Renderer> | undefined;
+const host = new DrawingHost();
 let controlSlots: Int32Array | undefined;
 
 const step = startSteps('sketch');
@@ -66,6 +66,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					capabilities: message.capabilities,
 					...senders,
 					pageUrl: message.pageUrl,
+					fps: message.fps,
 				},
 				message.hold,
 			);
@@ -73,31 +74,38 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			// The sketch downloads while the renderer starts. The renderer starts before the setup,
 			// so a warm-up in the setup has a renderer to build its pipelines.
 			const sketch = awaitLater(loadSketch(message.sketchUrl));
+			/** The GPU path that this worker draws with, in low-latency mode. */
+			let tier: Tier | undefined;
 			if (message.renderer && drawModule) {
 				draw = await drawModule;
 				step('renderer loaded');
-				drawing = await draw.startDrawing({
-					...message.renderer,
-					metrics: message.metrics,
-					device: message.device,
-					scene: { memory, control: message.control },
-					control: message.control,
-					sketch: runner,
-					imageTable,
-					fail: (reason) => replyToPage({ type: 'lost', role: 'sketch', reason }),
-				});
+				const drawing = await host.start(
+					draw.startDrawing({
+						...message.renderer,
+						metrics: message.metrics,
+						device: message.device,
+						scene: { memory, control: message.control },
+						control: message.control,
+						sketch: runner,
+						imageTable,
+						fail: (reason) => replyToPage({ type: 'lost', role: 'sketch', reason }),
+					}),
+				);
+				if (!drawing) return;
+				tier = drawing.renderer.tier;
 			}
 			await runner.setup(await sketch);
 			step(message.hold === undefined ? 'sketch loaded' : 'sketch loaded and held');
-			if (!drawing && message.hold === undefined) void runPipelined(runner, message.control);
+			if (!tier && message.hold === undefined) void runPipelined(runner, message.control);
 			replyToPage({
 				type: 'ready',
 				role: 'sketch',
 				threaded: core.isThreadedBuild(),
 				version: core.engineVersion(),
-				tier: drawing?.renderer.tier,
+				tier,
 			});
 		} catch (e) {
+			host.release();
 			replyToPage({
 				type: 'error',
 				role: 'sketch',
@@ -108,10 +116,12 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 		wakeWaiters();
 	} else if (message.type === 'post') {
 		runner?.receive(message.name, message.data);
-	} else if (message.type === 'capture' && draw && drawing && controlSlots) {
+	} else if (message.type === 'capture' && draw && host.drawing && controlSlots) {
 		const capture = message.image ? draw.captureImage : draw.captureFrame;
-		await replyWithCapture(capture(drawing, controlSlots));
+		await replyWithCapture(capture(host.drawing, controlSlots));
 	} else if (message.type === 'lose-gpu') {
-		drawing?.simulateLoss();
+		host.drawing?.simulateLoss();
+	} else if (message.type === 'stop-drawing') {
+		await host.stop('sketch');
 	}
 });

@@ -13,6 +13,7 @@ use null3d_core::scene::{Command, flags};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, NO_MESH};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
+use null3d_render::graph::RenderScale;
 use null3d_render::view::ViewId;
 
 /// Adds a light object at `position`, turned `angle` radians about X, in the world's current
@@ -54,7 +55,13 @@ fn uniform<B: FrameBuilder>(world: &World<B>) -> [[f32; 4]; 3] {
     let parity = world.scene.parity();
     let settings = world.renderer.settings();
     let frame = settings
-        .view_frame(ViewId::CAMERA, &world.scene, parity, world.canvas)
+        .view_frame(
+            ViewId::CAMERA,
+            &world.scene,
+            parity,
+            world.canvas,
+            world.render_scale,
+        )
         .unwrap();
     let u = frame.uniform;
     [u.sun_direction, u.sun_color, u.ambient]
@@ -118,20 +125,27 @@ fn lights_reach_the_frame_on_webgl2() {
 }
 
 /// The clock, the camera's place in the world and the target's size reach each view's uniform
-/// block, for the built-in values of custom materials.
+/// block, for the built-in values of custom materials. The target's size is the render size, so
+/// it shrinks with the render scale while the projection keeps the canvas's shape.
 #[test]
 fn the_clock_the_camera_and_the_target_reach_the_frame() {
     let mut world = World::new();
     world.renderer.settings_mut().set_clock(1.5, 0.25, 90);
     world.record(true);
     let parity = world.scene.parity();
-    let frame = world
-        .renderer
-        .settings()
-        .view_frame(ViewId::CAMERA, &world.scene, parity, world.canvas)
-        .unwrap();
-    let u = frame.uniform;
+    let frame = |scale| {
+        world
+            .renderer
+            .settings()
+            .view_frame(ViewId::CAMERA, &world.scene, parity, world.canvas, scale)
+            .unwrap()
+            .uniform
+    };
+    let u = frame(RenderScale::FULL);
     assert_eq!(u.clock, [1.5, 0.25, f32::from_bits(90), 0.0]);
     assert_eq!(u.camera_world, [0.0, 0.0, 20.0, 0.0]);
     assert_eq!(u.target_size, [640.0, 360.0, 1.0 / 640.0, 1.0 / 360.0]);
+    let half = frame(RenderScale::from_thousandths(500));
+    assert_eq!(half.target_size, [320.0, 180.0, 1.0 / 320.0, 1.0 / 180.0]);
+    assert_eq!(half.view_proj, u.view_proj);
 }

@@ -299,7 +299,7 @@ impl Culling {
         let mut any = false;
         for (index, view) in self.views.iter_mut().enumerate() {
             let id = ViewId::from_index(index);
-            view.frame = settings.view_frame(id, scene, parity, input.canvas);
+            view.frame = settings.view_frame(id, scene, parity, input.canvas, input.render_scale);
             if let Some(frame) = &view.frame {
                 view.offsets.update(scene, &frame.camera);
                 any = true;

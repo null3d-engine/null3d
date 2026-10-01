@@ -33,7 +33,7 @@ The values of the frame, the same for every draw in it.
 | `time` | `f32` | The sketch time in seconds, as `time.now` gives it to the sketch |
 | `deltaTime` | `f32` | The seconds since the frame before, as `time.dt` gives them |
 | `index` | `u32` | The frame's number, counting from 1, as `time.frame` gives it |
-| `resolution` | `vec2f` | The size of the render target in pixels |
+| `resolution` | `vec2f` | The size in pixels that the scene draws at. It is the canvas's size at the [render scale](../api/quality.md#render-scale), and `@builtin(position)` counts in the same pixels. |
 
 The time stops while the sketch is paused, as the sketch's own time does. In hold mode, it is the held time, so an image test of an animated material draws the same image each time.
 

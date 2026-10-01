@@ -215,7 +215,7 @@ const DOCS = {
 	E1404: {
 		title: 'Engine thread failed',
 		cause:
-			'An engine thread hit an error it could not handle after the engine started, so the engine may have stopped.',
+			'An engine thread, or the drawing on the page, hit an error it could not handle. After the start the engine may have stopped. During the start, createEngine() stops the engine and rejects with this error.',
 		example: 'E1404: the render worker failed: out of memory.',
 		since: '0.1',
 	},

@@ -215,11 +215,13 @@ fn custom_materials_draw_with_their_own_templates_on_webgl2() {
 
 /// Each render pipeline that a list creates for meshes without vertex colors: its template,
 /// permutation bits without the pass's own, which the device fixes, state flags and depth bias,
-/// sorted, once each.
+/// sorted, once each. The final pass draws no mesh, so its pipeline is left out.
 fn plain_pipelines(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32, u32, u32)> {
     let mut made: Vec<_> = commands
         .iter()
-        .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[7] & vertex::COLOR == 0)
+        .filter(|(op, o)| {
+            *op == Op::CreateRenderPipeline && o[1] != template::FINAL && o[7] & vertex::COLOR == 0
+        })
         .map(|(_, o)| (o[1], o[2] & !permutation::DEVICE, o[6], o[8], o[9]))
         .collect();
     made.sort_unstable();
