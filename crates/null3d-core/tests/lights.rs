@@ -308,3 +308,48 @@ fn light_positions_stay_exact_relative_to_a_camera_far_from_the_origin() {
     assert_eq!(world.lights.visible()[0].position, [10.25, 2.0, -30.0]);
     assert_eq!(world.lights.visible()[1].position, [-10.25, 0.0, -30.0]);
 }
+
+#[test]
+fn the_main_light_reports_its_shadows_when_it_casts_them() {
+    let mut world = World::new();
+    let (sun, sun_row) = world.light(kind::DIRECTIONAL, [0.0; 3], NO_TURN);
+    let (other, _) = world.light(kind::DIRECTIONAL, [0.0; 3], NO_TURN);
+    let casts = |object| Command::set_flags(object, flags::CAST_SHADOWS, flags::CAST_SHADOWS);
+    // A second directional light that casts shadows does not: only the main light does.
+    world.commands.push(casts(other));
+    assert_eq!(world.frame(Some(&origin_view())).sun_shadow, None);
+
+    world.commands.push(casts(sun));
+    world.commands.push(Command::set_layers(sun, 0b11));
+    let shadow = world.frame(Some(&origin_view())).sun_shadow.unwrap();
+    assert_eq!(
+        (shadow.cascades, shadow.map_size, shadow.layers),
+        (3, 2048, 0b11)
+    );
+    assert_eq!(
+        (shadow.bias, shadow.normal_bias, shadow.distance),
+        (0.5, 1.0, 200.0)
+    );
+
+    for (code, number) in [
+        (value::SHADOW_CASCADES, 2.0),
+        (value::SHADOW_MAP_SIZE, 1024.0),
+        (value::SHADOW_BIAS, 2.0),
+        (value::SHADOW_NORMAL_BIAS, 0.25),
+        (value::SHADOW_DISTANCE, 80.0),
+    ] {
+        world.lights.set_value(sun_row, code, number).unwrap();
+    }
+    let shadow = world.frame(Some(&origin_view())).sun_shadow.unwrap();
+    assert_eq!((shadow.cascades, shadow.map_size), (2, 1024));
+    assert_eq!(
+        (shadow.bias, shadow.normal_bias, shadow.distance),
+        (2.0, 0.25, 80.0)
+    );
+    // Cascade counts outside 1 to 4 clamp.
+    world
+        .lights
+        .set_value(sun_row, value::SHADOW_CASCADES, 9.0)
+        .unwrap();
+    assert_eq!(world.frame(None).sun_shadow.unwrap().cascades, 4);
+}

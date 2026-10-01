@@ -552,6 +552,10 @@ pub mod layout {
     /// texture at each binding from 0, then each one's sampler at the bindings after every
     /// texture. It sits where [`TEXTURES`] sits.
     pub const MATERIAL_MAPS: u32 = 6;
+    /// Group 0 of depth-only pipelines, such as shadow casters': per-frame constants and the
+    /// material table. It has no shadow map, so a pass that draws into the shadow map never binds
+    /// it.
+    pub const DEPTH: u32 = 7;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -627,12 +631,14 @@ pub mod state_flags {
     pub const CULL_NONE: u32 = 1;
     /// Draws each pair of vertices as a line one pixel wide, instead of each three as a triangle.
     pub const LINE_LIST: u32 = 2;
+    /// Draws only the back faces of triangles, as shadow casters draw into shadow maps.
+    pub const CULL_FRONT: u32 = 4;
     /// Writes no depth.
     pub const NO_DEPTH_WRITE: u32 = 8;
     /// Draws every fragment whatever the depth target holds, and writes no depth.
     pub const NO_DEPTH_TEST: u32 = 16;
     /// Every flag.
-    pub const ALL: u32 = CULL_NONE | LINE_LIST | NO_DEPTH_WRITE | NO_DEPTH_TEST;
+    pub const ALL: u32 = CULL_NONE | LINE_LIST | CULL_FRONT | NO_DEPTH_WRITE | NO_DEPTH_TEST;
 }
 
 /// Vertex formats. Every vertex has a position and a normal, three floats each. A format adds
@@ -789,6 +795,9 @@ pub mod sizes {
     /// Bytes of one vertex of the debug lines: its position relative to the camera, three 32-bit
     /// floats, then its sRGB color, four bytes from red to alpha.
     pub const LINE_VERTEX_BYTES: u32 = 16;
+    /// Bytes of the uniform block of the directional light's shadow cascades: four matrices, then
+    /// four vectors.
+    pub const SHADOW_UNIFORM_BYTES: u32 = 320;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
@@ -812,6 +821,9 @@ pub mod template {
     pub const INSTANCED_STANDARD_MAPS: u32 = 6;
     /// The final pass: one triangle over the canvas, which tone maps the scene color into it.
     pub const FINAL: u32 = 7;
+    /// The depth of instanced shadow casters, drawn from a light into a layer of a shadow map.
+    /// Casters between the light and the layer's view flatten onto its near face.
+    pub const SHADOW_DEPTH: u32 = 8;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;
 }
@@ -1036,6 +1048,7 @@ pub fn typescript_constants() -> String {
                 ("FINAL", layout::FINAL),
                 ("TEXTURES", layout::TEXTURES),
                 ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
+                ("DEPTH", layout::DEPTH),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1055,6 +1068,7 @@ pub fn typescript_constants() -> String {
             &[
                 ("CULL_NONE", state_flags::CULL_NONE),
                 ("LINE_LIST", state_flags::LINE_LIST),
+                ("CULL_FRONT", state_flags::CULL_FRONT),
                 ("NO_DEPTH_WRITE", state_flags::NO_DEPTH_WRITE),
                 ("NO_DEPTH_TEST", state_flags::NO_DEPTH_TEST),
             ],
@@ -1069,6 +1083,7 @@ pub fn typescript_constants() -> String {
                 ("INSTANCED_UNLIT_MAP", template::INSTANCED_UNLIT_MAP),
                 ("INSTANCED_STANDARD_MAPS", template::INSTANCED_STANDARD_MAPS),
                 ("FINAL", template::FINAL),
+                ("SHADOW_DEPTH", template::SHADOW_DEPTH),
                 ("CULL", template::CULL),
             ],
         ),
@@ -1115,6 +1130,7 @@ pub fn typescript_constants() -> String {
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
                 ("MAX_CULL_RANGES", sizes::MAX_CULL_RANGES),
                 ("LINE_VERTEX_BYTES", sizes::LINE_VERTEX_BYTES),
+                ("SHADOW_UNIFORM_BYTES", sizes::SHADOW_UNIFORM_BYTES),
             ],
         ),
     ];
