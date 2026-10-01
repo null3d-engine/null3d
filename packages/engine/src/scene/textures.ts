@@ -341,7 +341,7 @@ export class Textures {
 		}
 		const filterCode = FILTERS[filter];
 		const { core } = this;
-		const handle = core.check(
+		const handle = core.checkGrowth(
 			core.glue.createTexture(
 				width,
 				height,
@@ -378,7 +378,7 @@ export class Textures {
 				);
 		}
 		const { width, height } = image;
-		const id = this.core.check(
+		const id = this.core.checkGrowth(
 			this.core.glue.setTextureImage(
 				texture.handle,
 				width,
@@ -413,7 +413,7 @@ export class Textures {
 				);
 		}
 		const { core } = this;
-		const address = core.check(
+		const address = core.checkGrowth(
 			core.glue.setTextureData(texture.handle, width, height),
 			call,
 			'a texture',
@@ -431,7 +431,7 @@ export class Textures {
 
 	/** @internal */
 	destroy(texture: Texture): void {
-		this.core.check(
+		this.core.checkGrowth(
 			this.core.glue.destroyTexture(texture.handle, this.time.frame),
 			'texture.destroy',
 			'a texture',
