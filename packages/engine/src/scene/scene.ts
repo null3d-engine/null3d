@@ -99,13 +99,13 @@ export interface MeshOptions extends NodeOptions {
 	/** How the surface looks, from `ctx.materials`. */
 	material: Material;
 	/**
-	 * True makes the mesh cast shadows, like `setCastShadows(true)`. The default is false. This
-	 * version stores the setting but draws no shadows yet.
+	 * True makes the mesh cast the shadows of a directional light, like `setCastShadows(true)`. The
+	 * default is false.
 	 */
 	castShadows?: boolean;
 	/**
-	 * True makes the mesh receive shadows, like `setReceiveShadows(true)`. The default is false.
-	 * This version stores the setting but draws no shadows yet.
+	 * True makes shadows fall on the mesh, like `setReceiveShadows(true)`. The default is false.
+	 * Unlit materials show no shadows.
 	 */
 	receiveShadows?: boolean;
 }
@@ -222,10 +222,48 @@ export interface DirectionalLightOptions extends LightOptions {
 	 */
 	direction?: Vec3;
 	/**
-	 * True makes the light cast shadows, like `setCastShadows(true)`. The default is false. This
-	 * version stores the setting but draws no shadows yet.
+	 * True makes the light cast shadows, like `setCastShadows(true)`. The default is false. The
+	 * first directional light created casts them; WebGL2 draws no shadows yet.
 	 */
 	castShadows?: boolean;
+	/** How the light's shadows draw, like `setShadow`. Each setting has a default. */
+	shadow?: DirectionalShadowOptions;
+}
+
+/**
+ * The shadows of a directional light. The camera's view splits into cascades by distance, and
+ * each cascade has a shadow map of its own.
+ *
+ * @category api/lights
+ */
+export interface DirectionalShadowOptions {
+	/**
+	 * The cascades, a whole number from 1 to 4. More cascades keep shadows sharp further from the
+	 * camera, and each draws the shadow casters once more. The default is 3.
+	 */
+	cascades?: number;
+	/**
+	 * Texels on each side of each cascade's shadow map: 256, 512, 1,024, 2,048 or 4,096. The default
+	 * is 2,048.
+	 */
+	mapSize?: number;
+	/**
+	 * How far each receiving surface moves toward the light before its shadow test, in texels of
+	 * its cascade, at least 0. Raise it when surfaces show stripes of shadow on themselves. The
+	 * default is 0.5.
+	 */
+	bias?: number;
+	/**
+	 * How far each receiving surface moves along its normal before its shadow test, in texels of
+	 * its cascade, at least 0. The default is 1.
+	 */
+	normalBias?: number;
+	/**
+	 * The distance from the camera in meters, along its view, out to which shadows fall, above 0.
+	 * Shadows fade out over the last tenth of it. The camera's far plane ends them sooner. The
+	 * default is 200.
+	 */
+	distance?: number;
 }
 
 /**
@@ -288,7 +326,9 @@ export interface HemisphereLightOptions extends NodeOptions {
 }
 
 /** The options of any light, as the scene's shared create path reads them. */
-type AnyLightOptions = LightOptions & Partial<Omit<SpotLightOptions, keyof LightOptions>>;
+type AnyLightOptions = LightOptions &
+	Partial<Omit<SpotLightOptions, keyof LightOptions>> &
+	Pick<DirectionalLightOptions, 'shadow'>;
 
 /** The numbers of a light's options, and their codes in the light table. */
 const LIGHT_NUMBERS = [
@@ -309,7 +349,31 @@ const LIGHT_LIMITS: Record<number, readonly [string, number, number, string]> = 
 	[C.LIGHT_VALUE_DECAY]: ['decay', 0, Number.MAX_VALUE, 'at least 0'],
 	[C.LIGHT_VALUE_ANGLE]: ['angle', Number.MIN_VALUE, Math.PI / 2, 'above 0 and at most π/2'],
 	[C.LIGHT_VALUE_PENUMBRA]: ['penumbra', 0, 1, 'from 0 to 1'],
+	[C.LIGHT_VALUE_SHADOW_BIAS]: ['shadow bias', 0, Number.MAX_VALUE, 'at least 0'],
+	[C.LIGHT_VALUE_SHADOW_NORMAL_BIAS]: ['shadow normal bias', 0, Number.MAX_VALUE, 'at least 0'],
+	[C.LIGHT_VALUE_SHADOW_CASCADES]: ['shadow cascades', 1, 4, 'a whole number from 1 to 4'],
+	[C.LIGHT_VALUE_SHADOW_MAP_SIZE]: [
+		'shadow map size',
+		256,
+		4096,
+		'256, 512, 1,024, 2,048 or 4,096',
+	],
+	[C.LIGHT_VALUE_SHADOW_DISTANCE]: [
+		'shadow distance',
+		Number.MIN_VALUE,
+		Number.MAX_VALUE,
+		'above 0',
+	],
 };
+
+/** The options of a directional light's shadows, and their codes in the light table. */
+const SHADOW_NUMBERS = [
+	['cascades', C.LIGHT_VALUE_SHADOW_CASCADES],
+	['mapSize', C.LIGHT_VALUE_SHADOW_MAP_SIZE],
+	['bias', C.LIGHT_VALUE_SHADOW_BIAS],
+	['normalBias', C.LIGHT_VALUE_SHADOW_NORMAL_BIAS],
+	['distance', C.LIGHT_VALUE_SHADOW_DISTANCE],
+] as const;
 
 /** The direction a new directional or spot light points: straight down. */
 const DOWN: Vec3 = [0, -1, 0];
@@ -678,16 +742,16 @@ export class Mesh extends Object3D {
 	}
 
 	/**
-	 * Makes the mesh cast shadows, or stop. The default is false. This version stores the setting
-	 * but draws no shadows yet.
+	 * Makes the mesh cast the shadows of a directional light, or stop. The default is false. A
+	 * change rebuilds the engine's tables of what it draws, as a new material does.
 	 */
 	setCastShadows(cast: boolean): void {
 		this.setFlag('setCastShadows', C.FLAG_CAST_SHADOWS, cast);
 	}
 
 	/**
-	 * Makes the mesh receive shadows, or stop. The default is false. This version stores the
-	 * setting but draws no shadows yet.
+	 * Makes shadows fall on the mesh, or stop. The default is false. Unlit materials show no
+	 * shadows. A change rebuilds the engine's tables of what it draws, as a new material does.
 	 */
 	setReceiveShadows(receive: boolean): void {
 		this.setFlag('setReceiveShadows', C.FLAG_RECEIVE_SHADOWS, receive);
@@ -975,13 +1039,26 @@ export class Light extends Object3D {
 		this.scene.core.glue.setLightColor(this.id, which, rgb[0], rgb[1], rgb[2]);
 	}
 
+	/** @internal Sets each of the shadow settings that `shadow` gives. */
+	shadow(call: string, shadow: DirectionalShadowOptions): void {
+		for (const [key, which] of SHADOW_NUMBERS) {
+			const value = shadow[key];
+			if (value !== undefined) this.write(call, which, value);
+		}
+	}
+
 	/** @internal Sets one of the light's numbers, by its code in the light table. */
 	write(call: string, which: number, value: number): void {
 		if (DEV) {
 			checkLive(call, this);
 			const limits = LIGHT_LIMITS[which] as (typeof LIGHT_LIMITS)[number];
 			if (typeof value === 'number') checkNumber(call, limits[0], value, this);
-			if (!(value >= limits[1] && value <= limits[2]))
+			// Cascades are whole, and map sizes are powers of two.
+			const whole =
+				which === C.LIGHT_VALUE_SHADOW_CASCADES
+					? Number.isInteger(value)
+					: which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE || (value & (value - 1)) === 0;
+			if (!(value >= limits[1] && value <= limits[2] && whole))
 				throw new EngineError(
 					'E1108',
 					`${call}() got the ${limits[0]} ${value} on ${this.describe()}, which must be ${limits[3]}.`,
@@ -1028,11 +1105,19 @@ export class DirectionalLight extends Light {
 	}
 
 	/**
-	 * Makes the light cast shadows, or stop. The default is false. This version stores the setting
-	 * but draws no shadows yet.
+	 * Makes the light cast shadows, or stop. The default is false. The first directional light
+	 * created casts them; WebGL2 draws no shadows yet.
 	 */
 	setCastShadows(cast: boolean): void {
 		this.setFlag('setCastShadows', C.FLAG_CAST_SHADOWS, cast);
+	}
+
+	/**
+	 * Changes how the light's shadows draw. Settings that `shadow` leaves out keep their values. A
+	 * new cascade count or map size makes the shadow map again, so set them at setup.
+	 */
+	setShadow(shadow: DirectionalShadowOptions): void {
+		this.shadow('setShadow', shadow);
 	}
 }
 
@@ -1570,6 +1655,7 @@ export class Scene {
 			if (value !== undefined || (ranged && which === C.LIGHT_VALUE_RANGE))
 				light.write(call, which, value as number);
 		}
+		if (options.shadow) light.shadow(call, options.shadow);
 		if (type === C.LIGHT_KIND_DIRECTIONAL || type === C.LIGHT_KIND_SPOT) {
 			if (options.target) light.lookAt(...options.target);
 			else if (options.direction || !options.rotation)

@@ -108,10 +108,11 @@ The engine keeps each scene's draw tables and every object's matrix on the GPU, 
 | `setVisible` | The matrix and 4-byte draw entry of the object and of each object under it |
 | `setActiveCount` | The 4-byte draw entry of each row that starts or stops drawing |
 | `setLayers` | No rebuild: each view tests the new mask from the next frame |
-| `setCastShadows`, `setReceiveShadows` and `setRenderOrder` | Nothing |
+| `setRenderOrder` | Nothing |
 | `material.set` | The material's row of 128 bytes. Changes to several materials in one frame upload every row from the first to the last |
 | Creating or destroying an instance batch, or an object of any kind, lights included | A rebuild, and engine memory can grow in the next frame |
 | `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled` | A rebuild |
+| `setCastShadows` and `setReceiveShadows`, on meshes and on lights | A rebuild |
 | `texture.update()` with an image of another size, and `texture.destroy()` | A rebuild |
 
 These habits keep play free of rebuilds:

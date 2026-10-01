@@ -28,6 +28,12 @@
 //!   that survives writes a [`VisibleLight`] record to the visible list, in row order.
 //!
 //! Hemisphere lights are stored, and the frame does not read them yet.
+//!
+//! # Shadows
+//!
+//! The main directional light casts shadows when its object has the cast-shadows flag. The frame
+//! then reports the light's shadow numbers (see [`value`]) and its layer mask, which selects the
+//! casters. Point and spot lights store the flag, and cast no shadows yet.
 
 use std::f32::consts::FRAC_PI_3;
 
@@ -36,7 +42,7 @@ use crate::culling::Frustum;
 use crate::error::CoreError;
 use crate::handle::Handle;
 use crate::layers::{ALL_LAYERS, shares_layer};
-use crate::scene::SceneStorage;
+use crate::scene::{SceneStorage, flags};
 use crate::world::HIDDEN_RADIUS;
 
 /// Kinds of light. A free row has kind [`kind::NONE`].
@@ -77,7 +83,26 @@ pub mod value {
     /// The part of a spot light's cone, from 0 to 1, over which its light fades out toward the
     /// edge. The default is 0.
     pub const PENUMBRA: u32 = 4;
+    /// How far a receiver's depth moves toward a directional light before its shadow test, in
+    /// texels of its cascade. The default is 0.5.
+    pub const SHADOW_BIAS: u32 = 5;
+    /// How far a receiver's point moves along its normal before its shadow test, in texels of its
+    /// cascade. The default is 1.
+    pub const SHADOW_NORMAL_BIAS: u32 = 6;
+    /// The cascades of a directional light's shadows, from 1 to 4. The default is 3.
+    pub const SHADOW_CASCADES: u32 = 7;
+    /// Texels on each side of each cascade's shadow map. The default is 2,048.
+    pub const SHADOW_MAP_SIZE: u32 = 8;
+    /// The distance in meters from the camera, along its view, out to which a directional light's
+    /// shadows fall. The default is 200.
+    pub const SHADOW_DISTANCE: u32 = 9;
+    /// The last number.
+    pub const LAST: u32 = SHADOW_DISTANCE;
 }
+
+/// The numbers of a new light, by [`value`].
+const DEFAULT_VALUES: [f32; value::LAST as usize + 1] =
+    [1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.5, 1.0, 3.0, 2048.0, 200.0];
 
 /// The cone cosines of a point light's [`VisibleLight`] record. Every direction's cosine is above
 /// both, so a shader that fades spot lights with a smooth step between them lets a point light's
@@ -134,6 +159,9 @@ pub struct FrameLights {
     pub sun_color: [f32; 3],
     /// The sum of the ambient lights' linear colors times their intensities.
     pub ambient: [f32; 3],
+    /// The main directional light's shadows, or `None` when it casts none or there is no main
+    /// light.
+    pub sun_shadow: Option<SunShadow>,
 }
 
 impl Default for FrameLights {
@@ -142,6 +170,39 @@ impl Default for FrameLights {
             sun_direction: [0.0, -1.0, 0.0],
             sun_color: [0.0; 3],
             ambient: [0.0; 3],
+            sun_shadow: None,
+        }
+    }
+}
+
+/// The shadows of the main directional light, in a frame in which it casts them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SunShadow {
+    /// Its cascades, from 1 to 4.
+    pub cascades: u32,
+    /// Texels on each side of each cascade's shadow map, at least 1.
+    pub map_size: u32,
+    /// Its bias, in texels of each cascade.
+    pub bias: f32,
+    /// Its normal bias, in texels of each cascade.
+    pub normal_bias: f32,
+    /// The distance along the camera's view out to which its shadows fall.
+    pub distance: f32,
+    /// The light's layer mask: its cascades draw the casters whose masks share a bit with it.
+    pub layers: u32,
+}
+
+impl SunShadow {
+    /// The shadows of a light with `values`, by [`value`], and the layer mask `layers`.
+    fn of(values: &[f32; value::LAST as usize + 1], layers: u32) -> Self {
+        let whole = |code: u32, low: f32, high: f32| values[code as usize].clamp(low, high) as u32;
+        Self {
+            cascades: whole(value::SHADOW_CASCADES, 1.0, 4.0),
+            map_size: whole(value::SHADOW_MAP_SIZE, 1.0, 16_384.0),
+            bias: values[value::SHADOW_BIAS as usize],
+            normal_bias: values[value::SHADOW_NORMAL_BIAS as usize],
+            distance: values[value::SHADOW_DISTANCE as usize],
+            layers,
         }
     }
 }
@@ -156,7 +217,7 @@ struct Row {
     /// Linear colors, by [`color`].
     colors: [[f32; 3]; 2],
     /// Numbers, by [`value`].
-    values: [f32; 5],
+    values: [f32; value::LAST as usize + 1],
 }
 
 impl Row {
@@ -166,7 +227,7 @@ impl Row {
         object: Handle::NONE,
         order: 0,
         colors: [[0.0; 3]; 2],
-        values: [0.0; 5],
+        values: [0.0; value::LAST as usize + 1],
     };
 }
 
@@ -234,7 +295,7 @@ impl LightTable {
             object,
             order: self.created,
             colors: [[1.0; 3]; 2],
-            values: [1.0, 0.0, 2.0, FRAC_PI_3, 0.0],
+            values: DEFAULT_VALUES,
         };
         self.created = self.created.wrapping_add(1);
         Ok(row)
@@ -316,7 +377,7 @@ impl LightTable {
         let values = &mut self.row_mut(light)?.values;
         *values
             .get_mut(which as usize)
-            .ok_or(past(which, value::PENUMBRA))? = number;
+            .ok_or(past(which, value::LAST))? = number;
         Ok(())
     }
 
@@ -326,7 +387,7 @@ impl LightTable {
         values
             .get(which as usize)
             .copied()
-            .ok_or(past(which, value::PENUMBRA))
+            .ok_or(past(which, value::LAST))
     }
 
     /// The point and spot lights that the last [`LightTable::gather`] found visible, in row order.
@@ -359,7 +420,7 @@ impl LightTable {
             if world.radii()[s] == HIDDEN_RADIUS || !shares_layer(scene.layers()[s], layers) {
                 continue;
             }
-            let [intensity, range, decay, angle, penumbra] = row.values;
+            let [intensity, range, decay, angle, penumbra, ..] = row.values;
             let lit = row.colors[color::MAIN as usize].map(|c| c * intensity);
             match row.kind {
                 kind::AMBIENT => {
@@ -372,6 +433,9 @@ impl LightTable {
                         main_order = Some(row.order);
                         frame.sun_direction = forward(world.matrix(s));
                         frame.sun_color = lit;
+                        let casts = scene.flags()[s] & flags::CAST_SHADOWS != 0;
+                        frame.sun_shadow =
+                            casts.then(|| SunShadow::of(&row.values, scene.layers()[s]));
                     }
                 }
                 kind::POINT | kind::SPOT => {
@@ -508,8 +572,11 @@ mod tests {
             Err(CoreError::OutOfRange { value: 0, limit: 5 })
         );
         assert_eq!(
-            table.set_value(light, 5, 1.0),
-            Err(CoreError::OutOfRange { value: 5, limit: 4 })
+            table.set_value(light, 10, 1.0),
+            Err(CoreError::OutOfRange {
+                value: 10,
+                limit: 9
+            })
         );
         assert_eq!(
             table.set_color(light, 2, [1.0; 3]),

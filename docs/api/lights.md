@@ -8,7 +8,7 @@ summary: "Directional, point, spot, hemisphere and ambient lights; shadow option
 
 # Lights
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Point, spot and hemisphere lights do not light surfaces yet, and surfaces show one directional light. Shadows are not built yet either, so `castShadows` only stores the setting. Coding agents must not rely on these parts.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Point, spot and hemisphere lights do not light surfaces yet, and surfaces show one directional light. That light casts shadows on WebGPU only: WebGL2 draws none yet, and point and spot lights only store `castShadows`. Coding agents must not rely on these parts.
 
 A light is a scene object, like a mesh or a camera. It has a position, a rotation, a parent and layers, and `setVisible` and `destroy` work on it. Each kind of light has a class and a create call of its own. The standard material reflects lights, and the unlit material ignores them.
 
@@ -35,7 +35,7 @@ export default defineSketch(({ scene, time }) => {
 
 | Call | Class | Light | Its own options |
 | --- | --- | --- | --- |
-| `createDirectionalLight(options)` | `DirectionalLight` | Parallel light from one direction, like sunlight | `direction`, `castShadows` |
+| `createDirectionalLight(options)` | `DirectionalLight` | Parallel light from one direction, like sunlight | `direction`, `castShadows`, `shadow` |
 | `createPointLight(options)` | `PointLight` | Light from a point in every direction, out to its range | `range` (required), `decay`, `castShadows` |
 | `createSpotLight(options)` | `SpotLight` | Light from a point in a cone, out to its range | `range` (required), `angle`, `penumbra`, `decay`, `direction`, `target`, `castShadows` |
 | `createHemisphereLight(options)` | `HemisphereLight` | Light from the sky above and the ground below | `skyColor`, `groundColor` |
@@ -74,7 +74,19 @@ To turn a light off, hide it with `setVisible(false)`, set its intensity to 0, o
 
 ## Shadows
 
-`castShadows: true` and `setCastShadows(true)` mark a directional, point or spot light as one that casts shadows. This version stores the setting and draws no shadows. When shadows draw, one directional light per scene casts them.
+`castShadows: true` and `setCastShadows(true)` make a directional light cast shadows. The first directional light created casts them, and objects need `castShadows` and `receiveShadows` of their own. The `shadow` option and `setShadow` set the light's cascades, map size, distance and biases:
+
+```ts
+const sun = scene.createDirectionalLight({
+  direction: [-1, -2, -1],
+  intensity: 3,
+  castShadows: true,
+  shadow: { cascades: 3, mapSize: 2048, distance: 100 },
+});
+sun.setShadow({ bias: 1, normalBias: 1.5 });
+```
+
+[Shadows](../concepts/shadows.md) explains cascades, each setting and its default, and the biases. WebGL2 draws no shadows yet. Point and spot lights store `castShadows`, and cast no shadows yet.
 
 ## Coming from three.js
 
@@ -88,6 +100,7 @@ To turn a light off, hide it with `setVisible(false)`, set its intensity to 0, o
 | `new AmbientLight(color, intensity)` | `createAmbientLight({ color, intensity })` |
 | `scene.add(light)` or `group.add(light)` | Nothing for the scene; the `parent` option or `setParent(group)` for a group |
 | `light.visible = false` | `light.setVisible(false)` |
+| `light.castShadow = true`, `light.shadow.mapSize`, `light.shadow.bias` | `castShadows: true`, and `shadow: { mapSize, bias, normalBias }` in texels of each cascade. [Shadows](../concepts/shadows.md) covers the differences. |
 
 A three.js `distance` of 0 means a light with no end. null3D needs a finite range, so pick the distance where the light no longer matters.
 
@@ -118,7 +131,8 @@ Light from one direction, like sunlight. It travels along the light's -Z axis, w
 | Member | Description |
 | --- | --- |
 | `setDirection(x: number, y: number, z: number): void` | Turns the light so that its light travels along (x, y, z), relative to its parent. |
-| `setCastShadows(cast: boolean): void` | Makes the light cast shadows, or stop. The default is false. This version stores the setting but draws no shadows yet. |
+| `setCastShadows(cast: boolean): void` | Makes the light cast shadows, or stop. The default is false. The first directional light created casts them; WebGL2 draws no shadows yet. |
+| `setShadow(shadow: DirectionalShadowOptions): void` | Changes how the light's shadows draw. Settings that `shadow` leaves out keep their values. A new cascade count or map size makes the shadow map again, so set them at setup. |
 
 ### `DirectionalLightOptions`
 
@@ -129,7 +143,22 @@ Options for `scene.createDirectionalLight`.
 | Member | Description |
 | --- | --- |
 | `direction?: Vec3` | The direction the light travels, relative to the parent. The default, (0, -1, 0), points straight down. It sets the light's rotation, so it wins over `rotation`. |
-| `castShadows?: boolean` | True makes the light cast shadows, like `setCastShadows(true)`. The default is false. This version stores the setting but draws no shadows yet. |
+| `castShadows?: boolean` | True makes the light cast shadows, like `setCastShadows(true)`. The default is false. The first directional light created casts them; WebGL2 draws no shadows yet. |
+| `shadow?: DirectionalShadowOptions` | How the light's shadows draw, like `setShadow`. Each setting has a default. |
+
+### `DirectionalShadowOptions`
+
+Interface `DirectionalShadowOptions`.
+
+The shadows of a directional light. The camera's view splits into cascades by distance, and each cascade has a shadow map of its own.
+
+| Member | Description |
+| --- | --- |
+| `cascades?: number` | The cascades, a whole number from 1 to 4. More cascades keep shadows sharp further from the camera, and each draws the shadow casters once more. The default is 3. |
+| `mapSize?: number` | Texels on each side of each cascade's shadow map: 256, 512, 1,024, 2,048 or 4,096. The default is 2,048. |
+| `bias?: number` | How far each receiving surface moves toward the light before its shadow test, in texels of its cascade, at least 0. Raise it when surfaces show stripes of shadow on themselves. The default is 0.5. |
+| `normalBias?: number` | How far each receiving surface moves along its normal before its shadow test, in texels of its cascade, at least 0. The default is 1. |
+| `distance?: number` | The distance from the camera in meters, along its view, out to which shadows fall, above 0. Shadows fade out over the last tenth of it. The camera's far plane ends them sooner. The default is 200. |
 
 ### `HemisphereLight`
 
