@@ -1,6 +1,9 @@
 // Typed-array views on engine memory. A shared memory keeps its old buffer when it grows, but
 // views made before the growth cannot reach past the old end; the single-threaded build's memory
-// detaches every view when it grows. Each view therefore is re-made when the buffer changes.
+// detaches every view when it grows, and a write through a detached view is lost. Each view
+// therefore is re-made when the buffer changes. Every core call that can grow the memory goes
+// through `checkGrowth`, and the sketch runner refreshes after the frame's steps, so sketch code
+// never writes through a view from before a growth.
 
 import { coreFailure } from '../errors/core-failure';
 import type { CoreGlue } from '../shared/core';
@@ -52,5 +55,15 @@ export class CoreMemory {
 	check(result: number, call: string, what?: string, isStatus = false): number {
 		if (isStatus ? result !== 0 : result === 0) throw coreFailure(this.glue, call, what);
 		return result;
+	}
+
+	/**
+	 * Checks the result of a core call that can grow the engine's memory, as `check` does. It first
+	 * takes the memory's new buffer, if the call grew it, so every view is made again before its
+	 * next read or write, whether the call failed or not.
+	 */
+	checkGrowth(result: number, call: string, what?: string, isStatus = false): number {
+		this.refresh();
+		return this.check(result, call, what, isStatus);
 	}
 }

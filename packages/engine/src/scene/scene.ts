@@ -737,6 +737,7 @@ export class Mesh extends Object3D {
 			checkSameEngine('setMesh', 'mesh', mesh.core, this.scene);
 		}
 		this.scene.writeBounds(this.row, 0, 0, 0, mesh.radius);
+		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		this.scene.command(C.COMMAND_SET_MESH, this.handle, mesh.id, 0, 'setMesh');
 	}
 
@@ -799,6 +800,7 @@ export class Mesh extends Object3D {
 				);
 		}
 		this.scene.writeBounds(this.row, x, y, z, radius);
+		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		this.setFlag('setBounds', C.FLAG_CUSTOM_BOUNDS, true);
 	}
 }
@@ -1304,13 +1306,12 @@ export class InstanceBatch {
 	 */
 	destroy(): void {
 		const { core } = this.scene;
-		core.check(core.glue.destroyBatch(this.id, this.scene.frame), 'destroy', undefined, true);
+		core.checkGrowth(core.glue.destroyBatch(this.id, this.scene.frame), 'destroy', undefined, true);
 		if (DEV) this.scene.countBatchRows(-this.count);
 		this.destroyedFrame = this.scene.frame;
 		// The next read of the arrays asks the core for them again, and the core refuses a
 		// destroyed batch.
 		this.generation = -1;
-		core.refresh();
 	}
 }
 
@@ -1564,7 +1565,7 @@ export class Scene {
 		const { core } = this;
 		const { layers } = options;
 		if (DEV && layers !== undefined) checkLayers('createInstances', layers);
-		const id = core.check(
+		const id = core.checkGrowth(
 			core.glue.createBatch(
 				count,
 				options.dynamic ?? false,
@@ -1574,7 +1575,6 @@ export class Scene {
 			),
 			'createInstances',
 		);
-		core.refresh();
 		if (DEV) this.countBatchRows(count);
 		const batch = new InstanceBatch(this, id, count, options.colors ?? false);
 		batch.setActiveCount(count);
@@ -1646,7 +1646,8 @@ export class Scene {
 	): T {
 		const flags = options.castShadows ? C.FLAG_CAST_SHADOWS : 0;
 		const light = this.create(kind, options, C.CORE_NO_MESH, 0, flags, call);
-		light.id = this.core.check(this.core.glue.createLight(light.handle, type), call, options.name);
+		const { core } = this;
+		light.id = core.checkGrowth(core.glue.createLight(light.handle, type), call, options.name);
 		if (options.color !== undefined) light.paint(call, C.LIGHT_COLOR_MAIN, options.color);
 		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT;
 		for (const [key, which] of LIGHT_NUMBERS) {
