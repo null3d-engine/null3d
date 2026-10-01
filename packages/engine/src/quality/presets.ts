@@ -4,8 +4,8 @@
 // settings of features that are not built yet keep their planned values in preset-docs.ts, with
 // every setting's docs text. Only the docs generator and the tests import that file, so the
 // engine's files carry neither. A feature moves its row from there into this table when it
-// applies the setting. A setting that a sketch can change is also a member of QualitySettings,
-// and a test keeps the two lists equal.
+// applies the setting. A setting that a sketch reads is also a member of QualitySettings, and a
+// test keeps the two lists equal. A sketch changes only the settings that change during play.
 
 import { EngineError } from '../errors/engine-error';
 
@@ -77,6 +77,12 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 64 * 1024, max: 64 * MIB, whole: true },
 	},
+	// FXAA on Low, which phones draw: MSAA's samples cost them more memory traffic.
+	antialias: {
+		presets: ['fxaa', 'msaa', 'msaa', 'msaa'],
+		changes: 'start',
+		values: ['none', 'fxaa', 'msaa'],
+	},
 	// The shared memory's maximum, from 256 MiB to the 4 GiB that the threaded core declares. Every
 	// preset keeps the loader's default until measurements of the memory that tabs can use on
 	// phones and tablets set one per preset (D-04).
@@ -120,12 +126,31 @@ export interface QualitySettings {
 	 * number from 65,536 (64 KiB) to 67,108,864 (64 MiB), and changes during play.
 	 */
 	uploadBytesPerFrame: number;
+	/**
+	 * How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa`
+	 * smooths edges in the final pass, and `none` leaves them sharp. The mode is fixed when the
+	 * engine starts: the page's `antialias` option of `createEngine` sets it, and `set` does not
+	 * take it.
+	 */
+	antialias: 'none' | 'fxaa' | 'msaa';
 }
 
-/** The settings that a sketch reads and changes: those that can change after the load. */
-export const SKETCH_SETTINGS: readonly QualitySettingName[] = (
-	Object.keys(QUALITY_SETTINGS) as QualitySettingName[]
-).filter((name) => QUALITY_SETTINGS[name].changes !== 'load');
+/** The names of the settings in the preset table that change as `changes` says. */
+function settingsThatChange(changes: (change: SettingChange) => boolean): QualitySettingName[] {
+	return (Object.keys(QUALITY_SETTINGS) as QualitySettingName[]).filter((name) =>
+		changes(QUALITY_SETTINGS[name].changes),
+	);
+}
+
+/** The settings that a sketch reads: those that are fixed only after the load. */
+export const SKETCH_SETTINGS: readonly QualitySettingName[] = settingsThatChange(
+	(change) => change !== 'load',
+);
+
+/** The settings that a sketch changes: those that change during play. */
+export const LIVE_SETTINGS: readonly QualitySettingName[] = settingsThatChange(
+	(change) => change === 'live',
+);
 
 /** A preset's place in the order, from 0 for Low to 3 for Ultra. */
 export function presetIndex(preset: QualityPreset): number {
@@ -209,7 +234,9 @@ export function checkSettings(
 		if (!(names as readonly string[]).includes(name))
 			throw new EngineError(
 				'E1213',
-				`${call} got "${name}", which is not a setting it takes. It takes ${listOf(names)}.`,
+				QUALITY_SETTINGS[name as QualitySettingName]?.changes === 'start'
+					? `${call} got ${name}, which is fixed when the engine starts. Set it with the ${name} option of createEngine().`
+					: `${call} got "${name}", which is not a setting it takes. It takes ${listOf(names)}.`,
 			);
 		const { values } = QUALITY_SETTINGS[name as QualitySettingName];
 		if (!takesValue(values, value))
