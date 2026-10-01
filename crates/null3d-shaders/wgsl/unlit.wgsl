@@ -53,5 +53,5 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     }
 #endif
     let finished = finish(fogged(base, in.relative, m), in.clip.xy);
-    return fragment_color(m, finished.rgb, alpha, alpha);
+    return fragment_color(m, finished.rgb, alpha);
 }

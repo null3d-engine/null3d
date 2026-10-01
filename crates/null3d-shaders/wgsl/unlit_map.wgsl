@@ -9,10 +9,10 @@ enable draw_index;
 // without it. The VERTEX_COLOR builds
 // multiply the color by the mesh's vertex colors too. The ALPHA_MASK builds draw nothing where the
 // alpha of the color, the map and the vertex colors falls below the material's cutoff. A material
-// that blends writes premultiplied color, and takes a premultiplied map's colors as they are.
+// that blends writes premultiplied color.
 // null3d::mesh finds each instance on both GPU paths.
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
-#import null3d::mesh::{map_layer, map_ready, material_of, premultiplied_map, relative_position}
+#import null3d::mesh::{map_layer, map_ready, material_of, relative_position, straight_texel}
 
 // The maps' bind group comes after the frame's group, and on WebGL2 after the groups of the draw
 // records and the data textures.
@@ -75,21 +75,18 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     let raw = vec3f(select(in.uv.xy, in.uv.zw, second), 1.0);
     let uv = vec2f(dot(m.uv_u.xyz, raw), dot(m.uv_v.xyz, raw));
     let texel = textureSample(map_layers, map_sampler, uv, map_layer(m.maps.x));
-    let map = select(vec4f(1.0), texel, map_ready(m.maps.x));
+    let map = select(vec4f(1.0), straight_texel(m, texel), map_ready(m.maps.x));
     var base = m.color.rgb * map.rgb;
-    // The alpha besides the map's, which a premultiplied map's colors do not hold yet.
-    var rest = m.color.a;
+    var alpha = m.color.a * map.a;
 #ifdef VERTEX_COLOR
     base *= in.vertex_color.rgb;
-    rest *= in.vertex_color.a;
+    alpha *= in.vertex_color.a;
 #endif
-    let alpha = rest * map.a;
 #ifdef ALPHA_MASK
     if alpha < m.emissive.w {
         discard;
     }
 #endif
-    let color_alpha = select(alpha, rest, premultiplied_map(m));
     let finished = finish(fogged(base, in.relative, m), in.clip.xy);
-    return fragment_color(m, finished.rgb, alpha, color_alpha);
+    return fragment_color(m, finished.rgb, alpha);
 }

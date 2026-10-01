@@ -1089,7 +1089,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "loadTexture(url, { premultipliedAlpha: true }), which multiplies each color by its alpha as the image decodes",
-      "notes": "Blending needs no material flag: the engine blends premultiplied colors, and takes the colors of a texture loaded with premultipliedAlpha: true as they are.",
+      "notes": "Blending needs no material flag: the engine blends premultiplied colors. A base color map loaded with premultipliedAlpha: true looks the same as the image loaded without it, because the shader divides its colors by their alpha before it lights them.",
       "docs": "api/textures",
       "detect": "premultipl(ied|y)Alpha\\b"
     },

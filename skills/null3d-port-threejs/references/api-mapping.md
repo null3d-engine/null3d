@@ -165,7 +165,7 @@ The "Since" column gives the first engine version with the feature:
 | RGBELoader / EXRLoader / HDRLoader / UltraHDRLoader + PMREMGenerator | `bunx @null3d/cli assets env studio.hdr` offline, then assets.loadEnvironment | changed | 0.2 | Prefiltering happens once at build time instead of on every visit. | `guides/assets-pipeline` |
 | KTX2Loader + setTranscoderPath + detectSupport | assets.loadTexture('x.ktx2') | direct | 0.2 | Built in; delete the setup. | `api/textures` |
 | texture.channel (which UV set a map uses) | uvSet: 0 or 1 in the texture's options | direct | 0.1 | Each map of a material reads the set that its texture names. glTF files carry this per texture, so loaded models need nothing. | `api/textures` |
-| material.premultipliedAlpha / texture.premultiplyAlpha | loadTexture(url, { premultipliedAlpha: true }), which multiplies each color by its alpha as the image decodes | changed | 0.1 | Blending needs no material flag: the engine blends premultiplied colors, and takes the colors of a texture loaded with premultipliedAlpha: true as they are. | `api/textures` |
+| material.premultipliedAlpha / texture.premultiplyAlpha | loadTexture(url, { premultipliedAlpha: true }), which multiplies each color by its alpha as the image decodes | changed | 0.1 | Blending needs no material flag: the engine blends premultiplied colors. A base color map loaded with premultipliedAlpha: true looks the same as the image loaded without it, because the shader divides its colors by their alpha before it lights them. | `api/textures` |
 
 ## Loaders
 

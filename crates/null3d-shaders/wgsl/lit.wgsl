@@ -16,7 +16,7 @@ enable draw_index;
 // change between pixels, as three.js's getTangentFrame makes it.
 #import null3d::lighting
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color, frame}
-#import null3d::mesh::{map_layer, map_ready, material_of, premultiplied_map, relative_position}
+#import null3d::mesh::{map_layer, map_ready, material_of, relative_position, straight_texel}
 #import null3d::mesh::{world_direction, world_normal}
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
@@ -182,8 +182,6 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     base *= in.vertex_color.rgb;
     alpha *= in.vertex_color.a;
 #endif
-    // The alpha besides the base color map's, which a premultiplied map's colors do not hold yet.
-    let rest = alpha;
     var metalness = m.surface.x;
     var roughness = m.surface.y;
     var emitted = m.emissive.rgb * m.strengths.w;
@@ -214,7 +212,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     let position_dx = dpdx(in.relative);
     if map_ready(m.maps.x) {
         let at = map_uv(flags, 0u, first, second);
-        let texel = textureSampleGrad(
+        let sampled = textureSampleGrad(
             base_color_map,
             base_color_sampler,
             at.uv,
@@ -222,6 +220,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
             at.dx,
             at.dy,
         );
+        let texel = straight_texel(m, sampled);
         base *= texel.rgb;
         alpha *= texel.a;
     }
@@ -283,7 +282,6 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
         discard;
     }
 #endif
-    let color_alpha = select(alpha, rest, premultiplied_map(m));
     let finished = finish(fogged(outgoing, in.relative, m), in.clip.xy);
-    return fragment_color(m, finished.rgb, alpha, color_alpha);
+    return fragment_color(m, finished.rgb, alpha);
 }

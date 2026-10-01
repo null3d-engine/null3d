@@ -18,6 +18,7 @@ use null3d_core::handle::Handle;
 use null3d_gpu::drawlist::{sizes, state_flags, template, vertex};
 
 use crate::pipelines::DepthBias;
+use crate::textures::Premultiplied;
 
 /// How a material shades.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -126,9 +127,12 @@ pub mod flag {
     pub const BLEND: u32 = 2;
     /// The shader skips the scene's fog.
     pub const NO_FOG: u32 = 4;
-    /// The base color map holds colors multiplied by their alpha already, so the shader
-    /// multiplies them by the rest of the alpha only.
+    /// The base color map holds sRGB colors that were multiplied by their alpha while encoded, so
+    /// the shader divides them by it again before it uses them.
     pub const MAP_PREMULTIPLIED: u32 = 8;
+    /// With `MAP_PREMULTIPLIED`, the base color map holds linear colors instead, multiplied by
+    /// their alpha.
+    pub const MAP_LINEAR: u32 = 16;
     /// The map of slot `s` reads the second texture coordinates when bit `SECOND_UV << s` is set.
     pub const SECOND_UV: u32 = 256;
 }
@@ -454,7 +458,7 @@ impl MaterialTable {
         &mut self,
         layers_changed: bool,
         ready_layer: impl Fn(Handle) -> Option<u32>,
-        premultiplied: impl Fn(Handle) -> bool,
+        premultiplied: impl Fn(Handle) -> Premultiplied,
     ) {
         if !std::mem::take(&mut self.maps_changed) && !layers_changed {
             return;
@@ -476,13 +480,17 @@ impl MaterialTable {
             }
             // The base color map's texels decide whether its colors are premultiplied.
             let base = maps[MapSlot::BaseColor as usize];
-            let base_premultiplied = row[param::MAP_LAYERS] != NO_MAP && premultiplied(base);
-            let flags = row[param::FLAGS] as u32;
-            let flags = if base_premultiplied {
-                flags | flag::MAP_PREMULTIPLIED
+            let base_flags = if row[param::MAP_LAYERS] == NO_MAP {
+                0
             } else {
-                flags & !flag::MAP_PREMULTIPLIED
-            } as f32;
+                match premultiplied(base) {
+                    Premultiplied::No => 0,
+                    Premultiplied::Srgb => flag::MAP_PREMULTIPLIED,
+                    Premultiplied::Linear => flag::MAP_PREMULTIPLIED | flag::MAP_LINEAR,
+                }
+            };
+            let map_flags = flag::MAP_PREMULTIPLIED | flag::MAP_LINEAR;
+            let flags = ((row[param::FLAGS] as u32 & !map_flags) | base_flags) as f32;
             changed |= row[param::FLAGS] != flags;
             row[param::FLAGS] = flags;
             if changed {
@@ -733,7 +741,7 @@ mod tests {
         );
         assert_eq!(table.maps(waiting)[MapSlot::Emissive as usize], on_its_way);
         table.take_changed();
-        table.update_map_layers(false, layer, |_| false);
+        table.update_map_layers(false, layer, |_| Premultiplied::No);
         assert_eq!(
             table.take_changed(),
             Some(mapped..mapped + 1),
@@ -741,13 +749,29 @@ mod tests {
         );
         assert_eq!(layers(&table, mapped), [7.0, -1.0, -1.0, -1.0, -1.0, -1.0]);
         assert_eq!(layers(&table, waiting), [NO_MAP; MAP_SLOTS]);
-        table.update_map_layers(false, layer, |_| false);
+        table.update_map_layers(false, layer, |_| Premultiplied::No);
         assert_eq!(table.take_changed(), None, "nothing changed");
         // A texture whose layer became ready writes the layers again.
         let both = |_: Handle| Some(3);
-        table.update_map_layers(true, both, |_| false);
+        table.update_map_layers(true, both, |_| Premultiplied::No);
         assert_eq!(table.take_changed(), Some(mapped..waiting + 1));
         assert_eq!(layers(&table, waiting)[MapSlot::Emissive as usize], 3.0);
+        // A premultiplied base color map's encoding sets the flags; an emissive map's does not.
+        let map_flags = |table: &MaterialTable, id| {
+            row(table, id)[param::FLAGS] as u32 & (flag::MAP_PREMULTIPLIED | flag::MAP_LINEAR)
+        };
+        for (premultiplied, flags) in [
+            (Premultiplied::Srgb, flag::MAP_PREMULTIPLIED),
+            (
+                Premultiplied::Linear,
+                flag::MAP_PREMULTIPLIED | flag::MAP_LINEAR,
+            ),
+            (Premultiplied::No, 0),
+        ] {
+            table.update_map_layers(true, both, |_| premultiplied);
+            assert_eq!(map_flags(&table, mapped), flags, "{premultiplied:?}");
+            assert_eq!(map_flags(&table, waiting), 0);
+        }
         assert_eq!(
             table.set_map(9, MapSlot::BaseColor, ready, false),
             Err(MaterialError::Unknown(9))

@@ -96,6 +96,18 @@ impl Default for Sampling {
     }
 }
 
+/// How a texture's colors hold its alpha. The browser multiplies an image's stored colors by
+/// their alpha as it decodes the image, so an sRGB texture's colors are multiplied while encoded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Premultiplied {
+    /// The colors are straight, or the texture has no image.
+    No,
+    /// The colors were multiplied by their alpha in sRGB encoding, before sampling decodes them.
+    Srgb,
+    /// The colors are linear values multiplied by their alpha.
+    Linear,
+}
+
 /// A texture as its creator describes it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TextureDesc {
@@ -679,18 +691,25 @@ impl TextureStore {
         matches!(slot.state, State::Uploaded { .. }).then_some(slot.layer)
     }
 
-    /// True when a texture's texels on the GPU come from an image that holds colors multiplied by
-    /// their alpha.
-    pub fn premultiplied(&self, texture: Handle) -> bool {
-        self.slot(texture).is_ok_and(|slot| {
-            matches!(
-                slot.state,
-                State::Uploaded {
-                    source: Source::Image { flags, .. },
-                    ..
-                } if flags & upload_flags::PREMULTIPLIED_ALPHA != 0
-            )
-        })
+    /// Whether a texture's texels on the GPU come from an image that holds colors multiplied by
+    /// their alpha, and in which encoding the colors were multiplied.
+    pub fn premultiplied(&self, texture: Handle) -> Premultiplied {
+        let Ok(slot) = self.slot(texture) else {
+            return Premultiplied::No;
+        };
+        match slot.state {
+            State::Uploaded {
+                source: Source::Image { flags, .. },
+                ..
+            } if flags & upload_flags::PREMULTIPLIED_ALPHA != 0 => {
+                if self.arrays[slot.array as usize].key.format == format::RGBA8_UNORM_SRGB {
+                    Premultiplied::Srgb
+                } else {
+                    Premultiplied::Linear
+                }
+            }
+            _ => Premultiplied::No,
+        }
     }
 
     /// The GPU id of the bind group that samples a live texture: its array with its sampler.
