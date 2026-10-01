@@ -16,6 +16,7 @@ use null3d_render::camera::Perspective;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, RecordError};
 use null3d_render::graph::ALL_LAYERS;
+use null3d_render::materials::{Shading, feature};
 use null3d_render::view::{View, ViewId};
 
 /// The builder's data texture ids: resident, then the streamed ring, the cluster texture, and the
@@ -954,6 +955,8 @@ fn cell_culling_lists_exactly_the_scene_objects_that_culling_each_object_lists()
     }
 }
 
+/// Every object casts, and every fourth one has a blended lit material: the transparent pass draws
+/// it, and the cascades list it as any caster.
 #[test]
 fn cell_culling_lists_exactly_the_casters_that_each_cascade_lists_without_it() {
     const OBJECTS: u32 = 400;
@@ -968,12 +971,26 @@ fn cell_culling_lists_exactly_the_casters_that_each_cascade_lists_without_it() {
     };
     let [mut on, mut off] = [true, false].map(|cell_culling| {
         let (mut world, _) = spread_world(cell_culling, OBJECTS, 256);
+        let glass = world
+            .renderer
+            .settings_mut()
+            .materials_mut()
+            .create(Shading::Lit, feature::BLEND, [1.0, 1.0, 1.0, 0.5])
+            .unwrap()
+            + 1;
         let casts = flags::CAST_SHADOWS;
-        let commands: Vec<Command> = world
+        let mut commands: Vec<Command> = world
             .objects
             .iter()
             .map(|&object| Command::set_flags(object, casts, casts))
             .collect();
+        commands.extend(
+            world
+                .objects
+                .iter()
+                .step_by(4)
+                .map(|&object| Command::set_material(object, glass)),
+        );
         world.frame += 1;
         world.scene.begin_frame(world.frame);
         world.scene.apply_commands(&commands, world.frame).unwrap();

@@ -425,9 +425,16 @@ impl CpuCulledRenderer {
         self.clusters
             .prepare(input.batches, &self.layout)
             .map_err(out_of_memory)?;
-        let scene_buckets = &self.layout.scene_buckets;
+        // The cell order holds every object that a view or a cascade culls: blended casters have
+        // no bucket in the scene's layout, as the transparent pass draws them, but cast all the
+        // same. Each culling skips the rows that have no bucket in its own layout.
+        let (scene_buckets, casters) = (&self.layout.scene_buckets, &self.casters.scene_buckets);
+        let culled = |slot: usize| {
+            scene_buckets[slot] != NO_BUCKET
+                || casters.get(slot).is_some_and(|&bucket| bucket != NO_BUCKET)
+        };
         self.cells
-            .classify(input.scene, &|slot| scene_buckets[slot] != NO_BUCKET)
+            .classify(input.scene, &culled)
             .map_err(out_of_memory)?;
         let views = self.settings.views().len();
         self.culling.reserve(room, views).map_err(out_of_memory)?;

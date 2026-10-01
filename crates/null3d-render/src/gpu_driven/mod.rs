@@ -443,9 +443,14 @@ impl GpuDrivenRenderer {
                 self.casters.clear();
             }
             self.layouts_shadowed = shadows;
-            let layout = &self.layout;
+            // The cell order holds every object that a view or a cascade culls: blended casters
+            // have no bucket in the scene's layout, as the transparent pass draws them, but cast
+            // all the same.
+            let (layout, casters) = (&self.layout, &self.casters);
             self.cells
-                .classify(input.scene, &|slot| layout.draws(slot))
+                .classify(input.scene, &|slot| {
+                    layout.draws(slot) || (shadows && casters.draws(slot))
+                })
                 .map_err(|_| RecordError::OutOfMemory {
                     bytes: (input.scene.capacity() + 1).saturating_mul(16),
                 })?;

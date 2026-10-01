@@ -356,18 +356,34 @@ fn a_caster_that_stops_casting_leaves_the_cascades() {
     );
 }
 
+/// Every object casts, and every fourth one has a blended lit material: the transparent pass draws
+/// it, and the cascades cull it as any caster.
 #[test]
 fn each_cascade_culls_the_casters_of_the_cells_it_can_see() {
     const OBJECTS: u32 = 400;
     let renderer = GpuDrivenRenderer::new(RendererConfig::default());
     let mut world = World::build_sized(renderer, OBJECTS + 16);
     world.spread(OBJECTS, 2000, 7);
+    let glass = world
+        .renderer
+        .settings_mut()
+        .materials_mut()
+        .create(Shading::Lit, feature::BLEND, [1.0, 1.0, 1.0, 0.5])
+        .unwrap()
+        + 1;
     let casts = flags::CAST_SHADOWS;
-    let commands: Vec<_> = world
+    let mut commands: Vec<_> = world
         .objects
         .iter()
         .map(|&object| Command::set_flags(object, casts, casts))
         .collect();
+    commands.extend(
+        world
+            .objects
+            .iter()
+            .step_by(4)
+            .map(|&o| Command::set_material(o, glass)),
+    );
     world.scene.apply_commands(&commands, world.frame).unwrap();
     let shadow = SunShadow {
         distance: 400.0,
