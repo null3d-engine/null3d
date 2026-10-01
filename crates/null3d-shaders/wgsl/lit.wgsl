@@ -14,9 +14,8 @@ enable draw_index;
 // and the material draws as without it. The normal map bends the normal in a frame from the mesh's
 // tangents with VERTEX_TANGENT, and otherwise from how the position and the texture coordinates
 // change between pixels, as three.js's getTangentFrame makes it.
-#import null3d::color
 #import null3d::lighting
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, fogged, fragment_color, frame}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color, frame}
 #import null3d::mesh::{map_layer, map_ready, material_of, premultiplied_map, relative_position}
 #import null3d::mesh::{world_direction, world_normal}
 
@@ -285,6 +284,6 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     }
 #endif
     let color_alpha = select(alpha, rest, premultiplied_map(m));
-    let encoded = null3d::color::linear_to_srgb(fogged(outgoing, in.relative, m));
-    return fragment_color(m, encoded, alpha, color_alpha);
+    let finished = finish(fogged(outgoing, in.relative, m), in.clip.xy);
+    return fragment_color(m, finished.rgb, alpha, color_alpha);
 }

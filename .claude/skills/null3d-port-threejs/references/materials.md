@@ -49,7 +49,7 @@ Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness
 | `wireframe` | `debug.view('wireframe')` (later in 0.1), or `scene.createLines({ fromEdges })` (0.2) | |
 | `fog: false` | Same name | |
 | `toneMapped: false` | Not in 1.0 | Draw the objects in a declared pass after post-processing (0.2) |
-| `dithering` | Always on in the final pass (later in 0.1) | |
+| `dithering` | Always on in the final pass | |
 | `clippingPlanes`, `clipShadows` | A surface function (later in 0.1; section 8) | |
 | `shadowSide`, `precision`, `premultipliedAlpha` | Not needed | To store a texture's colors multiplied by alpha: `loadTexture(url, { premultipliedAlpha: true })` |
 
@@ -192,7 +192,7 @@ const leaf = materials.shader({
 
 ## 9. Checking material parity
 
-1. Compare with post-processing off and tone mapping matched. null3D has no tone mapping until `post.set({ toneMapping })` comes later in 0.1, so render the three.js side with `NoToneMapping`.
+1. Compare with post-processing off and tone mapping matched. null3D defaults to ACES, so a three.js side with `NoToneMapping` needs `post.set({ toneMapping: 'none' })` on the null3D side.
 2. Compare one material type at a time, on a simple lit test view: a sphere and a plane under the scene's lights.
 3. Read the diff image. Uniformly brighter or darker usually means color space, exposure or light units. Different highlight size means roughness mapping. Missing detail means a missing map, or a map with the wrong color space.
 4. Record accepted differences in the report, with the reason.

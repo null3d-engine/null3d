@@ -6,6 +6,7 @@
 import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
+import { FORMAT_CANVAS } from '../generated/gpu';
 import { choosePreset, crashTier, memoryPreset, type PresetRequest } from '../quality/chooser';
 import {
 	checkSettings,
@@ -25,6 +26,7 @@ import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
 import { ImageTable, sendThrough, sendToTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
+import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { loadSketch } from '../sketch/define-sketch';
 import type { QualityStart } from '../sketch/quality';
 import type { SketchRunner } from '../sketch/runner';
@@ -48,6 +50,7 @@ import { watchDisplay } from './display';
 import {
 	type FrameMetrics,
 	HeapSampler,
+	secondRates,
 	summarizeFrames,
 	threadRoles,
 	wasmDownloadBytes,
@@ -100,6 +103,12 @@ export interface EngineOptions {
 	powerPreference?: 'high-performance' | 'low-power';
 	/** The latency mode. The default is `pipelined`. */
 	latency?: LatencyMode;
+	/**
+	 * True for a see-through canvas: the page shows through wherever no object draws, until the
+	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
+	 * it. The default is false, an opaque canvas.
+	 */
+	transparent?: boolean;
 	/**
 	 * The thread that runs the sketch's code and the engine core: `worker`, the default, or `main`
 	 * for the page's main thread, where the sketch can reach the DOM. Use `main` for apps that work
@@ -167,6 +176,14 @@ export interface EngineCapabilities {
 	features: string[];
 	/** The WebGPU limits, or an empty object on WebGL2. */
 	limits: Record<string, number | null>;
+	/**
+	 * True when the scene draws high dynamic range color, which the final pass tone maps into the
+	 * canvas. False on the 8-bit path, where each shader tone maps its own output: in WebGPU's
+	 * compatibility mode, and on WebGL2 devices that cannot draw float targets with antialiasing.
+	 * Both paths show the same colors. Antialiased edges differ a little, because the 8-bit path
+	 * averages them after the tone mapping.
+	 */
+	hdr: boolean;
 	/**
 	 * The most objects and instance rows, counted together, that a scene can draw on this device.
 	 * On WebGPU every device draws at least 2,097,152, and a device with larger GPU buffers draws
@@ -796,7 +813,10 @@ async function startEngine(
 	});
 	onProgress?.('core');
 	let wasmMemory = core.memory;
-	const device = coreDevice(tier === 'webgl2', report, switches);
+	const device = coreDevice(tier, report, {
+		...switches,
+		transparent: options.transparent === true,
+	});
 	const capabilities: EngineCapabilities = {
 		tier,
 		threaded,
@@ -805,9 +825,13 @@ async function startEngine(
 				? Object.keys(report.webgl2.extensions).filter((n) => report.webgl2.extensions[n])
 				: report.webgpu.features,
 		limits: tier === 'webgl2' ? {} : report.webgpu.limits,
+		hdr: device.sceneColor !== FORMAT_CANVAS,
 		maxInstances: maxInstances(device),
 		depth: device.depth,
 	};
+	// Where the browser lacks Atomics.waitAsync, the threads wake each other with messages.
+	const wakeByMessage = switches.wakeByMessage || !report.atomicsWaitAsync;
+	setWakeByMessage(wakeByMessage);
 	const handoff: CoreHandoff = {
 		build,
 		module: core.module,
@@ -816,6 +840,7 @@ async function startEngine(
 		metrics,
 		device,
 		errorFixes: ERROR_FIXES,
+		wakeByMessage,
 	};
 	const canvasWatch = watchCanvas(options.canvas, control, quality.settings.maxPixelRatio);
 	canvasWatch.listen(true);
@@ -836,7 +861,7 @@ async function startEngine(
 		// Counted before the flag clears, so the sketch's first step after the pause sees it.
 		if (!paused && Atomics.load(slots, Slot.Paused) !== 0) Atomics.add(slots, Slot.Resumes, 1);
 		Atomics.store(slots, Slot.Paused, paused ? 1 : 0);
-		Atomics.notify(slots, Slot.Paused);
+		notifySlot(slots, Slot.Paused, threads?.sketch?.worker);
 	};
 	const pageLoss = (reason: string) =>
 		onFailure(new EngineError('E1302', `the page lost its GPU: ${reason}.`));
@@ -889,7 +914,7 @@ async function startEngine(
 				Slot.JobsReady,
 				Slot.PipelinesBuilt,
 			])
-				Atomics.notify(slots, slot);
+				notifySlot(slots, slot, threads?.sketch?.worker);
 			localDrawing?.stop();
 			localRunner?.dispose();
 			localCore?.destroyEngine();
@@ -1134,6 +1159,7 @@ async function startEngine(
 				completionSignal: tier === 'webgl2' ? 'fence' : 'queue',
 				refreshHz: reader.refreshHz > 0 ? reader.refreshHz : null,
 				mainThread: mainThread.stop(),
+				perSecond: secondRates(reader.records),
 			};
 		},
 		async capture() {

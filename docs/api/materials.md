@@ -36,7 +36,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 | Factory | How it looks |
 | --- | --- |
 | `materials.standard(options)` | Lit by the scene's lights with glTF's metallic-roughness model and the formulas of three.js's `MeshStandardMaterial` |
-| `materials.unlit(options)` | Its color as it is, whatever the lights, like three.js's `MeshBasicMaterial` |
+| `materials.unlit(options)` | Its color as it is, whatever the lights, like three.js's `MeshBasicMaterial`. The exposure and the tone mapping still apply to it. |
 
 Without lights, a standard material draws black, apart from its emissive color. [Lights](lights.md) explains how light colors and intensities shade it.
 
@@ -44,12 +44,12 @@ Without lights, a standard material draws black, apart from its emissive color. 
 
 | Option | Range | Default | What it does |
 | --- | --- | --- | --- |
-| `color` | An sRGB color | White | The base color: the color of diffuse light, and of a metal's reflections |
+| `color` | A [color](#color) | White | The base color: the color of diffuse light, and of a metal's reflections |
 | `opacity` | 0 to 1 | 1 | How opaque the surface is. The `mask` alpha mode tests it, and the `blend` alpha mode blends with it |
 | `alphaCutoff` | 0 to 1 | 0.5 | With the `mask` alpha mode, the alpha below which the surface draws nothing |
 | `metalness` | 0 to 1 | 0 | 0 is a surface such as paint or plastic, and 1 is a metal |
 | `roughness` | 0 to 1 | 1 | 0 is a mirror finish with a small, sharp highlight, and 1 is fully matte |
-| `emissive` | An sRGB color | Black | Light that the surface gives off itself, whatever the lights |
+| `emissive` | A [color](#color) | Black | Light that the surface gives off itself, whatever the lights |
 | `emissiveIntensity` | 0 or more | 1 | The factor of the emissive color |
 | `normalScale` | Two numbers | `[1, 1]` | How strongly the normal map bends normals along u and v |
 | `aoMapIntensity` | 0 to 1 | 1 | How much the occlusion map darkens ambient light |
@@ -99,7 +99,7 @@ Until a map's image reaches the GPU, the material draws as without that map.
 
 ## Color
 
-`color` and `emissive` take an sRGB color, as three.js does: a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three components from 0 to 1. The engine converts the color to linear once, when the call receives it. Any other value, such as the name `'red'`, throws E1204.
+`color` and `emissive` take a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three components from 0 to 1. Hex values are sRGB, as three.js reads them, and the engine converts them to linear once, when the call receives them. Three components are linear, as three.js's `Color.setRGB` reads them. Any other value, such as the name `'red'`, throws E1204. [Color management](../concepts/color-management.md) covers both color spaces.
 
 ## Changing a material
 
@@ -223,7 +223,7 @@ How a blended surface meets what lies behind it. The `normal` blending covers it
 type ColorInput = string | number | readonly [number, number, number];
 ```
 
-A color: a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three sRGB components from 0 to 1.
+A color: a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three linear components from 0 to 1, such as `[1, 0.26, 0.05]`. Hex values are sRGB, as on the web and in three.js, and the engine converts them to linear values. The color helpers, such as `color.fromHsl`, give linear components.
 
 ### `DepthBias`
 
@@ -271,7 +271,7 @@ Options every material takes.
 
 | Member | Description |
 | --- | --- |
-| `color?: ColorInput` | The base color: a hex string, a number, or three sRGB components from 0 to 1. |
+| `color?: ColorInput` | The base color: a hex string or a number in sRGB, or three linear components from 0 to 1. |
 | `opacity?: number` | How opaque the surface is, from 0 to 1. The default is 1. It is part of the alpha, which the `mask` alpha mode tests and the `blend` alpha mode blends with. The `opaque` alpha mode ignores it. |
 | `alphaCutoff?: number` | With the `mask` alpha mode, the alpha below which the surface draws nothing, from 0 to 1. The default is 0.5, as in glTF. |
 
@@ -284,7 +284,7 @@ Material factories. The standard material follows glTF's metallic-roughness mode
 | Member | Description |
 | --- | --- |
 | `standard(options: StandardOptions = {}): Material<StandardValues>` | A lit material with glTF's metallic-roughness model, like three.js's `MeshStandardMaterial`. |
-| `unlit(options: UnlitOptions = {}): Material<UnlitValues>` | A material that ignores lights and shows its color as it is, like three.js's `MeshBasicMaterial`. |
+| `unlit(options: UnlitOptions = {}): Material<UnlitValues>` | A material that ignores lights and shows its color unlit, like three.js's `MeshBasicMaterial`. The exposure and the tone mapping still apply to it, as three.js applies them to that material. |
 
 ### `StandardMaps`
 
@@ -321,7 +321,7 @@ The values of a standard material, which `set` changes at any time.
 | --- | --- |
 | `metalness?: number` | How much the surface acts like a metal, from 0 to 1. The default is 0. |
 | `roughness?: number` | How rough the surface is, from 0 (a mirror) to 1 (fully matte). The default is 1. |
-| `emissive?: ColorInput` | The color the surface gives off without any light, in sRGB as `color` takes it. The default is black, which gives off nothing. |
+| `emissive?: ColorInput` | The color the surface gives off without any light, in the forms that `color` takes. The default is black, which gives off nothing. |
 | `emissiveIntensity?: number` | The factor of the emissive color: 0 or more. The default is 1. |
 | `normalScale?: readonly [number, number]` | How strongly the normal map bends normals along u and along v. The default is `[1, 1]`, and negative values flip a direction. |
 | `aoMapIntensity?: number` | How much the occlusion map darkens ambient light, from 0 to 1. The default is 1. |

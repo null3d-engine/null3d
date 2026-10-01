@@ -32,6 +32,7 @@ use crate::materials::{
     MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, blend_state, feature,
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
+use crate::output::{Output, SceneColor};
 use crate::pipelines::DrawKey;
 use crate::textures::TextureStore;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
@@ -387,13 +388,23 @@ struct Lighting {
     sun_direction: [f32; 4],
     sun_color: [f32; 4],
     ambient: [f32; 4],
-    /// Linear background color.
-    background: [f32; 3],
+    /// Linear background color, or `None` before the sketch sets one.
+    background: Option<[f32; 3]>,
     fog: Fog,
 }
 
-/// What the sketch sets and changes rarely: meshes, materials, textures, the views, the lights
-/// and the fog.
+/// How frames reach the canvas, fixed when the builder starts: the target that scene passes draw
+/// into, and whether the canvas is transparent.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CanvasOutput {
+    pub scene_color: SceneColor,
+    /// True when the canvas shows the page behind it where nothing draws: it holds premultiplied
+    /// alpha, and it stays clear until the sketch sets a background.
+    pub transparent: bool,
+}
+
+/// What the sketch sets and changes rarely: meshes, materials, textures, the views, the lights, the
+/// fog and the output settings.
 pub struct SceneSettings {
     meshes: MeshStorage,
     materials: MaterialTable,
@@ -404,10 +415,17 @@ pub struct SceneSettings {
     /// The views, the camera's first.
     views: Vec<View>,
     lighting: Lighting,
+    canvas: CanvasOutput,
+    output: Output,
 }
 
 impl SceneSettings {
-    pub fn new(meshes: MeshStorage, max_materials: u32, textures: TextureStore) -> Self {
+    pub fn new(
+        meshes: MeshStorage,
+        max_materials: u32,
+        textures: TextureStore,
+        canvas: CanvasOutput,
+    ) -> Self {
         Self {
             meshes,
             materials: MaterialTable::with_capacity(max_materials),
@@ -418,10 +436,27 @@ impl SceneSettings {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
                 sun_color: [0.0; 4],
                 ambient: [0.0; 4],
-                background: [0.0; 3],
+                background: None,
                 fog: Fog::None,
             },
+            canvas,
+            output: Output::default(),
         }
+    }
+
+    /// How frames reach the canvas.
+    pub fn canvas(&self) -> CanvasOutput {
+        self.canvas
+    }
+
+    /// The exposure and the tone mapping.
+    pub fn output(&self) -> Output {
+        self.output
+    }
+
+    /// Sets the exposure and the tone mapping, from the next recorded frame on.
+    pub fn set_output(&mut self, output: Output) {
+        self.output = output;
     }
 
     pub fn meshes(&self) -> &MeshStorage {
@@ -604,9 +639,10 @@ impl SceneSettings {
         self.set_ambient(lit.ambient);
     }
 
-    /// The linear color behind every object.
+    /// The linear color behind every object. Exposure and tone mapping change it as they change
+    /// the objects.
     pub fn set_background(&mut self, color: [f32; 3]) {
-        self.lighting.background = color;
+        self.lighting.background = Some(color);
     }
 
     /// The fog that every view's objects take, apart from materials that opt out. The background
@@ -615,11 +651,13 @@ impl SceneSettings {
         self.lighting.fog = fog;
     }
 
-    /// The color that clears the color targets, as the scene's render passes hold it: the
-    /// background, encoded as sRGB as the shaders write their colors, and opaque.
+    /// The color that clears the color targets, as the scene's render passes hold it.
     pub(crate) fn clear_color(&self) -> [f32; 4] {
-        let [r, g, b] = self.lighting.background.map(linear_to_srgb);
-        [r, g, b, 1.0]
+        self.canvas.scene_color.clear_color(
+            self.lighting.background,
+            self.canvas.transparent,
+            self.output,
+        )
     }
 
     /// What a mesh and material pair, by engine ids, asks of the pipeline that draws it, or `None`
@@ -691,6 +729,7 @@ impl SceneSettings {
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
+            output: self.output.uniform(),
             fog: self.lighting.fog.uniform(forward),
         };
         Some(ViewFrame::new(uniform, camera, view.layers()))

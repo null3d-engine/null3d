@@ -11,8 +11,7 @@ enable draw_index;
 // alpha of the color, the map and the vertex colors falls below the material's cutoff. A material
 // that blends writes premultiplied color, and takes a premultiplied map's colors as they are.
 // null3d::mesh finds each instance on both GPU paths.
-#import null3d::color
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, fogged, fragment_color}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
 #import null3d::mesh::{map_layer, map_ready, material_of, premultiplied_map, relative_position}
 
 // The maps' bind group comes after the frame's group, and on WebGL2 after the groups of the draw
@@ -91,6 +90,6 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     }
 #endif
     let color_alpha = select(alpha, rest, premultiplied_map(m));
-    let encoded = null3d::color::linear_to_srgb(fogged(base, in.relative, m));
-    return fragment_color(m, encoded, alpha, color_alpha);
+    let finished = finish(fogged(base, in.relative, m), in.clip.xy);
+    return fragment_color(m, finished.rgb, alpha, color_alpha);
 }

@@ -93,7 +93,7 @@ A parent loop puts an object under itself, or under an object below it, so it ca
 
 These calls change the structure of the scene, so they take effect when the engine processes the frame, after `onUpdate` returns. [Scene](scene.md#when-changes-take-effect) gives the details.
 
-In development builds, every call on an object apart from `describe` throws E1101 once you destroy the object. So does a call that gets a destroyed object, such as `setParent`. Once the frame has removed the object, the world getters throw E1101 in every build.
+In development builds, every call on an object apart from `describe` throws E1101 once you destroy the object. So does a call that gets a destroyed object, such as `setParent`. Once the frame has removed the object, the world getters throw E1101 in every build. In a release build, the other calls on a destroyed object change nothing, and never reach the object that takes its slot ([Handles](../concepts/handles.md#stale-handles)).
 
 ## Layers
 

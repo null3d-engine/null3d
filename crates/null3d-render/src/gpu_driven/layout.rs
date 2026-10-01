@@ -677,13 +677,14 @@ mod tests {
     use null3d_gpu::drawlist::format;
 
     use super::*;
+    use crate::frame::CanvasOutput;
     use crate::geometry::box_geometry;
     use crate::gpu_driven::scene_settings;
     use crate::materials::Shading;
 
     #[test]
     fn objects_with_bounds_of_their_own_or_none_cull_in_buckets_of_their_own() {
-        let mut settings = scene_settings(4);
+        let mut settings = scene_settings(4, CanvasOutput::default());
         let box_mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
         let mesh = settings.meshes_mut().add(&box_mesh).unwrap() + 1;
         let material = settings.materials_mut().create(Shading::Lit, 0, [1.0; 4]);
