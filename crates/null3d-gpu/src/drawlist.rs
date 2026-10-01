@@ -727,6 +727,10 @@ pub mod template {
     /// The depth of instanced shadow casters, drawn from a light into a layer of a shadow map.
     /// Casters between the light and the layer's view flatten onto its near face.
     pub const SHADOW_DEPTH: u32 = 8;
+    /// A texture behind every object: one triangle over the whole view, with no vertex buffer, that
+    /// samples a layer of a texture array. The bind group of index 0 is the frame's and that of
+    /// index 1 the texture's. The draw's first vertex is the layer times three.
+    pub const BACKGROUND: u32 = 9;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;
 }
@@ -979,6 +983,7 @@ pub fn typescript_constants() -> String {
                 ("INSTANCED_STANDARD_MAPS", template::INSTANCED_STANDARD_MAPS),
                 ("FINAL", template::FINAL),
                 ("SHADOW_DEPTH", template::SHADOW_DEPTH),
+                ("BACKGROUND", template::BACKGROUND),
                 ("CULL", template::CULL),
             ],
         ),

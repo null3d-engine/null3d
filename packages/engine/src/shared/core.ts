@@ -233,6 +233,8 @@ export interface CoreGlue extends CoreErrors {
 	setOutput(toneMapping: number, exposure: number): number;
 	/** Whether the render scale can drop below the whole canvas, from the next frame on. */
 	setRenderScaling(scaling: boolean): number;
+	/** Draws the texture `texture` behind every object in the camera's view, or none with 0. */
+	setBackgroundTexture(texture: number): number;
 	/**
 	 * The scene's fog: its kind (`FOG_KIND_*`), its linear color, the near and far distances of
 	 * linear fog, and the density of exponential squared fog.
@@ -309,6 +311,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBackground',
 	'setOutput',
 	'setRenderScaling',
+	'setBackgroundTexture',
 	'setFog',
 ];
 

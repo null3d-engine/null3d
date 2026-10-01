@@ -6,6 +6,91 @@ import type { DeviceShaders } from './shaders';
 
 /** The WGSL builds of the shaders that load by device, without the bits that a device fixes. */
 export const SHADERS: DeviceShaders = {
+	background: {
+		webgpu: {
+			permutation: 0,
+			wgsl: {
+				source: `struct Output {
+    exposure: f32,
+    tone_mapping: u32,
+    flags: u32,
+    render_size: u32,
+}
+
+struct Fog {
+    color: vec3<f32>,
+    kind: u32,
+    forward: vec3<f32>,
+    density: f32,
+    near: f32,
+    far: f32,
+}
+
+struct Frame {
+    view_proj: mat4x4<f32>,
+    camera_position: vec4<f32>,
+    sun_direction: vec4<f32>,
+    sun_color: vec4<f32>,
+    ambient: vec4<f32>,
+    output: Output,
+    fog: Fog,
+}
+
+struct VertexOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) @interpolate(flat, either) layer: u32,
+}
+
+const ACES_INPUT: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.59719f, 0.076f, 0.0284f), vec3<f32>(0.35458f, 0.90834f, 0.13383f), vec3<f32>(0.04823f, 0.01566f, 0.83777f));
+const ACES_OUTPUT: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.60475f, -0.10208f, -0.00327f), vec3<f32>(-0.53108f, 1.10813f, -0.07276f), vec3<f32>(-0.07367f, -0.00605f, 1.07602f));
+const LINEAR_SRGB_TO_LINEAR_REC2020_: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.6274f, 0.0691f, 0.0164f), vec3<f32>(0.3293f, 0.9195f, 0.088f), vec3<f32>(0.0433f, 0.0113f, 0.8956f));
+const AGX_INSET: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.85662717f, 0.13731897f, 0.11189821f), vec3<f32>(0.09512124f, 0.761242f, 0.076799415f), vec3<f32>(0.048251607f, 0.10143904f, 0.81130236f));
+const AGX_OUTSET: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.1271006f, -0.14132977f, -0.14132977f), vec3<f32>(-0.11060664f, 1.1578237f, -0.11060664f), vec3<f32>(-0.016493939f, -0.016493939f, 1.2519364f));
+const LINEAR_REC2020_TO_LINEAR_SRGB: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.6605f, -0.1246f, -0.0182f), vec3<f32>(-0.5876f, 1.1329f, -0.1006f), vec3<f32>(-0.0728f, -0.0083f, 1.1187f));
+
+@group(0) @binding(0)
+var<uniform> frame: Frame;
+@group(1) @binding(0)
+var layers: texture_2d_array<f32>;
+@group(1) @binding(1)
+var layer_sampler: sampler;
+
+fn finish(c: vec3<f32>, pixel: vec2<f32>, settings: Output) -> vec4<f32> {
+    return vec4<f32>(c, 1f);
+}
+
+@vertex
+fn vs(@builtin(vertex_index) vertex: u32) -> VertexOut {
+    var out: VertexOut;
+
+    let index = (vertex % 3u);
+    let corner = vec2<f32>(f32(((index << 1u) & 2u)), f32((index & 2u)));
+    out.clip = vec4<f32>(((corner * 2f) - vec2(1f)), 0.5f, 1f);
+    out.uv = corner;
+    out.layer = (vertex / 3u);
+    let _e26 = out;
+    return _e26;
+}
+
+@fragment
+fn fs(in: VertexOut) -> @location(0) vec4<f32> {
+    let texel = textureSample(layers, layer_sampler, in.uv, in.layer);
+    let _e11 = frame.output;
+    let _e12 = finish(texel.xyz, in.clip.xy, _e11);
+    return _e12;
+}
+`,
+				pipelines: {
+					main: {
+						vertex: 'vs',
+						fragment: 'fs',
+					},
+				},
+			},
+			glsl: null,
+		},
+	},
 	cull: {
 		webgpu: {
 			permutation: 0,
