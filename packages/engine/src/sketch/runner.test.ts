@@ -192,6 +192,7 @@ async function start(
 				log.push(`page ${JSON.stringify(update.settings)}`);
 			},
 			sendImage: () => {},
+			sendShader: () => {},
 			pageUrl: 'http://localhost/',
 		},
 		holdSeconds,

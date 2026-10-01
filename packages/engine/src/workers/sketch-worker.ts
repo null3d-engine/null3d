@@ -9,7 +9,7 @@ import type { Drawing } from '../render/recovery';
 import type { Renderer } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews } from '../shared/control';
-import { ImageTable, sendThrough, sendToTable } from '../shared/images';
+import { drawingSenders, ImageTable } from '../shared/images';
 import { setWakeByMessage, wakeWaiters } from '../shared/wake';
 import { loadSketch } from '../sketch/define-sketch';
 import { runPipelined, SketchRunner } from '../sketch/runner';
@@ -47,11 +47,10 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			const started = await startWorkerCore(message, step);
 			const core = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
-			// Texture images go to the thread that draws: another through a port, or this one.
+			// Texture images and custom materials' shaders go to the thread that draws: another
+			// through a port, or this one.
 			const imageTable = new ImageTable();
-			const sendImage = message.imagePort
-				? sendThrough(message.imagePort)
-				: sendToTable(imageTable, control.slots);
+			const senders = drawingSenders(imageTable, control.slots, message.imagePort);
 			runner = new SketchRunner(
 				(name, data, transfer) => replyToPage({ type: 'sketch-message', name, data }, transfer),
 				message.metrics,
@@ -65,7 +64,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					quality: message.quality,
 					applyQuality: (update) => replyToPage({ type: 'quality', update }),
 					capabilities: message.capabilities,
-					sendImage,
+					...senders,
 					pageUrl: message.pageUrl,
 					fps: message.fps,
 				},

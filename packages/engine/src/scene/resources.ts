@@ -32,6 +32,7 @@ import {
 	MATERIAL_PARAM_ROUGHNESS,
 	MATERIAL_PARAM_UV_U,
 	MATERIAL_PARAM_UV_V,
+	SHADING_CUSTOM_FIRST,
 	SHADING_LIT,
 	SHADING_TEXCOORDS,
 	SHADING_UNLIT,
@@ -45,6 +46,8 @@ import {
 	SHAPE_SPHERE,
 	SHAPE_TORUS,
 } from '../generated/core';
+import type { ShaderVariants } from '../generated/shaders';
+import type { ShaderSender } from '../shared/images';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import { arraysProblem, meshFromArrays } from './mesh-arrays';
@@ -638,17 +641,24 @@ export interface MaterialFeatures {
 }
 
 /**
- * Options of `materials.standard`.
+ * The options of `materials.standard` besides its texture maps. Custom materials take them too.
  *
  * @category api/materials
  */
-export interface StandardOptions extends StandardValues, MaterialFeatures, StandardMaps {
+export interface StandardBaseOptions extends StandardValues, MaterialFeatures {
 	/**
 	 * Lights each triangle with one normal, the normal of its face, so the mesh looks faceted. It
 	 * is fixed when the material is created. The default is false.
 	 */
 	flatShading?: boolean;
 }
+
+/**
+ * Options of `materials.standard`.
+ *
+ * @category api/materials
+ */
+export interface StandardOptions extends StandardBaseOptions, StandardMaps {}
 
 /**
  * The values of an unlit material, which `set` changes at any time.
@@ -671,6 +681,41 @@ export interface UnlitOptions extends UnlitValues, MaterialFeatures {
 	 * created, and meshes need texture coordinates to show it.
 	 */
 	map?: Texture;
+}
+
+/**
+ * WGSL that the null3D Vite plugin compiled: a template literal that a `wgsl` block comment tags,
+ * or a `.wgsl` file that a module imports. TypeScript sees a tagged literal as a string, and the
+ * plugin puts the compiled WGSL in its place.
+ *
+ * @category api/materials
+ */
+export interface CompiledWgsl {
+	/** `'material'` for the functions of a custom material, and `'shader'` for a whole shader. */
+	readonly kind: 'material' | 'shader';
+}
+
+/**
+ * Options of `materials.shader`: the material's WGSL, and every option of `materials.standard`
+ * but its texture maps, which `defaultSurface` applies. Custom materials take no texture maps in
+ * this version, so the values of maps have no effect on them.
+ *
+ * @category api/materials
+ */
+export interface ShaderOptions extends StandardBaseOptions {
+	/**
+	 * The material's WGSL, compiled by the null3D Vite plugin. It declares
+	 * `fn surface(input: SurfaceInput) -> Surface`, which the engine calls for each pixel, and
+	 * which can start from `defaultSurface(input)`. The engine lights the surface that it returns.
+	 * Materials made from the same WGSL share their shader.
+	 */
+	wgsl: string | CompiledWgsl;
+}
+
+/** A custom material's WGSL as the plugin compiles it: the standard material's variants with it. */
+interface CompiledMaterial extends CompiledWgsl {
+	readonly kind: 'material';
+	readonly variants: ShaderVariants;
 }
 
 /** Every value of either material, which `set` writes. */
@@ -882,7 +927,15 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
  * @category api/materials
  */
 export class Materials {
-	constructor(private readonly core: CoreMemory) {}
+	/** The render pipeline template of each custom material's compiled WGSL. */
+	private readonly templates = new WeakMap<CompiledWgsl, number>();
+	private nextTemplate = SHADING_CUSTOM_FIRST;
+
+	constructor(
+		private readonly core: CoreMemory,
+		/** Sends each custom material's shader to the thread that draws, once. */
+		private readonly sendShader: ShaderSender = () => {},
+	) {}
 
 	/**
 	 * @internal Creates a material that shades as the engine core's shading code says, with the
@@ -939,6 +992,37 @@ export class Materials {
 	unlit(options: UnlitOptions = {}): Material<UnlitValues> {
 		const shading = options.map ? SHADING_UNLIT_MAP : SHADING_UNLIT;
 		return this.create<UnlitValues>(shading, options, 'materials.unlit');
+	}
+
+	/**
+	 * A custom material: the standard material with a surface function in WGSL, which changes how
+	 * each pixel of the surface looks before the engine lights it. It takes every option of
+	 * `materials.standard` but the texture maps, and `set` changes the same values. Meshes need texture coordinates to
+	 * draw with it. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a
+	 * whole shader with entry points.
+	 */
+	shader(options: ShaderOptions): Material<StandardValues> {
+		const call = 'materials.shader';
+		return this.create<StandardValues>(this.templateOf(options.wgsl, call), options, call);
+	}
+
+	/** The template of a custom material's WGSL, which goes to the thread that draws once. */
+	private templateOf(wgsl: string | CompiledWgsl, call: string): number {
+		if (typeof wgsl !== 'object' || wgsl?.kind !== 'material') {
+			throw new EngineError(
+				'E1215',
+				typeof wgsl === 'object' && wgsl?.kind === 'shader'
+					? `${call}() got a whole shader with entry points. Custom materials take a surface function, without entry points.`
+					: `${call}() got WGSL as ${typeof wgsl === 'string' ? 'text' : String(wgsl)}, which the null3D Vite plugin did not compile.`,
+			);
+		}
+		let template = this.templates.get(wgsl);
+		if (template === undefined) {
+			template = this.nextTemplate++;
+			this.templates.set(wgsl, template);
+			this.sendShader(template, (wgsl as CompiledMaterial).variants);
+		}
+		return template;
 	}
 }
 

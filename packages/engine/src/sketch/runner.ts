@@ -40,7 +40,7 @@ import { Scene } from '../scene/scene';
 import { Textures } from '../scene/textures';
 import { type ControlViews, controlViews, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
-import { type ImageSender, imagesArrived } from '../shared/images';
+import { type ImageSender, imagesArrived, type ShaderSender } from '../shared/images';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
 import { slotChange } from '../shared/wake';
 import { FixedClock, FrameClock, holdSteps } from './clock';
@@ -74,6 +74,8 @@ export interface SketchCore {
 	capabilities: EngineCapabilities;
 	/** Sends texture images to the thread that draws. */
 	sendImage: ImageSender;
+	/** Sends custom materials' shaders to the thread that draws. */
+	sendShader: ShaderSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
 	pageUrl: string;
 	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
@@ -260,7 +262,7 @@ export class SketchRunner {
 			time: this.time,
 			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
 			scene: new Scene(this.core, this.recorded, device.webgl2, () => this.warmUp()),
-			materials: new Materials(this.core),
+			materials: new Materials(this.core, sketch.sendShader),
 			geometry: new Geometry(this.core),
 			textures,
 			assets: new Assets(textures, sketch.pageUrl),

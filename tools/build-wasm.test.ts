@@ -8,24 +8,24 @@ import {
 } from './build-wasm';
 
 describe('parseOptions', () => {
-	it('reads the size check, its base, the base build, the names build and the core build', () => {
+	it('reads the size check, its base, the base build, the names build and the pages build', () => {
 		expect(parseOptions([])).toEqual({
 			checkSize: false,
 			sizesOnly: false,
 			keepNames: false,
-			coreOnly: false,
+			pagesOnly: false,
 		});
 		expect(parseOptions(['--check-size', '--base', 'origin/main'])).toEqual({
 			checkSize: true,
 			base: 'origin/main',
 			sizesOnly: false,
 			keepNames: false,
-			coreOnly: false,
+			pagesOnly: false,
 		});
 		expect(parseOptions(['--sizes-only']).sizesOnly).toBe(true);
 		expect(parseOptions(['--names']).keepNames).toBe(true);
-		expect(parseOptions(['--core-only', '--names'])).toMatchObject({
-			coreOnly: true,
+		expect(parseOptions(['--pages-only', '--names'])).toMatchObject({
+			pagesOnly: true,
 			keepNames: true,
 		});
 	});
@@ -40,8 +40,8 @@ describe('parseOptions', () => {
 			'cannot also run the check',
 		);
 		for (const other of ['--check-size', '--sizes-only'])
-			expect(() => parseOptions(['--core-only', other])).toThrow(
-				'--core-only makes no size report',
+			expect(() => parseOptions(['--pages-only', other])).toThrow(
+				'--pages-only makes no size report',
 			);
 	});
 });

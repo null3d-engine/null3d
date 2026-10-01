@@ -923,9 +923,10 @@ pub fn mesh_radius(mesh: u32) -> f32 {
 /// Creates a material with a linear color and opacity, and returns its id, counting from 1. Its
 /// shading (`constants::shading`) is the standard material, like three.js's
 /// `MeshStandardMaterial`, unlit, like its `MeshBasicMaterial`, or the first texture coordinates as
-/// colors, for the engine's own tests. Its features (`constants::material_feature`) and its depth
-/// bias are fixed from now on. The bias takes three.js's `polygonOffsetUnits` as `bias_constant`
-/// and its `polygonOffsetFactor` as `bias_slope`, whose positive values push the surface away.
+/// colors, for the engine's own tests. A shading from `shading::CUSTOM_FIRST` up is a custom
+/// material's template. Its features (`constants::material_feature`) and its depth bias are fixed
+/// from now on. The bias takes three.js's `polygonOffsetUnits` as `bias_constant` and its
+/// `polygonOffsetFactor` as `bias_slope`, whose positive values push the surface away.
 #[wasm_bindgen(js_name = createMaterial)]
 #[allow(clippy::too_many_arguments)]
 pub fn create_material(
@@ -942,6 +943,7 @@ pub fn create_material(
         shading::UNLIT => Shading::Unlit,
         shading::TEXCOORDS => Shading::TexCoords,
         shading::UNLIT_MAP => Shading::UnlitMap,
+        custom if custom >= shading::CUSTOM_FIRST => Shading::Custom(custom),
         _ => Shading::Lit,
     };
     let bias = DepthBias::from_polygon_offset(bias_constant, bias_slope);
