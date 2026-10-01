@@ -76,11 +76,18 @@ for (const tier of ['webgpu', 'webgl2'] as const) {
 		const step = result.overloaded;
 		test.skip(!step, 'no step of the page overloaded this GPU');
 		if (!step) return;
+		const figures = JSON.stringify(step);
+		console.log('OVERLOAD-DEBUG', JSON.stringify(result));
 		test.skip(
 			(step.completedFps ?? Number.POSITIVE_INFINITY) * STALL_MS <= 1000,
-			'each frame took longer on this GPU than the engine counts a frame in flight',
+			`each frame took longer on this GPU than the engine counts a frame in flight: ${figures}`,
 		);
-		expect(ratesParted(step), 'the presented rate stayed above the completed rate').toBe(false);
-		expect(framesInFlight(step) ?? Number.POSITIVE_INFINITY).toBeLessThan(MOST_FRAMES_IN_FLIGHT);
+		expect(
+			ratesParted(step),
+			`the presented rate stayed above the completed rate: ${figures}`,
+		).toBe(false);
+		expect(framesInFlight(step) ?? Number.POSITIVE_INFINITY, figures).toBeLessThan(
+			MOST_FRAMES_IN_FLIGHT,
+		);
 	});
 }
