@@ -12,6 +12,7 @@ describe('parseSwitches', () => {
 			copyUploads: false,
 			depth: undefined,
 			parallelCompile: true,
+			wakeByMessage: false,
 			hdr: true,
 			cells: true,
 			fps: undefined,
@@ -77,6 +78,11 @@ describe('parseSwitches', () => {
 	it('turns background compiles off with ?compile=wait only', () => {
 		expect(parseSwitches('?gpu=webgl2&compile=wait').parallelCompile).toBe(false);
 		expect(parseSwitches('?compile=later').parallelCompile).toBe(true);
+	});
+
+	it('makes the threads wake each other with messages with ?wake=message only', () => {
+		expect(parseSwitches('?wake=message').wakeByMessage).toBe(true);
+		expect(parseSwitches('?wake=atomics').wakeByMessage).toBe(false);
 	});
 
 	it('reads the WebGL2 depth mode, and ignores a mode it does not know', () => {
