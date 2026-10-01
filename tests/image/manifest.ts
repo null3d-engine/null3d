@@ -507,6 +507,14 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// Custom materials with vertex offsets: waves that uniforms shape, a swelling with a surface
+	// function from the same WGSL, and a twist beside the same torus with the standard material.
+	{
+		name: 'custom-vertex-offset',
+		sketch: 'tests/pages/sketches/custom-vertex-offset-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
 	// The README's dissolve: a surface function with uniforms and the mask alpha mode, at four
 	// stages of its progress.
 	{
