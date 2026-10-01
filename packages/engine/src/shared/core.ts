@@ -35,6 +35,8 @@ export interface CoreGlue extends CoreErrors {
 		webgl2: boolean,
 		capabilities: number,
 		maxTextureSize: number,
+		sceneColor: number,
+		transparent: boolean,
 		cellCulling: boolean,
 	): number;
 	jobWorkerLoop(index: number): void;
@@ -239,6 +241,8 @@ export interface CoreGlue extends CoreErrors {
 	/** Sets one of a light's numbers: `which` is one of the `LIGHT_VALUE_*` codes. */
 	setLightValue(light: number, which: number, value: number): number;
 	setBackground(r: number, g: number, b: number): number;
+	/** The tone mapping, by code, and the exposure, from the next frame on. */
+	setOutput(toneMapping: number, exposure: number): number;
 	/**
 	 * The scene's fog: its kind (`FOG_KIND_*`), its linear color, the near and far distances of
 	 * linear fog, and the density of exponential squared fog.
@@ -314,6 +318,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setLightColor',
 	'setLightValue',
 	'setBackground',
+	'setOutput',
 	'setFog',
 ];
 

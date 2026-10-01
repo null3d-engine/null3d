@@ -53,7 +53,33 @@ export function percentiles(samples: ArrayLike<number>): Percentiles {
  */
 export function ratePerSecond(intervalsMs: ArrayLike<number>): number | null {
 	if (intervalsMs.length === 0) return null;
+	const sum = spanMs(intervalsMs);
+	return sum > 0 ? (1000 * intervalsMs.length) / sum : null;
+}
+
+/** The sum of the intervals between events: the time from the event before the first to the last. */
+export function spanMs(intervalsMs: ArrayLike<number>): number {
 	let sum = 0;
 	for (let i = 0; i < intervalsMs.length; i++) sum += intervalsMs[i] as number;
-	return sum > 0 ? (1000 * intervalsMs.length) / sum : null;
+	return sum;
+}
+
+/**
+ * Events in each whole second, from the intervals between them. An event falls in the second that
+ * the running sum of the intervals reaches at it. It counts the first `seconds` seconds, by default
+ * every second that has ended: the ones before the last event's second.
+ */
+export function countPerSecond(
+	intervalsMs: ArrayLike<number>,
+	seconds = Math.floor(spanMs(intervalsMs) / 1000),
+): number[] {
+	const counts = new Array<number>(seconds).fill(0);
+	let elapsed = 0;
+	for (let i = 0; i < intervalsMs.length; i++) {
+		elapsed += intervalsMs[i] as number;
+		const second = Math.floor(elapsed / 1000);
+		if (second >= seconds) break;
+		counts[second] = (counts[second] as number) + 1;
+	}
+	return counts;
 }

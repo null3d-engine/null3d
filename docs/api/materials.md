@@ -36,7 +36,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 | Factory | How it looks |
 | --- | --- |
 | `materials.standard(options)` | Lit by the scene's lights with glTF's metallic-roughness model and the formulas of three.js's `MeshStandardMaterial` |
-| `materials.unlit(options)` | Its color as it is, whatever the lights, like three.js's `MeshBasicMaterial` |
+| `materials.unlit(options)` | Its color as it is, whatever the lights, like three.js's `MeshBasicMaterial`. The exposure and the tone mapping still apply to it. |
 | `materials.shader(options)` | A standard material whose WGSL surface function changes its look before the engine lights it |
 
 Without lights, a standard material draws black, apart from its emissive color. [Lights](lights.md) explains how light colors and intensities shade it.
@@ -227,7 +227,7 @@ How a material uses its alpha: its opacity, times its base color map's alpha, an
 type ColorInput = string | number | readonly [number, number, number];
 ```
 
-A color: a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three sRGB components from 0 to 1.
+A color: a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three linear components from 0 to 1, such as `[1, 0.26, 0.05]`. Hex values are sRGB, as on the web and in three.js, and the engine converts them to linear values. The color helpers, such as `color.fromHsl`, give linear components.
 
 ### `CompiledWgsl`
 
@@ -284,7 +284,7 @@ Options every material takes.
 
 | Member | Description |
 | --- | --- |
-| `color?: ColorInput` | The base color: a hex string, a number, or three sRGB components from 0 to 1. |
+| `color?: ColorInput` | The base color: a hex string or a number in sRGB, or three linear components from 0 to 1. |
 | `opacity?: number` | How opaque the surface is, from 0 to 1. The default is 1. With the `mask` alpha mode, it is part of the alpha that the cutoff tests. This version draws no blended materials, so it has no other effect yet. |
 | `alphaCutoff?: number` | With the `mask` alpha mode, the alpha below which the surface draws nothing, from 0 to 1. The default is 0.5, as in glTF. |
 
@@ -297,7 +297,7 @@ Material factories. The standard material follows glTF's metallic-roughness mode
 | Member | Description |
 | --- | --- |
 | `standard(options: StandardOptions = {}): Material<StandardValues>` | A lit material with glTF's metallic-roughness model, like three.js's `MeshStandardMaterial`. |
-| `unlit(options: UnlitOptions = {}): Material<UnlitValues>` | A material that ignores lights and shows its color as it is, like three.js's `MeshBasicMaterial`. |
+| `unlit(options: UnlitOptions = {}): Material<UnlitValues>` | A material that ignores lights and shows its color unlit, like three.js's `MeshBasicMaterial`. The exposure and the tone mapping still apply to it, as three.js applies them to that material. |
 | `shader(options: ShaderOptions): Material<ShaderValues>` | A custom material: the standard material with a surface function in WGSL, which changes how each pixel of the surface looks before the engine lights it. It takes every option of `materials.standard` but the texture maps, and the first values of the uniforms that its WGSL declares. `set` changes the standard values and the uniforms. Meshes need texture coordinates to draw with it. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole shader with entry points. Throws E1216 for a uniform that the WGSL does not declare, for a value of the wrong kind, and for a uniform named as a standard value, such as `color`. |
 
 ### `ShaderOptions`
@@ -358,7 +358,7 @@ The values of a standard material, which `set` changes at any time.
 | --- | --- |
 | `metalness?: number` | How much the surface acts like a metal, from 0 to 1. The default is 0. |
 | `roughness?: number` | How rough the surface is, from 0 (a mirror) to 1 (fully matte). The default is 1. |
-| `emissive?: ColorInput` | The color the surface gives off without any light, in sRGB as `color` takes it. The default is black, which gives off nothing. |
+| `emissive?: ColorInput` | The color the surface gives off without any light, in the forms that `color` takes. The default is black, which gives off nothing. |
 | `emissiveIntensity?: number` | The factor of the emissive color: 0 or more. The default is 1. |
 | `normalScale?: readonly [number, number]` | How strongly the normal map bends normals along u and along v. The default is `[1, 1]`, and negative values flip a direction. |
 | `aoMapIntensity?: number` | How much the occlusion map darkens ambient light, from 0 to 1. The default is 1. |

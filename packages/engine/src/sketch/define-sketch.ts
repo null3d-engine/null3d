@@ -10,6 +10,7 @@ import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import type { EngineCapabilities } from '../page/engine';
 import type { Assets } from '../scene/assets';
+import type { Post } from '../scene/post';
 import type { Geometry, Materials } from '../scene/resources';
 import type { Scene } from '../scene/scene';
 import type { Textures } from '../scene/textures';
@@ -134,6 +135,8 @@ export interface SketchContext {
 	assets: Assets;
 	/** Pointer, touch, keyboard and gamepad input, which the page forwards to the sketch. */
 	input: Input;
+	/** Post-processing: the tone mapping and the exposure of the scene's color. */
+	post: Post;
 	/** The quality preset that the engine runs, its settings, and a notice when they change. */
 	quality: Quality;
 	/** Sketch time, the frame's step and the frame number. */

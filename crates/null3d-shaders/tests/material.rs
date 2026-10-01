@@ -54,12 +54,24 @@ fn a_surface_function_builds_into_every_variant_of_the_template() {
             "webgl2_alpha_mask",
             "webgl2_draw_index",
             "webgl2_draw_index_alpha_mask",
+            "webgl2_draw_index_tone_map",
+            "webgl2_draw_index_tone_map_alpha_mask",
+            "webgl2_draw_index_tone_map_vertex_color",
+            "webgl2_draw_index_tone_map_vertex_color_alpha_mask",
             "webgl2_draw_index_vertex_color",
             "webgl2_draw_index_vertex_color_alpha_mask",
+            "webgl2_tone_map",
+            "webgl2_tone_map_alpha_mask",
+            "webgl2_tone_map_vertex_color",
+            "webgl2_tone_map_vertex_color_alpha_mask",
             "webgl2_vertex_color",
             "webgl2_vertex_color_alpha_mask",
             "webgpu",
             "webgpu_alpha_mask",
+            "webgpu_tone_map",
+            "webgpu_tone_map_alpha_mask",
+            "webgpu_tone_map_vertex_color",
+            "webgpu_tone_map_vertex_color_alpha_mask",
             "webgpu_vertex_color",
             "webgpu_vertex_color_alpha_mask",
         ]
@@ -94,7 +106,7 @@ fn a_problem_in_the_wgsl_names_its_own_line_and_column() {
     let line = broken.lines().nth(4).expect("the broken line");
     let column = line.find("2.0;").expect("the extra value") as u32 + 1;
     assert_eq!((problem.line, problem.column), (Some(5), Some(column)));
-    assert_eq!(problem.variants.len(), 12, "{problem}");
+    assert_eq!(problem.variants.len(), 24, "{problem}");
 }
 
 #[test]

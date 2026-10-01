@@ -152,7 +152,7 @@ Effects:
 
 | Need | Use | Docs |
 | --- | --- | --- |
-| Tone mapping and exposure | `post.set({ toneMapping, exposure })` (later in 0.1) | `api/post` |
+| Tone mapping and exposure | `post.set({ toneMapping, exposure })` | `api/post` |
 | Bloom, ambient occlusion, color grading, outlines | `post.set({ ... })` (0.2) | `api/post` |
 | A custom full-screen effect | `post.addEffect({ name, wgsl, uniforms })` (0.2) | `api/post` |
 | Render to a texture, or add a pass | `render.addPass({ ... })` (0.2) | `guides/custom-passes` |
