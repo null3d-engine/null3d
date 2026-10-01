@@ -2377,8 +2377,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -2794,8 +2794,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -3297,8 +3297,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -3714,8 +3714,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -5931,8 +5931,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -6354,8 +6354,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -6864,8 +6864,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -7287,8 +7287,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -7874,8 +7874,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -8104,8 +8104,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -10315,8 +10315,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -10762,8 +10762,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -11441,8 +11441,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -11912,8 +11912,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -13663,8 +13663,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -14110,8 +14110,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -14785,8 +14785,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -15256,8 +15256,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -18058,8 +18058,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -18511,8 +18511,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -19197,8 +19197,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -19674,8 +19674,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -21445,8 +21445,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -21898,8 +21898,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -22580,8 +22580,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -23057,8 +23057,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
