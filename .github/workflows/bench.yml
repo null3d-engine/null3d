@@ -53,7 +53,7 @@ jobs:
     # software GPU draws the larger scenes at under one frame per second and takes the processor
     # from the engine's threads, so its CPU times vary far more between identical builds.
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       HUSKY: "0"
     steps:

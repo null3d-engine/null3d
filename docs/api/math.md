@@ -78,7 +78,7 @@ The [math helpers demo](https://github.com/null3d-engine/null3d/tree/main/exampl
 
 ## Colors
 
-The color helpers give linear RGB, the color space that the engine lights in. The color options of materials, lights and the background take sRGB colors and convert them for you, as three.js does. The colors of an instance batch are linear, so convert sRGB colors with the helpers first:
+The color helpers give linear RGB, the color space that the engine lights in. The color options of materials, lights and the background take hex colors, which are sRGB, and convert them for you, as three.js does. They take three linear components as they are, so the helpers' results go straight into them. The colors of an instance batch are linear too, so convert sRGB colors with the helpers first:
 
 ```ts
 // In the setup: a color for each box.

@@ -11,6 +11,8 @@ const GL = {
 	RGBA: 0x1908,
 	FLOAT: 0x1406,
 	RGBA16F: 0x881a,
+	RENDERBUFFER: 0x8d41,
+	SAMPLES: 0x80a9,
 	NO_ERROR: 0,
 	INVALID_ENUM: 0x0500,
 	INVALID_OPERATION: 0x0502,
@@ -25,6 +27,8 @@ interface Device {
 	refusesRead?: boolean;
 	/** The browser throws when the texture's storage is made. */
 	throws?: boolean;
+	/** The sample counts that renderbuffers of the format take, the most first. */
+	samples?: number[];
 }
 
 /** A WebGL2 context that renders into a float texture as a device might, and the calls it saw. */
@@ -56,6 +60,11 @@ function fakeContext(device: Device) {
 			else (args[6] as Float32Array).set(stored);
 		},
 		getError: () => errors.shift() ?? GL.NO_ERROR,
+		getInternalformatParameter: (target: number, _format: number, name: number) => {
+			calls.push('samples');
+			if (target !== GL.RENDERBUFFER || name !== GL.SAMPLES) throw new Error('unknown query');
+			return new Int32Array(device.samples ?? [8, 4, 2]);
+		},
 		deleteFramebuffer: () => calls.push('delete framebuffer'),
 		deleteTexture: () => calls.push('delete texture'),
 	};
@@ -67,30 +76,47 @@ const CLEAN_UP = ['unbind', 'delete framebuffer', 'delete texture'];
 describe('the float render target test', () => {
 	it('passes a texture that renders and reads back, and deletes what it made', () => {
 		const { gl, calls } = fakeContext({ complete: true });
-		expect(probeFloatTarget(gl, GL.RGBA16F)).toEqual({ complete: true, readsBack: true });
-		expect(calls).toEqual(['bind', 'clear', 'read', ...CLEAN_UP]);
+		expect(probeFloatTarget(gl, GL.RGBA16F)).toEqual({
+			complete: true,
+			readsBack: true,
+			samples: 8,
+		});
+		expect(calls).toEqual(['bind', 'clear', 'read', 'samples', ...CLEAN_UP]);
 	});
 
 	it('neither clears nor reads an incomplete framebuffer', () => {
 		const { gl, calls } = fakeContext({ complete: false });
-		expect(probeFloatTarget(gl, GL.RGBA16F)).toEqual({ complete: false, readsBack: false });
+		expect(probeFloatTarget(gl, GL.RGBA16F)).toEqual({
+			complete: false,
+			readsBack: false,
+			samples: 0,
+		});
 		expect(calls).toEqual(['bind', ...CLEAN_UP]);
+	});
+
+	it('reports a format that takes no antialiasing samples as 0', () => {
+		const { gl } = fakeContext({ complete: true, samples: [] });
+		expect(probeFloatTarget(gl, GL.RGBA16F).samples).toBe(0);
 	});
 
 	it('fails the readback of a texture that clamps values above 1', () => {
 		const { gl } = fakeContext({ complete: true, stores: (value) => Math.min(value, 1) });
-		expect(probeFloatTarget(gl, GL.RGBA16F)).toEqual({ complete: true, readsBack: false });
+		expect(probeFloatTarget(gl, GL.RGBA16F)).toMatchObject({ complete: true, readsBack: false });
 	});
 
 	it('fails a readback the browser refuses, and leaves no error behind', () => {
 		const { gl, errors } = fakeContext({ complete: true, refusesRead: true });
-		expect(probeFloatTarget(gl, GL.RGBA16F)).toEqual({ complete: true, readsBack: false });
+		expect(probeFloatTarget(gl, GL.RGBA16F)).toMatchObject({ complete: true, readsBack: false });
 		expect(errors).toEqual([]);
 	});
 
 	it('fails a format whose texture the browser refuses to make', () => {
 		const { gl, calls } = fakeContext({ complete: true, throws: true });
-		expect(probeFloatTarget(gl, GL.RGBA16F)).toEqual({ complete: false, readsBack: false });
+		expect(probeFloatTarget(gl, GL.RGBA16F)).toEqual({
+			complete: false,
+			readsBack: false,
+			samples: 0,
+		});
 		expect(calls).toEqual(CLEAN_UP);
 	});
 });

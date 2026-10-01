@@ -2,7 +2,8 @@
 // four vertex formats, and the texture coordinate material on the two formats with coordinates.
 // The setup awaits scene.warmUp. On the page's `add` message, the sketch adds a hidden magenta quad
 // in a vertex format that no pipeline draws yet, warms the scene up again, then shows the quad and
-// posts `warmed`.
+// posts `warmed`. The page finds the quad by its exact color, so the sketch draws with no tone
+// mapping.
 import { defineSketch, type MeshArrays } from '@null3d/engine';
 import { texCoordsMaterial } from '@null3d/engine/internal';
 
@@ -22,7 +23,8 @@ function quad(uvs: boolean, colors: boolean, uvs1 = false): MeshArrays {
 	};
 }
 
-export default defineSketch(async ({ scene, materials, geometry, page }) => {
+export default defineSketch(async ({ scene, materials, geometry, page, post }) => {
+	post.set({ toneMapping: 'none' });
 	scene.setBackground('#20242a');
 	const camera = scene.createPerspectiveCamera({ fov: 45, near: 0.1, far: 50 });
 	camera.setPosition(0, 0, 8);

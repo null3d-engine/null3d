@@ -30,11 +30,10 @@ enable draw_index;
 // keeps its own names few. It never imports a module whole, which would reserve the module's name
 // in their WGSL too. Names that only the MAPS builds declare stay free for custom materials, which
 // build without maps.
-#import null3d::color::{linear_to_srgb}
 #import null3d::lighting::{PbrMaterial, dfg_lut, direct_light, indirect_diffuse}
 #import null3d::lighting::{multiscatter_compensation, pbr_material}
 #import null3d::globals::{Material}
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, fogged, frame, material_of}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, frame, material_of}
 #import null3d::mesh::{custom_value, relative_position, world_normal}
 #ifdef MAPS
 #import null3d::mesh::{map_layer, map_ready, world_direction}
@@ -380,8 +379,8 @@ fn light_surface(
 }
 
 /// The color of a pixel that shows the surface: the light it reflects and the light it gives off,
-/// in the scene's fog.
-fn shade(s: Surface, input: SurfaceInput) -> vec4f {
+/// in the scene's fog, finished for the screen at the pixel's position.
+fn shade(s: Surface, input: SurfaceInput, pixel: vec2f) -> vec4f {
     let normal = normalize(s.normal);
     // Where the mesh's normal changes fast between pixels, highlights soften, as three.js softens
     // them. As in three.js, the normal is the mesh's own, before a map or a surface function bends
@@ -399,7 +398,7 @@ fn shade(s: Surface, input: SurfaceInput) -> vec4f {
         discard;
     }
 #endif
-    return vec4f(linear_to_srgb(fogged(outgoing, input.relativePosition, material_row)), 1.0);
+    return finish(fogged(outgoing, input.relativePosition, material_row), pixel);
 }
 
 @fragment
@@ -443,5 +442,5 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #else
     let s = defaultSurface(input);
 #endif
-    return shade(s, input);
+    return shade(s, input, in.clip.xy);
 }
