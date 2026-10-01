@@ -34,9 +34,13 @@
 //! Each frame parity keeps its own culling output, because the render worker replays a frame's
 //! list while the next frame culls, and the list uploads the index list straight from that output.
 //!
-//! Each view then sorts the rows whose material blends (see [`crate::sorted`]). Their entries
-//! follow the opaque entries in the view's index list, farthest first, and the transparent pass
-//! draws them in that order. They are kept per frame parity too.
+//! Each camera view then sorts the rows whose material blends (see [`crate::sorted`]). Their
+//! entries follow the opaque entries in the view's index list, farthest first, and the transparent
+//! pass draws them in that order. They are kept per frame parity too.
+//!
+//! One [`Culling`] culls the views of cameras against the scene's layout, and another culls the
+//! shadow cascades against the casters' layout (see [`super::layout::Drawn`]), with no sort. Each
+//! keeps its own runs, since the layouts put different sources in buckets.
 
 use std::collections::TryReserveError;
 
@@ -52,8 +56,7 @@ use super::ids;
 use super::layout::{Clusters, CullRoom, Layout};
 use crate::cells::{CellCulling, CellMask, MOVING};
 use crate::frame::{
-    CellOffsets, FrameInput, RecordError, RunCells, SceneSettings, address, push_runs,
-    words_as_bytes,
+    CellOffsets, FrameInput, RecordError, RunCells, address, push_runs, words_as_bytes,
 };
 use crate::sorted::{SortedLayout, SortedView};
 use crate::view::{ViewFrame, ViewId};
@@ -87,9 +90,12 @@ struct ViewCull {
     sorted_entries: [Vec<u32>; 2],
 }
 
-/// Each view's culling output, and the runs of rows that a view culls.
-#[derive(Debug, Default)]
+/// Each view's culling output, and the runs of rows that a view culls. The views are of one kind,
+/// in order from the first: the views of cameras, or the shadow cascades.
+#[derive(Debug)]
 pub(super) struct Culling {
+    /// The first view, whose output is the first of `views`.
+    first: ViewId,
     views: Vec<ViewCull>,
     /// The runs of the view being culled.
     runs: Vec<CullRun>,
@@ -171,6 +177,27 @@ fn push_view_runs(
 }
 
 impl Culling {
+    /// No culling output yet, for views from `first` on.
+    pub(super) fn new(first: ViewId) -> Self {
+        Self {
+            first,
+            views: Vec::new(),
+            runs: Vec::new(),
+            clustered: Vec::new(),
+            culled: 0,
+        }
+    }
+
+    /// The place of a view's output in `views`.
+    fn slot(&self, view: ViewId) -> usize {
+        view.index() - self.first.index()
+    }
+
+    /// The view whose output is `k`-th in `views`.
+    pub(super) fn view(&self, k: usize) -> ViewId {
+        ViewId::from_index(self.first.index() + k)
+    }
+
     /// The number of views with culling output.
     pub(super) fn views(&self) -> usize {
         self.views.len()
@@ -183,22 +210,28 @@ impl Culling {
 
     /// A view's values in the frame that culled last, or `None` when it has no camera.
     pub(super) fn frame(&self, view: ViewId) -> Option<&ViewFrame> {
-        self.views.get(view.index())?.frame.as_ref()
+        self.output(view)?.frame.as_ref()
+    }
+
+    /// A view's output, or `None` for a view of another kind or one without output yet.
+    fn output(&self, view: ViewId) -> Option<&ViewCull> {
+        let slot = view.index().checked_sub(self.first.index())?;
+        self.views.get(slot)
     }
 
     /// The offset from a view's camera to each cell in use, in the frame that culled last.
     pub(super) fn offsets(&self, view: ViewId) -> &CellOffsets {
-        &self.views[view.index()].offsets
+        &self.views[self.slot(view)].offsets
     }
 
     /// The objects, rows and clusters that a view's culling tested in the frame that culled last.
     pub(super) fn tested(&self, view: ViewId) -> u32 {
-        self.views.get(view.index()).map_or(0, |view| view.tested)
+        self.output(view).map_or(0, |view| view.tested)
     }
 
     /// The culling output of a frame's parity for a view: its visible sources, bucket by bucket.
     pub(super) fn culled(&self, frame: u32, view: ViewId) -> &BucketedCull {
-        &self.views[view.index()].culls[(frame & 1) as usize]
+        &self.views[self.slot(view)].culls[(frame & 1) as usize]
     }
 
     /// The index list entries that a frame draws over all its views, or 0 for a frame that did
@@ -217,7 +250,7 @@ impl Culling {
 
     /// A view's blended rows, sorted back to front, in the frame that culled last.
     pub(super) fn sorted(&self, view: ViewId) -> &SortedView {
-        &self.views[view.index()].sorted
+        &self.views[self.slot(view)].sorted
     }
 
     /// Makes room in every view's output for the transparent pass's rows and draws.
@@ -281,35 +314,38 @@ impl Culling {
         Ok(())
     }
 
-    /// Finds each view's visible sources for the frame, on the calling thread and the job
-    /// workers. The clusters that come to rest are the same for every view, so they are built
+    /// Finds each view's visible sources of `layout` for the frame, on the calling thread and the
+    /// job workers. `frame_of` gives each view's values, or `None` for a view that the frame does
+    /// not draw. With `sorted`, each view also sorts the blended rows back to front. The clusters that come to rest are the same for every view, so they are built
     /// once; each view then culls runs of its own, which skip the cells it cannot see. Fails only
     /// when memory cannot grow for a view that sees more cells than any view did before.
     pub(super) fn cull(
         &mut self,
         input: &FrameInput<'_>,
-        settings: &SceneSettings,
         layout: &Layout,
         clusters: &mut Clusters,
         cells: &CellCulling,
-        sorted: &SortedLayout,
+        frame_of: impl Fn(ViewId) -> Option<ViewFrame>,
+        sorted: Option<&SortedLayout>,
     ) -> Result<(), TryReserveError> {
         let (parity, scene, batches) = (input.parity(), input.scene, input.batches);
         self.culled = input.frame;
         let mut any = false;
-        for (index, view) in self.views.iter_mut().enumerate() {
-            let id = ViewId::from_index(index);
-            view.frame = settings.view_frame(id, scene, parity, input.canvas);
+        let first = self.first.index();
+        for (k, view) in self.views.iter_mut().enumerate() {
+            view.frame = frame_of(ViewId::from_index(first + k));
             if let Some(frame) = &view.frame {
                 view.offsets.update(scene, &frame.camera);
                 any = true;
             }
-            let frame = view.frame.as_ref();
-            sorted.sort(input.jobs, frame, scene, batches, parity, &mut view.sorted);
             let entries = &mut view.sorted_entries[parity];
             entries.clear();
-            for &item in view.sorted.items() {
-                entries.push(sorted.row(item, batches).entry);
+            if let Some(sorted) = sorted {
+                let frame = view.frame.as_ref();
+                sorted.sort(input.jobs, frame, scene, batches, parity, &mut view.sorted);
+                for &item in view.sorted.items() {
+                    entries.push(sorted.row(item, batches).entry);
+                }
             }
         }
         if !any {
@@ -407,9 +443,9 @@ impl Culling {
         Ok(())
     }
 
-    /// Keeps each static batch's clusters in step with its rows, and notes which batches cull by
-    /// cluster in the frame: the static batches at rest whose rows share one cell, or, with
-    /// `in_cells`, whose rows fit their room for clusters inside cells.
+    /// Keeps the clusters of each static batch that the layout draws in step with its rows, and
+    /// notes which batches cull by cluster in the frame: the static batches at rest whose rows
+    /// share one cell, or, with `in_cells`, whose rows fit their room for clusters inside cells.
     fn refresh_clusters(
         &mut self,
         input: &FrameInput<'_>,
@@ -421,7 +457,7 @@ impl Culling {
         self.clustered.clear();
         for slot in &layout.batches {
             let mut clustered = false;
-            if slot.clustered() {
+            if slot.clustered() && slot.bucket != NO_BUCKET {
                 let batch = input
                     .batches
                     .get(slot.id)
@@ -461,11 +497,14 @@ impl Culling {
         layout: &Layout,
         limit: u32,
     ) -> Result<bool, RecordError> {
-        let needed = (layout.resident_rows + layout.streamed_rows)
+        let slot = self.slot(view);
+        let needed = layout
+            .room
+            .rows
             .div_ceil(null3d_gpu::drawlist::sizes::INDICES_PER_TEXTURE_ROW);
         DataTexture::indices(ids::visible(view), RING).grow(
             list,
-            &mut self.views[view.index()].rows,
+            &mut self.views[slot].rows,
             needed,
             limit,
         )
@@ -481,7 +520,8 @@ impl Culling {
         frame: u32,
     ) -> Result<(u32, bool), RecordError> {
         let parity = (frame & 1) as usize;
-        let state = &mut self.views[view.index()];
+        let k = self.slot(view);
+        let state = &mut self.views[k];
         let entries = &state.sorted_entries;
         let kept = state.listed.holds_previous(frame)
             && state.culls[parity].same_entries(&state.culls[parity ^ 1])

@@ -41,6 +41,7 @@ import {
 	startupTable,
 } from '../../bench/lib/startup.ts';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
+import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import {
 	choosePreset,
 	type DeviceHints,
@@ -56,6 +57,7 @@ import {
 	ratesParted,
 } from '../pages/lib/overload.ts';
 import { ROOM_KEPT } from '../pages/lib/room.ts';
+import { glslProgramsOf } from '../pages/lib/shader-list.ts';
 import { type CaptureResult, captureProblems } from './capture-checks.ts';
 import {
 	ENGINE_MODES,
@@ -237,6 +239,23 @@ function imageItem(run: ImageRun): PlanItem<Check> {
 	};
 }
 
+/** The shaders page's time for its loads and its WGSL modules. */
+const SHADERS_BASE_SECONDS = 30;
+
+/**
+ * The shaders page's time for each GLSL program it compiles: about twice what CI's Safari took per
+ * program when it compiled them one after another.
+ */
+const SHADERS_SECONDS_PER_PROGRAM = 0.5;
+
+/**
+ * The shaders page's time, which grows with the GLSL programs that it compiles, so more shader
+ * variants never make it time out. A page that stops still fails, with the last step it noted.
+ */
+export const SHADERS_PAGE_SECONDS = Math.ceil(
+	SHADERS_BASE_SECONDS + SHADERS_SECONDS_PER_PROGRAM * glslProgramsOf(await everyShader()).length,
+);
+
 /**
  * The production build of the engine test page, which the checks plan runs in every mode, under one
  * address prefix of the runner's own. A production build bundles the engine into shared files, so
@@ -257,7 +276,7 @@ export function checksPlan(): PlanItem<Check>[] {
 	return [
 		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
 		pageItem('isolation', 'isolation', { kind: 'isolation' }),
-		pageItem('shaders', 'shaders', { kind: 'shaders' }),
+		pageItem('shaders', 'shaders', { kind: 'shaders' }, { timeoutSeconds: SHADERS_PAGE_SECONDS }),
 		...TIERS.map((tier) =>
 			pageItem(
 				`shader-library-${tier}`,
