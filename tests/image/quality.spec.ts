@@ -252,7 +252,11 @@ test("a sketch's own upload budget stays until the setting changes", async ({ pa
 });
 
 test('a sketch that changes a setting the engine does not take gets E1213', async ({ page }) => {
-	const result = await openQuality(page, `gpu=webgpu&set=${JSON.stringify({ shadows: 2 })}`);
+	// A fixed preset skips the preset check, whose lower preset on a slow machine is a change too.
+	const result = await openQuality(
+		page,
+		`gpu=webgpu&preset=high&set=${JSON.stringify({ shadows: 2 })}`,
+	);
 	expect(result.changed).toBeUndefined();
 	expect(result.refused).toContain(
 		'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy or uploadBytesPerFrame.',
