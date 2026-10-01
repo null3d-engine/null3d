@@ -1,6 +1,6 @@
 # D-14: The engine's JavaScript budget through M1
 
-Status: decided by the owner on 2026-09-30; budget raised again on 2026-10-01. Date: 2026-09-30.
+Status: decided by the owner on 2026-09-30; budget raised to 80 KB and then 100 KB on 2026-10-01. Date: 2026-09-30.
 
 ## Question
 
@@ -160,6 +160,12 @@ Decided by the owner on 2026-09-30:
 - The budget may rise again, but only with the owner's approval in writing. Until then, a pull request that passes 70 KB fails the size check.
 
 On 2026-10-01 the owner raised the budget to 80 KB, in writing. With texture maps, HDR color and dynamic resolution on main, a pipelined page downloaded 67.3 KB. Anti-aliasing, clustered lighting, transparency, custom materials and shadows still had to land. The owner chose to raise the budget rather than wait for the size cuts in the options table. The renderer split by GPU path (#103) stays set aside. A further raise again needs the owner's approval in writing; a pull request that passes 80 KB fails the size check until then.
+
+Later on 2026-10-01 the owner raised the budget to 100 KB, in writing:
+
+> allow for 100kb size budget. we will trim later on.
+
+FXAA, shadows on WebGPU, transparency, KTX2 textures and custom materials had merged since the raise to 80 KB. A pipelined page then downloaded 74.6 KB, 93% of the 80 KB budget, and the other thread modes 68.9 KB to 73.1 KB. Shadows on WebGL2 and clustered lighting still had to land. The owner plans to trim the download back later, and the size cuts in the options table stay the way to do it. A further raise again needs the owner's approval in writing; a pull request that passes 100 KB fails the size check until then.
 
 The options in the table stay open, and each task can still take one to keep the download down. The proposal before the owner's decision was:
 
