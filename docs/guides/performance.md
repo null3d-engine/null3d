@@ -195,6 +195,7 @@ The camera lists up to 1,024 point and spot lights in a frame, the ones nearest 
 | `gpuPassMs` | The parts of `gpuMs`: the copies before the first pass, each pass, and the time between passes |
 | `intervalMs` | Time between frames on the screen |
 | `presentedFps` and `completedFps` | Frames per second that the renderer presented, and that the GPU finished |
+| `perSecond` | The presented and completed frame rates of each whole second, which show when and for how long the rate fell in a long measurement |
 | `gpuLatencyMs` | Time from a frame's submit to the GPU finishing it |
 | `completionSignal` | How the engine learned that the GPU finished a frame: `queue` on WebGPU, `fence` on WebGL2 |
 | `refreshHz` | The display's refresh rate, as the engine measured it |

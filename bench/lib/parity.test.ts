@@ -408,7 +408,7 @@ describe('parseParityArgs', () => {
 
 	test('refuses unknown names, a pair that is not two pages, and --tier with --pair', () => {
 		expect(() => parseParityArgs(['--scene', 's9'])).toThrow(
-			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3.',
+			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3, s4.',
 		);
 		expect(() => parseParityArgs(['--tier', 'webgl1'])).toThrow('"webgl1" is not a tier.');
 		expect(() => parseParityArgs(['--pair', 'threejs-webgl'])).toThrow(

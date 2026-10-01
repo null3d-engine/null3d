@@ -9,7 +9,7 @@
 //   bun run parity -- --pair threejs-webgl,threejs-webgpu
 //   bun run parity -- --save-baselines
 // Options:
-//   --scene <list>   scenes: s1, s1-static, s1-cells, s2, s3; the default is every scene that
+//   --scene <list>   scenes: s1, s1-static, s1-cells, s2, s3, s4; the default is every scene that
 //                    both engines draw in full (PARITY_SCENES in bench/lib/parity.ts)
 //   --tier <list>    GPU tiers: webgpu, compat (WebGPU forced into compatibility mode), webgl2;
 //                    the default is all three

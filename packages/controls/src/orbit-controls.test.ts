@@ -415,6 +415,37 @@ describe('orbit controls against three.js: the mouse', () => {
 		twin.stepAndCompare();
 	});
 
+	it('end a drag and start the next with its own button, when both fall between two frames', () => {
+		const twin = new Twin('orbit', [0, 4, 9], { target: [0, 0.5, 0] });
+		twin.pointer('down', 100, 90, LEFT);
+		twin.pointer('move', 150, 100, { buttons: 1 });
+		twin.stepAndCompare();
+		// The left button's release and a whole right drag, before the next frame.
+		twin.pointer('up', 150, 100, { button: 0, buttons: 0 });
+		twin.pointer('move', 200, 60, { buttons: 0 });
+		twin.pointer('down', 200, 60, RIGHT);
+		twin.pointer('move', 170, 76, { buttons: 2 });
+		twin.pointer('up', 170, 76, { button: 2, buttons: 0 });
+		// The right drag waits for the frame after the release.
+		twin.step();
+		twin.stepAndCompare();
+		const panned = twin.travel().target;
+		expect(panned).toBeGreaterThan(0.5);
+		// A left drag, then a right drag whose button is still down at the next frame.
+		twin.pointer('down', 100, 90, LEFT);
+		twin.pointer('move', 130, 80, { buttons: 1 });
+		twin.stepAndCompare();
+		twin.pointer('up', 130, 80, { button: 0, buttons: 0 });
+		twin.pointer('down', 130, 80, RIGHT);
+		twin.pointer('move', 110, 95, { buttons: 2 });
+		twin.step();
+		twin.stepAndCompare();
+		twin.pointer('move', 90, 110, { buttons: 2 });
+		twin.pointer('up', 90, 110, { button: 2, buttons: 0 });
+		twin.stepAndCompare();
+		expect(twin.travel().target).not.toBeCloseTo(panned, 3);
+	});
+
 	it('keep the distance and the angles within their limits', () => {
 		const twin = new Twin('orbit', [0, 2, 8], {
 			minDistance: 5,

@@ -47,7 +47,7 @@ export interface ImageComparison {
 // The scenes and the pages that draw their hold frames.
 
 /** Every benchmark scene. The benchmark runs, the page tests and the image tests cover each one. */
-export const BENCH_SCENES = ['s1', 's1-static', 's1-cells', 's2', 's3'] as const;
+export const BENCH_SCENES = ['s1', 's1-static', 's1-cells', 's2', 's3', 's4'] as const;
 export type BenchScene = (typeof BENCH_SCENES)[number];
 
 /**
@@ -64,6 +64,7 @@ export const LEFT_OUT_OF_PARITY: Readonly<Record<BenchScene, readonly string[]>>
 	// Every check compares with WebGLRenderer's frame, on its tier and in the baseline between
 	// three.js's renderers.
 	s3: ["WebGLRenderer's shader for 256 point lights, which most GPUs cannot build"],
+	s4: ['shadows of the sun, in cascades on both GPU paths'],
 };
 
 /** The benchmark scenes whose hold frames the parity checks compare with three.js's. */
