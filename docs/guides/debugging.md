@@ -39,6 +39,7 @@ The error also holds the code in `error.code` and the page's address in `error.d
 | The sketch module throws while it loads, for example when it reads `document` | `createEngine` rejects with [E1410](../errors/E1410.md), which quotes the module's error |
 | The sketch module has no default export of `defineSketch(...)` | `createEngine` rejects with [E1401](../errors/E1401.md) |
 | The setup function throws | `createEngine` rejects with [E1405](../errors/E1405.md), which quotes your error |
+| During the start, an engine thread fails or the GPU is lost for good | `createEngine` stops the engine and rejects with [E1404](../errors/E1404.md) or [E1302](../errors/E1302.md) |
 | A callback such as `onUpdate` throws | The console shows each distinct error once, with its stack. The engine carries on, and calls the callback again when it next runs |
 | After the start, the GPU is lost and cannot come back, or an engine thread fails | `engine.onFailure` receives [E1302](../errors/E1302.md) or [E1404](../errors/E1404.md). Without a handler, the console shows it |
 | Hold mode | The hold stops at the first error, and the result says why. [Testing your sketch](testing.md#when-a-hold-fails) lists the cases |

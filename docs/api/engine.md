@@ -53,6 +53,8 @@ try {
 | [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
 | [E1214](../errors/E1214.md) | An option of `defineSketch` is out of its range. |
 | [E1405](../errors/E1405.md) | An engine thread did not start. |
+| [E1404](../errors/E1404.md) | An engine thread, or the drawing on the page, failed during the start. For example, the GPU had no memory for the first frame's textures. |
+| [E1302](../errors/E1302.md) | The browser took the GPU away during the start, and no new device started. |
 | [E1408](../errors/E1408.md) | In hold mode, the sketch or the engine failed before the engine read the held frame back. |
 
 An error that the sketch's setup throws also rejects the start ([Sketch API](sketch.md#the-setup-function)).

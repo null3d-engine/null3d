@@ -19,6 +19,28 @@ export interface RenderLoop {
 	drawHeld?(): Promise<void>;
 }
 
+/** Hears the error that ended a frame loop. */
+export type LoopFault = (error: unknown) => void;
+
+/**
+ * An animation frame callback that runs `step`, which asks for the next callback itself. When
+ * `step` throws, the loop ends, and `fault` hears the error. Without `fault` the error goes on to
+ * the thread's error handler, which in a worker tells the page that the worker failed.
+ */
+export function guardFrame(
+	step: (timestamp: number) => void,
+	fault: LoopFault | undefined,
+): FrameRequestCallback {
+	return (timestamp) => {
+		try {
+			step(timestamp);
+		} catch (error) {
+			if (!fault) throw error;
+			fault(error);
+		}
+	};
+}
+
 /**
  * How long before its next frame callback is due a worker that draws wakes up. Safari runs a
  * worker's frame callbacks from a timer, which fires late when the worker has slept through most of
@@ -262,13 +284,14 @@ export function runRenderLoop(
 	fps: number | undefined,
 	queue?: number,
 	wake?: WakeTarget,
+	fault?: LoopFault,
 ): RenderLoop {
 	const { slots } = controlViews(control);
 	const presenter = new Presenter(slots, renderer, metrics, fps, queue, wake);
 	let taken = 0;
 	let stopped = false;
 
-	const frame = (timestamp: number) => {
+	const frame = guardFrame((timestamp) => {
 		if (stopped || Atomics.load(slots, Slot.Running) === 0) return;
 		presenter.tick(timestamp);
 		presenter.wakeBeforeNextFrame();
@@ -281,7 +304,7 @@ export function runRenderLoop(
 			presenter.draw(taken, timestamp);
 		}
 		requestAnimationFrame(frame);
-	};
+	}, fault);
 	requestAnimationFrame(frame);
 
 	return {

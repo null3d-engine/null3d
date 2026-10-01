@@ -10,7 +10,7 @@
 
 import { controlViews, Slot } from '../shared/control';
 import type { SketchRunner } from '../sketch/runner';
-import { Presenter, type RenderLoop } from './loop';
+import { guardFrame, type LoopFault, Presenter, type RenderLoop } from './loop';
 import type { Renderer } from './renderer';
 
 export function runDirectLoop(
@@ -20,6 +20,7 @@ export function runDirectLoop(
 	metrics: ArrayBufferLike,
 	fps: number | undefined,
 	queue?: number,
+	fault?: LoopFault,
 ): RenderLoop {
 	const { slots } = controlViews(control);
 	const presenter = new Presenter(slots, renderer, metrics, fps, queue);
@@ -27,7 +28,7 @@ export function runDirectLoop(
 	/** A frame that is recorded and waits to draw, or 0. */
 	let pending = 0;
 
-	const frame = (timestamp: number) => {
+	const frame = guardFrame((timestamp) => {
 		if (stopped || Atomics.load(slots, Slot.Running) === 0) return;
 		presenter.tick(timestamp);
 		presenter.wakeBeforeNextFrame();
@@ -53,7 +54,7 @@ export function runDirectLoop(
 			pending = 0;
 		}
 		requestAnimationFrame(frame);
-	};
+	}, fault);
 	requestAnimationFrame(frame);
 
 	return {

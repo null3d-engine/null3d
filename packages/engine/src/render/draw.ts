@@ -7,7 +7,7 @@ import { controlViews, Slot } from '../shared/control';
 import { ImageTable, receiveImages } from '../shared/images';
 import type { SketchRunner } from '../sketch/runner';
 import { runDirectLoop } from './direct-loop';
-import { emptySceneInput, HoldLoop, runRenderLoop } from './loop';
+import { emptySceneInput, HoldLoop, type LoopFault, runRenderLoop } from './loop';
 import { Drawing } from './recovery';
 import { createRenderer, type RenderCanvas, type Renderer, type RendererOptions } from './renderer';
 
@@ -33,6 +33,11 @@ export interface DrawingSetup extends RendererOptions {
 	/** Hears the reason when the engine stops drawing after GPU losses. */
 	fail: (reason: string) => void;
 	/**
+	 * Hears an error that ended the frame loop. Without it the error goes on to the thread's error
+	 * handler, which in a worker tells the page that the worker failed.
+	 */
+	fault?: LoopFault;
+	/**
 	 * The port through which the sketch thread sends texture images, when another thread runs it.
 	 * Wake messages go back to the sketch thread through it.
 	 */
@@ -45,7 +50,7 @@ export interface DrawingSetup extends RendererOptions {
  * runs, and every renderer reads them.
  */
 export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Renderer>> {
-	const { canvas, control, metrics, fps, queue, sketch, hold = false } = setup;
+	const { canvas, control, metrics, fps, queue, sketch, hold = false, fault } = setup;
 	const { slots } = controlViews(control);
 	const imageTable = setup.imageTable ?? new ImageTable();
 	if (setup.imagePort) receiveImages(setup.imagePort, imageTable, slots);
@@ -55,8 +60,8 @@ export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Rendere
 		hold
 			? new HoldLoop(slots, renderer, metrics)
 			: sketch
-				? runDirectLoop(sketch, renderer, control, metrics, fps, queue)
-				: runRenderLoop(renderer, control, metrics, fps, queue, setup.imagePort);
+				? runDirectLoop(sketch, renderer, control, metrics, fps, queue, fault)
+				: runRenderLoop(renderer, control, metrics, fps, queue, setup.imagePort, fault);
 	return new Drawing(await create(), create, run, slots, setup.fail, !hold, () =>
 		imageTable.clear(),
 	);
