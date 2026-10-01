@@ -78,6 +78,44 @@ function toneMappingTests(): ImageTest[] {
 	]);
 }
 
+/** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
+const EDGES_SKETCH = 'tests/pages/sketches/edges-sketch.ts';
+
+/** The anti-aliasing modes, as the page's option names them. */
+const ANTIALIAS_MODES = ['msaa', 'fxaa', 'none'] as const;
+
+/**
+ * The edges scene in each anti-aliasing mode on each tier, then in the one-sample modes on the
+ * 8-bit path. There the final pass reads color that the scene shaders tone mapped already, and it
+ * must draw the HDR path's image. FXAA judges edges by the brightness after tone mapping on both
+ * paths, but the 8-bit path blends the tone mapped colors, so a few edge pixels differ.
+ */
+function antialiasTests(): ImageTest[] {
+	return [
+		...ANTIALIAS_MODES.map(
+			(mode): ImageTest => ({
+				name: `antialias-${mode}`,
+				sketch: EDGES_SKETCH,
+				hold: 0,
+				switches: [`antialias=${mode}`],
+			}),
+		),
+		...(['fxaa', 'none'] as const).map(
+			(mode): ImageTest => ({
+				name: `antialias-${mode}-8-bit`,
+				sketch: EDGES_SKETCH,
+				hold: 0,
+				tiers: ['webgpu', 'webgl2'],
+				switches: [`antialias=${mode}`, 'hdr=off'],
+				reference: `antialias-${mode}`,
+				expect: { hdr: false },
+				tolerance: EIGHT_BIT_TOLERANCE,
+				deviceTolerance: EIGHT_BIT_TOLERANCE,
+			}),
+		),
+	];
+}
+
 /** The vertex formats sketch, and how its tests draw it. */
 const VERTEX_FORMATS = {
 	sketch: 'tests/pages/sketches/vertex-formats-sketch.ts',
@@ -202,6 +240,7 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		reference: 'scene',
 	},
 	...toneMappingTests(),
+	...antialiasTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
 	// alpha: the output spec checks the alpha of the captured pixels.
 	{

@@ -8,7 +8,7 @@ summary: "WebGPU core, compatibility mode and WebGL2; color, anti-aliasing and d
 
 # GPU tiers and backends
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The choice of anti-aliasing mode is not built yet, so every tier draws with MSAA.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart TD
@@ -44,17 +44,27 @@ WebGL2 and WebGPU's compatibility mode run at most the Medium [quality preset](q
 
 ## Color and anti-aliasing on each tier
 
-Every tier draws the opaque pass with 4 samples per pixel (MSAA), into color and depth targets the size of the canvas. WebGL2 lets every device draw at least 4 samples. The color target differs from tier to tier:
+The anti-aliasing mode smooths the jagged edges of objects. The quality preset picks it: FXAA on Low, and MSAA from Medium up. The `antialias` option of `createEngine` replaces the preset's mode. The mode stays fixed while the engine runs, because the scene's targets and pipelines depend on it.
+
+| Mode | How the frame draws it |
+| --- | --- |
+| `msaa` | The opaque pass draws 4 samples per pixel into color and depth targets the size of the canvas, and its render pass averages them. Edges and thin lines come out smooth. WebGL2 lets every device draw at least 4 samples. |
+| `fxaa` | The opaque pass draws one sample per pixel. The final pass finds edges by their contrast, and blends each pixel on an edge with its neighbors along the edge. It needs less memory and bandwidth than MSAA, and blurs thin lines a little. |
+| `none` | The opaque pass draws one sample per pixel, and nothing smooths the edges. |
+
+The scene's color target differs from tier to tier:
 
 | Tier | Scene color | How it reaches the canvas |
 | --- | --- | --- |
-| WebGPU core | `rg11b10ufloat` where the device can draw into it and the canvas is opaque; `rgba16float` elsewhere | The render pass resolves the samples into a texture. The final pass applies the exposure and the tone mapping, encodes sRGB and dithers, into the canvas. |
-| WebGPU compatibility mode | 8 bits per channel | Each shader tone maps and encodes its own result. The render pass resolves the samples straight into the canvas, with no pass of its own. |
-| WebGL2 | `RGBA16F` where the float target test passes; 8 bits per channel elsewhere | As on core WebGPU with the float target, and as in compatibility mode without it |
+| WebGPU core | `rg11b10ufloat` where the device can draw into it and the canvas is opaque; `rgba16float` elsewhere | The final pass applies the exposure and the tone mapping, encodes sRGB and dithers, into the canvas. With MSAA, the render pass first averages the samples into a texture. |
+| WebGPU compatibility mode | With MSAA, 8 bits per channel. With FXAA or none, as on core WebGPU. | With MSAA, each shader tone maps and encodes its own result, and the render pass averages the samples straight into the canvas, with no pass of its own. With FXAA or none, as on core WebGPU. |
+| WebGL2 | `RGBA16F` where the float target test passes; 8 bits per channel elsewhere | As on core WebGPU with the float target. Without it, each shader tone maps its own result: MSAA averages the samples into the canvas, and with FXAA or none the final pass reads the color as it is. |
 
-High dynamic range (HDR) color keeps light brighter than white until the tone mapping. It needs a float target that the GPU can draw into with MSAA. Compatibility mode allows no MSAA on 16-bit float targets, and some WebGL2 devices draw into no float target at all. On WebGL2, `engine.report.webgl2.floatRenderTargets` gives the result of the engine's test. The target must be complete, keep values above 1 and take 4 samples.
+High dynamic range (HDR) color keeps light brighter than white until the tone mapping. It needs a float target that the GPU can draw into, with 4 samples for MSAA. Compatibility mode allows no MSAA on 16-bit float targets, so there MSAA takes the 8-bit path, and FXAA and none keep HDR color. Some WebGL2 devices draw into no float target at all. On WebGL2, `engine.report.webgl2.floatRenderTargets` gives the result of the engine's test. The target must be complete and keep values above 1. For MSAA it must also take 4 samples.
 
-`engine.capabilities.hdr` says which path the engine took. Both paths show the same colors. Antialiased edges differ a little, because the 8-bit path averages the samples after the tone mapping. [Color management](color-management.md) describes the conversions and the tone mapping.
+`engine.capabilities.hdr` says which path the engine took. Both paths show the same colors. Edges differ a little, because the 8-bit path averages MSAA's samples after the tone mapping. FXAA compares and blends colors as the tone mapping would show them on both paths, so bright edges stay smooth. [Color management](color-management.md) describes the conversions and the tone mapping.
+
+Phone GPUs draw in tiles, and each write of a tile back to memory costs time and power. So each render pass discards the targets that no later pass reads: the depth, and with MSAA the samples once they are averaged. Chrome 146 and later also offer transient attachments. Where the browser has them, those targets take that usage, so they can stay in the GPU's tile memory. `engine.report.webgpu.transientAttachments` says whether the browser has them. On WebGL2 the engine tells the driver the same with `invalidateFramebuffer`.
 
 ## Depth on each tier
 
@@ -89,8 +99,9 @@ The features it tests include:
 - GPU timer queries
 - MSAA on 16-bit float targets
 - rendering into 16-bit and 32-bit float textures on WebGL2 (`engine.report.webgl2.floatRenderTargets`)
+- transient attachments on WebGPU (`engine.report.webgpu.transientAttachments`)
 
-Where float targets take antialiasing, the scene draws high dynamic range color, and the final pass tone maps it. That holds on core WebGPU, and on WebGL2 devices that pass the float target test. `hdr` says whether the engine took that path. [Color management](color-management.md) covers the 8-bit path of the other devices.
+Where float targets take the anti-aliasing mode, the scene draws high dynamic range color, and the final pass tone maps it. That holds on core WebGPU and on WebGL2 devices that pass the float target test. It holds in compatibility mode with FXAA or none too. `hdr` says whether the engine took that path. [Color management](color-management.md) covers the 8-bit path of the other devices.
 
 Code that uses an optional feature checks this object first. A sketch reads the same values in its context, as `ctx.engine.capabilities`.
 

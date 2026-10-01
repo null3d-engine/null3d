@@ -165,9 +165,7 @@ mod ids {
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
 #[derive(Clone, Copy, Debug)]
 pub struct CpuCulledConfig {
-    /// MSAA samples of the color and depth targets.
-    pub samples: u32,
-    /// The scene color's target and the canvas's transparency.
+    /// The scene color's target, the anti-aliasing mode and the canvas's transparency.
     pub canvas: CanvasOutput,
     /// Materials the table holds, at most [`sizes::MAX_MATERIALS`].
     pub max_materials: u32,
@@ -185,7 +183,6 @@ pub struct CpuCulledConfig {
 impl Default for CpuCulledConfig {
     fn default() -> Self {
         Self {
-            samples: 4,
             canvas: CanvasOutput::default(),
             max_materials: sizes::MAX_MATERIALS,
             draw_list_words: 64 * 1024,
@@ -271,11 +268,13 @@ impl CpuCulledRenderer {
                 config.canvas,
             ),
             lists: ParityLists::new(config.draw_list_words),
+            // WebGL2 has no transient attachments: the backend discards what a pass does not store
+            // with `invalidateFramebuffer` instead.
             graph: {
                 let mut graph = FrameGraph::new(
-                    config.samples,
                     false,
-                    config.canvas.scene_color,
+                    config.canvas,
+                    false,
                     GraphIds {
                         first_texture: ids::TARGETS,
                         final_pass: FinalIds {
