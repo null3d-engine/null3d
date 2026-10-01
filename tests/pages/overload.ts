@@ -31,7 +31,8 @@ function stepOf(count: number, stats: FrameMetrics): OverloadStep {
 		gpuMs: stats.gpuMs?.median ?? null,
 		cpuMs: stats.cpuMs.median,
 		refreshHz: stats.refreshHz,
-	};
+		raw: (stats as unknown as { debugRaw: unknown }).debugRaw,
+	} as OverloadStep;
 }
 
 run('overload', async (): Promise<OverloadResult> => {

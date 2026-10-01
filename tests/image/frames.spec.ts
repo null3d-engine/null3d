@@ -63,11 +63,18 @@ const MOST_FRAMES_IN_FLIGHT = 2.5;
  */
 const MIN_COMPLETED_FPS = 1;
 
-for (const tier of ['webgpu', 'webgl2'] as const) {
-	test(`a GPU that falls behind has at most two frames waiting on it, ${tier}`, async ({
+for (const [tier, run] of [
+	['webgpu', 0],
+	...Array.from({ length: 12 }, (_, i) => ['webgl2', i] as const),
+] as const) {
+	test(`a GPU that falls behind has at most two frames waiting on it, ${tier} ${run}`, async ({
 		page,
 	}) => {
 		test.setTimeout(120_000);
+		page.on('console', (m) => {
+			if (m.text().includes('DEBUG')) console.log(m.text());
+		});
+		page.on('worker', (w) => w.on('console', (m) => console.log(`W ${m.text()}`)));
 		await page.goto(`overload.html?gpu=${tier}&seconds=2`);
 		const result = await pageResult<OverloadResult & { error?: string }>(page, 110_000);
 		expect(result.error).toBeUndefined();
@@ -75,6 +82,7 @@ for (const tier of ['webgpu', 'webgl2'] as const) {
 		test.skip(!step, 'no step of the page overloaded this GPU');
 		if (!step) return;
 		const figures = JSON.stringify(step);
+		console.log(`DEBUGSTEP ${tier} ${figures}`);
 		test.skip(
 			(step.completedFps ?? Number.POSITIVE_INFINITY) <= MIN_COMPLETED_FPS,
 			`the GPU finished too few frames to compare the rates: ${figures}`,

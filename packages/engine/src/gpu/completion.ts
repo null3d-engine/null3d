@@ -67,6 +67,10 @@ class InFlight {
 		let oldest = this.tail;
 		while (oldest < this.head && (this.submitted[oldest % SLOTS] as number) < stalledBefore)
 			oldest++;
+		if (oldest > this.tail)
+			console.log(
+				`DEBUGSTALL now=${performance.now().toFixed(0)} lastDone=${times[LAST_DONE]?.toFixed(0)} interval=${times[DONE_INTERVAL]?.toFixed(0)} inflight=${this.head - this.tail} counted=${this.head - oldest} oldestSubmit=${this.submitted[this.tail % SLOTS]?.toFixed(0)}`,
+			);
 		return this.head - oldest;
 	}
 

@@ -32,7 +32,7 @@ import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
-import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
+import { createMetricsBuffer, MetricsReader, Role } from '../shared/metrics';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { loadSketch } from '../sketch/define-sketch';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
@@ -1257,7 +1257,11 @@ async function startEngine(
 				refreshHz: reader.refreshHz > 0 ? reader.refreshHz : null,
 				mainThread: mainThread.stop(),
 				perSecond: secondRates(reader.records),
-			};
+				debugRaw: [Role.Render, Role.Completion].map((r) => {
+					const x = reader.records[r];
+					return x && { frames: x.frames, intervals: x.intervals, busy: x.busy };
+				}),
+			} as FrameMetrics;
 		},
 		async capture() {
 			try {
