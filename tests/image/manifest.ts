@@ -305,13 +305,16 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	// The main directional light's shadows with 1 to 4 cascades, near the camera and far from it:
 	// casters that receive shadows, a receiver that casts none, a caster that receives none, and an
 	// unlit box in a shadow. Both GPU paths draw the same shadows, so every tier must draw the
-	// WebGPU image.
+	// WebGPU image. WebGL2 takes the 8-bit path, which averages antialiased edges after the tone
+	// mapping, so about 0.16% of the pixels differ, all at edges, on the Mac and with SwiftShader.
+	// A shadow drawn wrong changes several percent.
 	...[3, 1, 2, 4].map((cascades) => ({
 		name: cascades === 3 ? 'shadows' : `shadows-cascades-${cascades}`,
 		sketch: `tests/pages/sketches/shadows-sketch.ts?cascades=${cascades}`,
 		hold: 0,
 		size: [480, 270] as const,
 		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
 	})),
 	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the
 	// slab's front corner and the far plane cutting the bar at the back. The parity test compares
