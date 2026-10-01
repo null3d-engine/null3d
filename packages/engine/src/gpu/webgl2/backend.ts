@@ -239,8 +239,11 @@ export class WebGL2Backend {
 	private mipSampler: WebGLSampler | null = null;
 	/** Where drawing into the canvas goes during a capture; the canvas itself otherwise. */
 	canvasTarget: CanvasTarget | undefined;
-	/** What the replays since the last reset uploaded, drew, built, and the other objects they made. */
-	readonly counts = { uploadBytes: 0, drawCalls: 0, pipelines: 0, objects: 0 };
+	/**
+	 * What the replays since the last reset uploaded, drew and built, the other objects they made,
+	 * and the draw commands they skipped because the program was still compiling.
+	 */
+	readonly counts = { uploadBytes: 0, drawCalls: 0, pipelines: 0, objects: 0, skippedDraws: 0 };
 
 	// Views on engine memory, rebuilt when it grows, and copies for browsers that refuse views on
 	// shared memory. The replay's own views give the words and the floats.
@@ -453,6 +456,7 @@ export class WebGL2Backend {
 		this.counts.drawCalls = 0;
 		this.counts.pipelines = 0;
 		this.counts.objects = 0;
+		this.counts.skippedDraws = 0;
 	}
 
 	/**
@@ -606,7 +610,10 @@ export class WebGL2Backend {
 					this.indexBytes = words[a + 1] === G.INDEX_FORMAT_UINT32 ? 4 : 2;
 					break;
 				case G.OP_DRAW:
-					if (this.skipDraws) break;
+					if (this.skipDraws) {
+						this.counts.skippedDraws++;
+						break;
+					}
 					this.useVertexArray(this.drawVertexArray());
 					this.prepareDraw(words[a + 3] as number);
 					gl.drawArraysInstanced(
@@ -618,7 +625,10 @@ export class WebGL2Backend {
 					this.counts.drawCalls++;
 					break;
 				case G.OP_DRAW_INDEXED: {
-					if (this.skipDraws) break;
+					if (this.skipDraws) {
+						this.counts.skippedDraws++;
+						break;
+					}
 					if (words[a + 3] !== 0) throw new Error('WebGL2 has no base vertex for draws');
 					this.useMeshVertexArray();
 					this.prepareDraw(words[a + 4] as number);
@@ -633,7 +643,8 @@ export class WebGL2Backend {
 					break;
 				}
 				case G.OP_MULTI_DRAW_INDEXED:
-					if (!this.skipDraws) this.multiDrawIndexed(words, a);
+					if (this.skipDraws) this.counts.skippedDraws++;
+					else this.multiDrawIndexed(words, a);
 					break;
 				case G.OP_SUBMIT:
 					break;

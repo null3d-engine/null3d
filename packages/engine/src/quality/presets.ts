@@ -167,7 +167,10 @@ function settingsThatChange(changes: (change: SettingChange) => boolean): Qualit
 	);
 }
 
-/** The settings that a sketch reads: those that are fixed only after the load. */
+/**
+ * The settings that a sketch reads: those that are fixed only after the load. `quality.setPreset`
+ * gives them the new preset's values.
+ */
 export const SKETCH_SETTINGS: readonly QualitySettingName[] = settingsThatChange(
 	(change) => change !== 'load',
 );
@@ -180,6 +183,11 @@ export const LIVE_SETTINGS: readonly QualitySettingName[] = settingsThatChange(
 /** A preset's place in the order, from 0 for Low to 3 for Ultra. */
 export function presetIndex(preset: QualityPreset): number {
 	return QUALITY_PRESETS.indexOf(preset);
+}
+
+/** `preset` lowered by `steps`, down to Low at most. */
+export function lowered(preset: QualityPreset, steps: number): QualityPreset {
+	return QUALITY_PRESETS[Math.max(0, presetIndex(preset) - steps)] ?? 'low';
 }
 
 /** A setting's value on a preset. */
@@ -272,15 +280,26 @@ export function checkSettings(
 	}
 }
 
+/** `value` when it is one of `names`; otherwise throws E1213, which names the `call` that got it. */
+function namedPreset<T extends string>(call: string, value: unknown, names: readonly T[]): T {
+	if ((names as readonly unknown[]).includes(value)) return value as T;
+	throw new EngineError(
+		'E1213',
+		`${call} got the preset ${quoted(value)}, which is not ${listOf(names.map((name) => `'${name}'`))}.`,
+	);
+}
+
 /**
  * The preset that `createEngine`'s option names, `auto` when it names none. Throws E1213 when it
  * names no preset.
  */
 export function presetOption(value: unknown): QualityPreset | 'auto' {
-	if (value === undefined || value === 'auto') return 'auto';
-	if ((QUALITY_PRESETS as readonly unknown[]).includes(value)) return value as QualityPreset;
-	throw new EngineError(
-		'E1213',
-		`createEngine() got the preset ${quoted(value)}, which is not ${listOf(['auto', ...QUALITY_PRESETS].map((name) => `'${name}'`))}.`,
-	);
+	return value === undefined
+		? 'auto'
+		: namedPreset('createEngine()', value, ['auto', ...QUALITY_PRESETS] as const);
+}
+
+/** The preset that `quality.setPreset` got. Throws E1213 when it names no preset. */
+export function presetArgument(value: unknown): QualityPreset {
+	return namedPreset('quality.setPreset()', value, QUALITY_PRESETS);
 }

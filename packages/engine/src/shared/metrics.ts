@@ -44,6 +44,7 @@ export const COUNTER_NAMES = [
 	'rebuilds',
 	'pipelines',
 	'visibleEntries',
+	'skippedDraws',
 	'gpuObjects',
 ] as const;
 
@@ -147,6 +148,11 @@ class MetricsViews {
 	holds(at: number, sequence: number): boolean {
 		return Atomics.load(this.words, at + SEQUENCE) === sequence + 1;
 	}
+}
+
+/** The display's refresh rate in hertz, as the thread that draws measured it, or 0 before then. */
+export function refreshRate(buffer: ArrayBufferLike): number {
+	return new Float64Array(buffer, 0, HEADER_WORDS / 2)[REFRESH_HZ] as number;
 }
 
 /** Writes one role's records. Only one thread writes a given ring. */

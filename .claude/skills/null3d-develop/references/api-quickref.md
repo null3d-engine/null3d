@@ -447,13 +447,15 @@ quality.set({ minRenderScale: 0.5, maxRenderScale: 1 });  // the range dynamic r
 quality.set({ maxAnisotropy: 4, uploadBytesPerFrame: 2 * 1024 * 1024 });  // texture sampling cap, upload bytes per frame
 quality.settings.antialias;             // 'msaa' | 'fxaa' | 'none', fixed at the start; set it with createEngine's option
 quality.set({ shadowCascades: 2 });     // planned: the preset table gives each setting's status
+await quality.setPreset('low');         // the live settings take Low's values; start-time ones stay; resolves once its frame is on screen
 const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
 quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });
 quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => { aiRate = scale; } });  // (0.2)
 engine.mode.preset;                     // on the page: the preset, crashedStarts and memoryMaximumMiB
+engine.mode.presetCheck;                // what the preset check measured: { from, targetFps, rounds }, or null
 ```
 
-The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. Dynamic resolution lowers the render scale by 0.05 after about a second over budget, and raises it after 5 seconds with time to spare. Hold mode draws at `maxRenderScale`. The frame-budget governor, which also lowers other settings, is planned.
+The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. When the engine chose the preset itself, it checks it with the scene that the setup built. It lowers the preset until the GPU holds the frame rate, before `createEngine` resolves, and keeps the settings that the setup changed with `quality.set`. The `setPreset` call keeps the last frame on screen until the new preset's pipelines are built. So call it from a menu or a loading screen. Dynamic resolution lowers the render scale by 0.05 after about a second over budget, and raises it after 5 seconds with time to spare. Hold mode draws at `maxRenderScale`. The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
 
 ## 18. Messages and UI (`api/page`, `api/ui`)
 

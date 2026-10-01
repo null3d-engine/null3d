@@ -8,14 +8,20 @@ import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error'
 import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS } from '../generated/gpu';
-import { choosePreset, crashTier, memoryPreset, type PresetRequest } from '../quality/chooser';
+import type { PresetCheck } from '../quality/check';
+import {
+	choosePreset,
+	crashTier,
+	memoryPreset,
+	type PresetRequest,
+	withinTier,
+} from '../quality/chooser';
 import {
 	checkSettings,
 	presetOption,
 	presetSettings,
 	presetValue,
 	type QualityPreset,
-	type QualitySettings,
 } from '../quality/presets';
 import type { DrawingSetup } from '../render/draw';
 import { type DrawModule, loadDrawModule } from '../render/load-draw';
@@ -29,7 +35,7 @@ import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { loadSketch } from '../sketch/define-sketch';
-import type { QualityStart } from '../sketch/quality';
+import type { QualityStart, QualityUpdate } from '../sketch/quality';
 import type { SketchRunner } from '../sketch/runner';
 import type {
 	CapturedFrame,
@@ -234,8 +240,17 @@ export interface EngineMode {
 	jobWorkers: number;
 	/** The sketch time in seconds that hold mode holds the sketch at, or null for a live engine. */
 	hold: number | null;
-	/** The quality preset that the engine runs. */
+	/**
+	 * The quality preset that the engine runs. The preset check can lower it before `createEngine`
+	 * resolves, and `ctx.quality.setPreset` in the sketch changes it later.
+	 */
 	preset: QualityPreset;
+	/**
+	 * What the preset check measured, or null when no check ran. The engine checks the preset when
+	 * it chose it from the device: after the first frame, it measures the frame rate of the scene
+	 * that the setup built, and lowers the preset until one holds the target.
+	 */
+	presetCheck: PresetCheck | null;
 	/**
 	 * The starts of this sketch before this one that crashed the tab, one after another, as the
 	 * engine's note in `localStorage` records them. After one, the engine starts a preset lower, and
@@ -412,8 +427,8 @@ interface WorkerEvents {
 	sketchMessage(name: string, data: unknown): void;
 	/** A failure after the engine started. */
 	failure(error: EngineError): void;
-	/** The quality settings after the sketch changed them. */
-	quality(settings: QualitySettings): void;
+	/** The quality preset and settings after a change, and the preset check's result. */
+	quality(update: QualityUpdate): void;
 }
 
 /** A worker whose replies are routed: events to the page's handlers, answers to the oldest request. */
@@ -448,7 +463,7 @@ class EngineWorker {
 				return;
 			}
 			if (reply.type === 'quality') {
-				events.quality(reply.settings);
+				events.quality(reply.update);
 				return;
 			}
 			if (reply.type === 'lost') {
@@ -735,8 +750,13 @@ async function startEngine(
 	const events: WorkerEvents = {
 		sketchMessage: onSketchMessage,
 		failure: onFailure,
-		// The page applies the settings that it owns: the pixel ratio cap sizes the canvas.
-		quality: (settings) => canvasWatch.setMaxPixelRatio(settings.maxPixelRatio),
+		// The page applies the settings that it owns: the pixel ratio cap sizes the canvas. The
+		// engine's mode reports the preset and the preset check.
+		quality: (update) => {
+			canvasWatch.setMaxPixelRatio(update.settings.maxPixelRatio);
+			mode.preset = update.preset;
+			if (update.check) mode.presetCheck = update.check;
+		},
 	};
 
 	const jobWorkers = threaded
@@ -817,6 +837,29 @@ async function startEngine(
 	const quality: QualityStart = {
 		preset,
 		settings: presetSettings(preset, pageSettings),
+		options: pageSettings,
+		highest: withinTier('ultra', tier),
+		// The engine checks a preset that it chose itself, when a lighter one exists. A preset that
+		// the page, a switch or hold mode fixes stays as it is.
+		check:
+			optionPreset === 'auto' &&
+			switches.preset === undefined &&
+			hold === undefined &&
+			preset !== 'low'
+				? { fps: switches.fps }
+				: undefined,
+	};
+	const mode: EngineMode = {
+		build,
+		latency: latency === 'pipelined' && sketchOnPage && renderThread === 'main' ? 'low' : latency,
+		sketchThread,
+		renderThread,
+		jobWorkers,
+		hold: hold ?? null,
+		preset,
+		presetCheck: null,
+		crashedStarts: history.crashed,
+		memoryMaximumMiB: threaded ? maximumMiB : null,
 	};
 	// What the thread that draws needs besides its canvas, whichever thread that is.
 	const rendererSetup: Omit<RendererSetup, 'canvas'> = {
@@ -1059,17 +1102,6 @@ async function startEngine(
 	}
 
 	const engineStartMs = performance.now() - startedAt;
-	const mode: EngineMode = {
-		build,
-		latency: latency === 'pipelined' && sketchOnPage && renderThread === 'main' ? 'low' : latency,
-		sketchThread,
-		renderThread,
-		jobWorkers,
-		hold: hold ?? null,
-		preset,
-		crashedStarts: history.crashed,
-		memoryMaximumMiB: threaded ? maximumMiB : null,
-	};
 	onProgress?.('sketch');
 	// The thread that draws writes the time the GPU finished the first frame; the page checks for
 	// it once per animation frame until it appears.
