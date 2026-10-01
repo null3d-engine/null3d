@@ -12,6 +12,7 @@ The benchmarks measure the engine as developers ship it. A production build leav
 - `bun run bench:run`, `bun run bench:profile`, `bun run bench:allocation` and `bun run bench:soak` build the pages into `target/bench-pages` before each run. `vite preview` serves the build on the preview port, the dev server's port plus 2.
 - `--dev` runs the dev server's pages instead, where the engine runs its development checks. Run the same pages with and without it to see what the checks cost.
 - `bun run test:bench` checks the production build, as the benchmarks run it. The image test manifest and `bun run parity` still load the dev server's pages. So does null3D's side of each feature scene's [parity test](image-tests.md#parity-with-threejs), so `bun run test:bench` starts the dev server too.
+- CI runs `bun run test:bench` on SwiftShader in two shards, the `bench` jobs, with the WebAssembly files that its `build` job built once. Each test of `bench/tests/pages.spec.ts` opens a page of its own, so the file runs its tests in parallel, and Playwright can split it between shards.
 - The device runner's bench and scale plans load the production build through the dev server's load routes. [Device sessions](devices.md#benchmark-runs) says how.
 - The build keeps hidden source maps beside its files, and the built files stay as a production build writes them. The profile and the allocation check read the maps to name each function and its source file, as the dev server's pages would.
 
@@ -41,6 +42,7 @@ The benchmarks measure the engine as developers ship it. A production build leav
 - A pull request that makes a benchmark more than 3% slower still needs its written reason (hard rule 17). One job cannot tell such a change from the machine's noise, but its table shows every change.
 - The job runs on GitHub's Mac machine (`macos-15`, 3 cores of an Apple M1 in a virtual machine). Its GPU is shared with other machines, so the job reports GPU time but never judges it. Device sessions measure the GPU.
 - A job takes about 3 minutes to set up and 3 to build both commits. Each scene then adds about 8 minutes: 10 rounds of 2 pages in 2 builds, each run 10 s plus its load. With four scenes, main's jobs took 33 to 41 minutes. The job's limit is 90 minutes.
+- The job does not split into shards. Each shard would need a Mac machine of its own, and would set up and build both commits again. GitHub's free plan gives 5 Mac machines at once, which the merge queue's Safari and Firefox jobs need. The job is also not a check that the merge queue waits for.
 - The summary goes to the run's page. Each run's result, `summary.json` and `summary.md` stay in an artifact for 90 days, so the workflow's list of runs holds the history.
 
 ### How the machine and the rules were chosen
