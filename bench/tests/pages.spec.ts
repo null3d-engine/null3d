@@ -17,6 +17,9 @@ import {
 } from '../scenes/spec';
 import { openPage, type PageReport, runPage } from './open-page';
 
+// Each test opens a page of its own, so the tests run on any worker and in any shard.
+test.describe.configure({ mode: 'parallel' });
+
 const SCENES = BENCH_SCENES;
 /** The pages each scene is tested on, with the renderer each one reports. */
 const PAGES: { kind: PageKind; renderer: string }[] = [
