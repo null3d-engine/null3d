@@ -123,8 +123,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -209,8 +209,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -297,8 +297,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -470,8 +470,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -636,8 +636,8 @@ void main() {
 			source: `struct Output {
     exposure: f32,
     tone_mapping: u32,
-    spare_a: u32,
-    spare_b: u32,
+    flags: u32,
+    spare: u32,
 }
 
 struct Fog {
@@ -726,8 +726,8 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
 			source: `struct Output {
     exposure: f32,
     tone_mapping: u32,
-    spare_a: u32,
-    spare_b: u32,
+    flags: u32,
+    spare: u32,
 }
 
 struct Fog {

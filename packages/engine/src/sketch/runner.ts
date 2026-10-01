@@ -197,6 +197,7 @@ export class SketchRunner {
 			device.capabilities,
 			device.maxTextureSize,
 			device.sceneColor,
+			device.antialias,
 			device.transparent,
 			device.cellCulling,
 		);
