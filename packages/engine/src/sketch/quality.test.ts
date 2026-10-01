@@ -50,7 +50,7 @@ describe('SketchQuality', () => {
 		});
 		expect(changes).toEqual([['maxAnisotropy', 'uploadBytesPerFrame']]);
 		expect(quality.settings).toEqual({
-			maxPixelRatio: MEDIUM.maxPixelRatio,
+			...MEDIUM,
 			maxAnisotropy: 2,
 			uploadBytesPerFrame: 1_048_576,
 		});
@@ -80,7 +80,8 @@ describe('SketchQuality', () => {
 		expect(() => quality.set({ maxPixelRatio: 0 })).toThrow('E1213');
 		expect(() => quality.set({ maxAnisotropy: 32 })).toThrow('E1213');
 		expect(() => quality.set({ maxPixelRatio: 1, uploadBytesPerFrame: 1024 })).toThrow('E1213');
-		expect(() => quality.set({ antialias: 'fxaa' } as Partial<QualitySettings>)).toThrow('E1213');
+		// The anti-aliasing mode is fixed when the engine starts.
+		expect(() => quality.set({ antialias: 'fxaa' })).toThrow('fixed when the engine starts');
 		expect(quality.settings).toEqual(MEDIUM);
 		expect(applied).toEqual([]);
 		expect(quality.takeChange()).toBe(false);
