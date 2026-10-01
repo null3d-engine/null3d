@@ -65,8 +65,10 @@ const MOST_FRAMES_IN_FLIGHT = 2.5;
  */
 const STALL_MS = 1000;
 
-for (const tier of ['webgpu', 'webgl2'] as const) {
-	test(`a GPU that falls behind has at most two frames waiting on it, ${tier}`, async ({
+for (const [round, tier] of (
+	['webgpu', ...Array(8).fill('webgl2')] as ('webgpu' | 'webgl2')[]
+).entries()) {
+	test(`a GPU that falls behind has at most two frames waiting on it, ${tier} ${round}`, async ({
 		page,
 	}) => {
 		test.setTimeout(120_000);
