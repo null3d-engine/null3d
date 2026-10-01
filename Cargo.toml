@@ -24,3 +24,9 @@ lto = "fat"
 opt-level = 3
 panic = "abort"
 debug = false
+
+# Development builds optimize the dependencies but not the engine's own crates. The shader tools'
+# tests and `bun run shaders` then parse and validate WGSL several times faster, while the engine's
+# crates keep their fast rebuilds and full debug information.
+[profile.dev.package."*"]
+opt-level = 3
