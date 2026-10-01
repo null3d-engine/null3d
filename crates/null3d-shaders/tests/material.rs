@@ -268,7 +268,7 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 fn a_vertex_offset_moves_the_vertex_in_every_variant_and_reads_the_uniforms() {
     let built = compile(WAVE).expect("the vertex offset builds");
     assert_eq!(built.functions, ["vertexOffset"]);
-    assert_eq!(built.variants.len(), 32);
+    assert_eq!(built.variants.len(), 48);
     let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
     assert!(wgsl.contains("fn vertexOffset("), "{wgsl}");
     assert!(!wgsl.contains("fn surface("), "{wgsl}");
