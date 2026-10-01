@@ -37,6 +37,11 @@ export const LIGHT_VALUE_RANGE = 1;
 export const LIGHT_VALUE_DECAY = 2;
 export const LIGHT_VALUE_ANGLE = 3;
 export const LIGHT_VALUE_PENUMBRA = 4;
+export const LIGHT_VALUE_SHADOW_BIAS = 5;
+export const LIGHT_VALUE_SHADOW_NORMAL_BIAS = 6;
+export const LIGHT_VALUE_SHADOW_CASCADES = 7;
+export const LIGHT_VALUE_SHADOW_MAP_SIZE = 8;
+export const LIGHT_VALUE_SHADOW_DISTANCE = 9;
 
 export const SCENE_FIELD_POSITIONS = 0;
 export const SCENE_FIELD_ROTATIONS = 1;

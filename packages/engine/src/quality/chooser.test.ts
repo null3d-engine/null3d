@@ -10,6 +10,7 @@ import {
 	memoryPreset,
 	type PresetRequest,
 	TABLET_MIN_EDGE,
+	withinTier,
 } from './chooser';
 import type { QualityPreset } from './presets';
 
@@ -185,5 +186,14 @@ describe('crashTier', () => {
 		expect(crashTier(1, 'webgpu')).toBeUndefined();
 		expect(crashTier(2, 'webgl2')).toBeUndefined();
 		expect(crashTier(2, null)).toBeUndefined();
+	});
+});
+
+describe('withinTier', () => {
+	it("caps a preset at the GPU path's highest", () => {
+		expect(withinTier('ultra', 'webgpu')).toBe('ultra');
+		expect(withinTier('ultra', 'webgl2')).toBe('medium');
+		expect(withinTier('high', 'webgpu-compat')).toBe('medium');
+		expect(withinTier('low', 'webgl2')).toBe('low');
 	});
 });

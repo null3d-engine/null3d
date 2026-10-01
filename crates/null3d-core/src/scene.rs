@@ -107,9 +107,9 @@ pub mod flags {
     pub const DYNAMIC: u32 = 1 << 0;
     /// Drawn and culled. An object is hidden when this bit is clear on it or on any ancestor.
     pub const VISIBLE: u32 = 1 << 1;
-    /// Casts shadows, for the shadow passes to read.
+    /// Casts shadows: the object draws into the shadow maps of the lights that cast them.
     pub const CAST_SHADOWS: u32 = 1 << 2;
-    /// Receives shadows, for the shadow passes to read.
+    /// Receives shadows: the object's shader reads the shadow maps.
     pub const RECEIVE_SHADOWS: u32 = 1 << 3;
     /// Never culled: the object's world bounding sphere covers all of space.
     pub const UNCULLED: u32 = 1 << 4;
@@ -118,8 +118,11 @@ pub mod flags {
     pub const CUSTOM_BOUNDS: u32 = 1 << 5;
     /// The bits that change an object's world bounding sphere.
     pub const BOUNDS: u32 = UNCULLED | CUSTOM_BOUNDS;
+    /// The bits that choose where an object draws besides its views: the shadow maps it draws
+    /// into, and the shaders that read them.
+    pub const SHADOWS: u32 = CAST_SHADOWS | RECEIVE_SHADOWS;
     /// The bits that [`super::op::SET_FLAGS`] changes. The other bits have operations of their own.
-    pub const SETTABLE: u32 = CAST_SHADOWS | RECEIVE_SHADOWS | BOUNDS;
+    pub const SETTABLE: u32 = SHADOWS | BOUNDS;
 }
 
 /// Operation numbers of [`Command`] records (the low byte of [`Command::op`]).
@@ -300,11 +303,11 @@ impl Command {
 
     /// True for a change that keeps the scene's structure, so the renderer updates what it draws
     /// without rebuilding its tables: showing or hiding an object, its layers, a render order, and
-    /// flags that leave the object's bounds alone.
+    /// flags that leave the object's bounds and shadows alone.
     pub const fn keeps_structure(&self) -> bool {
         match self.opcode() {
             op::SET_VISIBLE | op::SET_LAYERS | op::SET_RENDER_ORDER => true,
-            op::SET_FLAGS => self.a & flags::BOUNDS == 0,
+            op::SET_FLAGS => self.a & (flags::BOUNDS | flags::SHADOWS) == 0,
             _ => false,
         }
     }
@@ -2346,10 +2349,14 @@ mod tests {
             .apply_commands(&[Command::set_flags(h, flags::CAST_SHADOWS, 0)], 3)
             .unwrap();
         assert_eq!(scene.flags()[slot], SHOWN | flags::RECEIVE_SHADOWS);
-        // Shadow flags keep the structure; bounds flags change it.
+        // Shadow flags and bounds flags change the structure; other bits keep it.
+        assert!(scene.take_structure_changed());
+        scene
+            .apply_commands(&[Command::set_flags(h, flags::DYNAMIC, 0)], 4)
+            .unwrap();
         assert!(!scene.take_structure_changed());
         scene
-            .apply_commands(&[Command::set_flags(h, flags::UNCULLED, 0)], 4)
+            .apply_commands(&[Command::set_flags(h, flags::UNCULLED, 0)], 5)
             .unwrap();
         assert!(scene.take_structure_changed());
     }

@@ -1,8 +1,9 @@
 //! The culling passes: one compute dispatch per view. Each thread tests one source's bounding
 //! sphere against the view's frustum, appends a visible source to its bucket's slice of the view's
 //! compacted instance buffer, and counts it in each of the bucket's indirect draws, which the
-//! view's bundle then draws. Every view reads the same sources and bucket tables, and writes
-//! buffers of its own.
+//! view's bundle then draws. Every view reads the same sources, and writes buffers of its own. The
+//! views of cameras read the scene layout's bucket tables, and the shadow cascades' views read the
+//! casters' layout's.
 //!
 //! A view's parameters also hold its layer mask, and the shader skips a source whose layer mask
 //! shares no bit with it.
@@ -87,7 +88,8 @@ impl Default for ViewBuffers {
 /// The culling passes' GPU objects, and each view's buffers.
 #[derive(Debug, Default)]
 pub(super) struct Culling {
-    views: Vec<ViewBuffers>,
+    /// Each view's buffers by view id, or `None` for a view whose buffers do not exist.
+    views: Vec<Option<ViewBuffers>>,
     /// The offsets from the camera of the view being uploaded to each cell in use.
     offsets: CellOffsets,
 }
@@ -99,35 +101,39 @@ pub(super) fn create_pipeline(list: &mut DrawList) -> Result<(), RecordError> {
 }
 
 impl Culling {
-    /// The number of views whose culling buffers exist.
-    pub(super) fn views(&self) -> usize {
-        self.views.len()
+    /// True when a view's culling buffers exist.
+    pub(super) fn has_view(&self, view: ViewId) -> bool {
+        self.views.get(view.index()).is_some_and(Option::is_some)
     }
 
-    /// Creates the parameter buffer of each view from the first one without it up to `views`.
-    pub(super) fn add_views(
+    /// Creates a view's parameter buffer, unless it exists.
+    pub(super) fn add_view(
         &mut self,
         list: &mut DrawList,
-        views: usize,
+        view: ViewId,
     ) -> Result<(), RecordError> {
-        while self.views.len() < views {
-            let view = ViewId::from_index(self.views.len());
-            list.push(
-                Op::CreateBuffer,
-                &[
-                    ids::cull_params(view),
-                    CULL_PARAMS_BYTES,
-                    usage::UNIFORM | usage::COPY_DST,
-                ],
-            )?;
-            self.views.push(ViewBuffers::default());
+        if self.has_view(view) {
+            return Ok(());
         }
+        list.push(
+            Op::CreateBuffer,
+            &[
+                ids::cull_params(view),
+                CULL_PARAMS_BYTES,
+                usage::UNIFORM | usage::COPY_DST,
+            ],
+        )?;
+        if self.views.len() <= view.index() {
+            self.views.resize(view.index() + 1, None);
+        }
+        self.views[view.index()] = Some(ViewBuffers::default());
         Ok(())
     }
 
     /// Sizes a view's compacted instance and indirect buffers for the layout, at most
     /// `binding_bytes` each, and binds its culling group again when a buffer it binds is new:
-    /// one of its own, or one of the layout's (`shared_recreated`).
+    /// one of its own, or one of the layouts' (`shared_recreated`). The group binds the layout's
+    /// bucket tables beside the scene's matrices and layer table.
     pub(super) fn apply(
         &mut self,
         list: &mut DrawList,
@@ -136,7 +142,9 @@ impl Culling {
         shared_recreated: bool,
         binding_bytes: u32,
     ) -> Result<(), RecordError> {
-        let buffers = &mut self.views[view.index()];
+        let buffers = self.views[view.index()]
+            .as_mut()
+            .expect("a view's buffers exist before it culls");
         let draws = layout.draws.len() as u32;
         let needed = [
             (
@@ -167,11 +175,12 @@ impl Culling {
                 bind_layout::CULL,
                 CULL_BINDINGS as u32,
             ]);
+            let (bucket_table, bucket_records) = layout.table_ids();
             for (binding, buffer) in [
                 ids::cull_params(view),
                 ids::MATRICES,
-                ids::INSTANCE_BUCKETS,
-                ids::BUCKETS,
+                bucket_table,
+                bucket_records,
                 ids::visible(view),
                 ids::indirect(view),
                 ids::SOURCE_LAYERS,
@@ -196,8 +205,10 @@ impl Culling {
 
     /// Uploads a view's culling parameters: its frustum's planes, the source count, its layer
     /// mask, the offset from its camera to each cell in use in `scene`, and, while `cells` culls by
-    /// cell, the runs of the cell order of the cells it can see. Resets its indirect draws'
-    /// instance counts to zero, and notes the workgroups of its dispatch.
+    /// cell, the runs of the cell order of the cells it can see. `sources` is the scene's layout,
+    /// whose sources and cell order every view culls, and `drawn` the layout whose buckets the
+    /// view draws. Resets its indirect draws' instance counts to zero, and notes the workgroups of
+    /// its dispatch.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn upload(
         &mut self,
@@ -205,7 +216,8 @@ impl Culling {
         arena: &mut UploadArena,
         view: ViewId,
         frame: &ViewFrame,
-        layout: &Layout,
+        sources: &Layout,
+        drawn: &Layout,
         scene: &SceneStorage,
         cells: &CellCulling,
     ) -> Result<(), RecordError> {
@@ -215,15 +227,17 @@ impl Culling {
                 *word = value.to_bits();
             }
         }
-        params[SOURCES_WORD] = layout.sources;
+        params[SOURCES_WORD] = sources.sources;
         params[LAYERS_WORD] = frame.layers;
         self.offsets.update(scene, &frame.camera);
-        let buffers = &mut self.views[view.index()];
+        let buffers = self.views[view.index()]
+            .as_mut()
+            .expect("a view's buffers exist before it culls");
         let (ranges, groups) = if cells.active() {
             let visible: CellMask = cells.visible(&frame.frustum, self.offsets.as_slice());
-            layout.ranges(&visible, &mut buffers.ranges)
+            sources.ranges(&visible, &mut buffers.ranges)
         } else {
-            (0, layout.sources.div_ceil(sizes::CULL_WORKGROUP_SIZE))
+            (0, sources.sources.div_ceil(sizes::CULL_WORKGROUP_SIZE))
         };
         params[RANGES_WORD] = ranges as u32;
         (buffers.groups, buffers.range_count) = (groups, ranges);
@@ -238,8 +252,8 @@ impl Culling {
             let (at, bytes) = arena.push(words_as_bytes(words))?;
             list.push(Op::WriteBuffer, &[params_id, RANGES_OFFSET, at, bytes])?;
         }
-        if !layout.draws.is_empty() {
-            let (at, bytes) = arena.push(words_as_bytes(&layout.indirect_template))?;
+        if !drawn.draws.is_empty() {
+            let (at, bytes) = arena.push(words_as_bytes(&drawn.indirect_template))?;
             list.push(Op::WriteBuffer, &[ids::indirect(view), 0, at, bytes])?;
         }
         Ok(())
@@ -248,7 +262,7 @@ impl Culling {
     /// The runs of the cell order that a view's culling pass covers in the last recorded frame,
     /// each its first position and its end, or `None` when it covers every source in place.
     pub(super) fn ranges(&self, view: ViewId) -> Option<impl Iterator<Item = (u32, u32)> + '_> {
-        let buffers = self.views.get(view.index())?;
+        let buffers = self.views.get(view.index())?.as_ref()?;
         (buffers.range_count > 0 || buffers.groups == 0).then(|| {
             buffers.ranges[..buffers.range_count]
                 .iter()
@@ -264,7 +278,9 @@ impl Culling {
         view: ViewId,
         layout: &Layout,
     ) -> Result<(), RecordError> {
-        let groups = self.views[view.index()].groups;
+        let groups = self.views[view.index()]
+            .as_ref()
+            .map_or(0, |buffers| buffers.groups);
         if layout.buckets.is_empty() || groups == 0 {
             return Ok(());
         }

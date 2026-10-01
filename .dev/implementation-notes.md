@@ -20,6 +20,7 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 ## Allocation in Rust
 
 - Rust tests that count allocations use `null3d_core::testing::CountingAllocator`, from the core crate's `testing` feature. It counts only the threads a test marks, so the test runner's own threads cannot reach the count.
+- A marked thread counts only while the test that marked it holds the counter. `std::thread::scope` returns when each thread's closure ends. The thread can still free memory after that, as it exits. Such a free once made the next test count 1 call, in CI.
 - The frame recorder sizes a frame's upload arena for the most that any frame can copy for the scene as it stands. It keeps its layout tables and scratch space between rebuilds. Only the frames right after the scene grows allocate.
 - Pipelined frames keep one arena per frame parity, so the allocation tests change the structure on both parities after warm-up.
 - A thread can run any number of a parallel loop's chunks, from none to all of them. The calling thread runs every chunk that no job worker claims, for example while the workers wake. Storage that one thread fills across chunks therefore needs room for the whole loop. Give each thread's list in the parallel draw-list recorder room for a whole recording. Tests reach this case with a job system whose workers never start.
@@ -51,6 +52,10 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - The docs generator and the device runner import the chooser and the table, and the tools' type check has no browser types. So `quality/presets.ts`, `quality/chooser.ts`, `quality/preset-docs.ts` and `shared/tier.ts` import no module that names a browser type, not even for types.
 - The page chooses the preset: workers have no media queries and no screen. The memory maximum follows the device hints and the crash marker alone, which the page has at once. So the core's download and the shared memory never wait for the GPU probe.
 - Hold mode and `?preset=` neither read nor write the crash marker, so a test that crashes can never lower the next test's preset.
+- `quality.set` takes the live settings only. A start-time setting changes with `quality.setPreset`. The core should take its new value in the first frame after the change, which waits for its pipelines. The sketch runner marks it where it takes the restart from `SketchQuality` in `frame()`.
+- The preset check runs at the end of `SketchRunner.setup`, before the frame loop steps the sketch. It publishes setup frames, one after another, as a warm-up does. Its code (`sketch/preset-check.ts`) loads with a dynamic import after the first frame, and the runner keeps drawing while it arrives. The size report names its files apart from the downloads before the first frame.
+- The check reads the render and completion rings with `RingSums`, from the thread that runs the sketch. Only a preset that the engine chose, above Low, gets a check, so pages that name a preset never download its code.
+- Tests that assert a preset-dependent value on a live engine fix the preset with `?preset=`, or compare the preset that the engine chose (`presetCheck.from`). The check of a busy machine can lower the preset of any scene.
 
 ## Start order
 
@@ -122,7 +127,10 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - The first frame on a GPU device waits for its pipelines. Later frames draw at once, and a draw whose pipeline is still building draws nothing. So each frame loop asks the presenter whether a frame is ready before it takes the frame. The sketch thread computes no frame past it.
 - Without `KHR_parallel_shader_compile`, a WebGL2 program never counts as building, and its first draw waits for its compile. The switch `?compile=wait` gives that path in a browser that has the extension.
 - A warm-up in the setup records a frame itself, since no frame loop runs yet. So the renderer must exist before the setup: low-latency and single-threaded modes start it first.
-- Sketch code that runs between frames, such as a message handler or the code after a warm-up, gets fresh views of engine memory first. The single-threaded build's memory detaches every view when it grows, which a frame may have done.
+- The single-threaded build's memory detaches every view when it grows, and a write through a detached view is lost. So every core call that can grow the memory goes through `CoreMemory.checkGrowth`, which takes the new buffer. The sketch runner takes it after each frame step that sketch code or a development check follows, and at the end of each frame. Sketch code then writes through current views in every callback, between frames and after a warm-up.
+- A change of preset starts the first frame's wait again. The sketch thread writes the frame in the control block's `PipelineHold` before it publishes the frame. The replay (`FrameReplay.prepare`) then holds that frame, and later ones, until one draws with every pipeline built. The canvas keeps the last frame meanwhile, on both paths.
+- The direct loop takes the frames that the setup publishes only when `Presenter.due` allows, as it steps play frames. The preset check then measures at the pace of play, within the limit of frames in flight. The loop wakes waiters on `FramesTaken`, because the check's code on the same thread waits for each frame to be taken.
+- Each backend counts the draw commands that a building pipeline skips, in `counts.skippedDraws`. The measurement sums them, and a test that expects no missing objects checks that the sum stays at 0.
 - The engine's shaders ship in one module for each GPU path and each value of the permutation bits that a device fixes ([D-13](decisions/D-13-shader-variants.md)). The thread that draws starts to load its module while it waits for the WebGPU device or the WebGL2 context. The renderer starts once both are ready.
 - A device module holds the builds of each shader that a device with its bits asks for. So the culling shader, which has no bits, is in every WGSL module. A device whose bits have no module fails to start its renderer, with an error that names the bits.
 

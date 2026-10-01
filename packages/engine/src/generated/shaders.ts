@@ -84,10 +84,12 @@ export type ShaderVariants<Pipeline extends string = string> = Readonly<
  * shader without builds there has no variants in it.
  */
 export interface DeviceShaders {
+	readonly background: ShaderVariants<'main'>;
 	readonly cull: ShaderVariants<never>;
 	readonly final: ShaderVariants<'main'>;
 	readonly lit: ShaderVariants<'main'>;
 	readonly mipmap: ShaderVariants<'main'>;
+	readonly shadow_depth: ShaderVariants<'main'>;
 	readonly standard_maps: ShaderVariants<'main'>;
 	readonly texcoords: ShaderVariants<'main'>;
 	readonly unlit: ShaderVariants<'main'>;
@@ -387,6 +389,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 srgb_to_linear(vec3 c_4) {
     vec3 low_1 = (c_4 / vec3(12.92));
     vec3 high_1 = pow(((c_4 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
@@ -413,7 +419,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -556,6 +563,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 srgb_to_linear(vec3 c_4) {
     vec3 low_1 = (c_4 / vec3(12.92));
     vec3 high_1 = pow(((c_4 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
@@ -582,7 +593,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -809,6 +821,10 @@ fn pcg(v_2: u32) -> u32 {
     return ((word >> 22u) ^ word);
 }
 
+fn to_unit(h: u32) -> f32 {
+    return (f32((h >> 8u)) / 16777216f);
+}
+
 fn srgb_to_linear(c_4: vec3<f32>) -> vec3<f32> {
     let low_1 = (c_4 / vec3(12.92f));
     let high_1 = pow(((c_4 + vec3(0.055f)) / vec3(1.055f)), vec3(2.4f));
@@ -835,7 +851,8 @@ fn tone_map(c_5: vec3<f32>, settings: Output) -> vec3<f32> {
 fn pixel_noise(pixel: vec2<f32>) -> f32 {
     let _e5 = pcg(u32(pixel.y));
     let _e7 = pcg((u32(pixel.x) + _e5));
-    return (f32((_e7 >> 8u)) / 16777216f);
+    let _e8 = to_unit(_e7);
+    return _e8;
 }
 
 fn encode(c_6: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
