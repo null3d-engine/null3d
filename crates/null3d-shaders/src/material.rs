@@ -34,13 +34,25 @@ struct Hook {
 }
 
 /// The functions a custom material's WGSL may declare.
-const HOOKS: [Hook; 1] = [Hook {
-    name: "surface",
-    def: "CUSTOM_SURFACE",
-    params: &["SurfaceInput"],
-    returns: "Surface",
-    signature: "fn surface(input: SurfaceInput) -> Surface",
-}];
+const HOOKS: [Hook; 2] = [
+    Hook {
+        name: "surface",
+        def: "CUSTOM_SURFACE",
+        params: &["SurfaceInput"],
+        returns: "Surface",
+        signature: "fn surface(input: SurfaceInput) -> Surface",
+    },
+    Hook {
+        name: "vertexOffset",
+        def: "CUSTOM_VERTEX_OFFSET",
+        params: &["VertexInput"],
+        returns: "vec3f",
+        signature: "fn vertexOffset(input: VertexInput) -> vec3f",
+    },
+];
+
+/// The shader def of every custom material's build, which reads the first texture coordinates.
+const CUSTOM_DEF: &str = "CUSTOM";
 
 /// What a problem in the template's own lines says after its message.
 const TEMPLATE_NOTE: &str = "The problem is in the engine's standard material, which your WGSL joins. Check that your WGSL does not declare a name that the engine's code uses, or import a module whole under a name that it uses. Import the items you use by name instead, as in `#import null3d::noise::{fbm3}`.";
@@ -188,7 +200,7 @@ impl Compiler {
             problems.push(Problem::at(
                 path,
                 Some(Position { line: 1, column: 1 }),
-                "the WGSL declares no function of a custom material. Declare `fn surface(input: SurfaceInput) -> Surface`, which starts from `defaultSurface(input)`. For a shader of your own, give the WGSL a `@vertex` and a `@fragment` entry point instead.",
+                "the WGSL declares no function of a custom material. Declare `fn surface(input: SurfaceInput) -> Surface`, which starts from `defaultSurface(input)`, `fn vertexOffset(input: VertexInput) -> vec3f`, or both. For a shader of your own, give the WGSL a `@vertex` and a `@fragment` entry point instead.",
             ));
         }
         if !problems.is_empty() {
@@ -200,6 +212,7 @@ impl Compiler {
             .iter()
             .map(|(name, variant)| {
                 let mut defs = variant.defs.clone();
+                defs.push(CUSTOM_DEF.to_owned());
                 defs.extend(declared.iter().map(|hook| hook.def.to_owned()));
                 defs.extend(uniforms.as_ref().map(|_| UNIFORMS_DEF.to_owned()));
                 defs.sort();

@@ -309,6 +309,14 @@ describe.skipIf(!ENABLED)('compileWgsl', () => {
 		expect(material(compileWgsl('src/stripes.wgsl', SURFACE, HINT)).uniforms).toEqual([]);
 	});
 
+	it('builds a vertex offset alone as a custom material', () => {
+		const wave =
+			'fn vertexOffset(input: VertexInput) -> vec3f {\n    return input.normal * sin(input.uv.x);\n}\n';
+		const built = material(compileWgsl('src/wave.wgsl', wave, HINT));
+		expect(built.functions).toEqual(['vertexOffset']);
+		expect(built.variants.webgpu?.wgsl?.source).toContain('fn vertexOffset(');
+	});
+
 	it('places problems of a surface function in its own lines', () => {
 		const broken = SURFACE.replace('4.0));', '4.0)) 2.0;');
 		const syntax = failure(compileWgsl('src/stripes.wgsl', broken, HINT));
