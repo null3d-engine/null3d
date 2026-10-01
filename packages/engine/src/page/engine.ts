@@ -337,9 +337,11 @@ export interface Engine {
 	 */
 	simulateGpuLoss(): void;
 	/**
-	 * Stops the engine and its workers. The engine cannot start again. The promise resolves once
-	 * every worker has stopped, when the browser can free the engine's memory. Wait for it before
-	 * you start another engine on the same page: an iPad has room for only a few engines' memory.
+	 * Stops the engine and its workers. The engine cannot start again. The thread that draws first
+	 * destroys the engine's GPU textures and buffers and its GPU device, so the GPU's memory comes
+	 * back at once. The promise resolves once every worker has stopped, when the browser can free
+	 * the engine's memory. Wait for it before you start another engine on the same page: an iPad has
+	 * room for only a few engines' memory.
 	 */
 	destroy(): Promise<void>;
 }
@@ -354,7 +356,7 @@ const RESERVED_CORES = 2;
 const DRAIN_INTERVAL_MS = 250;
 /** How many sketch messages the page keeps while no handler listens. */
 const MAX_EARLY_MESSAGES = 256;
-/** How long stopping the engine waits for its job workers to leave the job system. */
+/** How long stopping the engine waits for its job workers and the worker that draws to stop. */
 const STOP_TIMEOUT_MS = 2_000;
 
 interface TierChoice {
@@ -425,8 +427,11 @@ const SIMD_PROBE = new Uint8Array([
 interface WorkerEvents {
 	/** A message that the sketch sent with `ctx.page.post`. */
 	sketchMessage(name: string, data: unknown): void;
-	/** A failure after the engine started. */
-	failure(error: EngineError): void;
+	/**
+	 * A failure of a thread. It ends a start that is still under way, unless `endsStart` is false:
+	 * the engine then runs on without the thread.
+	 */
+	failure(error: EngineError, endsStart?: boolean): void;
 	/** The quality preset and settings after a change, and the preset check's result. */
 	quality(update: QualityUpdate): void;
 }
@@ -492,7 +497,10 @@ class EngineWorker {
 		return this.readyPromise;
 	}
 
-	/** Settles once a job worker has left the job system, or once the worker has failed. */
+	/**
+	 * Settles once a job worker has left the job system, once the worker that draws has destroyed
+	 * its GPU objects, or once the worker has failed.
+	 */
 	stopped(): Promise<void> {
 		return this.stoppedPromise;
 	}
@@ -512,14 +520,16 @@ class EngineWorker {
 }
 
 /**
- * Stops the workers once every job worker has left the job system, or after a timeout. A job
+ * Stops the workers once each worker in `waitFor` reports that it stopped, or after a timeout. A job
  * worker without work blocks its thread in a wait. When Safari stops a thread inside such a wait,
- * it keeps the thread's shared memory until the tab closes, even across reloads.
+ * it keeps the thread's shared memory until the tab closes, even across reloads. The worker that
+ * draws destroys its GPU objects first, because a browser frees what a stopped worker held only
+ * when it collects the worker's objects, and Safari does that late.
  */
-async function stopWorkers(workers: readonly EngineWorker[], jobs: readonly EngineWorker[]) {
+async function stopWorkers(workers: readonly EngineWorker[], waitFor: readonly EngineWorker[]) {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	await Promise.race([
-		Promise.all(jobs.map((job) => job.stopped())),
+		Promise.all(waitFor.map((worker) => worker.stopped())),
 		new Promise((resolve) => {
 			timer = setTimeout(resolve, STOP_TIMEOUT_MS);
 		}),
@@ -592,6 +602,7 @@ function startWorkers(
 			if (Atomics.load(slots, Slot.Running) !== 0)
 				events.failure(
 					error instanceof EngineError ? error : startError(`job ${index}`, String(error)),
+					false,
 				);
 		});
 		return job;
@@ -741,9 +752,22 @@ async function startEngine(
 	};
 	const failureHandlers = new Set<(error: EngineError) => void>();
 	const reported = new Set<string>();
-	const onFailure = (error: EngineError) => {
+	/**
+	 * Ends the start when the caller cancels it, or when a thread fails before the engine has
+	 * started. A thread that fails then, such as the one that draws, leaves the start waiting for
+	 * frames that never come, and the page could never stop the engine that it never got.
+	 */
+	const start = new AbortController();
+	let starting = true;
+	const cancelStart = () => start.abort(signal?.reason);
+	signal?.addEventListener('abort', cancelStart, { once: true });
+	const onFailure = (error: EngineError, endsStart = true) => {
 		if (reported.has(error.message)) return;
 		reported.add(error.message);
+		if (starting && endsStart) {
+			start.abort(error);
+			return;
+		}
 		if (failureHandlers.size === 0) console.error(error);
 		for (const handler of failureHandlers) handler(error);
 	};
@@ -951,6 +975,8 @@ async function startEngine(
 			sketch,
 			...images,
 			fail: pageLoss,
+			fault: (error) =>
+				onFailure(new EngineError('E1404', `the drawing on the page failed: ${messageOf(error)}.`)),
 		});
 	};
 
@@ -988,7 +1014,9 @@ async function startEngine(
 			stopDisplay?.();
 			// A start that fails or stops has not crashed the tab.
 			marker?.end();
-			await stopWorkers(allWorkers(threads), threads?.jobs ?? []);
+			rendererHost?.worker.postMessage({ type: 'stop-drawing' } satisfies RendererRequest);
+			const waitFor = threads?.jobs ?? [];
+			await stopWorkers(allWorkers(threads), rendererHost ? [...waitFor, rendererHost] : waitFor);
 			// The job workers have left the job system, so the page's threaded core has no more work,
 			// and the browser can free the engine's memory once the page lets go of the core.
 			localCore?.releaseInstance?.();
@@ -1021,7 +1049,7 @@ async function startEngine(
 			// The page starts its core before the workers get theirs. The first core in a new shared
 			// memory fills it with the core's data, and a core that starts while another fills it
 			// waits, which the page's thread must never do.
-			const started = await startCore(build, core.module, core.memory);
+			const started = await abortable(startCore(build, core.module, core.memory), start.signal);
 			localCore = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
 			wasmMemory = memory;
@@ -1061,10 +1089,15 @@ async function startEngine(
 			// numbers. The renderer starts before the setup, so a warm-up in the setup has a renderer
 			// to build its pipelines.
 			const sketchLoad = sketchModule ?? awaitLater(loadSketch(sketchUrl));
-			if (!render) localDrawing = await drawOnPage(memory, { imageTable }, localRunner);
-			await localRunner.setup(await sketchLoad);
+			if (!render)
+				localDrawing = await abortable(
+					drawOnPage(memory, { imageTable }, localRunner),
+					start.signal,
+				);
+			const setup = sketchLoad.then((sketch) => localRunner?.setup(sketch));
+			await abortable(setup, start.signal);
 			if (render) {
-				await abortable(render.ready(), signal);
+				await abortable(render.ready(), start.signal);
 				if (hold === undefined) void runPipelined(localRunner, control);
 			}
 		} else if (threads?.sketch) {
@@ -1091,16 +1124,23 @@ async function startEngine(
 				const images = new MessageChannel();
 				sketch.worker.postMessage({ ...init, imagePort: images.port1 }, [images.port1]);
 				if (render) startRenderWorker(render, images.port2);
-				else localDrawing = await drawOnPage(core.memory, { imagePort: images.port2 });
+				else
+					localDrawing = await abortable(
+						drawOnPage(core.memory, { imagePort: images.port2 }),
+						start.signal,
+					);
 			}
 			// The engine is ready once the sketch worker and the render worker are.
 			const essential = render ? [sketch, render] : [sketch];
-			await abortable(Promise.all(essential.map((w) => w.ready())), signal);
+			await abortable(Promise.all(essential.map((w) => w.ready())), start.signal);
 		}
-		signal?.throwIfAborted();
+		start.signal.throwIfAborted();
 	} catch (e) {
 		await stop();
 		throw e;
+	} finally {
+		starting = false;
+		signal?.removeEventListener('abort', cancelStart);
 	}
 
 	const engineStartMs = performance.now() - startedAt;
