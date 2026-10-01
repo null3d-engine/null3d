@@ -38,6 +38,7 @@ export type Three = Pick<
 	| 'CylinderGeometry'
 	| 'DataTexture'
 	| 'DirectionalLight'
+	| 'DoubleSide'
 	| 'DynamicDrawUsage'
 	| 'Float32BufferAttribute'
 	| 'Fog'
@@ -60,6 +61,7 @@ export type Three = Pick<
 	| 'Scene'
 	| 'SphereGeometry'
 	| 'SRGBColorSpace'
+	| 'TextureLoader'
 	| 'TorusGeometry'
 	| 'Vector3'
 >;

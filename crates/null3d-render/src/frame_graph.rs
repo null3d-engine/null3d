@@ -10,9 +10,19 @@
 //! compacted instances and indirect draws, which its opaque pass reads. On WebGL2 the job workers
 //! cull each view before the frame records, so that graph has no culling passes.
 //!
+//! A builder that binds a shadow map keeps one texture array for it (see [`crate::shadows`]),
+//! which every opaque pass samples. While a directional light casts shadows, each cascade has a
+//! shadow pass that draws the casters' depth into its layer of the array, and on WebGPU a culling
+//! pass of its own before it. Without shadows the array is one texel of one layer, which no pass
+//! draws, so the scene's bindings stay the same.
+//!
 //! The debug lines pass draws the lines that the sketch drew (see [`crate::debug_lines`]) into the
 //! scene color and depth, after the camera's opaque pass and in its render pass. It is on only in
 //! frames with lines, so the plan of a frame without them has no such pass.
+//!
+//! Each view has a transparent pass too, which draws the view's blended objects back to front
+//! (see [`crate::sorted`]) over its opaque objects and the debug lines, in the same render pass.
+//! The transparent passes are on only while some object blends.
 //!
 //! Two passes can take the scene color to the canvas, and the scene color's format and the
 //! anti-aliasing mode pick one (see [`crate::output`]). On the HDR path the final pass samples the
@@ -50,6 +60,7 @@ use crate::graph::{
 };
 use crate::output::{Antialias, Output, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache};
+use crate::shadows::MAX_CASCADES;
 use crate::view::{View, ViewId};
 
 /// The format of the scene's depth targets.
@@ -70,11 +81,42 @@ const OBJECTS: &str = "objects";
 const SCENE_COLOR: &str = "sceneColor";
 /// The camera's depth target.
 const SCENE_DEPTH: &str = "sceneDepth";
+/// The shadow map: a depth texture array with one layer per cascade, kept between frames.
+const SHADOW_MAP: &str = "shadowMap";
+/// Each cascade's culling pass, the buffer of its compacted instances and indirect draws, and its
+/// shadow pass.
+const SHADOW_CULLING: [&str; MAX_CASCADES] = [
+    "ShadowCulling0",
+    "ShadowCulling1",
+    "ShadowCulling2",
+    "ShadowCulling3",
+];
+const SHADOW_VISIBLE: [&str; MAX_CASCADES] = [
+    "shadowVisible0",
+    "shadowVisible1",
+    "shadowVisible2",
+    "shadowVisible3",
+];
+const SHADOW_CASCADES: [&str; MAX_CASCADES] = [
+    "ShadowCascade0",
+    "ShadowCascade1",
+    "ShadowCascade2",
+    "ShadowCascade3",
+];
 /// Ids after the first texture's that the views of layers take: the plan's textures take the ones
 /// below.
 const LAYER_VIEWS: u32 = 128;
 /// No views of layers: a texture that no pass draws into by layer.
 const NO_VIEWS: u32 = u32::MAX;
+
+/// The shadow passes of a directional light: its cascades, the texels on each side of each
+/// cascade's layer, and the light's layer mask, which selects the casters.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ShadowPasses {
+    pub(crate) cascades: u32,
+    pub(crate) map_size: u32,
+    pub(crate) layers: u32,
+}
 
 /// What a declared pass records.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,8 +125,12 @@ pub(crate) enum Role {
     Cull(ViewId),
     /// Draws a view's opaque objects.
     Opaque(ViewId),
+    /// Draws the depth of a shadow cascade's casters, by the cascade's view.
+    Shadow(ViewId),
     /// Draws the frame's debug lines into the camera's view.
     DebugLines,
+    /// Draws a view's blended objects, back to front, over its opaque ones.
+    Transparent(ViewId),
     /// Resolves the scene color into the canvas on the 8-bit path. It records nothing: the color
     /// attachment of its render pass resolves.
     Resolve,
@@ -136,6 +182,10 @@ pub(crate) struct FrameGraph {
     views: usize,
     /// The debug lines pass, once the passes are declared.
     debug_lines: Option<PassId>,
+    /// Each view's transparent pass, by view.
+    transparent: Vec<PassId>,
+    /// True while the transparent passes are on.
+    transparent_on: bool,
     /// The id of the texture that holds the plan's first texture. The others follow it.
     first_texture: u32,
     /// Each texture of the plan that the draw lists made, with the size it was made at.
@@ -144,6 +194,14 @@ pub(crate) struct FrameGraph {
     textures_made: bool,
     /// The canvas size the draw lists set last, or `(0, 0)` before any.
     canvas: (u32, u32),
+    /// True when the builder's scene passes bind a shadow map.
+    shadow_map: bool,
+    /// The directional light's shadow passes, or `None` without shadows.
+    shadows: Option<ShadowPasses>,
+    /// Each cascade's shadow pass, once the passes are declared.
+    shadow_passes: Vec<PassId>,
+    /// True once the passes are declared for the views, the shadows and the shadow map.
+    declared: bool,
     /// For each texture of the plan, the first of the views of its layers, counted from the views'
     /// first id, or [`NO_VIEWS`].
     layer_views: Vec<u32>,
@@ -180,14 +238,47 @@ impl FrameGraph {
             final_runs: scene_color.is_hdr() || antialias != Antialias::Msaa,
             views: 0,
             debug_lines: None,
+            transparent: Vec::new(),
+            transparent_on: false,
             first_texture: ids.first_texture,
             made: Vec::new(),
             textures_made: false,
             canvas: (0, 0),
             layer_views: Vec::new(),
             made_views: 0,
+            shadow_map: false,
+            shadows: None,
+            shadow_passes: Vec::new(),
+            declared: false,
             final_pass: FinalPass::new(ids.final_pass, scene_color, antialias),
         }
+    }
+
+    /// Makes the scene passes sample a shadow map, which the builder binds with every view's
+    /// objects. Without shadows the map is one texel of one layer.
+    pub(crate) fn bind_shadow_map(&mut self) {
+        self.shadow_map = true;
+        self.declared = false;
+    }
+
+    /// Sets the directional light's shadow passes for the next frames, or none. A new cascade count
+    /// or map size declares the passes again, which makes the shadow map again. A new layer mask
+    /// only changes the passes' masks. A builder that binds no shadow map draws no shadows.
+    pub(crate) fn set_shadows(&mut self, shadows: Option<ShadowPasses>) {
+        let shadows = shadows.filter(|_| self.shadow_map).map(|s| ShadowPasses {
+            cascades: s.cascades.clamp(1, MAX_CASCADES as u32),
+            map_size: s.map_size.max(1),
+            layers: s.layers,
+        });
+        let shape = |s: Option<ShadowPasses>| s.map(|s| (s.cascades, s.map_size));
+        if shape(shadows) != shape(self.shadows) {
+            self.declared = false;
+        } else if let Some(shadows) = shadows {
+            for &pass in &self.shadow_passes {
+                self.graph.set_layers(pass, shadows.layers);
+            }
+        }
+        self.shadows = shadows;
     }
 
     /// The render graph.
@@ -218,7 +309,7 @@ impl FrameGraph {
     /// Declares the passes again when the number of views changed, and gives each view's opaque
     /// pass the view's layers, which change without a new plan.
     pub(crate) fn sync_views(&mut self, views: &[View]) {
-        if views.len() != self.views {
+        if views.len() != self.views || !self.declared {
             self.declare(views);
         }
         for (&pass, view) in self.opaque.iter().zip(views) {
@@ -234,20 +325,41 @@ impl FrameGraph {
         }
     }
 
+    /// Switches the views' transparent passes on while some object blends, and off otherwise. The
+    /// graph compiles again only when that changes.
+    pub(crate) fn set_transparent(&mut self, on: bool) {
+        self.transparent_on = on;
+        for &pass in &self.transparent {
+            self.graph.set_enabled(pass, on);
+        }
+    }
+
     fn add(&mut self, pass: Pass, role: Role) -> PassId {
         self.roles.push(role);
         self.graph.add_pass(pass)
     }
 
-    /// Declares the engine's passes for `views`: each view's culling pass on WebGPU, each view's
-    /// opaque pass, the debug lines pass, which is off, then the resolve pass and the final pass,
-    /// of which one runs.
+    /// Declares the engine's passes for `views`: each view's culling pass on WebGPU, each shadow
+    /// cascade's culling and shadow passes, each view's opaque pass, the debug lines pass, which
+    /// is off, each view's transparent pass, then the resolve pass and the final pass, of which one
+    /// runs.
     fn declare(&mut self, views: &[View]) {
         self.graph.clear();
         self.roles.clear();
         self.opaque.clear();
+        self.transparent.clear();
+        self.shadow_passes.clear();
         let color = Target::color(self.scene_color.format()).samples(self.samples);
         let depth = Target::depth(DEPTH_FORMAT).samples(self.samples);
+        if self.shadow_map {
+            let (layers, size) = self.shadows.map_or((1, 1), |s| (s.cascades, s.map_size));
+            let map = Target::depth(DEPTH_FORMAT).layers(layers).array();
+            let size = Size::Fixed {
+                width: size,
+                height: size,
+            };
+            self.graph.keep(SHADOW_MAP, map, size);
+        }
         if self.gpu_culling {
             self.graph.import_buffer(OBJECTS);
             for index in 0..views.len() {
@@ -257,6 +369,9 @@ impl FrameGraph {
                 self.add(pass, Role::Cull(ViewId::from_index(index)));
             }
         }
+        if let Some(shadows) = self.shadows {
+            self.declare_shadows(shadows);
+        }
         for (index, view) in views.iter().enumerate() {
             let mut pass = Pass::new(view_name(index, "Opaque", "Opaque"), PassKind::Scene)
                 .layers(view.layers())
@@ -264,6 +379,9 @@ impl FrameGraph {
                 .creates(view_name(index, SCENE_DEPTH, "depth"), depth);
             if self.gpu_culling {
                 pass = pass.reads(view_name(index, "visible", "visible"));
+            }
+            if self.shadow_map {
+                pass = pass.reads(SHADOW_MAP);
             }
             let pass = self.add(pass, Role::Opaque(ViewId::from_index(index)));
             self.opaque.push(pass);
@@ -274,6 +392,17 @@ impl FrameGraph {
         let lines = self.add(lines, Role::DebugLines);
         self.graph.set_enabled(lines, false);
         self.debug_lines = Some(lines);
+        for index in 0..views.len() {
+            let pass = Pass::new(
+                view_name(index, "Transparent", "Transparent"),
+                PassKind::Scene,
+            )
+            .writes(view_name(index, SCENE_COLOR, "color"))
+            .writes(view_name(index, SCENE_DEPTH, "depth"));
+            let pass = self.add(pass, Role::Transparent(ViewId::from_index(index)));
+            self.graph.set_enabled(pass, self.transparent_on);
+            self.transparent.push(pass);
+        }
         let resolve = Pass::new("Resolve", PassKind::Resolve)
             .reads(SCENE_COLOR)
             .writes(CANVAS);
@@ -286,6 +415,32 @@ impl FrameGraph {
         self.graph.set_enabled(resolve, !self.final_runs);
         self.graph.set_enabled(final_pass, self.final_runs);
         self.views = views.len();
+        self.declared = true;
+    }
+
+    /// Declares each cascade's culling pass on WebGPU, and its shadow pass, which draws into the
+    /// cascade's layer of the shadow map.
+    fn declare_shadows(&mut self, shadows: ShadowPasses) {
+        let size = Size::Fixed {
+            width: shadows.map_size,
+            height: shadows.map_size,
+        };
+        for cascade in 0..shadows.cascades as usize {
+            let view = ViewId::cascade(cascade);
+            let mut pass = Pass::new(SHADOW_CASCADES[cascade], PassKind::Shadow)
+                .size(size)
+                .layers(shadows.layers)
+                .writes_layer(SHADOW_MAP, cascade as u32);
+            if self.gpu_culling {
+                let culling = Pass::new(SHADOW_CULLING[cascade], PassKind::Compute)
+                    .reads(OBJECTS)
+                    .creates_buffer(SHADOW_VISIBLE[cascade]);
+                self.add(culling, Role::Cull(view));
+                pass = pass.reads(SHADOW_VISIBLE[cascade]);
+            }
+            let pass = self.add(pass, Role::Shadow(view));
+            self.shadow_passes.push(pass);
+        }
     }
 
     /// Compiles the graph if its passes changed, then sets the canvas size and makes the plan's
@@ -521,6 +676,23 @@ impl FrameGraph {
         }
     }
 
+    /// True when the frame's [`FrameGraph::prepare`] made or released a texture of the plan, so
+    /// bind groups that name one must be made again.
+    pub(crate) fn textures_made(&self) -> bool {
+        self.textures_made
+    }
+
+    /// The draw list's id of the shadow map, which bind groups name, or `None` for a builder that
+    /// binds none. Valid once the frame's [`FrameGraph::prepare`] made the plan's textures.
+    pub(crate) fn shadow_map(&self) -> Option<u32> {
+        if !self.shadow_map {
+            return None;
+        }
+        let plan = self.graph.plan()?;
+        let surface = plan.texture_of(self.graph.find_resource(SHADOW_MAP)?)?;
+        Some(self.texture_id(surface))
+    }
+
     /// Forgets the canvas size, the textures and views the draw lists made and the final pass's
     /// objects, so the next frame makes them all again, after the thread that draws replaced the
     /// GPU.
@@ -610,6 +782,8 @@ mod tests {
             "Opaque",
             "Opaque1",
             "DebugLines",
+            "Transparent",
+            "Transparent1",
             "Resolve",
             "Final",
         ];
@@ -625,11 +799,13 @@ mod tests {
                 Role::Opaque(ViewId::CAMERA),
                 Role::Opaque(ViewId::from_index(1)),
                 Role::DebugLines,
+                Role::Transparent(ViewId::CAMERA),
+                Role::Transparent(ViewId::from_index(1)),
                 Role::Resolve,
                 Role::Final,
             ]
         );
-        for off in ["DebugLines", "Final"] {
+        for off in ["DebugLines", "Transparent", "Transparent1", "Final"] {
             assert!(!graph.is_enabled(graph.find_pass(off).unwrap()), "{off}");
         }
         assert!(graph.is_enabled(graph.find_pass("Resolve").unwrap()));
@@ -638,7 +814,7 @@ mod tests {
         // The WebGL2 path culls on the job workers, so its graph has no culling passes.
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
         frames.sync_views(&[View::default()]);
-        assert_eq!(frames.graph().pass_count(), 4);
+        assert_eq!(frames.graph().pass_count(), 5);
         assert_eq!(frames.roles[0], Role::Opaque(ViewId::CAMERA));
     }
 
@@ -872,5 +1048,41 @@ mod tests {
         list.clear();
         frames.prepare(&mut list, (64, 64)).unwrap();
         assert_eq!(operands(&list, Op::CreateTextureView), [[129, 1, 0, 0]]);
+    }
+
+    #[test]
+    fn transparent_passes_draw_last_in_each_view_render_pass_while_something_blends() {
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
+        frames.sync_views(&[View::default(), View::default()]);
+        let mut list = DrawList::with_capacity(256);
+        frames.set_debug_lines(true);
+        frames.set_transparent(true);
+        frames.prepare(&mut list, (64, 64)).unwrap();
+        assert_eq!(
+            steps(&frames),
+            [
+                vec!["Culling", "Culling1"],
+                vec!["Opaque", "DebugLines", "Transparent", "Resolve"],
+                vec!["Opaque1", "Transparent1"]
+            ],
+            "blended objects draw over the opaque ones and the lines, before the color resolves"
+        );
+        // Views declared later take the passes' state.
+        frames.sync_views(&[View::default(); 3]);
+        frames.prepare(&mut list, (64, 64)).unwrap();
+        assert_eq!(steps(&frames)[3], ["Opaque2", "Transparent2"]);
+        frames.set_transparent(false);
+        frames.prepare(&mut list, (64, 64)).unwrap();
+        assert_eq!(steps(&frames)[3], ["Opaque2"]);
+
+        // On the HDR path the final pass reads the scene color after the blended objects.
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync_views(&[View::default()]);
+        frames.set_transparent(true);
+        frames.prepare(&mut list, (64, 64)).unwrap();
+        assert_eq!(
+            &steps(&frames)[1..],
+            [vec!["Opaque", "Transparent"], vec!["Final"]]
+        );
     }
 }

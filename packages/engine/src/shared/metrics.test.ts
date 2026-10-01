@@ -234,6 +234,9 @@ describe('summarizeFrames', () => {
 			render.begin(frame);
 			render.interval(frame === 1 ? 0 : 16);
 			render.count(Counter.DrawCalls, 10);
+			// The first frame built two pipelines, and the second skipped three draws of a third.
+			render.count(Counter.Pipelines, frame === 1 ? 2 : 0);
+			render.count(Counter.SkippedDraws, frame === 2 ? 3 : 0);
 			render.commit(2);
 			record(gpu, frame, 0.1 * frame);
 			// The GPU finishes each frame 4 ms after its submit, 32 ms apart: half the presented rate.
@@ -267,6 +270,7 @@ describe('summarizeFrames', () => {
 		expect(summary.completedFps).toBeCloseTo(31.25, 6);
 		expect(summary.gpuLatencyMs).toMatchObject({ count: 3, median: 4 });
 		expect(summary.rebuilds).toBe(1);
+		expect([summary.pipelines, summary.skippedDraws]).toEqual([2, 3]);
 		// Every frame the sketch computed counts its entries: 100, 200, 300 and 400.
 		expect(summary.visibleEntries).toMatchObject({ count: 4, median: 250 });
 	});

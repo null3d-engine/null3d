@@ -1,6 +1,7 @@
 //! The render graph, passes, materials and the post-processing chain.
 //!
 //! - `arrays`: meshes from arrays, with normals and tangents computed as three.js computes them
+//! - `background`: a texture that the camera's view draws behind every object
 //! - `camera`: perspective and orthographic lenses with reversed depth, and view matrices
 //! - `cells`: grid-cell culling, which both frame builders share: still objects in cell order, a
 //!   box per cell, and the cells each view can see
@@ -23,10 +24,12 @@
 //! - `parallel_record`: draw lists recorded in chunks on the job workers, joined in chunk order
 //! - `pipelines`: the render pipeline cache, by the key of everything that sets a pipeline apart
 //! - `shadows`: the cascades of a directional light's shadows, fitted to the camera's view
+//! - `sorted`: the blended objects of the transparent pass, culled and sorted back to front
 //! - `textures`: texture arrays, their samplers and bind groups, and uploads under a byte budget
 //! - `view`: views, each a camera, a layer mask and a target, culled on its own
 
 pub mod arrays;
+mod background;
 pub mod camera;
 mod cells;
 pub mod cpu_culled;
@@ -47,5 +50,6 @@ pub mod output;
 pub mod parallel_record;
 pub mod pipelines;
 pub mod shadows;
+pub mod sorted;
 pub mod textures;
 pub mod view;

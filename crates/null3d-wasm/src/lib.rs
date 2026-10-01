@@ -29,7 +29,7 @@ use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
 use null3d_render::fog::Fog;
-use null3d_render::frame::{CanvasOutput, FrameBuilder, FrameInput, RecordError};
+use null3d_render::frame::{CanvasOutput, FrameBuilder, FrameInput, RecordError, SceneSettings};
 use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
@@ -204,6 +204,18 @@ fn texture_failure(error: TextureError) -> u32 {
         TextureError::Full => render_failure(render_detail::TEXTURES_FULL, MAX_TEXTURES),
         TextureError::Unsupported => render_failure(render_detail::BAD_TEXTURE, 0),
     }
+}
+
+/// The handle of `texture`, a texture's handle or 0 for none, or the failure of a texture that is
+/// not live.
+fn texture_or_none(settings: &SceneSettings, texture: u32) -> Result<Handle, u32> {
+    let handle = Handle::from_raw(texture);
+    if !handle.is_none()
+        && let Err(error) = settings.textures().bytes(handle)
+    {
+        return Err(texture_failure(error));
+    }
+    Ok(handle)
 }
 
 fn material_failure(error: MaterialError) -> u32 {
@@ -572,7 +584,8 @@ pub fn reset_gpu() -> u32 {
     })
 }
 
-/// The address of the draw list of a frame parity. It never moves.
+/// The address of the draw list of a frame parity. It moves when a frame needs more room than any
+/// before, so the thread that draws reads it with each frame.
 #[wasm_bindgen(js_name = drawListAddress)]
 pub fn draw_list_address(parity: u32) -> u32 {
     value_with_engine(|e| Ok(address(e.renderer.list(parity).words())))
@@ -1002,12 +1015,10 @@ pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) 
     };
     with_engine(|e| {
         let settings = e.renderer.settings_mut();
-        let map = Handle::from_raw(texture);
-        if !map.is_none()
-            && let Err(error) = settings.textures().bytes(map)
-        {
-            return texture_failure(error);
-        }
+        let map = match texture_or_none(settings, texture) {
+            Ok(map) => map,
+            Err(failure) => return failure,
+        };
         match settings
             .materials_mut()
             .set_map(material.wrapping_sub(1), slot, map, second_uv != 0)
@@ -1025,9 +1036,10 @@ pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) 
 
 // Creates a texture of `width` x `height` texels in `depth` layers, with no texels yet, in a
 // texture array, and returns its handle. `format` is the engine's format code: sRGB for colors,
-// linear for data, or half floats. `mipmaps` asks for a whole chain of mip levels, which the GPU
-// makes from each upload. The rest set its sampler: the address modes along u and v, the filters
-// of magnified and minified texels and between mip levels, and the anisotropy.
+// linear for data, half floats, or a compressed format. `mipmaps` asks for a whole chain of mip
+// levels, which the GPU makes from each upload. Without it, `levels` is the mip levels that the
+// texture's data brings, as a KTX2 file's do. The rest set its sampler: the address modes along u
+// and v, the filters of magnified and minified texels and between mip levels, and the anisotropy.
 /// Creates a texture and returns its handle.
 #[wasm_bindgen(js_name = createTexture)]
 #[allow(clippy::too_many_arguments)]
@@ -1037,6 +1049,7 @@ pub fn create_texture(
     depth: u32,
     format: u32,
     mipmaps: bool,
+    levels: u32,
     wrap_u: u32,
     wrap_v: u32,
     mag_filter: u32,
@@ -1051,6 +1064,7 @@ pub fn create_texture(
             depth,
             format,
             mipmaps,
+            levels,
             sampling: Sampling {
                 wrap: [wrap_u, wrap_v],
                 mag_filter,
@@ -1085,7 +1099,9 @@ pub fn set_texture_image(texture: u32, width: u32, height: u32, flags: u32) -> u
 }
 
 // Gives a texture new texels of `width` x `height` in each of its layers, and returns the address
-// of the memory that TypeScript fills with them at once: tightly packed rows, layer after layer.
+// of the memory that TypeScript fills with them at once: tightly packed rows, of blocks in a
+// compressed format, layer after layer, and level after level for a texture whose data brings its
+// mip levels.
 // The texels upload in the texture's turn, and the store frees the memory once no list reads it.
 // Texels of another size move the texture to another array, which changes the draw tables.
 /// Gives a texture new texels and returns the address to write them at.
@@ -1300,6 +1316,23 @@ pub fn set_output(tone_mapping: u32, exposure: f32) -> u32 {
             exposure,
         });
         0
+    })
+}
+
+// Draws a texture behind every object in the camera's view, or only the background color when
+// `texture` is 0. Fails for a texture that is not live.
+/// Draws a texture behind every object, or none with 0.
+#[wasm_bindgen(js_name = setBackgroundTexture)]
+pub fn set_background_texture(texture: u32) -> u32 {
+    with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        match texture_or_none(settings, texture) {
+            Ok(background) => {
+                settings.set_background_texture(background);
+                0
+            }
+            Err(failure) => failure,
+        }
     })
 }
 

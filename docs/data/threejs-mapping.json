@@ -121,7 +121,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.setBackground('#rrggbb' | texture | environment)",
-      "notes": "Exposure and tone mapping change the background, as in three.js's WebGPURenderer; WebGLRenderer draws a background color without them. For an exact page color, set toneMapping: \"none\", or use createEngine({ transparent: true }) over a CSS background. setClearColor(color, 0) on an alpha canvas becomes transparent: true with no background.",
+      "notes": "A texture fills the view behind every object and stretches to its shape, as a texture background does in three.js. Exposure and tone mapping change the background, as in three.js's WebGPURenderer; WebGLRenderer draws a background color, and an sRGB background texture, without them. For an exact page color, set toneMapping: \"none\", or use createEngine({ transparent: true }) over a CSS background. setClearColor(color, 0) on an alpha canvas becomes transparent: true with no background. Environment backgrounds come in 0.2.",
       "docs": "api/scene",
       "detect": "\\.setClearColor\\s*\\(|\\.background\\s*="
     },
@@ -352,7 +352,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "mesh.setCastShadows(true) / setReceiveShadows(true), or the castShadows and receiveShadows options of createMesh",
-      "notes": "Both are false by default, as in three.js. This version stores them but draws no shadows yet.",
+      "notes": "Both are false by default, as in three.js. The directional light's shadows draw on WebGPU; WebGL2 draws none yet. Unlit materials show no shadows. Instance batches neither cast nor receive them yet.",
       "docs": "api/objects",
       "detect": "\\.(castShadow|receiveShadow)\\s*="
     },
@@ -374,7 +374,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "mesh.setRenderOrder(n)",
-      "notes": "Affects the order of transparent objects. The engine orders opaque objects itself for speed. This version draws every material opaque, so the order has no effect yet.",
+      "notes": "Orders blended objects, lower first, before their depth, as in three.js. The engine orders opaque and masked objects itself for speed. The rows of an instance batch sort by depth one by one, where three.js sorts an InstancedMesh as one object.",
       "docs": "api/objects",
       "detect": "\\.renderOrder\\s*="
     },
@@ -516,8 +516,8 @@
       "three": "DirectionalLight (+ target, shadow.camera bounds)",
       "status": "changed",
       "since": "0.1",
-      "target": "scene.createDirectionalLight({ direction, color, intensity, castShadows })",
-      "notes": "The light is an object. Pass the target minus the position as direction, or call light.lookAt(x, y, z), again whenever the target moves. Surfaces show the first directional light created, and castShadows is stored until shadows draw. Delete shadow.camera bounds: the engine's shadow cascades will fit the view by themselves.",
+      "target": "scene.createDirectionalLight({ direction, color, intensity, castShadows, shadow })",
+      "notes": "The light is an object. Pass the target minus the position as direction, or call light.lookAt(x, y, z), again whenever the target moves. Surfaces show the first directional light created, which casts the shadows. Delete shadow.camera bounds: the engine's shadow cascades fit the view by themselves.",
       "docs": "api/lights",
       "detect": "\\bDirectionalLight\\b"
     },
@@ -604,8 +604,8 @@
       "three": "light.shadow.mapSize / bias / normalBias / radius / camera",
       "status": "changed",
       "since": "0.1",
-      "target": "shadow: { mapSize, bias, normalBias } in the light options",
-      "notes": "radius and blurSamples map to the preset's filter size; shadow.camera has no equivalent.",
+      "target": "shadow: { mapSize, bias, normalBias, cascades, distance } in the directional light's options, or light.setShadow()",
+      "notes": "mapSize is one number, the texels on each side. bias and normalBias count texels of each cascade, not depth units and meters, so start from the defaults. radius and blurSamples will map to the preset's filter size; shadow.camera has no equivalent.",
       "docs": "concepts/shadows",
       "detect": "\\.shadow\\.(mapSize|bias|normalBias|camera|radius|blurSamples)\\b"
     },
@@ -748,7 +748,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "materials.unlit({ color, map, opacity, alphaMode, vertexColors })",
-      "notes": "Alpha modes are not built yet.",
+      "notes": "Its map's alpha and the vertex alpha join the opacity, as in three.js.",
       "docs": "api/materials",
       "detect": "\\bMeshBasicMaterial\\b"
     },
@@ -825,7 +825,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "alphaMode: 'blend' | 'mask' (with alphaCutoff), doubleSided, depthWrite, depthTest, blending: 'normal' | 'additive' | 'multiply', vertexColors, flatShading",
-      "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; side: DoubleSide becomes doubleSided: true. BackSide has no equivalent: flip the geometry.",
+      "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; side: DoubleSide becomes doubleSided: true. BackSide has no equivalent: flip the geometry. depthTest: false writes no depth either, as in three.js's WebGL renderer. blending takes effect with alphaMode: 'blend' only, where three.js blends an opaque material with additive or multiply blending too.",
       "docs": "porting/threejs-materials",
       "detect": "\\b(transparent|alphaTest|side|depthWrite|depthTest|blending|vertexColors|flatShading)\\s*[:=]"
     },
@@ -1065,11 +1065,22 @@
       "category": "Textures",
       "three": "KTX2Loader + setTranscoderPath + detectSupport",
       "status": "direct",
-      "since": "0.2",
+      "since": "0.1",
       "target": "assets.loadTexture('x.ktx2')",
-      "notes": "Built in; delete the setup.",
+      "notes": "Built in: delete the setup. The engine loads the transcoder with the first KTX2 file and picks the device's format. The file's first row is at v = 0, as with KTX2Loader.",
       "docs": "api/textures",
       "detect": "\\bKTX2Loader\\b|setTranscoderPath|\\.detectSupport\\s*\\("
+    },
+    {
+      "id": "tex-compressed",
+      "category": "Textures",
+      "three": "CompressedTexture / CompressedArrayTexture",
+      "status": "changed",
+      "since": "0.1",
+      "target": "assets.loadTexture('x.ktx2'); texture.format names the compressed format",
+      "notes": "Compressed textures come from KTX2 files of ETC1S or UASTC data, with the file's mip levels. No call takes compressed blocks from code.",
+      "docs": "api/textures",
+      "detect": "\\bCompressed(Array)?Texture\\b"
     },
     {
       "id": "texture-channel",
@@ -1089,7 +1100,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "loadTexture(url, { premultipliedAlpha: true }), which multiplies each color by its alpha as the image decodes",
-      "notes": "Standard blending needs no flag.",
+      "notes": "Blending needs no material flag: the engine blends premultiplied colors. On a blended material, a base color map loaded with premultipliedAlpha: true looks the same as the image loaded without it, because the shader divides its colors by their alpha before it lights them. Other materials show the multiplied colors, as three.js does.",
       "docs": "api/textures",
       "detect": "premultipl(ied|y)Alpha\\b"
     },

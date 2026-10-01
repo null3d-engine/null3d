@@ -17,6 +17,8 @@ import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
+import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
+import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
@@ -207,6 +209,55 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		size: [480, 270],
 		modes: ALL_MODES,
 	},
+	// KTX2 files of ETC1S and UASTC data, which the transcoder turns into the compressed format that
+	// each device supports, with the files' mip levels, beside the same picture from a PNG file. A
+	// ramp whose size takes no compressed format becomes RGBA8. Every thread mode starts the
+	// transcoder from its own thread, and must draw the same image.
+	{
+		name: 'ktx2',
+		sketch: 'tests/pages/sketches/ktx2-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
+	// The same files where the device keeps to one family of compressed formats, or has none, as
+	// ?compression= makes it: BC7 as on a desktop GPU, ASTC alone, and RGBA8. Every format draws the
+	// image of the device's own formats, so each borrows its references.
+	...(
+		[
+			['ktx2-bc7', 'bc'],
+			['ktx2-astc', 'astc'],
+			['ktx2-rgba8', 'none'],
+		] as const
+	).map(([name, family]) => ({
+		name,
+		sketch: 'tests/pages/sketches/ktx2-sketch.ts',
+		hold: 0,
+		size: [480, 270] as const,
+		switches: [`compression=${family}`],
+		reference: 'ktx2',
+	})),
+	// A picture behind a lit box and an unlit box, as three.js draws a texture background: it fills
+	// the view, upright, and every object draws over it. The parity test compares it with its
+	// three.js twin.
+	{
+		name: 'texture-background',
+		sketch: 'tests/pages/sketches/texture-background-sketch.ts',
+		size: [BACKGROUND_IMAGE.width, BACKGROUND_IMAGE.height],
+		hold: 0,
+	},
+	// The same scene on the 8-bit path, where the background's own shader tone maps its color. It
+	// must draw the HDR path's image.
+	{
+		name: 'texture-background-8-bit',
+		sketch: 'tests/pages/sketches/texture-background-sketch.ts',
+		size: [BACKGROUND_IMAGE.width, BACKGROUND_IMAGE.height],
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['hdr=off'],
+		reference: 'texture-background',
+		expect: { hdr: false },
+	},
 	// Fifty textures that load in waves in a live engine, a band of rows per frame under a small
 	// upload budget, while their array grows twice, to 64 layers. No frame may upload more than the
 	// budget, and the GPU memory count must match the array.
@@ -302,6 +353,26 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	// other layers after they were created, and a camera that draws two of the layers. A child keeps
 	// its own layers, so the child of a parent that the camera leaves out still draws.
 	{ name: 'layers', sketch: 'tests/pages/sketches/layers-sketch.ts', hold: 0.1 },
+	// The main directional light's shadows with 1 to 4 cascades, near the camera and far from it:
+	// casters that receive shadows, a receiver that casts none, a caster that receives none, and an
+	// unlit box in a shadow. WebGL2 draws no shadows yet.
+	...[3, 1, 2, 4].map((cascades) => ({
+		name: cascades === 3 ? 'shadows' : `shadows-cascades-${cascades}`,
+		sketch: `tests/pages/sketches/shadows-sketch.ts?cascades=${cascades}`,
+		hold: 0,
+		size: [480, 270] as const,
+		tiers: ['webgpu', 'compat'] as const,
+	})),
+	// The same scene with custom materials on the ground and the red boxes, whose surface function
+	// keeps the standard look: they cast and receive shadows as the standard material does, so the
+	// references are copies of the shadows test's.
+	{
+		name: 'shadows-custom',
+		sketch: 'tests/pages/sketches/shadows-sketch.ts?custom',
+		hold: 0,
+		size: [480, 270],
+		tiers: ['webgpu', 'compat'],
+	},
 	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the
 	// slab's front corner and the far plane cutting the bar at the back. The parity test compares
 	// the image with three.js's OrthographicCamera.
@@ -479,6 +550,31 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 			reference: 'depth-bias',
 		}),
 	),
+	// See-through planes and a sphere, created nearest first, which must draw farthest first with
+	// normal blending. The parity test compares it with three.js's transparent materials.
+	{
+		name: 'transparency',
+		sketch: 'tests/pages/sketches/transparency-sketch.ts',
+		hold: 0,
+		size: [GLASS_IMAGE.width, GLASS_IMAGE.height],
+	},
+	// The same scene with custom materials on the lit planes and the sphere, whose surface function
+	// keeps the standard look: they blend as the standard material does, so the references are
+	// copies of the transparency test's.
+	{
+		name: 'transparency-custom',
+		sketch: 'tests/pages/sketches/transparency-sketch.ts?custom',
+		hold: 0,
+		size: [GLASS_IMAGE.width, GLASS_IMAGE.height],
+	},
+	// Additive and multiply blending, a batch of blended quads sorted row by row, render order,
+	// a surface without the depth test, and a glow map with straight and premultiplied colors.
+	{
+		name: 'blending',
+		sketch: 'tests/pages/sketches/blending-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
 	// Orbit controls after the controls test's drags, made through the controls' own calls. The
 	// controls test must draw this image after it makes the drags with Playwright.
 	{ name: 'controls', sketch: 'tests/pages/sketches/controls-sketch.ts?moved', hold: 0 },

@@ -3,6 +3,7 @@
 //! `graph` module declares the engine's render passes for the render graph tests.
 #![allow(dead_code)]
 
+pub mod blended;
 pub mod graph;
 
 use std::f64::consts::{PI, TAU};
@@ -14,6 +15,7 @@ use null3d_core::scene::{Command, SceneStorage, flags};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::format;
 use null3d_gpu::drawlist::{Op, decode};
+use null3d_gpu::mock::MockBackend;
 use null3d_render::arrays::{MeshArrays, from_arrays};
 use null3d_render::camera::{Lens, Perspective};
 use null3d_render::debug_lines::LineStore;
@@ -290,6 +292,31 @@ impl<B: FrameBuilder> World<B> {
         (texture, mesh, material + 1)
     }
 
+    /// The thread that draws holds images 1 to `count`, of `size` texels on each side, and took
+    /// the frames before the current one.
+    pub fn arrive(&mut self, mock: &mut MockBackend, count: u32, size: u32) {
+        for image in 1..=count {
+            mock.provide_image(image, size, size);
+        }
+        let taken = self.frame - 1;
+        self.renderer
+            .settings_mut()
+            .textures_mut()
+            .sync(count, taken);
+    }
+
+    /// Records the current frame and replays it twice on the mock, as a capture replays a frame's
+    /// list again, then moves on to the next frame. Returns the frame's operations.
+    pub fn step(&mut self, mock: &mut MockBackend, structure_changed: bool) -> Vec<(Op, Vec<u32>)> {
+        self.record(structure_changed);
+        for _ in 0..2 {
+            mock.replay(self.renderer.list(self.frame).words()).unwrap();
+        }
+        let commands = self.commands();
+        self.frame += 1;
+        commands
+    }
+
     /// The operations of the frame's list with their operands.
     pub fn commands(&self) -> Vec<(Op, Vec<u32>)> {
         decode(self.renderer.list(self.frame).words())
@@ -336,6 +363,7 @@ pub fn map_desc(size: u32) -> TextureDesc {
         depth: 1,
         format: format::RGBA8_UNORM_SRGB,
         mipmaps: true,
+        levels: 1,
         sampling: Sampling::default(),
     }
 }

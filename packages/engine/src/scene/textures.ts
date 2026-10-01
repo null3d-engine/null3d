@@ -2,14 +2,23 @@
 // of assets.ts. The engine core gives each texture a layer of a texture array that textures of
 // its size, format and mip levels share, and a sampler. An image travels to the thread that
 // draws; data goes into engine memory. Either uploads in its turn, a band of rows per frame
-// within the frame's upload budget, and then makes its mip levels on the GPU. Until its texels
-// are on the GPU, a material draws as without the map.
+// within the frame's upload budget, and then makes its mip levels on the GPU. Texels from a KTX2
+// file (ktx2.ts) go into engine memory with every mip level, often in a compressed format. Until
+// its texels are on the GPU, a material draws as without the map.
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import {
 	TEXTURE_FILTER_LINEAR,
 	TEXTURE_FILTER_NEAREST,
+	TEXTURE_FORMAT_ASTC,
+	TEXTURE_FORMAT_ASTC_SRGB,
+	TEXTURE_FORMAT_BC7,
+	TEXTURE_FORMAT_BC7_SRGB,
+	TEXTURE_FORMAT_ETC2_RGB,
+	TEXTURE_FORMAT_ETC2_RGB_SRGB,
+	TEXTURE_FORMAT_ETC2_RGBA,
+	TEXTURE_FORMAT_ETC2_RGBA_SRGB,
 	TEXTURE_FORMAT_HALF_FLOAT,
 	TEXTURE_FORMAT_LINEAR,
 	TEXTURE_FORMAT_SRGB,
@@ -66,6 +75,20 @@ export type TextureColorSpace = 'srgb' | 'linear';
  * @category api/textures
  */
 export type TextureFormat = 'rgba8unorm' | 'rgba16float';
+
+/**
+ * A compressed format, which stores blocks of 4 x 4 texels in a quarter or an eighth of the GPU
+ * memory of `rgba8unorm`. A texture from a KTX2 file takes the one that the device supports:
+ * `astc-4x4-unorm`, `bc7-rgba-unorm`, `etc2-rgb8unorm` without alpha or `etc2-rgba8unorm` with
+ * it. The names are WebGPU's, and a texture's `colorSpace` says whether sampling decodes sRGB.
+ *
+ * @category api/textures
+ */
+export type CompressedTextureFormat =
+	| 'astc-4x4-unorm'
+	| 'bc7-rgba-unorm'
+	| 'etc2-rgb8unorm'
+	| 'etc2-rgba8unorm';
 
 /**
  * Texel data: bytes for `rgba8unorm`, and for `rgba16float` either half floats as 16-bit words or
@@ -156,6 +179,31 @@ const COLOR_SPACES: Record<TextureColorSpace, true> = { srgb: true, linear: true
 
 const FORMATS: Record<TextureFormat, true> = { rgba8unorm: true, rgba16float: true };
 
+/** The core's code of each format, in linear values and in sRGB. */
+const FORMAT_CODES: Record<TextureFormat | CompressedTextureFormat, readonly [number, number]> = {
+	rgba8unorm: [TEXTURE_FORMAT_LINEAR, TEXTURE_FORMAT_SRGB],
+	rgba16float: [TEXTURE_FORMAT_HALF_FLOAT, TEXTURE_FORMAT_HALF_FLOAT],
+	'astc-4x4-unorm': [TEXTURE_FORMAT_ASTC, TEXTURE_FORMAT_ASTC_SRGB],
+	'bc7-rgba-unorm': [TEXTURE_FORMAT_BC7, TEXTURE_FORMAT_BC7_SRGB],
+	'etc2-rgb8unorm': [TEXTURE_FORMAT_ETC2_RGB, TEXTURE_FORMAT_ETC2_RGB_SRGB],
+	'etc2-rgba8unorm': [TEXTURE_FORMAT_ETC2_RGBA, TEXTURE_FORMAT_ETC2_RGBA_SRGB],
+};
+
+/** @internal Texels from a file, with the mip levels that it holds. */
+export interface FileTexels {
+	width: number;
+	height: number;
+	/** Layers: 1, or more for an array texture. */
+	depth: number;
+	/** Mip levels, from level 0: all that the file holds, or 1. */
+	levels: number;
+	format: TextureFormat | CompressedTextureFormat;
+	/** The color space that the file names, which the options can change. */
+	colorSpace: TextureColorSpace;
+	/** Tightly packed rows, of blocks in a compressed format: each level's layers in turn. */
+	texels: Uint8Array;
+}
+
 /**
  * A texture: an image or data on the GPU, which materials sample. Its texels upload in the
  * frames after the call that makes it, a band of rows per frame. A material draws with its color
@@ -174,13 +222,18 @@ export class Texture {
 		height: number,
 		/** Layers: 1, or more for a texture from data with a depth. */
 		readonly depth: number,
-		/** How the texture stores its texels on the GPU. */
-		readonly format: TextureFormat,
+		/**
+		 * How the texture stores its texels on the GPU. A texture from a KTX2 file has the
+		 * compressed format that the device supports, or `rgba8unorm` where it supports none.
+		 */
+		readonly format: TextureFormat | CompressedTextureFormat,
 		/** Whether sampling turns the texels from sRGB into linear values, or reads them as they are. */
 		readonly colorSpace: TextureColorSpace,
 		/** The set of texture coordinates that materials read the texture at. */
 		readonly uvSet: 0 | 1,
 		private readonly textures: Textures,
+		/** @internal True for a texture from a file, whose texels come from the file alone. */
+		readonly fromFile = false,
 	) {
 		this.size = [width, height];
 	}
@@ -204,10 +257,17 @@ export class Texture {
 	 * Gives the texture new texels, which upload in their turn. An image may have another size,
 	 * and the texture then takes that size; the image moves to the thread that draws, so this
 	 * thread can use it no more. Data must fit the texture's size and format. Until the new texels
-	 * are on the GPU, materials draw with their colors alone.
+	 * are on the GPU, materials draw with their colors alone. A texture from a KTX2 file takes no
+	 * updates, and throws E1208: load the file again.
 	 */
 	update(source: ImageBitmap | TextureDataArray): void {
 		const call = 'texture.update';
+		// Release builds refuse too: the texture's memory holds its file's blocks, not RGBA texels.
+		if (this.fromFile)
+			throw invalid(
+				call,
+				'got a texture from a KTX2 file, whose texels come from the file alone. Load the file again, or make the texture with fromImageBitmap or fromData.',
+			);
 		if (ArrayBuffer.isView(source)) this.textures.setData(this, source, call);
 		else this.textures.setImage(this, source, 0, call);
 	}
@@ -238,6 +298,9 @@ export class Textures {
 		private readonly core: CoreMemory,
 		private readonly send: ImageSender,
 		private readonly time: { readonly frame: number },
+		/** @internal The device's capability flags, which say what compressed formats it has. */
+		readonly capabilities: number,
+		private readonly ownBudget: () => void = () => {},
 	) {}
 
 	/**
@@ -262,9 +325,43 @@ export class Textures {
 		call: string,
 	): Texture {
 		if (DEV) checkImage(image, call);
-		const texture = this.create(image.width, image.height, 1, 'rgba8unorm', options, true, call);
+		const texture = this.create(image.width, image.height, 1, 'rgba8unorm', options, 'image', call);
 		this.setImage(texture, image, premultiplied, call);
 		return texture;
+	}
+
+	/**
+	 * @internal A texture from texels that a file brought, with their mip levels, such as a KTX2
+	 * file's once transcoded. The texels move into engine memory at once.
+	 */
+	fromTexels(file: FileTexels, options: TextureOptions, call: string): Texture {
+		const { width, height, depth, levels, format, colorSpace, texels } = file;
+		const texture = this.create(
+			width,
+			height,
+			depth,
+			format,
+			{ colorSpace, ...options, mipmaps: false },
+			'file',
+			call,
+			levels,
+		);
+		const address = this.texelAddress(texture, width, height, call);
+		new Uint8Array(this.core.memory.buffer, address, texels.length).set(texels);
+		return texture;
+	}
+
+	/**
+	 * Where the texture's new texels go in engine memory. The core makes room for them there, which
+	 * can grow the memory.
+	 */
+	private texelAddress(texture: Texture, width: number, height: number, call: string): number {
+		const { core } = this;
+		return core.checkGrowth(
+			core.glue.setTextureData(texture.handle, width, height),
+			call,
+			'a texture',
+		);
 	}
 
 	/**
@@ -286,7 +383,7 @@ export class Textures {
 				if (!(Number.isInteger(value) && value >= 1 && value <= max))
 					throw invalid(call, `got the ${name} ${value}: give a whole number from 1 to ${max}.`);
 		}
-		const made = this.create(width, height, depth, format, texture, false, call);
+		const made = this.create(width, height, depth, format, texture, 'data', call);
 		try {
 			this.setData(made, data, call);
 		} catch (error) {
@@ -297,18 +394,21 @@ export class Textures {
 	}
 
 	/**
-	 * Checks the options and makes a texture with no texels yet. `image` says whether the texture
-	 * is for images, whose defaults differ from those of data.
+	 * Checks the options and makes a texture with no texels yet. `source` says where its texels
+	 * come from: images and data have their own defaults, and a file brings `levels` mip levels,
+	 * which the GPU never makes.
 	 */
 	private create(
 		width: number,
 		height: number,
 		depth: number,
-		format: TextureFormat,
+		format: TextureFormat | CompressedTextureFormat,
 		options: TextureOptions,
-		image: boolean,
+		source: 'image' | 'data' | 'file',
 		call: string,
+		levels = 1,
 	): Texture {
+		const image = source === 'image';
 		const {
 			colorSpace = image ? 'srgb' : 'linear',
 			wrap = 'clamp',
@@ -341,17 +441,14 @@ export class Textures {
 		}
 		const filterCode = FILTERS[filter];
 		const { core } = this;
-		const handle = core.check(
+		const handle = core.checkGrowth(
 			core.glue.createTexture(
 				width,
 				height,
 				depth,
-				half
-					? TEXTURE_FORMAT_HALF_FLOAT
-					: colorSpace === 'srgb'
-						? TEXTURE_FORMAT_SRGB
-						: TEXTURE_FORMAT_LINEAR,
+				FORMAT_CODES[format][colorSpace === 'srgb' ? 1 : 0],
 				mipmaps === true,
+				levels,
 				WRAPS[wrapU],
 				WRAPS[wrapV],
 				filterCode,
@@ -361,7 +458,17 @@ export class Textures {
 			),
 			call,
 		);
-		return new Texture(handle, width, height, depth, format, colorSpace, uvSet, this);
+		return new Texture(
+			handle,
+			width,
+			height,
+			depth,
+			format,
+			colorSpace,
+			uvSet,
+			this,
+			source === 'file',
+		);
 	}
 
 	/**
@@ -378,7 +485,7 @@ export class Textures {
 				);
 		}
 		const { width, height } = image;
-		const id = this.core.check(
+		const id = this.core.checkGrowth(
 			this.core.glue.setTextureImage(
 				texture.handle,
 				width,
@@ -412,13 +519,8 @@ export class Textures {
 					`got ${data.length} numbers for ${width} x ${height} x ${depth} texels, not ${values}: give four per texel.`,
 				);
 		}
-		const { core } = this;
-		const address = core.check(
-			core.glue.setTextureData(texture.handle, width, height),
-			call,
-			'a texture',
-		);
-		const { buffer } = core.memory;
+		const address = this.texelAddress(texture, width, height, call);
+		const { buffer } = this.core.memory;
 		if (data instanceof Float32Array) toHalfFloats(data, new Uint16Array(buffer, address, values));
 		else if (data instanceof Uint16Array) new Uint16Array(buffer, address, values).set(data);
 		else new Uint8Array(buffer, address, values).set(data);
@@ -431,7 +533,7 @@ export class Textures {
 
 	/** @internal */
 	destroy(texture: Texture): void {
-		this.core.check(
+		this.core.checkGrowth(
 			this.core.glue.destroyTexture(texture.handle, this.time.frame),
 			'texture.destroy',
 			'a texture',
@@ -475,10 +577,12 @@ export class Textures {
 
 	/**
 	 * @internal Sets the texel bytes that one frame may upload, in place of the quality setting's
-	 * value until the setting changes. Tests take budgets below the setting's range.
+	 * value until the sketch changes the setting or the preset. Tests take budgets below the
+	 * setting's range.
 	 */
 	setUploadBudget(bytes: number): void {
 		this.core.glue.setTextureOption(TEXTURE_OPTION_UPLOAD_BUDGET, bytes);
+		this.ownBudget();
 	}
 
 	/** @internal The texel bytes that one frame may upload, as the core holds it. */

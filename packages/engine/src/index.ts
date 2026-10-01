@@ -60,6 +60,7 @@ export type {
 } from './page/frame-stats';
 export type { HeldFrame, HoldFailure, HoldResult } from './page/hold';
 export type { DepthMode, LatencyMode, SketchThread } from './page/switches';
+export type { PresetCheck, PresetCheckRound } from './quality/check';
 export type { DeviceHints } from './quality/chooser';
 export type { QualityPreset, QualitySettings } from './quality/presets';
 export type {
@@ -73,6 +74,7 @@ export type { Exp2FogOptions, FogOptions, LinearFogOptions } from './scene/fog';
 export type { Post, PostSettings, ToneMapping } from './scene/post';
 export type {
 	AlphaMode,
+	Blending,
 	BoxOptions,
 	CapsuleOptions,
 	CircleOptions,
@@ -108,6 +110,7 @@ export type {
 	CameraOptions,
 	DirectionalLight,
 	DirectionalLightOptions,
+	DirectionalShadowOptions,
 	Group,
 	HemisphereLight,
 	HemisphereLightOptions,
@@ -133,6 +136,7 @@ export type {
 	Vec3,
 } from './scene/scene';
 export type {
+	CompressedTextureFormat,
 	Texture,
 	TextureColorSpace,
 	TextureData,

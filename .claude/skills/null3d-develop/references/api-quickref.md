@@ -105,7 +105,7 @@ export default defineSketch(async (ctx) => {
 | Call | Returns | Notes |
 | --- | --- | --- |
 | `scene.createGroup({ name, position, rotation, scale, parent, dynamic, layers })` | Group | Empty node for hierarchy |
-| `scene.createMesh({ mesh, material, position, rotation, scale, parent, dynamic, layers, castShadows, receiveShadows, name })` | Mesh | Static unless `dynamic: true`. Shadow flags are stored; shadows draw later in 0.1 |
+| `scene.createMesh({ mesh, material, position, rotation, scale, parent, dynamic, layers, castShadows, receiveShadows, name })` | Mesh | Static unless `dynamic: true`. Shadows draw on WebGPU; WebGL2 later in 0.1 |
 | `scene.createInstances(mesh, count, { material, dynamic, colors, layers })` | InstanceBatch | Section 5 |
 | `scene.instantiate(prefab, { position, rotation, scale, parent })` (0.2) | Node | Creates a loaded glTF model |
 | `scene.clone(obj)` (0.2) | same type | Deep copy of a built object |
@@ -114,7 +114,7 @@ export default defineSketch(async (ctx) => {
 | `scene.createOrthographicCamera({ height, near, far, position, target, layers })` | OrthographicCamera | Or left, right, top, bottom in place of height |
 | `scene.setActiveCamera(camera)` | | The camera the canvas shows |
 | `scene.createDirectionalLight(opts)`, `createPointLight`, `createSpotLight`, `createHemisphereLight`, `createAmbientLight` | Light | Section 7 |
-| `scene.setBackground('#rrggbb')` | | Any color input (section 20); a texture later in 0.1 |
+| `scene.setBackground('#rrggbb')` or `scene.setBackground(texture)` | | Any color input (section 20), or a texture that fills the view behind every object, as three.js's `scene.background` |
 | `scene.setBackground({ sky: { turbidity, rayleigh, sunDirection } })` (0.2) | | Sky backgrounds |
 | `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment` |
 | `scene.setBackground(env, { blur, intensity, rotation })` (0.2) | | Blurred environment backgrounds |
@@ -149,20 +149,20 @@ obj.on('click', fn); obj.off('click', fn);  // (0.2) 'pointerenter', 'pointerlea
 obj.animator();                      // (0.2) section 12
 ```
 
-Meshes also have these calls:
+Meshes also have these calls. `setCastShadows` and `setReceiveShadows` are stored until shadows draw. `setRenderOrder` orders blended objects before their depth.
 
 ```ts
 mesh.setMaterial(material);          mesh.setMesh(geometry);       // setMesh brings back the mesh's bounds
-mesh.setCastShadows(true);           mesh.setReceiveShadows(true); // false by default; stored until shadows draw
-mesh.setRenderOrder(n);                                             // transparent objects, lower first
+mesh.setCastShadows(true);           mesh.setReceiveShadows(true); // false by default, as in three.js
+mesh.setRenderOrder(n);                                             // blended objects, lower first
 mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center relative to the origin, before scale
 ```
 
 - Getters write into the `out` array you pass, so they allocate nothing. The world getters read the last frame the engine processed. Pass them a plain array or `Float64Array` to keep 64-bit positions.
 - Use a setter for static objects; direct array writes are for dynamic objects and batches.
 - A parent change with `keepWorld: true` works out the new local transform when the frame applies it, so set the object's transform first.
-- These calls rebuild the draw tables, so make them at setup: `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled`.
-- Every material draws opaque until transparency comes later in 0.1, so `setRenderOrder` has no effect yet.
+- These calls rebuild the draw tables, so make them at setup: `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows`.
+- Blended objects draw after the opaque ones, farthest first by the center of their bounds. `setRenderOrder` comes before depth, and an instance batch's rows sort one by one.
 
 ## 5. Instance batches (`concepts/instances`)
 
@@ -209,20 +209,22 @@ An orthographic camera made with `height` follows the canvas's aspect ratio; one
 ## 7. Lights (`api/lights`)
 
 ```ts
-const sun = scene.createDirectionalLight({ direction: [-1, -2, -1], color: '#fff4e0', intensity: 3 });
+const sun = scene.createDirectionalLight({ direction: [-1, -2, -1], color: '#fff4e0', intensity: 3,
+  castShadows: true, shadow: { cascades: 3, mapSize: 2048, distance: 200, bias: 0.5, normalBias: 1 } });
 scene.createAmbientLight({ color: '#ffffff', intensity: 0.4 });
 scene.createPointLight({ position, color, intensity, range: 10, decay: 2 });   // range is required
 scene.createSpotLight({ position, target, angle, penumbra, range: 20, decay, color, intensity });  // or direction
 scene.createHemisphereLight({ skyColor, groundColor, intensity });
 // every light also takes the node options: name, position, rotation, parent, dynamic, layers
-// castShadows: true on directional, point and spot lights; shadow settings come later in 0.1
+// castShadows: on directional, point and spot lights; only directional shadows draw yet
 
 light.setIntensity(v); light.setColor(c);   // every light; setColor allocates, so animate the intensity
 light.setDirection(x, y, z);                 // directional and spot lights: the way the light travels
 light.setRange(r); light.setDecay(d);        // point and spot lights
 light.setAngle(a); light.setPenumbra(p);     // spot lights; angle in radians, up to π/2
 light.setGroundColor(c);                     // hemisphere lights; setColor sets the sky
-light.setCastShadows(true);                  // directional, point and spot lights; stored until shadows draw
+light.setCastShadows(true);                  // directional lights cast; point and spot lights store it
+sun.setShadow({ cascades: 2, distance: 80 }); // directional lights; changes only the settings given
 light.setVisible(false); light.destroy();    // lights are objects: section 4
 ```
 
@@ -230,7 +232,8 @@ light.setVisible(false); light.destroy();    // lights are objects: section 4
 - three.js aims a directional light from its position to a target. Pass the target minus the position as `direction`, or call `lookAt`.
 - A light lights a camera's view when their layer masks share a bit. Without lights, standard materials draw black.
 - Units follow three.js r155 and later: point and spot intensity in candela. The same colors and intensities give the same light as in three.js.
-- For now, surfaces show one directional light (the first visible one) and every ambient light. Later in 0.1, point, spot and hemisphere lights light surfaces through clustered lighting, and shadows draw.
+- For now, surfaces show one directional light (the first visible one) and every ambient light. Later in 0.1, point, spot and hemisphere lights light surfaces through clustered lighting.
+- Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`, in cascades that fit the camera's view. Defaults: 3 cascades, 2,048 texels, 200 m, bias 0.5 and normal bias 1, both in texels of each cascade. Unlit materials show no shadows. WebGPU draws them now, and WebGL2 later in 0.1. Instance batches do not cast or receive them yet (`concepts/shadows`).
 
 ## 8. Geometry (`api/geometry`)
 
@@ -258,8 +261,12 @@ const paint = materials.standard({
   color: '#e8554e',                            // base color (sRGB), converted to linear once
   metalness: 0, roughness: 1,                  // glTF metallic-roughness, three.js's defaults
   emissive: '#000000', emissiveIntensity: 1,   // light the surface gives off itself
-  opacity: 1,                                  // stored; every material draws opaque for now
+  opacity: 1,                                  // part of the alpha that 'mask' tests and 'blend' blends
   doubleSided: false, vertexColors: false, flatShading: false,  // fixed at creation
+  alphaMode: 'opaque', alphaCutoff: 0.5,       // 'mask' cuts out below the cutoff; 'blend' shows through
+  blending: 'normal',                          // with 'blend': 'normal', 'additive' or 'multiply'
+  depthWrite: true, depthTest: true,           // fixed at creation
+  depthBias: { constant: 0, slopeScale: 0 },   // three.js's polygonOffset, for decals
 });
 const glow = materials.unlit({ color: '#ffcc00' });      // ignores lights, like three.js's MeshBasicMaterial
 paint.set({ roughness: 0.4 });  // changes only the options you pass; converting a color allocates
@@ -283,10 +290,10 @@ stripes.set({ speed: 2, roughness: 0.3 });  // uniforms of struct Uniforms and s
 - `fog: false` keeps a material's color out of the scene's fog (`scene.setFog`).
 - `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option but the texture maps feeds `defaultSurface()`. `references/shaders.md` has the contract.
 - A map reads the texture coordinates that its texture's `uvSet` names, and a mesh without a second set gives its first. A mesh without texture coordinates draws the material without its maps. A normal map takes its frame from the mesh's tangents (`computeTangents: true`) where the mesh has them, and otherwise from the pixels around it, as three.js does.
-- `alphaMode: 'mask'` with `alphaCutoff` draws nothing where the alpha falls below the cutoff, as three.js's `alphaTest`. `depthWrite`, `depthTest` and `depthBias: { constant, slopeScale }` set the depth state.
-- Later in 0.1: the `blend` alpha mode, `blending`, and in `materials.shader` texture maps, textures and full shaders.
+- `alphaMode: 'mask'` with `alphaCutoff` draws nothing where the alpha falls below the cutoff, as three.js's `alphaTest`. `alphaMode: 'blend'` is three.js's `transparent: true`, and `blending` picks `'normal'`, `'additive'` or `'multiply'`. Blended objects cost culling and sorting in every frame, so use `'mask'` for cut-out shapes. `depthWrite`, `depthTest` and `depthBias: { constant, slopeScale }` set the depth state.
+- Later in 0.1: in `materials.shader` texture maps, textures and full shaders.
 - `envIntensity` (0.2) comes with environment lighting, and `materials.shadowCatcher` in 0.2.
-- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
+- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `blending`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
 
@@ -301,6 +308,10 @@ const tex = await assets.loadTexture('/tex/bricks.png', {  // PNG, JPEG, WebP, A
   uvSet: 0,                  // which UV set the map uses (three.js texture.channel)
   premultipliedAlpha: false, // true to store color multiplied by alpha
 });
+// KTX2 of ETC1S or UASTC data (basisu, toktx): the device's compressed format, with the file's mip levels
+const floor = await assets.loadTexture('/tex/floor.ktx2', { wrap: 'repeat' }); // color space from the file
+floor.format;              // 'astc-4x4-unorm' | 'bc7-rgba-unorm' | 'etc2-rgb8unorm' | 'etc2-rgba8unorm' | 'rgba8unorm'
+// KTX2 rows stay as the file holds them (first row at v = 0): encode with basisu -y_flip for planes; no flipY
 textures.fromData({ width, height, depth: 1, format: 'rgba8unorm', colorSpace: 'linear', data }); // 4 numbers per texel
 textures.fromData({ width, height, format: 'rgba16float', data: new Float32Array(width * height * 4) });
 // fromImageBitmap uploads the bitmap as it is: decode with imageOrientation: 'flipY' to stand upright
@@ -313,7 +324,10 @@ textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the larg
 
 - Data rows go from the bottom up: the first row is at v = 0. `rgba8unorm` takes a `Uint8Array` or `Uint8ClampedArray`, and `rgba16float` a `Float32Array` or a `Uint16Array` of half floats. Bad data or options throw E1208.
 - Textures return at once and upload over the next frames, within each frame's upload budget.
-- Later in 0.1: texture backgrounds, and KTX2 files through `loadTexture`. `textures.fromPass` (0.2) and cube maps (0.2) follow.
+- `scene.setBackground(tex)` shows a texture behind every object. The color set before it shows until its texels are on the GPU.
+- Later: `textures.fromPass` (0.2) and cube maps (0.2).
+
+Use KTX2 for large textures, above all on phones: a compressed texel takes a quarter or an eighth of the GPU memory of RGBA8. Encode mip levels into the file (`basisu -mipmap`), since the GPU cannot make them for compressed texels. UASTC keeps more detail, and ETC1S makes smaller files. The first KTX2 file downloads the transcoder, about 365 KB after Brotli. A page without KTX2 files downloads none of it. A texture from a KTX2 file takes no `update`.
 
 ## 11. Assets (`api/assets`)
 
@@ -442,13 +456,15 @@ quality.set({ maxPixelRatio: 1.5 });    // from the next frame; E1213 for anothe
 quality.set({ maxAnisotropy: 4, uploadBytesPerFrame: 2 * 1024 * 1024 });  // texture sampling cap, upload bytes per frame
 quality.settings.antialias;             // 'msaa' | 'fxaa' | 'none', fixed at the start; set it with createEngine's option
 quality.set({ shadowCascades: 2 });     // planned: the preset table gives each setting's status
+await quality.setPreset('low');         // the live settings take Low's values; start-time ones stay; resolves once its frame is on screen
 const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
 quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });
 quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => { aiRate = scale; } });  // (0.2)
 engine.mode.preset;                     // on the page: the preset, crashedStarts and memoryMaximumMiB
+engine.mode.presetCheck;                // what the preset check measured: { from, targetFps, rounds }, or null
 ```
 
-The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
+The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. When the engine chose the preset itself, it checks it with the scene that the setup built. It lowers the preset until the GPU holds the frame rate, before `createEngine` resolves, and keeps the settings that the setup changed with `quality.set`. The `setPreset` call keeps the last frame on screen until the new preset's pipelines are built. So call it from a menu or a loading screen. The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
 
 ## 18. Messages and UI (`api/page`, `api/ui`)
 

@@ -1,9 +1,10 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?wake=message and
-// ?hdr=off. Five more set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job
-// worker count, ?memory= for the shared memory's maximum, ?queue= for the frames that may wait on
-// the GPU and ?cells=off for culling without grid cells. ?hold starts hold mode for image tests,
-// ?preset= fixes the quality preset, and ?bench publishes the running engine for benchmark tools.
+// ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?wake=message, ?hdr=off
+// and ?compression=. Five more set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs=
+// for the job worker count, ?memory= for the shared memory's maximum, ?queue= for the frames that
+// may wait on the GPU and ?cells=off for culling without grid cells. ?hold starts hold mode for
+// image tests, ?preset= fixes the quality preset, and ?bench publishes the running engine for
+// benchmark tools.
 
 import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
@@ -39,6 +40,11 @@ export type SketchThread = 'worker' | 'main';
  */
 export type DepthMode = 'reversed' | 'reversed-gl' | 'standard';
 
+/** A family of compressed texture formats that KTX2 files can become. */
+export type CompressionFamily = 'astc' | 'bc' | 'etc2';
+
+const COMPRESSION_FAMILIES: readonly CompressionFamily[] = ['astc', 'bc', 'etc2'];
+
 export interface Switches {
 	gpu: GpuSwitch;
 	/** False when ?threads=off asks for the single-threaded build. */
@@ -55,6 +61,12 @@ export interface Switches {
 	 * own. A device without `EXT_clip_control` cannot draw `reversed`, and draws its own instead.
 	 */
 	depth: DepthMode | undefined;
+	/**
+	 * The compressed texture families that ?compression= lets KTX2 files become, of those the
+	 * device has: a list such as ?compression=bc,etc2, or none with ?compression=none. Undefined
+	 * for every family the device has.
+	 */
+	compression: readonly CompressionFamily[] | undefined;
 	/**
 	 * False when ?compile=wait makes the WebGL2 path wait for each program's compile at its first
 	 * draw, as it does in a browser without `KHR_parallel_shader_compile`.
@@ -137,6 +149,10 @@ export function parseSwitches(search: string): Switches {
 		latency: oneOf(params.get('latency'), ['pipelined', 'low'] as const),
 		copyUploads: params.get('uploads') === 'copy',
 		depth: oneOf(params.get('depth'), ['reversed', 'reversed-gl', 'standard'] as const),
+		compression: params
+			.get('compression')
+			?.split(',')
+			.flatMap((name) => oneOf(name, COMPRESSION_FAMILIES) ?? []),
 		parallelCompile: params.get('compile') !== 'wait',
 		wakeByMessage: params.get('wake') === 'message',
 		hdr: params.get('hdr') !== 'off',

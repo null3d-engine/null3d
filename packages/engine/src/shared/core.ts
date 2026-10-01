@@ -176,8 +176,9 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setMaterialMap(material: number, slot: number, texture: number, secondUv: number): number;
 	/**
-	 * A texture with no texels yet, in `depth` layers of a texture array. `format` is a `FORMAT_*` code;
-	 * the rest set its sampler with `ADDRESS_*` and `FILTER_*` codes. Returns its handle.
+	 * A texture with no texels yet, in `depth` layers of a texture array. `format` is a `FORMAT_*` code.
+	 * `mipmaps` has the GPU make the mip levels; without it, `levels` is the mip levels that its data
+	 * brings. The rest set its sampler with `ADDRESS_*` and `FILTER_*` codes. Returns its handle.
 	 */
 	createTexture(
 		width: number,
@@ -185,6 +186,7 @@ export interface CoreGlue extends CoreErrors {
 		depth: number,
 		format: number,
 		mipmaps: boolean,
+		levels: number,
 		wrapU: number,
 		wrapV: number,
 		magFilter: number,
@@ -199,7 +201,8 @@ export interface CoreGlue extends CoreErrors {
 	setTextureImage(texture: number, width: number, height: number, flags: number): number;
 	/**
 	 * Gives a texture texels of `width` x `height` in each layer, and returns the address that
-	 * TypeScript writes them at, as tightly packed rows, layer after layer.
+	 * TypeScript writes them at: tightly packed rows, of blocks in a compressed format, layer after
+	 * layer, and level after level for a texture whose data brings its mip levels.
 	 */
 	setTextureData(texture: number, width: number, height: number): number;
 	destroyTexture(texture: number, frame: number): number;
@@ -248,6 +251,8 @@ export interface CoreGlue extends CoreErrors {
 	setBackground(r: number, g: number, b: number): number;
 	/** The tone mapping, by code, and the exposure, from the next frame on. */
 	setOutput(toneMapping: number, exposure: number): number;
+	/** Draws the texture `texture` behind every object in the camera's view, or none with 0. */
+	setBackgroundTexture(texture: number): number;
 	/**
 	 * The scene's fog: its kind (`FOG_KIND_*`), its linear color, the near and far distances of
 	 * linear fog, and the density of exponential squared fog.
@@ -324,6 +329,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setLightValue',
 	'setBackground',
 	'setOutput',
+	'setBackgroundTexture',
 	'setFog',
 ];
 

@@ -9,12 +9,14 @@
 //! straight from the core's world buffer of the frame's parity, which the core keeps the same way.
 
 use std::collections::TryReserveError;
+use std::ops::Range;
 
-use null3d_core::cells::{CellPosition, MAX_CELLS};
+use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
+use null3d_core::culling::{CULL_CHUNK, CullRun, ROW_CELLS};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
-use null3d_core::lights::{LightTable, LightView};
+use null3d_core::lights::{LightTable, LightView, SunShadow};
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{
@@ -27,11 +29,12 @@ use crate::fog::Fog;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::graph::GraphError;
 use crate::materials::{
-    MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, feature,
+    MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, blend_state, feature,
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
 use crate::output::{Antialias, Output, SceneColor};
-use crate::pipelines::DrawKey;
+use crate::pipelines::{DepthBias, DrawKey};
+use crate::shadows::{ShadowFrame, ShadowSettings, fit_cascades};
 use crate::textures::TextureStore;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
 
@@ -59,6 +62,65 @@ pub(crate) fn drawn_rows(buckets: &[u32], start: u32, count: u32) -> Option<(u32
     let first = (start..end).find(draws)?;
     let last = (first..end).rev().find(draws)?;
     Some((first, last + 1 - first))
+}
+
+/// Where the rows of a run's positions lie: all in one cell, each in the cell of its entry in a
+/// list of cells by position, or each in the cell of the row that a list of rows names.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum RunCells<'a> {
+    One(u32),
+    Rows(&'a [u32]),
+    Listed { rows: &'a [u32], cells: &'a [u32] },
+}
+
+impl RunCells<'_> {
+    /// The cell of every position in `range`, or [`ROW_CELLS`] when they lie in several.
+    pub(crate) fn of(&self, range: Range<u32>) -> u32 {
+        let (start, end) = (range.start as usize, range.end as usize);
+        let same = |mut cells: std::slice::Iter<'_, u32>, cell: &dyn Fn(u32) -> u32| {
+            let first = cells.next().map_or(ORIGIN_CELL, |&c| cell(c));
+            if cells.all(|&c| cell(c) == first) {
+                first
+            } else {
+                ROW_CELLS
+            }
+        };
+        match *self {
+            RunCells::One(cell) => cell,
+            RunCells::Rows(cells) => same(cells[start..end].iter(), &|cell| cell),
+            RunCells::Listed { rows, cells } => {
+                same(rows[start..end].iter(), &|row| cells[row as usize])
+            }
+        }
+    }
+}
+
+/// Splits positions `range` of a set into culling runs of at most one chunk each. A run whose rows
+/// share a cell culls as that cell's run; the others look each row's cell up. The list grows only
+/// when it has no room left for a run.
+pub(crate) fn push_runs(
+    runs: &mut Vec<CullRun>,
+    set: u32,
+    range: Range<u32>,
+    bucket: u32,
+    base: u32,
+    cells: RunCells<'_>,
+) -> Result<(), TryReserveError> {
+    let mut start = range.start;
+    while start < range.end {
+        let end = (start + CULL_CHUNK).min(range.end);
+        runs.try_reserve(1)?;
+        runs.push(CullRun {
+            set,
+            start,
+            end,
+            bucket,
+            base,
+            cell: cells.of(start..end),
+        });
+        start = end;
+    }
+    Ok(())
 }
 
 /// Why a frame could not be recorded.
@@ -290,6 +352,22 @@ impl UploadArena {
     }
 }
 
+/// Binds a view's frame group `group` at index 0, at the dynamic offsets `offsets`, as the view's
+/// opaque pass binds it. The passes that draw inside that pass's render pass bind it the same way.
+pub(crate) fn bind_frame_group(
+    list: &mut DrawList,
+    group: u32,
+    offsets: &[u32],
+) -> Result<(), RecordError> {
+    let mut words = [0; 5];
+    let len = 3 + offsets.len();
+    words[1] = group;
+    words[2] = offsets.len() as u32;
+    words[3..len].copy_from_slice(offsets);
+    list.push(Op::SetBindGroup, &words[..len])?;
+    Ok(())
+}
+
 /// Writes `value` into four bytes, in the byte order the engine's memory uses.
 pub(crate) fn put_u32(bytes: &mut [u8], word: usize, value: u32) {
     bytes[word * 4..word * 4 + 4].copy_from_slice(&value.to_ne_bytes());
@@ -353,6 +431,8 @@ struct Lighting {
     sun_direction: [f32; 4],
     sun_color: [f32; 4],
     ambient: [f32; 4],
+    /// The main directional light's shadows, or `None` when it casts none.
+    sun_shadow: Option<SunShadow>,
     /// Linear background color, or `None` before the sketch sets one.
     background: Option<[f32; 3]>,
     fog: Fog,
@@ -379,6 +459,8 @@ pub struct SceneSettings {
     /// The bind group of each material's maps, by material id, for the standard materials with a
     /// live map, and 0 for the others.
     map_groups: Vec<u32>,
+    /// The texture that the camera's view draws behind every object, or `Handle::NONE`.
+    background_texture: Handle,
     /// The views, the camera's first.
     views: Vec<View>,
     lighting: Lighting,
@@ -401,11 +483,13 @@ impl SceneSettings {
             materials: MaterialTable::with_capacity(max_materials),
             textures,
             map_groups: Vec::new(),
+            background_texture: Handle::NONE,
             views: vec![View::default()],
             lighting: Lighting {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
                 sun_color: [0.0; 4],
                 ambient: [0.0; 4],
+                sun_shadow: None,
                 background: None,
                 fog: Fog::None,
             },
@@ -462,6 +546,18 @@ impl SceneSettings {
         &mut self.textures
     }
 
+    /// The texture that the camera's view draws behind every object, or `Handle::NONE` for the
+    /// background color alone.
+    pub fn background_texture(&self) -> Handle {
+        self.background_texture
+    }
+
+    /// Draws `texture` behind every object in the camera's view, or only the background color
+    /// with `Handle::NONE`.
+    pub fn set_background_texture(&mut self, texture: Handle) {
+        self.background_texture = texture;
+    }
+
     /// Records the frame's texture work, writes each map's layer into its material's row when a
     /// map changed, or a texture's layer became ready or stopped drawing, then uploads the rows
     /// that changed into `table`. Returns true when a map's bind group was made again, which
@@ -476,8 +572,11 @@ impl SceneSettings {
         let remade = self.textures.record(list, frame)?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
-        self.materials
-            .update_map_layers(layers_changed, |map| textures.ready_layer(map));
+        self.materials.update_map_layers(
+            layers_changed,
+            |map| textures.ready_layer(map),
+            |map| textures.premultiplied(map),
+        );
         if let Some(ids) = self.materials.take_changed() {
             let rows = self.materials.rows(ids.clone());
             write_table_rows(list, arena, table, ids.start, rows)?;
@@ -604,6 +703,76 @@ impl SceneSettings {
         let lit = lights.gather(scene, parity, view.as_ref());
         self.set_sun(lit.sun_direction, lit.sun_color);
         self.set_ambient(lit.ambient);
+        self.set_sun_shadow(lit.sun_shadow);
+    }
+
+    /// The main directional light's shadows, or `None` when it casts none.
+    pub fn set_sun_shadow(&mut self, shadow: Option<SunShadow>) {
+        self.lighting.sun_shadow = shadow;
+    }
+
+    /// The cascades of the main directional light's shadows in a frame whose targets have the
+    /// canvas's size, fitted to the camera's view, or `None` when the light casts no shadows or
+    /// the camera has nothing to draw from.
+    pub fn shadow_frame(
+        &self,
+        scene: &SceneStorage,
+        parity: usize,
+        canvas: (u32, u32),
+    ) -> Option<ShadowFrame> {
+        let shadow = self.lighting.sun_shadow?;
+        let (camera, lens) = self.views[ViewId::CAMERA.index()].camera()?;
+        let slot = scene.resolve(camera).ok()?;
+        let world = scene.world(parity).matrix(slot as usize);
+        let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
+        let settings = ShadowSettings {
+            cascades: shadow.cascades,
+            map_size: shadow.map_size,
+            bias: shadow.bias,
+            normal_bias: shadow.normal_bias,
+            distance: shadow.distance,
+        };
+        let [x, y, z, _] = self.lighting.sun_direction;
+        Some(ShadowFrame {
+            cascades: fit_cascades(world, &lens, aspect, [x, y, z], &settings),
+            settings,
+            camera: scene.cell_position(slot, parity),
+            layers: shadow.layers,
+        })
+    }
+
+    /// The pipeline that draws the depth of a shadow caster whose mesh and material draw with
+    /// `pipeline`: only its back faces, as three.js draws them with its filtered shadow maps, or
+    /// both faces of a double-sided material. The material's depth bias moves what the camera sees,
+    /// so the caster draws without it.
+    pub fn caster_of(&self, pipeline: DrawKey) -> DrawKey {
+        let faces = if pipeline.state & state_flags::CULL_NONE != 0 {
+            state_flags::CULL_NONE
+        } else {
+            state_flags::CULL_FRONT
+        };
+        DrawKey {
+            template: template::SHADOW_DEPTH,
+            permutation: 0,
+            vertex_format: pipeline.vertex_format,
+            state: faces,
+            bias: DepthBias::NONE,
+        }
+    }
+
+    /// The pipeline that draws an object with `pipeline` where it receives shadows: the same one,
+    /// reading the shadow maps where its shading reflects the lights. Custom materials light their
+    /// surfaces as the standard material does, so they receive shadows too.
+    pub fn receiving(&self, pipeline: DrawKey) -> DrawKey {
+        let lit = [template::INSTANCED_LIT, template::INSTANCED_STANDARD_MAPS];
+        if lit.contains(&pipeline.template) || pipeline.template >= template::CUSTOM_FIRST {
+            DrawKey {
+                permutation: pipeline.permutation | permutation::RECEIVE_SHADOWS,
+                ..pipeline
+            }
+        } else {
+            pipeline
+        }
     }
 
     /// The linear color behind every object. Exposure and tone mapping change it as they change
@@ -635,7 +804,8 @@ impl SceneSettings {
     /// frame from the mesh's tangents where the mesh has them. A
     /// material with vertex colors reads them only from a mesh that has them, a masked material
     /// draws with the shader variant that discards fragments, and a double-sided material culls no
-    /// faces. The material's depth options and depth bias set the pipeline's depth state.
+    /// faces. The material's depth options and depth bias set the pipeline's depth state, and a
+    /// blended material's blending sets its blend state, which draws it in the transparent pass.
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
             return None;
@@ -656,6 +826,7 @@ impl SceneSettings {
         let has = |bit: u32| features & bit != 0;
         let base_color = shading.reads_base_color();
         let vertex_colors = has(feature::VERTEX_COLORS) && format & vertex::COLOR != 0;
+        let masked = has(feature::ALPHA_MASK) && !has(feature::BLEND);
         let tangents = shading == Shading::StandardMaps
             && live(MapSlot::Normal)
             && format & vertex::TANGENT != 0;
@@ -663,15 +834,13 @@ impl SceneSettings {
         ((format & needs) == needs).then_some(DrawKey {
             template: shading.template(),
             permutation: bit(base_color && vertex_colors, permutation::VERTEX_COLOR)
-                | bit(
-                    base_color && has(feature::ALPHA_MASK),
-                    permutation::ALPHA_MASK,
-                )
+                | bit(base_color && masked, permutation::ALPHA_MASK)
                 | bit(tangents, permutation::VERTEX_TANGENT),
             vertex_format: format,
             state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
                 | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)
-                | bit(has(feature::NO_DEPTH_TEST), state_flags::NO_DEPTH_TEST),
+                | bit(has(feature::NO_DEPTH_TEST), state_flags::NO_DEPTH_TEST)
+                | blend_state(features),
             bias: self.materials.depth_bias(id),
         })
     }

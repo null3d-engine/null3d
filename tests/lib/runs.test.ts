@@ -27,6 +27,7 @@ import {
 	memorySummary,
 	NO_RESULT,
 	NONE_MISSING,
+	overloadPlan,
 	PLANS,
 	parityPlan,
 	STARTUP_RUNS,
@@ -197,9 +198,18 @@ describe('the checks plan', () => {
 		if (!quality) throw new Error('the plan lacks the quality page');
 		expect(quality.path).toBe('/tests/pages/quality.html');
 		const tablet = { coarsePointer: true, screenMinEdge: 834, deviceMemoryGB: null };
-		const result = (preset: string) => ({
+		const round = (preset: string, fps: number) => ({
+			preset,
+			presentedFps: 60,
+			completedFps: fps,
+		});
+		const result = (preset: string, rounds = [round(preset, 60)]) => ({
 			ok: true,
-			mode: { preset, crashedStarts: 0 },
+			mode: {
+				preset: rounds.at(-1)?.preset,
+				presetCheck: { from: preset, targetFps: 60, rounds },
+				crashedStarts: 0,
+			},
 			tier: 'webgpu',
 			hints: tablet,
 		});
@@ -211,10 +221,73 @@ describe('the checks plan', () => {
 		};
 		expect(judge(quality.check, result('medium'), NONE_MISSING, context)).toEqual([]);
 		expect(notes).toEqual([
-			'quality preset medium on webgpu for a tablet (coarse pointer, smaller screen edge 834 px, no memory reading, 0 crashed starts)',
+			'quality preset medium on webgpu for a tablet (coarse pointer, smaller screen edge 834 px, no memory reading, 0 crashed starts); the preset check measured medium at 60 frames per second, against a target of 60; medium runs',
 		]);
 		expect(judge(quality.check, result('high'), NONE_MISSING, context)).toEqual([
-			'the engine ran the high preset, where the chooser gives medium',
+			'the engine chose the high preset, where the chooser gives medium',
+		]);
+
+		// The heavy scene's page: the check must lower the chosen preset.
+		const heavy = overloadPlan().find((item) => item.id === 'preset-check');
+		if (!heavy) throw new Error('the plan lacks the preset check page');
+		expect(heavy.path).toBe('/tests/pages/quality.html?spheres=32768');
+		const lowered = result('medium', [round('medium', 20), round('low', 25)]);
+		expect(judge(heavy.check, lowered, NONE_MISSING, context)).toEqual([]);
+		expect(judge(heavy.check, result('medium'), NONE_MISSING, context)).toEqual([
+			'the check kept medium for a scene too heavy for the GPU',
+		]);
+		// A phone starts at Low, which the engine does not check.
+		const phone = {
+			...result('low'),
+			mode: { preset: 'low', presetCheck: null, crashedStarts: 0 },
+			hints: { ...tablet, screenMinEdge: 412 },
+		};
+		expect(judge(heavy.check, phone, NONE_MISSING, context)).toEqual([]);
+	});
+
+	it('checks the formats of KTX2 files on both GPU paths, and notes what each device got', () => {
+		const ktx2 = items.filter((item) => item.check.kind === 'ktx2');
+		expect(ktx2.map(({ id, path }) => [id, path])).toEqual([
+			['ktx2-webgpu', '/tests/pages/ktx2-files.html?gpu=webgpu'],
+			['ktx2-webgl2', '/tests/pages/ktx2-files.html?gpu=webgl2'],
+		]);
+		// A tablet's WebGL2 context with ASTC and ETC2: ETC1S data goes to ETC2, and UASTC to ASTC.
+		const texture = (format: string, size: number[], bytes: number, colorSpace = 'srgb') => ({
+			format,
+			colorSpace,
+			size,
+			bytes,
+		});
+		const result = (uastc: string) => ({
+			ok: true,
+			mode: { build: 'threaded', latency: 'pipelined', renderThread: 'render-worker' },
+			features: ['WEBGL_compressed_texture_astc', 'WEBGL_compressed_texture_etc'],
+			recorded: {
+				textures: [
+					texture('etc2-rgb8unorm', [64, 64, 1], 2744),
+					texture('etc2-rgb8unorm', [64, 64, 1], 2744),
+					texture(uastc, [64, 64, 1], 5488),
+					texture('rgba8unorm', [30, 20, 1], 3168, 'linear'),
+					texture('etc2-rgb8unorm', [64, 64, 1], 2048),
+				],
+				memoryBytes: 2744 * 2 + 5488 + 4 * 3168 + 2048,
+				codes: { broken: 'E1412', flipY: 'E1208', update: 'E1208' },
+			},
+		});
+		const notes: string[] = [];
+		const context = {
+			resultOf: () => undefined,
+			imageDir: '',
+			note: (text: string) => notes.push(text),
+		};
+		const [, webgl2] = ktx2;
+		if (!webgl2) throw new Error('the plan lacks the KTX2 page');
+		expect(judge(webgl2.check, result('astc-4x4-unorm'), NONE_MISSING, context)).toEqual([]);
+		expect(notes).toEqual([
+			'KTX2 on webgl2: ETC1S became etc2-rgb8unorm, UASTC astc-4x4-unorm (compressed families: astc, etc2)',
+		]);
+		expect(judge(webgl2.check, result('etc2-rgba8unorm'), NONE_MISSING, context)).toEqual([
+			'the formats are etc2-rgb8unorm, etc2-rgb8unorm, etc2-rgba8unorm, rgba8unorm, etc2-rgb8unorm, not etc2-rgb8unorm, etc2-rgb8unorm, astc-4x4-unorm, rgba8unorm, etc2-rgb8unorm',
 		]);
 	});
 

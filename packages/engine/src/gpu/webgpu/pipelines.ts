@@ -6,15 +6,22 @@
 
 import {
 	LAYOUT_CULL,
+	LAYOUT_DEPTH,
 	LAYOUT_FINAL,
 	LAYOUT_FRAME,
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_TEXTURES,
 	SIZE_INSTANCE_STRIDE,
+	STATE_BLEND,
+	STATE_BLEND_ADDITIVE,
+	STATE_BLEND_MULTIPLY,
+	STATE_BLEND_NORMAL,
+	STATE_CULL_FRONT,
 	STATE_CULL_NONE,
 	STATE_LINE_LIST,
 	STATE_NO_DEPTH_TEST,
 	STATE_NO_DEPTH_WRITE,
+	TEMPLATE_BACKGROUND,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_FINAL,
@@ -23,6 +30,7 @@ import {
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
+	TEMPLATE_SHADOW_DEPTH,
 	VERTEX_INSTANCE_LOCATION,
 } from '../../generated/gpu';
 import {
@@ -87,6 +95,26 @@ const INSTANCE_BUFFERS: GPUVertexBufferLayout[] = [
 	},
 ];
 
+/**
+ * The blend state of each blend mode, whose fragments write color premultiplied by alpha, as
+ * three.js blends with `premultipliedAlpha`: normal blending covers the target, additive blending
+ * adds light to it, and multiply blending tints it and keeps its alpha.
+ */
+const BLENDS: Readonly<Record<number, GPUBlendState>> = {
+	[STATE_BLEND_NORMAL]: {
+		color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
+		alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
+	},
+	[STATE_BLEND_ADDITIVE]: {
+		color: { srcFactor: 'one', dstFactor: 'one' },
+		alpha: { srcFactor: 'one', dstFactor: 'one' },
+	},
+	[STATE_BLEND_MULTIPLY]: {
+		color: { srcFactor: 'dst', dstFactor: 'one-minus-src-alpha' },
+		alpha: { srcFactor: 'zero', dstFactor: 'one' },
+	},
+};
+
 /** WebGPU's vertex formats of 32-bit floats, by float count. */
 const FLOAT_FORMATS: (GPUVertexFormat | undefined)[] = [
 	undefined,
@@ -141,19 +169,33 @@ export class Pipelines {
 		shaders: DeviceShaders,
 	) {
 		const fragment = GPUShaderStage.FRAGMENT;
-		this.defineLayout(LAYOUT_FRAME, 'frame', [
+		// The frame's constants and the material table, which depth-only pipelines read too.
+		const frameEntries: GPUBindGroupLayoutEntry[] = [
 			{
 				binding: 0,
 				visibility: GPUShaderStage.VERTEX | fragment,
 				buffer: { type: 'uniform' },
 			},
 			{ binding: 1, visibility: fragment, buffer: { type: 'read-only-storage' } },
+		];
+		this.defineLayout(LAYOUT_DEPTH, 'depth', frameEntries);
+		// The materials' custom values, the table of specular terms, then the shadow map, the
+		// sampler that compares depths in it, and its cascades.
+		this.defineLayout(LAYOUT_FRAME, 'frame', [
+			...frameEntries,
 			{
 				binding: 2,
 				visibility: GPUShaderStage.VERTEX | fragment,
 				texture: { sampleType: 'unfilterable-float' },
 			},
 			{ binding: 3, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
+			{
+				binding: 4,
+				visibility: fragment,
+				texture: { sampleType: 'depth', viewDimension: '2d-array' },
+			},
+			{ binding: 5, visibility: fragment, sampler: { type: 'comparison' } },
+			{ binding: 6, visibility: fragment, buffer: { type: 'uniform' } },
 		]);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
@@ -213,6 +255,7 @@ export class Pipelines {
 				[0, 1, 2, 3],
 				[LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS],
 			],
+			[TEMPLATE_SHADOW_DEPTH, 'shadow depth', shaders.shadow_depth, [0], [LAYOUT_DEPTH]],
 		] as const) {
 			this.defineTemplate(id, {
 				label: `mesh ${label}`,
@@ -228,6 +271,13 @@ export class Pipelines {
 			shader: shaders.final,
 			pipeline: 'main',
 			layouts: [LAYOUT_FINAL],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_BACKGROUND, {
+			label: 'background',
+			shader: shaders.background,
+			pipeline: 'main',
+			layouts: [LAYOUT_FRAME, LAYOUT_TEXTURES],
 			vertexBuffers: [],
 		});
 		if (DEV)
@@ -333,11 +383,16 @@ export class Pipelines {
 				buffers: vertexBuffers(t, vertexFormat, permutation),
 			},
 			fragment: colorFormat
-				? { module, entryPoint: entryPoints?.fragment, targets: [{ format: colorFormat }] }
+				? {
+						module,
+						entryPoint: entryPoints?.fragment,
+						targets: [{ format: colorFormat, blend: BLENDS[stateFlags & STATE_BLEND] }],
+					}
 				: undefined,
 			primitive: {
 				topology: stateFlags & STATE_LINE_LIST ? 'line-list' : 'triangle-list',
-				cullMode: stateFlags & STATE_CULL_NONE ? 'none' : 'back',
+				cullMode:
+					stateFlags & STATE_CULL_NONE ? 'none' : stateFlags & STATE_CULL_FRONT ? 'front' : 'back',
 				frontFace: 'ccw',
 			},
 			// Reversed depth: 1 at the near plane, 0 at the far plane. Without the depth test a surface

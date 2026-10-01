@@ -354,7 +354,8 @@ impl Compiler {
     /// Builds a full shader, a `@vertex` and a `@fragment` entry point, into the variants of the
     /// engine's mesh templates: for WebGPU, and for WebGL2 with and without the draw index of
     /// `WEBGL_multi_draw`, each with and without the tone mapping that `finish` applies on the
-    /// 8-bit path. Problems name the lines of the WGSL.
+    /// 8-bit path. The WebGPU builds also come with and without RECEIVE_SHADOWS, which the engine
+    /// asks for where an object receives shadows. Problems name the lines of the WGSL.
     fn compile_full_shader(
         &mut self,
         material: &MaterialSource,
@@ -386,7 +387,7 @@ impl Compiler {
                 "webgpu".to_owned(),
                 Variant {
                     defs: Vec::new(),
-                    permutations: vec!["TONE_MAP".to_owned()],
+                    permutations: vec!["TONE_MAP".to_owned(), "RECEIVE_SHADOWS".to_owned()],
                     targets: vec![Target::Wgsl],
                 },
             ),

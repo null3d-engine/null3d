@@ -3,24 +3,25 @@ id: api/textures
 title: Textures
 status: experimental
 since: "0.1"
-summary: "loadTexture options; fromData; fromImageBitmap; fromPass; cube maps."
+summary: "loadTexture options; KTX2 files; fromData; fromImageBitmap; fromPass; cube maps."
 ---
 
 # Textures
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture backgrounds, `textures.fromPass`, compressed textures such as KTX2 files, and cube maps are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `textures.fromPass` and cube maps are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
     file["An image file"] -->|"assets.loadTexture:<br/>downloaded and decoded<br/>outside the sketch's frames"| image["A decoded image<br/>(ImageBitmap)"]
     image -->|"textures.fromImageBitmap"| texture["A texture"]
+    ktx2["A KTX2 file"] -->|"assets.loadTexture:<br/>transcoded in a worker to<br/>the device's compressed format"| texture
     data["Texel data<br/>(typed array)"] -->|"textures.fromData"| texture
     texture -->|"uploads a band of rows per frame,<br/>within the frame's upload budget"| layer["A layer of a texture array<br/>on the GPU, with mip levels"]
 ```
 
-A texture is an image or a block of data on the GPU, which materials sample. A sketch makes textures in three ways:
+A texture is an image or a block of data on the GPU, which materials sample. The scene can also show a texture behind every object ([Scene](scene.md#the-camera-and-the-background)). A sketch makes textures in three ways:
 
-- `assets.loadTexture(url, options)` downloads an image file and decodes it into a texture. [Assets](assets.md) covers the loading calls.
+- `assets.loadTexture(url, options)` downloads an image file or a KTX2 file and decodes it into a texture. [Assets](assets.md) covers the loading calls.
 - `textures.fromImageBitmap(bitmap, options)` makes a texture from an image that is decoded already, such as a frame drawn on an `OffscreenCanvas`.
 - `textures.fromData({ width, height, depth, format, data })` makes a texture from numbers, four per texel.
 
@@ -66,6 +67,37 @@ Every call that makes a texture takes these options:
 
 An option that the engine does not know, such as `wrap: 'tile'` or `anisotropy: 32`, throws [E1208](../errors/E1208.md).
 
+## KTX2 files
+
+`assets.loadTexture` also loads KTX2 files of Basis Universal data, in ETC1S or UASTC, as `basisu` and `toktx` write them. The GPU keeps such a texture in a compressed format. It takes a quarter or an eighth of the GPU memory of `rgba8unorm`, and uploads that many fewer bytes.
+
+```ts
+const bricks = await assets.loadTexture('/tex/bricks.ktx2', { wrap: 'repeat' });
+console.log(bricks.format); // 'astc-4x4-unorm' on phones and tablets, 'bc7-rgba-unorm' on most desktop GPUs
+```
+
+The engine turns the file's data into the first format on its list that the device supports:
+
+| Data in the file | Formats, in order |
+| --- | --- |
+| UASTC | `astc-4x4-unorm`, `bc7-rgba-unorm`, `etc2-rgb8unorm` or `etc2-rgba8unorm`, `rgba8unorm` |
+| ETC1S | `etc2-rgb8unorm` or `etc2-rgba8unorm`, `bc7-rgba-unorm`, `astc-4x4-unorm`, `rgba8unorm` |
+
+- UASTC keeps the most detail in ASTC and BC7. ETC1S data is ETC1 data, which ETC2 takes as it is. Without alpha, ETC2 also takes half the memory of the other formats.
+- Phones and tablets have ASTC and ETC2. Desktop GPUs have BC7, and Macs with Apple chips have all three. A device with none gets `rgba8unorm`.
+- A texture whose width or height is not a multiple of 4 texels gets `rgba8unorm` too. WebGPU keeps compressed textures in whole blocks of 4 x 4 texels.
+- `texture.format` says which format the device got, and `texture.bytes` its GPU memory.
+
+A KTX2 file takes the texture options above, with these differences:
+
+- The texture has the mip levels that the file holds. The GPU cannot make mip levels of compressed texels, so encode the file with them, as `basisu -mipmap` and `toktx --genmipmap` do. `mipmaps: false` keeps level 0 alone.
+- The color space comes from the file, which `basisu` writes as sRGB unless you give it `-linear`. The `colorSpace` option overrides it.
+- The file's first row goes to v = 0, the bottom of a plane, as with three.js's `KTX2Loader`. glTF models expect that order. For a plane, encode the file flipped, as `basisu -y_flip` does. Compressed rows cannot turn over. So in development builds, `flipY: true` throws E1208, and so does `premultipliedAlpha: true`. A production build ignores both.
+- A KTX2 file of several layers makes a texture of several layers. Cube maps, 3D textures, UASTC HDR data and KTX2 files of other formats throw [E1412](../errors/E1412.md).
+- `texture.update` throws E1208 on a texture from a KTX2 file. Load the file again instead.
+
+The first KTX2 file starts the transcoder: a worker that runs the official build of Basis Universal. It downloads about 365 KB after Brotli, once. A page that loads no KTX2 file never downloads it. The worker transcodes outside the sketch's frames. A build copies the transcoder's files beside the engine's other files, and the host serves them all alike. When they do not download, the load throws [E1406](../errors/E1406.md).
+
 ## Images
 
 `textures.fromImageBitmap` uploads an image as it is: the image's first row goes to v = 0, the bottom of a plane. To make a texture that stands upright, as three.js shows it, decode the image with its rows flipped. `assets.loadImageBitmap` does so by default. `createImageBitmap` does so with `imageOrientation: 'flipY'`:
@@ -99,9 +131,9 @@ Data of the wrong length or type for the size and format throws E1208. Data text
 - An image may have another size, and the texture then takes that size. Images fill textures of one layer in `rgba8unorm`.
 - Data must fit the texture's size and format.
 
-Until the new texels are on the GPU, materials draw with their colors alone. For a texture that changes often, such as frames of a video, keep the images small: each update decodes and uploads a whole image.
+Until the new texels are on the GPU, materials draw with their colors alone. The scene shows its background color in place of a background texture. For a texture that changes often, such as frames of a video, keep the images small: each update decodes and uploads a whole image.
 
-`texture.destroy()` frees the texture's GPU memory. Materials that map it draw with their colors alone, and later calls on the texture throw [E1101](../errors/E1101.md).
+`texture.destroy()` frees the texture's GPU memory. Materials that map it draw with their colors alone, and the scene shows its background color in place of a background texture. Later calls on the texture throw [E1101](../errors/E1101.md).
 
 A texture's `width`, `height` and `depth` give its size, and `bytes` its GPU memory. Its `format`, `colorSpace` and `uvSet` say how it was made. The widest and tallest texture the device takes is `textures.maxSize`. The GPU memory of every texture array is `textures.memoryBytes`.
 
@@ -109,7 +141,7 @@ A texture's `width`, `height` and `depth` give its size, and `bytes` its GPU mem
 
 Textures of one size, one format and one number of mip levels share a 2D texture array on the GPU. Each texture takes one layer of the array. Materials whose maps are in one array share one bind group when they sample their maps the same way. The GPU then switches textures less often between draws.
 
-An array holds at most 256 layers, the most that an iPad allows. It starts with room for a few textures, and doubles its layers when it is full. The GPU copies the old array into the new one, so the textures that it holds keep their texels. When a size has more than 256 textures, a second array holds the rest. A texture from data with several layers has an array of its own, with exactly its layers.
+An array holds at most 256 layers, the most that an iPad allows. It starts with room for a few textures, and doubles its layers when it is full. The GPU copies the old array into the new one, so the textures that it holds keep their texels. When a size has more than 256 textures, a second array holds the rest. A texture from data with several layers has an array of its own, with exactly its layers. So does a texture in a compressed format, because WebGPU's compatibility mode cannot copy compressed texels into a larger array.
 
 Textures of many different sizes need many arrays. Give the textures of a scene a few common sizes where you can, such as 512 x 512 and 1024 x 1024. An update with an image of another size moves the texture to the array of that size.
 
@@ -119,13 +151,13 @@ A texture can be at most 4096 texels wide and tall, the most that every WebGPU d
 
 An image decodes off the main thread into an `ImageBitmap`, and then moves to the thread that draws without a copy. In the default pipelined mode, that thread is the render worker. Data goes into the engine's memory, which that thread reads.
 
-The engine spreads uploads over frames, so loading many textures does not make one frame slow. Each frame uploads no more texel bytes than the upload budget, the `uploadBytesPerFrame` setting of the [quality preset](../concepts/quality-presets.md#the-settings-of-each-preset). A large texture goes up in bands of rows, one band per frame. Textures upload in the order that they got their texels. The engine frees its copy of data once the upload is done.
+The engine spreads uploads over frames, so loading many textures does not make one frame slow. Each frame uploads no more texel bytes than the upload budget, the `uploadBytesPerFrame` setting of the [quality preset](../concepts/quality-presets.md#the-settings-of-each-preset). A large texture goes up in bands of rows, one band per frame. Textures upload in the order that they got their texels. The engine frees its copy of data once the upload is done. Texels from a KTX2 file go into the engine's memory as data does. They go up in bands of rows of blocks, each mip level in turn.
 
 Until its texels are on the GPU, a texture draws as if the material had no map. A material then shows its base color alone.
 
 ## Mip levels
 
-Mip levels are smaller copies of a texture. The GPU reads them where the texture covers few pixels on screen, so distant textures do not shimmer. The engine makes each texture's mip levels on the GPU, after its texels upload. Each level is the average of the level above it, in linear color. Textures in `rgba16float` have no mip levels.
+Mip levels are smaller copies of a texture. The GPU reads them where the texture covers few pixels on screen, so distant textures do not shimmer. The engine makes each texture's mip levels on the GPU, after its texels upload. Each level is the average of the level above it, in linear color. Textures in `rgba16float` have no mip levels. A texture from a KTX2 file has the mip levels of its file.
 
 ## Sampling
 
@@ -141,19 +173,31 @@ Color maps, such as the base color of a surface, store sRGB colors. The GPU turn
 
 ## GPU memory
 
-A texture takes the GPU memory of its layers, with every mip level. The mip levels add a third to the image: a texture of 1024 x 1024 texels, at 4 bytes each, takes about 5.3 MiB. An `rgba16float` texel takes 8 bytes. An array also holds its free layers, so a half-full array costs as much as a full one.
+A texture takes the GPU memory of its layers, with every mip level. The mip levels add a third to the image: a texture of 1024 x 1024 texels, at 4 bytes each, takes about 5.3 MiB. An `rgba16float` texel takes 8 bytes. A compressed texel takes 1 byte, or half a byte in `etc2-rgb8unorm`. The same texture from a KTX2 file then takes about 1.3 MiB or 0.7 MiB. An array also holds its free layers, so a half-full array costs as much as a full one.
 
 ## Both GPU paths
 
-WebGPU and WebGL2 store, upload and sample textures the same way, and make the same mip levels. They draw the same images.
+WebGPU and WebGL2 store, upload and sample textures the same way, and make the same mip levels. They draw the same images. A compressed format needs its WebGPU feature or its WebGL2 extension, which the engine asks for by name: `WEBGL_compressed_texture_astc`, `EXT_texture_compression_bptc` and `WEBGL_compressed_texture_etc`.
 
 ## When the browser takes the GPU away
 
-The engine keeps no copy of an image or of data once its upload is done, which saves memory. When the browser takes the GPU away, the engine starts a new device and uploads the texels that it still holds. A texture whose texels it released draws without its map until the texture gets an update.
+The engine keeps no copy of an image or of data once its upload is done, which saves memory. When the browser takes the GPU away, the engine starts a new device and uploads the texels that it still holds. A texture whose texels it released draws without its map until the texture gets an update. A texture from a KTX2 file takes no update, so load the file again for a new texture.
 
 ## API reference
 
 <!-- null3d:api:start -->
+
+### `CompressedTextureFormat`
+
+```ts
+type CompressedTextureFormat =
+	| 'astc-4x4-unorm'
+	| 'bc7-rgba-unorm'
+	| 'etc2-rgb8unorm'
+	| 'etc2-rgba8unorm';
+```
+
+A compressed format, which stores blocks of 4 x 4 texels in a quarter or an eighth of the GPU memory of `rgba8unorm`. A texture from a KTX2 file takes the one that the device supports: `astc-4x4-unorm`, `bc7-rgba-unorm`, `etc2-rgb8unorm` without alpha or `etc2-rgba8unorm` with it. The names are WebGPU's, and a texture's `colorSpace` says whether sampling decodes sRGB.
 
 ### `Texture`
 
@@ -164,13 +208,13 @@ A texture: an image or data on the GPU, which materials sample. Its texels uploa
 | Member | Description |
 | --- | --- |
 | `readonly depth: number` | Layers: 1, or more for a texture from data with a depth. |
-| `readonly format: TextureFormat` | How the texture stores its texels on the GPU. |
+| `readonly format: TextureFormat \| CompressedTextureFormat` | How the texture stores its texels on the GPU. A texture from a KTX2 file has the compressed format that the device supports, or `rgba8unorm` where it supports none. |
 | `readonly colorSpace: TextureColorSpace` | Whether sampling turns the texels from sRGB into linear values, or reads them as they are. |
 | `readonly uvSet: 0 \| 1` | The set of texture coordinates that materials read the texture at. |
 | `readonly width: number` | Texels in each row. An update with an image of another size changes it. |
 | `readonly height: number` | Rows in each layer. An update with an image of another size changes it. |
 | `readonly bytes: number` | The GPU bytes of the texture: its layers, with every mip level. |
-| `update(source: ImageBitmap \| TextureDataArray): void` | Gives the texture new texels, which upload in their turn. An image may have another size, and the texture then takes that size; the image moves to the thread that draws, so this thread can use it no more. Data must fit the texture's size and format. Until the new texels are on the GPU, materials draw with their colors alone. |
+| `update(source: ImageBitmap \| TextureDataArray): void` | Gives the texture new texels, which upload in their turn. An image may have another size, and the texture then takes that size; the image moves to the thread that draws, so this thread can use it no more. Data must fit the texture's size and format. Until the new texels are on the GPU, materials draw with their colors alone. A texture from a KTX2 file takes no updates, and throws E1208: load the file again. |
 | `destroy(): void` | Frees the texture's GPU memory. Materials that map it draw with their colors alone. Calls on the texture after this throw E1101. |
 
 ### `TextureColorSpace`

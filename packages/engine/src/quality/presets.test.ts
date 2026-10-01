@@ -7,7 +7,9 @@ import {
 	checkSettings,
 	describeValues,
 	LIVE_SETTINGS,
+	lowered,
 	MIB,
+	presetArgument,
 	presetOption,
 	presetSettings,
 	presetValue,
@@ -265,5 +267,33 @@ describe('presetOption', () => {
 			`E1213: createEngine() got the preset "Ultra", which is not 'auto', 'low', 'medium', 'high' or 'ultra'.`,
 		);
 		for (const bad of ['epic', '', 2, null]) expect(() => presetOption(bad)).toThrow('E1213');
+	});
+});
+
+describe('presetArgument', () => {
+	it('takes the name of a preset, and refuses auto and any other value with E1213', () => {
+		for (const preset of QUALITY_PRESETS) expect(presetArgument(preset)).toBe(preset);
+		expect(() => presetArgument('auto')).toThrow(
+			`E1213: quality.setPreset() got the preset "auto", which is not 'low', 'medium', 'high' or 'ultra'.`,
+		);
+		for (const bad of ['Ultra', '', 2, null, undefined])
+			expect(() => presetArgument(bad)).toThrow('E1213');
+	});
+});
+
+describe('LIVE_SETTINGS', () => {
+	it('holds the settings that change during play, which quality.set takes', () => {
+		for (const name of LIVE_SETTINGS) expect(QUALITY_SETTINGS[name].changes).toBe('live');
+		for (const name of SKETCH_SETTINGS)
+			if (QUALITY_SETTINGS[name].changes === 'live') expect(LIVE_SETTINGS).toContain(name);
+	});
+});
+
+describe('lowered', () => {
+	it('lowers a preset by a number of steps, down to Low', () => {
+		expect(lowered('ultra', 1)).toBe('high');
+		expect(lowered('medium', 1)).toBe('low');
+		expect(lowered('low', 1)).toBe('low');
+		expect(lowered('high', 5)).toBe('low');
 	});
 });

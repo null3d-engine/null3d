@@ -130,7 +130,7 @@ const DOCS = {
 	E1208: {
 		title: 'Invalid texture',
 		cause:
-			"A call that makes or updates a texture received something it cannot use. It can be an option the engine does not know, or an image without pixels or larger than the device takes. It can also be data that does not fit the texture's size and format.",
+			"A call that makes or updates a texture received something it cannot use. It can be an option the engine does not know, or an image without pixels or larger than the device takes. It can also be data that does not fit the texture's size and format. With a KTX2 file, it can be an option that the file cannot take, or an update of its texture.",
 		example:
 			'E1208: textures.fromData() got 12 numbers for 2 x 2 x 1 texels, not 16: give four per texel.',
 		since: '0.1',
@@ -168,8 +168,8 @@ const DOCS = {
 	E1217: {
 		title: 'Invalid material option',
 		cause:
-			'A material factory received a value that one of its options does not take, such as an alpha mode that the engine does not know.',
-		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque' or 'mask'.`,
+			'A material factory received an option value that it does not take, such as an unknown alpha mode or blending.',
+		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		since: '0.1',
 	},
 	E1301: {
@@ -227,9 +227,9 @@ const DOCS = {
 		since: '0.1',
 	},
 	E1406: {
-		title: 'Engine core not downloaded',
+		title: 'Engine file not downloaded',
 		cause:
-			'A file of the engine core did not download whole: the server answered with an error, or the connection broke off.',
+			'A file of the engine core, or of the KTX2 transcoder that the first KTX2 file loads, did not download whole. The server answered with an error, or the connection broke off.',
 		example: 'E1406: /assets/null3d_memory-3f9c1a2b.json did not download: HTTP 404.',
 		since: '0.1',
 	},
@@ -275,7 +275,7 @@ const DOCS = {
 	E1412: {
 		title: 'Asset not decoded',
 		cause:
-			'A loading call downloaded its file but could not read it. The browser could not decode the image, as with a format it does not support, or the file was not valid JSON.',
+			'A loading call downloaded its file but could not read it. The browser could not decode the image, as with a format it does not support. Or the file was a KTX2 file that the engine does not load, or not valid JSON.',
 		example:
 			'E1412: assets.loadTexture() could not decode https://example.com/tex/brick.tga as an image: The source image could not be decoded.',
 		since: '0.1',

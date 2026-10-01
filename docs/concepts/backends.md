@@ -18,7 +18,7 @@ flowchart TD
     adapter -- "no" --> gl["WebGL2"]
 ```
 
-null3D draws with WebGPU where the browser offers it, and with WebGL2 everywhere else. The same sketch code runs on both, with no backend checks in it. The engine picks the tier once, at startup, from feature tests. It tests the thread that will draw: where a worker draws, the engine picks the best tier that the worker can use. After two starts in a row that crashed the tab on WebGPU, the engine starts on WebGL2. A page that names a GPU path keeps it ([Quality presets](quality-presets.md#starts-that-crashed-the-tab)).
+null3D draws with WebGPU where the browser offers it, and with WebGL2 everywhere else. The same sketch code runs on both, with no backend checks in it. The engine picks the tier once, at startup, from feature tests. It tests the thread that will draw: where a worker draws, the engine picks the best tier that the worker can use. Where no worker can draw, the page draws in pipelined mode, even when the page asks for low latency ([Architecture](architecture.md#where-the-sketch-runs)). After two starts in a row that crashed the tab on WebGPU, the engine starts on WebGL2. A page that names a GPU path keeps it ([Quality presets](quality-presets.md#starts-that-crashed-the-tab)).
 
 ## The three tiers
 
@@ -148,6 +148,8 @@ On WebGL2, uploads read straight from the engine's shared memory. A browser that
 On WebGL2, the engine compiles shader programs in the background where the browser has the `KHR_parallel_shader_compile` extension. The switch `?compile=wait` makes it wait for each compile at the program's first draw instead, as a browser without the extension does.
 
 The switch `?depth=` forces a WebGL2 depth mode: `reversed`, `reversed-gl` or `standard`, which draws depth as three.js's WebGL renderer does by default. A browser without `EXT_clip_control` cannot draw `reversed`, so it draws its own mode instead.
+
+KTX2 textures take the compressed format of the first family that the device has: ASTC, BC7 or ETC2 by the file's data ([Textures](../api/textures.md#ktx2-files)). The switch `?compression=` keeps them to the families that it lists, such as `?compression=bc`, or to none with `?compression=none`. One device can then test the format of each kind of device.
 
 ## When the GPU goes away
 

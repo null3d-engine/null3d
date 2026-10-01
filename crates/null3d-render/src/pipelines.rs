@@ -11,7 +11,7 @@
 //! formats and the sample count of its targets, and the permutation bits that it sets for every
 //! pipeline in it.
 
-use null3d_gpu::drawlist::{DrawList, Op};
+use null3d_gpu::drawlist::{DrawList, Op, permutation, state_flags};
 
 use crate::frame::RecordError;
 
@@ -94,6 +94,18 @@ pub struct PassTargets {
     pub permutation: u32,
 }
 
+impl PassTargets {
+    /// The same targets for a shader that reads no draw index, such as a pass's own triangles or
+    /// lines: of the pass's bits, only tone mapping on the 8-bit path stays, as scene shaders
+    /// apply it.
+    pub(crate) const fn tone_map_only(self) -> PassTargets {
+        PassTargets {
+            permutation: self.permutation & permutation::TONE_MAP,
+            ..self
+        }
+    }
+}
+
 /// What a mesh and material pair decides about the pipeline that draws it: the template of the
 /// material's shading, the permutation bits of the pair's features, the mesh's vertex format, and
 /// the material's state flags and depth bias. Its order is the order in which builders sort their
@@ -108,6 +120,11 @@ pub struct DrawKey {
 }
 
 impl DrawKey {
+    /// True when the pair blends, so it draws back to front in the transparent pass.
+    pub const fn blends(self) -> bool {
+        self.state & state_flags::BLEND != 0
+    }
+
     /// The key of the pipeline that draws the pair in a pass with these targets.
     pub const fn in_pass(self, targets: PassTargets) -> PipelineKey {
         PipelineKey {

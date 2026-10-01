@@ -6,6 +6,7 @@
 // development builds define the template of the debug lines, so release builds hold none of it.
 
 import {
+	TEMPLATE_BACKGROUND,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_FINAL,
 	TEMPLATE_INSTANCED_LIT,
@@ -102,6 +103,8 @@ export interface Pipeline {
 	readonly depthWrite: boolean;
 	/** True when every fragment passes the depth test. */
 	readonly depthAlways: boolean;
+	/** The blend mode: a `STATE_BLEND_*` flag, or 0 for none. */
+	readonly blend: number;
 	/** GL's polygon offset for the backend's depth mode: its factor and its units. */
 	readonly offsetFactor: number;
 	readonly offsetUnits: number;
@@ -122,6 +125,7 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = { shader: shaders.unlit_map, pipeline: 'main' };
 	templates[TEMPLATE_INSTANCED_STANDARD_MAPS] = { shader: shaders.standard_maps, pipeline: 'main' };
 	templates[TEMPLATE_FINAL] = { shader: shaders.final, pipeline: 'main' };
+	templates[TEMPLATE_BACKGROUND] = { shader: shaders.background, pipeline: 'main' };
 	if (DEV)
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,

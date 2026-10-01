@@ -5,9 +5,12 @@ import {
 	MAP_SLOT_BASE_COLOR,
 	MAP_SLOT_LIGHT,
 	MAP_SLOT_NORMAL,
+	MATERIAL_FEATURE_ADDITIVE,
 	MATERIAL_FEATURE_ALPHA_MASK,
+	MATERIAL_FEATURE_BLEND,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
+	MATERIAL_FEATURE_MULTIPLY,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
@@ -271,6 +274,20 @@ describe('Material.set', () => {
 		]);
 	});
 
+	test('passes the blend alpha mode with each blending', () => {
+		const { features, materials } = fakeCore();
+		materials.standard({ alphaMode: 'blend' });
+		materials.unlit({ alphaMode: 'blend', blending: 'additive', depthWrite: false });
+		materials.unlit({ alphaMode: 'blend', blending: 'multiply' });
+		materials.unlit({ alphaMode: 'blend', blending: 'normal' });
+		expect(features).toEqual([
+			MATERIAL_FEATURE_BLEND,
+			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_ADDITIVE | MATERIAL_FEATURE_NO_DEPTH_WRITE,
+			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_MULTIPLY,
+			MATERIAL_FEATURE_BLEND,
+		]);
+	});
+
 	test('maps go into their slots, on the coordinates of their texture', () => {
 		const { maps, shadings, materials } = fakeCore();
 		materials.standard({ map: texture(5), normalMap: texture(6), lightMap: texture(7, 1) });
@@ -360,7 +377,14 @@ describe('Material.set', () => {
 		);
 		expect(mode.code).toBe('E1217');
 		expect(mode.message).toStartWith(
-			`E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque' or 'mask'.`,
+			`E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
+		);
+		const blending = thrown(() =>
+			materials.unlit({ alphaMode: 'blend', blending: 'screen' as unknown as 'normal' }),
+		);
+		expect(blending.code).toBe('E1217');
+		expect(blending.message).toStartWith(
+			`E1217: materials.unlit() got the blending "screen"; it takes 'normal', 'additive' or 'multiply'.`,
 		);
 		const bias = thrown(() => materials.unlit({ depthBias: { slopeScale: Number.NaN } }));
 		expect(bias.code).toBe('E1203');

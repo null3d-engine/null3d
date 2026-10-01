@@ -62,11 +62,11 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Static and dynamic objects](concepts/static-dynamic.md) | When to mark objects static; setters versus direct array writes; dirty ranges. | experimental | 0.1 |
 | [Instances and batching](concepts/instances.md) | createInstances; typed-array views; markDirty; automatic batching; per-instance attributes. | experimental | 0.1 |
 | [GPU tiers and backends](concepts/backends.md) | WebGPU core, compatibility mode and WebGL2; color, anti-aliasing and depth on each tier; capability flags; the portable budget; never branching on GPU names. | experimental | 0.1 |
-| [Quality presets, dynamic resolution and frame budgets](concepts/quality-presets.md) | Low to Ultra; pixel-ratio caps; the frame-budget governor; quality events for sketch code. | experimental | 0.1 |
+| [Quality presets, dynamic resolution and frame budgets](concepts/quality-presets.md) | Low to Ultra; pixel-ratio caps; the preset check; switching presets; the frame-budget governor; quality events for sketch code. | experimental | 0.1 |
 | [Color management](concepts/color-management.md) | Linear working space; sRGB hex colors and linear arrays; texture color spaces; HDR color; exposure and tone mapping; transparent canvases; parity with three.js. | experimental | 0.1 |
 | [Materials and pipelines](concepts/materials.md) | Built-in materials; permutations; pipeline warm-up; why changing shader features can stall a frame. | experimental | 0.1 |
 | [Lighting and environment](concepts/lighting.md) | Light types and units; clustered lighting; fog; environment maps and spherical harmonics. | experimental | 0.1 |
-| [Shadows](concepts/shadows.md) | Cascades; update rates; filtering per preset; bias settings. | planned | 0.1 |
+| [Shadows](concepts/shadows.md) | Cascades; update rates; filtering per preset; bias settings. | experimental | 0.1 |
 | [Render layers](concepts/render-layers.md) | 32-bit layer masks that choose which cameras draw which objects and instance batches. | experimental | 0.1 |
 | [The render graph](concepts/render-graph.md) | Declared reads and writes; automatic order; transient memory; validation errors; the text dump. | experimental | 0.1 |
 | [Large worlds and precision](concepts/large-worlds.md) | Cell-relative positions and per-frame camera-to-cell offsets; reversed depth; largeWorld mode; batch origins; floating-origin geometry. | planned | 0.2 |
@@ -87,7 +87,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Lights](api/lights.md) | Directional, point, spot, hemisphere and ambient lights; shadow options. | experimental | 0.1 |
 | [Geometry](api/geometry.md) | Generators with three.js parameters; meshes from arrays; vertex formats; large meshes. | experimental | 0.1 |
 | [Materials](api/materials.md) | standard, unlit, shader, shadowCatcher; every option. | experimental | 0.1 |
-| [Textures](api/textures.md) | loadTexture options; fromData; fromImageBitmap; fromPass; cube maps. | experimental | 0.1 |
+| [Textures](api/textures.md) | loadTexture options; KTX2 files; fromData; fromImageBitmap; fromPass; cube maps. | experimental | 0.1 |
 | [Assets](api/assets.md) | loadTexture, loadImageBitmap, loadJson, loadBinary, preload, onProgress; glTF models and environments. | experimental | 0.1 |
 | [Animation](api/animation.md) | The animator; play, crossFade, layers, events; morph weights. | planned | 0.2 |
 | [Raycasting and spatial queries](api/raycast.md) | raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects. | planned | 0.2 |
@@ -95,7 +95,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Camera controls (@null3d/controls)](api/controls.md) | Orbit and map controls (0.1); fly and first-person controls (0.2). | experimental | 0.1 |
 | [Post-processing API](api/post.md) | post.set for tone mapping and exposure; the effects and post.addEffect of 0.2. | experimental | 0.1 |
 | [Render graph API](api/render.md) | render.addPass declarations; enabling and disabling passes; dumpGraph. | planned | 0.2 |
-| [Quality API](api/quality.md) | quality.preset, quality.set, frame budgets, quality events. | experimental | 0.1 |
+| [Quality API](api/quality.md) | quality.preset, quality.set, quality.setPreset, the preset check, frame budgets, quality events. | experimental | 0.1 |
 | [Debug drawing and stats](api/debug.md) | debug.line, box, sphere, arrow, axes, grid, frustum and light; engine.measure and its figures; debug.view; debug.stats. | experimental | 0.1 |
 | [Math helpers](api/math.md) | vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds. | experimental | 0.1 |
 | [Time](api/time.md) | dt, time.now, fixed steps. | experimental | 0.1 |
@@ -113,7 +113,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Phones and tablets](guides/phones.md) | Pixel-ratio caps; memory budgets; heat; testing on real devices. | experimental | 0.1 |
 | [Custom shaders](guides/custom-shaders.md) | WGSL in sketch code; shader errors; surface functions; full shaders; uniforms and typed materials; hot reload. | experimental | 0.1 |
 | [Custom passes and render targets](guides/custom-passes.md) | Declaring passes; reading and writing named textures; layer masks. | planned | 0.2 |
-| [Loading screens and warm-up](guides/loading-screens.md) | preload; onProgress; scene.warmUp; upload budgets. | experimental | 0.1 |
+| [Loading screens and warm-up](guides/loading-screens.md) | preload; onProgress; scene.warmUp; the preset check; upload budgets; switching presets behind a loading screen. | experimental | 0.1 |
 | [Accessibility](guides/accessibility.md) | What the canvas tells assistive technology; keyboard use; reduced motion; pausing; loading and errors. | experimental | 0.1 |
 | [3D scenes on content pages](guides/content-pages.md) | Product and marketing pages: the fallback page, a load deadline, pausing off screen, scroll-driven cameras, second visits and crashes. | experimental | 0.1 |
 | [UI, HTML overlays and labels](guides/ui-overlays.md) | HTML UI on the page; labels that follow objects; GUI panels. | planned | 0.2 |
@@ -175,12 +175,12 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1205: Unknown input name](errors/E1205.md) | An input call received a name that no key, button or action has, or `input.actions.define()` received an action name that a key or button already has. Names are case-sensitive: `KeyW` is the W key, and `keyW` names nothing. | generated | 0.1 |
 | [E1206: Invalid mesh arrays](errors/E1206.md) | geometry.fromArrays() received arrays that make no mesh. An array can have the wrong length for the vertex count, an index can name no vertex, or a value can be NaN or Infinity. Normals can also be missing, or both given and computed. | generated | 0.1 |
 | [E1207: Invalid layer mask](errors/E1207.md) | A call that sets layers received a number that is not a 32-bit layer mask: a fraction, NaN, or a number past 32 bits. | generated | 0.1 |
-| [E1208: Invalid texture](errors/E1208.md) | A call that makes or updates a texture received something it cannot use. It can be an option the engine does not know, or an image without pixels or larger than the device takes. It can also be data that does not fit the texture's size and format. | generated | 0.1 |
+| [E1208: Invalid texture](errors/E1208.md) | A call that makes or updates a texture received something it cannot use. It can be an option the engine does not know, or an image without pixels or larger than the device takes. It can also be data that does not fit the texture's size and format. With a KTX2 file, it can be an option that the file cannot take, or an update of its texture. | generated | 0.1 |
 | [E1213: Invalid setting](errors/E1213.md) | A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, and a negative exposure. | generated | 0.1 |
 | [E1214: Invalid sketch option](errors/E1214.md) | defineSketch() received an option out of its range. fixedRate must be a number above 0, and maxFixedSteps a whole number of 1 or more. The engine checks the options before it runs the setup function. | generated | 0.1 |
 | [E1215: Invalid custom material WGSL](errors/E1215.md) | materials.shader() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function or a vertex offset. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh. | generated | 0.1 |
 | [E1216: Invalid uniform](errors/E1216.md) | A custom material's uniforms did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too. | generated | 0.1 |
-| [E1217: Invalid material option](errors/E1217.md) | A material factory received a value that one of its options does not take, such as an alpha mode that the engine does not know. | generated | 0.1 |
+| [E1217: Invalid material option](errors/E1217.md) | A material factory received an option value that it does not take, such as an unknown alpha mode or blending. | generated | 0.1 |
 | [E1301: No usable GPU path](errors/E1301.md) | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. | generated | 0.1 |
 | [E1302: GPU lost](errors/E1302.md) | The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash, and the engine could not carry on. No new GPU device started, or the GPU was lost more than twice within a minute. The engine stopped drawing. | generated | 0.1 |
 | [E1303: WebAssembly SIMD missing](errors/E1303.md) | The browser runs WebAssembly without SIMD, which the engine's core needs. | generated | 0.1 |
@@ -189,13 +189,13 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1403: Engine core not ready](errors/E1403.md) | An engine call ran before the engine core started in this worker, or the core started twice. | generated | 0.1 |
 | [E1404: Engine thread failed](errors/E1404.md) | An engine thread hit an error it could not handle after the engine started, so the engine may have stopped. | generated | 0.1 |
 | [E1405: Engine thread did not start](errors/E1405.md) | An engine worker failed while the engine started. The worker's script, the engine core or the renderer did not start there, or the sketch's setup function threw an error without an engine code. | generated | 0.1 |
-| [E1406: Engine core not downloaded](errors/E1406.md) | A file of the engine core did not download whole: the server answered with an error, or the connection broke off. | generated | 0.1 |
+| [E1406: Engine file not downloaded](errors/E1406.md) | A file of the engine core, or of the KTX2 transcoder that the first KTX2 file loads, did not download whole. The server answered with an error, or the connection broke off. | generated | 0.1 |
 | [E1407: Invalid hold time](errors/E1407.md) | The ?hold= switch or the hold option of createEngine gave a hold time that is not a number of seconds from 0 to 600. | generated | 0.1 |
 | [E1408: Hold failed](errors/E1408.md) | The sketch or the engine failed in hold mode, before the engine read the held frame back. A live engine logs an error in the sketch and carries on. Hold mode stops at the first one, so a test fails at once. | generated | 0.1 |
 | [E1409: Invalid memory maximum](errors/E1409.md) | The memory option of createEngine asked for a maximum that is not a whole number of MiB from 256 to 4096. | generated | 0.1 |
 | [E1410: Sketch module not loaded](errors/E1410.md) | The sketch module that createEngine got did not load. It did not download, or its code threw an error while the module loaded. | generated | 0.1 |
 | [E1411: Asset not downloaded](errors/E1411.md) | A loading call could not download its file. The server answered with an error, such as 404 for a missing file, or the network failed. | generated | 0.1 |
-| [E1412: Asset not decoded](errors/E1412.md) | A loading call downloaded its file but could not read it. The browser could not decode the image, as with a format it does not support, or the file was not valid JSON. | generated | 0.1 |
+| [E1412: Asset not decoded](errors/E1412.md) | A loading call downloaded its file but could not read it. The browser could not decode the image, as with a format it does not support. Or the file was a KTX2 file that the engine does not load, or not valid JSON. | generated | 0.1 |
 | [E1413: Asset from another origin blocked](errors/E1413.md) | A loading call could not read a file from another origin. The browser reads such a file only when its server allows the page's origin with an Access-Control-Allow-Origin header. The browser gives no reason, so the server may also have been unreachable. | generated | 0.1 |
 | [E1414: Frame not captured](errors/E1414.md) | engine.capture() could not give an image of a frame. The engine had stopped, or the thread that draws could not read the frame back from the GPU or encode it. | generated | 0.1 |
 | [E1415: Page thread already runs a sketch](errors/E1415.md) | createEngine() was asked to run a sketch on the page's thread while another engine still runs its sketch there. The page's copy of the engine core serves one engine at a time. This happens with sketchThread: 'main', and in the single-threaded build, which runs every sketch on the page's thread. | generated | 0.1 |
