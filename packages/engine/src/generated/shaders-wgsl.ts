@@ -2370,7 +2370,6 @@ const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const NO_FOG: u32 = 4u;
-const MAP_PREMULTIPLIED_FLAG: u32 = 8u;
 const MAP_LINEAR_FLAG: u32 = 16u;
 const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
@@ -2497,22 +2496,22 @@ fn straight_texel(m_1: Material, texel: vec4<f32>) -> vec4<f32> {
     var local: bool;
 
     let flags_1 = u32(m_1.strengths.z);
-    if !(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u)) {
+    if !(((flags_1 & 10u) != 10u)) {
         local = (texel.w <= 0f);
     } else {
         local = true;
     }
-    let _e16 = local;
-    if _e16 {
+    let _e15 = local;
+    if _e15 {
         return texel;
     }
     if ((flags_1 & MAP_LINEAR_FLAG) != 0u) {
         return vec4<f32>(min((texel.xyz / vec3(texel.w)), vec3(1f)), texel.w);
     }
-    let _e31 = linear_to_srgb(texel.xyz);
-    let encoded = min((_e31 / vec3(texel.w)), vec3(1f));
-    let _e38 = srgb_to_linear(encoded);
-    return vec4<f32>(_e38, texel.w);
+    let _e30 = linear_to_srgb(texel.xyz);
+    let encoded = min((_e30 / vec3(texel.w)), vec3(1f));
+    let _e37 = srgb_to_linear(encoded);
+    return vec4<f32>(_e37, texel.w);
 }
 
 fn fragment_color(m_2: Material, color: vec3<f32>, alpha_1: f32) -> vec4<f32> {
@@ -2947,7 +2946,6 @@ const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const NO_FOG: u32 = 4u;
-const MAP_PREMULTIPLIED_FLAG: u32 = 8u;
 const MAP_LINEAR_FLAG: u32 = 16u;
 const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
@@ -3074,22 +3072,22 @@ fn straight_texel(m_1: Material, texel: vec4<f32>) -> vec4<f32> {
     var local: bool;
 
     let flags_1 = u32(m_1.strengths.z);
-    if !(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u)) {
+    if !(((flags_1 & 10u) != 10u)) {
         local = (texel.w <= 0f);
     } else {
         local = true;
     }
-    let _e16 = local;
-    if _e16 {
+    let _e15 = local;
+    if _e15 {
         return texel;
     }
     if ((flags_1 & MAP_LINEAR_FLAG) != 0u) {
         return vec4<f32>(min((texel.xyz / vec3(texel.w)), vec3(1f)), texel.w);
     }
-    let _e31 = linear_to_srgb(texel.xyz);
-    let encoded = min((_e31 / vec3(texel.w)), vec3(1f));
-    let _e38 = srgb_to_linear(encoded);
-    return vec4<f32>(_e38, texel.w);
+    let _e30 = linear_to_srgb(texel.xyz);
+    let encoded = min((_e30 / vec3(texel.w)), vec3(1f));
+    let _e37 = srgb_to_linear(encoded);
+    return vec4<f32>(_e37, texel.w);
 }
 
 fn fragment_color(m_2: Material, color: vec3<f32>, alpha_1: f32) -> vec4<f32> {
@@ -3531,7 +3529,6 @@ const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const NO_FOG: u32 = 4u;
-const MAP_PREMULTIPLIED_FLAG: u32 = 8u;
 const MAP_LINEAR_FLAG: u32 = 16u;
 const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
@@ -3663,22 +3660,22 @@ fn straight_texel(m_1: Material, texel: vec4<f32>) -> vec4<f32> {
     var local: bool;
 
     let flags_1 = u32(m_1.strengths.z);
-    if !(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u)) {
+    if !(((flags_1 & 10u) != 10u)) {
         local = (texel.w <= 0f);
     } else {
         local = true;
     }
-    let _e16 = local;
-    if _e16 {
+    let _e15 = local;
+    if _e15 {
         return texel;
     }
     if ((flags_1 & MAP_LINEAR_FLAG) != 0u) {
         return vec4<f32>(min((texel.xyz / vec3(texel.w)), vec3(1f)), texel.w);
     }
-    let _e31 = linear_to_srgb(texel.xyz);
-    let encoded = min((_e31 / vec3(texel.w)), vec3(1f));
-    let _e38 = srgb_to_linear(encoded);
-    return vec4<f32>(_e38, texel.w);
+    let _e30 = linear_to_srgb(texel.xyz);
+    let encoded = min((_e30 / vec3(texel.w)), vec3(1f));
+    let _e37 = srgb_to_linear(encoded);
+    return vec4<f32>(_e37, texel.w);
 }
 
 fn fragment_color(m_2: Material, color: vec3<f32>, alpha_1: f32) -> vec4<f32> {
@@ -4111,7 +4108,6 @@ const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const NO_FOG: u32 = 4u;
-const MAP_PREMULTIPLIED_FLAG: u32 = 8u;
 const MAP_LINEAR_FLAG: u32 = 16u;
 const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
@@ -4238,22 +4234,22 @@ fn straight_texel(m_1: Material, texel: vec4<f32>) -> vec4<f32> {
     var local: bool;
 
     let flags_1 = u32(m_1.strengths.z);
-    if !(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u)) {
+    if !(((flags_1 & 10u) != 10u)) {
         local = (texel.w <= 0f);
     } else {
         local = true;
     }
-    let _e16 = local;
-    if _e16 {
+    let _e15 = local;
+    if _e15 {
         return texel;
     }
     if ((flags_1 & MAP_LINEAR_FLAG) != 0u) {
         return vec4<f32>(min((texel.xyz / vec3(texel.w)), vec3(1f)), texel.w);
     }
-    let _e31 = linear_to_srgb(texel.xyz);
-    let encoded = min((_e31 / vec3(texel.w)), vec3(1f));
-    let _e38 = srgb_to_linear(encoded);
-    return vec4<f32>(_e38, texel.w);
+    let _e30 = linear_to_srgb(texel.xyz);
+    let encoded = min((_e30 / vec3(texel.w)), vec3(1f));
+    let _e37 = srgb_to_linear(encoded);
+    return vec4<f32>(_e37, texel.w);
 }
 
 fn fragment_color(m_2: Material, color: vec3<f32>, alpha_1: f32) -> vec4<f32> {
@@ -4695,7 +4691,6 @@ const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const NO_FOG: u32 = 4u;
-const MAP_PREMULTIPLIED_FLAG: u32 = 8u;
 const MAP_LINEAR_FLAG: u32 = 16u;
 const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
@@ -4822,22 +4817,22 @@ fn straight_texel(m_1: Material, texel: vec4<f32>) -> vec4<f32> {
     var local: bool;
 
     let flags_1 = u32(m_1.strengths.z);
-    if !(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u)) {
+    if !(((flags_1 & 10u) != 10u)) {
         local = (texel.w <= 0f);
     } else {
         local = true;
     }
-    let _e16 = local;
-    if _e16 {
+    let _e15 = local;
+    if _e15 {
         return texel;
     }
     if ((flags_1 & MAP_LINEAR_FLAG) != 0u) {
         return vec4<f32>(min((texel.xyz / vec3(texel.w)), vec3(1f)), texel.w);
     }
-    let _e31 = linear_to_srgb(texel.xyz);
-    let encoded = min((_e31 / vec3(texel.w)), vec3(1f));
-    let _e38 = srgb_to_linear(encoded);
-    return vec4<f32>(_e38, texel.w);
+    let _e30 = linear_to_srgb(texel.xyz);
+    let encoded = min((_e30 / vec3(texel.w)), vec3(1f));
+    let _e37 = srgb_to_linear(encoded);
+    return vec4<f32>(_e37, texel.w);
 }
 
 fn fragment_color(m_2: Material, color: vec3<f32>, alpha_1: f32) -> vec4<f32> {
@@ -5286,7 +5281,6 @@ const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const NO_FOG: u32 = 4u;
-const MAP_PREMULTIPLIED_FLAG: u32 = 8u;
 const MAP_LINEAR_FLAG: u32 = 16u;
 const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
@@ -5418,22 +5412,22 @@ fn straight_texel(m_1: Material, texel: vec4<f32>) -> vec4<f32> {
     var local: bool;
 
     let flags_1 = u32(m_1.strengths.z);
-    if !(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u)) {
+    if !(((flags_1 & 10u) != 10u)) {
         local = (texel.w <= 0f);
     } else {
         local = true;
     }
-    let _e16 = local;
-    if _e16 {
+    let _e15 = local;
+    if _e15 {
         return texel;
     }
     if ((flags_1 & MAP_LINEAR_FLAG) != 0u) {
         return vec4<f32>(min((texel.xyz / vec3(texel.w)), vec3(1f)), texel.w);
     }
-    let _e31 = linear_to_srgb(texel.xyz);
-    let encoded = min((_e31 / vec3(texel.w)), vec3(1f));
-    let _e38 = srgb_to_linear(encoded);
-    return vec4<f32>(_e38, texel.w);
+    let _e30 = linear_to_srgb(texel.xyz);
+    let encoded = min((_e30 / vec3(texel.w)), vec3(1f));
+    let _e37 = srgb_to_linear(encoded);
+    return vec4<f32>(_e37, texel.w);
 }
 
 fn fragment_color(m_2: Material, color: vec3<f32>, alpha_1: f32) -> vec4<f32> {
@@ -5874,7 +5868,6 @@ const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const NO_FOG: u32 = 4u;
-const MAP_PREMULTIPLIED_FLAG: u32 = 8u;
 const MAP_LINEAR_FLAG: u32 = 16u;
 const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
@@ -6006,22 +5999,22 @@ fn straight_texel(m_1: Material, texel: vec4<f32>) -> vec4<f32> {
     var local: bool;
 
     let flags_1 = u32(m_1.strengths.z);
-    if !(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u)) {
+    if !(((flags_1 & 10u) != 10u)) {
         local = (texel.w <= 0f);
     } else {
         local = true;
     }
-    let _e16 = local;
-    if _e16 {
+    let _e15 = local;
+    if _e15 {
         return texel;
     }
     if ((flags_1 & MAP_LINEAR_FLAG) != 0u) {
         return vec4<f32>(min((texel.xyz / vec3(texel.w)), vec3(1f)), texel.w);
     }
-    let _e31 = linear_to_srgb(texel.xyz);
-    let encoded = min((_e31 / vec3(texel.w)), vec3(1f));
-    let _e38 = srgb_to_linear(encoded);
-    return vec4<f32>(_e38, texel.w);
+    let _e30 = linear_to_srgb(texel.xyz);
+    let encoded = min((_e30 / vec3(texel.w)), vec3(1f));
+    let _e37 = srgb_to_linear(encoded);
+    return vec4<f32>(_e37, texel.w);
 }
 
 fn fragment_color(m_2: Material, color: vec3<f32>, alpha_1: f32) -> vec4<f32> {
@@ -6456,7 +6449,6 @@ const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const NO_FOG: u32 = 4u;
-const MAP_PREMULTIPLIED_FLAG: u32 = 8u;
 const MAP_LINEAR_FLAG: u32 = 16u;
 const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
@@ -6588,22 +6580,22 @@ fn straight_texel(m_1: Material, texel: vec4<f32>) -> vec4<f32> {
     var local: bool;
 
     let flags_1 = u32(m_1.strengths.z);
-    if !(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u)) {
+    if !(((flags_1 & 10u) != 10u)) {
         local = (texel.w <= 0f);
     } else {
         local = true;
     }
-    let _e16 = local;
-    if _e16 {
+    let _e15 = local;
+    if _e15 {
         return texel;
     }
     if ((flags_1 & MAP_LINEAR_FLAG) != 0u) {
         return vec4<f32>(min((texel.xyz / vec3(texel.w)), vec3(1f)), texel.w);
     }
-    let _e31 = linear_to_srgb(texel.xyz);
-    let encoded = min((_e31 / vec3(texel.w)), vec3(1f));
-    let _e38 = srgb_to_linear(encoded);
-    return vec4<f32>(_e38, texel.w);
+    let _e30 = linear_to_srgb(texel.xyz);
+    let encoded = min((_e30 / vec3(texel.w)), vec3(1f));
+    let _e37 = srgb_to_linear(encoded);
+    return vec4<f32>(_e37, texel.w);
 }
 
 fn fragment_color(m_2: Material, color: vec3<f32>, alpha_1: f32) -> vec4<f32> {
@@ -8030,7 +8022,6 @@ const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const NO_FOG: u32 = 4u;
-const MAP_PREMULTIPLIED_FLAG: u32 = 8u;
 const MAP_LINEAR_FLAG: u32 = 16u;
 const BLEND_FLAG: u32 = 2u;
 const SECOND_UV: u32 = 256u;
@@ -8119,22 +8110,22 @@ fn straight_texel(m_1: Material, texel: vec4<f32>) -> vec4<f32> {
     var local: bool;
 
     let flags = u32(m_1.strengths.z);
-    if !(((flags & MAP_PREMULTIPLIED_FLAG) == 0u)) {
+    if !(((flags & 10u) != 10u)) {
         local = (texel.w <= 0f);
     } else {
         local = true;
     }
-    let _e16 = local;
-    if _e16 {
+    let _e15 = local;
+    if _e15 {
         return texel;
     }
     if ((flags & MAP_LINEAR_FLAG) != 0u) {
         return vec4<f32>(min((texel.xyz / vec3(texel.w)), vec3(1f)), texel.w);
     }
-    let _e31 = linear_to_srgb(texel.xyz);
-    let encoded = min((_e31 / vec3(texel.w)), vec3(1f));
-    let _e38 = srgb_to_linear(encoded);
-    return vec4<f32>(_e38, texel.w);
+    let _e30 = linear_to_srgb(texel.xyz);
+    let encoded = min((_e30 / vec3(texel.w)), vec3(1f));
+    let _e37 = srgb_to_linear(encoded);
+    return vec4<f32>(_e37, texel.w);
 }
 
 fn fragment_color(m_2: Material, color: vec3<f32>, alpha_1: f32) -> vec4<f32> {
@@ -8304,7 +8295,6 @@ const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const NO_FOG: u32 = 4u;
-const MAP_PREMULTIPLIED_FLAG: u32 = 8u;
 const MAP_LINEAR_FLAG: u32 = 16u;
 const BLEND_FLAG: u32 = 2u;
 const SECOND_UV: u32 = 256u;
@@ -8393,22 +8383,22 @@ fn straight_texel(m_1: Material, texel: vec4<f32>) -> vec4<f32> {
     var local: bool;
 
     let flags = u32(m_1.strengths.z);
-    if !(((flags & MAP_PREMULTIPLIED_FLAG) == 0u)) {
+    if !(((flags & 10u) != 10u)) {
         local = (texel.w <= 0f);
     } else {
         local = true;
     }
-    let _e16 = local;
-    if _e16 {
+    let _e15 = local;
+    if _e15 {
         return texel;
     }
     if ((flags & MAP_LINEAR_FLAG) != 0u) {
         return vec4<f32>(min((texel.xyz / vec3(texel.w)), vec3(1f)), texel.w);
     }
-    let _e31 = linear_to_srgb(texel.xyz);
-    let encoded = min((_e31 / vec3(texel.w)), vec3(1f));
-    let _e38 = srgb_to_linear(encoded);
-    return vec4<f32>(_e38, texel.w);
+    let _e30 = linear_to_srgb(texel.xyz);
+    let encoded = min((_e30 / vec3(texel.w)), vec3(1f));
+    let _e37 = srgb_to_linear(encoded);
+    return vec4<f32>(_e37, texel.w);
 }
 
 fn fragment_color(m_2: Material, color: vec3<f32>, alpha_1: f32) -> vec4<f32> {
@@ -8584,7 +8574,6 @@ const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const NO_FOG: u32 = 4u;
-const MAP_PREMULTIPLIED_FLAG: u32 = 8u;
 const MAP_LINEAR_FLAG: u32 = 16u;
 const BLEND_FLAG: u32 = 2u;
 const SECOND_UV: u32 = 256u;
@@ -8673,22 +8662,22 @@ fn straight_texel(m_1: Material, texel: vec4<f32>) -> vec4<f32> {
     var local: bool;
 
     let flags = u32(m_1.strengths.z);
-    if !(((flags & MAP_PREMULTIPLIED_FLAG) == 0u)) {
+    if !(((flags & 10u) != 10u)) {
         local = (texel.w <= 0f);
     } else {
         local = true;
     }
-    let _e16 = local;
-    if _e16 {
+    let _e15 = local;
+    if _e15 {
         return texel;
     }
     if ((flags & MAP_LINEAR_FLAG) != 0u) {
         return vec4<f32>(min((texel.xyz / vec3(texel.w)), vec3(1f)), texel.w);
     }
-    let _e31 = linear_to_srgb(texel.xyz);
-    let encoded = min((_e31 / vec3(texel.w)), vec3(1f));
-    let _e38 = srgb_to_linear(encoded);
-    return vec4<f32>(_e38, texel.w);
+    let _e30 = linear_to_srgb(texel.xyz);
+    let encoded = min((_e30 / vec3(texel.w)), vec3(1f));
+    let _e37 = srgb_to_linear(encoded);
+    return vec4<f32>(_e37, texel.w);
 }
 
 fn fragment_color(m_2: Material, color: vec3<f32>, alpha_1: f32) -> vec4<f32> {
@@ -8865,7 +8854,6 @@ const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const NO_FOG: u32 = 4u;
-const MAP_PREMULTIPLIED_FLAG: u32 = 8u;
 const MAP_LINEAR_FLAG: u32 = 16u;
 const BLEND_FLAG: u32 = 2u;
 const SECOND_UV: u32 = 256u;
@@ -8954,22 +8942,22 @@ fn straight_texel(m_1: Material, texel: vec4<f32>) -> vec4<f32> {
     var local: bool;
 
     let flags = u32(m_1.strengths.z);
-    if !(((flags & MAP_PREMULTIPLIED_FLAG) == 0u)) {
+    if !(((flags & 10u) != 10u)) {
         local = (texel.w <= 0f);
     } else {
         local = true;
     }
-    let _e16 = local;
-    if _e16 {
+    let _e15 = local;
+    if _e15 {
         return texel;
     }
     if ((flags & MAP_LINEAR_FLAG) != 0u) {
         return vec4<f32>(min((texel.xyz / vec3(texel.w)), vec3(1f)), texel.w);
     }
-    let _e31 = linear_to_srgb(texel.xyz);
-    let encoded = min((_e31 / vec3(texel.w)), vec3(1f));
-    let _e38 = srgb_to_linear(encoded);
-    return vec4<f32>(_e38, texel.w);
+    let _e30 = linear_to_srgb(texel.xyz);
+    let encoded = min((_e30 / vec3(texel.w)), vec3(1f));
+    let _e37 = srgb_to_linear(encoded);
+    return vec4<f32>(_e37, texel.w);
 }
 
 fn fragment_color(m_2: Material, color: vec3<f32>, alpha_1: f32) -> vec4<f32> {

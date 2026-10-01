@@ -5003,7 +5003,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -5198,22 +5197,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags_1 = uint(m_2.strengths.z);
-    if (!(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags_1 & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -5575,7 +5574,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -5793,22 +5791,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags_1 = uint(m_2.strengths.z);
-    if (!(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags_1 & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -6294,7 +6292,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -6489,22 +6486,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags_1 = uint(m_2.strengths.z);
-    if (!(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags_1 & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -6866,7 +6863,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -7084,22 +7080,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags_1 = uint(m_2.strengths.z);
-    if (!(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags_1 & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -7592,7 +7588,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -7795,22 +7790,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags_1 = uint(m_2.strengths.z);
-    if (!(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags_1 & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -8188,7 +8183,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -8413,22 +8407,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags_1 = uint(m_2.strengths.z);
-    if (!(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags_1 & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -8907,7 +8901,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -9104,22 +9097,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags_1 = uint(m_2.strengths.z);
-    if (!(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags_1 & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -9485,7 +9478,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -9704,22 +9696,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags_1 = uint(m_2.strengths.z);
-    if (!(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags_1 & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -10211,7 +10203,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -10408,22 +10399,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags_1 = uint(m_2.strengths.z);
-    if (!(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags_1 & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -10789,7 +10780,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -11008,22 +10998,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags_1 = uint(m_2.strengths.z);
-    if (!(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags_1 & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -11522,7 +11512,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -11727,22 +11716,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags_1 = uint(m_2.strengths.z);
-    if (!(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags_1 & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -12124,7 +12113,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -12350,22 +12338,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags_1 = uint(m_2.strengths.z);
-    if (!(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags_1 & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -12851,7 +12839,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -13056,22 +13043,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags_1 = uint(m_2.strengths.z);
-    if (!(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags_1 & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -13453,7 +13440,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -13679,22 +13665,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags_1 = uint(m_2.strengths.z);
-    if (!(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags_1 & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -14174,7 +14160,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -14377,22 +14362,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags_1 = uint(m_2.strengths.z);
-    if (!(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags_1 & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -14770,7 +14755,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -14995,22 +14979,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags_1 = uint(m_2.strengths.z);
-    if (!(((flags_1 & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags_1 & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags_1 & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -18871,7 +18855,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -19048,22 +19031,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags = uint(m_2.strengths.z);
-    if (!(((flags & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -19298,7 +19281,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -19487,22 +19469,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags = uint(m_2.strengths.z);
-    if (!(((flags & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -19679,7 +19661,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -19856,22 +19837,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags = uint(m_2.strengths.z);
-    if (!(((flags & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -20106,7 +20087,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -20295,22 +20275,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags = uint(m_2.strengths.z);
-    if (!(((flags & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -20493,7 +20473,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -20672,22 +20651,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags = uint(m_2.strengths.z);
-    if (!(((flags & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -20926,7 +20905,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -21116,22 +21094,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags = uint(m_2.strengths.z);
-    if (!(((flags & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -21314,7 +21292,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -21493,22 +21470,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags = uint(m_2.strengths.z);
-    if (!(((flags & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {
@@ -21747,7 +21724,6 @@ const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const uint NO_FOG = 4u;
-const uint MAP_PREMULTIPLIED_FLAG = 8u;
 const uint MAP_LINEAR_FLAG = 16u;
 const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
@@ -21937,22 +21913,22 @@ uint map_layer(float layer_1) {
 vec4 straight_texel(Material m_2, vec4 texel) {
     bool local = false;
     uint flags = uint(m_2.strengths.z);
-    if (!(((flags & MAP_PREMULTIPLIED_FLAG) == 0u))) {
+    if (!(((flags & 10u) != 10u))) {
         local = (texel.w <= 0.0);
     } else {
         local = true;
     }
-    bool _e16 = local;
-    if (_e16) {
+    bool _e15 = local;
+    if (_e15) {
         return texel;
     }
     if (((flags & MAP_LINEAR_FLAG) != 0u)) {
         return vec4(min((texel.xyz / vec3(texel.w)), vec3(1.0)), texel.w);
     }
-    vec3 _e31 = linear_to_srgb(texel.xyz);
-    vec3 encoded = min((_e31 / vec3(texel.w)), vec3(1.0));
-    vec3 _e38 = srgb_to_linear(encoded);
-    return vec4(_e38, texel.w);
+    vec3 _e30 = linear_to_srgb(texel.xyz);
+    vec3 encoded = min((_e30 / vec3(texel.w)), vec3(1.0));
+    vec3 _e37 = srgb_to_linear(encoded);
+    return vec4(_e37, texel.w);
 }
 
 vec4 fragment_color(Material m_3, vec3 color, float alpha_1) {

@@ -163,14 +163,16 @@ const MAP_PREMULTIPLIED_FLAG: u32 = 8u;
 /// The bit of a material's flags that says a premultiplied base color map holds linear colors.
 const MAP_LINEAR_FLAG: u32 = 16u;
 
-/// A texel of a material's base color map with straight colors. A premultiplied sRGB map's image
-/// had its colors multiplied by their alpha while encoded, before sampling decoded them, so this
-/// divides the encoded colors by the alpha again; a linear map's colors divide as they are. The
-/// map then lights, fogs, tone maps and blends as the same image with straight colors does, on
-/// both output paths. A texel with no alpha has no color.
+/// A texel of a blended material's base color map with straight colors. A premultiplied sRGB
+/// map's image had its colors multiplied by their alpha while encoded, before sampling decoded
+/// them, so this divides the encoded colors by the alpha again; a linear map's colors divide as
+/// they are. The map then lights, fogs, tone maps and blends as the same image with straight
+/// colors does, on both output paths. A material that does not blend shows a premultiplied map's
+/// colors as they are, as three.js does. A texel with no alpha stays as it is.
 fn straight_texel(m: Material, texel: vec4f) -> vec4f {
     let flags = u32(m.strengths.z);
-    if (flags & MAP_PREMULTIPLIED_FLAG) == 0u || texel.a <= 0.0 {
+    let blended_map = MAP_PREMULTIPLIED_FLAG | BLEND_FLAG;
+    if (flags & blended_map) != blended_map || texel.a <= 0.0 {
         return texel;
     }
     if (flags & MAP_LINEAR_FLAG) != 0u {

@@ -128,7 +128,7 @@ pub mod flag {
     /// The shader skips the scene's fog.
     pub const NO_FOG: u32 = 4;
     /// The base color map holds sRGB colors that were multiplied by their alpha while encoded, so
-    /// the shader divides them by it again before it uses them.
+    /// a material that blends divides them by it again before it uses them.
     pub const MAP_PREMULTIPLIED: u32 = 8;
     /// With `MAP_PREMULTIPLIED`, the base color map holds linear colors instead, multiplied by
     /// their alpha.
