@@ -1,10 +1,11 @@
 // Starts the engine with a sketch that reports its quality preset and settings, and reports them
 // with the engine's mode, its GPU path, the device hints of its capability report, and the crash
 // notes in localStorage once the first frame is on screen. ?option= passes createEngine's preset
-// option, and ?antialias= its anti-aliasing option. ?budget= has the sketch set its own texture
-// upload budget in bytes first. ?set= sends the sketch settings to change, as JSON, and reports
-// the change it hears of, or the error that refused it. ?wait=<ms> waits that long after the first
-// frame and reports the notes again.
+// option, and ?antialias= its anti-aliasing option. ?spheres=<n> starts the GPU-bound page's scene
+// with n spheres instead, for the preset check to measure. ?budget= has the sketch set its own
+// texture upload budget in bytes first. ?set= sends the sketch settings to change, as JSON, and
+// reports the change it hears of, or the error that refused it. ?wait=<ms> waits that long after
+// the first frame and reports the notes again.
 import { createEngine, type EngineOptions, type QualityPreset } from '@null3d/engine';
 import { run } from './lib/result';
 
@@ -33,9 +34,12 @@ run('quality', async () => {
 			waiters.set(name, resolve);
 			setTimeout(() => resolve(undefined), timeoutMs);
 		});
+	const spheres = params.get('spheres');
+	const heavy = new URL('./sketches/overload-sketch.ts', import.meta.url);
+	heavy.searchParams.set('spheres', spheres ?? '0');
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL('./sketches/quality-sketch.ts', import.meta.url),
+		sketch: spheres === null ? new URL('./sketches/quality-sketch.ts', import.meta.url) : heavy,
 		preset: (params.get('option') ?? undefined) as QualityPreset | undefined,
 		antialias: (params.get('antialias') ?? undefined) as EngineOptions['antialias'],
 		onSketchMessage: (name, data) => {
@@ -45,7 +49,7 @@ run('quality', async () => {
 	});
 	await engine.firstFrame;
 	const notesAtFirstFrame = crashNotes();
-	const sketch = await message('quality');
+	const sketch = spheres === null ? await message('quality') : undefined;
 	let changed: unknown;
 	let refused: unknown;
 	const budget = params.get('budget');

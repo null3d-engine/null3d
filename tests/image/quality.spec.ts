@@ -1,10 +1,13 @@
 // The quality presets in the browser. The ?preset= switch fixes the preset on each GPU path, and
 // the engine and the sketch report the same one. The GPU path caps the preset, and the engine
-// chooses from the device. Each preset's texture settings reach the core. Starts that crash the tab
-// make the next start lighter. The crash note stays out of storage that the browser refuses, and
-// leaves after the first seconds of play. A sketch changes its settings, its own upload budget
-// stays until the setting changes, and a setting that the engine does not take is refused.
+// chooses from the device. The preset check then lowers a preset that the GPU cannot draw the
+// scene at. Each preset's texture settings reach the core. Starts that crash the tab make the next
+// start lighter. The crash note stays out of storage that the browser refuses, and leaves after the
+// first seconds of play. A sketch changes its settings, its own upload budget stays until the
+// setting changes, and a setting that the engine does not take is refused. A sketch changes the
+// preset, and no frame draws without the pipelines of the new preset.
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
+import type { PresetCheck } from '../../packages/engine/src/quality/check.ts';
 import {
 	presetSettings,
 	type QualityPreset,
@@ -12,6 +15,13 @@ import {
 } from '../../packages/engine/src/quality/presets.ts';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
+import {
+	HEAVY_SPHERES,
+	HEAVY_SPHERES_SOFTWARE,
+	heavyCheckProblems,
+	type PresetChangeResult,
+	presetChangeProblems,
+} from '../lib/preset-checks.ts';
 
 /** The texture settings that the core holds. */
 interface CoreSettings {
@@ -28,7 +38,12 @@ interface SketchReport {
 interface QualityResult {
 	ok: boolean;
 	error?: string;
-	mode: { preset: string; crashedStarts: number; memoryMaximumMiB: number | null };
+	mode: {
+		preset: QualityPreset;
+		presetCheck: PresetCheck | null;
+		crashedStarts: number;
+		memoryMaximumMiB: number | null;
+	};
 	tier: string;
 	hints: { coarsePointer: boolean; screenMinEdge: number; deviceMemoryGB: number | null };
 	sketch: SketchReport & { preset: string };
@@ -43,6 +58,12 @@ function settingsOf(report: SketchReport): QualitySettings {
 	const { maxPixelRatio } = report.settings;
 	return { ...report.settings, maxPixelRatio: maxPixelRatio ?? Number.POSITIVE_INFINITY };
 }
+
+/**
+ * The preset that the engine chose from the device and the crash notes, before the preset check
+ * could lower it. A busy machine can draw even a light scene too slowly for the check.
+ */
+const chosen = (result: QualityResult) => result.mode.presetCheck?.from ?? result.mode.preset;
 
 /** Opens the quality page with these switches, and returns its result. */
 async function openQuality(page: Page, query: string): Promise<QualityResult> {
@@ -92,10 +113,13 @@ test("the engine chooses High on a desktop's WebGPU, and Medium on its WebGL2", 
 }) => {
 	const webgpu = await openQuality(page, 'gpu=webgpu');
 	expect(webgpu.hints.coarsePointer).toBe(false);
-	expect([webgpu.mode.preset, webgpu.sketch.preset]).toEqual(['high', 'high']);
+	// The setup runs at the chosen preset, which the check measures first.
+	expect([chosen(webgpu), webgpu.sketch.preset]).toEqual(['high', 'high']);
+	expect(webgpu.mode.presetCheck?.rounds[0]?.preset).toBe('high');
+	expect(webgpu.mode.presetCheck?.rounds.at(-1)?.preset).toBe(webgpu.mode.preset);
 	expect(webgpu.notesAtFirstFrame).toHaveLength(1);
 	const webgl2 = await openQuality(page, 'gpu=webgl2');
-	expect(webgl2.mode.preset).toBe('medium');
+	expect(chosen(webgl2)).toBe('medium');
 });
 
 test.describe('on a phone', () => {
@@ -112,6 +136,8 @@ test.describe('on a phone', () => {
 		expect(result.hints).toMatchObject({ coarsePointer: true, screenMinEdge: 412 });
 		expect([result.mode.preset, result.sketch.preset]).toEqual(['low', 'low']);
 		expect(result.sketch.settings.maxPixelRatio).toBe(1.5);
+		// No preset is lighter than Low, so the engine does not check it.
+		expect(result.mode.presetCheck).toBeNull();
 	});
 });
 
@@ -121,6 +147,8 @@ test('the preset option names the preset, and the GPU path still caps it', async
 	expect((await openQuality(page, 'gpu=webgl2&option=ultra')).mode.preset).toBe('medium');
 	// The switch wins over the option.
 	expect((await openQuality(page, 'gpu=webgpu&option=low&preset=high')).mode.preset).toBe('high');
+	// The engine checks only a preset that it chose itself.
+	expect((await openQuality(page, 'gpu=webgpu&option=high')).mode.presetCheck).toBeNull();
 });
 
 test('a preset option that names no preset fails the start with E1213', async ({ page }) => {
@@ -136,12 +164,12 @@ test('each start that crashed the tab makes the next start lighter', async ({ co
 	// Each page crashes right after its first frame, before its note leaves.
 	const first = await context.newPage();
 	const normalStart = await openQuality(first, 'gpu=webgpu');
-	expect([normalStart.mode.preset, normalStart.mode.crashedStarts]).toEqual(['high', 0]);
+	expect([chosen(normalStart), normalStart.mode.crashedStarts]).toEqual(['high', 0]);
 	await crash(context, first);
 
 	const second = await context.newPage();
 	const afterOne = await openQuality(second, 'gpu=webgpu');
-	expect([afterOne.mode.preset, afterOne.mode.crashedStarts]).toEqual(['medium', 1]);
+	expect([chosen(afterOne), afterOne.mode.crashedStarts]).toEqual(['medium', 1]);
 	await crash(context, second);
 
 	// After two crashes on WebGPU, a page that leaves the GPU path to the engine gets WebGL2.
@@ -157,7 +185,7 @@ test('each start that crashed the tab makes the next start lighter', async ({ co
 	// The third start closed the page normally, so the next start is a normal one again.
 	const fourth = await context.newPage();
 	const normal = await openQuality(fourth, 'gpu=webgpu');
-	expect([normal.mode.preset, normal.mode.crashedStarts]).toEqual(['high', 0]);
+	expect([chosen(normal), normal.mode.crashedStarts]).toEqual(['high', 0]);
 	await fourth.close();
 });
 
@@ -176,7 +204,7 @@ test('storage that the browser refuses counts as a normal start', async ({ page 
 		});
 	});
 	const result = await openQuality(page, 'gpu=webgpu');
-	expect([result.mode.preset, result.mode.crashedStarts]).toEqual(['high', 0]);
+	expect([chosen(result), result.mode.crashedStarts]).toEqual(['high', 0]);
 	expect(result.notesAtFirstFrame).toBeNull();
 });
 
@@ -244,3 +272,49 @@ test("the page's antialias option replaces the preset's mode, which a sketch can
 		'E1213: quality.set() got antialias, which is fixed when the engine starts. Set it with the antialias option of createEngine().',
 	);
 });
+
+const heavySpheres = process.env.CI ? HEAVY_SPHERES_SOFTWARE : HEAVY_SPHERES;
+
+for (const [gpu, highest] of [
+	['webgpu', 'high'],
+	['compat', 'medium'],
+	['webgl2', 'medium'],
+] as const) {
+	test(`the preset check lowers the preset of a scene too heavy for the GPU on ${gpu}`, async ({
+		page,
+	}) => {
+		test.setTimeout(120_000);
+		const result = await openQuality(page, `gpu=${gpu}&spheres=${heavySpheres}`);
+		expect(heavyCheckProblems(result.mode, highest)).toEqual([]);
+	});
+}
+
+/** Opens the page that changes the preset with these switches, and returns its result. */
+async function openPresetChange(page: Page, query: string): Promise<PresetChangeResult> {
+	await page.goto(`preset-change.html?${query}`);
+	const result = await pageResult<PresetChangeResult & { error?: string }>(page, 60_000);
+	expect(result.error).toBeUndefined();
+	return result;
+}
+
+for (const gpu of ['webgpu', 'compat', 'webgl2'] as const) {
+	for (const mode of ENGINE_MODES) {
+		test(`setPreset changes every setting and draws no frame without its pipelines on ${gpu}, ${mode.name}`, async ({
+			page,
+		}) => {
+			const result = await openPresetChange(page, `gpu=${gpu}&from=medium&to=low&${mode.query}`);
+			expect(presetChangeProblems(result, 'medium', 'low')).toEqual([]);
+		});
+	}
+
+	test(`a new pipeline without a warm-up skips the draws that need it on ${gpu}`, async ({
+		page,
+	}) => {
+		// This shows that the counter finds frames that drew without their pipelines. CI's software
+		// GPU often builds the pipeline before the next frame, so no frame skips a draw there.
+		test.skip(Boolean(process.env.CI), 'the software GPU builds pipelines before the next frame');
+		const result = await openPresetChange(page, `gpu=${gpu}&swap`);
+		expect(result.pipelines).toBeGreaterThan(0);
+		expect(result.skippedDraws).toBeGreaterThan(0);
+	});
+}
