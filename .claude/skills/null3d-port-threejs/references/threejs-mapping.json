@@ -121,7 +121,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.setBackground('#rrggbb' | texture | environment)",
-      "notes": "Exposure and tone mapping change the background, as in three.js's WebGPURenderer; WebGLRenderer draws a background color without them. For an exact page color, set toneMapping: \"none\", or use createEngine({ transparent: true }) over a CSS background. setClearColor(color, 0) on an alpha canvas becomes transparent: true with no background.",
+      "notes": "A texture fills the view behind every object and stretches to its shape, as a texture background does in three.js. Exposure and tone mapping change the background, as in three.js's WebGPURenderer; WebGLRenderer draws a background color, and an sRGB background texture, without them. For an exact page color, set toneMapping: \"none\", or use createEngine({ transparent: true }) over a CSS background. setClearColor(color, 0) on an alpha canvas becomes transparent: true with no background. Environment backgrounds come in 0.2.",
       "docs": "api/scene",
       "detect": "\\.setClearColor\\s*\\(|\\.background\\s*="
     },

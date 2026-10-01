@@ -8,7 +8,7 @@ summary: "loadTexture options; KTX2 files; fromData; fromImageBitmap; fromPass; 
 
 # Textures
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture backgrounds, `textures.fromPass` and cube maps are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `textures.fromPass` and cube maps are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -19,7 +19,7 @@ flowchart LR
     texture -->|"uploads a band of rows per frame,<br/>within the frame's upload budget"| layer["A layer of a texture array<br/>on the GPU, with mip levels"]
 ```
 
-A texture is an image or a block of data on the GPU, which materials sample. A sketch makes textures in three ways:
+A texture is an image or a block of data on the GPU, which materials sample. The scene can also show a texture behind every object ([Scene](scene.md#the-camera-and-the-background)). A sketch makes textures in three ways:
 
 - `assets.loadTexture(url, options)` downloads an image file or a KTX2 file and decodes it into a texture. [Assets](assets.md) covers the loading calls.
 - `textures.fromImageBitmap(bitmap, options)` makes a texture from an image that is decoded already, such as a frame drawn on an `OffscreenCanvas`.
@@ -131,9 +131,9 @@ Data of the wrong length or type for the size and format throws E1208. Data text
 - An image may have another size, and the texture then takes that size. Images fill textures of one layer in `rgba8unorm`.
 - Data must fit the texture's size and format.
 
-Until the new texels are on the GPU, materials draw with their colors alone. For a texture that changes often, such as frames of a video, keep the images small: each update decodes and uploads a whole image.
+Until the new texels are on the GPU, materials draw with their colors alone. The scene shows its background color in place of a background texture. For a texture that changes often, such as frames of a video, keep the images small: each update decodes and uploads a whole image.
 
-`texture.destroy()` frees the texture's GPU memory. Materials that map it draw with their colors alone, and later calls on the texture throw [E1101](../errors/E1101.md).
+`texture.destroy()` frees the texture's GPU memory. Materials that map it draw with their colors alone, and the scene shows its background color in place of a background texture. Later calls on the texture throw [E1101](../errors/E1101.md).
 
 A texture's `width`, `height` and `depth` give its size, and `bytes` its GPU memory. Its `format`, `colorSpace` and `uvSet` say how it was made. The widest and tallest texture the device takes is `textures.maxSize`. The GPU memory of every texture array is `textures.memoryBytes`.
 

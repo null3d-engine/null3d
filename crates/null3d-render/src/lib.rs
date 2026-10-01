@@ -1,6 +1,7 @@
 //! The render graph, passes, materials and the post-processing chain.
 //!
 //! - `arrays`: meshes from arrays, with normals and tangents computed as three.js computes them
+//! - `background`: a texture that the camera's view draws behind every object
 //! - `camera`: perspective and orthographic lenses with reversed depth, and view matrices
 //! - `cells`: grid-cell culling, which both frame builders share: still objects in cell order, a
 //!   box per cell, and the cells each view can see
@@ -27,6 +28,7 @@
 //! - `view`: views, each a camera, a layer mask and a target, culled on its own
 
 pub mod arrays;
+mod background;
 pub mod camera;
 mod cells;
 pub mod cpu_culled;

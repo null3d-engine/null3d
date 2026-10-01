@@ -17,6 +17,7 @@ import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
+import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
@@ -235,6 +236,27 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		switches: [`compression=${family}`],
 		reference: 'ktx2',
 	})),
+	// A picture behind a lit box and an unlit box, as three.js draws a texture background: it fills
+	// the view, upright, and every object draws over it. The parity test compares it with its
+	// three.js twin.
+	{
+		name: 'texture-background',
+		sketch: 'tests/pages/sketches/texture-background-sketch.ts',
+		size: [BACKGROUND_IMAGE.width, BACKGROUND_IMAGE.height],
+		hold: 0,
+	},
+	// The same scene on the 8-bit path, where the background's own shader tone maps its color. It
+	// must draw the HDR path's image.
+	{
+		name: 'texture-background-8-bit',
+		sketch: 'tests/pages/sketches/texture-background-sketch.ts',
+		size: [BACKGROUND_IMAGE.width, BACKGROUND_IMAGE.height],
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['hdr=off'],
+		reference: 'texture-background',
+		expect: { hdr: false },
+	},
 	// Fifty textures that load in waves in a live engine, a band of rows per frame under a small
 	// upload budget, while their array grows twice, to 64 layers. No frame may upload more than the
 	// budget, and the GPU memory count must match the array.

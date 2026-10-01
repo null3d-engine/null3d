@@ -29,7 +29,7 @@ use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
 use null3d_render::fog::Fog;
-use null3d_render::frame::{CanvasOutput, FrameBuilder, FrameInput, RecordError};
+use null3d_render::frame::{CanvasOutput, FrameBuilder, FrameInput, RecordError, SceneSettings};
 use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
@@ -204,6 +204,18 @@ fn texture_failure(error: TextureError) -> u32 {
         TextureError::Full => render_failure(render_detail::TEXTURES_FULL, MAX_TEXTURES),
         TextureError::Unsupported => render_failure(render_detail::BAD_TEXTURE, 0),
     }
+}
+
+/// The handle of `texture`, a texture's handle or 0 for none, or the failure of a texture that is
+/// not live.
+fn texture_or_none(settings: &SceneSettings, texture: u32) -> Result<Handle, u32> {
+    let handle = Handle::from_raw(texture);
+    if !handle.is_none()
+        && let Err(error) = settings.textures().bytes(handle)
+    {
+        return Err(texture_failure(error));
+    }
+    Ok(handle)
 }
 
 fn material_failure(error: MaterialError) -> u32 {
@@ -965,12 +977,10 @@ pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) 
     };
     with_engine(|e| {
         let settings = e.renderer.settings_mut();
-        let map = Handle::from_raw(texture);
-        if !map.is_none()
-            && let Err(error) = settings.textures().bytes(map)
-        {
-            return texture_failure(error);
-        }
+        let map = match texture_or_none(settings, texture) {
+            Ok(map) => map,
+            Err(failure) => return failure,
+        };
         match settings
             .materials_mut()
             .set_map(material.wrapping_sub(1), slot, map, second_uv != 0)
@@ -1268,6 +1278,23 @@ pub fn set_output(tone_mapping: u32, exposure: f32) -> u32 {
             exposure,
         });
         0
+    })
+}
+
+// Draws a texture behind every object in the camera's view, or only the background color when
+// `texture` is 0. Fails for a texture that is not live.
+/// Draws a texture behind every object, or none with 0.
+#[wasm_bindgen(js_name = setBackgroundTexture)]
+pub fn set_background_texture(texture: u32) -> u32 {
+    with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        match texture_or_none(settings, texture) {
+            Ok(background) => {
+                settings.set_background_texture(background);
+                0
+            }
+            Err(failure) => failure,
+        }
     })
 }
 
