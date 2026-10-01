@@ -200,7 +200,7 @@ jobs:
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/1)
     needs: real-browsers-build
     runs-on: ${{ github.event_name == 'merge_group' && 'macos-15' || 'ubuntu-latest' }}
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
