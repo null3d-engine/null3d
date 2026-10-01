@@ -43,7 +43,7 @@ fn tone_map(c: vec3f, settings: Output) -> vec3f {
 /// every frame: a hash of the pixel's column and row.
 fn pixel_noise(pixel: vec2f) -> f32 {
     let hash = null3d::noise::pcg(u32(pixel.x) + null3d::noise::pcg(u32(pixel.y)));
-    return f32(hash >> 8u) / 16777216.0;
+    return null3d::noise::to_unit(hash);
 }
 
 /// Encodes linear color from 0 to 1 as sRGB for an 8-bit target, and dithers it by up to half a
