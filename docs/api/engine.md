@@ -258,7 +258,8 @@ How the engine runs on this device: its build, its latency mode and its threads.
 | `renderThread: 'render-worker' \| 'sketch-worker' \| 'main'` | The thread that owns the canvas and draws. |
 | `jobWorkers: number` | The job workers that share the engine's parallel work. |
 | `hold: number \| null` | The sketch time in seconds that hold mode holds the sketch at, or null for a live engine. |
-| `preset: QualityPreset` | The quality preset that the engine runs. |
+| `preset: QualityPreset` | The quality preset that the engine runs. The preset check can lower it before `createEngine` resolves, and `ctx.quality.setPreset` in the sketch changes it later. |
+| `presetCheck: PresetCheck \| null` | What the preset check measured, or null when no check ran. The engine checks the preset when it chose it from the device: after the first frame, it measures the frame rate of the scene that the setup built, and lowers the preset until one holds the target. |
 | `crashedStarts: number` | The starts of this sketch before this one that crashed the tab, one after another, as the engine's note in `localStorage` records them. After one, the engine starts a preset lower, and after two at `low`. |
 | `memoryMaximumMiB: number \| null` | The shared memory's maximum in MiB, or null for the single-threaded build, whose memory is not shared. |
 
