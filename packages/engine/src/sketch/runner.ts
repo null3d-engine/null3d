@@ -26,6 +26,7 @@ import type { CoreDevice } from '../page/limits';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
 import { Assets } from '../scene/assets';
 import { CoreMemory } from '../scene/memory';
+import { Post } from '../scene/post';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
 import { Textures } from '../scene/textures';
@@ -33,6 +34,7 @@ import { type ControlViews, controlViews, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { type ImageSender, imagesArrived } from '../shared/images';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
+import { slotChange } from '../shared/wake';
 import { FixedClock, FrameClock, holdSteps } from './clock';
 import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-sketch';
 import { InputReader } from './input';
@@ -82,8 +84,8 @@ async function reached(slots: Int32Array, slot: number, target: number): Promise
 		const value = Atomics.load(slots, slot);
 		if (value >= target || Atomics.load(slots, Slot.Running) === 0) return;
 		if (shared) {
-			const wait = Atomics.waitAsync(slots, slot, value);
-			if (wait.async) await wait.value;
+			const change = slotChange(slots, slot, value);
+			if (change) await change;
 		} else await new Promise((resolve) => setTimeout(resolve, SLOT_POLL_MS));
 	}
 }
@@ -95,26 +97,17 @@ async function reached(slots: Int32Array, slot: number, target: number): Promise
  */
 async function shutDownJobsOnStop(glue: CoreGlue, slots: Int32Array): Promise<void> {
 	while (Atomics.load(slots, Slot.Running) !== 0) {
-		const wait = Atomics.waitAsync(slots, Slot.Running, 1);
-		if (wait.async) await wait.value;
+		const change = slotChange(slots, Slot.Running, 1);
+		if (change) await change;
 	}
 	glue.shutdownJobs();
 }
 
 /**
- * A promise that settles when the slot no longer holds `value`, or undefined when it already
- * holds another value. A plain function, so a wait makes no promise beyond the browser's own.
- */
-function changeOf(slots: Int32Array, slot: number, value: number): Promise<unknown> | undefined {
-	const wait = Atomics.waitAsync(slots, slot, value);
-	return wait.async ? wait.value : undefined;
-}
-
-/**
  * The pipelined frame loop of a thread that runs the sketch while another thread draws: the sketch
  * worker, or the page with sketchThread: 'main'. It steps the sketch once the thread that draws has
- * taken the frame before, and waits for that with Atomics.waitAsync, so the thread's event loop
- * stays free for promises, messages and the page's events. It ends when the engine stops.
+ * taken the frame before, and waits for that without blocking, so the thread's event loop stays free
+ * for promises, messages and the page's events. It ends when the engine stops.
  */
 export async function runPipelined(sketch: SketchRunner, control: ArrayBufferLike): Promise<void> {
 	const { slots } = controlViews(control);
@@ -123,13 +116,13 @@ export async function runPipelined(sketch: SketchRunner, control: ArrayBufferLik
 	while (Atomics.load(slots, Slot.Running) !== 0) {
 		const paused = Atomics.load(slots, Slot.Paused);
 		if (paused !== 0) {
-			const change = changeOf(slots, Slot.Paused, paused);
+			const change = slotChange(slots, Slot.Paused, paused);
 			if (change) await change;
 			continue;
 		}
 		const taken = Atomics.load(slots, Slot.FramesTaken);
 		if (taken < published) {
-			const change = changeOf(slots, Slot.FramesTaken, taken);
+			const change = slotChange(slots, Slot.FramesTaken, taken);
 			if (change) await change;
 			continue;
 		}
@@ -203,6 +196,8 @@ export class SketchRunner {
 			device.webgl2,
 			device.capabilities,
 			device.maxTextureSize,
+			device.sceneColor,
+			device.transparent,
 			device.cellCulling,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
@@ -236,6 +231,7 @@ export class SketchRunner {
 			textures,
 			assets: new Assets(textures, sketch.pageUrl),
 			input: this.input,
+			post: new Post(this.core),
 			quality: this.quality,
 			preferences: {
 				get reducedMotion() {

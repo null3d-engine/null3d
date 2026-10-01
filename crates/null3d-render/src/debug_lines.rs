@@ -23,7 +23,7 @@ use std::collections::TryReserveError;
 
 use null3d_core::cells::CellPosition;
 use null3d_gpu::drawlist::sizes::LINE_VERTEX_BYTES;
-use null3d_gpu::drawlist::{DrawList, Op, buffer_usage, state_flags, template};
+use null3d_gpu::drawlist::{DrawList, Op, buffer_usage, permutation, state_flags, template};
 
 use crate::frame::{RecordError, UploadArena, grown_size};
 use crate::pipelines::{DepthBias, DrawKey, PassTargets, PipelineCache};
@@ -205,9 +205,9 @@ impl LinesPass {
         if lines.is_empty() {
             return;
         }
-        // The lines' shader reads no draw index and applies no pass's bits of its own.
+        // The lines' shader reads no draw index. It tone maps on the 8-bit path, as scene shaders do.
         let targets = PassTargets {
-            permutation: 0,
+            permutation: targets.permutation & permutation::TONE_MAP,
             ..targets
         };
         self.pipeline = pipelines.id(LINES_DRAW.in_pass(targets));

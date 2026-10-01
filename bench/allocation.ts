@@ -62,7 +62,7 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {
 		'frame sketch/runner.ts': 240,
 		'runPipelined sketch/runner.ts': 128,
-		'changeOf sketch/runner.ts': 16,
+		'slotChange shared/wake.ts': 16,
 		'(IDLE)': 96,
 		'(anonymous) null3d/sketch-common.ts': 48,
 		'views scene/scene.ts': 16,
