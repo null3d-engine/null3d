@@ -13,11 +13,6 @@ import { MIB, QUALITY_SETTINGS, type Setting, type SettingChange } from './prese
  * feature moves its row into the engine's table (presets.ts) when it applies the setting.
  */
 export const PLANNED_SETTINGS = {
-	antialias: {
-		presets: ['fxaa', 'msaa', 'msaa', 'msaa'],
-		changes: 'start',
-		values: ['none', 'fxaa', 'msaa'],
-	},
 	shadowCascades: {
 		presets: [1, 2, 3, 4],
 		changes: 'start',

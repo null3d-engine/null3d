@@ -13,7 +13,7 @@ use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{CanvasOutput, FrameBuilder};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::RenderScale;
-use null3d_render::output::SceneColor;
+use null3d_render::output::{Antialias, SceneColor};
 
 /// Commands that make, destroy or resize a GPU object.
 const OBJECT_OPS: [Op; 9] = [
@@ -33,6 +33,7 @@ const OBJECT_OPS: [Op; 9] = [
 fn worlds(scene_color: u32) -> (World<GpuDrivenRenderer>, World<CpuCulledRenderer>) {
     let canvas = CanvasOutput {
         scene_color: SceneColor::from_format(scene_color),
+        antialias: Antialias::Msaa,
         transparent: false,
     };
     let mut webgpu = World::build(GpuDrivenRenderer::new(RendererConfig {

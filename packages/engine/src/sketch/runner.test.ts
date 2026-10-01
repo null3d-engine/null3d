@@ -111,6 +111,7 @@ async function start(
 				depth: 'reversed',
 				parallelCompile: true,
 				sceneColor: FORMAT_RGBA16_FLOAT,
+				antialias: C.ANTIALIAS_MSAA,
 				transparent: false,
 				shaderBits: 0,
 				cellCulling: true,

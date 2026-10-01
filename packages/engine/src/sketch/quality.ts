@@ -6,6 +6,7 @@
 import { EngineError } from '../errors/engine-error';
 import {
 	checkSettings,
+	LIVE_SETTINGS,
 	type QualityPreset,
 	type QualitySettingName,
 	type QualitySettings,
@@ -80,7 +81,7 @@ export class SketchQuality implements Quality {
 	}
 
 	set(settings: Partial<QualitySettings>): void {
-		checkSettings('quality.set()', settings);
+		checkSettings('quality.set()', settings, LIVE_SETTINGS);
 		const lowest = settings.minRenderScale ?? this.settings.minRenderScale;
 		const highest = settings.maxRenderScale ?? this.settings.maxRenderScale;
 		if (lowest > highest)

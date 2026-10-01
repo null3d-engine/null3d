@@ -23,9 +23,6 @@ struct Output {
     render_size: u32,
 }
 
-/// The flag of a scene color that holds display color already, which the final pass only copies.
-const DISPLAY_COLOR: u32 = 1u;
-
 /// Linear scene color after the exposure and the tone mapping: linear color from 0 to 1. Without
 /// tone mapping, the exposed color is clipped at 1, as three.js's LinearToneMapping does.
 fn tone_map(c: vec3f, settings: Output) -> vec3f {

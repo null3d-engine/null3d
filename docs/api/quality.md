@@ -8,7 +8,7 @@ summary: "quality.preset, quality.set, frame budgets, quality events."
 
 # Quality API
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy` and `uploadBytesPerFrame`: the other settings of the preset table are not built yet. Neither are `quality.setPreset`, the frame-budget governor and its budgets (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy` and `uploadBytesPerFrame`, and `quality.settings` also holds `antialias`. The other settings of the preset table are not built yet. Neither are `quality.setPreset`, the frame-budget governor and its budgets (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
 
 `ctx.quality` gives a sketch the quality preset that the engine runs and its settings. The sketch can change the settings that change during play, and hear when they change. [Quality presets](../concepts/quality-presets.md) explains how the engine chooses the preset, and lists each preset's values.
 
@@ -18,6 +18,7 @@ import { defineSketch } from '@null3d/engine';
 export default defineSketch(({ quality, page }) => {
   console.log(quality.preset); // 'low', 'medium', 'high' or 'ultra'
   console.log(quality.settings.maxPixelRatio); // 1.5 on Low, Infinity on Ultra
+  console.log(quality.settings.antialias); // 'fxaa' on Low, 'msaa' from Medium up
 
   // A menu on the page asks for a sharper or a faster picture.
   page.onMessage((type, data) => {
@@ -41,12 +42,13 @@ console.log(engine.mode.preset, engine.mode.crashedStarts, engine.mode.memoryMax
 | `preset: 'auto'` | The engine chooses the preset for the device. |
 | `preset: 'low'` to `'ultra'` | Names the preset. The GPU path still caps it, and a crashed start lowers it. |
 | `maxPixelRatio` | Replaces the preset's pixel ratio cap. |
+| `antialias: 'msaa'`, `'fxaa'` or `'none'` | Replaces the preset's anti-aliasing mode. |
 | `memory: { maximumMiB }` | Replaces the preset's memory maximum: [Page API](engine.md#memory). |
 | `?preset=low` to `?preset=ultra` | Fixes the preset for tests. It wins over the option, and the engine ignores earlier crashes. |
 
 ## Settings
 
-`quality.settings` holds the settings that a sketch can read and change. Each starts at the preset's value, or at the value of the page's option for it.
+`quality.settings` holds the settings that a sketch can read. Each starts at the preset's value, or at the value of the page's option for it.
 
 | Setting | Takes | Changes |
 | --- | --- | --- |
@@ -55,8 +57,11 @@ console.log(engine.mode.preset, engine.mode.crashedStarts, engine.mode.memoryMax
 | `maxRenderScale` | A number from 0.25 to 1: the highest render scale, where the engine starts. | During play. |
 | `maxAnisotropy` | A whole number from 1 to 16. A texture whose `anisotropy` option is higher samples at this value. | During play. Textures sample with the new cap from the next frame. |
 | `uploadBytesPerFrame` | A whole number of texel bytes from 65,536 (64 KiB) to 67,108,864 (64 MiB). | During play, from the next frame. |
+| `antialias` | `'msaa'`: 4 samples per pixel. `'fxaa'`: the final pass smooths edges. `'none'`: no smoothing. | At the start only. The scene's targets and pipelines depend on it, so the page's `antialias` option sets it. |
 
-`quality.set(settings)` changes the settings it gets and keeps the others. A setting that it does not take, or a value outside the setting's range, throws [E1213](../errors/E1213.md) and changes nothing. So does a `minRenderScale` above `maxRenderScale`, and a preset name that `createEngine` does not know. To move both ends of the render scale's range past each other, give both in one call.
+[GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) compares the anti-aliasing modes on each GPU path.
+
+`quality.set(settings)` changes the settings it gets and keeps the others. It takes the settings that change during play. Another setting, or a value outside the setting's range, throws [E1213](../errors/E1213.md) and changes nothing. So does a `minRenderScale` above `maxRenderScale`, an option of `createEngine` with a value that its setting does not take, and a preset name that `createEngine` does not know. To move both ends of the render scale's range past each other, give both in one call.
 
 ## Render scale
 
@@ -130,5 +135,6 @@ The quality settings that a sketch reads and changes through `ctx.quality`. Each
 | `maxRenderScale: number` | The highest render scale, where the engine starts. It takes a number from 0.25 to 1, and changes during play. With `minRenderScale` at the same value, the scene always draws at that scale. |
 | `maxAnisotropy: number` | The highest anisotropy that textures sample with. A texture whose own `anisotropy` option is higher samples at this value. It takes a whole number from 1 to 16, and changes during play. |
 | `uploadBytesPerFrame: number` | The texel bytes that one frame may upload, so that loading many textures does not make one frame slow. A larger texture goes up in bands of rows over several frames. It takes a whole number from 65,536 (64 KiB) to 67,108,864 (64 MiB), and changes during play. |
+| `antialias: 'none' \| 'fxaa' \| 'msaa'` | How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa` smooths edges in the final pass, and `none` leaves them sharp. The mode is fixed when the engine starts: the page's `antialias` option of `createEngine` sets it, and `set` does not take it. |
 
 <!-- null3d:api:end -->

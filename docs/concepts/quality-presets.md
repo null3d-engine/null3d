@@ -8,7 +8,7 @@ summary: "Low to Ultra; pixel-ratio caps; the frame-budget governor; quality eve
 
 # Quality presets, dynamic resolution and frame budgets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset, applies its pixel ratio cap, its render scale range, its texture settings and its memory maximum, and reports it. Dynamic resolution moves the render scale during play. The settings that the table below marks as planned are not built yet. Neither are the frame-budget governor, the warm-up check that lowers a preset on a slow GPU, or `quality.setPreset`. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset, applies its pixel ratio cap, its render scale range, its texture settings, its anti-aliasing mode and its memory maximum, and reports it. Dynamic resolution moves the render scale during play. The settings that the table below marks as planned are not built yet. Neither are the frame-budget governor, the warm-up check that lowers a preset on a slow GPU, or `quality.setPreset`. Coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -106,7 +106,7 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Pixel ratio cap (`maxPixelRatio`) | 1.5 | 2 | 2 | none | during play | built |
 | Lowest render scale (`minRenderScale`) | 0.5 | 0.6 | 0.75 | 1 | during play | built |
 | Highest render scale (`maxRenderScale`) | 1 | 1 | 1 | 1 | during play | built |
-| Anti-aliasing (`antialias`) | FXAA | MSAA 4x | MSAA 4x | MSAA 4x | at the start | planned |
+| Anti-aliasing (`antialias`) | FXAA | MSAA 4x | MSAA 4x | MSAA 4x | at the start | built |
 | Shadow cascades (`shadowCascades`) | 1 | 2 | 3 | 4 | at the start | planned |
 | Shadow map size in texels (`shadowMapSize`) | 1024 | 2048 | 2048 | 4096 | at the start | planned |
 | Shadow filter (`shadowFilter`) | 3 x 3 taps | 3 x 3 taps | 5 x 5 taps | 5 x 5 taps | at the start | planned |
@@ -125,6 +125,8 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 The pixel ratio cap is the cheapest large saving on phones. The GPU fills each device pixel, and a screen's device pixels grow with the square of its ratio. So a ratio of 3 fills 2.25 times the pixels of a ratio of 2. The `maxPixelRatio` option of `createEngine` replaces the preset's cap, and `quality.set({ maxPixelRatio })` changes it during play.
 
 The anisotropic filtering cap limits the `anisotropy` option of every texture, so surfaces seen at a slant cost fewer texture reads on the lighter presets. The upload budget limits the texel bytes that one frame sends to the GPU, so loading many textures does not make one frame slow. A larger texture goes up over several frames. `quality.set({ maxAnisotropy, uploadBytesPerFrame })` changes either during play.
+
+Low smooths edges with FXAA, and the other presets with MSAA. MSAA draws 4 samples per pixel, which costs a phone's GPU memory and bandwidth. FXAA draws one sample and smooths edges in the final pass, at a small cost in sharpness. The `antialias` option of `createEngine` replaces the preset's mode. The mode then stays fixed while the engine runs, because the scene's targets and pipelines depend on it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) compares the modes.
 
 The engine makes its memory while it tests the GPU paths. So the memory maximum follows the starting preset and the crashed starts, and the GPU path does not cap it. The `memory` option of `createEngine` replaces it: [Page API](../api/engine.md#memory).
 
@@ -170,7 +172,7 @@ export default defineSketch(({ quality, page }) => {
 });
 ```
 
-A `minRenderScale` of 1 keeps the whole canvas. Hold mode draws at `maxRenderScale`, so tests draw the same image on every run. Some GPU paths draw the scene's color in 8 bits: WebGPU's compatibility mode, and WebGL2 devices that cannot draw multisampled float targets. There, a lowest scale below 1 adds the final pass, which copies the image to the canvas. At a lowest scale of 1, the scene's render pass writes straight to the canvas.
+A `minRenderScale` of 1 keeps the whole canvas. Hold mode draws at `maxRenderScale`, so tests draw the same image on every run. Some GPU paths draw the scene's color in 8 bits: WebGPU's compatibility mode, and WebGL2 devices that cannot draw multisampled float targets. There, with MSAA, a lowest scale below 1 adds the final pass, which copies the image to the canvas. At a lowest scale of 1, the scene's render pass writes straight to the canvas. Below a scale of 1, the final pass scales the image up instead of running FXAA: the scaling softens edges already.
 
 ## Related pages
 

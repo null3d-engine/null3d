@@ -13,6 +13,12 @@
 //!
 //! The tone mapping operators follow three.js's formulas, as `null3d::color` in the shader library
 //! writes them. Their codes are the same in the core, `null3d::tonemap` and the TypeScript API.
+//!
+//! The anti-aliasing mode is fixed when the frame builder starts. MSAA draws the scene with 4
+//! samples per pixel. FXAA and no anti-aliasing draw it with one, and the final pass runs FXAA on
+//! the scene color before the output transform. The 8-bit path resolves MSAA into the canvas as
+//! before; with one sample, its final pass reads the scene color as display color and only copies
+//! it, or runs FXAA on it.
 
 use null3d_gpu::drawlist::{format, permutation, sizes::OUTPUT_UNIFORM_BYTES};
 
@@ -102,21 +108,14 @@ impl Output {
     }
 }
 
-/// Bits of [`OutputUniform::flags`], which the final pass reads.
-pub mod output_flags {
-    /// The scene color holds display color already, as the 8-bit path's shaders write it, so the
-    /// final pass only copies it.
-    pub const DISPLAY_COLOR: u32 = 1;
-}
-
 /// The output settings as the shaders' `Output` block lays them out. Scene shaders read the
-/// exposure and the tone mapping. The final pass also reads the flags and the render size.
+/// exposure and the tone mapping. Only the final pass reads the flags and the render size.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct OutputUniform {
     pub exposure: f32,
     pub tone_mapping: u32,
-    /// Bits from [`output_flags`].
+    /// Flags that only the final pass reads: [`OutputUniform::DISPLAY_COLOR`].
     pub flags: u32,
     /// The part of the scene color that the scene drew, from its top-left corner: the width in
     /// pixels in the low 16 bits, and the height in the high 16 bits.
@@ -126,14 +125,9 @@ pub struct OutputUniform {
 const _: () = assert!(std::mem::size_of::<OutputUniform>() == OUTPUT_UNIFORM_BYTES as usize);
 
 impl OutputUniform {
-    /// Says whether the scene color holds display color already.
-    pub fn set_display_color(&mut self, display: bool) {
-        if display {
-            self.flags |= output_flags::DISPLAY_COLOR;
-        } else {
-            self.flags &= !output_flags::DISPLAY_COLOR;
-        }
-    }
+    /// The flag that says the scene color holds display color, which the scene shaders tone
+    /// mapped and encoded already, so the final pass leaves the color as it is.
+    pub const DISPLAY_COLOR: u32 = 1;
 
     /// Sets the size the scene drew at, in pixels. Each side keeps its low 16 bits, which hold any
     /// texture size a GPU makes.
@@ -150,6 +144,42 @@ impl OutputUniform {
                 (self as *const Self).cast::<u8>(),
                 std::mem::size_of::<Self>(),
             )
+        }
+    }
+}
+
+/// How the engine smooths the edges of what it draws. Each mode works on every GPU path.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u32)]
+pub enum Antialias {
+    /// No anti-aliasing: one sample per pixel, and no smoothing.
+    None = 0,
+    /// FXAA in the final pass, over a scene drawn with one sample per pixel.
+    Fxaa = 1,
+    /// MSAA with 4 samples per pixel, the engine's default.
+    #[default]
+    Msaa = 2,
+}
+
+impl Antialias {
+    /// Every mode, in code order.
+    pub const ALL: [Self; 3] = [Self::None, Self::Fxaa, Self::Msaa];
+
+    /// The mode's code, which the TypeScript API shares.
+    pub const fn code(self) -> u32 {
+        self as u32
+    }
+
+    /// The mode of a code, or `None` for a code that names none.
+    pub fn from_code(code: u32) -> Option<Self> {
+        Self::ALL.into_iter().find(|mode| mode.code() == code)
+    }
+
+    /// Samples per pixel of the scene's color and depth targets.
+    pub const fn samples(self) -> u32 {
+        match self {
+            Self::Msaa => 4,
+            Self::None | Self::Fxaa => 1,
         }
     }
 }
@@ -394,20 +424,16 @@ mod tests {
         );
         let uniform = brighter.uniform();
         assert_eq!((uniform.exposure, uniform.tone_mapping), (2.0, 0));
+        assert_eq!((uniform.flags, uniform.render_size), (0, 0));
         assert_eq!(uniform.as_bytes().len(), OUTPUT_UNIFORM_BYTES as usize);
     }
 
     #[test]
-    fn the_final_pass_reads_its_flags_and_the_render_size_from_the_spare_words() {
+    fn the_final_pass_reads_the_render_size_from_the_last_word() {
         let mut uniform = Output::default().uniform();
-        assert_eq!((uniform.flags, uniform.render_size), (0, 0));
-        uniform.set_display_color(true);
         uniform.set_render_size((1001, 600));
-        assert_eq!(uniform.flags, output_flags::DISPLAY_COLOR);
         assert_eq!(uniform.render_size & 0xffff, 1001);
         assert_eq!(uniform.render_size >> 16, 600);
-        uniform.set_display_color(false);
-        assert_eq!(uniform.flags, 0);
         // The shader library's block has the same words in the same order.
         let library = include_str!("../../null3d-shaders/wgsl/lib/tonemap.wgsl");
         let block =
@@ -416,6 +442,18 @@ mod tests {
             library.contains(block),
             "tonemap.wgsl's Output block differs"
         );
+    }
+
+    #[test]
+    fn only_msaa_draws_more_than_one_sample_and_codes_name_each_mode_once() {
+        for mode in Antialias::ALL {
+            assert_eq!(Antialias::from_code(mode.code()), Some(mode));
+        }
+        assert_eq!(Antialias::from_code(3), None);
+        assert_eq!(Antialias::default(), Antialias::Msaa);
+        assert_eq!(Antialias::Msaa.samples(), 4);
+        assert_eq!(Antialias::Fxaa.samples(), 1);
+        assert_eq!(Antialias::None.samples(), 1);
     }
 
     #[test]
