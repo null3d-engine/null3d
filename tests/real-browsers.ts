@@ -87,6 +87,7 @@ import {
 	neededPath,
 	overloadSummary,
 	PLANS,
+	REPORT_ON_TOP_PLANS,
 	startupSummary,
 } from './lib/plans.ts';
 import { RUNS_DIR } from './lib/report-collector.ts';
@@ -623,7 +624,7 @@ async function runPlan(
 	local: DevServer,
 ): Promise<number> {
 	const run = runName(options.plan);
-	const plan = writePlan(run, items);
+	const plan = writePlan(run, items, REPORT_ON_TOP_PLANS.has(options.plan));
 	const recovery = new QuietRecovery(plan, macReopener(run, launches, local.url));
 	const heatReadings = new Map<string, HeatSample[]>();
 	try {

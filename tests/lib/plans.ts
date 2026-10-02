@@ -612,6 +612,17 @@ export function startupPlan({ runs = STARTUP_RUNS }: PlanSettings = {}): PlanIte
 	];
 }
 
+/**
+ * The plans whose pages only check results, without timing them, so the runner page may draw its
+ * report over their frames. Any other plan keeps each page's frame on top.
+ */
+export const REPORT_ON_TOP_PLANS: ReadonlySet<string> = new Set([
+	'checks',
+	'parity',
+	'memory',
+	'depth',
+]);
+
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
 	checks: checksPlan,
 	parity: parityPlan,
