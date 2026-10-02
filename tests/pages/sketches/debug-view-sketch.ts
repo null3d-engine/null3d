@@ -22,10 +22,10 @@ export default defineSketch(({ scene, materials, geometry, debug }) => {
 	scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
 	scene.createAmbientLight({ intensity: 0.3 });
 	scene.createMesh({
-		mesh: geometry.plane({ width: 12, height: 73.5 }),
+		mesh: geometry.plane({ width: 12, height: 75 }),
 		material: materials.standard({ color: '#7a8b6f' }),
 		rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
-		position: [0, 0, -33.25],
+		position: [0, 0, -32.5],
 	});
 	scene.createMesh({
 		mesh: geometry.box(),
