@@ -170,13 +170,15 @@ fn a_tile_cull_and_draw_on_webgpu_reads_the_casters_alone() {
     world.add_spot([-3.0, 4.0, 0.0], 6.0);
     let mut mock = MockBackend::default();
     world.frame = 0;
+    // Each frame with lights lists the lights of the camera's clusters in three dispatches.
+    let clustering = 3;
     let commands = step(&mut world, &mut mock, true);
     // The camera's culling dispatch and the tile's, and two bundles run: the camera's and the
     // tile's.
-    assert_eq!(count(&commands, Op::Dispatch), 2);
+    assert_eq!(count(&commands, Op::Dispatch), clustering + 2);
     assert_eq!(count(&commands, Op::ExecuteBundles), 2);
     let still = step(&mut world, &mut mock, false);
-    assert_eq!(count(&still, Op::Dispatch), 1);
+    assert_eq!(count(&still, Op::Dispatch), clustering + 1);
     assert_eq!(count(&still, Op::ExecuteBundles), 1);
 }
 

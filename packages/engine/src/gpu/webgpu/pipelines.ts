@@ -9,6 +9,7 @@ import {
 	LAYOUT_DEPTH,
 	LAYOUT_FINAL,
 	LAYOUT_FRAME,
+	LAYOUT_LIGHT_CLUSTERS,
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_TEXTURES,
 	SIZE_INSTANCE_STRIDE,
@@ -31,6 +32,9 @@ import {
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
+	TEMPLATE_LIGHT_COUNT,
+	TEMPLATE_LIGHT_PLACE,
+	TEMPLATE_LIGHT_WRITE,
 	TEMPLATE_SHADOW_DEPTH,
 	VERTEX_INSTANCE_LOCATION,
 } from '../../generated/gpu';
@@ -82,6 +86,13 @@ const MAP_SLOTS = [0, 1, 2, 3, 4, 5];
 
 /** The culling shader's compute entry point. */
 const CULL_ENTRY_POINT = 'main';
+
+/** The compute templates of light clustering: each one's entry point in the light clustering shader. */
+const LIGHT_ENTRY_POINTS: Readonly<Record<number, string>> = {
+	[TEMPLATE_LIGHT_COUNT]: 'count_lights',
+	[TEMPLATE_LIGHT_PLACE]: 'place_lights',
+	[TEMPLATE_LIGHT_WRITE]: 'write_lights',
+};
 
 /** The compacted instance that a mesh draw's instances read: its matrix rows, then its ids. */
 const INSTANCE_BUFFERS: GPUVertexBufferLayout[] = [
@@ -160,6 +171,8 @@ export class Pipelines {
 	private readonly pipelineLayouts: (GPUPipelineLayout | undefined)[] = [];
 	private readonly cullLayout: GPUPipelineLayout;
 	private readonly cull: WgslShader | undefined;
+	private readonly lightLayout: GPUPipelineLayout;
+	private readonly lightClusters: WgslShader | undefined;
 	private readonly mipmap: WgslShader | undefined;
 	private readonly modules = new Map<WgslShader, GPUShaderModule>();
 	/** The pipelines that make mip levels, by the format they draw. */
@@ -240,6 +253,12 @@ export class Pipelines {
 			{ binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 		]);
+		// Light clustering's parameters, the light list, and the light grid that it fills.
+		this.defineLayout(LAYOUT_LIGHT_CLUSTERS, 'light clusters', [
+			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+		]);
 		// The final pass reads the scene color with textureLoad, which takes any float format.
 		this.defineLayout(LAYOUT_FINAL, 'final', [
 			{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
@@ -311,6 +330,10 @@ export class Pipelines {
 		}
 		this.cullLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_CULL)] });
 		this.cull = variantFor(shaders.cull, 0, 'wgsl')?.wgsl ?? undefined;
+		this.lightLayout = device.createPipelineLayout({
+			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_CLUSTERS)],
+		});
+		this.lightClusters = variantFor(shaders.light_clusters, 0, 'wgsl')?.wgsl ?? undefined;
 		this.mipmap = variantFor(shaders.mipmap, 0, 'wgsl')?.wgsl ?? undefined;
 	}
 
@@ -452,14 +475,24 @@ export class Pipelines {
 		return pipeline;
 	}
 
-	/** How to build a compute pipeline of a template. */
+	/** How to build a compute pipeline of a template: culling, or a step of light clustering. */
 	compute(template: number): GPUComputePipelineDescriptor {
-		if (template !== TEMPLATE_CULL) throw new Error(`unknown compute template ${template}`);
-		if (!this.cull) throw new Error("the device's shader module has no culling shader");
+		if (template === TEMPLATE_CULL) {
+			if (!this.cull) throw new Error("the device's shader module has no culling shader");
+			return {
+				label: 'cull',
+				layout: this.cullLayout,
+				compute: { module: this.module('cull', this.cull), entryPoint: CULL_ENTRY_POINT },
+			};
+		}
+		const entryPoint = LIGHT_ENTRY_POINTS[template];
+		if (!entryPoint) throw new Error(`unknown compute template ${template}`);
+		const shader = this.lightClusters;
+		if (!shader) throw new Error("the device's shader module has no light clustering shader");
 		return {
-			label: 'cull',
-			layout: this.cullLayout,
-			compute: { module: this.module('cull', this.cull), entryPoint: CULL_ENTRY_POINT },
+			label: entryPoint,
+			layout: this.lightLayout,
+			compute: { module: this.module('light clusters', shader), entryPoint },
 		};
 	}
 }
