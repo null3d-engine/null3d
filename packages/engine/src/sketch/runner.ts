@@ -233,6 +233,7 @@ export class SketchRunner {
 			device.antialias,
 			device.transparent,
 			device.cellCulling,
+			device.depthPrepass,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
 		const { shadowTiles, shadowTileSize, pointLightShadows } = sketch.quality.settings;

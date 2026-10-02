@@ -39,7 +39,8 @@ struct VertexIn {
 }
 
 struct VertexOut {
-    @builtin(position) clip: vec4f,
+    /// Invariant, so the depth prepass finds the same depth for each vertex as this template.
+    @invariant @builtin(position) clip: vec4f,
     /// The first texture coordinates, then the second.
     @location(0) uv: vec4f,
     @location(1) @interpolate(flat, either) material: u32,

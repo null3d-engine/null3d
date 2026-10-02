@@ -8,7 +8,7 @@ summary: "Low to Ultra; pixel-ratio caps; the preset check; switching presets; t
 
 # Quality presets, dynamic resolution and frame budgets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow settings, texture settings, anti-aliasing mode and memory maximum, and reports it. During play, the frame-budget governor moves the render scale and then the live shadow settings, and a sketch can switch presets with `quality.setPreset`. The settings that the table below marks as planned are not built yet. Neither are frame budgets for a sketch's own systems. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow settings, texture settings, anti-aliasing mode, depth prepass and memory maximum, and reports it. During play, the frame-budget governor moves the render scale and then the live shadow settings, and a sketch can switch presets with `quality.setPreset`. The settings that the table below marks as planned are not built yet. Neither are frame budgets for a sketch's own systems. Coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -160,7 +160,7 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Shadow tile size in texels (`shadowTileSize`) | 512 | 512 | 1024 | 1024 | at the start | built |
 | Point light shadows (`pointLightShadows`) | no | no | yes | yes | at the start | built |
 | Frame-budget governor (`governor`) | on | on | on | on | during play | built |
-| Depth prepass (`depthPrepass`) | no | no | yes | yes | at the start | planned |
+| Depth prepass (`depthPrepass`) | no | no | no | no | at the start | built |
 | Anisotropic filtering cap (`maxAnisotropy`) | 2x | 4x | 8x | 16x | during play | built |
 | Texture uploads per frame (`uploadBytesPerFrame`) | 2 MiB | 4 MiB | 8 MiB | 16 MiB | during play | built |
 | Point and spot lights per frame (`maxLights`) | 256 | 256 | 512 | 1024 | at the start | planned |
@@ -177,6 +177,18 @@ The anisotropic filtering cap limits the `anisotropy` option of every texture, s
 Low smooths edges with FXAA, and the other presets with MSAA. MSAA draws 4 samples per pixel, which costs a phone's GPU memory and bandwidth. FXAA draws one sample and smooths edges in the final pass, at a small cost in sharpness. The `antialias` option of `createEngine` replaces the preset's mode. The mode then stays fixed while the engine runs, because the scene's targets and pipelines depend on it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) compares the modes.
 
 The engine makes its memory while it tests the GPU paths. So the memory maximum follows the starting preset and the crashed starts, and the GPU path does not cap it. The `memory` option of `createEngine` replaces it: [Page API](../api/engine.md#memory).
+
+### The depth prepass
+
+With the depth prepass, the engine first draws the depth of the opaque objects, with a shader that computes positions only. The opaque pass then shades each pixel once, for its nearest surface. Without the prepass, a pixel can be shaded for several surfaces before the nearest one covers them. The prepass costs a second pass over the objects' vertices. So it saves GPU time where objects hide many others and their shading costs much, such as in a lit street of buildings. It costs time where a scene has many vertices and little overdraw.
+
+Some objects stay out of the prepass and shade as they would without it. These are blended objects, and objects whose material has an alpha cutoff, skips depth writes or the depth test, or is a custom material. Every preset leaves the prepass off. Turn it on with the `depthPrepass` option of `createEngine`, and compare the scene's GPU time with `?prepass=on` and `?prepass=off`. The prepass is fixed while the engine runs, because the scene's pipelines depend on it.
+
+Only WebGPU draws the prepass. On WebGL2, two shader programs can compute different depths for a triangle that the camera's near plane cuts. So WebGL2 draws without the prepass, and `quality.settings.depthPrepass` is false there.
+
+```ts
+const engine = await createEngine({ canvas, sketch, depthPrepass: true });
+```
 
 ## Dynamic resolution
 

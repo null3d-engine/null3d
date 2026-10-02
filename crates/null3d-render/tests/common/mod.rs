@@ -314,11 +314,16 @@ impl<B: FrameBuilder> World<B> {
     /// Adds a mesh and a material to the builder, and an object that draws with them, in the
     /// current frame. Returns the engine mesh id.
     pub fn add_object(&mut self, mesh: &Geometry, shading: Shading) -> u32 {
+        self.add_object_with(mesh, shading, 0)
+    }
+
+    /// As [`World::add_object`], with a material of the `features` bits.
+    pub fn add_object_with(&mut self, mesh: &Geometry, shading: Shading, features: u32) -> u32 {
         let settings = self.renderer.settings_mut();
         let mesh = settings.meshes_mut().add(mesh).unwrap() + 1;
         let material = settings
             .materials_mut()
-            .create(shading, 0, [1.0, 1.0, 1.0, 1.0])
+            .create(shading, features, [1.0, 1.0, 1.0, 1.0])
             .unwrap()
             + 1;
         let object = self.scene.reserve().unwrap();

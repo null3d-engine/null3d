@@ -102,6 +102,7 @@ describe('the preset table', () => {
 			'shadowTileSize',
 			'pointLightShadows',
 			'governor',
+			'depthPrepass',
 			'maxAnisotropy',
 			'uploadBytesPerFrame',
 			'memoryMaximumMiB',
@@ -133,6 +134,7 @@ describe('the preset table', () => {
 			'shadowTiles',
 			'shadowTileSize',
 			'pointLightShadows',
+			'depthPrepass',
 		]);
 		expect(LIVE_SETTINGS).toEqual([
 			'maxPixelRatio',
@@ -165,7 +167,7 @@ describe('the preset table', () => {
 
 describe('presetSettings', () => {
 	it("gives a sketch each preset's values", () => {
-		const full = { maxRenderScale: 1, governor: true };
+		const full = { maxRenderScale: 1, governor: true, depthPrepass: false };
 		expect(presetSettings('low')).toEqual({
 			maxPixelRatio: 1.5,
 			minRenderScale: 0.5,

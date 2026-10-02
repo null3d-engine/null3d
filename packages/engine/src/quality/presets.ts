@@ -136,6 +136,14 @@ export const QUALITY_SETTINGS = {
 		changes: 'start',
 		values: 'flag',
 	},
+	// The depth prepass trades a second pass over the opaque objects' vertices for shading each
+	// pixel once. It stays off on every preset: it made S2's GPU time per frame 45% longer on the
+	// Mac (Benchmarks, "The depth prepass").
+	depthPrepass: {
+		presets: [false, false, false, false],
+		changes: 'start',
+		values: 'flag',
+	},
 	// The shared memory's maximum, from 256 MiB to the 4 GiB that the threaded core declares. Every
 	// preset keeps the loader's default until measurements of the memory that tabs can use on
 	// phones and tablets set one per preset (D-04).
@@ -240,6 +248,13 @@ export interface QualitySettings {
 	 * `pointLightShadows` option of `createEngine` sets it, and `set` does not take it.
 	 */
 	pointLightShadows: boolean;
+	/**
+	 * True when the engine draws the depth of the opaque objects before it shades them, so it
+	 * shades each pixel once, for its nearest surface. The setting is fixed when the engine starts:
+	 * the page's `depthPrepass` option of `createEngine` sets it, and `set` does not take it. It is
+	 * always false on WebGL2, which draws without the prepass.
+	 */
+	depthPrepass: boolean;
 }
 
 /** The names of the settings in the preset table that change as `changes` says. */

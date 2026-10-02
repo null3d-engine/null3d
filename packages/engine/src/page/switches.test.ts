@@ -16,6 +16,7 @@ describe('parseSwitches', () => {
 			wakeByMessage: false,
 			hdr: true,
 			cells: true,
+			prepass: undefined,
 			fps: undefined,
 			queue: undefined,
 			jobs: undefined,
@@ -24,6 +25,12 @@ describe('parseSwitches', () => {
 			hold: undefined,
 			bench: false,
 		});
+	});
+
+	it('turns the depth prepass on or off with ?prepass=, and leaves it to the page otherwise', () => {
+		expect(parseSwitches('?prepass=on').prepass).toBe(true);
+		expect(parseSwitches('?prepass=off').prepass).toBe(false);
+		expect(parseSwitches('?prepass=yes').prepass).toBeUndefined();
 	});
 
 	it('reads the compressed texture families that ?compression= keeps, and none for ?compression=none', () => {

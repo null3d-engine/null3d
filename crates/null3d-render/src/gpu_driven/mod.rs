@@ -78,6 +78,12 @@
 //! The camera's point and spot lights reach the fragment shaders through its light grid (see
 //! [`crate::light_grid`]). The CPU uploads the light list, and a compute pass before the culling
 //! passes lists each cluster's lights in the grid.
+//!
+//! # Depth prepass
+//!
+//! With the depth prepass, each camera view also replays a bundle of its opaque buckets' depth
+//! before its opaque bundle (see [`crate::pipelines`] and [`opaque`]).
+//!
 //! The debug lines pass, which both builders share, is [`crate::debug_lines`], and the background
 //! texture that the camera's opaque pass draws before its bundle is [`crate::background`]. The
 //! render graph ([`crate::frame_graph`]) orders the passes and begins their render passes.
@@ -250,11 +256,19 @@ mod ids {
     pub const FINAL_GROUP: u32 = 1 + 2 * MAX_VIEW_IDS as u32;
     /// The light clustering pass's group.
     pub const LIGHT_GROUP: u32 = FINAL_GROUP + 1;
-    /// The bind groups of materials' maps, after the light clustering pass's group.
-    pub const TEXTURE_GROUPS: u32 = LIGHT_GROUP + 1;
+    /// Each camera view's group of its depth prepass, after the light clustering pass's group.
+    pub const fn prepass_group(view: ViewId) -> u32 {
+        LIGHT_GROUP + 1 + view.index() as u32
+    }
+    /// The bind groups of materials' maps, after the groups of the depth prepass.
+    pub const TEXTURE_GROUPS: u32 = LIGHT_GROUP + 1 + MAX_VIEWS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
+    }
+    /// Each camera view's bundle of its depth prepass, after every view's bundle.
+    pub const fn prepass_bundle(view: ViewId) -> u32 {
+        1 + MAX_VIEW_IDS as u32 + view.index() as u32
     }
 }
 
@@ -277,6 +291,9 @@ pub struct RendererConfig {
     pub cell_culling: bool,
     /// The most point and spot lights that the camera's light grid lists.
     pub light_limits: LightLimits,
+    /// True to draw each camera view's opaque objects' depth in a depth prepass, before the opaque
+    /// pass shades them.
+    pub depth_prepass: bool,
 }
 
 impl Default for RendererConfig {
@@ -289,6 +306,7 @@ impl Default for RendererConfig {
             storage_binding_bytes: sizes::PORTABLE_STORAGE_BINDING_BYTES,
             cell_culling: true,
             light_limits: LightLimits::default(),
+            depth_prepass: false,
         }
     }
 }
@@ -380,6 +398,7 @@ impl GpuDrivenRenderer {
                     },
                 );
                 graph.bind_shadow_map();
+                graph.set_depth_prepass(config.depth_prepass);
                 graph
             },
             layout: Layout::new(Drawn::Scene),
@@ -484,6 +503,7 @@ impl GpuDrivenRenderer {
                 parity,
                 limit,
                 shadows,
+                self.graph.depth_prepass(),
             )?;
             self.sorted
                 .rebuild(
@@ -508,6 +528,7 @@ impl GpuDrivenRenderer {
                     parity,
                     limit,
                     shadows,
+                    false,
                 )?;
             } else {
                 self.casters.clear();
@@ -574,11 +595,15 @@ impl GpuDrivenRenderer {
             .shadow_atlas()
             .expect("the builder's graph binds a shadow atlas");
         let first_new = self.views_made;
+        let prepass = self.graph.depth_prepass();
         for index in 0..views {
             let view = ViewId::from_index(index);
             if index >= first_new {
                 opaque::create_frame_buffer(list, view)?;
                 self.culling.add_view(list, view)?;
+                if prepass {
+                    shadow::bind_depth(list, ids::prepass_group(view), view)?;
+                }
             }
             if index >= first_new || self.graph.textures_made() {
                 opaque::bind_frame(list, view, shadow_map, atlas)?;
@@ -663,7 +688,10 @@ impl GpuDrivenRenderer {
             let view = ViewId::from_index(index);
             self.culling
                 .apply(list, view, &self.layout, shared_recreated, binding_bytes)?;
-            opaque::record_bundle(list, view, &self.layout, &self.meshes, scene_targets)?;
+            opaque::record_bundle(list, view, &self.layout, &self.meshes, scene_targets, false)?;
+            if prepass {
+                opaque::record_bundle(list, view, &self.layout, &self.meshes, scene_targets, true)?;
+            }
         }
         let first_cascade_to_apply = if upload_everything || pages_remade {
             0
@@ -682,7 +710,8 @@ impl GpuDrivenRenderer {
             let recreated = shared_recreated || casters_recreated;
             self.culling
                 .apply(list, view, &self.casters, recreated, binding_bytes)?;
-            opaque::record_bundle(list, view, &self.casters, &self.meshes, shadows::TARGETS)?;
+            let (casters, meshes) = (&self.casters, &self.meshes);
+            opaque::record_bundle(list, view, casters, meshes, shadows::TARGETS, false)?;
         }
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
@@ -803,11 +832,12 @@ impl GpuDrivenRenderer {
             |list, role| match role {
                 Role::LightClusters => light_clusters.record(list),
                 Role::Cull(view) if drawn(view) => culling.record(list, view, layout_of(view)),
+                Role::Prepass(view) if drawn(view) => opaque::record(list, view, true),
                 Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
                     if view == ViewId::CAMERA {
                         background.record(list, ids::frame_group(view), &[])?;
                     }
-                    opaque::record(list, view)
+                    opaque::record(list, view, false)
                 }
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::Transparent(view) => transparent.record(list, view, sorted, settings, meshes),
