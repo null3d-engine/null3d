@@ -93,9 +93,9 @@ fn recording_frames_with_shadows_allocates_nothing() {
     }
 }
 
-/// Records warm-up frames of `world` with two spot lights that cast shadows into a shadow atlas of
-/// one tile, which they take in turn as a caster moves, then frames in which a caster moves within
-/// the lights' reach and out of it, still frames, and frames whose structure changes, and returns
+/// Records warm-up frames of `world` with two spot lights and a point light that cast shadows into
+/// a shadow atlas of seven tiles, which the near spot light takes in turn from the others as it
+/// moves, then frames in which a caster moves within the lights' reach and out of it, still frames, and frames whose structure changes, and returns
 /// what those allocated.
 fn spot_shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     let casts = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
@@ -109,12 +109,13 @@ fn spot_shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
         .renderer
         .settings_mut()
         .set_tile_settings(TileSettings {
-            tiles: 1,
+            tiles: 7,
             size: 256,
-            point_shadows: false,
+            point_shadows: true,
         });
     let near = world.add_spot([-3.0, 4.0, 0.0], 6.0);
     world.add_spot([3.0, 4.0, 0.0], 6.0);
+    world.add_point([0.0, 3.0, -2.0], 5.0);
     let mover = world.objects[0];
     let step = |world: &mut World<B>, frame: u32| {
         // The near light moves toward the camera and back, so the two lights swap the tile.

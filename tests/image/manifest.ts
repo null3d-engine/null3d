@@ -441,6 +441,18 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// Point light shadows: one point light among casters on every side, whose shadows fall across
+	// the six tiles of its cube onto the ground and a wall. The switch turns point light shadows
+	// on, as the presets of WebGL2 and compatibility mode leave them off.
+	{
+		name: 'point-shadows',
+		sketch: 'tests/pages/sketches/point-shadows-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		switches: ['shadowTileSize=1024', 'pointLightShadows'],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the
 	// slab's front corner and the far plane cutting the bar at the back. The parity test compares
 	// the image with three.js's OrthographicCamera.

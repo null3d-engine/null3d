@@ -136,6 +136,11 @@ export interface EngineOptions {
 	 */
 	shadowTileSize?: number;
 	/**
+	 * True makes point lights cast shadows, false keeps them from it. Without it, the quality
+	 * preset decides: High and Ultra turn them on. Another value fails with E1213.
+	 */
+	pointLightShadows?: boolean;
+	/**
 	 * True for a see-through canvas: the page shows through wherever no object draws, until the
 	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
 	 * it. The default is false, an opaque canvas.
@@ -729,6 +734,7 @@ async function startEngine(
 		antialias: options.antialias,
 		shadowTiles: options.shadowTiles,
 		shadowTileSize: options.shadowTileSize,
+		pointLightShadows: options.pointLightShadows,
 	};
 	checkSettings('createEngine()', pageSettings);
 	const presetRequest: PresetRequest = {

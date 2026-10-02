@@ -23,11 +23,6 @@ export const PLANNED_SETTINGS = {
 		changes: 'start',
 		values: [512, 1024, 2048, 4096],
 	},
-	pointLightShadows: {
-		presets: [false, false, true, true],
-		changes: 'start',
-		values: 'flag',
-	},
 	depthPrepass: {
 		presets: [false, false, true, true],
 		changes: 'start',
