@@ -67,6 +67,12 @@
 //! the shadow map. The scene's objects that receive shadows draw with pipelines that read the map.
 //! Turning shadows on or off rebuilds both layouts. Every camera view's frame group binds the
 //! shadow map, which is one texel of one layer while no light casts shadows.
+//!
+//! # Lights
+//!
+//! The camera's point and spot lights reach the fragment shaders through its light grid (see
+//! [`crate::light_grid`]). The CPU uploads the light list, and a compute pass before the culling
+//! passes lists each cluster's lights in the grid.
 //! The debug lines pass, which both builders share, is [`crate::debug_lines`], and the background
 //! texture that the camera's opaque pass draws before its bundle is [`crate::background`]. The
 //! render graph ([`crate::frame_graph`]) orders the passes and begins their render passes.
@@ -113,6 +119,7 @@ use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES};
 use layout::{Drawn, Layout};
+use lights::LightClusters;
 use transparent::Transparent;
 
 /// The most sources the builder can draw, scene slots and instance rows together, on a device whose
@@ -200,8 +207,10 @@ mod ids {
     pub const LIGHT_GRID: u32 = SORTED + MAX_VIEWS as u32;
     /// The records of the lights that the light grid lists.
     pub const LIGHTS: u32 = LIGHT_GRID + 1;
+    /// The parameters of the light clustering pass, which fills the light grid.
+    pub const LIGHT_PARAMS: u32 = LIGHTS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = LIGHTS + 1;
+    pub const PAGES: u32 = LIGHT_PARAMS + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -217,6 +226,10 @@ mod ids {
     pub const SAMPLERS: u32 = 2;
 
     pub const CULL: u32 = 1;
+    /// The light clustering pass's pipelines, in the order it dispatches them.
+    pub const LIGHT_COUNT: u32 = 2;
+    pub const LIGHT_PLACE: u32 = 3;
+    pub const LIGHT_WRITE: u32 = 4;
 
     /// Each view's bind groups: the frame group of its render pipelines, then its culling group.
     pub const fn frame_group(view: ViewId) -> u32 {
@@ -227,8 +240,10 @@ mod ids {
     }
     /// The final pass's group, after every view's.
     pub const FINAL_GROUP: u32 = 1 + 2 * MAX_VIEW_IDS as u32;
-    /// The bind groups of materials' maps, after the final pass's group.
-    pub const TEXTURE_GROUPS: u32 = FINAL_GROUP + 1;
+    /// The light clustering pass's group.
+    pub const LIGHT_GROUP: u32 = FINAL_GROUP + 1;
+    /// The bind groups of materials' maps, after the light clustering pass's group.
+    pub const TEXTURE_GROUPS: u32 = LIGHT_GROUP + 1;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -295,6 +310,8 @@ pub struct GpuDrivenRenderer {
     background: BackgroundPass,
     /// The point and spot lights of the camera's view.
     lights: CameraLights,
+    /// The pass that lists the lights of each cluster of the camera's light grid.
+    light_clusters: LightClusters,
     /// Each camera view's values in the frame being recorded, or `None` for a view with no camera.
     frames: Vec<Option<ViewFrame>>,
     /// Each shadow cascade's values in the frame being recorded, or `None` for a cascade that the
@@ -361,7 +378,8 @@ impl GpuDrivenRenderer {
             sorted: SortedLayout::default(),
             transparent: Transparent::default(),
             background: BackgroundPass::default(),
-            lights: CameraLights::new(config.light_limits),
+            lights: CameraLights::on_gpu(config.light_limits),
+            light_clusters: LightClusters::default(),
             frames: Vec::new(),
             cascade_frames: [None; MAX_CASCADES],
             views_made: 0,
@@ -482,6 +500,7 @@ impl GpuDrivenRenderer {
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
         if !self.created {
             cull::create_pipeline(list)?;
+            lights::create_pipelines(list)?;
         }
         self.lines.request_pipeline(
             &input.lines,
@@ -611,7 +630,7 @@ impl GpuDrivenRenderer {
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
         self.layout.update_order(list, arena, &self.cells, input)?;
-        lights::upload(list, arena, &mut self.lights)?;
+        self.light_clusters.upload(list, arena, &mut self.lights)?;
         self.transparent.size(list, &self.sorted, views)?;
 
         for (index, frame) in self.frames.iter().enumerate() {
@@ -684,7 +703,7 @@ impl GpuDrivenRenderer {
         let (layout, casters, culling, lines) =
             (&self.layout, &self.casters, &self.culling, &self.lines);
         let (frames, cascade_frames) = (&self.frames, &self.cascade_frames);
-        let background = &self.background;
+        let (background, light_clusters) = (&self.background, &self.light_clusters);
         let drawn = |view: ViewId| match view.cascade_index() {
             Some(cascade) => cascade_frames[cascade].is_some(),
             None => frames[view.index()].is_some(),
@@ -697,6 +716,7 @@ impl GpuDrivenRenderer {
         let (settings, meshes) = (&self.settings, &self.meshes);
         self.graph
             .record(list, self.settings.clear_color(), |list, role| match role {
+                Role::LightClusters => light_clusters.record(list),
                 Role::Cull(view) if drawn(view) => culling.record(list, view, layout_of(view)),
                 Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
                     if view == ViewId::CAMERA {

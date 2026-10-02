@@ -24,7 +24,7 @@ use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{CanvasOutput, FrameBuilder};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::RenderScale;
-use null3d_render::light_grid::{DEFAULT_GRID, GridView, LightGrid, LightLimits};
+use null3d_render::light_grid::{ClusterParams, DEFAULT_GRID, GridView, LightGrid, LightLimits};
 use null3d_render::materials::Shading;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::parallel_record::ParallelRecorder;
@@ -671,7 +671,8 @@ fn switching_render_graph_passes_after_the_first_compile_allocates_nothing() {
 
 /// Assigns `count` point lights that move every frame to a light grid with a frame cap of `cap`,
 /// on job workers that count their allocations, and returns what the steady frames allocated.
-fn light_grid_allocations(count: u32, cap: u32) -> u64 {
+/// With `on_gpu`, the grid only prepares what the GPU's passes read, as on WebGPU.
+fn light_grid_allocations(count: u32, cap: u32, on_gpu: bool) -> u64 {
     let lens = Lens::Perspective(Perspective {
         fov_degrees: 60.0,
         near: 0.1,
@@ -687,6 +688,7 @@ fn light_grid_allocations(count: u32, cap: u32) -> u64 {
         ..LightLimits::default()
     };
     let mut grid = LightGrid::new(DEFAULT_GRID, limits);
+    let mut params = ClusterParams::default();
     let mut lights: Vec<VisibleLight> = (0..count)
         .map(|i| VisibleLight {
             range: 4.0 + (i % 5) as f32,
@@ -715,7 +717,12 @@ fn light_grid_allocations(count: u32, cap: u32) -> u64 {
                     let ring = 5.0 + (i % 40) as f32;
                     light.position = [ring * angle.cos(), (i % 7) as f32 - 3.0, -ring * 1.5];
                 }
-                grid.assign(&jobs, &view, &lights);
+                if on_gpu {
+                    grid.prepare(&view, &lights);
+                    grid.gpu_params(&mut params);
+                } else {
+                    grid.assign(&jobs, &view, &lights);
+                }
             }
         };
         frames(0, 4);
@@ -733,11 +740,24 @@ fn assigning_moving_lights_to_the_light_grid_allocates_nothing() {
     let _only = CountingAllocator::exclusive();
     CountingAllocator::track_this_thread();
     // Enough lights over enough slices that the job workers take part.
-    assert_eq!(light_grid_allocations(1000, 1024), 0, "every light listed");
     assert_eq!(
-        light_grid_allocations(1200, 1000),
+        light_grid_allocations(1000, 1024, false),
+        0,
+        "every light listed"
+    );
+    assert_eq!(
+        light_grid_allocations(1200, 1000, false),
         0,
         "the nearest lights listed"
     );
-    assert_eq!(light_grid_allocations(5, 1024), 0, "on the calling thread");
+    assert_eq!(
+        light_grid_allocations(5, 1024, false),
+        0,
+        "on the calling thread"
+    );
+    assert_eq!(
+        light_grid_allocations(1200, 1000, true),
+        0,
+        "prepared for the GPU"
+    );
 }

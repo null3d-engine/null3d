@@ -188,3 +188,11 @@ pipelines.main = { vertex = "vs_main", fragment = "fs_main" }
 variants.plain = { targets = ["wgsl", "glsl"] }
 variants.instanced = { defs = ["INSTANCED"], targets = ["wgsl", "glsl"] }
 variants.multi_draw = { defs = ["INSTANCED", "DRAW_INDEX"], targets = ["glsl"] }
+
+# Light clustering on the GPU: three compute entry points, `count_lights`, `place_lights` and
+# `write_lights`, that list each cluster's point and spot lights in the light grid. WebGPU only;
+# on WebGL2 the job workers list them.
+[shaders.light_clusters]
+file = "light_clusters.wgsl"
+by_device = true
+variants.webgpu = { targets = ["wgsl"] }

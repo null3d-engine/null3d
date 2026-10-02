@@ -1,6 +1,7 @@
 //! The light grid: every light that reaches a point is in the point's cluster, the clusters list
 //! what a search of every cluster and light finds, the job workers list what one thread lists, and
-//! the caps keep the lights they promise.
+//! the caps keep the lights they promise. The file that the GPU's light clustering test page
+//! reads holds lights, the GPU's parameters for them, and what the job workers list.
 #![allow(clippy::disallowed_methods)] // Native job workers are threads.
 
 use std::thread;
@@ -10,7 +11,7 @@ use null3d_core::jobs::JobSystem;
 use null3d_core::lights::{POINT_CONE, VisibleLight, kind};
 use null3d_render::camera::{Affine, Lens, Orthographic, Perspective};
 use null3d_render::light_grid::{
-    DEFAULT_GRID, GridShape, GridView, LightGrid, LightLimits, START_BITS,
+    ClusterParams, DEFAULT_GRID, GridShape, GridView, LightGrid, LightLimits, START_BITS,
 };
 
 /// Runs `f` with a job system whose workers are native threads.
@@ -330,4 +331,118 @@ fn slices_end_where_the_farthest_light_ends() {
     // The word of that cluster names the light.
     let word = grid.words()[cluster as usize];
     assert_eq!(word >> START_BITS, 1);
+}
+
+/// The cases of the GPU's light clustering test page: a lens and a camera, the light count, the
+/// seed of the lights, how far they spread and how far they reach, and the limits.
+fn gpu_cases() -> [(Lens, Affine, usize, u64, f32, f32, LightLimits); 3] {
+    let capped = LightLimits {
+        lights: 200,
+        per_cluster: 6,
+        indices: 4000,
+    };
+    [
+        // S3's many small lights, as one camera sees them.
+        (
+            PERSPECTIVE,
+            AHEAD,
+            256,
+            5,
+            120.0,
+            8.0,
+            LightLimits::default(),
+        ),
+        (
+            ORTHOGRAPHIC,
+            TURNED,
+            100,
+            9,
+            150.0,
+            20.0,
+            LightLimits::default(),
+        ),
+        // Every cap at work: the frame's, each cluster's and the index list's.
+        (PERSPECTIVE, TURNED, 300, 13, 150.0, 20.0, capped),
+    ]
+}
+
+/// The file of the GPU's light clustering test page, as 32-bit words: the number of cases, then
+/// for each case the parameters' words and their count before them, the light list's words and
+/// the light count before them, and the grid's words that the job workers list and their count
+/// before them.
+fn gpu_fixture() -> Vec<u32> {
+    let cases = gpu_cases();
+    let mut out = vec![cases.len() as u32];
+    for (lens, world, count, seed, depth, range, limits) in cases {
+        let view = view(lens, &world);
+        let lights = lights_in(&mut Rng(seed), &view, &world, count, depth, range);
+        let mut grid = LightGrid::new(DEFAULT_GRID, limits);
+        grid.assign(&JobSystem::new(0), &view, &lights);
+        let mut params = ClusterParams::default();
+        grid.gpu_params(&mut params);
+        let listed = grid.lights();
+        assert_eq!(params.shape[3] as usize, listed.len());
+        out.push(params.as_words().len() as u32);
+        out.extend_from_slice(params.as_words());
+        out.push(listed.len() as u32);
+        for light in listed {
+            // SAFETY: a light record is `repr(C)` and made of 32-bit values only.
+            let words: [u32; 16] = unsafe { std::mem::transmute(*light) };
+            out.extend_from_slice(&words);
+        }
+        out.push(grid.words().len() as u32);
+        out.extend_from_slice(grid.words());
+    }
+    out
+}
+
+#[test]
+fn the_gpu_test_page_reads_what_the_job_workers_list() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/light-clusters.bin"
+    );
+    let expected: Vec<u8> = gpu_fixture().iter().flat_map(|w| w.to_le_bytes()).collect();
+    if std::env::var_os("NULL3D_UPDATE_GENERATED").is_some() {
+        std::fs::write(path, &expected).unwrap();
+    }
+    let actual = std::fs::read(path).unwrap_or_default();
+    assert!(
+        actual == expected,
+        "{path} is out of date: run `NULL3D_UPDATE_GENERATED=1 cargo test -p null3d-render --test light_grid`"
+    );
+}
+
+#[test]
+fn the_gpu_reads_the_slicing_that_the_job_workers_assign_with() {
+    for (lens, world, count, seed, depth, range, limits) in gpu_cases() {
+        let view = view(lens, &world);
+        let lights = lights_in(&mut Rng(seed), &view, &world, count, depth, range);
+        let mut assigned = LightGrid::new(DEFAULT_GRID, limits);
+        assigned.assign(&JobSystem::new(0), &view, &lights);
+        let mut prepared = LightGrid::new(DEFAULT_GRID, limits);
+        assert!(prepared.prepare(&view, &lights).is_some());
+        assert_eq!(prepared.uniform(), assigned.uniform());
+        assert_eq!(prepared.lights(), assigned.lights());
+        let (mut a, mut b) = (ClusterParams::default(), ClusterParams::default());
+        assigned.gpu_params(&mut a);
+        prepared.gpu_params(&mut b);
+        assert_eq!(a, b);
+        // The planes between the 16 columns and 9 rows of tiles, and the bounds of 24 slices.
+        assert_eq!(a.planes[26], assigned_plane(&a, 26));
+        assert_eq!(a.planes[27], [0.0; 4]);
+        assert_eq!(a.bounds[12], [0.0; 4]);
+        assert_eq!(prepared.gpu_workgroups(), [2, 24, 1]);
+    }
+}
+
+/// A plane of the parameters, which the grid set: a normalized plane.
+fn assigned_plane(params: &ClusterParams, index: usize) -> [f32; 4] {
+    let p = params.planes[index];
+    let length = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
+    assert!(
+        (length - 1.0).abs() < 1e-5,
+        "plane {index} of length {length}"
+    );
+    p
 }

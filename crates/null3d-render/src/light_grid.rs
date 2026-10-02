@@ -24,10 +24,18 @@
 //! that misses it, but never misses a light that reaches it. The shaders' lighting ends each
 //! light's reach smoothly at its range, so a cluster that lists a light it misses looks the same.
 //!
-//! The job workers assign the lights slice by slice, in two passes over the same tiles. The first
-//! counts each cluster's lights. A prefix sum then gives each cluster its place in the light index
-//! list, and the second pass writes the lights' indices there, in the order of the light list.
-//! Neither pass allocates: the grid keeps room for the most lights it takes.
+//! The assignment runs in two passes over the same tiles. The first counts each cluster's lights.
+//! A prefix sum then gives each cluster its place in the light index list, and the second pass
+//! writes the lights' indices there, in the order of the light list. On WebGL2 the job workers
+//! run both passes, slice by slice, and neither pass allocates: the grid keeps room for the most
+//! lights it takes.
+//!
+//! On WebGPU a compute pass runs them instead (see [`ClusterParams`]). The CPU only picks the
+//! frame's lights and cuts the view into slices and tiles, and the GPU tests each light against
+//! each slice and tile with the same arithmetic, so both paths list the same lights in the same
+//! order. That arithmetic keeps to the operations that WGSL rounds as the CPU does: it multiplies
+//! by the inverse of a length instead of dividing by it, and it reads the depths where the slices
+//! start from a table that the CPU fills, instead of taking powers of two.
 //!
 //! # Limits
 //!
@@ -154,6 +162,61 @@ pub struct GridUniform {
     pub grid: [f32; 4],
 }
 
+/// Threads per workgroup of the GPU's light clustering passes.
+pub const GPU_WORKGROUP_SIZE: u32 = 128;
+/// The most slices that [`ClusterParams`] holds.
+pub const GPU_MAX_SLICES: u32 = 32;
+/// The most planes between tiles that [`ClusterParams`] holds: the columns' and the rows' planes,
+/// one more than the tiles across and one more than the tiles up.
+pub const GPU_MAX_PLANES: u32 = 32;
+
+/// What the GPU's light clustering passes read beside the light list, as a uniform block: the
+/// CPU's part of [`LightGrid::assign`] for the frame, which [`LightGrid::prepare`] does. The
+/// shader `light_clusters.wgsl` declares the same block.
+///
+/// Three dispatches in one compute pass list each cluster's lights, as the job workers' passes
+/// do. The first counts each cluster's lights into the cluster's word. One workgroup then adds up
+/// the counts, with the caps, into each cluster's place in the index list. The last writes the
+/// lights' indices there, in the order of the light list. The first and the last run one
+/// workgroup per slice and run of tiles ([`LightGrid::gpu_workgroups`]), whose threads share the
+/// tile rectangles of each run of lights.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ClusterParams {
+    /// Tiles across, tiles up, slices, and the lights of the light list.
+    pub shape: [u32; 4],
+    /// The most lights of one cluster, the entries of the index list, the clusters, and 0.
+    pub limits: [u32; 4],
+    /// The row that gives a position's depth along the view.
+    pub depth_row: [f32; 4],
+    /// The depth row's direction, of length 1, then one over the row's length.
+    pub forward: [f32; 4],
+    /// How far each tile test reaches past a sphere: the share of its radius, the share of its
+    /// distance from the camera, and two zeros.
+    pub reach: [f32; 4],
+    /// Each slice's bounds along the view, two slices per vector.
+    pub bounds: [[f32; 4]; (GPU_MAX_SLICES / 2) as usize],
+    /// The planes between the columns of tiles, then between the rows.
+    pub planes: [[f32; 4]; GPU_MAX_PLANES as usize],
+}
+
+/// Bytes of [`ClusterParams`].
+pub const CLUSTER_PARAMS_BYTES: u32 = size_of::<ClusterParams>() as u32;
+
+impl ClusterParams {
+    /// The block as 32-bit words, for an upload.
+    pub fn as_words(&self) -> &[u32] {
+        // SAFETY: the block is `repr(C)` and made of 32-bit values only, so it has no padding and
+        // every word of it is initialized.
+        unsafe {
+            std::slice::from_raw_parts(
+                (self as *const Self).cast::<u32>(),
+                CLUSTER_PARAMS_BYTES as usize / 4,
+            )
+        }
+    }
+}
+
 /// A view as the grid sees it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GridView {
@@ -170,9 +233,9 @@ struct Span {
     depth: f32,
     /// How far the light's sphere reaches along the view on each side.
     reach: f32,
-    /// The first and last slices it reaches: none when `first > last`.
+    /// The slices it reaches: `first..end`, none when they are equal.
     first: u32,
-    last: u32,
+    end: u32,
 }
 
 /// How the grid slices depth for the frame: see [`GridUniform`].
@@ -184,8 +247,11 @@ struct Slicing {
     unit: f32,
     /// Slices per doubling of the slice depth.
     per_doubling: f32,
-    /// The length of the depth row's direction: the view's units per world unit.
-    scale: f32,
+    /// One over the length of the depth row's direction: the world units per unit of the view's
+    /// depth.
+    inverse_scale: f32,
+    /// The row that gives a position's depth along the view.
+    row: [f32; 4],
     /// The depth row's direction, of length 1.
     forward: [f32; 3],
 }
@@ -196,16 +262,23 @@ impl Slicing {
         (depth - self.start) / self.unit + 1.0
     }
 
-    /// The slice of a view depth, from 0 to `slices - 1`.
-    fn slice_of(&self, depth: f32, slices: u32) -> u32 {
-        let slice = (self.slice_depth(depth).log2() * self.per_doubling).floor();
-        (slice.max(0.0) as u32).min(slices - 1)
-    }
-
     /// The view depth where slice `slice` starts.
     fn slice_start(&self, slice: u32) -> f32 {
         ((slice as f32 / self.per_doubling).exp2() - 1.0) * self.unit + self.start
     }
+
+    /// The depth of a light's position along the view, added up in the order the GPU adds it.
+    fn depth_of(&self, p: [f32; 3]) -> f32 {
+        let [rx, ry, rz, rw] = self.row;
+        rx * p[0] + ry * p[1] + rz * p[2] + rw
+    }
+}
+
+/// True when a sphere of radius `r` whose center lies at view depth `depth` reaches the depths
+/// between `bounds`, in the world units that `inverse_scale` turns view depths into: the test that
+/// a slice's tile rectangle starts with.
+fn reaches_depths(bounds: [f32; 2], depth: f32, r: f32, inverse_scale: f32) -> bool {
+    (bounds[0] - depth) * inverse_scale <= r && (bounds[1] - depth) * inverse_scale >= -r
 }
 
 /// The light grid of one view: see the module documentation.
@@ -220,6 +293,9 @@ pub struct LightGrid {
     lights: Vec<VisibleLight>,
     /// Each light's span along the view.
     spans: Vec<Span>,
+    /// Each slice's depths along the view, widened on each side for the GPU's rounding: where it
+    /// starts and where it ends.
+    bounds: Vec<[f32; 2]>,
     /// The visible lights in order of nearness, when more than the frame's cap are visible.
     nearest: Vec<u32>,
     /// Each slice's tile rectangle of each light, [`NO_TILES`] for none: one row of lights per
@@ -260,6 +336,7 @@ impl LightGrid {
             planes: vec![[0.0; 4]; (shape.tiles_x + shape.tiles_y + 2) as usize],
             lights: Vec::with_capacity(lights),
             spans: vec![Span::default(); lights],
+            bounds: vec![[0.0; 2]; shape.slices as usize],
             nearest: Vec::new(),
             rects: vec![NO_TILES; shape.slices as usize * lights],
             counts: vec![0; clusters],
@@ -328,6 +405,54 @@ impl LightGrid {
         (slice < slices).then(|| self.shape.cluster(x as u32, y as u32, slice as u32))
     }
 
+    /// True when the GPU's light clustering passes can assign lights to a grid of `shape`: its
+    /// slices and its planes fit [`ClusterParams`].
+    pub const fn fits_gpu(shape: GridShape) -> bool {
+        shape.slices <= GPU_MAX_SLICES && shape.tiles_x + shape.tiles_y + 2 <= GPU_MAX_PLANES
+    }
+
+    /// Writes what the GPU's passes read to list the lights that [`LightGrid::prepare`] picked.
+    /// Panics when the grid's shape does not fit them ([`LightGrid::fits_gpu`]).
+    pub fn gpu_params(&self, out: &mut ClusterParams) {
+        assert!(
+            Self::fits_gpu(self.shape),
+            "a GPU light grid of {:?}",
+            self.shape
+        );
+        let shape = self.shape;
+        let s = &self.slicing;
+        out.shape = [
+            shape.tiles_x,
+            shape.tiles_y,
+            shape.slices,
+            self.lights.len() as u32,
+        ];
+        out.limits = [
+            self.limits.per_cluster,
+            self.limits.indices,
+            shape.clusters(),
+            0,
+        ];
+        out.depth_row = s.row;
+        out.forward = [s.forward[0], s.forward[1], s.forward[2], s.inverse_scale];
+        out.reach = [1.0 + MARGIN, MARGIN, 0.0, 0.0];
+        for (pair, out) in self.bounds.chunks(2).zip(&mut out.bounds) {
+            *out = [0.0; 4];
+            out[..pair.len() * 2].copy_from_slice(pair.as_flattened());
+        }
+        out.planes[..self.planes.len()].copy_from_slice(&self.planes);
+    }
+
+    /// The workgroups of the GPU's counting and writing dispatches: a run of tiles of one slice
+    /// each, across the slices.
+    pub fn gpu_workgroups(&self) -> [u32; 3] {
+        [
+            self.shape.tiles().div_ceil(GPU_WORKGROUP_SIZE),
+            self.shape.slices,
+            1,
+        ]
+    }
+
     /// True when the grid's test finds that light `light` of [`LightGrid::lights`] reaches
     /// cluster `cluster`, before any cap. The clusters list exactly the lights this finds, until
     /// a cap cuts a list short.
@@ -337,7 +462,7 @@ impl LightGrid {
         let tile = cluster % tiles;
         let (x, y) = (tile % self.shape.tiles_x, tile / self.shape.tiles_x);
         let span = self.spans[light as usize];
-        if slice < span.first || slice > span.last {
+        if !(span.first..span.end).contains(&slice) {
             return false;
         }
         let rect = self.rect(&self.lights[light as usize], &span, slice);
@@ -351,14 +476,9 @@ impl LightGrid {
     /// clusters they reach, on the calling thread and the job workers. Allocates nothing, unless
     /// more lights are visible than ever before and more than the frame's cap.
     pub fn assign(&mut self, jobs: &JobSystem, view: &GridView, visible: &[VisibleLight]) {
-        self.choose(visible);
-        self.used = 0;
-        self.view_proj = view.view_proj;
-        let Some(work) = self.slice(&view.depth) else {
-            self.uniform = GridUniform::default();
+        let Some(work) = self.prepare(view, visible) else {
             return;
         };
-        self.set_planes();
         let lights = self.lights.len();
         let parallel = jobs.worker_count() > 0
             && work
@@ -393,7 +513,7 @@ impl LightGrid {
                 for (rect, (light, span)) in
                     rects.iter_mut().zip(this.lights.iter().zip(&this.spans))
                 {
-                    *rect = if (span.first..=span.last).contains(&slice) {
+                    *rect = if (span.first..span.end).contains(&slice) {
                         this.rect(light, span, slice)
                     } else {
                         NO_TILES
@@ -426,6 +546,22 @@ impl LightGrid {
                 }
             });
         }
+    }
+
+    /// Picks the lights of `visible` that the frame lists, cuts the view into slices for them, and
+    /// sets the planes between the tiles: everything but the passes that list each cluster's
+    /// lights. Returns the slices that the lights reach in all, or `None` when the grid lists no
+    /// light, so a frame needs no pass. The GPU's passes start from here (see [`ClusterParams`]).
+    pub fn prepare(&mut self, view: &GridView, visible: &[VisibleLight]) -> Option<u32> {
+        self.choose(visible);
+        self.used = 0;
+        self.view_proj = view.view_proj;
+        let Some(work) = self.slice(&view.depth) else {
+            self.uniform = GridUniform::default();
+            return None;
+        };
+        self.set_planes();
+        Some(work)
     }
 
     /// Copies the lights the frame lists: all of `visible`, or past the frame's cap, the ones whose
@@ -474,10 +610,17 @@ impl LightGrid {
             depth.near
         };
         let unit = if depth.perspective { start } else { 1.0 };
+        let mut slicing = Slicing {
+            start,
+            unit,
+            per_doubling: 1.0,
+            inverse_scale: 1.0 / scale,
+            row: depth.row,
+            forward: [rx / scale, ry / scale, rz / scale],
+        };
         let mut end = start;
         for (span, light) in self.spans.iter_mut().zip(&self.lights) {
-            let [x, y, z] = light.position;
-            span.depth = rx * x + ry * y + rz * z + rw;
+            span.depth = slicing.depth_of(light.position);
             span.reach = light.range * scale;
             end = end.max(span.depth + span.reach);
         }
@@ -487,27 +630,34 @@ impl LightGrid {
         }
         // At least a little depth, so the logarithm of the last slice's end is above 0.
         let end = end.max(start + unit * 1e-3);
-        let mut slicing = Slicing {
-            start,
-            unit,
-            per_doubling: 1.0,
-            scale,
-            forward: [rx / scale, ry / scale, rz / scale],
-        };
         let slices = self.shape.slices;
         slicing.per_doubling = slices as f32 / slicing.slice_depth(end).log2();
+        let mut near = slicing.slice_start(0);
+        for (slice, bounds) in self.bounds.iter_mut().enumerate() {
+            let far = slicing.slice_start(slice as u32 + 1);
+            let margin = MARGIN * (near.abs() + far.abs() + unit);
+            *bounds = [near - margin, far + margin];
+            near = far;
+        }
+        // A light reaches the slices whose depths its sphere reaches, a run of them, found with the
+        // same test as each slice's tile rectangle starts with.
+        let inverse = slicing.inverse_scale;
         let mut work = 0;
-        for span in &mut self.spans[..self.lights.len()] {
-            let (near, far) = (span.depth - span.reach, span.depth + span.reach);
-            (span.first, span.last) = if far < start || near > end {
-                (1, 0)
-            } else {
-                (
-                    slicing.slice_of(near.max(start), slices),
-                    slicing.slice_of(far.min(end), slices),
-                )
-            };
-            work += (span.last + 1).saturating_sub(span.first);
+        for (span, light) in self.spans.iter_mut().zip(&self.lights) {
+            let (depth, r) = (span.depth, light.range);
+            span.first = self
+                .bounds
+                .partition_point(|&[_, far]| (far - depth) * inverse < -r)
+                as u32;
+            span.end = self
+                .bounds
+                .partition_point(|&[near, _]| (near - depth) * inverse <= r)
+                as u32;
+            span.end = span.end.max(span.first);
+            work += span.end - span.first;
+        }
+        if work == 0 {
+            return None;
         }
         self.slicing = slicing;
         self.uniform = GridUniform {
@@ -566,22 +716,24 @@ impl LightGrid {
 
     /// The tiles that a light reaches in a slice, packed as the bytes first column, last column,
     /// first row and last row, or [`NO_TILES`].
+    ///
+    /// The GPU's passes run the same steps in `light_clusters.wgsl`, so a change here changes the
+    /// shader too.
     fn rect(&self, light: &VisibleLight, span: &Span, slice: u32) -> u32 {
         let s = &self.slicing;
         let r = light.range;
         // The part of the sphere inside the slice, as offsets along the view from its center, a
         // little wider than the slice for the GPU's rounding.
-        let (start, end) = (s.slice_start(slice), s.slice_start(slice + 1));
-        let margin = MARGIN * (start.abs() + end.abs() + s.unit);
-        let low = ((start - margin - span.depth) / s.scale).max(-r);
-        let high = ((end + margin - span.depth) / s.scale).min(r);
-        if low > high {
+        let [near, far] = self.bounds[slice as usize];
+        if !reaches_depths([near, far], span.depth, r, s.inverse_scale) {
             return NO_TILES;
         }
+        let low = ((near - span.depth) * s.inverse_scale).max(-r);
+        let high = ((far - span.depth) * s.inverse_scale).min(r);
         // A sphere around that part: its widest circle, and its half length along the view.
         let widest = low.max(0.0).min(high);
-        let half = (high - low) / 2.0;
-        let middle = (high + low) / 2.0;
+        let half = (high - low) * 0.5;
+        let middle = (high + low) * 0.5;
         let squared = (r * r - widest * widest).max(0.0) + half * half;
         let (center, radius) = if squared < r * r {
             let [x, y, z] = light.position;
@@ -609,10 +761,18 @@ impl LightGrid {
 /// A frame builder's light grid: the grid of the camera's view each frame, and what the GPU holds
 /// of it. Only the camera's view lists point and spot lights: every other view's uniform block
 /// says that its grid lists none.
+///
+/// The job workers list each cluster's lights, or on WebGPU the GPU does: the CPU then prepares
+/// the grid and uploads the light list and [`ClusterParams`] alone.
 #[derive(Debug)]
 pub(crate) struct CameraLights {
     grid: LightGrid,
-    /// The grid's words and lights as the GPU holds them, after the last upload.
+    /// True when the GPU lists each cluster's lights.
+    on_gpu: bool,
+    /// What the GPU's passes read, when they list the lights.
+    params: ClusterParams,
+    /// The grid's words, or on the GPU its parameters, and the lights, as the GPU holds them
+    /// after the last upload.
     held_words: Vec<u32>,
     held_lights: Vec<VisibleLight>,
     held: bool,
@@ -622,10 +782,27 @@ pub(crate) struct CameraLights {
 }
 
 impl CameraLights {
+    /// A grid whose clusters' lights the job workers list.
     pub(crate) fn new(limits: LightLimits) -> Self {
+        Self::with_assignment(limits, false)
+    }
+
+    /// A grid whose clusters' lights the GPU's light clustering passes list.
+    pub(crate) fn on_gpu(limits: LightLimits) -> Self {
+        Self::with_assignment(limits, true)
+    }
+
+    fn with_assignment(limits: LightLimits, on_gpu: bool) -> Self {
         let grid = LightGrid::new(DEFAULT_GRID, limits);
+        let words = if on_gpu {
+            CLUSTER_PARAMS_BYTES / 4
+        } else {
+            grid.max_words()
+        };
         Self {
-            held_words: Vec::with_capacity(grid.max_words() as usize),
+            on_gpu,
+            params: ClusterParams::default(),
+            held_words: Vec::with_capacity(words as usize),
             held_lights: Vec::with_capacity(limits.lights as usize),
             held: false,
             room: 0,
@@ -650,7 +827,13 @@ impl CameraLights {
             view_proj: frame.uniform.view_proj,
             depth: frame.depth,
         };
-        self.grid.assign(jobs, &view, lights);
+        if self.on_gpu {
+            if self.grid.prepare(&view, lights).is_some() {
+                self.grid.gpu_params(&mut self.params);
+            }
+        } else {
+            self.grid.assign(jobs, &view, lights);
+        }
         self.room = self.room.max(self.upload_bytes().next_power_of_two());
         let uniform = self.grid.uniform();
         frame.uniform.cluster_depth = uniform.depth;
@@ -660,23 +843,37 @@ impl CameraLights {
     /// True when the grid lists lights and they differ from what the GPU holds. They count as
     /// held from then on, so the caller uploads them.
     pub(crate) fn take_new(&mut self) -> bool {
-        let (words, lights) = (self.grid.words(), self.grid.lights());
-        if self.grid.uniform().grid[2] == 0.0
-            || (self.held && words == &self.held_words[..] && lights == &self.held_lights[..])
+        let Self {
+            grid,
+            on_gpu,
+            params,
+            held_words,
+            held_lights,
+            held,
+            ..
+        } = self;
+        let (words, lights) = (held_source(*on_gpu, params, grid), grid.lights());
+        if grid.uniform().grid[2] == 0.0
+            || (*held && words == &held_words[..] && lights == &held_lights[..])
         {
             return false;
         }
-        self.held_words.clear();
-        self.held_words.extend_from_slice(words);
-        self.held_lights.clear();
-        self.held_lights.extend_from_slice(lights);
-        self.held = true;
+        held_words.clear();
+        held_words.extend_from_slice(words);
+        held_lights.clear();
+        held_lights.extend_from_slice(lights);
+        *held = true;
         true
     }
 
     /// The grid's words, as bytes for an upload.
     pub(crate) fn words_bytes(&self) -> &[u8] {
         words_as_bytes(self.grid.words())
+    }
+
+    /// The parameters of the GPU's passes, as bytes for an upload.
+    pub(crate) fn params_bytes(&self) -> &[u8] {
+        words_as_bytes(self.params.as_words())
     }
 
     /// The grid's light records, as bytes for an upload.
@@ -687,13 +884,13 @@ impl CameraLights {
         unsafe { std::slice::from_raw_parts(lights.as_ptr().cast::<u8>(), size_of_val(lights)) }
     }
 
-    /// The bytes that the next upload copies: the grid's words and lights of this frame, or none
-    /// when the grid lists no light.
+    /// The bytes that the next upload copies: the grid's words, or on the GPU its parameters, and
+    /// the lights of this frame, or none when the grid lists no light.
     fn upload_bytes(&self) -> usize {
         if self.grid.uniform().grid[2] == 0.0 {
             return 0;
         }
-        self.words_bytes().len() + self.lights_bytes().len()
+        held_source(self.on_gpu, &self.params, &self.grid).len() * 4 + self.lights_bytes().len()
     }
 
     /// The room to keep in a frame's arena for the upload, at least [`CameraLights::upload_bytes`]
@@ -705,6 +902,16 @@ impl CameraLights {
     /// Forgets what the GPU holds, after the thread that draws replaced the GPU.
     pub(crate) fn forget_gpu(&mut self) {
         self.held = false;
+    }
+}
+
+/// What the GPU must hold for a frame besides the lights: the grid's words, or when the GPU lists
+/// each cluster's lights, the parameters of its passes.
+fn held_source<'a>(on_gpu: bool, params: &'a ClusterParams, grid: &'a LightGrid) -> &'a [u32] {
+    if on_gpu {
+        params.as_words()
+    } else {
+        grid.words()
     }
 }
 
@@ -773,6 +980,26 @@ mod tests {
     }
 
     #[test]
+    fn the_light_clustering_shader_reads_the_parameters_as_the_grid_writes_them() {
+        let shader = include_str!("../../null3d-shaders/wgsl/light_clusters.wgsl");
+        for line in [
+            format!("const WORKGROUP_SIZE: u32 = {GPU_WORKGROUP_SIZE}u;"),
+            format!("const START_BITS: u32 = {START_BITS}u;"),
+            format!("const MAX_PLANES: u32 = {GPU_MAX_PLANES}u;"),
+            format!("bounds: array<vec4f, {}>,", GPU_MAX_SLICES / 2),
+            "planes: array<vec4f, MAX_PLANES>,".to_owned(),
+        ] {
+            assert!(shader.contains(&line), "light_clusters.wgsl lacks {line}");
+        }
+        // Five vectors, then the slices' bounds and the planes.
+        assert_eq!(
+            CLUSTER_PARAMS_BYTES,
+            (5 + GPU_MAX_SLICES / 2 + GPU_MAX_PLANES) * 16
+        );
+        assert!(LightGrid::fits_gpu(DEFAULT_GRID));
+    }
+
+    #[test]
     fn clusters_count_across_then_up_then_along() {
         let shape = GridShape {
             tiles_x: 4,
@@ -808,15 +1035,27 @@ mod tests {
             start: 0.5,
             unit: 0.5,
             per_doubling: 2.0,
-            scale: 1.0,
+            inverse_scale: 1.0,
+            row: [0.0, 0.0, -1.0, 0.0],
             forward: [0.0, 0.0, -1.0],
         };
         for slice in 0..10 {
             let start = slicing.slice_start(slice);
             assert!((slicing.slice_depth(start).log2() * 2.0 - slice as f32).abs() < 1e-5);
-            assert_eq!(slicing.slice_of(start * 1.001, 20), slice);
+            // A slice's depth on its own side of the slice's start.
+            let floor = |depth: f32| (slicing.slice_depth(depth).log2() * 2.0).floor();
+            assert_eq!(floor(start * 1.001), slice as f32);
         }
-        assert_eq!(slicing.slice_of(0.1, 20), 0);
-        assert_eq!(slicing.slice_of(1e9, 20), 19);
+    }
+
+    #[test]
+    fn a_sphere_reaches_the_depths_its_radius_spans() {
+        // Depths 10 to 12 in a view of two units per world unit: one to six world units away.
+        let bounds = [10.0, 12.0];
+        assert!(reaches_depths(bounds, 8.0, 1.0, 0.5));
+        assert!(!reaches_depths(bounds, 7.9, 1.0, 0.5));
+        assert!(reaches_depths(bounds, 14.0, 1.0, 0.5));
+        assert!(!reaches_depths(bounds, 14.1, 1.0, 0.5));
+        assert!(reaches_depths(bounds, 11.0, 0.1, 0.5));
     }
 }
