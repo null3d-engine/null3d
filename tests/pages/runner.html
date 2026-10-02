@@ -13,8 +13,13 @@
 			#layout { position: fixed; inset: 0; display: flex; flex-direction: column; }
 			#status { padding: 4px 8px; background: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 			#stage { position: relative; flex: 1; }
-			/* The report scrolls under the frame of the page that runs. */
-			#report { position: absolute; inset: 0; overflow: auto; -webkit-overflow-scrolling: touch; padding: 8px; }
+			/*
+			 * The report scrolls under the frame of the page that runs, or, for a plan that only checks
+			 * results, over it. The frame keeps its full size either way, because a frame that is hidden,
+			 * tiny or off screen gets fewer animation frames or none.
+			 */
+			#report { position: absolute; inset: 0; overflow: auto; -webkit-overflow-scrolling: touch; padding: 8px; background: #101418; }
+			#stage.report-on-top #report { z-index: 1; }
 			#run { margin: 0 0 6px; font-size: 12px; color: #9aa4ae; }
 			/* Small enough that a whole run's grid fits on a phone's screen. */
 			#grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(12px, 1fr)); gap: 2px; touch-action: manipulation; }

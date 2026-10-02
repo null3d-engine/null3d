@@ -8,9 +8,10 @@
 // running, hidden, where the runner tool cannot close it. A request to the dev server that gets no
 // answer in time goes out again, because Safari can lose one that it sends as a removed frame
 // closes its connections.
-// Under the stage's frames, the page reports the run: a grid with one cell per page, the failures
-// with their errors, and a line per result, newest first. Each result changes one cell and adds
-// one line, so the page does no work while a test page runs.
+// The page reports the run: a grid with one cell per page, the failures with their errors, and a
+// line per result, newest first. The report lies under each page's frame, or over it when the plan
+// asks, as plans that only check results do, so the screen does not flash between pages. Each
+// result changes one cell and adds one line, so the page does no work while a test page runs.
 // Pixels travel as the page read them back, never re-encoded through a canvas, which privacy
 // protections can alter. For a startup load, the result also tells what the server sent for it.
 
@@ -245,8 +246,10 @@ async function runItem(item: PlanItem, run: string): Promise<Result> {
 async function runPlan(run: string, from = 0): Promise<void> {
 	const plan = JSON.parse((await patientFetch(`/__null3d/runs/${run}/plan`)).text) as {
 		items: PlanItem[];
+		reportOnTop?: boolean;
 	};
 	await claim(run);
+	stage.classList.toggle('report-on-top', plan.reportOnTop === true);
 	report.start(run, plan.items, from);
 	if (from === 0) {
 		show(`run ${run}: reading the device`);
