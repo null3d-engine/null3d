@@ -556,6 +556,9 @@ pub mod layout {
     /// material table. It has no shadow map, so a pass that draws into the shadow map never binds
     /// it.
     pub const DEPTH: u32 = 7;
+    /// Group 0 of the light clustering compute pipelines: their parameters' uniform block, the
+    /// light list, and the light grid that they write.
+    pub const LIGHT_CLUSTERS: u32 = 8;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -869,6 +872,12 @@ pub mod template {
     pub const DEBUG_VIEW: u32 = 12;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;
+    /// Light clustering, first step: counts the lights of each cluster of the light grid.
+    pub const LIGHT_COUNT: u32 = 17;
+    /// Light clustering, second step: gives each cluster its place in the light index list.
+    pub const LIGHT_PLACE: u32 = 18;
+    /// Light clustering, last step: writes each cluster's lights into its place in the list.
+    pub const LIGHT_WRITE: u32 = 19;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1103,6 +1112,7 @@ pub fn typescript_constants() -> String {
                 ("TEXTURES", layout::TEXTURES),
                 ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
                 ("DEPTH", layout::DEPTH),
+                ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1145,6 +1155,9 @@ pub fn typescript_constants() -> String {
                 ("BACKGROUND", template::BACKGROUND),
                 ("DEBUG_VIEW", template::DEBUG_VIEW),
                 ("CULL", template::CULL),
+                ("LIGHT_COUNT", template::LIGHT_COUNT),
+                ("LIGHT_PLACE", template::LIGHT_PLACE),
+                ("LIGHT_WRITE", template::LIGHT_WRITE),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),

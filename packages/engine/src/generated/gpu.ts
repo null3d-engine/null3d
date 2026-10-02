@@ -105,6 +105,7 @@ export const LAYOUT_FINAL = 4;
 export const LAYOUT_TEXTURES = 5;
 export const LAYOUT_MATERIAL_MAPS = 6;
 export const LAYOUT_DEPTH = 7;
+export const LAYOUT_LIGHT_CLUSTERS = 8;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -148,6 +149,9 @@ export const TEMPLATE_SHADOW_DEPTH = 8;
 export const TEMPLATE_BACKGROUND = 9;
 export const TEMPLATE_DEBUG_VIEW = 12;
 export const TEMPLATE_CULL = 16;
+export const TEMPLATE_LIGHT_COUNT = 17;
+export const TEMPLATE_LIGHT_PLACE = 18;
+export const TEMPLATE_LIGHT_WRITE = 19;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;

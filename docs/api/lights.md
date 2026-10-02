@@ -8,7 +8,7 @@ summary: "Directional, point, spot, hemisphere and ambient lights; shadow option
 
 # Lights
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. That light and spot lights cast shadows, and point lights only store `castShadows`. Coding agents must not rely on these parts.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. That light, spot lights and point lights cast shadows. Coding agents must not rely on these parts.
 
 A light is a scene object, like a mesh or a camera. It has a position, a rotation, a parent and layers, and `setVisible` and `destroy` work on it. Each kind of light has a class and a create call of its own. The standard material reflects lights, and the unlit material ignores them.
 
@@ -36,7 +36,7 @@ export default defineSketch(({ scene, time }) => {
 | Call | Class | Light | Its own options |
 | --- | --- | --- | --- |
 | `createDirectionalLight(options)` | `DirectionalLight` | Parallel light from one direction, like sunlight | `direction`, `castShadows`, `shadow` |
-| `createPointLight(options)` | `PointLight` | Light from a point in every direction, out to its range | `range` (required), `decay`, `castShadows` |
+| `createPointLight(options)` | `PointLight` | Light from a point in every direction, out to its range | `range` (required), `decay`, `castShadows`, `shadow` |
 | `createSpotLight(options)` | `SpotLight` | Light from a point in a cone, out to its range | `range` (required), `angle`, `penumbra`, `decay`, `direction`, `target`, `castShadows`, `shadow` |
 | `createHemisphereLight(options)` | `HemisphereLight` | Light from the sky above and the ground below | `skyColor`, `groundColor` |
 | `createAmbientLight(options)` | `AmbientLight` | The same light on every surface | |
@@ -87,7 +87,7 @@ const sun = scene.createDirectionalLight({
 sun.setShadow({ bias: 1, normalBias: 1.5 });
 ```
 
-A spot light casts shadows with `castShadows` too. Its `shadow` option and `setShadow` take the biases alone:
+Spot and point lights cast shadows with `castShadows` too. Their `shadow` option and `setShadow` take the biases alone:
 
 ```ts
 const lamp = scene.createSpotLight({
@@ -100,7 +100,7 @@ const lamp = scene.createSpotLight({
 });
 ```
 
-[Shadows](../concepts/shadows.md) explains cascades, the shadow atlas of spot lights, each setting and its default, and the biases. Point lights store `castShadows`, and cast no shadows yet.
+Point lights cast them where the quality preset's `pointLightShadows` is on, as on High and Ultra. [Shadows](../concepts/shadows.md) explains cascades, the shadow atlas of spot and point lights, each setting and its default, and the biases.
 
 ## Coming from three.js
 
@@ -115,7 +115,7 @@ const lamp = scene.createSpotLight({
 | `scene.add(light)` or `group.add(light)` | Nothing for the scene; the `parent` option or `setParent(group)` for a group |
 | `light.visible = false` | `light.setVisible(false)` |
 | `light.castShadow = true`, `light.shadow.mapSize`, `light.shadow.bias` | `castShadows: true`, and `shadow: { mapSize, bias, normalBias }` in texels of each cascade. [Shadows](../concepts/shadows.md) covers the differences. |
-| `spotLight.castShadow = true`, `spotLight.shadow.bias` | `castShadows: true`, and `shadow: { bias, normalBias }` in texels of the light's tile. The quality preset sets the tile size. |
+| `spotLight.castShadow = true` or `pointLight.castShadow = true`, and `shadow.bias` | `castShadows: true`, and `shadow: { bias, normalBias }` in texels of the light's tile. The quality preset sets the tile size. |
 
 A three.js `distance` of 0 means a light with no end. null3D needs a finite range, so pick the distance where the light no longer matters.
 
@@ -224,7 +224,7 @@ Options every light takes, besides the options of every node.
 
 Interface `LightShadowOptions`.
 
-The shadows of a spot light. The light draws its casters' depth into a tile of the shadow atlas, a view from the light that holds its cone.
+The shadows of a point or spot light. A spot light draws its casters' depth into a tile of the shadow atlas, a view from the light that holds its cone. A point light draws into six tiles, one for each face of a cube around it.
 
 | Member | Description |
 | --- | --- |
@@ -241,7 +241,8 @@ Light from a point in every direction, which fades with distance and ends at its
 | --- | --- |
 | `setRange(range: number): void` | Sets the distance in meters where the light ends, above 0. |
 | `setDecay(decay: number): void` | Sets how fast the light fades with distance, at least 0: 2 is the physical rate. |
-| `setCastShadows(cast: boolean): void` | Makes the light cast shadows, or stop. The default is false. This version stores the setting but draws no shadows yet. |
+| `setCastShadows(cast: boolean): void` | Makes the light cast shadows, or stop. The default is false. Point lights cast them where the quality preset's `pointLightShadows` is on, and each takes six tiles of `shadowTiles`. |
+| `setShadow(shadow: LightShadowOptions): void` | Changes how the light's shadows draw. Settings that `shadow` leaves out keep their values. |
 
 ### `PointLightOptions`
 
@@ -253,7 +254,8 @@ Options for `scene.createPointLight`.
 | --- | --- |
 | `range: number` | The distance in meters where the light ends, above 0. Every point light needs one, because the engine finds the lights near each surface by their ranges. |
 | `decay?: number` | How fast the light fades with distance, at least 0. The default, 2, is the physical rate. |
-| `castShadows?: boolean` | True makes the light cast shadows, like `setCastShadows(true)`. The default is false. This version stores the setting but draws no shadows yet. |
+| `castShadows?: boolean` | True makes the light cast shadows, like `setCastShadows(true)`. The default is false. Point lights cast them where the quality preset's `pointLightShadows` is on, as on High and Ultra. |
+| `shadow?: LightShadowOptions` | How the light's shadows draw, like `setShadow`. Each setting has a default. |
 
 ### `SpotLight`
 

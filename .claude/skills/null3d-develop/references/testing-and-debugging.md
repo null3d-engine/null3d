@@ -151,7 +151,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | Colors too dark or washed out | Texture color space | `'srgb'` for color maps, `'linear'` for data maps | `concepts/color-management` |
 | Lighting much brighter or darker than expected | Light units (physical, like three.js r155+) or exposure | Retune intensities; check `post.set({ exposure })` | `concepts/lighting` |
 | The background differs from the page's CSS color | Exposure and tone mapping change the background too | `post.set({ toneMapping: 'none' })`, or `createEngine({ transparent: true })` over a CSS background | `concepts/color-management` |
-| Shadows missing | A light or object not casting, a receiver not receiving, or out of range; a spot light without a tile, past the preset's `shadowTiles`; point lights cast later in 0.1 | `castShadows` on light and caster, `receiveShadows` on the receiver, `shadowTiles` | `concepts/shadows` |
+| Shadows missing | A light or object not casting, a receiver not receiving, or out of range; a spot or point light without a tile, past the preset's `shadowTiles`; point lights on a preset without `pointLightShadows` | `castShadows` on light and caster, `receiveShadows` on the receiver, `shadowTiles`, `pointLightShadows` | `concepts/shadows` |
 | Shadow acne or peter-panning | Bias | Adjust `shadow.bias` and `normalBias` in small steps | `concepts/shadows` |
 | Flicker between overlapping surfaces | Z-fighting | Separate the surfaces; raise the near plane | `api/cameras` |
 | Blended objects in the wrong order | Sorting by the center of each object's bounds; surfaces that cross have no right order | `setRenderOrder`; split large blended meshes; `depthWrite: false` on surfaces that cross | `concepts/materials` |

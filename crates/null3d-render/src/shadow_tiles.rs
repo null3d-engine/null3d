@@ -56,7 +56,7 @@ use null3d_gpu::drawlist::sizes::SHADOW_TILES_UNIFORM_BYTES;
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage};
 
 use crate::camera::{Affine, Mat4, ViewDepth, multiply, view_matrix};
-use crate::frame::{FrameInput, RecordError, UploadArena};
+use crate::frame::{FrameInput, NO_MESH, RecordError, UploadArena};
 use crate::frame_data::FrameUniform;
 use crate::view::ViewFrame;
 
@@ -576,7 +576,9 @@ impl ShadowTiles {
                 continue;
             }
             for slot in range.start as usize..(range.start + range.count) as usize {
-                if slot >= slots || scene.flags()[slot] & flags::CAST_SHADOWS == 0 {
+                // Objects without a mesh, such as the lights themselves, draw nothing.
+                let casts = scene.flags()[slot] & flags::CAST_SHADOWS != 0;
+                if slot >= slots || !casts || scene.meshes()[slot] == NO_MESH {
                     continue;
                 }
                 let now = caster_of(scene, parity, slot);
@@ -678,6 +680,20 @@ fn perspective_of(half_tan: f32, near: f32, far: f32) -> Mat4 {
     m[11] = -1.0;
     m[14] = near * far / (far - near);
     m
+}
+
+/// The face of a point light's cube that a direction from the light points through, as the
+/// shaders choose it (`null3d::shadows::cube_face`): the axis along which the direction is
+/// longest, with ties going to x, then y.
+pub fn cube_face(direction: [f32; 3]) -> u32 {
+    let [x, y, z] = direction.map(f32::abs);
+    if x >= y && x >= z {
+        u32::from(direction[0] <= 0.0)
+    } else if y >= z {
+        2 + u32::from(direction[1] <= 0.0)
+    } else {
+        4 + u32::from(direction[2] <= 0.0)
+    }
 }
 
 /// One tile's view in one frame.
@@ -822,6 +838,43 @@ mod tests {
             let [x, y, _] = project(&view.view_proj, corner);
             let inside = 1.0 - 2.0 / 512.0;
             assert!((x.abs() - inside).abs() < 1e-4 && (y.abs() - inside).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn every_direction_lands_inside_the_tile_of_its_face() {
+        let mut light = spot([0.0; 3], 0.0);
+        light.kind = kind::POINT;
+        let at = [3.0, -1.0, 2.0];
+        let views: Vec<TileView> = (0..POINT_FACES as u32)
+            .map(|face| TileView::of(&light, face, at, 256))
+            .collect();
+        // Directions over a sphere, the cube's edges and corners among them.
+        let steps = [-1.0, -0.99, -0.5, -0.1, 0.0, 0.1, 0.5, 0.99, 1.0];
+        for x in steps {
+            for y in steps {
+                for z in steps {
+                    let d = [x, y, z];
+                    if d == [0.0; 3] {
+                        continue;
+                    }
+                    let face = cube_face(d);
+                    let along: f32 = FACE_DIRECTIONS[face as usize]
+                        .iter()
+                        .zip(d)
+                        .map(|(a, b)| a * b)
+                        .sum();
+                    assert!(along > 0.0, "{d:?}");
+                    let p: [f32; 3] = std::array::from_fn(|k| at[k] + d[k] * 4.0);
+                    let [px, py, depth] = project(&views[face as usize].view_proj, p);
+                    let inside = 1.0 - 2.0 / 256.0 + 1e-5;
+                    assert!(
+                        px.abs() <= inside && py.abs() <= inside,
+                        "{d:?} face {face}"
+                    );
+                    assert!((0.0..=1.0).contains(&depth), "{d:?}");
+                }
+            }
         }
     }
 

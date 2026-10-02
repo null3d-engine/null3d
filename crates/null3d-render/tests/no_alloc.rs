@@ -24,7 +24,7 @@ use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{CanvasOutput, FrameBuilder};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::RenderScale;
-use null3d_render::light_grid::{DEFAULT_GRID, GridView, LightGrid, LightLimits};
+use null3d_render::light_grid::{ClusterParams, DEFAULT_GRID, GridView, LightGrid, LightLimits};
 use null3d_render::materials::Shading;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::parallel_record::ParallelRecorder;
@@ -93,9 +93,9 @@ fn recording_frames_with_shadows_allocates_nothing() {
     }
 }
 
-/// Records warm-up frames of `world` with two spot lights that cast shadows into a shadow atlas of
-/// one tile, which they take in turn as a caster moves, then frames in which a caster moves within
-/// the lights' reach and out of it, still frames, and frames whose structure changes, and returns
+/// Records warm-up frames of `world` with two spot lights and a point light that cast shadows into
+/// a shadow atlas of seven tiles, which the near spot light takes in turn from the others as it
+/// moves, then frames in which a caster moves within the lights' reach and out of it, still frames, and frames whose structure changes, and returns
 /// what those allocated.
 fn spot_shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     let casts = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
@@ -109,12 +109,13 @@ fn spot_shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
         .renderer
         .settings_mut()
         .set_tile_settings(TileSettings {
-            tiles: 1,
+            tiles: 7,
             size: 256,
-            point_shadows: false,
+            point_shadows: true,
         });
     let near = world.add_spot([-3.0, 4.0, 0.0], 6.0);
     world.add_spot([3.0, 4.0, 0.0], 6.0);
+    world.add_point([0.0, 3.0, -2.0], 5.0);
     let mover = world.objects[0];
     let step = |world: &mut World<B>, frame: u32| {
         // The near light moves toward the camera and back, so the two lights swap the tile.
@@ -728,7 +729,8 @@ fn switching_render_graph_passes_after_the_first_compile_allocates_nothing() {
 
 /// Assigns `count` point lights that move every frame to a light grid with a frame cap of `cap`,
 /// on job workers that count their allocations, and returns what the steady frames allocated.
-fn light_grid_allocations(count: u32, cap: u32) -> u64 {
+/// With `on_gpu`, the grid only prepares what the GPU's passes read, as on WebGPU.
+fn light_grid_allocations(count: u32, cap: u32, on_gpu: bool) -> u64 {
     let lens = Lens::Perspective(Perspective {
         fov_degrees: 60.0,
         near: 0.1,
@@ -744,6 +746,7 @@ fn light_grid_allocations(count: u32, cap: u32) -> u64 {
         ..LightLimits::default()
     };
     let mut grid = LightGrid::new(DEFAULT_GRID, limits);
+    let mut params = ClusterParams::default();
     let mut lights: Vec<VisibleLight> = (0..count)
         .map(|i| VisibleLight {
             range: 4.0 + (i % 5) as f32,
@@ -772,7 +775,12 @@ fn light_grid_allocations(count: u32, cap: u32) -> u64 {
                     let ring = 5.0 + (i % 40) as f32;
                     light.position = [ring * angle.cos(), (i % 7) as f32 - 3.0, -ring * 1.5];
                 }
-                grid.assign(&jobs, &view, &lights);
+                if on_gpu {
+                    grid.prepare(&view, &lights);
+                    grid.gpu_params(&mut params);
+                } else {
+                    grid.assign(&jobs, &view, &lights);
+                }
             }
         };
         frames(0, 4);
@@ -790,11 +798,24 @@ fn assigning_moving_lights_to_the_light_grid_allocates_nothing() {
     let _only = CountingAllocator::exclusive();
     CountingAllocator::track_this_thread();
     // Enough lights over enough slices that the job workers take part.
-    assert_eq!(light_grid_allocations(1000, 1024), 0, "every light listed");
     assert_eq!(
-        light_grid_allocations(1200, 1000),
+        light_grid_allocations(1000, 1024, false),
+        0,
+        "every light listed"
+    );
+    assert_eq!(
+        light_grid_allocations(1200, 1000, false),
         0,
         "the nearest lights listed"
     );
-    assert_eq!(light_grid_allocations(5, 1024), 0, "on the calling thread");
+    assert_eq!(
+        light_grid_allocations(5, 1024, false),
+        0,
+        "on the calling thread"
+    );
+    assert_eq!(
+        light_grid_allocations(1200, 1000, true),
+        0,
+        "prepared for the GPU"
+    );
 }
