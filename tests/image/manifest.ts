@@ -14,17 +14,19 @@
 import { BENCH_SCENES } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
+import { LIGHTS_IMAGE } from '../../bench/scenes/lights.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
+import { GRID_IMAGE } from '../../bench/scenes/standard-grid.ts';
 import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
 import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
 import { ALL_MODES, type ImageRun, type ImageTest, imageRuns, type Tier } from '../lib/images.ts';
-import { STOPS, TONE_MAPPINGS } from '../pages/lib/bright-scene.ts';
+import { STOPS, TONE_MAPPINGS, toneMappingTest } from '../pages/lib/bright-scene.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 
 /**
@@ -38,10 +40,6 @@ const FAR_OUT_TOLERANCE = { threshold: 0, maxDiffRatio: 0.00005 };
 
 /** The sketch of the tone mapping tests: tiles whose linear colors run from about 0.2 to 16. */
 export const BRIGHT_SKETCH = 'tests/pages/sketches/bright-sketch.ts';
-
-/** The name of the tone mapping test of a tone mapping at an exposure in stops. */
-export const toneMappingTest = (tone: string, stops: number) =>
-	`tone-${tone}${stops === 0 ? '' : '-half-exposure'}`;
 
 /** The name of the test that draws a tone mapping test at an exposure of 1 on the 8-bit path. */
 export const eightBitTest = (tone: string) => `tone-${tone}-8-bit`;
@@ -488,7 +486,7 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		name: 'standard-grid',
 		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=grid',
 		hold: 0,
-		size: [480, 270],
+		size: [GRID_IMAGE.width, GRID_IMAGE.height],
 	},
 	{
 		name: 'standard-features',
@@ -498,7 +496,8 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	},
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
-	// lights through an orthographic camera.
+	// lights through an orthographic camera. Then the same floor under a hemisphere light alone. The
+	// parity test compares the grid of 16, the spot lights and the hemisphere light with three.js.
 	...(
 		[
 			['lights-1', 'lights=1'],
@@ -506,12 +505,13 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 			['lights-256', 'lights=256'],
 			['lights-spot', 'scene=spot'],
 			['lights-ortho', 'lights=16&camera=ortho'],
+			['lights-hemisphere', 'scene=hemisphere'],
 		] as const
 	).map(([name, query]) => ({
 		name,
 		sketch: `tests/pages/sketches/lights-sketch.ts?${query}`,
 		hold: 0,
-		size: [480, 270] as const,
+		size: [LIGHTS_IMAGE.width, LIGHTS_IMAGE.height] as const,
 	})),
 	// Custom materials with surface functions: pairs of a standard material and a surface function
 	// that keeps its look, which must match, then surface functions that change the look. Each

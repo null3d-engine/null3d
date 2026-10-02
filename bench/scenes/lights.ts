@@ -1,9 +1,23 @@
-// The point and spot light scenes of clustered lighting, defined once for null3D's image tests and
-// for a three.js twin. It is plain data with no engine imports: a floor with rows of spheres and
-// boxes, lit by point lights in a square grid above it, or by spot lights of different cones, and
-// a dim ambient light. No directional light shines, so every lit pixel comes from the clusters.
+// The point, spot and hemisphere light scenes, defined once for null3D's image tests and for their
+// three.js twin, which the parity test compares them with. It is plain data with no engine imports:
+// a floor with rows of spheres and boxes, lit by point lights in a square grid above it, by spot
+// lights of different cones, or by a hemisphere light, and a dim ambient light. No directional
+// light shines, so in the point and spot scenes every lit pixel comes from the clusters.
 
 type Vec3 = readonly [number, number, number];
+
+/** The image's size in pixels. */
+export const LIGHTS_IMAGE = { width: 480, height: 270 } as const;
+
+/**
+ * The hemisphere light: a blue sky above and a brown ground below, which shade each surface by
+ * how far its normal turns up or down.
+ */
+export const HEMISPHERE_LIGHT = {
+	skyColor: '#9cc8ff',
+	groundColor: '#806040',
+	intensity: 1.5,
+} as const;
 
 /** The background, in sRGB. */
 export const LIGHTS_BACKGROUND = '#101216';
@@ -31,6 +45,9 @@ export const LIGHTS_ORTHO_CAMERA = {
 	near: 1,
 	far: 60,
 } as const satisfies { position: Vec3; target: Vec3; height: number; near: number; far: number };
+
+/** The segments of the spheres' mesh, around and from pole to pole. Their radius is 1, scaled. */
+export const LIGHTS_SPHERE = { widthSegments: 32, heightSegments: 16 } as const;
 
 /** The floor: a square plane at y = 0, with its edge in meters. */
 export const LIGHTS_FLOOR = { size: 20, color: '#9a9ea8', roughness: 0.8 } as const;

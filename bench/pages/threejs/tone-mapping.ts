@@ -1,7 +1,9 @@
 // The bright scene of the tone mapping tests (tests/pages/lib/bright-scene.ts) in three.js, under
 // the tone mapping and the exposure in stops that ?tone= and ?stops= name. WebGLRenderer tone maps
 // only what it draws into the canvas, so the page draws one frame there, reads the canvas back at
-// once, and publishes the pixels. The tone mapping spec compares them with null3D's frame.
+// once, and publishes the pixels. The tone mapping spec and the parity checks compare them with
+// null3D's frame. ?antialias=none draws without anti-aliasing, as null3D's image page does with the
+// same switch.
 import * as three from 'three';
 import {
 	ACESFilmicToneMapping,
@@ -41,7 +43,10 @@ run('tone-mapping', async () => {
 		throw new Error(`?tone=${tone} is not a tone mapping`);
 	const exposure = exposureOf(Number(params.get('stops') ?? '0'));
 	const [width, height] = SIZE;
-	const renderer = new three.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+	const renderer = new three.WebGLRenderer({
+		antialias: params.get('antialias') !== 'none',
+		preserveDrawingBuffer: true,
+	});
 	renderer.setPixelRatio(1);
 	renderer.setSize(width, height);
 	renderer.toneMapping = THREE_TONE_MAPPINGS[tone];
