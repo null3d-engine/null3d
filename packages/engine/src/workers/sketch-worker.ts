@@ -105,7 +105,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 				tier,
 			});
 		} catch (e) {
-			host.release();
+			await host.release();
 			replyToPage({
 				type: 'error',
 				role: 'sketch',

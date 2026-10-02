@@ -339,9 +339,10 @@ export interface Engine {
 	/**
 	 * Stops the engine and its workers. The engine cannot start again. The thread that draws first
 	 * destroys the engine's GPU textures and buffers and its GPU device, so the GPU's memory comes
-	 * back at once. The promise resolves once every worker has stopped, when the browser can free
-	 * the engine's memory. Wait for it before you start another engine on the same page: an iPad has
-	 * room for only a few engines' memory.
+	 * back at once. It also leaves the canvas blank, at its size, because Safari keeps the GPU
+	 * memory of a canvas's last frame until the canvas shows another. The promise resolves once
+	 * every worker has stopped, when the browser can free the engine's memory. Wait for it before
+	 * you start another engine on the same page: an iPad has room for only a few engines' memory.
 	 */
 	destroy(): Promise<void>;
 }
@@ -1005,7 +1006,7 @@ async function startEngine(
 				Slot.PipelinesBuilt,
 			])
 				notifySlot(slots, slot, threads?.sketch?.worker);
-			localDrawing?.stop();
+			await localDrawing?.stop();
 			localRunner?.dispose();
 			localCore?.destroyEngine();
 			input.listen(false);

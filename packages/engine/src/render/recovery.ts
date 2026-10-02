@@ -5,13 +5,16 @@
 // is reported at once.
 
 import { messageOf } from '../errors/message';
+import { type CanvasHolder, releaseCanvas } from '../gpu/canvas-release';
 import { Slot } from '../shared/control';
 
-/** What recovery needs of a renderer: its loss signal, a simulated loss and a way to release it. */
-export interface Recoverable {
+/**
+ * What recovery needs of a renderer: its loss signal, a simulated loss, and its canvas and GPU
+ * objects to release.
+ */
+export interface Recoverable extends CanvasHolder {
 	readonly lost: Promise<string>;
 	simulateLoss(): void;
-	destroy(): void;
 }
 
 /** A loop that draws with one renderer until it stops. */
@@ -79,7 +82,7 @@ export class Drawing<R extends Recoverable> {
 			return;
 		}
 		if (this.stopped) {
-			this.renderer.destroy();
+			await releaseCanvas(this.renderer);
 			return;
 		}
 		Atomics.add(this.slots, Slot.GpuEpoch, 1);
@@ -103,10 +106,11 @@ export class Drawing<R extends Recoverable> {
 		this.renderer.simulateLoss();
 	}
 
-	stop(): void {
+	/** Stops drawing, and resolves once the renderer has given back the canvas and the GPU. */
+	async stop(): Promise<void> {
 		this.stopped = true;
 		this.loop.stop();
-		this.renderer.destroy();
+		await releaseCanvas(this.renderer);
 		this.release?.();
 	}
 }
