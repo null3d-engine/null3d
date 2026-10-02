@@ -141,6 +141,15 @@ export interface EngineOptions {
 	 */
 	pointLightShadows?: boolean;
 	/**
+	 * True to draw the depth of the opaque objects before the engine shades them, so each pixel is
+	 * shaded once, for its nearest surface. It saves GPU time in scenes where objects hide many
+	 * others and shading costs much, and costs a second pass over the objects' vertices. Without
+	 * it, the quality preset decides. The prepass stays fixed while the engine runs, and the
+	 * `?prepass=on` or `?prepass=off` switch wins over this option. WebGL2 draws without it.
+	 * Another value fails with E1213.
+	 */
+	depthPrepass?: boolean;
+	/**
 	 * True for a see-through canvas: the page shows through wherever no object draws, until the
 	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
 	 * it. The default is false, an opaque canvas.
@@ -735,6 +744,7 @@ async function startEngine(
 		shadowTiles: options.shadowTiles,
 		shadowTileSize: options.shadowTileSize,
 		pointLightShadows: options.pointLightShadows,
+		depthPrepass: switches.prepass ?? options.depthPrepass,
 	};
 	checkSettings('createEngine()', pageSettings);
 	const presetRequest: PresetRequest = {
@@ -904,10 +914,13 @@ async function startEngine(
 		);
 	const { tier, forceCompat } = choice;
 	const preset = choosePreset(presetRequest, tier);
+	// WebGL2 draws without the depth prepass, whatever the page asks: two of its shader programs
+	// can compute different depths for one triangle that the near plane cuts.
+	const tierSettings = tier === 'webgl2' ? { ...pageSettings, depthPrepass: false } : pageSettings;
 	const quality: QualityStart = {
 		preset,
-		settings: presetSettings(preset, pageSettings),
-		options: pageSettings,
+		settings: presetSettings(preset, tierSettings),
+		options: tierSettings,
 		highest: withinTier('ultra', tier),
 		// The engine checks a preset that it chose itself, when a lighter one exists. A preset that
 		// the page, a switch or hold mode fixes stays as it is.
@@ -953,6 +966,7 @@ async function startEngine(
 		...switches,
 		antialias: quality.settings.antialias,
 		transparent: options.transparent === true,
+		depthPrepass: quality.settings.depthPrepass,
 	});
 	const capabilities: EngineCapabilities = {
 		tier,

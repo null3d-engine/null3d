@@ -5,8 +5,8 @@
 //! neither do frames that draw debug lines or stop drawing them, that draw a texture background,
 //! or that sort blended objects whose order changes. The render graph allocates nothing while it
 //! stays the same, nor when passes switch on and off after it has compiled once, nor when the
-//! render scale changes. The job workers and the calling thread assign moving lights to the light
-//! grid without allocating.
+//! render scale changes. WebGPU frames with the depth prepass allocate nothing either. The job
+//! workers and the calling thread assign moving lights to the light grid without allocating.
 #![allow(clippy::disallowed_methods)] // Native job workers are threads.
 
 mod common;
@@ -176,6 +176,20 @@ fn recording_frames_of_two_views_allocates_nothing() {
             "WebGL2, multi-draw {multi_draw}"
         );
     }
+}
+
+#[test]
+fn recording_frames_with_the_depth_prepass_allocates_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    let world = || {
+        World::with_config(RendererConfig {
+            depth_prepass: true,
+            ..RendererConfig::default()
+        })
+    };
+    assert_eq!(shadow_allocations(world()), 0, "shadows");
+    assert_eq!(two_view_allocations(world()), 0, "two views");
 }
 
 /// Records warm-up frames, then steady frames whose exposure changes every frame, so the final pass

@@ -155,6 +155,9 @@ export const TEXTURE_STAT_MAX_SIZE = 6;
 export const TEXTURE_STAT_UPLOAD_BUDGET = 7;
 export const TEXTURE_STAT_MAX_ANISOTROPY = 8;
 
+export const SHADOW_CASTERS_CASCADE_MASK = 255;
+export const SHADOW_CASTERS_TILES = 256;
+
 export const TEXTURE_FORMAT_SRGB = 9;
 export const TEXTURE_FORMAT_LINEAR = 2;
 export const TEXTURE_FORMAT_HALF_FLOAT = 4;

@@ -10,8 +10,17 @@
 //! depth bias. Builders sort their buckets by it. What a pass decides is its [`PassTargets`]: the
 //! formats and the sample count of its targets, and the permutation bits that it sets for every
 //! pipeline in it.
+//!
+//! # The depth prepass
+//!
+//! With the depth prepass, the scene's opaque objects draw twice in each view's render pass. The
+//! prepass draws their depth alone, with the depth template, into the view's depth. The opaque pass
+//! then shades each object only where its depth equals what the prepass left, which is the nearest
+//! surface, and writes no depth. Every template's position is invariant, so both compute the same
+//! depth. A pair whose depth the depth template cannot draw the same way stays out of the prepass
+//! and shades as it would without it (see [`DrawKey::prepass`]).
 
-use null3d_gpu::drawlist::{DrawList, Op, permutation, state_flags};
+use null3d_gpu::drawlist::{DrawList, Op, permutation, state_flags, template};
 
 use crate::frame::RecordError;
 
@@ -104,6 +113,15 @@ impl PassTargets {
             ..self
         }
     }
+
+    /// The same targets for the depth template, which writes no color: of the pass's bits, only
+    /// the draw index stays.
+    pub(crate) const fn depth_only(self) -> PassTargets {
+        PassTargets {
+            permutation: self.permutation & permutation::DRAW_INDEX,
+            ..self
+        }
+    }
 }
 
 /// What a mesh and material pair decides about the pipeline that draws it: the template of the
@@ -123,6 +141,41 @@ impl DrawKey {
     /// True when the pair blends, so it draws back to front in the transparent pass.
     pub const fn blends(self) -> bool {
         self.state & state_flags::BLEND != 0
+    }
+
+    /// The key of the pipeline that draws the pair's depth in the depth prepass, or `None` when the
+    /// pair stays out of it. The depth template places the vertices of the engine's templates as
+    /// they do, with the same faces and depth bias. It cannot follow a pair that blends, discards
+    /// fragments by their alpha, skips the depth test or depth writes, or has a custom material,
+    /// whose vertices may move.
+    pub const fn prepass(self) -> Option<DrawKey> {
+        let unfit = state_flags::BLEND
+            | state_flags::LINE_LIST
+            | state_flags::NO_DEPTH_WRITE
+            | state_flags::NO_DEPTH_TEST;
+        if self.state & unfit != 0
+            || self.permutation & permutation::ALPHA_MASK != 0
+            || self.template >= template::CUSTOM_FIRST
+        {
+            return None;
+        }
+        let faces = state_flags::CULL_NONE | state_flags::CULL_FRONT;
+        Some(DrawKey {
+            template: template::SHADOW_DEPTH,
+            permutation: permutation::PREPASS,
+            vertex_format: self.vertex_format,
+            state: (self.state & faces) | state_flags::NO_COLOR_WRITE,
+            bias: self.bias,
+        })
+    }
+
+    /// The key of the pipeline that shades the pair after the depth prepass drew its depth: it
+    /// draws only where its depth equals the target's, and writes none.
+    pub const fn after_prepass(self) -> DrawKey {
+        DrawKey {
+            state: self.state | state_flags::DEPTH_EQUAL | state_flags::NO_DEPTH_WRITE,
+            ..self
+        }
     }
 
     /// The key of the pipeline that draws the pair in a pass with these targets.
@@ -174,6 +227,19 @@ impl PipelineCache {
             self.created += 1;
         }
         Ok(self.created - first)
+    }
+
+    /// The ids of the pipelines that draw an opaque pair with `key` into a scene pass's `targets`:
+    /// the one that shades it, and with the depth prepass (`prepass`), the one that draws its depth
+    /// first, or 0 for a pair that stays out of the prepass.
+    pub fn opaque(&mut self, key: DrawKey, targets: PassTargets, prepass: bool) -> (u32, u32) {
+        match key.prepass() {
+            Some(depth) if prepass => (
+                self.id(key.after_prepass().in_pass(targets)),
+                self.id(depth.in_pass(targets.depth_only())),
+            ),
+            _ => (self.id(key.in_pass(targets)), 0),
+        }
     }
 
     /// Every key, in id order: the key at index `k` has id `k + 1`.
@@ -376,5 +442,100 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn the_prepass_draws_the_depth_of_pairs_whose_depth_its_template_computes_alike() {
+        let bias = DepthBias::from_polygon_offset(1.0, 2.0);
+        let base = DrawKey {
+            template: template::INSTANCED_STANDARD_MAPS,
+            permutation: permutation::VERTEX_COLOR | permutation::RECEIVE_SHADOWS,
+            vertex_format: vertex::UV0 | vertex::COLOR,
+            state: state_flags::CULL_NONE,
+            bias,
+        };
+        // The depth template keeps the vertex format, the faces and the bias, and writes no color.
+        assert_eq!(
+            base.prepass(),
+            Some(DrawKey {
+                template: template::SHADOW_DEPTH,
+                permutation: permutation::PREPASS,
+                vertex_format: vertex::UV0 | vertex::COLOR,
+                state: state_flags::CULL_NONE | state_flags::NO_COLOR_WRITE,
+                bias,
+            })
+        );
+        let back_faces = DrawKey {
+            state: state_flags::CULL_FRONT,
+            ..lit(0)
+        };
+        assert_eq!(
+            back_faces.prepass().map(|key| key.state),
+            Some(state_flags::CULL_FRONT | state_flags::NO_COLOR_WRITE)
+        );
+        // Pairs whose fragments the depth template cannot follow stay out.
+        let out = [
+            DrawKey {
+                state: state_flags::BLEND_NORMAL,
+                ..lit(0)
+            },
+            DrawKey {
+                permutation: permutation::ALPHA_MASK,
+                ..lit(0)
+            },
+            DrawKey {
+                state: state_flags::NO_DEPTH_WRITE,
+                ..lit(0)
+            },
+            DrawKey {
+                state: state_flags::NO_DEPTH_TEST,
+                ..lit(0)
+            },
+            DrawKey {
+                template: template::CUSTOM_FIRST + 3,
+                ..lit(0)
+            },
+        ];
+        for key in out {
+            assert_eq!(key.prepass(), None, "{key:?}");
+        }
+        // After the prepass, the pair draws only at the depth the prepass found, and writes none.
+        assert_eq!(
+            base.after_prepass().state,
+            state_flags::CULL_NONE | state_flags::DEPTH_EQUAL | state_flags::NO_DEPTH_WRITE
+        );
+    }
+
+    #[test]
+    fn opaque_pairs_get_a_depth_pipeline_only_with_the_prepass() {
+        let targets = PassTargets {
+            permutation: permutation::DRAW_INDEX | permutation::TONE_MAP,
+            ..TARGETS
+        };
+        let mut cache = PipelineCache::default();
+        assert_eq!(cache.opaque(lit(0), targets, false), (1, 0));
+        let (shading, depth) = cache.opaque(lit(0), targets, true);
+        assert_eq!((shading, depth), (2, 3));
+        let keys = cache.keys();
+        assert_eq!(keys[1], lit(0).after_prepass().in_pass(targets));
+        // The depth pipeline draws into the pass's targets, with the draw index but no tone mapping.
+        let depth = keys[2];
+        assert_eq!(depth.template, template::SHADOW_DEPTH);
+        assert_eq!(
+            depth.permutation,
+            permutation::PREPASS | permutation::DRAW_INDEX
+        );
+        assert_eq!(
+            (depth.color_format, depth.depth_format, depth.samples),
+            (TARGETS.color_format, TARGETS.depth_format, TARGETS.samples)
+        );
+        // A masked pair shades as it would without the prepass.
+        let masked = DrawKey {
+            permutation: permutation::ALPHA_MASK,
+            ..lit(0)
+        };
+        let (shading, depth) = cache.opaque(masked, targets, true);
+        assert_eq!(depth, 0);
+        assert_eq!(cache.keys()[shading as usize - 1], masked.in_pass(targets));
     }
 }
