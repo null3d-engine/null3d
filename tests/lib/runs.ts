@@ -16,6 +16,16 @@ export interface PlanItem<Check = unknown> {
 	path: string;
 	/** How long the page may take to publish its result. */
 	timeoutSeconds: number;
+	/**
+	 * How long the runner page may send nothing on this page before it counts as stopped, for a page
+	 * that posts its progress as it goes, so a dead tab shows sooner than at the page's timeout.
+	 */
+	quietSeconds?: number;
+	/**
+	 * The page may end its tab on purpose, as the tab memory page does. It posts its progress under
+	 * its progress name, and a dead tab then counts as its result, not as a stopped runner page.
+	 */
+	endsTab?: true;
 	/** What the command-line tool checks in the result. */
 	check: Check;
 }
@@ -223,10 +233,11 @@ const LOAD_SECONDS = 30;
 
 /**
  * How long a runner page may send nothing on a page before it counts as stopped, as when its tab
- * closes: the page's timeout, after which the runner page reports a timeout itself, and time to
- * open the page.
+ * closes: the page's timeout, after which the runner page reports a timeout itself, or the page's
+ * quiet time where it posts progress, and time to open the page.
  */
-export const quietLimitMs = (item: PlanItem) => (item.timeoutSeconds + LOAD_SECONDS) * 1000;
+export const quietLimitMs = (item: PlanItem) =>
+	((item.quietSeconds ?? item.timeoutSeconds) + LOAD_SECONDS) * 1000;
 
 /** A plan item and its place in the plan. */
 export interface PlanPlace<Check = unknown> {

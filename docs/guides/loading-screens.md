@@ -139,11 +139,12 @@ Keep the textures of the first view small, so the first frames show them. Or wai
 | Figure | What it is |
 | --- | --- |
 | `load.warmUpMs` | Time from the start of the first frame's pipeline builds until none was building |
+| `load.firstDrawMs` | Time the first frame's draw took, with the compiles that it waited for |
 | `load.firstFramePipelines` | The pipelines that the first frame built |
 | `pipelines` | The pipelines built during the measurement, which stays at 0 in steady play |
 | `skippedDraws` | Draws that frames skipped because their pipeline was still building, so their objects were missing. A warm-up before new objects show keeps it at 0 |
 
-Where a browser compiles WebGL2 programs without the extension, `load.warmUpMs` is about 0, and the first frame's draw takes the compile time instead.
+Where a browser compiles WebGL2 programs without the extension, `load.warmUpMs` is about 0, and `load.firstDrawMs` holds the compile time instead. Their sum is the time that the pipelines hold up the first frame on every browser.
 
 ## Related pages
 

@@ -13,6 +13,7 @@ describe('parseSwitches', () => {
 			depth: undefined,
 			compression: undefined,
 			parallelCompile: true,
+			freshShaders: false,
 			wakeByMessage: false,
 			hdr: true,
 			cells: true,
@@ -85,6 +86,11 @@ describe('parseSwitches', () => {
 	it('turns background compiles off with ?compile=wait only', () => {
 		expect(parseSwitches('?gpu=webgl2&compile=wait').parallelCompile).toBe(false);
 		expect(parseSwitches('?compile=later').parallelCompile).toBe(true);
+	});
+
+	it('makes the shaders fresh with ?shaders=fresh only', () => {
+		expect(parseSwitches('?shaders=fresh').freshShaders).toBe(true);
+		expect(parseSwitches('?shaders=cached').freshShaders).toBe(false);
 	});
 
 	it('makes the threads wake each other with messages with ?wake=message only', () => {

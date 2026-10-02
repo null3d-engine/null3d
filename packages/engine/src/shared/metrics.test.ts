@@ -128,16 +128,18 @@ describe('frame records', () => {
 		]);
 	});
 
-	it('keep the time of the first frame only', () => {
+	it('keep the time and the draw time of the first frame only', () => {
 		const buffer = createMetricsBuffer(true, 0);
 		const render = new FrameRecorder(buffer, Role.Render);
 		const reader = new MetricsReader(buffer);
 		expect(reader.firstFrameTime).toBe(0);
-		render.markFirstFrame();
+		expect(reader.firstDrawMs).toBeNull();
+		render.markFirstFrame(12.5);
 		const first = reader.firstFrameTime;
-		render.markFirstFrame();
+		render.markFirstFrame(3);
 		expect(first).toBeGreaterThan(0);
 		expect(reader.firstFrameTime).toBe(first);
+		expect(reader.firstDrawMs).toBe(12.5);
 	});
 
 	it('sum the records of a window without turning costly timing on', () => {

@@ -8,6 +8,12 @@
 // running, hidden, where the runner tool cannot close it. A request to the dev server that gets no
 // answer in time goes out again, because Safari can lose one that it sends as a removed frame
 // closes its connections.
+// A runner page that opens without &from= starts at the first page of the plan that has no result,
+// so a browser that reloads it in the middle of a run, as Safari does after a page crashed its tab,
+// goes on where it stopped. A page that may end its tab on purpose, such as the tab memory page,
+// posts its progress as it goes. When the runner page finds such a page started and without a
+// result, the browser closed the tab during it: the runner page records the page's last progress
+// as its result, rests so the device can free the tab's memory, and goes on with the next page.
 // The page reports the run: a grid with one cell per page, the failures with their errors, and a
 // line per result, newest first. The report lies under each page's frame, or over it when the plan
 // asks, as plans that only check results do, so the screen does not flash between pages. Each
@@ -17,11 +23,14 @@
 
 import { fillRunner, loadOf, takeDownloads } from '../lib/load-routes';
 import { patientFetch } from '../lib/patient-fetch';
+import { progressName, tabEndedResult } from '../lib/tab-end';
 
 interface PlanItem {
 	id: string;
 	path: string;
 	timeoutSeconds: number;
+	/** The page may end its tab on purpose, and posts its progress as it goes. */
+	endsTab?: boolean;
 }
 
 type Result = { ok: boolean; error?: string } & Record<string, unknown>;
@@ -32,6 +41,11 @@ const LISTEN_POLL_MS = 2000;
 const RESULT_POLL_MS = 200;
 const PAUSE_BETWEEN_PAGES_MS = 1000;
 const REFRESH_SAMPLES = 61;
+/**
+ * The rest after a page ended the tab: the device frees the dead tab's memory, and Safari, which
+ * reloads a page that crashed, does so again only for a crash some time after the last.
+ */
+const REST_AFTER_TAB_END_MS = 45_000;
 
 const byId = (id: string) => document.getElementById(id) as HTMLElement;
 const statusLine = byId('status');
@@ -242,23 +256,55 @@ async function runItem(item: PlanItem, run: string): Promise<Result> {
 	return load ? { ...result, downloads: await takeDownloads(load) } : result;
 }
 
-/** Runs a run's items from the item at `from`. Only a run from its first item reads the device. */
-async function runPlan(run: string, from = 0): Promise<void> {
+/** The names of the results and records that this runner stored in a run so far. */
+async function stored(run: string): Promise<Set<string>> {
+	const answer = await patientFetch(`/__null3d/runs/${run}/${runner}`, { cache: 'no-store' });
+	if (!answer.ok) throw new Error(`the dev server did not list the results: ${answer.status}`);
+	return new Set(JSON.parse(answer.text) as string[]);
+}
+
+/**
+ * Where a run goes on when the page opens without &from=: at the first item without a result. An
+ * item that may end its tab, and that started without a result, ended the tab: its last progress
+ * becomes its result, and the run goes on after it.
+ */
+async function resumeAt(run: string, items: readonly PlanItem[]): Promise<number> {
+	const names = await stored(run);
+	const index = items.findIndex((item) => !names.has(item.id));
+	const item = items[index];
+	if (!item?.endsTab || !names.has(progressName(item.id))) return index < 0 ? items.length : index;
+	const progress = await patientFetch(`/__null3d/runs/${run}/${runner}/${progressName(item.id)}`);
+	const facts = progress.ok ? (JSON.parse(progress.text) as Record<string, unknown>) : undefined;
+	await post(run, item.id, tabEndedResult(facts, 'runner page'));
+	show(`${item.id} ended the tab; resting before the next page`);
+	await sleep(REST_AFTER_TAB_END_MS);
+	return index + 1;
+}
+
+/**
+ * Runs a run's items from the item at `from`, or where the run stopped without it. Only a run from
+ * its first item reads the device. Before an item that may end its tab, the page notes that the
+ * item started, under the item's progress.
+ */
+async function runPlan(run: string, from?: number): Promise<void> {
 	const plan = JSON.parse((await patientFetch(`/__null3d/runs/${run}/plan`)).text) as {
 		items: PlanItem[];
 		reportOnTop?: boolean;
 	};
 	await claim(run);
 	stage.classList.toggle('report-on-top', plan.reportOnTop === true);
-	report.start(run, plan.items, from);
-	if (from === 0) {
+	const start = from ?? (await resumeAt(run, plan.items));
+	report.start(run, plan.items, start);
+	if (start === 0) {
 		show(`run ${run}: reading the device`);
 		await post(run, 'device', await deviceInfo());
 	}
 	for (const [index, item] of plan.items.entries()) {
-		if (index < from) continue;
+		if (index < start) continue;
 		report.running(index);
 		show(`${report.counts()}; now ${item.id}`);
+		if (item.endsTab)
+			await post(run, progressName(item.id), { startedAt: new Date().toISOString() });
 		const result = await runItem(item, run);
 		await post(run, item.id, result);
 		report.finish(index, result);
@@ -302,7 +348,7 @@ const run = params.get('run');
 const from = Number(params.get('from') ?? 0);
 if (params.has('listen')) void listen();
 else if (run)
-	runPlan(run, Number.isSafeInteger(from) && from > 0 ? from : 0)
+	runPlan(run, Number.isSafeInteger(from) && from > 0 ? from : undefined)
 		// A page opened for one run closes its tab, so finished runs leave no tabs behind. Browsers
 		// allow it because each test page loads in a new frame, which adds nothing to the tab's history.
 		.then(() => window.close())

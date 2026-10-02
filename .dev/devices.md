@@ -5,12 +5,14 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `parity`, `bench`, `memory`, `depth`, `overload`, `scale`, `skinning` and `startup`. `bun run devices` runs the checks on the phone and on the iPad.
+- The plans are `checks` (the default), `parity`, `bench`, `memory`, `depth`, `overload`, `scale`, `skinning`, `startup`, `tab-memory`, `soak` and `warm-up-time`. `bun run devices` runs the checks on the phone and on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
 - Run one runner at a time. All runs share one file, `target/runs/current.json`, which tells waiting runner pages which run to start. A second runner can replace it before a waiting page reads it, and that page then waits forever.
 - A runner page that waits on the local network reloads itself before each run after its first. No run then inherits memory that an earlier run kept.
+- A runner page that opens without `&from=` starts at the first page of the plan that has no result. Safari reloads a runner page whose tab crashed, and the reloaded page goes on where the run stopped. The dev server lists a runner's results for it.
+- A plan item can mark a page that may end its tab on purpose, as the tab memory page does. The page posts its progress after each step, under a name beside its result. So the dev server keeps its last step when the tab dies. Before such a page, the runner page notes that it started. A runner page that finds such a page started and without a result records its last progress as its result. It then rests for 45 s, so the device frees the dead tab's memory, and goes on with the next page. Safari reloads a crashed page only when the last crash was some time ago.
 - The runner reports a page that gives no result in time with its last steps. The steps are each worker it started, each step of each worker's start, and the errors it logged. A page that fails reports its steps too.
 - A runner page that stops answering sends no result at all, so it has no steps to report. The runner names the page it was on: the first page of the plan without a result.
 - Safari can lose a request that the runner page sends just after it removes a page's frame. The request never reaches the dev server, and it never fails. In two merge queue runs on 1 and 2 October 2026, this stopped CI's Safari runner page. Each time, a page had failed within 0.2 s, and its frame closed while its connection to the dev server's live reload was opening. A new request to the server later freed the lost one. So each request from the runner page to the dev server has a time limit of 20 s. A request with no answer by then goes out again, up to three times in all.
@@ -102,12 +104,37 @@ To collect the numbers, rest each device first and close its other tabs:
 - Run it on the phone and the iPad from a checkout of the branch that holds the page: `bun tests/real-browsers.ts --plan skinning --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool.
 - The page takes `?characters=`, `?cascades=`, `?rounds=` and `?warmup=` (milliseconds), to time one load by hand.
 
+## The tab memory plan
+
+- The `tab-memory` plan finds how much memory one tab can use, for [D-12](decisions/D-12-memory-budgets.md). The page (`tests/pages/tab-memory.html`) grows one kind of memory in steps of 32 MiB until something gives. It grows GPU textures or GPU buffers on one GPU path, or a shared WebAssembly memory.
+- Each step allocates textures of 2048 x 2048 texels or buffers of 16 MiB. It fills every byte with data that does not compress, and waits until the GPU has taken it. The WebAssembly memory grows and fills its new pages.
+- Growth ends when the browser closes the tab, refuses an allocation or takes the GPU away. It also ends when a step gives no answer for a minute. On a desktop it ends at a cap of 8 GiB, and at 4 GiB for WebAssembly memory.
+- The plan grows textures, then buffers, on WebGPU, then on WebGL2, then WebAssembly memory. `--runs 2` repeats it. The run's summary gives each growth's last MiB that lived and how it ended, and the lowest point at which each kind failed.
+- Each page of the plan may end the tab, so it runs on a device that nobody watches. The phone runs it with `bun tests/real-browsers.ts --plan tab-memory --allow-no-webgpu --android chrome,brave --shields on`, and the iPad with `--lan ipad-safari`. Afterwards, quit Safari on the iPad and open the runner page again.
+- `?step=` and `?most=` change the step and the cap, in MiB, for a run by hand.
+
+## The soak plan
+
+- The `soak` plan closes T-24. First the scene page acts out a GPU loss in each thread mode on each GPU path. The engine must draw the whole scene again on a new device, match the scene's references, and count one loss.
+- Then S4 plays for 30 minutes on each GPU path, from the benchmark pages' production build. `--minutes` changes the length. The page measures the engine once a minute, and stops early when the engine fails.
+- The run's summary gives each soak's GPU losses that the engine recovered from, and in which minutes. It also gives the median and lowest frame rate of a minute, and the growth of the WebAssembly memory. A recovered loss is a finding; an engine failure, or a minute with no frames, fails the page.
+- The iPad runs it with `bun tests/real-browsers.ts --plan soak --lan ipad-safari`. Turn on Limit Frame Rate, and keep the iPad's screen from locking.
+
+## The warm-up time plan
+
+- The `warm-up-time` plan closes T-26, for [D-13](decisions/D-13-shader-variants.md) and the loading screens guide. The page (`tests/pages/warm-up-time.html`) starts a sketch on a canvas that fills the window, at the preset that the engine chooses.
+- Each load reports its pipeline wait: the warm-up, `load.warmUpMs`, plus the first draw, `load.firstDrawMs`. Where the browser cannot compile WebGL2 programs in the background, the warm-up is about 0 and the first draw waits for the compiles. Each load also reports the time from `createEngine` until the first frame was on screen.
+- The plan loads each benchmark scene at its own count and each demo, on each GPU path. The first two loads take `?shaders=fresh`, which gives each shader's text a new comment, so the browser cannot reuse programs that it compiled before. Then two loads take the shaders as they ship. The last of them reuses what the browser compiled for the first, as a repeat visit does.
+- A fresh comment stops the browser's cache of compiled programs, which keys on the shader's text. A GPU driver may still keep compiled code of its own.
+- The phone runs it with `bun tests/real-browsers.ts --plan warm-up-time --allow-no-webgpu --android chrome`, and the iPad with `--lan ipad-safari`.
+
 ## Browser apps on the Mac
 
 - Keep the Mac's screen unlocked and its display awake during runs. Safari stops running pages while the Mac is locked, and the runner then waits until its deadline. Chrome started by Playwright keeps running.
 - A runner page in a Mac app that sends nothing for its current page's timeout and 30 more seconds counts as stopped. The runner then prints the Mac's state: the screen lock, the memory pressure and the size of each web content process. It closes the quiet runner page in Safari, and opens a new one at the same page, so that page runs again. That page's result gets a note that says so.
 - In CI, the runner cannot close the quiet runner page, because macOS asks for permission to control Safari. A quiet page can also still be running, hidden behind the new one. So each runner page claims its runner's results when it starts. The dev server refuses results from an older runner page, and that page then stops and closes its tab.
-- A page where the runner page stops twice fails, and the next runner page starts after it. The runner replaces a runner page at most twice per run, and never on a phone or a tablet.
+- A page where the runner page stops twice fails, and the next runner page starts after it. The runner replaces a runner page at most twice per run, and never on a tablet.
+- When a page that may end its tab goes quiet, the runner records its last progress as its result. On the phone, Chrome and Brave then show their crash page in place of the runner page. So the runner opens a new runner page, which goes on with the next page. These new runner pages do not count against the two. On the phone, the runner never replaces a runner page that stopped on another page.
 - Close a Safari tab that a test opened with AppleScript: tell Safari to close the tabs whose address holds `localhost:517`.
 - On GitHub's macOS machines, Safari has no WebGPU and Firefox has no WebGL2. The CI jobs pass `--allow-no-webgpu` and `--allow-no-webgl2`, so those pages count as skipped there.
 - CI runs the checks plan in each browser in shards of its own, such as `real-browsers (Safari 1/2)`. CI's `build` job first runs `bun tools/build-wasm.ts --pages-only` on Linux, which builds what the test pages need. That is the two WebAssembly files, and the shader compiler that the dev server runs on the WGSL in test sketches. Each macOS job downloads them.

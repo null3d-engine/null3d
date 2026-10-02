@@ -15,6 +15,9 @@
 //   bun tests/real-browsers.ts --plan depth --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
 //   bun tests/real-browsers.ts --plan overload --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
 //   bun tests/real-browsers.ts --plan skinning --android chrome --lan ipad-safari
+//   bun tests/real-browsers.ts --plan tab-memory --allow-no-webgpu --android chrome
+//   bun tests/real-browsers.ts --plan soak --lan ipad-safari --minutes 30
+//   bun tests/real-browsers.ts --plan warm-up-time --allow-no-webgpu --android chrome
 // Options:
 //   --plan <name>       the plan to run: checks (the default), parity, bench, memory, which loads
 //                       the engine page 20 times at each shared memory maximum from 256 to 4096 MiB,
@@ -25,15 +28,23 @@
 //                       scene until the GPU falls behind and compares the presented and completed
 //                       rates on each GPU path, skinning, which times two ways to skin a crowd on
 //                       WebGL2 with 1 to 4 shadow cascades: in every pass, or once per frame with
-//                       transform feedback, or scale, which finds the largest S1 count at which
-//                       three.js holds 30 frames per second
+//                       transform feedback, tab-memory, which grows GPU textures, GPU buffers and
+//                       a WebAssembly memory in steps until the browser closes the tab, soak,
+//                       which loses the GPU on purpose in every thread mode and then plays S4 for
+//                       many minutes on each GPU path, recording each GPU loss, warm-up-time,
+//                       which times how long the pipelines of each benchmark scene and demo hold
+//                       up the first frame, with fresh shaders and with compiled ones, or scale,
+//                       which finds the largest S1 count at which three.js holds 30 frames per
+//                       second
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
 //   --runs <count>      fresh runs of each bench plan page, the protocol's 5 by default, loads at
 //                       each maximum of the memory plan, 20 by default, where 0 runs only the
-//                       counts of how many engines fit at once, or cold and warm loads of each
-//                       thread mode in the startup plan, 5 by default
+//                       counts of how many engines fit at once, cold and warm loads of each
+//                       thread mode in the startup plan, 5 by default, rounds of the tab
+//                       memory plan, 1 by default, or loads of each scene with fresh shaders in
+//                       the warm-up time plan, 2 by default
 //   --jobs <list>       job worker counts, such as 2,4,6,8: the bench plan then runs null3D's two
 //                       GPU paths at each count instead of its usual pages
 //   --pages <list>      the bench plan's page kinds, such as null3d-webgl2,null3d-webgl2-low
@@ -41,6 +52,7 @@
 //                       is s1
 //   --seconds <n>       the bench plan's warm-up and measured seconds, each, instead of the
 //                       protocol's 5 and 30; 300 gives the protocol's 10-minute sustained run
+//   --minutes <n>       the soak plan's minutes on each GPU path, 30 by default
 //   --shard <i>/<n>     run only the i-th of n shards of a fixed plan, as CI does on each of its
 //                       machines: the plan's items split evenly, and an item stays with the items
 //                       whose results its check compares with
@@ -92,7 +104,10 @@ import {
 	PLANS,
 	REPORT_ON_TOP_PLANS,
 	skinningSummary,
+	soakSummary,
 	startupSummary,
+	tabMemorySummary,
+	warmUpTimeSummary,
 } from './lib/plans.ts';
 import { RUNS_DIR } from './lib/report-collector.ts';
 import {
@@ -130,6 +145,7 @@ import {
 	scaleItem,
 } from './lib/scale.ts';
 import { type DevServer, HTTP_PORT, REPO_ROOT, startServer } from './lib/server.ts';
+import { progressName, tabEndedResult } from './lib/tab-end.ts';
 
 export interface Options {
 	plan: string;
@@ -147,6 +163,8 @@ export interface Options {
 	scenes?: BenchScene[];
 	/** The bench plan's warm-up and measured seconds, each, when given. */
 	seconds?: number;
+	/** The soak plan's minutes on each GPU path, when given. */
+	minutes?: number;
 	/** The state of Brave's Shields for the dev server's site, when given. */
 	shields?: ShieldsState;
 	/** The one shard of a fixed plan to run, when given. */
@@ -158,7 +176,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--shard <i>/<n>] [--shields on|off] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--shields on|off] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -207,6 +225,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--pages') options.pages = known(arg, list(args[++i]), BENCH_PAGE_KINDS);
 		else if (arg === '--scenes') options.scenes = known(arg, list(args[++i]), BENCH_SCENES);
 		else if (arg === '--seconds') options.seconds = wholeNumber(arg, args[++i]);
+		else if (arg === '--minutes') options.minutes = wholeNumber(arg, args[++i]);
 		else if (arg === '--shard') options.shard = shard(args[++i]);
 		else if (arg === '--shields') options.shields = oneOf(arg, args[++i], SHIELDS_STATES);
 		else if (arg === '--plan') options.plan = args[++i] ?? '';
@@ -230,6 +249,8 @@ export function parseArgs(args: readonly string[]): Options {
 	] as const)
 		if (given && options.plan !== 'bench')
 			throw new Error(`${flag} works with --plan bench only\n${USAGE}`);
+	if (options.minutes && options.plan !== 'soak')
+		throw new Error(`--minutes works with --plan soak only\n${USAGE}`);
 	const other = options.jobs && options.pages?.filter((kind) => !isNull3dPage(kind));
 	if (other && other.length > 0)
 		throw new Error(
@@ -465,15 +486,21 @@ function closeSafariRunner(run: string, runner: string): void {
 
 /** How the runner tool replaces a quiet runner page, where it can. */
 export interface Reopener {
-	/** True when the tool can open a new runner page for this runner itself. */
-	canReopen(runner: string): boolean;
+	/**
+	 * True when the tool can open a new runner page for this runner itself: after any quiet page, or
+	 * only after a page that ended its tab, when `tabEnded` says so.
+	 */
+	canReopen(runner: string, tabEnded: boolean): boolean;
 	/**
 	 * Looks at the device when a runner page goes quiet for the `count`-th time in the run, and
 	 * returns what it found as one line.
 	 */
 	inspect(runner: string, count: number): string;
-	/** Opens a new runner page at the plan's item `from`, and says whether it opened. */
-	reopen(runner: string, from: number): boolean;
+	/**
+	 * Opens a new runner page at the plan's item `from`, or, without it, at the first item without a
+	 * result, and says whether it opened.
+	 */
+	reopen(runner: string, from?: number): boolean;
 }
 
 /**
@@ -496,7 +523,8 @@ export class QuietRecovery {
 	/** Handles a quiet runner page, and says whether a new one took its place. */
 	readonly onQuiet = (name: string, seconds: number, at: PlanPlace | undefined): boolean => {
 		reportQuiet(name, seconds, at);
-		if (!at || !this.reopener.canReopen(name)) return false;
+		if (at?.item.endsTab) return this.tabEnded(name, at);
+		if (!at || !this.reopener.canReopen(name, false)) return false;
 		const reopens = this.reopens.get(name) ?? 0;
 		console.log(`${name}: ${this.reopener.inspect(name, reopens + 1)}`);
 		if (reopens >= MAX_REOPENS) {
@@ -525,6 +553,22 @@ export class QuietRecovery {
 		return true;
 	};
 
+	/**
+	 * Records a page that may end its tab, and went quiet, as a dead tab: its last progress becomes
+	 * its result. A new runner page, where the tool can open one, goes on with the next page. These
+	 * new pages do not count against the few that a runner gets for stopped pages.
+	 */
+	private tabEnded(name: string, at: PlanPlace): boolean {
+		const progress = readResult(this.plan.run, name, progressName(at.item.id));
+		writeRunnerFile(this.plan.run, name, at.item.id, tabEndedResult(progress, 'runner tool'));
+		console.log(`${name}: the tab ended on ${at.item.id}, which that page may do`);
+		if (at.index + 1 >= this.plan.items.length || !this.reopener.canReopen(name, true))
+			return false;
+		if (!this.reopener.reopen(name)) return false;
+		console.log(`${name}: opened a new runner page, which goes on after ${at.item.id}`);
+		return true;
+	}
+
 	/** The note for a page where a runner page went quiet once and a new one ran it again. */
 	noteFor(name: string, id: string): string | undefined {
 		return this.stalls.get(name)?.get(id) === 1
@@ -534,23 +578,30 @@ export class QuietRecovery {
 }
 
 /**
- * Replaces runner pages in macOS apps: it closes a quiet runner page in Safari, then opens a new one
- * in the app. Where the quiet page stays open, the new page's claim on the runner's results stops
- * it. Runners on phones and tablets are never replaced.
+ * Replaces runner pages: in macOS apps, it closes a quiet runner page in Safari, then opens a new
+ * one in the app. Where the quiet page stays open, the new page's claim on the runner's results
+ * stops it. On the Android phone, it opens a new runner page only after a page that ended its tab,
+ * since the browser then shows its crash page in place of the runner page. Runner pages on the
+ * local network are never replaced: Safari reloads a page that crashed by itself.
  */
-function macReopener(run: string, launches: Launches, baseUrl: string): Reopener {
+function deviceReopener(run: string, launches: Launches, baseUrl: string): Reopener {
 	const startedAt = Date.now();
-	const appOf = (runner: string) => {
-		const launch = launches.get(runner);
-		return launch?.kind === 'mac' ? launch.app : undefined;
-	};
 	return {
-		canReopen: (runner) => appOf(runner) !== undefined,
+		canReopen: (runner, tabEnded) => {
+			const kind = launches.get(runner)?.kind;
+			return kind === 'mac' || (kind === 'android' && tabEnded);
+		},
 		inspect: (runner, count) => inspectMac(run, runner, count, startedAt),
 		reopen: (runner, from) => {
-			const app = appOf(runner) as string;
-			if (app === 'Safari') closeSafariRunner(run, runner);
-			return openApp(app, runnerUrl(baseUrl, run, runner, from));
+			const launch = launches.get(runner);
+			const url = runnerUrl(baseUrl, run, runner, from);
+			if (launch?.kind === 'android') {
+				openOnPhone(launch.browser, url);
+				return true;
+			}
+			if (launch?.kind !== 'mac') return false;
+			if (launch.app === 'Safari') closeSafariRunner(run, runner);
+			return openApp(launch.app, url);
 		},
 	};
 }
@@ -605,6 +656,7 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 		pages: options.pages,
 		scenes: options.scenes,
 		seconds: options.seconds,
+		minutes: options.minutes,
 	});
 	const { shard } = options;
 	if (!items || !shard) return items;
@@ -629,7 +681,7 @@ async function runPlan(
 ): Promise<number> {
 	const run = runName(options.plan);
 	const plan = writePlan(run, items, REPORT_ON_TOP_PLANS.has(options.plan));
-	const recovery = new QuietRecovery(plan, macReopener(run, launches, local.url));
+	const recovery = new QuietRecovery(plan, deviceReopener(run, launches, local.url));
 	const heatReadings = new Map<string, HeatSample[]>();
 	try {
 		for (const batch of turnBatches(runners)) {
@@ -742,6 +794,9 @@ async function runPlan(
 			depthSummary,
 			overloadSummary,
 			skinningSummary,
+			tabMemorySummary,
+			soakSummary,
+			warmUpTimeSummary,
 		].map((summary) => summary(plan.items, resultOf));
 		for (const table of tables) if (table) console.log(`\n${name}\n${table}\n`);
 		const heat = wholeHeatText(heatReadings.get(name) ?? []);
