@@ -68,6 +68,17 @@
 //! Turning shadows on or off rebuilds both layouts. Every camera view's frame group binds the
 //! shadow map, which is one texel of one layer while no light casts shadows.
 //!
+//! Point and spot lights cast shadows into the tiles of the shadow atlas (see
+//! [`crate::shadow_tiles`]). Each tile is a view too, which culls and draws the casters' layout as
+//! a cascade does, but only in the frames in which the tile must draw again. Every camera view's
+//! frame group binds the atlas and the tiles' uniform block.
+//!
+//! # Lights
+//!
+//! The camera's point and spot lights reach the fragment shaders through its light grid (see
+//! [`crate::light_grid`]). The CPU uploads the light list, and a compute pass before the culling
+//! passes lists each cluster's lights in the grid.
+//!
 //! # Depth prepass
 //!
 //! With the depth prepass, each camera view also replays a bundle of its opaque buckets' depth
@@ -107,18 +118,20 @@ use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
     SceneSettings, UploadArena,
 };
-use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses};
+use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::graph::RenderGraph;
-use crate::light_grid::{CameraLights, LightLimits};
+use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
 use crate::pipelines::PipelineCache;
-use crate::shadows::{self, MAX_CASCADES};
+use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
+use crate::shadows::{self, MAX_CASCADES, ShadowUniform};
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES};
 use layout::{Drawn, Layout};
+use lights::LightClusters;
 use transparent::Transparent;
 
 /// The most sources the builder can draw, scene slots and instance rows together, on a device whose
@@ -195,8 +208,10 @@ mod ids {
     pub const SHADOWS: u32 = LINES + 3;
     /// The final pass's output settings.
     pub const FINAL_SETTINGS: u32 = LINES + 4;
+    /// The uniform block of the shadow atlas's tiles, which receivers read beside the atlas.
+    pub const SHADOW_TILES: u32 = FINAL_SETTINGS + 1;
     /// Each camera view's sorted instances of the transparent pass, one buffer per view from here.
-    const SORTED: u32 = FINAL_SETTINGS + 1;
+    const SORTED: u32 = SHADOW_TILES + 1;
 
     pub const fn sorted(view: ViewId) -> u32 {
         SORTED + view.index() as u32
@@ -206,8 +221,10 @@ mod ids {
     pub const LIGHT_GRID: u32 = SORTED + MAX_VIEWS as u32;
     /// The records of the lights that the light grid lists.
     pub const LIGHTS: u32 = LIGHT_GRID + 1;
+    /// The parameters of the light clustering pass, which fills the light grid.
+    pub const LIGHT_PARAMS: u32 = LIGHTS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = LIGHTS + 1;
+    pub const PAGES: u32 = LIGHT_PARAMS + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -223,6 +240,10 @@ mod ids {
     pub const SAMPLERS: u32 = 2;
 
     pub const CULL: u32 = 1;
+    /// The light clustering pass's pipelines, in the order it dispatches them.
+    pub const LIGHT_COUNT: u32 = 2;
+    pub const LIGHT_PLACE: u32 = 3;
+    pub const LIGHT_WRITE: u32 = 4;
 
     /// Each view's bind groups: the frame group of its render pipelines, then its culling group.
     pub const fn frame_group(view: ViewId) -> u32 {
@@ -233,12 +254,14 @@ mod ids {
     }
     /// The final pass's group, after every view's.
     pub const FINAL_GROUP: u32 = 1 + 2 * MAX_VIEW_IDS as u32;
-    /// Each camera view's group of its depth prepass, after the final pass's group.
+    /// The light clustering pass's group.
+    pub const LIGHT_GROUP: u32 = FINAL_GROUP + 1;
+    /// Each camera view's group of its depth prepass, after the light clustering pass's group.
     pub const fn prepass_group(view: ViewId) -> u32 {
-        FINAL_GROUP + 1 + view.index() as u32
+        LIGHT_GROUP + 1 + view.index() as u32
     }
     /// The bind groups of materials' maps, after the groups of the depth prepass.
-    pub const TEXTURE_GROUPS: u32 = FINAL_GROUP + 1 + MAX_VIEWS as u32;
+    pub const TEXTURE_GROUPS: u32 = LIGHT_GROUP + 1 + MAX_VIEWS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -313,14 +336,21 @@ pub struct GpuDrivenRenderer {
     background: BackgroundPass,
     /// The point and spot lights of the camera's view.
     lights: CameraLights,
+    /// The pass that lists the lights of each cluster of the camera's light grid.
+    light_clusters: LightClusters,
     /// Each camera view's values in the frame being recorded, or `None` for a view with no camera.
     frames: Vec<Option<ViewFrame>>,
     /// Each shadow cascade's values in the frame being recorded, or `None` for a cascade that the
     /// frame does not draw.
     cascade_frames: [Option<ViewFrame>; MAX_CASCADES],
-    /// The camera views and the cascades whose GPU objects exist.
+    /// The tiles of the point and spot lights' shadow atlas.
+    tiles: ShadowTiles,
+    /// The camera views, the cascades and the tiles whose GPU objects exist.
     views_made: usize,
     cascades_made: usize,
+    tiles_made: usize,
+    /// True when the cascades' uniform block holds cascades, which receivers then read.
+    cascades_held: bool,
     created: bool,
     /// True from the creation of three.js's table of specular terms until a frame uploads it.
     dfg_pending: bool,
@@ -380,11 +410,15 @@ impl GpuDrivenRenderer {
             sorted: SortedLayout::default(),
             transparent: Transparent::default(),
             background: BackgroundPass::default(),
-            lights: CameraLights::new(config.light_limits),
+            lights: CameraLights::on_gpu(config.light_limits),
+            light_clusters: LightClusters::default(),
             frames: Vec::new(),
             cascade_frames: [None; MAX_CASCADES],
+            tiles: ShadowTiles::new(),
             views_made: 0,
             cascades_made: 0,
+            tiles_made: 0,
+            cascades_held: false,
             created: false,
             dfg_pending: false,
         }
@@ -396,12 +430,27 @@ impl GpuDrivenRenderer {
     }
 
     /// A view's values in the last recorded frame, or `None` when the view had no camera, or a
-    /// cascade was not drawn. Its frustum is the one that the view's culling pass tested against.
+    /// cascade or a tile was not drawn. Its frustum is the one that the view's culling pass tested
+    /// against.
     pub fn view_frame(&self, view: ViewId) -> Option<&ViewFrame> {
+        if let Some(tile) = view.tile_index() {
+            return self.tiles.frame(tile);
+        }
         match view.cascade_index() {
             Some(cascade) => self.cascade_frames.get(cascade)?.as_ref(),
             None => self.frames.get(view.index())?.as_ref(),
         }
+    }
+
+    /// The light grid of the camera's view in the frame recorded last, with the records that the
+    /// shaders read.
+    pub fn light_grid(&self) -> &LightGrid {
+        self.lights.grid()
+    }
+
+    /// The tiles of the point and spot lights' shadow atlas in the last recorded frame.
+    pub fn shadow_tiles(&self) -> &ShadowTiles {
+        &self.tiles
     }
 
     /// The sources that a view's culling pass tests in the last recorded frame, in the order its
@@ -432,12 +481,17 @@ impl GpuDrivenRenderer {
         let shadow = self
             .settings
             .shadow_frame(input.scene, parity, input.canvas);
-        let upload_everything = input.structure_changed
-            || !self.layout.built
-            || shadow.is_some() != self.layouts_shadowed;
+        let camera = self.settings.camera_position(input.scene, parity);
+        let tile_settings = self.settings.tile_settings();
+        let filter = self.settings.shadow_quality().filter;
+        self.tiles
+            .plan(input, tile_settings, filter, camera.as_ref());
+        // Receivers read the shadow maps while the sun or a point or spot light casts shadows.
+        let shadows = shadow.is_some() || self.tiles.shape().is_some();
+        let upload_everything =
+            input.structure_changed || !self.layout.built || shadows != self.layouts_shadowed;
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
-            let shadows = shadow.is_some();
             self.settings.update_map_groups();
             let targets = self.graph.scene_targets();
             self.layout.rebuild(
@@ -501,8 +555,10 @@ impl GpuDrivenRenderer {
         );
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
+        let mut created_pipelines = !self.created;
         if !self.created {
             cull::create_pipeline(list)?;
+            lights::create_pipelines(list)?;
         }
         self.lines.request_pipeline(
             &input.lines,
@@ -515,12 +571,16 @@ impl GpuDrivenRenderer {
             &mut self.pipelines,
             self.graph.scene_targets(),
         );
-        self.pipelines.create_new(list)?;
+        created_pipelines |= self.pipelines.create_new(list)? > 0;
         if !self.created {
             self.create_fixed(list)?;
         }
         self.graph
             .set_shadows(shadow.as_ref().map(ShadowPasses::of));
+        self.graph.set_tiles(self.tiles.shape().map(|s| TilePasses {
+            tiles: s.layers,
+            size: s.size,
+        }));
         self.graph.sync_views(self.settings.views());
         self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.set_transparent(!self.sorted.is_empty());
@@ -530,6 +590,10 @@ impl GpuDrivenRenderer {
             .graph
             .shadow_map()
             .expect("the builder's graph binds a shadow map");
+        let atlas = self
+            .graph
+            .shadow_atlas()
+            .expect("the builder's graph binds a shadow atlas");
         let first_new = self.views_made;
         let prepass = self.graph.depth_prepass();
         for index in 0..views {
@@ -542,7 +606,7 @@ impl GpuDrivenRenderer {
                 }
             }
             if index >= first_new || self.graph.textures_made() {
-                opaque::bind_frame(list, view, shadow_map)?;
+                opaque::bind_frame(list, view, shadow_map, atlas)?;
             }
         }
         self.views_made = self.views_made.max(views);
@@ -554,6 +618,14 @@ impl GpuDrivenRenderer {
             self.culling.add_view(list, view)?;
         }
         self.cascades_made = self.cascades_made.max(cascades);
+        let tiles = self.tiles.shape().map_or(0, |s| s.layers as usize);
+        let first_new_tile = self.tiles_made;
+        for tile in first_new_tile..tiles {
+            let view = ViewId::tile(tile);
+            shadow::create_view(list, view)?;
+            self.culling.add_view(list, view)?;
+        }
+        self.tiles_made = self.tiles_made.max(tiles);
 
         self.cells.update(input);
         // Each view's values first: the camera's light grid sets how much its upload takes.
@@ -569,6 +641,7 @@ impl GpuDrivenRenderer {
             );
             if let (Some(frame), ViewId::CAMERA) = (&mut frame, view) {
                 self.lights.assign(input.jobs, frame, input.lights);
+                self.lights.mark_shadows(&self.tiles, input.shadow_lights);
             }
             self.frames.push(frame);
         }
@@ -591,7 +664,6 @@ impl GpuDrivenRenderer {
             .record_materials(list, arena, table, input.frame)?;
         self.background.prepare(&self.settings);
         let binding_bytes = self.config.storage_binding_bytes;
-        let shadows = shadow.is_some();
         let (shared_recreated, casters_recreated) = if upload_everything {
             let shared = self.layout.apply(list, arena, binding_bytes)?;
             let casters = shadows && self.casters.apply(list, arena, binding_bytes)?;
@@ -626,8 +698,15 @@ impl GpuDrivenRenderer {
         } else {
             first_new_cascade
         };
-        for cascade in first_cascade_to_apply..cascades {
-            let view = ViewId::cascade(cascade);
+        let first_tile_to_apply = if upload_everything || pages_remade {
+            0
+        } else {
+            first_new_tile
+        };
+        let shadow_views = (first_cascade_to_apply..cascades)
+            .map(ViewId::cascade)
+            .chain((first_tile_to_apply..tiles).map(ViewId::tile));
+        for view in shadow_views {
             let recreated = shared_recreated || casters_recreated;
             self.culling
                 .apply(list, view, &self.casters, recreated, binding_bytes)?;
@@ -637,7 +716,7 @@ impl GpuDrivenRenderer {
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
         self.layout.update_order(list, arena, &self.cells, input)?;
-        lights::upload(list, arena, &mut self.lights)?;
+        self.light_clusters.upload(list, arena, &mut self.lights)?;
         self.transparent.size(list, &self.sorted, views)?;
 
         for (index, frame) in self.frames.iter().enumerate() {
@@ -658,6 +737,31 @@ impl GpuDrivenRenderer {
             }
         }
         self.cascade_frames = [None; MAX_CASCADES];
+        if shadow.is_none() && self.cascades_held && shadows {
+            // Receivers of point and spot light shadows read the cascades too: none now.
+            let (at, bytes) = arena.push(ShadowUniform::default().as_bytes())?;
+            list.push(Op::WriteBuffer, &[ids::SHADOWS, 0, at, bytes])?;
+        }
+        self.cascades_held = shadow.is_some() || (self.cascades_held && !shadows);
+        self.tiles.upload(list, arena, ids::SHADOW_TILES)?;
+        for tile in 0..tiles {
+            let view = ViewId::tile(tile);
+            let Some(frame) = self.tiles.frame(tile).copied() else {
+                continue;
+            };
+            opaque::upload(list, arena, view, &frame)?;
+            let (layout, casters, cells) = (&self.layout, &self.casters, &self.cells);
+            self.culling.upload(
+                list,
+                arena,
+                view,
+                &frame,
+                layout,
+                casters,
+                input.scene,
+                cells,
+            )?;
+        }
         if let Some(shadow) = &shadow {
             shadows::upload(list, arena, ids::SHADOWS, shadow)?;
             for cascade in (0..cascades).filter(|&cascade| shadow.draws(cascade)) {
@@ -709,20 +813,24 @@ impl GpuDrivenRenderer {
 
         let (layout, casters, culling, lines) =
             (&self.layout, &self.casters, &self.culling, &self.lines);
-        let (frames, cascade_frames) = (&self.frames, &self.cascade_frames);
-        let background = &self.background;
-        let drawn = |view: ViewId| match view.cascade_index() {
-            Some(cascade) => cascade_frames[cascade].is_some(),
-            None => frames[view.index()].is_some(),
+        let (frames, cascade_frames, tiles) = (&self.frames, &self.cascade_frames, &self.tiles);
+        let (background, light_clusters) = (&self.background, &self.light_clusters);
+        let drawn = |view: ViewId| match (view.cascade_index(), view.tile_index()) {
+            (Some(cascade), _) => cascade_frames[cascade].is_some(),
+            (_, Some(tile)) => tiles.frame(tile).is_some(),
+            _ => frames[view.index()].is_some(),
         };
-        let layout_of = |view: ViewId| match view.cascade_index() {
-            Some(_) => casters,
-            None => layout,
-        };
+        let layout_of = |view: ViewId| if view.is_camera() { layout } else { casters };
+        // A cascade or a tile that does not draw keeps its depth: its render pass is left out.
+        let skips = |role: Role| matches!(role, Role::Shadow(view) if !drawn(view));
         let (sorted, transparent) = (&self.sorted, &self.transparent);
         let (settings, meshes) = (&self.settings, &self.meshes);
-        self.graph
-            .record(list, self.settings.clear_color(), |list, role| match role {
+        self.graph.record(
+            list,
+            self.settings.clear_color(),
+            skips,
+            |list, role| match role {
+                Role::LightClusters => light_clusters.record(list),
                 Role::Cull(view) if drawn(view) => culling.record(list, view, layout_of(view)),
                 Role::Prepass(view) if drawn(view) => opaque::record(list, view, true),
                 Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
@@ -734,7 +842,10 @@ impl GpuDrivenRenderer {
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::Transparent(view) => transparent.record(list, view, sorted, settings, meshes),
                 _ => Ok(()),
-            })?;
+            },
+        )?;
+        self.tiles
+            .finish(input.frame, created_pipelines, input.pipelines_built);
         Ok(upload_everything)
     }
 
@@ -743,6 +854,7 @@ impl GpuDrivenRenderer {
     /// uniform block and sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
         shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER)?;
+        ShadowTiles::create_objects(list, ids::SHADOW_TILES)?;
         let materials = self.config.max_materials.max(1);
         list.push(
             Op::CreateBuffer,
@@ -775,8 +887,9 @@ impl GpuDrivenRenderer {
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
     /// uploaded yet, the whole material table, three.js's table of specular terms, both layouts'
-    /// tables, the light grid, each view's and each cascade's frame uniform, culling parameters
-    /// and indirect draws, the cascades' uniform, and the final pass's settings.
+    /// tables, the light grid, each view's, each cascade's and each tile's frame uniform, culling
+    /// parameters and indirect draws, the cascades' and the tiles' uniforms, and the final pass's
+    /// settings.
     fn upload_bound(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         let materials =
@@ -787,10 +900,11 @@ impl GpuDrivenRenderer {
         };
         let camera_views = self.settings.views().len();
         let views = camera_views * per_view(&self.layout);
-        let cascades = MAX_CASCADES * per_view(&self.casters);
+        let tiles = self.settings.tile_settings().tiles as usize;
+        let cascades = (MAX_CASCADES + tiles.min(MAX_TILES)) * per_view(&self.casters);
         let tables = self.layout.upload_bound() + self.casters.upload_bound();
         let lights = self.lights.upload_room();
-        let shadows = sizes::SHADOW_UNIFORM_BYTES as usize;
+        let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
         let sorted = Transparent::upload_bound(&self.sorted, camera_views);
         meshes
             + materials
@@ -844,6 +958,9 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.culling.forget_gpu();
         self.views_made = 0;
         self.cascades_made = 0;
+        self.tiles_made = 0;
+        self.cascades_held = false;
+        self.tiles.forget_gpu();
         self.lines.forget_gpu();
         self.lights.forget_gpu();
         self.transparent.forget_gpu();

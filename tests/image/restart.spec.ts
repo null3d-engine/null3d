@@ -80,6 +80,47 @@ for (const mode of ENGINE_MODES) {
 	});
 }
 
+/** What the page's trail notes once its second copy of a worker that did not load has loaded. */
+const COPY_LOADED = /null3d-render: a second copy of the worker loaded/;
+
+// With the sketch on the main thread, the setup can wait for frames of the render worker, as the
+// preset check after the first frame does. When the render worker's script does not load, as over
+// a network that drops a request, the start rejects at once with the reason, instead of waiting for
+// frames that never come. The page's trail notes the failure, and that a second copy of the worker
+// loads. Once that copy has stopped, the page reaches none of the engine's memory and workers.
+for (const gpu of ['webgpu', 'webgl2'] as const) {
+	test(`a start whose render worker does not load rejects at once, sketch on the main thread on ${gpu}`, async ({
+		page,
+	}) => {
+		let renderLoads = 0;
+		await page
+			.context()
+			.route(/\/render-worker\.ts/, (route) =>
+				++renderLoads === 1 ? route.abort('connectionreset') : route.continue(),
+			);
+		await page.goto(`shared-memory.html?room=off&cycles=1&gpu=${gpu}&sketch-thread=main`);
+		const result = await pageResult<RestartResult>(page, 30_000);
+		const engine = result.kinds.engine;
+		expect(engine?.error).toMatch(
+			/^E1405: the render worker did not start: its script or a file it imports did not load\./,
+		);
+		expect(engine?.trail?.join('\n')).toContain(
+			'null3d-render: failed: its script or a file it imports did not load',
+		);
+		await expect
+			.poll(() =>
+				page.evaluate(() =>
+					(globalThis as { __null3dProgress?: string[] }).__null3dProgress?.join('\n'),
+				),
+			)
+			.toMatch(COPY_LOADED);
+		const cdp = await page.context().newCDPSession(page);
+		await cdp.send('HeapProfiler.collectGarbage');
+		expect(await reachable(cdp, 'WebAssembly.Memory.prototype')).toBe(0);
+		expect(await reachable(cdp, 'Worker.prototype')).toBe(0);
+	});
+}
+
 /** How long the page goes on after its capture before it stops the engine. */
 const STOP_AFTER_MS = 500;
 /** The longest that the render worker holds a frame while it waits for the page to stop. */

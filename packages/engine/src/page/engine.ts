@@ -125,6 +125,22 @@ export interface EngineOptions {
 	 */
 	antialias?: 'msaa' | 'fxaa' | 'none';
 	/**
+	 * The most tiles of the shadow atlas that spot and point lights cast their shadows into, a
+	 * whole number from 0 to 24. Without it, the quality preset sets it. 0 turns the shadows of
+	 * spot and point lights off. Another value fails with E1213.
+	 */
+	shadowTiles?: number;
+	/**
+	 * Texels on each side of each tile of the shadow atlas: 256, 512, 1,024 or 2,048. Without it,
+	 * the quality preset sets it. Another value fails with E1213.
+	 */
+	shadowTileSize?: number;
+	/**
+	 * True makes point lights cast shadows, false keeps them from it. Without it, the quality
+	 * preset decides: High and Ultra turn them on. Another value fails with E1213.
+	 */
+	pointLightShadows?: boolean;
+	/**
 	 * True to draw the depth of the opaque objects before the engine shades them, so each pixel is
 	 * shaded once, for its nearest surface. It saves GPU time in scenes where objects hide many
 	 * others and shading costs much, and costs a second pass over the objects' vertices. Without
@@ -506,7 +522,9 @@ class EngineWorker {
 		};
 		worker.onerror = (event) => {
 			markStopped();
-			const message = event.message || 'a worker failed';
+			// A browser sends an error event without a message when the worker's script, or a file
+			// that the script imports, did not load.
+			const message = event.message || 'its script or a file it imports did not load';
 			this.waiting.shift()?.reject(startError(role, message));
 			if (this.started)
 				events.failure(new EngineError('E1404', `the ${role} worker failed: ${message}.`));
@@ -723,6 +741,9 @@ async function startEngine(
 	const pageSettings = {
 		maxPixelRatio: options.maxPixelRatio,
 		antialias: options.antialias,
+		shadowTiles: options.shadowTiles,
+		shadowTileSize: options.shadowTileSize,
+		pointLightShadows: options.pointLightShadows,
 		depthPrepass: switches.prepass ?? options.depthPrepass,
 	};
 	checkSettings('createEngine()', pageSettings);
@@ -1108,6 +1129,9 @@ async function startEngine(
 			if (threads) startJobs(threads.jobs);
 			let imagePort: MessagePort | undefined;
 			if (render) {
+				// The setup can wait for frames of the render worker: in hold mode, for a warm-up, and
+				// for the preset check. So a render worker that does not start ends the start at once.
+				render.ready().catch((error: unknown) => start.abort(error));
 				// Texture images and custom materials' shaders go from the page straight to the render
 				// worker.
 				const images = new MessageChannel();

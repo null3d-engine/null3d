@@ -109,6 +109,26 @@ export const QUALITY_SETTINGS = {
 		changes: 'start',
 		values: ['none', 'fxaa', 'msaa'],
 	},
+	// The tiles of the shadow atlas that spot and point lights cast their shadows into: a spot light
+	// takes one, and a point light six. The lights that look largest from the camera get them
+	// first. 0 turns their shadows off. The atlas holds no more layers than the lights can fill.
+	shadowTiles: {
+		presets: [4, 8, 16, 24],
+		changes: 'start',
+		values: { min: 0, max: 24, whole: true },
+	},
+	// Texels on each side of each tile of the shadow atlas. A tile takes 4 bytes per texel.
+	shadowTileSize: {
+		presets: [512, 512, 1024, 1024],
+		changes: 'start',
+		values: [256, 512, 1024, 2048],
+	},
+	// Point lights cast shadows into six tiles each, so only the heavier presets turn them on.
+	pointLightShadows: {
+		presets: [false, false, true, true],
+		changes: 'start',
+		values: 'flag',
+	},
 	// The depth prepass trades a second pass over the opaque objects' vertices for shading each
 	// pixel once. It stays off on every preset: it made S2's GPU time per frame 45% longer on the
 	// Mac (Benchmarks, "The depth prepass").
@@ -193,6 +213,26 @@ export interface QualitySettings {
 	 * take it.
 	 */
 	antialias: 'none' | 'fxaa' | 'msaa';
+	/**
+	 * The most tiles of the shadow atlas, which spot and point lights cast their shadows into: a
+	 * spot light takes one tile. When more lights cast shadows than the tiles hold, the lights that
+	 * look largest from the camera get them. It takes a whole number from 0, which turns the
+	 * shadows of spot and point lights off, to 24. The `shadowTiles` option of `createEngine` sets
+	 * it, and `set` does not take it.
+	 */
+	shadowTiles: number;
+	/**
+	 * Texels on each side of each tile of the shadow atlas: 256, 512, 1,024 or 2,048. Larger tiles
+	 * give sharper shadows and take more memory, 4 bytes per texel. The `shadowTileSize` option of
+	 * `createEngine` sets it, and `set` does not take it.
+	 */
+	shadowTileSize: number;
+	/**
+	 * True when point lights cast shadows. Each point light that casts them takes six tiles of the
+	 * shadow atlas, one for each face of a cube around it, within `shadowTiles`. The
+	 * `pointLightShadows` option of `createEngine` sets it, and `set` does not take it.
+	 */
+	pointLightShadows: boolean;
 	/**
 	 * True when the engine draws the depth of the opaque objects before it shades them, so it
 	 * shades each pixel once, for its nearest surface. The setting is fixed when the engine starts:

@@ -366,7 +366,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Debug drawing: every shape of ctx.debug over a small scene, the axes of a spinning box and the
 	// frustum of a second camera. The single-threaded mode runs the sketch on the page, which draws
-	// the same lines.
+	// the same lines. The S24+'s GPU puts some lines one pixel off, in 1.6% of the pixels, so it
+	// keeps its own references, which the test 1,000 km out compares with too.
 	{
 		name: 'debug',
 		sketch: 'tests/pages/sketches/debug-sketch.ts',
@@ -374,6 +375,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [400, 225],
 		modes: ['pipelined', 'single-threaded'],
 		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		devices: ['sm-s926b'],
 	},
 	// The same scene about 1,000 km out, at the center of a cell: the lines keep 64-bit positions,
 	// which the engine draws relative to the camera, so the frame must match. In 32-bit floats from
@@ -431,6 +433,31 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/shadows-sketch.ts?custom',
 		hold: 0,
 		size: [SHADOW_IMAGE.width, SHADOW_IMAGE.height],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// Spot light shadows: two spot lights, each with a tile of the shadow atlas, over casters that
+	// receive shadows, a receiver that casts none, a caster that receives none, and an unlit box.
+	// The tile size is fixed, as the presets of the GPU tiers differ. Both GPU paths draw the same
+	// shadows; WebGL2's 8-bit path differs at edges, as in the shadows test.
+	{
+		name: 'spot-shadows',
+		sketch: 'tests/pages/sketches/spot-shadows-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		switches: ['shadowTileSize=1024'],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// Point light shadows: one point light among casters on every side, whose shadows fall across
+	// the six tiles of its cube onto the ground and a wall. The switch turns point light shadows
+	// on, as the presets of WebGL2 and compatibility mode leave them off.
+	{
+		name: 'point-shadows',
+		sketch: 'tests/pages/sketches/point-shadows-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		switches: ['shadowTileSize=1024', 'pointLightShadows'],
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},

@@ -229,6 +229,8 @@ export class SketchRunner {
 			device.depthPrepass,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
+		const { shadowTiles, shadowTileSize, pointLightShadows } = sketch.quality.settings;
+		glue.setShadowTiles(shadowTiles, shadowTileSize, pointLightShadows);
 		if (sketch.jobWorkers > 0) {
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.notify(slots, Slot.JobsReady);
@@ -667,7 +669,8 @@ export class SketchRunner {
 			}
 		}
 		const scale = this.renderScale();
-		if (glue.recordFrame(frame, width, height, scale) !== 0)
+		const built = Atomics.load(slots, Slot.PipelinesBuilt);
+		if (glue.recordFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		Atomics.store(slots, Slot.RenderScale, scale);
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);

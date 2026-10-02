@@ -305,6 +305,15 @@ describe('the files in the folder of references', () => {
 		]);
 	});
 
+	it("need a device's references only on the tiers that the device draws", () => {
+		const phoneRuns = imageRuns([{ ...(TESTS[0] as ImageTest), devices: ['sm-s926b'] }]);
+		const boxes = NEEDED.filter((file) => file.endsWith('/boxes.png'));
+		expect(referenceFileProblems(phoneRuns, boxes)).toEqual([
+			'sm-s926b/webgl2/boxes.png is missing. Make it: run the checks plan on sm-s926b (.dev/devices.md), then bun run images:review --accept boxes',
+		]);
+		expect(referenceFileProblems(phoneRuns, [...boxes, 'sm-s926b/webgl2/boxes.png'])).toEqual([]);
+	});
+
 	it('name files that no test compares with: a tier that draws the first tier image, a device the test does not list, a test the manifest lacks', () => {
 		const unused = [
 			'chrome-real-gpu/webgl2/grid.png',

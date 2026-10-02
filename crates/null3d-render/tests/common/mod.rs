@@ -11,7 +11,7 @@ use std::f64::consts::{PI, TAU};
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::JobSystem;
-use null3d_core::lights::VisibleLight;
+use null3d_core::lights::{LightShadow, LightTable, VisibleLight, kind, value};
 use null3d_core::scene::{Command, SceneStorage, flags};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::format;
@@ -52,6 +52,13 @@ pub struct World<B: FrameBuilder = GpuDrivenRenderer> {
     pub lines: LineStore,
     /// The point and spot lights that the camera sees, as the core's light table lists them.
     pub lights: Vec<VisibleLight>,
+    /// The point and spot lights that cast shadows, as the core's light table lists them.
+    pub shadow_lights: Vec<LightShadow>,
+    /// The newest frame that the thread that draws drew with every pipeline built.
+    pub pipelines_built: u32,
+    /// A light table that each frame gathers its lights from, as the engine does, or `None` to
+    /// take `lights` and `shadow_lights` as they are.
+    pub light_table: Option<LightTable>,
     /// The render scale of the frames that record next.
     pub render_scale: RenderScale,
 }
@@ -161,8 +168,49 @@ impl<B: FrameBuilder> World<B> {
             canvas: (640, 360),
             lines: LineStore::default(),
             lights: Vec::new(),
+            shadow_lights: Vec::new(),
+            pipelines_built: u32::MAX,
+            light_table: None,
             render_scale: RenderScale::FULL,
         }
+    }
+
+    /// Adds a spot light at `position` that points straight down and casts shadows, with a range
+    /// of `range` meters and a cone of about 54 degrees, created in the current frame. Its row
+    /// goes into the world's light table, which it makes when the world has none.
+    pub fn add_spot(&mut self, position: [f32; 3], range: f32) -> Handle {
+        self.add_light(kind::SPOT, position, range)
+    }
+
+    /// Adds a point light at `position` that casts shadows, with a range of `range` meters, as
+    /// [`World::add_spot`] adds a spot light.
+    pub fn add_point(&mut self, position: [f32; 3], range: f32) -> Handle {
+        self.add_light(kind::POINT, position, range)
+    }
+
+    fn add_light(&mut self, light_kind: u32, position: [f32; 3], range: f32) -> Handle {
+        let object = self.scene.reserve().unwrap();
+        self.scene.set_position(object, position).unwrap();
+        // A quarter turn back about X points the light's -Z axis straight down.
+        let down = [
+            -std::f32::consts::FRAC_1_SQRT_2,
+            0.0,
+            0.0,
+            std::f32::consts::FRAC_1_SQRT_2,
+        ];
+        self.scene.set_rotation(object, down).unwrap();
+        let shown = flags::VISIBLE | flags::CAST_SHADOWS;
+        self.scene
+            .apply_commands(
+                &[Command::create(object, Handle::NONE, NO_MESH, shown)],
+                self.frame,
+            )
+            .unwrap();
+        let table = self.light_table.get_or_insert_with(LightTable::new);
+        let light = table.create(object, light_kind).unwrap();
+        table.set_value(light, value::RANGE, range).unwrap();
+        table.set_value(light, value::ANGLE, 0.95).unwrap();
+        object
     }
 
     /// Adds a view from a second camera at `position`, which looks down -z as the first camera
@@ -209,6 +257,15 @@ impl<B: FrameBuilder> World<B> {
         self.batches
             .update(&self.jobs, frame, self.scene.cell_table_mut());
         self.snapshot.record(frame, &self.scene, &self.batches);
+        if let Some(table) = self.light_table.as_mut() {
+            let parity = self.scene.parity();
+            let settings = self.renderer.settings_mut();
+            settings.gather_lights(table, &self.scene, parity, self.canvas);
+            self.lights.clear();
+            self.lights.extend_from_slice(table.visible());
+            self.shadow_lights.clear();
+            self.shadow_lights.extend_from_slice(table.shadows());
+        }
         let input = FrameInput {
             frame,
             scene: &self.scene,
@@ -220,6 +277,8 @@ impl<B: FrameBuilder> World<B> {
             jobs: &self.jobs,
             lines: self.lines.lines(),
             lights: &self.lights,
+            shadow_lights: &self.shadow_lights,
+            pipelines_built: self.pipelines_built,
         };
         let recorded = self
             .renderer

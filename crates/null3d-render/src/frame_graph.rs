@@ -21,6 +21,12 @@
 //! pass of its own before it. Without shadows the array is one texel of one layer, which no pass
 //! draws, so the scene's bindings stay the same.
 //!
+//! The same builder keeps a second texture array, the shadow atlas of point and spot lights (see
+//! [`crate::shadow_tiles`]), which every opaque pass samples too. Each layer of the atlas is a
+//! tile, with a shadow pass and on WebGPU a culling pass of its own. A tile keeps its depth from
+//! frame to frame, and draws only in frames that need it: the recording skips the render pass of
+//! each other tile, and the graph does not compile again.
+//!
 //! The debug lines pass draws the lines that the sketch drew (see [`crate::debug_lines`]) into the
 //! scene color and depth, after the camera's opaque pass and in its render pass. It is on only in
 //! frames with lines, so the plan of a frame without them has no such pass.
@@ -89,6 +95,10 @@ pub(crate) struct GraphIds {
 /// The buffers that the culling passes read: the world matrices and the bucket tables, which the
 /// frame uploads before its passes run.
 const OBJECTS: &str = "objects";
+/// The camera's point and spot lights, which the frame uploads before its passes run.
+const LIGHTS: &str = "lights";
+/// The camera's light grid, which the light clustering pass fills on WebGPU.
+const LIGHT_GRID: &str = "lightGrid";
 /// The camera's color target, which reaches the canvas.
 const SCENE_COLOR: &str = "sceneColor";
 /// The camera's depth target.
@@ -115,6 +125,9 @@ const SHADOW_CASCADES: [&str; MAX_CASCADES] = [
     "ShadowCascade2",
     "ShadowCascade3",
 ];
+/// The shadow atlas of point and spot lights: a depth texture array with one layer per tile,
+/// kept between frames.
+const SHADOW_ATLAS: &str = "shadowAtlas";
 /// Ids after the first texture's that the views of layers take: the plan's textures take the ones
 /// below.
 const LAYER_VIEWS: u32 = 128;
@@ -122,15 +135,12 @@ const LAYER_VIEWS: u32 = 128;
 const NO_VIEWS: u32 = u32::MAX;
 
 /// The shadow passes of a directional light: its cascades, the texels on each side of each
-/// cascade's layer, the light's layer mask, which selects the casters, and the cascades that draw
-/// in the frame, one bit each. A cascade that does not draw runs no render pass, so its layer
-/// keeps what it holds.
+/// cascade's layer, and the light's layer mask, which selects the casters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ShadowPasses {
     pub(crate) cascades: u32,
     pub(crate) map_size: u32,
     pub(crate) layers: u32,
-    pub(crate) drawn: u32,
 }
 
 impl ShadowPasses {
@@ -140,21 +150,29 @@ impl ShadowPasses {
             cascades: shadow.cascades.count as u32,
             map_size: shadow.settings.map_size,
             layers: shadow.layers,
-            drawn: shadow.drawn,
         }
     }
+}
+
+/// The tile passes of the shadow atlas: its tiles, and the texels on each side of each.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TilePasses {
+    pub(crate) tiles: u32,
+    pub(crate) size: u32,
 }
 
 /// What a declared pass records.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Role {
+    /// Lists the lights of each cluster of the camera's light grid on the GPU.
+    LightClusters,
     /// Culls a view on the GPU into its compacted instances and indirect draws.
     Cull(ViewId),
     /// Draws the depth of a view's opaque objects, before its opaque pass shades them.
     Prepass(ViewId),
     /// Draws a view's opaque objects.
     Opaque(ViewId),
-    /// Draws the depth of a shadow cascade's casters, by the cascade's view.
+    /// Draws the depth of a shadow cascade's or a shadow tile's casters, by its view.
     Shadow(ViewId),
     /// Draws the frame's debug lines into the camera's view.
     DebugLines,
@@ -168,25 +186,33 @@ pub(crate) enum Role {
 }
 
 /// A name for a view's pass or resource: `camera` for the camera's view, and `other` followed by
-/// the view's number for any other. It writes the digits itself, which keeps the text formatting
-/// code out of the WebAssembly file.
+/// the view's number for any other.
 fn view_name(view: usize, camera: &'static str, other: &str) -> Cow<'static, str> {
     if view == ViewId::CAMERA.index() {
         return Cow::Borrowed(camera);
     }
+    numbered(other, view)
+}
+
+/// `name` followed by `number`. It writes the digits itself, which keeps the text formatting code
+/// out of the WebAssembly file.
+fn numbered(name: &str, number: usize) -> Cow<'static, str> {
     let mut digits = [0u8; 20];
     let mut count = 0;
-    let mut rest = view;
-    while rest > 0 {
+    let mut rest = number;
+    loop {
         digits[count] = b'0' + (rest % 10) as u8;
         count += 1;
         rest /= 10;
+        if rest == 0 {
+            break;
+        }
     }
-    let mut name = String::from(other);
+    let mut text = String::from(name);
     for &digit in digits[..count].iter().rev() {
-        name.push(char::from(digit));
+        text.push(char::from(digit));
     }
-    Cow::Owned(name)
+    Cow::Owned(text)
 }
 
 /// The render graph of a frame builder's passes, the textures its draw lists made for the compiled
@@ -240,6 +266,8 @@ pub(crate) struct FrameGraph {
     shadows: Option<ShadowPasses>,
     /// Each cascade's shadow pass, once the passes are declared.
     shadow_passes: Vec<PassId>,
+    /// The shadow atlas's tile passes, or `None` while no light casts shadows into it.
+    tiles: Option<TilePasses>,
     /// True once the passes are declared for the views, the shadows and the shadow map.
     declared: bool,
     /// For each texture of the plan, the first of the views of its layers, counted from the views'
@@ -294,6 +322,7 @@ impl FrameGraph {
             shadow_map: false,
             shadows: None,
             shadow_passes: Vec::new(),
+            tiles: None,
             declared: false,
             final_pass: FinalPass::new(ids.final_pass, scene_color, antialias),
         }
@@ -336,6 +365,17 @@ impl FrameGraph {
             }
         }
         self.shadows = shadows;
+    }
+
+    /// Sets the shadow atlas's tile passes for the next frames, or none. A new tile count or size
+    /// declares the passes again, which makes the atlas again. A builder that binds no shadow map
+    /// draws no tiles.
+    pub(crate) fn set_tiles(&mut self, tiles: Option<TilePasses>) {
+        let tiles = tiles.filter(|t| self.shadow_map && t.tiles > 0);
+        if tiles != self.tiles {
+            self.declared = false;
+        }
+        self.tiles = tiles;
     }
 
     /// The render graph.
@@ -420,9 +460,9 @@ impl FrameGraph {
     }
 
     /// Declares the engine's passes for `views`: each view's culling pass on WebGPU, each shadow
-    /// cascade's culling and shadow passes, each view's depth prepass with the prepass and its
-    /// opaque pass, the debug lines pass, which is off, each view's transparent pass, then the
-    /// resolve pass and the final pass, of which one runs.
+    /// cascade's and each shadow tile's culling and shadow passes, each view's depth prepass with
+    /// the prepass and its opaque pass, the debug lines pass, which is off, each view's
+    /// transparent pass, then the resolve pass and the final pass, of which one runs.
     fn declare(&mut self, views: &[View]) {
         self.graph.clear();
         self.roles.clear();
@@ -440,8 +480,20 @@ impl FrameGraph {
                 height: size,
             };
             self.graph.keep(SHADOW_MAP, map, size);
+            let (tiles, size) = self.tiles.map_or((1, 1), |t| (t.tiles, t.size));
+            let atlas = Target::depth(DEPTH_FORMAT).layers(tiles).array();
+            let size = Size::Fixed {
+                width: size,
+                height: size,
+            };
+            self.graph.keep(SHADOW_ATLAS, atlas, size);
         }
         if self.gpu_culling {
+            self.graph.import_buffer(LIGHTS);
+            let clusters = Pass::new("LightClusters", PassKind::Compute)
+                .reads(LIGHTS)
+                .creates_buffer(LIGHT_GRID);
+            self.add(clusters, Role::LightClusters);
             self.graph.import_buffer(OBJECTS);
             for index in 0..views.len() {
                 let pass = Pass::new(view_name(index, "Culling", "Culling"), PassKind::Compute)
@@ -452,6 +504,9 @@ impl FrameGraph {
         }
         if let Some(shadows) = self.shadows {
             self.declare_shadows(shadows);
+        }
+        if let Some(tiles) = self.tiles {
+            self.declare_tiles(tiles);
         }
         for (index, view) in views.iter().enumerate() {
             let depth_name = view_name(index, SCENE_DEPTH, "depth");
@@ -476,9 +531,12 @@ impl FrameGraph {
             }
             if self.gpu_culling {
                 pass = pass.reads(view_name(index, "visible", "visible"));
+                if index == ViewId::CAMERA.index() {
+                    pass = pass.reads(LIGHT_GRID);
+                }
             }
             if self.shadow_map {
-                pass = pass.reads(SHADOW_MAP);
+                pass = pass.reads(SHADOW_MAP).reads(SHADOW_ATLAS);
             }
             let pass = self.add(pass, Role::Opaque(ViewId::from_index(index)));
             self.opaque.push(pass);
@@ -537,6 +595,30 @@ impl FrameGraph {
             }
             let pass = self.add(pass, Role::Shadow(view));
             self.shadow_passes.push(pass);
+        }
+    }
+
+    /// Declares each tile's culling pass on WebGPU, and its shadow pass, which draws into the
+    /// tile's layer of the shadow atlas.
+    fn declare_tiles(&mut self, tiles: TilePasses) {
+        let size = Size::Fixed {
+            width: tiles.size,
+            height: tiles.size,
+        };
+        for tile in 0..tiles.tiles as usize {
+            let view = ViewId::tile(tile);
+            let mut pass = Pass::new(numbered("ShadowTile", tile), PassKind::Shadow)
+                .size(size)
+                .writes_layer(SHADOW_ATLAS, tile as u32);
+            if self.gpu_culling {
+                let visible = numbered("tileVisible", tile);
+                let culling = Pass::new(numbered("TileCulling", tile), PassKind::Compute)
+                    .reads(OBJECTS)
+                    .creates_buffer(visible.clone());
+                self.add(culling, Role::Cull(view));
+                pass = pass.reads(visible);
+            }
+            self.add(pass, Role::Shadow(view));
         }
     }
 
@@ -670,11 +752,13 @@ impl FrameGraph {
 
     /// Records the plan's render and compute passes, then submits them. The graph records the
     /// final pass, and `record` the commands of each other declared pass. Each render pass clears
-    /// its color targets to `clear`.
+    /// its color targets to `clear`. A render pass whose passes all have roles that `skips` names
+    /// is left out, so its targets keep what earlier frames drew.
     pub(crate) fn record(
         &self,
         list: &mut DrawList,
         clear: [f32; 4],
+        skips: impl Fn(Role) -> bool,
         mut record: impl FnMut(&mut DrawList, Role) -> Result<(), RecordError>,
     ) -> Result<(), RecordError> {
         let plan = self
@@ -696,8 +780,11 @@ impl FrameGraph {
                         list.push(Op::EndComputePass, &[])?;
                     }
                 }
-                StepKind::Render { .. } if !self.runs(plan.passes(step)) => {}
                 StepKind::Render { size, .. } => {
+                    let passes = plan.passes(step);
+                    if passes.iter().all(|&pass| skips(self.roles[pass.index()])) {
+                        continue;
+                    }
                     self.begin_render_pass(list, plan, step, clear)?;
                     self.set_render_area(list, size)?;
                     for &pass in plan.passes(step) {
@@ -712,16 +799,6 @@ impl FrameGraph {
         }
         list.push(Op::Submit, &[])?;
         Ok(())
-    }
-
-    /// True when a render pass of `passes` runs in this frame: always, unless every one of them
-    /// draws a shadow cascade that keeps its layer in this frame.
-    fn runs(&self, passes: &[PassId]) -> bool {
-        let drawn = self.shadows.map_or(0, |s| s.drawn);
-        passes.iter().any(|pass| match self.roles[pass.index()] {
-            Role::Shadow(view) => view.cascade_index().is_some_and(|k| drawn & (1 << k) != 0),
-            _ => true,
-        })
     }
 
     /// Begins a render pass with the step's attachments and their load and store operations.
@@ -831,6 +908,17 @@ impl FrameGraph {
         Some(self.texture_id(surface))
     }
 
+    /// The draw list's id of the shadow atlas, which bind groups name, or `None` for a builder that
+    /// binds no shadow map. Valid once the frame's [`FrameGraph::prepare`] made the plan's textures.
+    pub(crate) fn shadow_atlas(&self) -> Option<u32> {
+        if !self.shadow_map {
+            return None;
+        }
+        let plan = self.graph.plan()?;
+        let surface = plan.texture_of(self.graph.find_resource(SHADOW_ATLAS)?)?;
+        Some(self.texture_id(surface))
+    }
+
     /// Forgets the canvas size, the textures and views the draw lists made and the final pass's
     /// objects, so the next frame makes them all again, after the thread that draws replaced the
     /// GPU.
@@ -915,6 +1003,7 @@ mod tests {
         frames.sync_views(&[View::default(), View::default()]);
         let graph = frames.graph();
         let names = [
+            "LightClusters",
             "Culling",
             "Culling1",
             "Opaque",
@@ -932,6 +1021,7 @@ mod tests {
         assert_eq!(
             frames.roles,
             [
+                Role::LightClusters,
                 Role::Cull(ViewId::CAMERA),
                 Role::Cull(ViewId::from_index(1)),
                 Role::Opaque(ViewId::CAMERA),
@@ -1075,7 +1165,7 @@ mod tests {
         assert_eq!(
             without,
             [
-                vec!["Culling", "Culling1"],
+                vec!["LightClusters", "Culling", "Culling1"],
                 vec!["Opaque", "Resolve"],
                 vec!["Opaque1"]
             ]
@@ -1106,8 +1196,9 @@ mod tests {
         frames.set_depth_prepass(true);
         frames.sync_views(&[View::default(), View::default()]);
         assert_eq!(
-            frames.roles[..6],
+            frames.roles[..7],
             [
+                Role::LightClusters,
                 Role::Cull(ViewId::CAMERA),
                 Role::Cull(ViewId::from_index(1)),
                 Role::Prepass(ViewId::CAMERA),
@@ -1124,14 +1215,16 @@ mod tests {
         assert_eq!(
             with,
             [
-                vec!["Culling", "Culling1"],
+                vec!["LightClusters", "Culling", "Culling1"],
                 vec!["DepthPrepass", "Opaque", "Resolve"],
                 vec!["DepthPrepass1", "Opaque1"]
             ]
         );
         // The prepass begins the render pass, which clears the color and the depth.
         list.clear();
-        frames.record(&mut list, [0.0; 4], |_, _| Ok(())).unwrap();
+        frames
+            .record(&mut list, [0.0; 4], |_| false, |_, _| Ok(()))
+            .unwrap();
         let passes = operands(&list, Op::BeginRenderPass);
         let both = pass_flags::CLEAR_COLOR | pass_flags::CLEAR_DEPTH;
         assert!(passes[..2].iter().all(|pass| pass[8] & both == both));
@@ -1199,7 +1292,9 @@ mod tests {
         assert_eq!(operands(&list, Op::CreateTexture)[0], array);
         let views = [[129, 1, 0, 0], [130, 1, 0, 1], [131, 1, 0, 2]];
         assert_eq!(operands(&list, Op::CreateTextureView), views);
-        frames.record(&mut list, [0.0; 4], |_, _| Ok(())).unwrap();
+        frames
+            .record(&mut list, [0.0; 4], |_| false, |_, _| Ok(()))
+            .unwrap();
         let depth_only = pass_flags::CLEAR_DEPTH | pass_flags::STORE_DEPTH;
         let passes = operands(&list, Op::BeginRenderPass);
         let depth_passes: Vec<_> = passes.iter().filter(|p| p[0] == NO_TARGET).collect();
@@ -1273,7 +1368,7 @@ mod tests {
         assert_eq!(
             steps(&frames),
             [
-                vec!["Culling", "Culling1"],
+                vec!["LightClusters", "Culling", "Culling1"],
                 vec!["Opaque", "DebugLines", "Transparent", "Resolve"],
                 vec!["Opaque1", "Transparent1"]
             ],

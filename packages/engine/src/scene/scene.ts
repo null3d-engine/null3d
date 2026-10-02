@@ -281,10 +281,33 @@ export interface PointLightOptions extends LightOptions {
 	/** How fast the light fades with distance, at least 0. The default, 2, is the physical rate. */
 	decay?: number;
 	/**
-	 * True makes the light cast shadows, like `setCastShadows(true)`. The default is false. This
-	 * version stores the setting but draws no shadows yet.
+	 * True makes the light cast shadows, like `setCastShadows(true)`. The default is false. Point
+	 * lights cast them where the quality preset's `pointLightShadows` is on, as on High and Ultra.
 	 */
 	castShadows?: boolean;
+	/** How the light's shadows draw, like `setShadow`. Each setting has a default. */
+	shadow?: LightShadowOptions;
+}
+
+/**
+ * The shadows of a point or spot light. A spot light draws its casters' depth into a tile of the
+ * shadow atlas, a view from the light that holds its cone. A point light draws into six tiles, one
+ * for each face of a cube around it.
+ *
+ * @category api/lights
+ */
+export interface LightShadowOptions {
+	/**
+	 * How far each receiving surface moves toward the light before its shadow test, in texels of
+	 * the light's tile at the surface's distance, at least 0. Raise it when surfaces show stripes of
+	 * shadow on themselves. The default is 0.5.
+	 */
+	bias?: number;
+	/**
+	 * How far each receiving surface moves along its normal before its shadow test, in texels of the
+	 * light's tile at the surface's distance, at least 0. The default is 1.
+	 */
+	normalBias?: number;
 }
 
 /**
@@ -310,6 +333,13 @@ export interface SpotLightOptions extends PointLightOptions {
 	 * default, 0, gives a sharp edge.
 	 */
 	penumbra?: number;
+	/**
+	 * True makes the light cast shadows, like `setCastShadows(true)`. The default is false. The
+	 * quality preset's `shadowTiles` caps the lights that cast them at once.
+	 */
+	castShadows?: boolean;
+	/** How the light's shadows draw, like `setShadow`. Each setting has a default. */
+	shadow?: LightShadowOptions;
 }
 
 /**
@@ -1041,9 +1071,9 @@ export class Light extends Object3D {
 	}
 
 	/** @internal Sets each of the shadow settings that `shadow` gives. */
-	shadow(call: string, shadow: DirectionalShadowOptions): void {
+	shadow(call: string, shadow: DirectionalShadowOptions | LightShadowOptions): void {
 		for (const [key, which] of SHADOW_NUMBERS) {
-			const value = shadow[key];
+			const value = (shadow as DirectionalShadowOptions)[key];
 			if (value !== undefined) this.write(call, which, value);
 		}
 	}
@@ -1139,11 +1169,16 @@ export class PointLight extends Light {
 	}
 
 	/**
-	 * Makes the light cast shadows, or stop. The default is false. This version stores the setting
-	 * but draws no shadows yet.
+	 * Makes the light cast shadows, or stop. The default is false. Point lights cast them where the
+	 * quality preset's `pointLightShadows` is on, and each takes six tiles of `shadowTiles`.
 	 */
 	setCastShadows(cast: boolean): void {
 		this.setFlag('setCastShadows', C.FLAG_CAST_SHADOWS, cast);
+	}
+
+	/** Changes how the light's shadows draw. Settings that `shadow` leaves out keep their values. */
+	setShadow(shadow: LightShadowOptions): void {
+		this.shadow('setShadow', shadow);
 	}
 }
 
@@ -1180,11 +1215,17 @@ export class SpotLight extends Light {
 	}
 
 	/**
-	 * Makes the light cast shadows, or stop. The default is false. This version stores the setting
-	 * but draws no shadows yet.
+	 * Makes the light cast shadows, or stop. The default is false. The quality preset's
+	 * `shadowTiles` caps the lights that cast them at once: the lights that look largest from the
+	 * camera cast them first.
 	 */
 	setCastShadows(cast: boolean): void {
 		this.setFlag('setCastShadows', C.FLAG_CAST_SHADOWS, cast);
+	}
+
+	/** Changes how the light's shadows draw. Settings that `shadow` leaves out keep their values. */
+	setShadow(shadow: LightShadowOptions): void {
+		this.shadow('setShadow', shadow);
 	}
 }
 

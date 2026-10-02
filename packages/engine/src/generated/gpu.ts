@@ -105,6 +105,7 @@ export const LAYOUT_FINAL = 4;
 export const LAYOUT_TEXTURES = 5;
 export const LAYOUT_MATERIAL_MAPS = 6;
 export const LAYOUT_DEPTH = 7;
+export const LAYOUT_LIGHT_CLUSTERS = 8;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -150,6 +151,9 @@ export const TEMPLATE_SHADOW_DEPTH = 8;
 export const TEMPLATE_BACKGROUND = 9;
 export const TEMPLATE_DEBUG_VIEW = 12;
 export const TEMPLATE_CULL = 16;
+export const TEMPLATE_LIGHT_COUNT = 17;
+export const TEMPLATE_LIGHT_PLACE = 18;
+export const TEMPLATE_LIGHT_WRITE = 19;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;
@@ -187,6 +191,7 @@ export const SIZE_CELL_SHIFT = 23;
 export const SIZE_MAX_CULL_RANGES = 257;
 export const SIZE_LINE_VERTEX_BYTES = 16;
 export const SIZE_SHADOW_UNIFORM_BYTES = 336;
+export const SIZE_SHADOW_TILES_UNIFORM_BYTES = 1936;
 
 /** Bytes of one block of texels of each format, by format code: one texel unless compressed. */
 export const FORMAT_BLOCK_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4, 16, 16, 16, 16, 8, 8, 16, 16];

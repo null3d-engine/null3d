@@ -39,7 +39,7 @@ import type { DepthSetup } from './depth';
  * blocks stay below the fewest binding points that WebGL2 allows, and their textures below the
  * texture upload unit.
  */
-const GROUP_BASES = Uint8Array.of(0, 10, 14, 18);
+const GROUP_BASES = Uint8Array.of(0, 11, 15, 19);
 
 /** The fewest uniform block binding points that a WebGL2 context has. */
 export const MIN_UNIFORM_BLOCK_SLOTS = 24;

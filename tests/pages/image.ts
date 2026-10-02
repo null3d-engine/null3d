@@ -1,8 +1,9 @@
 // Draws one sketch of the image test manifest in the engine's hold mode and publishes the held
 // frame, with the depth mode that the engine drew. ?sketch= names the sketch module from the
 // server's root, with the sketch's own query after it, and ?size= gives the canvas in pixels, such
-// as 320x180. ?transparent starts the engine with a transparent canvas, and ?antialias= with an
-// anti-aliasing mode. The engine reads its own switches: ?hold= the sketch time, ?gpu= the tier,
+// as 320x180. ?transparent starts the engine with a transparent canvas, ?antialias= with an
+// anti-aliasing mode, ?shadowTileSize= with a size of the shadow atlas's tiles, and
+// ?pointLightShadows with point light shadows on. The engine reads its own switches: ?hold= the sketch time, ?gpu= the tier,
 // ?depth= the WebGL2 depth mode, ?hdr=off, and the thread mode's switches.
 import { createEngine, type EngineOptions } from '@null3d/engine';
 import { depthFacts } from './lib/depth';
@@ -36,6 +37,8 @@ run('image', async () => {
 		maxPixelRatio: 1,
 		transparent: params.has('transparent'),
 		antialias: (params.get('antialias') ?? undefined) as EngineOptions['antialias'],
+		shadowTileSize: params.has('shadowTileSize') ? Number(params.get('shadowTileSize')) : undefined,
+		pointLightShadows: params.has('pointLightShadows') || undefined,
 	});
 	const frame = await engine.captureFrame();
 	await engine.destroy();
