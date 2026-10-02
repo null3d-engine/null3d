@@ -2,7 +2,7 @@
 // worker (low-latency mode) or on the page's main thread (single-threaded mode and ?render=main).
 
 import { FORMAT_RG11B10_UFLOAT } from '../generated/gpu';
-import { loadGlslShaders, loadWgslShaders } from '../generated/shaders';
+import { type DeviceShaders, loadGlslShaders, loadWgslShaders } from '../generated/shaders';
 import { type CanvasHolder, clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
 import { type Completion, FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
@@ -21,6 +21,7 @@ import { type FrameRecorder, Phase } from '../shared/metrics';
 import type { Tier } from '../shared/tier';
 import { contextLoss, contextRestored, deviceLoss } from './loss';
 import { WebGL2SceneRenderer, WebGPUSceneRenderer } from './scene-renderer';
+import { freshSalt, saltShaders } from './shader-salt';
 
 export type { Tier } from '../shared/tier';
 
@@ -272,6 +273,10 @@ class WebGL2Renderer implements Renderer {
 	}
 }
 
+/** The loaded shaders, or a fresh copy that the browser must compile again when the device asks. */
+const freshIf = (device: CoreDevice, shaders: DeviceShaders) =>
+	device.freshShaders ? saltShaders(shaders, freshSalt()) : shaders;
+
 /** Creates the renderer for a tier on the canvas this thread owns. */
 export async function createRenderer(
 	canvas: RenderCanvas,
@@ -286,7 +291,7 @@ export async function createRenderer(
 		// scene's shaders download meanwhile.
 		const [, shaders] = await Promise.all([
 			contextRestored(gl),
-			scene && loadGlslShaders(device.shaderBits),
+			scene && loadGlslShaders(device.shaderBits).then((loaded) => freshIf(device, loaded)),
 		]);
 		if (scene && shaders)
 			return new WebGL2SceneRenderer(
@@ -303,7 +308,7 @@ export async function createRenderer(
 	}
 	const [gpu, shaders] = await Promise.all([
 		requestDevice(options),
-		scene && loadWgslShaders(device.shaderBits),
+		scene && loadWgslShaders(device.shaderBits).then((loaded) => freshIf(device, loaded)),
 	]);
 	if (scene && shaders)
 		return new WebGPUSceneRenderer(

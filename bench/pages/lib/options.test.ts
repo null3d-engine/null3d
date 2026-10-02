@@ -5,12 +5,13 @@ import { readChoice, readRunOptions } from './options';
 describe('readRunOptions', () => {
 	const read = (query: string) => readRunOptions(new URLSearchParams(query));
 
-	test('reads hold, demo, the count, the seconds and the shadow cascades', () => {
+	test('reads hold, demo, the count, the seconds, the soak and the shadow cascades', () => {
 		expect(read('')).toEqual({
 			hold: null,
 			demo: false,
 			count: null,
 			seconds: null,
+			soak: null,
 			shadows: null,
 		});
 		expect(read('?hold&n=1000&seconds=2.5&shadows=3')).toEqual({
@@ -18,8 +19,10 @@ describe('readRunOptions', () => {
 			demo: false,
 			count: 1000,
 			seconds: 2.5,
+			soak: null,
 			shadows: 3,
 		});
+		expect(read('?soak=30').soak).toBe(30);
 		expect(read('?hold=3.25').hold).toBe(3.25);
 		expect(read('?hold=0').hold).toBe(0);
 		expect(read('?demo').demo).toBe(true);
@@ -34,6 +37,8 @@ describe('readRunOptions', () => {
 			'n=',
 			'seconds=0',
 			'seconds=x',
+			'soak=0',
+			'soak=2.5',
 			'hold=-1',
 			'hold=soon',
 			'shadows=0',

@@ -70,6 +70,12 @@ describe('load addresses', () => {
 		);
 	});
 
+	it("fills in the item's own name, as a page that posts its progress names its record", () => {
+		expect(
+			fillRunner('/p.html?progress=/__null3d/runs/{run}/{runner}/{item}.progress', 'r', 'n', 'i-2'),
+		).toBe('/p.html?progress=/__null3d/runs/r/n/i-2.progress');
+	});
+
 	it('reads the build file of a load address, even before the runner fills in its key', () => {
 		const template = loadPath({ kind: 'warm', key: runnerKey('bench') }, 'bench/pages/a.html?n=2');
 		expect(loadedFile(template)).toBe('bench/pages/a.html');

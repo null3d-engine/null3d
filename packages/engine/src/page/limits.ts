@@ -74,6 +74,8 @@ export interface CoreDevice {
 	 * `KHR_parallel_shader_compile`, false to wait for each program's compile at its first draw.
 	 */
 	parallelCompile: boolean;
+	/** True when every shader's text gets a comment of its own, so the browser compiles it again. */
+	freshShaders: boolean;
 	/**
 	 * The format code of the target that scene passes draw into: a float format for HDR color, which
 	 * the final pass tone maps, or the canvas's format on the 8-bit path.
@@ -135,7 +137,7 @@ function compression(
  */
 export type DeviceOptions = Pick<
 	Switches,
-	'copyUploads' | 'depth' | 'hdr' | 'parallelCompile' | 'compression' | 'cells'
+	'copyUploads' | 'depth' | 'hdr' | 'parallelCompile' | 'freshShaders' | 'compression' | 'cells'
 > & {
 	/** The anti-aliasing mode. */
 	antialias: AntialiasMode;
@@ -207,7 +209,8 @@ export function sceneColorFormat(
  * The device and the canvas as the engine uses them on a tier, from the capability report and the
  * options. The test switches make the WebGL2 path copy uploads out of shared memory even where
  * WebGL reads it, force a WebGL2 depth mode, make WebGL2 wait for each program's compile, or force
- * the 8-bit path, so tests reach every route. `compression` limits the compressed texture families,
+ * the 8-bit path, so tests reach every route. `freshShaders` makes the browser compile every
+ * shader again, as on a first visit. `compression` limits the compressed texture families,
  * as on a device with fewer. `cells` off makes the core cull without grid cells, for benchmarks.
  */
 export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOptions): CoreDevice {
@@ -215,6 +218,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 	const toneMap = sceneColor === FORMAT_CANVAS ? PERMUTATION_TONE_MAP : 0;
 	const common = {
 		parallelCompile: options.parallelCompile,
+		freshShaders: options.freshShaders,
 		sceneColor,
 		antialias: ANTIALIAS_CODES[options.antialias],
 		transparent: options.transparent,
