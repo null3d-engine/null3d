@@ -123,6 +123,7 @@ Add `--shard 2/3` to run only the pages of one shard, as a CI shard does. Each r
 - On the Mac: `bun run bench:run --scenes s3 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,scene-code`.
 - On the phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s3 --pages null3d-webgl2,null3d-webgl2-low,scene-code`.
 - On the iPad: `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s3 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,scene-code`.
+- [D-06](decisions/D-06-success-targets.md#addendum-2026-10-02-s3-s4-and-s1-at-phone-scale-on-each-device) gives S3's figures on the S24+, the iPad and the Mac from 2 and 3 October 2026.
 
 ## The phone scene
 
@@ -139,6 +140,7 @@ Add `--shard 2/3` to run only the pages of one shard, as a CI shard does. Each r
 - On the Mac: `bun run bench:run --scenes s4 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,threejs-webgl,scene-code`.
 - On the phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s4 --pages null3d-webgl2,threejs-webgl,scene-code`. For the long run, add `--pages null3d-webgl2 --runs 1 --seconds 600`: 10 minutes of warm-up, then a trace of 10 measured minutes.
 - On the iPad: `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,scene-code`.
+- [D-06](decisions/D-06-success-targets.md#addendum-2026-10-02-s3-s4-and-s1-at-phone-scale-on-each-device) gives S4's figures on each device from 2 and 3 October 2026, with the long runs. [D-03](decisions/D-03-latency-mode.md) gives S4's pacing in low-latency mode on the iPad.
 
 ## Shadows
 
