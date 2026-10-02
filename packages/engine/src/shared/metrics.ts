@@ -95,7 +95,9 @@ const WARM_UP_START = 5;
 const WARM_UP_END = 6;
 /** Float64 index of the number of pipelines that the first frame built. */
 const FIRST_FRAME_PIPELINES = 7;
-const HEADER_WORDS = 16;
+/** Float64 index of the time, in ms, that the thread that draws spent on the first frame's draw. */
+const FIRST_DRAW = 8;
+const HEADER_WORDS = 18;
 const WRITTEN = HEADER_WORDS;
 
 function recordsStart(rings: number): number {
@@ -235,13 +237,16 @@ export class FrameRecorder {
 
 	/**
 	 * Records when the first frame reached the screen, as epoch milliseconds, once per engine, with
-	 * the pipelines it built: the pipeline count of the record that `commit` has not closed yet.
+	 * the pipelines it built: the pipeline count of the record that `commit` has not closed yet. It
+	 * also records how long the frame's draw took, which holds the compiles that the first draw
+	 * waited for.
 	 */
-	markFirstFrame(): void {
+	markFirstFrame(drawMs: number): void {
 		const { times, words } = this.views;
 		if (times[FIRST_FRAME] !== 0) return;
 		times[FIRST_FRAME] = performance.timeOrigin + performance.now();
 		times[FIRST_FRAME_PIPELINES] = words[this.at + COUNTERS + Counter.Pipelines] as number;
+		times[FIRST_DRAW] = drawMs;
 	}
 
 	/**
@@ -311,6 +316,12 @@ export class MetricsReader {
 		const { times } = this.views;
 		const end = times[WARM_UP_END] as number;
 		return end > 0 ? end - (times[WARM_UP_START] as number) : null;
+	}
+
+	/** Milliseconds that the first frame's draw took on the thread that draws, or null before it. */
+	get firstDrawMs(): number | null {
+		const { times } = this.views;
+		return (times[FIRST_FRAME] as number) > 0 ? (times[FIRST_DRAW] as number) : null;
 	}
 
 	/** Pipelines that the first frame built, or null before the first frame. */

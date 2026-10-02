@@ -17,6 +17,11 @@ export interface RunOptions {
 	/** `?seconds=`: the warm-up and the measured time of a run, or null to use the protocol's. */
 	seconds: number | null;
 	/**
+	 * `?soak=`: minutes to run the scene, measured once a minute, instead of a timed run, or null
+	 * without the switch.
+	 */
+	soak: number | null;
+	/**
 	 * `?shadows=`: the sun's shadow cascades, from 1 to 4, in the scenes that draw shadows, or null
 	 * for no shadows. three.js draws one shadow map whatever the count.
 	 */
@@ -57,12 +62,14 @@ function readNumber(
 	return value;
 }
 
-/** The name a page publishes its result under: `hold`, `demo` or `bench`. */
-export function pageReport(params: URLSearchParams): 'hold' | 'demo' | 'bench' {
-	return params.has('hold') ? 'hold' : params.has('demo') ? 'demo' : 'bench';
+/** The name a page publishes its result under: `hold`, `demo`, `soak` or `bench`. */
+export function pageReport(params: URLSearchParams): 'hold' | 'demo' | 'soak' | 'bench' {
+	if (params.has('hold')) return 'hold';
+	if (params.has('demo')) return 'demo';
+	return params.has('soak') ? 'soak' : 'bench';
 }
 
-/** Reads `?hold`, `?demo`, `?n=`, `?seconds=` and `?shadows=`. */
+/** Reads `?hold`, `?demo`, `?n=`, `?seconds=`, `?soak=` and `?shadows=`. */
 export function readRunOptions(params: URLSearchParams): RunOptions {
 	return {
 		hold:
@@ -86,6 +93,12 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 			'seconds',
 			(v) => Number.isFinite(v) && v > 0,
 			'a number of seconds above 0',
+		),
+		soak: readNumber(
+			params,
+			'soak',
+			(v) => Number.isInteger(v) && v >= 1,
+			'a whole number of minutes, 1 or more',
 		),
 		shadows: readNumber(
 			params,

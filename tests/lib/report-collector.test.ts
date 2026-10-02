@@ -102,3 +102,18 @@ test("a replaced runner page's late result is refused and leaves the newer page'
 		rmSync(join(RUNS_DIR, run), { recursive: true, force: true });
 	}
 });
+
+test('a runner page can list the results and records that its runner stored so far', async () => {
+	const run = `list-test-${process.pid}`;
+	const runs = `http://127.0.0.1:${port}/__null3d/runs/${run}/ipad-safari`;
+	try {
+		expect(await (await fetch(runs)).json()).toEqual([]);
+		await fetch(`${runs}?page=one`, { method: 'POST' });
+		await fetch(`${runs}/device?page=one`, { method: 'POST', body: '{}' });
+		await fetch(`${runs}/grow.progress`, { method: 'POST', body: '{"livedMiB":64}' });
+		const names = (await (await fetch(runs)).json()) as string[];
+		expect(names.sort()).toEqual(['device', 'grow.progress']);
+	} finally {
+		rmSync(join(RUNS_DIR, run), { recursive: true, force: true });
+	}
+});

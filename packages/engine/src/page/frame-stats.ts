@@ -189,9 +189,19 @@ export interface FrameMetrics extends FrameSummary {
 		 * programs in the background report about 0, and the first frame's draw waits instead.
 		 */
 		warmUpMs: number | null;
+		/**
+		 * Time the thread that draws spent on the first frame's draw, or null before the first frame.
+		 * Where a browser cannot build WebGL2 programs in the background, it holds their compiles.
+		 */
+		firstDrawMs: number | null;
 		/** GPU pipelines that the first frame built, or null before the first frame. */
 		firstFramePipelines: number | null;
 	};
+	/**
+	 * Times the browser took the GPU away since the engine started, and the engine carried on with a
+	 * new device. `simulateGpuLoss` counts too.
+	 */
+	gpuLosses: number;
 	/** Bytes of the engine's WebAssembly file as the page downloaded it. */
 	downloadBytes: { wasm: number | null };
 	/** Frame records the page read too late; nonzero means some frames are missing from the figures. */

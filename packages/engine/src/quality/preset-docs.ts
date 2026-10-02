@@ -33,6 +33,7 @@ export const PLANNED_SETTINGS = {
 		changes: 'start',
 		values: { min: 1, max: 256, whole: true },
 	},
+	// Low and Medium stay under half the GPU texture memory at which a tablet's tab died (D-12).
 	textureMemoryMiB: {
 		presets: [256, 512, 1024, 2048],
 		changes: 'start',
