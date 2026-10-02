@@ -497,7 +497,9 @@ class EngineWorker {
 		};
 		worker.onerror = (event) => {
 			markStopped();
-			const message = event.message || 'a worker failed';
+			// A browser sends an error event without a message when the worker's script, or a file
+			// that the script imports, did not load.
+			const message = event.message || 'its script or a file it imports did not load';
 			this.waiting.shift()?.reject(startError(role, message));
 			if (this.started)
 				events.failure(new EngineError('E1404', `the ${role} worker failed: ${message}.`));
@@ -1091,6 +1093,9 @@ async function startEngine(
 			if (threads) startJobs(threads.jobs);
 			let imagePort: MessagePort | undefined;
 			if (render) {
+				// The setup can wait for frames of the render worker: in hold mode, for a warm-up, and
+				// for the preset check. So a render worker that does not start ends the start at once.
+				render.ready().catch((error: unknown) => start.abort(error));
 				// Texture images and custom materials' shaders go from the page straight to the render
 				// worker.
 				const images = new MessageChannel();
