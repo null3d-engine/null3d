@@ -16,7 +16,8 @@
 // them. The single-threaded build runs on pages that are not cross-origin isolated. The
 // wasm-bindgen command-line tool must match the crate version exactly, so the script downloads
 // that release into the build folder and verifies its checksum. The shader compiler runs in build
-// tools, never in a page, so it has no size budget.
+// tools, never in a page, so it has no size budget. Every mode first builds the shader modules
+// when they are missing or out of date, because git does not keep them.
 //
 // The size check's base is main's own build: tools/lib/size-check.ts picks the commit, and the
 // check builds it in a worktree under target/ with that commit's own build script. It keeps the
@@ -60,6 +61,7 @@ import {
 	type SizeEntry,
 	totalSize,
 } from './lib/size-report';
+import { ensureShaderModules } from './shaders';
 
 const root = process.cwd();
 const CRATE = 'null3d-wasm';
@@ -581,6 +583,7 @@ function checkGrowth(sizes: Record<string, SizeEntry>, ref: string | undefined):
 
 async function main(): Promise<void> {
 	const options = parseOptions(process.argv.slice(2));
+	ensureShaderModules(root);
 	const version = lockedVersion(readFileSync(join(root, 'Cargo.lock'), 'utf8'), 'wasm-bindgen');
 	const bindgen = await wasmBindgen(version);
 	for (const variant of VARIANTS) buildVariant(variant, bindgen, options.keepNames);

@@ -7,6 +7,10 @@ target/
 dist/
 *.tsbuildinfo
 
+# The shader modules. Every command that reads them builds them first when they are missing or out
+# of date (tools/shaders.ts), and the engine's npm package holds them.
+packages/engine/src/generated/shaders*.ts
+
 # Test output
 coverage/
 test-results/

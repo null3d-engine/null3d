@@ -1,6 +1,11 @@
 import { defineConfig } from '@playwright/test';
 import { browserOptions, defaultEnvironment } from '../packages/cli/src/browser.js';
+import { ensureShaderModules } from '../tools/shaders.ts';
 import { HTTP_PORT, PREVIEW_PORT, REPO_ROOT } from './lib/server.ts';
+
+// The test files import the shader modules, which git does not keep, and Playwright loads the test
+// files before it starts the web servers.
+ensureShaderModules();
 
 const ci = Boolean(process.env.CI);
 /**

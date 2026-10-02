@@ -23,6 +23,8 @@ env:
 
 jobs:
   docs-and-tools:
+    # The type check and the unit tests read the shader modules, which the build job makes.
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -41,6 +43,9 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
 
       - name: Generated files are committed
         run: |
@@ -93,10 +98,11 @@ jobs:
           grep -q 'disallowed method `std::time::SystemTime::now`' clippy.log
 
   build:
-    # The WebAssembly files that the browser jobs need, built once on Linux: the engine's two files,
-    # and the shader compiler that the dev server runs on the WGSL in the test sketches. The files
-    # are the same on every platform, so each shard below downloads them instead of spending about
-    # 2 minutes to build them again.
+    # The files that the other jobs need, built once on Linux: the engine's two WebAssembly files,
+    # the shader compiler that the dev server runs on the WGSL in the test sketches, and the shader
+    # modules, which git does not keep, with the record of the inputs they were built from. The
+    # files are the same on every platform, so each job below downloads them instead of spending
+    # about 2 minutes to build them again.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -112,14 +118,19 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - name: Build the WebAssembly files that the test pages need
+      - name: Build the shader modules and the WebAssembly files that the test pages need
         run: bun tools/build-wasm.ts --pages-only
+      - name: The engine's npm package holds the shader modules
+        run: bun tools/check-package.ts
+      # The artifact's paths start at the repository's root, their closest shared folder.
       - uses: actions/upload-artifact@v4
         with:
           name: page-wasm
           path: |
             packages/engine/dist/
             packages/vite-plugin/dist/
+            packages/engine/src/generated/shaders*.ts
+            target/shader-modules.json
           if-no-files-found: error
           retention-days: 1
 
@@ -168,11 +179,10 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      # The artifact holds both dist folders below packages/, their closest shared folder.
+      # The build job's files, at their places in the repository.
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
-          path: packages/
       - uses: ./.github/actions/playwright-chromium
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         run: bun run test:browser --shard=${{ matrix.shard }}/${{ strategy.job-total }}
@@ -206,7 +216,6 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
-          path: packages/
       - uses: ./.github/actions/playwright-chromium
       - name: The benchmark pages on SwiftShader
         run: bun run test:bench --shard=${{ matrix.shard }}/${{ strategy.job-total }}
@@ -251,7 +260,6 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
-          path: packages/
       # An app with the downloaded-file flag asks before its first launch, and nobody can answer.
       - name: Let Firefox open without the first-launch prompt
         if: matrix.browser == 'Firefox'

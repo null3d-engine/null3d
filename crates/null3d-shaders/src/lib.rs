@@ -483,35 +483,3 @@ pub fn write(root: &Path) -> Result<Written, BuildError> {
     }
     Ok(written)
 }
-
-/// Builds the TypeScript modules in memory and fails when a file on disk differs from them, or
-/// when a device module that the build no longer makes remains.
-pub fn check(root: &Path) -> Result<(), BuildError> {
-    let modules = generate(root)?;
-    let mut errors = BuildError::default();
-    for (path, module) in &modules {
-        let message = match fs::read_to_string(root.join(path)) {
-            Ok(current) if current == *module => continue,
-            Ok(current) => {
-                let line = current
-                    .lines()
-                    .zip(module.lines())
-                    .position(|(a, b)| a != b)
-                    .unwrap_or_else(|| current.lines().count().min(module.lines().count()))
-                    + 1;
-                format!(
-                    "the file differs from a fresh build, first at line {line}. Run `{COMMAND}` and commit the result; never edit the file by hand."
-                )
-            }
-            Err(e) => format!("cannot read the file ({e}). Run `{COMMAND}` to create it."),
-        };
-        errors.add([Problem::in_file(path, message)], None);
-    }
-    for path in stale_modules(root, &modules) {
-        let message = format!(
-            "the shader build no longer makes this device module. Run `{COMMAND}`, which deletes it."
-        );
-        errors.add([Problem::in_file(&path, message)], None);
-    }
-    errors.or(())
-}

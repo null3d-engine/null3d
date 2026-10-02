@@ -1,6 +1,7 @@
-# The shader manifest. `bun run shaders` (cargo run -p null3d-shaders --bin shader-build) builds
+# The shader manifest. The shader build (cargo run -p null3d-shaders --bin shader-build) builds
 # every variant listed here into packages/engine/src/generated/shaders.ts and the device modules
-# beside it, and `bun run shaders:check` fails when one of those files is out of date.
+# beside it. Git ignores those files: `bun run shaders`, and every command that reads them, runs
+# the build when they are missing or out of date.
 #
 # Each [shaders.<name>] table is one entry shader:
 #

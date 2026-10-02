@@ -49,8 +49,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run docs:style` | Check the writing rules in all published Markdown |
 | `bun run skills` | Sync `.claude/skills/` from `skills/`, then check the skills |
 | `bun run skills:check` | Check the skills without syncing |
-| `bun run shaders` | Build every shader variant in the shader manifest and write the generated TypeScript modules: the main module, and the engine's shaders in one module for each GPU path and each value of the bits a device fixes |
-| `bun run shaders:check` | Fail when a committed shader module is out of date |
+| `bun run shaders` | Build every shader variant in the shader manifest and write the generated TypeScript modules, when they are missing or out of date: the main module, and the engine's shaders in one module for each GPU path and each value of the bits a device fixes. Git ignores the modules, and the build, the type check, the tests and the dev server run this step first |
 | `bun run check` | Lint and format check (Biome) |
 | `bun run check:fix` | Lint and format, fixing what Biome can |
 | `bun run typecheck` | TypeScript check |
@@ -113,7 +112,7 @@ The benchmarks compare null3D with three.js in the same browser. [Benchmarks](.d
 ## Docs and skills stay in sync
 
 1. One source per fact. The API reference comes from TypeScript doc comments, the three.js mapping from `docs/data/threejs-mapping.json`, and the page inventory from `tools/lib/docs.ts`. Skills link to docs pages by ID and do not copy facts.
-2. Generated files are committed. Run `bun run docs` and `bun run skills` after changing a source, and stage what they write.
+2. Generated files are committed. Run `bun run docs` and `bun run skills` after changing a source, and stage what they write. The shader modules (`packages/engine/src/generated/shaders*.ts`) are the exception, because git ignores them. Every command that reads them builds them first when they are missing or out of date. The engine's npm package gets them when it is packed.
 3. A placeholder page carries a marker comment, and `bun run docs` rewrites it. When you write the real page, remove the marker. The generator then leaves the page alone, apart from its API reference (rule 5).
 4. Every docs page has front matter: `id`, `title`, `status` (`planned`, `experimental`, `stable` or `generated`), `since` and `summary`.
 5. The API reference on the `api/` pages comes from the TSDoc comments on the engine's public exports. Each export needs a summary and a `@category api/<page>` tag that names its page. Each public member needs a summary too. A public declaration may name only types that the engine exports. On a written API page, the reference goes between the `<!-- null3d:api:start -->` and `<!-- null3d:api:end -->` markers.
