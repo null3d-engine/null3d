@@ -131,7 +131,7 @@ Materials:
 | Flat color or texture without lighting | `materials.unlit` | `api/materials` |
 | A ground plane that only shows shadows | `materials.shadowCatcher` (0.2) | `api/materials` |
 | A custom look that still gets lights, shadows and fog | `materials.shader({ wgsl })` with `fn surface` in the WGSL | `shaders/surface-functions` |
-| A fully custom effect, such as a hologram | `materials.shader({ wgsl })` with `@vertex` and `@fragment` entry points (later in 0.1) | `guides/custom-shaders` |
+| A fully custom effect, such as a hologram | `materials.shader({ wgsl })` with a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one | `guides/custom-shaders` |
 
 Lighting and shadows: for now, surfaces show one directional light and the ambient lights. Point, spot and hemisphere lights exist, and they light surfaces later in 0.1, when shadows come too. Then one directional light with shadows, plus a hemisphere light, covers most outdoor scenes. Point and spot lights are cheap without shadows, because lighting is clustered, and expensive with them. Shadow quality follows the preset. Environment maps come in 0.2. (`api/lights`, `concepts/lighting`, `concepts/shadows`)
 
@@ -176,7 +176,7 @@ const rings = materials.shader({
 rings.set({ roughness: 0.2 }); // the standard values, which defaultSurface reads
 ```
 
-`references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, uniforms (`struct Uniforms` in the WGSL, read from `material`), the names to avoid, and the WGSL rules. Vertex offsets (`fn vertexOffset` in the same WGSL) and the built-in values (`frame.time`, `camera.position`, `object.position`) are built too. Textures and full shaders come later in 0.1.
+`references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, uniforms (`struct Uniforms` in the WGSL, read from `material`), the names to avoid, and the WGSL rules. Vertex offsets (`fn vertexOffset` in the same WGSL) and the built-in values (`frame.time`, `camera.position`, `object.position`) are built too. So are full shaders (`guides/custom-shaders`). Textures come later in 0.1.
 
 ## 7. When something goes wrong
 

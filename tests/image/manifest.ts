@@ -539,6 +539,15 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	},
 	// The built-in values of custom materials, at a held time: frame, camera and object, and the
 	// surface's world position, in a surface function and a vertex offset.
+	// A full shader as a custom material, at a held time: a hologram on meshes and instances, and a
+	// shader that reads vertex colors, which a mesh without colors does not draw.
+	{
+		name: 'custom-full-shader',
+		sketch: 'tests/pages/sketches/custom-full-shader-sketch.ts',
+		hold: 1,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
 	{
 		name: 'custom-builtins',
 		sketch: 'tests/pages/sketches/custom-builtins-sketch.ts',

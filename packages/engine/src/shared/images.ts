@@ -12,11 +12,20 @@ import type { ShaderVariants } from '../generated/shaders';
 import { Slot } from './control';
 import { notifySlot, slotChange, type WakeTarget, wakeFrom } from './wake';
 
+/**
+ * A custom material's shader, as the thread that draws builds its pipelines: its variants, whose
+ * render pipeline is `main`, and the mesh locations that its vertex stage reads.
+ */
+export interface CustomShader {
+	readonly variants: ShaderVariants;
+	readonly locations: readonly number[];
+}
+
 /** The images and custom materials' shaders that the thread that draws holds. */
 export class ImageTable {
 	private readonly images = new Map<number, ImageBitmap>();
-	/** Custom materials' shader variants, by render pipeline template. */
-	readonly shaders = new Map<number, ShaderVariants>();
+	/** Custom materials' shaders, by render pipeline template. */
+	readonly shaders = new Map<number, CustomShader>();
 
 	/** Keeps an image under its id, and closes one that the id named before. */
 	set(id: number, image: ImageBitmap): void {
@@ -53,12 +62,12 @@ export class ImageTable {
 export type ImageSender = (id: number, image: ImageBitmap) => void;
 
 /** Sends a custom material's shader variants, under its template, to the thread that draws. */
-export type ShaderSender = (template: number, shader: ShaderVariants) => void;
+export type ShaderSender = (template: number, shader: CustomShader) => void;
 
 /** A message that carries an image or a custom material's shader to the thread that draws. */
 type DrawingMessage =
 	| { id: number; image: ImageBitmap }
-	| { template: number; shader: ShaderVariants };
+	| { template: number; shader: CustomShader };
 
 /**
  * Counts an image that the thread that draws received, and wakes a thread that waits for it, through

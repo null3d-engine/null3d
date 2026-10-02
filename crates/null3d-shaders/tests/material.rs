@@ -295,3 +295,117 @@ fn a_vertex_offset_with_another_signature_is_refused_at_its_name() {
         "`vertexOffset` does not have the signature that the engine calls. Declare it as `fn vertexOffset(input: VertexInput) -> vec3f`."
     );
 }
+
+/// A full shader: the mesh's position, normal and color, each instance's transform, and the
+/// built-in values.
+const FULL: &str = "#import null3d::builtins::{fill_builtins, frame}
+#import null3d::mesh::{InstanceIn, clip_position, find_instance, finish, relative_position}
+#import null3d::mesh::{world_normal}
+
+struct Varyings {
+    @builtin(position) clip: vec4f,
+    @location(0) normal: vec3f,
+    @location(1) color: vec4f,
+}
+
+@vertex
+fn vs(
+    @location(0) position: vec3f,
+    @location(1) normal: vec3f,
+    @location(5) color: vec4f,
+    i: InstanceIn,
+) -> Varyings {
+    let found = find_instance(i);
+    var out: Varyings;
+    out.clip = clip_position(found, position);
+    out.normal = world_normal(found, normal);
+    out.color = color;
+    return out;
+}
+
+@fragment
+fn fs(in: Varyings) -> @location(0) vec4f {
+    fill_builtins(vec3f(0.0));
+    let pulse = 0.5 + 0.5 * sin(frame.time);
+    return finish(abs(normalize(in.normal)) * in.color.rgb * pulse, in.clip.xy);
+}
+";
+
+#[test]
+fn a_full_shader_builds_for_both_paths_and_reports_the_attributes_it_reads() {
+    let built = compile(FULL).expect("the full shader builds");
+    assert!(built.functions.is_empty());
+    assert!(!built.base_color);
+    let names: Vec<&str> = built.variants.keys().map(String::as_str).collect();
+    assert_eq!(
+        names,
+        [
+            "webgl2",
+            "webgl2_draw_index",
+            "webgl2_draw_index_tone_map",
+            "webgl2_tone_map",
+            "webgpu",
+            "webgpu_receive_shadows",
+            "webgpu_tone_map",
+            "webgpu_tone_map_receive_shadows",
+        ]
+    );
+    assert_eq!(built.locations, [0, 1, 5]);
+    assert_eq!(built.attributes, null3d_gpu::drawlist::vertex::COLOR);
+    let wgsl = built.variants["webgpu"].wgsl.as_ref().expect("WGSL");
+    assert_eq!(wgsl.pipelines["main"].vertex, "vs");
+    assert_eq!(wgsl.pipelines["main"].fragment, "fs");
+}
+
+#[test]
+fn a_surface_function_reads_the_first_texture_coordinates() {
+    let built = compile(STRIPES).expect("the surface function builds");
+    assert_eq!(built.locations, [0, 1, 2]);
+    assert_eq!(built.attributes, null3d_gpu::drawlist::vertex::UV0);
+    assert!(built.base_color);
+}
+
+#[test]
+fn a_full_shader_names_its_own_lines_and_needs_one_pipeline() {
+    let broken = FULL.replace("out.color = color;", "out.color = color 2.0;");
+    let problem = only_problem(&broken);
+    let line = broken
+        .lines()
+        .position(|line| line.contains("color 2.0"))
+        .unwrap() as u32
+        + 1;
+    assert_eq!(problem.line, Some(line));
+    let two = format!(
+        "{FULL}\n@fragment\nfn fs_other(in: Varyings) -> @location(0) vec4f {{\n    return vec4f(1.0);\n}}\n"
+    );
+    let problem = only_problem(&two);
+    assert!(
+        problem
+            .message
+            .starts_with("a full shader for `materials.shader` has one `@vertex`"),
+        "{problem}"
+    );
+}
+
+#[test]
+fn a_custom_material_that_breaks_a_portable_rule_fails_at_its_line_with_a_fix() {
+    let half = STRIPES.replace(
+        "    return s;",
+        "    let h: f16 = 1.0h;\n    s.metalness = f32(h);\n    return s;",
+    );
+    let problem = only_problem(&half);
+    assert_eq!(problem.file.as_deref(), Some(PATH));
+    assert_eq!(problem.line, Some(6));
+    assert!(problem.message.contains("`shader-f16`"), "{problem}");
+    assert!(
+        problem.message.contains("Write the math in `f32`"),
+        "{problem}"
+    );
+    let swizzle = STRIPES.replace(
+        "    return s;",
+        "    s.baseColor.xy = vec2f(1.0);\n    return s;",
+    );
+    let problem = only_problem(&swizzle);
+    assert_eq!(problem.line, Some(6));
+    assert!(problem.feature.is_some(), "{problem}");
+}

@@ -8,7 +8,7 @@ summary: "WGSL in sketch code; shader errors; surface functions; full shaders; u
 
 # Custom shaders
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Custom materials with surface functions, vertex offsets and uniforms are built. Full shaders and textures in custom materials are not built yet, so coding agents must not use them. Hot reload that keeps the page running comes in 0.2.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Custom materials with surface functions, vertex offsets, uniforms and full shaders are built. Textures in custom materials are not built yet, so coding agents must not use them. Hot reload that keeps the page running comes in 0.2.
 
 ```mermaid
 flowchart LR
@@ -41,6 +41,56 @@ const red = materials.shader({ wgsl: rings, color: '#e04040', roughness: 0.5 });
 ```
 
 The WGSL can declare uniforms as `struct Uniforms`, which `set()` changes at any time, and a vertex offset, `fn vertexOffset`, which moves the mesh's vertices. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface`, uniforms and vertex offsets. [Built-in shader inputs](../shaders/builtins.md) lists the values that every custom material reads, such as `frame.time`.
+
+## Full shaders
+
+A full shader draws a custom material with WGSL of your own from end to end: a `@vertex` and a `@fragment` entry point. Use it for a look that the engine's lighting cannot give, such as a hologram. The engine gives a full shader its meshes, its instances and the frame's values, but no lighting, shadows or fog.
+
+```ts
+// sketch.ts
+const hologram = /* wgsl */ `
+#import null3d::builtins::{fill_builtins, frame}
+#import null3d::mesh::{InstanceIn, clip_position, find_instance, finish}
+#import null3d::mesh::{relative_position, world_normal}
+
+struct Varyings {
+    @builtin(position) clip: vec4f,
+    @location(0) relative: vec3f,
+    @location(1) normal: vec3f,
+}
+
+@vertex
+fn vs(@location(0) position: vec3f, @location(1) normal: vec3f, i: InstanceIn) -> Varyings {
+    let found = find_instance(i);
+    var out: Varyings;
+    out.relative = relative_position(found, position);
+    out.clip = clip_position(found, position);
+    out.normal = world_normal(found, normal);
+    return out;
+}
+
+@fragment
+fn fs(in: Varyings) -> @location(0) vec4f {
+    fill_builtins(vec3f(0.0));
+    let rim = 1.0 - abs(dot(normalize(in.normal), normalize(-in.relative)));
+    let lines = step(0.5, fract(in.relative.y * 8.0 - frame.time));
+    return finish(vec3f(0.2, 0.8, 1.0) * (rim * rim * 1.5 + lines * 0.25), in.clip.xy);
+}
+`;
+
+// In the setup:
+const ghost = materials.shader({ wgsl: hologram, doubleSided: true });
+```
+
+The plugin takes WGSL as a full shader when its `@vertex` entry point takes an `InstanceIn`. The shader follows these rules:
+
+- It has one `@vertex` and one `@fragment` entry point.
+- The vertex entry point reads the mesh at the engine's locations. The position is at 0, the normal at 1, the first texture coordinates at 2 and the second at 3. The tangent is at 4, and the color at 5. A mesh draws only when it has every attribute that the shader reads.
+- It finds its instance with `InstanceIn` and `find_instance` from `null3d::mesh`. On each GPU path, the engine gives each instance's transform in its own way, and these hide the difference.
+- `null3d::mesh` also gives `clip_position(found, position)`, `relative_position(found, position)` and `world_normal(found, normal)`. Positions are relative to the camera, as in the engine's own shaders.
+- The fragment entry point writes its linear color through `finish(color, clip.xy)` from `null3d::mesh`, which prepares it for the engine's output.
+- `fill_builtins(origin)` from `null3d::builtins` fills `frame`, `camera` and `object` in a stage. Pass the object's origin relative to the camera, or zero when the shader does not read `object`.
+- The fixed options for faces and depth apply, such as `doubleSided` and `depthBias`. The standard values and uniforms do not reach a full shader, and `vertexColors` and the `mask` alpha mode change nothing: the shader reads the colors and discards pixels itself.
 
 ## WGSL in sketch code
 
@@ -84,7 +134,8 @@ The plugin puts the compiled shader where the literal was. Your code therefore r
 The plugin compiles two kinds of WGSL:
 
 - WGSL without entry points that declares `fn surface`, `fn vertexOffset` or both is a custom material's WGSL. The plugin builds it into the standard material's shader, once for each of that shader's variants.
-- WGSL with entry points is a whole shader. It has one `@vertex` entry point and one or more `@fragment` entry points. Each `@fragment` entry point makes one render pipeline, named after it, with the `@vertex` entry point. A shader with only `@compute` entry points builds for WebGPU alone, because WebGL2 has no compute shaders.
+- WGSL whose `@vertex` entry point takes an `InstanceIn` is a [full shader](#full-shaders) of a custom material. The plugin builds it for WebGPU, and for WebGL2 with and without multi-draw.
+- Other WGSL with entry points is a whole shader. It has one `@vertex` entry point and one or more `@fragment` entry points. Each `@fragment` entry point makes one render pipeline, named after it, with the `@vertex` entry point. A shader with only `@compute` entry points builds for WebGPU alone, because WebGL2 has no compute shaders.
 
 WGSL that is neither stops the build with an error that says how to fix it.
 

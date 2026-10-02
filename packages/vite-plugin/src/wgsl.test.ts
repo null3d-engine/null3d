@@ -333,6 +333,36 @@ describe.skipIf(!ENABLED)('compileWgsl', () => {
 		expect(built.variants.webgpu?.wgsl?.source).toContain('fn vertexOffset(');
 	});
 
+	it('builds a mesh shader of its own as a full shader of a custom material', () => {
+		const full = `#import null3d::mesh::{InstanceIn, clip_position, find_instance, finish}
+
+@vertex
+fn vs(@location(0) position: vec3f, @location(2) uv: vec2f, i: InstanceIn) -> @builtin(position) vec4f {
+    return clip_position(find_instance(i), position + vec3f(uv, 0.0));
+}
+
+@fragment
+fn fs(@builtin(position) pixel: vec4f) -> @location(0) vec4f {
+    return finish(vec3f(0.5), pixel.xy);
+}
+`;
+		const built = material(compileWgsl('src/full.wgsl', full, HINT));
+		expect(built.functions).toEqual([]);
+		expect(built.locations).toEqual([0, 2]);
+		expect(built.baseColor).toBe(false);
+		expect(Object.keys(built.variants).sort()).toEqual([
+			'webgl2',
+			'webgl2_draw_index',
+			'webgl2_draw_index_tone_map',
+			'webgl2_tone_map',
+			'webgpu',
+			'webgpu_receive_shadows',
+			'webgpu_tone_map',
+			'webgpu_tone_map_receive_shadows',
+		]);
+		expect(compiled(compileWgsl('src/glow.wgsl', SHADER, HINT)).kind).toBe('shader');
+	});
+
 	it('places problems of a surface function in its own lines', () => {
 		const broken = SURFACE.replace('4.0));', '4.0)) 2.0;');
 		const syntax = failure(compileWgsl('src/stripes.wgsl', broken, HINT));
