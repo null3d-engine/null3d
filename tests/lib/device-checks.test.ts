@@ -57,7 +57,7 @@ describe('the tab memory plan', () => {
 		]);
 		const first = items[0];
 		expect(first?.path).toBe(
-			'/tests/pages/tab-memory.html?kind=texture&gpu=webgpu&progress=/__null3d/runs/{run}/{runner}/tab-memory-texture-webgpu-1.progress',
+			'/tests/pages/tab-memory.html?kind=texture&gpu=webgpu&progress=/__null3d/runs/{run}/{runner}/{item}.progress',
 		);
 		expect(items.every((item) => item.endsTab === true && item.quietSeconds === 120)).toBe(true);
 		expect(tabMemoryPlan({ runs: 2 }).at(-1)?.id).toBe('tab-memory-wasm-2');
@@ -83,8 +83,8 @@ describe('the tab memory plan', () => {
 		expect(judge(wasm.check, refused, NONE_MISSING)).toEqual([]);
 		// A page that gave no result in time counts as a stall at its last progress.
 		const late = { ok: false, error: 'no result within 300 s' };
-		const stored = context({ [`${texture.id}.progress`]: progress as unknown as ItemResult });
-		expect(judge(texture.check, late, NONE_MISSING, stored)).toEqual([]);
+		const posted = { ...context({}), progress: progress as unknown as ItemResult };
+		expect(judge(texture.check, late, NONE_MISSING, posted)).toEqual([]);
 		expect(judge(texture.check, late, NONE_MISSING, context({}))).toEqual([
 			'no result within 300 s, before it posted any progress',
 		]);

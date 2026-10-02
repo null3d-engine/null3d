@@ -155,17 +155,8 @@ export type Check =
 	| { kind: 'skinning'; tier: 'webgl2'; characters: number; cascades: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
 	| { kind: 'startup'; mode: EngineMode; load: LoadKind; first?: true }
-	/**
-	 * The tab memory page, which grows one kind of memory until something gives, with the name of
-	 * the record of its progress.
-	 */
-	| {
-			kind: 'tab-memory';
-			growth: GrowthKind;
-			tier?: Tier;
-			round: number;
-			progress: string;
-	  }
+	/** The tab memory page, which grows one kind of memory until something gives. */
+	| { kind: 'tab-memory'; growth: GrowthKind; tier?: Tier; round: number }
 	/** A benchmark scene played for many minutes and measured once a minute. */
 	| { kind: 'soak'; tier: Tier; minutes: number }
 	/** The scene page after a simulated GPU loss: the engine must draw the whole scene again. */
@@ -177,6 +168,8 @@ export type Check =
 export interface JudgeContext {
 	/** Another item's result from the same runner in the same run. */
 	resultOf(id: string): ItemResult | undefined;
+	/** The last progress that the judged page posted, for a page that may end its tab. */
+	progress?: ItemResult;
 	/** The folder for images that judging saves, such as parity diffs. */
 	imageDir: string;
 	/** Baselines measured on a device that draws with both of three.js's renderers. */
@@ -683,16 +676,15 @@ export function tabMemoryPlan({ runs = 1 }: PlanSettings = {}): PlanItem<Check>[
 	return Array.from({ length: runs }, (_, round) =>
 		TAB_MEMORY_GROWTHS.map(({ growth, tier }) => {
 			const id = `tab-memory-${growth}${tier ? `-${tier}` : ''}-${round + 1}`;
-			const progress = progressName(id);
 			const item = pageItem(
 				id,
 				'tab-memory',
-				{ kind: 'tab-memory', growth, ...(tier && { tier }), round: round + 1, progress },
+				{ kind: 'tab-memory', growth, ...(tier && { tier }), round: round + 1 },
 				{
 					switches: [
 						`kind=${growth}`,
 						tier ? `gpu=${tier}` : '',
-						`progress=/__null3d/runs/{run}/{runner}/${progress}`,
+						`progress=/__null3d/runs/{run}/{runner}/${progressName('{item}')}`,
 					],
 					timeoutSeconds: TAB_MEMORY_TIMEOUT_SECONDS,
 				},
@@ -1251,7 +1243,7 @@ export function judge(
 		case 'skinning':
 			return skinningProblems(result as ItemResult & SkinningResult);
 		case 'tab-memory':
-			return growthProblems(result, context?.resultOf(check.progress));
+			return growthProblems(result, context?.progress);
 		case 'soak':
 			return soakProblems(result.soak as SoakReport | undefined);
 		case 'recovery': {
@@ -1578,7 +1570,7 @@ export function tabMemorySummary(
 	for (const { id, check } of items) {
 		if (check.kind !== 'tab-memory') continue;
 		const result = resultOf(id);
-		const progress = resultOf(check.progress);
+		const progress = resultOf(progressName(id));
 		rows.push(
 			growthRow({ kind: check.growth, gpu: check.tier, round: check.round }, result, progress),
 		);

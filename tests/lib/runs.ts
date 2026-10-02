@@ -192,6 +192,42 @@ export function shardItems<Check>(
 	return items.filter((item) => shardOf.get(root(item.id)) === index - 1);
 }
 
+/**
+ * The items of a plan that `ids` name, in the plan's order, with each item that `needs` names for
+ * them, such as the first thread mode of an image test. Throws on an id that the plan lacks.
+ */
+export function pickItems<Check>(
+	items: readonly PlanItem<Check>[],
+	ids: readonly string[],
+	needs: (item: PlanItem<Check>) => readonly string[],
+): PlanItem<Check>[] {
+	const byId = new Map(items.map((item) => [item.id, item]));
+	const unknown = ids.filter((id) => !byId.has(id));
+	if (unknown.length > 0) throw new Error(`the plan has no item ${unknown.join(', ')}`);
+	const picked = new Set<string>();
+	const pick = (id: string) => {
+		const item = byId.get(id);
+		if (!item || picked.has(id)) return;
+		picked.add(id);
+		for (const needed of needs(item)) pick(needed);
+	};
+	for (const id of ids) pick(id);
+	return items.filter((item) => picked.has(item.id));
+}
+
+/**
+ * The items `rounds` times over, one round after another, as when a fault comes only now and then.
+ * Each later round's items get the round's number after their ids, so each keeps its own result.
+ */
+export function repeatItems<Check>(
+	items: readonly PlanItem<Check>[],
+	rounds: number,
+): PlanItem<Check>[] {
+	return Array.from({ length: rounds }, (_, round) =>
+		items.map((item) => (round === 0 ? item : { ...item, id: `${item.id}-round-${round + 1}` })),
+	).flat();
+}
+
 /** A runner page in one browser, and the physical device that browser runs on. */
 export interface Runner {
 	name: string;
