@@ -96,8 +96,8 @@ export const QUALITY_SETTINGS = {
 		values: ['none', 'fxaa', 'msaa'],
 	},
 	// The depth prepass trades a second pass over the opaque objects' vertices for shading each
-	// pixel once. It stays off on every preset until S2's GPU time with and without it, on desktops,
-	// tablets and phones, shows where it pays.
+	// pixel once. It stays off on every preset: it made S2's GPU time per frame 45% longer on the
+	// Mac (Benchmarks, "The depth prepass").
 	depthPrepass: {
 		presets: [false, false, false, false],
 		changes: 'start',

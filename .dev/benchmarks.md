@@ -124,6 +124,12 @@ Build two checkouts, such as a git worktree of main beside your branch, with `bu
 - On the phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s4 --pages null3d-webgl2,threejs-webgl,scene-code`. For the long run, add `--pages null3d-webgl2 --runs 1 --seconds 600`: 10 minutes of warm-up, then a trace of 10 measured minutes.
 - On the iPad: `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,scene-code`.
 
+## The depth prepass
+
+- The page switch `?prepass=on` or `?prepass=off` turns the depth prepass on or off, whatever the preset says. Only the WebGPU path draws it. `?prepass=on` on a benchmark page, with `measure`'s `gpuPassMs`, gives the prepass's GPU cost in the scene's render pass.
+- On 2 October 2026 (M1-A7), S2 ran on WebGPU in Chrome on the MacBook Pro, 3 runs of 10 seconds each way. Its GPU time per frame was 0.28 ms without the prepass and 0.41 ms with it. The scene's render pass grew from 0.13 ms to 0.26 ms. S2's trees hide few others, and its shading is cheap, so a second pass over its vertices costs more than it saves.
+- Every preset leaves the prepass off on that result. The iPad's figure, from S2's page with each switch, is still to come.
+
 ## Sweeps for the open defaults
 
 Three sweeps measure the defaults that are still open: the latency mode, the job worker count and the shared memory's maximum. Each runs on the Mac, and on a phone or an iPad through the device runner.
