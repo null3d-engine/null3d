@@ -11,6 +11,7 @@
 // reference, so it saves its image as a candidate. Look at it with bun run images:review, and make it
 // the reference with bun run images:review --accept. Then do the same with CI=1 for the SwiftShader
 // reference: on the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
+// bun run check fails until the test has both references.
 import { BENCH_SCENES } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';

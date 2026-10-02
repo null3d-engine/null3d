@@ -36,6 +36,7 @@ This guide covers how to merge main into a branch, and what to do when the merge
 - `gh run list --event merge_group` lists the queue's runs. Each run's branch is `gh-readonly-queue/main/pr-<number>-<commit>`, so look for your pull request's number. The pull request's timeline also links the failed run, and `gh run view <run> --log-failed` prints its failed steps.
 - Each run builds the shader modules from the sources that it tests, so pull requests that change shaders can share a queue run.
 - When a pull request fails because of one that merged just before it, merge main, run the generators, and push.
+- The Safari and Firefox jobs run only in the queue. They compare the image tests with the Mac's `chrome-real-gpu` references. A test without one of these references, or without its SwiftShader reference, fails `bun run check` in the pull request's own run ([Image tests](image-tests.md#references)).
 
 ## Several copies on one machine
 
