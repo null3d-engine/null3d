@@ -151,7 +151,7 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | drei `<Float>` | A sine offset in `onUpdate` |
 | drei `<Center>`, `<Bounds>` | `prefab.bounds` (0.2) and a camera fit computed at setup |
 | drei `<PerformanceMonitor>`, `<AdaptiveDpr>` | `quality.onChange`; dynamic resolution comes later in 0.1 |
-| drei `<Stats>` | `engine.measure()` on the page; the overlay `debug.stats(true)` comes later in 0.1 |
+| drei `<Stats>` | `debug.stats(true)` in the sketch; `engine.measure()` on the page for GPU time |
 | Mesh events: `onClick`, `onPointerOver`, `onPointerOut` | `obj.on('click' | 'pointerenter' | 'pointerleave', fn)` (0.2), then `page.post` if React needs to know |
 | `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping now, bloom and other effects in 0.2 (`references/post-processing.md`) |
 | `@react-three/rapier` | Rapier inside the sketch worker (null3d-develop recipe 11) |

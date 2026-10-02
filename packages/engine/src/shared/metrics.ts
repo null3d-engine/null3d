@@ -389,6 +389,12 @@ export const SUM_BUSY_MS = 1;
 export const SUM_LONGEST_BUSY_MS = 2;
 /** Their intervals, summed. */
 export const SUM_INTERVAL_MS = 3;
+/** With detail: each phase's time, summed, in the order of `PHASE_NAMES`. */
+export const SUM_PHASES = 4;
+/** With detail: each counter's values, summed, in the order of `COUNTER_NAMES`. */
+export const SUM_COUNTERS = SUM_PHASES + PHASE_NAMES.length;
+/** The values of a record that the detail sums add up: its phases, then its counters. */
+const DETAIL_VALUES = PHASE_NAMES.length + COUNTER_NAMES.length;
 
 /**
  * The display's refresh rate that the thread that draws measured, for code on any thread that
@@ -419,34 +425,52 @@ export class RefreshRate {
  */
 export class RingSums {
 	/** The window's sums, by the `SUM_` indices. */
-	readonly sums = new Float64Array(SUM_INTERVAL_MS + 1);
+	readonly sums: Float64Array;
 	private readonly views: MetricsViews;
 	private next: number;
 
-	/** Sums `ring`'s records from those written after this call. */
+	/** With detail, a record's phases and counters, copied before the check that the record held. */
+	private readonly detail: Float64Array | undefined;
+
+	/**
+	 * Sums `ring`'s records from those written after this call. With `detail`, the sums also hold
+	 * each phase and each counter.
+	 */
 	constructor(
 		buffer: ArrayBufferLike,
 		readonly ring: number,
+		detail = false,
 	) {
 		this.views = new MetricsViews(buffer);
 		this.next = Atomics.load(this.views.header, WRITTEN + ring);
+		this.sums = new Float64Array(detail ? SUM_COUNTERS + COUNTER_NAMES.length : SUM_PHASES);
+		this.detail = detail ? new Float64Array(DETAIL_VALUES) : undefined;
 	}
 
 	/** Takes in the records written since the last call. */
 	add(): void {
-		const { views, sums } = this;
+		const { views, sums, detail } = this;
+		const { floats, words } = views;
 		const written = Atomics.load(views.header, WRITTEN + this.ring);
 		const from = Math.max(this.next, written - views.capacity);
 		for (let sequence = from; sequence < written; sequence++) {
 			const at = views.record(this.ring, sequence);
 			if (!views.holds(at, sequence)) continue;
-			const busy = views.floats[at + BUSY] as number;
-			const interval = views.floats[at + INTERVAL] as number;
+			const busy = floats[at + BUSY] as number;
+			const interval = floats[at + INTERVAL] as number;
+			if (detail) {
+				for (let p = 0; p < PHASE_NAMES.length; p++) detail[p] = floats[at + PHASES + p] as number;
+				for (let c = 0; c < COUNTER_NAMES.length; c++)
+					detail[PHASE_NAMES.length + c] = words[at + COUNTERS + c] as number;
+			}
 			if (!views.holds(at, sequence)) continue;
 			sums[SUM_RECORDS] = (sums[SUM_RECORDS] as number) + 1;
 			sums[SUM_BUSY_MS] = (sums[SUM_BUSY_MS] as number) + busy;
 			sums[SUM_LONGEST_BUSY_MS] = Math.max(sums[SUM_LONGEST_BUSY_MS] as number, busy);
 			sums[SUM_INTERVAL_MS] = (sums[SUM_INTERVAL_MS] as number) + interval;
+			if (detail)
+				for (let k = 0; k < DETAIL_VALUES; k++)
+					sums[SUM_PHASES + k] = (sums[SUM_PHASES + k] as number) + (detail[k] as number);
 		}
 		this.next = written;
 	}

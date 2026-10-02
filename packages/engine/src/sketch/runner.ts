@@ -17,8 +17,8 @@
 // loads after the first frame. The first frame after a change of preset, and the first frame whose
 // handlers hear of it, wait for their pipelines on the thread that draws.
 
-import { type Debug, RELEASE_DEBUG } from '../debug/debug';
 import { DebugDraw } from '../debug/draw';
+import { type DebugHost, SketchDebug } from '../debug/sketch-debug';
 import { DEV } from '../errors/checks';
 import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
@@ -80,6 +80,10 @@ export interface SketchCore {
 	pageUrl: string;
 	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
 	fps?: number;
+	/** Each engine thread's name and the roles it runs, as `engine.measure` names them. */
+	threads: readonly (readonly [string, readonly number[]])[];
+	/** Asks the page to show or hide its stats overlay. */
+	showStats(show: boolean): void;
 }
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
@@ -187,7 +191,7 @@ export class SketchRunner {
 	private readonly resolution: DynamicResolution | undefined;
 	/** The render scale in thousandths where no dynamic resolution moves it: the highest. */
 	private heldScale = FULL_SCALE;
-	/** The sketch's debug drawing, in development builds only. */
+	/** The sketch's debug drawing, in development builds only, which is also its `ctx.debug`. */
 	private readonly debugDraw: DebugDraw | undefined;
 	readonly context: SketchContext;
 
@@ -258,8 +262,18 @@ export class SketchRunner {
 		);
 		this.applyRenderScale(this.quality.settings);
 		this.readViewport();
-		this.debugDraw = DEV ? new DebugDraw(this.core) : undefined;
-		const debug: Debug = this.debugDraw ?? RELEASE_DEBUG;
+		const host: DebugHost = {
+			showStats: sketch.showStats,
+			metrics,
+			threads: sketch.threads,
+			sources: {
+				tier: sketch.capabilities.tier,
+				preset: () => this.quality.preset,
+				renderScaleThousandths: () => this.renderScale(),
+			},
+		};
+		this.debugDraw = DEV ? new DebugDraw(this.core, host) : undefined;
+		const debug = this.debugDraw ?? new SketchDebug(host);
 		this.context = {
 			time: this.time,
 			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
@@ -649,9 +663,11 @@ export class SketchRunner {
 				this.report(error);
 			}
 		}
+		const scale = this.renderScale();
 		const built = Atomics.load(slots, Slot.PipelinesBuilt);
-		if (glue.recordFrame(frame, width, height, this.renderScale(), built) !== 0)
+		if (glue.recordFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
+		Atomics.store(slots, Slot.RenderScale, scale);
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		// A frame whose list needs more room than any before moves the list, so each frame gives
