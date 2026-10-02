@@ -114,11 +114,13 @@ fn tiles_draw_only_when_their_casters_or_lights_move<B: Tiles>(renderer: B) {
     assert_eq!(world.renderer.tiles().drawn(), 1);
     assert_eq!(depth_passes(&first), 1);
     assert!(world.renderer.tiles().frame(0).is_some());
+    assert!(world.renderer.casts_tile_shadows());
 
-    // A still frame draws no tile.
+    // A still frame draws no tile, and its light still casts shadows.
     let still = step(&mut world, &mut mock, false);
     assert_eq!(world.renderer.tiles().drawn(), 0);
     assert_eq!(depth_passes(&still), 0);
+    assert!(world.renderer.casts_tile_shadows());
 
     // A caster beyond the light's reach moves: still no tile.
     world.scene.set_position(far, [3.0, 0.5, 0.0]).unwrap();
@@ -257,6 +259,7 @@ fn without_tiles_in_the_budget_spot_lights_cast_no_shadows() {
     world.frame = 0;
     let commands = step(&mut world, &mut mock, true);
     assert!(world.renderer.tiles().shape().is_none());
+    assert!(!world.renderer.casts_tile_shadows());
     assert_eq!(depth_passes(&commands), 0);
     let tiles = world.renderer.tiles();
     assert!(

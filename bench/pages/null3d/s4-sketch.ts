@@ -36,6 +36,9 @@ export default defineSketch((context) => {
 	// every object receives them. The engine stores these settings, and draws the shadows once it
 	// has shadow maps on the GPU path. The quality preset sets their cascades and map size.
 	const moveCamera = followPath(setUpView(context, S4_VIEW_LIGHTS, S4_FOG.color), s4Camera);
+	// S4 measures how the quality governor holds the frame rate on phones, so it runs, and lightens
+	// the shadows when frames take too long. The render scale stays at 1, as for the other scenes.
+	context.quality.set({ governor: true });
 	const reportQuality = watchQuality(context);
 
 	scene.setFog({ type: 'linear', color: S4_FOG.color, near: S4_FOG.near, far: S4_FOG.far });

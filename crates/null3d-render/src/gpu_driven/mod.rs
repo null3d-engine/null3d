@@ -919,6 +919,10 @@ impl FrameBuilder for GpuDrivenRenderer {
         result
     }
 
+    fn casts_tile_shadows(&self) -> bool {
+        self.tiles.shape().is_some()
+    }
+
     fn reset_gpu(&mut self) {
         self.created = false;
         self.graph.reset_gpu();

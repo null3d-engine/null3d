@@ -215,6 +215,11 @@ pub trait FrameBuilder {
     fn visible_entries(&self, _frame: u32) -> Option<u32> {
         None
     }
+    /// True when point or spot lights cast shadows into the shadow atlas in the frame recorded
+    /// last.
+    fn casts_tile_shadows(&self) -> bool {
+        false
+    }
     /// Forgets every GPU object the draw lists created and every upload they made, so the next
     /// frame creates them all again and uploads the whole scene. The thread that draws asks for
     /// this after the browser took the GPU away and it made a new device.
@@ -796,6 +801,12 @@ impl SceneSettings {
     /// The main directional light's shadows, or `None` when it casts none.
     pub fn set_sun_shadow(&mut self, shadow: Option<SunShadow>) {
         self.lighting.sun_shadow = shadow;
+    }
+
+    /// The shadow cascades of the main directional light in the last gathered frame, or 0 when it
+    /// casts no shadows.
+    pub fn sun_shadow_cascades(&self) -> u32 {
+        self.lighting.sun_shadow.map_or(0, |shadow| shadow.cascades)
     }
 
     /// The shadow filter and the far cascades' update interval.

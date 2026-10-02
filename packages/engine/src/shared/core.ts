@@ -267,6 +267,12 @@ export interface CoreGlue extends CoreErrors {
 	 * shadow cascade, from 1 to 8, from the next frame on.
 	 */
 	setShadowQuality(filter: number, farInterval: number): number;
+	/**
+	 * What casts shadows in the last recorded frame: the main directional light's cascades in the
+	 * bits of `SHADOW_CASTERS_CASCADE_MASK`, and `SHADOW_CASTERS_TILES` when point or spot lights
+	 * cast shadows.
+	 */
+	shadowCasters(): number;
 	/** Draws the texture `texture` behind every object in the camera's view, or none with 0. */
 	setBackgroundTexture(texture: number): number;
 	/**
@@ -353,6 +359,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOutput',
 	'setRenderScaling',
 	'setShadowQuality',
+	'shadowCasters',
 	'setBackgroundTexture',
 	'setFog',
 	'setDebugView',

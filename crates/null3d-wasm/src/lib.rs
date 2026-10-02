@@ -1343,6 +1343,22 @@ pub fn set_render_scaling(scaling: bool) -> u32 {
     })
 }
 
+/// What casts shadows in the last recorded frame: the main directional light's cascades in the
+/// bits of `shadow_casters::CASCADE_MASK`, 0 when it casts none, and `shadow_casters::TILES` when
+/// point or spot lights cast shadows. The quality governor lightens only the shadows that exist.
+#[wasm_bindgen(js_name = shadowCasters)]
+pub fn shadow_casters() -> u32 {
+    value_with_engine(|e| {
+        let tiles = if e.renderer.casts_tile_shadows() {
+            constants::shadow_casters::TILES
+        } else {
+            0
+        };
+        let cascades = e.renderer.settings().sun_shadow_cascades();
+        Ok(cascades & constants::shadow_casters::CASCADE_MASK | tiles)
+    })
+}
+
 /// The shadow settings that the quality settings give every light: the texels on each side of the
 /// shadow filter, and how many frames pass between two draws of a far cascade. The TypeScript API
 /// checks both.
