@@ -197,7 +197,6 @@ async function start(
 				capabilities: 0,
 				maxTextureSize: 4096,
 				sharedUploads: false,
-				textureRewrites: 'direct',
 				depth: 'reversed',
 				parallelCompile: true,
 				sceneColor: FORMAT_RGBA16_FLOAT,

@@ -288,7 +288,6 @@ export class WebGL2SceneRenderer implements Renderer {
 			images,
 			device.parallelCompile,
 			device.transparent,
-			device.textureRewrites,
 		);
 		this.transparent = device.transparent;
 		this.canvasFormat = device.transparent ? gl.RGBA8 : gl.RGB8;

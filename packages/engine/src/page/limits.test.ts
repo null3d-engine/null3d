@@ -32,7 +32,6 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	capabilities: 0,
 	maxTextureSize: 0,
 	sharedUploads: true,
-	textureRewrites: 'direct',
 	depth: 'reversed',
 	parallelCompile: true,
 	sceneColor: FORMAT_RGBA16_FLOAT,
@@ -65,7 +64,6 @@ function report(webgl2: Partial<DeviceReport['webgl2']>, features: string[] = []
 /** The options of a page that asks for nothing special. */
 const PLAIN: DeviceOptions = {
 	copyUploads: false,
-	textureRewrites: undefined,
 	depth: undefined,
 	parallelCompile: true,
 	compression: undefined,
