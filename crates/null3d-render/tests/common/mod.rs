@@ -179,6 +179,16 @@ impl<B: FrameBuilder> World<B> {
     /// of `range` meters and a cone of about 54 degrees, created in the current frame. Its row
     /// goes into the world's light table, which it makes when the world has none.
     pub fn add_spot(&mut self, position: [f32; 3], range: f32) -> Handle {
+        self.add_light(kind::SPOT, position, range)
+    }
+
+    /// Adds a point light at `position` that casts shadows, with a range of `range` meters, as
+    /// [`World::add_spot`] adds a spot light.
+    pub fn add_point(&mut self, position: [f32; 3], range: f32) -> Handle {
+        self.add_light(kind::POINT, position, range)
+    }
+
+    fn add_light(&mut self, light_kind: u32, position: [f32; 3], range: f32) -> Handle {
         let object = self.scene.reserve().unwrap();
         self.scene.set_position(object, position).unwrap();
         // A quarter turn back about X points the light's -Z axis straight down.
@@ -197,7 +207,7 @@ impl<B: FrameBuilder> World<B> {
             )
             .unwrap();
         let table = self.light_table.get_or_insert_with(LightTable::new);
-        let light = table.create(object, kind::SPOT).unwrap();
+        let light = table.create(object, light_kind).unwrap();
         table.set_value(light, value::RANGE, range).unwrap();
         table.set_value(light, value::ANGLE, 0.95).unwrap();
         object
@@ -304,11 +314,16 @@ impl<B: FrameBuilder> World<B> {
     /// Adds a mesh and a material to the builder, and an object that draws with them, in the
     /// current frame. Returns the engine mesh id.
     pub fn add_object(&mut self, mesh: &Geometry, shading: Shading) -> u32 {
+        self.add_object_with(mesh, shading, 0)
+    }
+
+    /// As [`World::add_object`], with a material of the `features` bits.
+    pub fn add_object_with(&mut self, mesh: &Geometry, shading: Shading, features: u32) -> u32 {
         let settings = self.renderer.settings_mut();
         let mesh = settings.meshes_mut().add(mesh).unwrap() + 1;
         let material = settings
             .materials_mut()
-            .create(shading, 0, [1.0, 1.0, 1.0, 1.0])
+            .create(shading, features, [1.0, 1.0, 1.0, 1.0])
             .unwrap()
             + 1;
         let object = self.scene.reserve().unwrap();

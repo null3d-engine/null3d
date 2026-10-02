@@ -205,6 +205,7 @@ async function start(
 				transparent: false,
 				shaderBits: 0,
 				cellCulling: true,
+				depthPrepass: false,
 			},
 			capabilities: CAPABILITIES,
 			quality,
@@ -413,6 +414,25 @@ describe('SketchRunner', () => {
 		expect(calls.filter((call) => call[0] === 'setRenderScaling').at(-1)).toEqual([
 			'setRenderScaling',
 			true,
+		]);
+	});
+
+	it('draws at the highest render scale with the settings as set while the governor is off', async () => {
+		const { runner, calls, context } = await start(({ quality }) => {
+			quality.set({ minRenderScale: 0.5, maxRenderScale: 0.75, governor: false });
+			return {};
+		});
+		runner.step(0);
+		const scaling = () => calls.filter((call) => call[0] === 'setRenderScaling').at(-1);
+		expect(scaling()).toEqual(['setRenderScaling', true]);
+		expect(calls.find((call) => call[0] === 'recordFrame')?.[4]).toBe(750);
+		context.quality.set({ maxRenderScale: 1 });
+		expect(scaling()).toEqual(['setRenderScaling', false]);
+		const { governor, settings } = context.quality;
+		expect([governor.steps, governor.shadowFilter, governor.farCascadeInterval]).toEqual([
+			0,
+			settings.shadowFilter,
+			settings.farCascadeInterval,
 		]);
 	});
 

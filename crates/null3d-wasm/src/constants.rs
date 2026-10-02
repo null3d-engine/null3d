@@ -108,6 +108,14 @@ pub mod texture_stat {
     pub const MAX_ANISOTROPY: u32 = 8;
 }
 
+/// The parts of the number that `shadowCasters` returns.
+pub mod shadow_casters {
+    /// The bits that hold the main directional light's shadow cascades, 0 when it casts none.
+    pub const CASCADE_MASK: u32 = 0xff;
+    /// Set when point or spot lights cast shadows into the shadow atlas.
+    pub const TILES: u32 = 1 << 8;
+}
+
 /// The settings that `setTextureOption` changes.
 pub mod texture_option {
     /// The texel bytes that one frame may upload.
@@ -410,6 +418,13 @@ pub fn typescript() -> String {
                 ("MAX_SIZE", texture_stat::MAX_SIZE),
                 ("UPLOAD_BUDGET", texture_stat::UPLOAD_BUDGET),
                 ("MAX_ANISOTROPY", texture_stat::MAX_ANISOTROPY),
+            ],
+        ),
+        (
+            "SHADOW_CASTERS",
+            &[
+                ("CASCADE_MASK", shadow_casters::CASCADE_MASK),
+                ("TILES", shadow_casters::TILES),
             ],
         ),
         // The draw list's codes that `createTexture` takes, so the sketch thread needs no import of

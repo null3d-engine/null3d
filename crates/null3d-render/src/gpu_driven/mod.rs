@@ -72,6 +72,18 @@
 //! [`crate::shadow_tiles`]). Each tile is a view too, which culls and draws the casters' layout as
 //! a cascade does, but only in the frames in which the tile must draw again. Every camera view's
 //! frame group binds the atlas and the tiles' uniform block.
+//!
+//! # Lights
+//!
+//! The camera's point and spot lights reach the fragment shaders through its light grid (see
+//! [`crate::light_grid`]). The CPU uploads the light list, and a compute pass before the culling
+//! passes lists each cluster's lights in the grid.
+//!
+//! # Depth prepass
+//!
+//! With the depth prepass, each camera view also replays a bundle of its opaque buckets' depth
+//! before its opaque bundle (see [`crate::pipelines`] and [`opaque`]).
+//!
 //! The debug lines pass, which both builders share, is [`crate::debug_lines`], and the background
 //! texture that the camera's opaque pass draws before its bundle is [`crate::background`]. The
 //! render graph ([`crate::frame_graph`]) orders the passes and begins their render passes.
@@ -119,6 +131,7 @@ use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES};
 use layout::{Drawn, Layout};
+use lights::LightClusters;
 use transparent::Transparent;
 
 /// The most sources the builder can draw, scene slots and instance rows together, on a device whose
@@ -208,8 +221,10 @@ mod ids {
     pub const LIGHT_GRID: u32 = SORTED + MAX_VIEWS as u32;
     /// The records of the lights that the light grid lists.
     pub const LIGHTS: u32 = LIGHT_GRID + 1;
+    /// The parameters of the light clustering pass, which fills the light grid.
+    pub const LIGHT_PARAMS: u32 = LIGHTS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = LIGHTS + 1;
+    pub const PAGES: u32 = LIGHT_PARAMS + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -225,6 +240,10 @@ mod ids {
     pub const SAMPLERS: u32 = 2;
 
     pub const CULL: u32 = 1;
+    /// The light clustering pass's pipelines, in the order it dispatches them.
+    pub const LIGHT_COUNT: u32 = 2;
+    pub const LIGHT_PLACE: u32 = 3;
+    pub const LIGHT_WRITE: u32 = 4;
 
     /// Each view's bind groups: the frame group of its render pipelines, then its culling group.
     pub const fn frame_group(view: ViewId) -> u32 {
@@ -235,11 +254,21 @@ mod ids {
     }
     /// The final pass's group, after every view's.
     pub const FINAL_GROUP: u32 = 1 + 2 * MAX_VIEW_IDS as u32;
-    /// The bind groups of materials' maps, after the final pass's group.
-    pub const TEXTURE_GROUPS: u32 = FINAL_GROUP + 1;
+    /// The light clustering pass's group.
+    pub const LIGHT_GROUP: u32 = FINAL_GROUP + 1;
+    /// Each camera view's group of its depth prepass, after the light clustering pass's group.
+    pub const fn prepass_group(view: ViewId) -> u32 {
+        LIGHT_GROUP + 1 + view.index() as u32
+    }
+    /// The bind groups of materials' maps, after the groups of the depth prepass.
+    pub const TEXTURE_GROUPS: u32 = LIGHT_GROUP + 1 + MAX_VIEWS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
+    }
+    /// Each camera view's bundle of its depth prepass, after every view's bundle.
+    pub const fn prepass_bundle(view: ViewId) -> u32 {
+        1 + MAX_VIEW_IDS as u32 + view.index() as u32
     }
 }
 
@@ -262,6 +291,9 @@ pub struct RendererConfig {
     pub cell_culling: bool,
     /// The most point and spot lights that the camera's light grid lists.
     pub light_limits: LightLimits,
+    /// True to draw each camera view's opaque objects' depth in a depth prepass, before the opaque
+    /// pass shades them.
+    pub depth_prepass: bool,
 }
 
 impl Default for RendererConfig {
@@ -274,6 +306,7 @@ impl Default for RendererConfig {
             storage_binding_bytes: sizes::PORTABLE_STORAGE_BINDING_BYTES,
             cell_culling: true,
             light_limits: LightLimits::default(),
+            depth_prepass: false,
         }
     }
 }
@@ -303,6 +336,8 @@ pub struct GpuDrivenRenderer {
     background: BackgroundPass,
     /// The point and spot lights of the camera's view.
     lights: CameraLights,
+    /// The pass that lists the lights of each cluster of the camera's light grid.
+    light_clusters: LightClusters,
     /// Each camera view's values in the frame being recorded, or `None` for a view with no camera.
     frames: Vec<Option<ViewFrame>>,
     /// Each shadow cascade's values in the frame being recorded, or `None` for a cascade that the
@@ -363,6 +398,7 @@ impl GpuDrivenRenderer {
                     },
                 );
                 graph.bind_shadow_map();
+                graph.set_depth_prepass(config.depth_prepass);
                 graph
             },
             layout: Layout::new(Drawn::Scene),
@@ -374,7 +410,8 @@ impl GpuDrivenRenderer {
             sorted: SortedLayout::default(),
             transparent: Transparent::default(),
             background: BackgroundPass::default(),
-            lights: CameraLights::new(config.light_limits),
+            lights: CameraLights::on_gpu(config.light_limits),
+            light_clusters: LightClusters::default(),
             frames: Vec::new(),
             cascade_frames: [None; MAX_CASCADES],
             tiles: ShadowTiles::new(),
@@ -466,6 +503,7 @@ impl GpuDrivenRenderer {
                 parity,
                 limit,
                 shadows,
+                self.graph.depth_prepass(),
             )?;
             self.sorted
                 .rebuild(
@@ -490,6 +528,7 @@ impl GpuDrivenRenderer {
                     parity,
                     limit,
                     shadows,
+                    false,
                 )?;
             } else {
                 self.casters.clear();
@@ -519,6 +558,7 @@ impl GpuDrivenRenderer {
         let mut created_pipelines = !self.created;
         if !self.created {
             cull::create_pipeline(list)?;
+            lights::create_pipelines(list)?;
         }
         self.lines.request_pipeline(
             &input.lines,
@@ -555,11 +595,15 @@ impl GpuDrivenRenderer {
             .shadow_atlas()
             .expect("the builder's graph binds a shadow atlas");
         let first_new = self.views_made;
+        let prepass = self.graph.depth_prepass();
         for index in 0..views {
             let view = ViewId::from_index(index);
             if index >= first_new {
                 opaque::create_frame_buffer(list, view)?;
                 self.culling.add_view(list, view)?;
+                if prepass {
+                    shadow::bind_depth(list, ids::prepass_group(view), view)?;
+                }
             }
             if index >= first_new || self.graph.textures_made() {
                 opaque::bind_frame(list, view, shadow_map, atlas)?;
@@ -644,7 +688,10 @@ impl GpuDrivenRenderer {
             let view = ViewId::from_index(index);
             self.culling
                 .apply(list, view, &self.layout, shared_recreated, binding_bytes)?;
-            opaque::record_bundle(list, view, &self.layout, &self.meshes, scene_targets)?;
+            opaque::record_bundle(list, view, &self.layout, &self.meshes, scene_targets, false)?;
+            if prepass {
+                opaque::record_bundle(list, view, &self.layout, &self.meshes, scene_targets, true)?;
+            }
         }
         let first_cascade_to_apply = if upload_everything || pages_remade {
             0
@@ -663,12 +710,13 @@ impl GpuDrivenRenderer {
             let recreated = shared_recreated || casters_recreated;
             self.culling
                 .apply(list, view, &self.casters, recreated, binding_bytes)?;
-            opaque::record_bundle(list, view, &self.casters, &self.meshes, shadows::TARGETS)?;
+            let (casters, meshes) = (&self.casters, &self.meshes);
+            opaque::record_bundle(list, view, casters, meshes, shadows::TARGETS, false)?;
         }
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
         self.layout.update_order(list, arena, &self.cells, input)?;
-        lights::upload(list, arena, &mut self.lights)?;
+        self.light_clusters.upload(list, arena, &mut self.lights)?;
         self.transparent.size(list, &self.sorted, views)?;
 
         for (index, frame) in self.frames.iter().enumerate() {
@@ -766,7 +814,7 @@ impl GpuDrivenRenderer {
         let (layout, casters, culling, lines) =
             (&self.layout, &self.casters, &self.culling, &self.lines);
         let (frames, cascade_frames, tiles) = (&self.frames, &self.cascade_frames, &self.tiles);
-        let background = &self.background;
+        let (background, light_clusters) = (&self.background, &self.light_clusters);
         let drawn = |view: ViewId| match (view.cascade_index(), view.tile_index()) {
             (Some(cascade), _) => cascade_frames[cascade].is_some(),
             (_, Some(tile)) => tiles.frame(tile).is_some(),
@@ -782,12 +830,14 @@ impl GpuDrivenRenderer {
             self.settings.clear_color(),
             skips,
             |list, role| match role {
+                Role::LightClusters => light_clusters.record(list),
                 Role::Cull(view) if drawn(view) => culling.record(list, view, layout_of(view)),
+                Role::Prepass(view) if drawn(view) => opaque::record(list, view, true),
                 Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
                     if view == ViewId::CAMERA {
                         background.record(list, ids::frame_group(view), &[])?;
                     }
-                    opaque::record(list, view)
+                    opaque::record(list, view, false)
                 }
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::Transparent(view) => transparent.record(list, view, sorted, settings, meshes),
@@ -897,6 +947,10 @@ impl FrameBuilder for GpuDrivenRenderer {
         let result = self.record_into(input, &mut list, &mut arena);
         self.lists.restore(input.frame, list, arena);
         result
+    }
+
+    fn casts_tile_shadows(&self) -> bool {
+        self.tiles.shape().is_some()
     }
 
     fn reset_gpu(&mut self) {

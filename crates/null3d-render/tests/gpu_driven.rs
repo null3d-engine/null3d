@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use common::{BATCH_ROWS, SCENE_CAPACITY, World, count, far_out};
 use null3d_core::handle::Handle;
 use null3d_core::layers::DEFAULT_LAYERS;
+use null3d_core::lights::{POINT_CONE, VisibleLight, kind};
 use null3d_core::scene::{Command, NO_PARENT, flags};
 use null3d_core::world::SphereArrays;
 use null3d_gpu::drawlist::{NO_TARGET, Op, layout};
@@ -15,6 +16,7 @@ use null3d_gpu::mock::MockBackend;
 use null3d_render::camera::Perspective;
 use null3d_render::frame::FrameBuilder;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
+use null3d_render::light_grid::{CLUSTER_PARAMS_BYTES, DEFAULT_GRID};
 use null3d_render::view::ViewId;
 
 const MATRIX_BYTES: u32 = 48;
@@ -170,9 +172,12 @@ fn the_frame_runs_the_passes_of_the_render_graph_and_compiles_it_only_when_they_
             })
             .collect()
     };
-    // The culling pass, then the scene's render pass, which resolves into the canvas while the
-    // final pass, which has no work, stays off.
-    assert_eq!(steps(&world), [vec!["Culling"], vec!["Opaque", "Resolve"]]);
+    // The light clustering and culling passes, then the scene's render pass, which resolves into
+    // the canvas while the final pass, which has no work, stays off.
+    assert_eq!(
+        steps(&world),
+        [vec!["LightClusters", "Culling"], vec!["Opaque", "Resolve"]]
+    );
     let graph = world.renderer.render_graph();
     assert!(!graph.is_enabled(graph.find_pass("Final").unwrap()));
     for frame in 2..=10 {
@@ -191,7 +196,7 @@ fn the_frame_runs_the_passes_of_the_render_graph_and_compiles_it_only_when_they_
     assert_eq!(
         steps(&world),
         [
-            vec!["Culling", "Culling1"],
+            vec!["LightClusters", "Culling", "Culling1"],
             vec!["Opaque", "Resolve"],
             vec!["Opaque1"]
         ]
@@ -234,7 +239,8 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
 
     // Lit and unlit, and the final pass's, made for frames whose render scale drops.
     assert_eq!(count(&commands, Op::CreateRenderPipeline), 3);
-    assert_eq!(count(&commands, Op::CreateComputePipeline), 1);
+    // Culling, and the three steps of light clustering.
+    assert_eq!(count(&commands, Op::CreateComputePipeline), 4);
     assert_eq!(count(&commands, Op::ResizeCanvas), 1);
     // The color and depth targets, the shadow map and the shadow atlas, one texel each while no
     // light casts shadows, the table of specular terms and the materials' custom values.
@@ -553,10 +559,10 @@ fn pipelines_follow_the_shading_model_and_objects_sharing_a_mesh_and_material_sh
     world.scene.apply_commands(&commands, 1).unwrap();
     world.record(true);
     let first = world.commands();
-    // Pipelines depend on the shading model, not on materials: lit, unlit, the final pass and
-    // the culling pass.
+    // Pipelines depend on the shading model, not on materials: lit, unlit, the final pass, the
+    // culling pass and light clustering's three.
     assert_eq!(count(&first, Op::CreateRenderPipeline), 3);
-    assert_eq!(count(&first, Op::CreateComputePipeline), 1);
+    assert_eq!(count(&first, Op::CreateComputePipeline), 4);
     // One draw per mesh and material: the world's three, one for the ten boxes, one per ball.
     assert_eq!(count(&first, Op::DrawIndexedIndirect), 3 + 1 + 10);
 
@@ -979,4 +985,82 @@ fn each_view_culls_with_its_own_layers() {
     let layers = |view| world.renderer.view_frame(view).unwrap().layers;
     assert_eq!(layers(ViewId::CAMERA), DEFAULT_LAYERS);
     assert_eq!(layers(side), 0b1010);
+}
+
+#[test]
+fn the_gpu_lists_the_lights_in_frames_whose_lights_changed() {
+    let light = |z: f32| VisibleLight {
+        position: [0.0, 0.0, z],
+        range: 3.0,
+        color: [1.0; 3],
+        decay: 2.0,
+        direction: [0.0; 3],
+        cone_cos: POINT_CONE[0],
+        penumbra_cos: POINT_CONE[1],
+        kind: kind::POINT,
+        light: 1,
+        shadow: 0.0,
+    };
+    let dispatches = |world: &World| -> Vec<Vec<u32>> {
+        world
+            .commands()
+            .into_iter()
+            .filter(|(op, _)| *op == Op::Dispatch)
+            .map(|(_, operands)| operands)
+            .collect()
+    };
+    // The bytes of each upload of the light clustering parameters, and of the light list that
+    // follows it.
+    let uploads = |world: &World| -> Vec<[u32; 2]> {
+        let writes: Vec<u32> = world
+            .commands()
+            .into_iter()
+            .filter(|(op, _)| *op == Op::WriteBuffer)
+            .map(|(_, o)| o[3])
+            .collect();
+        writes
+            .windows(2)
+            .filter(|pair| pair[0] == CLUSTER_PARAMS_BYTES)
+            .map(|pair| [pair[0], pair[1]])
+            .collect()
+    };
+    let both = vec![[CLUSTER_PARAMS_BYTES, 2 * 64]];
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    world.lights = vec![light(-5.0), light(-9.0)];
+    world.record(true);
+    mock.replay(world.renderer.list(1).words()).unwrap();
+    // The CPU uploads the light list and the parameters, and the GPU fills the grid in three
+    // steps, before the culling pass: a run of tiles of each slice, then every cluster in one
+    // workgroup, then the runs of tiles again.
+    assert_eq!(uploads(&world), both);
+    let tiles = [DEFAULT_GRID.tiles().div_ceil(128), DEFAULT_GRID.slices, 1];
+    let found = dispatches(&world);
+    assert_eq!(found.len(), 4);
+    assert_eq!(found[..3], [tiles.to_vec(), vec![1, 1, 1], tiles.to_vec()]);
+
+    // Nothing uploads while the lights and the view stay, but the GPU fills the grid again, in
+    // case the thread that draws skipped the dispatches of pipelines it was still building.
+    world.frame = 2;
+    world.record(false);
+    mock.replay(world.renderer.list(2).words()).unwrap();
+    assert!(uploads(&world).is_empty());
+    assert_eq!(dispatches(&world).len(), 4);
+
+    // A light that moves uploads the list again.
+    world.frame = 3;
+    world.lights[1] = light(-8.0);
+    world.record(false);
+    mock.replay(world.renderer.list(3).words()).unwrap();
+    assert_eq!(uploads(&world), both);
+    assert_eq!(dispatches(&world).len(), 4);
+
+    // Without lights the shaders skip the grid, and the GPU fills none.
+    world.frame = 4;
+    world.lights.clear();
+    world.record(false);
+    mock.replay(world.renderer.list(4).words()).unwrap();
+    assert_eq!(dispatches(&world).len(), 1);
+    let frame = world.renderer.view_frame(ViewId::CAMERA).unwrap();
+    assert_eq!(frame.uniform.cluster_grid[2], 0.0);
 }

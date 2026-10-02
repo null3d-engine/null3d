@@ -328,7 +328,9 @@ export class WebGL2Backend {
 	private cullMode = CULL_BACK;
 	private depthTest = false;
 	private depthMask = true;
-	private depthAlways = false;
+	/** GL's depth function, which starts as the depth mode's own. */
+	private depthFunc: number;
+	private colorMask = true;
 	private blend = 0;
 	private offsetFactor = 0;
 	private offsetUnits = 0;
@@ -401,6 +403,7 @@ export class WebGL2Backend {
 		(this.minFilters[G.FILTER_LINEAR] as number[])[G.FILTER_LINEAR] = gl.LINEAR_MIPMAP_LINEAR;
 		this.indexType = gl.UNSIGNED_SHORT;
 		this.depth = setDepthMode(gl, depthMode);
+		this.depthFunc = this.nearerPasses();
 		// GL clears depth to 1 until told otherwise, which is the draw list's 0 in standard depth.
 		this.clearDepth = this.depth.standard ? 0 : 1;
 		// Texel rows in engine memory are tightly packed, whatever their width.
@@ -517,7 +520,8 @@ export class WebGL2Backend {
 			cull: this.cullOf(flags),
 			depth,
 			depthWrite: depth && (flags & (G.STATE_NO_DEPTH_WRITE | G.STATE_NO_DEPTH_TEST)) === 0,
-			depthAlways: (flags & G.STATE_NO_DEPTH_TEST) !== 0,
+			depthFunc: this.depthFuncOf(flags),
+			colorWrite: (flags & G.STATE_NO_COLOR_WRITE) === 0,
 			blend: flags & G.STATE_BLEND,
 			offsetUnits: sign * ((words[a + 8] as number) | 0),
 			offsetFactor: sign * floatOfBits(words[a + 9] as number),
@@ -1141,6 +1145,7 @@ export class WebGL2Backend {
 		this.setScissorTest(false);
 		this.setDepthTest(false);
 		this.setCullFace(0);
+		this.setColorMask(true);
 		if (this.blend) this.setBlend(0);
 		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, texture.texture);
 		this.bindUnitSampler(MIP_UNIT, this.mipSampler);
@@ -1355,6 +1360,7 @@ export class WebGL2Backend {
 		this.indexBuffer = 0;
 		let clear = 0;
 		if (flags & G.PASS_CLEAR_COLOR && color !== G.NO_TARGET) {
+			this.setColorMask(true);
 			const clearColor = this.clearColor;
 			if (
 				clearColor[0] !== floats[a + 3] ||
@@ -1399,6 +1405,7 @@ export class WebGL2Backend {
 					: this.soloFramebuffer(this.need(this.textures, this.passResolve, 'texture'));
 			gl.bindFramebuffer(gl.READ_FRAMEBUFFER, framebuffer);
 			gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, into);
+			this.setColorMask(true);
 			const width = this.passWidth;
 			const height = this.passHeight;
 			gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
@@ -1513,15 +1520,37 @@ export class WebGL2Backend {
 			this.gl.depthMask(p.depthWrite);
 			this.depthMask = p.depthWrite;
 		}
-		// A pass without the depth test still keeps GL's test on, with a function that passes every
-		// fragment: GL writes no depth while its test is off, and the pass writes none either way.
-		if (p.depthAlways !== this.depthAlways) {
-			const gl = this.gl;
-			gl.depthFunc(p.depthAlways ? gl.ALWAYS : this.depth.standard ? gl.LESS : gl.GREATER);
-			this.depthAlways = p.depthAlways;
+		if (p.depthFunc !== this.depthFunc) {
+			this.gl.depthFunc(p.depthFunc);
+			this.depthFunc = p.depthFunc;
 		}
+		this.setColorMask(p.colorWrite);
 		this.setPolygonOffset(p.offsetFactor, p.offsetUnits);
 		if (p.blend !== this.blend) this.setBlend(p.blend);
+	}
+
+	/** GL's depth function that passes nearer surfaces in the backend's depth mode. */
+	private nearerPasses(): number {
+		return this.depth.standard ? this.gl.LESS : this.gl.GREATER;
+	}
+
+	/**
+	 * GL's depth function of a pipeline's state flags. A pipeline without the depth test still
+	 * keeps GL's test on, with a function that passes every fragment: GL writes no depth while its
+	 * test is off, and the pipeline writes none either way. After the depth prepass, the opaque
+	 * pass draws only at the depth that the prepass found, in every depth mode.
+	 */
+	private depthFuncOf(flags: number): number {
+		const gl = this.gl;
+		if (flags & G.STATE_NO_DEPTH_TEST) return gl.ALWAYS;
+		return flags & G.STATE_DEPTH_EQUAL ? gl.EQUAL : this.nearerPasses();
+	}
+
+	/** Lets draws write color, or keeps the color targets as they are. */
+	private setColorMask(on: boolean): void {
+		if (on === this.colorMask) return;
+		this.gl.colorMask(on, on, on, on);
+		this.colorMask = on;
 	}
 
 	/**

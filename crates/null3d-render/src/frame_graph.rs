@@ -10,6 +10,11 @@
 //! compacted instances and indirect draws, which its opaque pass reads. On WebGL2 the job workers
 //! cull each view before the frame records, so that graph has no culling passes.
 //!
+//! With the depth prepass, a depth prepass comes before each view's opaque pass. It creates the
+//! view's depth and draws the opaque objects' depth into it, and the opaque pass then writes into
+//! that depth (see [`crate::pipelines`]). Both draw in one render pass, which has the color from
+//! the start. The prepass is fixed when the builder starts.
+//!
 //! A builder that binds a shadow map keeps one texture array for it (see [`crate::shadows`]),
 //! which every opaque pass samples. While a directional light casts shadows, each cascade has a
 //! shadow pass that draws the casters' depth into its layer of the array, and on WebGPU a culling
@@ -90,6 +95,10 @@ pub(crate) struct GraphIds {
 /// The buffers that the culling passes read: the world matrices and the bucket tables, which the
 /// frame uploads before its passes run.
 const OBJECTS: &str = "objects";
+/// The camera's point and spot lights, which the frame uploads before its passes run.
+const LIGHTS: &str = "lights";
+/// The camera's light grid, which the light clustering pass fills on WebGPU.
+const LIGHT_GRID: &str = "lightGrid";
 /// The camera's color target, which reaches the canvas.
 const SCENE_COLOR: &str = "sceneColor";
 /// The camera's depth target.
@@ -155,8 +164,12 @@ pub(crate) struct TilePasses {
 /// What a declared pass records.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Role {
+    /// Lists the lights of each cluster of the camera's light grid on the GPU.
+    LightClusters,
     /// Culls a view on the GPU into its compacted instances and indirect draws.
     Cull(ViewId),
+    /// Draws the depth of a view's opaque objects, before its opaque pass shades them.
+    Prepass(ViewId),
     /// Draws a view's opaque objects.
     Opaque(ViewId),
     /// Draws the depth of a shadow cascade's or a shadow tile's casters, by its view.
@@ -211,6 +224,10 @@ pub(crate) struct FrameGraph {
     roles: Vec<Role>,
     /// Each view's opaque pass, by view.
     opaque: Vec<PassId>,
+    /// True when each view has a depth prepass.
+    prepass: bool,
+    /// Each view's depth prepass, by view, with the depth prepass.
+    prepasses: Vec<PassId>,
     /// MSAA samples of the scene's color and depth targets.
     samples: u32,
     /// True when the GPU culls each view in a culling pass.
@@ -283,6 +300,8 @@ impl FrameGraph {
             graph,
             roles: Vec::new(),
             opaque: Vec::new(),
+            prepass: false,
+            prepasses: Vec::new(),
             samples: antialias.samples(),
             gpu_culling,
             scene_color,
@@ -314,6 +333,17 @@ impl FrameGraph {
     pub(crate) fn bind_shadow_map(&mut self) {
         self.shadow_map = true;
         self.declared = false;
+    }
+
+    /// Gives each view a depth prepass before its opaque pass, or none.
+    pub(crate) fn set_depth_prepass(&mut self, on: bool) {
+        self.prepass = on;
+        self.declared = false;
+    }
+
+    /// True when each view has a depth prepass.
+    pub(crate) fn depth_prepass(&self) -> bool {
+        self.prepass
     }
 
     /// Sets the directional light's shadow passes for the next frames, or none. A new cascade count
@@ -394,12 +424,15 @@ impl FrameGraph {
     }
 
     /// Declares the passes again when the number of views changed, and gives each view's opaque
-    /// pass the view's layers, which change without a new plan.
+    /// pass and depth prepass the view's layers, which change without a new plan.
     pub(crate) fn sync_views(&mut self, views: &[View]) {
         if views.len() != self.views || !self.declared {
             self.declare(views);
         }
         for (&pass, view) in self.opaque.iter().zip(views) {
+            self.graph.set_layers(pass, view.layers());
+        }
+        for (&pass, view) in self.prepasses.iter().zip(views) {
             self.graph.set_layers(pass, view.layers());
         }
     }
@@ -427,13 +460,14 @@ impl FrameGraph {
     }
 
     /// Declares the engine's passes for `views`: each view's culling pass on WebGPU, each shadow
-    /// cascade's and each shadow tile's culling and shadow passes, each view's opaque pass, the
-    /// debug lines pass, which is off, each view's transparent pass, then the resolve pass and the
-    /// final pass, of which one runs.
+    /// cascade's and each shadow tile's culling and shadow passes, each view's depth prepass with
+    /// the prepass and its opaque pass, the debug lines pass, which is off, each view's
+    /// transparent pass, then the resolve pass and the final pass, of which one runs.
     fn declare(&mut self, views: &[View]) {
         self.graph.clear();
         self.roles.clear();
         self.opaque.clear();
+        self.prepasses.clear();
         self.transparent.clear();
         self.shadow_passes.clear();
         let color = Target::color(self.scene_color.format()).samples(self.samples);
@@ -455,6 +489,11 @@ impl FrameGraph {
             self.graph.keep(SHADOW_ATLAS, atlas, size);
         }
         if self.gpu_culling {
+            self.graph.import_buffer(LIGHTS);
+            let clusters = Pass::new("LightClusters", PassKind::Compute)
+                .reads(LIGHTS)
+                .creates_buffer(LIGHT_GRID);
+            self.add(clusters, Role::LightClusters);
             self.graph.import_buffer(OBJECTS);
             for index in 0..views.len() {
                 let pass = Pass::new(view_name(index, "Culling", "Culling"), PassKind::Compute)
@@ -470,12 +509,31 @@ impl FrameGraph {
             self.declare_tiles(tiles);
         }
         for (index, view) in views.iter().enumerate() {
+            let depth_name = view_name(index, SCENE_DEPTH, "depth");
             let mut pass = Pass::new(view_name(index, "Opaque", "Opaque"), PassKind::Scene)
                 .layers(view.layers())
-                .creates(view_name(index, SCENE_COLOR, "color"), color)
-                .creates(view_name(index, SCENE_DEPTH, "depth"), depth);
+                .creates(view_name(index, SCENE_COLOR, "color"), color);
+            if self.prepass {
+                let mut prepass = Pass::new(
+                    view_name(index, "DepthPrepass", "DepthPrepass"),
+                    PassKind::Scene,
+                )
+                .layers(view.layers())
+                .creates(depth_name.clone(), depth);
+                if self.gpu_culling {
+                    prepass = prepass.reads(view_name(index, "visible", "visible"));
+                }
+                let prepass = self.add(prepass, Role::Prepass(ViewId::from_index(index)));
+                self.prepasses.push(prepass);
+                pass = pass.writes(depth_name);
+            } else {
+                pass = pass.creates(depth_name, depth);
+            }
             if self.gpu_culling {
                 pass = pass.reads(view_name(index, "visible", "visible"));
+                if index == ViewId::CAMERA.index() {
+                    pass = pass.reads(LIGHT_GRID);
+                }
             }
             if self.shadow_map {
                 pass = pass.reads(SHADOW_MAP).reads(SHADOW_ATLAS);
@@ -945,6 +1003,7 @@ mod tests {
         frames.sync_views(&[View::default(), View::default()]);
         let graph = frames.graph();
         let names = [
+            "LightClusters",
             "Culling",
             "Culling1",
             "Opaque",
@@ -962,6 +1021,7 @@ mod tests {
         assert_eq!(
             frames.roles,
             [
+                Role::LightClusters,
                 Role::Cull(ViewId::CAMERA),
                 Role::Cull(ViewId::from_index(1)),
                 Role::Opaque(ViewId::CAMERA),
@@ -1105,7 +1165,7 @@ mod tests {
         assert_eq!(
             without,
             [
-                vec!["Culling", "Culling1"],
+                vec!["LightClusters", "Culling", "Culling1"],
                 vec!["Opaque", "Resolve"],
                 vec!["Opaque1"]
             ]
@@ -1128,6 +1188,60 @@ mod tests {
             .unwrap();
         assert_eq!(steps(&frames), without);
         assert!(list.is_empty(), "switching the lines makes no texture");
+    }
+
+    #[test]
+    fn each_view_depth_prepass_draws_first_in_its_render_pass_and_creates_its_depth() {
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
+        frames.set_depth_prepass(true);
+        frames.sync_views(&[View::default(), View::default()]);
+        assert_eq!(
+            frames.roles[..7],
+            [
+                Role::LightClusters,
+                Role::Cull(ViewId::CAMERA),
+                Role::Cull(ViewId::from_index(1)),
+                Role::Prepass(ViewId::CAMERA),
+                Role::Opaque(ViewId::CAMERA),
+                Role::Prepass(ViewId::from_index(1)),
+                Role::Opaque(ViewId::from_index(1)),
+            ]
+        );
+        let mut list = DrawList::with_capacity(256);
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        let with = steps(&frames);
+        assert_eq!(
+            with,
+            [
+                vec!["LightClusters", "Culling", "Culling1"],
+                vec!["DepthPrepass", "Opaque", "Resolve"],
+                vec!["DepthPrepass1", "Opaque1"]
+            ]
+        );
+        // The prepass begins the render pass, which clears the color and the depth.
+        list.clear();
+        frames
+            .record(&mut list, [0.0; 4], |_| false, |_, _| Ok(()))
+            .unwrap();
+        let passes = operands(&list, Op::BeginRenderPass);
+        let both = pass_flags::CLEAR_COLOR | pass_flags::CLEAR_DEPTH;
+        assert!(passes[..2].iter().all(|pass| pass[8] & both == both));
+        // The prepass makes no texture of its own.
+        let textures = frames.graph().plan().unwrap().textures().len();
+        let mut without = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
+        without.sync_views(&[View::default(), View::default()]);
+        without
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        assert_eq!(without.graph().plan().unwrap().textures().len(), textures);
+        // Views keep their prepass when they change.
+        frames.sync_views(&[View::default()]);
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        assert_eq!(steps(&frames)[1], ["DepthPrepass", "Opaque", "Resolve"]);
     }
 
     /// The operands of each command of a list with `op`.
@@ -1254,7 +1368,7 @@ mod tests {
         assert_eq!(
             steps(&frames),
             [
-                vec!["Culling", "Culling1"],
+                vec!["LightClusters", "Culling", "Culling1"],
                 vec!["Opaque", "DebugLines", "Transparent", "Resolve"],
                 vec!["Opaque1", "Transparent1"]
             ],

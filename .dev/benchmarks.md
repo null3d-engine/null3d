@@ -118,6 +118,7 @@ Add `--shard 2/3` to run only the pages of one shard, as a CI shard does. Each r
 - WebGLRenderer has no clustered lighting. Its shader for 256 point lights needs more than the 1,024 uniform vectors that the Mac's GPU gives a fragment shader in Chrome. The shader fails to build there, and the WebGL page reports the GPU's reason and draws nothing. A benchmark run then lists the WebGL page as failed. A device without WebGPU, such as the S24+, has no three.js twin of S3 when its GPU has the same limit.
 - SwiftShader gives a fragment shader 4,096 uniform vectors, so the WebGL twin's shader builds there, but only after minutes. The page tests leave that page out on SwiftShader. The WebGPU twin's short run warms up for 5 seconds and measures for 5, because its first frames take seconds on SwiftShader.
 - The parity checks leave S3 out, because each of them compares with WebGLRenderer's frame. `LEFT_OUT_OF_PARITY` in `bench/lib/parity.ts` lists why a scene is left out: a feature that its twin draws and null3D does not draw yet, a twin that cannot draw it, or a tier whose frame differs from the twin's by more than the checks allow.
+- On WebGPU a compute pass lists each cluster's lights (M1-E3), and the CPU only uploads the light list. We measured it on 2 October 2026 with `bench:run --compare`, 10 rounds on the Mac in Chrome at 144 Hz. S3's own work per frame on WebGPU went from 0.140 ms to 0.070 ms. The busiest thread went from 0.153 ms to 0.087 ms. WebGL2, where the job workers still list the lights, did not change. The GPU time per frame went from 2.85 ms to 3.06 ms: the pass's three dispatches take about 0.2 ms at the clock speed the GPU keeps in this scene.
 - On the Mac: `bun run bench:run --scenes s3 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,scene-code`.
 - On the phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s3 --pages null3d-webgl2,null3d-webgl2-low,scene-code`.
 - On the iPad: `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s3 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,scene-code`.
@@ -142,6 +143,12 @@ Add `--shard 2/3` to run only the pages of one shard, as a CI shard does. Each r
 - `--switches <switches>` gives every page of a run more switches. On the Mac, run S2 without shadows, then with each cascade count: `bun run bench:run --scenes s2 --pages null3d-webgpu,null3d-compat,threejs-webgpu,threejs-webgl --switches shadows=1`. Each count's difference from the run without shadows is the cost of its cascades, in CPU time and in GPU time.
 - `bun run parity --scene s2 --switches shadows=3` compares the hold frames on each tier. On 30 September 2026 on the Mac, 0.147% of the pixels differed on both WebGPU tiers, and three.js's two renderers differed by 0.270%. WebGL2 drew no shadows then, so it has no figure yet.
 - Each cascade adds a culling dispatch and a depth pass on the GPU. On the CPU it adds the recording of both, and its uniforms: about the same work whatever the number of casters.
+
+## The depth prepass
+
+- The page switch `?prepass=on` or `?prepass=off` turns the depth prepass on or off, whatever the preset says. Only the WebGPU path draws it. `?prepass=on` on a benchmark page, with `measure`'s `gpuPassMs`, gives the prepass's GPU cost in the scene's render pass.
+- On 2 October 2026 (M1-A7), S2 ran on WebGPU in Chrome on the MacBook Pro, 3 runs of 10 seconds each way. Its GPU time per frame was 0.28 ms without the prepass and 0.41 ms with it. The scene's render pass grew from 0.13 ms to 0.26 ms. S2's trees hide few others, and its shading is cheap, so a second pass over its vertices costs more than it saves.
+- Every preset leaves the prepass off on that result. The iPad's figure, from S2's page with each switch, is still to come.
 
 ## Sweeps for the open defaults
 

@@ -18,6 +18,7 @@
 //   bun tests/real-browsers.ts --plan tab-memory --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan soak --lan ipad-safari --minutes 30
 //   bun tests/real-browsers.ts --plan warm-up-time --allow-no-webgpu --android chrome
+//   bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari
 // Options:
 //   --plan <name>       the plan to run: checks (the default), parity, bench, memory, which loads
 //                       the engine page 20 times at each shared memory maximum from 256 to 4096 MiB,
@@ -28,14 +29,16 @@
 //                       scene until the GPU falls behind and compares the presented and completed
 //                       rates on each GPU path, skinning, which times two ways to skin a crowd on
 //                       WebGL2 with 1 to 4 shadow cascades: in every pass, or once per frame with
-//                       transform feedback, tab-memory, which grows GPU textures, GPU buffers and
-//                       a WebAssembly memory in steps until the browser closes the tab, soak,
-//                       which loses the GPU on purpose in every thread mode and then plays S4 for
-//                       many minutes on each GPU path, recording each GPU loss, warm-up-time,
-//                       which times how long the pipelines of each benchmark scene and demo hold
-//                       up the first frame, with fresh shaders and with compiled ones, or scale,
-//                       which finds the largest S1 count at which three.js holds 30 frames per
-//                       second
+//                       transform feedback, governor, which runs the quality governor's stress
+//                       test on each GPU path: every live step down and back up under a load,
+//                       then a scene too heavy for the GPU whose frame rate the governor must bring
+//                       back, tab-memory, which grows GPU textures, GPU buffers and a WebAssembly
+//                       memory in steps until the browser closes the tab, soak, which loses the GPU
+//                       on purpose in every thread mode and then plays S4 for many minutes on each
+//                       GPU path, recording each GPU loss, warm-up-time, which times how long the
+//                       pipelines of each benchmark scene and demo hold up the first frame, with
+//                       fresh shaders and with compiled ones, or scale, which finds the largest S1
+//                       count at which three.js holds 30 frames per second
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
@@ -97,6 +100,7 @@ import {
 	benchSummary,
 	type Check,
 	depthSummary,
+	governorSummary,
 	itemsNeeded,
 	judge,
 	type MissingAllowed,
@@ -824,6 +828,7 @@ async function runPlan(
 			tabMemorySummary,
 			soakSummary,
 			warmUpTimeSummary,
+			governorSummary,
 		].map((summary) => summary(plan.items, resultOf));
 		for (const table of tables) if (table) console.log(`\n${name}\n${table}\n`);
 		const heat = wholeHeatText(heatReadings.get(name) ?? []);

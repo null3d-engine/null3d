@@ -124,6 +124,34 @@ fn lights_reach_the_frame_on_webgl2() {
     )));
 }
 
+/// The frame reports the cascades of the main directional light's shadows, which the quality
+/// governor lightens, and 0 once the light casts none.
+#[test]
+fn the_sun_reports_its_shadow_cascades() {
+    let mut world = World::new();
+    let mut lights = LightTable::new();
+    record(&mut world, &mut lights);
+    assert_eq!(world.renderer.settings().sun_shadow_cascades(), 0);
+    let (sun, row) = light(
+        &mut world,
+        &mut lights,
+        kind::DIRECTIONAL,
+        [0.0; 3],
+        -FRAC_PI_2,
+    );
+    lights.set_value(row, value::SHADOW_CASCADES, 3.0).unwrap();
+    world.frame += 1;
+    let casts = Command::set_flags(sun, flags::CAST_SHADOWS, flags::CAST_SHADOWS);
+    world.scene.apply_commands(&[casts], world.frame).unwrap();
+    record(&mut world, &mut lights);
+    assert_eq!(world.renderer.settings().sun_shadow_cascades(), 3);
+    world.frame += 1;
+    let stops = Command::set_flags(sun, flags::CAST_SHADOWS, 0);
+    world.scene.apply_commands(&[stops], world.frame).unwrap();
+    record(&mut world, &mut lights);
+    assert_eq!(world.renderer.settings().sun_shadow_cascades(), 0);
+}
+
 /// The clock, the camera's place in the world and the target's size reach each view's uniform
 /// block, for the built-in values of custom materials. The target's size is the render size, so
 /// it shrinks with the render scale while the projection keeps the canvas's shape.

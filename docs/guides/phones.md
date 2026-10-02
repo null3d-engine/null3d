@@ -8,7 +8,7 @@ summary: "Pixel-ratio caps; memory budgets; heat; testing on real devices."
 
 # Phones and tablets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The texture memory budgets are not built yet. Neither is the frame-budget governor, which lowers settings when a phone heats up. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The texture memory budgets are not built yet. Coding agents must not use them.
 
 Phones have small GPUs, sharp screens and little memory, and they slow down when they heat up. The quality presets set how much work the engine does on each device. This guide says what the engine does on a phone or a tablet, and how to test your sketch on one.
 
@@ -62,7 +62,7 @@ When the tab crashes during a start, the next start of the sketch runs one prese
 
 ## Heat
 
-A phone lowers its clock speeds when it heats up, often after a few minutes of play. Leave room for it: aim for about 70% of the frame budget, and test runs of 10 minutes. In the engine's benchmarks, a warm Galaxy S24+ took about 70% longer per frame than a cool one ([Performance guide](performance.md#phones-and-tablets)). The [Performance guide](performance.md) also shows how to measure the frame.
+A phone lowers its clock speeds when it heats up, often after a few minutes of play. Leave room for it: aim for about 70% of the frame budget, and test runs of 10 minutes. When frames still take too long, the frame-budget governor lowers the render scale, then the live shadow settings. The `quality.onChange` handlers run after each shadow step, so the sketch can lighten its own work too ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). In the engine's benchmarks, a warm Galaxy S24+ took about 70% longer per frame than a cool one ([Performance guide](performance.md#phones-and-tablets)). The [Performance guide](performance.md) also shows how to measure the frame.
 
 ## Touch input
 

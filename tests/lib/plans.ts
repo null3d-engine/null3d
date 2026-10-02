@@ -66,6 +66,13 @@ import type { Tier as GpuPath } from '../../packages/engine/src/shared/tier.ts';
 import { IMAGE_RUNS, manifestRun } from '../image/manifest.ts';
 import { distanceLabel, PRECISION, type PrecisionFacts } from '../pages/lib/depth-precision.ts';
 import {
+	GOVERNOR_STAGES,
+	type GovernorResult,
+	type GovernorStage,
+	governorSummary as governorLine,
+	governorProblems,
+} from '../pages/lib/governor.ts';
+import {
 	framesInFlight,
 	type OverloadResult,
 	type OverloadStep,
@@ -151,6 +158,8 @@ export type Check =
 	| { kind: 'bench'; tier: Tier; scene: BenchScene; page: BenchPageKind; jobs?: number }
 	/** The GPU-bound page, with the ?queue= setting it ran with, if any. */
 	| { kind: 'overload'; tier: Tier; queue?: string }
+	/** The quality governor's stress test: one stage on one GPU path. */
+	| { kind: 'governor'; tier: Tier; stage: GovernorStage }
 	/** The skinning page, which draws on WebGL2 alone, with its crowd and its cascades. */
 	| { kind: 'skinning'; tier: 'webgl2'; characters: number; cascades: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
@@ -603,6 +612,27 @@ export function skinningPlan(): PlanItem<Check>[] {
 	);
 }
 
+/** How long a stage of the governor's stress test may take: its waits, plus the start. */
+const GOVERNOR_TIMEOUT_SECONDS = 150;
+
+/**
+ * The quality governor's stress test on each GPU path, in the default thread mode: the walk, which
+ * takes every live step down and back up, with a frame captured after each step, then the hold,
+ * where the governor brings the frame rate of a scene too heavy for the GPU back to its target.
+ */
+export function governorPlan(): PlanItem<Check>[] {
+	return GOVERNOR_STAGES.flatMap((stage) =>
+		TIERS.map((tier) =>
+			pageItem(
+				`governor-${stage}-${tier}`,
+				'governor',
+				{ kind: 'governor', tier, stage },
+				{ switches: [`gpu=${tier}`, `stage=${stage}`], timeoutSeconds: GOVERNOR_TIMEOUT_SECONDS },
+			),
+		),
+	);
+}
+
 /** The shared memory maximums that the memory plan tries, in MiB, from low to high. */
 export const MEMORY_MAXIMUMS_MIB = [256, 512, 1024, 2048, 4096] as const;
 /** Loads of the engine page at each maximum in the memory plan. */
@@ -872,6 +902,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'tab-memory': tabMemoryPlan,
 	soak: soakPlan,
 	'warm-up-time': warmUpTimePlan,
+	governor: governorPlan,
 };
 
 /**
@@ -1266,6 +1297,8 @@ export function judge(
 				problems.push(`the page loaded ${check.fresh ? 'without' : 'with'} fresh shaders`);
 			return problems;
 		}
+		case 'governor':
+			return governorProblems(result as ItemResult & GovernorResult);
 	}
 }
 
@@ -1508,6 +1541,29 @@ export function overloadSummary(
 		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 		...rows,
 	].join('\n');
+}
+
+/**
+ * The governor plan's results as a Markdown table: for each stage on each GPU path, what the stage
+ * did, as `governorSummary` of the page's module says it. Undefined when the plan has no stress
+ * test pages.
+ */
+export function governorSummary(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): string | undefined {
+	const rows = items.flatMap(({ id, check }) => {
+		if (check.kind !== 'governor') return [];
+		const result = resultOf(id);
+		const text = !result?.ok
+			? result
+				? failureText(result)
+				: NO_RESULT
+			: governorLine(result as ItemResult & GovernorResult);
+		return [`| ${check.stage} | ${check.tier} | ${text} |`];
+	});
+	if (rows.length === 0) return undefined;
+	return ['| Stage | Path | Result |', '| --- | --- | --- |', ...rows].join('\n');
 }
 
 /** Milliseconds to two decimal places, or a dash when there are none. */

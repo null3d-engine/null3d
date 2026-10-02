@@ -93,6 +93,11 @@ export interface CoreDevice {
 	shaderBits: number;
 	/** False when the core culls every object and instance row, with no grid cells skipped first. */
 	cellCulling: boolean;
+	/**
+	 * True when each camera view draws its opaque objects' depth before it shades them. Only the
+	 * WebGPU path draws the prepass.
+	 */
+	depthPrepass: boolean;
 }
 
 /**
@@ -138,6 +143,8 @@ export type DeviceOptions = Pick<
 	antialias: AntialiasMode;
 	/** True for a transparent canvas. */
 	transparent: boolean;
+	/** True to draw the opaque objects' depth in a depth prepass. */
+	depthPrepass: boolean;
 };
 
 /** The depth mode of a WebGL2 device without `EXT_clip_control`. */
@@ -216,6 +223,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		antialias: ANTIALIAS_CODES[options.antialias],
 		transparent: options.transparent,
 		cellCulling: options.cells,
+		depthPrepass: options.depthPrepass,
 	};
 	if (tier !== 'webgl2') {
 		return {

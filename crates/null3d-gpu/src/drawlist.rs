@@ -556,6 +556,9 @@ pub mod layout {
     /// material table. It has no shadow map, so a pass that draws into the shadow map never binds
     /// it.
     pub const DEPTH: u32 = 7;
+    /// Group 0 of the light clustering compute pipelines: their parameters' uniform block, the
+    /// light list, and the light grid that they write.
+    pub const LIGHT_CLUSTERS: u32 = 8;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -593,8 +596,13 @@ pub mod permutation {
     /// The high bit of the debug view's number.
     pub const DEBUG_VIEW_HIGH: u32 = 2048;
 
+    /// The depth template draws the camera's depth prepass: it clips what lies in front of the
+    /// near plane, as the templates that shade do. Without it, the shadow passes flatten casters
+    /// there onto the near face.
+    pub const PREPASS: u32 = 4096;
+
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 12] = [
+    pub const NAMES: [(&str, u32); 13] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -607,6 +615,7 @@ pub mod permutation {
         ("VERTEX_TANGENT", VERTEX_TANGENT),
         ("DEBUG_VIEW_LOW", DEBUG_VIEW_LOW),
         ("DEBUG_VIEW_HIGH", DEBUG_VIEW_HIGH),
+        ("PREPASS", PREPASS),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -654,9 +663,20 @@ pub mod state_flags {
     /// The target tinted by the fragment: `src * dst + dst * (1 - src alpha)`, as three.js's
     /// premultiplied multiply blending; the target's alpha stays.
     pub const BLEND_MULTIPLY: u32 = 96;
+    /// Draws only where the fragment's depth equals what the depth target holds, as the opaque
+    /// pass draws the surfaces that the depth prepass found nearest.
+    pub const DEPTH_EQUAL: u32 = 128;
+    /// Writes no color, as the depth prepass draws into the color target's render pass.
+    pub const NO_COLOR_WRITE: u32 = 256;
     /// Every flag.
-    pub const ALL: u32 =
-        CULL_NONE | LINE_LIST | CULL_FRONT | NO_DEPTH_WRITE | NO_DEPTH_TEST | BLEND;
+    pub const ALL: u32 = CULL_NONE
+        | LINE_LIST
+        | CULL_FRONT
+        | NO_DEPTH_WRITE
+        | NO_DEPTH_TEST
+        | BLEND
+        | DEPTH_EQUAL
+        | NO_COLOR_WRITE;
 }
 
 /// Vertex formats. Every vertex has a position and a normal, three floats each. A format adds
@@ -863,6 +883,12 @@ pub mod template {
     pub const DEBUG_VIEW: u32 = 12;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;
+    /// Light clustering, first step: counts the lights of each cluster of the light grid.
+    pub const LIGHT_COUNT: u32 = 17;
+    /// Light clustering, second step: gives each cluster its place in the light index list.
+    pub const LIGHT_PLACE: u32 = 18;
+    /// Light clustering, last step: writes each cluster's lights into its place in the list.
+    pub const LIGHT_WRITE: u32 = 19;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1097,6 +1123,7 @@ pub fn typescript_constants() -> String {
                 ("TEXTURES", layout::TEXTURES),
                 ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
                 ("DEPTH", layout::DEPTH),
+                ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1123,6 +1150,8 @@ pub fn typescript_constants() -> String {
                 ("BLEND_NORMAL", state_flags::BLEND_NORMAL),
                 ("BLEND_ADDITIVE", state_flags::BLEND_ADDITIVE),
                 ("BLEND_MULTIPLY", state_flags::BLEND_MULTIPLY),
+                ("DEPTH_EQUAL", state_flags::DEPTH_EQUAL),
+                ("NO_COLOR_WRITE", state_flags::NO_COLOR_WRITE),
             ],
         ),
         (
@@ -1139,6 +1168,9 @@ pub fn typescript_constants() -> String {
                 ("BACKGROUND", template::BACKGROUND),
                 ("DEBUG_VIEW", template::DEBUG_VIEW),
                 ("CULL", template::CULL),
+                ("LIGHT_COUNT", template::LIGHT_COUNT),
+                ("LIGHT_PLACE", template::LIGHT_PLACE),
+                ("LIGHT_WRITE", template::LIGHT_WRITE),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),

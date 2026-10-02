@@ -136,13 +136,14 @@ variants.webgpu = { permutations = ["TONE_MAP", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HI
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HIGH"], targets = ["glsl"] }
 
 # The depth of shadow casters, drawn from the main directional light into one cascade's layer of
-# the shadow map.
+# the shadow map. The PREPASS builds draw the depth of a camera's opaque objects for the depth
+# prepass, and clip what lies in front of the camera as the templates that shade do.
 [shaders.shadow_depth]
 file = "shadow_depth.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["PREPASS"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "PREPASS"], targets = ["glsl"] }
 
 # GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
 [shaders.cull]
@@ -198,3 +199,11 @@ pipelines.main = { vertex = "vs_main", fragment = "fs_main" }
 variants.plain = { targets = ["wgsl", "glsl"] }
 variants.instanced = { defs = ["INSTANCED"], targets = ["wgsl", "glsl"] }
 variants.multi_draw = { defs = ["INSTANCED", "DRAW_INDEX"], targets = ["glsl"] }
+
+# Light clustering on the GPU: three compute entry points, `count_lights`, `place_lights` and
+# `write_lights`, that list each cluster's point and spot lights in the light grid. WebGPU only;
+# on WebGL2 the job workers list them.
+[shaders.light_clusters]
+file = "light_clusters.wgsl"
+by_device = true
+variants.webgpu = { targets = ["wgsl"] }

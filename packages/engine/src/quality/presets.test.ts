@@ -100,6 +100,9 @@ describe('the preset table', () => {
 			'farCascadeInterval',
 			'shadowTiles',
 			'shadowTileSize',
+			'pointLightShadows',
+			'governor',
+			'depthPrepass',
 			'maxAnisotropy',
 			'uploadBytesPerFrame',
 			'memoryMaximumMiB',
@@ -126,9 +129,12 @@ describe('the preset table', () => {
 			'uploadBytesPerFrame',
 			'shadowFilter',
 			'farCascadeInterval',
+			'governor',
 			'antialias',
 			'shadowTiles',
 			'shadowTileSize',
+			'pointLightShadows',
+			'depthPrepass',
 		]);
 		expect(LIVE_SETTINGS).toEqual([
 			'maxPixelRatio',
@@ -138,6 +144,7 @@ describe('the preset table', () => {
 			'uploadBytesPerFrame',
 			'shadowFilter',
 			'farCascadeInterval',
+			'governor',
 		]);
 	});
 
@@ -160,7 +167,7 @@ describe('the preset table', () => {
 
 describe('presetSettings', () => {
 	it("gives a sketch each preset's values", () => {
-		const full = { maxRenderScale: 1 };
+		const full = { maxRenderScale: 1, governor: true, depthPrepass: false };
 		expect(presetSettings('low')).toEqual({
 			maxPixelRatio: 1.5,
 			minRenderScale: 0.5,
@@ -172,6 +179,7 @@ describe('presetSettings', () => {
 			antialias: 'fxaa',
 			shadowTiles: 4,
 			shadowTileSize: 512,
+			pointLightShadows: false,
 		});
 		expect(presetSettings('medium')).toEqual({
 			maxPixelRatio: 2,
@@ -184,6 +192,7 @@ describe('presetSettings', () => {
 			antialias: 'msaa',
 			shadowTiles: 8,
 			shadowTileSize: 512,
+			pointLightShadows: false,
 		});
 		expect(presetSettings('high')).toEqual({
 			maxPixelRatio: 2,
@@ -196,6 +205,7 @@ describe('presetSettings', () => {
 			antialias: 'msaa',
 			shadowTiles: 16,
 			shadowTileSize: 1024,
+			pointLightShadows: true,
 		});
 		expect(presetSettings('ultra')).toEqual({
 			maxPixelRatio: Number.POSITIVE_INFINITY,
@@ -208,6 +218,7 @@ describe('presetSettings', () => {
 			antialias: 'msaa',
 			shadowTiles: 24,
 			shadowTileSize: 1024,
+			pointLightShadows: true,
 		});
 	});
 
@@ -217,6 +228,7 @@ describe('presetSettings', () => {
 		expect(presetSettings('high', { antialias: 'none' }).antialias).toBe('none');
 		expect(presetSettings('ultra', { shadowTiles: 0 }).shadowTiles).toBe(0);
 		expect(presetSettings('low', { shadowTileSize: 2048 }).shadowTileSize).toBe(2048);
+		expect(presetSettings('low', { pointLightShadows: true }).pointLightShadows).toBe(true);
 	});
 
 	it("reads one setting's value on a preset", () => {
@@ -264,7 +276,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter or farCascadeInterval.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval or governor.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(

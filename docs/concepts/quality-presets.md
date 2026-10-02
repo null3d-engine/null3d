@@ -8,7 +8,7 @@ summary: "Low to Ultra; pixel-ratio caps; the preset check; switching presets; t
 
 # Quality presets, dynamic resolution and frame budgets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow settings, texture settings, anti-aliasing mode and memory maximum, and reports it. Dynamic resolution moves the render scale during play, and a sketch can switch presets with `quality.setPreset`. The settings that the table below marks as planned are not built yet. Neither is the frame-budget governor. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow settings, texture settings, anti-aliasing mode, depth prepass and memory maximum, and reports it. During play, the frame-budget governor moves the render scale and then the live shadow settings, and a sketch can switch presets with `quality.setPreset`. The settings that the table below marks as planned are not built yet. Neither are frame budgets for a sketch's own systems. Coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -158,8 +158,9 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame | during play | built |
 | Spot and point light shadow tiles (`shadowTiles`) | 4 | 8 | 16 | 24 | at the start | built |
 | Shadow tile size in texels (`shadowTileSize`) | 512 | 512 | 1024 | 1024 | at the start | built |
-| Point light shadows (`pointLightShadows`) | no | no | yes | yes | at the start | planned |
-| Depth prepass (`depthPrepass`) | no | no | yes | yes | at the start | planned |
+| Point light shadows (`pointLightShadows`) | no | no | yes | yes | at the start | built |
+| Frame-budget governor (`governor`) | on | on | on | on | during play | built |
+| Depth prepass (`depthPrepass`) | no | no | no | no | at the start | built |
 | Anisotropic filtering cap (`maxAnisotropy`) | 2x | 4x | 8x | 16x | during play | built |
 | Texture uploads per frame (`uploadBytesPerFrame`) | 2 MiB | 4 MiB | 8 MiB | 16 MiB | during play | built |
 | Point and spot lights per frame (`maxLights`) | 256 | 256 | 512 | 1024 | at the start | planned |
@@ -176,6 +177,18 @@ The anisotropic filtering cap limits the `anisotropy` option of every texture, s
 Low smooths edges with FXAA, and the other presets with MSAA. MSAA draws 4 samples per pixel, which costs a phone's GPU memory and bandwidth. FXAA draws one sample and smooths edges in the final pass, at a small cost in sharpness. The `antialias` option of `createEngine` replaces the preset's mode. The mode then stays fixed while the engine runs, because the scene's targets and pipelines depend on it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) compares the modes.
 
 The engine makes its memory while it tests the GPU paths. So the memory maximum follows the starting preset and the crashed starts, and the GPU path does not cap it. The `memory` option of `createEngine` replaces it: [Page API](../api/engine.md#memory).
+
+### The depth prepass
+
+With the depth prepass, the engine first draws the depth of the opaque objects, with a shader that computes positions only. The opaque pass then shades each pixel once, for its nearest surface. Without the prepass, a pixel can be shaded for several surfaces before the nearest one covers them. The prepass costs a second pass over the objects' vertices. So it saves GPU time where objects hide many others and their shading costs much, such as in a lit street of buildings. It costs time where a scene has many vertices and little overdraw.
+
+Some objects stay out of the prepass and shade as they would without it. These are blended objects, and objects whose material has an alpha cutoff, skips depth writes or the depth test, or is a custom material. Every preset leaves the prepass off. Turn it on with the `depthPrepass` option of `createEngine`, and compare the scene's GPU time with `?prepass=on` and `?prepass=off`. The prepass is fixed while the engine runs, because the scene's pipelines depend on it.
+
+Only WebGPU draws the prepass. On WebGL2, two shader programs can compute different depths for a triangle that the camera's near plane cuts. So WebGL2 draws without the prepass, and `quality.settings.depthPrepass` is false there.
+
+```ts
+const engine = await createEngine({ canvas, sketch, depthPrepass: true });
+```
 
 ## Dynamic resolution
 
@@ -196,7 +209,7 @@ During play, the engine moves the scale between the `minRenderScale` and `maxRen
 - Frames are over budget when they come at least 10% slower than the target rate. They are also over budget when the GPU finishes each one two frames late or later. The target is the display's refresh rate, at most 60 frames per second, or the lower rate that the `?fps=` switch holds.
 - After about a second over budget, the scale drops by 0.05. The engine then waits a second, so it judges frames at the new scale.
 - After 5 seconds at the target rate, with the GPU done with each frame within about one frame, the scale rises by 0.05. A rise that takes the frames over budget again doubles the wait before the next rise, up to 80 seconds. So the scale settles below the point where frames fall behind.
-- It takes no step in the first 2 seconds of play, and it starts to judge the frames again after a pause.
+- It takes no step in the first 2 seconds of play, or while textures wait to upload. It starts to judge the frames again after a pause.
 
 The scene's render targets keep the canvas's size at every scale, and the scene draws into their top-left corner. So a new scale makes no GPU object and allocates no memory. `engine.measure()` counts the GPU objects that the engine made, in `gpuObjects`.
 
@@ -220,6 +233,27 @@ export default defineSketch(({ quality, page }) => {
 ```
 
 A `minRenderScale` of 1 keeps the whole canvas. Hold mode draws at `maxRenderScale`, so tests draw the same image on every run. Some GPU paths draw the scene's color in 8 bits: WebGPU's compatibility mode, and WebGL2 devices that cannot draw multisampled float targets. There, with MSAA, a lowest scale below 1 adds the final pass, which copies the image to the canvas. At a lowest scale of 1, the scene's render pass writes straight to the canvas. Below a scale of 1, the final pass scales the image up instead of running FXAA: the scaling softens edges already.
+
+## The frame-budget governor
+
+```mermaid
+flowchart LR
+    over["About 1 s over budget"] --> scale["1. Render scale: 0.05 lower,<br/>down to minRenderScale"]
+    scale -- "still over budget" --> far["2. Far shadow cascades:<br/>half as often, down to every 8th frame"]
+    far -- "still over budget" --> filter["3. Shadow filter: 3 x 3 texels"]
+    room["5 s with time to spare"] --> back["One step back up,<br/>in the reverse order"]
+```
+
+Dynamic resolution is the first part of the frame-budget governor. The scale can stop at `minRenderScale` while frames still take too long. The governor then lowers the live shadow settings, one step at a time:
+
+1. The far shadow cascades draw half as often, for example every 4th frame instead of every 2nd, and at most every 8th frame. This step needs a directional light with two cascades or more.
+2. The shadow filter blends 3 x 3 texels instead of 5 x 5.
+
+Each step follows the rules of dynamic resolution. Frames must stay over budget for about a second before a step down, and keep time to spare for 5 seconds before a step up. A wait follows each step, and no step happens early in play, after a pause, or during uploads. The governor raises the settings in the reverse order, so the render scale comes back last. It takes shadow steps only where a directional light casts shadows. It never changes the preset, nor a setting that is fixed while the preset runs, such as the shadow map's size.
+
+Phones slow down as they heat up, often after a few minutes of play. The governor responds as it does to any slow frames: after a second over budget, it lowers the next setting. The target is the display's refresh rate, at most 60 frames per second. When the browser lowers the rate of its frames to save battery, the rate that the engine measures falls, and the target falls with it.
+
+`quality.governor` reports what the governor lowered, and the `quality.onChange` handlers run after each shadow step. So a sketch can lighten its own work at the same time: [Quality API](../api/quality.md#the-frame-budget-governor) shows how. `quality.set({ governor: false })` turns the governor off. The scene then draws at `maxRenderScale`, with the shadow settings as set, as a benchmark or a recorded video needs. Hold mode has no governor.
 
 ## Related pages
 

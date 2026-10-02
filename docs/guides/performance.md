@@ -83,6 +83,8 @@ The pixel ratio cap often decides GPU time on a phone, because the GPU shades ea
 
 Measure at the presets that your users get. `engine.mode.preset` names the preset that runs, and the `?preset=low` switch fixes one for a test.
 
+During play, the frame-budget governor lowers the render scale, then the live shadow settings, when frames take too long ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). It hides some of a slow scene's cost. To measure the scene's own cost, turn it off with `quality.set({ governor: false })`, so every run draws the same frames.
+
 ## Write per-frame code that allocates nothing
 
 Garbage collection pauses the thread that allocated the memory. The render worker runs no sketch code, so your garbage cannot delay drawing. It can still delay your next frame. These habits keep per-frame code free of new objects:
@@ -178,7 +180,7 @@ The engine lights each pixel with the point and spot lights of its cluster only,
 
 - A pixel's cost grows with the lights whose ranges reach its cluster. Give each light the shortest range that keeps its look, because a longer range reaches more clusters.
 - A light near the camera covers much of the screen, and its range reaches many clusters. Many large lights near the camera cost the most.
-- Each frame the job workers list the lights of each cluster on the CPU. A few hundred small lights take a fraction of a millisecond, on the sketch thread alone when the work is small.
+- Each frame the engine lists the lights of each cluster. On WebGPU a compute pass does it on the GPU, and the CPU only uploads the light list. On WebGL2 the job workers do it on the CPU. There, a few hundred small lights take a fraction of a millisecond, on the sketch thread alone when the work is small.
 - A frame uploads the lists when the lights or the camera moved. It uploads 14 KB for the clusters, 4 bytes for each light in each cluster, and 64 bytes for each light. A still scene seen from a still camera uploads nothing.
 
 The camera lists up to 1,024 point and spot lights in a frame, the ones nearest to it, and up to 128 in each cluster.

@@ -105,6 +105,7 @@ export const LAYOUT_FINAL = 4;
 export const LAYOUT_TEXTURES = 5;
 export const LAYOUT_MATERIAL_MAPS = 6;
 export const LAYOUT_DEPTH = 7;
+export const LAYOUT_LIGHT_CLUSTERS = 8;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -118,6 +119,7 @@ export const PERMUTATION_FXAA = 256;
 export const PERMUTATION_VERTEX_TANGENT = 512;
 export const PERMUTATION_DEBUG_VIEW_LOW = 1024;
 export const PERMUTATION_DEBUG_VIEW_HIGH = 2048;
+export const PERMUTATION_PREPASS = 4096;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;
@@ -135,6 +137,8 @@ export const STATE_BLEND = 96;
 export const STATE_BLEND_NORMAL = 32;
 export const STATE_BLEND_ADDITIVE = 64;
 export const STATE_BLEND_MULTIPLY = 96;
+export const STATE_DEPTH_EQUAL = 128;
+export const STATE_NO_COLOR_WRITE = 256;
 
 export const TEMPLATE_INSTANCED_LIT = 1;
 export const TEMPLATE_INSTANCED_UNLIT = 2;
@@ -147,6 +151,9 @@ export const TEMPLATE_SHADOW_DEPTH = 8;
 export const TEMPLATE_BACKGROUND = 9;
 export const TEMPLATE_DEBUG_VIEW = 12;
 export const TEMPLATE_CULL = 16;
+export const TEMPLATE_LIGHT_COUNT = 17;
+export const TEMPLATE_LIGHT_PLACE = 18;
+export const TEMPLATE_LIGHT_WRITE = 19;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;
