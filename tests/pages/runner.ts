@@ -262,6 +262,7 @@ async function runPlan(run: string, from = 0): Promise<void> {
 		const result = await runItem(item, run);
 		await post(run, item.id, result);
 		report.finish(index, result);
+		show(report.counts());
 		await sleep(PAUSE_BETWEEN_PAGES_MS);
 	}
 	await post(run, 'done', { items: plan.items.length, finishedAt: new Date().toISOString() });
