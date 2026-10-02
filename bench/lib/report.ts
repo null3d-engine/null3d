@@ -192,12 +192,16 @@ export function traceTable(rows: readonly SummaryRow[]): string {
 }
 
 /** The WebGL calls of each -timed page that its table lists: those with the most time. */
-const GL_TIMING_ROWS = 10;
+const GL_TIMING_ROWS = 16;
+/** The calls of a page's slowest frame that its table lists: those that took this long or more. */
+const SLOW_CALL_MS = 0.5;
 
 /**
- * The WebGL call times of a run's -timed pages as a Markdown table: for each page, the calls that
- * took the most time on the thread that draws, with their time and count per measured frame and
- * their longest single call. A call that waits for the browser's GPU process shows here.
+ * The WebGL call times of a run's -timed and -synced pages as two Markdown tables. The first gives,
+ * for each page, the calls that took the most time on the thread that draws, with their time and
+ * count per measured frame and their longest single call. A call that waits for the browser's GPU
+ * process shows here. The second gives the slow calls of each page's slowest frame, with their
+ * place among the frame's calls.
  */
 export function glTimingTable(rows: readonly SummaryRow[]): string {
 	const lines = [
@@ -211,6 +215,20 @@ export function glTimingTable(rows: readonly SummaryRow[]): string {
 			lines.push(
 				`| ${scene} | ${kind} | ${call.name} | ${(call.ms / frames).toFixed(3)} | ${(call.calls / frames).toFixed(1)} | ${call.longestMs.toFixed(2)} |`,
 			);
+	}
+	lines.push(
+		'',
+		"| Scene | Page | Slowest frame's call | Place in the frame's calls | ms |",
+		'| --- | --- | --- | --- | --- |',
+	);
+	for (const { scene, kind, glTiming } of rows) {
+		const frame = glTiming?.slowestFrame ?? [];
+		frame.forEach((call, k) => {
+			if (call.ms >= SLOW_CALL_MS)
+				lines.push(
+					`| ${scene} | ${kind} | ${call.name} | ${k + 1} of ${frame.length} | ${call.ms.toFixed(2)} |`,
+				);
+		});
 	}
 	return lines.join('\n');
 }

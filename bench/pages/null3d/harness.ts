@@ -141,7 +141,8 @@ function requestGlTiming(): Promise<GlTiming | undefined> {
 		channel.onmessage = (event: MessageEvent<GlTimingReport>) => {
 			if (event.data?.type !== 'gl-timing') return;
 			clearTimeout(timeout);
-			resolve({ frames: event.data.frames, calls: event.data.calls });
+			const { frames, calls, slowestFrame } = event.data;
+			resolve({ frames, calls, slowestFrame });
 		};
 		channel.postMessage(GL_TIMING_REQUEST);
 	}).finally(() => channel.close());

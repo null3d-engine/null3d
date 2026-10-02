@@ -28,11 +28,19 @@ export interface GlCallTimes {
 	longestMs: number;
 }
 
+/** One call of a frame, in order. */
+export interface GlFrameCall {
+	name: string;
+	ms: number;
+}
+
 /** The call times of the measured frames. A frame counts at its fence, which ends each frame. */
 export interface GlTimingReport {
 	type: 'gl-timing';
 	frames: number;
 	calls: GlCallTimes[];
+	/** The calls of the measured frame whose calls took the longest, in order. */
+	slowestFrame: GlFrameCall[];
 }
 
 type Method = (...args: unknown[]) => unknown;
@@ -51,11 +59,58 @@ export function timeGlCalls(
 	const sync = mode === 'sync';
 	const times = new Map<string, GlCallTimes>();
 	let frames = 0;
+	let frame: GlFrameCall[] = [];
+	let frameMs = 0;
+	let slowestFrame: GlFrameCall[] = [];
+	let slowestMs = -1;
+	/** Ends a frame's list of calls at its fence, keeping it when it took the longest so far. */
+	const endFrame = (): void => {
+		if (frameMs > slowestMs) {
+			slowestFrame = frame;
+			slowestMs = frameMs;
+		}
+		frame = [];
+		frameMs = 0;
+	};
+
+	const record = (name: string, ms: number): void => {
+		frame.push({ name, ms });
+		frameMs += ms;
+		let figures = times.get(name);
+		if (!figures) {
+			figures = { name, ms: 0, calls: 0, longestMs: 0 };
+			times.set(name, figures);
+		}
+		figures.ms += ms;
+		figures.calls++;
+		if (ms > figures.longestMs) figures.longestMs = ms;
+	};
+
+	// Texture writes count apart for each texture, named by its size and format, as the texture
+	// bound on the active unit gets them.
+	const textureNames = new WeakMap<object, string>();
+	const unitTextures = new Map<number, WebGLTexture | null>();
+	let unit = 0;
+	const boundTexture = () => unitTextures.get(unit) ?? null;
+	const callName = (name: string): string => {
+		if (!name.startsWith('texSubImage') && !name.startsWith('compressedTexSubImage')) return name;
+		const texture = boundTexture();
+		return `${name} into ${(texture && textureNames.get(texture)) ?? 'a texture'}`;
+	};
+	const watch = (name: string, args: unknown[]): void => {
+		if (name === 'activeTexture') unit = (args[0] as number) - gl.TEXTURE0;
+		else if (name === 'bindTexture') unitTextures.set(unit, args[1] as WebGLTexture | null);
+		else if (name === 'texStorage2D' || name === 'texStorage3D') {
+			const texture = boundTexture();
+			const layers = name === 'texStorage3D' ? `x${args[5]}` : '';
+			const format = (args[2] as number).toString(16);
+			if (texture) textureNames.set(texture, `${args[3]}x${args[4]}${layers} 0x${format}`);
+		}
+	};
 
 	const timed = (name: string, target: object, method: Method): Method => {
-		const figures: GlCallTimes = { name, ms: 0, calls: 0, longestMs: 0 };
-		times.set(name, figures);
 		return (...args) => {
+			watch(name, args);
 			if (recorder && !recorder.measuring) return method.apply(target, args);
 			if (name === 'fenceSync') frames++;
 			const start = performance.now();
@@ -63,10 +118,8 @@ export function timeGlCalls(
 				return method.apply(target, args);
 			} finally {
 				if (sync) gl.getError();
-				const ms = performance.now() - start;
-				figures.ms += ms;
-				figures.calls++;
-				if (ms > figures.longestMs) figures.longestMs = ms;
+				record(callName(name), performance.now() - start);
+				if (name === 'fenceSync') endFrame();
 			}
 		};
 	};
@@ -112,7 +165,12 @@ export function timeGlCalls(
 	channel.onmessage = (event: MessageEvent<unknown>) => {
 		if (event.data !== GL_TIMING_REQUEST) return;
 		const calls = [...times.values()].filter((call) => call.calls > 0).sort((a, b) => b.ms - a.ms);
-		channel.postMessage({ type: 'gl-timing', frames, calls } satisfies GlTimingReport);
+		channel.postMessage({
+			type: 'gl-timing',
+			frames,
+			calls,
+			slowestFrame,
+		} satisfies GlTimingReport);
 	};
 	return stand as unknown as WebGL2RenderingContext;
 }
