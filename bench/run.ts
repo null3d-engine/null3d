@@ -545,8 +545,9 @@ function judgeComparison(record: ComparisonRecord, dir: string): string {
 	return report.join('\n');
 }
 
-/** The records of every shard under a folder, from the record files of their runs. */
+/** The records of every shard under a folder, or none when the folder does not exist. */
 function readRecords(folder: string): ComparisonRecord[] {
+	if (!existsSync(folder)) return [];
 	return readdirSync(folder, { recursive: true, encoding: 'utf8' })
 		.filter((path) => basename(path) === RECORD_FILE)
 		.map((path) => JSON.parse(readFileSync(join(folder, path), 'utf8')) as ComparisonRecord);
