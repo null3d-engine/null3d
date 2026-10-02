@@ -13,6 +13,8 @@ use crate::frame::{RecordError, address, floats_as_bytes};
 pub(super) const RING: u32 = 3;
 /// Bytes of one world matrix: three rows of four floats.
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
+/// Texels of one light record: four vectors of four 32-bit values.
+const LIGHT_TEXELS: u32 = sizes::LIGHT_RECORD_BYTES / 16;
 
 /// A slot of one of the frame rings that moves on only when a frame writes new data, so a frame
 /// whose data did not change draws from the slot that already holds it. A slot is written again
@@ -26,6 +28,11 @@ pub(super) struct RingSlot {
 }
 
 impl RingSlot {
+    /// The slot that the last frame took.
+    pub(super) fn slot(&self) -> u32 {
+        self.slot
+    }
+
     /// True when the slot holds data that a frame can draw from.
     pub(super) fn holds_any(&self) -> bool {
         self.holds != 0
@@ -97,6 +104,17 @@ impl TextureRows {
             per_row: sizes::INDICES_PER_TEXTURE_ROW,
             texels: 1,
             bytes: 4,
+        }
+    }
+
+    /// `count` light records of the light list's textures, from record `first` on.
+    pub(super) fn lights(first: u32, count: u32) -> Self {
+        Self {
+            first,
+            count,
+            per_row: sizes::LIGHTS_PER_TEXTURE_ROW,
+            texels: LIGHT_TEXELS,
+            bytes: sizes::LIGHT_RECORD_BYTES,
         }
     }
 }
@@ -174,6 +192,16 @@ impl DataTexture {
             count,
             width: sizes::INDICES_PER_TEXTURE_ROW,
             format: format::R32_UINT,
+        }
+    }
+
+    /// The textures of light records, four texels each.
+    pub(super) const fn lights(first_id: u32, count: u32) -> Self {
+        Self {
+            first_id,
+            count,
+            width: sizes::LIGHTS_PER_TEXTURE_ROW * LIGHT_TEXELS,
+            format: format::RGBA32_FLOAT,
         }
     }
 

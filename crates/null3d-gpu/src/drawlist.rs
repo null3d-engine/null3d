@@ -765,8 +765,8 @@ pub mod sizes {
     /// Bytes per compacted instance: three rows of the world matrix, then a vector of ids.
     pub const INSTANCE_STRIDE: u32 = 64;
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
-    /// settings and the fog's 48 bytes.
-    pub const FRAME_UNIFORM_BYTES: u32 = 192;
+    /// settings, the fog's 48 bytes, and the light grid's two vectors.
+    pub const FRAME_UNIFORM_BYTES: u32 = 224;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -783,6 +783,12 @@ pub mod sizes {
     pub const MATRICES_PER_TEXTURE_ROW: u32 = 512;
     /// Indices per row of an index list texture: WebGL2's smallest allowed texture width.
     pub const INDICES_PER_TEXTURE_ROW: u32 = 2048;
+    /// Bytes of one point or spot light's record, which fragment shaders read from the light
+    /// list: four vectors of four 32-bit values.
+    pub const LIGHT_RECORD_BYTES: u32 = 64;
+    /// Light records per row of the WebGL2 light list's data texture, four texels each. A
+    /// power of two.
+    pub const LIGHTS_PER_TEXTURE_ROW: u32 = 512;
     /// Bytes of one draw record: the start of the draw's slice of the index list, its material
     /// and the data texture its instances come from, and one spare word.
     pub const DRAW_RECORD_BYTES: u32 = 16;
@@ -1155,6 +1161,8 @@ pub fn typescript_constants() -> String {
                 ("MATRIX_TEXELS", sizes::MATRIX_TEXELS),
                 ("MATRICES_PER_TEXTURE_ROW", sizes::MATRICES_PER_TEXTURE_ROW),
                 ("INDICES_PER_TEXTURE_ROW", sizes::INDICES_PER_TEXTURE_ROW),
+                ("LIGHT_RECORD_BYTES", sizes::LIGHT_RECORD_BYTES),
+                ("LIGHTS_PER_TEXTURE_ROW", sizes::LIGHTS_PER_TEXTURE_ROW),
                 ("DRAW_RECORD_BYTES", sizes::DRAW_RECORD_BYTES),
                 ("MULTI_DRAW_RECORDS", sizes::MULTI_DRAW_RECORDS),
                 ("MAX_MATERIALS", sizes::MAX_MATERIALS),

@@ -9,7 +9,6 @@ import {
 	comparisonName,
 	decodeHoldResult,
 	differenceText,
-	FEATURES_TO_COME,
 	formatStoredBaselines,
 	gpuApiOf,
 	gpuApiOfPage,
@@ -17,6 +16,7 @@ import {
 	holdPagePath,
 	isNull3dPage,
 	JOBS_PAGES,
+	LEFT_OUT_OF_PARITY,
 	MAX_DIFFERENT_PERCENT,
 	PAGE_KINDS,
 	PARITY_SCENES,
@@ -248,10 +248,10 @@ describe('the scenes', () => {
 				expect(existsSync(join(root, pagePath(scene, kind).split('?')[0] as string))).toBe(true);
 	});
 
-	test('compares with three.js the scenes whose every feature null3D draws', () => {
+	test('compares with three.js the scenes that both engines draw in full', () => {
 		expect(PARITY_SCENES).toEqual(['s1', 's1-static', 's1-cells', 's2']);
 		for (const scene of BENCH_SCENES)
-			expect(PARITY_SCENES.includes(scene)).toBe(FEATURES_TO_COME[scene].length === 0);
+			expect(PARITY_SCENES.includes(scene)).toBe(LEFT_OUT_OF_PARITY[scene].length === 0);
 	});
 });
 
