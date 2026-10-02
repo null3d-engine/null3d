@@ -59,7 +59,7 @@ off();                                   // every on... call returns a function 
 engine.detach();                         // single-page apps: canvas off the page, engine paused, scene kept
 engine.attach(container);                // canvas back on the page; the engine resumes with no new start
 engine.setPaused(true);                  // the first step after resuming counts no time
-engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, maxInstances, depth }
+engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, halfPrecision, maxInstances, depth }
 engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, crashedStarts, memoryMaximumMiB }
 const metrics = await engine.measure(5);          // CPU time per thread and phase, GPU time, frame rates, memory
 const frame = await engine.captureFrame();        // { width, height, pixels }: RGBA8 rows, top row first

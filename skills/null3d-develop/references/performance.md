@@ -159,6 +159,10 @@ With `createEngine({ depthPrepass: true })`, each camera view first draws the de
 
 Every preset leaves it off. In the S2 benchmark, a scene with little overdraw, the prepass made the GPU time per frame 45% longer on WebGPU on a Mac. Only WebGPU draws the prepass. On WebGL2, two shader programs can compute different depths where the near plane cuts a triangle, so `quality.settings.depthPrepass` is false there. Blended objects, alpha-cutoff materials and custom materials stay out of the prepass. Turn it on only after you compare the scene's GPU time with `?prepass=on` and `?prepass=off`.
 
+### Half precision
+
+The scene shaders can do their color math at half precision: lighting, tone mapping and sRGB encoding. Positions, depth and shadow lookups keep full precision. It stays off on both GPU paths. On a WebGL2 phone it saved no frame time and moved shadow edges. The WebGPU path has no measurement yet. `?half=on` turns it on to measure a scene. WebGPU takes it only on devices with the `shader-f16` feature. `engine.capabilities.halfPrecision` says what the engine took. Custom materials always use full precision. There is no `createEngine` option for it.
+
 ### Your own systems
 
 Keep your own values per preset in one table. Apply them in the setup, and again in `quality.onChange`, which runs when a setting changes. Your systems get budgets of their own through `setBudget` (0.2):
