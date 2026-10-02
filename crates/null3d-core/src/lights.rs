@@ -33,7 +33,12 @@
 //!
 //! The main directional light casts shadows when its object has the cast-shadows flag. The frame
 //! then reports the light's shadow numbers (see [`value`]) and its layer mask, which selects the
-//! casters. Point and spot lights store the flag, and cast no shadows yet.
+//! casters.
+//!
+//! A point or spot light with the flag lists a [`LightShadow`] record in the shadow list, in row
+//! order, whether or not the view sees it: the record says where the light stands in the world and
+//! how its shadows draw, and where the visible list holds it. A frame builder gives the visible
+//! ones tiles of its shadow atlas, and writes each light's tile into its [`VisibleLight`] record.
 
 use std::f32::consts::FRAC_PI_3;
 
@@ -83,11 +88,11 @@ pub mod value {
     /// The part of a spot light's cone, from 0 to 1, over which its light fades out toward the
     /// edge. The default is 0.
     pub const PENUMBRA: u32 = 4;
-    /// How far a receiver's depth moves toward a directional light before its shadow test, in
-    /// texels of its cascade. The default is 0.5.
+    /// How far a receiver's depth moves toward the light before its shadow test, in texels of its
+    /// cascade or its shadow tile. The default is 0.5.
     pub const SHADOW_BIAS: u32 = 5;
     /// How far a receiver's point moves along its normal before its shadow test, in texels of its
-    /// cascade. The default is 1.
+    /// cascade or its shadow tile. The default is 1.
     pub const SHADOW_NORMAL_BIAS: u32 = 6;
     /// The cascades of a directional light's shadows, from 1 to 4. The default is 3.
     pub const SHADOW_CASCADES: u32 = 7;
@@ -134,8 +139,37 @@ pub struct VisibleLight {
     pub kind: u32,
     /// The light's row in the table.
     pub light: u32,
-    /// Unused, so the record fills four groups of four values.
-    pub unused: u32,
+    /// The light's first tile in the frame builder's shadow atlas plus one, as a float, or 0 when
+    /// the light has no tile. The core writes 0, and the frame builder the tile.
+    pub shadow: f32,
+}
+
+/// The place in the visible list of a light that the view does not see.
+pub const NOT_VISIBLE: u32 = u32::MAX;
+
+/// A point or spot light that casts shadows, as one frame's shadow list holds it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LightShadow {
+    /// The light's row in the table.
+    pub light: u32,
+    /// The light's [`kind`]: [`kind::POINT`] or [`kind::SPOT`].
+    pub kind: u32,
+    /// The light's place in the visible list, or [`NOT_VISIBLE`].
+    pub visible: u32,
+    /// Where the light stands: its cell, and its position in the cell.
+    pub at: CellPosition,
+    /// The direction a spot light's light travels, of length 1; zero for a point light.
+    pub direction: [f32; 3],
+    /// A spot light's cone angle in radians; 0 for a point light.
+    pub angle: f32,
+    /// The distance in meters where the light ends.
+    pub range: f32,
+    /// Its bias, in texels of its tile.
+    pub bias: f32,
+    /// Its normal bias, in texels of its tile.
+    pub normal_bias: f32,
+    /// The light's layer mask: its tiles draw the casters whose masks share a bit with it.
+    pub layers: u32,
 }
 
 /// The view a frame's lights are gathered for.
@@ -239,6 +273,7 @@ pub struct LightTable {
     free: Vec<u32>,
     created: u32,
     visible: Vec<VisibleLight>,
+    shadows: Vec<LightShadow>,
 }
 
 impl Default for LightTable {
@@ -255,6 +290,7 @@ impl LightTable {
             free: Vec::new(),
             created: 0,
             visible: Vec::new(),
+            shadows: Vec::new(),
         }
     }
 
@@ -301,18 +337,22 @@ impl LightTable {
         Ok(row)
     }
 
-    /// Adds a free row at the end, with room in the free list and the visible list for every row.
+    /// Adds a free row at the end, with room in the free list, the visible list and the shadow
+    /// list for every row.
     fn grow(&mut self) -> Result<(), CoreError> {
         let rows = self.rows.len() + 1;
+        let per_row = size_of::<Row>() + size_of::<VisibleLight>() + size_of::<LightShadow>();
         let out_of_memory = |_| CoreError::OutOfMemory {
-            bytes: u32::try_from(rows * (size_of::<Row>() + size_of::<VisibleLight>()))
-                .unwrap_or(u32::MAX),
+            bytes: u32::try_from(rows * per_row).unwrap_or(u32::MAX),
         };
         self.free
             .try_reserve(rows - self.free.len())
             .map_err(out_of_memory)?;
         self.visible
             .try_reserve(rows - self.visible.len())
+            .map_err(out_of_memory)?;
+        self.shadows
+            .try_reserve(rows - self.shadows.len())
             .map_err(out_of_memory)?;
         self.rows.try_reserve(1).map_err(out_of_memory)?;
         self.rows.push(Row::FREE);
@@ -395,8 +435,14 @@ impl LightTable {
         &self.visible
     }
 
+    /// The point and spot lights that cast shadows, as the last [`LightTable::gather`] found them,
+    /// in row order.
+    pub fn shadows(&self) -> &[LightShadow] {
+        &self.shadows
+    }
+
     /// Gathers the lights of the frame whose world output is `parity`'s, for `view`, or for no
-    /// view: then every layer counts, and the visible list stays empty. See the module
+    /// view: then every layer counts, and the visible and shadow lists stay empty. See the module
     /// documentation. It allocates nothing.
     pub fn gather(
         &mut self,
@@ -407,6 +453,7 @@ impl LightTable {
         let mut frame = FrameLights::default();
         let mut main_order = None;
         self.visible.clear();
+        self.shadows.clear();
         let layers = view.map_or(ALL_LAYERS, |v| v.layers);
         let world = scene.world(parity);
         for (index, row) in self.rows.iter().enumerate().skip(1) {
@@ -420,7 +467,16 @@ impl LightTable {
             if world.radii()[s] == HIDDEN_RADIUS || !shares_layer(scene.layers()[s], layers) {
                 continue;
             }
-            let [intensity, range, decay, angle, penumbra, ..] = row.values;
+            let [
+                intensity,
+                range,
+                decay,
+                angle,
+                penumbra,
+                bias,
+                normal_bias,
+                ..,
+            ] = row.values;
             let lit = row.colors[color::MAIN as usize].map(|c| c * intensity);
             match row.kind {
                 kind::AMBIENT => {
@@ -445,16 +501,40 @@ impl LightTable {
                     let position = scene.cell_position(slot, parity);
                     let offset = view.camera.offset_to(position.cell);
                     let at: [f32; 3] = std::array::from_fn(|k| offset[k] + position.local[k]);
-                    if !view.frustum.contains_sphere(at[0], at[1], at[2], range) {
+                    let seen = view.frustum.contains_sphere(at[0], at[1], at[2], range);
+                    let spot = row.kind == kind::SPOT;
+                    let direction = if spot {
+                        forward(world.matrix(s))
+                    } else {
+                        [0.0; 3]
+                    };
+                    // The table reserved room for every row in both lists when it grew.
+                    if scene.flags()[s] & flags::CAST_SHADOWS != 0 {
+                        self.shadows.push(LightShadow {
+                            light: index as u32,
+                            kind: row.kind,
+                            visible: if seen {
+                                self.visible.len() as u32
+                            } else {
+                                NOT_VISIBLE
+                            },
+                            at: position,
+                            direction,
+                            angle: if spot { angle } else { 0.0 },
+                            range,
+                            bias,
+                            normal_bias,
+                            layers: scene.layers()[s],
+                        });
+                    }
+                    if !seen {
                         continue;
                     }
-                    let (direction, cone_cos, penumbra_cos) = if row.kind == kind::SPOT {
-                        let inner = angle * (1.0 - penumbra);
-                        (forward(world.matrix(s)), cosine(angle), cosine(inner))
+                    let (cone_cos, penumbra_cos) = if spot {
+                        (cosine(angle), cosine(angle * (1.0 - penumbra)))
                     } else {
-                        ([0.0; 3], POINT_CONE[0], POINT_CONE[1])
+                        (POINT_CONE[0], POINT_CONE[1])
                     };
-                    // The table reserved room for every row when it grew.
                     self.visible.push(VisibleLight {
                         position: at,
                         range,
@@ -465,7 +545,7 @@ impl LightTable {
                         penumbra_cos,
                         kind: row.kind,
                         light: index as u32,
-                        unused: 0,
+                        shadow: 0.0,
                     });
                 }
                 _ => {}

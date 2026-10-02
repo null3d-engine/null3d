@@ -126,11 +126,11 @@ fn two_views_cull_into_buffers_of_their_own_and_draw_their_own_bundles() {
     }
     // The camera's render pass resolves into the canvas. The side view's draws into targets of
     // its own, which share the camera's textures, as the two render passes do not overlap. The
-    // textures: the color and depth targets, the shadow map, one texel while no light casts
-    // shadows, the table of specular terms and the materials' custom values.
+    // textures: the color and depth targets, the shadow map and the shadow atlas, one texel each
+    // while no light casts shadows, the table of specular terms and the materials' custom values.
     assert_eq!(camera.pass[1], 0);
     assert_eq!(other.pass[1], NO_TARGET);
-    assert_eq!(count(&commands, Op::CreateTexture), 5);
+    assert_eq!(count(&commands, Op::CreateTexture), 6);
 
     // Each view's culling tests its own frustum: the side view's leaves out the object at
     // x = -3, which the camera sees. A frustum is relative to its view's camera, so each sphere
@@ -242,9 +242,9 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
     // Culling, and the three steps of light clustering.
     assert_eq!(count(&commands, Op::CreateComputePipeline), 4);
     assert_eq!(count(&commands, Op::ResizeCanvas), 1);
-    // The color and depth targets, the shadow map, one texel while no light casts shadows, the
-    // table of specular terms and the materials' custom values.
-    assert_eq!(count(&commands, Op::CreateTexture), 5);
+    // The color and depth targets, the shadow map and the shadow atlas, one texel each while no
+    // light casts shadows, the table of specular terms and the materials' custom values.
+    assert_eq!(count(&commands, Op::CreateTexture), 6);
     // Buckets: box lit (one object and the batch), box unlit, ball lit; the hidden ball draws
     // nowhere.
     assert_eq!(count(&commands, Op::DrawIndexedIndirect), 3);
@@ -999,7 +999,7 @@ fn the_gpu_lists_the_lights_in_frames_whose_lights_changed() {
         penumbra_cos: POINT_CONE[1],
         kind: kind::POINT,
         light: 1,
-        unused: 0,
+        shadow: 0.0,
     };
     let dispatches = |world: &World| -> Vec<Vec<u32>> {
         world

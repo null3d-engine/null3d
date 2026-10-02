@@ -28,6 +28,7 @@ use null3d_render::light_grid::{ClusterParams, DEFAULT_GRID, GridView, LightGrid
 use null3d_render::materials::Shading;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::parallel_record::ParallelRecorder;
+use null3d_render::shadow_tiles::TileSettings;
 use null3d_render::view::ViewId;
 
 #[global_allocator]
@@ -88,6 +89,62 @@ fn recording_frames_with_shadows_allocates_nothing() {
     assert_eq!(shadow_allocations(World::new()), 0);
     for multi_draw in [true, false] {
         let allocated = shadow_allocations(webgl2_world(multi_draw));
+        assert_eq!(allocated, 0, "WebGL2, multi-draw {multi_draw}");
+    }
+}
+
+/// Records warm-up frames of `world` with two spot lights that cast shadows into a shadow atlas of
+/// one tile, which they take in turn as a caster moves, then frames in which a caster moves within
+/// the lights' reach and out of it, still frames, and frames whose structure changes, and returns
+/// what those allocated.
+fn spot_shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    let casts = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
+    let commands: Vec<Command> = world
+        .objects
+        .iter()
+        .map(|&object| Command::set_flags(object, casts, casts))
+        .collect();
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    world
+        .renderer
+        .settings_mut()
+        .set_tile_settings(TileSettings {
+            tiles: 1,
+            size: 256,
+            point_shadows: false,
+        });
+    let near = world.add_spot([-3.0, 4.0, 0.0], 6.0);
+    world.add_spot([3.0, 4.0, 0.0], 6.0);
+    let mover = world.objects[0];
+    let step = |world: &mut World<B>, frame: u32| {
+        // The near light moves toward the camera and back, so the two lights swap the tile.
+        let z = if frame % 8 < 4 { 0.0 } else { 15.0 };
+        world.scene.set_position(near, [-3.0, 4.0, z]).unwrap();
+        let x = if frame.is_multiple_of(3) { -3.0 } else { 30.0 };
+        world.scene.set_position(mover, [x, 0.0, 0.0]).unwrap();
+    };
+    world.record(true);
+    for frame in 2..=16 {
+        step(&mut world, frame);
+        world.frame = frame;
+        world.record(frame > 12);
+    }
+    CountingAllocator::arm();
+    for frame in 17..=120 {
+        step(&mut world, frame);
+        world.frame = frame;
+        world.record(frame.is_multiple_of(20));
+    }
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn recording_frames_with_spot_light_shadows_allocates_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(spot_shadow_allocations(World::new()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        let allocated = spot_shadow_allocations(webgl2_world(multi_draw));
         assert_eq!(allocated, 0, "WebGL2, multi-draw {multi_draw}");
     }
 }

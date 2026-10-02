@@ -54,12 +54,13 @@
 //! needs to find a position's cluster: [`LightGrid::cluster_at`] does what the shaders do.
 
 use null3d_core::jobs::JobSystem;
-use null3d_core::lights::VisibleLight;
+use null3d_core::lights::{LightShadow, VisibleLight};
 use null3d_core::shared::SharedMut;
 use null3d_gpu::drawlist::sizes::LIGHT_RECORD_BYTES;
 
 use crate::camera::{Mat4, ViewDepth};
 use crate::frame::words_as_bytes;
+use crate::shadow_tiles::ShadowTiles;
 use crate::view::ViewFrame;
 
 // The core's light records are what the shaders read.
@@ -838,6 +839,12 @@ impl CameraLights {
         let uniform = self.grid.uniform();
         frame.uniform.cluster_depth = uniform.depth;
         frame.uniform.cluster_grid = uniform.grid;
+    }
+
+    /// Writes each listed light's first tile of the shadow atlas into its record, from the tiles
+    /// that `tiles` planned for the lights of `shadows`.
+    pub(crate) fn mark_shadows(&mut self, tiles: &ShadowTiles, shadows: &[LightShadow]) {
+        tiles.mark_lights(&mut self.grid.lights, shadows);
     }
 
     /// True when the grid lists lights and they differ from what the GPU holds. They count as

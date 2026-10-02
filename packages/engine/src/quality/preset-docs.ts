@@ -91,6 +91,8 @@ export const SETTING_DOCS: {
 	shadowMapSize: { label: 'Shadow map size in texels' },
 	shadowFilter: { label: 'Shadow filter', print: (value) => `${value} x ${value} texels` },
 	farCascadeInterval: { label: 'Far cascade updates', print: everyNth },
+	shadowTiles: { label: 'Spot and point light shadow tiles' },
+	shadowTileSize: { label: 'Shadow tile size in texels' },
 	pointLightShadows: { label: 'Point light shadows', print: yesNo },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	maxAnisotropy: { label: 'Anisotropic filtering cap', print: (value) => `${value}x` },

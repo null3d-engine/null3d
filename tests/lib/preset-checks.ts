@@ -1,16 +1,19 @@
 // Checks of the preset check and of a change of preset, shared by the Playwright tests and the
 // real-browser runner. The quality page with a heavy scene must see the check lower the preset. The
-// preset change page must see every setting take the new preset's value, and no frame draw
-// without the pipelines of the new preset.
+// preset change page must see every setting take the new preset's value, apart from those fixed
+// when the engine starts, and no frame draw without the pipelines of the new preset.
 import {
 	CHECK_HOLD_SHARE,
 	type PresetCheck,
 	type PresetCheckRound,
 } from '../../packages/engine/src/quality/check.ts';
 import {
+	LIVE_SETTINGS,
 	presetIndex,
 	presetSettings,
 	type QualityPreset,
+	type QualitySettings,
+	SKETCH_SETTINGS,
 } from '../../packages/engine/src/quality/presets.ts';
 
 /**
@@ -107,10 +110,11 @@ export function presetChangeProblems(
 	const problems: string[] = [];
 	if (result.sketch?.preset !== to || result.mode.preset !== to)
 		problems.push(`the engine runs ${result.mode.preset}, not ${to}`);
-	const settings = presetSettings(to, {
-		maxPixelRatio: 1,
-		antialias: presetSettings(from).antialias,
-	});
+	// The settings fixed when the engine starts keep the start preset's values.
+	const start: Record<string, unknown> = { maxPixelRatio: 1 };
+	const first = presetSettings(from) as unknown as Record<string, unknown>;
+	for (const name of SKETCH_SETTINGS) if (!LIVE_SETTINGS.includes(name)) start[name] = first[name];
+	const settings = presetSettings(to, start as Partial<QualitySettings>);
 	for (const [name, value] of Object.entries(settings)) {
 		// JSON gives Infinity as null.
 		const reported = result.sketch?.settings[name] ?? Number.POSITIVE_INFINITY;

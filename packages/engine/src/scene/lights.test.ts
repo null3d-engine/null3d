@@ -192,6 +192,20 @@ describe('creating lights', () => {
 		expect(tableRow(plain).values).toEqual([]);
 	});
 
+	test("a spot light's shadow biases land in the light table, and setShadow changes only those it names", () => {
+		const { scene, tableRow } = fakeCore();
+		const spot = scene.createSpotLight({
+			range: 8,
+			castShadows: true,
+			shadow: { bias: 2, normalBias: 0.25 },
+		});
+		expect(tableRow(spot).values[C.LIGHT_VALUE_SHADOW_BIAS]).toBe(2);
+		expect(tableRow(spot).values[C.LIGHT_VALUE_SHADOW_NORMAL_BIAS]).toBe(0.25);
+		spot.setShadow({ normalBias: 3 });
+		expect(tableRow(spot).values[C.LIGHT_VALUE_SHADOW_BIAS]).toBe(2);
+		expect(tableRow(spot).values[C.LIGHT_VALUE_SHADOW_NORMAL_BIAS]).toBe(3);
+	});
+
 	test('castShadows travels with the create command', () => {
 		const { scene, commands } = fakeCore();
 		const lights = [
@@ -418,6 +432,14 @@ describe('development checks', () => {
 			thrown(() => scene.createDirectionalLight({ shadow: { cascades: 0 } })).message,
 		).toStartWith('E1108: createDirectionalLight() got the shadow cascades 0');
 		sun.setShadow({ cascades: 1, mapSize: 256, bias: 0, normalBias: 0, distance: 0.5 });
+		const spot = scene.createSpotLight({ range: 4, name: 'Lamp' });
+		expect(thrown(() => spot.setShadow({ bias: -1 })).message).toStartWith(
+			`E1108: setShadow() got the shadow bias -1 on "Lamp" (slot ${spot.slot}), which must be at least 0.`,
+		);
+		expect(thrown(() => scene.createSpotLight({ range: 4, shadow: { normalBias: -2 } })).code).toBe(
+			'E1108',
+		);
+		spot.setShadow({ bias: 0, normalBias: 0 });
 	});
 
 	test('the create calls check their options and name themselves', () => {
