@@ -1,13 +1,15 @@
 name: Benchmarks
 
 # Compares the speed of a new commit with a baseline. GitHub's shared machines change speed from
-# run to run, so the job builds both commits on one machine, runs their benchmark pages in turns,
-# and judges only that comparison. Each commit's pages run as a production build, as a developer
-# ships the engine, so development checks count in neither. On main it runs one job at a time, against the last commit on
-# main that a job measured with success. For a pull request it runs on demand, against the pull
-# request's merge base: add the benchmark label, or start it from the Actions tab with the pull
-# request's number. .dev/benchmarks.md says how to read the summary and how to mark an expected
-# slowdown.
+# run to run, so each machine runs both commits' benchmark pages in turns, and the run judges only
+# that comparison. Linux machines build both commits once. Mac machines then split the pages into
+# shards, each running both builds of its share, and a last job merges the shards into one report
+# and one verdict. A shard that fails can run again alone. Each commit's pages run as a production
+# build, as a developer ships the engine, so development checks count in neither. On main it runs
+# one run at a time, against the last commit on main that a run measured with success. For a pull
+# request it runs on demand, against the pull request's merge base: add the benchmark label, or
+# start it from the Actions tab with the pull request's number. .dev/benchmarks.md says how to read
+# the summary and how to mark an expected slowdown.
 
 on:
   push:
@@ -30,32 +32,38 @@ permissions:
   # A push's baseline comes from this workflow's earlier runs.
   actions: read
 
+# Pushes to main share one group, so main runs one run at a time and leaves GitHub's other Mac
+# machines to pull requests. A running run is never cancelled; a newer push replaces a run that
+# waits, and the next run measures the waiting commit's change too. A pull request's newer run
+# replaces its older one, and a run started by hand has a group of its own. A pull request run that
+# the commits job skips, such as one for another label, also gets a group of its own, so it cancels
+# nothing: the group repeats that job's condition.
+concurrency:
+  group: >-
+    bench-${{ github.event_name == 'push' && 'main' ||
+    github.event_name == 'pull_request' &&
+    contains(github.event.pull_request.labels.*.name, 'benchmark') &&
+    (github.event.action != 'labeled' || github.event.label.name == 'benchmark') &&
+    format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   BUN_VERSION: "1.3.14"
 
 jobs:
-  compare:
-    # A pull request runs the job while it has the benchmark label, from the moment the label is added.
+  commits:
+    name: choose the commits
+    # A pull request runs the benchmarks while it has the benchmark label, from the moment the label
+    # is added. Every other job needs this one, so they are skipped with it.
     if: >-
       github.event_name != 'pull_request' ||
       (contains(github.event.pull_request.labels.*.name, 'benchmark') &&
       (github.event.action != 'labeled' || github.event.label.name == 'benchmark'))
-    # Pushes to main share one group, so main runs one job at a time and leaves GitHub's other Mac
-    # machines to pull requests. A running job is never cancelled; a newer push replaces a job that
-    # waits, and the next job measures the waiting commit's change too. A pull request's newer run
-    # replaces its older one, and a run started by hand has a group of its own. The group is the
-    # job's, not the workflow's: a run whose job is skipped, such as one for another label, then
-    # cancels nothing.
-    concurrency:
-      group: bench-${{ github.event_name == 'push' && 'main' || github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
-      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-    # The Mac machine draws with a real GPU, shared with other machines. On the Linux machine the
-    # software GPU draws the larger scenes at under one frame per second and takes the processor
-    # from the engine's threads, so its CPU times vary far more between identical builds.
-    runs-on: macos-15
-    timeout-minutes: 90
-    env:
-      HUSKY: "0"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      baseline: ${{ steps.commits.outputs.baseline }}
+      new: ${{ steps.commits.outputs.new }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -63,7 +71,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
-
       - name: Choose the baseline and the new commit
         id: commits
         env:
@@ -103,35 +110,104 @@ jobs:
           echo "baseline=$baseline" >> "$GITHUB_OUTPUT"
           echo "new=$new" >> "$GITHUB_OUTPUT"
 
+  build:
+    # Each commit builds on a Linux machine of its own, with that commit's build script. The build's
+    # files are the same on every platform, as CI's build job relies on too, so the Mac shards only
+    # download them.
+    name: build (${{ matrix.build }})
+    needs: commits
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        build: [baseline, new]
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.commits.outputs[matrix.build] }}
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
+      # The job and the key match CI's build job, so a build here starts from main's cache of it.
       # The cache's own key leaves out the build profiles in the workspace's Cargo.toml, so a
       # profile change would keep restoring a cache built with the old profile.
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ hashFiles('Cargo.toml') }}
+          key: ${{ hashFiles('Cargo.toml') }}-shader-build
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
       - uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
+      - run: bun run build
+      # The engine's WebAssembly files, the shader compiler and the shader modules with the record
+      # of their inputs. An older commit may keep its shader modules in git, or lack the record.
+      - name: Pack the build
+        run: tar -czf "$RUNNER_TEMP/build.tgz" $(ls -d packages/*/dist packages/engine/src/generated target/shader-modules.json 2>/dev/null)
+      # A rerun of a failed shard downloads these files again, so they stay as long as GitHub lets
+      # a run's jobs run again.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-build-${{ matrix.build }}
+          path: ${{ runner.temp }}/build.tgz
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
 
-      # Each build gets a worktree of its own. The worktrees share this checkout's compiler output,
-      # which the Rust cache keeps, so the second build compiles only the engine's own crates.
-      - name: Build the baseline and the new commit
-        env:
-          BASELINE: ${{ steps.commits.outputs.baseline }}
-          NEW: ${{ steps.commits.outputs.new }}
+  shard:
+    # The Mac machine draws with a real GPU, shared with other machines. On the Linux machine the
+    # software GPU draws the larger scenes at under one frame per second and takes the processor
+    # from the engine's threads, so its CPU times vary far more between identical builds. Each shard
+    # runs every third page of the plan in both builds, and fails when its own pages fail. GitHub
+    # gives 5 Mac machines at once, which the merge queue's Safari and Firefox jobs share, so
+    # .dev/benchmarks.md says how the count was chosen. To change it, change the list.
+    name: benchmark (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
+    needs: [commits, build]
+    runs-on: macos-15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      HUSKY: "0"
+      BASELINE: ${{ needs.commits.outputs.baseline }}
+      NEW: ${{ needs.commits.outputs.new }}
+    steps:
+      # The full history, from which the comparison reads the trailers of the commits between the
+      # two builds.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bench-build-*
+          path: ${{ runner.temp }}/builds
+
+      # Each build gets a worktree of its own, with its own packages and the files its build made.
+      - name: Set up the baseline and the new build
         run: |
-          mkdir -p target
+          git fetch --quiet --no-tags origin "$BASELINE" "$NEW"
           for build in baseline new; do
-            commit="${BASELINE}"
-            if [ "$build" = new ]; then commit="${NEW}"; fi
+            commit="$BASELINE"
+            if [ "$build" = new ]; then commit="$NEW"; fi
             dir="$RUNNER_TEMP/$build"
             git worktree add --detach "$dir" "$commit"
-            ln -s "$GITHUB_WORKSPACE/target" "$dir/target"
-            (cd "$dir" && bun install --frozen-lockfile && bun run build)
+            (cd "$dir" && bun install --frozen-lockfile && tar -xzf "$RUNNER_TEMP/builds/bench-build-$build/build.tgz")
           done
 
       # Rounds and run length: see "The benchmark job in CI" in .dev/benchmarks.md. The command builds
@@ -139,16 +215,62 @@ jobs:
       - name: Run both builds' benchmark pages in turns, and compare them
         run: |
           rm -rf target/bench
-          bun run bench:run --compare "$RUNNER_TEMP/baseline,$RUNNER_TEMP/new" --runs 10 --seconds 5
+          bun run bench:run --compare "$RUNNER_TEMP/baseline,$RUNNER_TEMP/new" --runs 10 --seconds 5 --shard ${{ matrix.shard }}/${{ strategy.job-total }}
+
+      - name: Show the shard's summary on the job's page
+        if: always()
+        run: cat target/bench/*-compare/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      # A rerun of the shard replaces its record.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-shard-${{ matrix.shard }}
+          path: target/bench/
+          if-no-files-found: ignore
+          overwrite: true
+          retention-days: 30
+
+  report:
+    # Merges the shards' records into the comparison of every page, with the verdict and the
+    # Bench-Expected trailers. It runs when a shard fails too, and fails when a shard's record is
+    # missing, so a rerun of the failed shards runs it again.
+    name: benchmark report
+    needs: [commits, shard]
+    if: ${{ !cancelled() && (needs.shard.result == 'success' || needs.shard.result == 'failure') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bench-shard-*
+          path: target/bench/shards
+
+      - name: Merge the shards and judge the new build
+        run: bun run bench:run --merge target/bench/shards
 
       - name: Show the summary on the job's page
         if: always()
-        run: cat target/bench/*-compare/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+        run: |
+          cat target/bench/*-compare/summary.md >> "$GITHUB_STEP_SUMMARY" ||
+            echo "No report: the merge step's log says which shard records are missing." >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: benchmarks-${{ steps.commits.outputs.new }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: benchmarks-${{ needs.commits.outputs.new }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: target/bench/
           if-no-files-found: ignore
           retention-days: 90

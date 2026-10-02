@@ -6,6 +6,7 @@
 // The comparison judges CPU time only: the busiest thread's time per frame, and the engine's own
 // work on its busiest thread. Machines without a real GPU, or with a shared one, time the GPU
 // poorly, so GPU time is reported and never judged.
+import type { Shard } from '../../tests/lib/runs.ts';
 import { findAckValues, isBareAck } from '../../tools/hooks/commit-ack.ts';
 import { type BenchResult, median, ownWorkMs, summarizeRuns } from './report';
 
@@ -524,4 +525,146 @@ export function compareReport(
 	if (problems.length > 0)
 		lines.push('', 'Trailers that do not count:', ...problems.map((problem) => `- ${problem}`));
 	return lines;
+}
+
+// A comparison's record: what its runs measured, from which a report can be made without a
+// browser. CI splits a comparison's pages between machines, each running both builds of its
+// share, and then merges the shards' records into one report and one verdict.
+
+/** One page of a comparison's plan: a scene on a page kind. */
+export interface PlanPage {
+	scene: string;
+	kind: string;
+}
+
+/** Everything a comparison measured, for the whole plan or for one shard of it. */
+export interface ComparisonRecord {
+	/** The shard of the plan that the runs cover, or null for the whole plan. */
+	shard: Shard | null;
+	/** Every page of the plan, in the order the report lists them. */
+	plan: PlanPage[];
+	/** The pages of the plan that this record covers, whether their runs ran or not. */
+	pages: PlanPage[];
+	/** Each build's commit, such as its short hash and subject. */
+	commits: Record<Build, string>;
+	/** The messages of the commits that the new build adds to the baseline, where trailers are. */
+	messages: string[];
+	/** The browser, the machine and the pages, in a few words. */
+	browser: string;
+	runs: number;
+	warmupSeconds: number;
+	measureSeconds: number;
+	results: BuildRun[];
+}
+
+/**
+ * The pages of one shard of a plan: every count-th page, from the shard's place in the plan. The
+ * shards' shares then differ by one page at most.
+ */
+export function shardPages<T extends PlanPage>(plan: readonly T[], { index, count }: Shard): T[] {
+	return plan.filter((_, k) => k % count === index - 1);
+}
+
+/** The fields that every record of a merge must share, and what an error calls each. */
+const SHARED_FIELDS = {
+	plan: 'plan of pages',
+	commits: 'commits',
+	runs: 'number of rounds',
+	warmupSeconds: 'warm-up',
+	measureSeconds: 'measured time',
+} as const satisfies Partial<Record<keyof ComparisonRecord, string>>;
+
+/**
+ * Merges the records of a plan's shards into the record of the whole plan. Each page of the plan
+ * must be in exactly one record, and the records must agree on the plan, the commits and the
+ * protocol. The runs keep their order within each page, and the pages take the plan's order.
+ */
+export function mergeRecords(records: readonly ComparisonRecord[]): ComparisonRecord {
+	const [first] = records;
+	if (!first) throw new Error('there are no shard records to merge');
+	for (const field of Object.keys(SHARED_FIELDS) as (keyof typeof SHARED_FIELDS)[])
+		if (records.some((r) => JSON.stringify(r[field]) !== JSON.stringify(first[field])))
+			throw new Error(`the shard records differ in their ${SHARED_FIELDS[field]}`);
+	const order = new Map(first.plan.map((page, k) => [pageName(page), k]));
+	const held = new Set<string>();
+	for (const record of records)
+		for (const page of record.pages) {
+			const name = pageName(page);
+			if (!order.has(name)) throw new Error(`${name} is not in the plan`);
+			if (held.has(name)) throw new Error(`two shard records hold ${name}`);
+			held.add(name);
+		}
+	const missing = first.plan.filter((page) => !held.has(pageName(page)));
+	if (missing.length > 0)
+		throw new Error(
+			`no shard record holds ${missing.map(pageName).join(', ')}: rerun the shards that failed`,
+		);
+	const place = (run: BuildRun) => order.get(pageName(run)) ?? 0;
+	const browsers = [...new Set(records.map((r) => r.browser))].join('; ');
+	return {
+		...first,
+		shard: null,
+		pages: first.plan,
+		browser:
+			records.length > 1
+				? `${browsers}, in ${records.length} shards of the pages, each on a machine of its own`
+				: browsers,
+		results: records.flatMap((r) => r.results).sort((a, b) => place(a) - place(b)),
+	};
+}
+
+/** A judged comparison: the report's lines, the verdict, and the summary that goes to a file. */
+export interface JudgedComparison {
+	report: string[];
+	verdict: Verdict;
+	summary: object;
+}
+
+/**
+ * Judges a record: reads its trailers, selects its runs, compares the builds, and writes the
+ * report. The summary holds each build's medians of each page, the runs dropped, the comparisons
+ * and the verdict.
+ */
+export function judgeRecord(record: ComparisonRecord, known: KnownNames): JudgedComparison {
+	const trailers = readExpectedChanges(record.messages, known);
+	const selection = selectRuns(record.results);
+	const comparison = compareBuilds(selection, trailers.changes);
+	const verdict = judge(comparison);
+	const report = compareReport(comparison, verdict, {
+		baseline: record.commits.baseline,
+		new: record.commits.new,
+		runs: record.runs,
+		warmupSeconds: record.warmupSeconds,
+		measureSeconds: record.measureSeconds,
+		browser: record.browser,
+		selection,
+		trailers,
+	});
+	const summaries = BUILDS.flatMap((build) =>
+		record.pages.flatMap(({ scene, kind }) => {
+			const kept = selection.kept.filter(
+				(r) => r.build === build && r.scene === scene && r.kind === kind,
+			);
+			return kept.length > 0
+				? [{ build, scene, kind, summary: summarizeRuns(kept.map((r) => r.result)) }]
+				: [];
+		}),
+	);
+	const dropped = selection.dropped.map(({ run: { build, scene, kind, round }, reason }) => ({
+		build,
+		scene,
+		kind,
+		round,
+		reason,
+	}));
+	const summary = {
+		commits: record.commits,
+		shard: record.shard,
+		refreshHz: selection.refreshHz,
+		dropped,
+		summaries,
+		...comparison,
+		verdict,
+	};
+	return { report, verdict, summary };
 }
