@@ -11,6 +11,7 @@
 // reference, so it saves its image as a candidate. Look at it with bun run images:review, and make it
 // the reference with bun run images:review --accept. Then do the same with CI=1 for the SwiftShader
 // reference: on the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
+// bun run check fails until the test has both references.
 import { BENCH_SCENES, type FeatureScene } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
@@ -377,6 +378,14 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		reference: 'debug',
 		tolerance: FAR_OUT_TOLERANCE,
 	},
+	// Each debug view of a scene with lit, unlit, see-through and instanced objects, on every tier.
+	...(['normals', 'depth', 'overdraw', 'wireframe'] as const).map(
+		(view): ImageTest => ({
+			name: `debug-view-${view}`,
+			sketch: `tests/pages/sketches/debug-view-sketch.ts?view=${view}`,
+			hold: 0,
+		}),
+	),
 	// Objects, a parent and its child, and instance batches on three layers, some of them moved to
 	// other layers after they were created, and a camera that draws two of the layers. A child keeps
 	// its own layers, so the child of a parent that the camera leaves out still draws.

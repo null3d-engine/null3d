@@ -8,7 +8,10 @@
 // never trail it. Each reads the object's transform through the core, as getWorldPosition does.
 //
 // The arrays grow by doubling, up to a frame's limit, so steady frames make no new arrays.
+//
+// Debug views switch the core's shading of every mesh, which development builds alone draw.
 
+import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import { linearToSrgb } from '../math/color';
 import { hexValue, invalidColor } from '../math/hex';
@@ -22,7 +25,7 @@ import {
 	type OrthographicCamera,
 	type PerspectiveCamera,
 } from '../scene/scene';
-import type { DebugGridOptions, DebugLightOptions } from './debug';
+import type { DebugGridOptions, DebugLightOptions, DebugView } from './debug';
 import { type DebugHost, SketchDebug } from './sketch-debug';
 
 /** The points that the arrays first make room for: 2,048 lines. */
@@ -89,6 +92,27 @@ export function packedColor(color: ColorInput, call: string): number {
 	throw invalidColor(color, call);
 }
 
+/** The core's code of a debug view, or E1213 for a name that is not one. */
+function viewCode(view: DebugView): number {
+	switch (view) {
+		case 'lit':
+			return C.DEBUG_VIEW_LIT;
+		case 'normals':
+			return C.DEBUG_VIEW_NORMALS;
+		case 'depth':
+			return C.DEBUG_VIEW_DEPTH;
+		case 'overdraw':
+			return C.DEBUG_VIEW_OVERDRAW;
+		case 'wireframe':
+			return C.DEBUG_VIEW_WIREFRAME;
+		default:
+			throw new EngineError(
+				'E1213',
+				`debug.view() got ${JSON.stringify(view)}, which is not 'lit', 'normals', 'depth', 'wireframe' or 'overdraw'.`,
+			);
+	}
+}
+
 export class DebugDraw extends SketchDebug {
 	private positions: Float64Array<ArrayBufferLike> = new Float64Array(0);
 	private colors: Uint32Array<ArrayBufferLike> = new Uint32Array(0);
@@ -124,6 +148,10 @@ export class DebugDraw extends SketchDebug {
 		host: DebugHost,
 	) {
 		super(host);
+	}
+
+	view(view: DebugView): void {
+		this.core.glue.setDebugView(viewCode(view));
 	}
 
 	line(from: Vec3Like, to: Vec3Like, color?: ColorInput): void {

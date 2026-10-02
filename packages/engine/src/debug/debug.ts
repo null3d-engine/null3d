@@ -39,6 +39,14 @@ export interface DebugLightOptions {
 }
 
 /**
+ * A debug view of `debug.view`: the materials' own shading with `'lit'`, or one debug shading in
+ * place of every material.
+ *
+ * @category api/debug
+ */
+export type DebugView = 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw';
+
+/**
  * Debug drawing and frame figures. The drawing calls draw lines that show where things are, such
  * as bounds, directions and axes. Each draws for one frame only, so call it in `onUpdate` in every
  * frame that needs the drawing. Lines are one pixel wide, and objects in front of them hide them.
@@ -65,6 +73,17 @@ export interface Debug {
 	 * so the figures are 0 until about half a second after that call.
 	 */
 	frameStats(): FrameStats;
+	/**
+	 * Draws the whole scene with one debug shading in place of every material, from the next frame
+	 * on, until the next call. `'lit'` draws the materials again. `'normals'` shows each surface's
+	 * world-space normal as a color, and `'depth'` its distance from the camera as a gray, white at
+	 * the near plane and black at the far plane. `'overdraw'` adds light for each surface that
+	 * covers a pixel, so bright pixels cost the most shading. `'wireframe'` draws each triangle's
+	 * edges in its material's color. Debug views clear to black and use no tone mapping. Only
+	 * development builds draw them: in a release build the call does nothing. A view's first frame
+	 * builds its pipelines, so objects can be missing for a few frames after a change.
+	 */
+	view(view: DebugView): void;
 	/** Draws a line from one point to another. The default color is yellow. */
 	line(from: Vec3Like, to: Vec3Like, color?: ColorInput): void;
 	/**
