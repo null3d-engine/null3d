@@ -94,18 +94,26 @@ A sketch test draws with the engine's default options. When the page passes opti
 bunx @null3d/cli shot --page '/?view=hero-closeup' --time 1.5 --size 800x450 --gpu webgl2 --out compare/hero-closeup.webgl2.png
 ```
 
-For the comparison, match the original's settings: the same tone mapping and a pixel ratio of 1. `post.set({ toneMapping: 'none' })` matches an original with `NoToneMapping`. `createEngine({ antialias: 'none' })` matches an original without anti-aliasing.
+Match the original's settings: the same tone mapping and a pixel ratio of 1. `post.set({ toneMapping: 'none' })` matches an original with `NoToneMapping`. `createEngine({ antialias: 'none' })` matches an original without anti-aliasing.
 
 ## 4. Tolerances
 
 | Scene content | Suggested tolerance | Why |
 | --- | --- | --- |
-| Geometry, unlit and standard materials, no post effects | At most 0.5% of pixels differ by more than the 0.1 threshold | Rasterization and shadow filtering differ slightly between engines |
+| Geometry, unlit and standard materials, lights, fog, tone mapping, no shadows or post effects | Under 0.1% of pixels differ by more than the 0.1 threshold | null3D's own parity scenes stay under it on every GPU tier |
+| The same with directional shadows | Under 0.5% of pixels | Shadow edges differ: three.js's `PCFShadowMap` takes five rotated taps of one map, and null3D one hardware-filtered tap of a cascade |
 | Lambert, Phong or Toon materials ported by approximation | Review the diff image with the user | Differences are expected by design |
 | Bloom, ambient occlusion, other effects | Review with the user | Effects are implemented differently |
 | Text, HTML labels | Compare in the browser, not in images | Labels are HTML on the page |
 
 three.js's own screenshot tests allow 0.1% of pixels over the threshold, which is a good target for simple views. Record every accepted difference in the report.
+
+null3D checks its own parity with three.js r186 on scenes of each feature, on core WebGPU, compatibility mode and WebGL2. These differences are known, and a view that shows them may need its own tolerance or a matched setting:
+
+- Shadows: edge pixels differ, as the table says. On SwiftShader the shadow scene differed in 0.18% to 0.22% of its pixels.
+- Tone mapping with anti-aliasing: null3D averages an edge's samples before it tone maps them, and `WebGLRenderer` after. Where a very bright surface meets a dark one, the edge pixels differ. Compare such views with anti-aliasing off on both sides, or review those edges.
+- The background color: null3D tone maps and exposes it with the scene. `WebGLRenderer` clears to `scene.background` as it is, with no tone mapping or exposure. With an exposure other than 1, or a curve that changes the background's color, the two backgrounds differ.
+- Hemisphere lights: null3D 0.1 stores them but does not draw them yet. A view lit by a `HemisphereLight` is darker in the port.
 
 ## 5. Compare performance
 
