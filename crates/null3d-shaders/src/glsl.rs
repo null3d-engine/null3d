@@ -5,7 +5,10 @@
 use naga::back::glsl::{self as backend, Options, PipelineOptions, Version, WriterFlags};
 use naga::proc::BoundsCheckPolicies;
 use naga::valid::ModuleInfo;
-use naga::{Binding as IoBinding, BuiltIn, EntryPoint, Handle, Module, ShaderStage, TypeInner};
+use naga::{
+    ArraySize, Binding as IoBinding, BuiltIn, EntryPoint, Handle, Module, ShaderStage, Type,
+    TypeInner, VectorSize,
+};
 
 use crate::{Binding, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Pipeline};
 
@@ -106,6 +109,13 @@ fn write_stage(
         .uniforms
         .iter()
         .map(|(&handle, name)| {
+            let global = &module.global_variables[handle];
+            let block = global.name.as_deref().unwrap_or(name);
+            metal_layout(module, global.ty, block).map_err(|e| {
+                format!(
+                    "the uniform block `{block}` of pipeline `{pipeline}` lays out differently in WebGL2 on Metal, as Safari runs it: {e}. Safari then converts the block on the CPU at each draw, after it waits for the GPU. Fill each vec3f with a scalar into a vec4f."
+                )
+            })?;
             Ok(GlslUniformBlock {
                 name: name.clone(),
                 binding: binding(handle)?,
@@ -130,6 +140,76 @@ fn write_stage(
         source: crate::finish_source(&source),
         uniform_blocks,
         textures,
+    })
+}
+
+/// The size and alignment in bytes of a uniform type in ANGLE's Metal layout, which WebGL2 has in
+/// Safari and in Chrome on macOS, or where that layout parts from WGSL's, which the engine writes.
+/// The two agree on scalars, `vec2f`, `vec4f`, matrices, arrays and structs of them, but ANGLE gives
+/// a `vec3f` 16 bytes where WGSL lets a scalar follow at byte 12. `path` names the type in the
+/// error.
+fn metal_layout(module: &Module, ty: Handle<Type>, path: &str) -> Result<(u32, u32), String> {
+    let vector = |size: VectorSize, width: u8| -> (u32, u32) {
+        let width = u32::from(width);
+        let bytes = if size == VectorSize::Bi {
+            2 * width
+        } else {
+            4 * width
+        };
+        (bytes, bytes)
+    };
+    Ok(match &module.types[ty].inner {
+        TypeInner::Scalar(scalar) | TypeInner::Atomic(scalar) => {
+            (u32::from(scalar.width), u32::from(scalar.width))
+        }
+        &TypeInner::Vector { size, scalar } => vector(size, scalar.width),
+        &TypeInner::Matrix {
+            columns,
+            rows,
+            scalar,
+        } => {
+            let (column, align) = vector(rows, scalar.width);
+            (columns as u32 * column, align)
+        }
+        &TypeInner::Array { base, size, stride } => {
+            let (bytes, align) = metal_layout(module, base, &format!("{path}[]"))?;
+            let metal_stride = bytes.next_multiple_of(align);
+            if metal_stride != stride {
+                return Err(format!(
+                    "`{path}` steps {metal_stride} bytes from element to element there, and {stride} in WGSL"
+                ));
+            }
+            let count = match size {
+                ArraySize::Constant(count) => count.get(),
+                _ => 1,
+            };
+            (count * stride, align)
+        }
+        TypeInner::Struct { members, span } => {
+            let (mut end, mut align) = (0u32, 1u32);
+            for member in members {
+                let name = member.name.as_deref().unwrap_or("?");
+                let field = format!("{path}.{name}");
+                let (bytes, member_align) = metal_layout(module, member.ty, &field)?;
+                let offset = end.next_multiple_of(member_align);
+                if offset != member.offset {
+                    return Err(format!(
+                        "`{field}` starts at byte {offset} there, and at byte {} in WGSL",
+                        member.offset
+                    ));
+                }
+                end = offset + bytes;
+                align = align.max(member_align);
+            }
+            let size = end.next_multiple_of(align);
+            if size != *span {
+                return Err(format!(
+                    "`{path}` takes {size} bytes there, and {span} in WGSL"
+                ));
+            }
+            (size, align)
+        }
+        _ => return Err(format!("`{path}` is no type that a uniform block holds")),
     })
 }
 
@@ -215,6 +295,30 @@ mod tests {
         assert!(!kept.contains("-gl_Position.y"));
         assert!(!kept.contains("* 2.0"));
         assert!(keep_gl_row_order("void main() {}\n").is_err());
+    }
+
+    /// The Metal layout of the type of the uniform `u` in `source`.
+    fn uniform_layout(source: &str) -> Result<(u32, u32), String> {
+        let module = naga::front::wgsl::parse_str(source).unwrap();
+        let (_, global) = module
+            .global_variables
+            .iter()
+            .find(|(_, g)| g.name.as_deref() == Some("u"))
+            .unwrap();
+        metal_layout(&module, global.ty, "U")
+    }
+
+    #[test]
+    fn uniform_blocks_must_lay_out_as_webgl2_on_metal_does() {
+        let fits = "struct Inner { a: vec4f, b: f32, c: u32 }\nstruct U { m: mat4x4f, inner: Inner, list: array<vec4f, 4>, d: vec2f, e: f32 }\n@group(0) @binding(0) var<uniform> u: U;\n";
+        assert_eq!(uniform_layout(fits), Ok((176, 16)));
+        let vec3_then_scalar =
+            "struct U { color: vec3f, kind: u32 }\n@group(0) @binding(0) var<uniform> u: U;\n";
+        let error = uniform_layout(vec3_then_scalar).unwrap_err();
+        assert!(
+            error.contains("`U.kind` starts at byte 16 there"),
+            "{error}"
+        );
     }
 
     #[test]

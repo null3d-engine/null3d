@@ -56,10 +56,16 @@ export interface EnginePart {
  * before the first frame counts it. The stats overlay loads on the page when the sketch first asks
  * for it, and the frame figures that it and `debug.frameStats` read load with it, or in the thread
  * that runs the sketch at the first call of `debug.frameStats`. No download counts them either.
+ * The WebGL call timing of benchmark pages loads in the thread that draws, only with ?gl-timing.
  */
 export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page.js', module: 'page/engine.ts' },
 	{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
+	{
+		name: 'page-call-timing.js',
+		module: 'gpu/webgl2/call-timing.ts',
+		loadedBy: 'page-renderer.js',
+	},
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{
@@ -71,6 +77,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-frame-stats.js', module: 'debug/stats.ts', loadedBy: 'page-stats-overlay.js' },
 	{ name: 'sketch-worker.js', module: 'workers/sketch-worker.ts' },
 	{ name: 'sketch-worker-renderer.js', module: 'render/draw.ts', loadedBy: 'sketch-worker.js' },
+	{
+		name: 'sketch-worker-call-timing.js',
+		module: 'gpu/webgl2/call-timing.ts',
+		loadedBy: 'sketch-worker-renderer.js',
+	},
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
 	{
 		name: 'sketch-worker-preset-check.js',
@@ -79,6 +90,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	},
 	{ name: 'sketch-worker-frame-stats.js', module: 'debug/stats.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'render-worker.js', module: 'workers/render-worker.ts' },
+	{
+		name: 'render-worker-call-timing.js',
+		module: 'gpu/webgl2/call-timing.ts',
+		loadedBy: 'render-worker.js',
+	},
 	{ name: 'job-worker.js', module: 'workers/job-worker.ts' },
 	{ name: 'probe-worker.js', module: 'workers/probe-worker.ts' },
 ];

@@ -13,19 +13,18 @@ const LINEAR: u32 = 1u;
 const EXP2: u32 = 2u;
 
 /// The scene's fog, as the engine writes it into each frame's values for the camera that draws.
+/// Each three-component value shares a `vec4f` with a scalar, so the frame's values lay out the same
+/// on every GPU path.
 struct Fog {
-    /// The linear fog color.
-    color: vec3f,
-    /// The kind of fog: `NONE`, `LINEAR` or `EXP2`.
-    kind: u32,
-    /// The camera's unit view direction, which fog depth follows.
-    forward: vec3f,
-    /// The density of exponential squared fog.
-    density: f32,
-    /// Where linear fog starts.
-    near: f32,
+    /// The linear fog color in `xyz`, and the density of exponential squared fog in `w`.
+    color_density: vec4f,
+    /// The camera's unit view direction in `xyz`, which fog depth follows, and where linear fog
+    /// starts in `w`.
+    forward_near: vec4f,
     /// Where linear fog hides everything.
     far: f32,
+    /// The kind of fog: `NONE`, `LINEAR` or `EXP2`.
+    kind: u32,
 }
 
 /// The fog depth of a point: its distance from the camera along the camera's unit `forward`
@@ -53,7 +52,7 @@ fn apply_fog(c: vec3f, fog_color: vec3f, factor: f32) -> vec3f {
 /// The factor of the scene's `fog` at a point, by its position relative to the camera: 0 where
 /// the scene has no fog.
 fn fog_factor(fog: Fog, relative_position: vec3f) -> f32 {
-    let depth = fog_depth(relative_position, fog.forward);
-    let linear = select(0.0, fog_linear(depth, fog.near, fog.far), fog.kind == LINEAR);
-    return select(linear, fog_exp2(depth, fog.density), fog.kind == EXP2);
+    let depth = fog_depth(relative_position, fog.forward_near.xyz);
+    let linear = select(0.0, fog_linear(depth, fog.forward_near.w, fog.far), fog.kind == LINEAR);
+    return select(linear, fog_exp2(depth, fog.color_density.w), fog.kind == EXP2);
 }

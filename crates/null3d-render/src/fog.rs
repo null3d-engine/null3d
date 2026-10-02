@@ -66,21 +66,23 @@ impl Fog {
 }
 
 /// The fog's part of the frame's uniform block, laid out as the WGSL struct `Fog` in `null3d::fog`
-/// reads it.
+/// reads it: each three-component value fills a vector of four with a scalar after it, which every
+/// GPU path lays out alike.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct FogUniform {
     /// The linear fog color.
     pub color: [f32; 3],
-    /// The kind of fog (`kind::*`).
-    pub kind: u32,
-    /// The camera's unit view direction, in world space.
-    pub forward: [f32; 3],
     /// The density of exponential squared fog.
     pub density: f32,
-    /// Where linear fog starts, and where it hides everything.
+    /// The camera's unit view direction, in world space.
+    pub forward: [f32; 3],
+    /// Where linear fog starts.
     pub near: f32,
+    /// Where linear fog hides everything.
     pub far: f32,
+    /// The kind of fog (`kind::*`).
+    pub kind: u32,
     /// Fills the block to a multiple of 16 bytes, as WGSL lays out a struct in a uniform buffer.
     pub spare: [f32; 2],
 }
