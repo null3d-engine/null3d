@@ -213,18 +213,20 @@ const sun = scene.createDirectionalLight({ direction: [-1, -2, -1], color: '#fff
   castShadows: true, shadow: { cascades: 3, mapSize: 2048, distance: 200, bias: 0.5, normalBias: 1 } });
 scene.createAmbientLight({ color: '#ffffff', intensity: 0.4 });
 scene.createPointLight({ position, color, intensity, range: 10, decay: 2 });   // range is required
-scene.createSpotLight({ position, target, angle, penumbra, range: 20, decay, color, intensity });  // or direction
+scene.createSpotLight({ position, target, angle, penumbra, range: 20, decay, color, intensity,
+  castShadows: true, shadow: { bias: 0.5, normalBias: 1 } });  // or direction
 scene.createHemisphereLight({ skyColor, groundColor, intensity });
 // every light also takes the node options: name, position, rotation, parent, dynamic, layers
-// castShadows: on directional, point and spot lights; only directional shadows draw yet
+// castShadows: directional and spot lights cast shadows; point lights store it, and cast later in 0.1
 
 light.setIntensity(v); light.setColor(c);   // every light; setColor allocates, so animate the intensity
 light.setDirection(x, y, z);                 // directional and spot lights: the way the light travels
 light.setRange(r); light.setDecay(d);        // point and spot lights
 light.setAngle(a); light.setPenumbra(p);     // spot lights; angle in radians, up to π/2
 light.setGroundColor(c);                     // hemisphere lights; setColor sets the sky
-light.setCastShadows(true);                  // directional lights cast; point and spot lights store it
+light.setCastShadows(true);                  // directional and spot lights cast; point lights store it
 sun.setShadow({ cascades: 2, distance: 80 }); // directional lights; changes only the settings given
+spot.setShadow({ bias: 1 });                  // spot lights take bias and normalBias alone
 light.setVisible(false); light.destroy();    // lights are objects: section 4
 ```
 
@@ -234,6 +236,7 @@ light.setVisible(false); light.destroy();    // lights are objects: section 4
 - Units follow three.js r155 and later: point and spot intensity in candela. The same colors and intensities give the same light as in three.js.
 - Point and spot lights light the surfaces their ranges reach, through clustered lighting, so keep each range as short as the look allows. Surfaces show the first visible directional light, every ambient light, and the point and spot lights. Later in 0.1, hemisphere lights light surfaces.
 - Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`. Its cascades fit the camera's view and keep still edges as it turns. The nearest cascade draws every frame, and far ones every few frames (`farCascadeInterval`). `shadowFilter` softens edges over 3 or 5 texels. Both follow the preset. Defaults: 3 cascades, 2,048 texels, 200 m, bias 0.5 and normal bias 1, both in texels of each cascade. Unlit materials show no shadows. Both GPU paths draw them. Instance batches do not cast or receive them yet (`concepts/shadows`).
+- Spot light shadows: each spot light with `castShadows` takes a tile of the shared shadow atlas. The preset's `shadowTiles` caps the tiles, and the lights that look largest on screen get them first. `shadowTileSize` sets each tile's texels; both are `createEngine` options. A tile draws again only when its light or a caster within the light's range moves, so still scenes cost nothing per frame. The biases count texels of the tile, and `shadowFilter` softens its edges too (`concepts/shadows`).
 
 ## 8. Geometry (`api/geometry`)
 

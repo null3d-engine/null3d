@@ -6,6 +6,9 @@
 #import null3d::lighting::{direct_light}
 #endif
 #import null3d::mesh::{frame}
+#ifdef RECEIVE_SHADOWS
+#import null3d::shadows::{light_shadow}
+#endif
 
 // The point and spot lights of clustered forward shading. Each frame the engine cuts the camera's
 // view into clusters: tiles across the view, in slices along it that grow with distance. For each
@@ -35,7 +38,9 @@ struct PointLight {
     /// The direction a spot light's light travels, and the cosine of the angle of its cone's
     /// edge.
     direction_cone: vec4f,
-    /// The cosine of the angle where a spot light's penumbra starts. The rest is for the engine.
+    /// The cosine of the angle where a spot light's penumbra starts, then the light's kind and row,
+    /// which are for the engine, then its first tile in the shadow atlas plus one, or 0 when it
+    /// has none.
     penumbra: vec4f,
 }
 
@@ -123,12 +128,19 @@ fn clustered_light(
             light.penumbra.x,
             dot(-to_light, light.direction_cone.xyz),
         );
+        var strength = fade * cone;
+#ifdef RECEIVE_SHADOWS
+        let tile = light.penumbra.w;
+        if tile > 0.5 && strength > 0.0 {
+            strength *= light_shadow(u32(tile) - 1u, relative, normal, to_light, gap);
+        }
+#endif
         let reflected = direct_light(
             m,
             normal,
             to_view,
             to_light,
-            light.color_decay.rgb * (fade * cone),
+            light.color_decay.rgb * strength,
             compensation,
         );
         sum.diffuse += reflected.diffuse;

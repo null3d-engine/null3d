@@ -20,6 +20,14 @@ export interface WorkerProbe {
 	error?: string;
 }
 
+/**
+ * What the probe worker posts: `loaded` as soon as its script runs, then its answer. The page waits
+ * for the script without a time limit, so a slow download never reads as a worker that cannot draw.
+ */
+export type ProbeMessage = 'loaded' | WorkerProbe;
+
+const post = (message: ProbeMessage) => postMessage(message);
+
 async function probe(): Promise<WorkerProbe> {
 	const result: WorkerProbe = {
 		requestAnimationFrame:
@@ -53,4 +61,5 @@ async function probe(): Promise<WorkerProbe> {
 	return result;
 }
 
-probe().then((result) => postMessage(result));
+post('loaded');
+probe().then(post);
