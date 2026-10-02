@@ -1,6 +1,6 @@
 # D-13: Shader variants
 
-Status: proposed. Date: 2026-09-30. Task: M1-A6, with M1-L3 for the compile times. Tests: T-12, T-26.
+Status: proposed on 2026-09-30; decided by its rule on 2026-10-03, when T-26's device times met it. Date: 2026-09-30. Task: M1-A6, with M1-L3 for the compile times. Tests: T-12, T-26.
 
 ## Question
 
@@ -8,7 +8,7 @@ How many shader variants does the engine build, and how do they reach a page? A 
 
 ## Rule
 
-Stay within the 60 KB budget for the engine's JavaScript in each thread mode, with M1's permutation bits. Keep S4's warm-up on the S24+ within a target that T-26's data sets.
+Stay within the 60 KB budget for the engine's JavaScript in each thread mode, with M1's permutation bits. Keep S4's warm-up on the S24+ within a target that T-26's data sets. T-26 set it at 250 ms of pipeline wait with fresh shaders, about twice the time measured.
 
 ## Data
 
@@ -94,13 +94,30 @@ The warm-up test page builds 10 pipelines on WebGL2, and 11 on WebGPU, where the
 | Safari 26.6.2 | 354 ms | 215 ms | 0: the first draw waits for each program |
 | Firefox 156 | 848 ms | 0: no extension, so the first draw waits | 0 |
 
-The S24+ and the iPad rows come from the same checks plan, which records `warmUpMs` on every device. T-26's target comes from M1-L3's runs of S4 there.
+### Device warm-up times (T-26)
+
+The device runner's `warm-up-time` plan loads each benchmark scene and each demo four times on each GPU path, at the preset that the engine chooses. Two loads use fresh shaders: `?shaders=fresh` gives each shader's text a new comment, so the browser compiles every program again, as on a first visit. Two loads use the shaders as they ship, and the second of them reuses the first's compiles, as a repeat visit does. [Device sessions](../devices.md#the-warm-up-time-plan) describes the plan.
+
+The pipeline wait is the warm-up, `load.warmUpMs`, plus the first draw, `load.firstDrawMs`. It is the time that pipelines hold up the first frame on every browser, with or without background compiles. Shown is the time from `createEngine` until the first frame was on screen. Each figure is the median of two loads. The scenes built 2 to 4 pipelines each.
+
+| Device and path | Pipeline wait, fresh | Pipeline wait, repeat visit | S4, fresh / repeat | Shown |
+| --- | --- | --- | --- | --- |
+| iPad, Safari 26.6, WebGPU | 21 to 31 ms | 21 to 32 ms | 31 / 32 ms | 1.0 to 1.9 s |
+| iPad, Safari 26.6, WebGL2, background compiles | 35 to 53 ms, two scenes more | 35 to 61 ms | 412 / 61 ms | 1.0 to 2.2 s |
+| S24+, Chrome 154, WebGL2, no background compiles | 45 to 73 ms, S4 more | 29 to 42 ms, S4 more | 115 / 88 ms | 0.23 to 0.43 s |
+
+- On the iPad's WebGL2 path, two scenes took longer with fresh shaders: S4 412 ms and the layers demo 170 ms. On a repeat visit they took 61 and 35 ms.
+- On the iPad's WebGPU path, fresh and repeat loads took the same time. Safari turns WGSL into Metal's shading language, which may drop the comment. Metal may then reuse its own compiled code. So the WebGPU figures may be repeat-visit times.
+- On the iPad, the preset check takes most of the time until the first frame shows. It takes about 1 s for each preset that it measures. Loads that lowered the preset once took about 1.9 to 2.2 s. The S24+ starts at Low, which has no lighter preset, so it runs no check. Without WebGPU, the S24+ skipped the 60 WebGPU loads.
+- No scene came near the 15 slow seconds of the Godot port that T-26 was written for. The longest pipeline wait was S4's 412 ms on the iPad's WebGL2 path, with fresh shaders.
+
+How the data was produced: on 2026-10-02, `bun tests/real-browsers.ts --plan warm-up-time --lan ipad-safari`, run 20261002-183327-warm-up-time, 120 of 120 pages passed. Then `--plan warm-up-time --allow-no-webgpu --android chrome`, run 20261002-183848-warm-up-time, 60 passed and 60 skipped.
 
 ## Decision
 
 (b3): the shaders of each GPU path load as files of their own. There is one file for each value of the bits that a device fixes when the engine starts, and a page loads exactly one. The device fixes the draw index (WebGL2 with multi-draw or without) and TONE_MAP (the 8-bit output path or HDR). Each file holds every template's variants for every combination of the material bits. The thread that draws starts the download as soon as it knows its GPU path and its fixed bits. The first frame waits for its pipelines anyway.
 
-(b3) gives the smallest page on both paths at every bit count, and the least JavaScript to parse. At five bits, a WebGL2 page is 52.0 KB and parses 414 KB of shader text. With every variant in the file that draws, it is 57.6 KB and parses 1,644 KB. (b3) keeps 8 KB of the budget with M1's five bits, and each more material bit costs about 1 KB. (c) saves 0.6 KB more on a WebGPU page and nothing on WebGL2, but each template needs a second way to write it. So (c) waits until WebGPU warm-up time asks for fewer shader modules.
+(b3) gives the smallest page on both paths at every bit count, and the least JavaScript to parse. At five bits, a WebGL2 page is 52.0 KB and parses 414 KB of shader text. With every variant in the file that draws, it is 57.6 KB and parses 1,644 KB. (b3) keeps 8 KB of the budget with M1's five bits, and each more material bit costs about 1 KB. (c) saves 0.6 KB more on a WebGPU page and nothing on WebGL2, but each template needs a second way to write it. So (c) waits until WebGPU warm-up time asks for fewer shader modules. T-26 gives no such reason: on the iPad, no scene's WebGPU pipelines took more than 32 ms.
 
 How many: each file holds 2^m variants of a template with m material bits: 16 for the standard material with M1's four material bits. A scene builds only the variants that its materials use.
 
@@ -110,5 +127,6 @@ How many: each file holds 2^m variants of a template with m material bits: 16 fo
 - The core device carries the bits that the device fixes (`shaderBits`). The thread that draws starts the download while it waits for its WebGPU device or its WebGL2 context. It then gives the loaded shaders to the backend.
 - The size report names each shader file (`SHADER_PARTS` in `tools/lib/size-report.ts`) and counts the largest in each thread mode's download. A new value of the device's bits adds a module, which the report must name.
 - A new material bit doubles each file: check the size report when one is added.
-- M1-L3 adds the warm-up times of S4 on the S24+ and the iPad, which set T-26's target.
+- The warm-up time plan watches the target: S4's pipeline wait with fresh shaders stays under 250 ms on the S24+. A new material bit, or a pass that adds pipelines to S4, reruns it on the S24+.
+- T-26's times give the device figures in the loading screens guide.
 - The record is in the table in README.md.

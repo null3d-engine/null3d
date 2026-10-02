@@ -74,7 +74,19 @@ A handler that `engine.onSketchMessage` adds after `createEngine` resolves hears
 
 The GPU draws each object with a pipeline: compiled shaders, and the drawing state that goes with them. One pipeline serves every object with the same shading model and the same vertex format of mesh. A thousand materials of one shading model share it, so a scene needs few pipelines, often fewer than ten. [Performance guide](performance.md#how-the-engine-batches-builds-pipelines-and-times-frames) lists what sets pipelines apart.
 
-Pipelines take time to build. In the engine's warm-up test, a scene of ten pipelines took up to 0.4 seconds to build in Chrome and Safari on a MacBook Pro. It took 0.8 seconds on WebGPU in Firefox. The engine builds pipelines without blocking any thread:
+Pipelines take time to build. In the engine's warm-up test, a scene of ten pipelines took up to 0.4 seconds to build in Chrome and Safari on a MacBook Pro. It took 0.8 seconds on WebGPU in Firefox.
+
+The engine's benchmark scenes and demos need 2 to 4 pipelines each. In the engine's warm-up time test, they took these times on a phone and a tablet:
+
+| Device and GPU path | First visit | Repeat visit |
+| --- | --- | --- |
+| 11-inch iPad Pro, Safari, WebGPU | 21 to 31 ms | 21 to 32 ms |
+| 11-inch iPad Pro, Safari, WebGL2 | 35 to 53 ms; S4 0.41 s | 35 to 61 ms |
+| Galaxy S24+, Chrome, WebGL2 | 45 to 115 ms | 29 to 88 ms |
+
+On a first visit, the browser compiles every shader. On a repeat visit, it reuses what it compiled before. The S4 benchmark, a town with a shadow-casting sun, was the slowest scene on each device.
+
+The engine builds pipelines without blocking any thread:
 
 - On WebGPU, the browser builds each pipeline in the background.
 - On WebGL2, the browser compiles each program in the background where it has the `KHR_parallel_shader_compile` extension. Chrome, Safari and Brave have it on the Mac, and Safari and Brave have it on the iPad. Firefox does not, and neither does Chrome on some Android phones, such as the Galaxy S24+. There, the first draw with a program waits for its compile.
@@ -89,7 +101,9 @@ A setup function that awaits `scene.warmUp()` after it creates the scene, as the
 
 ## The preset check
 
-When the page leaves the quality preset to the engine, the engine checks its choice after the setup. For about three quarters of a second, it draws the scene that the setup built and measures the frame rate. The sketch's `onUpdate` does not run yet. Where the GPU cannot hold the display's rate, up to 60 frames per second, the engine lowers the preset and measures again. The loading screen hides these frames. [Quality presets](../concepts/quality-presets.md#the-preset-check) gives the rules.
+When the page leaves the quality preset to the engine, the engine checks its choice after the setup. For about three quarters of a second, it draws the scene that the setup built and measures the frame rate. The sketch's `onUpdate` does not run yet. Where the GPU cannot hold the display's rate, up to 60 frames per second, the engine lowers the preset and measures again. The loading screen hides these frames.
+
+The check takes most of the start on a tablet. On an 11-inch iPad Pro, the first frame of each benchmark scene and demo showed about 1 second after `createEngine` was called. It took about 2 seconds when the check lowered the preset once. A phone starts at Low, which has no lighter preset, so the engine skips the check. On a Galaxy S24+, the first frame showed after 0.23 to 0.43 seconds. [Quality presets](../concepts/quality-presets.md#the-preset-check) gives the rules.
 
 So build the whole first view in the setup, with its textures: the check measures what the setup built, and waits while textures upload. A sketch whose setup leaves the scene empty gets a preset that the scene may not hold.
 
@@ -139,11 +153,12 @@ Keep the textures of the first view small, so the first frames show them. Or wai
 | Figure | What it is |
 | --- | --- |
 | `load.warmUpMs` | Time from the start of the first frame's pipeline builds until none was building |
+| `load.firstDrawMs` | Time the first frame's draw took, with the compiles that it waited for |
 | `load.firstFramePipelines` | The pipelines that the first frame built |
 | `pipelines` | The pipelines built during the measurement, which stays at 0 in steady play |
 | `skippedDraws` | Draws that frames skipped because their pipeline was still building, so their objects were missing. A warm-up before new objects show keeps it at 0 |
 
-Where a browser compiles WebGL2 programs without the extension, `load.warmUpMs` is about 0, and the first frame's draw takes the compile time instead.
+Where a browser compiles WebGL2 programs without the extension, `load.warmUpMs` is about 0, and `load.firstDrawMs` holds the compile time instead. Their sum is the time that the pipelines hold up the first frame on every browser.
 
 ## Related pages
 

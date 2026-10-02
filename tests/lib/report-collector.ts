@@ -1,4 +1,11 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+	appendFileSync,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import type { Connect, Plugin } from 'vite';
@@ -84,6 +91,8 @@ function holdsClaim(run: string, device: string, page: string): boolean {
  * - `GET /__null3d/runs/<run>/plan` returns a run's list of pages.
  * - `POST /__null3d/runs/<run>/<device>?page=<page>` claims a run's device for the runner page that
  *   calls itself `page`, as each runner page does when it starts.
+ * - `GET /__null3d/runs/<run>/<device>` lists the names of a device's results and records so far,
+ *   where a runner page that the browser reloaded finds where to go on.
  * - `POST /__null3d/runs/<run>/<device>/<name>?page=<page>` stores one result of a device as its
  *   own file, and `GET` on the same path reads it back. A result from a runner page other than the
  *   one that claimed the device last is refused with 409 and stores nothing: a runner page that the
@@ -113,6 +122,15 @@ export function collectorRoutes(middlewares: Connect.Server): void {
 		if (parts.length === 2 && device === 'plan') {
 			const plan = join(RUNS_DIR, run, 'plan.json');
 			return existsSync(plan) ? send(res, 200, readFileSync(plan, 'utf8')) : send(res, 404);
+		}
+		if (parts.length === 2 && device && req.method === 'GET') {
+			const dir = join(RUNS_DIR, run, device);
+			const names = existsSync(dir)
+				? readdirSync(dir)
+						.filter((file) => file.endsWith('.json'))
+						.map((file) => file.slice(0, -'.json'.length))
+				: [];
+			return send(res, 200, JSON.stringify(names));
 		}
 		if (parts.length === 2 && device && page !== null && req.method === 'POST') {
 			mkdirSync(join(RUNS_DIR, run, device), { recursive: true });

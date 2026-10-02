@@ -239,8 +239,8 @@ The engine now applies the shadow cascade count and map size of each preset. A d
 
 The other rows keep their starting values. Why each value moved:
 
-- Low takes 2 cascades, not 1. One cascade spreads its 1,024 texels over the whole 200 m of shadow. A vehicle's shadow in S4 then drew as a smear of a few texels. With two, the near cascade ends at about 24 m, so the shadows near the camera get texels about eight times finer. Before this change, every light drew 3 cascades of 2,048 texels. With them, the S24+ held 60 fps at Low in S4's 10-minute run on 2 October, at a render scale of 1. Two cascades of 1,024 texels draw the casters one time fewer, and fill a sixth of those texels.
-- Medium keeps 3 cascades, not 2. With 2, the near cascade ends at about 24 m instead of 14 m, so its texels grow by about two thirds. The owner saw jagged shadow edges on the iPad at Medium with 3 cascades, before this change.
+- Low takes 2 cascades, not 1. One cascade spreads its 1,024 texels over the whole 200 m of shadow. A vehicle's shadow in S4 then drew as a smear of a few texels. With two, the near cascade ends at about 38 m, so the shadows near the camera get texels about five times finer. Before this change, every light drew 3 cascades of 2,048 texels. With them, the S24+ held 60 fps at Low in S4's 10-minute run on 2 October, at a render scale of 1. Two cascades of 1,024 texels draw the casters one time fewer, and fill a sixth of those texels.
+- Medium keeps 3 cascades, not 2. With 2, the near cascade ends at about 38 m instead of 24 m, so its texels grow by about half. The owner saw jagged shadow edges on the iPad at Medium with 3 cascades, before this change.
 - Medium takes the 5 x 5 filter, for those edges. The iPad draws at a pixel ratio of 2, where the 3 x 3 filter's edges show their steps. The governor lowers the filter to 3 x 3 as its last step when frames run long.
 
 Shadow map memory, 4 bytes per texel in each cascade: Low 8 MiB, Medium and High 48 MiB, Ultra 256 MiB.

@@ -1340,8 +1340,10 @@ async function startEngine(
 							? reader.firstFrameDoneTime - performance.timeOrigin
 							: null,
 					warmUpMs: reader.warmUpMs,
+					firstDrawMs: reader.firstDrawMs,
 					firstFramePipelines: reader.firstFramePipelines,
 				},
+				gpuLosses: Atomics.load(slots, Slot.GpuEpoch),
 				downloadBytes: { wasm: wasmDownloadBytes() },
 				lostRecords: reader.lost,
 				completionSignal: tier === 'webgl2' ? 'fence' : 'queue',

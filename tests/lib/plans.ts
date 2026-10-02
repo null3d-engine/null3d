@@ -40,7 +40,22 @@ import {
 	startupProblems,
 	startupTable,
 } from '../../bench/lib/startup.ts';
-import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
+import {
+	SOAK_SAMPLE_SECONDS,
+	SOAK_TABLE_HEAD,
+	type SoakReport,
+	soakProblems,
+	soakRow,
+} from '../../bench/pages/lib/device-soak.ts';
+import {
+	createS4,
+	MEASURE_SECONDS,
+	S1_DEFAULT_COUNT,
+	S2_NODE_COUNT,
+	S3_DEFAULT_COUNT,
+	WARMUP_SECONDS,
+} from '../../bench/scenes/spec.ts';
+import { DEMOS } from '../../examples/demos.ts';
 import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import {
 	choosePreset,
@@ -48,7 +63,7 @@ import {
 	deviceKind,
 } from '../../packages/engine/src/quality/chooser.ts';
 import type { Tier as GpuPath } from '../../packages/engine/src/shared/tier.ts';
-import { IMAGE_RUNS } from '../image/manifest.ts';
+import { IMAGE_RUNS, manifestRun } from '../image/manifest.ts';
 import { distanceLabel, PRECISION, type PrecisionFacts } from '../pages/lib/depth-precision.ts';
 import {
 	GOVERNOR_STAGES,
@@ -72,6 +87,12 @@ import {
 	type SkinningResult,
 	skinningProblems,
 } from '../pages/lib/skinning.ts';
+import {
+	GROWTH_TABLE_HEAD,
+	type GrowthKind,
+	growthProblems,
+	growthRow,
+} from '../pages/lib/tab-memory.ts';
 import { type CaptureResult, captureProblems } from './capture-checks.ts';
 import {
 	ENGINE_MODES,
@@ -81,7 +102,7 @@ import {
 	jobWorkersProblem,
 	THREADED_MODES,
 } from './engine-checks.ts';
-import { type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
+import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts';
 import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
 import {
@@ -96,7 +117,15 @@ import {
 } from './preset-checks.ts';
 import { failureText, type ItemResult, lastSteps, type PlanItem, slug } from './runs.ts';
 import { type StatsResult, statsProblems } from './stats-checks.ts';
+import { progressName, REST_AFTER_TAB_END_SECONDS } from './tab-end.ts';
 import { type WarmUpResult, warmUpProblems } from './warm-up-checks.ts';
+import {
+	WARM_UP_TABLE_HEAD,
+	type WarmUpLoads,
+	type WarmUpTimeResult,
+	warmUpTimeProblems,
+	warmUpTimeRow,
+} from './warm-up-time.ts';
 
 /** The GPU interface that a page draws with. */
 export type Tier = 'webgpu' | 'webgl2';
@@ -134,12 +163,22 @@ export type Check =
 	/** The skinning page, which draws on WebGL2 alone, with its crowd and its cascades. */
 	| { kind: 'skinning'; tier: 'webgl2'; characters: number; cascades: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
-	| { kind: 'startup'; mode: EngineMode; load: LoadKind; first?: true };
+	| { kind: 'startup'; mode: EngineMode; load: LoadKind; first?: true }
+	/** The tab memory page, which grows one kind of memory until something gives. */
+	| { kind: 'tab-memory'; growth: GrowthKind; tier?: Tier; round: number }
+	/** A benchmark scene played for many minutes and measured once a minute. */
+	| { kind: 'soak'; tier: Tier; minutes: number }
+	/** The scene page after a simulated GPU loss: the engine must draw the whole scene again. */
+	| { kind: 'recovery'; tier: Tier; run: ImageRun }
+	/** The warm-up time page with a scene's sketch, with fresh shaders or with those compiled before. */
+	| { kind: 'warm-up-time'; tier: Tier; scene: string; fresh: boolean };
 
 /** What judging can reach besides the result itself. */
 export interface JudgeContext {
 	/** Another item's result from the same runner in the same run. */
 	resultOf(id: string): ItemResult | undefined;
+	/** The last progress that the judged page posted, for a page that may end its tab. */
+	progress?: ItemResult;
 	/** The folder for images that judging saves, such as parity diffs. */
 	imageDir: string;
 	/** Baselines measured on a device that draws with both of three.js's renderers. */
@@ -447,7 +486,11 @@ const BENCH_PAGES: readonly BenchPageKind[] = [
 export interface PlanSettings {
 	/** The instance count of the benchmark pages, or undefined for the scene's default. */
 	count?: number;
-	/** Fresh runs of each benchmark page, or loads at each memory maximum; undefined for the plan's own number. */
+	/**
+	 * Fresh runs of each benchmark page, loads at each memory maximum, rounds of the tab memory
+	 * test, or fresh loads of each scene in the warm-up time plan; undefined for the plan's own
+	 * number.
+	 */
 	runs?: number;
 	/** Job worker counts, at each of which the bench plan runs the null3D pages instead. */
 	jobs?: readonly number[];
@@ -459,6 +502,8 @@ export interface PlanSettings {
 	seconds?: number;
 	/** More switches for every bench plan page, such as `preset=medium`, or undefined for none. */
 	switches?: string;
+	/** The soak plan's minutes of each soak, or undefined for its own number. */
+	minutes?: number;
 }
 
 /**
@@ -634,6 +679,163 @@ export function memoryPlan({ runs = MEMORY_LOADS }: PlanSettings = {}): PlanItem
 	]);
 }
 
+/**
+ * How long the tab memory page may take: up to its cap in steps, each an upload, a wait for the GPU
+ * and a post of its progress.
+ */
+const TAB_MEMORY_TIMEOUT_SECONDS = 300;
+/**
+ * How long a runner page may post nothing on a tab memory page before its tab counts as dead. A step
+ * that gives no answer for a minute ends the growth, and the page then publishes its result. The
+ * page after a dead tab starts only after the runner page's rest, which counts as quiet too.
+ */
+const TAB_MEMORY_QUIET_SECONDS = REST_AFTER_TAB_END_SECONDS + 60;
+/**
+ * What the tab memory plan grows, in its order: the GPU path that the browser picks first, then the
+ * other, and WebAssembly memory last. A device without WebGPU skips the WebGPU growths.
+ */
+const TAB_MEMORY_GROWTHS: readonly { growth: GrowthKind; tier?: Tier }[] = [
+	{ growth: 'texture', tier: 'webgpu' },
+	{ growth: 'buffer', tier: 'webgpu' },
+	{ growth: 'texture', tier: 'webgl2' },
+	{ growth: 'buffer', tier: 'webgl2' },
+	{ growth: 'wasm' },
+];
+
+/**
+ * The tab memory test, `runs` rounds of it, one by default: on each GPU path, GPU textures and then
+ * GPU buffers grow in steps until the browser closes the tab, refuses an allocation or takes the
+ * GPU away; then a shared WebAssembly memory does. Each page posts its progress after each step that
+ * lived, so the run keeps the last one when the tab dies. A runner page that the browser reloads,
+ * or that the runner tool opens again, records the dead tab and goes on with the next page.
+ */
+export function tabMemoryPlan({ runs = 1 }: PlanSettings = {}): PlanItem<Check>[] {
+	return Array.from({ length: runs }, (_, round) =>
+		TAB_MEMORY_GROWTHS.map(({ growth, tier }) => {
+			const id = `tab-memory-${growth}${tier ? `-${tier}` : ''}-${round + 1}`;
+			const item = pageItem(
+				id,
+				'tab-memory',
+				{ kind: 'tab-memory', growth, ...(tier && { tier }), round: round + 1 },
+				{
+					switches: [
+						`kind=${growth}`,
+						tier ? `gpu=${tier}` : '',
+						`progress=/__null3d/runs/{run}/{runner}/${progressName('{item}')}`,
+					],
+					timeoutSeconds: TAB_MEMORY_TIMEOUT_SECONDS,
+				},
+			);
+			return { ...item, quietSeconds: TAB_MEMORY_QUIET_SECONDS, endsTab: true as const };
+		}),
+	).flat();
+}
+
+/** Minutes of each soak, unless the plan names another number. */
+export const SOAK_MINUTES = 30;
+/** The soaked scene: S4, a city that a full-screen app on a phone or a tablet draws. */
+const SOAK_SCENE: BenchScene = 's4';
+/** Time to start the soaked page and build its scene, on top of its minutes. */
+const SOAK_START_SECONDS = 180;
+
+/**
+ * The soak and recovery test. First the scene page loses its GPU on purpose in each thread mode on
+ * each GPU path, and must draw the whole scene again on a new device. Then S4 plays for `minutes`
+ * on each GPU path, from the benchmark pages' production build, measured once a minute: the run's
+ * summary gives the GPU losses that the engine recovered from, the frame rates and the memory.
+ */
+export function soakPlan({ minutes = SOAK_MINUTES }: PlanSettings = {}): PlanItem<Check>[] {
+	return [
+		...TIERS.flatMap((tier) =>
+			ENGINE_MODES.map((mode) =>
+				pageItem(
+					`recovery-${tier}-${slug(mode.name)}`,
+					'scene',
+					{
+						kind: 'recovery',
+						tier,
+						run: borrowedRun(manifestRun('scene', tier, mode.name), 'scene-after-gpu-loss'),
+					},
+					{ switches: [`gpu=${tier}`, mode.query, 'lose-gpu'], timeoutSeconds: 60 },
+				),
+			),
+		),
+		...TIERS.map((tier) => ({
+			id: `soak-${SOAK_SCENE}-${tier}`,
+			path: loadPath(
+				BENCH_BUILD,
+				pagePath(SOAK_SCENE, `null3d-${tier}`, `soak=${minutes}`).slice(1),
+			),
+			timeoutSeconds: minutes * SOAK_SAMPLE_SECONDS + SOAK_START_SECONDS,
+			check: { kind: 'soak' as const, tier, minutes },
+		})),
+	];
+}
+
+/** Loads of each scene with fresh shaders in the warm-up time plan, unless the plan names another number. */
+export const WARM_UP_FRESH_LOADS = 2;
+/**
+ * Loads of each scene with the shaders as they ship, after the fresh ones. The last one reuses what
+ * the browser compiled for the first, as a repeat visit does.
+ */
+const WARM_UP_PLAIN_LOADS = 2;
+/** How long a load may take on a slow device: S1 builds 100,000 objects before its first frame. */
+const WARM_UP_TIMEOUT_SECONDS = 90;
+
+/** Each benchmark scene's count on its own page. */
+const SCENE_COUNTS: Readonly<Record<BenchScene, number>> = {
+	s1: S1_DEFAULT_COUNT,
+	's1-static': S1_DEFAULT_COUNT,
+	's1-cells': S1_DEFAULT_COUNT,
+	s2: S2_NODE_COUNT,
+	s3: S3_DEFAULT_COUNT,
+	s4: createS4().count,
+};
+
+/** The sketches whose warm-up the plan times: each benchmark scene at its own count, then each demo. */
+function warmUpSketches(): { scene: string; sketch: string }[] {
+	return [
+		...(Object.keys(SCENE_COUNTS) as BenchScene[]).map((scene) => ({
+			scene,
+			sketch: `/bench/pages/null3d/${scene}-sketch.ts?n=${SCENE_COUNTS[scene]}`,
+		})),
+		...DEMOS.map((demo) => ({
+			scene: `demo-${demo.name}`,
+			sketch: `/examples/${demo.name}/sketch.ts`,
+		})),
+	];
+}
+
+/**
+ * The warm-up time test: each benchmark scene and each demo starts on each GPU path, first with
+ * fresh shaders, which the browser must compile as on a first visit, then with the shaders as they
+ * ship, the last time reusing what the browser compiled. Each load reports how long the pipelines
+ * held up the first frame, and how long the first frame took to show.
+ */
+export function warmUpTimePlan({
+	runs = WARM_UP_FRESH_LOADS,
+}: PlanSettings = {}): PlanItem<Check>[] {
+	return TIERS.flatMap((tier) =>
+		warmUpSketches().flatMap(({ scene, sketch }) => {
+			const sketchSwitch = `sketch=${encodeURIComponent(sketch).replaceAll('%2F', '/')}`;
+			const load = (fresh: boolean, k: number) =>
+				pageItem(
+					`warm-up-${scene}-${tier}-${fresh ? 'fresh' : 'plain'}-${k}`,
+					'warm-up-time',
+					{ kind: 'warm-up-time', tier, scene, fresh },
+					{
+						switches: [`gpu=${tier}`, fresh ? 'shaders=fresh' : '', sketchSwitch],
+						timeoutSeconds: WARM_UP_TIMEOUT_SECONDS,
+					},
+				);
+			return [
+				...Array.from({ length: runs }, (_, k) => load(true, k + 1)),
+				...Array.from({ length: WARM_UP_PLAIN_LOADS }, (_, k) => load(false, k + 1)),
+			];
+		}),
+	);
+}
+
 /** Cold and warm loads of each thread mode in the startup plan, unless the plan names another number. */
 export const STARTUP_RUNS = 5;
 /** How long a startup load may take on a slow device. */
@@ -692,6 +894,7 @@ export const REPORT_ON_TOP_PLANS: ReadonlySet<string> = new Set([
 	'parity',
 	'memory',
 	'depth',
+	'tab-memory',
 ]);
 
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
@@ -703,6 +906,9 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	startup: startupPlan,
 	overload: overloadPlan,
 	skinning: skinningPlan,
+	'tab-memory': tabMemoryPlan,
+	soak: soakPlan,
+	'warm-up-time': warmUpTimePlan,
 	governor: governorPlan,
 };
 
@@ -953,7 +1159,8 @@ export function judge(
 	if (!result.ok) {
 		const path = neededPath(check);
 		if (path && missing[path] && missingPath(path, result.error)) return 'skip';
-		return [failureText(result)];
+		// A tab memory page that gave no result in time still tells how far it got.
+		if (check.kind !== 'tab-memory') return [failureText(result)];
 	}
 	switch (check.kind) {
 		case 'capabilities':
@@ -1073,6 +1280,30 @@ export function judge(
 		}
 		case 'skinning':
 			return skinningProblems(result as ItemResult & SkinningResult);
+		case 'tab-memory':
+			return growthProblems(result, context?.progress);
+		case 'soak':
+			return soakProblems(result.soak as SoakReport | undefined);
+		case 'recovery': {
+			const scene = result as ItemResult & {
+				failures?: string[];
+				stats?: { frames?: number; gpuLosses?: number };
+			};
+			const losses = scene.stats?.gpuLosses;
+			return [
+				...(scene.failures ?? []).map((failure) => `the engine failed: ${failure}`),
+				...((scene.stats?.frames ?? 0) > 0 ? [] : ['the engine drew no frames after the loss']),
+				...(losses === 1 ? [] : [`the engine counted ${losses ?? 'no'} GPU losses, not 1`]),
+				...imageRunProblems({ kind: 'image', run: check.run }, result, context),
+			];
+		}
+		case 'warm-up-time': {
+			const load = result as unknown as WarmUpTimeResult;
+			const problems = warmUpTimeProblems(load);
+			if (load.freshShaders !== check.fresh)
+				problems.push(`the page loaded ${check.fresh ? 'without' : 'with'} fresh shaders`);
+			return problems;
+		}
 		case 'governor':
 			return governorProblems(result as ItemResult & GovernorResult);
 	}
@@ -1385,4 +1616,93 @@ export function skinningSummary(
 		'| --- | --- | --- | --- | --- | --- | --- | --- |',
 		...rows,
 	].join('\n');
+}
+
+/**
+ * The tab memory pages' results as a Markdown table: for each growth, the last MiB that lived, the
+ * steps, and how the growth ended, from the page's result or, where the tab died, from its last
+ * progress. Then the lowest point at which each kind of growth failed. Undefined when the plan has
+ * no tab memory pages.
+ */
+export function tabMemorySummary(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): string | undefined {
+	const rows: string[] = [];
+	const failedAt = new Map<string, number>();
+	for (const { id, check } of items) {
+		if (check.kind !== 'tab-memory') continue;
+		const result = resultOf(id);
+		const progress = resultOf(progressName(id));
+		rows.push(
+			growthRow({ kind: check.growth, gpu: check.tier, round: check.round }, result, progress),
+		);
+		const facts = result?.ok ? result : progress;
+		const lived = facts?.livedMiB;
+		const step = facts?.stepMiB;
+		if (typeof lived !== 'number' || typeof step !== 'number' || result?.end === 'cap') continue;
+		const key = `${check.growth}${check.tier ? ` on ${check.tier}` : ''}`;
+		failedAt.set(key, Math.min(failedAt.get(key) ?? Number.POSITIVE_INFINITY, lived + step));
+	}
+	if (rows.length === 0) return undefined;
+	const lowest = [...failedAt].map(([key, mib]) => `- ${key}: failed at ${mib} MiB`);
+	return [
+		...GROWTH_TABLE_HEAD,
+		...rows,
+		'',
+		lowest.length > 0
+			? `The lowest failure point of each growth, the step after the last that lived:\n${lowest.join('\n')}`
+			: 'No growth failed below its cap.',
+	].join('\n');
+}
+
+/**
+ * The soaks as a Markdown table: for each GPU path, the minutes measured, the GPU losses that the
+ * engine recovered from and when, the median and lowest frame rates of a minute, the growth of the
+ * WebAssembly memory, and the engine's failures. Undefined when the plan has no soaks.
+ */
+export function soakSummary(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): string | undefined {
+	const rows = items.flatMap(({ id, check }) => {
+		if (check.kind !== 'soak') return [];
+		const result = resultOf(id);
+		const report = result?.soak as SoakReport | undefined;
+		if (!report)
+			return [`| ${check.tier} | ${result ? failureText(result) : NO_RESULT} | | | | | |`];
+		return [soakRow(check.tier, report)];
+	});
+	return rows.length === 0 ? undefined : [...SOAK_TABLE_HEAD, ...rows].join('\n');
+}
+
+/**
+ * The warm-up times as a Markdown table: for each scene on each GPU path, the medians of the fresh
+ * loads, and the last plain load, which reuses what the browser compiled. Loads that failed stay
+ * out. Undefined when the plan has no warm-up time pages.
+ */
+export function warmUpTimeSummary(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): string | undefined {
+	const groups = new Map<string, WarmUpLoads>();
+	for (const { id, check } of items) {
+		if (check.kind !== 'warm-up-time') continue;
+		const key = `${check.scene} ${check.tier}`;
+		const group = groups.get(key) ?? {
+			scene: check.scene,
+			tier: check.tier,
+			fresh: [],
+			cached: [],
+		};
+		groups.set(key, group);
+		const result = resultOf(id);
+		if (!result?.ok) continue;
+		const load = result as unknown as WarmUpTimeResult;
+		if (warmUpTimeProblems(load).length > 0) continue;
+		if (check.fresh) group.fresh.push(load);
+		else group.cached = [load];
+	}
+	if (groups.size === 0) return undefined;
+	return [...WARM_UP_TABLE_HEAD, ...[...groups.values()].map(warmUpTimeRow)].join('\n');
 }
