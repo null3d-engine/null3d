@@ -103,6 +103,13 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 1, max: 8, whole: true, heavierBelow: true },
 	},
+	// The frame-budget governor (governor.ts), which lowers the live settings above when frames take
+	// too long and raises them again when they have time to spare.
+	governor: {
+		presets: [true, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
 	// FXAA on Low, which phones draw: MSAA's samples cost them more memory traffic.
 	antialias: {
 		presets: ['fxaa', 'msaa', 'msaa', 'msaa'],
@@ -126,6 +133,14 @@ export const QUALITY_SETTINGS = {
 	// Point lights cast shadows into six tiles each, so only the heavier presets turn them on.
 	pointLightShadows: {
 		presets: [false, false, true, true],
+		changes: 'start',
+		values: 'flag',
+	},
+	// The depth prepass trades a second pass over the opaque objects' vertices for shading each
+	// pixel once. It stays off on every preset: it made S2's GPU time per frame 45% longer on the
+	// Mac (Benchmarks, "The depth prepass").
+	depthPrepass: {
+		presets: [false, false, false, false],
 		changes: 'start',
 		values: 'flag',
 	},
@@ -199,6 +214,14 @@ export interface QualitySettings {
 	 */
 	farCascadeInterval: number;
 	/**
+	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
+	 * toward `minRenderScale`, then how often far shadow cascades draw, then the shadow filter. It
+	 * raises them again, in the reverse order, once frames have time to spare. `quality.governor`
+	 * reports its steps. False keeps the render scale at `maxRenderScale` and the shadow settings as
+	 * set, as benchmarks and captures need. It changes during play.
+	 */
+	governor: boolean;
+	/**
 	 * How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa`
 	 * smooths edges in the final pass, and `none` leaves them sharp. The mode is fixed when the
 	 * engine starts: the page's `antialias` option of `createEngine` sets it, and `set` does not
@@ -225,6 +248,13 @@ export interface QualitySettings {
 	 * `pointLightShadows` option of `createEngine` sets it, and `set` does not take it.
 	 */
 	pointLightShadows: boolean;
+	/**
+	 * True when the engine draws the depth of the opaque objects before it shades them, so it
+	 * shades each pixel once, for its nearest surface. The setting is fixed when the engine starts:
+	 * the page's `depthPrepass` option of `createEngine` sets it, and `set` does not take it. It is
+	 * always false on WebGL2, which draws without the prepass.
+	 */
+	depthPrepass: boolean;
 }
 
 /** The names of the settings in the preset table that change as `changes` says. */
