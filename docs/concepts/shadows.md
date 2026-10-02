@@ -3,12 +3,12 @@ id: concepts/shadows
 title: Shadows
 status: experimental
 since: "0.1"
-summary: "Cascades that stay still as the camera turns; the shadow atlas of spot lights; update rates and filtering per preset; bias settings."
+summary: "Cascades that stay still as the camera turns; the shadow atlas of spot and point lights; update rates and filtering per preset; bias settings."
 ---
 
 # Shadows
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. In this version the first directional light and spot lights cast shadows. Point lights cast none yet. Instance batches neither cast nor receive shadows yet. A masked material's map does not cut holes in its shadow yet, so it casts its mesh's whole shape. The quality presets set the filter and the far cascades' update rate, but not the cascade count or the map size yet. Coding agents must not rely on these parts.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. In this version the first directional light, spot lights and point lights cast shadows. Instance batches neither cast nor receive shadows yet. A masked material's map does not cut holes in its shadow yet, so it casts its mesh's whole shape. The quality presets set the filter and the far cascades' update rate, but not the cascade count or the map size yet. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -57,11 +57,11 @@ export default defineSketch(({ scene, geometry, materials }) => {
 });
 ```
 
-## Spot light shadows
+## Spot and point light shadows
 
 ```mermaid
 flowchart LR
-    lights["Spot lights with castShadows,<br/>largest on screen first"] --> tiles["One tile each in the<br/>shadow atlas"]
+    lights["Spot and point lights with castShadows,<br/>largest on screen first"] --> tiles["Spot light: one tile<br/>Point light: six tiles"]
     tiles --> check{"Did the light or a caster<br/>in its range move?"}
     check -- "yes" --> draw["The tile draws the casters'<br/>depth from the light"]
     check -- "no" --> keep["The tile keeps its depth"]
@@ -69,9 +69,11 @@ flowchart LR
     keep --> receivers
 ```
 
-A spot light casts shadows when you create it with `castShadows: true` or call `setCastShadows(true)`. Casters and receivers need `castShadows` and `receiveShadows`, as for the directional light.
+A spot or point light casts shadows when you create it with `castShadows: true` or call `setCastShadows(true)`. Casters and receivers need `castShadows` and `receiveShadows`, as for the directional light.
 
-Spot lights share one shadow atlas: a depth texture with one tile per light. A tile is a view from the light that holds its cone. A cone wider than 85 degrees from its direction casts shadows over its middle part alone.
+Spot and point lights share one shadow atlas: a depth texture of equal tiles. A spot light takes one tile, a view from the light that holds its cone. A cone wider than 85 degrees from its direction casts shadows over its middle part alone. A point light takes six tiles, one for each face of a cube around it. A surface reads the tile of the face that its direction from the light points through.
+
+Point light shadows cost six times as much as a spot light's, so the quality preset's `pointLightShadows` setting turns them on for High and Ultra alone. The `pointLightShadows` option of `createEngine` turns them on or off on any preset. Where they are off, point lights still light surfaces.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -110,18 +112,18 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 The quality preset's `shadowTiles` setting caps the tiles, and `shadowTileSize` sets the texels on each side of each tile. [Quality presets](quality-presets.md) lists their values. The atlas has only as many tiles as the lights that cast shadows can fill.
 
-Each frame, the spot lights in the camera's view compete for the tiles. A light's size on screen is its range over its distance from the camera, and the largest lights get tiles first. A light keeps its tile from frame to frame while it still gets one. The other lights cast no shadows in that frame, and they still light surfaces.
+Each frame, the spot and point lights in the camera's view compete for the tiles. A light's size on screen is its range over its distance from the camera, and the largest lights get tiles first. A point light needs six free tiles, so a smaller spot light can take the last tile that a point light cannot use. A light keeps its tile from frame to frame while it still gets one. The other lights cast no shadows in that frame, and they still light surfaces.
 
 ### When a tile draws
 
 A tile keeps its depth from frame to frame. It draws again only when:
 
 - it goes to another light;
-- its light moves or turns, or its range, cone or layers change;
+- its light moves or turns, or its range, cone or layers change (a point light's tiles do not change when it turns);
 - a caster within the light's range moves, turns, scales, shows or hides, or leaves the range;
 - objects are created or destroyed, or their meshes, materials or shadow flags change.
 
-A scene whose casters and lights stand still draws no tile. Make static casters static, and keep moving objects out of the ranges of shadowed spot lights when you can.
+A scene whose casters and lights stand still draws no tile. Make static casters static, and keep moving objects out of the ranges of shadowed spot and point lights when you can.
 
 ## Settings
 
@@ -139,7 +141,7 @@ A shorter `distance` gives the cascades smaller boxes, so shadows get sharper. S
 
 A new cascade count or map size makes the shadow map again, so set them at setup. The other settings cost nothing to change, so a sketch can change them in any frame.
 
-A spot light's `shadow` option and `setShadow` take `bias` and `normalBias` alone, with the same defaults. Both count texels of the light's tile at the receiving surface's distance from the light. The preset sets the tile size.
+The `shadow` option and `setShadow` of spot and point lights take `bias` and `normalBias` alone, with the same defaults. Both count texels of the light's tile at the receiving surface's distance from the light. The preset sets the tile size.
 
 ## Where the cascades split
 
@@ -185,7 +187,7 @@ A cascade that waits keeps the box it drew with. When the camera turns quickly, 
 
 ## Filtering
 
-The filter softens each shadow's edge over a square of shadow map texels. The `shadowFilter` quality setting gives the texels on each side: 3 on Low and Medium, and 5 on High and Ultra. Each read compares the depth with four texels and blends them. So a 3 x 3 square takes 4 reads, and a 5 x 5 square takes 9. A larger square gives softer edges and costs more on every pixel that receives shadows. `quality.set({ shadowFilter: 3 })` changes it during play. Spot lights' tiles use the same filter, over texels of the tile.
+The filter softens each shadow's edge over a square of shadow map texels. The `shadowFilter` quality setting gives the texels on each side: 3 on Low and Medium, and 5 on High and Ultra. Each read compares the depth with four texels and blends them. So a 3 x 3 square takes 4 reads, and a 5 x 5 square takes 9. A larger square gives softer edges and costs more on every pixel that receives shadows. `quality.set({ shadowFilter: 3 })` changes it during play. The tiles of spot and point lights use the same filter, over texels of the tile.
 
 Each read weights the texels by where the point falls between them, so an edge moves smoothly as the point moves. But each texel holds only "lit" or "shadowed". Where one texel covers several pixels, an edge at a shallow angle to the texel grid still shows soft steps, one texel apart. The 5 x 5 filter makes the steps fainter, and no filter of a few texels removes them. More texels per meter remove them. For the directional light, use a shorter `distance`, a larger `mapSize` or another cascade. For spot lights, use a larger `shadowTileSize`.
 
@@ -196,14 +198,14 @@ A surface that casts and receives shadows can shadow itself in stripes, which is
 - `bias` moves the surface's depth toward the light. It removes acne on surfaces that face the light.
 - `normalBias` moves the surface along its normal. It removes acne on surfaces at a steep angle to the light.
 
-A spot light's biases work the same way, in texels of its tile. A texel of a tile grows with the distance from the light, so the biases grow with it.
+The biases of spot and point lights work the same way, in texels of their tiles. A texel of a tile grows with the distance from the light, so the biases grow with it.
 
 Raise them in small steps if a surface shows acne. Values that are too large make shadows start a little away from the objects that cast them. The casters draw only the faces that point away from the light, as three.js's shadows draw them. That keeps acne off most surfaces that face the light.
 
 ## Which objects cast and receive
 
 - The first directional light created casts the shadows, if it has `castShadows`. Other directional lights light surfaces, and cast none.
-- Each spot light with `castShadows` casts shadows while it holds a tile of the atlas.
+- Each spot light with `castShadows` casts shadows while it holds a tile of the atlas. Each point light with `castShadows` casts them while it holds six, where the preset's `pointLightShadows` is on.
 - A caster draws into every cascade whose box it reaches, however far toward the light it stands.
 - The light's layers choose the casters: an object casts only when its layer mask shares a bit with the light's. [Render layers](render-layers.md) explains masks.
 - The standard material and [custom materials](../shaders/surface-functions.md) show shadows. The unlit material shows none, but unlit objects still cast them.
@@ -218,9 +220,9 @@ Each cascade that draws in a frame has a render pass that draws its casters' dep
 
 Each layer of the shadow map takes 4 bytes per texel: 16 MB at 2,048 texels on each side. Surfaces that receive shadows read the map 4 or 9 times per pixel, as the filter's size says.
 
-A spot light's tile costs a render pass and its culling, but only in the frames in which it draws. Its culling runs on the GPU on WebGPU, and on the job workers on WebGL2. Each tile takes 4 bytes per texel: 4 MB at 1,024 texels on each side. A receiving surface reads the tile of each shadowed spot light whose cone reaches it, 4 or 9 times per pixel, as for the cascades.
+A tile costs a render pass and its culling, but only in the frames in which it draws. A point light draws six tiles when a caster in its range moves. Its culling runs on the GPU on WebGPU, and on the job workers on WebGL2. Each tile takes 4 bytes per texel: 4 MB at 1,024 texels on each side. A receiving surface reads one tile for each shadowed light that reaches it, 4 or 9 times per pixel, as for the cascades.
 
-To make shadows cheaper, use fewer cascades, a smaller map, a shorter distance, a higher `farCascadeInterval` or a `shadowFilter` of 3. Mark only the objects whose shadows matter as casters. For spot lights, give shadows only to the lights that need them, and keep their ranges short.
+To make shadows cheaper, use fewer cascades, a smaller map, a shorter distance, a higher `farCascadeInterval` or a `shadowFilter` of 3. Mark only the objects whose shadows matter as casters. For spot and point lights, give shadows only to the lights that need them, and keep their ranges short. Prefer a spot light to a point light where a cone covers the area.
 
 ## On each GPU path
 
@@ -236,8 +238,8 @@ WebGPU and WebGL2 draw the same shadows. Both keep the shadow map and the shadow
 - `renderer.shadowMap.type` becomes the `shadowFilter` quality setting: `PCFShadowMap` and `PCFSoftShadowMap` map to 3 or 5. `BasicShadowMap` and `VSMShadowMap` have no equivalent.
 - `light.shadow.radius` and `light.shadow.blurSamples` become the `shadowFilter` setting too, for every light.
 - The CSM addon is built in: set `cascades` on the directional light. Its `maxFar` and `shadowMapSize` become `distance` and `mapSize`.
-- A spot light's `shadow.mapSize` has no equivalent. The quality preset sets the size of every tile. `shadow.camera` has none either, as the tile fits the cone by itself.
-- three.js draws a spot light's shadow map in every frame. null3D draws a tile only when its light or a caster in its range moves.
+- A spot or point light's `shadow.mapSize` has no equivalent. The quality preset sets the size of every tile. `shadow.camera` has none either, as the tiles fit the light by themselves.
+- three.js draws a spot or point light's shadow map in every frame. null3D draws a tile only when its light or a caster in its range moves.
 
 ## Related pages
 

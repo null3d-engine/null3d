@@ -18,7 +18,7 @@ flowchart LR
     table --> frame
     frame --> main["The first directional light,<br/>and the ambient lights"]
     frame --> list["Point and spot lights<br/>whose ranges reach the view"]
-    list --> grid["Light grid<br/>the lights of each cluster,<br/>on the job workers"]
+    list --> grid["Light grid<br/>the lights of each cluster,<br/>on the GPU or the job workers"]
     main --> shading["Standard material shading"]
     grid --> shading
 ```
@@ -30,7 +30,7 @@ Setters change the engine's memory at once, and they allocate nothing except tho
 1. It skips a light that is hidden by itself or a parent, or whose layer mask shares no bit with the camera's.
 2. The first directional light created that remains, and the sum of the ambient lights, become the light that standard materials reflect.
 3. It tests the sphere of each point and spot light's range against the camera's view, and lists the lights whose spheres reach into it.
-4. The job workers put each listed light into the clusters of the view that its sphere reaches, as [Clustered forward shading](#clustered-forward-shading) explains.
+4. Each listed light goes into the clusters of the view that its sphere reaches. On WebGPU the GPU does this work, and on WebGL2 the job workers do it, as [Clustered forward shading](#clustered-forward-shading) explains.
 
 ## Kinds of light and their units
 
@@ -63,14 +63,25 @@ export default defineSketch(({ scene }) => {
 
 A scene can hold hundreds of point and spot lights, but a surface only needs the few whose ranges reach it. The engine therefore cuts the camera's view into clusters. The screen splits into 16 tiles across and 9 up, and the depth splits into 24 slices. Slices grow with distance, from the near plane out to where the farthest light ends. Near the camera, where each meter covers more of the screen, slices are thin.
 
-Each frame the job workers list, for each cluster, the lights whose range spheres reach it. Each pixel of a standard material then finds its cluster and loops over that cluster's lights alone. The test is conservative: a cluster may list a light that ends just before it, but never misses a light that reaches it. Each light fades smoothly to nothing at its range, so a listed light that does not reach a pixel adds nothing.
+Each frame the engine lists, for each cluster, the lights whose range spheres reach it. Each pixel of a standard material then finds its cluster and loops over that cluster's lights alone. The test is conservative: a cluster may list a light that ends just before it, but never misses a light that reaches it. Each light fades smoothly to nothing at its range, so a listed light that does not reach a pixel adds nothing.
 
 ```mermaid
 flowchart LR
-    lights["Visible point and<br/>spot lights"] --> assign["Job workers:<br/>lights of each cluster"]
-    assign --> upload["Upload:<br/>grid, index list, lights"]
-    upload --> pixel["Each pixel:<br/>find its cluster,<br/>loop over its lights"]
+    lights["Visible point and<br/>spot lights"] --> path{"GPU path"}
+    path -->|WebGPU| upload["Upload:<br/>lights only"]
+    upload --> compute["Compute pass:<br/>lights of each cluster"]
+    path -->|WebGL2| assign["Job workers:<br/>lights of each cluster"]
+    assign --> textures["Upload:<br/>grid, index list, lights"]
+    compute --> pixel["Each pixel:<br/>find its cluster,<br/>loop over its lights"]
+    textures --> pixel
 ```
+
+Where the lists come from depends on the GPU path:
+
+- On WebGPU, a compute pass on the GPU lists each cluster's lights, before the scene draws. The CPU only picks the frame's lights, cuts the view into slices and uploads the light list. Its work per frame stays small with hundreds of lights.
+- On WebGL2, which has no compute shaders, the job workers list them on the CPU, and the frame uploads the lists as data textures.
+
+Both paths use the same tests in the same order, so they list the same lights in each cluster.
 
 The engine shades each surface in the pass that draws it. A deferred renderer would light the whole screen in a later pass instead. Forward shading favors phones and tablets:
 

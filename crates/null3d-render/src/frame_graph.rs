@@ -90,6 +90,10 @@ pub(crate) struct GraphIds {
 /// The buffers that the culling passes read: the world matrices and the bucket tables, which the
 /// frame uploads before its passes run.
 const OBJECTS: &str = "objects";
+/// The camera's point and spot lights, which the frame uploads before its passes run.
+const LIGHTS: &str = "lights";
+/// The camera's light grid, which the light clustering pass fills on WebGPU.
+const LIGHT_GRID: &str = "lightGrid";
 /// The camera's color target, which reaches the canvas.
 const SCENE_COLOR: &str = "sceneColor";
 /// The camera's depth target.
@@ -155,6 +159,8 @@ pub(crate) struct TilePasses {
 /// What a declared pass records.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Role {
+    /// Lists the lights of each cluster of the camera's light grid on the GPU.
+    LightClusters,
     /// Culls a view on the GPU into its compacted instances and indirect draws.
     Cull(ViewId),
     /// Draws a view's opaque objects.
@@ -455,6 +461,11 @@ impl FrameGraph {
             self.graph.keep(SHADOW_ATLAS, atlas, size);
         }
         if self.gpu_culling {
+            self.graph.import_buffer(LIGHTS);
+            let clusters = Pass::new("LightClusters", PassKind::Compute)
+                .reads(LIGHTS)
+                .creates_buffer(LIGHT_GRID);
+            self.add(clusters, Role::LightClusters);
             self.graph.import_buffer(OBJECTS);
             for index in 0..views.len() {
                 let pass = Pass::new(view_name(index, "Culling", "Culling"), PassKind::Compute)
@@ -476,6 +487,9 @@ impl FrameGraph {
                 .creates(view_name(index, SCENE_DEPTH, "depth"), depth);
             if self.gpu_culling {
                 pass = pass.reads(view_name(index, "visible", "visible"));
+                if index == ViewId::CAMERA.index() {
+                    pass = pass.reads(LIGHT_GRID);
+                }
             }
             if self.shadow_map {
                 pass = pass.reads(SHADOW_MAP).reads(SHADOW_ATLAS);
@@ -945,6 +959,7 @@ mod tests {
         frames.sync_views(&[View::default(), View::default()]);
         let graph = frames.graph();
         let names = [
+            "LightClusters",
             "Culling",
             "Culling1",
             "Opaque",
@@ -962,6 +977,7 @@ mod tests {
         assert_eq!(
             frames.roles,
             [
+                Role::LightClusters,
                 Role::Cull(ViewId::CAMERA),
                 Role::Cull(ViewId::from_index(1)),
                 Role::Opaque(ViewId::CAMERA),
@@ -1105,7 +1121,7 @@ mod tests {
         assert_eq!(
             without,
             [
-                vec!["Culling", "Culling1"],
+                vec!["LightClusters", "Culling", "Culling1"],
                 vec!["Opaque", "Resolve"],
                 vec!["Opaque1"]
             ]
@@ -1254,7 +1270,7 @@ mod tests {
         assert_eq!(
             steps(&frames),
             [
-                vec!["Culling", "Culling1"],
+                vec!["LightClusters", "Culling", "Culling1"],
                 vec!["Opaque", "DebugLines", "Transparent", "Resolve"],
                 vec!["Opaque1", "Transparent1"]
             ],

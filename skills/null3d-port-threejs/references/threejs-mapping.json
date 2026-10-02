@@ -352,7 +352,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "mesh.setCastShadows(true) / setReceiveShadows(true), or the castShadows and receiveShadows options of createMesh",
-      "notes": "Both are false by default, as in three.js. The directional light and spot lights cast them on both GPU paths. Unlit materials show no shadows. Instance batches neither cast nor receive them yet.",
+      "notes": "Both are false by default, as in three.js. The directional light, spot lights and point lights cast them on both GPU paths; point lights where the preset's pointLightShadows is on. Unlit materials show no shadows. Instance batches neither cast nor receive them yet.",
       "docs": "api/objects",
       "detect": "\\.(castShadow|receiveShadow)\\s*="
     },
@@ -527,7 +527,7 @@
       "three": "PointLight(color, intensity, distance, decay)",
       "status": "direct",
       "since": "0.1",
-      "target": "scene.createPointLight({ position, color, intensity, range, decay })",
+      "target": "scene.createPointLight({ position, color, intensity, range, decay, castShadows, shadow })",
       "notes": "distance becomes range, which every point light needs: 0, a light with no end, is not allowed, because the engine finds the lights near each surface by their ranges.",
       "docs": "api/lights",
       "detect": "\\bPointLight\\b"
