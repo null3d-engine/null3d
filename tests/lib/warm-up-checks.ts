@@ -22,17 +22,22 @@ export interface WarmUpResult {
 
 /** The render pipelines of the pipelines sketch: lit and unlit on four vertex formats, and two. */
 export const SCENE_PIPELINES = 10;
+/**
+ * The compute pipelines that WebGPU builds in the first frame, with or without lights in the
+ * scene: the culling pass's, and the light clustering pass's three steps.
+ */
+const WEBGPU_COMPUTE_PIPELINES = 4;
 /** Pixels the added quad covers at the least, in the page's 320 x 180 capture. */
 const ADDED_PIXELS = 100;
 
 /**
  * What is wrong with a warm-up page's result on a GPU path; empty when nothing is. WebGPU also
- * builds the culling pass's compute pipeline in the first frame, and every path the final pass's,
- * which the 8-bit path runs while the render scale can drop.
+ * builds its compute pipelines in the first frame, and every path the final pass's, which the
+ * 8-bit path runs while the render scale can drop.
  */
 export function warmUpProblems(result: WarmUpResult, gpu: 'webgpu' | 'webgl2'): string[] {
 	const problems = result.failures.map((code) => `the engine failed with ${code}`);
-	const expected = SCENE_PIPELINES + (gpu === 'webgpu' ? 1 : 0) + 1;
+	const expected = SCENE_PIPELINES + (gpu === 'webgpu' ? WEBGPU_COMPUTE_PIPELINES : 0) + 1;
 	if (result.firstFramePipelines !== expected)
 		problems.push(`the first frame built ${result.firstFramePipelines} pipelines, not ${expected}`);
 	if (result.warmUpMs === null || result.warmUpMs < 0)

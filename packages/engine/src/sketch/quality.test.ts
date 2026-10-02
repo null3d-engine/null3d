@@ -29,8 +29,9 @@ function fromMedium(
 	preset: QualityPreset,
 	options: Partial<QualitySettings> = {},
 ): QualitySettings {
-	const { antialias, shadowTiles, shadowTileSize } = MEDIUM;
-	return presetSettings(preset, { antialias, shadowTiles, shadowTileSize, ...options });
+	const { antialias, shadowTiles, shadowTileSize, pointLightShadows } = MEDIUM;
+	const start = { antialias, shadowTiles, shadowTileSize, pointLightShadows };
+	return presetSettings(preset, { ...start, ...options });
 }
 
 /**
@@ -231,6 +232,7 @@ describe('SketchQuality.lower', () => {
 			antialias: MEDIUM.antialias,
 			shadowTiles: MEDIUM.shadowTiles,
 			shadowTileSize: MEDIUM.shadowTileSize,
+			pointLightShadows: MEDIUM.pointLightShadows,
 		});
 		// The preset changed, and of the settings only the lowest render scale and the far cascades'
 		// interval did.

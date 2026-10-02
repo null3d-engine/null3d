@@ -178,7 +178,7 @@ The engine lights each pixel with the point and spot lights of its cluster only,
 
 - A pixel's cost grows with the lights whose ranges reach its cluster. Give each light the shortest range that keeps its look, because a longer range reaches more clusters.
 - A light near the camera covers much of the screen, and its range reaches many clusters. Many large lights near the camera cost the most.
-- Each frame the job workers list the lights of each cluster on the CPU. A few hundred small lights take a fraction of a millisecond, on the sketch thread alone when the work is small.
+- Each frame the engine lists the lights of each cluster. On WebGPU a compute pass does it on the GPU, and the CPU only uploads the light list. On WebGL2 the job workers do it on the CPU. There, a few hundred small lights take a fraction of a millisecond, on the sketch thread alone when the work is small.
 - A frame uploads the lists when the lights or the camera moved. It uploads 14 KB for the clusters, 4 bytes for each light in each cluster, and 64 bytes for each light. A still scene seen from a still camera uploads nothing.
 
 The camera lists up to 1,024 point and spot lights in a frame, the ones nearest to it, and up to 128 in each cluster.
