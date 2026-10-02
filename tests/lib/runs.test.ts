@@ -1516,6 +1516,17 @@ describe('parseArgs', () => {
 		);
 		expect(() => parseArgs(['--fast'])).toThrow('unknown option --fast');
 	});
+
+	it('gives every page of the plan the switches of --switches', () => {
+		const plain = planItems(parseArgs(['--plan', 'depth'])) ?? [];
+		const half = planItems(parseArgs(['--plan', 'depth', '--switches', 'half=on'])) ?? [];
+		expect(half.map((item) => item.path)).toEqual(plain.map((item) => `${item.path}&half=on`));
+		const bench = parseArgs(['--plan', 'bench', '--switches', 'half=on&preset=ultra']);
+		expect(planItems(bench)?.every((item) => item.path.endsWith('&half=on&preset=ultra'))).toBe(
+			true,
+		);
+		expect(() => parseArgs(['--switches', '?half=on'])).toThrow('--switches: give page switches');
+	});
 });
 
 describe('the device protocol', () => {

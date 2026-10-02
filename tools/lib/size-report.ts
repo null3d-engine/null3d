@@ -112,6 +112,12 @@ export const SHADER_PARTS: readonly string[] = [
 	'shaders-glsl-tone-map.js',
 	'shaders-glsl-draw-index.js',
 	'shaders-glsl-draw-index-tone-map.js',
+	'shaders-wgsl-half.js',
+	'shaders-wgsl-tone-map-half.js',
+	'shaders-glsl-half.js',
+	'shaders-glsl-tone-map-half.js',
+	'shaders-glsl-draw-index-half.js',
+	'shaders-glsl-draw-index-tone-map-half.js',
 ];
 
 /**

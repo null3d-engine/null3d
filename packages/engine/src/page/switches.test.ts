@@ -16,6 +16,7 @@ describe('parseSwitches', () => {
 			freshShaders: false,
 			wakeByMessage: false,
 			hdr: true,
+			half: undefined,
 			cells: true,
 			prepass: undefined,
 			fps: undefined,
@@ -39,6 +40,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?compression=bc,etc2').compression).toEqual(['bc', 'etc2']);
 		expect(parseSwitches('?compression=astc').compression).toEqual(['astc']);
 		expect(parseSwitches('?compression=none').compression).toEqual([]);
+	});
+
+	it('reads ?half=on and ?half=off, and leaves any other value to the engine', () => {
+		expect(parseSwitches('?half=on').half).toBe(true);
+		expect(parseSwitches('?half=off').half).toBe(false);
+		expect(parseSwitches('?half=yes').half).toBeUndefined();
 	});
 
 	it('reads ?bench with or without a value', () => {

@@ -1,7 +1,7 @@
 // The renderer interface. The same renderer runs in the render worker (pipelined mode), in the sketch
 // worker (low-latency mode) or on the page's main thread (single-threaded mode and ?render=main).
 
-import { FORMAT_RG11B10_UFLOAT } from '../generated/gpu';
+import { FORMAT_RG11B10_UFLOAT, PERMUTATION_HALF } from '../generated/gpu';
 import { type DeviceShaders, loadGlslShaders, loadWgslShaders } from '../generated/shaders';
 import { type CanvasHolder, clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
 import { type Completion, FenceCompletion, QueueCompletion } from '../gpu/completion';
@@ -348,6 +348,8 @@ async function requestDevice(options: RendererOptions): Promise<{ tier: Tier; de
 			requiredFeatures.push(feature);
 	if (options.device.sceneColor === FORMAT_RG11B10_UFLOAT)
 		requiredFeatures.push('rg11b10ufloat-renderable');
+	// The device chose half precision only where the adapter offers 16-bit floats.
+	if (options.device.shaderBits & PERMUTATION_HALF) requiredFeatures.push('shader-f16');
 	const binding = options.device.storageBindingBytes;
 	const device = await adapter.requestDevice({
 		requiredFeatures,
