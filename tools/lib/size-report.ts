@@ -53,7 +53,9 @@ export interface EnginePart {
  * load on demand on the page, which runs the sketch only in single-threaded mode. The KTX2 loader
  * loads on demand in the thread that runs the sketch, when the sketch loads its first KTX2 file.
  * The preset check loads after the first frame, in the thread that runs the sketch, so no download
- * before the first frame counts it.
+ * before the first frame counts it. The stats overlay loads on the page when the sketch first asks
+ * for it, and the frame figures that it and `debug.frameStats` read load with it, or in the thread
+ * that runs the sketch at the first call of `debug.frameStats`. No download counts them either.
  */
 export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page.js', module: 'page/engine.ts' },
@@ -65,6 +67,8 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		module: 'sketch/preset-check.ts',
 		loadedBy: 'page-sketch-runner.js',
 	},
+	{ name: 'page-stats-overlay.js', module: 'debug/overlay.ts', loadedBy: 'page.js' },
+	{ name: 'page-frame-stats.js', module: 'debug/stats.ts', loadedBy: 'page-stats-overlay.js' },
 	{ name: 'sketch-worker.js', module: 'workers/sketch-worker.ts' },
 	{ name: 'sketch-worker-renderer.js', module: 'render/draw.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
@@ -73,6 +77,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		module: 'sketch/preset-check.ts',
 		loadedBy: 'sketch-worker.js',
 	},
+	{ name: 'sketch-worker-frame-stats.js', module: 'debug/stats.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'render-worker.js', module: 'workers/render-worker.ts' },
 	{ name: 'job-worker.js', module: 'workers/job-worker.ts' },
 	{ name: 'probe-worker.js', module: 'workers/probe-worker.ts' },

@@ -185,6 +185,8 @@ The camera lists up to 1,024 point and spot lights in a frame, the ones nearest 
 
 ## Measure
 
+For a quick look while the scene runs, call `debug.stats(true)` in the sketch. Its overlay shows the frame rates and the CPU time of each thread and phase, twice a second ([Debug drawing and stats](../api/debug.md#stats-overlay-and-frame-figures)). For figures that you compare between changes, measure.
+
 `engine.measure(seconds)` on the page records every frame for that many seconds and returns these figures:
 
 | Figure | What it is |

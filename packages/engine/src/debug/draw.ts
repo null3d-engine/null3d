@@ -22,7 +22,8 @@ import {
 	type OrthographicCamera,
 	type PerspectiveCamera,
 } from '../scene/scene';
-import type { Debug, DebugGridOptions, DebugLightOptions } from './debug';
+import type { DebugGridOptions, DebugLightOptions } from './debug';
+import { type DebugHost, SketchDebug } from './sketch-debug';
 
 /** The points that the arrays first make room for: 2,048 lines. */
 const FIRST_POINTS = 4096;
@@ -88,7 +89,7 @@ export function packedColor(color: ColorInput, call: string): number {
 	throw invalidColor(color, call);
 }
 
-export class DebugDraw implements Debug {
+export class DebugDraw extends SketchDebug {
 	private positions: Float64Array<ArrayBufferLike> = new Float64Array(0);
 	private colors: Uint32Array<ArrayBufferLike> = new Uint32Array(0);
 	/** The points the arrays have room for. */
@@ -118,7 +119,12 @@ export class DebugDraw implements Debug {
 	/** The direction a drawn light's light travels. */
 	private readonly direction = new Float64Array(3);
 
-	constructor(private readonly core: CoreMemory) {}
+	constructor(
+		private readonly core: CoreMemory,
+		host: DebugHost,
+	) {
+		super(host);
+	}
 
 	line(from: Vec3Like, to: Vec3Like, color?: ColorInput): void {
 		const c = color === undefined ? YELLOW : packedColor(color, 'debug.line');
