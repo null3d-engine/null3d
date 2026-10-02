@@ -174,6 +174,12 @@ export interface FeatureScene {
 	/** Switches of the image page for null3D's side, such as `antialias=none`, or none. */
 	switches?: string;
 	/**
+	 * Switches of the test's sketch module for null3D's side, or none: `tone=none` turns off the
+	 * engine's default tone mapping, as three.js's twin draws with none. The image test itself keeps
+	 * the engine's defaults.
+	 */
+	sketchSwitches?: string;
+	/**
 	 * True when only WebGLRenderer draws the twin. Its frame is then the reference on every tier,
 	 * and the scene has no baseline between three.js's renderers.
 	 */
@@ -183,24 +189,27 @@ export interface FeatureScene {
 }
 
 const TWINS = '/bench/pages/threejs';
+/** The sketch switch that turns off tone mapping, for sketches whose image tests keep ACES. */
+const NO_TONE = 'tone=none';
 
 /**
- * Each feature scene that exit gate's parity covers: standard materials, each light type (the
- * directional and ambient lights shine in the material scenes), fog, tone mapping, the
- * orthographic camera, and shadows at their own limit. The tone mappings compare without
+ * Each feature scene that the exit gate's parity covers: standard materials, the light types
+ * (point and spot lights, and the directional and ambient lights of the material scenes), fog, tone
+ * mapping, the orthographic camera, and shadows at their own limit. The engine stores hemisphere
+ * lights but does not draw them yet; the lights twin draws `?scene=hemisphere` already, so the pull
+ * request that draws them adds that scene's image test here. The tone mappings compare without
  * anti-aliasing: null3D resolves the samples of an edge before it tone maps them, and three.js's
  * WebGLRenderer after, so a bright edge differs by design. The tone mapping spec compares each
  * tile's color with anti-aliasing on.
  */
 export const FEATURE_SCENES: readonly FeatureScene[] = [
-	{ test: 'standard-grid', twin: `${TWINS}/standard-grid.html` },
+	{ test: 'standard-grid', twin: `${TWINS}/standard-grid.html`, sketchSwitches: NO_TONE },
 	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html` },
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
 	{ test: 'transparency', twin: `${TWINS}/transparency.html` },
 	{ test: 'texture-background', twin: `${TWINS}/texture-background.html` },
-	{ test: 'lights-16', twin: `${TWINS}/lights.html?lights=16` },
-	{ test: 'lights-spot', twin: `${TWINS}/lights.html?scene=spot` },
-	{ test: 'lights-hemisphere', twin: `${TWINS}/lights.html?scene=hemisphere` },
+	{ test: 'lights-16', twin: `${TWINS}/lights.html?lights=16`, sketchSwitches: NO_TONE },
+	{ test: 'lights-spot', twin: `${TWINS}/lights.html?scene=spot`, sketchSwitches: NO_TONE },
 	{ test: 'fog-linear', twin: `${TWINS}/fog.html?fog=linear` },
 	{ test: 'fog-exp2', twin: `${TWINS}/fog.html?fog=exp2` },
 	...TONE_MAPPINGS.flatMap((tone) =>
@@ -214,7 +223,12 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		),
 	),
 	{ test: 'ortho-camera', twin: `${TWINS}/ortho-camera.html` },
-	{ test: 'shadows', twin: `${TWINS}/shadows.html`, limit: SHADOW_MAX_DIFFERENT_PERCENT },
+	{
+		test: 'shadows',
+		twin: `${TWINS}/shadows.html`,
+		sketchSwitches: NO_TONE,
+		limit: SHADOW_MAX_DIFFERENT_PERCENT,
+	},
 ];
 
 /** The feature scene of an image test, or undefined when no twin draws that test's scene. */
@@ -242,7 +256,8 @@ const FEATURE_TIERS: Partial<Record<PageKind, Tier>> = {
 
 /**
  * The path of the page of one kind that draws a feature scene: the twin for three.js's kinds, and
- * for a null3D kind, the image test on that kind's tier, from `imagePath`, with the scene's
+ * for a null3D kind, the image test on that kind's tier with the scene's sketch switches, from
+ * `imagePath` (`featureImagePath` in tests/image/manifest.ts), and with the scene's
  * switches. The other null3D kinds, such as the low-latency ones, draw no feature scene, so they
  * get null.
  */

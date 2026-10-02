@@ -1,8 +1,8 @@
 // The point, spot and hemisphere light scenes (bench/scenes/lights.ts). ?lights=N lights the floor
 // with N point lights in a square grid, ?scene=spot with three spot lights instead, and
 // ?scene=hemisphere with a hemisphere light. ?camera=ortho draws through an orthographic camera.
-// The three.js twin draws with no tone mapping, three.js's default, so the sketch turns off the
-// engine's default of ACES.
+// ?tone=none turns off the engine's default of ACES, as the parity test asks: the three.js twin
+// draws with no tone mapping, three.js's default.
 import { defineSketch } from '@null3d/engine';
 import {
 	HEMISPHERE_LIGHT,
@@ -20,7 +20,7 @@ import {
 const params = new URL(import.meta.url).searchParams;
 
 export default defineSketch(({ scene, materials, geometry, post }) => {
-	post.set({ toneMapping: 'none' });
+	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	scene.setBackground(LIGHTS_BACKGROUND);
 	const camera =
 		params.get('camera') === 'ortho'

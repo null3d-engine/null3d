@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { decode } from 'fast-png';
+import { featureImagePath } from '../../tests/image/manifest.ts';
 import {
 	BENCH_SCENES,
 	compareFrames,
@@ -224,6 +225,21 @@ describe('decodeFeatureResult', () => {
 describe('feature scenes', () => {
 	const imagePath = (tier: string) => `/tests/pages/image.html?gpu=${tier}&sketch=/s.ts%3Fa%3D1`;
 
+	test("draw each image test of the manifest on every tier, with the scene's sketch switches", () => {
+		for (const scene of FEATURE_SCENES)
+			for (const tier of TIERS) expect(featureImagePath(scene, tier)).toContain(`gpu=${tier}`);
+		const shadows = featureScene('shadows');
+		const tone = featureScene('tone-aces');
+		if (!shadows || !tone) throw new Error('the feature scenes lost the shadows or ACES');
+		const sketchOf = (path: string) => new URL(path, 'http://x').searchParams.get('sketch');
+		expect(sketchOf(featureImagePath(shadows, 'webgl2'))).toBe(
+			'/tests/pages/sketches/shadows-sketch.ts?cascades=3&tone=none',
+		);
+		expect(sketchOf(featureImagePath(tone, 'webgpu'))).toBe(
+			'/tests/pages/sketches/bright-sketch.ts?tone=aces&stops=0',
+		);
+	});
+
 	test('name image tests of their own, each once, apart from the benchmark scenes', () => {
 		const names = FEATURE_SCENES.map((scene) => scene.test);
 		expect(new Set(names).size).toBe(names.length);
@@ -232,7 +248,6 @@ describe('feature scenes', () => {
 			'standard-grid',
 			'lights-16',
 			'lights-spot',
-			'lights-hemisphere',
 			'fog-linear',
 			'fog-exp2',
 			'tone-aces',

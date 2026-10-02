@@ -2,8 +2,9 @@
 // three.js: a ground, and boxes, a ball and posts that cast and receive shadows, from next to the
 // camera out past 40 m, so each cascade holds some. ?cascades=<n> sets the cascade count, from 1
 // to 4. ?custom draws the ground and the red boxes with custom materials whose surface function
-// keeps the standard look, so the image must match the one without it. The three.js twin draws
-// with no tone mapping, three.js's default, so the sketch turns off the engine's default of ACES.
+// keeps the standard look, so the image must match the one without it. ?tone=none turns off the
+// engine's default of ACES, as the parity test asks: the three.js twin draws with no tone mapping,
+// three.js's default.
 import { defineSketch, type Material, type MeshGeometry } from '@null3d/engine';
 import {
 	AMBIENT,
@@ -30,7 +31,7 @@ fn surface(input: SurfaceInput) -> Surface {
 `;
 
 export default defineSketch(({ scene, materials, geometry, post }) => {
-	post.set({ toneMapping: 'none' });
+	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	scene.setBackground(BACKGROUND);
 	const { fov, position, target, near, far } = SHADOW_CAMERA;
 	scene.setActiveCamera(scene.createPerspectiveCamera({ fov, position, target, near, far }));

@@ -11,7 +11,7 @@
 // reference, so it saves its image as a candidate. Look at it with bun run images:review, and make it
 // the reference with bun run images:review --accept. Then do the same with CI=1 for the SwiftShader
 // reference: on the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
-import { BENCH_SCENES } from '../../bench/lib/parity.ts';
+import { BENCH_SCENES, type FeatureScene } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
 import { LIGHTS_IMAGE } from '../../bench/scenes/lights.ts';
@@ -496,8 +496,8 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	},
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
-	// lights through an orthographic camera. Then the same floor under a hemisphere light alone. The
-	// parity test compares the grid of 16, the spot lights and the hemisphere light with three.js.
+	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot
+	// lights with three.js.
 	...(
 		[
 			['lights-1', 'lights=1'],
@@ -505,7 +505,6 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 			['lights-256', 'lights=256'],
 			['lights-spot', 'scene=spot'],
 			['lights-ortho', 'lights=16&camera=ortho'],
-			['lights-hemisphere', 'scene=hemisphere'],
 		] as const
 	).map(([name, query]) => ({
 		name,
@@ -696,6 +695,24 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 
 /** Every run of the manifest's tests: each test on each of its tiers, in each of its thread modes. */
 export const IMAGE_RUNS = imageRuns(IMAGE_TESTS);
+
+/**
+ * The page of a feature scene's image test on a tier, in the pipelined mode, with the sketch
+ * switches that the scene's parity comparison gives the test's sketch module.
+ */
+export function featureImagePath({ test, sketchSwitches }: FeatureScene, tier: Tier): string {
+	const own = IMAGE_TESTS.find((candidate) => candidate.name === test);
+	if (!own) throw new Error(`the manifest has no test ${test}`);
+	const drawn =
+		sketchSwitches && 'sketch' in own
+			? { ...own, sketch: `${own.sketch}${own.sketch.includes('?') ? '&' : '?'}${sketchSwitches}` }
+			: own;
+	const run = imageRuns([drawn]).find(
+		(candidate) => candidate.tier === tier && candidate.mode?.name === 'pipelined',
+	);
+	if (!run) throw new Error(`the manifest has no pipelined run of ${test} on ${tier}`);
+	return run.path;
+}
 
 /** The run of a manifest test on a tier, in a thread mode for a page that starts the engine. */
 export function manifestRun(test: string, tier: Tier, mode?: EngineModeName): ImageRun {

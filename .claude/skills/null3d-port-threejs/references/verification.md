@@ -94,7 +94,7 @@ A sketch test draws with the engine's default options. When the page passes opti
 bunx @null3d/cli shot --page '/?view=hero-closeup' --time 1.5 --size 800x450 --gpu webgl2 --out compare/hero-closeup.webgl2.png
 ```
 
-For the comparison, match the original's settings: no tone mapping and a pixel ratio of 1. Later in 0.1, `post.set({ toneMapping: 'none' })` matches an original that differs in tone mapping. `createEngine({ antialias: 'none' })` matches an original without anti-aliasing.
+For the comparison, match the original's settings: the same tone mapping and a pixel ratio of 1. `post.set({ toneMapping: 'none' })` matches an original with `NoToneMapping`. `createEngine({ antialias: 'none' })` matches an original without anti-aliasing.
 
 ## 4. Tolerances
 

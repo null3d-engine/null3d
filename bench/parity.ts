@@ -33,7 +33,7 @@ import { join, relative } from 'node:path';
 import { type Browser, errors } from '@playwright/test';
 import { defaultEnvironment, launchBrowser } from '../packages/cli/src/browser.js';
 import { watchConsole } from '../packages/cli/src/page.js';
-import { manifestRun } from '../tests/image/manifest.ts';
+import { featureImagePath } from '../tests/image/manifest.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { REPO_ROOT, startServer } from '../tests/lib/server.ts';
 import {
@@ -96,8 +96,7 @@ function sourceOf(name: string, switches: string): SceneSource {
 	if (!scene) throw new Error(`no page draws the scene ${name}`);
 	return {
 		name,
-		path: (kind) =>
-			featurePagePath(scene, kind, (tier) => manifestRun(scene.test, tier, 'pipelined').path),
+		path: (kind) => featurePagePath(scene, kind, (tier) => featureImagePath(scene, tier)),
 		decode: (result) => decodeFeatureResult(result, name),
 		pair: (comparison) =>
 			comparison.tier === undefined ? comparison : featurePair(scene, comparison.tier),

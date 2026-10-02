@@ -1,8 +1,8 @@
 // The standard and unlit materials, for their image tests. `?scene=grid` draws the grid of
 // bench/scenes/standard-grid.ts: spheres over metalness (rows, from 0 at the top to 1) and roughness
-// (columns, from 0 to 1), lit by a sun and an ambient light. The parity test compares it with a
-// three.js twin, which draws with no tone mapping, three.js's default, so the grid turns off the
-// engine's default of ACES. `?scene=features` draws what a material fixes when it is created, in
+// (columns, from 0 to 1), lit by a sun and an ambient light. ?tone=none turns off the engine's
+// default of ACES, as the parity test asks: the grid's three.js twin draws with no tone mapping,
+// three.js's default. `?scene=features` draws what a material fixes when it is created, in
 // pairs: an emissive sphere beside a plain one, a flat-shaded sphere beside a smooth one, a
 // double-sided plane seen from behind beside a single-sided one that draws nothing, and a quad of
 // vertex colors with the standard material, with the unlit material, and with a material that
@@ -18,7 +18,8 @@ import {
 	GRID_SUN,
 } from '../../../bench/scenes/standard-grid';
 
-const scene = new URL(import.meta.url).searchParams.get('scene') ?? 'grid';
+const params = new URL(import.meta.url).searchParams;
+const scene = params.get('scene') ?? 'grid';
 
 /** A quad in the XY plane, facing +Z, with a linear color at each corner. */
 const QUAD = {
@@ -29,7 +30,8 @@ const QUAD = {
 };
 
 export default defineSketch((ctx) => {
-	const { scene: world } = ctx;
+	const { scene: world, post } = ctx;
+	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	world.setBackground(GRID_BACKGROUND);
 	world.setActiveCamera(world.createPerspectiveCamera(GRID_CAMERA));
 	world.createDirectionalLight(GRID_SUN);
@@ -41,8 +43,7 @@ export default defineSketch((ctx) => {
 type Context = Parameters<Parameters<typeof defineSketch>[0]>[0];
 
 /** Five columns of roughness by three rows of metalness. */
-function grid({ scene, materials, geometry, post }: Context): void {
-	post.set({ toneMapping: 'none' });
+function grid({ scene, materials, geometry }: Context): void {
 	const sphere = geometry.sphere(GRID_SPHERE);
 	for (const { position, metalness, roughness } of GRID_CELLS) {
 		const material = materials.standard({ color: GRID_COLOR, metalness, roughness });

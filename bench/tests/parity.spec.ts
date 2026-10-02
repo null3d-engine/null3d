@@ -9,7 +9,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { manifestRun } from '../../tests/image/manifest.ts';
+import { featureImagePath } from '../../tests/image/manifest.ts';
 import { HTTP_PORT } from '../../tests/lib/server.ts';
 import {
 	BASELINE_PAIR,
@@ -41,11 +41,7 @@ interface ImageReport extends PageReport {
 
 /** The path of a scene's page of one kind: the twin's in the build, or null3D's on the dev server. */
 function pathOf(scene: FeatureScene, kind: PageKind): string {
-	const path = featurePagePath(
-		scene,
-		kind,
-		(tier) => manifestRun(scene.test, tier, 'pipelined').path,
-	);
+	const path = featurePagePath(scene, kind, (tier) => featureImagePath(scene, tier));
 	if (path === null) throw new Error(`no page of kind ${kind} draws ${scene.test}`);
 	return kind.startsWith('null3d') ? DEV_SERVER_URL + path : path;
 }
