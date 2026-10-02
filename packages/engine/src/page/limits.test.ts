@@ -5,6 +5,7 @@ import {
 	FORMAT_RG11B10_UFLOAT,
 	FORMAT_RGBA16_FLOAT,
 	PERMUTATION_DRAW_INDEX,
+	PERMUTATION_HALF,
 	PERMUTATION_TONE_MAP,
 } from '../generated/gpu';
 import type { Tier } from '../render/renderer';
@@ -71,6 +72,7 @@ const PLAIN: DeviceOptions = {
 	compression: undefined,
 	cells: true,
 	hdr: true,
+	half: undefined,
 	antialias: 'msaa',
 	transparent: false,
 	depthPrepass: false,
@@ -335,6 +337,21 @@ describe('the permutation bits that a device fixes', () => {
 		// Compatibility mode draws HDR color with one sample per pixel.
 		const fxaa: DeviceOptions = { ...PLAIN, antialias: 'fxaa' };
 		expect(coreDevice('webgpu-compat', report({}), fxaa).shaderBits).toBe(0);
+	});
+
+	it('hold half precision only where ?half=on asks for it and the device can draw it', () => {
+		const half: DeviceOptions = { ...PLAIN, half: true };
+		const f16 = report({}, ['shader-f16']);
+		expect(coreDevice('webgpu', f16, half).shaderBits).toBe(PERMUTATION_HALF);
+		expect(coreDevice('webgpu-compat', f16, half).shaderBits).toBe(
+			PERMUTATION_TONE_MAP | PERMUTATION_HALF,
+		);
+		expect(coreDevice('webgpu', report({}), half).shaderBits).toBe(0);
+		expect(coreDevice('webgl2', report({}), half).shaderBits).toBe(PERMUTATION_HALF);
+		for (const tier of ['webgpu', 'webgl2'] as const) {
+			expect(coreDevice(tier, f16, PLAIN).shaderBits).toBe(0);
+			expect(coreDevice(tier, f16, { ...PLAIN, half: false }).shaderBits).toBe(0);
+		}
 	});
 });
 

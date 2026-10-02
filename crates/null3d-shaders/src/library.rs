@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use naga::Handle;
 use naga::valid::Capabilities;
 use naga_oil::compose::preprocess::Preprocessor;
 use naga_oil::compose::{
@@ -11,7 +12,7 @@ use naga_oil::compose::{
 
 use crate::position::{Position, locate};
 use crate::scan::{Token, tokenize};
-use crate::{Problem, composition, features, shader_path};
+use crate::{Problem, composition, features, half, shader_path};
 
 /// The folder of library modules, inside the shader folder.
 const LIBRARY_FOLDER: &str = "lib/";
@@ -34,6 +35,9 @@ pub(crate) struct LibraryModule {
     pub source: String,
     /// The suffix the composer adds to the names this module declares.
     pub decoration: String,
+    /// True when the module does its math in 16-bit floats. Builds without `shader-f16` get it
+    /// widened to 32-bit floats, and on WebGL2 its functions run at `mediump`.
+    pub half: bool,
 }
 
 /// The library modules, each after the modules it imports.
@@ -93,6 +97,7 @@ impl Library {
                     name: expected,
                     path,
                     source: source.clone(),
+                    half: half::enables_f16(source),
                 },
                 imports,
             ));
@@ -148,13 +153,45 @@ impl Library {
             .map(|m| m.source.as_str())
     }
 
-    /// A composer that validates with the given capabilities and knows every library module.
+    /// The functions and constants of a composed module that half precision modules declare, by
+    /// the names that the composer decorated.
+    pub fn half_items(&self, module: &naga::Module) -> HalfItems {
+        let half: Vec<&str> = self
+            .modules
+            .iter()
+            .filter(|m| m.half)
+            .map(|m| m.decoration.as_str())
+            .collect();
+        let from_half = |name: &Option<String>| {
+            name.as_deref()
+                .is_some_and(|name| half.iter().any(|d| name.ends_with(d)))
+        };
+        HalfItems {
+            functions: module
+                .functions
+                .iter()
+                .filter(|(_, f)| from_half(&f.name))
+                .map(|(handle, _)| handle)
+                .collect(),
+            constants: module
+                .constants
+                .iter()
+                .filter(|(_, c)| from_half(&c.name))
+                .map(|(handle, _)| handle)
+                .collect(),
+        }
+    }
+
+    /// A composer that validates with the given capabilities and knows every library module. A
+    /// composer without `shader-f16` gets each half precision module with 32-bit floats.
     fn composer(&self, capabilities: Capabilities) -> Result<Composer, Problem> {
         let mut composer = Composer::default().with_capabilities(capabilities);
+        let f16 = capabilities.contains(Capabilities::SHADER_FLOAT16);
         for module in &self.modules {
+            let widened = (module.half && !f16).then(|| half::widened(&module.source));
             let added = composer
                 .add_composable_module(ComposableModuleDescriptor {
-                    source: &module.source,
+                    source: widened.as_deref().unwrap_or(&module.source),
                     file_path: &module.path,
                     ..Default::default()
                 })
@@ -227,6 +264,22 @@ impl Library {
             text = out;
         }
         text
+    }
+}
+
+/// The functions and constants of a composed module that half precision modules declare.
+pub(crate) struct HalfItems {
+    functions: Vec<Handle<naga::Function>>,
+    constants: Vec<Handle<naga::Constant>>,
+}
+
+impl HalfItems {
+    /// The items' names in the module, after a rename such as the one that takes off the
+    /// composer's decorations.
+    pub fn names(&self, module: &naga::Module) -> Vec<String> {
+        let functions = self.functions.iter().map(|&h| &module.functions[h].name);
+        let constants = self.constants.iter().map(|&h| &module.constants[h].name);
+        functions.chain(constants).flatten().cloned().collect()
     }
 }
 

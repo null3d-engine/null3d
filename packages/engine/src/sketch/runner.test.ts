@@ -28,6 +28,7 @@ const CAPABILITIES: EngineCapabilities = {
 	features: ['WEBGL_multi_draw'],
 	limits: {},
 	hdr: true,
+	halfPrecision: false,
 	maxInstances: 2_097_152,
 	depth: 'reversed',
 };

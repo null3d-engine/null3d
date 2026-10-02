@@ -66,6 +66,9 @@
 //                       that comes only now and then
 //   --shields on|off    the state of Brave's Shields for the dev server's site, which the runner
 //                       cannot read: it goes into each Brave result and the run's summary
+//   --switches <q>      page switches that every page of the plan gets, such as half=on or
+//                       half=on&preset=ultra: the checks plan's image tests then compare the
+//                       scene shaders at half precision with the usual references
 //   --android <list>    browsers on the Android phone: chrome, chrome-beta, brave, firefox, samsung
 //   --lan <list>        names of runner pages that wait on the local network, as device-browser,
 //                       such as ipad-safari; pages on one device take turns
@@ -93,6 +96,7 @@ import {
 	isNull3dPage,
 	parseStoredBaselines,
 	readJobCounts,
+	readSwitches,
 	STORED_BASELINES_FILE,
 	type StoredBaselines,
 } from '../bench/lib/parity.ts';
@@ -187,6 +191,8 @@ export interface Options {
 	only?: string[];
 	/** How many times over to run the items, when given. */
 	rounds?: number;
+	/** Page switches that every page of the plan gets, joined by `&`, when given. */
+	switches?: string;
 	/** Someone is at the network devices, to reopen a runner page that a crash closed. */
 	attended?: boolean;
 	/** macOS app names, such as Safari. */
@@ -196,7 +202,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--android <browsers>] [--lan <runners>] [--attended] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--attended] [<macOS app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -250,6 +256,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--only') options.only = list(args[++i]);
 		else if (arg === '--rounds') options.rounds = wholeNumber(arg, args[++i]);
 		else if (arg === '--shields') options.shields = oneOf(arg, args[++i], SHIELDS_STATES);
+		else if (arg === '--switches') options.switches = readSwitches(args[++i], arg);
 		else if (arg === '--plan') options.plan = args[++i] ?? '';
 		else if (arg === '--android') options.android = list(args[++i]);
 		else if (arg === '--lan') options.lan = list(args[++i]);
@@ -677,12 +684,13 @@ function wholeHeatText(samples: readonly HeatSample[]): string | undefined {
 
 /**
  * A fixed plan's items with the command line's settings: the items that --only names, or only its
- * shard's items, the number of rounds over. Undefined for the phone-scale search. Items whose pages
- * end their tab run on a network device only with --attended: a phone over USB gets a new runner
- * page from the runner tool, but a tablet's runner page that Safari did not reload stays closed.
+ * shard's items, the number of rounds over. With --switches, each item's page gets them after its
+ * own. Undefined for the phone-scale search. Items whose pages end their tab run on a network device
+ * only with --attended: a phone over USB gets a new runner page from the runner tool, but a
+ * tablet's runner page that Safari did not reload stays closed.
  */
 export function planItems(options: Options): PlanItem<Check>[] | undefined {
-	const all = PLANS[options.plan]?.({
+	const planned = PLANS[options.plan]?.({
 		count: options.count,
 		runs: options.runs,
 		jobs: options.jobs,
@@ -691,9 +699,16 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 		seconds: options.seconds,
 		minutes: options.minutes,
 	});
-	if (!all) return undefined;
+	if (!planned) return undefined;
+	const { shard, only, rounds = 1, switches } = options;
+	const all =
+		switches === undefined
+			? planned
+			: planned.map((item) => ({
+					...item,
+					path: `${item.path}${item.path.includes('?') ? '&' : '?'}${switches}`,
+				}));
 	const needs = (item: PlanItem<Check>) => itemsNeeded(item.check);
-	const { shard, only, rounds = 1 } = options;
 	const items = only ? pickItems(all, only, needs) : all;
 	if (options.lan.length > 0 && !options.attended && items.some((item) => item.endsTab))
 		throw new Error(

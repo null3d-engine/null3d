@@ -96,6 +96,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?depth=reversed-gl` | On WebGL2, force a depth mode: `reversed`, `reversed-gl` (as in browsers without `EXT_clip_control`, such as Firefox) or `standard` (`concepts/backends`) |
 | `?latency=pipelined`, `?latency=low` | Latency mode |
 | `?cells=off` | Cull every object, with no grid cell out of view skipped first, to measure what skipping cells saves (`concepts/culling`) |
+| `?half=on`, `?half=off` | Do the scene shaders' color math at half precision, or at full precision; WebGPU needs the device feature `shader-f16`, and `engine.capabilities.halfPrecision` says which one the engine took (`guides/testing`) |
 | `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest (`concepts/quality-presets`) |
 | `?jobs=4` | Start this many job workers, from 1 to 255, instead of the logical cores minus 2 |
 | `?memory=2048` | Set the maximum of the memory that worker threads share, in MiB, up to 4096, over the `memory` option of `createEngine`; the default is 1024 |

@@ -16,6 +16,7 @@
 mod composition;
 mod features;
 mod glsl;
+mod half;
 mod library;
 mod manifest;
 mod material;
@@ -34,6 +35,7 @@ use std::path::Path;
 use naga::valid::{Capabilities, ModuleInfo, ValidationFlags, Validator};
 use naga_oil::compose::preprocess::Preprocessor;
 use naga_oil::compose::{NagaModuleDescriptor, ShaderDefValue};
+use null3d_gpu::drawlist::permutation;
 use serde::{Deserialize, Serialize};
 
 pub use features::ALLOWED_LANGUAGE_FEATURES;
@@ -290,9 +292,13 @@ impl Compiler {
             .iter()
             .map(|def| (def.clone(), ShaderDefValue::Bool(true)))
             .collect();
-        // WebGPU has no draw index, so only variants for WebGL2 alone may read `gl_DrawID`.
+        // WebGPU has no draw index, so only variants for WebGL2 alone may read `gl_DrawID`. The
+        // WGSL builds of the half precision bit load only where the device has `shader-f16`, so
+        // they alone compose library modules with their 16-bit floats.
         let capabilities = if variant.targets == [Target::Glsl] {
             WEBGPU_BASELINE.union(Capabilities::DRAW_INDEX)
+        } else if variant.targets == [Target::Wgsl] && build.permutation & permutation::HALF != 0 {
+            WEBGPU_BASELINE.union(Capabilities::SHADER_FLOAT16)
         } else {
             WEBGPU_BASELINE
         };
@@ -328,7 +334,9 @@ impl Compiler {
         fail_on(problems)?;
 
         naga::compact::compact(&mut module, naga::compact::KeepUnused::No);
+        let half_items = self.library.half_items(&module);
         names::undecorate(&mut module, &self.library);
+        let mediump = half_items.names(&module);
         let info = validate(&module, capabilities)?;
         let wgsl = if variant.has(Target::Wgsl) {
             let flags = naga::back::wgsl::WriterFlags::empty();
@@ -347,7 +355,7 @@ impl Compiler {
         };
         let glsl = if variant.has(Target::Glsl) {
             let programs = pipelines.iter().map(|(name, pipeline)| {
-                glsl::write_program(&module, &info, name, pipeline)
+                glsl::write_program(&module, &info, name, pipeline, &mediump)
                     .map(|program| (name.clone(), program))
                     .map_err(|message| vec![Problem::in_file(path, message)])
             });

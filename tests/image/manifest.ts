@@ -46,6 +46,14 @@ import { PRECISION } from '../pages/lib/depth-precision.ts';
  */
 const FAR_OUT_TOLERANCE = { threshold: 0, maxDiffRatio: 0.00005 };
 
+/**
+ * The switch of tests that compare exact colors with another test's references, such as a scene far
+ * out against its image at the origin. Half precision rounds colors differently, by one step in
+ * most changed pixels, so these tests keep full precision even when a run turns half precision on
+ * for every page. Positions keep full precision either way, which is what they test.
+ */
+const FULL_PRECISION = 'half=off';
+
 /** The sketch of the tone mapping tests: tiles whose linear colors run from about 0.2 to 16. */
 export const BRIGHT_SKETCH = 'tests/pages/sketches/bright-sketch.ts';
 
@@ -159,7 +167,7 @@ const S1_CELLS_DEVICE_TOLERANCE = { maxDiffRatio: 0.003 };
 /** The WebGL2 depth modes that ?depth= forces. */
 const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'];
 
-/** The tests of every feature, before the depth prepass draws some of their scenes again. */
+/** The tests of every feature, before the depth prepass and half precision draw some again. */
 const FEATURE_TESTS: readonly ImageTest[] = [
 	// A clear color, read back through the engine's readback on each GPU interface.
 	{ name: 'clear', page: 'tests/pages/clear.html', size: [64, 64], tiers: ['webgpu', 'webgl2'] },
@@ -355,6 +363,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/cells-sketch.ts?x=100000',
 		hold: 1,
 		reference: 'cells',
+		switches: [FULL_PRECISION],
 		tolerance: { threshold: 0, maxDiffRatio: 0.0003 },
 	},
 	{
@@ -362,6 +371,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: `tests/pages/sketches/cells-sketch.ts?x=${977 * 1024}`,
 		hold: 1,
 		reference: 'cells',
+		switches: [FULL_PRECISION],
 		tolerance: FAR_OUT_TOLERANCE,
 	},
 	// Debug drawing: every shape of ctx.debug over a small scene, the axes of a spinning box and the
@@ -374,6 +384,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 1,
 		size: [400, 225],
 		modes: ['pipelined', 'single-threaded'],
+		switches: [FULL_PRECISION],
 		tolerance: { threshold: 0, maxDiffRatio: 0 },
 		devices: ['sm-s926b'],
 	},
@@ -386,6 +397,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 1,
 		size: [400, 225],
 		reference: 'debug',
+		switches: [FULL_PRECISION],
 		tolerance: FAR_OUT_TOLERANCE,
 	},
 	// Each debug view of a scene with lit, unlit, see-through and instanced objects, on every tier.
@@ -479,6 +491,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		...ORTHO,
 		sketch: `${ORTHO.sketch}?x=${977 * 1024}`,
 		reference: 'ortho-camera',
+		switches: [FULL_PRECISION],
 		tolerance: FAR_OUT_TOLERANCE,
 	},
 	// Each depth mode that ?depth= forces on WebGL2 must cut the scene at the same near and far
@@ -748,6 +761,23 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 ];
 
 /**
+/**
+ * A copy of a feature test that draws with one more switch, against the references of the test it
+ * copies.
+ */
+function copyWithSwitch(name: string, suffix: string, extra: string): ImageTest {
+	const test = FEATURE_TESTS.find((t) => t.name === name);
+	if (!test) throw new Error(`the manifest has no ${name} test to draw again with ?${extra}`);
+	const { sameOnEveryTier: _, ...rest } = test;
+	return {
+		...rest,
+		name: `${name}-${suffix}`,
+		reference: test.reference ?? name,
+		switches: [...(test.switches ?? []), extra],
+	};
+}
+
+/**
  * The scenes that the depth prepass draws again on the WebGPU tiers, which must match their images
  * without it: shadows, masked cards that stay out of the prepass, decals whose depth bias the
  * prepass keeps, see-through objects that draw after it, an orthographic camera whose near plane
@@ -763,24 +793,38 @@ const PREPASS_SCENES = [
 	's2',
 ];
 
-/** Each prepass scene's test again with ?prepass=on, in its first thread mode. */
-function prepassTests(tests: readonly ImageTest[]): ImageTest[] {
-	return PREPASS_SCENES.map((name) => {
-		const test = tests.find((t) => t.name === name);
-		if (!test) throw new Error(`the manifest has no ${name} test for the depth prepass to draw`);
-		const { sameOnEveryTier: _, ...rest } = test;
-		return {
-			...rest,
-			name: `${name}-prepass`,
-			switches: [...(test.switches ?? []), 'prepass=on'],
-			reference: name,
-			tiers: tiersOf(test).filter((tier) => tier !== 'webgl2'),
-			...(test.modes && { modes: test.modes.slice(0, 1) }),
-		};
-	});
+/** A prepass scene's test again with ?prepass=on, in its first thread mode. */
+function withPrepass(name: string): ImageTest {
+	const test = copyWithSwitch(name, 'prepass', 'prepass=on');
+	return {
+		...test,
+		tiers: tiersOf(test).filter((tier) => tier !== 'webgl2'),
+		...(test.modes && { modes: test.modes.slice(0, 1) }),
+	};
 }
 
-export const IMAGE_TESTS: readonly ImageTest[] = [...FEATURE_TESTS, ...prepassTests(FEATURE_TESTS)];
+/**
+ * The tests that draw again with the scene shaders' color math at half precision, as `?half=on`
+ * asks: the standard material over metalness and roughness, its texture maps, clustered point
+ * lights, cascaded shadows, and tone mapping in the final pass and in each scene shader on the
+ * 8-bit path. Each copy must draw its test's image. WebGPU draws them in 16-bit floats where the
+ * device has `shader-f16`, and at full precision elsewhere, as on CI's software GPU. WebGL2 runs
+ * that math at `mediump`.
+ */
+const HALF_PRECISION_TESTS = [
+	'standard-grid',
+	'standard-maps',
+	'lights-16',
+	'shadows',
+	toneMappingTest('agx', 0),
+	eightBitTest('aces'),
+];
+
+export const IMAGE_TESTS: readonly ImageTest[] = [
+	...FEATURE_TESTS,
+	...PREPASS_SCENES.map(withPrepass),
+	...HALF_PRECISION_TESTS.map((name) => copyWithSwitch(name, 'half', 'half=on')),
+];
 
 /** Every run of the manifest's tests: each test on each of its tiers, in each of its thread modes. */
 export const IMAGE_RUNS = imageRuns(IMAGE_TESTS);

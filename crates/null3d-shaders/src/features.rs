@@ -25,6 +25,7 @@ use naga::valid::{
 use naga::{AddressSpace, Block, Expression, Handle, Statement, TypeInner};
 use naga_oil::compose::{Composer, ComposerError, ComposerErrorInner};
 
+use crate::half::{is_half_float_type, is_half_float_value};
 use crate::library::{Library, View, owner};
 use crate::position::{Position, to_u32};
 use crate::scan::{self, Kind, Token};
@@ -172,37 +173,6 @@ fn half_float_problem(path: &str, position: Position, what: &str) -> Problem {
     )
 }
 
-/// True for a 16-bit float type: `f16`, and the vector and matrix aliases that end in `h`.
-fn is_half_float_type(name: &str) -> bool {
-    if name == "f16" {
-        return true;
-    }
-    let Some(shape) = name.strip_suffix('h') else {
-        return false;
-    };
-    let size = |digit: u8| (b'2'..=b'4').contains(&digit);
-    match shape.as_bytes() {
-        [b'v', b'e', b'c', n] => size(*n),
-        [b'm', b'a', b't', c, b'x', r] => size(*c) && size(*r),
-        _ => false,
-    }
-}
-
-/// True for a 16-bit float value, such as `1.0h`, `2h` or `0x1p-2h`. A hexadecimal value ends in
-/// `h` only when it has an exponent, because `h` is not a hexadecimal digit.
-fn is_half_float_value(number: &str) -> bool {
-    let Some(value) = number.strip_suffix('h') else {
-        return false;
-    };
-    match value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-    {
-        Some(hex) => hex.contains(['p', 'P']),
-        None => !value.is_empty(),
-    }
-}
-
 /// A problem about a language feature, found at `what` in a file.
 fn language_feature(path: &str, position: Option<Position>, feature: &str, what: &str) -> Problem {
     feature_problem(path, position, feature, what, fix(feature))
@@ -301,7 +271,8 @@ fn is_assignment(operator: &str) -> bool {
 /// Scans one file. Each problem points at the token its message names: an attribute's `@`, the
 /// name of a function, type, extension or texel format, or the start of a swizzle. Of the 16-bit
 /// float types and values in a file, only the first gets a problem, and none does when an
-/// `enable f16;` line already has one.
+/// `enable f16;` line already has one. A library module may use 16-bit floats, because builds
+/// without `shader-f16` get it with 32-bit floats instead.
 fn scan_file(
     view: &View,
     members: &BTreeSet<&str>,
@@ -310,6 +281,7 @@ fn scan_file(
 ) {
     let tokens = &view.tokens;
     let path = view.path;
+    let library = !view.decoration.is_empty();
     let mut depth = 0usize;
     let mut enables_f16 = false;
     let mut first_half_float = None;
@@ -345,12 +317,13 @@ fn scan_file(
                 for name in directive_names(tokens, index) {
                     let extension = tokens[name].text;
                     enables_f16 |= extension == "f16";
-                    if extension != BUILD_EXTENSION {
+                    if extension != BUILD_EXTENSION && !(library && extension == "f16") {
                         problems.push(extension_problem(path, view.position(name), extension));
                     }
                 }
             }
             name if first_half_float.is_none()
+                && !library
                 && ((token.kind == Kind::Ident
                     && is_half_float_type(name)
                     && !declared.contains(name))

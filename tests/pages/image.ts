@@ -3,8 +3,9 @@
 // server's root, with the sketch's own query after it, and ?size= gives the canvas in pixels, such
 // as 320x180. ?transparent starts the engine with a transparent canvas, ?antialias= with an
 // anti-aliasing mode, ?shadowTileSize= with a size of the shadow atlas's tiles, and
-// ?pointLightShadows with point light shadows on. The engine reads its own switches: ?hold= the sketch time, ?gpu= the tier,
-// ?depth= the WebGL2 depth mode, ?hdr=off, and the thread mode's switches.
+// ?pointLightShadows with point light shadows on. The engine reads its own switches: ?hold= the
+// sketch time, ?gpu= the tier, ?depth= the WebGL2 depth mode, ?hdr=off, ?half=, and the thread
+// mode's switches.
 import { createEngine, type EngineOptions } from '@null3d/engine';
 import { depthFacts } from './lib/depth';
 import { run, toBase64 } from './lib/result';
@@ -45,6 +46,7 @@ run('image', async () => {
 	return {
 		tier: engine.capabilities.tier,
 		hdr: engine.capabilities.hdr,
+		halfPrecision: engine.capabilities.halfPrecision,
 		mode: engine.mode,
 		...depthFacts(engine),
 		width: frame.width,
