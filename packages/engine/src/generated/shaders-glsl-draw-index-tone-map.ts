@@ -43,6 +43,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct VertexOut {
     vec4 clip;
@@ -204,6 +207,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct VertexOut {
     vec4 clip;
@@ -1184,6 +1190,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -1742,6 +1751,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -2410,6 +2422,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -2968,6 +2983,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -3640,6 +3658,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -4205,6 +4226,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -4955,6 +4979,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -5520,6 +5547,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -6266,6 +6296,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -6830,6 +6863,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -7502,6 +7538,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -8066,6 +8105,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -8742,6 +8784,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -9313,6 +9358,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -10067,6 +10115,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -10638,6 +10689,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -11459,6 +11513,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -11692,6 +11749,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -11813,6 +11873,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -12431,6 +12494,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -13319,6 +13385,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -13937,6 +14006,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -14829,6 +14901,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -15454,6 +15529,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -16424,6 +16502,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -17075,6 +17156,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -18048,6 +18132,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -18692,6 +18779,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -19587,6 +19677,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -20212,6 +20305,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -21178,6 +21274,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -21829,6 +21928,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -22798,6 +22900,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -23422,6 +23527,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -24314,6 +24422,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -24938,6 +25049,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -25834,6 +25948,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -26465,6 +26582,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -27439,6 +27559,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -28096,6 +28219,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -29073,6 +29199,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -29723,6 +29852,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -30622,6 +30754,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -31253,6 +31388,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -32223,6 +32361,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -32880,6 +33021,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -33853,6 +33997,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -34503,6 +34650,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -35398,6 +35548,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -36042,6 +36195,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -36925,6 +37081,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -37266,6 +37425,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -37512,6 +37674,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -37901,6 +38066,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -38230,6 +38398,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -38619,6 +38790,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -38952,6 +39126,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -39347,6 +39524,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -39683,6 +39863,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -40078,6 +40261,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -40420,6 +40606,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -40854,6 +41043,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -41243,6 +41435,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -41677,6 +41872,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -42070,6 +42268,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -42510,6 +42711,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -42906,6 +43110,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -43346,6 +43553,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;

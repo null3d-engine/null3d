@@ -146,6 +146,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct VertexIn {
     vec3 position;
@@ -231,6 +234,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct VertexIn {
     vec3 position;
@@ -318,6 +324,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct VertexIn {
     vec3 position;
@@ -495,6 +504,9 @@ struct Frame {
     Fog fog;
     vec4 cluster_depth;
     vec4 cluster_grid;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct VertexIn {
     vec3 position;
@@ -667,6 +679,9 @@ struct Frame {
     fog: Fog,
     cluster_depth: vec4<f32>,
     cluster_grid: vec4<f32>,
+    clock: vec4<f32>,
+    camera_world: vec4<f32>,
+    target_size: vec4<f32>,
 }
 
 struct VertexIn {
@@ -756,6 +771,9 @@ struct Frame {
     fog: Fog,
     cluster_depth: vec4<f32>,
     cluster_grid: vec4<f32>,
+    clock: vec4<f32>,
+    camera_world: vec4<f32>,
+    target_size: vec4<f32>,
 }
 
 struct VertexIn {

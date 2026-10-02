@@ -105,11 +105,19 @@ export class FrameReplay {
 		if (!this.backend.building) this.complete = true;
 	}
 
-	/** Resolves once every pipeline is built, including those of a frame's list. */
-	async built(frame: number): Promise<void> {
-		this.restOf(frame);
-		while (this.backend.building)
+	/**
+	 * Resolves with the frame that this thread took last, once every pipeline is built, including
+	 * those of that frame's list. Frames go on while it waits, and the sketch thread records into a
+	 * taken frame's list again once the next frame is taken, so the caller replays the frame at
+	 * once, before this thread can take another.
+	 */
+	async builtTaken(): Promise<number> {
+		for (;;) {
+			const frame = Atomics.load(this.slots, Slot.FramesTaken);
+			this.restOf(frame);
+			if (!this.backend.building) return frame;
 			await new Promise((resolve) => setTimeout(resolve, BUILD_POLL_MS));
+		}
 	}
 
 	/**
@@ -197,11 +205,11 @@ export class WebGPUSceneRenderer implements Renderer {
 	}
 
 	/**
-	 * Replays a frame into an offscreen copy of the canvas, once every pipeline is built, and reads
-	 * its pixels back.
+	 * Replays the frame taken last into an offscreen copy of the canvas, once every pipeline is
+	 * built, and reads its pixels back.
 	 */
-	async capture(input: FrameInput): Promise<{ width: number; height: number; pixels: Uint8Array }> {
-		await this.frames.built(input.frame);
+	async capture(): Promise<{ width: number; height: number; pixels: Uint8Array }> {
+		const frame = await this.frames.builtTaken();
 		const { width, height } = this.canvas;
 		const texture = this.device.createTexture({
 			size: [width, height],
@@ -210,7 +218,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		});
 		this.backend.canvasTarget = texture;
 		try {
-			this.frames.replay(input.frame);
+			this.frames.replay(frame);
 		} finally {
 			this.backend.canvasTarget = undefined;
 			this.backend.resetCounts();
@@ -311,11 +319,11 @@ export class WebGL2SceneRenderer implements Renderer {
 	}
 
 	/**
-	 * Replays a frame into an offscreen stand-in for the canvas, of the canvas's format and size,
-	 * once every pipeline is built, and reads its pixels back.
+	 * Replays the frame taken last into an offscreen stand-in for the canvas, of the canvas's format
+	 * and size, once every pipeline is built, and reads its pixels back.
 	 */
-	async capture(input: FrameInput): Promise<{ width: number; height: number; pixels: Uint8Array }> {
-		await this.frames.built(input.frame);
+	async capture(): Promise<{ width: number; height: number; pixels: Uint8Array }> {
+		const frame = await this.frames.builtTaken();
 		const gl = this.gl;
 		const { width, height } = this.canvas;
 		const framebuffer = gl.createFramebuffer();
@@ -327,7 +335,7 @@ export class WebGL2SceneRenderer implements Renderer {
 		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, color);
 		this.backend.canvasTarget = { framebuffer, width, height };
 		try {
-			this.frames.replay(input.frame);
+			this.frames.replay(frame);
 		} finally {
 			this.backend.canvasTarget = undefined;
 			this.backend.resetCounts();

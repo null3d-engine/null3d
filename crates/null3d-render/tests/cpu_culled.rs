@@ -10,6 +10,7 @@ use null3d_core::handle::Handle;
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::SunShadow;
 use null3d_core::scene::{Command, flags};
+use null3d_gpu::caps::OFFSET_ALIGNMENT;
 use null3d_gpu::drawlist::{NO_TARGET, Op, sizes};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::camera::Perspective;
@@ -30,7 +31,9 @@ const FRAME: u32 = 1;
 const DRAWS: u32 = 2;
 /// Bytes of one frame's slot in the frame uniform ring: the uniform block, aligned for binding,
 /// then the offsets from the camera to 512 cells.
-const FRAME_SLOT: u32 = 256 + 512 * 16;
+const FRAME_SLOT: u32 = OFFSETS_AT + 512 * 16;
+/// Where a frame's slot holds the offsets from the camera to the cells.
+const OFFSETS_AT: u32 = sizes::FRAME_UNIFORM_BYTES.next_multiple_of(OFFSET_ALIGNMENT);
 /// Scene slots up to the highest the world uses: slot 0 is never used, then the camera and four
 /// objects.
 const SCENE_ROWS: u32 = 6;
@@ -1088,7 +1091,7 @@ fn far_from_the_origin_static_objects_stay_resident_and_list_their_cell() {
             .collect();
         assert_eq!(
             frame_writes,
-            vec![(0, sizes::FRAME_UNIFORM_BYTES), (256, 2 * 16)],
+            vec![(0, sizes::FRAME_UNIFORM_BYTES), (OFFSETS_AT, 2 * 16)],
             "frame {frame}"
         );
     }

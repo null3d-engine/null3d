@@ -390,12 +390,13 @@ export class SketchRunner {
 
 	/**
 	 * Records a frame of the scene as the setup has built it so far, with no update, and publishes
-	 * it for the thread that draws. The frame before the last shares its list, so it waits for that
-	 * frame to be taken first.
+	 * it for the thread that draws. The frame before the last shares its list. The thread that
+	 * draws marks a frame taken before it replays the frame's list, so that list is free only once
+	 * the last frame is taken, as in the frame loop.
 	 */
 	private async publishSetupFrame(): Promise<number> {
 		const { slots } = this.sketch.control;
-		await reached(slots, Slot.FramesTaken, this.recorded.frame - 1);
+		await reached(slots, Slot.FramesTaken, this.recorded.frame);
 		const frame = this.frame(false);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);
@@ -603,7 +604,10 @@ export class SketchRunner {
 		// Job workers woken now start while the engine applies the frame's commands; woken before
 		// the sketch's update, they would spin through it and sleep again.
 		glue.prepareJobs();
-		if (glue.beginFrame(frame) !== 0) this.report(coreFailure(glue, QUEUED_CHANGE));
+		// Whole milliseconds and microseconds cross into the core without a number object each.
+		const timeMs = Math.round(time.now * 1000);
+		const stepUs = Math.round(dt * 1_000_000);
+		if (glue.beginFrame(frame, timeMs, stepUs) !== 0) this.report(coreFailure(glue, QUEUED_CHANGE));
 		this.core.refresh();
 		this.endPhase(Phase.Commands);
 		this.updateTransforms(false);

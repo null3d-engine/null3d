@@ -537,6 +537,15 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// The built-in values of custom materials, at a held time: frame, camera and object, and the
+	// surface's world position, in a surface function and a vertex offset.
+	{
+		name: 'custom-builtins',
+		sketch: 'tests/pages/sketches/custom-builtins-sketch.ts',
+		hold: 1.5,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
 	// The README's dissolve: a surface function with uniforms and the mask alpha mode, at four
 	// stages of its progress.
 	{

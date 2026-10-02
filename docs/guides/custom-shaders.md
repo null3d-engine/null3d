@@ -40,7 +40,7 @@ fn surface(input: SurfaceInput) -> Surface {
 const red = materials.shader({ wgsl: rings, color: '#e04040', roughness: 0.5 });
 ```
 
-The WGSL can declare uniforms as `struct Uniforms`, which `set()` changes at any time, and a vertex offset, `fn vertexOffset`, which moves the mesh's vertices. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface`, uniforms and vertex offsets.
+The WGSL can declare uniforms as `struct Uniforms`, which `set()` changes at any time, and a vertex offset, `fn vertexOffset`, which moves the mesh's vertices. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface`, uniforms and vertex offsets. [Built-in shader inputs](../shaders/builtins.md) lists the values that every custom material reads, such as `frame.time`.
 
 ## WGSL in sketch code
 

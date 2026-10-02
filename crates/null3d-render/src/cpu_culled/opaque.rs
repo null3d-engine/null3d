@@ -30,7 +30,7 @@ use crate::view::{ViewFrame, ViewId};
 
 /// Where a frame's slot in a view's ring of frame uniforms holds the offset from the camera to
 /// each cell: after the uniform block, aligned for binding.
-const OFFSETS_AT: u32 = OFFSET_ALIGNMENT;
+const OFFSETS_AT: u32 = sizes::FRAME_UNIFORM_BYTES.next_multiple_of(OFFSET_ALIGNMENT);
 /// Bytes of the offsets from the camera to the cells, as the vertex shader's block holds them.
 pub(super) const OFFSETS_BYTES: u32 = MAX_CELLS * CELL_OFFSET_BYTES;
 /// Bytes of one frame's slot in a view's ring of frame uniforms: the uniform block, then the

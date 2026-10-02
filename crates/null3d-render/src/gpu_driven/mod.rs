@@ -539,9 +539,13 @@ impl GpuDrivenRenderer {
         self.frames.clear();
         for index in 0..views {
             let view = ViewId::from_index(index);
-            let mut frame = self
-                .settings
-                .view_frame(view, input.scene, parity, input.canvas);
+            let mut frame = self.settings.view_frame(
+                view,
+                input.scene,
+                parity,
+                input.canvas,
+                input.render_scale,
+            );
             if let (Some(frame), ViewId::CAMERA) = (&mut frame, view) {
                 self.lights.assign(input.jobs, frame, input.lights);
             }

@@ -8,7 +8,7 @@ summary: "The surface record; vertex-offset functions; per-instance attributes."
 
 # Surface functions
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Textures, per-instance attributes and the built-in values `frame`, `camera` and `object` are not built yet. Coding agents must not use them in a custom material.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Textures and per-instance attributes are not built yet. Coding agents must not use them in a custom material.
 
 A surface function changes how a material's surface looks, and keeps the engine's lighting. You write it in WGSL. For each pixel, the engine gives it a `SurfaceInput`, and it returns a `Surface`: the base color, roughness, metalness, normal and light of that point. The engine then lights the surface with the scene's lights and shadows, as it lights a standard material. The function works on every GPU path, because the null3D Vite plugin builds it into the standard material's shader for WebGPU and WebGL2.
 
@@ -50,6 +50,7 @@ The engine fills a `SurfaceInput` for each pixel. Positions and directions are i
 | Field | Type | What it holds |
 | --- | --- | --- |
 | `relativePosition` | `vec3f` | The position of the point, relative to the camera |
+| `worldPosition` | `vec3f` | The position of the point in the world, with fewer digits far from the origin ([Built-in shader inputs](builtins.md#positions-relative-to-the-camera)) |
 | `normal` | `vec3f` | The unit normal of the mesh, or of the triangle's face with `flatShading`. On the back face of a double-sided material, it faces the camera |
 | `viewDirection` | `vec3f` | The unit direction from the point toward the camera |
 | `vertexColor` | `vec4f` | The mesh's vertex color when the material has `vertexColors` and the mesh has colors, else white |
@@ -151,6 +152,10 @@ The engine calls the function once for each vertex, with a `VertexInput`:
 - Culling tests the mesh's bounding sphere. Vertices that move out of it can make the object vanish at the edge of the view. Give the object a sphere that holds them with `setBounds(center, radius)`, at setup, as [Objects and transforms](../api/objects.md) describes.
 - Shadows follow the mesh's own vertices, not the moved ones.
 
+## Built-in values
+
+Besides its inputs, a custom material reads the built-in values `frame`, `camera`, `object` and `material` anywhere in its WGSL. The sketch time, `frame.time`, animates a look. The origin of each object, `object.position`, gives each object its own look from one material. [Built-in shader inputs](builtins.md) lists every field.
+
 ## Library functions
 
 A surface function can import the engine's [shader library](library.md), such as its noise and color functions. Import the items that you use by name:
@@ -170,7 +175,7 @@ fn surface(input: SurfaceInput) -> Surface {
 
 Your WGSL shares one file with the engine's standard material, so a few rules apply besides the [WGSL rules for portable shaders](wgsl-rules.md):
 
-- Do not declare the names that the engine declares: `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `material`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs` and `fs`. The build stops at your line when a name clashes.
+- Do not declare a name that the engine declares. The build stops at your line when a name clashes. The engine's names are `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs` and `fs`.
 - Import library items by name, as in `#import null3d::noise::{fbm3}`. An import of a whole module reserves the module's name. After `#import null3d::color`, no name in the file can be `color`.
 - The WGSL cannot hold directives such as `enable`.
 - Call `dpdx`, `dpdy`, `fwidth` and `textureSample` in uniform control flow, outside branches that differ between pixels. Chrome rejects the shader otherwise.
@@ -180,6 +185,7 @@ When the WGSL breaks a rule, the build stops with the file, line and column of t
 ## Related pages
 
 - [Custom shaders](../guides/custom-shaders.md): WGSL in sketch code, and how the Vite plugin compiles it.
+- [Built-in shader inputs](builtins.md): `frame`, `camera`, `object` and `material`.
 - [Materials](../api/materials.md): `materials.shader` and the standard options.
 - [Materials and pipelines](../concepts/materials.md): why materials share shaders.
 - [Shader library and imports](library.md): the functions that a surface function can import.

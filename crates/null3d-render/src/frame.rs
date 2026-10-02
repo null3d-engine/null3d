@@ -27,7 +27,7 @@ use crate::camera::Lens;
 use crate::debug_lines::DebugLines;
 use crate::fog::Fog;
 use crate::frame_data::{FrameUniform, normalized_direction};
-use crate::graph::{GraphError, RenderScale};
+use crate::graph::{GraphError, RenderScale, Size};
 use crate::materials::{
     MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, blend_state, feature,
 };
@@ -471,6 +471,9 @@ pub struct SceneSettings {
     lighting: Lighting,
     canvas: CanvasOutput,
     output: Output,
+    /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
+    /// the bits of a `u32`, as the frame uniform holds them.
+    clock: [f32; 4],
     /// True when the render scale may drop below the whole canvas.
     render_scaling: bool,
 }
@@ -499,8 +502,15 @@ impl SceneSettings {
             },
             canvas,
             output: Output::default(),
+            clock: [0.0; 4],
             render_scaling: false,
         }
+    }
+
+    /// The frame's clock: the sketch time and the seconds since the frame before, in seconds,
+    /// and the frame's number.
+    pub fn set_clock(&mut self, time: f32, delta: f32, frame: u32) {
+        self.clock = [time, delta, f32::from_bits(frame), 0.0];
     }
 
     /// How frames reach the canvas.
@@ -704,7 +714,7 @@ impl SceneSettings {
         canvas: (u32, u32),
     ) {
         let view = self
-            .view_frame(ViewId::CAMERA, scene, parity, canvas)
+            .view_frame(ViewId::CAMERA, scene, parity, canvas, RenderScale::FULL)
             .map(|frame| LightView {
                 camera: frame.camera,
                 frustum: frame.frustum,
@@ -855,20 +865,25 @@ impl SceneSettings {
         })
     }
 
-    /// A view's values for a frame whose targets have the canvas's size, or `None` when the view
-    /// has no camera to draw from. Shaders work in positions relative to the camera, so the
-    /// constants put a perspective camera at the origin, and an orthographic camera at infinity
-    /// behind its view.
+    /// A view's values for a frame on a canvas of `canvas` device pixels that the scene draws at
+    /// render scale `scale`, or `None` when the view has no camera to draw from. The projection
+    /// takes the canvas's shape, and the target size is the render size, which fragment positions
+    /// count in. Shaders work in positions relative to the camera, so the constants put a
+    /// perspective camera at the origin, and an orthographic camera at infinity behind its view.
     pub fn view_frame(
         &self,
         view: ViewId,
         scene: &SceneStorage,
         parity: usize,
         canvas: (u32, u32),
+        scale: RenderScale,
     ) -> Option<ViewFrame> {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
         let view = self.views.get(view.index())?;
         let camera = view.transform(scene, parity, aspect)?;
+        let [x, y, z] = camera.cell.absolute().map(|v| v as f32);
+        let (width, height) = Size::Full.viewport(canvas, scale);
+        let (width, height) = (width as f32, height as f32);
         let uniform = FrameUniform {
             view_proj: camera.view_proj,
             camera_position: camera.eye,
@@ -877,6 +892,9 @@ impl SceneSettings {
             ambient: self.lighting.ambient,
             output: self.output.uniform(),
             fog: self.lighting.fog.uniform(camera.forward),
+            clock: self.clock,
+            camera_world: [x, y, z, 0.0],
+            target_size: [width, height, 1.0 / width, 1.0 / height],
             ..FrameUniform::default()
         };
         Some(ViewFrame::new(

@@ -63,7 +63,11 @@ export interface CoreGlue extends CoreErrors {
 	 * are ready when this frame's parallel work comes.
 	 */
 	prepareJobs(): void;
-	beginFrame(frame: number): number;
+	/**
+	 * Starts a frame, with the sketch time in whole milliseconds and the step since the frame
+	 * before in whole microseconds, and applies every pending command.
+	 */
+	beginFrame(frame: number, timeMs: number, stepUs: number): number;
 	updateTransforms(): number;
 	/**
 	 * Updates the objects that the sketch moved after `updateTransforms`, and the objects below

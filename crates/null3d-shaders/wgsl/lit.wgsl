@@ -24,20 +24,22 @@ enable draw_index;
 // change between pixels, as three.js's getTangentFrame makes it.
 //
 // Custom materials build this template with their WGSL added after its last line, and with the
-// shader def CUSTOM, which reads the first texture coordinates. CUSTOM_SURFACE makes the fragment
-// shader call their `fn surface`, and CUSTOM_VERTEX_OFFSET makes the vertex shader move each vertex
-// by their `fn vertexOffset`. When their WGSL declares `struct Uniforms`, the build adds
-// `load_material_uniforms` after it, and CUSTOM_UNIFORMS makes each stage fill `material` with the
-// uniforms. Their WGSL shares this file's names, so the template imports library items by name and
-// keeps its own names few. It never imports a module whole, which would reserve the module's name
-// in their WGSL too. Names that only the MAPS builds declare stay free for custom materials, which
-// build without maps.
+// shader defs CUSTOM and UV0, which reads the first texture coordinates. CUSTOM_SURFACE makes the
+// fragment shader call their `fn surface`, and CUSTOM_VERTEX_OFFSET makes the vertex shader move
+// each vertex by their `fn vertexOffset`. Their WGSL reads the built-in values `frame`, `camera` and
+// `object`, which each stage fills under CUSTOM; the frame's uniform block is `engine_frame` here.
+// When their WGSL declares `struct Uniforms`, the build adds `load_material_uniforms` after it, and
+// CUSTOM_UNIFORMS makes each stage fill `material` with the uniforms. Their WGSL shares this file's
+// names, so the template imports library items by name and keeps its own names few. It never
+// imports a module whole, which would reserve the module's name in their WGSL too. Names that only
+// the MAPS builds declare stay free for custom materials, which build without maps.
 #import null3d::lighting::{PbrMaterial, dfg_lut, direct_light, indirect_diffuse}
 #import null3d::lighting::{multiscatter_compensation, pbr_material}
 #import null3d::globals::{Material}
 #import null3d::lights::{clustered_light}
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
-#import null3d::mesh::{custom_value, frame, material_of, relative_position, world_normal}
+#import null3d::mesh::{custom_value, frame as engine_frame, material_of}
+#import null3d::mesh::{relative_position, world_normal}
 #ifdef MAPS
 #import null3d::mesh::{map_layer, map_ready, straight_texel, world_direction}
 #endif
@@ -54,6 +56,49 @@ var<private> material_row: Material;
 #ifdef CUSTOM_UNIFORMS
 /// The custom material's uniforms, which each stage reads once.
 var<private> material: Uniforms;
+#endif
+
+#ifdef CUSTOM
+/// The frame's values that a custom material reads as `frame`.
+struct FrameValues {
+    /// The sketch time in seconds, as `time.now` gives it to the sketch.
+    time: f32,
+    /// The seconds since the frame before, as `time.dt` gives them.
+    deltaTime: f32,
+    /// The frame's number, counting from 1, as `time.frame` gives it.
+    index: u32,
+    /// The size of the render target in pixels.
+    resolution: vec2f,
+}
+
+/// The camera's values that a custom material reads as `camera`.
+struct CameraValues {
+    /// The camera's position in the world. Far from the world's origin, it holds fewer digits than
+    /// positions relative to the camera.
+    position: vec3f,
+    /// The matrix from positions relative to the camera to clip space.
+    viewProjection: mat4x4f,
+}
+
+/// The values of the object, or of the instance, that a custom material reads as `object`.
+struct ObjectValues {
+    /// The position of the object's origin in the world.
+    position: vec3f,
+}
+
+var<private> frame: FrameValues;
+var<private> camera: CameraValues;
+var<private> object: ObjectValues;
+
+/// Fills the built-in values from the frame's uniform block and the object's origin, relative to
+/// the camera.
+fn fill_builtins(origin: vec3f) {
+    let clock = engine_frame.clock;
+    let world = engine_frame.camera_world.xyz;
+    frame = FrameValues(clock.x, clock.y, bitcast<u32>(clock.z), engine_frame.target_size.xy);
+    camera = CameraValues(world, engine_frame.view_proj);
+    object = ObjectValues(world + origin);
+}
 #endif
 
 #ifdef MAPS
@@ -129,7 +174,7 @@ struct VertexIn {
     @location(2) uv0: vec2f,
     /// The second texture coordinates, or the first on a mesh without a second set.
     @location(3) uv1: vec2f,
-#else ifdef CUSTOM
+#else ifdef UV0
     @location(2) uv0: vec2f,
 #endif
 #ifdef VERTEX_TANGENT
@@ -152,13 +197,17 @@ struct VertexOut {
 #ifdef MAPS
     /// The first texture coordinates, then the second.
     @location(4) uv: vec4f,
-#else ifdef CUSTOM
+#else ifdef UV0
     /// The first texture coordinates.
     @location(4) uv: vec2f,
 #endif
 #ifdef VERTEX_TANGENT
     @location(5) tangent: vec3f,
     @location(6) bitangent: vec3f,
+#endif
+#ifdef CUSTOM
+    /// The object's origin, relative to the camera.
+    @location(8) @interpolate(flat, either) origin: vec3f,
 #endif
 }
 
@@ -180,6 +229,11 @@ struct VertexInput {
 struct SurfaceInput {
     /// The position relative to the camera, which stays precise far from the world's origin.
     relativePosition: vec3f,
+#ifdef CUSTOM
+    /// The position in the world. Far from the world's origin, it holds fewer digits than
+    /// `relativePosition`.
+    worldPosition: vec3f,
+#endif
     /// The unit normal of the mesh, or of the triangle's face with flat shading, turned toward the
     /// camera on the back faces of double-sided materials.
     normal: vec3f,
@@ -193,7 +247,7 @@ struct SurfaceInput {
     uv: vec2f,
     /// The mesh's second texture coordinates, or the first on a mesh without a second set.
     uv1: vec2f,
-#else ifdef CUSTOM
+#else ifdef UV0
     /// The mesh's first texture coordinates.
     uv: vec2f,
 #endif
@@ -329,6 +383,10 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
+#ifdef CUSTOM
+    let origin = relative_position(found, vec3f(0.0));
+    fill_builtins(origin);
+#endif
 #ifdef CUSTOM_UNIFORMS
     material = load_material_uniforms(found.material);
 #endif
@@ -347,7 +405,7 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #endif
 #ifdef MAPS
     out.uv = vec4f(v.uv0, v.uv1);
-#else ifdef CUSTOM
+#else ifdef UV0
     out.uv = v.uv0;
 #endif
 #ifdef VERTEX_TANGENT
@@ -356,6 +414,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let tangent = normalize(world_direction(found, v.tangent.xyz));
     out.tangent = tangent;
     out.bitangent = normalize(cross(out.normal, tangent) * v.tangent.w);
+#endif
+#ifdef CUSTOM
+    out.origin = origin;
 #endif
     return out;
 }
@@ -376,7 +437,7 @@ fn light_surface(
     occlusion: f32,
 ) -> vec3f {
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
-    var sun_color = frame.sun_color.rgb;
+    var sun_color = engine_frame.sun_color.rgb;
 #ifdef RECEIVE_SHADOWS
     sun_color *= sun_shadow(relative, normal);
 #endif
@@ -384,12 +445,12 @@ fn light_surface(
         m,
         normal,
         to_view,
-        -frame.sun_direction.xyz,
+        -engine_frame.sun_direction.xyz,
         sun_color,
         compensation,
     );
     let clustered = clustered_light(m, relative, normal, to_view, compensation);
-    let ambient = indirect_diffuse(m, frame.ambient.rgb + extra, dfg);
+    let ambient = indirect_diffuse(m, engine_frame.ambient.rgb + extra, dfg);
     let direct = sun.diffuse + sun.specular + clustered.diffuse + clustered.specular;
     return direct + ambient * occlusion;
 }
@@ -430,6 +491,9 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec2f) -> vec4f {
 @fragment
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     material_row = material_of(in.material);
+#ifdef CUSTOM
+    fill_builtins(in.origin);
+#endif
 #ifdef CUSTOM_UNIFORMS
     material = load_material_uniforms(in.material);
 #endif
@@ -437,7 +501,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     input.relativePosition = in.relative;
     // Toward the camera: from the point for a perspective camera, and one direction for an
     // orthographic camera, whose view rays are parallel.
-    let eye = frame.camera_position;
+    let eye = engine_frame.camera_position;
     input.viewDirection = normalize(eye.xyz - in.relative * eye.w);
     // A face's normal comes from how the position changes between pixels. The two GPU paths count
     // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
@@ -452,10 +516,13 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef VERTEX_COLOR
     input.vertexColor = in.vertex_color;
 #endif
+#ifdef CUSTOM
+    input.worldPosition = in.relative + engine_frame.camera_world.xyz;
+#endif
 #ifdef MAPS
     input.uv = in.uv.xy;
     input.uv1 = in.uv.zw;
-#else ifdef CUSTOM
+#else ifdef UV0
     input.uv = in.uv;
 #endif
 #ifdef VERTEX_TANGENT

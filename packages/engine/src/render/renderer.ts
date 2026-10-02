@@ -58,7 +58,11 @@ export interface Renderer extends CanvasHolder {
 	readonly building: boolean;
 	/** Draws a frame to the canvas, adding its phase times and counters to the frame's record. */
 	drawFrame(input: FrameInput, record: FrameRecorder): void;
-	/** Draws one frame into an offscreen target and returns its pixels as RGBA8 rows, top row first. */
+	/**
+	 * Draws the frame taken last into an offscreen target and returns its pixels as RGBA8 rows, top
+	 * row first. A renderer that first waits for its pipelines reads the frame taken last again once
+	 * they are built, since frames go on during the wait and `input` falls behind.
+	 */
 	capture(input: FrameInput): Promise<{ width: number; height: number; pixels: Uint8Array }>;
 	/** Resolves with the browser's reason if it takes the GPU away; destroying the renderer does not. */
 	readonly lost: Promise<string>;

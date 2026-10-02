@@ -946,7 +946,12 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 
     fn cull(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
-        let (scene, parity, canvas) = (input.scene, input.parity(), input.canvas);
+        let (scene, parity, canvas, scale) = (
+            input.scene,
+            input.parity(),
+            input.canvas,
+            input.render_scale,
+        );
         self.shadow = self.settings.shadow_frame(scene, parity, canvas);
         let shadows = self.shadow.is_some();
         if input.structure_changed || !self.layout.built || shadows != self.layouts_shadowed {
@@ -967,7 +972,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 &self.layout,
                 &mut self.clusters,
                 cells,
-                |view| settings.view_frame(view, scene, parity, canvas),
+                |view| settings.view_frame(view, scene, parity, canvas, scale),
                 Some(sorted),
             )
             .map_err(|_| out_of_memory(&self.layout))?;
