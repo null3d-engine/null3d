@@ -501,10 +501,10 @@ debug.skeleton(obj);                            // (0.2)
 
 debug.stats(true);                       // overlay on the canvas: fps, CPU ms per thread and phase, tier, preset, render scale
 const s = debug.frameStats();            // the same figures: s.presentedFps, s.completedFps, s.cpuMs, s.threads, s.drawCalls
-debug.view('normals');                   // later in 0.1: 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw'
+debug.view('normals');                   // 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw'; 'lit' draws the materials again
 ```
 
-Debug drawing exists in development builds only. In a production build every drawing call does nothing, and the build holds none of the drawing code. Lines are one pixel wide, and objects in front of them hide them. `debug.stats` and `debug.frameStats` work in every build. The figures are means over the last half second. They are 0 for about half a second after the first call. `frameStats()` allocates nothing, so you can call it every frame. The object changes, so copy it with `JSON.parse(JSON.stringify(s))` before you send it. For GPU time and memory, call `engine.measure(seconds)` on the page (section 1).
+Debug drawing and `debug.view` exist in development builds only. In a production build every drawing call and `debug.view` do nothing, and the build holds none of their code. A debug view replaces every material until the next call, clears to black and skips tone mapping. Lines are one pixel wide, and objects in front of them hide them. `debug.stats` and `debug.frameStats` work in every build. The figures are means over the last half second. They are 0 for about half a second after the first call. `frameStats()` allocates nothing, so you can call it every frame. The object changes, so copy it with `JSON.parse(JSON.stringify(s))` before you send it. For GPU time and memory, call `engine.measure(seconds)` on the page (section 1).
 
 ## 20. Math, color and time (`api/math`, `api/time`)
 

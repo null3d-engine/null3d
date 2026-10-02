@@ -331,6 +331,53 @@ export function referenceOf(run: ImageRun, place: Place): Reference {
 	return reference;
 }
 
+/**
+ * The places whose references a run needs: each environment of Playwright's runs, and each device
+ * that keeps its own references of the test. Other browsers and devices compare with the real-GPU
+ * set, which its environment needs already.
+ */
+function placesNeeding(run: ImageRun): Place[] {
+	return [
+		...ENVIRONMENTS.map((environment) => ({ environment })),
+		...run.reference.devices.map((device) => ({ runner: device, device })),
+	];
+}
+
+/** The commands that make a missing reference, as the guide to image tests gives them. */
+function makeCommand(run: ImageRun, place: Place): string {
+	const { test, tier } = run.reference;
+	const accept = `bun run images:review --accept ${test}`;
+	if ('device' in place)
+		return `run the checks plan on ${place.device} (.dev/devices.md), then ${accept}`;
+	const ci = place.environment === REAL_GPU ? '' : 'CI=1 ';
+	return `${ci}bun run test:images -g "${test} on ${tier}", then ${accept}`;
+}
+
+/**
+ * What is wrong with the files in the folder of references, without a browser: each reference that
+ * a run needs in some place and that `files` lacks, with the commands that make it, and each file
+ * that no run needs. `files` are paths from the folder of references.
+ */
+export function referenceFileProblems(
+	runs: readonly ImageRun[],
+	files: readonly string[],
+): string[] {
+	const needed = new Map<string, string>();
+	for (const run of runs)
+		for (const place of placesNeeding(run)) {
+			const { file } = referenceOf(run, place);
+			if (!needed.has(file)) needed.set(file, makeCommand(run, place));
+		}
+	const present = new Set(files);
+	const missing = [...needed]
+		.filter(([file]) => !present.has(file))
+		.map(([file, command]) => `${file} is missing. Make it: ${command}`);
+	const unused = files
+		.filter((file) => !needed.has(file))
+		.map((file) => `${file} is a reference of no test. Delete it, or add its test to the manifest`);
+	return [...missing.sort(), ...unused.sort()];
+}
+
 /** The folders of references and of candidates. */
 export interface HarnessDirs {
 	references: string;

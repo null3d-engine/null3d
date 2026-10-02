@@ -50,7 +50,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run skills` | Sync `.claude/skills/` from `skills/`, then check the skills |
 | `bun run skills:check` | Check the skills without syncing |
 | `bun run shaders` | Build every shader variant in the shader manifest and write the generated TypeScript modules, when they are missing or out of date: the main module, and the engine's shaders in one module for each GPU path and each value of the bits a device fixes. Git ignores the modules, and the build, the type check, the tests and the dev server run this step first |
-| `bun run check` | Lint and format check (Biome) |
+| `bun run check` | Lint and format check (Biome), then the image test references: each manifest test must have the references of both sets, and each reference must belong to a test |
 | `bun run check:fix` | Lint and format, fixing what Biome can |
 | `bun run typecheck` | TypeScript check |
 | `bun run release` | Print the next version and its changelog. `--apply` writes them, as the Release workflow does, and `--notes <version>` prints one release's notes |

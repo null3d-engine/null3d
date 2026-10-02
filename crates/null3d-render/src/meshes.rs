@@ -8,6 +8,11 @@
 //! a draw's base vertex. A mesh with more vertices splits into parts: runs of whole triangles, in
 //! their order, that each use at most that many vertices. Each part holds its own copy of the
 //! vertices it uses, sits in one page, and draws with its own draw.
+//!
+//! The wireframe debug view draws lines, and WebGL2 has no line fill mode, so each part can also
+//! keep an edge list: two indices for each edge of each of its triangles, in its page after the
+//! indices it had then. The storage makes the edge lists the first time the view asks for them,
+//! and from then on gives each new part its own.
 
 use null3d_gpu::drawlist::vertex;
 
@@ -91,6 +96,12 @@ pub struct MeshStorage {
     pages: Vec<Page>,
     parts: Vec<MeshPart>,
     meshes: Vec<MeshSlot>,
+    /// Each part's edge list as a part of its page, in the order of `parts`, once made.
+    edge_parts: Vec<MeshPart>,
+    /// True once every part has an edge list, so each new part gets one too.
+    edges: bool,
+    /// True while draws take each part's edge list in place of its triangles.
+    drawing_edges: bool,
 }
 
 /// A vertex that the part being built does not use yet.
@@ -109,6 +120,9 @@ impl MeshStorage {
             pages: Vec::new(),
             parts: Vec::new(),
             meshes: Vec::new(),
+            edge_parts: Vec::new(),
+            edges: false,
+            drawing_edges: false,
         }
     }
 
@@ -120,10 +134,62 @@ impl MeshStorage {
         self.meshes.get(id as usize)
     }
 
-    /// The parts of a mesh, in triangle order.
+    /// The parts of a mesh, in triangle order: their triangles, or their edge lists while draws
+    /// take those.
     pub fn parts(&self, mesh: &MeshSlot) -> &[MeshPart] {
         let first = mesh.first_part as usize;
-        &self.parts[first..first + mesh.part_count as usize]
+        let parts = if self.drawing_edges {
+            &self.edge_parts
+        } else {
+            &self.parts
+        };
+        &parts[first..first + mesh.part_count as usize]
+    }
+
+    /// Makes draws take each part's edge list in place of its triangles, or its triangles again.
+    /// The first call that turns them on makes every part's edge list, which the pages upload as
+    /// new indices.
+    pub fn draw_edges(&mut self, on: bool) {
+        if on && !self.edges {
+            self.edges = true;
+            self.add_edge_parts();
+        }
+        self.drawing_edges = on;
+    }
+
+    /// Makes the edge list of each part that has none yet.
+    fn add_edge_parts(&mut self) {
+        for k in self.edge_parts.len()..self.parts.len() {
+            let edges = self.edge_part(self.parts[k]);
+            self.edge_parts.push(edges);
+        }
+    }
+
+    /// Appends a part's edge list to its page and returns where it landed: the two ends of each
+    /// edge of each triangle. Edges that two triangles share draw twice. A page without room for
+    /// them gives the part an empty list, which draws nothing.
+    fn edge_part(&mut self, part: MeshPart) -> MeshPart {
+        let page = &mut self.pages[part.page as usize];
+        let first_index = page.indices.len() as u32;
+        let count = part.index_count as usize * 2;
+        let (_, index_bytes) = page.buffer_bytes();
+        if index_bytes + (count * 2) as u64 > self.max_page_bytes {
+            return MeshPart {
+                first_index,
+                index_count: 0,
+                ..part
+            };
+        }
+        let start = part.first_index as usize;
+        for t in (start..start + part.index_count as usize).step_by(3) {
+            let (a, b, c) = (page.indices[t], page.indices[t + 1], page.indices[t + 2]);
+            page.indices.extend_from_slice(&[a, b, b, c, c, a]);
+        }
+        MeshPart {
+            first_index,
+            index_count: count as u32,
+            ..part
+        }
     }
 
     /// Adds a mesh and returns its id.
@@ -146,6 +212,9 @@ impl MeshStorage {
             self.parts.push(part);
         } else {
             self.split(geometry, max_vertices, max_indices);
+        }
+        if self.edges {
+            self.add_edge_parts();
         }
 
         let radius = geometry
@@ -180,10 +249,12 @@ impl MeshStorage {
     fn place(&mut self, format: u32, vertices: &[f32], indices: &[u32]) -> MeshPart {
         let count = (vertices.len() / vertex::floats(format) as usize) as u32;
         let (limit, packing) = (self.max_page_bytes, self.packing);
+        // With edge lists, the part's edges follow its triangles: twice as many indices.
+        let indices_placed = indices.len() * if self.edges { 3 } else { 1 };
         let fits = |page: &Page| {
             let (vertex_bytes, index_bytes) = page.buffer_bytes();
             vertex_bytes + (vertices.len() * 4) as u64 <= limit
-                && index_bytes + (indices.len() * 2).next_multiple_of(4) as u64 <= limit
+                && index_bytes + (indices_placed * 2).next_multiple_of(4) as u64 <= limit
                 && (packing == Packing::SharedBuffers
                     || page.vertex_count() + count <= MAX_PAGE_VERTICES)
         };
@@ -555,5 +626,82 @@ mod tests {
             .add(&box_geometry(0.6, 0.6, 0.6, [1, 1, 1]).unwrap())
             .unwrap();
         assert!((storage.mesh(id).unwrap().radius - 0.3 * 3f32.sqrt()).abs() < 1e-6);
+    }
+
+    /// The pairs of vertices that a mesh's parts draw as lines, through each part's page.
+    fn drawn_lines(storage: &MeshStorage, id: u32) -> Vec<[Vec<f32>; 2]> {
+        let slot = storage.mesh(id).unwrap();
+        let floats = vertex::floats(slot.format) as usize;
+        storage
+            .parts(slot)
+            .iter()
+            .flat_map(|part| {
+                let page = &storage.pages()[part.page as usize];
+                let range =
+                    part.first_index as usize..(part.first_index + part.index_count) as usize;
+                let vertex = move |i: u16| {
+                    let v = (i as u32 + part.base_vertex) as usize * floats;
+                    page.vertices[v..v + floats].to_vec()
+                };
+                page.indices[range]
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(move |&[a, b]| [vertex(a), vertex(b)])
+            })
+            .collect()
+    }
+
+    #[test]
+    fn edge_lists_draw_each_edge_of_each_triangle_in_both_packings() {
+        for packing in [Packing::SharedBuffers, Packing::Pages] {
+            let mut storage = MeshStorage::new(packing);
+            let first = storage
+                .add(&box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap())
+                .unwrap();
+            let triangles = storage.parts(storage.mesh(first).unwrap()).to_vec();
+            storage.draw_edges(true);
+            // A mesh added later gets its edge list too.
+            let second = storage.add(&sphere(1.0, [8, 4])).unwrap();
+            storage.draw_edges(false);
+            // Turned off, the parts draw their triangles from where they always were.
+            assert_eq!(storage.parts(storage.mesh(first).unwrap()), triangles);
+            let corners = [first, second].map(|id| resolved_vertices(&storage, id));
+            storage.draw_edges(true);
+            for (id, corners) in [first, second].into_iter().zip(corners) {
+                let expected: Vec<[Vec<f32>; 2]> = corners
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .flat_map(|[a, b, c]| {
+                        [[a, b], [b, c], [c, a]].map(|[p, q]| [p.clone(), q.clone()])
+                    })
+                    .collect();
+                assert_eq!(drawn_lines(&storage, id), expected, "{packing:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_part_without_room_for_its_edges_draws_none() {
+        // Pages of 256 bytes: 40 triangles take 240 bytes of indices, and their edges 480 more.
+        let floats = vertex::floats(0) as usize;
+        let triangles = |count: usize| Geometry {
+            format: 0,
+            vertices: vec![0.0; floats * 3],
+            indices: (0..count).flat_map(|_| [0, 1, 2]).collect(),
+        };
+        let mut storage = MeshStorage::with_page_limit(Packing::SharedBuffers, 256);
+        let full = storage.add(&triangles(40)).unwrap();
+        storage.draw_edges(true);
+        // With edge lists on, a new part goes to a page with room for its edges too.
+        let small = storage.add(&triangles(1)).unwrap();
+        let counts =
+            [full, small].map(|id| storage.parts(storage.mesh(id).unwrap())[0].index_count);
+        assert_eq!(counts, [0, 6]);
+        assert_eq!(storage.pages().len(), 2);
+        for page in storage.pages() {
+            assert!(page.buffer_bytes().1 <= 256);
+        }
     }
 }

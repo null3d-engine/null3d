@@ -776,7 +776,8 @@ impl CpuCulledRenderer {
         }
         let rebuilt = self.layout.built_in == input.frame;
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
-        self.graph.upload(list, arena, self.settings.output())?;
+        self.graph
+            .upload(list, arena, self.settings.drawn_output())?;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::DFG)?;
         }

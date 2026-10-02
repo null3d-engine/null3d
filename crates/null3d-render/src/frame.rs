@@ -25,6 +25,7 @@ use null3d_gpu::drawlist::{
 
 use crate::camera::Lens;
 use crate::debug_lines::DebugLines;
+use crate::debug_view::DebugView;
 use crate::fog::Fog;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::graph::{GraphError, RenderScale, Size};
@@ -32,7 +33,7 @@ use crate::materials::{
     MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, blend_state, feature,
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
-use crate::output::{Antialias, Output, SceneColor};
+use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, DrawKey};
 use crate::shadows::{CascadeSchedule, ShadowFrame, ShadowQuality, ShadowSettings, fit_cascades};
 use crate::textures::TextureStore;
@@ -479,6 +480,8 @@ pub struct SceneSettings {
     clock: [f32; 4],
     /// True when the render scale may drop below the whole canvas.
     render_scaling: bool,
+    /// The materials' shading, or a debug view in its place.
+    debug_view: DebugView,
 }
 
 impl SceneSettings {
@@ -509,6 +512,7 @@ impl SceneSettings {
             output: Output::default(),
             clock: [0.0; 4],
             render_scaling: false,
+            debug_view: DebugView::Lit,
         }
     }
 
@@ -526,6 +530,37 @@ impl SceneSettings {
     /// The exposure and the tone mapping.
     pub fn output(&self) -> Output {
         self.output
+    }
+
+    /// The exposure and the tone mapping that frames draw with: none in a debug view, whose
+    /// colors reach the canvas as its shader writes them.
+    pub fn drawn_output(&self) -> Output {
+        if self.debug_view.is_debug() {
+            Output {
+                tone_mapping: ToneMapping::None,
+                exposure: 1.0,
+            }
+        } else {
+            self.output
+        }
+    }
+
+    /// The materials' shading, or the debug view that draws in its place.
+    pub fn debug_view(&self) -> DebugView {
+        self.debug_view
+    }
+
+    /// Draws the scene with a debug view, or with its materials with `DebugView::Lit`, from the
+    /// next rebuild of the draw tables on. The wireframe view draws each mesh part's edge list,
+    /// which the meshes keep from the first time it is asked for. Returns true when the view
+    /// changed, so the caller rebuilds the draw tables.
+    pub fn set_debug_view(&mut self, view: DebugView) -> bool {
+        if view == self.debug_view {
+            return false;
+        }
+        self.debug_view = view;
+        self.meshes.draw_edges(view == DebugView::Wireframe);
+        true
     }
 
     /// Sets the exposure and the tone mapping, from the next recorded frame on.
@@ -572,9 +607,13 @@ impl SceneSettings {
     }
 
     /// The texture that the camera's view draws behind every object, or `Handle::NONE` for the
-    /// background color alone.
+    /// background color alone, as in every debug view.
     pub fn background_texture(&self) -> Handle {
-        self.background_texture
+        if self.debug_view.is_debug() {
+            Handle::NONE
+        } else {
+            self.background_texture
+        }
     }
 
     /// Draws `texture` behind every object in the camera's view, or only the background color
@@ -849,12 +888,18 @@ impl SceneSettings {
         self.lighting.fog = fog;
     }
 
-    /// The color that clears the color targets, as the scene's render passes hold it.
+    /// The color that clears the color targets, as the scene's render passes hold it: black in a
+    /// debug view.
     pub(crate) fn clear_color(&self) -> [f32; 4] {
+        let background = if self.debug_view.is_debug() {
+            Some([0.0; 3])
+        } else {
+            self.lighting.background
+        };
         self.canvas.scene_color.clear_color(
-            self.lighting.background,
+            background,
             self.canvas.transparent,
-            self.output,
+            self.drawn_output(),
         )
     }
 
@@ -868,6 +913,7 @@ impl SceneSettings {
     /// draws with the shader variant that discards fragments, and a double-sided material culls no
     /// faces. The material's depth options and depth bias set the pipeline's depth state, and a
     /// blended material's blending sets its blend state, which draws it in the transparent pass.
+    /// A debug view replaces the key with its own (see [`DebugView::draw_key`]).
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
             return None;
@@ -893,7 +939,7 @@ impl SceneSettings {
             && live(MapSlot::Normal)
             && format & vertex::TANGENT != 0;
         let bit = |on: bool, bit: u32| if on { bit } else { 0 };
-        ((format & needs) == needs).then_some(DrawKey {
+        let key = ((format & needs) == needs).then_some(DrawKey {
             template: shading.template(),
             permutation: bit(base_color && vertex_colors, permutation::VERTEX_COLOR)
                 | bit(base_color && masked, permutation::ALPHA_MASK)
@@ -904,7 +950,8 @@ impl SceneSettings {
                 | bit(has(feature::NO_DEPTH_TEST), state_flags::NO_DEPTH_TEST)
                 | blend_state(features),
             bias: self.materials.depth_bias(id),
-        })
+        });
+        key.map(|key| self.debug_view.draw_key(key))
     }
 
     /// A view's values for a frame on a canvas of `canvas` device pixels that the scene draws at
@@ -932,11 +979,12 @@ impl SceneSettings {
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
-            output: self.output.uniform(),
+            output: self.drawn_output().uniform(),
             fog: self.lighting.fog.uniform(camera.forward),
             clock: self.clock,
             camera_world: [x, y, z, 0.0],
             target_size: [width, height, 1.0 / width, 1.0 / height],
+            camera_range: [camera.depth.near, camera.depth.far, 0.0, 0.0],
             ..FrameUniform::default()
         };
         Some(ViewFrame::new(
