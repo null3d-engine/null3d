@@ -118,6 +118,20 @@ async function deviceInfo(): Promise<Record<string, unknown>> {
 	};
 }
 
+/**
+ * How far a frame's page loaded, as a step for its trail: the state of its document, and the files
+ * it finished loading, with the last of them. A page whose script or one of its imports never
+ * arrived stays in the `interactive` state, and its trail is empty.
+ */
+function frameLoadStep(frame: HTMLIFrameElement): string {
+	const loaded = frame.contentWindow?.performance.getEntriesByType('resource') ?? [];
+	const last = loaded.at(-1);
+	const lastText = last
+		? `, the last ${new URL(last.name).pathname} at ${Math.round(last.startTime + last.duration)} ms`
+		: '';
+	return `runner: the page's document is ${frame.contentDocument?.readyState ?? 'out of reach'}, and it loaded ${loaded.length} files${lastText}`;
+}
+
 /** Opens a page in a frame and waits for the result it publishes, or records a timeout. */
 async function openInFrame(path: string, timeoutSeconds: number): Promise<Result> {
 	const frame = document.createElement('iframe');
@@ -135,7 +149,7 @@ async function openInFrame(path: string, timeoutSeconds: number): Promise<Result
 		return {
 			ok: false,
 			error: `no result within ${timeoutSeconds} s`,
-			trail: trail ? [...trail] : [],
+			trail: [...(trail ?? []), frameLoadStep(frame)],
 		};
 	} finally {
 		frame.remove();

@@ -49,8 +49,10 @@ import {
 	type ItemResult,
 	type Plan,
 	type PlanItem,
+	pickItems,
 	quietLimitMs,
 	readResult,
+	repeatItems,
 	runName,
 	shardItems,
 	turnBatches,
@@ -240,6 +242,43 @@ describe('shardItems', () => {
 		const joined = [item('a'), item('b'), item('c'), item('d', ['a', 'b'])];
 		expect(shardIds(joined, 1, 2)).toEqual(['a', 'b', 'd']);
 		expect(shardIds(joined, 2, 2)).toEqual(['c']);
+	});
+});
+
+describe('pickItems', () => {
+	const item = (id: string, needs: string[] = []) => ({
+		id,
+		path: `/${id}`,
+		timeoutSeconds: 30,
+		check: needs,
+	});
+	const plan = [item('a'), item('b', ['a']), item('c', ['b']), item('d')];
+	const pick = (ids: string[]) => pickItems(plan, ids, (planItem) => planItem.check);
+
+	it('keeps the named items in the order of the plan, with the items that they need', () => {
+		expect(pick(['d', 'a']).map(({ id }) => id)).toEqual(['a', 'd']);
+		expect(pick(['c']).map(({ id }) => id)).toEqual(['a', 'b', 'c']);
+	});
+
+	it('fails on an item that the plan lacks', () => {
+		expect(() => pick(['a', 'e', 'f'])).toThrow('the plan has no item e, f');
+	});
+});
+
+describe('repeatItems', () => {
+	it('runs the items round after round, each later round under ids of its own', () => {
+		const items = ['a', 'b'].map((id) => ({ id, path: `/${id}`, timeoutSeconds: 30, check: id }));
+		const repeated = repeatItems(items, 3);
+		expect(repeated.map(({ id }) => id)).toEqual([
+			'a',
+			'b',
+			'a-round-2',
+			'b-round-2',
+			'a-round-3',
+			'b-round-3',
+		]);
+		expect(repeated.map(({ path }) => path)).toEqual(['/a', '/b', '/a', '/b', '/a', '/b']);
+		expect(repeatItems(items, 1)).toEqual(items);
 	});
 });
 
@@ -1391,7 +1430,28 @@ describe('parseArgs', () => {
 		for (const shard of ['0/2', '3/2', '1', '1/2/3', 'one/two'])
 			expect(() => parseArgs(['--shard', shard])).toThrow('--shard: use <i>/<n>');
 		expect(() => parseArgs(['--plan', 'scale', '--shard', '1/2'])).toThrow(
-			'--shard splits a fixed plan, so it does not work with --plan scale',
+			'--shard picks items of a fixed plan, so it does not work with --plan scale',
+		);
+		expect(parseArgs(['--only', 'a,b', '--rounds', '3', 'Safari'])).toMatchObject({
+			only: ['a', 'b'],
+			rounds: 3,
+		});
+		expect(() => parseArgs(['--only', ','])).toThrow('--only: name some items');
+		expect(() => parseArgs(['--rounds', '0'])).toThrow(
+			'--rounds: use a whole number of at least 1',
+		);
+		expect(() => parseArgs(['--plan', 'scale', '--rounds', '2'])).toThrow(
+			'--rounds picks items of a fixed plan',
+		);
+		const restarts = planItems(
+			parseArgs(['--only', 'restarts-sketch-on-the-main-thread', '--rounds', '2', 'Safari']),
+		);
+		expect(restarts?.map(({ id }) => id)).toEqual([
+			'restarts-sketch-on-the-main-thread',
+			'restarts-sketch-on-the-main-thread-round-2',
+		]);
+		expect(() => planItems(parseArgs(['--only', 'no-such-page', 'Safari']))).toThrow(
+			'the plan has no item no-such-page',
 		);
 		expect(() => planItems(parseArgs(['--plan', 'depth', '--shard', '50/50']))).toThrow(
 			'shard 50 of 50 has no items',
