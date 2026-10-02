@@ -133,6 +133,8 @@ run('replay', async () => {
 		// The light grid and the light list, which the frame group binds and the shader skips.
 		[14, 16, U.STORAGE, -1],
 		[15, G.SIZE_LIGHT_RECORD_BYTES, U.STORAGE, -1],
+		// The shadow atlas's tiles, which the frame group binds; no light casts shadows here.
+		[16, G.SIZE_SHADOW_TILES_UNIFORM_BYTES, U.UNIFORM | U.COPY_DST, -1],
 	];
 	for (const [id, size, usage] of buffers) memory.push(G.OP_CREATE_BUFFER, id, size, usage);
 	for (const [id, size, , source] of buffers)
@@ -162,7 +164,7 @@ run('replay', async () => {
 		G.VIEW_2D,
 	);
 	// The frame group's shadow map: one texel of one layer, which no light draws into, and the
-	// sampler that compares depths in it.
+	// sampler that compares depths in it. The group binds it as the shadow atlas too.
 	memory.push(
 		G.OP_CREATE_TEXTURE,
 		4,
@@ -236,7 +238,7 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		1,
 		G.LAYOUT_FRAME,
-		9,
+		11,
 		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
 		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
 		...[2, G.RESOURCE_TEXTURE, 5, 0, 0],
@@ -246,6 +248,8 @@ run('replay', async () => {
 		...[6, G.RESOURCE_BUFFER, 13, 0, 0],
 		...[7, G.RESOURCE_BUFFER, 14, 0, 0],
 		...[8, G.RESOURCE_BUFFER, 15, 0, 0],
+		...[9, G.RESOURCE_TEXTURE, 4, 0, 0],
+		...[10, G.RESOURCE_BUFFER, 16, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,

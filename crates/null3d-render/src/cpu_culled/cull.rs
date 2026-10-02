@@ -330,7 +330,7 @@ impl Culling {
         layout: &Layout,
         clusters: &mut Clusters,
         cells: &CellCulling,
-        frame_of: impl Fn(ViewId) -> Option<ViewFrame>,
+        frame_of: &dyn Fn(ViewId) -> Option<ViewFrame>,
         sorted: Option<&SortedLayout>,
     ) -> Result<(), TryReserveError> {
         let (parity, scene, batches) = (input.parity(), input.scene, input.batches);

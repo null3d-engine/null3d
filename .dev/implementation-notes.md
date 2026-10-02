@@ -75,6 +75,7 @@ The page starts every download that the start needs while the core downloads. On
 - In low-latency mode the page sends the sketch worker `load-renderer` as soon as it starts it, so the worker loads the renderer at once.
 - Where the page draws, it imports the renderer while the core downloads. In single-threaded mode it imports the core's loader then too. Each of the two was the last download to arrive once the other started early.
 - The page starts the render worker before the probe says whether a worker can draw. When one cannot, the page stops the render worker and draws itself.
+- The probe worker's time limit starts when its script runs, not when the page asks for it. It covers the GPU checks, which can hang. A slow download must not make a device that can draw in a worker draw on the page. The script shares the link with the core, and the dev server compiles a sketch's WGSL before it answers other requests.
 - A start that fails before the workers have the core stops them at once, because none waits in the job system yet. After that, a stop waits until each job worker leaves the job system. So the page sends the job workers the core before anything else that can fail, such as the canvas's transfer.
 - The core now arrives last on Slow 4G. Its download shares the link with the workers' scripts. In the pipelined mode it is ready about 300 ms later than before, and the engine about 10 ms after it. In low-latency mode the engine is ready about 270 ms after the core. There the sketch worker asks for the renderer only once its own script has arrived.
 

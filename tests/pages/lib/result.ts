@@ -32,19 +32,72 @@ for (const level of ['error', 'warn'] as const) {
 	};
 }
 
-/** Workers the page starts, each noted with its name, its replies' types and its failures. */
+/** How long a second copy of a worker whose script did not load may take to load it. */
+const RELOAD_TIMEOUT_MS = 10_000;
+
 const BrowserWorker = Worker;
+/** Workers the page started and has not stopped, and the workers it stopped. */
+const workerCounts = { live: 0, stopped: 0 };
+
+/**
+ * Starts a second copy of a worker whose script or one of its imports did not load, and notes
+ * whether that copy loads, which tells a passing fault of the network from a lasting one. The copy
+ * stops at its first message, which a worker of the engine sends once its script has run.
+ */
+function reloadWorker(name: string, url: string | URL, options: WorkerOptions | undefined): void {
+	const started = performance.now();
+	const copy = new BrowserWorker(url, { ...options, name: `${name}-copy` });
+	const end = (outcome: string) => {
+		clearTimeout(timer);
+		copy.terminate();
+		progress(`${name}: a second copy of the worker ${outcome}`);
+	};
+	const timer = setTimeout(
+		() => end(`sent nothing within ${RELOAD_TIMEOUT_MS / 1000} s`),
+		RELOAD_TIMEOUT_MS,
+	);
+	copy.onmessage = () => end(`loaded in ${Math.round(performance.now() - started)} ms`);
+	copy.onerror = (event) =>
+		end(event instanceof ErrorEvent ? `failed: ${event.message}` : 'did not load either');
+}
+
+/**
+ * Workers the page starts, each noted with its name, its replies' types and its failures. A worker
+ * whose script or one of its imports did not load gets an error event without a message: the trail
+ * then names the workers that are running, and whether a second copy of the worker loads.
+ */
 globalThis.Worker = class extends BrowserWorker {
 	constructor(url: string | URL, options?: WorkerOptions) {
 		super(url, options);
-		const name = options?.name ?? String(url).split('/').pop()?.split('?')[0];
+		const name = options?.name ?? String(url).split('/').pop()?.split('?')[0] ?? 'worker';
+		workerCounts.live++;
 		progress(`${name}: started`);
 		this.addEventListener('message', ({ data }: MessageEvent) => {
 			const { type, step } = (data ?? {}) as { type?: unknown; step?: unknown };
 			if (type !== 'sketch-message')
 				progress(`${name}: ${String(type ?? 'a reply')}${step ? ` (${String(step)})` : ''}`);
 		});
-		this.addEventListener('error', (event) => progress(`${name}: failed: ${event.message}`));
+		this.addEventListener('error', (event) => {
+			if (event instanceof ErrorEvent) {
+				progress(`${name}: failed: ${event.message} at ${event.filename}:${event.lineno}`);
+				return;
+			}
+			progress(
+				`${name}: failed: its script or a file it imports did not load; ${workerCounts.live} workers running, ${workerCounts.stopped} stopped`,
+			);
+			reloadWorker(name, url, options);
+		});
+	}
+
+	private stopped = false;
+
+	override terminate(): void {
+		if (!this.stopped) {
+			this.stopped = true;
+			workerCounts.live--;
+			workerCounts.stopped++;
+		}
+		super.terminate();
 	}
 };
 

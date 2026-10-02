@@ -5,7 +5,7 @@
 import { messageOf } from '../errors/message';
 import { TEXTURE_USAGE_TRANSIENT_ATTACHMENT } from '../generated/gpu';
 import type { DeviceHints } from '../quality/chooser';
-import type { WorkerProbe } from '../workers/probe-worker';
+import type { ProbeMessage, WorkerProbe } from '../workers/probe-worker';
 
 /** Limits the engine reads, from its portable WebGPU budget. */
 const WEBGPU_LIMITS = [
@@ -368,6 +368,11 @@ function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {
 	}
 }
 
+/**
+ * How long the probe worker's GPU checks may take once its script runs. A GPU call that never
+ * returns ends the wait. The script's download does not count: the network or the server can delay
+ * it for any time, and the browser reports a download that fails.
+ */
 const WORKER_PROBE_TIMEOUT_MS = 5000;
 
 function probeWorker(): Promise<WorkerProbe | { error: string }> {
@@ -381,20 +386,21 @@ function probeWorker(): Promise<WorkerProbe | { error: string }> {
 			resolve({ error: messageOf(e) });
 			return;
 		}
-		const timer = setTimeout(() => {
-			worker.terminate();
-			resolve({ error: 'the probe worker did not answer' });
-		}, WORKER_PROBE_TIMEOUT_MS);
-		worker.onmessage = (event: MessageEvent<WorkerProbe>) => {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const finish = (result: WorkerProbe | { error: string }) => {
 			clearTimeout(timer);
 			worker.terminate();
-			resolve(event.data);
+			resolve(result);
 		};
-		worker.onerror = (event) => {
-			clearTimeout(timer);
-			worker.terminate();
-			resolve({ error: event.message || 'the probe worker failed to start' });
+		worker.onmessage = ({ data }: MessageEvent<ProbeMessage>) => {
+			if (data !== 'loaded') return finish(data);
+			timer = setTimeout(
+				() => finish({ error: 'the probe worker did not answer' }),
+				WORKER_PROBE_TIMEOUT_MS,
+			);
 		};
+		worker.onerror = (event) =>
+			finish({ error: event.message || 'the probe worker failed to start' });
 	});
 }
 
