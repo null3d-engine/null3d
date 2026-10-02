@@ -3,12 +3,12 @@ id: concepts/shadows
 title: Shadows
 status: experimental
 since: "0.1"
-summary: "Cascades; update rates; filtering per preset; bias settings."
+summary: "Cascades that stay still as the camera turns; update rates and filtering per preset; bias settings."
 ---
 
 # Shadows
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. In this version the first directional light casts shadows. Point and spot lights cast none yet. Instance batches neither cast nor receive shadows yet. A masked material's map does not cut holes in its shadow yet, so it casts its mesh's whole shape. Cascades fit the view again in every frame, so their edges can shimmer as the camera turns, and every cascade draws in every frame. The quality presets do not set the cascades, the map size or the filter yet. Coding agents must not rely on these parts.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. In this version the first directional light casts shadows. Point and spot lights cast none yet. Instance batches neither cast nor receive shadows yet. A masked material's map does not cut holes in its shadow yet, so it casts its mesh's whole shape. The quality presets set the filter and the far cascades' update rate, but not the cascade count or the map size yet. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -24,7 +24,7 @@ flowchart LR
 
 A directional light casts shadows when you create it with `castShadows: true` or call `setCastShadows(true)`. An object casts shadows with `castShadows: true`, and shadows fall on it with `receiveShadows: true`. All three are false by default, as in three.js.
 
-The engine splits the camera's view by distance into cascades. Each cascade is a box along the light that holds one slice of the view. Near slices are short and far slices long, so each cascade covers about the same share of the screen. Shadows near the camera then stay sharp. Each frame, each cascade culls the casters in its box and draws their depth from the light into its layer of the shadow map. A surface that receives shadows then finds its cascade and compares its depth from the light with the depth in the map.
+The engine splits the camera's view by distance into cascades. Each cascade is a box along the light that holds one slice of the view. Near slices are short and far slices long, so each cascade covers about the same share of the screen. Shadows near the camera then stay sharp. When a cascade draws, it culls the casters in its box and draws their depth from the light into its layer of the shadow map. A surface that receives shadows then finds its cascade and compares its depth from the light with the depth in the map.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -73,6 +73,33 @@ A shorter `distance` gives the cascades smaller boxes, so shadows get sharper. S
 
 A new cascade count or map size makes the shadow map again, so set them at setup. The other settings cost nothing to change, so a sketch can change them in any frame.
 
+## Stable cascades
+
+Shadow edges stay still while the camera turns and moves. Each cascade's box holds a sphere around its slice of the view, so the box keeps its size as the camera turns. The box also moves only in steps of whole texels of the shadow map, on a grid fixed to the world. So a caster always covers the same texels, and its shadow's edge does not crawl or shimmer.
+
+The sphere wastes some of each layer's texels, so these shadows are a little softer than a box fitted tightly to each frame. Shorten `distance` or raise `mapSize` for sharper shadows.
+
+## Update rates
+
+The nearest cascade draws in every frame. The far cascades draw once every few frames, in turn, and keep their layers of the shadow map in between. Far shadows then lag their moving casters by a few frames, where the lag is hardest to see. Each frame draws fewer casters.
+
+The `farCascadeInterval` quality setting sets the frames between two draws of a far cascade, from 1 to 8. Low uses 4, Medium 3, and High and Ultra 2. A value of 1 draws every cascade in every frame. It changes during play:
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ quality }) => {
+  // Fast casters far away: draw every cascade in every frame.
+  quality.set({ farCascadeInterval: 1 });
+});
+```
+
+A cascade that waits keeps the box it drew with. When the camera turns quickly, part of the view can leave that box for a frame or two. Those surfaces then read the next cascade, whose box is larger.
+
+## Filtering
+
+The filter softens each shadow's edge over a square of shadow map texels. The `shadowFilter` quality setting gives the texels on each side: 3 on Low and Medium, and 5 on High and Ultra. Each read compares the depth with four texels and blends them. So a 3 x 3 square takes 4 reads, and a 5 x 5 square takes 9. A larger square gives softer edges and costs more on every pixel that receives shadows. `quality.set({ shadowFilter: 3 })` changes it during play.
+
 ## Bias
 
 A surface that casts and receives shadows can shadow itself in stripes, which is called shadow acne. It comes from the finite size of the map's texels. Both biases work in texels of the surface's cascade, so one setting suits near and far cascades alike.
@@ -92,18 +119,18 @@ Raise them in small steps if a surface shows acne. Values that are too large mak
 
 ## What shadows cost
 
-Each cascade has a render pass that draws its casters' depth. Each cascade culls its casters too:
+Each cascade that draws in a frame has a render pass that draws its casters' depth. It culls its casters too:
 
 - On WebGPU, a culling pass on the GPU runs before each cascade's render pass. The CPU does the same small amount of work per cascade whatever the number of casters.
 - On WebGL2, the job workers test each caster against each cascade's box, as they test each object against the camera's view. They first skip the still casters of the grid cells out of the box. That CPU work grows with the number of casters.
 
-Each layer of the shadow map takes 4 bytes per texel: 16 MB at 2,048 texels on each side. Surfaces that receive shadows read the map once per pixel.
+Each layer of the shadow map takes 4 bytes per texel: 16 MB at 2,048 texels on each side. Surfaces that receive shadows read the map 4 or 9 times per pixel, as the filter's size says.
 
-To make shadows cheaper, use fewer cascades, a smaller map, or a shorter distance. Mark only the objects whose shadows matter as casters.
+To make shadows cheaper, use fewer cascades, a smaller map, a shorter distance, a higher `farCascadeInterval` or a `shadowFilter` of 3. Mark only the objects whose shadows matter as casters.
 
 ## On each GPU path
 
-WebGPU and WebGL2 draw the same shadows. Both keep the shadow map as a depth texture array of 32-bit floats, and read it with the GPU's depth comparison. The comparison blends the tests of the four nearest texels. On WebGL2 the shaders read it as a `sampler2DArrayShadow` through a comparison sampler. [Depth on each tier](backends.md#depth-on-each-tier) explains how WebGL2 keeps WebGPU's depth values.
+WebGPU and WebGL2 draw the same shadows. Both keep the shadow map as a depth texture array of 32-bit floats, and read it with the GPU's depth comparison. Each comparison blends the tests of the four nearest texels, and the filter blends several comparisons. On WebGL2 the shaders read it as a `sampler2DArrayShadow` through a comparison sampler. [Depth on each tier](backends.md#depth-on-each-tier) explains how WebGL2 keeps WebGPU's depth values.
 
 ## Coming from three.js
 
@@ -112,7 +139,9 @@ WebGPU and WebGL2 draw the same shadows. Both keep the shadow map as a depth tex
 - `light.shadow.camera` has no equivalent. The cascades fit the camera's view by themselves, so delete the shadow camera's bounds.
 - `light.shadow.mapSize` becomes one number, `mapSize`, the texels on each side.
 - `light.shadow.bias` and `light.shadow.normalBias` count texels of each cascade, where three.js counts depth units and meters. Start from the defaults.
-- The CSM addon is built in: set `cascades` on the directional light.
+- `renderer.shadowMap.type` becomes the `shadowFilter` quality setting: `PCFShadowMap` and `PCFSoftShadowMap` map to 3 or 5. `BasicShadowMap` and `VSMShadowMap` have no equivalent.
+- `light.shadow.radius` and `light.shadow.blurSamples` become the `shadowFilter` setting too, for every light.
+- The CSM addon is built in: set `cascades` on the directional light. Its `maxFar` and `shadowMapSize` become `distance` and `mapSize`.
 
 ## Related pages
 
@@ -120,3 +149,4 @@ WebGPU and WebGL2 draw the same shadows. Both keep the shadow map as a depth tex
 - [Objects and transforms](../api/objects.md): `setCastShadows` and `setReceiveShadows`.
 - [Lighting and environment](lighting.md): how lights reach surfaces.
 - [Render graph](render-graph.md): the passes that draw each frame.
+- [Quality presets](quality-presets.md): `shadowFilter`, `farCascadeInterval` and their values on each preset.

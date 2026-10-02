@@ -3,15 +3,21 @@ import {
 	allowedMs,
 	type Build,
 	type BuildRun,
+	type ComparisonRecord,
 	compareBuilds,
 	compareReport,
 	type ExpectedChange,
 	judge,
+	judgeRecord,
 	MIN_ROUNDS,
+	mergeRecords,
+	type PlanPage,
+	pageName,
 	RULES,
 	readExpectedChanges,
 	roundOrder,
 	selectRuns,
+	shardPages,
 } from './compare';
 import type { BenchResult } from './report';
 
@@ -472,5 +478,90 @@ describe('the report', () => {
 			'Not compared: s2 null3d-webgpu, as the new build kept 2 runs of 2 and the baseline 0 runs of 2, so 0 rounds have a run of each, and a comparison needs 2.',
 		);
 		expect(text).toContain('Refresh rate: 60 Hz on every page. Dropped runs: baseline s2');
+	});
+});
+
+describe('shards of a comparison', () => {
+	const plan = ['s1', 's1-static', 's2'].flatMap((scene) =>
+		['null3d-webgpu', 'null3d-webgl2'].map((kind) => ({ scene, kind })),
+	);
+	const names = (pages: readonly PlanPage[]) => pages.map(pageName);
+
+	/** The record of one shard of the plan, with two rounds of each of its pages; S2 doubles. */
+	function record(index: number, count: number, fields: Partial<ComparisonRecord> = {}) {
+		const pages = shardPages(plan, { index, count });
+		return {
+			shard: { index, count },
+			plan,
+			pages,
+			commits: { baseline: 'abc1234 "fix: a"', new: 'def5678 "perf: x"' },
+			messages: ['perf: x\n\nBench-Expected: s2/null3d-webgl2: the trees now have one more level'],
+			browser: 'Chrome 152 on macOS',
+			runs: 2,
+			warmupSeconds: 5,
+			measureSeconds: 5,
+			results: pages.flatMap(({ scene, kind }) =>
+				page([1, 1], scene === 's2' ? [2, 2] : [1, 1], {}, scene, kind),
+			),
+			...fields,
+		} satisfies ComparisonRecord;
+	}
+
+	test('split the plan into shares that differ by one page at most', () => {
+		expect(names(shardPages(plan, { index: 1, count: 4 }))).toEqual([
+			's1 null3d-webgpu',
+			's2 null3d-webgpu',
+		]);
+		expect(names(shardPages(plan, { index: 4, count: 4 }))).toEqual(['s1-static null3d-webgl2']);
+		const shares = [1, 2, 3, 4].flatMap((index) => names(shardPages(plan, { index, count: 4 })));
+		expect(shares.toSorted()).toEqual(names(plan).toSorted());
+	});
+
+	test('merge into the record of the whole plan, in the plan order', () => {
+		const merged = mergeRecords([record(2, 2), record(1, 2)]);
+		expect(merged.shard).toBeNull();
+		expect(merged.pages).toEqual(plan);
+		expect([...new Set(merged.results.map(pageName))]).toEqual(names(plan));
+		expect(merged.results).toHaveLength(plan.length * 4);
+		expect(merged.browser).toBe(
+			'Chrome 152 on macOS, in 2 shards of the pages, each on a machine of its own',
+		);
+	});
+
+	test('judge the merged record as one comparison of the whole plan would', () => {
+		const alone = judgeRecord(record(1, 1, { shard: null }), KNOWN);
+		const { report, verdict, summary } = judgeRecord(
+			mergeRecords([record(1, 3), record(2, 3), record(3, 3)]),
+			KNOWN,
+		);
+		expect(verdict).toEqual(alone.verdict);
+		expect(verdict).toEqual({
+			pass: false,
+			failures: [
+				's2 null3d-webgpu, busiest thread: +100.0% slower (medians 1.000 ms and 2.000 ms)',
+				's2 null3d-webgpu, own work: +100.0% slower (medians 1.000 ms and 2.000 ms)',
+			],
+		});
+		expect(report.slice(3)).toEqual(alone.report.slice(3));
+		expect(report.join('\n')).toContain(
+			'| s2 | null3d-webgl2 | busiest thread | 1.000 (1.000 to 1.000) | 2.000 (2.000 to 2.000) | +100.0% | slower, expected: the trees now have one more level |',
+		);
+		expect(summary).toMatchObject({ shard: null, verdict });
+	});
+
+	test('refuse records that miss a page, hold one twice or disagree', () => {
+		expect(() => mergeRecords([])).toThrow('there are no shard records to merge');
+		expect(() => mergeRecords([record(1, 3), record(3, 3)])).toThrow(
+			'no shard record holds s1 null3d-webgl2, s2 null3d-webgpu: rerun the shards that failed',
+		);
+		expect(() => mergeRecords([record(1, 2), record(1, 2), record(2, 2)])).toThrow(
+			'two shard records hold s1 null3d-webgpu',
+		);
+		expect(() =>
+			mergeRecords([record(1, 2), record(2, 2, { commits: { baseline: 'a', new: 'b' } })]),
+		).toThrow('the shard records differ in their commits');
+		expect(() => mergeRecords([record(1, 2), record(2, 2, { runs: 3 })])).toThrow(
+			'the shard records differ in their number of rounds',
+		);
 	});
 });
