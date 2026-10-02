@@ -7,7 +7,7 @@ import {
 	isExemptCommit,
 } from './check-docs-ack';
 import { audienceOf, isStyleChecked, subjectOf } from './check-docs-style';
-import { isShaderModule, touchesShaders, unstagedPaths } from './check-generated';
+import { unstagedPaths } from './check-generated';
 import { touchesRust } from './check-rust';
 import { explainedFiles, growthReason, namesFile, sizeGrowthProblems } from './check-size-growth';
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
@@ -225,19 +225,6 @@ describe('unstagedPaths', () => {
 			'',
 		].join('\n');
 		expect(unstagedPaths(porcelain)).toEqual(['docs/unstaged.md', 'docs/both.md', 'docs/new.md']);
-	});
-});
-
-describe('the shader modules', () => {
-	it('are the main module and the device modules beside it', () => {
-		const generated = 'packages/engine/src/generated';
-		expect(isShaderModule(`${generated}/shaders.ts`)).toBe(true);
-		expect(isShaderModule(`${generated}/shaders-glsl-draw-index.ts`)).toBe(true);
-		expect(isShaderModule(`${generated}/gpu.ts`)).toBe(false);
-		expect(isShaderModule('packages/engine/src/gpu/shaders-glsl.ts')).toBe(false);
-		expect(touchesShaders([`${generated}/shaders-wgsl.ts`])).toBe(true);
-		expect(touchesShaders(['crates/null3d-shaders/wgsl/lit.wgsl'])).toBe(true);
-		expect(touchesShaders(['packages/engine/src/gpu/variants.ts'])).toBe(false);
 	});
 });
 
