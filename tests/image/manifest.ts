@@ -11,12 +11,16 @@
 // reference, so it saves its image as a candidate. Look at it with bun run images:review, and make it
 // the reference with bun run images:review --accept. Then do the same with CI=1 for the SwiftShader
 // reference: on the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
-import { BENCH_SCENES } from '../../bench/lib/parity.ts';
+// bun run check fails until the test has both references.
+import { BENCH_SCENES, type FeatureScene } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
+import { LIGHTS_IMAGE } from '../../bench/scenes/lights.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
+import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
+import { GRID_IMAGE } from '../../bench/scenes/standard-grid.ts';
 import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
 import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
 import { DEMOS } from '../../examples/demos.ts';
@@ -30,7 +34,7 @@ import {
 	type Tier,
 	tiersOf,
 } from '../lib/images.ts';
-import { STOPS, TONE_MAPPINGS } from '../pages/lib/bright-scene.ts';
+import { STOPS, TONE_MAPPINGS, toneMappingTest } from '../pages/lib/bright-scene.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 
 /**
@@ -44,10 +48,6 @@ const FAR_OUT_TOLERANCE = { threshold: 0, maxDiffRatio: 0.00005 };
 
 /** The sketch of the tone mapping tests: tiles whose linear colors run from about 0.2 to 16. */
 export const BRIGHT_SKETCH = 'tests/pages/sketches/bright-sketch.ts';
-
-/** The name of the tone mapping test of a tone mapping at an exposure in stops. */
-export const toneMappingTest = (tone: string, stops: number) =>
-	`tone-${tone}${stops === 0 ? '' : '-half-exposure'}`;
 
 /** The name of the test that draws a tone mapping test at an exposure of 1 on the 8-bit path. */
 export const eightBitTest = (tone: string) => `tone-${tone}-8-bit`;
@@ -386,6 +386,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'debug',
 		tolerance: FAR_OUT_TOLERANCE,
 	},
+	// Each debug view of a scene with lit, unlit, see-through and instanced objects, on every tier.
+	...(['normals', 'depth', 'overdraw', 'wireframe'] as const).map(
+		(view): ImageTest => ({
+			name: `debug-view-${view}`,
+			sketch: `tests/pages/sketches/debug-view-sketch.ts?view=${view}`,
+			hold: 0,
+		}),
+	),
 	// Objects, a parent and its child, and instance batches on three layers, some of them moved to
 	// other layers after they were created, and a camera that draws two of the layers. A child keeps
 	// its own layers, so the child of a parent that the camera leaves out still draws.
@@ -395,12 +403,13 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// unlit box in a shadow. Both GPU paths draw the same shadows, so every tier must draw the
 	// WebGPU image. WebGL2 takes the 8-bit path, which averages antialiased edges after the tone
 	// mapping, so about 0.16% of the pixels differ, all at edges, on the Mac and with SwiftShader.
-	// A shadow drawn wrong changes several percent.
+	// A shadow drawn wrong changes several percent. The parity test compares the three cascades with
+	// three.js.
 	...[3, 1, 2, 4].map((cascades) => ({
 		name: cascades === 3 ? 'shadows' : `shadows-cascades-${cascades}`,
 		sketch: `tests/pages/sketches/shadows-sketch.ts?cascades=${cascades}`,
 		hold: 0,
-		size: [480, 270] as const,
+		size: [SHADOW_IMAGE.width, SHADOW_IMAGE.height] as const,
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	})),
@@ -411,7 +420,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		name: 'shadows-custom',
 		sketch: 'tests/pages/sketches/shadows-sketch.ts?custom',
 		hold: 0,
-		size: [480, 270],
+		size: [SHADOW_IMAGE.width, SHADOW_IMAGE.height],
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
@@ -494,7 +503,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		name: 'standard-grid',
 		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=grid',
 		hold: 0,
-		size: [480, 270],
+		size: [GRID_IMAGE.width, GRID_IMAGE.height],
 	},
 	{
 		name: 'standard-features',
@@ -504,7 +513,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
-	// lights through an orthographic camera.
+	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot
+	// lights with three.js.
 	...(
 		[
 			['lights-1', 'lights=1'],
@@ -517,7 +527,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		name,
 		sketch: `tests/pages/sketches/lights-sketch.ts?${query}`,
 		hold: 0,
-		size: [480, 270] as const,
+		size: [LIGHTS_IMAGE.width, LIGHTS_IMAGE.height] as const,
 	})),
 	// Custom materials with surface functions: pairs of a standard material and a surface function
 	// that keeps its look, which must match, then surface functions that change the look. Each
@@ -737,6 +747,24 @@ export const IMAGE_TESTS: readonly ImageTest[] = [...FEATURE_TESTS, ...prepassTe
 
 /** Every run of the manifest's tests: each test on each of its tiers, in each of its thread modes. */
 export const IMAGE_RUNS = imageRuns(IMAGE_TESTS);
+
+/**
+ * The page of a feature scene's image test on a tier, in the pipelined mode, with the sketch
+ * switches that the scene's parity comparison gives the test's sketch module.
+ */
+export function featureImagePath({ test, sketchSwitches }: FeatureScene, tier: Tier): string {
+	const own = IMAGE_TESTS.find((candidate) => candidate.name === test);
+	if (!own) throw new Error(`the manifest has no test ${test}`);
+	const drawn =
+		sketchSwitches && 'sketch' in own
+			? { ...own, sketch: `${own.sketch}${own.sketch.includes('?') ? '&' : '?'}${sketchSwitches}` }
+			: own;
+	const run = imageRuns([drawn]).find(
+		(candidate) => candidate.tier === tier && candidate.mode?.name === 'pipelined',
+	);
+	if (!run) throw new Error(`the manifest has no pipelined run of ${test} on ${tier}`);
+	return run.path;
+}
 
 /** The run of a manifest test on a tier, in a thread mode for a page that starts the engine. */
 export function manifestRun(test: string, tier: Tier, mode?: EngineModeName): ImageRun {

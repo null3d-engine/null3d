@@ -9,7 +9,7 @@ import type { QualityPreset } from '../quality/presets';
 import type { ColorInput } from '../scene/color';
 import type { Camera, DirectionalLight, Object3D } from '../scene/scene';
 import type { Tier } from '../shared/tier';
-import type { Debug, DebugGridOptions, DebugLightOptions } from './debug';
+import type { Debug, DebugGridOptions, DebugLightOptions, DebugView } from './debug';
 import type { FrameStats, FrameStatsWindow, StatsSources } from './stats';
 
 /** What the debug API needs from the thread that runs the sketch. */
@@ -58,6 +58,7 @@ export class SketchDebug implements Debug {
 	grid(_size?: number, _divisions?: number, _options?: DebugGridOptions): void {}
 	frustum(_camera: Camera, _color?: ColorInput): void {}
 	light(_light: DirectionalLight, _options?: DebugLightOptions): void {}
+	view(_view: DebugView): void {}
 
 	stats(show = true): void {
 		if (show === this.showing) return;

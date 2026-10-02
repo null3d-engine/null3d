@@ -1,12 +1,25 @@
-// The standard and unlit materials, for their image tests. `?scene=grid` draws spheres over
-// metalness (rows, from 0 at the top to 1) and roughness (columns, from 0 to 1), lit by a sun and
-// an ambient light. `?scene=features` draws what a material fixes when it is created, in pairs:
-// an emissive sphere beside a plain one, a flat-shaded sphere beside a smooth one, a double-sided
-// plane seen from behind beside a single-sided one that draws nothing, and a quad of vertex colors
-// with the standard material, with the unlit material, and with a material that ignores them.
+// The standard and unlit materials, for their image tests. `?scene=grid` draws the grid of
+// bench/scenes/standard-grid.ts: spheres over metalness (rows, from 0 at the top to 1) and roughness
+// (columns, from 0 to 1), lit by a sun and an ambient light. ?tone=none turns off the engine's
+// default of ACES, as the parity test asks: the grid's three.js twin draws with no tone mapping,
+// three.js's default. `?scene=features` draws what a material fixes when it is created, in
+// pairs: an emissive sphere beside a plain one, a flat-shaded sphere beside a smooth one, a
+// double-sided plane seen from behind beside a single-sided one that draws nothing, and a quad of
+// vertex colors with the standard material, with the unlit material, and with a material that
+// ignores them.
 import { defineSketch } from '@null3d/engine';
+import {
+	GRID_AMBIENT,
+	GRID_BACKGROUND,
+	GRID_CAMERA,
+	GRID_CELLS,
+	GRID_COLOR,
+	GRID_SPHERE,
+	GRID_SUN,
+} from '../../../bench/scenes/standard-grid';
 
-const scene = new URL(import.meta.url).searchParams.get('scene') ?? 'grid';
+const params = new URL(import.meta.url).searchParams;
+const scene = params.get('scene') ?? 'grid';
 
 /** A quad in the XY plane, facing +Z, with a linear color at each corner. */
 const QUAD = {
@@ -17,18 +30,12 @@ const QUAD = {
 };
 
 export default defineSketch((ctx) => {
-	const { scene: world } = ctx;
-	world.setBackground('#20242a');
-	const camera = world.createPerspectiveCamera({
-		fov: 35,
-		near: 0.1,
-		far: 50,
-		position: [0, 0, 12],
-		target: [0, 0, 0],
-	});
-	world.setActiveCamera(camera);
-	world.createDirectionalLight({ direction: [-0.5, -0.7, -1], color: '#ffffff', intensity: 3 });
-	world.createAmbientLight({ color: '#ffffff', intensity: 0.4 });
+	const { scene: world, post } = ctx;
+	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
+	world.setBackground(GRID_BACKGROUND);
+	world.setActiveCamera(world.createPerspectiveCamera(GRID_CAMERA));
+	world.createDirectionalLight(GRID_SUN);
+	world.createAmbientLight(GRID_AMBIENT);
 	if (scene === 'grid') grid(ctx);
 	else features(ctx);
 });
@@ -37,20 +44,10 @@ type Context = Parameters<Parameters<typeof defineSketch>[0]>[0];
 
 /** Five columns of roughness by three rows of metalness. */
 function grid({ scene, materials, geometry }: Context): void {
-	const sphere = geometry.sphere({ radius: 0.62, widthSegments: 48, heightSegments: 24 });
-	for (let row = 0; row < 3; row++) {
-		for (let column = 0; column < 5; column++) {
-			const material = materials.standard({
-				color: '#d8a860',
-				metalness: row / 2,
-				roughness: column / 4,
-			});
-			scene.createMesh({
-				mesh: sphere,
-				material,
-				position: [(column - 2) * 1.5, (1 - row) * 1.5, 0],
-			});
-		}
+	const sphere = geometry.sphere(GRID_SPHERE);
+	for (const { position, metalness, roughness } of GRID_CELLS) {
+		const material = materials.standard({ color: GRID_COLOR, metalness, roughness });
+		scene.createMesh({ mesh: sphere, material, position: [...position] });
 	}
 }
 

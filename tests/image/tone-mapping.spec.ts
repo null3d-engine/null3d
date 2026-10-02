@@ -6,8 +6,15 @@
 // the dithering averages out.
 import { expect, type Page, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
-import { exposureOf, SIZE, STOPS, TONE_MAPPINGS, tileCenters } from '../pages/lib/bright-scene.ts';
-import { eightBitTest, IMAGE_RUNS, toneMappingTest } from './manifest.ts';
+import {
+	exposureOf,
+	SIZE,
+	STOPS,
+	TONE_MAPPINGS,
+	tileCenters,
+	toneMappingTest,
+} from '../pages/lib/bright-scene.ts';
+import { eightBitTest, IMAGE_RUNS } from './manifest.ts';
 
 test.describe.configure({ mode: 'parallel' });
 

@@ -5,7 +5,9 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `parity`, `bench`, `memory`, `depth`, `overload`, `scale` and `startup`. `bun run devices` runs the checks on the phone and on the iPad.
+- The plans are `checks` (the default), `parity`, `bench`, `memory`, `depth`, `overload`, `scale`, `skinning` and `startup`. `bun run devices` runs the checks on the phone and on the iPad.
+- The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
+- The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
 - Run one runner at a time. All runs share one file, `target/runs/current.json`, which tells waiting runner pages which run to start. A second runner can replace it before a waiting page reads it, and that page then waits forever.
 - A runner page that waits on the local network reloads itself before each run after its first. No run then inherits memory that an earlier run kept.
@@ -87,6 +89,18 @@ To collect the numbers, rest each device first and close its other tabs:
 - [D-11](decisions/D-11-frames-in-flight.md) holds the results. The phone and the iPad run it from the main checkout: `bun tests/real-browsers.ts --plan overload --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave --shields on`. The Mac's four browsers run it with `bun tests/real-browsers.ts --plan overload Safari Firefox "Google Chrome" "Brave Browser"`.
 - Without the limit, a queue can hold seconds of frames. A page then takes a while to stop, so each page gets 2 minutes.
 - `?spheres=<n>` makes the page measure that many spheres alone. Use it to compare switches, such as `?queue=3`, at one load.
+
+## The skinning plan
+
+- The `skinning` plan times two ways to skin characters on WebGL2, for [D-10](decisions/D-10-webgl2-skinning.md). The engine does not skin yet, so the page (`tests/pages/skinning.html`) draws with WebGL2 calls of its own, and no engine code runs.
+- The scene is a crowd of generated characters on a ground plane, under a directional light with 1 to 4 shadow cascades. Each character has 2,560 vertices and a chain of 32 joints, with four joint weights per vertex. The page bends each chain every frame and uploads the joint matrices to a float texture.
+- The vertex shader path skins each character again in each pass that draws it: each cascade and the main pass. The transform feedback path skins each character that some pass draws once per frame, into a buffer of positions and a buffer of normals. Then the cascades and the main pass draw those buffers as plain vertices.
+- Both paths cull the crowd per pass on the CPU, and fit each cascade's box to its slice of the view, as the engine does. The frame is 1280 x 720 pixels on every device, with 2048 x 2048 texels in each cascade.
+- Each page first draws one pose both ways and compares the two images. It fails when more than 0.1% of the pixels differ by more than 2 levels.
+- Then the page draws each path's frames back to back in batches of about 100 ms. It reads a pixel at the end of each batch, which waits for the GPU. The paths take 12 turns each, so heat slows both alike. The figures are medians per frame: the whole frame, the JavaScript, and the GPU time where the browser has timer queries. Phones and tablets have none.
+- The plan runs each crowd of 50, 100, 200 and 500 characters with 1, 2, 3 and 4 cascades: 16 pages. The run's summary gives each page's characters per pass, each path's figures, and the share of the frame time that transform feedback saves.
+- Run it on the phone and the iPad from a checkout of the branch that holds the page: `bun tests/real-browsers.ts --plan skinning --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool.
+- The page takes `?characters=`, `?cascades=`, `?rounds=` and `?warmup=` (milliseconds), to time one load by hand.
 
 ## Browser apps on the Mac
 

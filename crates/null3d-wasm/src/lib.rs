@@ -28,6 +28,7 @@ use null3d_render::arrays::{ArrayName, ArraysError, MeshArrays, from_arrays};
 use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
+use null3d_render::debug_view::DebugView;
 use null3d_render::fog::Fog;
 use null3d_render::frame::{CanvasOutput, FrameBuilder, FrameInput, RecordError, SceneSettings};
 use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
@@ -1352,6 +1353,21 @@ pub fn set_background_texture(texture: u32) -> u32 {
             }
             Err(failure) => failure,
         }
+    })
+}
+
+/// Draws the scene with a debug view (`debug_view::code`), or with its materials with `LIT`, from
+/// the next frame on. A change rebuilds the draw tables. The TypeScript API checks the code, so an
+/// unknown one keeps the view as it was.
+#[wasm_bindgen(js_name = setDebugView)]
+pub fn set_debug_view(view: u32) -> u32 {
+    with_engine(|e| {
+        if let Some(view) = DebugView::from_code(view)
+            && e.renderer.settings_mut().set_debug_view(view)
+        {
+            e.structure_changed = true;
+        }
+        0
     })
 }
 

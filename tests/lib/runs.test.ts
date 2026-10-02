@@ -33,6 +33,7 @@ import {
 	overloadPlan,
 	PLANS,
 	parityPlan,
+	REPORT_ON_TOP_PLANS,
 	SHADERS_PAGE_SECONDS,
 	STARTUP_RUNS,
 	startupPlan,
@@ -246,6 +247,13 @@ describe('shardItems', () => {
 describe('runName', () => {
 	it('sorts by time and is safe as a folder name', () => {
 		expect(runName('checks', new Date('2026-09-27T10:15:30.123Z'))).toBe('20260927-101530-checks');
+	});
+});
+
+describe("the runner page's report", () => {
+	it('goes over the frames of the plans that check results, and never over a timed page', () => {
+		expect([...REPORT_ON_TOP_PLANS].sort()).toEqual(['checks', 'depth', 'memory', 'parity']);
+		for (const plan of REPORT_ON_TOP_PLANS) expect(Object.keys(PLANS)).toContain(plan);
 	});
 });
 

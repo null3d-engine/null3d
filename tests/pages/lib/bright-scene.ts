@@ -14,6 +14,10 @@ export type BrightToneMapping = (typeof TONE_MAPPINGS)[number];
  */
 export const STOPS = [0, -1] as const;
 
+/** The name of the image test of a tone mapping at an exposure in stops. */
+export const toneMappingTest = (tone: string, stops: number) =>
+	`tone-${tone}${stops === 0 ? '' : '-half-exposure'}`;
+
 /** The exposure of a number of stops. */
 export const exposureOf = (stops: number) => 2 ** stops;
 

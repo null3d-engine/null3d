@@ -21,6 +21,7 @@ import {
 	manifestProblems,
 	type Place,
 	readPng,
+	referenceFileProblems,
 	referenceOf,
 	TOLERANCE,
 	writePng,
@@ -255,6 +256,68 @@ describe('the reference of a run', () => {
 		expect(grid.file).toBe('ipad/webgpu/grid.png');
 		expect(grid.fixed).toBe(
 			'every tier must draw the image of webgpu, which alone makes this reference',
+		);
+	});
+});
+
+describe('the files in the folder of references', () => {
+	/** Every reference that the made-up tests need: both environments' sets, and the iPad's own. */
+	const NEEDED = [
+		...['chromium-swiftshader', 'chrome-real-gpu'].flatMap((set) => [
+			...['webgpu', 'webgl2', 'compat'].map((tier) => `${set}/${tier}/boxes.png`),
+			`${set}/webgpu/grid.png`,
+		]),
+		'ipad/webgpu/grid.png',
+	];
+	const without = (file: string) => NEEDED.filter((other) => other !== file);
+
+	it('pass when each reference that some place compares with exists, and nothing else', () => {
+		expect(referenceFileProblems(RUNS, NEEDED)).toEqual([]);
+	});
+
+	it('name a missing real-GPU reference, and the run on the Mac that makes it', () => {
+		expect(referenceFileProblems(RUNS, without('chrome-real-gpu/compat/boxes.png'))).toEqual([
+			'chrome-real-gpu/compat/boxes.png is missing. Make it: bun run test:images -g "boxes on compat", then bun run images:review --accept boxes',
+		]);
+	});
+
+	it('name a missing SwiftShader reference, and the run with CI=1 that makes it', () => {
+		expect(referenceFileProblems(RUNS, without('chromium-swiftshader/webgl2/boxes.png'))).toEqual([
+			'chromium-swiftshader/webgl2/boxes.png is missing. Make it: CI=1 bun run test:images -g "boxes on webgl2", then bun run images:review --accept boxes',
+		]);
+	});
+
+	it("name a device's missing reference, made by the checks plan on that device", () => {
+		expect(referenceFileProblems(RUNS, without('ipad/webgpu/grid.png'))).toEqual([
+			'ipad/webgpu/grid.png is missing. Make it: run the checks plan on ipad (.dev/devices.md), then bun run images:review --accept grid',
+		]);
+	});
+
+	it('name every missing reference of a new test, both sets', () => {
+		const problems = referenceFileProblems(
+			RUNS,
+			NEEDED.filter((file) => !file.endsWith('grid.png')),
+		);
+		expect(problems.map((problem) => problem.split(' ')[0])).toEqual([
+			'chrome-real-gpu/webgpu/grid.png',
+			'chromium-swiftshader/webgpu/grid.png',
+			'ipad/webgpu/grid.png',
+		]);
+	});
+
+	it('name files that no test compares with: a tier that draws the first tier image, a device the test does not list, a test the manifest lacks', () => {
+		const unused = [
+			'chrome-real-gpu/webgl2/grid.png',
+			'mac/webgpu/boxes.png',
+			'chrome-real-gpu/webgpu/boxes-copied.png',
+			'chromium-swiftshader/webgpu/gone.png',
+		];
+		expect(referenceFileProblems(RUNS, [...NEEDED, ...unused])).toEqual(
+			unused
+				.toSorted()
+				.map(
+					(file) => `${file} is a reference of no test. Delete it, or add its test to the manifest`,
+				),
 		);
 	});
 });
