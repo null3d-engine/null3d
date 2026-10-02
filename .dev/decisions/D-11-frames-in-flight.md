@@ -209,7 +209,7 @@ The stress test (`tests/pages/governor.html`) on the Mac in Chrome, both GPU pat
 
 - The walk took every step down, one every 1.9 to 2 s, and every step back up, one every 6 s. No frame stuck: the 99th percentile of presented intervals was 50 ms under the load and 16.7 ms after it. No pipeline built and no draw was skipped. Each capture's largest block difference from the first frame was about 2 to 6 levels. A frame drawn without its shadows differs by about 113.
 - The hold grew the plane's loop until the lower rate fell under 45 fps, at about 33,000 to 66,000 steps per pixel. The governor then held 55 to 60 fps in the last 15 seconds, at render scales of 0.5 to 0.8. At the heavier load it reached 0.5, tried 0.55 once, fell behind and stepped back within 2 s.
-- CI's software GPU draws the scene at about 40 fps on WebGL2 without a load, so its walk runs with `?fps=30`.
+- The Mac's software GPU draws the scene at about 40 fps on WebGL2 without a load, and passes the walk with `?fps=30`. CI's takes 300 to 400 ms for some frames, so CI skips both stages.
 
 The S24+ and the iPad rows are still to come, from `bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari`.
 
