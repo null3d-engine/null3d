@@ -105,6 +105,7 @@ run('engine', async () => {
 		count,
 		pause,
 		stopMs,
+		seconds,
 		sharedMemoryMiB,
 		downloads: params.has('downloads')
 			? (performance.getEntriesByType('resource') as PerformanceResourceTiming[]).map(

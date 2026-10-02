@@ -125,6 +125,8 @@ export interface EngineResult {
 	pause?: { paused: FrameCounts; resumed: FrameCounts };
 	/** How long the engine took to stop. */
 	stopMs: number;
+	/** How long the page measured frames for, in seconds. */
+	seconds: number;
 	/**
 	 * With `?memory-option=`: the maximum in MiB of each shared memory that the engine asked the
 	 * browser for.
@@ -138,7 +140,12 @@ export interface EngineResult {
 
 /** Slower than this median frame interval means the loop is not keeping up with the display. */
 const MAX_MEDIAN_INTERVAL_MS = 34;
-const MIN_FRAMES = 30;
+/**
+ * The share of the frames that the slowest accepted median interval gives over a measurement, below
+ * which the loop stalled. A slow GPU drops the loop to half the display's rate, as on CI's software
+ * GPU, and the median check accepts that rate, so the floor sits well under it.
+ */
+const MIN_FRAME_SHARE = 0.5;
 /** A measured refresh rate outside this range is a measuring fault, not a display. */
 const REFRESH_HZ_RANGE = [20, 500] as const;
 /**
@@ -168,13 +175,14 @@ export function jobWorkersProblem(
 /** What is wrong with a result of the engine page, run in a mode on a GPU tier; empty when nothing is. */
 export function engineProblems(result: EngineResult, mode: EngineMode, tier: string): string[] {
 	const { stats } = result;
+	const minFrames = ((result.seconds * 1000) / MAX_MEDIAN_INTERVAL_MS) * MIN_FRAME_SHARE;
 	const problems = modeProblems(result.mode, mode);
 	if (result.mode.jobWorkers >= 1 !== (mode.build === 'threaded'))
 		problems.push(`started ${result.mode.jobWorkers} job workers`);
 	const jobs = jobWorkersProblem(result.mode.jobWorkers, mode.jobWorkers);
 	if (jobs) problems.push(jobs);
 	if (!result.capabilities.tier.startsWith(tier)) problems.push(`used ${result.capabilities.tier}`);
-	if (stats.frames <= MIN_FRAMES) problems.push(`measured only ${stats.frames} frames`);
+	if (stats.frames < minFrames) problems.push(`measured only ${stats.frames} frames`);
 	if (stats.intervalMs.median >= MAX_MEDIAN_INTERVAL_MS)
 		problems.push(`median frame interval ${stats.intervalMs.median} ms`);
 	// A page without cross-origin isolation gets a coarse timer (0.1 ms steps in Chrome), and an
@@ -218,7 +226,7 @@ export function engineProblems(result: EngineResult, mode: EngineMode, tier: str
 	if (result.messages.join(',') !== 'setup,count')
 		problems.push(`the page received the sketch's messages ${result.messages.join(', ')}`);
 	if (!((stats.memory.wasmBytes ?? 0) > 0)) problems.push('the WebAssembly memory size is missing');
-	if (result.count.updates <= MIN_FRAMES)
+	if (result.count.updates < minFrames)
 		problems.push(`the sketch updated only ${result.count.updates} times`);
 	if (!(result.stopMs < MAX_STOP_MS))
 		problems.push(
