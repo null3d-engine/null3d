@@ -33,6 +33,8 @@ Reading the data:
 - On the S24+, low latency presents more frames than pipelined (40.4 against 32.5 per second), with the same CPU time. In pipelined mode a frame that misses the display's deadline waits a whole refresh, so the presented rate snaps toward 30 when frames take just over 16.7 ms. Low latency presents each frame as it finishes. The owner chose on 2026-09-29 to keep the pipelined pacing as it is; this record only reports what it costs on the phone.
 - Low latency would show input about one frame sooner. The benchmarks do not measure input delay yet.
 
+Later data, 2 October 2026 (run `target/runs/20261002-151739-bench`): S4 on the iPad in Safari 26.6 on WebGPU held its target frame rate. It did so in 55% of its seconds in low-latency mode, and in 100% pipelined. [D-06](D-06-success-targets.md) gives the other figures of those runs.
+
 ## Decision
 
 The owner decided on 2026-09-30: pipelined stays the default, and low latency stays an option for pages that need input to show one frame sooner. The Mac row was not needed for the choice: on WebGPU, pipelined presents a third more frames on the iPad, and on WebGL2 the two modes present the same rate. The S24+ result for low latency comes from the pacing that the owner chose to keep, not from less work.
