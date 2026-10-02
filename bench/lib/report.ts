@@ -27,8 +27,11 @@ export interface BenchResult extends TimedRun {
 	scene: string;
 	renderer: string;
 	n: number;
-	/** null3d pages: how the engine ran, such as how many job workers it started. */
-	mode?: { jobWorkers: number };
+	/**
+	 * null3d pages: how the engine ran, such as how many job workers it started and the quality
+	 * preset it drew with.
+	 */
+	mode?: { jobWorkers: number; preset?: string };
 	/** Pages that record one: the trace of each measured second. */
 	trace?: TraceSecond[];
 }

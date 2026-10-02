@@ -3,9 +3,11 @@ import {
 	allowedMs,
 	type Build,
 	type BuildRun,
+	COMPARISON_SWITCHES,
 	type ComparisonRecord,
 	compareBuilds,
 	compareReport,
+	comparisonSwitches,
 	type ExpectedChange,
 	judge,
 	judgeRecord,
@@ -13,9 +15,11 @@ import {
 	mergeRecords,
 	type PlanPage,
 	pageName,
+	qualityLines,
 	RULES,
 	readExpectedChanges,
 	roundOrder,
+	runQualities,
 	selectRuns,
 	shardPages,
 } from './compare';
@@ -27,14 +31,27 @@ interface RunFacts {
 	refreshHz?: number | null;
 	frames?: number;
 	gpuMs?: number | null;
+	/** The quality preset that the engine reports, if any. */
+	preset?: string;
+	/** Quality steps in each measured second, for a page that records a trace. */
+	steps?: readonly number[];
 }
 
 /** A null3D page's result whose busiest thread, the sketch worker, takes `cpu` ms per frame. */
 function result(
 	cpu: number,
-	{ update = 0, refreshHz = 60, frames = 600, gpuMs = null }: RunFacts = {},
+	{ update = 0, refreshHz = 60, frames = 600, gpuMs = null, preset, steps }: RunFacts = {},
 ) {
 	return {
+		...(preset !== undefined && { mode: { jobWorkers: 1, preset } }),
+		...(steps !== undefined && {
+			trace: steps.map((count) => ({
+				presentedFps: 60,
+				completedFps: 60,
+				renderScale: 1,
+				steps: count,
+			})),
+		}),
 		ok: true,
 		scene: 's1',
 		renderer: 'null3d',
@@ -399,6 +416,70 @@ describe('the verdict', () => {
 	});
 });
 
+describe('the switches of a comparison', () => {
+	test('fix the preset and turn the governor off on every page', () => {
+		expect(COMPARISON_SWITCHES).toEqual(['preset=high', 'governor=off']);
+		expect(comparisonSwitches('')).toEqual(['preset=high', 'governor=off']);
+		expect(comparisonSwitches('shadows=3')).toEqual(['preset=high', 'governor=off']);
+	});
+
+	test('leave out a switch that the command sets itself', () => {
+		expect(comparisonSwitches('preset=low&shadows=3')).toEqual(['governor=off']);
+		expect(comparisonSwitches('governor=off')).toEqual(['preset=high']);
+	});
+});
+
+describe('the quality of each run', () => {
+	test('records the preset and the steps of each run that published a result', () => {
+		const runs = [
+			run('baseline', 1, result(1, { preset: 'high', steps: [0, 2, 1] }), 's4'),
+			run('new', 1, result(1, { preset: 'medium' })),
+			run('new', 2, FAILED),
+		];
+		expect(runQualities(runs)).toEqual([
+			{ build: 'baseline', scene: 's4', kind: 'null3d-webgpu', round: 1, preset: 'high', steps: 3 },
+			{ build: 'new', scene: 's1', kind: 'null3d-webgpu', round: 1, preset: 'medium', steps: null },
+		]);
+	});
+
+	test('sums up pages at one preset, and lists the rounds of a page whose presets differ', () => {
+		const runs = [
+			...page([1, 1], [1, 1], { preset: 'high' }),
+			...page([1, 1], [1, 1], { preset: 'medium' }, 's1', 'null3d-webgl2'),
+			...page([1, 1], [1, 1], { preset: 'high', steps: [0, 0] }, 's4'),
+			run('baseline', 1, result(1, { preset: 'low' }), 's2', 'null3d-webgl2'),
+			run('new', 1, result(1, { preset: 'medium' }), 's2', 'null3d-webgl2'),
+			run('baseline', 2, result(1, { preset: 'medium' }), 's2', 'null3d-webgl2'),
+		];
+		expect(qualityLines(runQualities(runs))).toEqual([
+			'',
+			'Quality preset in every run of both builds: high on s1 null3d-webgpu, s4 null3d-webgpu; medium on s1 null3d-webgl2.',
+			'',
+			'Pages whose runs drew at different quality presets, round by round:',
+			'- s2 null3d-webgl2: round 1 baseline low, new medium; round 2 baseline medium, new no run',
+			'',
+			'Quality steps in the measured seconds: none in any run of s4 null3d-webgpu.',
+		]);
+	});
+
+	test('names each run in which the quality changed during the measured seconds', () => {
+		const runs = [
+			...page([1, 1], [1, 1], { preset: 'high', steps: [0, 0] }, 's4'),
+			run('new', 3, result(1, { preset: 'high', steps: [1, 0, 1] }), 's4'),
+		];
+		expect(qualityLines(runQualities(runs)).at(-1)).toBe(
+			'Quality steps in the measured seconds: new s4 null3d-webgpu round 3 took 2.',
+		);
+	});
+
+	test('says when the pages report no preset', () => {
+		expect(qualityLines(runQualities(page([1, 1], [1, 1])))).toEqual([
+			'',
+			'Quality preset in every run of both builds: not reported on s1 null3d-webgpu.',
+		]);
+	});
+});
+
 describe('the report', () => {
 	const context = {
 		baseline: 'abc1234 "fix: a"',
@@ -454,6 +535,9 @@ describe('the report', () => {
 			'- `Bench-Expected: s1/null3d-webgpu/busiest-thread: culling tests every box`',
 		);
 		expect(text).toContain('"s9" is not a scene');
+		expect(text).toContain(
+			'Quality preset in every run of both builds: not reported on s1 null3d-webgpu, s2 null3d-webgl2.',
+		);
 	});
 
 	test('says when the comparison passes, and names the pages the baseline kept from it', () => {
@@ -547,6 +631,7 @@ describe('shards of a comparison', () => {
 			'| s2 | null3d-webgl2 | busiest thread | 1.000 (1.000 to 1.000) | 2.000 (2.000 to 2.000) | +100.0% | slower, expected: the trees now have one more level |',
 		);
 		expect(summary).toMatchObject({ shard: null, verdict });
+		expect((summary as { quality: unknown[] }).quality).toHaveLength(plan.length * 4);
 	});
 
 	test('refuse records that miss a page, hold one twice or disagree', () => {

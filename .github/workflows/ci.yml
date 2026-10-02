@@ -137,14 +137,16 @@ jobs:
           retention-days: 1
 
   wasm-checks:
-    # The size check builds the WebAssembly files and the engine test page itself, and then main's
-    # build, so it runs beside the build job instead of after it.
+    # The size check builds the WebAssembly files and the engine test page itself, and then the
+    # base's build, so it runs beside the build job instead of after it.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       HUSKY: "0"
     steps:
-      # The size check finds its base in main's history and reads the commits since it.
+      # The size check finds its base in the history and reads the commits since it. A pull request
+      # compares with main, and a merge queue run with the commit that its group builds on, which
+      # holds the pull requests ahead of it, so their growth never counts against it.
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
@@ -157,7 +159,7 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - name: Build both WebAssembly files and the shader compiler, and check their sizes against main's build
+      - name: Build both WebAssembly files and the shader compiler, and check their sizes against the base's build
         run: bun run build:check-size
       - name: The shader compiler gives the native shader build's results
         run: bun run test:shader-compiler
