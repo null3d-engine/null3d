@@ -5,11 +5,14 @@
 // With &from=<index>, a page opened for one run starts at that item of the plan, as when the runner
 // tool replaces a runner page that stopped answering. Each runner page claims its runner's results
 // when it starts a run, and a page whose claim a newer page took stops: a replaced page can still be
-// running, hidden, where the runner tool cannot close it.
+// running, hidden, where the runner tool cannot close it. A request to the dev server that gets no
+// answer in time goes out again, because Safari can lose one that it sends as a removed frame
+// closes its connections.
 // Pixels travel as the page read them back, never re-encoded through a canvas, which privacy
 // protections can alter. For a startup load, the result also tells what the server sent for it.
 
 import { fillRunner, loadOf, takeDownloads } from '../lib/load-routes';
+import { patientFetch } from '../lib/patient-fetch';
 
 interface PlanItem {
 	id: string;
@@ -51,7 +54,7 @@ function log(text: string): void {
 }
 
 async function post(run: string, name: string, body: unknown): Promise<void> {
-	const response = await fetch(`/__null3d/runs/${run}/${runner}/${name}?page=${pageId}`, {
+	const response = await patientFetch(`/__null3d/runs/${run}/${runner}/${name}?page=${pageId}`, {
 		method: 'POST',
 		body: JSON.stringify(body),
 	});
@@ -61,7 +64,7 @@ async function post(run: string, name: string, body: unknown): Promise<void> {
 
 /** Claims this runner's results in a run for this page, so that an older page's are refused. */
 async function claim(run: string): Promise<void> {
-	const response = await fetch(`/__null3d/runs/${run}/${runner}?page=${pageId}`, {
+	const response = await patientFetch(`/__null3d/runs/${run}/${runner}?page=${pageId}`, {
 		method: 'POST',
 	});
 	if (!response.ok) throw new Error(`the dev server refused the claim: ${response.status}`);
@@ -145,7 +148,7 @@ async function openInFrame(path: string, timeoutSeconds: number): Promise<Result
  */
 async function runItem(item: PlanItem, run: string): Promise<Result> {
 	const path = fillRunner(item.path, run, runner);
-	const page = await fetch(path, { cache: 'no-store' });
+	const page = await patientFetch(path, { cache: 'no-store' });
 	if (!page.ok) return { ok: false, error: `page not found (HTTP ${page.status})` };
 	const load = loadOf(path);
 	// The check above was a download of the load, which starts afresh after it.
@@ -156,7 +159,9 @@ async function runItem(item: PlanItem, run: string): Promise<Result> {
 
 /** Runs a run's items from the item at `from`. Only a run from its first item reads the device. */
 async function runPlan(run: string, from = 0): Promise<void> {
-	const plan = (await (await fetch(`/__null3d/runs/${run}/plan`)).json()) as { items: PlanItem[] };
+	const plan = JSON.parse((await patientFetch(`/__null3d/runs/${run}/plan`)).text) as {
+		items: PlanItem[];
+	};
 	await claim(run);
 	list.replaceChildren();
 	if (from === 0) {
@@ -184,11 +189,11 @@ async function listen(): Promise<void> {
 	let ranOne = false;
 	for (;;) {
 		try {
-			const current = (await (
-				await fetch('/__null3d/runs/current', { cache: 'no-store' })
-			).json()) as { run?: string; turns?: string[] };
+			const current = JSON.parse(
+				(await patientFetch('/__null3d/runs/current', { cache: 'no-store' })).text,
+			) as { run?: string; turns?: string[] };
 			const due = current.run !== undefined && current.turns?.includes(runner) === true;
-			if (due && !(await fetch(`/__null3d/runs/${current.run}/${runner}/done`)).ok) {
+			if (due && !(await patientFetch(`/__null3d/runs/${current.run}/${runner}/done`)).ok) {
 				if (ranOne) {
 					location.reload();
 					return;
