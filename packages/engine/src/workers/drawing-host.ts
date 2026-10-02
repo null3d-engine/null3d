@@ -18,21 +18,24 @@ export class DrawingHost {
 	 * Keeps the drawing that `start` makes. A drawing that starts after the page asked the worker
 	 * to stop drawing stops at once, and the call resolves with undefined.
 	 */
-	async start(start: Promise<Drawing<Renderer>>): Promise<Drawing<Renderer> | undefined> {
-		this.starting = start.catch(() => {});
-		const drawing = await start;
-		if (this.stopping) {
-			drawing.stop();
+	start(start: Promise<Drawing<Renderer>>): Promise<Drawing<Renderer> | undefined> {
+		const started = start.then(async (drawing) => {
+			if (!this.stopping) {
+				this.drawing = drawing;
+				return drawing;
+			}
+			await drawing.stop();
 			return undefined;
-		}
-		this.drawing = drawing;
-		return drawing;
+		});
+		this.starting = started.catch(() => {});
+		return started;
 	}
 
 	/** Stops drawing and frees the GPU, without a reply: for a start that failed. */
-	release(): void {
-		this.drawing?.stop();
+	async release(): Promise<void> {
+		const drawing = this.drawing;
 		this.drawing = undefined;
+		await drawing?.stop();
 	}
 
 	/**
@@ -42,7 +45,7 @@ export class DrawingHost {
 	async stop(role: 'sketch' | 'render'): Promise<void> {
 		this.stopping = true;
 		await this.starting;
-		this.release();
+		await this.release();
 		replyToPage({ type: 'stopped', role });
 	}
 }

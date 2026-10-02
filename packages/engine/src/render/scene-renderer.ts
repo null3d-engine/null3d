@@ -5,6 +5,7 @@
 // prepared.
 
 import type { DeviceShaders } from '../generated/shaders';
+import { clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
 import { FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import { WebGL2Backend } from '../gpu/webgl2/backend';
@@ -146,7 +147,7 @@ export class WebGPUSceneRenderer implements Renderer {
 	constructor(
 		readonly tier: Tier,
 		private readonly device: GPUDevice,
-		private readonly canvas: RenderCanvas,
+		readonly canvas: RenderCanvas,
 		memory: WebAssembly.Memory,
 		control: ArrayBufferLike,
 		metrics: ArrayBufferLike | undefined,
@@ -228,6 +229,10 @@ export class WebGPUSceneRenderer implements Renderer {
 		return this.device.queue.onSubmittedWorkDone();
 	}
 
+	drawBlank(): void {
+		clearWebGPUCanvas(this.device, this.context);
+	}
+
 	destroy(): void {
 		this.backend.timer?.destroy();
 		this.backend.destroy();
@@ -256,7 +261,7 @@ export class WebGL2SceneRenderer implements Renderer {
 	 * device loaded.
 	 */
 	constructor(
-		private readonly canvas: RenderCanvas,
+		readonly canvas: RenderCanvas,
 		private readonly gl: WebGL2RenderingContext,
 		memory: WebAssembly.Memory,
 		control: ArrayBufferLike,
@@ -341,6 +346,10 @@ export class WebGL2SceneRenderer implements Renderer {
 
 	finished(): Promise<void> {
 		return contextFinished(this.gl);
+	}
+
+	drawBlank(): void {
+		clearWebGL2Canvas(this.gl);
 	}
 
 	destroy(): void {

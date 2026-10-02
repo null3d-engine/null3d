@@ -1,30 +1,58 @@
-import { describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { Slot } from '../shared/control';
 import { Drawing, MAX_RECOVERIES, type Recoverable } from './recovery';
 
 type Loop = { stop(): void; stopped: boolean };
-type FakeRenderer = Recoverable & { lose(reason: string): void; destroyed: boolean };
+type Size = { width: number; height: number };
+type FakeRenderer = Recoverable & {
+	canvas: Size;
+	lose(reason: string): void;
+	destroyed: boolean;
+	/** The canvas's size at each blank frame, and when the renderer was destroyed. */
+	blanks: Size[];
+	destroyedAt?: Size;
+};
 
-/** A renderer whose loss the test triggers, and which records whether it was destroyed. */
+/**
+ * A renderer whose loss the test triggers, and which records its blank frames and whether it was
+ * destroyed.
+ */
 function fakeRenderer(): FakeRenderer {
 	let lose: (reason: string) => void = () => {};
 	const lost = new Promise<string>((resolve) => {
 		lose = resolve;
 	});
 	return {
+		canvas: { width: 640, height: 360 },
 		lost,
 		destroyed: false,
+		blanks: [],
 		lose,
 		simulateLoss() {
 			lose('simulated');
 		},
+		drawBlank() {
+			this.blanks.push({ ...this.canvas });
+		},
 		destroy() {
 			this.destroyed = true;
+			this.destroyedAt = { ...this.canvas };
 		},
 	};
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+/** Long enough for the frames that a stop waits for, which the test's frame timer runs at once. */
+const frames = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+const thread = globalThis as { requestAnimationFrame?: (callback: () => void) => unknown };
+const browserFrames = thread.requestAnimationFrame;
+beforeAll(() => {
+	thread.requestAnimationFrame = (callback) => setTimeout(callback, 0);
+});
+afterAll(() => {
+	thread.requestAnimationFrame = browserFrames;
+});
 
 function setup(create?: () => Promise<FakeRenderer>, recovers = true) {
 	const slots = new Int32Array(32);
@@ -113,10 +141,34 @@ describe('Drawing', () => {
 		);
 		last().lose('driver reset');
 		await settle();
-		drawing.stop();
+		const stopped = drawing.stop();
 		release(replacement);
-		await settle();
+		await stopped;
+		await frames();
 		expect(replacement.destroyed).toBe(true);
 		expect(failures).toEqual([]);
+	});
+
+	it('shows a blank frame of one pixel before it destroys the renderer, then restores the canvas', async () => {
+		const { drawing, loops, last } = setup();
+		const renderer = last();
+		const stopped = drawing.stop();
+		expect(loops[0]?.stopped).toBe(true);
+		expect(renderer.blanks).toEqual([{ width: 1, height: 1 }]);
+		expect(renderer.destroyed).toBe(false);
+		await stopped;
+		expect(renderer.destroyedAt).toEqual({ width: 1, height: 1 });
+		expect(renderer.canvas).toEqual({ width: 640, height: 360 });
+	});
+
+	it('destroys a renderer whose blank frame fails', async () => {
+		const { drawing, last } = setup();
+		const renderer = last();
+		renderer.drawBlank = () => {
+			throw new Error('the GPU is lost');
+		};
+		await drawing.stop();
+		expect(renderer.destroyed).toBe(true);
+		expect(renderer.canvas).toEqual({ width: 640, height: 360 });
 	});
 });
