@@ -1,10 +1,10 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?wake=message, ?hdr=off,
-// ?half= and ?compression=. Five more set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs=
-// for the job worker count, ?memory= for the shared memory's maximum, ?queue= for the frames that
-// may wait on the GPU and ?cells=off for culling without grid cells. ?hold starts hold mode for
-// image tests, ?preset= fixes the quality preset, and ?bench publishes the running engine for
-// benchmark tools.
+// ?half= and ?compression=. Six more set what the benchmarks vary: ?fps= for a fixed frame rate,
+// ?jobs= for the job worker count, ?memory= for the shared memory's maximum, ?queue= for the frames
+// that may wait on the GPU, ?cells=off for culling without grid cells and ?prepass=on or off for
+// the depth prepass. ?hold starts hold mode for image tests, ?preset= fixes the quality preset, and
+// ?bench publishes the running engine for benchmark tools.
 
 import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
@@ -94,6 +94,11 @@ export interface Switches {
 	 */
 	cells: boolean;
 	/**
+	 * True when ?prepass=on turns the depth prepass on, false when ?prepass=off turns it off, and
+	 * undefined to leave it to the page's option and the quality preset.
+	 */
+	prepass: boolean | undefined;
+	/**
 	 * The frame rate from ?fps= that the thread that draws holds, up to the display's rate, or
 	 * undefined to draw at the display's rate.
 	 */
@@ -133,6 +138,11 @@ function oneOf<T extends string>(value: string | null, allowed: readonly T[]): T
 		: undefined;
 }
 
+/** True for `on`, false for `off`, and undefined for anything else. */
+function onOff(value: string | null): boolean | undefined {
+	return value === 'on' ? true : value === 'off' ? false : undefined;
+}
+
 /** A number above 0, or undefined for a missing or unusable value. */
 function positive(value: string | null): number | undefined {
 	const n = Number(value);
@@ -147,7 +157,6 @@ function whole(value: string | null, max = Number.MAX_SAFE_INTEGER): number | un
 
 export function parseSwitches(search: string): Switches {
 	const params = new URLSearchParams(search);
-	const half = oneOf(params.get('half'), ['on', 'off'] as const);
 	return {
 		gpu: oneOf(params.get('gpu'), ['webgpu', 'compat', 'webgl2'] as const) ?? 'auto',
 		threads: params.get('threads') !== 'off',
@@ -163,8 +172,9 @@ export function parseSwitches(search: string): Switches {
 		parallelCompile: params.get('compile') !== 'wait',
 		wakeByMessage: params.get('wake') === 'message',
 		hdr: params.get('hdr') !== 'off',
-		half: half === undefined ? undefined : half === 'on',
+		half: onOff(params.get('half')),
 		cells: params.get('cells') !== 'off',
+		prepass: onOff(params.get('prepass')),
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),

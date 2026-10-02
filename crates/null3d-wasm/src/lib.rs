@@ -286,7 +286,8 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// into a target of format `scene_color`: a float format for HDR color, or the canvas's for the
 /// 8-bit path. `antialias` is the anti-aliasing mode's code; an unknown code takes MSAA.
 /// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
-/// every object, with no grid cells skipped first. Every capacity is fixed from here on.
+/// every object, with no grid cells skipped first. With `depth_prepass`, each camera view draws its
+/// opaque objects' depth before it shades them, on WebGPU. Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
 pub fn init_engine(
@@ -302,6 +303,7 @@ pub fn init_engine(
     antialias: u32,
     transparent: bool,
     cell_culling: bool,
+    depth_prepass: bool,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
     let cell = unsafe { &mut *ENGINE.0.get() };
@@ -353,6 +355,7 @@ pub fn init_engine(
                     MAX_USEFUL_BINDING_BYTES,
                 ),
                 cell_culling,
+                depth_prepass,
                 ..RendererConfig::default()
             }))
         },
@@ -1340,6 +1343,22 @@ pub fn set_render_scaling(scaling: bool) -> u32 {
     with_engine(|e| {
         e.renderer.settings_mut().set_render_scaling(scaling);
         0
+    })
+}
+
+/// What casts shadows in the last recorded frame: the main directional light's cascades in the
+/// bits of `shadow_casters::CASCADE_MASK`, 0 when it casts none, and `shadow_casters::TILES` when
+/// point or spot lights cast shadows. The quality governor lightens only the shadows that exist.
+#[wasm_bindgen(js_name = shadowCasters)]
+pub fn shadow_casters() -> u32 {
+    value_with_engine(|e| {
+        let tiles = if e.renderer.casts_tile_shadows() {
+            constants::shadow_casters::TILES
+        } else {
+            0
+        };
+        let cascades = e.renderer.settings().sun_shadow_cascades();
+        Ok(cascades & constants::shadow_casters::CASCADE_MASK | tiles)
     })
 }
 

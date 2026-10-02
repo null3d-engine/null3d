@@ -8,6 +8,11 @@ enable draw_index;
 // be clipped away. The vertex shader flattens it onto the box's face toward the light instead,
 // where its depth of 1 hides everything behind it. Its place across the light does not change,
 // because the cascade's projection is orthographic.
+//
+// The PREPASS builds draw the depth of a camera's opaque objects before the opaque pass shades
+// them. They clip what lies in front of the camera's near plane, as the templates that shade do.
+// The position is invariant, as in those templates, so both compute the same depth for the same
+// vertex, and the opaque pass's test for equal depth passes on exactly the nearest surfaces.
 #import null3d::mesh::{InstanceIn, clip_position, find_instance}
 
 /// The vertex attribute that the template reads.
@@ -16,9 +21,11 @@ struct VertexIn {
 }
 
 @vertex
-fn vs(v: VertexIn, i: InstanceIn) -> @builtin(position) vec4f {
+fn vs(v: VertexIn, i: InstanceIn) -> @invariant @builtin(position) vec4f {
     var clip = clip_position(find_instance(i), v.position);
+#ifndef PREPASS
     clip.z = min(clip.z, clip.w);
+#endif
     return clip;
 }
 

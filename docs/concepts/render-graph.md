@@ -14,11 +14,14 @@ summary: "Declared reads and writes; automatic order; transient memory; validati
 flowchart LR
     objects[("objects")] --> culling["Culling<br/>WebGPU only"] --> visible[("visible instances")]
     visible --> opaque
+    visible -.-> prepass
     subgraph scene["One render pass"]
+        prepass["Depth prepass<br/>WebGPU, when on"]
         opaque["Opaque"]
         transparent["Transparent"]
         resolve["Resolve<br/>8-bit path with MSAA"]
     end
+    prepass -.-> depth
     opaque --> color[("scene color")]
     opaque --> depth[("scene depth")]
     color --> transparent
@@ -38,12 +41,15 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 | Pass | Kind | Reads | Writes |
 | --- | --- | --- | --- |
 | Culling | Compute, one pass per view, on WebGPU only | The world matrix and bounds of every object and instance | The view's visible instances and draw counts |
+| Depth prepass | Scene, one pass per view, on WebGPU with the `depthPrepass` setting | The view's visible instances | The scene depth |
 | Opaque | Scene, one pass per view | The view's visible instances, on WebGPU | The scene color and depth |
 | Transparent | Scene, one pass per view, on while some object blends | The view's blended objects, sorted back to front on the job workers | The scene color and depth |
 | Resolve | Resolve, on the 8-bit path with MSAA | The scene color | The canvas |
 | Final pass | Fullscreen, on the HDR path, and with FXAA or no anti-aliasing | The scene color | The canvas |
 
-On WebGL2 the job workers cull the objects before the frame draws, so the graph has no culling pass there. Passes for shadows, light clustering and a depth prepass join the graph as those features ship.
+On WebGL2 the job workers cull the objects before the frame draws, so the graph has no culling pass there. Passes for shadows and light clustering join the graph as those features ship.
+
+With the depth prepass on, each view draws the depth of its opaque objects first, in the render pass that then shades them. Only WebGPU draws it. The opaque pass then shades only the nearest surface at each pixel. [Quality presets](quality-presets.md#the-depth-prepass) says when the prepass saves time.
 
 A view is the scene seen from one camera, culled on its own. On WebGPU each view has a culling pass, and on WebGL2 the job workers list the visible objects of each view. The engine draws one view: the camera's. Its opaque pass draws the scene color and depth, and the scene color reaches the canvas.
 

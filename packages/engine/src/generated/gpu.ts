@@ -119,6 +119,7 @@ export const PERMUTATION_FXAA = 256;
 export const PERMUTATION_VERTEX_TANGENT = 512;
 export const PERMUTATION_DEBUG_VIEW_LOW = 1024;
 export const PERMUTATION_DEBUG_VIEW_HIGH = 2048;
+export const PERMUTATION_PREPASS = 4096;
 export const PERMUTATION_HALF = 8192;
 
 export const VERTEX_UV0 = 1;
@@ -137,6 +138,8 @@ export const STATE_BLEND = 96;
 export const STATE_BLEND_NORMAL = 32;
 export const STATE_BLEND_ADDITIVE = 64;
 export const STATE_BLEND_MULTIPLY = 96;
+export const STATE_DEPTH_EQUAL = 128;
+export const STATE_NO_COLOR_WRITE = 256;
 
 export const TEMPLATE_INSTANCED_LIT = 1;
 export const TEMPLATE_INSTANCED_UNLIT = 2;

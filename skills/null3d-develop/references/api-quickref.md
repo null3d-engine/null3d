@@ -36,6 +36,7 @@ const engine = await createEngine({
   preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'; WebGL2 runs at most 'medium'
   maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
   antialias: 'msaa',     // 'msaa' | 'fxaa' | 'none' in place of the preset's mode (FXAA on Low, MSAA above)
+  depthPrepass: false,   // true draws opaque depth first, so each pixel shades once (WebGPU only); presets leave it off
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
@@ -460,7 +461,11 @@ quality.renderScale;                    // the part of the canvas's width and he
 quality.set({ minRenderScale: 0.5, maxRenderScale: 1 });  // the range dynamic resolution moves in; 1 and 1 turn it off
 quality.set({ maxAnisotropy: 4, uploadBytesPerFrame: 2 * 1024 * 1024 });  // texture sampling cap, upload bytes per frame
 quality.settings.antialias;             // 'msaa' | 'fxaa' | 'none', fixed at the start; set it with createEngine's option
+quality.settings.depthPrepass;          // true when opaque depth draws first; fixed at the start, as antialias is
 quality.set({ shadowFilter: 5, farCascadeInterval: 1 });  // shadow edge softness, 3 or 5 texels; far cascades every frame
+quality.governor.steps;                 // the governor's steps past the render scale; onChange runs after each
+quality.governor.farCascadeInterval;    // the shadow settings drawn now, which the governor may lower
+quality.set({ governor: false });       // no governor: maxRenderScale, and the shadow settings as set
 quality.set({ shadowCascades: 2 });     // planned: the preset table gives each setting's status
 await quality.setPreset('low');         // the live settings take Low's values; start-time ones stay; resolves once its frame is on screen
 const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
@@ -470,7 +475,7 @@ engine.mode.preset;                     // on the page: the preset, crashedStart
 engine.mode.presetCheck;                // what the preset check measured: { from, targetFps, rounds }, or null
 ```
 
-The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. When the engine chose the preset itself, it checks it with the scene that the setup built. It lowers the preset until the GPU holds the frame rate, before `createEngine` resolves, and keeps the settings that the setup changed with `quality.set`. The `setPreset` call keeps the last frame on screen until the new preset's pipelines are built. So call it from a menu or a loading screen. Dynamic resolution lowers the render scale by 0.05 after about a second over budget, and raises it after 5 seconds with time to spare. Hold mode draws at `maxRenderScale`. The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
+The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. When the engine chose the preset itself, it checks it with the scene that the setup built. It lowers the preset until the GPU holds the frame rate, before `createEngine` resolves, and keeps the settings that the setup changed with `quality.set`. The `setPreset` call keeps the last frame on screen until the new preset's pipelines are built. So call it from a menu or a loading screen. Dynamic resolution lowers the render scale by 0.05 after about a second over budget, and raises it after 5 seconds with time to spare. Hold mode draws at `maxRenderScale`. When the scale reaches `minRenderScale` and frames still run long, the frame-budget governor makes far shadow cascades draw less often, then uses the lighter shadow filter. It raises them again in the reverse order after a stable period.
 
 ## 18. Messages and UI (`api/page`, `api/ui`)
 

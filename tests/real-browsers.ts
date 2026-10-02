@@ -15,6 +15,7 @@
 //   bun tests/real-browsers.ts --plan depth --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
 //   bun tests/real-browsers.ts --plan overload --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
 //   bun tests/real-browsers.ts --plan skinning --android chrome --lan ipad-safari
+//   bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari
 // Options:
 //   --plan <name>       the plan to run: checks (the default), parity, bench, memory, which loads
 //                       the engine page 20 times at each shared memory maximum from 256 to 4096 MiB,
@@ -25,7 +26,10 @@
 //                       scene until the GPU falls behind and compares the presented and completed
 //                       rates on each GPU path, skinning, which times two ways to skin a crowd on
 //                       WebGL2 with 1 to 4 shadow cascades: in every pass, or once per frame with
-//                       transform feedback, or scale, which finds the largest S1 count at which
+//                       transform feedback, governor, which runs the quality governor's stress
+//                       test on each GPU path: every live step down and back up under a load,
+//                       then a scene too heavy for the GPU whose frame rate the governor must bring
+//                       back, or scale, which finds the largest S1 count at which
 //                       three.js holds 30 frames per second
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
@@ -89,6 +93,7 @@ import {
 	benchSummary,
 	type Check,
 	depthSummary,
+	governorSummary,
 	itemsNeeded,
 	judge,
 	type MissingAllowed,
@@ -780,6 +785,7 @@ async function runPlan(
 			depthSummary,
 			overloadSummary,
 			skinningSummary,
+			governorSummary,
 		].map((summary) => summary(plan.items, resultOf));
 		for (const table of tables) if (table) console.log(`\n${name}\n${table}\n`);
 		const heat = wholeHeatText(heatReadings.get(name) ?? []);

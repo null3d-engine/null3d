@@ -93,6 +93,9 @@ fn local_sphere(scene: &SceneStorage, bounds: u32, mesh_radius: f32) -> ([f32; 3
 pub(super) struct Bucket {
     /// The id of its render pipeline.
     pub(super) pipeline: u32,
+    /// The id of the render pipeline that draws its depth in the depth prepass, or 0 for a bucket
+    /// that the prepass leaves out.
+    pub(super) prepass: u32,
     /// The bind group of its material's map, or 0 for a pipeline that reads none.
     pub(super) group: u32,
     pub(super) material: u32,
@@ -397,7 +400,8 @@ impl Layout {
 
     /// Assigns every source to a bucket and lays the buckets out, from the frame's world state,
     /// with each bucket's pipeline id from `pipelines`, for a pass that draws into `targets`. With
-    /// `shadows`, the scene's receivers draw with pipelines that read the shadow maps. It reuses
+    /// `shadows`, the scene's receivers draw with pipelines that read the shadow maps. With
+    /// `prepass`, the buckets that the depth prepass draws get its pipelines too. It reuses
     /// the layout's tables and scratch space, which grow only with the scene. A scene of more than
     /// `limit` sources fails.
     #[allow(clippy::too_many_arguments)]
@@ -411,6 +415,7 @@ impl Layout {
         parity: usize,
         limit: u32,
         shadows: bool,
+        prepass: bool,
     ) -> Result<(), RecordError> {
         let scene_rows = scene.capacity() + 1;
         self.batch_bases.clear();
@@ -487,8 +492,10 @@ impl Layout {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let parts = meshes.parts(slot);
             let (center, radius) = local_sphere(scene, bounds, slot.radius);
+            let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
             self.buckets.push(Bucket {
-                pipeline: pipelines.id(pipeline.in_pass(targets)),
+                pipeline,
+                prepass,
                 group,
                 material,
                 base,
@@ -819,6 +826,7 @@ mod tests {
                 &batches,
                 parity,
                 u32::MAX,
+                false,
                 false,
             )
             .unwrap();

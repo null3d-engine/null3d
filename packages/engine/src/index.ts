@@ -165,7 +165,7 @@ export type {
 } from './sketch/define-sketch';
 export { defineSketch } from './sketch/define-sketch';
 export type { Input, InputActions, InputPointer, InputTouch } from './sketch/input';
-export type { Quality } from './sketch/quality';
+export type { Quality, QualityGovernor } from './sketch/quality';
 export type { WorkerProbe } from './workers/probe-worker';
 
 /**

@@ -26,7 +26,14 @@ import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
-import { ALL_MODES, type ImageRun, type ImageTest, imageRuns, type Tier } from '../lib/images.ts';
+import {
+	ALL_MODES,
+	type ImageRun,
+	type ImageTest,
+	imageRuns,
+	type Tier,
+	tiersOf,
+} from '../lib/images.ts';
 import { STOPS, TONE_MAPPINGS, toneMappingTest } from '../pages/lib/bright-scene.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 
@@ -160,8 +167,8 @@ const S1_CELLS_DEVICE_TOLERANCE = { maxDiffRatio: 0.003 };
 /** The WebGL2 depth modes that ?depth= forces. */
 const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'];
 
-/** The manifest's tests, before each test of the half precision list gets its copy. */
-const FULL_PRECISION_TESTS: readonly ImageTest[] = [
+/** The tests of every feature, before the depth prepass and half precision draw some again. */
+const FEATURE_TESTS: readonly ImageTest[] = [
 	// A clear color, read back through the engine's readback on each GPU interface.
 	{ name: 'clear', page: 'tests/pages/clear.html', size: [64, 64], tiers: ['webgpu', 'webgl2'] },
 	// Every texture command of the GPU layer, replayed on each path, which must all draw one image,
@@ -754,6 +761,49 @@ const FULL_PRECISION_TESTS: readonly ImageTest[] = [
 ];
 
 /**
+/**
+ * A copy of a feature test that draws with one more switch, against the references of the test it
+ * copies.
+ */
+function copyWithSwitch(name: string, suffix: string, extra: string): ImageTest {
+	const test = FEATURE_TESTS.find((t) => t.name === name);
+	if (!test) throw new Error(`the manifest has no ${name} test to draw again with ?${extra}`);
+	const { sameOnEveryTier: _, ...rest } = test;
+	return {
+		...rest,
+		name: `${name}-${suffix}`,
+		reference: test.reference ?? name,
+		switches: [...(test.switches ?? []), extra],
+	};
+}
+
+/**
+ * The scenes that the depth prepass draws again on the WebGPU tiers, which must match their images
+ * without it: shadows, masked cards that stay out of the prepass, decals whose depth bias the
+ * prepass keeps, see-through objects that draw after it, an orthographic camera whose near plane
+ * cuts a slab, and S2. WebGL2 draws without the prepass: in Chrome on the Mac, two of its programs
+ * gave the shadows test's ground, which the near plane cuts, different depths.
+ */
+const PREPASS_SCENES = [
+	'shadows',
+	'alpha-mask',
+	'depth-bias',
+	'transparency',
+	'ortho-camera',
+	's2',
+];
+
+/** A prepass scene's test again with ?prepass=on, in its first thread mode. */
+function withPrepass(name: string): ImageTest {
+	const test = copyWithSwitch(name, 'prepass', 'prepass=on');
+	return {
+		...test,
+		tiers: tiersOf(test).filter((tier) => tier !== 'webgl2'),
+		...(test.modes && { modes: test.modes.slice(0, 1) }),
+	};
+}
+
+/**
  * The tests that draw again with the scene shaders' color math at half precision, as `?half=on`
  * asks: the standard material over metalness and roughness, its texture maps, clustered point
  * lights, cascaded shadows, and tone mapping in the final pass and in each scene shader on the
@@ -770,22 +820,10 @@ const HALF_PRECISION_TESTS = [
 	eightBitTest('aces'),
 ];
 
-/** The copy of a test that draws at half precision, with the references of the test it copies. */
-function atHalfPrecision(name: string): ImageTest {
-	const own = FULL_PRECISION_TESTS.find((test) => test.name === name);
-	if (!own) throw new Error(`the manifest has no test ${name}`);
-	const { sameOnEveryTier: _, ...test } = own;
-	return {
-		...test,
-		name: `${name}-half`,
-		reference: own.reference ?? name,
-		switches: [...(own.switches ?? []), 'half=on'],
-	};
-}
-
 export const IMAGE_TESTS: readonly ImageTest[] = [
-	...FULL_PRECISION_TESTS,
-	...HALF_PRECISION_TESTS.map(atHalfPrecision),
+	...FEATURE_TESTS,
+	...PREPASS_SCENES.map(withPrepass),
+	...HALF_PRECISION_TESTS.map((name) => copyWithSwitch(name, 'half', 'half=on')),
 ];
 
 /** Every run of the manifest's tests: each test on each of its tiers, in each of its thread modes. */

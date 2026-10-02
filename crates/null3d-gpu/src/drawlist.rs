@@ -595,13 +595,17 @@ pub mod permutation {
     pub const DEBUG_VIEW_LOW: u32 = 1024;
     /// The high bit of the debug view's number.
     pub const DEBUG_VIEW_HIGH: u32 = 2048;
+    /// The depth template draws the camera's depth prepass: it clips what lies in front of the
+    /// near plane, as the templates that shade do. Without it, the shadow passes flatten casters
+    /// there onto the near face.
+    pub const PREPASS: u32 = 4096;
     /// The fragment shader does its color math at half precision: lighting, tone mapping and
     /// sRGB encoding. WebGPU builds use 16-bit floats, which need the device feature
     /// `shader-f16`, and WebGL2 builds run that math at `mediump`.
     pub const HALF: u32 = 8192;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 13] = [
+    pub const NAMES: [(&str, u32); 14] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -614,6 +618,7 @@ pub mod permutation {
         ("VERTEX_TANGENT", VERTEX_TANGENT),
         ("DEBUG_VIEW_LOW", DEBUG_VIEW_LOW),
         ("DEBUG_VIEW_HIGH", DEBUG_VIEW_HIGH),
+        ("PREPASS", PREPASS),
         ("HALF", HALF),
     ];
 
@@ -663,9 +668,20 @@ pub mod state_flags {
     /// The target tinted by the fragment: `src * dst + dst * (1 - src alpha)`, as three.js's
     /// premultiplied multiply blending; the target's alpha stays.
     pub const BLEND_MULTIPLY: u32 = 96;
+    /// Draws only where the fragment's depth equals what the depth target holds, as the opaque
+    /// pass draws the surfaces that the depth prepass found nearest.
+    pub const DEPTH_EQUAL: u32 = 128;
+    /// Writes no color, as the depth prepass draws into the color target's render pass.
+    pub const NO_COLOR_WRITE: u32 = 256;
     /// Every flag.
-    pub const ALL: u32 =
-        CULL_NONE | LINE_LIST | CULL_FRONT | NO_DEPTH_WRITE | NO_DEPTH_TEST | BLEND;
+    pub const ALL: u32 = CULL_NONE
+        | LINE_LIST
+        | CULL_FRONT
+        | NO_DEPTH_WRITE
+        | NO_DEPTH_TEST
+        | BLEND
+        | DEPTH_EQUAL
+        | NO_COLOR_WRITE;
 }
 
 /// Vertex formats. Every vertex has a position and a normal, three floats each. A format adds
@@ -1139,6 +1155,8 @@ pub fn typescript_constants() -> String {
                 ("BLEND_NORMAL", state_flags::BLEND_NORMAL),
                 ("BLEND_ADDITIVE", state_flags::BLEND_ADDITIVE),
                 ("BLEND_MULTIPLY", state_flags::BLEND_MULTIPLY),
+                ("DEPTH_EQUAL", state_flags::DEPTH_EQUAL),
+                ("NO_COLOR_WRITE", state_flags::NO_COLOR_WRITE),
             ],
         ),
         (
