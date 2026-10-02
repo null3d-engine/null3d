@@ -1,11 +1,16 @@
 #define_import_path null3d::tonemap
-#import null3d::color
+#ifdef HALF
+#import null3d::half::{linear_to_srgb, tone_map_aces, tone_map_agx, tone_map_neutral}
+#else
+#import null3d::color::{linear_to_srgb, tone_map_aces, tone_map_agx, tone_map_neutral}
+#endif
 #import null3d::noise
 
 // The output transform: exposure, tone mapping, sRGB encoding and dithering. The final pass applies
 // it to the scene color. On the 8-bit path each fragment shader applies it itself. The tone mapping
 // curves come from the color module, which follows three.js's formulas, so a scene looks as it does
-// in three.js with the same curve and exposure.
+// in three.js with the same curve and exposure. The HALF builds take the curves and the sRGB
+// encoding from the half precision module instead.
 
 /// Tone mapping codes, as the core and the TypeScript API number them.
 const ACES: u32 = 0u;
@@ -28,15 +33,15 @@ struct Output {
 fn tone_map(c: vec3f, settings: Output) -> vec3f {
     let exposed = c * settings.exposure;
     if settings.tone_mapping == AGX {
-        return null3d::color::tone_map_agx(exposed);
+        return tone_map_agx(exposed);
     }
     if settings.tone_mapping == NEUTRAL {
-        return null3d::color::tone_map_neutral(exposed);
+        return tone_map_neutral(exposed);
     }
     if settings.tone_mapping == NONE {
         return saturate(exposed);
     }
-    return null3d::color::tone_map_aces(exposed);
+    return tone_map_aces(exposed);
 }
 
 /// A value from 0 to 1 that looks random from pixel to pixel, and stays the same for a pixel on
@@ -51,7 +56,7 @@ fn pixel_noise(pixel: vec2f) -> f32 {
 /// keeps its value.
 fn encode(c: vec3f, pixel: vec2f) -> vec3f {
     let dither = (pixel_noise(pixel) - 0.5) / 255.0;
-    return null3d::color::linear_to_srgb(c) + dither;
+    return linear_to_srgb(c) + dither;
 }
 
 /// The color that a scene shader writes for linear color `c` at framebuffer position `pixel`: `c`

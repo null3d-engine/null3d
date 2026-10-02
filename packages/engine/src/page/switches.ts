@@ -1,10 +1,10 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?shaders=fresh,
-// ?wake=message, ?hdr=off and ?compression=. Six more set what the benchmarks vary: ?fps= for a
-// fixed frame rate, ?jobs= for the job worker count, ?memory= for the shared memory's maximum,
-// ?queue= for the frames that may wait on the GPU, ?cells=off for culling without grid cells and
-// ?prepass=on or off for the depth prepass. ?hold starts hold mode for image tests, ?preset= fixes
-// the quality preset, and ?bench publishes the running engine for benchmark tools.
+// ?wake=message, ?hdr=off, ?half= and ?compression=. Six more set what the benchmarks vary: ?fps=
+// for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the shared memory's
+// maximum, ?queue= for the frames that may wait on the GPU, ?cells=off for culling without grid
+// cells and ?prepass=on or off for the depth prepass. ?hold starts hold mode for image tests,
+// ?preset= fixes the quality preset, and ?bench publishes the running engine for benchmark tools.
 
 import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
@@ -88,6 +88,12 @@ export interface Switches {
 	 * themselves, on a device that draws HDR color.
 	 */
 	hdr: boolean;
+	/**
+	 * True when ?half=on makes the scene shaders do their color math at half precision, where the
+	 * device can, false when ?half=off makes them use full precision, and undefined for the
+	 * engine's own choice.
+	 */
+	half: boolean | undefined;
 	/**
 	 * False when ?cells=off makes the core cull every object and instance row, with no whole grid
 	 * cells skipped first, for benchmarks that measure what cell culling saves.
@@ -173,6 +179,7 @@ export function parseSwitches(search: string): Switches {
 		freshShaders: params.get('shaders') === 'fresh',
 		wakeByMessage: params.get('wake') === 'message',
 		hdr: params.get('hdr') !== 'off',
+		half: onOff(params.get('half')),
 		cells: params.get('cells') !== 'off',
 		prepass: onOff(params.get('prepass')),
 		fps: positive(params.get('fps')),

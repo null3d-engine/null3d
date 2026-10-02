@@ -255,8 +255,6 @@ export interface BenchSwitches {
 	n?: number;
 	/** The job workers a null3D page starts, or undefined for the engine's own count. */
 	jobs?: number;
-	/** More page switches, such as `preset=medium`, joined by `&`, or undefined for none. */
-	more?: string;
 }
 
 /**
@@ -273,13 +271,12 @@ const BENCH_BUILD: Load = { kind: 'warm', key: runnerKey('bench') };
 export function benchItem(
 	id: string,
 	page: BenchPageKind,
-	{ seconds, n, jobs, more }: BenchSwitches = {},
+	{ seconds, n, jobs }: BenchSwitches = {},
 	scene: BenchScene = 's1',
 ): PlanItem<Check> {
 	const switches = Object.entries({ seconds, n, jobs }).flatMap(([name, value]) =>
 		value === undefined ? [] : [`${name}=${value}`],
 	);
-	if (more) switches.push(more);
 	const tier = gpuApiOfPage(page);
 	return {
 		id,
@@ -500,8 +497,6 @@ export interface PlanSettings {
 	scenes?: readonly BenchScene[];
 	/** The bench plan's warm-up and measured seconds, each, or undefined for the protocol's. */
 	seconds?: number;
-	/** More switches for every bench plan page, such as `preset=medium`, or undefined for none. */
-	switches?: string;
 	/** The soak plan's minutes of each soak, or undefined for its own number. */
 	minutes?: number;
 }
@@ -520,7 +515,6 @@ export function benchPlan({
 	pages,
 	scenes = ['s1'],
 	seconds,
-	switches,
 }: PlanSettings = {}): PlanItem<Check>[] {
 	const kinds = pages ?? (jobs ? JOBS_PAGES : BENCH_PAGES);
 	const runsOfPages = jobs
@@ -532,7 +526,7 @@ export function benchPlan({
 				benchItem(
 					`bench-${scene}-${page}${workers === undefined ? '' : `-jobs${workers}`}-${run + 1}`,
 					page,
-					{ n: count, jobs: workers, seconds, more: switches },
+					{ n: count, jobs: workers, seconds },
 					scene,
 				),
 			),

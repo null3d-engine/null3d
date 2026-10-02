@@ -56,7 +56,6 @@
 //                       is s1
 //   --seconds <n>       the bench plan's warm-up and measured seconds, each, instead of the
 //                       protocol's 5 and 30; 300 gives the protocol's 10-minute sustained run
-//   --switches <q>      more switches for every bench plan page, such as preset=medium
 //   --minutes <n>       the soak plan's minutes on each GPU path, 30 by default
 //   --shard <i>/<n>     run only the i-th of n shards of a fixed plan, as CI does on each of its
 //                       machines: the plan's items split evenly, and an item stays with the items
@@ -67,6 +66,9 @@
 //                       that comes only now and then
 //   --shields on|off    the state of Brave's Shields for the dev server's site, which the runner
 //                       cannot read: it goes into each Brave result and the run's summary
+//   --switches <q>      page switches that every page of the plan gets, such as half=on or
+//                       half=on&preset=ultra: the checks plan's image tests then compare the
+//                       scene shaders at half precision with the usual references
 //   --android <list>    browsers on the Android phone: chrome, chrome-beta, brave, firefox, samsung
 //   --lan <list>        names of runner pages that wait on the local network, as device-browser,
 //                       such as ipad-safari; pages on one device take turns
@@ -179,8 +181,6 @@ export interface Options {
 	scenes?: BenchScene[];
 	/** The bench plan's warm-up and measured seconds, each, when given. */
 	seconds?: number;
-	/** More switches for every bench plan page, such as `preset=medium`, when given. */
-	switches?: string;
 	/** The soak plan's minutes on each GPU path, when given. */
 	minutes?: number;
 	/** The state of Brave's Shields for the dev server's site, when given. */
@@ -191,6 +191,8 @@ export interface Options {
 	only?: string[];
 	/** How many times over to run the items, when given. */
 	rounds?: number;
+	/** Page switches that every page of the plan gets, joined by `&`, when given. */
+	switches?: string;
 	/** Someone is at the network devices, to reopen a runner page that a crash closed. */
 	attended?: boolean;
 	/** macOS app names, such as Safari. */
@@ -200,7 +202,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--switches <q>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--android <browsers>] [--lan <runners>] [--attended] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--attended] [<macOS app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -249,12 +251,12 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--pages') options.pages = known(arg, list(args[++i]), BENCH_PAGE_KINDS);
 		else if (arg === '--scenes') options.scenes = known(arg, list(args[++i]), BENCH_SCENES);
 		else if (arg === '--seconds') options.seconds = wholeNumber(arg, args[++i]);
-		else if (arg === '--switches') options.switches = readSwitches(args[++i], arg);
 		else if (arg === '--minutes') options.minutes = wholeNumber(arg, args[++i]);
 		else if (arg === '--shard') options.shard = shard(args[++i]);
 		else if (arg === '--only') options.only = list(args[++i]);
 		else if (arg === '--rounds') options.rounds = wholeNumber(arg, args[++i]);
 		else if (arg === '--shields') options.shields = oneOf(arg, args[++i], SHIELDS_STATES);
+		else if (arg === '--switches') options.switches = readSwitches(args[++i], arg);
 		else if (arg === '--plan') options.plan = args[++i] ?? '';
 		else if (arg === '--android') options.android = list(args[++i]);
 		else if (arg === '--lan') options.lan = list(args[++i]);
@@ -282,7 +284,6 @@ export function parseArgs(args: readonly string[]): Options {
 		['--pages', options.pages],
 		['--scenes', options.scenes],
 		['--seconds', options.seconds],
-		['--switches', options.switches],
 	] as const)
 		if (given && options.plan !== 'bench')
 			throw new Error(`${flag} works with --plan bench only\n${USAGE}`);
@@ -683,24 +684,31 @@ function wholeHeatText(samples: readonly HeatSample[]): string | undefined {
 
 /**
  * A fixed plan's items with the command line's settings: the items that --only names, or only its
- * shard's items, the number of rounds over. Undefined for the phone-scale search. Items whose pages
- * end their tab run on a network device only with --attended: a phone over USB gets a new runner
- * page from the runner tool, but a tablet's runner page that Safari did not reload stays closed.
+ * shard's items, the number of rounds over. With --switches, each item's page gets them after its
+ * own. Undefined for the phone-scale search. Items whose pages end their tab run on a network device
+ * only with --attended: a phone over USB gets a new runner page from the runner tool, but a
+ * tablet's runner page that Safari did not reload stays closed.
  */
 export function planItems(options: Options): PlanItem<Check>[] | undefined {
-	const all = PLANS[options.plan]?.({
+	const planned = PLANS[options.plan]?.({
 		count: options.count,
 		runs: options.runs,
 		jobs: options.jobs,
 		pages: options.pages,
 		scenes: options.scenes,
 		seconds: options.seconds,
-		switches: options.switches,
 		minutes: options.minutes,
 	});
-	if (!all) return undefined;
+	if (!planned) return undefined;
+	const { shard, only, rounds = 1, switches } = options;
+	const all =
+		switches === undefined
+			? planned
+			: planned.map((item) => ({
+					...item,
+					path: `${item.path}${item.path.includes('?') ? '&' : '?'}${switches}`,
+				}));
 	const needs = (item: PlanItem<Check>) => itemsNeeded(item.check);
-	const { shard, only, rounds = 1 } = options;
 	const items = only ? pickItems(all, only, needs) : all;
 	if (options.lan.length > 0 && !options.attended && items.some((item) => item.endsTab))
 		throw new Error(

@@ -1090,20 +1090,6 @@ describe('the bench plan', () => {
 		);
 	});
 
-	it('gives every page the switches that the command line adds, such as a preset', () => {
-		const options = parseArgs(['--plan', 'bench', '--switches', 'preset=medium', 'Safari']);
-		expect(options.switches).toBe('preset=medium');
-		expect(() => parseArgs(['--plan', 'bench', '--switches', '?preset=low'])).toThrow(
-			'--switches: give page switches',
-		);
-		expect(() => parseArgs(['--plan', 'checks', '--switches', 'preset=low'])).toThrow(
-			'--switches works with --plan bench only',
-		);
-		const items = benchPlan({ runs: 1, scenes: ['s4'], switches: options.switches });
-		expect(items.length).toBeGreaterThan(0);
-		for (const item of items) expect(item.path).toMatch(/[?&]preset=medium$/);
-	});
-
 	it('takes the number of runs and the instance count', () => {
 		const items = benchPlan({ runs: 2, count: 1000 });
 		expect(items).toHaveLength(14);
@@ -1529,6 +1515,17 @@ describe('parseArgs', () => {
 			'shard 50 of 50 has no items',
 		);
 		expect(() => parseArgs(['--fast'])).toThrow('unknown option --fast');
+	});
+
+	it('gives every page of the plan the switches of --switches', () => {
+		const plain = planItems(parseArgs(['--plan', 'depth'])) ?? [];
+		const half = planItems(parseArgs(['--plan', 'depth', '--switches', 'half=on'])) ?? [];
+		expect(half.map((item) => item.path)).toEqual(plain.map((item) => `${item.path}&half=on`));
+		const bench = parseArgs(['--plan', 'bench', '--switches', 'half=on&preset=ultra']);
+		expect(planItems(bench)?.every((item) => item.path.endsWith('&half=on&preset=ultra'))).toBe(
+			true,
+		);
+		expect(() => parseArgs(['--switches', '?half=on'])).toThrow('--switches: give page switches');
 	});
 });
 

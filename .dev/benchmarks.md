@@ -103,6 +103,7 @@ Add `--shard 2/3` to run only the pages of one shard, as a CI shard does. Each r
 ## Grid-cell culling
 
 - S1-cells spreads S1-static's boxes over 8 x 8 grid cells, 8 km on each side. Its camera flies low along -Z at 200 m/s, so a few cells are in view. New ones come into view about every 5 seconds.
+- The page kinds that end in `-half` start null3D with `?half=on`, so the scene shaders do their color math at half precision. [D-09](decisions/D-09-half-precision.md) gives the commands and the results on the Mac, the iPad and the S24+.
 - The page kinds that end in `-cells-off` start null3D with `?cells=off`. Culling then skips no cell: WebGPU's culling pass covers every source. WebGL2 culls every object. It builds no clusters for a static batch whose rows lie in several cells.
 - On the Mac, compare both paths with and without cells: `bun run bench:run --scenes s1-cells --pages null3d-webgpu,null3d-webgpu-cells-off,null3d-webgl2,null3d-webgl2-cells-off,threejs-webgpu,threejs-webgl,scene-code`.
 - On the phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s1-cells --pages null3d-webgl2,null3d-webgl2-cells-off,threejs-webgl`.
