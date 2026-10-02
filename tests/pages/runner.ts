@@ -8,6 +8,9 @@
 // running, hidden, where the runner tool cannot close it. A request to the dev server that gets no
 // answer in time goes out again, because Safari can lose one that it sends as a removed frame
 // closes its connections.
+// Under the stage's frames, the page reports the run: a grid with one cell per page, the failures
+// with their errors, and a line per result, newest first. Each result changes one cell and adds
+// one line, so the page does no work while a test page runs.
 // Pixels travel as the page read them back, never re-encoded through a canvas, which privacy
 // protections can alter. For a startup load, the result also tells what the server sent for it.
 
@@ -29,9 +32,9 @@ const RESULT_POLL_MS = 200;
 const PAUSE_BETWEEN_PAGES_MS = 1000;
 const REFRESH_SAMPLES = 61;
 
-const statusLine = document.getElementById('status') as HTMLElement;
-const list = document.getElementById('items') as HTMLElement;
-const stage = document.getElementById('stage') as HTMLElement;
+const byId = (id: string) => document.getElementById(id) as HTMLElement;
+const statusLine = byId('status');
+const stage = byId('stage');
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /** This page's name in its claims and results. Not a UUID: phones open the page without HTTPS. */
 const pageId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -47,11 +50,92 @@ function show(text: string): void {
 	statusLine.textContent = `${runner}: ${text}`;
 }
 
-function log(text: string): void {
+function line(text: string): HTMLLIElement {
 	const item = document.createElement('li');
 	item.textContent = text;
-	list.append(item);
+	return item;
 }
+
+type Outcome = 'waiting' | 'running' | 'passed' | 'failed' | 'earlier';
+
+/**
+ * The run's report: a cell per page of the plan, coloured by its outcome, with running counts. A
+ * tap or a hover on a cell shows its page and that page's error. Pages before a run's first item
+ * ran on an earlier runner page, so they count as neither done nor left.
+ */
+class RunReport {
+	private readonly heading = byId('run');
+	private readonly grid = byId('grid');
+	private readonly detail = byId('detail');
+	private readonly failures = byId('failures');
+	private readonly log = byId('log');
+	private cells: HTMLElement[] = [];
+	private ids: string[] = [];
+	private outcomes: Outcome[] = [];
+	private errors: (string | undefined)[] = [];
+	private passed = 0;
+	private failed = 0;
+	private left = 0;
+
+	constructor() {
+		const pick = (event: Event) => {
+			const index = this.cells.indexOf(event.target as HTMLElement);
+			if (index < 0) return;
+			const error = this.errors[index];
+			this.detail.textContent = `${this.ids[index]}: ${this.outcomes[index]}${error ? `: ${error}` : ''}`;
+		};
+		this.grid.addEventListener('pointerover', pick);
+		this.grid.addEventListener('click', pick);
+	}
+
+	/** Lays out a cell for each item of the plan. */
+	start(run: string, items: PlanItem[], from: number): void {
+		this.ids = items.map((item) => item.id);
+		this.outcomes = this.ids.map((_, index) => (index < from ? 'earlier' : 'waiting'));
+		this.errors = [];
+		this.passed = 0;
+		this.failed = 0;
+		this.left = Math.max(0, items.length - from);
+		this.cells = this.outcomes.map((outcome) => {
+			const cell = document.createElement('i');
+			cell.className = outcome;
+			return cell;
+		});
+		this.heading.textContent = `run ${run}, ${items.length} pages${from > 0 ? `, from page ${from + 1}` : ''}`;
+		this.grid.replaceChildren(...this.cells);
+		this.detail.textContent = '';
+		this.failures.replaceChildren();
+		this.log.replaceChildren();
+	}
+
+	running(index: number): void {
+		this.mark(index, 'running');
+	}
+
+	finish(index: number, result: Result): void {
+		const page = `${this.ids[index]}${result.error ? `: ${result.error}` : ''}`;
+		this.left--;
+		if (result.ok) this.passed++;
+		else {
+			this.failed++;
+			this.errors[index] = result.error;
+			this.failures.append(line(page));
+		}
+		this.mark(index, result.ok ? 'passed' : 'failed');
+		this.log.prepend(line(`${result.ok ? 'done' : 'failed'}  ${page}`));
+	}
+
+	counts(): string {
+		return `${this.passed} passed, ${this.failed} failed, ${this.left} left`;
+	}
+
+	private mark(index: number, outcome: Outcome): void {
+		this.outcomes[index] = outcome;
+		(this.cells[index] as HTMLElement).className = outcome;
+	}
+}
+
+const report = new RunReport();
 
 async function post(run: string, name: string, body: unknown): Promise<void> {
 	const response = await patientFetch(`/__null3d/runs/${run}/${runner}/${name}?page=${pageId}`, {
@@ -163,21 +247,22 @@ async function runPlan(run: string, from = 0): Promise<void> {
 		items: PlanItem[];
 	};
 	await claim(run);
-	list.replaceChildren();
+	report.start(run, plan.items, from);
 	if (from === 0) {
 		show(`run ${run}: reading the device`);
 		await post(run, 'device', await deviceInfo());
 	}
 	for (const [index, item] of plan.items.entries()) {
 		if (index < from) continue;
-		show(`run ${run}: ${index + 1} of ${plan.items.length}, ${item.id}`);
+		report.running(index);
+		show(`${report.counts()}; now ${item.id}`);
 		const result = await runItem(item, run);
 		await post(run, item.id, result);
-		log(`${result.ok ? 'done' : 'failed'}  ${item.id}${result.error ? `: ${result.error}` : ''}`);
+		report.finish(index, result);
 		await sleep(PAUSE_BETWEEN_PAGES_MS);
 	}
 	await post(run, 'done', { items: plan.items.length, finishedAt: new Date().toISOString() });
-	show(`run ${run}: finished`);
+	show(`run ${run} finished: ${report.counts()}`);
 }
 
 /**
