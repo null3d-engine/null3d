@@ -88,6 +88,7 @@ To collect the numbers, rest each device first and close its other tabs:
 
 - Keep the Mac's screen unlocked and its display awake during runs. Safari stops running pages while the Mac is locked, and the runner then waits until its deadline. Chrome started by Playwright keeps running.
 - A runner page in a Mac app that sends nothing for its current page's timeout and 30 more seconds counts as stopped. The runner then prints the Mac's state: the screen lock, the memory pressure and the size of each web content process. It closes the quiet runner page in Safari, and opens a new one at the same page, so that page runs again. That page's result gets a note that says so.
+- In CI, the runner cannot close the quiet runner page, because macOS asks for permission to control Safari. A quiet page can also still be running, hidden behind the new one. So each runner page claims its runner's results when it starts. The dev server refuses results from an older runner page, and that page then stops and closes its tab.
 - A page where the runner page stops twice fails, and the next runner page starts after it. The runner replaces a runner page at most twice per run, and never on a phone or a tablet.
 - Close a Safari tab that a test opened with AppleScript: tell Safari to close the tabs whose address holds `localhost:517`.
 - On GitHub's macOS machines, Safari has no WebGPU and Firefox has no WebGL2. The CI jobs pass `--allow-no-webgpu` and `--allow-no-webgl2`, so those pages count as skipped there.

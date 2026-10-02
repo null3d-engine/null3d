@@ -529,7 +529,8 @@ export class QuietRecovery {
 
 /**
  * Replaces runner pages in macOS apps: it closes a quiet runner page in Safari, then opens a new one
- * in the app. Runners on phones and tablets are never replaced.
+ * in the app. Where the quiet page stays open, the new page's claim on the runner's results stops
+ * it. Runners on phones and tablets are never replaced.
  */
 function macReopener(run: string, launches: Launches, baseUrl: string): Reopener {
 	const startedAt = Date.now();

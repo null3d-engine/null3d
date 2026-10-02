@@ -1,6 +1,8 @@
 // The report collector on a server of its own. A page can leave while its report is on the way, as
-// when a test ends or the startup tool closes its tab, and the server must stay up.
+// when a test ends or the startup tool closes its tab, and the server must stay up. A runner page
+// that a newer one replaced can still send results, and the collector must refuse them.
 import { afterAll, beforeAll, expect, test } from 'bun:test';
+import { readFileSync, rmSync } from 'node:fs';
 import {
 	createServer,
 	type IncomingMessage,
@@ -9,8 +11,9 @@ import {
 	type ServerResponse,
 } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { join } from 'node:path';
 import type { Connect } from 'vite';
-import { collectorRoutes } from './report-collector.ts';
+import { collectorRoutes, RUNS_DIR } from './report-collector.ts';
 
 type Handler = (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
 
@@ -73,5 +76,29 @@ test('a report upload that the page drops half way leaves the server up', async 
 		expect(answer.status).toBe(200);
 	} finally {
 		process.off('unhandledRejection', record);
+	}
+});
+
+test("a replaced runner page's late result is refused and leaves the newer page's result", async () => {
+	const run = `claim-test-${process.pid}`;
+	const runs = `http://127.0.0.1:${port}/__null3d/runs/${run}/mac-safari`;
+	const post = (path: string, body?: unknown) =>
+		fetch(`${runs}${path}`, {
+			method: 'POST',
+			body: body === undefined ? undefined : JSON.stringify(body),
+		});
+	try {
+		expect((await post('?page=old')).status).toBe(204);
+		expect((await post('/item?page=old', { ok: true, from: 'old' })).status).toBe(204);
+		// A new runner page takes over and runs the item again; the old one, still running hidden,
+		// finishes it later.
+		expect((await post('?page=new')).status).toBe(204);
+		expect((await post('/item?page=new', { ok: true, from: 'new' })).status).toBe(204);
+		expect((await post('/item?page=old', { ok: false, from: 'old' })).status).toBe(409);
+		const stored = JSON.parse(readFileSync(join(RUNS_DIR, run, 'mac-safari/item.json'), 'utf8'));
+		expect(stored).toMatchObject({ ok: true, from: 'new' });
+		expect((await post('/item?page=bad/name', { ok: true })).status).toBe(400);
+	} finally {
+		rmSync(join(RUNS_DIR, run), { recursive: true, force: true });
 	}
 });
