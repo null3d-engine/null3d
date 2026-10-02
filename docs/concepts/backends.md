@@ -98,7 +98,7 @@ The engine reads what the device can do at startup and exposes it as `engine.cap
 
 ```ts
 engine.capabilities;
-// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, maxInstances, depth }
+// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, maxInstances, depth, halfPrecision }
 ```
 
 The `features` field lists the WebGPU adapter's optional features. On WebGL2 it lists the extensions that the engine asks for and the browser has. The `limits` field gives the WebGPU adapter's limits, and is empty on WebGL2. The engine acts on these tests:
@@ -156,7 +156,7 @@ On WebGL2, uploads read straight from the engine's shared memory. A browser that
 
 On WebGL2, the engine compiles shader programs in the background where the browser has the `KHR_parallel_shader_compile` extension. The switch `?compile=wait` makes it wait for each compile at the program's first draw instead, as a browser without the extension does.
 
-The switch `?hdr=off` makes the engine draw the 8-bit color path on a device that draws HDR color, so one device can test both. The switch `?prepass=on` or `?prepass=off` turns the depth prepass on or off.
+The switch `?half=on` makes the scene shaders do their color math at half precision, where the device can. It is off by default, and serves measurements. The switch `?hdr=off` makes the engine draw the 8-bit color path on a device that draws HDR color, so one device can test both. The switch `?prepass=on` or `?prepass=off` turns the depth prepass on or off.
 
 The switch `?depth=` forces a WebGL2 depth mode: `reversed`, `reversed-gl` or `standard`, which draws depth as three.js's WebGL renderer does by default. A browser without `EXT_clip_control` cannot draw `reversed`, so it draws its own mode instead. Shadow maps hold the same depth values as on WebGPU in `reversed` and `reversed-gl`. In `standard` they would hold them the other way around, so WebGL2 draws no shadows in that mode.
 
