@@ -202,6 +202,15 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 - The shipped core has no function names. Build it with `bun tools/build-wasm.ts --names` before a profile, so the profile names the core's functions. The names add size, so that build skips the size checks: build again without it before you check sizes.
 - Chrome's page-wide memory measurement waits up to a minute for the job workers, and it counts shared memory once per worker. Chrome's debugger gives exact heaps per worker through `Runtime.getHeapUsage`.
 
+## WebGL call times
+
+The page kinds that end in `-timed` start null3D on WebGL2 with `?gl-timing`. The thread that draws then times each WebGL call while the page measures. The report adds two tables: the calls that took the most time per frame, and the slow calls of the slowest frame, in order. The timing wraps every call and allocates for each one, so these pages are not for comparisons.
+
+- Safari runs WebGL in a process of its own. It answers a call that returns a value only after that process has run every call before it. So the time of such a call holds the process's work on the calls before it.
+- The page kinds that end in `-synced` start null3D with `?gl-timing=sync`. Each call then ends with `getError`, which waits for that process, so a wait there counts toward the call that caused it. Writes into a texture count apart for each texture, named by its size and its format's GL code.
+- On the iPad: `bun tests/real-browsers.ts --plan bench --scenes s4 --pages null3d-webgl2-timed,null3d-webgl2-synced --runs 2 --seconds 10 --lan ipad-safari`.
+- On 2 October 2026 these pages found the two waits that [Safari's WebGL2 path](implementation-notes.md#safaris-webgl2-path) describes. In S3, `fenceSync` took 22 ms per frame. In S4, the synced page put 16 ms on one texture write per frame.
+
 ## GPU time per pass
 
 - On WebGPU, `measure` returns `gpuPassMs` beside `gpuMs`: the copies before the frame's first pass, each pass, and the time between passes. The bench plan's results keep it in each result's stats.

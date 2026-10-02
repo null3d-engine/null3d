@@ -220,3 +220,15 @@ Safari 26 does work for each WebGPU frame that no GPU timestamp covers. It shows
 - So the page measures the display's refresh period from its own frame callbacks, which follow the display in every browser. It writes the period to the control block. A worker whose callbacks come at a rate that matches no display's holds its frames to that period. Chrome's worker callbacks follow the display, so Chrome draws as before, even when a busy page thread measures a slower rate.
 - With the hold, Safari on the Mac's built-in screen presented 60.0 frames per second in 4 of 4 runs. Safari runs the page's frame callbacks at 60 Hz on that 120 Hz screen, and at 72 Hz on a 144 Hz screen. On the 144 Hz screen, the worker's 64.6 frames per second stay below the page's rate, so the hold skips no callback there.
 - Safari writes no timestamps, or stale ones, for a pass without work. The GPU timer's start mark therefore dispatches one invocation that does nothing.
+
+## Safari's WebGL2 path
+
+Safari runs WebGL2 in its GPU process, through ANGLE on Metal. A call that returns a value waits until that process has run every call before it. `fenceSync` is such a call. The completion tracker places a fence at the end of each frame, so the render worker waits there until Safari has run the frame's calls. Any wait inside Safari then shows in the render worker's time per frame. [WebGL call times](benchmarks.md#webgl-call-times) finds the call that waits.
+
+- ANGLE lays out a uniform block by Metal's rules, where a `vec3` takes 16 bytes. WGSL lets a scalar follow a `vec3f` at byte 12. Where the two layouts differ, ANGLE converts the block on the CPU before a draw that reads changed data.
+- ANGLE writes a buffer that the GPU still reads with a GPU copy. The conversion then reads the buffer on the CPU, so it waits for the GPU to finish every frame queued before. Until 2 October 2026, the frame's fog held a `vec3f` before a scalar. On the iPad, S3 then spent 22 ms of each WebGL2 frame in `fenceSync`.
+- The shader build therefore fails when a uniform block lays out differently by ANGLE's Metal rules (`metal_layout` in `crates/null3d-shaders/src/glsl.rs`). Fill each `vec3f` with a scalar into a `vec4f`.
+- Safari writes texels into a texture that the GPU still reads only after the GPU has finished with it. The resident texture of world matrices takes such a write whenever a scene object moves. In S4, one write per frame waited about 16 ms on the iPad.
+- So a data texture's later writes go through a ring of three pixel unpack buffers (`unpack` in `gpu/webgl2/backend.ts`). The GPU copies them in order with its other work. A texture's first write, and writes into color textures, stay direct. In Chrome on the Mac, sRGB texels written through an unpack buffer came out brighter.
+- The Mac showed neither wait. Its GPU finished each frame before the next frame's writes, so nothing waited.
+- With both fixes, the render worker's time per frame on the iPad fell from 25.9 to 0.8 ms in S3. In S4 it fell from 15.2 to 1.0 ms.
