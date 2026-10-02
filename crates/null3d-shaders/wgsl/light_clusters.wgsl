@@ -5,14 +5,18 @@
 // with the same tests in the same order, so both paths list the same lights:
 //
 // - `count_lights`: each cluster's word gets the number of lights that reach the cluster.
-// - `place_lights`: one workgroup adds up the counts, each at most the cap of one cluster and in all at
-//   most the index list's room, and gives each cluster's word where its lights start in the grid
-//   and how many it keeps.
-// - `write_lights`: each cluster writes the indices of the lights it keeps, in the light list's order.
+// - `place_lights`: one workgroup adds up the counts, each at most the cap of one cluster and in
+//   all at most the index list's room, and gives each cluster's word where its lights start in
+//   the grid and how many it keeps.
+// - `write_lights`: each cluster writes the indices of the lights it keeps, in the light list's
+//   order.
 //
-// `count_lights` and `write_lights` run one workgroup per slice and run of tiles. A light reaches a rectangle
-// of the tiles of each slice. The workgroup's threads find the rectangles of a run of lights
-// together, one light each, and then each thread tests its own tile against all of them.
+// `count_lights` and `write_lights` run one workgroup per slice and run of tiles. A light reaches a
+// rectangle of the tiles of each slice. The workgroup's threads find the rectangles of a run of
+// lights together, one light each, and keep only the lights that reach the slice, which are few.
+// Each thread then tests its own tile against those alone. They arrive in any order, so a thread
+// that writes marks the lights of the run that reach its tile, and writes them in the light list's
+// order.
 //
 // The tile rectangle of a light in a slice: the part of the light's sphere between the slice's
 // bounds, a sphere around that part, and the planes between the tiles that sphere reaches. The
@@ -54,8 +58,12 @@ struct ClusterParams {
 /// One word per cluster, then the light index list.
 @group(0) @binding(2) var<storage, read_write> grid: array<u32>;
 
-/// The tile rectangles of the workgroup's run of lights.
+/// The tile rectangles of the lights of the workgroup's run that reach its slice, in any order,
+/// and each one's light, counted from the run's first.
 var<workgroup> rects: array<u32, WORKGROUP_SIZE>;
+var<workgroup> rect_lights: array<u32, WORKGROUP_SIZE>;
+/// The number of rectangles in `rects`.
+var<workgroup> rect_count: atomic<u32>;
 /// Each thread's total of counts, then the totals of the threads before it and its own.
 var<workgroup> totals: array<u32, WORKGROUP_SIZE>;
 
@@ -130,15 +138,25 @@ fn covers(rect: u32, tile: vec2u) -> bool {
     return rect != NO_TILES && all(tile >= first) && all(tile <= last);
 }
 
-/// Finds the tile rectangles in slice `slice` of the lights from `first` on, one per thread of
-/// the workgroup, for every thread to read.
-fn find_rects(first: u32, slice: u32, local: u32) {
-    let light = first + local;
-    var found = NO_TILES;
-    if light < params.shape.w {
-        found = rect(light, slice);
+/// Keeps in `rects` the tile rectangles in slice `slice` of the lights from `first` on that reach
+/// the slice, one light per thread of the workgroup, and returns how many it kept. Every thread of
+/// the workgroup calls it together.
+fn find_rects(first: u32, slice: u32, local: u32) -> u32 {
+    if local == 0u {
+        atomicStore(&rect_count, 0u);
     }
-    rects[local] = found;
+    workgroupBarrier();
+    let light = first + local;
+    if light < params.shape.w {
+        let found = rect(light, slice);
+        if found != NO_TILES {
+            let at = atomicAdd(&rect_count, 1u);
+            rects[at] = found;
+            rect_lights[at] = local;
+        }
+    }
+    workgroupBarrier();
+    return atomicLoad(&rect_count);
 }
 
 /// A thread's tile, by its workgroup's slice and run of tiles.
@@ -158,10 +176,8 @@ fn count_lights(
     let at = vec2u(tile % tiles_x, tile / tiles_x);
     var found = 0u;
     for (var first = 0u; first < params.shape.w; first += WORKGROUP_SIZE) {
-        find_rects(first, slice, local);
-        workgroupBarrier();
-        let run = min(WORKGROUP_SIZE, params.shape.w - first);
-        for (var k = 0u; k < run; k++) {
+        let kept = find_rects(first, slice, local);
+        for (var k = 0u; k < kept; k++) {
             if covers(rects[k], at) {
                 found++;
             }
@@ -231,13 +247,21 @@ fn write_lights(
     let kept = word >> START_BITS;
     var written = 0u;
     for (var first = 0u; first < params.shape.w; first += WORKGROUP_SIZE) {
-        find_rects(first, slice, local);
-        workgroupBarrier();
-        let run = min(WORKGROUP_SIZE, params.shape.w - first);
-        for (var k = 0u; k < run; k++) {
-            if written < kept && covers(rects[k], at) {
-                grid[start + written] = first + k;
+        let found = find_rects(first, slice, local);
+        // The lights of the run that reach the tile, one bit each.
+        var marked = array<u32, 4>(0u, 0u, 0u, 0u);
+        for (var k = 0u; k < found; k++) {
+            if covers(rects[k], at) {
+                let light = rect_lights[k];
+                marked[light >> 5u] |= 1u << (light & 31u);
+            }
+        }
+        for (var w = 0u; w < 4u; w++) {
+            var bits = marked[w];
+            while bits != 0u && written < kept {
+                grid[start + written] = first + w * 32u + countTrailingZeros(bits);
                 written++;
+                bits &= bits - 1u;
             }
         }
         workgroupBarrier();
