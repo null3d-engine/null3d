@@ -144,6 +144,8 @@ struct Frame {
     vec4 ambient;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct VertexIn {
     vec3 position;
@@ -227,6 +229,8 @@ struct Frame {
     vec4 ambient;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct VertexIn {
     vec3 position;
@@ -312,6 +316,8 @@ struct Frame {
     vec4 ambient;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct VertexIn {
     vec3 position;
@@ -487,6 +493,8 @@ struct Frame {
     vec4 ambient;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct VertexIn {
     vec3 position;
@@ -657,6 +665,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct VertexIn {
@@ -744,6 +754,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct VertexIn {

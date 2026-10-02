@@ -190,7 +190,7 @@ impl Opaque {
     }
 
     /// Creates the ring of frame uniforms of each view from the first one without it up to
-    /// `views` of them. Each new view then needs its frame group ([`Opaque::bind_frame`]).
+    /// `views` of them. Each new view then needs its frame groups ([`Opaque::bind_frame`]).
     pub(super) fn add_views(
         &mut self,
         list: &mut DrawList,
@@ -211,11 +211,12 @@ impl Opaque {
         Ok(())
     }
 
-    /// Records the creation of a view's frame group, which binds its uniform block, its cell
-    /// offsets and the material table's texture. A camera's view also binds three.js's table of
-    /// the split-sum terms of specular light, and `shadow_map`, with the comparison sampler and
-    /// the cascades' uniform block that read it. A shadow cascade's view binds no shadow map, so
-    /// no pass reads the texture it draws into.
+    /// Records the creation of a view's frame groups, which bind its uniform block, its cell
+    /// offsets and the material table's texture. A camera's view has one group for each slot of
+    /// the light textures' ring. Each also binds three.js's table of the split-sum terms of
+    /// specular light, `shadow_map` with the comparison sampler and the cascades' uniform block
+    /// that read it, and the slot's light grid and light records. A shadow cascade's view has one
+    /// group, which binds no shadow map, so no pass reads the texture it draws into.
     pub(super) fn bind_frame(
         list: &mut DrawList,
         view: ViewId,
@@ -249,10 +250,9 @@ impl Opaque {
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
         };
-        let mut words = [0; 38];
-        words[..3].copy_from_slice(&[group, bind_layout::FRAME, 7]);
+        let mut words = [0; 48];
         words[3..18].copy_from_slice(&common);
-        words[18..].copy_from_slice(&[
+        words[18..38].copy_from_slice(&[
             3,
             resource_kind::TEXTURE,
             ids::DFG,
@@ -274,7 +274,22 @@ impl Opaque {
             0,
             sizes::SHADOW_UNIFORM_BYTES,
         ]);
-        list.push(Op::CreateBindGroup, &words)?;
+        for slot in 0..RING {
+            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 9]);
+            words[38..].copy_from_slice(&[
+                7,
+                resource_kind::TEXTURE,
+                ids::LIGHT_GRID + slot,
+                0,
+                0,
+                8,
+                resource_kind::TEXTURE,
+                ids::LIGHTS + slot,
+                0,
+                0,
+            ]);
+            list.push(Op::CreateBindGroup, &words)?;
+        }
         Ok(())
     }
 
@@ -427,15 +442,18 @@ impl Opaque {
         Ok(())
     }
 
-    /// Binds a view's frame group and instance textures for the frame being recorded, as the
-    /// view's scene passes draw from them.
-    pub(super) fn bind_view(&self, list: &mut DrawList, view: ViewId) -> Result<(), RecordError> {
+    /// Binds a view's frame group, with the light textures of the ring slot `light_slot`, and its
+    /// instance textures for the frame being recorded, as the view's scene passes draw from them.
+    pub(super) fn bind_view(
+        &self,
+        list: &mut DrawList,
+        view: ViewId,
+        light_slot: u32,
+    ) -> Result<(), RecordError> {
         let slots = self.views[self.slot(view)].slots;
         let frame_slot = self.frame_slot(view);
-        list.push(
-            Op::SetBindGroup,
-            &[0, ids::frame_group(view), 2, frame_slot, frame_slot],
-        )?;
+        let group = ids::frame_group(view) + light_slot;
+        list.push(Op::SetBindGroup, &[0, group, 2, frame_slot, frame_slot])?;
         let instances = ids::instances_group(view) + slots.streamed * RING + slots.listed;
         list.push(Op::SetBindGroup, &[2, instances, 0])?;
         Ok(())
@@ -450,8 +468,9 @@ impl Opaque {
 
     /// Records a view's opaque pass inside the render pass that the render graph began: every
     /// draw whose bucket has visible instances, where the index list of bucket `b` starts at
-    /// `starts[b]`, from its mesh page's buffers in `meshes` and the ring slots that
-    /// [`Opaque::upload`] took.
+    /// `starts[b]`, from its mesh page's buffers in `meshes`, the ring slots that
+    /// [`Opaque::upload`] took, and the light textures of the ring slot `light_slot`.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn record(
         &self,
         list: &mut DrawList,
@@ -460,6 +479,7 @@ impl Opaque {
         starts: &[u32],
         layout: &Layout,
         meshes: &MeshBuffers,
+        light_slot: u32,
     ) -> Result<(), RecordError> {
         let slots = self.views[self.slot(view)].slots;
         let (buckets, draws, multi_draw) = (&layout.buckets, &layout.draws, self.multi_draw);
@@ -467,7 +487,7 @@ impl Opaque {
         let shift = |d: usize| buckets[draws[d].bucket as usize].shift;
         let stride = record_stride(multi_draw);
         let slot = slots.listed * layout.draws_slot_bytes;
-        self.bind_view(list, view)?;
+        self.bind_view(list, view, light_slot)?;
         let mut pipeline = None;
         let mut textures = 0;
         let mut run = usize::MAX;

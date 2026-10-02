@@ -81,13 +81,14 @@ const skipWhereTooSlow = (page: string) =>
 		'SwiftShader takes minutes to draw its first frames',
 	);
 /**
- * The warm-up and measured seconds of a page's short benchmark run. On SwiftShader, the first frames
- * of S3's three.js twin on WebGPU take seconds, and null3D draws S4 at a few frames a second. Their
- * runs need longer to measure frames.
+ * The warm-up and measured seconds of a page's short benchmark run. On SwiftShader, null3D draws S4
+ * at a few frames a second, and S3's 256 lights at about one, with each frame done more than two
+ * seconds after it starts. The first frames of S3's three.js twin on WebGPU take seconds, so its run
+ * is longer on every GPU. These runs need longer to measure frames.
  */
 function shortRunSeconds(scene: (typeof SCENES)[number], kind: PageKind): number {
+	if ((scene === 's3' || scene === 's4') && SWIFTSHADER) return 8;
 	if (scene === 's3' && kind === 'threejs-webgpu') return 5;
-	if (scene === 's4' && SWIFTSHADER) return 8;
 	return 2;
 }
 /** S4's canvas fills the window. A small window keeps its frames short on SwiftShader. */
