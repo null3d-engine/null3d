@@ -1,19 +1,12 @@
 // The debug views: a small scene of lit, unlit, see-through and instanced objects, drawn with the
-// view that ?view= names. A floor runs from near the camera to past its far plane, so the depth
-// view shows every gray, and a see-through box covers two objects, so overdraw shows the layers.
+// view that ?view= names. A floor runs from below the view's bottom edge to past the camera's far
+// plane, so the depth view shows every gray, and a see-through box covers two objects, so overdraw
+// shows the layers. The floor starts in front of the camera: SwiftShader, CI's software GPU, takes
+// a line's direction from its projected ends before it clips the line. An end behind the camera
+// reverses it, and the line fills no pixels, so the wireframe would lose the floor's edges.
 import { type DebugView, defineSketch } from '@null3d/engine';
 
-const params = new URL(import.meta.url).searchParams;
-const view = (params.get('view') ?? 'normals') as DebugView;
-// PROBE: floor placements and a floor-only scene for CI experiments.
-const FLOORS: Record<string, { height: number; z: number; width: number }> = {
-	default: { width: 12, height: 80, z: -30 },
-	inside: { width: 6, height: 6, z: -3 },
-	front: { width: 12, height: 75, z: -32.5 },
-	behind: { width: 12, height: 30, z: -5 },
-};
-const floor = FLOORS[params.get('floor') ?? 'default'] ?? FLOORS.default!;
-const onlyFloor = params.has('only-floor');
+const view = (new URL(import.meta.url).searchParams.get('view') ?? 'normals') as DebugView;
 
 export default defineSketch(({ scene, materials, geometry, debug }) => {
 	scene.setBackground('#3a5f8a');
@@ -29,15 +22,11 @@ export default defineSketch(({ scene, materials, geometry, debug }) => {
 	scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
 	scene.createAmbientLight({ intensity: 0.3 });
 	scene.createMesh({
-		mesh: geometry.plane({ width: floor!.width, height: floor!.height }),
+		mesh: geometry.plane({ width: 12, height: 73.5 }),
 		material: materials.standard({ color: '#7a8b6f' }),
 		rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
-		position: [0, 0, floor!.z],
+		position: [0, 0, -33.25],
 	});
-	if (onlyFloor) {
-		debug.view(view);
-		return {};
-	}
 	scene.createMesh({
 		mesh: geometry.box(),
 		material: materials.standard({ color: '#e8554e' }),
