@@ -39,6 +39,7 @@ use null3d_render::graph::RenderScale;
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
+use null3d_render::shadow_tiles::TileSettings;
 use null3d_render::shadows::ShadowQuality;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
@@ -117,13 +118,15 @@ struct Engine {
 
 impl Engine {
     /// The frame builder, and the frame's input for it. The frame's upload list and its lights are
-    /// recorded once, by the frame's first step.
+    /// recorded once, by the frame's first step. `pipelines_built` is the newest frame that the
+    /// thread that draws drew with every pipeline built.
     fn frame(
         &mut self,
         frame: u32,
         canvas: (u32, u32),
         render_scale: RenderScale,
         jobs: &'static JobSystem,
+        pipelines_built: u32,
     ) -> (&mut dyn FrameBuilder, FrameInput<'_>) {
         if self.snapshot.frame() != frame {
             self.snapshot.record(frame, &self.scene, &self.batches);
@@ -145,6 +148,8 @@ impl Engine {
             jobs,
             lines: self.lines.lines(),
             lights: self.lights.visible(),
+            shadow_lights: self.lights.shadows(),
+            pipelines_built,
         };
         (self.renderer.as_mut(), input)
     }
@@ -528,7 +533,7 @@ pub fn cull_frame(frame: u32, width: u32, height: u32) -> u32 {
         return fail(codes::NOT_READY, [0, 0]);
     };
     with_engine(|e| {
-        let (renderer, input) = e.frame(frame, (width, height), RenderScale::FULL, jobs);
+        let (renderer, input) = e.frame(frame, (width, height), RenderScale::FULL, jobs, 0);
         match renderer.cull(&input) {
             Ok(()) => 0,
             Err(error) => record_failure(error),
@@ -536,18 +541,20 @@ pub fn cull_frame(frame: u32, width: u32, height: u32) -> u32 {
     })
 }
 
-// The frame draws the debug lines that `drawDebugLines` gave it, and then forgets them.
+// The frame draws the debug lines that `drawDebugLines` gave it, and then forgets them. `built` is
+// the newest frame that the thread that draws drew with every pipeline built: shadow tiles drawn
+// while a pipeline may still build draw again in the next frame.
 /// Records the frame's upload list and its draw list for a canvas of this size in device pixels.
 /// The scene draws at a render scale of `scale` thousandths of the canvas's width and height, from
 /// 1 to 1000.
 #[wasm_bindgen(js_name = recordFrame)]
-pub fn record_frame(frame: u32, width: u32, height: u32, scale: u32) -> u32 {
+pub fn record_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32) -> u32 {
     let Some(jobs) = JOBS.get() else {
         return fail(codes::NOT_READY, [0, 0]);
     };
     with_engine(|e| {
         let scale = RenderScale::from_thousandths(scale);
-        let (renderer, input) = e.frame(frame, (width, height), scale, jobs);
+        let (renderer, input) = e.frame(frame, (width, height), scale, jobs, built);
         let recorded = renderer.record(&input);
         e.lines.clear();
         match recorded {
@@ -1185,6 +1192,21 @@ pub fn texture_stat(field: u32, texture: u32) -> f64 {
     value
 }
 
+// Sets up the shadow atlas of point and spot lights: its most tiles, from 0, which turns their
+// shadows off, the texels on each side of each tile, and whether point lights cast shadows.
+/// Sets up the shadow atlas of point and spot lights.
+#[wasm_bindgen(js_name = setShadowTiles)]
+pub fn set_shadow_tiles(tiles: u32, size: u32, point_shadows: bool) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_tile_settings(TileSettings {
+            tiles,
+            size,
+            point_shadows,
+        });
+        0
+    })
+}
+
 // Changes one of the texture store's settings (`constants::texture_option`): the bytes one frame
 // may upload, the largest anisotropy, or an upload of every waiting image in the next frame.
 /// Changes one of the texture store's settings.
@@ -1321,11 +1343,20 @@ pub fn set_render_scaling(scaling: bool) -> u32 {
     })
 }
 
-/// The shadow cascades of the main directional light in the last culled frame, or 0 when no
-/// directional light casts shadows. The quality governor lightens only the shadows that exist.
-#[wasm_bindgen(js_name = sunShadowCascades)]
-pub fn sun_shadow_cascades() -> u32 {
-    value_with_engine(|e| Ok(e.renderer.settings().sun_shadow_cascades()))
+/// What casts shadows in the last recorded frame: the main directional light's cascades in the
+/// bits of `shadow_casters::CASCADE_MASK`, 0 when it casts none, and `shadow_casters::TILES` when
+/// point or spot lights cast shadows. The quality governor lightens only the shadows that exist.
+#[wasm_bindgen(js_name = shadowCasters)]
+pub fn shadow_casters() -> u32 {
+    value_with_engine(|e| {
+        let tiles = if e.renderer.casts_tile_shadows() {
+            constants::shadow_casters::TILES
+        } else {
+            0
+        };
+        let cascades = e.renderer.settings().sun_shadow_cascades();
+        Ok(cascades & constants::shadow_casters::CASCADE_MASK | tiles)
+    })
 }
 
 /// The shadow settings that the quality settings give every light: the texels on each side of the

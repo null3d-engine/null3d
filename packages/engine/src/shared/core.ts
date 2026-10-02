@@ -77,7 +77,11 @@ export interface CoreGlue extends CoreErrors {
 	updateBatches(frame: number): number;
 	/** Finds the frame's visible objects on the job workers, where the path culls on the CPU. */
 	cullFrame(frame: number, width: number, height: number): number;
-	recordFrame(frame: number, width: number, height: number, scale: number): number;
+	/**
+	 * Records the frame's draw list. `built` is the newest frame that the thread that draws drew
+	 * with every pipeline built.
+	 */
+	recordFrame(frame: number, width: number, height: number, scale: number, built: number): number;
 	/**
 	 * The index list entries that a recorded frame draws, where the path culls on the CPU, or
 	 * `CORE_NOT_COUNTED` where the GPU culls.
@@ -213,6 +217,11 @@ export interface CoreGlue extends CoreErrors {
 	/** Changes one of the texture store's settings, by `TEXTURE_OPTION_*` code. */
 	setTextureOption(option: number, value: number): number;
 	/**
+	 * Sets up the shadow atlas of point and spot lights: its most tiles, the texels on each side of
+	 * each, and whether point lights cast shadows.
+	 */
+	setShadowTiles(tiles: number, size: number, pointShadows: boolean): number;
+	/**
 	 * Draws from a camera object with a perspective lens, a vertical field of view in degrees, and
 	 * the objects on `layers`.
 	 */
@@ -259,10 +268,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setShadowQuality(filter: number, farInterval: number): number;
 	/**
-	 * The shadow cascades of the main directional light in the last culled frame, or 0 when no
-	 * directional light casts shadows.
+	 * What casts shadows in the last recorded frame: the main directional light's cascades in the
+	 * bits of `SHADOW_CASTERS_CASCADE_MASK`, and `SHADOW_CASTERS_TILES` when point or spot lights
+	 * cast shadows.
 	 */
-	sunShadowCascades(): number;
+	shadowCasters(): number;
 	/** Draws the texture `texture` behind every object in the camera's view, or none with 0. */
 	setBackgroundTexture(texture: number): number;
 	/**
@@ -338,6 +348,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'syncTextures',
 	'textureStat',
 	'setTextureOption',
+	'setShadowTiles',
 	'setPerspectiveCamera',
 	'setOrthographicCamera',
 	'createLight',
@@ -348,7 +359,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOutput',
 	'setRenderScaling',
 	'setShadowQuality',
-	'sunShadowCascades',
+	'shadowCasters',
 	'setBackgroundTexture',
 	'setFog',
 	'setDebugView',

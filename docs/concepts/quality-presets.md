@@ -156,6 +156,8 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Shadow map size in texels (`shadowMapSize`) | 1024 | 2048 | 2048 | 4096 | at the start | planned |
 | Shadow filter (`shadowFilter`) | 3 x 3 texels | 3 x 3 texels | 5 x 5 texels | 5 x 5 texels | during play | built |
 | Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame | during play | built |
+| Spot and point light shadow tiles (`shadowTiles`) | 4 | 8 | 16 | 24 | at the start | built |
+| Shadow tile size in texels (`shadowTileSize`) | 512 | 512 | 1024 | 1024 | at the start | built |
 | Frame-budget governor (`governor`) | on | on | on | on | during play | built |
 | Point light shadows (`pointLightShadows`) | no | no | yes | yes | at the start | planned |
 | Depth prepass (`depthPrepass`) | no | no | yes | yes | at the start | planned |

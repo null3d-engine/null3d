@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { SHADOW_CASTERS_TILES } from '../generated/core';
 import { createMetricsBuffer, FrameRecorder, Role } from '../shared/metrics';
 import {
 	BUDGET_US,
@@ -199,10 +200,10 @@ describe('the render scale steps', () => {
 
 describe('the shadow steps', () => {
 	/** A governor whose scene's sun casts shadows in `cascades`, with these shadow settings. */
-	function shadowed(cascades: number, filter: number, interval: number, low = 900) {
+	function shadowed(cascades: number, filter: number, interval: number, low = 900, tiles = false) {
 		const governed = controlled(low);
 		governed.controller.setShadows(filter, interval);
-		governed.controller.setCascades(cascades);
+		governed.controller.setCasters(cascades, tiles);
 		return governed;
 	}
 
@@ -235,6 +236,10 @@ describe('the shadow steps', () => {
 		expect(shadowed(4, 3, 8).ladder(SLOW)).toEqual(['950 8 3', '900 8 3']);
 	});
 
+	it("lightens the filter of point and spot lights' shadows without a shadowed sun", () => {
+		expect(shadowed(0, 5, 2, 900, true).ladder(SLOW)).toEqual(['950 2 5', '900 2 5', '900 2 3']);
+	});
+
 	it('doubles the far cascade interval up to the longest', () => {
 		expect([1, 2, 3, 4, 5, 8].map(farIntervalSteps)).toEqual([3, 2, 2, 1, 1, 0]);
 		expect(shadowed(2, 3, 3).ladder(SLOW).slice(2)).toEqual(['900 6 3', '900 8 3']);
@@ -249,7 +254,7 @@ describe('the shadow steps', () => {
 		controller.setShadows(5, 4);
 		expect([controller.steps, controller.farInterval, controller.filter]).toEqual([2, 8, 3]);
 		// The sun stops casting shadows: the steps go.
-		controller.setCascades(0);
+		controller.setCasters(0, false);
 		expect([controller.steps, controller.farInterval, controller.filter]).toEqual([0, 4, 5]);
 		expect(controller.shadowChanges - before).toBe(4);
 	});
@@ -283,9 +288,9 @@ describe('the governor in the frame loop', () => {
 		const render = new FrameRecorder(metrics, Role.Render);
 		const done = new FrameRecorder(metrics, Role.Completion);
 		render.setRefreshHz(refreshHz);
-		const scene = { cascades: 0, loading: false };
+		const scene = { casters: 0, loading: false };
 		const reads: GovernorScene = {
-			shadowCascades: () => scene.cascades,
+			shadowCasters: () => scene.casters,
 			loading: () => scene.loading,
 		};
 		const resolution = new GovernorLoop(new Governor(), metrics, reads, fps);
@@ -347,7 +352,7 @@ describe('the governor in the frame loop', () => {
 		expect(governor.steps).toBe(0);
 		// Loading ends: a second over the budget, and the scene's shadows give the step.
 		scene.loading = false;
-		scene.cascades = 3;
+		scene.casters = 3 | SHADOW_CASTERS_TILES;
 		run(2 * BUDGET, BUDGET, DROP_AFTER_MS + WINDOW_MS);
 		expect([governor.steps, governor.farInterval]).toEqual([1, 4]);
 	});

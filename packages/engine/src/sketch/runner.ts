@@ -235,6 +235,8 @@ export class SketchRunner {
 			device.cellCulling,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
+		const { shadowTiles, shadowTileSize } = sketch.quality.settings;
+		glue.setShadowTiles(shadowTiles, shadowTileSize, false);
 		if (sketch.jobWorkers > 0) {
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.notify(slots, Slot.JobsReady);
@@ -259,7 +261,7 @@ export class SketchRunner {
 						this.governor,
 						metrics,
 						{
-							shadowCascades: () => glue.sunShadowCascades(),
+							shadowCasters: () => glue.shadowCasters(),
 							loading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
 						},
 						sketch.fps,
@@ -714,7 +716,8 @@ export class SketchRunner {
 			}
 		}
 		const scale = this.renderScale();
-		if (glue.recordFrame(frame, width, height, scale) !== 0)
+		const built = Atomics.load(slots, Slot.PipelinesBuilt);
+		if (glue.recordFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		Atomics.store(slots, Slot.RenderScale, scale);
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);

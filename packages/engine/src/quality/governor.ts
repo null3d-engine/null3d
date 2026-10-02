@@ -14,13 +14,15 @@
 // frames of the new setting before it judges again. A step up that takes the frames over the budget
 // doubles the wait before the next step up, so the settings settle below the point where the frames
 // fall behind instead of swinging across it. A shadow step happens only where the scene has a light
-// that casts shadows, and only where the step changes what the frame draws.
+// that casts shadows, and only where the step changes what the frame draws: the far cascades need a
+// directional light with two cascades or more, and the filter any light that casts shadows.
 //
 // The frame loop calls it once per frame, and it allocates nothing. The governor judges only a few
 // times a second, so the browser may never optimize it, and unoptimized code makes a number object
 // for each fraction. So it works in whole numbers alone: clock times in whole ms, and frame times in
 // whole microseconds, in typed arrays of 32-bit integers.
 
+import { SHADOW_CASTERS_CASCADE_MASK, SHADOW_CASTERS_TILES } from '../generated/core';
 import {
 	RefreshRate,
 	RingSums,
@@ -132,8 +134,10 @@ export class Governor {
 	/** The settings that the shadow steps start from. */
 	private intervalSetting = 1;
 	private filterSetting: number = LIGHTEST_FILTER;
-	/** The cascades of the light whose shadows the steps lighten, or 0 for none. */
+	/** The cascades of the main directional light's shadows, or 0 for none. */
 	private cascades = 0;
+	/** True when point or spot lights cast shadows, which the filter's step lightens too. */
+	private tiles = false;
 
 	constructor() {
 		this.restart(0);
@@ -159,12 +163,14 @@ export class Governor {
 	}
 
 	/**
-	 * Sets the shadow cascades of the scene's main directional light, or 0 when no light casts
-	 * shadows. The far cascades' steps need two cascades or more.
+	 * Sets what casts shadows in the scene: the main directional light's cascades, or 0 when it
+	 * casts none, and with `tiles`, point or spot lights. The far cascades' steps need two cascades
+	 * or more, and the filter's step any shadows.
 	 */
-	setCascades(cascades: number): void {
-		if (cascades === this.cascades) return;
+	setCasters(cascades: number, tiles: boolean): void {
+		if (cascades === this.cascades && tiles === this.tiles) return;
 		this.cascades = cascades;
+		this.tiles = tiles;
 		this.applySteps();
 	}
 
@@ -267,7 +273,7 @@ export class Governor {
 
 	/** The filter's step: one where shadows filter with more than the lightest filter. */
 	private filterSteps(): number {
-		return this.cascades > 0 && this.filterSetting > LIGHTEST_FILTER ? 1 : 0;
+		return (this.cascades > 0 || this.tiles) && this.filterSetting > LIGHTEST_FILTER ? 1 : 0;
 	}
 
 	/**
@@ -290,8 +296,11 @@ export class Governor {
 
 /** What the governor reads from the scene, once per window of frames. */
 export interface GovernorScene {
-	/** The shadow cascades of the main directional light, or 0 when no light casts shadows. */
-	shadowCascades(): number;
+	/**
+	 * What casts shadows: the main directional light's cascades in the bits of
+	 * `SHADOW_CASTERS_CASCADE_MASK`, and `SHADOW_CASTERS_TILES` when point or spot lights do.
+	 */
+	shadowCasters(): number;
 	/** True while the scene loads, as when textures wait to upload: the governor takes no step. */
 	loading(): boolean;
 }
@@ -346,7 +355,11 @@ export class GovernorLoop {
 			governor.restart(Math.round(now) + (last < 0 ? GRACE_MS : 0));
 		} else {
 			if (now - (times[0] as number) < WINDOW_MS) return;
-			governor.setCascades(this.scene.shadowCascades());
+			const casters = this.scene.shadowCasters();
+			governor.setCasters(
+				casters & SHADOW_CASTERS_CASCADE_MASK,
+				(casters & SHADOW_CASTERS_TILES) !== 0,
+			);
 			// The window's figures turn into whole numbers here, in code that runs every frame and
 			// so gets optimized, before the governor judges them.
 			const shown = presented.sums;

@@ -16,7 +16,7 @@ use null3d_core::culling::{CULL_CHUNK, CullRun, ROW_CELLS};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
-use null3d_core::lights::{LightTable, LightView, SunShadow, VisibleLight};
+use null3d_core::lights::{LightShadow, LightTable, LightView, SunShadow, VisibleLight};
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{
@@ -35,6 +35,7 @@ use crate::materials::{
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, DrawKey};
+use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{CascadeSchedule, ShadowFrame, ShadowQuality, ShadowSettings, fit_cascades};
 use crate::textures::TextureStore;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
@@ -174,6 +175,11 @@ pub struct FrameInput<'a> {
     /// The point and spot lights that the camera sees, with positions relative to it (see
     /// [`LightTable::visible`]).
     pub lights: &'a [VisibleLight],
+    /// The point and spot lights that cast shadows (see [`LightTable::shadows`]).
+    pub shadow_lights: &'a [LightShadow],
+    /// The newest frame that the thread that draws drew with every pipeline built, or 0 before
+    /// any.
+    pub pipelines_built: u32,
 }
 
 impl FrameInput<'_> {
@@ -208,6 +214,11 @@ pub trait FrameBuilder {
     /// GPU culls, as the CPU never learns the count there.
     fn visible_entries(&self, _frame: u32) -> Option<u32> {
         None
+    }
+    /// True when point or spot lights cast shadows into the shadow atlas in the frame recorded
+    /// last.
+    fn casts_tile_shadows(&self) -> bool {
+        false
     }
     /// Forgets every GPU object the draw lists created and every upload they made, so the next
     /// frame creates them all again and uploads the whole scene. The thread that draws asks for
@@ -480,6 +491,8 @@ pub struct SceneSettings {
     clock: [f32; 4],
     /// True when the render scale may drop below the whole canvas.
     render_scaling: bool,
+    /// How the point and spot lights' shadow atlas is set up.
+    tiles: TileSettings,
     /// The materials' shading, or a debug view in its place.
     debug_view: DebugView,
 }
@@ -512,6 +525,7 @@ impl SceneSettings {
             output: Output::default(),
             clock: [0.0; 4],
             render_scaling: false,
+            tiles: TileSettings::default(),
             debug_view: DebugView::Lit,
         }
     }
@@ -578,6 +592,20 @@ impl SceneSettings {
     /// resolve into the canvas. Frames at a lower scale while this is off draw the whole canvas.
     pub fn set_render_scaling(&mut self, scaling: bool) {
         self.render_scaling = scaling;
+    }
+
+    /// How the point and spot lights' shadow atlas is set up.
+    pub fn tile_settings(&self) -> TileSettings {
+        self.tiles
+    }
+
+    /// Sets up the point and spot lights' shadow atlas, from the next recorded frame on. A new
+    /// setting makes the atlas again, so every tile draws again.
+    pub fn set_tile_settings(&mut self, tiles: TileSettings) {
+        self.tiles = TileSettings {
+            tiles: tiles.tiles.min(MAX_TILES as u32),
+            ..tiles
+        };
     }
 
     pub fn meshes(&self) -> &MeshStorage {
@@ -781,6 +809,11 @@ impl SceneSettings {
         self.lighting.sun_shadow.map_or(0, |shadow| shadow.cascades)
     }
 
+    /// The shadow filter and the far cascades' update interval.
+    pub fn shadow_quality(&self) -> ShadowQuality {
+        self.lighting.shadow_quality
+    }
+
     /// The shadow filter and the far cascades' update interval, from the next frame on.
     pub fn set_shadow_quality(&mut self, quality: ShadowQuality) {
         self.lighting.shadow_quality = quality;
@@ -846,6 +879,14 @@ impl SceneSettings {
             layers: shadow.layers,
             drawn,
         })
+    }
+
+    /// Where the camera's view stands in the frame whose world output is `parity`'s: its cell, and
+    /// its position in the cell. `None` when the view has no camera.
+    pub fn camera_position(&self, scene: &SceneStorage, parity: usize) -> Option<CellPosition> {
+        let (camera, _) = self.views[ViewId::CAMERA.index()].camera()?;
+        let slot = scene.resolve(camera).ok()?;
+        Some(scene.cell_position(slot, parity))
     }
 
     /// The pipeline that draws the depth of a shadow caster whose mesh and material draw with

@@ -98,6 +98,8 @@ describe('the preset table', () => {
 			'antialias',
 			'shadowFilter',
 			'farCascadeInterval',
+			'shadowTiles',
+			'shadowTileSize',
 			'governor',
 			'maxAnisotropy',
 			'uploadBytesPerFrame',
@@ -127,6 +129,8 @@ describe('the preset table', () => {
 			'farCascadeInterval',
 			'governor',
 			'antialias',
+			'shadowTiles',
+			'shadowTileSize',
 		]);
 		expect(LIVE_SETTINGS).toEqual([
 			'maxPixelRatio',
@@ -169,6 +173,8 @@ describe('presetSettings', () => {
 			maxAnisotropy: 2,
 			uploadBytesPerFrame: 2 * MIB,
 			antialias: 'fxaa',
+			shadowTiles: 4,
+			shadowTileSize: 512,
 		});
 		expect(presetSettings('medium')).toEqual({
 			maxPixelRatio: 2,
@@ -179,6 +185,8 @@ describe('presetSettings', () => {
 			maxAnisotropy: 4,
 			uploadBytesPerFrame: 4 * MIB,
 			antialias: 'msaa',
+			shadowTiles: 8,
+			shadowTileSize: 512,
 		});
 		expect(presetSettings('high')).toEqual({
 			maxPixelRatio: 2,
@@ -189,6 +197,8 @@ describe('presetSettings', () => {
 			maxAnisotropy: 8,
 			uploadBytesPerFrame: 8 * MIB,
 			antialias: 'msaa',
+			shadowTiles: 16,
+			shadowTileSize: 1024,
 		});
 		expect(presetSettings('ultra')).toEqual({
 			maxPixelRatio: Number.POSITIVE_INFINITY,
@@ -199,6 +209,8 @@ describe('presetSettings', () => {
 			maxAnisotropy: 16,
 			uploadBytesPerFrame: 16 * MIB,
 			antialias: 'msaa',
+			shadowTiles: 24,
+			shadowTileSize: 1024,
 		});
 	});
 
@@ -206,6 +218,8 @@ describe('presetSettings', () => {
 		expect(presetSettings('low', { maxPixelRatio: 3 }).maxPixelRatio).toBe(3);
 		expect(presetSettings('high', { maxPixelRatio: undefined }).maxPixelRatio).toBe(2);
 		expect(presetSettings('high', { antialias: 'none' }).antialias).toBe('none');
+		expect(presetSettings('ultra', { shadowTiles: 0 }).shadowTiles).toBe(0);
+		expect(presetSettings('low', { shadowTileSize: 2048 }).shadowTileSize).toBe(2048);
 	});
 
 	it("reads one setting's value on a preset", () => {

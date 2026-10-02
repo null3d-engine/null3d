@@ -48,6 +48,10 @@
 //   --shard <i>/<n>     run only the i-th of n shards of a fixed plan, as CI does on each of its
 //                       machines: the plan's items split evenly, and an item stays with the items
 //                       whose results its check compares with
+//   --only <ids>        run only these items of a fixed plan, such as the pages that failed in an
+//                       earlier run, with the items whose results their checks compare with
+//   --rounds <n>        run the items n times over, one round after another, to catch a fault
+//                       that comes only now and then
 //   --shields on|off    the state of Brave's Shields for the dev server's site, which the runner
 //                       cannot read: it goes into each Brave result and the run's summary
 //   --android <list>    browsers on the Android phone: chrome, chrome-beta, brave, firefox, samsung
@@ -106,11 +110,13 @@ import {
 	type Plan,
 	type PlanItem,
 	type PlanPlace,
+	pickItems,
 	type Runner,
 	readDevice,
 	readResult,
 	readShard,
 	receivedAt,
+	repeatItems,
 	runName,
 	SHARD_FORMAT,
 	type Shard,
@@ -156,6 +162,10 @@ export interface Options {
 	shields?: ShieldsState;
 	/** The one shard of a fixed plan to run, when given. */
 	shard?: Shard;
+	/** The ids of the only items of a fixed plan to run, when given. */
+	only?: string[];
+	/** How many times over to run the items, when given. */
+	rounds?: number;
 	/** macOS app names, such as Safari. */
 	mac: string[];
 	android: string[];
@@ -163,7 +173,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--shard <i>/<n>] [--shields on|off] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -213,6 +223,8 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--scenes') options.scenes = known(arg, list(args[++i]), BENCH_SCENES);
 		else if (arg === '--seconds') options.seconds = wholeNumber(arg, args[++i]);
 		else if (arg === '--shard') options.shard = shard(args[++i]);
+		else if (arg === '--only') options.only = list(args[++i]);
+		else if (arg === '--rounds') options.rounds = wholeNumber(arg, args[++i]);
 		else if (arg === '--shields') options.shields = oneOf(arg, args[++i], SHIELDS_STATES);
 		else if (arg === '--plan') options.plan = args[++i] ?? '';
 		else if (arg === '--android') options.android = list(args[++i]);
@@ -222,8 +234,16 @@ export function parseArgs(args: readonly string[]): Options {
 	}
 	if (!PLAN_NAMES.includes(options.plan))
 		throw new Error(`no plan named ${options.plan}; plans: ${PLAN_NAMES.join(', ')}`);
-	if (options.shard && options.plan === SCALE_PLAN)
-		throw new Error(`--shard splits a fixed plan, so it does not work with --plan ${SCALE_PLAN}`);
+	for (const [flag, given] of [
+		['--shard', options.shard],
+		['--only', options.only],
+		['--rounds', options.rounds],
+	] as const)
+		if (given && options.plan === SCALE_PLAN)
+			throw new Error(
+				`${flag} picks items of a fixed plan, so it does not work with --plan ${SCALE_PLAN}`,
+			);
+	if (options.only?.length === 0) throw new Error(`--only: name some items\n${USAGE}`);
 	// The memory plan still counts the room at each maximum without loads; other plans need runs.
 	if (options.runs === 0 && options.plan !== 'memory')
 		throw new Error(`--runs 0 works with --plan memory only\n${USAGE}`);
@@ -599,11 +619,11 @@ function wholeHeatText(samples: readonly HeatSample[]): string | undefined {
 }
 
 /**
- * A fixed plan's items with the command line's settings, or only its shard's items, or undefined
- * for the phone-scale search.
+ * A fixed plan's items with the command line's settings: the items that --only names, or only its
+ * shard's items, the number of rounds over. Undefined for the phone-scale search.
  */
 export function planItems(options: Options): PlanItem<Check>[] | undefined {
-	const items = PLANS[options.plan]?.({
+	const all = PLANS[options.plan]?.({
 		count: options.count,
 		runs: options.runs,
 		jobs: options.jobs,
@@ -611,14 +631,17 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 		scenes: options.scenes,
 		seconds: options.seconds,
 	});
-	const { shard } = options;
-	if (!items || !shard) return items;
-	const part = shardItems(items, shard, (item) => itemsNeeded(item.check));
+	if (!all) return undefined;
+	const needs = (item: PlanItem<Check>) => itemsNeeded(item.check);
+	const { shard, only, rounds = 1 } = options;
+	const items = only ? pickItems(all, only, needs) : all;
+	if (!shard) return repeatItems(items, rounds);
+	const part = shardItems(items, shard, needs);
 	if (part.length === 0)
 		throw new Error(
 			`shard ${shard.index} of ${shard.count} has no items: the ${options.plan} plan has too few items for ${shard.count} shards`,
 		);
-	return part;
+	return repeatItems(part, rounds);
 }
 
 /**

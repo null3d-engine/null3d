@@ -66,7 +66,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Color management](concepts/color-management.md) | Linear working space; sRGB hex colors and linear arrays; texture color spaces; HDR color; exposure and tone mapping; transparent canvases; parity with three.js. | experimental | 0.1 |
 | [Materials and pipelines](concepts/materials.md) | Built-in materials; permutations; pipeline warm-up; why changing shader features can stall a frame. | experimental | 0.1 |
 | [Lighting and environment](concepts/lighting.md) | Light types and units; clustered lighting; fog; environment maps and spherical harmonics. | experimental | 0.1 |
-| [Shadows](concepts/shadows.md) | Cascades that stay still as the camera turns; update rates and filtering per preset; bias settings. | experimental | 0.1 |
+| [Shadows](concepts/shadows.md) | Cascades that stay still as the camera turns; the shadow atlas of spot lights; update rates and filtering per preset; bias settings. | experimental | 0.1 |
 | [Render layers](concepts/render-layers.md) | 32-bit layer masks that choose which cameras draw which objects and instance batches. | experimental | 0.1 |
 | [The render graph](concepts/render-graph.md) | Declared reads and writes; automatic order; transient memory; validation errors; the text dump. | experimental | 0.1 |
 | [Large worlds and precision](concepts/large-worlds.md) | Cell-relative positions and per-frame camera-to-cell offsets; reversed depth; largeWorld mode; batch origins; floating-origin geometry. | planned | 0.2 |

@@ -119,6 +119,7 @@ export type {
 	InstanceOptions,
 	Light,
 	LightOptions,
+	LightShadowOptions,
 	Mesh,
 	MeshOptions,
 	NodeOptions,
