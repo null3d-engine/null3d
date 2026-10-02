@@ -396,6 +396,16 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	})),
+	// The same scene with the 5 x 5 shadow filter of the High and Ultra presets, whose edges are
+	// softer than the 3 x 3 filter's.
+	{
+		name: 'shadows-filter-5',
+		sketch: 'tests/pages/sketches/shadows-sketch.ts?filter=5',
+		hold: 0,
+		size: [480, 270],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// The same scene with custom materials on the ground and the red boxes, whose surface function
 	// keeps the standard look: they cast and receive shadows as the standard material does, so the
 	// references are copies of the shadows test's, with its tolerance for WebGL2's edges.

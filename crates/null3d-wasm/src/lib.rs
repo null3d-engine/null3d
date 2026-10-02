@@ -38,6 +38,7 @@ use null3d_render::graph::RenderScale;
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
+use null3d_render::shadows::ShadowQuality;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
@@ -1315,6 +1316,21 @@ pub fn set_background(r: f32, g: f32, b: f32) -> u32 {
 pub fn set_render_scaling(scaling: bool) -> u32 {
     with_engine(|e| {
         e.renderer.settings_mut().set_render_scaling(scaling);
+        0
+    })
+}
+
+/// The shadow settings that the quality settings give every light: the texels on each side of the
+/// shadow filter, and how many frames pass between two draws of a far cascade. The TypeScript API
+/// checks both.
+#[wasm_bindgen(js_name = setShadowQuality)]
+pub fn set_shadow_quality(filter: u32, far_interval: u32) -> u32 {
+    with_engine(|e| {
+        let quality = ShadowQuality {
+            filter,
+            far_interval,
+        };
+        e.renderer.settings_mut().set_shadow_quality(quality);
         0
     })
 }

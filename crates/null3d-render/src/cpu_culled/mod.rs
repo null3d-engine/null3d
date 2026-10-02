@@ -745,11 +745,7 @@ impl CpuCulledRenderer {
             self.create_fixed(list)?;
         }
         self.graph
-            .set_shadows(self.shadow.as_ref().map(|s| ShadowPasses {
-                cascades: s.cascades.count as u32,
-                map_size: s.settings.map_size,
-                layers: s.layers,
-            }));
+            .set_shadows(self.shadow.as_ref().map(ShadowPasses::of));
         self.graph.sync_views(self.settings.views());
         self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.set_transparent(!self.sorted.is_empty());
@@ -990,7 +986,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 cells,
                 |view| {
                     let cascade = view.cascade_index()?;
-                    let shadow = shadow.filter(|s| cascade < s.cascades.count)?;
+                    let shadow = shadow.filter(|s| s.draws(cascade))?;
                     Some(shadow.view_frame(cascade))
                 },
                 None,
@@ -1012,6 +1008,7 @@ impl FrameBuilder for CpuCulledRenderer {
     fn reset_gpu(&mut self) {
         self.created = false;
         self.graph.reset_gpu();
+        self.settings.forget_shadow_maps();
         self.layout.built = false;
         self.meshes.forget();
         self.pipelines.forget();

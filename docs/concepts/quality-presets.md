@@ -8,7 +8,7 @@ summary: "Low to Ultra; pixel-ratio caps; the preset check; switching presets; t
 
 # Quality presets, dynamic resolution and frame budgets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, texture settings, anti-aliasing mode and memory maximum, and reports it. Dynamic resolution moves the render scale during play, and a sketch can switch presets with `quality.setPreset`. The settings that the table below marks as planned are not built yet. Neither is the frame-budget governor. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow settings, texture settings, anti-aliasing mode and memory maximum, and reports it. Dynamic resolution moves the render scale during play, and a sketch can switch presets with `quality.setPreset`. The settings that the table below marks as planned are not built yet. Neither is the frame-budget governor. Coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -154,8 +154,8 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Anti-aliasing (`antialias`) | FXAA | MSAA 4x | MSAA 4x | MSAA 4x | at the start | built |
 | Shadow cascades (`shadowCascades`) | 1 | 2 | 3 | 4 | at the start | planned |
 | Shadow map size in texels (`shadowMapSize`) | 1024 | 2048 | 2048 | 4096 | at the start | planned |
-| Shadow filter (`shadowFilter`) | 3 x 3 taps | 3 x 3 taps | 5 x 5 taps | 5 x 5 taps | at the start | planned |
-| Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame | during play | planned |
+| Shadow filter (`shadowFilter`) | 3 x 3 texels | 3 x 3 texels | 5 x 5 texels | 5 x 5 texels | during play | built |
+| Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame | during play | built |
 | Point light shadows (`pointLightShadows`) | no | no | yes | yes | at the start | planned |
 | Depth prepass (`depthPrepass`) | no | no | yes | yes | at the start | planned |
 | Anisotropic filtering cap (`maxAnisotropy`) | 2x | 4x | 8x | 16x | during play | built |

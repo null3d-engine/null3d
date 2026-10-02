@@ -4,7 +4,8 @@
 // shadows but casts none, a post on the right casts but receives none, and an unlit box shows no
 // shadow on itself. ?cascades=<n> sets the cascade count, from 1 to 4. ?custom draws the ground and
 // the red boxes with custom materials whose surface function keeps the standard look, so the image
-// must match the one without it.
+// must match the one without it. ?filter=<n> sets the shadow filter, 3 or 5 texels; 3 by default,
+// so every GPU tier draws the same image whatever preset it runs.
 import { defineSketch, type StandardOptions } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -12,6 +13,8 @@ const params = new URL(import.meta.url).searchParams;
 const CASCADES = Number(params.get('cascades') ?? 3);
 /** True when the sketch module's ?custom switch draws some objects with custom materials. */
 const CUSTOM = params.has('custom');
+/** The shadow filter's texels on each side, from the sketch module's ?filter switch. */
+const FILTER = params.get('filter') === '5' ? 5 : 3;
 
 /** A surface function that keeps the material's own look. */
 const plain = /* wgsl */ `
@@ -20,7 +23,8 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 `;
 
-export default defineSketch(({ scene, materials, geometry }) => {
+export default defineSketch(({ scene, materials, geometry, quality }) => {
+	quality.set({ shadowFilter: FILTER });
 	scene.setBackground('#101418');
 	const camera = scene.createPerspectiveCamera({
 		fov: 50,

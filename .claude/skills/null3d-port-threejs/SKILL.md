@@ -115,7 +115,7 @@ When parity images differ, check these first.
 - Tone mapping. three.js defaults to none, and null3D to ACES. Set `post.set({ toneMapping: 'none' })` to match an original without tone mapping, and copy `toneMappingExposure` to `exposure`.
 - Light units. null3D uses physical units, as three.js r155 and later do. Scenes tuned with legacy lights need new intensities.
 - Point and spot light range. three.js `distance: 0` means infinite range; null3D needs a finite `range`. Pick the distance where the light no longer matters; the edge of the light may differ slightly.
-- Shadows (later in 0.1). three.js shadow cameras are hand-fitted; null3D cascades fit the view. Tune `mapSize`, `cascades` and bias rather than copying `shadow.camera`.
+- Shadows. three.js shadow cameras are hand-fitted; null3D cascades fit the view. Tune `mapSize`, `cascades` and bias rather than copying `shadow.camera`. The `shadowFilter` quality setting replaces `shadowMap.type` and `shadow.radius`.
 - Pixel ratio. Many three.js apps render at the full device pixel ratio (3 on many phones); null3D's presets cap it (`concepts/quality-presets`). For parity tests, fix the pixel ratio to 1 in both.
 - Material approximations. Lambert, Phong and Toon materials become standard materials or surface functions; small differences are expected (`references/materials.md`).
 - Post effects. Bloom and ambient occlusion are implemented differently; match the look by tuning, one effect at a time.

@@ -93,7 +93,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 - After a start that crashed the tab, the engine starts one preset lower, and at Low after two. A phone that ran out of memory shows it in `engine.mode.crashedStarts`.
 - The preset check measures the scene that the setup built, then lowers the preset where the GPU misses the frame rate. Build the first view and load its textures in the setup, or the check measures an empty scene. `engine.mode.presetCheck` shows what it measured (`concepts/quality-presets`).
 - A player's preset choice goes through `quality.setPreset`. It waits for the new preset's pipelines behind the last frame, so call it from a menu or a loading screen. The `skippedDraws` figure of `engine.measure()` counts draws that a building pipeline kept from drawing. It stays at 0 when warm-ups come first.
-- Shadows (later in 0.1): one cascade on Low, two on Medium. Each shadowed point light draws the scene six times; avoid them on phones.
+- Shadows: use one or two cascades on phones, and a `distance` no longer than the scene needs. Far cascades draw every few frames by preset; raise `farCascadeInterval` to draw them less often, and set `shadowFilter: 3` for cheaper edges. Each shadowed point light (later in 0.1) draws the scene six times; avoid them on phones.
 - Transparent and additive effects covering the screen (smoke, glass) cost the most on phone GPUs.
 - Memory is tight: a 4 GB iPad reports a 256 MB largest buffer and closes tabs that use too much. Share materials, destroy textures you no longer need, and load large textures from KTX2 files, which stay compressed on the GPU. Prefabs to free with `destroy()` come in 0.2.
 - For comparison runs, fix the refresh rate at 60 Hz and start with a cool, charged device (engine docs `guides/phones`).
@@ -115,10 +115,10 @@ The number of objects and instance rows one scene can draw depends on the GPU pa
 
 ## 7. Quality presets, the governor and your own systems
 
-The engine starts each device on one of four presets: Low, Medium, High or Ultra (`concepts/quality-presets`). Phones start at Low, tablets at Medium and desktops at High. The preset sets the pixel ratio cap, the render scale range, the anisotropy cap, the texture upload budget and the engine's memory maximum. The preset table marks its other settings, such as anti-aliasing and shadows, as planned.
+The engine starts each device on one of four presets: Low, Medium, High or Ultra (`concepts/quality-presets`). Phones start at Low, tablets at Medium and desktops at High. The preset sets the pixel ratio cap, the render scale range and the anti-aliasing mode. It also sets the shadow filter, the far shadow cascades' update rate, the anisotropy cap, the texture upload budget and the engine's memory maximum. The preset table marks its other settings, such as the shadow cascade count and map size, as planned.
 
 - The sketch reads the preset in `quality.preset`, and the page in `engine.mode.preset`. The preset stays the same during play.
-- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame })` changes these settings during play, for example from a settings menu. Other settings throw E1213.
+- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval })` changes these settings during play, for example from a settings menu. Other settings throw E1213.
 - Do not raise the preset of a phone. Check each preset that your users can get with `?preset=low` to `?preset=ultra`.
 
 Keep your own values per preset in one table. Apply them in the setup, and again in `quality.onChange`, which runs when a setting changes. Later in 0.1, a governor lowers settings in a fixed order when frames run over budget: render scale first, then shadow updates, then effects. It never changes the preset during play. It raises the settings again after a stable period, so quality does not flicker. Your systems can join in through `setBudget` (0.2):
