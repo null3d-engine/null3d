@@ -124,6 +124,13 @@ Build two checkouts, such as a git worktree of main beside your branch, with `bu
 - On the phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s4 --pages null3d-webgl2,threejs-webgl,scene-code`. For the long run, add `--pages null3d-webgl2 --runs 1 --seconds 600`: 10 minutes of warm-up, then a trace of 10 measured minutes.
 - On the iPad: `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,scene-code`.
 
+## Shadows
+
+- `?shadows=<n>` on S2's pages turns on the sun's shadows, and every node casts and receives them. null3D draws them in n cascades, from 1 to 4, and three.js in one map. Both maps have 2,048 texels on each side (`SHADOWS` in `bench/scenes/spec.ts`), and three.js's map covers a box around the whole forest.
+- `--switches <switches>` gives every page of a run more switches. On the Mac, run S2 without shadows, then with each cascade count: `bun run bench:run --scenes s2 --pages null3d-webgpu,null3d-compat,threejs-webgpu,threejs-webgl --switches shadows=1`. Each count's difference from the run without shadows is the cost of its cascades, in CPU time and in GPU time.
+- `bun run parity --scene s2 --switches shadows=3` compares the hold frames on each tier. On 30 September 2026 on the Mac, 0.147% of the pixels differed on both WebGPU tiers, and three.js's two renderers differed by 0.270%. WebGL2 drew no shadows then, so it has no figure yet.
+- Each cascade adds a culling dispatch and a depth pass on the GPU. On the CPU it adds the recording of both, and its uniforms: about the same work whatever the number of casters.
+
 ## Sweeps for the open defaults
 
 Three sweeps measure the defaults that are still open: the latency mode, the job worker count and the shared memory's maximum. Each runs on the Mac, and on a phone or an iPad through the device runner.

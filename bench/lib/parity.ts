@@ -1,6 +1,8 @@
-// Parity images: hold frames of the benchmark scenes from two kinds of benchmark page, compared
-// with three.js's own image rule. Everything here is pure. The parity command (bench/parity.ts) and
-// the runner's parity plan (tests/lib/plans.ts) load the pages and write the files.
+// Parity images: hold frames of the benchmark scenes from two kinds of benchmark page, and images of
+// the feature scenes from null3D's image tests and their three.js twins, compared with three.js's
+// own image rule. Everything here is pure. The parity command (bench/parity.ts), the feature parity
+// test (bench/tests/parity.spec.ts) and the runner's parity plan (tests/lib/plans.ts) load the pages
+// and write the files.
 //
 // The rule is the one that three.js's end-to-end test applies to its example screenshots
 // (test/e2e/puppeteer.js and test/e2e/image.js in the three.js repository, at the release that the
@@ -10,6 +12,7 @@
 import { percent } from '../../packages/cli/src/compare.js';
 import { TIERS, type Tier } from '../../packages/cli/src/page.js';
 import { encodePng, type RgbaImage } from '../../packages/cli/src/png.js';
+import { STOPS, TONE_MAPPINGS, toneMappingTest } from '../../tests/pages/lib/bright-scene.ts';
 
 export { encodePng, percent, type RgbaImage, TIERS, type Tier };
 
@@ -17,6 +20,13 @@ export { encodePng, percent, type RgbaImage, TIERS, type Tier };
 export const PIXEL_THRESHOLD = 0.1;
 /** Two images match when strictly less than this percentage of their pixels differ. */
 export const MAX_DIFFERENT_PERCENT = 0.1;
+/**
+ * The limit for scenes with shadows, which three.js's rule would fail on shadow edges alone. three.js
+ * softens each edge with five rotated taps of its shadow map, and null3D with one filtered tap of a
+ * cascade whose texels have another size. The shadows fall in the same places, and only the pixels
+ * that an edge crosses differ. `.dev/image-tests.md` records the measured shares.
+ */
+export const SHADOW_MAX_DIFFERENT_PERCENT = 0.5;
 
 /** The squared RGB distance from black to white, which scales a squared distance to [0, 1]. */
 const MAX_SQUARED_DISTANCE = 255 * 255 * 3;
@@ -150,6 +160,119 @@ export const TIER_PAIRS: Readonly<Record<Tier, PagePair>> = {
 	webgl2: { candidate: 'null3d-webgl2', reference: 'threejs-webgl' },
 };
 
+// The feature scenes and their three.js twins.
+
+/**
+ * A feature scene: an image test of the manifest (tests/image/manifest.ts) whose scene a three.js
+ * twin page also draws. Both build it from one data module in bench/scenes/.
+ */
+export interface FeatureScene {
+	/** The image test that draws null3D's side. Its name names the scene. */
+	test: string;
+	/** The twin page's path from the server's root, with its own switches. */
+	twin: string;
+	/** Switches of the image page for null3D's side, such as `antialias=none`, or none. */
+	switches?: string;
+	/**
+	 * Switches of the test's sketch module for null3D's side, or none: `tone=none` turns off the
+	 * engine's default tone mapping, as three.js's twin draws with none. The image test itself keeps
+	 * the engine's defaults.
+	 */
+	sketchSwitches?: string;
+	/**
+	 * True when only WebGLRenderer draws the twin. Its frame is then the reference on every tier,
+	 * and the scene has no baseline between three.js's renderers.
+	 */
+	webglOnly?: boolean;
+	/** The percentage of pixels under which the scene passes, where it is not three.js's limit. */
+	limit?: number;
+}
+
+const TWINS = '/bench/pages/threejs';
+/** The sketch switch that turns off tone mapping, for sketches whose image tests keep ACES. */
+const NO_TONE = 'tone=none';
+
+/**
+ * Each feature scene that the exit gate's parity covers: standard materials, the light types
+ * (point and spot lights, and the directional and ambient lights of the material scenes), fog, tone
+ * mapping, the orthographic camera, and shadows at their own limit. The engine stores hemisphere
+ * lights but does not draw them yet; the lights twin draws `?scene=hemisphere` already, so the pull
+ * request that draws them adds that scene's image test here. The tone mappings compare without
+ * anti-aliasing: null3D resolves the samples of an edge before it tone maps them, and three.js's
+ * WebGLRenderer after, so a bright edge differs by design. The tone mapping spec compares each
+ * tile's color with anti-aliasing on.
+ */
+export const FEATURE_SCENES: readonly FeatureScene[] = [
+	{ test: 'standard-grid', twin: `${TWINS}/standard-grid.html`, sketchSwitches: NO_TONE },
+	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html` },
+	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
+	{ test: 'transparency', twin: `${TWINS}/transparency.html` },
+	{ test: 'texture-background', twin: `${TWINS}/texture-background.html` },
+	{ test: 'lights-16', twin: `${TWINS}/lights.html?lights=16`, sketchSwitches: NO_TONE },
+	{ test: 'lights-spot', twin: `${TWINS}/lights.html?scene=spot`, sketchSwitches: NO_TONE },
+	{ test: 'fog-linear', twin: `${TWINS}/fog.html?fog=linear` },
+	{ test: 'fog-exp2', twin: `${TWINS}/fog.html?fog=exp2` },
+	...TONE_MAPPINGS.flatMap((tone) =>
+		STOPS.map(
+			(stops): FeatureScene => ({
+				test: toneMappingTest(tone, stops),
+				twin: `${TWINS}/tone-mapping.html?tone=${tone}&stops=${stops}&antialias=none`,
+				switches: 'antialias=none',
+				webglOnly: true,
+			}),
+		),
+	),
+	{ test: 'ortho-camera', twin: `${TWINS}/ortho-camera.html` },
+	{
+		test: 'shadows',
+		twin: `${TWINS}/shadows.html`,
+		sketchSwitches: NO_TONE,
+		limit: SHADOW_MAX_DIFFERENT_PERCENT,
+	},
+];
+
+/** The feature scene of an image test, or undefined when no twin draws that test's scene. */
+export function featureScene(test: string): FeatureScene | undefined {
+	return FEATURE_SCENES.find((scene) => scene.test === test);
+}
+
+/** The path of a feature scene's twin page that draws with one of three.js's renderers. */
+export function twinPath({ twin, webglOnly }: FeatureScene, renderer: 'webgl' | 'webgpu'): string {
+	return `${twin}${twin.includes('?') ? '&' : '?'}renderer=${webglOnly ? 'webgl' : renderer}`;
+}
+
+/** On a tier, the pages whose frames a feature scene compares. */
+export function featurePair({ webglOnly }: FeatureScene, tier: Tier): PagePair {
+	const pair = TIER_PAIRS[tier];
+	return webglOnly ? { ...pair, reference: 'threejs-webgl' } : pair;
+}
+
+/** The tier that each null3D page kind of the tiers' comparisons draws a feature scene on. */
+const FEATURE_TIERS: Partial<Record<PageKind, Tier>> = {
+	'null3d-webgpu': 'webgpu',
+	'null3d-compat': 'compat',
+	'null3d-webgl2': 'webgl2',
+};
+
+/**
+ * The path of the page of one kind that draws a feature scene: the twin for three.js's kinds, and
+ * for a null3D kind, the image test on that kind's tier with the scene's sketch switches, from
+ * `imagePath` (`featureImagePath` in tests/image/manifest.ts), and with the scene's
+ * switches. The other null3D kinds, such as the low-latency ones, draw no feature scene, so they
+ * get null.
+ */
+export function featurePagePath(
+	scene: FeatureScene,
+	kind: PageKind,
+	imagePath: (tier: Tier) => string,
+): string | null {
+	if (kind === 'threejs-webgl') return twinPath(scene, 'webgl');
+	if (kind === 'threejs-webgpu') return twinPath(scene, 'webgpu');
+	const tier = FEATURE_TIERS[kind];
+	if (tier === undefined) return null;
+	return [imagePath(tier), scene.switches].filter(Boolean).join('&');
+}
+
 /** The dev-server path of one scene's page of one kind, with more switches after its own. */
 export function pagePath(scene: BenchScene, kind: BenchPageKind, switches = ''): string {
 	const page = kind === SCENE_CODE ? { folder: SCENE_CODE, switches: '' } : PAGES[kind];
@@ -166,15 +289,29 @@ export function pagePath(scene: BenchScene, kind: BenchPageKind, switches = ''):
 export const REFERENCE_PRESET_SWITCH = 'preset=high';
 
 /**
- * The dev-server path of the page that draws one scene's hold frame, at the references' preset. A
- * three.js twin that copies the preset's settings reads the same switch.
+ * The dev-server path of the page that draws one scene's hold frame, at the references' preset, with
+ * more switches. A three.js twin that copies the preset's settings reads the same switch.
  */
-export function holdPagePath(scene: BenchScene, kind: PageKind): string {
-	return pagePath(scene, kind, `hold&${REFERENCE_PRESET_SWITCH}`);
+export function holdPagePath(scene: BenchScene, kind: PageKind, switches = ''): string {
+	return pagePath(
+		scene,
+		kind,
+		['hold', REFERENCE_PRESET_SWITCH, switches].filter(Boolean).join('&'),
+	);
+}
+
+/**
+ * The page switches of a command's `option`, such as `--switches shadows=3`: names, each with a
+ * value or none, joined by `&`. It throws unless the text has that form.
+ */
+export function readSwitches(text: string | undefined, option: string): string {
+	if (!text || !/^[a-z]+(=[\w.]+)?(&[a-z]+(=[\w.]+)?)*$/i.test(text))
+		throw new Error(`${option}: give page switches without the ?, such as shadows=3 or a=1&b`);
+	return text;
 }
 
 /** The name that a comparison's image files start with. */
-export function comparisonName(scene: BenchScene, { candidate, reference }: PagePair): string {
+export function comparisonName(scene: string, { candidate, reference }: PagePair): string {
 	return `${scene}-${candidate}-vs-${reference}`;
 }
 
@@ -220,20 +357,27 @@ export function formatStoredBaselines(baselines: StoredBaselines): string {
  * two pixels wide, and three.js's rule counts every such pixel. An engine that matches three.js as
  * closely as three.js's renderers match each other draws the same scene.
  */
-export function passesWithBaseline(share: number, baselineShare: number | null): boolean {
-	return share * 100 < MAX_DIFFERENT_PERCENT || (baselineShare !== null && share <= baselineShare);
+export function passesWithBaseline(
+	share: number,
+	baselineShare: number | null,
+	limitPercent = MAX_DIFFERENT_PERCENT,
+): boolean {
+	return share * 100 < limitPercent || (baselineShare !== null && share <= baselineShare);
 }
 
 /**
  * How much two images differ, and what may differ, in words for a report. A `stored` baseline was
- * measured on another device, because this one cannot draw with both of three.js's renderers.
+ * measured on another device, because this one cannot draw with both of three.js's renderers. A
+ * scene with a limit of its own, such as a scene with shadows, names it as the scene's limit.
  */
 export function differenceText(
 	{ share }: Pick<ImageComparison, 'share'>,
 	baselineShare: number | null = null,
 	stored = false,
+	limitPercent = MAX_DIFFERENT_PERCENT,
 ): string {
-	const limit = `${percent(share)} of pixels differ; three.js's rule allows under ${MAX_DIFFERENT_PERCENT}%`;
+	const rule = limitPercent === MAX_DIFFERENT_PERCENT ? "three.js's rule" : "the scene's limit";
+	const limit = `${percent(share)} of pixels differ; ${rule} allows under ${limitPercent}%`;
 	if (baselineShare === null) return limit;
 	const where = stored ? `, in ${STORED_BASELINES_FILE} from a device that draws with both` : '';
 	return `${limit}, and three.js's two renderers differ by ${percent(baselineShare)}${where}`;
@@ -244,17 +388,42 @@ export function differenceText(
 export interface Comparison extends PagePair {
 	/** How the command's report names the comparison: a GPU tier, or the two page kinds. */
 	label: string;
+	/** The GPU tier that a comparison of the tiers is on, which picks each feature scene's pair. */
+	tier?: Tier;
 }
 
+/** True for the name of a benchmark scene, whose hold frames the benchmark pages draw. */
+export function isBenchScene(name: string): name is BenchScene {
+	return (BENCH_SCENES as readonly string[]).includes(name);
+}
+
+/** Every scene that the parity command can compare: the benchmark scenes, then the feature scenes. */
+export const PARITY_SCENE_NAMES: readonly string[] = [
+	...BENCH_SCENES,
+	...FEATURE_SCENES.map((scene) => scene.test),
+];
+
+/** The scenes that the parity command compares when no `--scene` names others. */
+export const DEFAULT_PARITY_SCENES: readonly string[] = [
+	...PARITY_SCENES,
+	...FEATURE_SCENES.map((scene) => scene.test),
+];
+
 export interface ParityOptions {
-	scenes: BenchScene[];
+	/** The scenes to compare: benchmark scenes, and the image tests of feature scenes. */
+	scenes: string[];
 	comparisons: Comparison[];
 	/** Save how much three.js's two renderers differ on each scene, for devices that lack one. */
 	saveBaselines: boolean;
+	/**
+	 * Page switches that every benchmark scene's hold page gets, such as `shadows=3`, or an empty
+	 * string. The feature scenes' pages take none.
+	 */
+	switches: string;
 }
 
 export const PARITY_USAGE =
-	'usage: bun run parity [-- [--scene <scenes>] [--tier <tiers>] [--pair <page kind>,<page kind>] [--save-baselines]]';
+	'usage: bun run parity [-- [--scene <scenes>] [--tier <tiers>] [--pair <page kind>,<page kind>] [--switches <switches>] [--save-baselines]]';
 
 function readList<T extends string>(
 	value: string | undefined,
@@ -277,25 +446,32 @@ function readList<T extends string>(
 }
 
 /**
- * Reads the parity command's switches. With no switch, it compares every scene of the parity checks
- * on every GPU tier. `--scene` can name any benchmark scene, to see how far one still differs.
- * `--pair a,b` compares page kind a with page kind b instead, where b is the reference.
+ * Reads the parity command's switches. With no switch, it compares every scene of the parity checks,
+ * the benchmark scenes and the feature scenes, on every GPU tier. `--scene` can name any benchmark
+ * scene, to see how far one still differs, and any feature scene by its image test. `--pair a,b`
+ * compares page kind a with page kind b instead, where b is the reference.
  */
 export function parseParityArgs(args: readonly string[]): ParityOptions {
-	let scenes: BenchScene[] = [...PARITY_SCENES];
+	let scenes: string[] = [...DEFAULT_PARITY_SCENES];
 	let tiers: Tier[] | undefined;
 	let pair: PageKind[] | undefined;
 	let saveBaselines = false;
+	let switches = '';
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
 		if (arg === '--') continue;
 		if (arg === '--save-baselines') saveBaselines = true;
-		else if (arg === '--scene') scenes = readList(args[++i], BENCH_SCENES, 'scene');
+		else if (arg === '--switches') switches = readSwitches(args[++i], '--switches');
+		else if (arg === '--scene') scenes = readList(args[++i], PARITY_SCENE_NAMES, 'scene');
 		else if (arg === '--tier') tiers = readList(args[++i], TIERS, 'tier');
 		else if (arg === '--pair') pair = readList(args[++i], PAGE_KINDS, 'page kind');
 		else throw new Error(`unknown option ${arg}\n${PARITY_USAGE}`);
 	}
 	if (tiers && pair) throw new Error('use --tier or --pair, not both');
+	if (saveBaselines && switches)
+		throw new Error(
+			'use --save-baselines without --switches: the baselines are of the plain scenes',
+		);
 	if (pair) {
 		const [candidate, reference] = pair;
 		if (pair.length !== 2 || !candidate || !reference)
@@ -306,12 +482,14 @@ export function parseParityArgs(args: readonly string[]): ParityOptions {
 			scenes,
 			comparisons: [{ label: `${candidate} vs ${reference}`, candidate, reference }],
 			saveBaselines,
+			switches,
 		};
 	}
 	return {
 		scenes,
-		comparisons: (tiers ?? [...TIERS]).map((tier) => ({ label: tier, ...TIER_PAIRS[tier] })),
+		comparisons: (tiers ?? [...TIERS]).map((tier) => ({ label: tier, tier, ...TIER_PAIRS[tier] })),
 		saveBaselines,
+		switches,
 	};
 }
 
@@ -336,18 +514,45 @@ function checkImage(image: RgbaImage, what: string): void {
  * page failed, and an error that names the fault when the result is not a whole frame.
  */
 export function decodeHoldResult(result: unknown): HoldFrame {
-	if (typeof result !== 'object' || result === null)
-		throw new Error('the page published no result object');
-	const { ok, error, scene, n, width, height, pixels } = result as Record<string, unknown>;
-	if (ok !== true)
-		throw new Error(typeof error === 'string' ? error : 'the page failed without a message');
+	const fields = succeededResult(result);
+	const { scene, n } = fields;
 	if (typeof scene !== 'string') throw new Error('the result does not name its scene');
 	if (!Number.isSafeInteger(n) || (n as number) < 0)
 		throw new Error(`the result has no valid object count: ${n}`);
+	return frameOf(scene, n as number, fields);
+}
+
+/**
+ * Reads the frame of a feature scene `scene` from a page's published result,
+ * `{ ok, width, height, pixels }`: an image test page's or a twin's. The frame counts no objects,
+ * because the two pages draw one scene module. It throws as `decodeHoldResult` does.
+ */
+export function decodeFeatureResult(result: unknown, scene: string): HoldFrame {
+	return frameOf(scene, 0, succeededResult(result));
+}
+
+/** A published result's fields. It throws unless the result is an object of a page that succeeded. */
+function succeededResult(result: unknown): Record<string, unknown> {
+	if (typeof result !== 'object' || result === null)
+		throw new Error('the page published no result object');
+	const fields = result as Record<string, unknown>;
+	if (fields.ok !== true)
+		throw new Error(
+			typeof fields.error === 'string' ? fields.error : 'the page failed without a message',
+		);
+	return fields;
+}
+
+/** The frame in a result's `width`, `height` and `pixels`. It throws unless they make a whole frame. */
+function frameOf(
+	scene: string,
+	n: number,
+	{ width, height, pixels }: Record<string, unknown>,
+): HoldFrame {
 	if (typeof pixels !== 'string') throw new Error('the result has no pixels');
 	const frame = {
 		scene,
-		n: n as number,
+		n,
 		width: width as number,
 		height: height as number,
 		data: Buffer.from(pixels, 'base64'),
