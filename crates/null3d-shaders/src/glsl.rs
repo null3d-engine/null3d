@@ -17,15 +17,17 @@ pub(crate) const MULTI_DRAW_EXTENSION: &str = "#extension GL_ANGLE_multi_draw : 
 /// serves every depth mode, and the backend sets the uniform once per program.
 pub(crate) const DEPTH_MAPPING_UNIFORM: &str = "null3d_depth_mapping";
 
-/// Writes the vertex and fragment shaders of one render pipeline.
+/// Writes the vertex and fragment shaders of one render pipeline. The functions and constants
+/// that `mediump` names run at that precision.
 pub(crate) fn write_program(
     module: &Module,
     info: &ModuleInfo,
     name: &str,
     pipeline: &Pipeline,
+    mediump: &[String],
 ) -> Result<GlslProgram, String> {
     let [vertex, fragment] = pipeline.stages().map(|(stage, stage_name, entry_point)| {
-        write_stage(module, info, name, stage, stage_name, entry_point)
+        write_stage(module, info, name, stage, stage_name, entry_point, mediump)
     });
     Ok(GlslProgram {
         vertex: vertex?,
@@ -40,6 +42,7 @@ fn write_stage(
     stage: ShaderStage,
     stage_name: &str,
     entry_point: &str,
+    mediump: &[String],
 ) -> Result<GlslStage, String> {
     let options = Options {
         version: Version::Embedded {
@@ -72,6 +75,8 @@ fn write_stage(
             "GLSL ES 3.00 for WebGL2 cannot express the {stage_name} shader `{entry_point}` of pipeline `{pipeline}`: {e}. Keep such code out of variants that target \"glsl\", for example behind a shader def."
         )
     })?;
+
+    source = crate::half::mediump_items(&source, mediump);
 
     let entry = module
         .entry_points

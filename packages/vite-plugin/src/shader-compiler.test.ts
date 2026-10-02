@@ -196,9 +196,10 @@ describe.skipIf(!ENABLED)('the shader compiler', () => {
 		);
 	});
 
+	// Building every variant of the engine's shaders takes several seconds on CI's runners.
 	it("gives the native build's output for the engine's shaders", async () => {
 		const result = buildShaders(engineShaderInputs());
 		if (!result.ok) throw new Error(result.problems.map((p) => p.message).join('\n'));
 		expect(result.output.shaders).toEqual(await everyShader());
-	});
+	}, 60_000);
 });

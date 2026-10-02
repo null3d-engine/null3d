@@ -252,6 +252,11 @@ fn check_variant(errors: &mut Vec<String>, key: &str, variant: &Variant) -> bool
             errors.push(format!("{key}.defs lists \"{def}\" twice."));
         }
     }
+    if variant.permutations.iter().any(|bit| bit == "HALF") && variant.targets.len() > 1 {
+        errors.push(format!(
+            "{key} has the HALF permutation bit and more than one target. Its WGSL builds use 16-bit floats, which GLSL does not have, so give WebGPU and WebGL2 a variant each."
+        ));
+    }
     let mut known = true;
     for (index, bit) in variant.permutations.iter().enumerate() {
         if permutation::bit(bit).is_none() {

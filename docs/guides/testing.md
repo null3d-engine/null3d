@@ -159,4 +159,5 @@ The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/
 | `?sketch-thread=main` | Run the sketch on the page's main thread, over the `sketchThread` option |
 | `?latency=pipelined`, `?latency=low` | Pick the latency mode |
 | `?cells=off` | Cull every object, with no [grid cell](../concepts/culling.md) out of view skipped first, to measure what skipping cells saves |
+| `?half=on`, `?half=off` | Do the scene shaders' color math at half precision, or at full precision. WebGPU needs the device feature `shader-f16`, and a device without it keeps full precision. `engine.capabilities.halfPrecision` says which one the engine took |
 | `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest; the engine then ignores starts that crashed before |
