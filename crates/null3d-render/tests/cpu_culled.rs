@@ -7,13 +7,17 @@ use common::{BATCH_ROWS, LENS, World, count, far_out};
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::clusters::{CLUSTER_ROWS, CLUSTER_SHIFT};
 use null3d_core::handle::Handle;
-use null3d_core::scene::Command;
+use null3d_core::layers::DEFAULT_LAYERS;
+use null3d_core::lights::SunShadow;
+use null3d_core::scene::{Command, flags};
+use null3d_gpu::caps::OFFSET_ALIGNMENT;
 use null3d_gpu::drawlist::{NO_TARGET, Op, sizes};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::camera::Perspective;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, RecordError};
 use null3d_render::graph::ALL_LAYERS;
+use null3d_render::materials::{Shading, feature};
 use null3d_render::view::{View, ViewId};
 
 /// The builder's data texture ids: resident, then the streamed ring, the cluster texture, and the
@@ -27,7 +31,9 @@ const FRAME: u32 = 1;
 const DRAWS: u32 = 2;
 /// Bytes of one frame's slot in the frame uniform ring: the uniform block, aligned for binding,
 /// then the offsets from the camera to 512 cells.
-const FRAME_SLOT: u32 = 256 + 512 * 16;
+const FRAME_SLOT: u32 = OFFSETS_AT + 512 * 16;
+/// Where a frame's slot holds the offsets from the camera to the cells.
+const OFFSETS_AT: u32 = sizes::FRAME_UNIFORM_BYTES.next_multiple_of(OFFSET_ALIGNMENT);
 /// Scene slots up to the highest the world uses: slot 0 is never used, then the camera and four
 /// objects.
 const SCENE_ROWS: u32 = 6;
@@ -135,7 +141,7 @@ fn two_views_list_their_own_visible_objects_and_draw_them_in_passes_of_their_own
         );
         assert_eq!(passes[0][0], passes[1][0]);
         assert_eq!(passes[0][2], passes[1][2]);
-        assert_eq!(count(&commands, Op::CreateTexture), 12 + 3);
+        assert_eq!(count(&commands, Op::CreateTexture), 19 + 3);
         // Each pass binds its view's frame uniform and index list textures.
         let bound = |group: u32| -> Vec<u32> {
             commands
@@ -225,6 +231,7 @@ fn a_view_added_after_the_frame_culled_draws_from_the_next_frame() {
         structure_changed: false,
         jobs: &world.jobs,
         lines: DebugLines::NONE,
+        lights: &[],
     };
     world.renderer.cull(&input).unwrap();
     let late = world
@@ -297,9 +304,10 @@ fn the_first_frame_creates_everything_and_replays_on_both_draw_paths() {
         // The two meshes' pipelines, and the final pass's, made for frames whose render scale
         // drops.
         assert_eq!(count(&commands, Op::CreateRenderPipeline), 3);
-        // The color and depth targets, the resident texture, the two rings of three, the
-        // cluster texture, the material table and the table of specular terms.
-        assert_eq!(count(&commands, Op::CreateTexture), 12);
+        // The color and depth targets, the shadow map (one texel while no light casts shadows),
+        // the resident texture, the two rings of three, the cluster texture, the material table,
+        // the table of specular terms, and the two rings of three light textures.
+        assert_eq!(count(&commands, Op::CreateTexture), 19);
         // Buckets: lit boxes (the object, and the batch in the streamed texture), lit balls, and
         // unlit boxes. The hidden ball culls away; everything else is in view. Nothing is static
         // but the scene, so no bucket has clusters.
@@ -363,7 +371,9 @@ fn the_index_list_holds_each_buckets_sources_in_order() {
 /// The id of the bind group of the streamed texture of ring slot `streamed` and the index list
 /// of ring slot `listed`.
 fn instances_group(streamed: u32, listed: u32) -> u32 {
-    3 + streamed * 3 + listed
+    // After the camera view's three frame groups, one per slot of the light textures' ring, and
+    // its draw record group.
+    5 + streamed * 3 + listed
 }
 
 /// The instances bind group a frame's list binds.
@@ -462,7 +472,7 @@ fn steady_frames_upload_the_moving_rows_into_the_ring_and_keep_an_unchanged_inde
     assert!(texture_writes(&commands, RESIDENT).is_empty());
 
     // With no active moving rows, the streamed ring keeps its slot.
-    let streamed = (bound_instances(&commands) - 3) / 3;
+    let streamed = (bound_instances(&commands) - instances_group(0, 0)) / 3;
     world
         .batches
         .get_mut(world.batch)
@@ -476,7 +486,10 @@ fn steady_frames_upload_the_moving_rows_into_the_ring_and_keep_an_unchanged_inde
     for slot in 0..3 {
         assert!(texture_writes(&commands, STREAMED + slot).is_empty());
     }
-    assert_eq!((bound_instances(&commands) - 3) / 3, streamed);
+    assert_eq!(
+        (bound_instances(&commands) - instances_group(0, 0)) / 3,
+        streamed
+    );
 }
 
 #[test]
@@ -954,6 +967,81 @@ fn cell_culling_lists_exactly_the_scene_objects_that_culling_each_object_lists()
     }
 }
 
+/// Every object casts, and every fourth one has a blended lit material: the transparent pass draws
+/// it, and the cascades list it as any caster.
+#[test]
+fn cell_culling_lists_exactly_the_casters_that_each_cascade_lists_without_it() {
+    const OBJECTS: u32 = 400;
+    const CASCADES: usize = 3;
+    let sun = SunShadow {
+        cascades: CASCADES as u32,
+        map_size: 1024,
+        bias: 0.5,
+        normal_bias: 1.0,
+        distance: 300.0,
+        layers: DEFAULT_LAYERS,
+    };
+    let [mut on, mut off] = [true, false].map(|cell_culling| {
+        let (mut world, _) = spread_world(cell_culling, OBJECTS, 256);
+        let glass = world
+            .renderer
+            .settings_mut()
+            .materials_mut()
+            .create(Shading::Lit, feature::BLEND, [1.0, 1.0, 1.0, 0.5])
+            .unwrap()
+            + 1;
+        let casts = flags::CAST_SHADOWS;
+        let mut commands: Vec<Command> = world
+            .objects
+            .iter()
+            .map(|&object| Command::set_flags(object, casts, casts))
+            .collect();
+        commands.extend(
+            world
+                .objects
+                .iter()
+                .step_by(4)
+                .map(|&object| Command::set_material(object, glass)),
+        );
+        world.frame += 1;
+        world.scene.begin_frame(world.frame);
+        world.scene.apply_commands(&commands, world.frame).unwrap();
+        world.renderer.settings_mut().set_sun_shadow(Some(sun));
+        world.record(true);
+        world
+    });
+    // Each cascade's entries over all its buckets, in order.
+    let cascade_entries = |world: &World<CpuCulledRenderer>, cascade: usize| {
+        let view = ViewId::cascade(cascade);
+        let mut entries = world.renderer.culled(world.frame, view).indices().to_vec();
+        entries.sort_unstable();
+        entries
+    };
+    let mut listed = 0;
+    for (k, pose) in poses().into_iter().enumerate() {
+        record_at(&mut on, pose);
+        record_at(&mut off, pose);
+        for cascade in 0..CASCADES {
+            let entries = cascade_entries(&on, cascade);
+            assert_eq!(
+                entries,
+                cascade_entries(&off, cascade),
+                "pose {k}, {cascade}"
+            );
+            listed += entries.len();
+            // A cascade's box reaches only a few of the world's cells, so the cascade tests
+            // fewer casters with cells than without.
+            let view = ViewId::cascade(cascade);
+            let (tested_on, tested_off) = (on.renderer.tested(view), off.renderer.tested(view));
+            assert!(
+                tested_on < tested_off,
+                "pose {k}, cascade {cascade}: {tested_on} tested with cells, {tested_off} without"
+            );
+        }
+    }
+    assert!(listed > 0, "the cascades list casters");
+}
+
 #[test]
 fn far_from_the_origin_static_objects_stay_resident_and_list_their_cell() {
     let mut world = world(true);
@@ -1003,7 +1091,7 @@ fn far_from_the_origin_static_objects_stay_resident_and_list_their_cell() {
             .collect();
         assert_eq!(
             frame_writes,
-            vec![(0, sizes::FRAME_UNIFORM_BYTES), (256, 2 * 16)],
+            vec![(0, sizes::FRAME_UNIFORM_BYTES), (OFFSETS_AT, 2 * 16)],
             "frame {frame}"
         );
     }

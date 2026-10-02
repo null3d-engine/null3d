@@ -19,7 +19,7 @@ use null3d_core::scene::SceneStorage;
 
 use null3d_core::layers::DEFAULT_LAYERS;
 
-use crate::camera::{Affine, Lens, Mat4, view_direction};
+use crate::camera::{Affine, Lens, Mat4, ViewDepth, view_direction};
 use crate::frame_data::FrameUniform;
 use crate::shadows::MAX_CASCADES;
 
@@ -108,46 +108,68 @@ impl View {
         self.layers = mask;
     }
 
-    /// The view-projection matrix for positions relative to the camera, for a target of `aspect`,
-    /// the camera's place for those positions as [`Lens::eye`] gives it, the direction it looks
-    /// along, and the camera's cell and position in it. `None` when the view has no camera, or its
-    /// camera object is gone.
+    /// Where the view's camera stands and how it sees, for a target of `aspect`. `None` when the
+    /// view has no camera, or its camera object is gone.
     pub(crate) fn transform(
         &self,
         scene: &SceneStorage,
         parity: usize,
         aspect: f32,
-    ) -> Option<(Mat4, [f32; 4], [f32; 3], CellPosition)> {
+    ) -> Option<CameraTransform> {
         let (camera, lens) = self.camera?;
         let slot = scene.resolve(camera).ok()?;
         let world: Affine = *scene.world(parity).matrix(slot as usize);
-        Some((
-            lens.relative_view_projection(&world, aspect),
-            lens.eye(&world),
-            view_direction(&world),
-            scene.cell_position(slot, parity),
-        ))
+        Some(CameraTransform {
+            view_proj: lens.relative_view_projection(&world, aspect),
+            eye: lens.eye(&world),
+            forward: view_direction(&world),
+            cell: scene.cell_position(slot, parity),
+            depth: lens.depth(&world),
+        })
     }
 }
 
+/// A view's camera in one frame, as [`View::transform`] gives it.
+pub(crate) struct CameraTransform {
+    /// The view-projection matrix for positions relative to the camera.
+    pub view_proj: Mat4,
+    /// The camera's place for those positions, as [`Lens::eye`] gives it.
+    pub eye: [f32; 4],
+    /// The direction the camera looks along.
+    pub forward: [f32; 3],
+    /// The camera's cell, and its position in the cell.
+    pub cell: CellPosition,
+    /// How far positions relative to the camera lie along the view.
+    pub depth: ViewDepth,
+}
+
 /// A view's values for one frame: the uniform block its passes read, the frustum its culling
-/// tests against, both relative to its camera, where its camera is, and the layers it draws.
+/// tests against, both relative to its camera, where its camera is, how far positions lie along
+/// its view, and the layers it draws.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ViewFrame {
     pub uniform: FrameUniform,
     pub frustum: Frustum,
     /// The camera's cell, and its position relative to the cell's center.
     pub camera: CellPosition,
+    /// How far positions relative to the camera lie along the view.
+    pub depth: ViewDepth,
     /// The view's layer mask.
     pub layers: u32,
 }
 
 impl ViewFrame {
-    pub(crate) fn new(uniform: FrameUniform, camera: CellPosition, layers: u32) -> Self {
+    pub(crate) fn new(
+        uniform: FrameUniform,
+        camera: CellPosition,
+        depth: ViewDepth,
+        layers: u32,
+    ) -> Self {
         Self {
             frustum: Frustum::from_view_projection(&uniform.view_proj),
             uniform,
             camera,
+            depth,
             layers,
         }
     }

@@ -62,7 +62,7 @@ run('replay', async () => {
 
 	const view = lookAt([0, 6, 10], [0, 0, 0]);
 	const viewProj = multiply(perspectiveReversed((60 * Math.PI) / 180, 1, 0.1, 100), view);
-	// The frame's values; the fog's stay 0, which means no fog.
+	// The frame's values. The fog's and the light grid's stay 0: no fog, and no point or spot light.
 	const frame = new Float32Array(G.SIZE_FRAME_UNIFORM_BYTES / 4);
 	frame.set(viewProj, 0);
 	frame.set([0, 6, 10, 1], 16);
@@ -130,6 +130,9 @@ run('replay', async () => {
 		[12, 4, U.STORAGE | U.COPY_DST, -1],
 		// The shadow cascades' uniform, which the frame group binds; no light casts shadows here.
 		[13, G.SIZE_SHADOW_UNIFORM_BYTES, U.UNIFORM | U.COPY_DST, -1],
+		// The light grid and the light list, which the frame group binds and the shader skips.
+		[14, 16, U.STORAGE, -1],
+		[15, G.SIZE_LIGHT_RECORD_BYTES, U.STORAGE, -1],
 	];
 	for (const [id, size, usage] of buffers) memory.push(G.OP_CREATE_BUFFER, id, size, usage);
 	for (const [id, size, , source] of buffers)
@@ -233,7 +236,7 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		1,
 		G.LAYOUT_FRAME,
-		7,
+		9,
 		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
 		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
 		...[2, G.RESOURCE_TEXTURE, 5, 0, 0],
@@ -241,6 +244,8 @@ run('replay', async () => {
 		...[4, G.RESOURCE_TEXTURE, 4, 0, 0],
 		...[5, G.RESOURCE_SAMPLER, 1, 0, 0],
 		...[6, G.RESOURCE_BUFFER, 13, 0, 0],
+		...[7, G.RESOURCE_BUFFER, 14, 0, 0],
+		...[8, G.RESOURCE_BUFFER, 15, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,

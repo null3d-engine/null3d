@@ -7,16 +7,17 @@
 // sample where it allocated least, so an event that happens once fails no place. From the page's
 // start to the end of the samples, it moves the mouse over the canvas and presses a key and the
 // mouse button, so the samples cover the sketch's reading of input. It draws with WebGPU, or with
-// WebGL2 when `--gpu webgl2` asks for it, and runs S1-cells, whose views skip whole grid cells,
-// when `--scene s1-cells` asks for it, and makes S1's boxes see through when `--blend` asks for
-// it, so each frame sorts every visible row for the transparent pass. It samples the production
-// build of the benchmark pages, as a developer ships the engine, and names the build's functions
-// through its source maps; `--dev` samples the dev server's pages, with the engine's development
-// checks. From the repository root:
+// WebGL2 when `--gpu webgl2` asks for it. `--scene s1-cells` runs S1-cells, whose views skip whole
+// grid cells, and `--scene s3` runs S3, whose 256 point lights move every frame. `--blend` makes
+// S1's boxes see through, so each frame sorts every visible row for the transparent pass. It
+// samples the production build of the benchmark pages, as a developer ships the engine, and names
+// the build's functions through its source maps; `--dev` samples the dev server's pages, with the
+// engine's development checks. From the repository root:
 //   bun run bench:allocation
 //   bun run bench:allocation --n 30000 --seconds 5 --warmup 30
 //   bun run bench:allocation --gpu webgl2
 //   bun run bench:allocation --scene s1-cells --gpu webgl2
+//   bun run bench:allocation --scene s3
 //   bun run bench:allocation --blend --n 30000 --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
@@ -26,6 +27,7 @@ import { attachWorkers, DevTools, pagesAt, sleep } from './lib/devtools';
 import { pagePath } from './lib/parity';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
 import type { BuildNames } from './lib/source-names';
+import { S3_DEFAULT_COUNT } from './scenes/spec';
 
 /** Bytes between allocation samples: small, so a few bytes per frame still show. */
 const SAMPLING_INTERVAL = 128;
@@ -134,14 +136,14 @@ async function main(): Promise<void> {
 		const at = args.indexOf(name);
 		return at >= 0 ? Number(args[at + 1]) : fallback;
 	};
-	const n = option('--n', 100_000);
+	const scene = args.includes('--scene') ? args[args.indexOf('--scene') + 1] : 's1';
+	if (scene !== 's1' && scene !== 's1-cells' && scene !== 's3')
+		throw new Error(`--scene takes s1, s1-cells or s3, not ${scene}`);
+	const n = option('--n', scene === 's3' ? S3_DEFAULT_COUNT : 100_000);
 	const seconds = option('--seconds', 5);
 	const gpu = args.includes('--gpu') ? args[args.indexOf('--gpu') + 1] : 'webgpu';
 	if (gpu !== 'webgpu' && gpu !== 'webgl2')
 		throw new Error(`--gpu takes webgpu or webgl2, not ${gpu}`);
-	const scene = args.includes('--scene') ? args[args.indexOf('--scene') + 1] : 's1';
-	if (scene !== 's1' && scene !== 's1-cells')
-		throw new Error(`--scene takes s1 or s1-cells, not ${scene}`);
 	// The browser optimizes code that runs once per frame only after many frames; until then,
 	// numbers that such code computes are allocated.
 	const warmup = option('--warmup', WARMUP_SECONDS);
@@ -236,7 +238,7 @@ async function main(): Promise<void> {
 		await input;
 		devtools.close();
 		console.log(
-			`S1 on ${gpu} with ${n} instances, ${pagesText(dev)}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`${scene.toUpperCase()} on ${gpu} with ${n} instances, ${pagesText(dev)}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
 		);
 		console.log(
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',

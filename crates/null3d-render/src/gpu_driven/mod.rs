@@ -80,6 +80,7 @@
 
 mod cull;
 mod layout;
+mod lights;
 mod opaque;
 mod shadow;
 mod transparent;
@@ -102,6 +103,7 @@ use crate::frame::{
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses};
 use crate::graph::RenderGraph;
+use crate::light_grid::{CameraLights, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
 use crate::pipelines::PipelineCache;
@@ -194,8 +196,12 @@ mod ids {
         SORTED + view.index() as u32
     }
 
+    /// The light grid of the camera's view: a word per cluster, then the light index list.
+    pub const LIGHT_GRID: u32 = SORTED + MAX_VIEWS as u32;
+    /// The records of the lights that the light grid lists.
+    pub const LIGHTS: u32 = LIGHT_GRID + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = SORTED + MAX_VIEWS as u32;
+    pub const PAGES: u32 = LIGHTS + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -246,6 +252,8 @@ pub struct RendererConfig {
     /// True to cull only the sources of grid cells in view; false to cull every source, as a
     /// benchmark of cell culling compares.
     pub cell_culling: bool,
+    /// The most point and spot lights that the camera's light grid lists.
+    pub light_limits: LightLimits,
 }
 
 impl Default for RendererConfig {
@@ -257,6 +265,7 @@ impl Default for RendererConfig {
             draw_list_words: 16 * 1024,
             storage_binding_bytes: sizes::PORTABLE_STORAGE_BINDING_BYTES,
             cell_culling: true,
+            light_limits: LightLimits::default(),
         }
     }
 }
@@ -284,6 +293,8 @@ pub struct GpuDrivenRenderer {
     sorted: SortedLayout,
     transparent: Transparent,
     background: BackgroundPass,
+    /// The point and spot lights of the camera's view.
+    lights: CameraLights,
     /// Each camera view's values in the frame being recorded, or `None` for a view with no camera.
     frames: Vec<Option<ViewFrame>>,
     /// Each shadow cascade's values in the frame being recorded, or `None` for a cascade that the
@@ -350,6 +361,7 @@ impl GpuDrivenRenderer {
             sorted: SortedLayout::default(),
             transparent: Transparent::default(),
             background: BackgroundPass::default(),
+            lights: CameraLights::new(config.light_limits),
             frames: Vec::new(),
             cascade_frames: [None; MAX_CASCADES],
             views_made: 0,
@@ -447,9 +459,14 @@ impl GpuDrivenRenderer {
                 self.casters.clear();
             }
             self.layouts_shadowed = shadows;
-            let layout = &self.layout;
+            // The cell order holds every object that a view or a cascade culls: blended casters
+            // have no bucket in the scene's layout, as the transparent pass draws them, but cast
+            // all the same.
+            let (layout, casters) = (&self.layout, &self.casters);
             self.cells
-                .classify(input.scene, &|slot| layout.draws(slot))
+                .classify(input.scene, &|slot| {
+                    layout.draws(slot) || (shadows && casters.draws(slot))
+                })
                 .map_err(|_| RecordError::OutOfMemory {
                     bytes: (input.scene.capacity() + 1).saturating_mul(16),
                 })?;
@@ -518,6 +535,23 @@ impl GpuDrivenRenderer {
         self.cascades_made = self.cascades_made.max(cascades);
 
         self.cells.update(input);
+        // Each view's values first: the camera's light grid sets how much its upload takes.
+        self.frames.clear();
+        for index in 0..views {
+            let view = ViewId::from_index(index);
+            let mut frame = self.settings.view_frame(
+                view,
+                input.scene,
+                parity,
+                input.canvas,
+                input.render_scale,
+            );
+            if let (Some(frame), ViewId::CAMERA) = (&mut frame, view) {
+                self.lights.assign(input.jobs, frame, input.lights);
+            }
+            self.frames.push(frame);
+        }
+
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         self.graph.upload(list, arena, self.settings.output())?;
         if std::mem::take(&mut self.dfg_pending) {
@@ -577,19 +611,12 @@ impl GpuDrivenRenderer {
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
         self.layout.update_order(list, arena, &self.cells, input)?;
+        lights::upload(list, arena, &mut self.lights)?;
         self.transparent.size(list, &self.sorted, views)?;
 
-        self.frames.clear();
-        for index in 0..views {
+        for (index, frame) in self.frames.iter().enumerate() {
             let view = ViewId::from_index(index);
-            let frame = self.settings.view_frame(
-                view,
-                input.scene,
-                parity,
-                input.canvas,
-                input.render_scale,
-            );
-            if let Some(frame) = &frame {
+            if let Some(frame) = frame {
                 opaque::upload(list, arena, view, frame)?;
                 let (layout, cells) = (&self.layout, &self.cells);
                 self.culling.upload(
@@ -603,7 +630,6 @@ impl GpuDrivenRenderer {
                     cells,
                 )?;
             }
-            self.frames.push(frame);
         }
         self.cascade_frames = [None; MAX_CASCADES];
         if let Some(shadow) = &shadow {
@@ -714,6 +740,7 @@ impl GpuDrivenRenderer {
             ],
         )?;
         dfg::create(list, ids::DFG)?;
+        lights::create(list, &self.lights)?;
         self.dfg_pending = true;
         self.created = true;
         Ok(())
@@ -721,8 +748,8 @@ impl GpuDrivenRenderer {
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
     /// uploaded yet, the whole material table, three.js's table of specular terms, both layouts'
-    /// tables, each view's and each cascade's frame uniform, culling parameters and indirect
-    /// draws, the cascades' uniform, and the final pass's settings.
+    /// tables, the light grid, each view's and each cascade's frame uniform, culling parameters
+    /// and indirect draws, the cascades' uniform, and the final pass's settings.
     fn upload_bound(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         let materials =
@@ -735,11 +762,13 @@ impl GpuDrivenRenderer {
         let views = camera_views * per_view(&self.layout);
         let cascades = MAX_CASCADES * per_view(&self.casters);
         let tables = self.layout.upload_bound() + self.casters.upload_bound();
+        let lights = self.lights.upload_room();
         let shadows = sizes::SHADOW_UNIFORM_BYTES as usize;
         let sorted = Transparent::upload_bound(&self.sorted, camera_views);
         meshes
             + materials
             + tables
+            + lights
             + views
             + cascades
             + shadows
@@ -788,6 +817,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.views_made = 0;
         self.cascades_made = 0;
         self.lines.forget_gpu();
+        self.lights.forget_gpu();
         self.transparent.forget_gpu();
         self.meshes.forget();
         self.pipelines.forget();

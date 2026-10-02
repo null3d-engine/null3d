@@ -59,15 +59,15 @@
 # base color by the mesh's vertex colors, and ALPHA_MASK discards the fragments whose alpha falls
 # below the material's cutoff, as glTF's alpha mode MASK and three.js's alphaTest do. Only masked
 # materials pay for the discard, which keeps the GPU's early depth test for the others.
-# RECEIVE_SHADOWS reads the main directional light's shadow maps; WebGL2 draws no shadows yet.
-# Custom materials build this template.
+# RECEIVE_SHADOWS reads the main directional light's shadow maps. Custom materials build this
+# template.
 [shaders.lit]
 file = "lit.wgsl"
 by_device = true
 custom_materials = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["glsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS"], targets = ["glsl"] }
 
 # The standard material with its texture maps, from the same file: base color, metal-rough, normal,
 # occlusion, emissive and light maps. VERTEX_TANGENT takes the normal map's frame from the mesh's
@@ -77,7 +77,7 @@ file = "lit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { defs = ["MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "VERTEX_TANGENT"], targets = ["glsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT"], targets = ["glsl"] }
 
 # The material's color alone, like three.js's MeshBasicMaterial, times the mesh's vertex colors
 # with VERTEX_COLOR. ALPHA_MASK as for the standard material.
@@ -125,12 +125,13 @@ variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 
 # The depth of shadow casters, drawn from the main directional light into one cascade's layer of
-# the shadow map. WebGL2 draws no shadows yet.
+# the shadow map.
 [shaders.shadow_depth]
 file = "shadow_depth.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX"], targets = ["glsl"] }
 
 # GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
 [shaders.cull]

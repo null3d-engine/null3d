@@ -86,16 +86,23 @@ function fakeGlue(
 	});
 }
 
-/** How the thread that draws behaves in a test: the intervals it records, in ms. */
+/**
+ * How the thread that draws behaves in a test: the intervals it records, in ms. With `replayMs`,
+ * each frame's replay lasts that long after the frame is taken, and `overwritten` gets each frame
+ * whose list the sketch recorded again during its replay.
+ */
 interface FakeDrawing {
 	presentedMs: number;
 	completedMs: number;
+	replayMs?: number;
+	overwritten?: number[];
 }
 
 /**
  * A stand-in for the thread that draws: each few ms it takes the newest published frame, reports
- * its pipelines built, and records a presented and a completed frame with the given intervals.
- * Returns a function that stops it.
+ * its pipelines built, and records a presented and a completed frame with the given intervals. As
+ * the real thread does, it marks a frame taken before it replays the frame's list. Returns a
+ * function that stops it.
  */
 function drawFrames(
 	control: ReturnType<typeof controlViews>,
@@ -105,11 +112,24 @@ function drawFrames(
 	const { slots } = control;
 	const render = new FrameRecorder(metrics, Role.Render);
 	const completion = new FrameRecorder(metrics, Role.Completion);
+	let replaying = 0;
+	let replayEnd = 0;
 	const timer = setInterval(() => {
+		if (replaying !== 0) {
+			// The frame two after shares the list.
+			if (Atomics.load(slots, Slot.FramesPublished) >= replaying + 2)
+				drawing.overwritten?.push(replaying);
+			else if (performance.now() < replayEnd) return;
+			replaying = 0;
+		}
 		const published = Atomics.load(slots, Slot.FramesPublished);
 		if (published <= Atomics.load(slots, Slot.FramesTaken)) return;
 		Atomics.store(slots, Slot.PipelinesBuilt, published);
 		Atomics.store(slots, Slot.FramesTaken, published);
+		if (drawing.replayMs) {
+			replaying = published;
+			replayEnd = performance.now() + drawing.replayMs;
+		}
 		for (const [recorder, ms] of [
 			[render, drawing.presentedMs],
 			[completion, drawing.completedMs],
@@ -439,6 +459,20 @@ describe('SketchRunner', () => {
 			textureOption(C.TEXTURE_OPTION_MAX_ANISOTROPY, 2),
 			`page ${JSON.stringify({ ...medium, maxPixelRatio: 1, maxAnisotropy: 2, uploadBytesPerFrame: 65_536 })}`,
 		]);
+	});
+
+	it('records no setup frame into the list of a frame that the thread that draws still replays', async () => {
+		const drawing = { presentedMs: 16, completedMs: 16, replayMs: 10, overwritten: [] as number[] };
+		const { stopDrawing } = await start(
+			async ({ scene }) => {
+				await Promise.all([scene.warmUp(), scene.warmUp(), scene.warmUp(), scene.warmUp()]);
+				return {};
+			},
+			undefined,
+			{ drawing },
+		);
+		stopDrawing();
+		expect(drawing.overwritten).toEqual([]);
 	});
 
 	it('refuses options out of range with E1214, before the setup function runs', async () => {

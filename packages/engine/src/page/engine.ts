@@ -992,7 +992,8 @@ async function startEngine(
 	let stopping: Promise<void> | undefined;
 	/**
 	 * Stops every loop and then the workers, and wakes each thread that waits, so it sees the stop.
-	 * Then it lets go of the page's threaded core. A second call returns the first call's promise.
+	 * Then it drops the page's engine and lets go of the page's threaded core. A second call returns
+	 * the first call's promise.
 	 */
 	const stop = () => {
 		stopping ??= (async () => {
@@ -1007,7 +1008,6 @@ async function startEngine(
 				notifySlot(slots, slot, threads?.sketch?.worker);
 			localDrawing?.stop();
 			localRunner?.dispose();
-			localCore?.destroyEngine();
 			input.listen(false);
 			canvasWatch.listen(false);
 			stopPreferences();
@@ -1017,6 +1017,9 @@ async function startEngine(
 			rendererHost?.worker.postMessage({ type: 'stop-drawing' } satisfies RendererRequest);
 			const waitFor = threads?.jobs ?? [];
 			await stopWorkers(allWorkers(threads), rendererHost ? [...waitFor, rendererHost] : waitFor);
+			// The render worker may have been inside a frame when the engine stopped, replaying a draw
+			// list that the page's engine holds, so the engine stays until that worker has stopped.
+			localCore?.destroyEngine();
 			// The job workers have left the job system, so the page's threaded core has no more work,
 			// and the browser can free the engine's memory once the page lets go of the core.
 			localCore?.releaseInstance?.();

@@ -78,7 +78,7 @@ The engine draws reversed depth: the near plane stores 1 and the far plane store
 
 WebGL2 maps depth into a range from -1 to 1, which loses most of the precision that reversed depth gives. The `EXT_clip_control` extension sets the range from 0 to 1, as on WebGPU. In September 2026, Chrome, Safari and Brave had it on a MacBook Pro. So did Chrome on a Galaxy S24+, and Safari and Brave on an iPad Pro. Firefox on macOS did not. Without the extension, the engine keeps reversed depth in the range from -1 to 1. In every browser tested, that fought in fewer pixels than standard depth.
 
-The distances come from the engine's depth precision test on a MacBook Pro, with the camera's near plane at 0.1 m. The field `engine.capabilities.depth` says which depth the device draws: `reversed`, or `reversed-gl` on WebGL2 without the extension.
+The distances come from the engine's depth precision test on a MacBook Pro, with the camera's near plane at 0.1 m. The field `engine.capabilities.depth` says which depth the device draws: `reversed`, or `reversed-gl` on WebGL2 without the extension. In both, depth textures such as [shadow maps](shadows.md) hold the same values as on WebGPU. Shaders that read depth then work the same on every tier.
 
 ## Capability flags
 
@@ -147,7 +147,7 @@ On WebGL2, uploads read straight from the engine's shared memory. A browser that
 
 On WebGL2, the engine compiles shader programs in the background where the browser has the `KHR_parallel_shader_compile` extension. The switch `?compile=wait` makes it wait for each compile at the program's first draw instead, as a browser without the extension does.
 
-The switch `?depth=` forces a WebGL2 depth mode: `reversed`, `reversed-gl` or `standard`, which draws depth as three.js's WebGL renderer does by default. A browser without `EXT_clip_control` cannot draw `reversed`, so it draws its own mode instead.
+The switch `?depth=` forces a WebGL2 depth mode: `reversed`, `reversed-gl` or `standard`, which draws depth as three.js's WebGL renderer does by default. A browser without `EXT_clip_control` cannot draw `reversed`, so it draws its own mode instead. Shadow maps hold the same depth values as on WebGPU in `reversed` and `reversed-gl`. In `standard` they would hold them the other way around, so WebGL2 draws no shadows in that mode.
 
 KTX2 textures take the compressed format of the first family that the device has: ASTC, BC7 or ETC2 by the file's data ([Textures](../api/textures.md#ktx2-files)). The switch `?compression=` keeps them to the families that it lists, such as `?compression=bc`, or to none with `?compression=none`. One device can then test the format of each kind of device.
 

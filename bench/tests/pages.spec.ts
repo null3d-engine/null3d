@@ -17,6 +17,9 @@ import {
 } from '../scenes/spec';
 import { openPage, type PageReport, runPage } from './open-page';
 
+// Each test opens a page of its own, so the tests run on any worker and in any shard.
+test.describe.configure({ mode: 'parallel' });
+
 const SCENES = BENCH_SCENES;
 /** The pages each scene is tested on, with the renderer each one reports. */
 const PAGES: { kind: PageKind; renderer: string }[] = [
@@ -78,13 +81,14 @@ const skipWhereTooSlow = (page: string) =>
 		'SwiftShader takes minutes to draw its first frames',
 	);
 /**
- * The warm-up and measured seconds of a page's short benchmark run. On SwiftShader, the first frames
- * of S3's three.js twin on WebGPU take seconds, and null3D draws S4 at a few frames a second. Their
- * runs need longer to measure frames.
+ * The warm-up and measured seconds of a page's short benchmark run. On SwiftShader, null3D draws S4
+ * at a few frames a second, and S3's 256 lights at about one, with each frame done more than two
+ * seconds after it starts. The first frames of S3's three.js twin on WebGPU take seconds, so its run
+ * is longer on every GPU. These runs need longer to measure frames.
  */
 function shortRunSeconds(scene: (typeof SCENES)[number], kind: PageKind): number {
+	if ((scene === 's3' || scene === 's4') && SWIFTSHADER) return 8;
 	if (scene === 's3' && kind === 'threejs-webgpu') return 5;
-	if (scene === 's4' && SWIFTSHADER) return 8;
 	return 2;
 }
 /** S4's canvas fills the window. A small window keeps its frames short on SwiftShader. */
@@ -144,7 +148,8 @@ function meanBrightness(pixels: Uint8Array, width: number, fromRow: number, toRo
 	return sum / ((toRow - fromRow) * width * 3);
 }
 
-for (const scene of SCENES) {
+/** Defines the tests of one scene on each page. */
+function sceneTests(scene: (typeof SCENES)[number]): void {
 	for (const { kind, renderer } of PAGES) {
 		if (CANNOT_DRAW.includes(`${scene} on ${kind}`)) {
 			test(`${scene} on ${kind} reports that its shader is past the GPU's limits`, async ({
@@ -216,6 +221,17 @@ for (const scene of SCENES) {
 			} else expect(result.trace).toBeUndefined();
 		});
 	}
+}
+
+for (const scene of SCENES) {
+	if (scene === 's4')
+		// S4 keeps SwiftShader's processor busy, so two of its runs side by side can measure no whole
+		// second. Its pages take turns in one worker, while the other scenes' tests run beside them.
+		test.describe("S4's pages take turns", () => {
+			test.describe.configure({ mode: 'default' });
+			sceneTests(scene);
+		});
+	else sceneTests(scene);
 }
 
 for (const scene of SCENES) {

@@ -39,6 +39,17 @@
 //! resident texture, and each view uploads its constants, its offsets and, when it changed, its
 //! index list.
 //!
+//! # Shadows
+//!
+//! While the main directional light casts shadows, each cascade of its shadows (see
+//! [`crate::shadows`]) is a view too. The job workers cull a second layout for the cascades, of
+//! the scene objects that cast shadows, grouped by mesh, into an index list per cascade. Each
+//! cascade's shadow pass draws their depth with depth-only programs into its layer of the shadow
+//! map, a depth texture array that the receivers sample with a comparison sampler. The scene's
+//! objects that receive shadows draw with programs that read the map. Turning shadows on or off
+//! rebuilds both layouts. Every camera view's frame group binds the shadow map, which is one texel
+//! of one layer while no light casts shadows.
+//!
 //! # Memory
 //!
 //! Frames record without the general-purpose allocator. Each frame parity keeps its own culling
@@ -49,6 +60,7 @@
 mod cull;
 mod data;
 mod layout;
+mod lights;
 mod opaque;
 mod transparent;
 
@@ -70,24 +82,28 @@ use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
     SceneSettings, UploadArena, drawn_rows,
 };
-use crate::frame_graph::{FrameGraph, GraphIds, Role};
+use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses};
 use crate::graph::RenderGraph;
+use crate::light_grid::{CameraLights, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
 use crate::pipelines::{PassTargets, PipelineCache};
+use crate::shadows::{self, MAX_CASCADES, ShadowFrame};
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
 use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices};
-use layout::{Clusters, Layout, RESIDENT, STREAMED};
+use layout::{Clusters, Drawn, Layout, RESIDENT, STREAMED};
+use lights::LightTextures;
 use opaque::{OFFSETS_BYTES, Opaque, ViewUpload};
 use transparent::Transparent;
 
-/// The builder's GPU objects. It owns every id it uses; each view has a range of its own.
+/// The builder's GPU objects. It owns every id it uses; each view has a range of its own, the
+/// shadow cascades' views after the camera views.
 mod ids {
     use super::data::RING;
-    use crate::view::{MAX_VIEWS, ViewId};
+    use crate::view::{MAX_VIEW_IDS, ViewId};
 
     /// Each view's buffers: its ring of frame uniforms, then its draw records, from
     /// `VIEW_BUFFERS + 2 * view`.
@@ -100,9 +116,11 @@ mod ids {
         frame(view) + 1
     }
     /// The vertices of the debug lines.
-    pub const LINES: u32 = VIEW_BUFFERS + 2 * MAX_VIEWS as u32;
+    pub const LINES: u32 = VIEW_BUFFERS + 2 * MAX_VIEW_IDS as u32;
+    /// The cascades' uniform block, which receivers read beside the shadow map.
+    pub const SHADOWS: u32 = LINES + 1;
     /// The final pass's output settings.
-    pub const FINAL_SETTINGS: u32 = LINES + 1;
+    pub const FINAL_SETTINGS: u32 = SHADOWS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = FINAL_SETTINGS + 1;
 
@@ -120,32 +138,40 @@ mod ids {
     }
 
     /// The material table: one row of texels per material.
-    pub const MATERIALS: u32 = VIEW_TEXTURES + RING * MAX_VIEWS as u32;
+    pub const MATERIALS: u32 = VIEW_TEXTURES + RING * MAX_VIEW_IDS as u32;
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = MATERIALS + 1;
+    /// The ring of light grid textures of the camera's view, one per ring slot.
+    pub const LIGHT_GRID: u32 = DFG + 1;
+    /// The ring of textures of the records of the lights that the light grid lists.
+    pub const LIGHTS: u32 = LIGHT_GRID + RING;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = DFG + 1;
+    pub const TARGETS: u32 = LIGHTS + RING;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
-    /// The samplers of materials' maps, the only samplers the builder makes.
-    pub const SAMPLERS: u32 = 1;
+    /// The comparison sampler of the shadow map.
+    pub const SHADOW_SAMPLER: u32 = 1;
+    /// The samplers of materials' maps.
+    pub const SAMPLERS: u32 = 2;
 
-    /// Each view's bind groups: the frame group, the draw record group, then the groups of its
-    /// instance textures, one per pair of ring slots.
-    const GROUPS_PER_VIEW: u32 = 2 + RING * RING;
+    /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
+    /// record group, then the groups of its instance textures, one per pair of ring slots.
+    const GROUPS_PER_VIEW: u32 = RING + 1 + RING * RING;
     /// The final pass's group, after every view's.
-    pub const FINAL_GROUP: u32 = 1 + GROUPS_PER_VIEW * MAX_VIEWS as u32;
+    pub const FINAL_GROUP: u32 = 1 + GROUPS_PER_VIEW * MAX_VIEW_IDS as u32;
 
+    /// The frame group of the light textures' first ring slot: slot `s` has the group `s` after
+    /// it.
     pub const fn frame_group(view: ViewId) -> u32 {
         1 + GROUPS_PER_VIEW * view.index() as u32
     }
     pub const fn draws_group(view: ViewId) -> u32 {
-        frame_group(view) + 1
+        frame_group(view) + RING
     }
     /// The textures of each pair of ring slots: the streamed texture's and the view's index
     /// list's, at `instances_group(view) + streamed * RING + listed`.
     pub const fn instances_group(view: ViewId) -> u32 {
-        frame_group(view) + 2
+        draws_group(view) + 1
     }
     /// The bind groups of materials' maps, after the final pass's group.
     pub const TEXTURE_GROUPS: u32 = FINAL_GROUP + 1;
@@ -167,6 +193,8 @@ pub struct CpuCulledConfig {
     /// True to skip every still object of a grid cell out of view before testing objects; false
     /// to test every object, as a benchmark of cell culling compares.
     pub cell_culling: bool,
+    /// The most point and spot lights that the camera's light grid lists.
+    pub light_limits: LightLimits,
 }
 
 impl Default for CpuCulledConfig {
@@ -178,6 +206,7 @@ impl Default for CpuCulledConfig {
             max_texture_size: 2048,
             multi_draw: false,
             cell_culling: true,
+            light_limits: LightLimits::default(),
         }
     }
 }
@@ -203,12 +232,22 @@ pub struct CpuCulledRenderer {
     settings: SceneSettings,
     lists: ParityLists,
     graph: FrameGraph,
+    /// The scene's layout, which the camera views draw.
     layout: Layout,
+    /// The shadow casters' layout, which the shadow cascades draw.
+    casters: Layout,
+    /// True when the layouts were built for a frame with shadows.
+    layouts_shadowed: bool,
     clusters: Clusters,
     /// Grid-cell culling: the still scene objects in cell order, and each cell's box.
     cells: CellCulling,
     culling: Culling,
     opaque: Opaque,
+    /// The shadow cascades' culling output and draws.
+    cascade_culling: Culling,
+    cascade_draws: Opaque,
+    /// The main directional light's shadows in the frame that culled last, or `None` without them.
+    shadow: Option<ShadowFrame>,
     lines: LinesPass,
     /// The sources of the transparent pass, and each view's draws of it.
     sorted: SortedLayout,
@@ -220,6 +259,9 @@ pub struct CpuCulledRenderer {
     textures: SharedTextures,
     /// The slot of the streamed textures, which every view reads.
     streamed_slot: RingSlot,
+    /// The point and spot lights of the camera's view, and the textures that hold them.
+    lights: CameraLights,
+    light_textures: LightTextures,
     created: bool,
     /// True from the creation of three.js's table of specular terms until a frame uploads it.
     dfg_pending: bool,
@@ -253,23 +295,32 @@ impl CpuCulledRenderer {
             lists: ParityLists::new(config.draw_list_words),
             // WebGL2 has no transient attachments: the backend discards what a pass does not store
             // with `invalidateFramebuffer` instead.
-            graph: FrameGraph::new(
-                false,
-                config.canvas,
-                false,
-                GraphIds {
-                    first_texture: ids::TARGETS,
-                    final_pass: FinalIds {
-                        settings: ids::FINAL_SETTINGS,
-                        group: ids::FINAL_GROUP,
+            graph: {
+                let mut graph = FrameGraph::new(
+                    false,
+                    config.canvas,
+                    false,
+                    GraphIds {
+                        first_texture: ids::TARGETS,
+                        final_pass: FinalIds {
+                            settings: ids::FINAL_SETTINGS,
+                            group: ids::FINAL_GROUP,
+                        },
                     },
-                },
-            ),
-            layout: Layout::default(),
+                );
+                graph.bind_shadow_map();
+                graph
+            },
+            layout: Layout::new(Drawn::Scene),
+            casters: Layout::new(Drawn::Casters),
+            layouts_shadowed: false,
             clusters: Clusters::default(),
             cells: CellCulling::new(config.cell_culling, true),
-            culling: Culling::default(),
-            opaque: Opaque::new(config.multi_draw),
+            culling: Culling::new(ViewId::CAMERA),
+            opaque: Opaque::new(ViewId::CAMERA, config.multi_draw),
+            cascade_culling: Culling::new(ViewId::cascade(0)),
+            cascade_draws: Opaque::new(ViewId::cascade(0), config.multi_draw),
+            shadow: None,
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
             transparent: Transparent::new(config.multi_draw),
@@ -278,6 +329,8 @@ impl CpuCulledRenderer {
             pipelines: PipelineCache::default(),
             textures: SharedTextures::default(),
             streamed_slot: RingSlot::default(),
+            lights: CameraLights::new(config.light_limits),
+            light_textures: LightTextures::default(),
             created: false,
             dfg_pending: false,
         }
@@ -288,20 +341,22 @@ impl CpuCulledRenderer {
         self.graph.graph()
     }
 
-    /// The culling output of a frame's parity for a view: its visible sources, bucket by bucket.
+    /// The culling output of a frame's parity for a view or a shadow cascade: its visible sources,
+    /// bucket by bucket.
     pub fn culled(&self, frame: u32, view: ViewId) -> &BucketedCull {
-        self.culling.culled(frame, view)
+        self.culling_of(view).culled(frame, view)
     }
 
-    /// A view's values in the frame that culled last, or `None` when the view had no camera.
+    /// A view's or a shadow cascade's values in the frame that culled last, or `None` when the
+    /// view had no camera, or the frame drew no such cascade.
     pub fn view_frame(&self, view: ViewId) -> Option<&ViewFrame> {
-        self.culling.frame(view)
+        self.culling_of(view).frame(view)
     }
 
-    /// The objects, instance rows and clusters that a view's culling tested in the frame that
-    /// culled last. For tests of what grid-cell culling skips.
+    /// The objects, instance rows and clusters that a view's or a shadow cascade's culling tested
+    /// in the frame that culled last. For tests of what grid-cell culling skips.
     pub fn tested(&self, view: ViewId) -> u32 {
-        self.culling.tested(view)
+        self.culling_of(view).tested(view)
     }
 
     /// A static batch's rows in cluster order, while its clusters are current: each cluster holds
@@ -311,10 +366,17 @@ impl CpuCulledRenderer {
         self.clusters.current_order(slot)
     }
 
-    /// What the scene's render pipelines draw into, in the shader variant that reads the draw's
-    /// index where the device has multi-draw.
-    fn scene_targets(&self) -> PassTargets {
-        let targets = self.graph.scene_targets();
+    /// The culling of the views of `view`'s kind: the cameras' or the shadow cascades'.
+    fn culling_of(&self, view: ViewId) -> &Culling {
+        match view.cascade_index() {
+            Some(_) => &self.cascade_culling,
+            None => &self.culling,
+        }
+    }
+
+    /// What a pass that draws into `targets` draws with, in the shader variant that reads the
+    /// draw's index where the device has multi-draw.
+    fn with_draw_index(&self, targets: PassTargets) -> PassTargets {
         let draw_index = if self.config.multi_draw {
             permutation::DRAW_INDEX
         } else {
@@ -326,20 +388,34 @@ impl CpuCulledRenderer {
         }
     }
 
+    /// The shadow cascades that the frame that culled last draws.
+    fn cascades(&self) -> usize {
+        self.shadow.as_ref().map_or(0, |s| s.cascades.count)
+    }
+
     /// Assigns every source to a data texture and a bucket, then makes room for the new layout:
-    /// the clusters, the culling runs and every view's output, and the upload arenas.
-    fn rebuild_layout(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
+    /// the clusters, the culling runs and every view's output, and the upload arenas. With
+    /// `shadows`, the casters' layout holds the casters, and the receivers read the shadow map.
+    fn rebuild_layout(&mut self, input: &FrameInput<'_>, shadows: bool) -> Result<(), RecordError> {
         self.settings.update_map_groups();
         let limit = FrameBuilder::max_sources(self);
-        let targets = self.scene_targets();
+        let multi_draw = self.config.multi_draw;
+        let targets = self.with_draw_index(self.graph.scene_targets());
+        let (settings, pipelines) = (&self.settings, &mut self.pipelines);
         self.layout.rebuild(
-            &self.settings,
-            &mut self.pipelines,
-            targets,
-            input,
-            limit,
-            self.config.multi_draw,
+            settings, pipelines, targets, input, limit, multi_draw, shadows,
         )?;
+        // The casters' layout holds buckets only while the light casts shadows.
+        if shadows {
+            let targets = self.with_draw_index(shadows::TARGETS);
+            let (settings, pipelines) = (&self.settings, &mut self.pipelines);
+            self.casters.rebuild(
+                settings, pipelines, targets, input, limit, multi_draw, shadows,
+            )?;
+        } else {
+            self.casters.clear();
+        }
+        self.layouts_shadowed = shadows;
         let room = self.layout.room;
         let out_of_memory = |_: TryReserveError| RecordError::OutOfMemory {
             bytes: room.rows.saturating_mul(8),
@@ -358,7 +434,7 @@ impl CpuCulledRenderer {
                 input.batches,
                 place,
                 RESIDENT,
-                false,
+                shadows,
             )
             .map_err(out_of_memory)?;
         let records = Transparent::records_bound(&self.sorted, self.config.multi_draw);
@@ -366,9 +442,16 @@ impl CpuCulledRenderer {
         self.clusters
             .prepare(input.batches, &self.layout)
             .map_err(out_of_memory)?;
-        let scene_buckets = &self.layout.scene_buckets;
+        // The cell order holds every object that a view or a cascade culls: blended casters have
+        // no bucket in the scene's layout, as the transparent pass draws them, but cast all the
+        // same. Each culling skips the rows that have no bucket in its own layout.
+        let (scene_buckets, casters) = (&self.layout.scene_buckets, &self.casters.scene_buckets);
+        let culled = |slot: usize| {
+            scene_buckets[slot] != NO_BUCKET
+                || casters.get(slot).is_some_and(|&bucket| bucket != NO_BUCKET)
+        };
         self.cells
-            .classify(input.scene, &|slot| scene_buckets[slot] != NO_BUCKET)
+            .classify(input.scene, &culled)
             .map_err(out_of_memory)?;
         let views = self.settings.views().len();
         self.culling.reserve(room, views).map_err(out_of_memory)?;
@@ -377,6 +460,10 @@ impl CpuCulledRenderer {
             .map_err(out_of_memory)?;
         self.transparent
             .reserve(&self.sorted, views)
+            .map_err(out_of_memory)?;
+        let cascades = self.cascades();
+        self.cascade_culling
+            .reserve(self.casters.room, cascades)
             .map_err(out_of_memory)?;
         // Room for every static batch's cluster order, so a batch coming to rest later uploads
         // its clusters without growing the arena.
@@ -389,16 +476,30 @@ impl CpuCulledRenderer {
         Ok(())
     }
 
-    /// Gives each view that has none yet its culling output, with room for the layout. A view
-    /// added after the frame culled draws nothing until the next frame culls it.
+    /// Gives each view and each shadow cascade that has none yet its culling output, with room for
+    /// its layout. A view added after the frame culled draws nothing until the next frame culls it.
     fn add_culled_views(&mut self) -> Result<(), RecordError> {
         let views = self.settings.views().len();
-        if self.culling.views() < views {
-            let room = self.layout.room;
+        let new_views = self.culling.views() < views;
+        let cascades = self.cascades();
+        for (culling, layout, count) in [
+            (&mut self.culling, &self.layout, views),
+            (&mut self.cascade_culling, &self.casters, cascades),
+        ] {
+            if culling.views() < count {
+                let room = layout.room;
+                culling
+                    .add_views(room, count)
+                    .map_err(|_| RecordError::OutOfMemory {
+                        bytes: room.rows.saturating_mul(8),
+                    })?;
+            }
+        }
+        // The camera views' transparent pass needs room for the sorted rows of the new views.
+        if new_views {
             let out_of_memory = |_| RecordError::OutOfMemory {
-                bytes: room.rows.saturating_mul(8),
+                bytes: self.layout.room.rows.saturating_mul(8),
             };
-            self.culling.add_views(room, views).map_err(out_of_memory)?;
             self.culling
                 .reserve_sorted(&self.sorted)
                 .map_err(out_of_memory)?;
@@ -410,9 +511,9 @@ impl CpuCulledRenderer {
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
-    /// uploaded yet, the material table, three.js's table of specular terms, each view's frame
-    /// uniform, draw records and multi-draw arrays, the final pass's settings, and the cluster
-    /// orders not uploaded yet.
+    /// uploaded yet, the material table, three.js's table of specular terms, the light grid, each
+    /// view's and each shadow cascade's frame uniform, draw records and multi-draw arrays, the
+    /// cascades' uniform block, the final pass's settings, and the cluster orders not uploaded yet.
     fn upload_bound(&self) -> usize {
         self.upload_bound_without_clusters() + self.clusters.pending_bytes(&self.layout)
     }
@@ -422,21 +523,29 @@ impl CpuCulledRenderer {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         let materials =
             self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2 + dfg::BYTES;
-        let per_view = (sizes::FRAME_UNIFORM_BYTES + OFFSETS_BYTES) as usize
-            + self.layout.draws_slot_bytes as usize
-            + self.layout.draws.len() * 12;
+        let per_view = |layout: &Layout| {
+            (sizes::FRAME_UNIFORM_BYTES + OFFSETS_BYTES) as usize
+                + layout.draws_slot_bytes as usize
+                + layout.draws.len() * 12
+        };
         let views = self.settings.views().len();
+        let cascades = MAX_CASCADES * per_view(&self.casters);
+        let shadows = sizes::SHADOW_UNIFORM_BYTES as usize;
         meshes
             + materials
-            + views * per_view
+            + self.lights.upload_room()
+            + views * per_view(&self.layout)
             + Transparent::upload_bound(&self.sorted, views, self.config.multi_draw)
+            + cascades
+            + shadows
             + self.graph.upload_bound()
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
-    /// material it holds and one for each material's custom values, and of three.js's table of
-    /// specular terms.
+    /// material it holds and one for each material's custom values, of three.js's table of
+    /// specular terms, and of the shadows' uniform block and comparison sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+        shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER)?;
         list.push(
             Op::CreateTexture,
             &[
@@ -457,14 +566,16 @@ impl CpuCulledRenderer {
         Ok(())
     }
 
-    /// Makes the data textures and each view's index list textures and draw records big enough
-    /// for the layout, with room to grow, and binds each view's textures again when one is new:
-    /// every view after a new layout, else only the views from `first_new` on. Returns true when
-    /// the resident texture is new, so it needs every row again.
+    /// Makes the data textures, and each view's and each shadow cascade's index list textures and
+    /// draw records, big enough for their layouts, with room to grow. Binds each view's textures
+    /// again when one is new: every view after a new layout, else only the new ones, from
+    /// `first_new` for the views and `first_new_cascade` for the cascades. Returns true when the
+    /// resident texture is new, so it needs every row again.
     fn size_resources(
         &mut self,
         list: &mut DrawList,
         first_new: usize,
+        first_new_cascade: usize,
         rebuilt: bool,
     ) -> Result<bool, RecordError> {
         let limit = self.config.max_texture_size;
@@ -473,13 +584,31 @@ impl CpuCulledRenderer {
         } else {
             Default::default()
         };
-        let first = if rebuilt { 0 } else { first_new };
-        for index in first..self.settings.views().len() {
-            let view = ViewId::from_index(index);
-            let listed = self.culling.size(list, view, &self.layout, limit)?;
-            let new_view = index >= first_new;
-            self.opaque
-                .size(list, view, &self.layout, remade.any || listed || new_view)?;
+        let views = self.settings.views().len();
+        let cascades = self.cascades();
+        for (culling, draws, layout, count, first_new) in [
+            (
+                &mut self.culling,
+                &mut self.opaque,
+                &self.layout,
+                views,
+                first_new,
+            ),
+            (
+                &mut self.cascade_culling,
+                &mut self.cascade_draws,
+                &self.casters,
+                cascades,
+                first_new_cascade,
+            ),
+        ] {
+            let first = if rebuilt { 0 } else { first_new };
+            for k in first..count {
+                let view = culling.view(k);
+                let listed = culling.size(list, view, layout, limit)?;
+                let new_view = k >= first_new;
+                draws.size(list, view, layout, remade.any || listed || new_view)?;
+            }
         }
         Ok(remade.resident)
     }
@@ -615,13 +744,40 @@ impl CpuCulledRenderer {
         if !self.created {
             self.create_fixed(list)?;
         }
+        self.graph
+            .set_shadows(self.shadow.as_ref().map(|s| ShadowPasses {
+                cascades: s.cascades.count as u32,
+                map_size: s.settings.map_size,
+                layers: s.layers,
+            }));
         self.graph.sync_views(self.settings.views());
         self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.set_transparent(!self.sorted.is_empty());
         self.graph.set_scaling(self.settings.render_scaling());
         self.graph.prepare(list, input.canvas, input.render_scale)?;
+        let shadow_map = self
+            .graph
+            .shadow_map()
+            .expect("the builder's graph binds a shadow map");
         let first_new = self.opaque.views();
+        let lights_remade =
+            self.light_textures
+                .size(list, &mut self.lights, self.config.max_texture_size)?;
         self.opaque.add_views(list, views)?;
+        // Every camera view's frame groups bind the shadow map and the light textures, so each
+        // view binds them again when the graph or the light textures make them again.
+        let rebind = lights_remade || self.graph.textures_made();
+        for index in 0..self.opaque.views() {
+            if index >= first_new || rebind {
+                Opaque::bind_frame(list, ViewId::from_index(index), Some(shadow_map))?;
+            }
+        }
+        let cascades = self.cascades();
+        let first_new_cascade = self.cascade_draws.views();
+        self.cascade_draws.add_views(list, cascades)?;
+        for cascade in first_new_cascade..cascades {
+            Opaque::bind_frame(list, ViewId::cascade(cascade), None)?;
+        }
         let rebuilt = self.layout.built_in == input.frame;
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         self.graph.upload(list, arena, self.settings.output())?;
@@ -635,13 +791,15 @@ impl CpuCulledRenderer {
         self.settings
             .record_materials(list, arena, table, input.frame)?;
         self.background.prepare(&self.settings);
-        let new_texture = if rebuilt || first_new < views {
-            self.size_resources(list, first_new, rebuilt)?
+        let new_texture = if rebuilt || first_new < views || first_new_cascade < cascades {
+            self.size_resources(list, first_new, first_new_cascade, rebuilt)?
         } else {
             false
         };
         self.upload_resident(list, input, rebuilt || new_texture)?;
         self.clusters.upload(list, arena, &self.layout)?;
+        self.light_textures
+            .upload(list, arena, &mut self.lights, input.frame)?;
 
         // The streamed ring moves to a new slot only for moving rows, and each view's rings only
         // for new data: a changed frame uniform, or an index list that differs from the previous
@@ -654,34 +812,30 @@ impl CpuCulledRenderer {
             if moving {
                 self.upload_streamed(list, input, streamed)?;
             }
-            for index in 0..views {
-                let view = ViewId::from_index(index);
-                let Some(values) = self.culling.frame(view).copied() else {
-                    continue;
-                };
-                let (listed, new_list) = self.culling.upload(list, view, frame)?;
-                let starts = self.culling.culled(frame, view).bucket_starts();
-                let upload = ViewUpload {
+            upload_views(
+                list,
+                arena,
+                (&mut self.culling, &mut self.opaque, &self.layout),
+                Some((&mut self.transparent, &self.sorted, &self.settings)),
+                views,
+                frame,
+                streamed,
+            )?;
+            if let Some(shadow) = &self.shadow {
+                shadows::upload(list, arena, ids::SHADOWS, shadow)?;
+                upload_views(
+                    list,
+                    arena,
+                    (
+                        &mut self.cascade_culling,
+                        &mut self.cascade_draws,
+                        &self.casters,
+                    ),
+                    None,
+                    cascades,
                     frame,
-                    values: &values,
-                    offsets: self.culling.offsets(view),
                     streamed,
-                    listed,
-                    new_list,
-                    starts,
-                };
-                self.opaque
-                    .upload(list, arena, view, upload, &self.layout)?;
-                // The sorted rows follow the opaque ones in the view's index list.
-                let first_sorted = starts.last().copied().unwrap_or(0);
-                let sorted = self.culling.sorted(view);
-                self.transparent
-                    .prepare(index, sorted, &self.sorted, &self.settings, first_sorted);
-                if new_list {
-                    let at = self.opaque.sorted_records_at(view, &self.layout);
-                    self.transparent
-                        .upload(list, arena, index, ids::draws(view), at)?;
-                }
+                )?;
             }
         }
         let camera = self.culling.frame(ViewId::CAMERA);
@@ -693,32 +847,84 @@ impl CpuCulledRenderer {
         )?;
 
         let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
-        let (layout, meshes) = (&self.layout, &self.meshes);
+        let (cascade_culling, cascade_draws) = (&self.cascade_culling, &self.cascade_draws);
+        let (layout, casters, meshes) = (&self.layout, &self.casters, &self.meshes);
         let (transparent, background) = (&self.transparent, &self.background);
+        let light_slot = self.light_textures.slot();
         self.graph
             .record(list, self.settings.clear_color(), |list, role| match role {
                 Role::Opaque(view) if culling.frame(view).is_some() => {
                     if view == ViewId::CAMERA {
                         let slot = opaque.frame_slot(view);
-                        background.record(list, ids::frame_group(view), &[slot, slot])?;
+                        let group = ids::frame_group(view) + light_slot;
+                        background.record(list, group, &[slot, slot])?;
                     }
                     let starts = culling.culled(frame, view).bucket_starts();
-                    opaque.record(list, arena, view, starts, layout, meshes)
+                    opaque.record(list, arena, view, starts, layout, meshes, light_slot)
+                }
+                Role::Shadow(view) if cascade_culling.frame(view).is_some() => {
+                    let starts = cascade_culling.culled(frame, view).bucket_starts();
+                    // A cascade's view has a single frame group, which binds no light textures.
+                    cascade_draws.record(list, arena, view, starts, casters, meshes, 0)
                 }
                 Role::Transparent(view) if culling.frame(view).is_some() => {
                     let at = opaque.sorted_records_at(view, layout);
                     let draws = ids::draws_group(view);
-                    let bind = |list: &mut DrawList| opaque.bind_view(list, view);
+                    let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot);
                     transparent.record(list, arena, view.index(), draws, at, meshes, bind)
                 }
                 Role::DebugLines => {
                     let slot = opaque.frame_slot(ViewId::CAMERA);
-                    lines.record(list, ids::frame_group(ViewId::CAMERA), &[slot, slot])
+                    let group = ids::frame_group(ViewId::CAMERA) + light_slot;
+                    lines.record(list, group, &[slot, slot])
                 }
                 _ => Ok(()),
             })?;
         Ok(rebuilt)
     }
+}
+
+/// Uploads, for each of the first `count` views of `culling` that the frame draws, its index list
+/// when it changed, and its frame uniform and draw records, from the views' culling output and the
+/// draws of `layout`. Every view reads the streamed texture of ring slot `streamed`. With
+/// `transparent`, each view also prepares its transparent pass's draws of the sorted rows, which
+/// follow the opaque ones in its index list, and uploads their records with a new list.
+fn upload_views(
+    list: &mut DrawList,
+    arena: &mut UploadArena,
+    (culling, draws, layout): (&mut Culling, &mut Opaque, &Layout),
+    mut transparent: Option<(&mut Transparent, &SortedLayout, &SceneSettings)>,
+    count: usize,
+    frame: u32,
+    streamed: u32,
+) -> Result<(), RecordError> {
+    for k in 0..count {
+        let view = culling.view(k);
+        let Some(values) = culling.frame(view).copied() else {
+            continue;
+        };
+        let (listed, new_list) = culling.upload(list, view, frame)?;
+        let starts = culling.culled(frame, view).bucket_starts();
+        let upload = ViewUpload {
+            frame,
+            values: &values,
+            offsets: culling.offsets(view),
+            streamed,
+            listed,
+            new_list,
+            starts,
+        };
+        draws.upload(list, arena, view, upload, layout)?;
+        if let Some((transparent, sorted, settings)) = transparent.as_mut() {
+            let first_sorted = starts.last().copied().unwrap_or(0);
+            transparent.prepare(k, culling.sorted(view), sorted, settings, first_sorted);
+            if new_list {
+                let at = draws.sorted_records_at(view, layout);
+                transparent.upload(list, arena, k, ids::draws(view), at)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 impl FrameBuilder for CpuCulledRenderer {
@@ -735,32 +941,61 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 
     fn reserve_sources(&mut self, sources: u32) -> Result<(), TryReserveError> {
-        self.culling.reserve_sources(sources)
+        self.culling.reserve_sources(sources)?;
+        self.cascade_culling.reserve_sources(sources)
     }
 
     fn cull(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
-        if input.structure_changed || !self.layout.built {
-            self.rebuild_layout(input)?;
+        let (scene, parity, canvas, scale) = (
+            input.scene,
+            input.parity(),
+            input.canvas,
+            input.render_scale,
+        );
+        self.shadow = self.settings.shadow_frame(scene, parity, canvas);
+        let shadows = self.shadow.is_some();
+        if input.structure_changed || !self.layout.built || shadows != self.layouts_shadowed {
+            self.rebuild_layout(input, shadows)?;
         }
         self.add_culled_views()?;
         self.cells.update(input);
-        let out_of_memory = |_| RecordError::OutOfMemory {
-            bytes: self.layout.room.rows.saturating_mul(8),
+        let out_of_memory = |layout: &Layout| RecordError::OutOfMemory {
+            bytes: layout.room.rows.saturating_mul(8),
         };
         self.sorted
             .gather(input.scene, input.batches, input.parity())
-            .map_err(out_of_memory)?;
-        let (layout, cells, sorted) = (&self.layout, &self.cells, &self.sorted);
+            .map_err(|_| out_of_memory(&self.layout))?;
+        let (settings, cells, sorted) = (&self.settings, &self.cells, &self.sorted);
         self.culling
             .cull(
                 input,
-                &self.settings,
-                layout,
+                &self.layout,
                 &mut self.clusters,
                 cells,
-                sorted,
+                |view| settings.view_frame(view, scene, parity, canvas, scale),
+                Some(sorted),
             )
-            .map_err(out_of_memory)
+            .map_err(|_| out_of_memory(&self.layout))?;
+        if let Some(frame) = self.culling.frame_mut(ViewId::CAMERA) {
+            self.lights.assign(input.jobs, frame, input.lights);
+        }
+        // The cascades skip the cells out of their view too: the casters' layout gives every other
+        // object no bucket, so the scene's cell order serves it.
+        let shadow = self.shadow.as_ref();
+        self.cascade_culling
+            .cull(
+                input,
+                &self.casters,
+                &mut self.clusters,
+                cells,
+                |view| {
+                    let cascade = view.cascade_index()?;
+                    let shadow = shadow.filter(|s| cascade < s.cascades.count)?;
+                    Some(shadow.view_frame(cascade))
+                },
+                None,
+            )
+            .map_err(|_| out_of_memory(&self.casters))
     }
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
@@ -783,8 +1018,12 @@ impl FrameBuilder for CpuCulledRenderer {
         self.textures.forget_gpu();
         self.culling.forget_gpu();
         self.opaque.forget_gpu();
+        self.cascade_culling.forget_gpu();
+        self.cascade_draws.forget_gpu();
         self.lines.forget_gpu();
         self.streamed_slot.forget();
+        self.lights.forget_gpu();
+        self.light_textures.forget_gpu();
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
     }

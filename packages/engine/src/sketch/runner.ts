@@ -390,12 +390,13 @@ export class SketchRunner {
 
 	/**
 	 * Records a frame of the scene as the setup has built it so far, with no update, and publishes
-	 * it for the thread that draws. The frame before the last shares its list, so it waits for that
-	 * frame to be taken first.
+	 * it for the thread that draws. The frame before the last shares its list. The thread that
+	 * draws marks a frame taken before it replays the frame's list, so that list is free only once
+	 * the last frame is taken, as in the frame loop.
 	 */
 	private async publishSetupFrame(): Promise<number> {
 		const { slots } = this.sketch.control;
-		await reached(slots, Slot.FramesTaken, this.recorded.frame - 1);
+		await reached(slots, Slot.FramesTaken, this.recorded.frame);
 		const frame = this.frame(false);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);

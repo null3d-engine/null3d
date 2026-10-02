@@ -1,4 +1,5 @@
 import { type CDPSession, expect, test } from '@playwright/test';
+import * as Slot from '../../packages/engine/src/shared/slot.ts';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { prefixEngineScripts, restoreEngineScripts } from '../lib/engine-scripts.ts';
 import { gpuObjectsHeld, watchGpuObjects } from '../lib/gpu-ledger.ts';
@@ -76,5 +77,82 @@ for (const mode of ENGINE_MODES) {
 		const kept = mode.build === 'single' ? 1 : 0;
 		expect(await reachable(cdp, 'WebAssembly.Memory.prototype')).toBe(kept);
 		expect(await reachable(cdp, 'Worker.prototype')).toBe(0);
+	});
+}
+
+/** How long the page goes on after its capture before it stops the engine. */
+const STOP_AFTER_MS = 500;
+/** The longest that the render worker holds a frame while it waits for the page to stop. */
+const HOLD_MS = 10_000;
+/** How long it holds the frame after the stop began, so the page's stop runs its steps meanwhile. */
+const SETTLE_MS = 200;
+/** What the render worker logs when the stop began while it held a frame. */
+const HELD = 'null3D test: the engine stopped while the render worker held a frame';
+
+/**
+ * Makes the render worker hold the first frame that it takes after it answers a capture, after it
+ * found the frame's draw list and before it replays it, until the page stops the engine. It then
+ * asks the core, through the render worker's own instance of it, for the address of the frame's
+ * list, and fails the frame when the core no longer holds the list there: the core gives 0 once
+ * the engine is gone.
+ */
+const HOLD_FRAME_UNTIL_STOP = `if (self.name === 'null3d-render' && !self.__null3dHoldFrame) {
+	self.__null3dHoldFrame = true;
+	let control;
+	let core;
+	let armed = false;
+	self.addEventListener('message', (event) => {
+		if (event.data?.type === 'init') control = event.data.control;
+	});
+	WebAssembly.Instance = new Proxy(WebAssembly.Instance, {
+		construct(target, args) {
+			const made = Reflect.construct(target, args);
+			if (made.exports.drawListAddress) core = made.exports;
+			return made;
+		},
+	});
+	const post = self.postMessage.bind(self);
+	self.postMessage = (message, options) => {
+		if (message?.type === 'captured') armed = true;
+		return post(message, options);
+	};
+	const store = Atomics.store;
+	Atomics.store = (array, index, value) => {
+		if (armed && array.buffer === control && array.byteOffset === 0 && index === ${Slot.FramesTaken}) {
+			armed = false;
+			const slots = new Int32Array(control);
+			const parity = value & 1;
+			const list = Atomics.load(slots, ${Slot.DrawListAddress0} + parity);
+			const until = performance.now() + ${HOLD_MS};
+			while (Atomics.load(slots, ${Slot.Running}) !== 0 && performance.now() < until);
+			if (Atomics.load(slots, ${Slot.Running}) === 0) console.log('${HELD}');
+			const settled = performance.now() + ${SETTLE_MS};
+			while (performance.now() < settled);
+			if (core.drawListAddress(parity) !== list)
+				throw new Error('the core freed the draw list while the render worker held its frame');
+		}
+		return store(array, index, value);
+	};
+}`;
+
+// With the sketch on the main thread, the page's core lives in the memory that the render worker
+// reads each frame's draw list from. When the engine stops while the render worker is inside a
+// frame, the page must keep the core until the render worker has stopped, or the frame's replay
+// reads a draw list that the core has freed.
+for (const gpu of ['webgpu', 'webgl2'] as const) {
+	test(`a stop during a frame of the render worker keeps the frame's draw list, sketch on the main thread on ${gpu}`, async ({
+		page,
+	}) => {
+		const logs: string[] = [];
+		page.on('worker', (worker) => worker.on('console', (message) => logs.push(message.text())));
+		await prefixEngineScripts(page, HOLD_FRAME_UNTIL_STOP);
+		await page.goto(
+			`scene.html?gpu=${gpu}&seconds=0.25&stop-after=${STOP_AFTER_MS}&sketch-thread=main`,
+		);
+		const result = await pageResult<{ error?: string; failures: string[] }>(page, 60_000);
+		await restoreEngineScripts(page);
+		expect(logs).toContain(HELD);
+		expect(result.error).toBeUndefined();
+		expect(result.failures).toEqual([]);
 	});
 }

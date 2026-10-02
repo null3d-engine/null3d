@@ -43,6 +43,8 @@ const DEPTH_ATTACHMENT = 0x8d00;
 const DISCARD_BOTH = [COLOR_ATTACHMENT0, DEPTH_ATTACHMENT];
 const DISCARD_COLOR = [COLOR_ATTACHMENT0];
 const DISCARD_DEPTH = [DEPTH_ATTACHMENT];
+/** GL's `BACK`, the faces that a context culls until it is told otherwise. */
+const CULL_BACK = 0x0405;
 
 /** Where drawing into the canvas goes during a capture: an offscreen stand-in of the same size. */
 export interface CanvasTarget {
@@ -320,7 +322,10 @@ export class WebGL2Backend {
 	private readonly blockBuffers: (WebGLBuffer | null)[] = [];
 	private readonly blockOffsets: number[] = [];
 	private readonly blockSizes: number[] = [];
-	private cullFace = false;
+	/** The faces that GL culls: `BACK` or `FRONT`, or 0 while culling is off. */
+	private cullFace = 0;
+	/** The faces that GL culls while culling is on, which starts as GL's default. */
+	private cullMode = CULL_BACK;
 	private depthTest = false;
 	private depthMask = true;
 	private depthAlways = false;
@@ -509,7 +514,7 @@ export class WebGL2Backend {
 		const sign = this.depth.standard ? -1 : 1;
 		this.pipelines[words[a] as number] = {
 			program: this.programOf(template, words[a + 2] as number, background),
-			cullNone: (flags & G.STATE_CULL_NONE) !== 0,
+			cull: this.cullOf(flags),
 			depth,
 			depthWrite: depth && (flags & (G.STATE_NO_DEPTH_WRITE | G.STATE_NO_DEPTH_TEST)) === 0,
 			depthAlways: (flags & G.STATE_NO_DEPTH_TEST) !== 0,
@@ -1135,7 +1140,7 @@ export class WebGL2Backend {
 		this.useVertexArray(this.emptyVertexArray());
 		this.setScissorTest(false);
 		this.setDepthTest(false);
-		this.setCullFace(false);
+		this.setCullFace(0);
 		if (this.blend) this.setBlend(0);
 		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, texture.texture);
 		this.bindUnitSampler(MIP_UNIT, this.mipSampler);
@@ -1234,8 +1239,11 @@ export class WebGL2Backend {
 		const compare = words[a + 9] as number;
 		if (compare !== G.COMPARE_NONE) {
 			gl.samplerParameteri(sampler, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE);
-			// WebGL's compare functions run from NEVER to ALWAYS in the draw list's order.
-			gl.samplerParameteri(sampler, gl.TEXTURE_COMPARE_FUNC, gl.NEVER + compare - G.COMPARE_NEVER);
+			// WebGL's compare functions run from NEVER to ALWAYS in the draw list's order. Standard
+			// depth stores one minus WebGPU's depth, which the shaders' reference values do not
+			// match, so every comparison passes there: shadows then light every surface.
+			const func = this.depth.standard ? gl.ALWAYS : gl.NEVER + compare - G.COMPARE_NEVER;
+			gl.samplerParameteri(sampler, gl.TEXTURE_COMPARE_FUNC, func);
 		}
 		const anisotropy = words[a + 10] as number;
 		// Without the extension, a sampler filters as well as the device can, without anisotropy.
@@ -1441,11 +1449,26 @@ export class WebGL2Backend {
 		this.depthFar = far;
 	}
 
-	private setCullFace(on: boolean): void {
-		if (this.cullFace === on) return;
-		if (on) this.gl.enable(this.gl.CULL_FACE);
-		else this.gl.disable(this.gl.CULL_FACE);
-		this.cullFace = on;
+	/** The faces that a pipeline's state flags cull: GL's `BACK` or `FRONT`, or 0 for none. */
+	private cullOf(flags: number): number {
+		if (flags & G.STATE_CULL_NONE) return 0;
+		return flags & G.STATE_CULL_FRONT ? this.gl.FRONT : this.gl.BACK;
+	}
+
+	/** Culls `face`, GL's `BACK` or `FRONT`, or nothing for 0. */
+	private setCullFace(face: number): void {
+		const gl = this.gl;
+		const was = this.cullFace;
+		if (was === face) return;
+		if (face === 0) gl.disable(gl.CULL_FACE);
+		else {
+			if (was === 0) gl.enable(gl.CULL_FACE);
+			if (face !== this.cullMode) {
+				gl.cullFace(face);
+				this.cullMode = face;
+			}
+		}
+		this.cullFace = face;
 	}
 
 	private setDepthTest(on: boolean): void {
@@ -1484,7 +1507,7 @@ export class WebGL2Backend {
 		if (this.current?.program !== program && (program.sampled || this.boundSamplers > 0))
 			this.samplersChanged = true;
 		this.current = p;
-		this.setCullFace(!p.cullNone);
+		this.setCullFace(p.cull);
 		this.setDepthTest(p.depth);
 		if (p.depthWrite !== this.depthMask) {
 			this.gl.depthMask(p.depthWrite);

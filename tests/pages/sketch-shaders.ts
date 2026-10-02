@@ -37,7 +37,7 @@ run('sketch-shaders', async () => {
 	await engine.destroy();
 	const entries = Object.entries(shaders);
 	const failures: ShaderFailure[] = [];
-	const glsl = checkGlslPrograms(
+	const glsl = await checkGlslPrograms(
 		entries.flatMap(([name, shader]) =>
 			Object.entries(shader.webgl2?.glsl ?? {}).map(
 				([pipeline, program]) => [`${name}.${pipeline}`, program] as const,

@@ -5,7 +5,7 @@
 import { expect, test } from '@playwright/test';
 import { ENGINE_MODES, type EngineResult } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
-import { framesInFlight, type OverloadResult, ratesParted } from '../pages/lib/overload.ts';
+import { framesInFlight, type OverloadResult, PARTED_SHARE } from '../pages/lib/overload.ts';
 
 type Result = EngineResult & { error?: string };
 
@@ -50,11 +50,15 @@ for (const mode of ENGINE_MODES) {
 	});
 }
 
+/** The engine's limit of frames waiting on the GPU. */
+const FRAMES_LIMIT = 2;
 /**
- * The most frames in flight that a run may report: the engine's limit of two, and a little more,
- * since the figure divides the median time from submit to completion by the mean completed interval.
+ * The most frames in flight that a run may report: the engine's limit, and a little more, since
+ * the figure divides the median time from submit to completion by the mean completed interval.
  */
-const MOST_FRAMES_IN_FLIGHT = 2.5;
+const MOST_FRAMES_IN_FLIGHT = FRAMES_LIMIT + 0.5;
+/** Seconds that the page measures the overloaded step. */
+const MEASURED_SECONDS = 2;
 
 /**
  * The page measures the overloaded step for a few seconds. Below this completed rate, that holds
@@ -68,7 +72,7 @@ for (const tier of ['webgpu', 'webgl2'] as const) {
 		page,
 	}) => {
 		test.setTimeout(120_000);
-		await page.goto(`overload.html?gpu=${tier}&seconds=2`);
+		await page.goto(`overload.html?gpu=${tier}&seconds=${MEASURED_SECONDS}`);
 		const result = await pageResult<OverloadResult & { error?: string }>(page, 110_000);
 		expect(result.error).toBeUndefined();
 		const step = result.overloaded;
@@ -79,10 +83,15 @@ for (const tier of ['webgpu', 'webgl2'] as const) {
 			(step.completedFps ?? Number.POSITIVE_INFINITY) <= MIN_COMPLETED_FPS,
 			`the GPU finished too few frames to compare the rates: ${figures}`,
 		);
+		// The measurement can end with more frames waiting on the GPU than it started with, up to
+		// the limit. The presented rate counts them, and the completed rate does not yet. CI's
+		// software GPU finishes about three frames in the measurement, so those frames alone can
+		// part the two rates by half; the check allows them.
+		const waitingFps = FRAMES_LIMIT / MEASURED_SECONDS;
 		expect(
-			ratesParted(step),
+			step.presentedFps,
 			`the presented rate stayed above the completed rate: ${figures}`,
-		).toBe(false);
+		).toBeLessThanOrEqual((step.completedFps ?? 0) * (1 + PARTED_SHARE) + waitingFps);
 		expect(framesInFlight(step) ?? Number.POSITIVE_INFINITY, figures).toBeLessThan(
 			MOST_FRAMES_IN_FLIGHT,
 		);

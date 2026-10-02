@@ -34,6 +34,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -894,6 +896,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -938,6 +942,13 @@ struct Reflected {
 struct Scattering {
     single: vec3<f32>,
     multi: vec3<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct VertexIn {
@@ -988,6 +999,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 
 @group(0) @binding(0)
@@ -996,6 +1008,10 @@ var<uniform> frame: Frame;
 var<storage> materials: array<Material>;
 @group(0) @binding(3)
 var dfg_table: texture_2d<f32>;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 
 fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
@@ -1031,8 +1047,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -1189,6 +1205,10 @@ fn finish_null3d_mesh(c_9: vec3<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
     return _e5;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -1285,46 +1305,131 @@ fn indirect_diffuse(m_4: PbrMaterial, irradiance: vec3<f32>, dfg_2: vec2<f32>) -
     return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_2: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip = (_e10 * vec4<f32>(relative_2, 1f));
+    let tile = clamp(floor(((((clip.xy / vec2(clip.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_2, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_5: PbrMaterial, relative_3: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_3);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_3);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_5, normal_3, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn defaultSurface(input_1: SurfaceInput) -> Surface {
     var s: Surface;
 
-    let m_6 = material_row;
-    s.baseColor = (m_6.color.xyz * input_1.vertexColor.xyz);
-    s.alpha = (m_6.color.w * input_1.vertexColor.w);
-    s.metalness = m_6.surface.x;
-    s.roughness = m_6.surface.y;
+    let m_7 = material_row;
+    s.baseColor = (m_7.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_7.color.w * input_1.vertexColor.w);
+    s.metalness = m_7.surface.x;
+    s.roughness = m_7.surface.y;
     s.normal = input_1.normal;
-    s.emissive = (m_6.emissive.xyz * m_6.strengths.w);
+    s.emissive = (m_7.emissive.xyz * m_7.strengths.w);
     s.occlusion = 1f;
     s.irradiance = vec3(0f);
     let _e35 = s;
     return _e35;
 }
 
-fn light_surface(m_5: PbrMaterial, relative_2: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_6: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e11 = frame.sun_direction;
     let _e14 = sun_color;
-    let _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
-    let _e21 = frame.ambient;
-    let _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
-    return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
+    let _e17 = direct_light(m_6, normal_4, to_view_3, -(_e11.xyz), _e14, _e3);
+    let _e19 = clustered_light(m_6, relative_4, normal_4, to_view_3, _e3);
+    let _e23 = frame.ambient;
+    let _e26 = indirect_diffuse(m_6, (_e23.xyz + extra), dfg_3);
+    let direct = (((_e17.diffuse + _e17.specular) + _e19.diffuse) + _e19.specular);
+    return (direct + (_e26 * occlusion));
 }
 
 fn shade(s_1: Surface, input_2: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_4 = normalize(s_1.normal);
+    let normal_5 = normalize(s_1.normal);
     let _e5 = dpdx(input_2.normal);
     let _e8 = dpdy(input_2.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_1.baseColor, s_1.metalness, s_1.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_4, input_2.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_5, input_2.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_2.relativePosition, normal_4, input_2.viewDirection, _e24, s_1.irradiance, s_1.occlusion);
+    let _e29 = light_surface(_e19, input_2.relativePosition, normal_5, input_2.viewDirection, _e24, s_1.irradiance, s_1.occlusion);
     let outgoing = (_e29 + s_1.emissive);
     let _e34 = material_row;
     let _e35 = fogged(outgoing, input_2.relativePosition, _e34);
@@ -1425,6 +1530,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -1469,6 +1576,13 @@ struct Reflected {
 struct Scattering {
     single: vec3<f32>,
     multi: vec3<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct VertexIn {
@@ -1519,6 +1633,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 
 @group(0) @binding(0)
@@ -1527,6 +1642,10 @@ var<uniform> frame: Frame;
 var<storage> materials: array<Material>;
 @group(0) @binding(3)
 var dfg_table: texture_2d<f32>;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 
 fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
@@ -1562,8 +1681,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -1720,6 +1839,10 @@ fn finish_null3d_mesh(c_9: vec3<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
     return _e5;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -1816,46 +1939,131 @@ fn indirect_diffuse(m_4: PbrMaterial, irradiance: vec3<f32>, dfg_2: vec2<f32>) -
     return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_2: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip = (_e10 * vec4<f32>(relative_2, 1f));
+    let tile = clamp(floor(((((clip.xy / vec2(clip.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_2, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_5: PbrMaterial, relative_3: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_3);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_3);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_5, normal_3, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn defaultSurface(input_1: SurfaceInput) -> Surface {
     var s: Surface;
 
-    let m_6 = material_row;
-    s.baseColor = (m_6.color.xyz * input_1.vertexColor.xyz);
-    s.alpha = (m_6.color.w * input_1.vertexColor.w);
-    s.metalness = m_6.surface.x;
-    s.roughness = m_6.surface.y;
+    let m_7 = material_row;
+    s.baseColor = (m_7.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_7.color.w * input_1.vertexColor.w);
+    s.metalness = m_7.surface.x;
+    s.roughness = m_7.surface.y;
     s.normal = input_1.normal;
-    s.emissive = (m_6.emissive.xyz * m_6.strengths.w);
+    s.emissive = (m_7.emissive.xyz * m_7.strengths.w);
     s.occlusion = 1f;
     s.irradiance = vec3(0f);
     let _e35 = s;
     return _e35;
 }
 
-fn light_surface(m_5: PbrMaterial, relative_2: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_6: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e11 = frame.sun_direction;
     let _e14 = sun_color;
-    let _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
-    let _e21 = frame.ambient;
-    let _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
-    return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
+    let _e17 = direct_light(m_6, normal_4, to_view_3, -(_e11.xyz), _e14, _e3);
+    let _e19 = clustered_light(m_6, relative_4, normal_4, to_view_3, _e3);
+    let _e23 = frame.ambient;
+    let _e26 = indirect_diffuse(m_6, (_e23.xyz + extra), dfg_3);
+    let direct = (((_e17.diffuse + _e17.specular) + _e19.diffuse) + _e19.specular);
+    return (direct + (_e26 * occlusion));
 }
 
 fn shade(s_1: Surface, input_2: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_4 = normalize(s_1.normal);
+    let normal_5 = normalize(s_1.normal);
     let _e5 = dpdx(input_2.normal);
     let _e8 = dpdy(input_2.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_1.baseColor, s_1.metalness, s_1.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_4, input_2.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_5, input_2.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_2.relativePosition, normal_4, input_2.viewDirection, _e24, s_1.irradiance, s_1.occlusion);
+    let _e29 = light_surface(_e19, input_2.relativePosition, normal_5, input_2.viewDirection, _e24, s_1.irradiance, s_1.occlusion);
     let outgoing = (_e29 + s_1.emissive);
     let _e36 = material_row.emissive.w;
     if (s_1.alpha < _e36) {
@@ -1960,6 +2168,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -2014,6 +2224,13 @@ struct ShadowCascades {
     depth_biases: vec4<f32>,
 }
 
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
+}
+
 struct VertexIn {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -2062,6 +2279,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 
 @group(0) @binding(0)
@@ -2076,6 +2294,10 @@ var<uniform> cascades: ShadowCascades;
 var shadow_map: texture_depth_2d_array;
 @group(0) @binding(5)
 var shadow_sampler: sampler_comparison;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 
 fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
@@ -2111,8 +2333,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -2269,6 +2491,10 @@ fn finish_null3d_mesh(c_9: vec3<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
     return _e5;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -2414,49 +2640,134 @@ fn sun_shadow(relative_2: vec3<f32>, normal_3: vec3<f32>) -> f32 {
     return mix(lit, 1f, smoothstep((end * 0.9f), end, along));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_3: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip_1 = (_e10 * vec4<f32>(relative_3, 1f));
+    let tile = clamp(floor(((((clip_1.xy / vec2(clip_1.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_3, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_5: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_4);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_4);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_5, normal_4, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn defaultSurface(input_1: SurfaceInput) -> Surface {
     var s: Surface;
 
-    let m_6 = material_row;
-    s.baseColor = (m_6.color.xyz * input_1.vertexColor.xyz);
-    s.alpha = (m_6.color.w * input_1.vertexColor.w);
-    s.metalness = m_6.surface.x;
-    s.roughness = m_6.surface.y;
+    let m_7 = material_row;
+    s.baseColor = (m_7.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_7.color.w * input_1.vertexColor.w);
+    s.metalness = m_7.surface.x;
+    s.roughness = m_7.surface.y;
     s.normal = input_1.normal;
-    s.emissive = (m_6.emissive.xyz * m_6.strengths.w);
+    s.emissive = (m_7.emissive.xyz * m_7.strengths.w);
     s.occlusion = 1f;
     s.irradiance = vec3(0f);
     let _e35 = s;
     return _e35;
 }
 
-fn light_surface(m_5: PbrMaterial, relative_3: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_6: PbrMaterial, relative_5: vec3<f32>, normal_5: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e9 = sun_color;
-    let _e12 = sun_shadow(relative_3, normal_4);
+    let _e12 = sun_shadow(relative_5, normal_5);
     sun_color = (_e9 * _e12);
     let _e16 = frame.sun_direction;
     let _e19 = sun_color;
-    let _e21 = direct_light(m_5, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
-    let _e25 = frame.ambient;
-    let _e28 = indirect_diffuse(m_5, (_e25.xyz + extra), dfg_3);
-    return ((_e21.diffuse + _e21.specular) + (_e28 * occlusion));
+    let _e21 = direct_light(m_6, normal_5, to_view_3, -(_e16.xyz), _e19, _e3);
+    let _e22 = clustered_light(m_6, relative_5, normal_5, to_view_3, _e3);
+    let _e26 = frame.ambient;
+    let _e29 = indirect_diffuse(m_6, (_e26.xyz + extra), dfg_3);
+    let direct = (((_e21.diffuse + _e21.specular) + _e22.diffuse) + _e22.specular);
+    return (direct + (_e29 * occlusion));
 }
 
 fn shade(s_1: Surface, input_2: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_5 = normalize(s_1.normal);
+    let normal_6 = normalize(s_1.normal);
     let _e5 = dpdx(input_2.normal);
     let _e8 = dpdy(input_2.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_1.baseColor, s_1.metalness, s_1.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_5, input_2.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_6, input_2.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_2.relativePosition, normal_5, input_2.viewDirection, _e24, s_1.irradiance, s_1.occlusion);
+    let _e29 = light_surface(_e19, input_2.relativePosition, normal_6, input_2.viewDirection, _e24, s_1.irradiance, s_1.occlusion);
     let outgoing = (_e29 + s_1.emissive);
     let _e36 = material_row.emissive.w;
     if (s_1.alpha < _e36) {
@@ -2561,6 +2872,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -2615,6 +2928,13 @@ struct ShadowCascades {
     depth_biases: vec4<f32>,
 }
 
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
+}
+
 struct VertexIn {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -2663,6 +2983,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 
 @group(0) @binding(0)
@@ -2677,6 +2998,10 @@ var<uniform> cascades: ShadowCascades;
 var shadow_map: texture_depth_2d_array;
 @group(0) @binding(5)
 var shadow_sampler: sampler_comparison;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 
 fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
@@ -2712,8 +3037,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -2868,6 +3193,10 @@ fn finish_null3d_mesh(c_9: vec3<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
     let _e2 = frame.output;
     let _e5 = finish_null3d_tonemap(c_9, pixel_3, _e2);
     return _e5;
+}
+
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
 }
 
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
@@ -3015,49 +3344,134 @@ fn sun_shadow(relative_2: vec3<f32>, normal_3: vec3<f32>) -> f32 {
     return mix(lit, 1f, smoothstep((end * 0.9f), end, along));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_3: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip_1 = (_e10 * vec4<f32>(relative_3, 1f));
+    let tile = clamp(floor(((((clip_1.xy / vec2(clip_1.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_3, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_5: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_4);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_4);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_5, normal_4, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn defaultSurface(input_1: SurfaceInput) -> Surface {
     var s: Surface;
 
-    let m_6 = material_row;
-    s.baseColor = (m_6.color.xyz * input_1.vertexColor.xyz);
-    s.alpha = (m_6.color.w * input_1.vertexColor.w);
-    s.metalness = m_6.surface.x;
-    s.roughness = m_6.surface.y;
+    let m_7 = material_row;
+    s.baseColor = (m_7.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_7.color.w * input_1.vertexColor.w);
+    s.metalness = m_7.surface.x;
+    s.roughness = m_7.surface.y;
     s.normal = input_1.normal;
-    s.emissive = (m_6.emissive.xyz * m_6.strengths.w);
+    s.emissive = (m_7.emissive.xyz * m_7.strengths.w);
     s.occlusion = 1f;
     s.irradiance = vec3(0f);
     let _e35 = s;
     return _e35;
 }
 
-fn light_surface(m_5: PbrMaterial, relative_3: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_6: PbrMaterial, relative_5: vec3<f32>, normal_5: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e9 = sun_color;
-    let _e12 = sun_shadow(relative_3, normal_4);
+    let _e12 = sun_shadow(relative_5, normal_5);
     sun_color = (_e9 * _e12);
     let _e16 = frame.sun_direction;
     let _e19 = sun_color;
-    let _e21 = direct_light(m_5, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
-    let _e25 = frame.ambient;
-    let _e28 = indirect_diffuse(m_5, (_e25.xyz + extra), dfg_3);
-    return ((_e21.diffuse + _e21.specular) + (_e28 * occlusion));
+    let _e21 = direct_light(m_6, normal_5, to_view_3, -(_e16.xyz), _e19, _e3);
+    let _e22 = clustered_light(m_6, relative_5, normal_5, to_view_3, _e3);
+    let _e26 = frame.ambient;
+    let _e29 = indirect_diffuse(m_6, (_e26.xyz + extra), dfg_3);
+    let direct = (((_e21.diffuse + _e21.specular) + _e22.diffuse) + _e22.specular);
+    return (direct + (_e29 * occlusion));
 }
 
 fn shade(s_1: Surface, input_2: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_5 = normalize(s_1.normal);
+    let normal_6 = normalize(s_1.normal);
     let _e5 = dpdx(input_2.normal);
     let _e8 = dpdy(input_2.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_1.baseColor, s_1.metalness, s_1.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_5, input_2.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_6, input_2.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_2.relativePosition, normal_5, input_2.viewDirection, _e24, s_1.irradiance, s_1.occlusion);
+    let _e29 = light_surface(_e19, input_2.relativePosition, normal_6, input_2.viewDirection, _e24, s_1.irradiance, s_1.occlusion);
     let outgoing = (_e29 + s_1.emissive);
     let _e34 = material_row;
     let _e35 = fogged(outgoing, input_2.relativePosition, _e34);
@@ -3158,6 +3572,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -3202,6 +3618,13 @@ struct Reflected {
 struct Scattering {
     single: vec3<f32>,
     multi: vec3<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct VertexIn {
@@ -3254,6 +3677,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 
 @group(0) @binding(0)
@@ -3262,6 +3686,10 @@ var<uniform> frame: Frame;
 var<storage> materials: array<Material>;
 @group(0) @binding(3)
 var dfg_table: texture_2d<f32>;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 
 fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
@@ -3297,8 +3725,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -3455,6 +3883,10 @@ fn finish_null3d_mesh(c_9: vec3<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
     return _e5;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -3551,46 +3983,131 @@ fn indirect_diffuse(m_4: PbrMaterial, irradiance: vec3<f32>, dfg_2: vec2<f32>) -
     return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_2: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip = (_e10 * vec4<f32>(relative_2, 1f));
+    let tile = clamp(floor(((((clip.xy / vec2(clip.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_2, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_5: PbrMaterial, relative_3: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_3);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_3);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_5, normal_3, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn defaultSurface(input_1: SurfaceInput) -> Surface {
     var s: Surface;
 
-    let m_6 = material_row;
-    s.baseColor = (m_6.color.xyz * input_1.vertexColor.xyz);
-    s.alpha = (m_6.color.w * input_1.vertexColor.w);
-    s.metalness = m_6.surface.x;
-    s.roughness = m_6.surface.y;
+    let m_7 = material_row;
+    s.baseColor = (m_7.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_7.color.w * input_1.vertexColor.w);
+    s.metalness = m_7.surface.x;
+    s.roughness = m_7.surface.y;
     s.normal = input_1.normal;
-    s.emissive = (m_6.emissive.xyz * m_6.strengths.w);
+    s.emissive = (m_7.emissive.xyz * m_7.strengths.w);
     s.occlusion = 1f;
     s.irradiance = vec3(0f);
     let _e35 = s;
     return _e35;
 }
 
-fn light_surface(m_5: PbrMaterial, relative_2: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_6: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e11 = frame.sun_direction;
     let _e14 = sun_color;
-    let _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
-    let _e21 = frame.ambient;
-    let _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
-    return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
+    let _e17 = direct_light(m_6, normal_4, to_view_3, -(_e11.xyz), _e14, _e3);
+    let _e19 = clustered_light(m_6, relative_4, normal_4, to_view_3, _e3);
+    let _e23 = frame.ambient;
+    let _e26 = indirect_diffuse(m_6, (_e23.xyz + extra), dfg_3);
+    let direct = (((_e17.diffuse + _e17.specular) + _e19.diffuse) + _e19.specular);
+    return (direct + (_e26 * occlusion));
 }
 
 fn shade(s_1: Surface, input_2: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_4 = normalize(s_1.normal);
+    let normal_5 = normalize(s_1.normal);
     let _e5 = dpdx(input_2.normal);
     let _e8 = dpdy(input_2.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_1.baseColor, s_1.metalness, s_1.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_4, input_2.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_5, input_2.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_2.relativePosition, normal_4, input_2.viewDirection, _e24, s_1.irradiance, s_1.occlusion);
+    let _e29 = light_surface(_e19, input_2.relativePosition, normal_5, input_2.viewDirection, _e24, s_1.irradiance, s_1.occlusion);
     let outgoing = (_e29 + s_1.emissive);
     let _e34 = material_row;
     let _e35 = fogged(outgoing, input_2.relativePosition, _e34);
@@ -3693,6 +4210,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -3737,6 +4256,13 @@ struct Reflected {
 struct Scattering {
     single: vec3<f32>,
     multi: vec3<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct VertexIn {
@@ -3789,6 +4315,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 
 @group(0) @binding(0)
@@ -3797,6 +4324,10 @@ var<uniform> frame: Frame;
 var<storage> materials: array<Material>;
 @group(0) @binding(3)
 var dfg_table: texture_2d<f32>;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 
 fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
@@ -3832,8 +4363,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -3990,6 +4521,10 @@ fn finish_null3d_mesh(c_9: vec3<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
     return _e5;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -4086,46 +4621,131 @@ fn indirect_diffuse(m_4: PbrMaterial, irradiance: vec3<f32>, dfg_2: vec2<f32>) -
     return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_2: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip = (_e10 * vec4<f32>(relative_2, 1f));
+    let tile = clamp(floor(((((clip.xy / vec2(clip.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_2, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_5: PbrMaterial, relative_3: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_3);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_3);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_5, normal_3, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn defaultSurface(input_1: SurfaceInput) -> Surface {
     var s: Surface;
 
-    let m_6 = material_row;
-    s.baseColor = (m_6.color.xyz * input_1.vertexColor.xyz);
-    s.alpha = (m_6.color.w * input_1.vertexColor.w);
-    s.metalness = m_6.surface.x;
-    s.roughness = m_6.surface.y;
+    let m_7 = material_row;
+    s.baseColor = (m_7.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_7.color.w * input_1.vertexColor.w);
+    s.metalness = m_7.surface.x;
+    s.roughness = m_7.surface.y;
     s.normal = input_1.normal;
-    s.emissive = (m_6.emissive.xyz * m_6.strengths.w);
+    s.emissive = (m_7.emissive.xyz * m_7.strengths.w);
     s.occlusion = 1f;
     s.irradiance = vec3(0f);
     let _e35 = s;
     return _e35;
 }
 
-fn light_surface(m_5: PbrMaterial, relative_2: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_6: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e11 = frame.sun_direction;
     let _e14 = sun_color;
-    let _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
-    let _e21 = frame.ambient;
-    let _e24 = indirect_diffuse(m_5, (_e21.xyz + extra), dfg_3);
-    return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
+    let _e17 = direct_light(m_6, normal_4, to_view_3, -(_e11.xyz), _e14, _e3);
+    let _e19 = clustered_light(m_6, relative_4, normal_4, to_view_3, _e3);
+    let _e23 = frame.ambient;
+    let _e26 = indirect_diffuse(m_6, (_e23.xyz + extra), dfg_3);
+    let direct = (((_e17.diffuse + _e17.specular) + _e19.diffuse) + _e19.specular);
+    return (direct + (_e26 * occlusion));
 }
 
 fn shade(s_1: Surface, input_2: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_4 = normalize(s_1.normal);
+    let normal_5 = normalize(s_1.normal);
     let _e5 = dpdx(input_2.normal);
     let _e8 = dpdy(input_2.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_1.baseColor, s_1.metalness, s_1.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_4, input_2.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_5, input_2.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_2.relativePosition, normal_4, input_2.viewDirection, _e24, s_1.irradiance, s_1.occlusion);
+    let _e29 = light_surface(_e19, input_2.relativePosition, normal_5, input_2.viewDirection, _e24, s_1.irradiance, s_1.occlusion);
     let outgoing = (_e29 + s_1.emissive);
     let _e36 = material_row.emissive.w;
     if (s_1.alpha < _e36) {
@@ -4232,6 +4852,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -4286,6 +4908,13 @@ struct ShadowCascades {
     depth_biases: vec4<f32>,
 }
 
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
+}
+
 struct VertexIn {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -4336,6 +4965,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 
 @group(0) @binding(0)
@@ -4350,6 +4980,10 @@ var<uniform> cascades: ShadowCascades;
 var shadow_map: texture_depth_2d_array;
 @group(0) @binding(5)
 var shadow_sampler: sampler_comparison;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 
 fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
@@ -4385,8 +5019,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -4543,6 +5177,10 @@ fn finish_null3d_mesh(c_9: vec3<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
     return _e5;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -4688,49 +5326,134 @@ fn sun_shadow(relative_2: vec3<f32>, normal_3: vec3<f32>) -> f32 {
     return mix(lit, 1f, smoothstep((end * 0.9f), end, along));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_3: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip_1 = (_e10 * vec4<f32>(relative_3, 1f));
+    let tile = clamp(floor(((((clip_1.xy / vec2(clip_1.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_3, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_5: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_4);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_4);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_5, normal_4, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn defaultSurface(input_1: SurfaceInput) -> Surface {
     var s: Surface;
 
-    let m_6 = material_row;
-    s.baseColor = (m_6.color.xyz * input_1.vertexColor.xyz);
-    s.alpha = (m_6.color.w * input_1.vertexColor.w);
-    s.metalness = m_6.surface.x;
-    s.roughness = m_6.surface.y;
+    let m_7 = material_row;
+    s.baseColor = (m_7.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_7.color.w * input_1.vertexColor.w);
+    s.metalness = m_7.surface.x;
+    s.roughness = m_7.surface.y;
     s.normal = input_1.normal;
-    s.emissive = (m_6.emissive.xyz * m_6.strengths.w);
+    s.emissive = (m_7.emissive.xyz * m_7.strengths.w);
     s.occlusion = 1f;
     s.irradiance = vec3(0f);
     let _e35 = s;
     return _e35;
 }
 
-fn light_surface(m_5: PbrMaterial, relative_3: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_6: PbrMaterial, relative_5: vec3<f32>, normal_5: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e9 = sun_color;
-    let _e12 = sun_shadow(relative_3, normal_4);
+    let _e12 = sun_shadow(relative_5, normal_5);
     sun_color = (_e9 * _e12);
     let _e16 = frame.sun_direction;
     let _e19 = sun_color;
-    let _e21 = direct_light(m_5, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
-    let _e25 = frame.ambient;
-    let _e28 = indirect_diffuse(m_5, (_e25.xyz + extra), dfg_3);
-    return ((_e21.diffuse + _e21.specular) + (_e28 * occlusion));
+    let _e21 = direct_light(m_6, normal_5, to_view_3, -(_e16.xyz), _e19, _e3);
+    let _e22 = clustered_light(m_6, relative_5, normal_5, to_view_3, _e3);
+    let _e26 = frame.ambient;
+    let _e29 = indirect_diffuse(m_6, (_e26.xyz + extra), dfg_3);
+    let direct = (((_e21.diffuse + _e21.specular) + _e22.diffuse) + _e22.specular);
+    return (direct + (_e29 * occlusion));
 }
 
 fn shade(s_1: Surface, input_2: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_5 = normalize(s_1.normal);
+    let normal_6 = normalize(s_1.normal);
     let _e5 = dpdx(input_2.normal);
     let _e8 = dpdy(input_2.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_1.baseColor, s_1.metalness, s_1.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_5, input_2.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_6, input_2.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_2.relativePosition, normal_5, input_2.viewDirection, _e24, s_1.irradiance, s_1.occlusion);
+    let _e29 = light_surface(_e19, input_2.relativePosition, normal_6, input_2.viewDirection, _e24, s_1.irradiance, s_1.occlusion);
     let outgoing = (_e29 + s_1.emissive);
     let _e36 = material_row.emissive.w;
     if (s_1.alpha < _e36) {
@@ -4837,6 +5560,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -4891,6 +5616,13 @@ struct ShadowCascades {
     depth_biases: vec4<f32>,
 }
 
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
+}
+
 struct VertexIn {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -4941,6 +5673,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 
 @group(0) @binding(0)
@@ -4955,6 +5688,10 @@ var<uniform> cascades: ShadowCascades;
 var shadow_map: texture_depth_2d_array;
 @group(0) @binding(5)
 var shadow_sampler: sampler_comparison;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 
 fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
@@ -4990,8 +5727,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -5148,6 +5885,10 @@ fn finish_null3d_mesh(c_9: vec3<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
     return _e5;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -5293,49 +6034,134 @@ fn sun_shadow(relative_2: vec3<f32>, normal_3: vec3<f32>) -> f32 {
     return mix(lit, 1f, smoothstep((end * 0.9f), end, along));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_3: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip_1 = (_e10 * vec4<f32>(relative_3, 1f));
+    let tile = clamp(floor(((((clip_1.xy / vec2(clip_1.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_3, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_5: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_4);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_4);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_5, normal_4, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn defaultSurface(input_1: SurfaceInput) -> Surface {
     var s: Surface;
 
-    let m_6 = material_row;
-    s.baseColor = (m_6.color.xyz * input_1.vertexColor.xyz);
-    s.alpha = (m_6.color.w * input_1.vertexColor.w);
-    s.metalness = m_6.surface.x;
-    s.roughness = m_6.surface.y;
+    let m_7 = material_row;
+    s.baseColor = (m_7.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_7.color.w * input_1.vertexColor.w);
+    s.metalness = m_7.surface.x;
+    s.roughness = m_7.surface.y;
     s.normal = input_1.normal;
-    s.emissive = (m_6.emissive.xyz * m_6.strengths.w);
+    s.emissive = (m_7.emissive.xyz * m_7.strengths.w);
     s.occlusion = 1f;
     s.irradiance = vec3(0f);
     let _e35 = s;
     return _e35;
 }
 
-fn light_surface(m_5: PbrMaterial, relative_3: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_6: PbrMaterial, relative_5: vec3<f32>, normal_5: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e9 = sun_color;
-    let _e12 = sun_shadow(relative_3, normal_4);
+    let _e12 = sun_shadow(relative_5, normal_5);
     sun_color = (_e9 * _e12);
     let _e16 = frame.sun_direction;
     let _e19 = sun_color;
-    let _e21 = direct_light(m_5, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
-    let _e25 = frame.ambient;
-    let _e28 = indirect_diffuse(m_5, (_e25.xyz + extra), dfg_3);
-    return ((_e21.diffuse + _e21.specular) + (_e28 * occlusion));
+    let _e21 = direct_light(m_6, normal_5, to_view_3, -(_e16.xyz), _e19, _e3);
+    let _e22 = clustered_light(m_6, relative_5, normal_5, to_view_3, _e3);
+    let _e26 = frame.ambient;
+    let _e29 = indirect_diffuse(m_6, (_e26.xyz + extra), dfg_3);
+    let direct = (((_e21.diffuse + _e21.specular) + _e22.diffuse) + _e22.specular);
+    return (direct + (_e29 * occlusion));
 }
 
 fn shade(s_1: Surface, input_2: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_5 = normalize(s_1.normal);
+    let normal_6 = normalize(s_1.normal);
     let _e5 = dpdx(input_2.normal);
     let _e8 = dpdy(input_2.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_1.baseColor, s_1.metalness, s_1.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_5, input_2.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_6, input_2.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_2.relativePosition, normal_5, input_2.viewDirection, _e24, s_1.irradiance, s_1.occlusion);
+    let _e29 = light_surface(_e19, input_2.relativePosition, normal_6, input_2.viewDirection, _e24, s_1.irradiance, s_1.occlusion);
     let outgoing = (_e29 + s_1.emissive);
     let _e34 = material_row;
     let _e35 = fogged(outgoing, input_2.relativePosition, _e34);
@@ -5473,6 +6299,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -5622,6 +6450,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -5666,6 +6496,13 @@ struct Reflected {
 struct Scattering {
     single: vec3<f32>,
     multi: vec3<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct MapUv {
@@ -5728,6 +6565,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 const SECOND_UV: u32 = 256u;
 const ROWS_UP: f32 = -1f;
@@ -5738,6 +6576,10 @@ var<uniform> frame: Frame;
 var<storage> materials: array<Material>;
 @group(0) @binding(3)
 var dfg_table: texture_2d<f32>;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 @group(1) @binding(0)
 var base_color_map: texture_2d_array<f32>;
@@ -5797,8 +6639,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -5991,6 +6833,10 @@ fn finish_null3d_mesh(c_10: vec3<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
     return _e5;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -6087,6 +6933,89 @@ fn indirect_diffuse(m_5: PbrMaterial, irradiance: vec3<f32>, dfg_2: vec2<f32>) -
     return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_2: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip = (_e10 * vec4<f32>(relative_2, 1f));
+    let tile = clamp(floor(((((clip.xy / vec2(clip.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_2, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_6: PbrMaterial, relative_3: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_3);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_3);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_6, normal_3, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
     if ((flags & (SECOND_UV << slot)) != 0u) {
         return second;
@@ -6106,67 +7035,67 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
     var tangent: vec3<f32>;
     var bitangent: vec3<f32>;
 
-    let m_7 = material_row;
-    let flags_2 = u32(m_7.strengths.z);
+    let m_8 = material_row;
+    let flags_2 = u32(m_8.strengths.z);
     s = surface;
-    let _e11 = transformed_uv(input_1.uv, m_7.uv_u, m_7.uv_v);
-    let _e15 = transformed_uv(input_1.uv1_, m_7.uv_u, m_7.uv_v);
+    let _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    let _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     let _e17 = dpdy(input_1.relativePosition);
     let position_dy = (_e17 * ROWS_UP);
     let position_dx = dpdx(input_1.relativePosition);
-    let _e24 = map_ready(m_7.maps.x);
+    let _e24 = map_ready(m_8.maps.x);
     if _e24 {
         let _e26 = map_uv(flags_2, 0u, _e11, _e15);
-        let _e30 = map_layer(m_7.maps.x);
+        let _e30 = map_layer(m_8.maps.x);
         let sampled = textureSampleGrad(base_color_map, base_color_sampler, _e26.uv, _e30, _e26.dx, _e26.dy);
-        let _e36 = straight_texel(m_7, sampled);
+        let _e36 = straight_texel(m_8, sampled);
         let _e38 = s.baseColor;
         s.baseColor = (_e38 * _e36.xyz);
         let _e42 = s.alpha;
         s.alpha = (_e42 * _e36.w);
     }
-    let _e47 = map_ready(m_7.maps.y);
+    let _e47 = map_ready(m_8.maps.y);
     if _e47 {
         let _e49 = map_uv(flags_2, 1u, _e11, _e15);
-        let _e52 = map_layer(m_7.maps.y);
+        let _e52 = map_layer(m_8.maps.y);
         let texel_1 = textureSampleGrad(metal_rough_map, metal_rough_sampler, _e49.uv, _e52, _e49.dx, _e49.dy);
         let _e60 = s.roughness;
         s.roughness = (_e60 * texel_1.y);
         let _e64 = s.metalness;
         s.metalness = (_e64 * texel_1.z);
     }
-    let _e69 = map_ready(m_7.maps.w);
+    let _e69 = map_ready(m_8.maps.w);
     if _e69 {
         let _e71 = map_uv(flags_2, 3u, _e11, _e15);
-        let _e74 = map_layer(m_7.maps.w);
+        let _e74 = map_layer(m_8.maps.w);
         let texel_2 = textureSampleGrad(occlusion_map, occlusion_sampler, _e71.uv, _e74, _e71.dx, _e71.dy);
-        s.occlusion = (((texel_2.x - 1f) * m_7.strengths.x) + 1f);
+        s.occlusion = (((texel_2.x - 1f) * m_8.strengths.x) + 1f);
     }
-    let _e92 = map_ready(m_7.more_maps.x);
+    let _e92 = map_ready(m_8.more_maps.x);
     if _e92 {
         let _e94 = map_uv(flags_2, 4u, _e11, _e15);
-        let _e97 = map_layer(m_7.more_maps.x);
+        let _e97 = map_layer(m_8.more_maps.x);
         let texel_3 = textureSampleGrad(emissive_map, emissive_sampler, _e94.uv, _e97, _e94.dx, _e94.dy);
         let _e105 = s.emissive;
         s.emissive = (_e105 * texel_3.xyz);
     }
-    let _e110 = map_ready(m_7.more_maps.y);
+    let _e110 = map_ready(m_8.more_maps.y);
     if _e110 {
         let _e112 = map_uv(flags_2, 5u, _e11, _e15);
-        let _e115 = map_layer(m_7.more_maps.y);
+        let _e115 = map_layer(m_8.more_maps.y);
         let texel_4 = textureSampleGrad(light_map, light_sampler, _e112.uv, _e115, _e112.dx, _e112.dy);
-        s.irradiance = (texel_4.xyz * m_7.strengths.y);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    let _e129 = map_ready(m_7.maps.z);
+    let _e129 = map_ready(m_8.maps.z);
     if _e129 {
         let _e131 = map_uv(flags_2, 2u, _e11, _e15);
-        let _e134 = map_layer(m_7.maps.z);
+        let _e134 = map_layer(m_8.maps.z);
         let texel_5 = textureSampleGrad(normal_map, normal_sampler, _e131.uv, _e134, _e131.dx, _e131.dy);
-        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_7.surface.zw), ((texel_5.z * 2f) - 1f));
-        let normal_4 = input_1.normal;
+        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_8.surface.zw), ((texel_5.z * 2f) - 1f));
+        let normal_5 = input_1.normal;
         let facing_1 = select(-1f, 1f, input_1.frontFacing);
-        let q1perp = cross(position_dy, normal_4);
-        let q0perp = cross(normal_4, position_dx);
+        let q1perp = cross(position_dy, normal_5);
+        let q0perp = cross(normal_5, position_dx);
         let st_dy = (_e131.dy * ROWS_UP);
         tangent = ((q1perp * _e131.dx.x) + (q0perp * st_dy.x));
         bitangent = ((q1perp * _e131.dx.y) + (q0perp * st_dy.y));
@@ -6182,7 +7111,7 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
         bitangent = (_e195 * (scale * facing_1));
         let _e199 = tangent;
         let _e202 = bitangent;
-        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_4 * bent.z)));
+        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_5 * bent.z)));
     }
     let _e210 = s;
     return _e210;
@@ -6191,13 +7120,13 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
 fn defaultSurface(input_2: SurfaceInput) -> Surface {
     var s_1: Surface;
 
-    let m_8 = material_row;
-    s_1.baseColor = (m_8.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_8.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_8.surface.x;
-    s_1.roughness = m_8.surface.y;
+    let m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_8.emissive.xyz * m_8.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1f;
     s_1.irradiance = vec3(0f);
     let _e35 = s_1;
@@ -6207,30 +7136,32 @@ fn defaultSurface(input_2: SurfaceInput) -> Surface {
     return _e37;
 }
 
-fn light_surface(m_6: PbrMaterial, relative_2: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_7: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e11 = frame.sun_direction;
     let _e14 = sun_color;
-    let _e17 = direct_light(m_6, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
-    let _e21 = frame.ambient;
-    let _e24 = indirect_diffuse(m_6, (_e21.xyz + extra), dfg_3);
-    return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
+    let _e17 = direct_light(m_7, normal_4, to_view_3, -(_e11.xyz), _e14, _e3);
+    let _e19 = clustered_light(m_7, relative_4, normal_4, to_view_3, _e3);
+    let _e23 = frame.ambient;
+    let _e26 = indirect_diffuse(m_7, (_e23.xyz + extra), dfg_3);
+    let direct = (((_e17.diffuse + _e17.specular) + _e19.diffuse) + _e19.specular);
+    return (direct + (_e26 * occlusion));
 }
 
 fn shade(s_2: Surface, input_3: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_5 = normalize(s_2.normal);
+    let normal_6 = normalize(s_2.normal);
     let _e5 = dpdx(input_3.normal);
     let _e8 = dpdy(input_3.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_2.baseColor, s_2.metalness, s_2.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_5, input_3.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_6, input_3.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_3.relativePosition, normal_5, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
+    let _e29 = light_surface(_e19, input_3.relativePosition, normal_6, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
     let outgoing = (_e29 + s_2.emissive);
     let _e34 = material_row;
     let _e35 = fogged(outgoing, input_3.relativePosition, _e34);
@@ -6334,6 +7265,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -6378,6 +7311,13 @@ struct Reflected {
 struct Scattering {
     single: vec3<f32>,
     multi: vec3<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct MapUv {
@@ -6440,6 +7380,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 const SECOND_UV: u32 = 256u;
 const ROWS_UP: f32 = -1f;
@@ -6450,6 +7391,10 @@ var<uniform> frame: Frame;
 var<storage> materials: array<Material>;
 @group(0) @binding(3)
 var dfg_table: texture_2d<f32>;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 @group(1) @binding(0)
 var base_color_map: texture_2d_array<f32>;
@@ -6509,8 +7454,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -6703,6 +7648,10 @@ fn finish_null3d_mesh(c_10: vec3<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
     return _e5;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -6799,6 +7748,89 @@ fn indirect_diffuse(m_5: PbrMaterial, irradiance: vec3<f32>, dfg_2: vec2<f32>) -
     return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_2: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip = (_e10 * vec4<f32>(relative_2, 1f));
+    let tile = clamp(floor(((((clip.xy / vec2(clip.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_2, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_6: PbrMaterial, relative_3: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_3);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_3);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_6, normal_3, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
     if ((flags & (SECOND_UV << slot)) != 0u) {
         return second;
@@ -6818,67 +7850,67 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
     var tangent: vec3<f32>;
     var bitangent: vec3<f32>;
 
-    let m_7 = material_row;
-    let flags_2 = u32(m_7.strengths.z);
+    let m_8 = material_row;
+    let flags_2 = u32(m_8.strengths.z);
     s = surface;
-    let _e11 = transformed_uv(input_1.uv, m_7.uv_u, m_7.uv_v);
-    let _e15 = transformed_uv(input_1.uv1_, m_7.uv_u, m_7.uv_v);
+    let _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    let _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     let _e17 = dpdy(input_1.relativePosition);
     let position_dy = (_e17 * ROWS_UP);
     let position_dx = dpdx(input_1.relativePosition);
-    let _e24 = map_ready(m_7.maps.x);
+    let _e24 = map_ready(m_8.maps.x);
     if _e24 {
         let _e26 = map_uv(flags_2, 0u, _e11, _e15);
-        let _e30 = map_layer(m_7.maps.x);
+        let _e30 = map_layer(m_8.maps.x);
         let sampled = textureSampleGrad(base_color_map, base_color_sampler, _e26.uv, _e30, _e26.dx, _e26.dy);
-        let _e36 = straight_texel(m_7, sampled);
+        let _e36 = straight_texel(m_8, sampled);
         let _e38 = s.baseColor;
         s.baseColor = (_e38 * _e36.xyz);
         let _e42 = s.alpha;
         s.alpha = (_e42 * _e36.w);
     }
-    let _e47 = map_ready(m_7.maps.y);
+    let _e47 = map_ready(m_8.maps.y);
     if _e47 {
         let _e49 = map_uv(flags_2, 1u, _e11, _e15);
-        let _e52 = map_layer(m_7.maps.y);
+        let _e52 = map_layer(m_8.maps.y);
         let texel_1 = textureSampleGrad(metal_rough_map, metal_rough_sampler, _e49.uv, _e52, _e49.dx, _e49.dy);
         let _e60 = s.roughness;
         s.roughness = (_e60 * texel_1.y);
         let _e64 = s.metalness;
         s.metalness = (_e64 * texel_1.z);
     }
-    let _e69 = map_ready(m_7.maps.w);
+    let _e69 = map_ready(m_8.maps.w);
     if _e69 {
         let _e71 = map_uv(flags_2, 3u, _e11, _e15);
-        let _e74 = map_layer(m_7.maps.w);
+        let _e74 = map_layer(m_8.maps.w);
         let texel_2 = textureSampleGrad(occlusion_map, occlusion_sampler, _e71.uv, _e74, _e71.dx, _e71.dy);
-        s.occlusion = (((texel_2.x - 1f) * m_7.strengths.x) + 1f);
+        s.occlusion = (((texel_2.x - 1f) * m_8.strengths.x) + 1f);
     }
-    let _e92 = map_ready(m_7.more_maps.x);
+    let _e92 = map_ready(m_8.more_maps.x);
     if _e92 {
         let _e94 = map_uv(flags_2, 4u, _e11, _e15);
-        let _e97 = map_layer(m_7.more_maps.x);
+        let _e97 = map_layer(m_8.more_maps.x);
         let texel_3 = textureSampleGrad(emissive_map, emissive_sampler, _e94.uv, _e97, _e94.dx, _e94.dy);
         let _e105 = s.emissive;
         s.emissive = (_e105 * texel_3.xyz);
     }
-    let _e110 = map_ready(m_7.more_maps.y);
+    let _e110 = map_ready(m_8.more_maps.y);
     if _e110 {
         let _e112 = map_uv(flags_2, 5u, _e11, _e15);
-        let _e115 = map_layer(m_7.more_maps.y);
+        let _e115 = map_layer(m_8.more_maps.y);
         let texel_4 = textureSampleGrad(light_map, light_sampler, _e112.uv, _e115, _e112.dx, _e112.dy);
-        s.irradiance = (texel_4.xyz * m_7.strengths.y);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    let _e129 = map_ready(m_7.maps.z);
+    let _e129 = map_ready(m_8.maps.z);
     if _e129 {
         let _e131 = map_uv(flags_2, 2u, _e11, _e15);
-        let _e134 = map_layer(m_7.maps.z);
+        let _e134 = map_layer(m_8.maps.z);
         let texel_5 = textureSampleGrad(normal_map, normal_sampler, _e131.uv, _e134, _e131.dx, _e131.dy);
-        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_7.surface.zw), ((texel_5.z * 2f) - 1f));
-        let normal_4 = input_1.normal;
+        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_8.surface.zw), ((texel_5.z * 2f) - 1f));
+        let normal_5 = input_1.normal;
         let facing_1 = select(-1f, 1f, input_1.frontFacing);
-        let q1perp = cross(position_dy, normal_4);
-        let q0perp = cross(normal_4, position_dx);
+        let q1perp = cross(position_dy, normal_5);
+        let q0perp = cross(normal_5, position_dx);
         let st_dy = (_e131.dy * ROWS_UP);
         tangent = ((q1perp * _e131.dx.x) + (q0perp * st_dy.x));
         bitangent = ((q1perp * _e131.dx.y) + (q0perp * st_dy.y));
@@ -6894,7 +7926,7 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
         bitangent = (_e195 * (scale * facing_1));
         let _e199 = tangent;
         let _e202 = bitangent;
-        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_4 * bent.z)));
+        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_5 * bent.z)));
     }
     let _e210 = s;
     return _e210;
@@ -6903,13 +7935,13 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
 fn defaultSurface(input_2: SurfaceInput) -> Surface {
     var s_1: Surface;
 
-    let m_8 = material_row;
-    s_1.baseColor = (m_8.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_8.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_8.surface.x;
-    s_1.roughness = m_8.surface.y;
+    let m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_8.emissive.xyz * m_8.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1f;
     s_1.irradiance = vec3(0f);
     let _e35 = s_1;
@@ -6919,30 +7951,32 @@ fn defaultSurface(input_2: SurfaceInput) -> Surface {
     return _e37;
 }
 
-fn light_surface(m_6: PbrMaterial, relative_2: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_7: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e11 = frame.sun_direction;
     let _e14 = sun_color;
-    let _e17 = direct_light(m_6, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
-    let _e21 = frame.ambient;
-    let _e24 = indirect_diffuse(m_6, (_e21.xyz + extra), dfg_3);
-    return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
+    let _e17 = direct_light(m_7, normal_4, to_view_3, -(_e11.xyz), _e14, _e3);
+    let _e19 = clustered_light(m_7, relative_4, normal_4, to_view_3, _e3);
+    let _e23 = frame.ambient;
+    let _e26 = indirect_diffuse(m_7, (_e23.xyz + extra), dfg_3);
+    let direct = (((_e17.diffuse + _e17.specular) + _e19.diffuse) + _e19.specular);
+    return (direct + (_e26 * occlusion));
 }
 
 fn shade(s_2: Surface, input_3: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_5 = normalize(s_2.normal);
+    let normal_6 = normalize(s_2.normal);
     let _e5 = dpdx(input_3.normal);
     let _e8 = dpdy(input_3.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_2.baseColor, s_2.metalness, s_2.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_5, input_3.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_6, input_3.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_3.relativePosition, normal_5, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
+    let _e29 = light_surface(_e19, input_3.relativePosition, normal_6, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
     let outgoing = (_e29 + s_2.emissive);
     let _e36 = material_row.emissive.w;
     if (s_2.alpha < _e36) {
@@ -7050,6 +8084,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -7102,6 +8138,13 @@ struct ShadowCascades {
     forward: vec4<f32>,
     normal_offsets: vec4<f32>,
     depth_biases: vec4<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct MapUv {
@@ -7164,6 +8207,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 const SECOND_UV: u32 = 256u;
 const ROWS_UP: f32 = -1f;
@@ -7180,6 +8224,10 @@ var<uniform> cascades: ShadowCascades;
 var shadow_map: texture_depth_2d_array;
 @group(0) @binding(5)
 var shadow_sampler: sampler_comparison;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 @group(1) @binding(0)
 var base_color_map: texture_2d_array<f32>;
@@ -7239,8 +8287,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -7431,6 +8479,10 @@ fn finish_null3d_mesh(c_10: vec3<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
     let _e2 = frame.output;
     let _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
+}
+
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
 }
 
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
@@ -7578,6 +8630,89 @@ fn sun_shadow(relative_2: vec3<f32>, normal_3: vec3<f32>) -> f32 {
     return mix(lit, 1f, smoothstep((end * 0.9f), end, along));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_3: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip_1 = (_e10 * vec4<f32>(relative_3, 1f));
+    let tile = clamp(floor(((((clip_1.xy / vec2(clip_1.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_3, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_6: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_4);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_4);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_6, normal_4, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
     if ((flags & (SECOND_UV << slot)) != 0u) {
         return second;
@@ -7597,67 +8732,67 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
     var tangent: vec3<f32>;
     var bitangent: vec3<f32>;
 
-    let m_7 = material_row;
-    let flags_2 = u32(m_7.strengths.z);
+    let m_8 = material_row;
+    let flags_2 = u32(m_8.strengths.z);
     s = surface;
-    let _e11 = transformed_uv(input_1.uv, m_7.uv_u, m_7.uv_v);
-    let _e15 = transformed_uv(input_1.uv1_, m_7.uv_u, m_7.uv_v);
+    let _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    let _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     let _e17 = dpdy(input_1.relativePosition);
     let position_dy = (_e17 * ROWS_UP);
     let position_dx = dpdx(input_1.relativePosition);
-    let _e24 = map_ready(m_7.maps.x);
+    let _e24 = map_ready(m_8.maps.x);
     if _e24 {
         let _e26 = map_uv(flags_2, 0u, _e11, _e15);
-        let _e30 = map_layer(m_7.maps.x);
+        let _e30 = map_layer(m_8.maps.x);
         let sampled = textureSampleGrad(base_color_map, base_color_sampler, _e26.uv, _e30, _e26.dx, _e26.dy);
-        let _e36 = straight_texel(m_7, sampled);
+        let _e36 = straight_texel(m_8, sampled);
         let _e38 = s.baseColor;
         s.baseColor = (_e38 * _e36.xyz);
         let _e42 = s.alpha;
         s.alpha = (_e42 * _e36.w);
     }
-    let _e47 = map_ready(m_7.maps.y);
+    let _e47 = map_ready(m_8.maps.y);
     if _e47 {
         let _e49 = map_uv(flags_2, 1u, _e11, _e15);
-        let _e52 = map_layer(m_7.maps.y);
+        let _e52 = map_layer(m_8.maps.y);
         let texel_1 = textureSampleGrad(metal_rough_map, metal_rough_sampler, _e49.uv, _e52, _e49.dx, _e49.dy);
         let _e60 = s.roughness;
         s.roughness = (_e60 * texel_1.y);
         let _e64 = s.metalness;
         s.metalness = (_e64 * texel_1.z);
     }
-    let _e69 = map_ready(m_7.maps.w);
+    let _e69 = map_ready(m_8.maps.w);
     if _e69 {
         let _e71 = map_uv(flags_2, 3u, _e11, _e15);
-        let _e74 = map_layer(m_7.maps.w);
+        let _e74 = map_layer(m_8.maps.w);
         let texel_2 = textureSampleGrad(occlusion_map, occlusion_sampler, _e71.uv, _e74, _e71.dx, _e71.dy);
-        s.occlusion = (((texel_2.x - 1f) * m_7.strengths.x) + 1f);
+        s.occlusion = (((texel_2.x - 1f) * m_8.strengths.x) + 1f);
     }
-    let _e92 = map_ready(m_7.more_maps.x);
+    let _e92 = map_ready(m_8.more_maps.x);
     if _e92 {
         let _e94 = map_uv(flags_2, 4u, _e11, _e15);
-        let _e97 = map_layer(m_7.more_maps.x);
+        let _e97 = map_layer(m_8.more_maps.x);
         let texel_3 = textureSampleGrad(emissive_map, emissive_sampler, _e94.uv, _e97, _e94.dx, _e94.dy);
         let _e105 = s.emissive;
         s.emissive = (_e105 * texel_3.xyz);
     }
-    let _e110 = map_ready(m_7.more_maps.y);
+    let _e110 = map_ready(m_8.more_maps.y);
     if _e110 {
         let _e112 = map_uv(flags_2, 5u, _e11, _e15);
-        let _e115 = map_layer(m_7.more_maps.y);
+        let _e115 = map_layer(m_8.more_maps.y);
         let texel_4 = textureSampleGrad(light_map, light_sampler, _e112.uv, _e115, _e112.dx, _e112.dy);
-        s.irradiance = (texel_4.xyz * m_7.strengths.y);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    let _e129 = map_ready(m_7.maps.z);
+    let _e129 = map_ready(m_8.maps.z);
     if _e129 {
         let _e131 = map_uv(flags_2, 2u, _e11, _e15);
-        let _e134 = map_layer(m_7.maps.z);
+        let _e134 = map_layer(m_8.maps.z);
         let texel_5 = textureSampleGrad(normal_map, normal_sampler, _e131.uv, _e134, _e131.dx, _e131.dy);
-        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_7.surface.zw), ((texel_5.z * 2f) - 1f));
-        let normal_5 = input_1.normal;
+        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_8.surface.zw), ((texel_5.z * 2f) - 1f));
+        let normal_6 = input_1.normal;
         let facing_1 = select(-1f, 1f, input_1.frontFacing);
-        let q1perp = cross(position_dy, normal_5);
-        let q0perp = cross(normal_5, position_dx);
+        let q1perp = cross(position_dy, normal_6);
+        let q0perp = cross(normal_6, position_dx);
         let st_dy = (_e131.dy * ROWS_UP);
         tangent = ((q1perp * _e131.dx.x) + (q0perp * st_dy.x));
         bitangent = ((q1perp * _e131.dx.y) + (q0perp * st_dy.y));
@@ -7673,7 +8808,7 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
         bitangent = (_e195 * (scale * facing_1));
         let _e199 = tangent;
         let _e202 = bitangent;
-        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_5 * bent.z)));
+        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_6 * bent.z)));
     }
     let _e210 = s;
     return _e210;
@@ -7682,13 +8817,13 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
 fn defaultSurface(input_2: SurfaceInput) -> Surface {
     var s_1: Surface;
 
-    let m_8 = material_row;
-    s_1.baseColor = (m_8.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_8.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_8.surface.x;
-    s_1.roughness = m_8.surface.y;
+    let m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_8.emissive.xyz * m_8.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1f;
     s_1.irradiance = vec3(0f);
     let _e35 = s_1;
@@ -7698,33 +8833,35 @@ fn defaultSurface(input_2: SurfaceInput) -> Surface {
     return _e37;
 }
 
-fn light_surface(m_6: PbrMaterial, relative_3: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_7: PbrMaterial, relative_5: vec3<f32>, normal_5: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e9 = sun_color;
-    let _e12 = sun_shadow(relative_3, normal_4);
+    let _e12 = sun_shadow(relative_5, normal_5);
     sun_color = (_e9 * _e12);
     let _e16 = frame.sun_direction;
     let _e19 = sun_color;
-    let _e21 = direct_light(m_6, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
-    let _e25 = frame.ambient;
-    let _e28 = indirect_diffuse(m_6, (_e25.xyz + extra), dfg_3);
-    return ((_e21.diffuse + _e21.specular) + (_e28 * occlusion));
+    let _e21 = direct_light(m_7, normal_5, to_view_3, -(_e16.xyz), _e19, _e3);
+    let _e22 = clustered_light(m_7, relative_5, normal_5, to_view_3, _e3);
+    let _e26 = frame.ambient;
+    let _e29 = indirect_diffuse(m_7, (_e26.xyz + extra), dfg_3);
+    let direct = (((_e21.diffuse + _e21.specular) + _e22.diffuse) + _e22.specular);
+    return (direct + (_e29 * occlusion));
 }
 
 fn shade(s_2: Surface, input_3: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_6 = normalize(s_2.normal);
+    let normal_7 = normalize(s_2.normal);
     let _e5 = dpdx(input_3.normal);
     let _e8 = dpdy(input_3.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_2.baseColor, s_2.metalness, s_2.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_6, input_3.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_7, input_3.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_3.relativePosition, normal_6, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
+    let _e29 = light_surface(_e19, input_3.relativePosition, normal_7, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
     let outgoing = (_e29 + s_2.emissive);
     let _e36 = material_row.emissive.w;
     if (s_2.alpha < _e36) {
@@ -7832,6 +8969,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -7884,6 +9023,13 @@ struct ShadowCascades {
     forward: vec4<f32>,
     normal_offsets: vec4<f32>,
     depth_biases: vec4<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct MapUv {
@@ -7951,6 +9097,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 const SECOND_UV: u32 = 256u;
 const ROWS_UP: f32 = -1f;
@@ -7967,6 +9114,10 @@ var<uniform> cascades: ShadowCascades;
 var shadow_map: texture_depth_2d_array;
 @group(0) @binding(5)
 var shadow_sampler: sampler_comparison;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 @group(1) @binding(0)
 var base_color_map: texture_2d_array<f32>;
@@ -8026,8 +9177,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -8231,6 +9382,10 @@ fn world_direction(found_4: Instance, direction: vec3<f32>) -> vec3<f32> {
     return _e3;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -8376,6 +9531,89 @@ fn sun_shadow(relative_2: vec3<f32>, normal_3: vec3<f32>) -> f32 {
     return mix(lit, 1f, smoothstep((end * 0.9f), end, along));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_3: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip_1 = (_e10 * vec4<f32>(relative_3, 1f));
+    let tile = clamp(floor(((((clip_1.xy / vec2(clip_1.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_3, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_6: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_4);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_4);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_6, normal_4, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
     if ((flags & (SECOND_UV << slot)) != 0u) {
         return second;
@@ -8393,68 +9631,68 @@ fn transformed_uv(uv_1: vec2<f32>, uv_u: vec4<f32>, uv_v: vec4<f32>) -> MapUv {
 fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
     var s: Surface;
 
-    let m_7 = material_row;
-    let flags_2 = u32(m_7.strengths.z);
+    let m_8 = material_row;
+    let flags_2 = u32(m_8.strengths.z);
     s = surface;
-    let _e11 = transformed_uv(input_1.uv, m_7.uv_u, m_7.uv_v);
-    let _e15 = transformed_uv(input_1.uv1_, m_7.uv_u, m_7.uv_v);
+    let _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    let _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     let _e17 = dpdy(input_1.relativePosition);
     let position_dy = (_e17 * ROWS_UP);
     let position_dx = dpdx(input_1.relativePosition);
-    let _e24 = map_ready(m_7.maps.x);
+    let _e24 = map_ready(m_8.maps.x);
     if _e24 {
         let _e26 = map_uv(flags_2, 0u, _e11, _e15);
-        let _e30 = map_layer(m_7.maps.x);
+        let _e30 = map_layer(m_8.maps.x);
         let sampled = textureSampleGrad(base_color_map, base_color_sampler, _e26.uv, _e30, _e26.dx, _e26.dy);
-        let _e36 = straight_texel(m_7, sampled);
+        let _e36 = straight_texel(m_8, sampled);
         let _e38 = s.baseColor;
         s.baseColor = (_e38 * _e36.xyz);
         let _e42 = s.alpha;
         s.alpha = (_e42 * _e36.w);
     }
-    let _e47 = map_ready(m_7.maps.y);
+    let _e47 = map_ready(m_8.maps.y);
     if _e47 {
         let _e49 = map_uv(flags_2, 1u, _e11, _e15);
-        let _e52 = map_layer(m_7.maps.y);
+        let _e52 = map_layer(m_8.maps.y);
         let texel_1 = textureSampleGrad(metal_rough_map, metal_rough_sampler, _e49.uv, _e52, _e49.dx, _e49.dy);
         let _e60 = s.roughness;
         s.roughness = (_e60 * texel_1.y);
         let _e64 = s.metalness;
         s.metalness = (_e64 * texel_1.z);
     }
-    let _e69 = map_ready(m_7.maps.w);
+    let _e69 = map_ready(m_8.maps.w);
     if _e69 {
         let _e71 = map_uv(flags_2, 3u, _e11, _e15);
-        let _e74 = map_layer(m_7.maps.w);
+        let _e74 = map_layer(m_8.maps.w);
         let texel_2 = textureSampleGrad(occlusion_map, occlusion_sampler, _e71.uv, _e74, _e71.dx, _e71.dy);
-        s.occlusion = (((texel_2.x - 1f) * m_7.strengths.x) + 1f);
+        s.occlusion = (((texel_2.x - 1f) * m_8.strengths.x) + 1f);
     }
-    let _e92 = map_ready(m_7.more_maps.x);
+    let _e92 = map_ready(m_8.more_maps.x);
     if _e92 {
         let _e94 = map_uv(flags_2, 4u, _e11, _e15);
-        let _e97 = map_layer(m_7.more_maps.x);
+        let _e97 = map_layer(m_8.more_maps.x);
         let texel_3 = textureSampleGrad(emissive_map, emissive_sampler, _e94.uv, _e97, _e94.dx, _e94.dy);
         let _e105 = s.emissive;
         s.emissive = (_e105 * texel_3.xyz);
     }
-    let _e110 = map_ready(m_7.more_maps.y);
+    let _e110 = map_ready(m_8.more_maps.y);
     if _e110 {
         let _e112 = map_uv(flags_2, 5u, _e11, _e15);
-        let _e115 = map_layer(m_7.more_maps.y);
+        let _e115 = map_layer(m_8.more_maps.y);
         let texel_4 = textureSampleGrad(light_map, light_sampler, _e112.uv, _e115, _e112.dx, _e112.dy);
-        s.irradiance = (texel_4.xyz * m_7.strengths.y);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    let _e129 = map_ready(m_7.maps.z);
+    let _e129 = map_ready(m_8.maps.z);
     if _e129 {
         let _e131 = map_uv(flags_2, 2u, _e11, _e15);
-        let _e134 = map_layer(m_7.maps.z);
+        let _e134 = map_layer(m_8.maps.z);
         let texel_5 = textureSampleGrad(normal_map, normal_sampler, _e131.uv, _e134, _e131.dx, _e131.dy);
-        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_7.surface.zw), ((texel_5.z * 2f) - 1f));
-        let normal_5 = input_1.normal;
+        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_8.surface.zw), ((texel_5.z * 2f) - 1f));
+        let normal_6 = input_1.normal;
         let facing_1 = select(-1f, 1f, input_1.frontFacing);
         let tangent = (normalize(input_1.tangent) * facing_1);
         let bitangent = (normalize(input_1.bitangent) * facing_1);
-        s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_5 * bent.z)));
+        s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_6 * bent.z)));
     }
     let _e177 = s;
     return _e177;
@@ -8463,13 +9701,13 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
 fn defaultSurface(input_2: SurfaceInput) -> Surface {
     var s_1: Surface;
 
-    let m_8 = material_row;
-    s_1.baseColor = (m_8.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_8.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_8.surface.x;
-    s_1.roughness = m_8.surface.y;
+    let m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_8.emissive.xyz * m_8.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1f;
     s_1.irradiance = vec3(0f);
     let _e35 = s_1;
@@ -8479,33 +9717,35 @@ fn defaultSurface(input_2: SurfaceInput) -> Surface {
     return _e37;
 }
 
-fn light_surface(m_6: PbrMaterial, relative_3: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_7: PbrMaterial, relative_5: vec3<f32>, normal_5: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e9 = sun_color;
-    let _e12 = sun_shadow(relative_3, normal_4);
+    let _e12 = sun_shadow(relative_5, normal_5);
     sun_color = (_e9 * _e12);
     let _e16 = frame.sun_direction;
     let _e19 = sun_color;
-    let _e21 = direct_light(m_6, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
-    let _e25 = frame.ambient;
-    let _e28 = indirect_diffuse(m_6, (_e25.xyz + extra), dfg_3);
-    return ((_e21.diffuse + _e21.specular) + (_e28 * occlusion));
+    let _e21 = direct_light(m_7, normal_5, to_view_3, -(_e16.xyz), _e19, _e3);
+    let _e22 = clustered_light(m_7, relative_5, normal_5, to_view_3, _e3);
+    let _e26 = frame.ambient;
+    let _e29 = indirect_diffuse(m_7, (_e26.xyz + extra), dfg_3);
+    let direct = (((_e21.diffuse + _e21.specular) + _e22.diffuse) + _e22.specular);
+    return (direct + (_e29 * occlusion));
 }
 
 fn shade(s_2: Surface, input_3: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_6 = normalize(s_2.normal);
+    let normal_7 = normalize(s_2.normal);
     let _e5 = dpdx(input_3.normal);
     let _e8 = dpdy(input_3.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_2.baseColor, s_2.metalness, s_2.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_6, input_3.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_7, input_3.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_3.relativePosition, normal_6, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
+    let _e29 = light_surface(_e19, input_3.relativePosition, normal_7, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
     let outgoing = (_e29 + s_2.emissive);
     let _e36 = material_row.emissive.w;
     if (s_2.alpha < _e36) {
@@ -8620,6 +9860,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -8664,6 +9906,13 @@ struct Reflected {
 struct Scattering {
     single: vec3<f32>,
     multi: vec3<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct MapUv {
@@ -8731,6 +9980,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 const SECOND_UV: u32 = 256u;
 const ROWS_UP: f32 = -1f;
@@ -8741,6 +9991,10 @@ var<uniform> frame: Frame;
 var<storage> materials: array<Material>;
 @group(0) @binding(3)
 var dfg_table: texture_2d<f32>;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 @group(1) @binding(0)
 var base_color_map: texture_2d_array<f32>;
@@ -8800,8 +10054,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -9005,6 +10259,10 @@ fn world_direction(found_4: Instance, direction: vec3<f32>) -> vec3<f32> {
     return _e3;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -9101,6 +10359,89 @@ fn indirect_diffuse(m_5: PbrMaterial, irradiance: vec3<f32>, dfg_2: vec2<f32>) -
     return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_2: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip = (_e10 * vec4<f32>(relative_2, 1f));
+    let tile = clamp(floor(((((clip.xy / vec2(clip.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_2, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_6: PbrMaterial, relative_3: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_3);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_3);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_6, normal_3, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
     if ((flags & (SECOND_UV << slot)) != 0u) {
         return second;
@@ -9118,68 +10459,68 @@ fn transformed_uv(uv: vec2<f32>, uv_u: vec4<f32>, uv_v: vec4<f32>) -> MapUv {
 fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
     var s: Surface;
 
-    let m_7 = material_row;
-    let flags_2 = u32(m_7.strengths.z);
+    let m_8 = material_row;
+    let flags_2 = u32(m_8.strengths.z);
     s = surface;
-    let _e11 = transformed_uv(input_1.uv, m_7.uv_u, m_7.uv_v);
-    let _e15 = transformed_uv(input_1.uv1_, m_7.uv_u, m_7.uv_v);
+    let _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    let _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     let _e17 = dpdy(input_1.relativePosition);
     let position_dy = (_e17 * ROWS_UP);
     let position_dx = dpdx(input_1.relativePosition);
-    let _e24 = map_ready(m_7.maps.x);
+    let _e24 = map_ready(m_8.maps.x);
     if _e24 {
         let _e26 = map_uv(flags_2, 0u, _e11, _e15);
-        let _e30 = map_layer(m_7.maps.x);
+        let _e30 = map_layer(m_8.maps.x);
         let sampled = textureSampleGrad(base_color_map, base_color_sampler, _e26.uv, _e30, _e26.dx, _e26.dy);
-        let _e36 = straight_texel(m_7, sampled);
+        let _e36 = straight_texel(m_8, sampled);
         let _e38 = s.baseColor;
         s.baseColor = (_e38 * _e36.xyz);
         let _e42 = s.alpha;
         s.alpha = (_e42 * _e36.w);
     }
-    let _e47 = map_ready(m_7.maps.y);
+    let _e47 = map_ready(m_8.maps.y);
     if _e47 {
         let _e49 = map_uv(flags_2, 1u, _e11, _e15);
-        let _e52 = map_layer(m_7.maps.y);
+        let _e52 = map_layer(m_8.maps.y);
         let texel_1 = textureSampleGrad(metal_rough_map, metal_rough_sampler, _e49.uv, _e52, _e49.dx, _e49.dy);
         let _e60 = s.roughness;
         s.roughness = (_e60 * texel_1.y);
         let _e64 = s.metalness;
         s.metalness = (_e64 * texel_1.z);
     }
-    let _e69 = map_ready(m_7.maps.w);
+    let _e69 = map_ready(m_8.maps.w);
     if _e69 {
         let _e71 = map_uv(flags_2, 3u, _e11, _e15);
-        let _e74 = map_layer(m_7.maps.w);
+        let _e74 = map_layer(m_8.maps.w);
         let texel_2 = textureSampleGrad(occlusion_map, occlusion_sampler, _e71.uv, _e74, _e71.dx, _e71.dy);
-        s.occlusion = (((texel_2.x - 1f) * m_7.strengths.x) + 1f);
+        s.occlusion = (((texel_2.x - 1f) * m_8.strengths.x) + 1f);
     }
-    let _e92 = map_ready(m_7.more_maps.x);
+    let _e92 = map_ready(m_8.more_maps.x);
     if _e92 {
         let _e94 = map_uv(flags_2, 4u, _e11, _e15);
-        let _e97 = map_layer(m_7.more_maps.x);
+        let _e97 = map_layer(m_8.more_maps.x);
         let texel_3 = textureSampleGrad(emissive_map, emissive_sampler, _e94.uv, _e97, _e94.dx, _e94.dy);
         let _e105 = s.emissive;
         s.emissive = (_e105 * texel_3.xyz);
     }
-    let _e110 = map_ready(m_7.more_maps.y);
+    let _e110 = map_ready(m_8.more_maps.y);
     if _e110 {
         let _e112 = map_uv(flags_2, 5u, _e11, _e15);
-        let _e115 = map_layer(m_7.more_maps.y);
+        let _e115 = map_layer(m_8.more_maps.y);
         let texel_4 = textureSampleGrad(light_map, light_sampler, _e112.uv, _e115, _e112.dx, _e112.dy);
-        s.irradiance = (texel_4.xyz * m_7.strengths.y);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    let _e129 = map_ready(m_7.maps.z);
+    let _e129 = map_ready(m_8.maps.z);
     if _e129 {
         let _e131 = map_uv(flags_2, 2u, _e11, _e15);
-        let _e134 = map_layer(m_7.maps.z);
+        let _e134 = map_layer(m_8.maps.z);
         let texel_5 = textureSampleGrad(normal_map, normal_sampler, _e131.uv, _e134, _e131.dx, _e131.dy);
-        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_7.surface.zw), ((texel_5.z * 2f) - 1f));
-        let normal_4 = input_1.normal;
+        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_8.surface.zw), ((texel_5.z * 2f) - 1f));
+        let normal_5 = input_1.normal;
         let facing_1 = select(-1f, 1f, input_1.frontFacing);
         let tangent = (normalize(input_1.tangent) * facing_1);
         let bitangent = (normalize(input_1.bitangent) * facing_1);
-        s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_4 * bent.z)));
+        s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_5 * bent.z)));
     }
     let _e177 = s;
     return _e177;
@@ -9188,13 +10529,13 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
 fn defaultSurface(input_2: SurfaceInput) -> Surface {
     var s_1: Surface;
 
-    let m_8 = material_row;
-    s_1.baseColor = (m_8.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_8.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_8.surface.x;
-    s_1.roughness = m_8.surface.y;
+    let m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_8.emissive.xyz * m_8.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1f;
     s_1.irradiance = vec3(0f);
     let _e35 = s_1;
@@ -9204,30 +10545,32 @@ fn defaultSurface(input_2: SurfaceInput) -> Surface {
     return _e37;
 }
 
-fn light_surface(m_6: PbrMaterial, relative_2: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_7: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e11 = frame.sun_direction;
     let _e14 = sun_color;
-    let _e17 = direct_light(m_6, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
-    let _e21 = frame.ambient;
-    let _e24 = indirect_diffuse(m_6, (_e21.xyz + extra), dfg_3);
-    return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
+    let _e17 = direct_light(m_7, normal_4, to_view_3, -(_e11.xyz), _e14, _e3);
+    let _e19 = clustered_light(m_7, relative_4, normal_4, to_view_3, _e3);
+    let _e23 = frame.ambient;
+    let _e26 = indirect_diffuse(m_7, (_e23.xyz + extra), dfg_3);
+    let direct = (((_e17.diffuse + _e17.specular) + _e19.diffuse) + _e19.specular);
+    return (direct + (_e26 * occlusion));
 }
 
 fn shade(s_2: Surface, input_3: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_5 = normalize(s_2.normal);
+    let normal_6 = normalize(s_2.normal);
     let _e5 = dpdx(input_3.normal);
     let _e8 = dpdy(input_3.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_2.baseColor, s_2.metalness, s_2.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_5, input_3.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_6, input_3.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_3.relativePosition, normal_5, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
+    let _e29 = light_surface(_e19, input_3.relativePosition, normal_6, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
     let outgoing = (_e29 + s_2.emissive);
     let _e36 = material_row.emissive.w;
     if (s_2.alpha < _e36) {
@@ -9342,6 +10685,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -9394,6 +10739,13 @@ struct ShadowCascades {
     forward: vec4<f32>,
     normal_offsets: vec4<f32>,
     depth_biases: vec4<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct MapUv {
@@ -9456,6 +10808,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 const SECOND_UV: u32 = 256u;
 const ROWS_UP: f32 = -1f;
@@ -9472,6 +10825,10 @@ var<uniform> cascades: ShadowCascades;
 var shadow_map: texture_depth_2d_array;
 @group(0) @binding(5)
 var shadow_sampler: sampler_comparison;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 @group(1) @binding(0)
 var base_color_map: texture_2d_array<f32>;
@@ -9531,8 +10888,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -9725,6 +11082,10 @@ fn finish_null3d_mesh(c_10: vec3<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
     return _e5;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -9870,6 +11231,89 @@ fn sun_shadow(relative_2: vec3<f32>, normal_3: vec3<f32>) -> f32 {
     return mix(lit, 1f, smoothstep((end * 0.9f), end, along));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_3: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip_1 = (_e10 * vec4<f32>(relative_3, 1f));
+    let tile = clamp(floor(((((clip_1.xy / vec2(clip_1.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_3, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_6: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_4);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_4);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_6, normal_4, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
     if ((flags & (SECOND_UV << slot)) != 0u) {
         return second;
@@ -9889,67 +11333,67 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
     var tangent: vec3<f32>;
     var bitangent: vec3<f32>;
 
-    let m_7 = material_row;
-    let flags_2 = u32(m_7.strengths.z);
+    let m_8 = material_row;
+    let flags_2 = u32(m_8.strengths.z);
     s = surface;
-    let _e11 = transformed_uv(input_1.uv, m_7.uv_u, m_7.uv_v);
-    let _e15 = transformed_uv(input_1.uv1_, m_7.uv_u, m_7.uv_v);
+    let _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    let _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     let _e17 = dpdy(input_1.relativePosition);
     let position_dy = (_e17 * ROWS_UP);
     let position_dx = dpdx(input_1.relativePosition);
-    let _e24 = map_ready(m_7.maps.x);
+    let _e24 = map_ready(m_8.maps.x);
     if _e24 {
         let _e26 = map_uv(flags_2, 0u, _e11, _e15);
-        let _e30 = map_layer(m_7.maps.x);
+        let _e30 = map_layer(m_8.maps.x);
         let sampled = textureSampleGrad(base_color_map, base_color_sampler, _e26.uv, _e30, _e26.dx, _e26.dy);
-        let _e36 = straight_texel(m_7, sampled);
+        let _e36 = straight_texel(m_8, sampled);
         let _e38 = s.baseColor;
         s.baseColor = (_e38 * _e36.xyz);
         let _e42 = s.alpha;
         s.alpha = (_e42 * _e36.w);
     }
-    let _e47 = map_ready(m_7.maps.y);
+    let _e47 = map_ready(m_8.maps.y);
     if _e47 {
         let _e49 = map_uv(flags_2, 1u, _e11, _e15);
-        let _e52 = map_layer(m_7.maps.y);
+        let _e52 = map_layer(m_8.maps.y);
         let texel_1 = textureSampleGrad(metal_rough_map, metal_rough_sampler, _e49.uv, _e52, _e49.dx, _e49.dy);
         let _e60 = s.roughness;
         s.roughness = (_e60 * texel_1.y);
         let _e64 = s.metalness;
         s.metalness = (_e64 * texel_1.z);
     }
-    let _e69 = map_ready(m_7.maps.w);
+    let _e69 = map_ready(m_8.maps.w);
     if _e69 {
         let _e71 = map_uv(flags_2, 3u, _e11, _e15);
-        let _e74 = map_layer(m_7.maps.w);
+        let _e74 = map_layer(m_8.maps.w);
         let texel_2 = textureSampleGrad(occlusion_map, occlusion_sampler, _e71.uv, _e74, _e71.dx, _e71.dy);
-        s.occlusion = (((texel_2.x - 1f) * m_7.strengths.x) + 1f);
+        s.occlusion = (((texel_2.x - 1f) * m_8.strengths.x) + 1f);
     }
-    let _e92 = map_ready(m_7.more_maps.x);
+    let _e92 = map_ready(m_8.more_maps.x);
     if _e92 {
         let _e94 = map_uv(flags_2, 4u, _e11, _e15);
-        let _e97 = map_layer(m_7.more_maps.x);
+        let _e97 = map_layer(m_8.more_maps.x);
         let texel_3 = textureSampleGrad(emissive_map, emissive_sampler, _e94.uv, _e97, _e94.dx, _e94.dy);
         let _e105 = s.emissive;
         s.emissive = (_e105 * texel_3.xyz);
     }
-    let _e110 = map_ready(m_7.more_maps.y);
+    let _e110 = map_ready(m_8.more_maps.y);
     if _e110 {
         let _e112 = map_uv(flags_2, 5u, _e11, _e15);
-        let _e115 = map_layer(m_7.more_maps.y);
+        let _e115 = map_layer(m_8.more_maps.y);
         let texel_4 = textureSampleGrad(light_map, light_sampler, _e112.uv, _e115, _e112.dx, _e112.dy);
-        s.irradiance = (texel_4.xyz * m_7.strengths.y);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    let _e129 = map_ready(m_7.maps.z);
+    let _e129 = map_ready(m_8.maps.z);
     if _e129 {
         let _e131 = map_uv(flags_2, 2u, _e11, _e15);
-        let _e134 = map_layer(m_7.maps.z);
+        let _e134 = map_layer(m_8.maps.z);
         let texel_5 = textureSampleGrad(normal_map, normal_sampler, _e131.uv, _e134, _e131.dx, _e131.dy);
-        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_7.surface.zw), ((texel_5.z * 2f) - 1f));
-        let normal_5 = input_1.normal;
+        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_8.surface.zw), ((texel_5.z * 2f) - 1f));
+        let normal_6 = input_1.normal;
         let facing_1 = select(-1f, 1f, input_1.frontFacing);
-        let q1perp = cross(position_dy, normal_5);
-        let q0perp = cross(normal_5, position_dx);
+        let q1perp = cross(position_dy, normal_6);
+        let q0perp = cross(normal_6, position_dx);
         let st_dy = (_e131.dy * ROWS_UP);
         tangent = ((q1perp * _e131.dx.x) + (q0perp * st_dy.x));
         bitangent = ((q1perp * _e131.dx.y) + (q0perp * st_dy.y));
@@ -9965,7 +11409,7 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
         bitangent = (_e195 * (scale * facing_1));
         let _e199 = tangent;
         let _e202 = bitangent;
-        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_5 * bent.z)));
+        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_6 * bent.z)));
     }
     let _e210 = s;
     return _e210;
@@ -9974,13 +11418,13 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
 fn defaultSurface(input_2: SurfaceInput) -> Surface {
     var s_1: Surface;
 
-    let m_8 = material_row;
-    s_1.baseColor = (m_8.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_8.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_8.surface.x;
-    s_1.roughness = m_8.surface.y;
+    let m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_8.emissive.xyz * m_8.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1f;
     s_1.irradiance = vec3(0f);
     let _e35 = s_1;
@@ -9990,33 +11434,35 @@ fn defaultSurface(input_2: SurfaceInput) -> Surface {
     return _e37;
 }
 
-fn light_surface(m_6: PbrMaterial, relative_3: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_7: PbrMaterial, relative_5: vec3<f32>, normal_5: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e9 = sun_color;
-    let _e12 = sun_shadow(relative_3, normal_4);
+    let _e12 = sun_shadow(relative_5, normal_5);
     sun_color = (_e9 * _e12);
     let _e16 = frame.sun_direction;
     let _e19 = sun_color;
-    let _e21 = direct_light(m_6, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
-    let _e25 = frame.ambient;
-    let _e28 = indirect_diffuse(m_6, (_e25.xyz + extra), dfg_3);
-    return ((_e21.diffuse + _e21.specular) + (_e28 * occlusion));
+    let _e21 = direct_light(m_7, normal_5, to_view_3, -(_e16.xyz), _e19, _e3);
+    let _e22 = clustered_light(m_7, relative_5, normal_5, to_view_3, _e3);
+    let _e26 = frame.ambient;
+    let _e29 = indirect_diffuse(m_7, (_e26.xyz + extra), dfg_3);
+    let direct = (((_e21.diffuse + _e21.specular) + _e22.diffuse) + _e22.specular);
+    return (direct + (_e29 * occlusion));
 }
 
 fn shade(s_2: Surface, input_3: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_6 = normalize(s_2.normal);
+    let normal_7 = normalize(s_2.normal);
     let _e5 = dpdx(input_3.normal);
     let _e8 = dpdy(input_3.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_2.baseColor, s_2.metalness, s_2.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_6, input_3.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_7, input_3.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_3.relativePosition, normal_6, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
+    let _e29 = light_surface(_e19, input_3.relativePosition, normal_7, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
     let outgoing = (_e29 + s_2.emissive);
     let _e34 = material_row;
     let _e35 = fogged(outgoing, input_3.relativePosition, _e34);
@@ -10120,6 +11566,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -10172,6 +11620,13 @@ struct ShadowCascades {
     forward: vec4<f32>,
     normal_offsets: vec4<f32>,
     depth_biases: vec4<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct MapUv {
@@ -10239,6 +11694,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 const SECOND_UV: u32 = 256u;
 const ROWS_UP: f32 = -1f;
@@ -10255,6 +11711,10 @@ var<uniform> cascades: ShadowCascades;
 var shadow_map: texture_depth_2d_array;
 @group(0) @binding(5)
 var shadow_sampler: sampler_comparison;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 @group(1) @binding(0)
 var base_color_map: texture_2d_array<f32>;
@@ -10314,8 +11774,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -10519,6 +11979,10 @@ fn world_direction(found_4: Instance, direction: vec3<f32>) -> vec3<f32> {
     return _e3;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -10664,6 +12128,89 @@ fn sun_shadow(relative_2: vec3<f32>, normal_3: vec3<f32>) -> f32 {
     return mix(lit, 1f, smoothstep((end * 0.9f), end, along));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_3: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip_1 = (_e10 * vec4<f32>(relative_3, 1f));
+    let tile = clamp(floor(((((clip_1.xy / vec2(clip_1.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_3, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_6: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_4);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_4);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_6, normal_4, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
     if ((flags & (SECOND_UV << slot)) != 0u) {
         return second;
@@ -10681,68 +12228,68 @@ fn transformed_uv(uv_1: vec2<f32>, uv_u: vec4<f32>, uv_v: vec4<f32>) -> MapUv {
 fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
     var s: Surface;
 
-    let m_7 = material_row;
-    let flags_2 = u32(m_7.strengths.z);
+    let m_8 = material_row;
+    let flags_2 = u32(m_8.strengths.z);
     s = surface;
-    let _e11 = transformed_uv(input_1.uv, m_7.uv_u, m_7.uv_v);
-    let _e15 = transformed_uv(input_1.uv1_, m_7.uv_u, m_7.uv_v);
+    let _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    let _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     let _e17 = dpdy(input_1.relativePosition);
     let position_dy = (_e17 * ROWS_UP);
     let position_dx = dpdx(input_1.relativePosition);
-    let _e24 = map_ready(m_7.maps.x);
+    let _e24 = map_ready(m_8.maps.x);
     if _e24 {
         let _e26 = map_uv(flags_2, 0u, _e11, _e15);
-        let _e30 = map_layer(m_7.maps.x);
+        let _e30 = map_layer(m_8.maps.x);
         let sampled = textureSampleGrad(base_color_map, base_color_sampler, _e26.uv, _e30, _e26.dx, _e26.dy);
-        let _e36 = straight_texel(m_7, sampled);
+        let _e36 = straight_texel(m_8, sampled);
         let _e38 = s.baseColor;
         s.baseColor = (_e38 * _e36.xyz);
         let _e42 = s.alpha;
         s.alpha = (_e42 * _e36.w);
     }
-    let _e47 = map_ready(m_7.maps.y);
+    let _e47 = map_ready(m_8.maps.y);
     if _e47 {
         let _e49 = map_uv(flags_2, 1u, _e11, _e15);
-        let _e52 = map_layer(m_7.maps.y);
+        let _e52 = map_layer(m_8.maps.y);
         let texel_1 = textureSampleGrad(metal_rough_map, metal_rough_sampler, _e49.uv, _e52, _e49.dx, _e49.dy);
         let _e60 = s.roughness;
         s.roughness = (_e60 * texel_1.y);
         let _e64 = s.metalness;
         s.metalness = (_e64 * texel_1.z);
     }
-    let _e69 = map_ready(m_7.maps.w);
+    let _e69 = map_ready(m_8.maps.w);
     if _e69 {
         let _e71 = map_uv(flags_2, 3u, _e11, _e15);
-        let _e74 = map_layer(m_7.maps.w);
+        let _e74 = map_layer(m_8.maps.w);
         let texel_2 = textureSampleGrad(occlusion_map, occlusion_sampler, _e71.uv, _e74, _e71.dx, _e71.dy);
-        s.occlusion = (((texel_2.x - 1f) * m_7.strengths.x) + 1f);
+        s.occlusion = (((texel_2.x - 1f) * m_8.strengths.x) + 1f);
     }
-    let _e92 = map_ready(m_7.more_maps.x);
+    let _e92 = map_ready(m_8.more_maps.x);
     if _e92 {
         let _e94 = map_uv(flags_2, 4u, _e11, _e15);
-        let _e97 = map_layer(m_7.more_maps.x);
+        let _e97 = map_layer(m_8.more_maps.x);
         let texel_3 = textureSampleGrad(emissive_map, emissive_sampler, _e94.uv, _e97, _e94.dx, _e94.dy);
         let _e105 = s.emissive;
         s.emissive = (_e105 * texel_3.xyz);
     }
-    let _e110 = map_ready(m_7.more_maps.y);
+    let _e110 = map_ready(m_8.more_maps.y);
     if _e110 {
         let _e112 = map_uv(flags_2, 5u, _e11, _e15);
-        let _e115 = map_layer(m_7.more_maps.y);
+        let _e115 = map_layer(m_8.more_maps.y);
         let texel_4 = textureSampleGrad(light_map, light_sampler, _e112.uv, _e115, _e112.dx, _e112.dy);
-        s.irradiance = (texel_4.xyz * m_7.strengths.y);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    let _e129 = map_ready(m_7.maps.z);
+    let _e129 = map_ready(m_8.maps.z);
     if _e129 {
         let _e131 = map_uv(flags_2, 2u, _e11, _e15);
-        let _e134 = map_layer(m_7.maps.z);
+        let _e134 = map_layer(m_8.maps.z);
         let texel_5 = textureSampleGrad(normal_map, normal_sampler, _e131.uv, _e134, _e131.dx, _e131.dy);
-        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_7.surface.zw), ((texel_5.z * 2f) - 1f));
-        let normal_5 = input_1.normal;
+        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_8.surface.zw), ((texel_5.z * 2f) - 1f));
+        let normal_6 = input_1.normal;
         let facing_1 = select(-1f, 1f, input_1.frontFacing);
         let tangent = (normalize(input_1.tangent) * facing_1);
         let bitangent = (normalize(input_1.bitangent) * facing_1);
-        s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_5 * bent.z)));
+        s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_6 * bent.z)));
     }
     let _e177 = s;
     return _e177;
@@ -10751,13 +12298,13 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
 fn defaultSurface(input_2: SurfaceInput) -> Surface {
     var s_1: Surface;
 
-    let m_8 = material_row;
-    s_1.baseColor = (m_8.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_8.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_8.surface.x;
-    s_1.roughness = m_8.surface.y;
+    let m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_8.emissive.xyz * m_8.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1f;
     s_1.irradiance = vec3(0f);
     let _e35 = s_1;
@@ -10767,33 +12314,35 @@ fn defaultSurface(input_2: SurfaceInput) -> Surface {
     return _e37;
 }
 
-fn light_surface(m_6: PbrMaterial, relative_3: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_7: PbrMaterial, relative_5: vec3<f32>, normal_5: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e9 = sun_color;
-    let _e12 = sun_shadow(relative_3, normal_4);
+    let _e12 = sun_shadow(relative_5, normal_5);
     sun_color = (_e9 * _e12);
     let _e16 = frame.sun_direction;
     let _e19 = sun_color;
-    let _e21 = direct_light(m_6, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
-    let _e25 = frame.ambient;
-    let _e28 = indirect_diffuse(m_6, (_e25.xyz + extra), dfg_3);
-    return ((_e21.diffuse + _e21.specular) + (_e28 * occlusion));
+    let _e21 = direct_light(m_7, normal_5, to_view_3, -(_e16.xyz), _e19, _e3);
+    let _e22 = clustered_light(m_7, relative_5, normal_5, to_view_3, _e3);
+    let _e26 = frame.ambient;
+    let _e29 = indirect_diffuse(m_7, (_e26.xyz + extra), dfg_3);
+    let direct = (((_e21.diffuse + _e21.specular) + _e22.diffuse) + _e22.specular);
+    return (direct + (_e29 * occlusion));
 }
 
 fn shade(s_2: Surface, input_3: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_6 = normalize(s_2.normal);
+    let normal_7 = normalize(s_2.normal);
     let _e5 = dpdx(input_3.normal);
     let _e8 = dpdy(input_3.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_2.baseColor, s_2.metalness, s_2.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_6, input_3.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_7, input_3.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_3.relativePosition, normal_6, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
+    let _e29 = light_surface(_e19, input_3.relativePosition, normal_7, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
     let outgoing = (_e29 + s_2.emissive);
     let _e34 = material_row;
     let _e35 = fogged(outgoing, input_3.relativePosition, _e34);
@@ -10904,6 +12453,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -10948,6 +12499,13 @@ struct Reflected {
 struct Scattering {
     single: vec3<f32>,
     multi: vec3<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct MapUv {
@@ -11012,6 +12570,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 const SECOND_UV: u32 = 256u;
 const ROWS_UP: f32 = -1f;
@@ -11022,6 +12581,10 @@ var<uniform> frame: Frame;
 var<storage> materials: array<Material>;
 @group(0) @binding(3)
 var dfg_table: texture_2d<f32>;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 @group(1) @binding(0)
 var base_color_map: texture_2d_array<f32>;
@@ -11081,8 +12644,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -11275,6 +12838,10 @@ fn finish_null3d_mesh(c_10: vec3<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
     return _e5;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -11371,6 +12938,89 @@ fn indirect_diffuse(m_5: PbrMaterial, irradiance: vec3<f32>, dfg_2: vec2<f32>) -
     return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_2: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip = (_e10 * vec4<f32>(relative_2, 1f));
+    let tile = clamp(floor(((((clip.xy / vec2(clip.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_2, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_6: PbrMaterial, relative_3: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_3);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_3);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_6, normal_3, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
     if ((flags & (SECOND_UV << slot)) != 0u) {
         return second;
@@ -11390,67 +13040,67 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
     var tangent: vec3<f32>;
     var bitangent: vec3<f32>;
 
-    let m_7 = material_row;
-    let flags_2 = u32(m_7.strengths.z);
+    let m_8 = material_row;
+    let flags_2 = u32(m_8.strengths.z);
     s = surface;
-    let _e11 = transformed_uv(input_1.uv, m_7.uv_u, m_7.uv_v);
-    let _e15 = transformed_uv(input_1.uv1_, m_7.uv_u, m_7.uv_v);
+    let _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    let _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     let _e17 = dpdy(input_1.relativePosition);
     let position_dy = (_e17 * ROWS_UP);
     let position_dx = dpdx(input_1.relativePosition);
-    let _e24 = map_ready(m_7.maps.x);
+    let _e24 = map_ready(m_8.maps.x);
     if _e24 {
         let _e26 = map_uv(flags_2, 0u, _e11, _e15);
-        let _e30 = map_layer(m_7.maps.x);
+        let _e30 = map_layer(m_8.maps.x);
         let sampled = textureSampleGrad(base_color_map, base_color_sampler, _e26.uv, _e30, _e26.dx, _e26.dy);
-        let _e36 = straight_texel(m_7, sampled);
+        let _e36 = straight_texel(m_8, sampled);
         let _e38 = s.baseColor;
         s.baseColor = (_e38 * _e36.xyz);
         let _e42 = s.alpha;
         s.alpha = (_e42 * _e36.w);
     }
-    let _e47 = map_ready(m_7.maps.y);
+    let _e47 = map_ready(m_8.maps.y);
     if _e47 {
         let _e49 = map_uv(flags_2, 1u, _e11, _e15);
-        let _e52 = map_layer(m_7.maps.y);
+        let _e52 = map_layer(m_8.maps.y);
         let texel_1 = textureSampleGrad(metal_rough_map, metal_rough_sampler, _e49.uv, _e52, _e49.dx, _e49.dy);
         let _e60 = s.roughness;
         s.roughness = (_e60 * texel_1.y);
         let _e64 = s.metalness;
         s.metalness = (_e64 * texel_1.z);
     }
-    let _e69 = map_ready(m_7.maps.w);
+    let _e69 = map_ready(m_8.maps.w);
     if _e69 {
         let _e71 = map_uv(flags_2, 3u, _e11, _e15);
-        let _e74 = map_layer(m_7.maps.w);
+        let _e74 = map_layer(m_8.maps.w);
         let texel_2 = textureSampleGrad(occlusion_map, occlusion_sampler, _e71.uv, _e74, _e71.dx, _e71.dy);
-        s.occlusion = (((texel_2.x - 1f) * m_7.strengths.x) + 1f);
+        s.occlusion = (((texel_2.x - 1f) * m_8.strengths.x) + 1f);
     }
-    let _e92 = map_ready(m_7.more_maps.x);
+    let _e92 = map_ready(m_8.more_maps.x);
     if _e92 {
         let _e94 = map_uv(flags_2, 4u, _e11, _e15);
-        let _e97 = map_layer(m_7.more_maps.x);
+        let _e97 = map_layer(m_8.more_maps.x);
         let texel_3 = textureSampleGrad(emissive_map, emissive_sampler, _e94.uv, _e97, _e94.dx, _e94.dy);
         let _e105 = s.emissive;
         s.emissive = (_e105 * texel_3.xyz);
     }
-    let _e110 = map_ready(m_7.more_maps.y);
+    let _e110 = map_ready(m_8.more_maps.y);
     if _e110 {
         let _e112 = map_uv(flags_2, 5u, _e11, _e15);
-        let _e115 = map_layer(m_7.more_maps.y);
+        let _e115 = map_layer(m_8.more_maps.y);
         let texel_4 = textureSampleGrad(light_map, light_sampler, _e112.uv, _e115, _e112.dx, _e112.dy);
-        s.irradiance = (texel_4.xyz * m_7.strengths.y);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    let _e129 = map_ready(m_7.maps.z);
+    let _e129 = map_ready(m_8.maps.z);
     if _e129 {
         let _e131 = map_uv(flags_2, 2u, _e11, _e15);
-        let _e134 = map_layer(m_7.maps.z);
+        let _e134 = map_layer(m_8.maps.z);
         let texel_5 = textureSampleGrad(normal_map, normal_sampler, _e131.uv, _e134, _e131.dx, _e131.dy);
-        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_7.surface.zw), ((texel_5.z * 2f) - 1f));
-        let normal_4 = input_1.normal;
+        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_8.surface.zw), ((texel_5.z * 2f) - 1f));
+        let normal_5 = input_1.normal;
         let facing_1 = select(-1f, 1f, input_1.frontFacing);
-        let q1perp = cross(position_dy, normal_4);
-        let q0perp = cross(normal_4, position_dx);
+        let q1perp = cross(position_dy, normal_5);
+        let q0perp = cross(normal_5, position_dx);
         let st_dy = (_e131.dy * ROWS_UP);
         tangent = ((q1perp * _e131.dx.x) + (q0perp * st_dy.x));
         bitangent = ((q1perp * _e131.dx.y) + (q0perp * st_dy.y));
@@ -11466,7 +13116,7 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
         bitangent = (_e195 * (scale * facing_1));
         let _e199 = tangent;
         let _e202 = bitangent;
-        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_4 * bent.z)));
+        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_5 * bent.z)));
     }
     let _e210 = s;
     return _e210;
@@ -11475,13 +13125,13 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
 fn defaultSurface(input_2: SurfaceInput) -> Surface {
     var s_1: Surface;
 
-    let m_8 = material_row;
-    s_1.baseColor = (m_8.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_8.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_8.surface.x;
-    s_1.roughness = m_8.surface.y;
+    let m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_8.emissive.xyz * m_8.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1f;
     s_1.irradiance = vec3(0f);
     let _e35 = s_1;
@@ -11491,30 +13141,32 @@ fn defaultSurface(input_2: SurfaceInput) -> Surface {
     return _e37;
 }
 
-fn light_surface(m_6: PbrMaterial, relative_2: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_7: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e11 = frame.sun_direction;
     let _e14 = sun_color;
-    let _e17 = direct_light(m_6, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
-    let _e21 = frame.ambient;
-    let _e24 = indirect_diffuse(m_6, (_e21.xyz + extra), dfg_3);
-    return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
+    let _e17 = direct_light(m_7, normal_4, to_view_3, -(_e11.xyz), _e14, _e3);
+    let _e19 = clustered_light(m_7, relative_4, normal_4, to_view_3, _e3);
+    let _e23 = frame.ambient;
+    let _e26 = indirect_diffuse(m_7, (_e23.xyz + extra), dfg_3);
+    let direct = (((_e17.diffuse + _e17.specular) + _e19.diffuse) + _e19.specular);
+    return (direct + (_e26 * occlusion));
 }
 
 fn shade(s_2: Surface, input_3: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_5 = normalize(s_2.normal);
+    let normal_6 = normalize(s_2.normal);
     let _e5 = dpdx(input_3.normal);
     let _e8 = dpdy(input_3.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_2.baseColor, s_2.metalness, s_2.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_5, input_3.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_6, input_3.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_3.relativePosition, normal_5, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
+    let _e29 = light_surface(_e19, input_3.relativePosition, normal_6, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
     let outgoing = (_e29 + s_2.emissive);
     let _e34 = material_row;
     let _e35 = fogged(outgoing, input_3.relativePosition, _e34);
@@ -11620,6 +13272,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -11664,6 +13318,13 @@ struct Reflected {
 struct Scattering {
     single: vec3<f32>,
     multi: vec3<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct MapUv {
@@ -11728,6 +13389,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 const SECOND_UV: u32 = 256u;
 const ROWS_UP: f32 = -1f;
@@ -11738,6 +13400,10 @@ var<uniform> frame: Frame;
 var<storage> materials: array<Material>;
 @group(0) @binding(3)
 var dfg_table: texture_2d<f32>;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 @group(1) @binding(0)
 var base_color_map: texture_2d_array<f32>;
@@ -11797,8 +13463,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -11991,6 +13657,10 @@ fn finish_null3d_mesh(c_10: vec3<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
     return _e5;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -12087,6 +13757,89 @@ fn indirect_diffuse(m_5: PbrMaterial, irradiance: vec3<f32>, dfg_2: vec2<f32>) -
     return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_2: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip = (_e10 * vec4<f32>(relative_2, 1f));
+    let tile = clamp(floor(((((clip.xy / vec2(clip.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_2, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_6: PbrMaterial, relative_3: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_3);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_3);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_6, normal_3, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
     if ((flags & (SECOND_UV << slot)) != 0u) {
         return second;
@@ -12106,67 +13859,67 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
     var tangent: vec3<f32>;
     var bitangent: vec3<f32>;
 
-    let m_7 = material_row;
-    let flags_2 = u32(m_7.strengths.z);
+    let m_8 = material_row;
+    let flags_2 = u32(m_8.strengths.z);
     s = surface;
-    let _e11 = transformed_uv(input_1.uv, m_7.uv_u, m_7.uv_v);
-    let _e15 = transformed_uv(input_1.uv1_, m_7.uv_u, m_7.uv_v);
+    let _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    let _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     let _e17 = dpdy(input_1.relativePosition);
     let position_dy = (_e17 * ROWS_UP);
     let position_dx = dpdx(input_1.relativePosition);
-    let _e24 = map_ready(m_7.maps.x);
+    let _e24 = map_ready(m_8.maps.x);
     if _e24 {
         let _e26 = map_uv(flags_2, 0u, _e11, _e15);
-        let _e30 = map_layer(m_7.maps.x);
+        let _e30 = map_layer(m_8.maps.x);
         let sampled = textureSampleGrad(base_color_map, base_color_sampler, _e26.uv, _e30, _e26.dx, _e26.dy);
-        let _e36 = straight_texel(m_7, sampled);
+        let _e36 = straight_texel(m_8, sampled);
         let _e38 = s.baseColor;
         s.baseColor = (_e38 * _e36.xyz);
         let _e42 = s.alpha;
         s.alpha = (_e42 * _e36.w);
     }
-    let _e47 = map_ready(m_7.maps.y);
+    let _e47 = map_ready(m_8.maps.y);
     if _e47 {
         let _e49 = map_uv(flags_2, 1u, _e11, _e15);
-        let _e52 = map_layer(m_7.maps.y);
+        let _e52 = map_layer(m_8.maps.y);
         let texel_1 = textureSampleGrad(metal_rough_map, metal_rough_sampler, _e49.uv, _e52, _e49.dx, _e49.dy);
         let _e60 = s.roughness;
         s.roughness = (_e60 * texel_1.y);
         let _e64 = s.metalness;
         s.metalness = (_e64 * texel_1.z);
     }
-    let _e69 = map_ready(m_7.maps.w);
+    let _e69 = map_ready(m_8.maps.w);
     if _e69 {
         let _e71 = map_uv(flags_2, 3u, _e11, _e15);
-        let _e74 = map_layer(m_7.maps.w);
+        let _e74 = map_layer(m_8.maps.w);
         let texel_2 = textureSampleGrad(occlusion_map, occlusion_sampler, _e71.uv, _e74, _e71.dx, _e71.dy);
-        s.occlusion = (((texel_2.x - 1f) * m_7.strengths.x) + 1f);
+        s.occlusion = (((texel_2.x - 1f) * m_8.strengths.x) + 1f);
     }
-    let _e92 = map_ready(m_7.more_maps.x);
+    let _e92 = map_ready(m_8.more_maps.x);
     if _e92 {
         let _e94 = map_uv(flags_2, 4u, _e11, _e15);
-        let _e97 = map_layer(m_7.more_maps.x);
+        let _e97 = map_layer(m_8.more_maps.x);
         let texel_3 = textureSampleGrad(emissive_map, emissive_sampler, _e94.uv, _e97, _e94.dx, _e94.dy);
         let _e105 = s.emissive;
         s.emissive = (_e105 * texel_3.xyz);
     }
-    let _e110 = map_ready(m_7.more_maps.y);
+    let _e110 = map_ready(m_8.more_maps.y);
     if _e110 {
         let _e112 = map_uv(flags_2, 5u, _e11, _e15);
-        let _e115 = map_layer(m_7.more_maps.y);
+        let _e115 = map_layer(m_8.more_maps.y);
         let texel_4 = textureSampleGrad(light_map, light_sampler, _e112.uv, _e115, _e112.dx, _e112.dy);
-        s.irradiance = (texel_4.xyz * m_7.strengths.y);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    let _e129 = map_ready(m_7.maps.z);
+    let _e129 = map_ready(m_8.maps.z);
     if _e129 {
         let _e131 = map_uv(flags_2, 2u, _e11, _e15);
-        let _e134 = map_layer(m_7.maps.z);
+        let _e134 = map_layer(m_8.maps.z);
         let texel_5 = textureSampleGrad(normal_map, normal_sampler, _e131.uv, _e134, _e131.dx, _e131.dy);
-        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_7.surface.zw), ((texel_5.z * 2f) - 1f));
-        let normal_4 = input_1.normal;
+        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_8.surface.zw), ((texel_5.z * 2f) - 1f));
+        let normal_5 = input_1.normal;
         let facing_1 = select(-1f, 1f, input_1.frontFacing);
-        let q1perp = cross(position_dy, normal_4);
-        let q0perp = cross(normal_4, position_dx);
+        let q1perp = cross(position_dy, normal_5);
+        let q0perp = cross(normal_5, position_dx);
         let st_dy = (_e131.dy * ROWS_UP);
         tangent = ((q1perp * _e131.dx.x) + (q0perp * st_dy.x));
         bitangent = ((q1perp * _e131.dx.y) + (q0perp * st_dy.y));
@@ -12182,7 +13935,7 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
         bitangent = (_e195 * (scale * facing_1));
         let _e199 = tangent;
         let _e202 = bitangent;
-        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_4 * bent.z)));
+        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_5 * bent.z)));
     }
     let _e210 = s;
     return _e210;
@@ -12191,13 +13944,13 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
 fn defaultSurface(input_2: SurfaceInput) -> Surface {
     var s_1: Surface;
 
-    let m_8 = material_row;
-    s_1.baseColor = (m_8.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_8.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_8.surface.x;
-    s_1.roughness = m_8.surface.y;
+    let m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_8.emissive.xyz * m_8.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1f;
     s_1.irradiance = vec3(0f);
     let _e35 = s_1;
@@ -12207,30 +13960,32 @@ fn defaultSurface(input_2: SurfaceInput) -> Surface {
     return _e37;
 }
 
-fn light_surface(m_6: PbrMaterial, relative_2: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_7: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e11 = frame.sun_direction;
     let _e14 = sun_color;
-    let _e17 = direct_light(m_6, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
-    let _e21 = frame.ambient;
-    let _e24 = indirect_diffuse(m_6, (_e21.xyz + extra), dfg_3);
-    return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
+    let _e17 = direct_light(m_7, normal_4, to_view_3, -(_e11.xyz), _e14, _e3);
+    let _e19 = clustered_light(m_7, relative_4, normal_4, to_view_3, _e3);
+    let _e23 = frame.ambient;
+    let _e26 = indirect_diffuse(m_7, (_e23.xyz + extra), dfg_3);
+    let direct = (((_e17.diffuse + _e17.specular) + _e19.diffuse) + _e19.specular);
+    return (direct + (_e26 * occlusion));
 }
 
 fn shade(s_2: Surface, input_3: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_5 = normalize(s_2.normal);
+    let normal_6 = normalize(s_2.normal);
     let _e5 = dpdx(input_3.normal);
     let _e8 = dpdy(input_3.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_2.baseColor, s_2.metalness, s_2.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_5, input_3.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_6, input_3.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_3.relativePosition, normal_5, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
+    let _e29 = light_surface(_e19, input_3.relativePosition, normal_6, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
     let outgoing = (_e29 + s_2.emissive);
     let _e36 = material_row.emissive.w;
     if (s_2.alpha < _e36) {
@@ -12340,6 +14095,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -12392,6 +14149,13 @@ struct ShadowCascades {
     forward: vec4<f32>,
     normal_offsets: vec4<f32>,
     depth_biases: vec4<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct MapUv {
@@ -12456,6 +14220,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 const SECOND_UV: u32 = 256u;
 const ROWS_UP: f32 = -1f;
@@ -12472,6 +14237,10 @@ var<uniform> cascades: ShadowCascades;
 var shadow_map: texture_depth_2d_array;
 @group(0) @binding(5)
 var shadow_sampler: sampler_comparison;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 @group(1) @binding(0)
 var base_color_map: texture_2d_array<f32>;
@@ -12531,8 +14300,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -12723,6 +14492,10 @@ fn finish_null3d_mesh(c_10: vec3<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
     let _e2 = frame.output;
     let _e5 = finish_null3d_tonemap(c_10, pixel_3, _e2);
     return _e5;
+}
+
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
 }
 
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
@@ -12870,6 +14643,89 @@ fn sun_shadow(relative_2: vec3<f32>, normal_3: vec3<f32>) -> f32 {
     return mix(lit, 1f, smoothstep((end * 0.9f), end, along));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_3: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip_1 = (_e10 * vec4<f32>(relative_3, 1f));
+    let tile = clamp(floor(((((clip_1.xy / vec2(clip_1.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_3, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_6: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_4);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_4);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_6, normal_4, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
     if ((flags & (SECOND_UV << slot)) != 0u) {
         return second;
@@ -12889,67 +14745,67 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
     var tangent: vec3<f32>;
     var bitangent: vec3<f32>;
 
-    let m_7 = material_row;
-    let flags_2 = u32(m_7.strengths.z);
+    let m_8 = material_row;
+    let flags_2 = u32(m_8.strengths.z);
     s = surface;
-    let _e11 = transformed_uv(input_1.uv, m_7.uv_u, m_7.uv_v);
-    let _e15 = transformed_uv(input_1.uv1_, m_7.uv_u, m_7.uv_v);
+    let _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    let _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     let _e17 = dpdy(input_1.relativePosition);
     let position_dy = (_e17 * ROWS_UP);
     let position_dx = dpdx(input_1.relativePosition);
-    let _e24 = map_ready(m_7.maps.x);
+    let _e24 = map_ready(m_8.maps.x);
     if _e24 {
         let _e26 = map_uv(flags_2, 0u, _e11, _e15);
-        let _e30 = map_layer(m_7.maps.x);
+        let _e30 = map_layer(m_8.maps.x);
         let sampled = textureSampleGrad(base_color_map, base_color_sampler, _e26.uv, _e30, _e26.dx, _e26.dy);
-        let _e36 = straight_texel(m_7, sampled);
+        let _e36 = straight_texel(m_8, sampled);
         let _e38 = s.baseColor;
         s.baseColor = (_e38 * _e36.xyz);
         let _e42 = s.alpha;
         s.alpha = (_e42 * _e36.w);
     }
-    let _e47 = map_ready(m_7.maps.y);
+    let _e47 = map_ready(m_8.maps.y);
     if _e47 {
         let _e49 = map_uv(flags_2, 1u, _e11, _e15);
-        let _e52 = map_layer(m_7.maps.y);
+        let _e52 = map_layer(m_8.maps.y);
         let texel_1 = textureSampleGrad(metal_rough_map, metal_rough_sampler, _e49.uv, _e52, _e49.dx, _e49.dy);
         let _e60 = s.roughness;
         s.roughness = (_e60 * texel_1.y);
         let _e64 = s.metalness;
         s.metalness = (_e64 * texel_1.z);
     }
-    let _e69 = map_ready(m_7.maps.w);
+    let _e69 = map_ready(m_8.maps.w);
     if _e69 {
         let _e71 = map_uv(flags_2, 3u, _e11, _e15);
-        let _e74 = map_layer(m_7.maps.w);
+        let _e74 = map_layer(m_8.maps.w);
         let texel_2 = textureSampleGrad(occlusion_map, occlusion_sampler, _e71.uv, _e74, _e71.dx, _e71.dy);
-        s.occlusion = (((texel_2.x - 1f) * m_7.strengths.x) + 1f);
+        s.occlusion = (((texel_2.x - 1f) * m_8.strengths.x) + 1f);
     }
-    let _e92 = map_ready(m_7.more_maps.x);
+    let _e92 = map_ready(m_8.more_maps.x);
     if _e92 {
         let _e94 = map_uv(flags_2, 4u, _e11, _e15);
-        let _e97 = map_layer(m_7.more_maps.x);
+        let _e97 = map_layer(m_8.more_maps.x);
         let texel_3 = textureSampleGrad(emissive_map, emissive_sampler, _e94.uv, _e97, _e94.dx, _e94.dy);
         let _e105 = s.emissive;
         s.emissive = (_e105 * texel_3.xyz);
     }
-    let _e110 = map_ready(m_7.more_maps.y);
+    let _e110 = map_ready(m_8.more_maps.y);
     if _e110 {
         let _e112 = map_uv(flags_2, 5u, _e11, _e15);
-        let _e115 = map_layer(m_7.more_maps.y);
+        let _e115 = map_layer(m_8.more_maps.y);
         let texel_4 = textureSampleGrad(light_map, light_sampler, _e112.uv, _e115, _e112.dx, _e112.dy);
-        s.irradiance = (texel_4.xyz * m_7.strengths.y);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    let _e129 = map_ready(m_7.maps.z);
+    let _e129 = map_ready(m_8.maps.z);
     if _e129 {
         let _e131 = map_uv(flags_2, 2u, _e11, _e15);
-        let _e134 = map_layer(m_7.maps.z);
+        let _e134 = map_layer(m_8.maps.z);
         let texel_5 = textureSampleGrad(normal_map, normal_sampler, _e131.uv, _e134, _e131.dx, _e131.dy);
-        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_7.surface.zw), ((texel_5.z * 2f) - 1f));
-        let normal_5 = input_1.normal;
+        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_8.surface.zw), ((texel_5.z * 2f) - 1f));
+        let normal_6 = input_1.normal;
         let facing_1 = select(-1f, 1f, input_1.frontFacing);
-        let q1perp = cross(position_dy, normal_5);
-        let q0perp = cross(normal_5, position_dx);
+        let q1perp = cross(position_dy, normal_6);
+        let q0perp = cross(normal_6, position_dx);
         let st_dy = (_e131.dy * ROWS_UP);
         tangent = ((q1perp * _e131.dx.x) + (q0perp * st_dy.x));
         bitangent = ((q1perp * _e131.dx.y) + (q0perp * st_dy.y));
@@ -12965,7 +14821,7 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
         bitangent = (_e195 * (scale * facing_1));
         let _e199 = tangent;
         let _e202 = bitangent;
-        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_5 * bent.z)));
+        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_6 * bent.z)));
     }
     let _e210 = s;
     return _e210;
@@ -12974,13 +14830,13 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
 fn defaultSurface(input_2: SurfaceInput) -> Surface {
     var s_1: Surface;
 
-    let m_8 = material_row;
-    s_1.baseColor = (m_8.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_8.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_8.surface.x;
-    s_1.roughness = m_8.surface.y;
+    let m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_8.emissive.xyz * m_8.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1f;
     s_1.irradiance = vec3(0f);
     let _e35 = s_1;
@@ -12990,33 +14846,35 @@ fn defaultSurface(input_2: SurfaceInput) -> Surface {
     return _e37;
 }
 
-fn light_surface(m_6: PbrMaterial, relative_3: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_7: PbrMaterial, relative_5: vec3<f32>, normal_5: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e9 = sun_color;
-    let _e12 = sun_shadow(relative_3, normal_4);
+    let _e12 = sun_shadow(relative_5, normal_5);
     sun_color = (_e9 * _e12);
     let _e16 = frame.sun_direction;
     let _e19 = sun_color;
-    let _e21 = direct_light(m_6, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
-    let _e25 = frame.ambient;
-    let _e28 = indirect_diffuse(m_6, (_e25.xyz + extra), dfg_3);
-    return ((_e21.diffuse + _e21.specular) + (_e28 * occlusion));
+    let _e21 = direct_light(m_7, normal_5, to_view_3, -(_e16.xyz), _e19, _e3);
+    let _e22 = clustered_light(m_7, relative_5, normal_5, to_view_3, _e3);
+    let _e26 = frame.ambient;
+    let _e29 = indirect_diffuse(m_7, (_e26.xyz + extra), dfg_3);
+    let direct = (((_e21.diffuse + _e21.specular) + _e22.diffuse) + _e22.specular);
+    return (direct + (_e29 * occlusion));
 }
 
 fn shade(s_2: Surface, input_3: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_6 = normalize(s_2.normal);
+    let normal_7 = normalize(s_2.normal);
     let _e5 = dpdx(input_3.normal);
     let _e8 = dpdy(input_3.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_2.baseColor, s_2.metalness, s_2.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_6, input_3.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_7, input_3.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_3.relativePosition, normal_6, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
+    let _e29 = light_surface(_e19, input_3.relativePosition, normal_7, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
     let outgoing = (_e29 + s_2.emissive);
     let _e36 = material_row.emissive.w;
     if (s_2.alpha < _e36) {
@@ -13126,6 +14984,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -13178,6 +15038,13 @@ struct ShadowCascades {
     forward: vec4<f32>,
     normal_offsets: vec4<f32>,
     depth_biases: vec4<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct MapUv {
@@ -13247,6 +15114,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 const SECOND_UV: u32 = 256u;
 const ROWS_UP: f32 = -1f;
@@ -13263,6 +15131,10 @@ var<uniform> cascades: ShadowCascades;
 var shadow_map: texture_depth_2d_array;
 @group(0) @binding(5)
 var shadow_sampler: sampler_comparison;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 @group(1) @binding(0)
 var base_color_map: texture_2d_array<f32>;
@@ -13322,8 +15194,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -13527,6 +15399,10 @@ fn world_direction(found_4: Instance, direction: vec3<f32>) -> vec3<f32> {
     return _e3;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -13672,6 +15548,89 @@ fn sun_shadow(relative_2: vec3<f32>, normal_3: vec3<f32>) -> f32 {
     return mix(lit, 1f, smoothstep((end * 0.9f), end, along));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_3: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip_1 = (_e10 * vec4<f32>(relative_3, 1f));
+    let tile = clamp(floor(((((clip_1.xy / vec2(clip_1.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_3, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_6: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_4);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_4);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_6, normal_4, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
     if ((flags & (SECOND_UV << slot)) != 0u) {
         return second;
@@ -13689,68 +15648,68 @@ fn transformed_uv(uv_1: vec2<f32>, uv_u: vec4<f32>, uv_v: vec4<f32>) -> MapUv {
 fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
     var s: Surface;
 
-    let m_7 = material_row;
-    let flags_2 = u32(m_7.strengths.z);
+    let m_8 = material_row;
+    let flags_2 = u32(m_8.strengths.z);
     s = surface;
-    let _e11 = transformed_uv(input_1.uv, m_7.uv_u, m_7.uv_v);
-    let _e15 = transformed_uv(input_1.uv1_, m_7.uv_u, m_7.uv_v);
+    let _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    let _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     let _e17 = dpdy(input_1.relativePosition);
     let position_dy = (_e17 * ROWS_UP);
     let position_dx = dpdx(input_1.relativePosition);
-    let _e24 = map_ready(m_7.maps.x);
+    let _e24 = map_ready(m_8.maps.x);
     if _e24 {
         let _e26 = map_uv(flags_2, 0u, _e11, _e15);
-        let _e30 = map_layer(m_7.maps.x);
+        let _e30 = map_layer(m_8.maps.x);
         let sampled = textureSampleGrad(base_color_map, base_color_sampler, _e26.uv, _e30, _e26.dx, _e26.dy);
-        let _e36 = straight_texel(m_7, sampled);
+        let _e36 = straight_texel(m_8, sampled);
         let _e38 = s.baseColor;
         s.baseColor = (_e38 * _e36.xyz);
         let _e42 = s.alpha;
         s.alpha = (_e42 * _e36.w);
     }
-    let _e47 = map_ready(m_7.maps.y);
+    let _e47 = map_ready(m_8.maps.y);
     if _e47 {
         let _e49 = map_uv(flags_2, 1u, _e11, _e15);
-        let _e52 = map_layer(m_7.maps.y);
+        let _e52 = map_layer(m_8.maps.y);
         let texel_1 = textureSampleGrad(metal_rough_map, metal_rough_sampler, _e49.uv, _e52, _e49.dx, _e49.dy);
         let _e60 = s.roughness;
         s.roughness = (_e60 * texel_1.y);
         let _e64 = s.metalness;
         s.metalness = (_e64 * texel_1.z);
     }
-    let _e69 = map_ready(m_7.maps.w);
+    let _e69 = map_ready(m_8.maps.w);
     if _e69 {
         let _e71 = map_uv(flags_2, 3u, _e11, _e15);
-        let _e74 = map_layer(m_7.maps.w);
+        let _e74 = map_layer(m_8.maps.w);
         let texel_2 = textureSampleGrad(occlusion_map, occlusion_sampler, _e71.uv, _e74, _e71.dx, _e71.dy);
-        s.occlusion = (((texel_2.x - 1f) * m_7.strengths.x) + 1f);
+        s.occlusion = (((texel_2.x - 1f) * m_8.strengths.x) + 1f);
     }
-    let _e92 = map_ready(m_7.more_maps.x);
+    let _e92 = map_ready(m_8.more_maps.x);
     if _e92 {
         let _e94 = map_uv(flags_2, 4u, _e11, _e15);
-        let _e97 = map_layer(m_7.more_maps.x);
+        let _e97 = map_layer(m_8.more_maps.x);
         let texel_3 = textureSampleGrad(emissive_map, emissive_sampler, _e94.uv, _e97, _e94.dx, _e94.dy);
         let _e105 = s.emissive;
         s.emissive = (_e105 * texel_3.xyz);
     }
-    let _e110 = map_ready(m_7.more_maps.y);
+    let _e110 = map_ready(m_8.more_maps.y);
     if _e110 {
         let _e112 = map_uv(flags_2, 5u, _e11, _e15);
-        let _e115 = map_layer(m_7.more_maps.y);
+        let _e115 = map_layer(m_8.more_maps.y);
         let texel_4 = textureSampleGrad(light_map, light_sampler, _e112.uv, _e115, _e112.dx, _e112.dy);
-        s.irradiance = (texel_4.xyz * m_7.strengths.y);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    let _e129 = map_ready(m_7.maps.z);
+    let _e129 = map_ready(m_8.maps.z);
     if _e129 {
         let _e131 = map_uv(flags_2, 2u, _e11, _e15);
-        let _e134 = map_layer(m_7.maps.z);
+        let _e134 = map_layer(m_8.maps.z);
         let texel_5 = textureSampleGrad(normal_map, normal_sampler, _e131.uv, _e134, _e131.dx, _e131.dy);
-        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_7.surface.zw), ((texel_5.z * 2f) - 1f));
-        let normal_5 = input_1.normal;
+        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_8.surface.zw), ((texel_5.z * 2f) - 1f));
+        let normal_6 = input_1.normal;
         let facing_1 = select(-1f, 1f, input_1.frontFacing);
         let tangent = (normalize(input_1.tangent) * facing_1);
         let bitangent = (normalize(input_1.bitangent) * facing_1);
-        s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_5 * bent.z)));
+        s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_6 * bent.z)));
     }
     let _e177 = s;
     return _e177;
@@ -13759,13 +15718,13 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
 fn defaultSurface(input_2: SurfaceInput) -> Surface {
     var s_1: Surface;
 
-    let m_8 = material_row;
-    s_1.baseColor = (m_8.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_8.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_8.surface.x;
-    s_1.roughness = m_8.surface.y;
+    let m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_8.emissive.xyz * m_8.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1f;
     s_1.irradiance = vec3(0f);
     let _e35 = s_1;
@@ -13775,33 +15734,35 @@ fn defaultSurface(input_2: SurfaceInput) -> Surface {
     return _e37;
 }
 
-fn light_surface(m_6: PbrMaterial, relative_3: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_7: PbrMaterial, relative_5: vec3<f32>, normal_5: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e9 = sun_color;
-    let _e12 = sun_shadow(relative_3, normal_4);
+    let _e12 = sun_shadow(relative_5, normal_5);
     sun_color = (_e9 * _e12);
     let _e16 = frame.sun_direction;
     let _e19 = sun_color;
-    let _e21 = direct_light(m_6, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
-    let _e25 = frame.ambient;
-    let _e28 = indirect_diffuse(m_6, (_e25.xyz + extra), dfg_3);
-    return ((_e21.diffuse + _e21.specular) + (_e28 * occlusion));
+    let _e21 = direct_light(m_7, normal_5, to_view_3, -(_e16.xyz), _e19, _e3);
+    let _e22 = clustered_light(m_7, relative_5, normal_5, to_view_3, _e3);
+    let _e26 = frame.ambient;
+    let _e29 = indirect_diffuse(m_7, (_e26.xyz + extra), dfg_3);
+    let direct = (((_e21.diffuse + _e21.specular) + _e22.diffuse) + _e22.specular);
+    return (direct + (_e29 * occlusion));
 }
 
 fn shade(s_2: Surface, input_3: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_6 = normalize(s_2.normal);
+    let normal_7 = normalize(s_2.normal);
     let _e5 = dpdx(input_3.normal);
     let _e8 = dpdy(input_3.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_2.baseColor, s_2.metalness, s_2.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_6, input_3.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_7, input_3.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_3.relativePosition, normal_6, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
+    let _e29 = light_surface(_e19, input_3.relativePosition, normal_7, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
     let outgoing = (_e29 + s_2.emissive);
     let _e36 = material_row.emissive.w;
     if (s_2.alpha < _e36) {
@@ -13918,6 +15879,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -13962,6 +15925,13 @@ struct Reflected {
 struct Scattering {
     single: vec3<f32>,
     multi: vec3<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct MapUv {
@@ -14031,6 +16001,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 const SECOND_UV: u32 = 256u;
 const ROWS_UP: f32 = -1f;
@@ -14041,6 +16012,10 @@ var<uniform> frame: Frame;
 var<storage> materials: array<Material>;
 @group(0) @binding(3)
 var dfg_table: texture_2d<f32>;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 @group(1) @binding(0)
 var base_color_map: texture_2d_array<f32>;
@@ -14100,8 +16075,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -14305,6 +16280,10 @@ fn world_direction(found_4: Instance, direction: vec3<f32>) -> vec3<f32> {
     return _e3;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -14401,6 +16380,89 @@ fn indirect_diffuse(m_5: PbrMaterial, irradiance: vec3<f32>, dfg_2: vec2<f32>) -
     return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_2: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip = (_e10 * vec4<f32>(relative_2, 1f));
+    let tile = clamp(floor(((((clip.xy / vec2(clip.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_2, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_6: PbrMaterial, relative_3: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_3);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_3);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_6, normal_3, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
     if ((flags & (SECOND_UV << slot)) != 0u) {
         return second;
@@ -14418,68 +16480,68 @@ fn transformed_uv(uv: vec2<f32>, uv_u: vec4<f32>, uv_v: vec4<f32>) -> MapUv {
 fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
     var s: Surface;
 
-    let m_7 = material_row;
-    let flags_2 = u32(m_7.strengths.z);
+    let m_8 = material_row;
+    let flags_2 = u32(m_8.strengths.z);
     s = surface;
-    let _e11 = transformed_uv(input_1.uv, m_7.uv_u, m_7.uv_v);
-    let _e15 = transformed_uv(input_1.uv1_, m_7.uv_u, m_7.uv_v);
+    let _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    let _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     let _e17 = dpdy(input_1.relativePosition);
     let position_dy = (_e17 * ROWS_UP);
     let position_dx = dpdx(input_1.relativePosition);
-    let _e24 = map_ready(m_7.maps.x);
+    let _e24 = map_ready(m_8.maps.x);
     if _e24 {
         let _e26 = map_uv(flags_2, 0u, _e11, _e15);
-        let _e30 = map_layer(m_7.maps.x);
+        let _e30 = map_layer(m_8.maps.x);
         let sampled = textureSampleGrad(base_color_map, base_color_sampler, _e26.uv, _e30, _e26.dx, _e26.dy);
-        let _e36 = straight_texel(m_7, sampled);
+        let _e36 = straight_texel(m_8, sampled);
         let _e38 = s.baseColor;
         s.baseColor = (_e38 * _e36.xyz);
         let _e42 = s.alpha;
         s.alpha = (_e42 * _e36.w);
     }
-    let _e47 = map_ready(m_7.maps.y);
+    let _e47 = map_ready(m_8.maps.y);
     if _e47 {
         let _e49 = map_uv(flags_2, 1u, _e11, _e15);
-        let _e52 = map_layer(m_7.maps.y);
+        let _e52 = map_layer(m_8.maps.y);
         let texel_1 = textureSampleGrad(metal_rough_map, metal_rough_sampler, _e49.uv, _e52, _e49.dx, _e49.dy);
         let _e60 = s.roughness;
         s.roughness = (_e60 * texel_1.y);
         let _e64 = s.metalness;
         s.metalness = (_e64 * texel_1.z);
     }
-    let _e69 = map_ready(m_7.maps.w);
+    let _e69 = map_ready(m_8.maps.w);
     if _e69 {
         let _e71 = map_uv(flags_2, 3u, _e11, _e15);
-        let _e74 = map_layer(m_7.maps.w);
+        let _e74 = map_layer(m_8.maps.w);
         let texel_2 = textureSampleGrad(occlusion_map, occlusion_sampler, _e71.uv, _e74, _e71.dx, _e71.dy);
-        s.occlusion = (((texel_2.x - 1f) * m_7.strengths.x) + 1f);
+        s.occlusion = (((texel_2.x - 1f) * m_8.strengths.x) + 1f);
     }
-    let _e92 = map_ready(m_7.more_maps.x);
+    let _e92 = map_ready(m_8.more_maps.x);
     if _e92 {
         let _e94 = map_uv(flags_2, 4u, _e11, _e15);
-        let _e97 = map_layer(m_7.more_maps.x);
+        let _e97 = map_layer(m_8.more_maps.x);
         let texel_3 = textureSampleGrad(emissive_map, emissive_sampler, _e94.uv, _e97, _e94.dx, _e94.dy);
         let _e105 = s.emissive;
         s.emissive = (_e105 * texel_3.xyz);
     }
-    let _e110 = map_ready(m_7.more_maps.y);
+    let _e110 = map_ready(m_8.more_maps.y);
     if _e110 {
         let _e112 = map_uv(flags_2, 5u, _e11, _e15);
-        let _e115 = map_layer(m_7.more_maps.y);
+        let _e115 = map_layer(m_8.more_maps.y);
         let texel_4 = textureSampleGrad(light_map, light_sampler, _e112.uv, _e115, _e112.dx, _e112.dy);
-        s.irradiance = (texel_4.xyz * m_7.strengths.y);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    let _e129 = map_ready(m_7.maps.z);
+    let _e129 = map_ready(m_8.maps.z);
     if _e129 {
         let _e131 = map_uv(flags_2, 2u, _e11, _e15);
-        let _e134 = map_layer(m_7.maps.z);
+        let _e134 = map_layer(m_8.maps.z);
         let texel_5 = textureSampleGrad(normal_map, normal_sampler, _e131.uv, _e134, _e131.dx, _e131.dy);
-        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_7.surface.zw), ((texel_5.z * 2f) - 1f));
-        let normal_4 = input_1.normal;
+        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_8.surface.zw), ((texel_5.z * 2f) - 1f));
+        let normal_5 = input_1.normal;
         let facing_1 = select(-1f, 1f, input_1.frontFacing);
         let tangent = (normalize(input_1.tangent) * facing_1);
         let bitangent = (normalize(input_1.bitangent) * facing_1);
-        s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_4 * bent.z)));
+        s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_5 * bent.z)));
     }
     let _e177 = s;
     return _e177;
@@ -14488,13 +16550,13 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
 fn defaultSurface(input_2: SurfaceInput) -> Surface {
     var s_1: Surface;
 
-    let m_8 = material_row;
-    s_1.baseColor = (m_8.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_8.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_8.surface.x;
-    s_1.roughness = m_8.surface.y;
+    let m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_8.emissive.xyz * m_8.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1f;
     s_1.irradiance = vec3(0f);
     let _e35 = s_1;
@@ -14504,30 +16566,32 @@ fn defaultSurface(input_2: SurfaceInput) -> Surface {
     return _e37;
 }
 
-fn light_surface(m_6: PbrMaterial, relative_2: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_7: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e11 = frame.sun_direction;
     let _e14 = sun_color;
-    let _e17 = direct_light(m_6, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
-    let _e21 = frame.ambient;
-    let _e24 = indirect_diffuse(m_6, (_e21.xyz + extra), dfg_3);
-    return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
+    let _e17 = direct_light(m_7, normal_4, to_view_3, -(_e11.xyz), _e14, _e3);
+    let _e19 = clustered_light(m_7, relative_4, normal_4, to_view_3, _e3);
+    let _e23 = frame.ambient;
+    let _e26 = indirect_diffuse(m_7, (_e23.xyz + extra), dfg_3);
+    let direct = (((_e17.diffuse + _e17.specular) + _e19.diffuse) + _e19.specular);
+    return (direct + (_e26 * occlusion));
 }
 
 fn shade(s_2: Surface, input_3: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_5 = normalize(s_2.normal);
+    let normal_6 = normalize(s_2.normal);
     let _e5 = dpdx(input_3.normal);
     let _e8 = dpdy(input_3.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_2.baseColor, s_2.metalness, s_2.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_5, input_3.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_6, input_3.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_3.relativePosition, normal_5, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
+    let _e29 = light_surface(_e19, input_3.relativePosition, normal_6, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
     let outgoing = (_e29 + s_2.emissive);
     let _e36 = material_row.emissive.w;
     if (s_2.alpha < _e36) {
@@ -14644,6 +16708,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -14696,6 +16762,13 @@ struct ShadowCascades {
     forward: vec4<f32>,
     normal_offsets: vec4<f32>,
     depth_biases: vec4<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct MapUv {
@@ -14760,6 +16833,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 const SECOND_UV: u32 = 256u;
 const ROWS_UP: f32 = -1f;
@@ -14776,6 +16850,10 @@ var<uniform> cascades: ShadowCascades;
 var shadow_map: texture_depth_2d_array;
 @group(0) @binding(5)
 var shadow_sampler: sampler_comparison;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 @group(1) @binding(0)
 var base_color_map: texture_2d_array<f32>;
@@ -14835,8 +16913,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -15029,6 +17107,10 @@ fn finish_null3d_mesh(c_10: vec3<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
     return _e5;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -15174,6 +17256,89 @@ fn sun_shadow(relative_2: vec3<f32>, normal_3: vec3<f32>) -> f32 {
     return mix(lit, 1f, smoothstep((end * 0.9f), end, along));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_3: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip_1 = (_e10 * vec4<f32>(relative_3, 1f));
+    let tile = clamp(floor(((((clip_1.xy / vec2(clip_1.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_3, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_6: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_4);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_4);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_6, normal_4, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
     if ((flags & (SECOND_UV << slot)) != 0u) {
         return second;
@@ -15193,67 +17358,67 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
     var tangent: vec3<f32>;
     var bitangent: vec3<f32>;
 
-    let m_7 = material_row;
-    let flags_2 = u32(m_7.strengths.z);
+    let m_8 = material_row;
+    let flags_2 = u32(m_8.strengths.z);
     s = surface;
-    let _e11 = transformed_uv(input_1.uv, m_7.uv_u, m_7.uv_v);
-    let _e15 = transformed_uv(input_1.uv1_, m_7.uv_u, m_7.uv_v);
+    let _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    let _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     let _e17 = dpdy(input_1.relativePosition);
     let position_dy = (_e17 * ROWS_UP);
     let position_dx = dpdx(input_1.relativePosition);
-    let _e24 = map_ready(m_7.maps.x);
+    let _e24 = map_ready(m_8.maps.x);
     if _e24 {
         let _e26 = map_uv(flags_2, 0u, _e11, _e15);
-        let _e30 = map_layer(m_7.maps.x);
+        let _e30 = map_layer(m_8.maps.x);
         let sampled = textureSampleGrad(base_color_map, base_color_sampler, _e26.uv, _e30, _e26.dx, _e26.dy);
-        let _e36 = straight_texel(m_7, sampled);
+        let _e36 = straight_texel(m_8, sampled);
         let _e38 = s.baseColor;
         s.baseColor = (_e38 * _e36.xyz);
         let _e42 = s.alpha;
         s.alpha = (_e42 * _e36.w);
     }
-    let _e47 = map_ready(m_7.maps.y);
+    let _e47 = map_ready(m_8.maps.y);
     if _e47 {
         let _e49 = map_uv(flags_2, 1u, _e11, _e15);
-        let _e52 = map_layer(m_7.maps.y);
+        let _e52 = map_layer(m_8.maps.y);
         let texel_1 = textureSampleGrad(metal_rough_map, metal_rough_sampler, _e49.uv, _e52, _e49.dx, _e49.dy);
         let _e60 = s.roughness;
         s.roughness = (_e60 * texel_1.y);
         let _e64 = s.metalness;
         s.metalness = (_e64 * texel_1.z);
     }
-    let _e69 = map_ready(m_7.maps.w);
+    let _e69 = map_ready(m_8.maps.w);
     if _e69 {
         let _e71 = map_uv(flags_2, 3u, _e11, _e15);
-        let _e74 = map_layer(m_7.maps.w);
+        let _e74 = map_layer(m_8.maps.w);
         let texel_2 = textureSampleGrad(occlusion_map, occlusion_sampler, _e71.uv, _e74, _e71.dx, _e71.dy);
-        s.occlusion = (((texel_2.x - 1f) * m_7.strengths.x) + 1f);
+        s.occlusion = (((texel_2.x - 1f) * m_8.strengths.x) + 1f);
     }
-    let _e92 = map_ready(m_7.more_maps.x);
+    let _e92 = map_ready(m_8.more_maps.x);
     if _e92 {
         let _e94 = map_uv(flags_2, 4u, _e11, _e15);
-        let _e97 = map_layer(m_7.more_maps.x);
+        let _e97 = map_layer(m_8.more_maps.x);
         let texel_3 = textureSampleGrad(emissive_map, emissive_sampler, _e94.uv, _e97, _e94.dx, _e94.dy);
         let _e105 = s.emissive;
         s.emissive = (_e105 * texel_3.xyz);
     }
-    let _e110 = map_ready(m_7.more_maps.y);
+    let _e110 = map_ready(m_8.more_maps.y);
     if _e110 {
         let _e112 = map_uv(flags_2, 5u, _e11, _e15);
-        let _e115 = map_layer(m_7.more_maps.y);
+        let _e115 = map_layer(m_8.more_maps.y);
         let texel_4 = textureSampleGrad(light_map, light_sampler, _e112.uv, _e115, _e112.dx, _e112.dy);
-        s.irradiance = (texel_4.xyz * m_7.strengths.y);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    let _e129 = map_ready(m_7.maps.z);
+    let _e129 = map_ready(m_8.maps.z);
     if _e129 {
         let _e131 = map_uv(flags_2, 2u, _e11, _e15);
-        let _e134 = map_layer(m_7.maps.z);
+        let _e134 = map_layer(m_8.maps.z);
         let texel_5 = textureSampleGrad(normal_map, normal_sampler, _e131.uv, _e134, _e131.dx, _e131.dy);
-        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_7.surface.zw), ((texel_5.z * 2f) - 1f));
-        let normal_5 = input_1.normal;
+        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_8.surface.zw), ((texel_5.z * 2f) - 1f));
+        let normal_6 = input_1.normal;
         let facing_1 = select(-1f, 1f, input_1.frontFacing);
-        let q1perp = cross(position_dy, normal_5);
-        let q0perp = cross(normal_5, position_dx);
+        let q1perp = cross(position_dy, normal_6);
+        let q0perp = cross(normal_6, position_dx);
         let st_dy = (_e131.dy * ROWS_UP);
         tangent = ((q1perp * _e131.dx.x) + (q0perp * st_dy.x));
         bitangent = ((q1perp * _e131.dx.y) + (q0perp * st_dy.y));
@@ -15269,7 +17434,7 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
         bitangent = (_e195 * (scale * facing_1));
         let _e199 = tangent;
         let _e202 = bitangent;
-        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_5 * bent.z)));
+        s.normal = normalize((((_e199 * bent.x) + (_e202 * bent.y)) + (normal_6 * bent.z)));
     }
     let _e210 = s;
     return _e210;
@@ -15278,13 +17443,13 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
 fn defaultSurface(input_2: SurfaceInput) -> Surface {
     var s_1: Surface;
 
-    let m_8 = material_row;
-    s_1.baseColor = (m_8.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_8.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_8.surface.x;
-    s_1.roughness = m_8.surface.y;
+    let m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_8.emissive.xyz * m_8.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1f;
     s_1.irradiance = vec3(0f);
     let _e35 = s_1;
@@ -15294,33 +17459,35 @@ fn defaultSurface(input_2: SurfaceInput) -> Surface {
     return _e37;
 }
 
-fn light_surface(m_6: PbrMaterial, relative_3: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_7: PbrMaterial, relative_5: vec3<f32>, normal_5: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e9 = sun_color;
-    let _e12 = sun_shadow(relative_3, normal_4);
+    let _e12 = sun_shadow(relative_5, normal_5);
     sun_color = (_e9 * _e12);
     let _e16 = frame.sun_direction;
     let _e19 = sun_color;
-    let _e21 = direct_light(m_6, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
-    let _e25 = frame.ambient;
-    let _e28 = indirect_diffuse(m_6, (_e25.xyz + extra), dfg_3);
-    return ((_e21.diffuse + _e21.specular) + (_e28 * occlusion));
+    let _e21 = direct_light(m_7, normal_5, to_view_3, -(_e16.xyz), _e19, _e3);
+    let _e22 = clustered_light(m_7, relative_5, normal_5, to_view_3, _e3);
+    let _e26 = frame.ambient;
+    let _e29 = indirect_diffuse(m_7, (_e26.xyz + extra), dfg_3);
+    let direct = (((_e21.diffuse + _e21.specular) + _e22.diffuse) + _e22.specular);
+    return (direct + (_e29 * occlusion));
 }
 
 fn shade(s_2: Surface, input_3: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_6 = normalize(s_2.normal);
+    let normal_7 = normalize(s_2.normal);
     let _e5 = dpdx(input_3.normal);
     let _e8 = dpdy(input_3.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_2.baseColor, s_2.metalness, s_2.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_6, input_3.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_7, input_3.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_3.relativePosition, normal_6, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
+    let _e29 = light_surface(_e19, input_3.relativePosition, normal_7, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
     let outgoing = (_e29 + s_2.emissive);
     let _e34 = material_row;
     let _e35 = fogged(outgoing, input_3.relativePosition, _e34);
@@ -15426,6 +17593,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -15478,6 +17647,13 @@ struct ShadowCascades {
     forward: vec4<f32>,
     normal_offsets: vec4<f32>,
     depth_biases: vec4<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct MapUv {
@@ -15547,6 +17723,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 const SECOND_UV: u32 = 256u;
 const ROWS_UP: f32 = -1f;
@@ -15563,6 +17740,10 @@ var<uniform> cascades: ShadowCascades;
 var shadow_map: texture_depth_2d_array;
 @group(0) @binding(5)
 var shadow_sampler: sampler_comparison;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 @group(1) @binding(0)
 var base_color_map: texture_2d_array<f32>;
@@ -15622,8 +17803,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -15825,6 +18006,10 @@ fn world_direction(found_4: Instance, direction: vec3<f32>) -> vec3<f32> {
     let _e1 = transform_of(found_4);
     let _e3 = transform_direction(_e1, direction);
     return _e3;
+}
+
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
 }
 
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
@@ -15972,6 +18157,89 @@ fn sun_shadow(relative_2: vec3<f32>, normal_3: vec3<f32>) -> f32 {
     return mix(lit, 1f, smoothstep((end * 0.9f), end, along));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_3: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip_1 = (_e10 * vec4<f32>(relative_3, 1f));
+    let tile = clamp(floor(((((clip_1.xy / vec2(clip_1.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_3, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_6: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_4);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_4);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_6, normal_4, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
     if ((flags & (SECOND_UV << slot)) != 0u) {
         return second;
@@ -15989,68 +18257,68 @@ fn transformed_uv(uv_1: vec2<f32>, uv_u: vec4<f32>, uv_v: vec4<f32>) -> MapUv {
 fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
     var s: Surface;
 
-    let m_7 = material_row;
-    let flags_2 = u32(m_7.strengths.z);
+    let m_8 = material_row;
+    let flags_2 = u32(m_8.strengths.z);
     s = surface;
-    let _e11 = transformed_uv(input_1.uv, m_7.uv_u, m_7.uv_v);
-    let _e15 = transformed_uv(input_1.uv1_, m_7.uv_u, m_7.uv_v);
+    let _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    let _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     let _e17 = dpdy(input_1.relativePosition);
     let position_dy = (_e17 * ROWS_UP);
     let position_dx = dpdx(input_1.relativePosition);
-    let _e24 = map_ready(m_7.maps.x);
+    let _e24 = map_ready(m_8.maps.x);
     if _e24 {
         let _e26 = map_uv(flags_2, 0u, _e11, _e15);
-        let _e30 = map_layer(m_7.maps.x);
+        let _e30 = map_layer(m_8.maps.x);
         let sampled = textureSampleGrad(base_color_map, base_color_sampler, _e26.uv, _e30, _e26.dx, _e26.dy);
-        let _e36 = straight_texel(m_7, sampled);
+        let _e36 = straight_texel(m_8, sampled);
         let _e38 = s.baseColor;
         s.baseColor = (_e38 * _e36.xyz);
         let _e42 = s.alpha;
         s.alpha = (_e42 * _e36.w);
     }
-    let _e47 = map_ready(m_7.maps.y);
+    let _e47 = map_ready(m_8.maps.y);
     if _e47 {
         let _e49 = map_uv(flags_2, 1u, _e11, _e15);
-        let _e52 = map_layer(m_7.maps.y);
+        let _e52 = map_layer(m_8.maps.y);
         let texel_1 = textureSampleGrad(metal_rough_map, metal_rough_sampler, _e49.uv, _e52, _e49.dx, _e49.dy);
         let _e60 = s.roughness;
         s.roughness = (_e60 * texel_1.y);
         let _e64 = s.metalness;
         s.metalness = (_e64 * texel_1.z);
     }
-    let _e69 = map_ready(m_7.maps.w);
+    let _e69 = map_ready(m_8.maps.w);
     if _e69 {
         let _e71 = map_uv(flags_2, 3u, _e11, _e15);
-        let _e74 = map_layer(m_7.maps.w);
+        let _e74 = map_layer(m_8.maps.w);
         let texel_2 = textureSampleGrad(occlusion_map, occlusion_sampler, _e71.uv, _e74, _e71.dx, _e71.dy);
-        s.occlusion = (((texel_2.x - 1f) * m_7.strengths.x) + 1f);
+        s.occlusion = (((texel_2.x - 1f) * m_8.strengths.x) + 1f);
     }
-    let _e92 = map_ready(m_7.more_maps.x);
+    let _e92 = map_ready(m_8.more_maps.x);
     if _e92 {
         let _e94 = map_uv(flags_2, 4u, _e11, _e15);
-        let _e97 = map_layer(m_7.more_maps.x);
+        let _e97 = map_layer(m_8.more_maps.x);
         let texel_3 = textureSampleGrad(emissive_map, emissive_sampler, _e94.uv, _e97, _e94.dx, _e94.dy);
         let _e105 = s.emissive;
         s.emissive = (_e105 * texel_3.xyz);
     }
-    let _e110 = map_ready(m_7.more_maps.y);
+    let _e110 = map_ready(m_8.more_maps.y);
     if _e110 {
         let _e112 = map_uv(flags_2, 5u, _e11, _e15);
-        let _e115 = map_layer(m_7.more_maps.y);
+        let _e115 = map_layer(m_8.more_maps.y);
         let texel_4 = textureSampleGrad(light_map, light_sampler, _e112.uv, _e115, _e112.dx, _e112.dy);
-        s.irradiance = (texel_4.xyz * m_7.strengths.y);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    let _e129 = map_ready(m_7.maps.z);
+    let _e129 = map_ready(m_8.maps.z);
     if _e129 {
         let _e131 = map_uv(flags_2, 2u, _e11, _e15);
-        let _e134 = map_layer(m_7.maps.z);
+        let _e134 = map_layer(m_8.maps.z);
         let texel_5 = textureSampleGrad(normal_map, normal_sampler, _e131.uv, _e134, _e131.dx, _e131.dy);
-        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_7.surface.zw), ((texel_5.z * 2f) - 1f));
-        let normal_5 = input_1.normal;
+        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_8.surface.zw), ((texel_5.z * 2f) - 1f));
+        let normal_6 = input_1.normal;
         let facing_1 = select(-1f, 1f, input_1.frontFacing);
         let tangent = (normalize(input_1.tangent) * facing_1);
         let bitangent = (normalize(input_1.bitangent) * facing_1);
-        s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_5 * bent.z)));
+        s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_6 * bent.z)));
     }
     let _e177 = s;
     return _e177;
@@ -16059,13 +18327,13 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
 fn defaultSurface(input_2: SurfaceInput) -> Surface {
     var s_1: Surface;
 
-    let m_8 = material_row;
-    s_1.baseColor = (m_8.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_8.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_8.surface.x;
-    s_1.roughness = m_8.surface.y;
+    let m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_8.emissive.xyz * m_8.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1f;
     s_1.irradiance = vec3(0f);
     let _e35 = s_1;
@@ -16075,33 +18343,35 @@ fn defaultSurface(input_2: SurfaceInput) -> Surface {
     return _e37;
 }
 
-fn light_surface(m_6: PbrMaterial, relative_3: vec3<f32>, normal_4: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_7: PbrMaterial, relative_5: vec3<f32>, normal_5: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e9 = sun_color;
-    let _e12 = sun_shadow(relative_3, normal_4);
+    let _e12 = sun_shadow(relative_5, normal_5);
     sun_color = (_e9 * _e12);
     let _e16 = frame.sun_direction;
     let _e19 = sun_color;
-    let _e21 = direct_light(m_6, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
-    let _e25 = frame.ambient;
-    let _e28 = indirect_diffuse(m_6, (_e25.xyz + extra), dfg_3);
-    return ((_e21.diffuse + _e21.specular) + (_e28 * occlusion));
+    let _e21 = direct_light(m_7, normal_5, to_view_3, -(_e16.xyz), _e19, _e3);
+    let _e22 = clustered_light(m_7, relative_5, normal_5, to_view_3, _e3);
+    let _e26 = frame.ambient;
+    let _e29 = indirect_diffuse(m_7, (_e26.xyz + extra), dfg_3);
+    let direct = (((_e21.diffuse + _e21.specular) + _e22.diffuse) + _e22.specular);
+    return (direct + (_e29 * occlusion));
 }
 
 fn shade(s_2: Surface, input_3: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_6 = normalize(s_2.normal);
+    let normal_7 = normalize(s_2.normal);
     let _e5 = dpdx(input_3.normal);
     let _e8 = dpdy(input_3.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_2.baseColor, s_2.metalness, s_2.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_6, input_3.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_7, input_3.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_3.relativePosition, normal_6, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
+    let _e29 = light_surface(_e19, input_3.relativePosition, normal_7, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
     let outgoing = (_e29 + s_2.emissive);
     let _e34 = material_row;
     let _e35 = fogged(outgoing, input_3.relativePosition, _e34);
@@ -16214,6 +18484,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -16258,6 +18530,13 @@ struct Reflected {
 struct Scattering {
     single: vec3<f32>,
     multi: vec3<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct MapUv {
@@ -16327,6 +18606,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 const SECOND_UV: u32 = 256u;
 const ROWS_UP: f32 = -1f;
@@ -16337,6 +18617,10 @@ var<uniform> frame: Frame;
 var<storage> materials: array<Material>;
 @group(0) @binding(3)
 var dfg_table: texture_2d<f32>;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 @group(1) @binding(0)
 var base_color_map: texture_2d_array<f32>;
@@ -16396,8 +18680,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -16601,6 +18885,10 @@ fn world_direction(found_4: Instance, direction: vec3<f32>) -> vec3<f32> {
     return _e3;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -16697,6 +18985,89 @@ fn indirect_diffuse(m_5: PbrMaterial, irradiance: vec3<f32>, dfg_2: vec2<f32>) -
     return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_2: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip = (_e10 * vec4<f32>(relative_2, 1f));
+    let tile = clamp(floor(((((clip.xy / vec2(clip.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_2, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_6: PbrMaterial, relative_3: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_3);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_3);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_6, normal_3, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
     if ((flags & (SECOND_UV << slot)) != 0u) {
         return second;
@@ -16714,68 +19085,68 @@ fn transformed_uv(uv: vec2<f32>, uv_u: vec4<f32>, uv_v: vec4<f32>) -> MapUv {
 fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
     var s: Surface;
 
-    let m_7 = material_row;
-    let flags_2 = u32(m_7.strengths.z);
+    let m_8 = material_row;
+    let flags_2 = u32(m_8.strengths.z);
     s = surface;
-    let _e11 = transformed_uv(input_1.uv, m_7.uv_u, m_7.uv_v);
-    let _e15 = transformed_uv(input_1.uv1_, m_7.uv_u, m_7.uv_v);
+    let _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    let _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     let _e17 = dpdy(input_1.relativePosition);
     let position_dy = (_e17 * ROWS_UP);
     let position_dx = dpdx(input_1.relativePosition);
-    let _e24 = map_ready(m_7.maps.x);
+    let _e24 = map_ready(m_8.maps.x);
     if _e24 {
         let _e26 = map_uv(flags_2, 0u, _e11, _e15);
-        let _e30 = map_layer(m_7.maps.x);
+        let _e30 = map_layer(m_8.maps.x);
         let sampled = textureSampleGrad(base_color_map, base_color_sampler, _e26.uv, _e30, _e26.dx, _e26.dy);
-        let _e36 = straight_texel(m_7, sampled);
+        let _e36 = straight_texel(m_8, sampled);
         let _e38 = s.baseColor;
         s.baseColor = (_e38 * _e36.xyz);
         let _e42 = s.alpha;
         s.alpha = (_e42 * _e36.w);
     }
-    let _e47 = map_ready(m_7.maps.y);
+    let _e47 = map_ready(m_8.maps.y);
     if _e47 {
         let _e49 = map_uv(flags_2, 1u, _e11, _e15);
-        let _e52 = map_layer(m_7.maps.y);
+        let _e52 = map_layer(m_8.maps.y);
         let texel_1 = textureSampleGrad(metal_rough_map, metal_rough_sampler, _e49.uv, _e52, _e49.dx, _e49.dy);
         let _e60 = s.roughness;
         s.roughness = (_e60 * texel_1.y);
         let _e64 = s.metalness;
         s.metalness = (_e64 * texel_1.z);
     }
-    let _e69 = map_ready(m_7.maps.w);
+    let _e69 = map_ready(m_8.maps.w);
     if _e69 {
         let _e71 = map_uv(flags_2, 3u, _e11, _e15);
-        let _e74 = map_layer(m_7.maps.w);
+        let _e74 = map_layer(m_8.maps.w);
         let texel_2 = textureSampleGrad(occlusion_map, occlusion_sampler, _e71.uv, _e74, _e71.dx, _e71.dy);
-        s.occlusion = (((texel_2.x - 1f) * m_7.strengths.x) + 1f);
+        s.occlusion = (((texel_2.x - 1f) * m_8.strengths.x) + 1f);
     }
-    let _e92 = map_ready(m_7.more_maps.x);
+    let _e92 = map_ready(m_8.more_maps.x);
     if _e92 {
         let _e94 = map_uv(flags_2, 4u, _e11, _e15);
-        let _e97 = map_layer(m_7.more_maps.x);
+        let _e97 = map_layer(m_8.more_maps.x);
         let texel_3 = textureSampleGrad(emissive_map, emissive_sampler, _e94.uv, _e97, _e94.dx, _e94.dy);
         let _e105 = s.emissive;
         s.emissive = (_e105 * texel_3.xyz);
     }
-    let _e110 = map_ready(m_7.more_maps.y);
+    let _e110 = map_ready(m_8.more_maps.y);
     if _e110 {
         let _e112 = map_uv(flags_2, 5u, _e11, _e15);
-        let _e115 = map_layer(m_7.more_maps.y);
+        let _e115 = map_layer(m_8.more_maps.y);
         let texel_4 = textureSampleGrad(light_map, light_sampler, _e112.uv, _e115, _e112.dx, _e112.dy);
-        s.irradiance = (texel_4.xyz * m_7.strengths.y);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    let _e129 = map_ready(m_7.maps.z);
+    let _e129 = map_ready(m_8.maps.z);
     if _e129 {
         let _e131 = map_uv(flags_2, 2u, _e11, _e15);
-        let _e134 = map_layer(m_7.maps.z);
+        let _e134 = map_layer(m_8.maps.z);
         let texel_5 = textureSampleGrad(normal_map, normal_sampler, _e131.uv, _e134, _e131.dx, _e131.dy);
-        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_7.surface.zw), ((texel_5.z * 2f) - 1f));
-        let normal_4 = input_1.normal;
+        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_8.surface.zw), ((texel_5.z * 2f) - 1f));
+        let normal_5 = input_1.normal;
         let facing_1 = select(-1f, 1f, input_1.frontFacing);
         let tangent = (normalize(input_1.tangent) * facing_1);
         let bitangent = (normalize(input_1.bitangent) * facing_1);
-        s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_4 * bent.z)));
+        s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_5 * bent.z)));
     }
     let _e177 = s;
     return _e177;
@@ -16784,13 +19155,13 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
 fn defaultSurface(input_2: SurfaceInput) -> Surface {
     var s_1: Surface;
 
-    let m_8 = material_row;
-    s_1.baseColor = (m_8.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_8.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_8.surface.x;
-    s_1.roughness = m_8.surface.y;
+    let m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_8.emissive.xyz * m_8.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1f;
     s_1.irradiance = vec3(0f);
     let _e35 = s_1;
@@ -16800,30 +19171,32 @@ fn defaultSurface(input_2: SurfaceInput) -> Surface {
     return _e37;
 }
 
-fn light_surface(m_6: PbrMaterial, relative_2: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_7: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e11 = frame.sun_direction;
     let _e14 = sun_color;
-    let _e17 = direct_light(m_6, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
-    let _e21 = frame.ambient;
-    let _e24 = indirect_diffuse(m_6, (_e21.xyz + extra), dfg_3);
-    return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
+    let _e17 = direct_light(m_7, normal_4, to_view_3, -(_e11.xyz), _e14, _e3);
+    let _e19 = clustered_light(m_7, relative_4, normal_4, to_view_3, _e3);
+    let _e23 = frame.ambient;
+    let _e26 = indirect_diffuse(m_7, (_e23.xyz + extra), dfg_3);
+    let direct = (((_e17.diffuse + _e17.specular) + _e19.diffuse) + _e19.specular);
+    return (direct + (_e26 * occlusion));
 }
 
 fn shade(s_2: Surface, input_3: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_5 = normalize(s_2.normal);
+    let normal_6 = normalize(s_2.normal);
     let _e5 = dpdx(input_3.normal);
     let _e8 = dpdy(input_3.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_2.baseColor, s_2.metalness, s_2.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_5, input_3.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_6, input_3.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_3.relativePosition, normal_5, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
+    let _e29 = light_surface(_e19, input_3.relativePosition, normal_6, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
     let outgoing = (_e29 + s_2.emissive);
     let _e34 = material_row;
     let _e35 = fogged(outgoing, input_3.relativePosition, _e34);
@@ -16936,6 +19309,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -16980,6 +19355,13 @@ struct Reflected {
 struct Scattering {
     single: vec3<f32>,
     multi: vec3<f32>,
+}
+
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
 }
 
 struct MapUv {
@@ -17047,6 +19429,7 @@ const BLEND_FLAG: u32 = 2u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 const SECOND_UV: u32 = 256u;
 const ROWS_UP: f32 = -1f;
@@ -17057,6 +19440,10 @@ var<uniform> frame: Frame;
 var<storage> materials: array<Material>;
 @group(0) @binding(3)
 var dfg_table: texture_2d<f32>;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 var<private> material_row: Material;
 @group(1) @binding(0)
 var base_color_map: texture_2d_array<f32>;
@@ -17116,8 +19503,8 @@ fn tone_map_agx(c_2: vec3<f32>) -> vec3<f32> {
 }
 
 fn tone_map_neutral(c_3: vec3<f32>) -> vec3<f32> {
-    let x_1 = min(c_3.x, min(c_3.y, c_3.z));
-    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let x_2 = min(c_3.x, min(c_3.y, c_3.z));
+    let toe = select(0.04f, (x_2 - ((6.25f * x_2) * x_2)), (x_2 < 0.08f));
     let shifted = (c_3 - vec3(toe));
     let peak = max(shifted.x, max(shifted.y, shifted.z));
     if (peak < 0.76f) {
@@ -17321,6 +19708,10 @@ fn world_direction(found_4: Instance, direction: vec3<f32>) -> vec3<f32> {
     return _e3;
 }
 
+fn square(x_1: f32) -> f32 {
+    return (x_1 * x_1);
+}
+
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
@@ -17417,6 +19808,89 @@ fn indirect_diffuse(m_5: PbrMaterial, irradiance: vec3<f32>, dfg_2: vec2<f32>) -
     return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_2: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip = (_e10 * vec4<f32>(relative_2, 1f));
+    let tile = clamp(floor(((((clip.xy / vec2(clip.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_2, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_6: PbrMaterial, relative_3: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_3);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_3);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_6, normal_3, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
     if ((flags & (SECOND_UV << slot)) != 0u) {
         return second;
@@ -17434,68 +19908,68 @@ fn transformed_uv(uv: vec2<f32>, uv_u: vec4<f32>, uv_v: vec4<f32>) -> MapUv {
 fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
     var s: Surface;
 
-    let m_7 = material_row;
-    let flags_2 = u32(m_7.strengths.z);
+    let m_8 = material_row;
+    let flags_2 = u32(m_8.strengths.z);
     s = surface;
-    let _e11 = transformed_uv(input_1.uv, m_7.uv_u, m_7.uv_v);
-    let _e15 = transformed_uv(input_1.uv1_, m_7.uv_u, m_7.uv_v);
+    let _e11 = transformed_uv(input_1.uv, m_8.uv_u, m_8.uv_v);
+    let _e15 = transformed_uv(input_1.uv1_, m_8.uv_u, m_8.uv_v);
     let _e17 = dpdy(input_1.relativePosition);
     let position_dy = (_e17 * ROWS_UP);
     let position_dx = dpdx(input_1.relativePosition);
-    let _e24 = map_ready(m_7.maps.x);
+    let _e24 = map_ready(m_8.maps.x);
     if _e24 {
         let _e26 = map_uv(flags_2, 0u, _e11, _e15);
-        let _e30 = map_layer(m_7.maps.x);
+        let _e30 = map_layer(m_8.maps.x);
         let sampled = textureSampleGrad(base_color_map, base_color_sampler, _e26.uv, _e30, _e26.dx, _e26.dy);
-        let _e36 = straight_texel(m_7, sampled);
+        let _e36 = straight_texel(m_8, sampled);
         let _e38 = s.baseColor;
         s.baseColor = (_e38 * _e36.xyz);
         let _e42 = s.alpha;
         s.alpha = (_e42 * _e36.w);
     }
-    let _e47 = map_ready(m_7.maps.y);
+    let _e47 = map_ready(m_8.maps.y);
     if _e47 {
         let _e49 = map_uv(flags_2, 1u, _e11, _e15);
-        let _e52 = map_layer(m_7.maps.y);
+        let _e52 = map_layer(m_8.maps.y);
         let texel_1 = textureSampleGrad(metal_rough_map, metal_rough_sampler, _e49.uv, _e52, _e49.dx, _e49.dy);
         let _e60 = s.roughness;
         s.roughness = (_e60 * texel_1.y);
         let _e64 = s.metalness;
         s.metalness = (_e64 * texel_1.z);
     }
-    let _e69 = map_ready(m_7.maps.w);
+    let _e69 = map_ready(m_8.maps.w);
     if _e69 {
         let _e71 = map_uv(flags_2, 3u, _e11, _e15);
-        let _e74 = map_layer(m_7.maps.w);
+        let _e74 = map_layer(m_8.maps.w);
         let texel_2 = textureSampleGrad(occlusion_map, occlusion_sampler, _e71.uv, _e74, _e71.dx, _e71.dy);
-        s.occlusion = (((texel_2.x - 1f) * m_7.strengths.x) + 1f);
+        s.occlusion = (((texel_2.x - 1f) * m_8.strengths.x) + 1f);
     }
-    let _e92 = map_ready(m_7.more_maps.x);
+    let _e92 = map_ready(m_8.more_maps.x);
     if _e92 {
         let _e94 = map_uv(flags_2, 4u, _e11, _e15);
-        let _e97 = map_layer(m_7.more_maps.x);
+        let _e97 = map_layer(m_8.more_maps.x);
         let texel_3 = textureSampleGrad(emissive_map, emissive_sampler, _e94.uv, _e97, _e94.dx, _e94.dy);
         let _e105 = s.emissive;
         s.emissive = (_e105 * texel_3.xyz);
     }
-    let _e110 = map_ready(m_7.more_maps.y);
+    let _e110 = map_ready(m_8.more_maps.y);
     if _e110 {
         let _e112 = map_uv(flags_2, 5u, _e11, _e15);
-        let _e115 = map_layer(m_7.more_maps.y);
+        let _e115 = map_layer(m_8.more_maps.y);
         let texel_4 = textureSampleGrad(light_map, light_sampler, _e112.uv, _e115, _e112.dx, _e112.dy);
-        s.irradiance = (texel_4.xyz * m_7.strengths.y);
+        s.irradiance = (texel_4.xyz * m_8.strengths.y);
     }
-    let _e129 = map_ready(m_7.maps.z);
+    let _e129 = map_ready(m_8.maps.z);
     if _e129 {
         let _e131 = map_uv(flags_2, 2u, _e11, _e15);
-        let _e134 = map_layer(m_7.maps.z);
+        let _e134 = map_layer(m_8.maps.z);
         let texel_5 = textureSampleGrad(normal_map, normal_sampler, _e131.uv, _e134, _e131.dx, _e131.dy);
-        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_7.surface.zw), ((texel_5.z * 2f) - 1f));
-        let normal_4 = input_1.normal;
+        let bent = vec3<f32>((((texel_5.xy * 2f) - vec2(1f)) * m_8.surface.zw), ((texel_5.z * 2f) - 1f));
+        let normal_5 = input_1.normal;
         let facing_1 = select(-1f, 1f, input_1.frontFacing);
         let tangent = (normalize(input_1.tangent) * facing_1);
         let bitangent = (normalize(input_1.bitangent) * facing_1);
-        s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_4 * bent.z)));
+        s.normal = normalize((((tangent * bent.x) + (bitangent * bent.y)) + (normal_5 * bent.z)));
     }
     let _e177 = s;
     return _e177;
@@ -17504,13 +19978,13 @@ fn with_maps(surface: Surface, input_1: SurfaceInput) -> Surface {
 fn defaultSurface(input_2: SurfaceInput) -> Surface {
     var s_1: Surface;
 
-    let m_8 = material_row;
-    s_1.baseColor = (m_8.color.xyz * input_2.vertexColor.xyz);
-    s_1.alpha = (m_8.color.w * input_2.vertexColor.w);
-    s_1.metalness = m_8.surface.x;
-    s_1.roughness = m_8.surface.y;
+    let m_9 = material_row;
+    s_1.baseColor = (m_9.color.xyz * input_2.vertexColor.xyz);
+    s_1.alpha = (m_9.color.w * input_2.vertexColor.w);
+    s_1.metalness = m_9.surface.x;
+    s_1.roughness = m_9.surface.y;
     s_1.normal = input_2.normal;
-    s_1.emissive = (m_8.emissive.xyz * m_8.strengths.w);
+    s_1.emissive = (m_9.emissive.xyz * m_9.strengths.w);
     s_1.occlusion = 1f;
     s_1.irradiance = vec3(0f);
     let _e35 = s_1;
@@ -17520,30 +19994,32 @@ fn defaultSurface(input_2: SurfaceInput) -> Surface {
     return _e37;
 }
 
-fn light_surface(m_6: PbrMaterial, relative_2: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
+fn light_surface(m_7: PbrMaterial, relative_4: vec3<f32>, normal_4: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>, extra: vec3<f32>, occlusion: f32) -> vec3<f32> {
     var sun_color: vec3<f32>;
 
-    let _e3 = multiscatter_compensation(m_6.specular_blended, dfg_3);
+    let _e3 = multiscatter_compensation(m_7.specular_blended, dfg_3);
     let _e6 = frame.sun_color;
     sun_color = _e6.xyz;
     let _e11 = frame.sun_direction;
     let _e14 = sun_color;
-    let _e17 = direct_light(m_6, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
-    let _e21 = frame.ambient;
-    let _e24 = indirect_diffuse(m_6, (_e21.xyz + extra), dfg_3);
-    return ((_e17.diffuse + _e17.specular) + (_e24 * occlusion));
+    let _e17 = direct_light(m_7, normal_4, to_view_3, -(_e11.xyz), _e14, _e3);
+    let _e19 = clustered_light(m_7, relative_4, normal_4, to_view_3, _e3);
+    let _e23 = frame.ambient;
+    let _e26 = indirect_diffuse(m_7, (_e23.xyz + extra), dfg_3);
+    let direct = (((_e17.diffuse + _e17.specular) + _e19.diffuse) + _e19.specular);
+    return (direct + (_e26 * occlusion));
 }
 
 fn shade(s_2: Surface, input_3: SurfaceInput, pixel_4: vec2<f32>) -> vec4<f32> {
-    let normal_5 = normalize(s_2.normal);
+    let normal_6 = normalize(s_2.normal);
     let _e5 = dpdx(input_3.normal);
     let _e8 = dpdy(input_3.normal);
     let change = max(abs(_e5), abs(_e8));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e19 = pbr_material(s_2.baseColor, s_2.metalness, s_2.roughness, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_5, input_3.viewDirection));
+    let n_dot_v_3 = saturate(dot(normal_6, input_3.viewDirection));
     let _e24 = dfg_lut(n_dot_v_3, _e19.roughness);
-    let _e29 = light_surface(_e19, input_3.relativePosition, normal_5, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
+    let _e29 = light_surface(_e19, input_3.relativePosition, normal_6, input_3.viewDirection, _e24, s_2.irradiance, s_2.occlusion);
     let outgoing = (_e29 + s_2.emissive);
     let _e34 = material_row;
     let _e35 = fogged(outgoing, input_3.relativePosition, _e34);
@@ -17645,6 +20121,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -17890,6 +20368,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -18198,6 +20678,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -18510,6 +20992,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -18825,6 +21309,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -19146,6 +21632,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -19508,6 +21996,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -19874,6 +22364,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,
@@ -20243,6 +22735,8 @@ struct Frame {
     ambient: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
     clock: vec4<f32>,
     camera_world: vec4<f32>,
     target_size: vec4<f32>,

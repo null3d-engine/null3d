@@ -8,7 +8,7 @@ summary: "Directional, point, spot, hemisphere and ambient lights; shadow option
 
 # Lights
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Point, spot and hemisphere lights do not light surfaces yet, and surfaces show one directional light. That light casts shadows on WebGPU only: WebGL2 draws none yet, and point and spot lights only store `castShadows`. Coding agents must not rely on these parts.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. That light casts shadows, and point and spot lights only store `castShadows`. Coding agents must not rely on these parts.
 
 A light is a scene object, like a mesh or a camera. It has a position, a rotation, a parent and layers, and `setVisible` and `destroy` work on it. Each kind of light has a class and a create call of its own. The standard material reflects lights, and the unlit material ignores them.
 
@@ -67,7 +67,8 @@ In this version:
 
 - Surfaces show one directional light: the first one you created that is visible and shares a layer with the camera.
 - Every ambient light that is visible and shares a layer with the camera adds its light.
-- Point, spot and hemisphere lights are stored. Each frame the engine finds the point and spot lights whose ranges reach into the camera's view. They do not light surfaces yet.
+- Point and spot lights light the surfaces that their ranges reach. Each frame the engine finds the ones whose ranges reach into the camera's view. It lists each one in the clusters of the view that it reaches. The camera lists up to 1,024 of them, the nearest, and up to 128 in each cluster. [Lighting and environment](../concepts/lighting.md#clustered-forward-shading) explains clusters.
+- Hemisphere lights are stored. They do not light surfaces yet.
 - Without lights, standard materials draw black.
 
 To turn a light off, hide it with `setVisible(false)`, set its intensity to 0, or destroy it. A light lights a camera's view only when their layer masks share a bit, as in three.js. [Render layers](../concepts/render-layers.md) explains masks.
@@ -86,7 +87,7 @@ const sun = scene.createDirectionalLight({
 sun.setShadow({ bias: 1, normalBias: 1.5 });
 ```
 
-[Shadows](../concepts/shadows.md) explains cascades, each setting and its default, and the biases. WebGL2 draws no shadows yet. Point and spot lights store `castShadows`, and cast no shadows yet.
+[Shadows](../concepts/shadows.md) explains cascades, each setting and its default, and the biases. Point and spot lights store `castShadows`, and cast no shadows yet.
 
 ## Coming from three.js
 
@@ -131,7 +132,7 @@ Light from one direction, like sunlight. It travels along the light's -Z axis, w
 | Member | Description |
 | --- | --- |
 | `setDirection(x: number, y: number, z: number): void` | Turns the light so that its light travels along (x, y, z), relative to its parent. |
-| `setCastShadows(cast: boolean): void` | Makes the light cast shadows, or stop. The default is false. The first directional light created casts them; WebGL2 draws no shadows yet. |
+| `setCastShadows(cast: boolean): void` | Makes the light cast shadows, or stop. The default is false. The first directional light created casts them. |
 | `setShadow(shadow: DirectionalShadowOptions): void` | Changes how the light's shadows draw. Settings that `shadow` leaves out keep their values. A new cascade count or map size makes the shadow map again, so set them at setup. |
 
 ### `DirectionalLightOptions`
@@ -143,7 +144,7 @@ Options for `scene.createDirectionalLight`.
 | Member | Description |
 | --- | --- |
 | `direction?: Vec3` | The direction the light travels, relative to the parent. The default, (0, -1, 0), points straight down. It sets the light's rotation, so it wins over `rotation`. |
-| `castShadows?: boolean` | True makes the light cast shadows, like `setCastShadows(true)`. The default is false. The first directional light created casts them; WebGL2 draws no shadows yet. |
+| `castShadows?: boolean` | True makes the light cast shadows, like `setCastShadows(true)`. The default is false. The first directional light created casts them. |
 | `shadow?: DirectionalShadowOptions` | How the light's shadows draw, like `setShadow`. Each setting has a default. |
 
 ### `DirectionalShadowOptions`
