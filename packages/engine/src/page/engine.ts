@@ -69,6 +69,7 @@ import { loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
+import { StatsSwitch } from './stats-switch';
 import {
 	type DepthMode,
 	type GpuSwitch,
@@ -438,6 +439,8 @@ interface WorkerEvents {
 	failure(error: EngineError, endsStart?: boolean): void;
 	/** The quality preset and settings after a change, and the preset check's result. */
 	quality(update: QualityUpdate): void;
+	/** The sketch asked to show or hide the stats overlay. */
+	stats(show: boolean): void;
 }
 
 /** A worker whose replies are routed: events to the page's handlers, answers to the oldest request. */
@@ -473,6 +476,10 @@ class EngineWorker {
 			}
 			if (reply.type === 'quality') {
 				events.quality(reply.update);
+				return;
+			}
+			if (reply.type === 'stats') {
+				events.stats(reply.show);
 				return;
 			}
 			if (reply.type === 'lost') {
@@ -785,6 +792,7 @@ async function startEngine(
 			mode.preset = update.preset;
 			if (update.check) mode.presetCheck = update.check;
 		},
+		stats: (show) => statsSwitch.show(show),
 	};
 
 	const jobWorkers = threaded
@@ -794,6 +802,16 @@ async function startEngine(
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
 	const views = controlViews(control);
 	const { slots } = views;
+	const statsSwitch = new StatsSwitch(() => ({
+		canvas: options.canvas,
+		metrics,
+		threads: engineThreads,
+		sources: {
+			tier,
+			preset: () => mode.preset,
+			renderScaleThousandths: () => Atomics.load(slots, Slot.RenderScale),
+		},
+	}));
 	Atomics.store(slots, Slot.Running, 1);
 	/**
 	 * The thread that draws, unless the probe finds that a worker cannot draw here. In low-latency
@@ -889,6 +907,8 @@ async function startEngine(
 		crashedStarts: history.crashed,
 		memoryMaximumMiB: threaded ? maximumMiB : null,
 	};
+	/** Each engine thread's name and the roles it runs, for the frame figures. */
+	const engineThreads = [...threadRoles(mode)];
 	// What the thread that draws needs besides its canvas, whichever thread that is.
 	const rendererSetup: Omit<RendererSetup, 'canvas'> = {
 		tier,
@@ -1007,6 +1027,7 @@ async function startEngine(
 	const stop = () => {
 		stopping ??= (async () => {
 			Atomics.store(slots, Slot.Running, 0);
+			statsSwitch.show(false);
 			for (const slot of [
 				Slot.Running,
 				Slot.FramesTaken,
@@ -1094,6 +1115,8 @@ async function startEngine(
 					...senders,
 					pageUrl: pageUrl ?? sketchUrl,
 					fps: switches.fps,
+					threads: engineThreads,
+					showStats: events.stats,
 				},
 				hold,
 			);
@@ -1126,6 +1149,7 @@ async function startEngine(
 				hold,
 				quality,
 				fps: switches.fps,
+				threads: engineThreads,
 			};
 			if (renderThread === 'sketch-worker') {
 				const canvas = options.canvas.transferControlToOffscreen();

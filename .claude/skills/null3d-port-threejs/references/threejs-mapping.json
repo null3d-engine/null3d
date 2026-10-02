@@ -99,7 +99,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "debug.stats(true); debug.frameStats() for numbers",
-      "notes": "The overlay shows frame phases per thread, GPU tier and preset.",
+      "notes": "The overlay shows the frame rates, CPU time per thread and phase, draw calls and uploads, the GPU tier, the preset and the render scale. It counts no triangles or GPU memory. engine.measure() on the page adds GPU time and memory.",
       "docs": "api/debug",
       "detect": "\\.info\\.(render|memory|programs)|from\\s+['\"][^'\"]*stats(\\.module)?(\\.js)?['\"]|\\bnew\\s+Stats\\s*\\("
     },

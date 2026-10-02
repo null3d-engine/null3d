@@ -3,14 +3,14 @@ id: api/debug
 title: Debug drawing and stats
 status: experimental
 since: "0.1"
-summary: "debug.line, box, sphere, arrow, axes, grid, frustum and light; engine.measure and its figures; debug.view; debug.stats."
+summary: "debug.line, box, sphere, arrow, axes, grid, frustum and light; debug.stats and frameStats; engine.measure and its figures; debug.view."
 ---
 
 # Debug drawing and stats
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The calls `debug.view`, `debug.frameStats` and `debug.stats`, which shows a stats overlay, are not built yet, so coding agents must not use them. Skeleton drawing, `debug.skeleton`, comes with animation in null3D 0.2.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The debug views of `debug.view` are not built yet, so coding agents must not use them. Skeleton drawing, `debug.skeleton`, comes with animation in null3D 0.2.
 
-Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows, axes, grids, camera frustums and lights. `engine.measure` measures the running engine.
+Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows, axes, grids, camera frustums and lights. The overlay of `debug.stats` shows the engine's frame figures over the canvas, and `debug.frameStats` gives them to the sketch. On the page, `engine.measure` measures the running engine.
 
 ## Debug drawing
 
@@ -64,13 +64,58 @@ Colors take the same forms as material colors: a hex string such as `'#ff0000'`,
 
 ### Release builds
 
-Debug drawing works in development builds only. In a production build, every `debug` call does nothing, and the build holds neither the drawing code nor the shader of the lines. The calls themselves still run. So work that only feeds debug drawing still costs time: wrap it in `if (import.meta.env.DEV)`, which Vite sets to false in production builds.
+Debug drawing works in development builds only. In a production build, every drawing call does nothing, and the build holds neither the drawing code nor the shader of the lines. The calls themselves still run. So work that only feeds debug drawing still costs time: wrap it in `if (import.meta.env.DEV)`, which Vite sets to false in production builds. The stats overlay and `debug.frameStats` work in every build.
 
 ### Limits
 
 - Lines are one pixel wide on every GPU, because WebGPU draws lines no wider. Wide lines come with [lines](lines.md) in null3D 0.2.
 - A frame draws at most 131,072 lines. The engine leaves out the lines after that, and warns once in the console.
 - A frame without debug drawing runs no debug pass, uploads nothing and allocates nothing.
+
+## Stats overlay and frame figures
+
+```mermaid
+flowchart LR
+    threads["Each engine thread writes<br/>a few numbers per frame"] --> buffer["The frame figures buffer"]
+    buffer --> overlay["The page's overlay,<br/>twice a second"]
+    buffer --> sketch["debug.frameStats()<br/>in the sketch"]
+```
+
+`debug.stats(true)` shows an overlay over the top-left corner of the canvas, as stats.js does. It shows the GPU path, the quality preset and the render scale. It also shows the frame rates and the CPU time per frame of each thread, split into the frame's phases. `debug.stats(false)` hides it. The page draws the overlay and updates it twice a second. The pointer goes through the overlay to the canvas.
+
+`debug.frameStats()` gives the sketch the figures that the overlay shows. Each figure per frame is a mean over the frames of the last window, about half a second of presented frames. The figures change when a window ends.
+
+```ts
+export default defineSketch(({ debug, page, time }) => {
+  debug.stats(true);
+  let next = 5;
+  return {
+    onUpdate() {
+      const stats = debug.frameStats();   // allocates nothing, so it can run every frame
+      if (stats.frames > 0 && time.now >= next) {
+        next = time.now + 5;
+        // JSON gives a copy that keeps this window's figures, for the page to log or upload.
+        page.post('stats', JSON.parse(JSON.stringify(stats)));
+      }
+    },
+  };
+});
+```
+
+| Figure | What it is |
+| --- | --- |
+| `frames`, `seconds` | The presented frames of the window and its length. Both are 0 before the first window ends |
+| `presentedFps` | Frames per second that the engine presented |
+| `completedFps` | Frames per second that the GPU finished. Below `presentedFps`, the GPU limits the frame rate |
+| `cpuMs` | CPU time per frame of the busiest thread, in milliseconds |
+| `threads` | Each engine thread's name, its CPU time per frame, and the time of each phase, as `engine.measure` names them |
+| `drawCalls`, `uploadBytes` | Draw calls and bytes uploaded to the GPU, per frame |
+| `tier`, `preset`, `renderScale` | The GPU path, the quality preset, and the share of the canvas's size that the scene draws at |
+
+- The figures cost the frame almost nothing: the engine's threads write them anyway, for `engine.measure`. Reading them allocates nothing, so a sketch can call `debug.frameStats()` every frame.
+- The overlay's code downloads at the first `debug.stats(true)`, and the figures' code at the first call of either. Pages that never call them download neither.
+- Both work in every build, production builds included.
+- The figures leave out GPU time, which the engine measures only during `engine.measure`.
 
 ## Frame measurement
 
@@ -117,10 +162,12 @@ These figures time the GPU's work only. Work that the browser does outside the p
 
 Interface `Debug`.
 
-Debug drawing: lines that show where things are, such as bounds, directions and axes. Each call draws for one frame only, so call it in `onUpdate` in every frame that needs the drawing. Lines are one pixel wide, and objects in front of them hide them. Colors take the same forms as material colors, and positions are in world space. Only development builds draw. In a release build every call does nothing, and the build holds none of the drawing code.
+Debug drawing and frame figures. The drawing calls draw lines that show where things are, such as bounds, directions and axes. Each draws for one frame only, so call it in `onUpdate` in every frame that needs the drawing. Lines are one pixel wide, and objects in front of them hide them. Colors take the same forms as material colors, and positions are in world space. The overlay of `stats` shows frame figures on the page, and `frameStats` gives the sketch the same figures. Only development builds draw. In a release build every drawing call does nothing, and the build holds none of the drawing code. The calls `stats` and `frameStats` work in every build.
 
 | Member | Description |
 | --- | --- |
+| `stats(show?: boolean): void` | Shows an overlay of frame figures over the top-left corner of the canvas, or hides it with `false`: the GPU path, the quality preset, the render scale, the frame rates, and CPU time per frame of each thread and phase. The page draws the overlay and updates it twice a second. Its code downloads at the first call. |
+| `frameStats(): FrameStats` | The figures that the stats overlay shows, for the sketch: means per frame over about the last half second. Call it each time you need figures, and read them from the object it returns. It allocates nothing, so a sketch can call it every frame. Its code downloads at the first call, so the figures are 0 until about half a second after that call. |
 | `line(from: Vec3Like, to: Vec3Like, color?: ColorInput): void` | Draws a line from one point to another. The default color is yellow. |
 | `box(min: Vec3Like, max: Vec3Like, color?: ColorInput): void` | Draws the edges of a box that lines up with the world's axes, from its lowest corner `min` to its highest corner `max`. The default color is yellow. |
 | `sphere(center: Vec3Like, radius: number, color?: ColorInput): void` | Draws a sphere as three circles around its center, one in each plane of the world's axes. The default color is yellow. |
@@ -171,6 +218,38 @@ What `engine.measure` returns: the per-frame figures, memory, load time and down
 | `refreshHz: number \| null` | The display's refresh rate in hertz, as the thread that draws measured it, or null before then. |
 | `mainThread: MainThreadStats \| null` | The page's own thread during the measurement, where the browser reports it, or null. |
 | `perSecond: SecondRates[]` | The frame rates of each whole second of the measurement, in order. A long measurement shows here when and for how long the rate fell, which the rates of the whole measurement hide. |
+
+### `FrameStats`
+
+Interface `FrameStats`.
+
+Figures of the running engine, as `debug.frameStats()` returns them and the stats overlay shows them. Each figure per frame is a mean over the frames of the last window: about half a second of presented frames. The figures change when a window ends, and stay the same while the engine presents no frames.
+
+| Member | Description |
+| --- | --- |
+| `readonly frames: number` | Frames that the engine presented in the window, or 0 before the first window ended. |
+| `readonly seconds: number` | The window's length in seconds. |
+| `readonly presentedFps: number` | Frames per second that the engine presented. |
+| `readonly completedFps: number` | Frames per second that the GPU finished. Below `presentedFps`, frames queue on the GPU, and the display shows fewer than the presented rate suggests. |
+| `readonly cpuMs: number` | Mean CPU time per frame of the busiest thread, in milliseconds. |
+| `readonly threads: readonly FrameStatsThread[]` | CPU time per frame of each engine thread. |
+| `readonly drawCalls: number` | Mean draw calls per frame. |
+| `readonly uploadBytes: number` | Mean bytes uploaded to the GPU per frame. |
+| `readonly tier: Tier` | The GPU path the engine draws with. |
+| `readonly preset: QualityPreset` | The quality preset that the engine runs. |
+| `readonly renderScale: number` | The render scale of the newest frame: the share of the canvas's width and height that the scene draws at, from 0 to 1. Dynamic resolution moves it during play. |
+
+### `FrameStatsThread`
+
+Interface `FrameStatsThread`.
+
+One thread's CPU time per frame, in `FrameStats.threads`.
+
+| Member | Description |
+| --- | --- |
+| `readonly name: string` | The thread, named as `engine.measure` names it: `main`, `sketch-worker`, `render-worker`, `job-0` and so on. |
+| `readonly busyMs: number` | Mean CPU time per frame on this thread, in milliseconds. |
+| `readonly phases: Readonly<Record<PhaseName, number>>` | Mean CPU time per frame of each phase, in milliseconds: 0 for a phase that runs elsewhere. |
 
 ### `FrameSummary`
 

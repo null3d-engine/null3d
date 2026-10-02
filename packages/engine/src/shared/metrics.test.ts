@@ -18,8 +18,10 @@ import {
 	RingSums,
 	Role,
 	SUM_BUSY_MS,
+	SUM_COUNTERS,
 	SUM_INTERVAL_MS,
 	SUM_LONGEST_BUSY_MS,
+	SUM_PHASES,
 	SUM_RECORDS,
 	UNTIMED,
 } from './metrics';
@@ -162,6 +164,29 @@ describe('frame records', () => {
 		expect(sums.sums[SUM_BUSY_MS]).toBe(4);
 		expect(sums.sums[SUM_LONGEST_BUSY_MS]).toBe(1);
 		expect(sums.sums[SUM_INTERVAL_MS]).toBe(0);
+	});
+
+	it('sum each phase and counter of a window with detail', () => {
+		const buffer = createMetricsBuffer(false, 0);
+		const render = new FrameRecorder(buffer, Role.Render);
+		const plain = new RingSums(buffer, Role.Render);
+		const detailed = new RingSums(buffer, Role.Render, true);
+		for (let frame = 1; frame <= 2; frame++) {
+			render.begin(frame);
+			render.addPhase(Phase.Replay, frame * 0.5);
+			render.count(Counter.DrawCalls, frame * 10);
+			render.interval(16);
+			render.commit(1);
+		}
+		plain.add();
+		detailed.add();
+		expect(plain.sums).toHaveLength(SUM_PHASES);
+		expect(detailed.sums[SUM_RECORDS]).toBe(2);
+		expect(detailed.sums[SUM_PHASES + Phase.Replay]).toBe(1.5);
+		expect(detailed.sums[SUM_PHASES + Phase.Update]).toBe(0);
+		expect(detailed.sums[SUM_COUNTERS + Counter.DrawCalls]).toBe(30);
+		detailed.clear();
+		expect(detailed.sums.every((sum) => sum === 0)).toBe(true);
 	});
 
 	it('refuse a ring the buffer does not have', () => {
