@@ -19,6 +19,8 @@ import {
 	HEAVY_SPHERES,
 	HEAVY_SPHERES_SOFTWARE,
 	heavyCheckProblems,
+	PRESET_CHANGE,
+	PRESET_CHANGE_SWITCHES,
 	type PresetChangeResult,
 	presetChangeProblems,
 } from '../lib/preset-checks.ts';
@@ -306,8 +308,11 @@ for (const gpu of ['webgpu', 'compat', 'webgl2'] as const) {
 		test(`setPreset changes every setting and draws no frame without its pipelines on ${gpu}, ${mode.name}`, async ({
 			page,
 		}) => {
-			const result = await openPresetChange(page, `gpu=${gpu}&from=medium&to=low&${mode.query}`);
-			expect(presetChangeProblems(result, 'medium', 'low')).toEqual([]);
+			const result = await openPresetChange(
+				page,
+				[`gpu=${gpu}`, ...PRESET_CHANGE_SWITCHES, mode.query].join('&'),
+			);
+			expect(presetChangeProblems(result, PRESET_CHANGE.from, PRESET_CHANGE.to)).toEqual([]);
 		});
 	}
 
