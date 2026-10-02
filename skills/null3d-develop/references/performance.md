@@ -23,7 +23,7 @@ A frame has three kinds of cost, and each has its own fixes.
 | --- | --- | --- | --- |
 | Sketch code | Sketch worker | Your `onUpdate` loops, allocations, messages | Typed-array loops, no allocation, fewer messages |
 | Engine CPU work | Job workers and the sketch worker | Moving objects, hierarchy depth, animation, culling on WebGL2 | Static objects, instances, fewer levels, LODs |
-| GPU work | GPU | Pixels, shader cost, overdraw, shadow maps, draw buckets | Pixel-ratio cap, presets, cheaper materials, fewer shadowed lights |
+| GPU work | GPU | Pixels, shader cost, overdraw, shadow maps, draw buckets | Pixel-ratio cap, presets, cheaper materials, fewer shadowed lights, `depthPrepass` for heavy overdraw |
 
 In pipelined mode the render worker draws frame N while the sketch worker computes frame N+1. The slower of the two sets the frame rate. The figures of `engine.measure()` show both.
 

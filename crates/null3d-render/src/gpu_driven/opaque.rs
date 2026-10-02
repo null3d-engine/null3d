@@ -3,6 +3,11 @@
 //! view's indirect draws, so the draws' first instance stays 0. It is recorded again only when the
 //! layout or the mesh buffers change. The shadow passes record and replay their bundles the same
 //! way (see [`super::shadow`]).
+//!
+//! With the depth prepass, each camera view has a second bundle, which the prepass replays before
+//! the view's bundle in the same render pass. It draws the same buckets from the same compacted
+//! instances and indirect draws, with each bucket's depth pipeline, and leaves out the buckets that
+//! have none. It binds the view's frame uniform through a group of the depth template's layout.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, index_format, layout as bind_layout, resource_kind, sizes,
@@ -73,31 +78,46 @@ pub(super) fn upload(
 
 /// Records a view's bundle: each draw of every bucket of the layout, with the bucket's slice of
 /// the view's compacted instances and the bind group of its material's map, from its mesh page's
-/// buffers in `meshes`, into `targets`.
+/// buffers in `meshes`, into `targets`. With `prepass`, it records the view's bundle of the depth
+/// prepass instead.
 pub(super) fn record_bundle(
     list: &mut DrawList,
     view: ViewId,
     layout: &Layout,
     meshes: &MeshBuffers,
     targets: PassTargets,
+    prepass: bool,
 ) -> Result<(), RecordError> {
+    let (bundle, frame_group) = if prepass {
+        (ids::prepass_bundle(view), ids::prepass_group(view))
+    } else {
+        (ids::bundle(view), ids::frame_group(view))
+    };
     list.push(
         Op::BeginBundle,
         &[
-            ids::bundle(view),
+            bundle,
             targets.color_format,
             targets.depth_format,
             targets.samples,
         ],
     )?;
-    list.push(Op::SetBindGroup, &[0, ids::frame_group(view), 0])?;
+    list.push(Op::SetBindGroup, &[0, frame_group, 0])?;
     let (mut pipeline, mut page, mut group) = (None, None, 0);
     for bucket in &layout.buckets {
-        if pipeline != Some(bucket.pipeline) {
-            list.push(Op::SetPipeline, &[bucket.pipeline])?;
-            pipeline = Some(bucket.pipeline);
+        let id = if prepass {
+            bucket.prepass
+        } else {
+            bucket.pipeline
+        };
+        if id == 0 {
+            continue;
         }
-        if bucket.group != 0 && bucket.group != group {
+        if pipeline != Some(id) {
+            list.push(Op::SetPipeline, &[id])?;
+            pipeline = Some(id);
+        }
+        if !prepass && bucket.group != 0 && bucket.group != group {
             list.push(Op::SetBindGroup, &[TEXTURES_GROUP, bucket.group, 0])?;
             group = bucket.group;
         }
@@ -128,8 +148,14 @@ pub(super) fn record_bundle(
     Ok(())
 }
 
-/// Records a view's pass: its bundle, inside the render pass that the render graph began.
-pub(super) fn record(list: &mut DrawList, view: ViewId) -> Result<(), RecordError> {
-    list.push(Op::ExecuteBundles, &[1, ids::bundle(view)])?;
+/// Records a view's pass: its bundle, or with `prepass` its bundle of the depth prepass, inside
+/// the render pass that the render graph began.
+pub(super) fn record(list: &mut DrawList, view: ViewId, prepass: bool) -> Result<(), RecordError> {
+    let bundle = if prepass {
+        ids::prepass_bundle(view)
+    } else {
+        ids::bundle(view)
+    };
+    list.push(Op::ExecuteBundles, &[1, bundle])?;
     Ok(())
 }

@@ -18,7 +18,9 @@ import {
 	STATE_BLEND_NORMAL,
 	STATE_CULL_FRONT,
 	STATE_CULL_NONE,
+	STATE_DEPTH_EQUAL,
 	STATE_LINE_LIST,
+	STATE_NO_COLOR_WRITE,
 	STATE_NO_DEPTH_TEST,
 	STATE_NO_DEPTH_WRITE,
 	TEMPLATE_BACKGROUND,
@@ -114,6 +116,19 @@ const BLENDS: Readonly<Record<number, GPUBlendState>> = {
 		alpha: { srcFactor: 'zero', dstFactor: 'one' },
 	},
 };
+
+/** The write mask of every color channel, as `GPUColorWrite.ALL` holds it. */
+const ALL_CHANNELS = 0xf;
+
+/**
+ * The depth test of a pipeline's state flags, in reversed depth: nearer surfaces pass, every one
+ * passes without the test, and only the surface at the target's depth passes after the depth
+ * prepass.
+ */
+function depthCompare(stateFlags: number): GPUCompareFunction {
+	if (stateFlags & STATE_NO_DEPTH_TEST) return 'always';
+	return stateFlags & STATE_DEPTH_EQUAL ? 'equal' : 'greater';
+}
 
 /** WebGPU's vertex formats of 32-bit floats, by float count. */
 const FLOAT_FORMATS: (GPUVertexFormat | undefined)[] = [
@@ -349,7 +364,8 @@ export class Pipelines {
 	/**
 	 * How to build a render pipeline of a template, in the shader variant that its permutation bits
 	 * pick, for meshes of a vertex format where the template draws meshes. Without a color format it
-	 * draws depth only. The depth bias is in reversed depth, as the draw list holds it.
+	 * draws depth only, and with the state that writes no color it keeps the color target untouched.
+	 * The depth bias is in reversed depth, as the draw list holds it.
 	 */
 	render(
 		template: number,
@@ -389,7 +405,13 @@ export class Pipelines {
 				? {
 						module,
 						entryPoint: entryPoints?.fragment,
-						targets: [{ format: colorFormat, blend: BLENDS[stateFlags & STATE_BLEND] }],
+						targets: [
+							{
+								format: colorFormat,
+								blend: BLENDS[stateFlags & STATE_BLEND],
+								writeMask: stateFlags & STATE_NO_COLOR_WRITE ? 0 : ALL_CHANNELS,
+							},
+						],
 					}
 				: undefined,
 			primitive: {
@@ -399,13 +421,14 @@ export class Pipelines {
 				frontFace: 'ccw',
 			},
 			// Reversed depth: 1 at the near plane, 0 at the far plane. Without the depth test a surface
-			// writes no depth either, as in three.js's WebGL renderer. Compatibility mode needs a bias
-			// clamp of 0.
+			// writes no depth either, as in three.js's WebGL renderer. After the depth prepass, the
+			// opaque pass draws only at the depth that the prepass found. Compatibility mode needs a
+			// bias clamp of 0.
 			depthStencil: depthFormat
 				? {
 						format: depthFormat,
 						depthWriteEnabled: (stateFlags & (STATE_NO_DEPTH_WRITE | STATE_NO_DEPTH_TEST)) === 0,
-						depthCompare: stateFlags & STATE_NO_DEPTH_TEST ? 'always' : 'greater',
+						depthCompare: depthCompare(stateFlags),
 						depthBias,
 						depthBiasSlopeScale,
 						depthBiasClamp: 0,

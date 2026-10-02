@@ -96,6 +96,7 @@ describe('the preset table', () => {
 			'minRenderScale',
 			'maxRenderScale',
 			'antialias',
+			'depthPrepass',
 			'maxAnisotropy',
 			'uploadBytesPerFrame',
 			'memoryMaximumMiB',
@@ -121,6 +122,7 @@ describe('the preset table', () => {
 			'maxAnisotropy',
 			'uploadBytesPerFrame',
 			'antialias',
+			'depthPrepass',
 		]);
 		expect(LIVE_SETTINGS).toEqual([
 			'maxPixelRatio',
@@ -150,7 +152,7 @@ describe('the preset table', () => {
 
 describe('presetSettings', () => {
 	it("gives a sketch each preset's values", () => {
-		const full = { maxRenderScale: 1 };
+		const full = { maxRenderScale: 1, depthPrepass: false };
 		expect(presetSettings('low')).toEqual({
 			maxPixelRatio: 1.5,
 			minRenderScale: 0.5,

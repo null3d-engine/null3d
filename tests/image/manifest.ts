@@ -22,7 +22,14 @@ import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
-import { ALL_MODES, type ImageRun, type ImageTest, imageRuns, type Tier } from '../lib/images.ts';
+import {
+	ALL_MODES,
+	type ImageRun,
+	type ImageTest,
+	imageRuns,
+	type Tier,
+	tiersOf,
+} from '../lib/images.ts';
 import { STOPS, TONE_MAPPINGS } from '../pages/lib/bright-scene.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 
@@ -152,7 +159,8 @@ const S1_CELLS_DEVICE_TOLERANCE = { maxDiffRatio: 0.003 };
 /** The WebGL2 depth modes that ?depth= forces. */
 const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'];
 
-export const IMAGE_TESTS: readonly ImageTest[] = [
+/** The tests of every feature, before the depth prepass draws some of their scenes again. */
+const FEATURE_TESTS: readonly ImageTest[] = [
 	// A clear color, read back through the engine's readback on each GPU interface.
 	{ name: 'clear', page: 'tests/pages/clear.html', size: [64, 64], tiers: ['webgpu', 'webgl2'] },
 	// Every texture command of the GPU layer, replayed on each path, which must all draw one image,
@@ -691,6 +699,41 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		timeoutSeconds: 90,
 	},
 ];
+
+/**
+ * The scenes that the depth prepass draws again on the WebGPU tiers, which must match their images
+ * without it: shadows, masked cards that stay out of the prepass, decals whose depth bias the
+ * prepass keeps, see-through objects that draw after it, an orthographic camera whose near plane
+ * cuts a slab, and S2. WebGL2 draws without the prepass: in Chrome on the Mac, two of its programs
+ * gave the shadows test's ground, which the near plane cuts, different depths.
+ */
+const PREPASS_SCENES = [
+	'shadows',
+	'alpha-mask',
+	'depth-bias',
+	'transparency',
+	'ortho-camera',
+	's2',
+];
+
+/** Each prepass scene's test again with ?prepass=on, in its first thread mode. */
+function prepassTests(tests: readonly ImageTest[]): ImageTest[] {
+	return PREPASS_SCENES.map((name) => {
+		const test = tests.find((t) => t.name === name);
+		if (!test) throw new Error(`the manifest has no ${name} test for the depth prepass to draw`);
+		const { sameOnEveryTier: _, ...rest } = test;
+		return {
+			...rest,
+			name: `${name}-prepass`,
+			switches: [...(test.switches ?? []), 'prepass=on'],
+			reference: name,
+			tiers: tiersOf(test).filter((tier) => tier !== 'webgl2'),
+			...(test.modes && { modes: test.modes.slice(0, 1) }),
+		};
+	});
+}
+
+export const IMAGE_TESTS: readonly ImageTest[] = [...FEATURE_TESTS, ...prepassTests(FEATURE_TESTS)];
 
 /** Every run of the manifest's tests: each test on each of its tiers, in each of its thread modes. */
 export const IMAGE_RUNS = imageRuns(IMAGE_TESTS);

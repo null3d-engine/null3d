@@ -39,6 +39,7 @@ export interface CoreGlue extends CoreErrors {
 		antialias: number,
 		transparent: boolean,
 		cellCulling: boolean,
+		depthPrepass: boolean,
 	): number;
 	jobWorkerLoop(index: number): void;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */

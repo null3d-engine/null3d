@@ -226,6 +226,7 @@ export class SketchRunner {
 			device.antialias,
 			device.transparent,
 			device.cellCulling,
+			device.depthPrepass,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
 		if (sketch.jobWorkers > 0) {

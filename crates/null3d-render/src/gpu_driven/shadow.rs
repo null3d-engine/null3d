@@ -13,14 +13,20 @@ use super::ids;
 use crate::frame::RecordError;
 use crate::view::ViewId;
 
-/// Records the creation of a cascade's frame uniform buffer, and of its frame group, which binds
-/// the buffer with the material table.
+/// Records the creation of a cascade's frame uniform buffer, and of its frame group.
 pub(super) fn create_view(list: &mut DrawList, view: ViewId) -> Result<(), RecordError> {
     super::opaque::create_frame_buffer(list, view)?;
+    bind_depth(list, ids::frame_group(view), view)
+}
+
+/// Records the creation of bind group `group` of the depth template, which binds a view's frame
+/// uniform buffer with the material table: a cascade's frame group, or the group of a camera
+/// view's depth prepass.
+pub(super) fn bind_depth(list: &mut DrawList, group: u32, view: ViewId) -> Result<(), RecordError> {
     list.push(
         Op::CreateBindGroup,
         &[
-            ids::frame_group(view),
+            group,
             bind_layout::DEPTH,
             2,
             0,

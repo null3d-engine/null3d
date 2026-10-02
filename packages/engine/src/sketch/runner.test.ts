@@ -204,6 +204,7 @@ async function start(
 				transparent: false,
 				shaderBits: 0,
 				cellCulling: true,
+				depthPrepass: false,
 			},
 			capabilities: CAPABILITIES,
 			quality,

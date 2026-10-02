@@ -146,7 +146,8 @@ struct VertexIn {
 }
 
 struct VertexOut {
-    @builtin(position) clip: vec4f,
+    /// Invariant, so the depth prepass finds the same depth for each vertex as this template.
+    @invariant @builtin(position) clip: vec4f,
     /// The position relative to the camera.
     @location(0) relative: vec3f,
     @location(1) normal: vec3f,

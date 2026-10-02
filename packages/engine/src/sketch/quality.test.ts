@@ -223,6 +223,7 @@ describe('SketchQuality.lower', () => {
 			maxAnisotropy: 16,
 			uploadBytesPerFrame: MEDIUM.uploadBytesPerFrame,
 			antialias: MEDIUM.antialias,
+			depthPrepass: MEDIUM.depthPrepass,
 		});
 		// The preset changed, and of the settings only the lowest render scale did.
 		expect(changes.at(-1)).toEqual(['minRenderScale']);

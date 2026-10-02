@@ -39,6 +39,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	transparent: false,
 	shaderBits: 0,
 	cellCulling: true,
+	depthPrepass: false,
 });
 
 /** A WebGL2 device that draws RGBA16F targets with the engine's MSAA. */
@@ -70,6 +71,7 @@ const PLAIN: DeviceOptions = {
 	hdr: true,
 	antialias: 'msaa',
 	transparent: false,
+	depthPrepass: false,
 };
 
 /** The scene color format on a tier for a page with the plain options and these changes. */
@@ -248,6 +250,14 @@ describe('coreDevice on WebGL2', () => {
 		for (const tier of ['webgl2', 'webgpu'] as const) {
 			expect(coreDevice(tier, report({}), PLAIN).cellCulling).toBe(true);
 			expect(coreDevice(tier, report({}), off).cellCulling).toBe(false);
+		}
+	});
+
+	it('draws the depth prepass on WebGPU where the options ask for it', () => {
+		const on: DeviceOptions = { ...PLAIN, depthPrepass: true };
+		for (const tier of ['webgpu', 'webgpu-compat'] as const) {
+			expect(coreDevice(tier, report({}), PLAIN).depthPrepass).toBe(false);
+			expect(coreDevice(tier, report({}), on).depthPrepass).toBe(true);
 		}
 	});
 });

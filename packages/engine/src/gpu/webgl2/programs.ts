@@ -103,8 +103,10 @@ export interface Pipeline {
 	readonly depth: boolean;
 	/** True when it writes depth. */
 	readonly depthWrite: boolean;
-	/** True when every fragment passes the depth test. */
-	readonly depthAlways: boolean;
+	/** GL's depth function for its depth test, in the backend's depth mode. */
+	readonly depthFunc: number;
+	/** True when it writes color. */
+	readonly colorWrite: boolean;
 	/** The blend mode: a `STATE_BLEND_*` flag, or 0 for none. */
 	readonly blend: number;
 	/** GL's polygon offset for the backend's depth mode: its factor and its units. */

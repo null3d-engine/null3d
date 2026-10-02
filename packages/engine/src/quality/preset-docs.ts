@@ -38,11 +38,6 @@ export const PLANNED_SETTINGS = {
 		changes: 'start',
 		values: 'flag',
 	},
-	depthPrepass: {
-		presets: [false, false, true, true],
-		changes: 'start',
-		values: 'flag',
-	},
 	maxLights: {
 		presets: [256, 256, 512, 1024],
 		changes: 'start',
