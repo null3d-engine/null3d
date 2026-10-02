@@ -18,7 +18,7 @@ export default defineSketch(({ scene, materials, geometry }) => {
 		position: [-4, 7, 2],
 		target: [-1, 0, -2],
 		color: '#ffd9a8',
-		intensity: 120,
+		intensity: 400,
 		range: 20,
 		angle: 0.6,
 		penumbra: 0.2,
@@ -28,14 +28,14 @@ export default defineSketch(({ scene, materials, geometry }) => {
 		position: [5, 6, -4],
 		target: [1, 0, -1],
 		color: '#a8c8ff',
-		intensity: 90,
+		intensity: 320,
 		range: 18,
 		angle: 0.5,
 		penumbra: 0.3,
 		castShadows: true,
 		shadow: { bias: 1, normalBias: 1.5 },
 	});
-	scene.createAmbientLight({ intensity: 0.15 });
+	scene.createAmbientLight({ intensity: 0.08 });
 
 	const ground = materials.standard({ color: '#9aa0a8' });
 	const red = materials.standard({ color: '#e8554e' });
