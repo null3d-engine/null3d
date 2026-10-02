@@ -8,7 +8,7 @@ summary: "Cascades that stay still as the camera turns; update rates and filteri
 
 # Shadows
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. In this version the first directional light casts shadows. Point and spot lights cast none yet. Instance batches neither cast nor receive shadows yet. The quality presets set the filter and the far cascades' update rate, but not the cascade count or the map size yet. Coding agents must not rely on these parts.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. In this version the first directional light casts shadows. Point and spot lights cast none yet. Instance batches neither cast nor receive shadows yet. A masked material's map does not cut holes in its shadow yet, so it casts its mesh's whole shape. The quality presets set the filter and the far cascades' update rate, but not the cascade count or the map size yet. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR

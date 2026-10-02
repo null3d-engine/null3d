@@ -8,6 +8,7 @@ import {
 	CAMERA,
 	type OutArray,
 	type SceneLights,
+	SHADOWS,
 	VIEW_LIGHTS,
 } from '../../scenes/spec';
 
@@ -17,24 +18,36 @@ export function readCount(moduleUrl: string): number {
 }
 
 /**
+ * Reads the sun's shadow cascades from the sketch module's address, where the page harness puts
+ * them when the page asks for shadows, or 0 for none.
+ */
+export function readShadows(moduleUrl: string): number {
+	return Number(new URL(moduleUrl).searchParams.get('shadows') ?? '0');
+}
+
+/**
  * Sets the background, the sun and the ambient light, and makes the active camera. The three.js
  * twins draw with no tone mapping, three.js's default, so the null3D pages turn off the engine's
  * default of ACES. The twins also draw every pixel of the canvas, so the null3D pages keep the
- * render scale at 1.
+ * render scale at 1. With `cascades` above 0 the sun casts shadows in that many cascades, at the
+ * benchmark scenes' shadow size.
  */
 export function setUpView(
 	{ scene, post, quality }: SketchContext,
 	{ sun, ambient }: SceneLights = VIEW_LIGHTS,
 	background: string = BACKGROUND,
+	cascades = 0,
 ): Camera {
 	post.set({ toneMapping: 'none' });
 	quality.set({ minRenderScale: 1 });
 	scene.setBackground(background);
+	const { mapSize, distance } = SHADOWS;
 	scene.createDirectionalLight({
 		direction: sun.direction,
 		color: sun.color,
 		intensity: sun.intensity,
-		castShadows: sun.castShadows === true,
+		castShadows: sun.castShadows === true || cascades > 0,
+		...(cascades > 0 ? { shadow: { cascades, mapSize, distance } } : {}),
 	});
 	scene.createAmbientLight({ color: ambient.color, intensity: ambient.intensity });
 	const camera = scene.createPerspectiveCamera({

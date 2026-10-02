@@ -21,6 +21,7 @@
 //   bun run bench:run -- --compare ../baseline,. --runs 3 --seconds 10 --shard 1/3
 //   bun run bench:run -- --merge target/bench/shards
 //   bun run bench:run -- --dev --scenes s2 --pages null3d-webgpu
+//   bun run bench:run -- --scenes s2 --pages null3d-webgpu,threejs-webgpu --switches shadows=3
 // Options:
 //   --scenes <list>   s1, s1-static, s1-cells, s2, s3, s4; the default is s1, and every scene with
 //                     --sweep or --compare
@@ -50,6 +51,8 @@
 //                     serves its own pages
 //   --browser <name>  chrome (the default), brave, or chromium: Playwright's Chromium without a
 //                     window, drawing with SwiftShader as CI's Linux machines do
+//   --switches <q>    page switches that every page gets, such as shadows=3: S2 with the sun's
+//                     shadows in 3 cascades on null3d, and in one map on three.js
 // Every browser starts with WebGPU's developer features on, so GPU timestamps are not rounded.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -81,6 +84,7 @@ import {
 	JOBS_PAGES,
 	pagePath,
 	readJobCounts,
+	readSwitches,
 	SCENE_CODE,
 } from './lib/parity';
 import {
@@ -151,6 +155,8 @@ export interface BenchOptions {
 	browser: (typeof BROWSERS)[number];
 	/** The dev server's pages, with the engine's development checks, instead of the production build. */
 	dev: boolean;
+	/** Page switches that every page gets, such as `shadows=3`, or an empty string. */
+	switches: string;
 }
 
 /** A run's warm-up and measured seconds: `--seconds` for both, or the protocol's. */
@@ -177,6 +183,11 @@ function list<T extends string>(
 	return items as T[];
 }
 
+/** A page address's switches: `own`, then those of `--switches`. */
+function withSwitches(own: readonly string[], options: BenchOptions): string {
+	return [...own, options.switches].filter(Boolean).join('&');
+}
+
 export function parseBenchArgs(args: readonly string[]): BenchOptions {
 	const options: BenchOptions = {
 		scenes: null,
@@ -190,6 +201,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 		merge: null,
 		browser: 'chrome',
 		dev: false,
+		switches: '',
 	};
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -215,6 +227,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 		} else if (arg === '--browser')
 			options.browser = list(value(), BROWSERS, '--browser')[0] as BenchOptions['browser'];
 		else if (arg === DEV_OPTION) options.dev = true;
+		else if (arg === '--switches') options.switches = readSwitches(value(), '--switches');
 		else throw new Error(`unknown option ${arg}`);
 	}
 	if (!(Number.isInteger(options.runs) && options.runs > 0))
@@ -277,10 +290,13 @@ async function runProtocol(
 	const pages = options.pages ?? (options.jobs ? JOBS_PAGES : DEFAULT_PAGES);
 	for (const scene of options.scenes ?? ['s1']) {
 		for (const jobs of options.jobs ?? [undefined]) {
-			const switches = [
-				...(seconds === null ? [] : [`seconds=${seconds}`]),
-				...(jobs === undefined ? [] : [`jobs=${jobs}`]),
-			].join('&');
+			const switches = withSwitches(
+				[
+					...(seconds === null ? [] : [`seconds=${seconds}`]),
+					...(jobs === undefined ? [] : [`jobs=${jobs}`]),
+				],
+				options,
+			);
 			for (const kind of pages) {
 				const name = jobs === undefined ? `${scene}-${kind}` : `${scene}-${kind}-jobs${jobs}`;
 				const results: BenchResult[] = [];
@@ -363,7 +379,7 @@ async function runSweep(
 			for (const kind of options.pages ?? SWEEP_PAGES) {
 				const result = await runPage(
 					browser,
-					`${baseUrl}${pagePath(scene, kind, `seconds=${seconds}&n=${n}`)}`,
+					`${baseUrl}${pagePath(scene, kind, withSwitches([`seconds=${seconds}`, `n=${n}`], options))}`,
 					timeoutMs,
 				);
 				writeFileSync(
@@ -479,7 +495,10 @@ async function runComparison(
 		if (!hasScene(scene))
 			console.log(`${scene}: skipped, because one of the checkouts has no page for it`);
 	const pages = share.filter((page) => hasScene(page.scene));
-	const switches = options.seconds === null ? '' : `seconds=${options.seconds}`;
+	const switches = withSwitches(
+		options.seconds === null ? [] : [`seconds=${options.seconds}`],
+		options,
+	);
 	const timeoutMs = pageTimeoutMs(options.seconds);
 	const servers: DevServer[] = [];
 	const results: BuildRun[] = [];

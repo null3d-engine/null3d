@@ -16,6 +16,11 @@ export interface RunOptions {
 	count: number | null;
 	/** `?seconds=`: the warm-up and the measured time of a run, or null to use the protocol's. */
 	seconds: number | null;
+	/**
+	 * `?shadows=`: the sun's shadow cascades, from 1 to 4, in the scenes that draw shadows, or null
+	 * for no shadows. three.js draws one shadow map whatever the count.
+	 */
+	shadows: number | null;
 }
 
 /** The value of a switch that must be one of a few words. */
@@ -57,7 +62,7 @@ export function pageReport(params: URLSearchParams): 'hold' | 'demo' | 'bench' {
 	return params.has('hold') ? 'hold' : params.has('demo') ? 'demo' : 'bench';
 }
 
-/** Reads `?hold`, `?demo`, `?n=` and `?seconds=`. */
+/** Reads `?hold`, `?demo`, `?n=`, `?seconds=` and `?shadows=`. */
 export function readRunOptions(params: URLSearchParams): RunOptions {
 	return {
 		hold:
@@ -81,6 +86,12 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 			'seconds',
 			(v) => Number.isFinite(v) && v > 0,
 			'a number of seconds above 0',
+		),
+		shadows: readNumber(
+			params,
+			'shadows',
+			(v) => Number.isInteger(v) && v >= 1 && v <= 4,
+			'a cascade count from 1 to 4',
 		),
 	};
 }
