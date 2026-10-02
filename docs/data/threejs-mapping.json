@@ -352,7 +352,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "mesh.setCastShadows(true) / setReceiveShadows(true), or the castShadows and receiveShadows options of createMesh",
-      "notes": "Both are false by default, as in three.js. The directional light casts them on both GPU paths. Unlit materials show no shadows. Instance batches neither cast nor receive them yet.",
+      "notes": "Both are false by default, as in three.js. The directional light and spot lights cast them on both GPU paths. Unlit materials show no shadows. Instance batches neither cast nor receive them yet.",
       "docs": "api/objects",
       "detect": "\\.(castShadow|receiveShadow)\\s*="
     },
@@ -538,8 +538,8 @@
       "three": "SpotLight(color, intensity, distance, angle, penumbra, decay)",
       "status": "direct",
       "since": "0.1",
-      "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity })",
-      "notes": "distance becomes range, which every spot light needs. target is a point: call light.lookAt(x, y, z) when it moves. Spot light cookies (light.map) come after 1.0.",
+      "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity, castShadows, shadow })",
+      "notes": "distance becomes range, which every spot light needs. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in texels of the light's tile in the shadow atlas. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. Spot light cookies (light.map) come after 1.0.",
       "docs": "api/lights",
       "detect": "\\bSpotLight\\b"
     },

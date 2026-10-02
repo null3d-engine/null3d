@@ -13,7 +13,8 @@ use null3d_core::handle::Handle;
 use null3d_core::jobs::JobSystem;
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{
-    FrameLights, LightTable, LightView, POINT_CONE, VisibleLight, color, kind, value,
+    FrameLights, LightShadow, LightTable, LightView, NOT_VISIBLE, POINT_CONE, VisibleLight, color,
+    kind, value,
 };
 use null3d_core::scene::{Command, SceneStorage, flags};
 
@@ -135,6 +136,66 @@ fn point_and_spot_lights_are_culled_by_their_range_spheres() {
 }
 
 #[test]
+fn point_and_spot_lights_that_cast_shadows_list_where_they_stand_in_view_or_not() {
+    let mut world = World::new();
+    let shadowed = flags::VISIBLE | flags::CAST_SHADOWS;
+    let quarter_back = turn([1.0, 0.0, 0.0], -FRAC_PI_2);
+    let spot_object = world.object([0.0, 3.0, -20.0], quarter_back, Handle::NONE, shadowed);
+    let spot = world.lights.create(spot_object, kind::SPOT).unwrap();
+    world.lights.set_value(spot, value::RANGE, 8.0).unwrap();
+    world.lights.set_value(spot, value::ANGLE, 0.5).unwrap();
+    world
+        .lights
+        .set_value(spot, value::SHADOW_BIAS, 2.0)
+        .unwrap();
+    world.commands.push(Command::set_layers(spot_object, 0b11));
+    // A point light behind the camera casts too, but the view does not see it.
+    let behind_object = world.object([0.0, 0.0, 30.0], NO_TURN, Handle::NONE, shadowed);
+    let behind = world.lights.create(behind_object, kind::POINT).unwrap();
+    world.lights.set_value(behind, value::RANGE, 1.0).unwrap();
+    // Lights without the flag, and directional lights with it, list nothing here.
+    let plain = world.ranged(kind::POINT, [0.0, 0.0, -5.0], 2.0);
+    let sun = world.object([0.0; 3], NO_TURN, Handle::NONE, shadowed);
+    world.lights.create(sun, kind::DIRECTIONAL).unwrap();
+    world.frame(Some(&origin_view()));
+    assert_eq!(world.visible_rows(), [spot, plain]);
+    let [s, b] = world.lights.shadows() else {
+        panic!("two lights cast shadows")
+    };
+    assert_eq!(s.light, spot);
+    assert_eq!((s.kind, s.visible), (kind::SPOT, 0));
+    assert_eq!(s.at.local, [0.0, 3.0, -20.0]);
+    assert_close(s.direction, [0.0, -1.0, 0.0]);
+    assert_eq!((s.angle, s.range), (0.5, 8.0));
+    assert_eq!((s.bias, s.normal_bias), (2.0, 1.0));
+    assert_eq!(s.layers, 0b11);
+    assert_eq!(
+        *b,
+        LightShadow {
+            light: behind,
+            kind: kind::POINT,
+            visible: NOT_VISIBLE,
+            at: CellPosition {
+                cell: [0, 0, 0],
+                local: [0.0, 0.0, 30.0],
+            },
+            direction: [0.0; 3],
+            angle: 0.0,
+            range: 1.0,
+            bias: 0.5,
+            normal_bias: 1.0,
+            layers: DEFAULT_LAYERS,
+        }
+    );
+    // The core leaves every light without a tile.
+    assert!(world.lights.visible().iter().all(|l| l.shadow == 0.0));
+
+    // Without a view, the list is empty.
+    world.frame(None);
+    assert!(world.lights.shadows().is_empty());
+}
+
+#[test]
 fn records_hold_colors_times_intensities_and_the_cones_of_spot_lights() {
     let mut world = World::new();
     let point = world.ranged(kind::POINT, [1.0, 0.0, -5.0], 4.0);
@@ -168,7 +229,7 @@ fn records_hold_colors_times_intensities_and_the_cones_of_spot_lights() {
             penumbra_cos: POINT_CONE[1],
             kind: kind::POINT,
             light: point,
-            unused: 0,
+            shadow: 0.0,
         }
     );
     // A quarter turn back about X points the spot light straight down.

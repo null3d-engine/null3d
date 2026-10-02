@@ -16,7 +16,7 @@ use null3d_core::culling::{CULL_CHUNK, CullRun, ROW_CELLS};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
-use null3d_core::lights::{LightTable, LightView, SunShadow, VisibleLight};
+use null3d_core::lights::{LightShadow, LightTable, LightView, SunShadow, VisibleLight};
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{
@@ -34,6 +34,7 @@ use crate::materials::{
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
 use crate::output::{Antialias, Output, SceneColor};
 use crate::pipelines::{DepthBias, DrawKey};
+use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{ShadowFrame, ShadowSettings, fit_cascades};
 use crate::textures::TextureStore;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
@@ -173,6 +174,11 @@ pub struct FrameInput<'a> {
     /// The point and spot lights that the camera sees, with positions relative to it (see
     /// [`LightTable::visible`]).
     pub lights: &'a [VisibleLight],
+    /// The point and spot lights that cast shadows (see [`LightTable::shadows`]).
+    pub shadow_lights: &'a [LightShadow],
+    /// The newest frame that the thread that draws drew with every pipeline built, or 0 before
+    /// any.
+    pub pipelines_built: u32,
 }
 
 impl FrameInput<'_> {
@@ -476,6 +482,8 @@ pub struct SceneSettings {
     clock: [f32; 4],
     /// True when the render scale may drop below the whole canvas.
     render_scaling: bool,
+    /// How the point and spot lights' shadow atlas is set up.
+    tiles: TileSettings,
 }
 
 impl SceneSettings {
@@ -504,6 +512,7 @@ impl SceneSettings {
             output: Output::default(),
             clock: [0.0; 4],
             render_scaling: false,
+            tiles: TileSettings::default(),
         }
     }
 
@@ -538,6 +547,20 @@ impl SceneSettings {
     /// resolve into the canvas. Frames at a lower scale while this is off draw the whole canvas.
     pub fn set_render_scaling(&mut self, scaling: bool) {
         self.render_scaling = scaling;
+    }
+
+    /// How the point and spot lights' shadow atlas is set up.
+    pub fn tile_settings(&self) -> TileSettings {
+        self.tiles
+    }
+
+    /// Sets up the point and spot lights' shadow atlas, from the next recorded frame on. A new
+    /// setting makes the atlas again, so every tile draws again.
+    pub fn set_tile_settings(&mut self, tiles: TileSettings) {
+        self.tiles = TileSettings {
+            tiles: tiles.tiles.min(MAX_TILES as u32),
+            ..tiles
+        };
     }
 
     pub fn meshes(&self) -> &MeshStorage {
@@ -759,6 +782,14 @@ impl SceneSettings {
             camera: scene.cell_position(slot, parity),
             layers: shadow.layers,
         })
+    }
+
+    /// Where the camera's view stands in the frame whose world output is `parity`'s: its cell, and
+    /// its position in the cell. `None` when the view has no camera.
+    pub fn camera_position(&self, scene: &SceneStorage, parity: usize) -> Option<CellPosition> {
+        let (camera, _) = self.views[ViewId::CAMERA.index()].camera()?;
+        let slot = scene.resolve(camera).ok()?;
+        Some(scene.cell_position(slot, parity))
     }
 
     /// The pipeline that draws the depth of a shadow caster whose mesh and material draw with

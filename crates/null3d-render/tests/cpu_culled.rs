@@ -141,7 +141,7 @@ fn two_views_list_their_own_visible_objects_and_draw_them_in_passes_of_their_own
         );
         assert_eq!(passes[0][0], passes[1][0]);
         assert_eq!(passes[0][2], passes[1][2]);
-        assert_eq!(count(&commands, Op::CreateTexture), 19 + 3);
+        assert_eq!(count(&commands, Op::CreateTexture), 20 + 3);
         // Each pass binds its view's frame uniform and index list textures.
         let bound = |group: u32| -> Vec<u32> {
             commands
@@ -232,6 +232,8 @@ fn a_view_added_after_the_frame_culled_draws_from_the_next_frame() {
         jobs: &world.jobs,
         lines: DebugLines::NONE,
         lights: &[],
+        shadow_lights: &[],
+        pipelines_built: u32::MAX,
     };
     world.renderer.cull(&input).unwrap();
     let late = world
@@ -304,10 +306,11 @@ fn the_first_frame_creates_everything_and_replays_on_both_draw_paths() {
         // The two meshes' pipelines, and the final pass's, made for frames whose render scale
         // drops.
         assert_eq!(count(&commands, Op::CreateRenderPipeline), 3);
-        // The color and depth targets, the shadow map (one texel while no light casts shadows),
-        // the resident texture, the two rings of three, the cluster texture, the material table,
-        // the table of specular terms, and the two rings of three light textures.
-        assert_eq!(count(&commands, Op::CreateTexture), 19);
+        // The color and depth targets, the shadow map and the shadow atlas (one texel each while
+        // no light casts shadows), the resident texture, the two rings of three, the cluster
+        // texture, the material table, the table of specular terms, and the two rings of three
+        // light textures.
+        assert_eq!(count(&commands, Op::CreateTexture), 20);
         // Buckets: lit boxes (the object, and the batch in the streamed texture), lit balls, and
         // unlit boxes. The hidden ball culls away; everything else is in view. Nothing is static
         // but the scene, so no bucket has clusters.

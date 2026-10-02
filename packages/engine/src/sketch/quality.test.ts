@@ -25,8 +25,12 @@ beforeEach(() => setErrorFixes(ERROR_FIXES));
 const MEDIUM = presetSettings('medium');
 
 /** A preset's settings after a switch from Medium, which keeps the settings fixed at the start. */
-function fromMedium(preset: QualityPreset): QualitySettings {
-	return presetSettings(preset, { antialias: MEDIUM.antialias });
+function fromMedium(
+	preset: QualityPreset,
+	options: Partial<QualitySettings> = {},
+): QualitySettings {
+	const { antialias, shadowTiles, shadowTileSize } = MEDIUM;
+	return presetSettings(preset, { antialias, shadowTiles, shadowTileSize, ...options });
 }
 
 /**
@@ -223,6 +227,8 @@ describe('SketchQuality.lower', () => {
 			maxAnisotropy: 16,
 			uploadBytesPerFrame: MEDIUM.uploadBytesPerFrame,
 			antialias: MEDIUM.antialias,
+			shadowTiles: MEDIUM.shadowTiles,
+			shadowTileSize: MEDIUM.shadowTileSize,
 		});
 		// The preset changed, and of the settings only the lowest render scale did.
 		expect(changes.at(-1)).toEqual(['minRenderScale']);
@@ -254,7 +260,7 @@ describe('SketchQuality.setPreset', () => {
 			settings: { ...MEDIUM, maxPixelRatio: 1 },
 		});
 		await quality.setPreset('ultra');
-		expect(quality.settings).toEqual(presetSettings('ultra', { maxPixelRatio: 1 }));
+		expect(quality.settings).toEqual(fromMedium('ultra', { maxPixelRatio: 1 }));
 	});
 
 	it("caps the preset at the GPU path's highest", async () => {

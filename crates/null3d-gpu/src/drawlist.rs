@@ -816,6 +816,9 @@ pub mod sizes {
     /// Bytes of the uniform block of the directional light's shadow cascades: four matrices, then
     /// four vectors.
     pub const SHADOW_UNIFORM_BYTES: u32 = 320;
+    /// Bytes of the uniform block of the shadow atlas's tiles: a matrix for each of the 24 tiles,
+    /// then a vector for each.
+    pub const SHADOW_TILES_UNIFORM_BYTES: u32 = 1920;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
@@ -1173,6 +1176,10 @@ pub fn typescript_constants() -> String {
                 ("MAX_CULL_RANGES", sizes::MAX_CULL_RANGES),
                 ("LINE_VERTEX_BYTES", sizes::LINE_VERTEX_BYTES),
                 ("SHADOW_UNIFORM_BYTES", sizes::SHADOW_UNIFORM_BYTES),
+                (
+                    "SHADOW_TILES_UNIFORM_BYTES",
+                    sizes::SHADOW_TILES_UNIFORM_BYTES,
+                ),
             ],
         ),
     ];

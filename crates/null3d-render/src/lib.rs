@@ -23,6 +23,7 @@
 //! - `output`: the output transform: the scene color's target, exposure and tone mapping
 //! - `parallel_record`: draw lists recorded in chunks on the job workers, joined in chunk order
 //! - `pipelines`: the render pipeline cache, by the key of everything that sets a pipeline apart
+//! - `shadow_tiles`: the tiles of the point and spot lights' shadow atlas, and when each draws
 //! - `shadows`: the cascades of a directional light's shadows, fitted to the camera's view
 //! - `sorted`: the blended objects of the transparent pass, culled and sorted back to front
 //! - `textures`: texture arrays, their samplers and bind groups, and uploads under a byte budget
@@ -49,6 +50,7 @@ pub mod meshes;
 pub mod output;
 pub mod parallel_record;
 pub mod pipelines;
+pub mod shadow_tiles;
 pub mod shadows;
 pub mod sorted;
 pub mod textures;

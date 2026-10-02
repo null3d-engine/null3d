@@ -131,9 +131,12 @@ fn each_cascade_lists_the_casters_and_draws_their_depth_into_its_layer() {
         let commands = world.commands();
 
         // The shadow map has a layer per cascade, bound as an array, and a view of each layer.
-        let [map] = &shadow_maps(&commands)[..] else {
-            panic!("one shadow map")
+        // The first frame also makes the shadow atlas of point and spot lights: one texel of
+        // one layer while none casts shadows.
+        let [map, atlas] = &shadow_maps(&commands)[..] else {
+            panic!("one shadow map and one shadow atlas")
         };
+        assert_eq!(atlas[1..4], [1, 1, 1]);
         assert_eq!(map[1..4], [1024, 1024, 3]);
         let usage = texture_usage::RENDER_ATTACHMENT | texture_usage::TEXTURE_BINDING;
         assert_eq!(map[5], usage);

@@ -124,6 +124,17 @@ export interface EngineOptions {
 	 */
 	antialias?: 'msaa' | 'fxaa' | 'none';
 	/**
+	 * The most tiles of the shadow atlas that spot and point lights cast their shadows into, a
+	 * whole number from 0 to 24. Without it, the quality preset sets it. 0 turns the shadows of
+	 * spot and point lights off. Another value fails with E1213.
+	 */
+	shadowTiles?: number;
+	/**
+	 * Texels on each side of each tile of the shadow atlas: 256, 512, 1,024 or 2,048. Without it,
+	 * the quality preset sets it. Another value fails with E1213.
+	 */
+	shadowTileSize?: number;
+	/**
 	 * True for a see-through canvas: the page shows through wherever no object draws, until the
 	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
 	 * it. The default is false, an opaque canvas.
@@ -704,7 +715,12 @@ async function startEngine(
 		hold === undefined && switches.preset === undefined ? new StartMarker(sketchUrl) : undefined;
 	const history = marker?.read() ?? NO_HISTORY;
 	const optionPreset = presetOption(options.preset);
-	const pageSettings = { maxPixelRatio: options.maxPixelRatio, antialias: options.antialias };
+	const pageSettings = {
+		maxPixelRatio: options.maxPixelRatio,
+		antialias: options.antialias,
+		shadowTiles: options.shadowTiles,
+		shadowTileSize: options.shadowTileSize,
+	};
 	checkSettings('createEngine()', pageSettings);
 	const presetRequest: PresetRequest = {
 		wanted: switches.preset ?? optionPreset,
