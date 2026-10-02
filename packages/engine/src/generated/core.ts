@@ -115,6 +115,12 @@ export const MATERIAL_FEATURE_ADDITIVE = 128;
 export const MATERIAL_FEATURE_MULTIPLY = 256;
 export const MATERIAL_FEATURE_NO_FOG = 1024;
 
+export const DEBUG_VIEW_LIT = 0;
+export const DEBUG_VIEW_NORMALS = 1;
+export const DEBUG_VIEW_DEPTH = 2;
+export const DEBUG_VIEW_OVERDRAW = 3;
+export const DEBUG_VIEW_WIREFRAME = 4;
+
 export const FOG_KIND_NONE = 0;
 export const FOG_KIND_LINEAR = 1;
 export const FOG_KIND_EXP2 = 2;

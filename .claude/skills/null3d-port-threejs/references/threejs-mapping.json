@@ -781,7 +781,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "debug.view('normals' | 'depth') for debugging; matcap is a surface-function recipe",
-      "notes": "",
+      "notes": "debug.view shades the whole scene, in development builds only. Its normals are in world space, where MeshNormalMaterial's are in view space. Its depth is white at the near plane, on a logarithmic scale for a perspective camera.",
       "docs": "porting/threejs-materials",
       "detect": "\\bMesh(Normal|Depth|Distance|Matcap)Material\\b"
     },

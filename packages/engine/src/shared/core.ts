@@ -268,6 +268,11 @@ export interface CoreGlue extends CoreErrors {
 		far: number,
 		density: number,
 	): number;
+	/**
+	 * Draws the scene with a debug view (`DEBUG_VIEW_*`), or with its materials with
+	 * `DEBUG_VIEW_LIT`, from the next frame on.
+	 */
+	setDebugView(view: number): number;
 }
 
 const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
@@ -334,6 +339,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setRenderScaling',
 	'setBackgroundTexture',
 	'setFog',
+	'setDebugView',
 ];
 
 /** Stack size for each engine thread. */
