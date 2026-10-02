@@ -2,8 +2,10 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
+import { glslProgramsOf } from '../pages/lib/shader-list.ts';
 import {
 	braveShieldsOf,
 	deviceChecklist,
@@ -31,6 +33,7 @@ import {
 	overloadPlan,
 	PLANS,
 	parityPlan,
+	SHADERS_PAGE_SECONDS,
 	STARTUP_RUNS,
 	startupPlan,
 	startupSummary,
@@ -549,6 +552,14 @@ describe('the checks plan', () => {
 		expect(judge(shaders.check, pageMissing, noWebGL2)).toBe('skip');
 		expect(judge(shaders.check, pageMissing, NO_WEBGPU)).toEqual([pageMissing.error]);
 		expect(judge(webgpu.check, pageMissing, noWebGL2)).toEqual([pageMissing.error]);
+	});
+
+	it('gives the shaders page more time than other pages, in proportion to its GLSL programs', async () => {
+		const shaders = items.find((item) => item.id === 'shaders');
+		const programs = glslProgramsOf(await everyShader()).length;
+		expect(programs).toBeGreaterThan(100);
+		expect(shaders?.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);
+		expect(SHADERS_PAGE_SECONDS).toBeGreaterThan(30 + programs / 4);
 	});
 
 	it("runs the shader library's values on both GPU paths, and names each wrong value", () => {
