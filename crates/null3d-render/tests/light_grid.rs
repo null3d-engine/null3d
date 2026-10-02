@@ -103,7 +103,7 @@ fn light(position: [f32; 3], range: f32, spot: bool, row: u32) -> VisibleLight {
         penumbra_cos,
         kind: light_kind,
         light: row,
-        unused: 0,
+        shadow: 0.0,
     }
 }
 

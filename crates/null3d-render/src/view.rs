@@ -21,14 +21,19 @@ use null3d_core::layers::DEFAULT_LAYERS;
 
 use crate::camera::{Affine, Lens, Mat4, ViewDepth, view_direction};
 use crate::frame_data::FrameUniform;
+use crate::shadow_tiles::MAX_TILES;
 use crate::shadows::MAX_CASCADES;
 
 /// The most views a builder draws. Each view has a fixed range of GPU object ids.
 pub const MAX_VIEWS: usize = 32;
 
 /// The most views of every kind: the views of cameras, then the cascades of the directional
-/// light's shadows, which cull and draw as views do.
-pub const MAX_VIEW_IDS: usize = MAX_VIEWS + MAX_CASCADES;
+/// light's shadows, then the tiles of the point and spot lights' shadow atlas, which cull and draw
+/// as views do.
+pub const MAX_VIEW_IDS: usize = MAX_VIEWS + MAX_CASCADES + MAX_TILES;
+
+/// The first id of the shadow atlas's tiles.
+const FIRST_TILE: usize = MAX_VIEWS + MAX_CASCADES;
 
 /// A view, by its place in the scene settings' list of views.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -52,14 +57,34 @@ impl ViewId {
         Self((MAX_VIEWS + cascade) as u16)
     }
 
-    /// The cascade of a shadow cascade's view, or `None` for a camera's view.
+    /// The cascade of a shadow cascade's view, or `None` for another view.
     pub const fn cascade_index(self) -> Option<usize> {
         let index = self.0 as usize;
-        if index >= MAX_VIEWS {
+        if index >= MAX_VIEWS && index < FIRST_TILE {
             Some(index - MAX_VIEWS)
         } else {
             None
         }
+    }
+
+    /// The view of a tile of the shadow atlas, from 0, after every cascade.
+    pub const fn tile(tile: usize) -> Self {
+        Self((FIRST_TILE + tile) as u16)
+    }
+
+    /// The tile of a shadow atlas tile's view, or `None` for another view.
+    pub const fn tile_index(self) -> Option<usize> {
+        let index = self.0 as usize;
+        if index >= FIRST_TILE {
+            Some(index - FIRST_TILE)
+        } else {
+            None
+        }
+    }
+
+    /// True for the view of a camera, false for a view of a light's shadows.
+    pub const fn is_camera(self) -> bool {
+        (self.0 as usize) < MAX_VIEWS
     }
 }
 

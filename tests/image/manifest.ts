@@ -428,6 +428,19 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// Spot light shadows: two spot lights, each with a tile of the shadow atlas, over casters that
+	// receive shadows, a receiver that casts none, a caster that receives none, and an unlit box.
+	// The tile size is fixed, as the presets of the GPU tiers differ. Both GPU paths draw the same
+	// shadows; WebGL2's 8-bit path differs at edges, as in the shadows test.
+	{
+		name: 'spot-shadows',
+		sketch: 'tests/pages/sketches/spot-shadows-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		switches: ['shadowTileSize=1024'],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the
 	// slab's front corner and the far plane cutting the bar at the back. The parity test compares
 	// the image with three.js's OrthographicCamera.
