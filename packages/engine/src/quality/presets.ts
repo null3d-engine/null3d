@@ -109,6 +109,20 @@ export const QUALITY_SETTINGS = {
 		changes: 'start',
 		values: ['none', 'fxaa', 'msaa'],
 	},
+	// The tiles of the shadow atlas that spot and point lights cast their shadows into: a spot light
+	// takes one, and a point light six. The lights that look largest from the camera get them
+	// first. 0 turns their shadows off. The atlas holds no more layers than the lights can fill.
+	shadowTiles: {
+		presets: [4, 8, 16, 24],
+		changes: 'start',
+		values: { min: 0, max: 24, whole: true },
+	},
+	// Texels on each side of each tile of the shadow atlas. A tile takes 4 bytes per texel.
+	shadowTileSize: {
+		presets: [512, 512, 1024, 1024],
+		changes: 'start',
+		values: [256, 512, 1024, 2048],
+	},
 	// The shared memory's maximum, from 256 MiB to the 4 GiB that the threaded core declares. Every
 	// preset keeps the loader's default until measurements of the memory that tabs can use on
 	// phones and tablets set one per preset (D-04).
@@ -185,6 +199,20 @@ export interface QualitySettings {
 	 * take it.
 	 */
 	antialias: 'none' | 'fxaa' | 'msaa';
+	/**
+	 * The most tiles of the shadow atlas, which spot and point lights cast their shadows into: a
+	 * spot light takes one tile. When more lights cast shadows than the tiles hold, the lights that
+	 * look largest from the camera get them. It takes a whole number from 0, which turns the
+	 * shadows of spot and point lights off, to 24. The `shadowTiles` option of `createEngine` sets
+	 * it, and `set` does not take it.
+	 */
+	shadowTiles: number;
+	/**
+	 * Texels on each side of each tile of the shadow atlas: 256, 512, 1,024 or 2,048. Larger tiles
+	 * give sharper shadows and take more memory, 4 bytes per texel. The `shadowTileSize` option of
+	 * `createEngine` sets it, and `set` does not take it.
+	 */
+	shadowTileSize: number;
 }
 
 /** The names of the settings in the preset table that change as `changes` says. */

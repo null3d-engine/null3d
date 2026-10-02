@@ -214,13 +214,15 @@ impl Opaque {
     /// Records the creation of a view's frame groups, which bind its uniform block, its cell
     /// offsets and the material table's texture. A camera's view has one group for each slot of
     /// the light textures' ring. Each also binds three.js's table of the split-sum terms of
-    /// specular light, `shadow_map` with the comparison sampler and the cascades' uniform block
-    /// that read it, and the slot's light grid and light records. A shadow cascade's view has one
-    /// group, which binds no shadow map, so no pass reads the texture it draws into.
+    /// specular light, the shadow map of `shadow_maps` with the comparison sampler and the
+    /// cascades' uniform block that read it, the slot's light grid and light records, and the
+    /// shadow atlas of `shadow_maps` with the tiles' uniform block. A shadow cascade's or a shadow
+    /// tile's view has one group, which binds no shadow map, so no pass reads the texture it draws
+    /// into.
     pub(super) fn bind_frame(
         list: &mut DrawList,
         view: ViewId,
-        shadow_map: Option<u32>,
+        shadow_maps: Option<(u32, u32)>,
     ) -> Result<(), RecordError> {
         // The frame's slot offset moves the uniform block and the cell offsets together, and
         // the backend gives dynamic offsets to a group's buffers in their order here.
@@ -243,16 +245,16 @@ impl Opaque {
             0,
         ];
         let group = ids::frame_group(view);
-        let Some(map) = shadow_map else {
+        let Some((map, atlas)) = shadow_maps else {
             let mut words = [0; 18];
             words[..3].copy_from_slice(&[group, bind_layout::DEPTH, 3]);
             words[3..].copy_from_slice(&common);
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
         };
-        let mut words = [0; 48];
+        let mut words = [0; 58];
         words[3..18].copy_from_slice(&common);
-        words[18..38].copy_from_slice(&[
+        words[18..48].copy_from_slice(&[
             3,
             resource_kind::TEXTURE,
             ids::DFG,
@@ -273,10 +275,20 @@ impl Opaque {
             ids::SHADOWS,
             0,
             sizes::SHADOW_UNIFORM_BYTES,
+            9,
+            resource_kind::TEXTURE,
+            atlas,
+            0,
+            0,
+            10,
+            resource_kind::BUFFER,
+            ids::SHADOW_TILES,
+            0,
+            sizes::SHADOW_TILES_UNIFORM_BYTES,
         ]);
         for slot in 0..RING {
-            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 9]);
-            words[38..].copy_from_slice(&[
+            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 11]);
+            words[48..].copy_from_slice(&[
                 7,
                 resource_kind::TEXTURE,
                 ids::LIGHT_GRID + slot,
