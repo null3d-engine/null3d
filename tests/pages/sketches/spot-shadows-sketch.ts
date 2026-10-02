@@ -2,10 +2,12 @@
 // with boxes, a ball and a tall post that cast and receive them. Each light casts into its own
 // tile of the shadow atlas. A box on the right receives shadows but casts none, a post casts but
 // receives none, and an unlit box shows no shadow on itself. The page's ?shadowTileSize= switch
-// fixes the tile size, so every GPU tier draws the same tiles.
+// fixes the tile size, and the sketch fixes the 3 x 3 shadow filter, so every GPU tier draws the
+// same image whatever preset it runs.
 import { defineSketch } from '@null3d/engine';
 
-export default defineSketch(({ scene, materials, geometry }) => {
+export default defineSketch(({ scene, materials, geometry, quality }) => {
+	quality.set({ shadowFilter: 3 });
 	scene.setBackground('#101418');
 	const camera = scene.createPerspectiveCamera({
 		fov: 50,

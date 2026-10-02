@@ -1,21 +1,26 @@
-// The point and spot light scenes of clustered lighting (bench/scenes/lights.ts). ?lights=N lights
-// the floor with N point lights in a square grid, and ?scene=spot with three spot lights instead.
-// ?camera=ortho draws through an orthographic camera.
+// The point, spot and hemisphere light scenes (bench/scenes/lights.ts). ?lights=N lights the floor
+// with N point lights in a square grid, ?scene=spot with three spot lights instead, and
+// ?scene=hemisphere with a hemisphere light. ?camera=ortho draws through an orthographic camera.
+// ?tone=none turns off the engine's default of ACES, as the parity test asks: the three.js twin
+// draws with no tone mapping, three.js's default.
 import { defineSketch } from '@null3d/engine';
 import {
+	HEMISPHERE_LIGHT,
 	LIGHTS_AMBIENT,
 	LIGHTS_BACKGROUND,
 	LIGHTS_CAMERA,
 	LIGHTS_FLOOR,
 	LIGHTS_ORTHO_CAMERA,
 	LIGHTS_SHAPES,
+	LIGHTS_SPHERE,
 	pointLightGrid,
 	SPOT_LIGHTS,
 } from '../../../bench/scenes/lights';
 
 const params = new URL(import.meta.url).searchParams;
 
-export default defineSketch(({ scene, materials, geometry }) => {
+export default defineSketch(({ scene, materials, geometry, post }) => {
+	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	scene.setBackground(LIGHTS_BACKGROUND);
 	const camera =
 		params.get('camera') === 'ortho'
@@ -32,7 +37,7 @@ export default defineSketch(({ scene, materials, geometry }) => {
 		}),
 	});
 	floor.setRotationEuler(-Math.PI / 2, 0, 0);
-	const sphere = geometry.sphere({ radius: 1, widthSegments: 32, heightSegments: 16 });
+	const sphere = geometry.sphere({ radius: 1, ...LIGHTS_SPHERE });
 	const box = geometry.box({ width: 1, height: 1, depth: 1 });
 	for (const { shape, position, size, color, roughness, metalness } of LIGHTS_SHAPES) {
 		const shaped = scene.createMesh({
@@ -43,9 +48,14 @@ export default defineSketch(({ scene, materials, geometry }) => {
 		shaped.setScale(size, size, size);
 	}
 
-	if (params.get('scene') === 'spot') {
+	const lights = params.get('scene');
+	if (lights === 'spot') {
 		for (const { position, target, ...light } of SPOT_LIGHTS)
 			scene.createSpotLight({ ...light, position: [...position], target: [...target] });
+		return;
+	}
+	if (lights === 'hemisphere') {
+		scene.createHemisphereLight(HEMISPHERE_LIGHT);
 		return;
 	}
 	const count = Number(params.get('lights') ?? '16');

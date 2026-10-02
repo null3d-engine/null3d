@@ -5,7 +5,9 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `parity`, `bench`, `memory`, `depth`, `overload`, `scale` and `startup`. `bun run devices` runs the checks on the phone and on the iPad.
+- The plans are `checks` (the default), `parity`, `bench`, `memory`, `depth`, `overload`, `scale`, `skinning` and `startup`. `bun run devices` runs the checks on the phone and on the iPad.
+- The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
+- The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
 - Run one runner at a time. All runs share one file, `target/runs/current.json`, which tells waiting runner pages which run to start. A second runner can replace it before a waiting page reads it, and that page then waits forever.
 - A runner page that waits on the local network reloads itself before each run after its first. No run then inherits memory that an earlier run kept.
@@ -88,6 +90,18 @@ To collect the numbers, rest each device first and close its other tabs:
 - Without the limit, a queue can hold seconds of frames. A page then takes a while to stop, so each page gets 2 minutes.
 - `?spheres=<n>` makes the page measure that many spheres alone. Use it to compare switches, such as `?queue=3`, at one load.
 
+## The skinning plan
+
+- The `skinning` plan times two ways to skin characters on WebGL2, for [D-10](decisions/D-10-webgl2-skinning.md). The engine does not skin yet, so the page (`tests/pages/skinning.html`) draws with WebGL2 calls of its own, and no engine code runs.
+- The scene is a crowd of generated characters on a ground plane, under a directional light with 1 to 4 shadow cascades. Each character has 2,560 vertices and a chain of 32 joints, with four joint weights per vertex. The page bends each chain every frame and uploads the joint matrices to a float texture.
+- The vertex shader path skins each character again in each pass that draws it: each cascade and the main pass. The transform feedback path skins each character that some pass draws once per frame, into a buffer of positions and a buffer of normals. Then the cascades and the main pass draw those buffers as plain vertices.
+- Both paths cull the crowd per pass on the CPU, and fit each cascade's box to its slice of the view, as the engine does. The frame is 1280 x 720 pixels on every device, with 2048 x 2048 texels in each cascade.
+- Each page first draws one pose both ways and compares the two images. It fails when more than 0.1% of the pixels differ by more than 2 levels.
+- Then the page draws each path's frames back to back in batches of about 100 ms. It reads a pixel at the end of each batch, which waits for the GPU. The paths take 12 turns each, so heat slows both alike. The figures are medians per frame: the whole frame, the JavaScript, and the GPU time where the browser has timer queries. Phones and tablets have none.
+- The plan runs each crowd of 50, 100, 200 and 500 characters with 1, 2, 3 and 4 cascades: 16 pages. The run's summary gives each page's characters per pass, each path's figures, and the share of the frame time that transform feedback saves.
+- Run it on the phone and the iPad from a checkout of the branch that holds the page: `bun tests/real-browsers.ts --plan skinning --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool.
+- The page takes `?characters=`, `?cascades=`, `?rounds=` and `?warmup=` (milliseconds), to time one load by hand.
+
 ## Browser apps on the Mac
 
 - Keep the Mac's screen unlocked and its display awake during runs. Safari stops running pages while the Mac is locked, and the runner then waits until its deadline. Chrome started by Playwright keeps running.
@@ -102,7 +116,7 @@ To collect the numbers, rest each device first and close its other tabs:
 - On 30 September 2026, one job for both browsers took about 7.7 minutes. It built for 1.5 minutes, then ran the two browsers in turn for 5.6 minutes. The Rust cache did not shorten the build much. The threaded build compiled the standard library again each time, and the shader compiler took another half minute.
 - The split jobs took 3.3 minutes for Safari and 3.4 for Firefox, after a Linux build of 1 minute. That is 6.6 minutes of macOS machines per run. Two shards per browser took at most 2.3 minutes each, but 8.0 machine minutes and four machines at once.
 - The plan grows with each feature. On 1 October 2026, it held about 450 items for each browser, at about 2 seconds each. One shard per browser then took about 14 minutes.
-- GitHub's free plan gives 5 macOS machines at once, and main's benchmark job holds one for about 25 minutes after each merge. That leaves 4 machines, so CI runs 2 shards per browser, and the 4 jobs of one queue run start at once. A third shard per browser does not finish a run sooner: 6 jobs on 4 machines run in two turns. When several queue runs wait for machines, more shards only add the time that each job takes to start.
+- GitHub's free plan gives 5 macOS machines at once. CI runs 2 shards per browser, so the 4 jobs of one queue run start at once when 4 machines are free. Main's benchmark run holds 3 machines for about 17 minutes after each merge, as [Benchmarks](benchmarks.md#the-benchmark-job-in-ci) says, and the queue's jobs then wait for machines. A third shard per browser does not finish a run sooner: 6 jobs on 4 machines run in two turns. When several queue runs wait for machines, more shards only add the time that each job takes to start.
 
 ## Android phone
 

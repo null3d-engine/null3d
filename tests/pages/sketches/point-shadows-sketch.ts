@@ -2,10 +2,12 @@
 // every direction, across the six tiles of its cube. A wall behind receives shadows too. A box
 // receives shadows but casts none, a post casts but receives none, and an unlit box shows no shadow
 // on itself. The page's ?pointLightShadows switch turns point light shadows on, as the presets of
-// some GPU tiers leave them off, and ?shadowTileSize= fixes the tile size.
+// some GPU tiers leave them off, and ?shadowTileSize= fixes the tile size. The sketch fixes the
+// 3 x 3 shadow filter, so every GPU tier draws the same image whatever preset it runs.
 import { defineSketch } from '@null3d/engine';
 
-export default defineSketch(({ scene, materials, geometry }) => {
+export default defineSketch(({ scene, materials, geometry, quality }) => {
+	quality.set({ shadowFilter: 3 });
 	scene.setBackground('#101418');
 	const camera = scene.createPerspectiveCamera({
 		fov: 50,

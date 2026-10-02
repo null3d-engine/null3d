@@ -136,7 +136,8 @@ fn display(texel: vec4f, pixel: vec2f) -> vec4f {
     if (settings.flags & DISPLAY_COLOR) != 0u {
         return texel;
     }
-    let coverage = texel.a;
+    // Additive blending adds coverage too, past 1 over a covered pixel, which covers it whole.
+    let coverage = min(texel.a, 1.0);
     if coverage <= 0.0 {
         return vec4f(0.0);
     }

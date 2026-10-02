@@ -28,22 +28,32 @@ The benchmarks measure the engine as developers ship it. A production build leav
 
 ## The benchmark job in CI
 
-- The Benchmarks workflow compares a new commit with a baseline on one of GitHub's machines. On main it runs one job at a time, so it leaves GitHub's other Mac machines to the merge queue's Safari and Firefox checks.
-- A push to main waits while a job runs, and a newer push replaces the job that waits. So the baseline of a push is the last commit on main that a job measured with success, which `bench/ci-baseline.ts` finds. The next job then measures the change of every push that got no job.
-- Without such a commit, the baseline is the commit before. After a failed job, the next job still compares with the last commit that passed. Main's job then fails until a commit fixes the slowdown or names it in a `Bench-Expected:` trailer.
+- The Benchmarks workflow compares a new commit with a baseline on GitHub's machines. On main it runs one run at a time, so it leaves GitHub's other Mac machines to pull requests and the merge queue.
+- A push to main waits while a run goes on, and a newer push replaces the run that waits. So the baseline of a push is the last commit on main that a run measured with success, which `bench/ci-baseline.ts` finds. The next run then measures the change of every push that got no run.
+- Without such a commit, the baseline is the commit before. After a failed run, the next run still compares with the last commit that passed. Main's run then fails until a commit fixes the slowdown or names it in a `Bench-Expected:` trailer.
 - For a pull request it runs on demand, against the pull request's merge base. Add the `benchmark` label, and each push runs it again while the label stays. You can also start the workflow from the Actions tab with a pull request's number, a branch or a commit.
-- GitHub's machines are shared, and their speed changes from run to run. So the job judges a new commit only against a baseline measured in the same job. It builds both commits on one machine, each in a git worktree of its own, with `bun run build`. That build also makes each commit's shader modules, unless the commit keeps them in git.
-- It then runs `bun run bench:run --compare <baseline>,<new>` in Chrome. The command builds each commit's benchmark pages for production, into `target/bench-pages-baseline` and `target/bench-pages-new`, and serves each build on a port of its own.
+- GitHub's machines are shared, and their speed changes from run to run. So each Mac machine runs the pages of both commits. A page's new build is judged only against the baseline that ran on the same machine.
+- The workflow has four kinds of jobs:
+  - `choose the commits` picks the baseline and the new commit.
+  - `build (baseline)` and `build (new)` each build one commit on a Linux machine, with that commit's `bun run build`. That build also makes the commit's shader modules, unless the commit keeps them in git. The built files are the same on every platform, so each job packs them into an artifact.
+  - The `benchmark (shard i of 3)` jobs run on Mac machines. Each one makes a git worktree of each commit, unpacks its build there, and runs `bun run bench:run --compare <baseline>,<new> --shard i/3` in Chrome. The command builds each commit's benchmark pages for production, into `target/bench-pages-baseline` and `target/bench-pages-new`, and serves each build on a port of its own. The shards need no Rust toolchain, because `vite preview` does not build the shader modules that a dev server needs.
+  - `benchmark report` downloads the record of each shard, `runs.json`, and runs `bun run bench:run --merge`. It judges every page as one comparison would, with the same rules and the same trailers. Its summary and artifact are the run's result.
 - A commit from before `bench/vite.pages.config.ts` existed has its pages built with the new commit's config.
-- S1, S1-static, S1-cells, S2, S3 and S4 run on null3D's two GPU paths. A scene that one of the two commits has no page for runs in neither. So a pull request that adds a benchmark is compared on the other scenes. The job runs 10 rounds. Each round runs every page once in each build, the two runs back to back, and even rounds run the new build first. Each run has 5 s of warm-up and 5 s measured.
-- It drops a run that measured no frames, and a run that measured another refresh rate than most runs of its page did.
-- Each run gives two medians of CPU time per frame: the busiest thread's time, and the engine's own work on that thread. For each page and measure, the job divides the new build's median by the baseline's in each round. The change is the median of these ratios. A machine that changes speed between rounds then changes both runs of a round alike.
-- The job fails when the busiest thread's change is more than 5% and more than 0.01 ms. It also fails when own work's change is more than 15% and more than 0.02 ms. The browser's timer counts in steps of 5 microseconds, so a small time moves by whole steps between runs.
-- A pull request that makes a benchmark more than 3% slower still needs its written reason (hard rule 17). One job cannot tell such a change from the machine's noise, but its table shows every change.
-- The job runs on GitHub's Mac machine (`macos-15`, 3 cores of an Apple M1 in a virtual machine). Its GPU is shared with other machines, so the job reports GPU time but never judges it. Device sessions measure the GPU.
-- A job takes about 3 minutes to set up and 3 to build both commits. Each scene then adds about 8 minutes: 10 rounds of 2 pages in 2 builds, each run 10 s plus its load. With four scenes, main's jobs took 33 to 41 minutes. The job's limit is 90 minutes.
-- The job does not split into shards. Each shard would need a Mac machine of its own, and would set up and build both commits again. GitHub's free plan gives 5 Mac machines at once, which the merge queue's Safari and Firefox jobs need. The job is also not a check that the merge queue waits for.
-- The summary goes to the run's page. Each run's result, `summary.json` and `summary.md` stay in an artifact for 90 days, so the workflow's list of runs holds the history.
+- S1, S1-static, S1-cells, S2, S3 and S4 run on null3D's two GPU paths. Each scene on each path is one page, so the plan has 12 pages. A shard runs every third page, from its own place in the plan. So each shard runs 4 pages of 3 or 4 scenes.
+- A scene that one of the two commits has no page for runs in neither. So a pull request that adds a benchmark is compared on the other scenes.
+- Each shard runs 10 rounds. Each round runs every page of the shard once in each build, the two runs back to back. Even rounds run the new build first. Each run has 5 s of warm-up and 5 s measured.
+- The comparison drops a run that measured no frames, and a run that measured another refresh rate than most runs of its page did.
+- Each run gives two medians of CPU time per frame: the busiest thread's time, and the engine's own work on that thread. For each page and measure, the comparison divides the new build's median by the baseline's in each round. The change is the median of these ratios. A machine that changes speed between rounds then changes both runs of a round alike.
+- A page fails when the busiest thread's change is more than 5% and more than 0.01 ms. It also fails when own work's change is more than 15% and more than 0.02 ms. The browser's timer counts in steps of 5 microseconds, so a small time moves by whole steps between runs.
+- A shard fails when one of its own pages fails, and the report fails when any page fails. Each shard's page shows the summary of its own pages, and the report's page shows them all.
+- To measure a shard again, open the run and use "Re-run failed jobs". GitHub then runs the failed shards and the report again, with the same commits and the same builds. The shards that passed keep their records, and a shard that runs again replaces its own.
+- The report also fails when no record holds a page of the plan, such as after a shard ran out of time. Its log names the missing pages.
+- A pull request that makes a benchmark more than 3% slower still needs its written reason (hard rule 17). One run cannot tell such a change from the machine's noise, but its table shows every change.
+- The shards run on GitHub's Mac machine (`macos-15`, 3 cores of an Apple M1 in a virtual machine). Its GPU is shared with other machines, so the comparison reports GPU time but never judges it. Device sessions measure the GPU.
+- On 2 October 2026, each run took about 12 s with its load. A shard's 80 runs then take about 16 minutes, after about a minute to set up. The Linux builds come first. A shard's limit is 30 minutes.
+- GitHub's free plan gives 5 Mac machines at once, and the merge queue's Safari and Firefox jobs need 4 of them. Main's run holds 3 machines after each merge. Shards of one page each would take about 5 minutes. But 12 of them would need more Mac machines than GitHub gives, so the run would not end sooner. To change the count, change the shard list in `.github/workflows/bench.yml`. The job names and the `--shard` option follow the list.
+- The workflow is not a check that the merge queue waits for.
+- Each shard's results stay in an artifact for 30 days, the time in which GitHub lets a run's jobs run again. The report's artifact holds every shard's results, `summary.json` and `summary.md` for 90 days, so the workflow's list of runs holds the history.
 
 ### How the machine and the rules were chosen
 
@@ -66,12 +76,14 @@ Bench-Expected: s1/null3d-webgl2: the batch pass now writes normals, about 0.1 m
 
 - Before the colon, name the benchmarks: a scene, then a page and a measure if needed. For example `s1`, `s1/null3d-webgl2` or `s1/null3d-webgl2/own-work`. The measures are `busiest-thread` and `own-work`. A `*` stands for any part, and a comma separates two benchmarks.
 - After the colon, give the reason. A bare value such as "yes" does not count.
-- The job reads the trailers of every commit from the baseline to the new commit. A squash merge keeps them, because main's squash messages list each commit's message.
+- The comparison reads the trailers of every commit from the baseline to the new commit. A squash merge keeps them, because main's squash messages list each commit's message.
 - A trailer that does not parse excuses nothing, and the summary lists it.
 
 ### Run a comparison on your computer
 
 Build two checkouts, such as a git worktree of main beside your branch, with `bun run build` in each. Then run `bun run bench:run --compare ../main,. --runs 10 --seconds 5`, the job's settings. The baseline's pages are served on the port that `NULL3D_PORT` names, and the new build's pages on the next one. With `--dev`, each checkout's dev server takes its port instead.
+
+Add `--shard 2/3` to run only the pages of one shard, as a CI shard does. Each run writes its record to `runs.json` beside its summary. `bun run bench:run --merge <folder>` judges the records under a folder as one comparison, as the report job does. It needs no browser.
 
 ## Hold frames
 
@@ -123,6 +135,13 @@ Build two checkouts, such as a git worktree of main beside your branch, with `bu
 - On the Mac: `bun run bench:run --scenes s4 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,threejs-webgl,scene-code`.
 - On the phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s4 --pages null3d-webgl2,threejs-webgl,scene-code`. For the long run, add `--pages null3d-webgl2 --runs 1 --seconds 600`: 10 minutes of warm-up, then a trace of 10 measured minutes.
 - On the iPad: `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,scene-code`.
+
+## Shadows
+
+- `?shadows=<n>` on S2's pages turns on the sun's shadows, and every node casts and receives them. null3D draws them in n cascades, from 1 to 4, and three.js in one map. Both maps have 2,048 texels on each side (`SHADOWS` in `bench/scenes/spec.ts`), and three.js's map covers a box around the whole forest.
+- `--switches <switches>` gives every page of a run more switches. On the Mac, run S2 without shadows, then with each cascade count: `bun run bench:run --scenes s2 --pages null3d-webgpu,null3d-compat,threejs-webgpu,threejs-webgl --switches shadows=1`. Each count's difference from the run without shadows is the cost of its cascades, in CPU time and in GPU time.
+- `bun run parity --scene s2 --switches shadows=3` compares the hold frames on each tier. On 30 September 2026 on the Mac, 0.147% of the pixels differed on both WebGPU tiers, and three.js's two renderers differed by 0.270%. WebGL2 drew no shadows then, so it has no figure yet.
+- Each cascade adds a culling dispatch and a depth pass on the GPU. On the CPU it adds the recording of both, and its uniforms: about the same work whatever the number of casters.
 
 ## Sweeps for the open defaults
 

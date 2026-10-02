@@ -24,6 +24,12 @@ export interface Plan<Check = unknown> {
 	run: string;
 	createdAt: string;
 	items: PlanItem<Check>[];
+	/**
+	 * The runner page draws its report over each page's frame, which stays full size underneath, so
+	 * the screen does not flash between pages. Only plans that check results set it: over a timed
+	 * page, the report would add to what the browser composites.
+	 */
+	reportOnTop?: true;
 }
 
 /** The run that waiting runner pages start, and the runners that may start it now. */
@@ -61,8 +67,17 @@ export function runName(planName: string, now = new Date()): string {
 	return `${stamp}-${planName}`.toLowerCase();
 }
 
-export function writePlan<Check>(run: string, items: PlanItem<Check>[]): Plan<Check> {
-	const plan: Plan<Check> = { run, createdAt: new Date().toISOString(), items };
+export function writePlan<Check>(
+	run: string,
+	items: PlanItem<Check>[],
+	reportOnTop = false,
+): Plan<Check> {
+	const plan: Plan<Check> = {
+		run,
+		createdAt: new Date().toISOString(),
+		items,
+		...(reportOnTop && { reportOnTop }),
+	};
 	mkdirSync(join(RUNS_DIR, run), { recursive: true });
 	writeFileSync(join(RUNS_DIR, run, 'plan.json'), JSON.stringify(plan, null, '\t'));
 	return plan;
@@ -124,6 +139,15 @@ export function finished(run: string, runner: string): boolean {
 export interface Shard {
 	index: number;
 	count: number;
+}
+
+/** What a tool's `--shard` option takes, for its error message. */
+export const SHARD_FORMAT = '<i>/<n>, such as 1/2, with i from 1 to n';
+
+/** Reads a shard written as `<i>/<n>`, or null when the text is not one. */
+export function readShard(text: string | undefined): Shard | null {
+	const [, index = 0, count = 0] = /^(\d+)\/(\d+)$/.exec(text ?? '')?.map(Number) ?? [];
+	return index >= 1 && index <= count ? { index, count } : null;
 }
 
 /**

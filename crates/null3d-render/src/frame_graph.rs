@@ -73,7 +73,7 @@ use crate::graph::{
 };
 use crate::output::{Antialias, Output, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache};
-use crate::shadows::MAX_CASCADES;
+use crate::shadows::{MAX_CASCADES, ShadowFrame};
 use crate::view::{View, ViewId};
 
 /// The format of the scene's depth targets.
@@ -132,6 +132,17 @@ pub(crate) struct ShadowPasses {
     pub(crate) cascades: u32,
     pub(crate) map_size: u32,
     pub(crate) layers: u32,
+}
+
+impl ShadowPasses {
+    /// The passes of `shadow`'s frame.
+    pub(crate) fn of(shadow: &ShadowFrame) -> Self {
+        Self {
+            cascades: shadow.cascades.count as u32,
+            map_size: shadow.settings.map_size,
+            layers: shadow.layers,
+        }
+    }
 }
 
 /// The tile passes of the shadow atlas: its tiles, and the texels on each side of each.
@@ -307,12 +318,13 @@ impl FrameGraph {
 
     /// Sets the directional light's shadow passes for the next frames, or none. A new cascade count
     /// or map size declares the passes again, which makes the shadow map again. A new layer mask
-    /// only changes the passes' masks. A builder that binds no shadow map draws no shadows.
+    /// only changes the passes' masks, and new cascades to draw change only which passes run. A
+    /// builder that binds no shadow map draws no shadows.
     pub(crate) fn set_shadows(&mut self, shadows: Option<ShadowPasses>) {
         let shadows = shadows.filter(|_| self.shadow_map).map(|s| ShadowPasses {
             cascades: s.cascades.clamp(1, MAX_CASCADES as u32),
             map_size: s.map_size.max(1),
-            layers: s.layers,
+            ..s
         });
         let shape = |s: Option<ShadowPasses>| s.map(|s| (s.cascades, s.map_size));
         if shape(shadows) != shape(self.shadows) {

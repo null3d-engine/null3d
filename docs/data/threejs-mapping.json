@@ -65,8 +65,8 @@
       "three": "renderer.shadowMap.enabled / .type (PCFSoftShadowMap, VSMShadowMap)",
       "status": "changed",
       "since": "0.1",
-      "target": "castShadows: true on the light; filtering follows the preset",
-      "notes": "Presets use 3 x 3 or 5 x 5 PCF filtering. VSM has no equivalent.",
+      "target": "castShadows: true on the light; the shadowFilter quality setting sets the filter",
+      "notes": "PCFShadowMap and PCFSoftShadowMap become the shadowFilter setting: 3 x 3 or 5 x 5 texels, by preset. quality.set({ shadowFilter }) changes it during play. BasicShadowMap and VSMShadowMap have no equivalent.",
       "docs": "concepts/shadows",
       "detect": "\\.shadowMap\\.(enabled|type)|\\b(PCF|PCFSoft|VSM|Basic)ShadowMap\\b"
     },
@@ -594,7 +594,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "Built in: shadow: { cascades } on the directional light",
-      "notes": "Delete the addon.",
+      "notes": "Delete the addon. Its cascades, maxFar and shadowMapSize become the cascades, distance and mapSize settings. The cascades keep still edges as the camera turns, and far cascades draw every few frames, as the farCascadeInterval quality setting says.",
       "docs": "concepts/shadows",
       "detect": "\\bCSM\\b|csm/CSM"
     },
@@ -605,7 +605,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "shadow: { mapSize, bias, normalBias, cascades, distance } in the directional light's options, or light.setShadow()",
-      "notes": "mapSize is one number, the texels on each side. bias and normalBias count texels of each cascade, not depth units and meters, so start from the defaults. radius and blurSamples will map to the preset's filter size; shadow.camera has no equivalent.",
+      "notes": "mapSize is one number, the texels on each side. bias and normalBias count texels of each cascade, not depth units and meters, so start from the defaults. radius and blurSamples become the shadowFilter quality setting, 3 or 5 texels on each side. shadow.camera has no equivalent: the cascades fit the camera's view.",
       "docs": "concepts/shadows",
       "detect": "\\.shadow\\.(mapSize|bias|normalBias|camera|radius|blurSamples)\\b"
     },
@@ -781,7 +781,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "debug.view('normals' | 'depth') for debugging; matcap is a surface-function recipe",
-      "notes": "",
+      "notes": "debug.view shades the whole scene, in development builds only. Its normals are in world space, where MeshNormalMaterial's are in view space. Its depth is white at the near plane, on a logarithmic scale for a perspective camera.",
       "docs": "porting/threejs-materials",
       "detect": "\\bMesh(Normal|Depth|Distance|Matcap)Material\\b"
     },

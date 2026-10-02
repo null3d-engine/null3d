@@ -8,6 +8,8 @@
 //! - `cpu_culled`: the WebGL2 frame builder, with culling on the job workers and an index list per
 //!   view
 //! - `debug_lines`: the lines that a sketch draws for one frame, and the pass that draws them
+//! - `debug_view`: the debug views, which draw every mesh with one debug shading in place of its
+//!   material's
 //! - `final_pass`: the pass that tone maps the HDR scene color into the canvas
 //! - `fog`: the scene's fog, with three.js's formulas, and its part of each frame's uniform block
 //! - `frame`: what every frame builder shares: its input, the scene settings, the per-parity lists
@@ -35,6 +37,7 @@ pub mod camera;
 mod cells;
 pub mod cpu_culled;
 pub mod debug_lines;
+pub mod debug_view;
 pub mod dfg;
 mod final_pass;
 pub mod fog;

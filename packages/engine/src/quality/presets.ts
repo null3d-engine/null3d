@@ -89,6 +89,20 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 64 * 1024, max: 64 * MIB, whole: true },
 	},
+	// The texels on each side of the square that blends each shadow's edge. The shaders read it
+	// from a uniform, so it changes during play with no new pipeline.
+	shadowFilter: {
+		presets: [3, 3, 5, 5],
+		changes: 'live',
+		values: [3, 5],
+	},
+	// The frames between two draws of each far shadow cascade. The nearest cascade draws in every
+	// frame, and a far cascade keeps its layer of the shadow map in between.
+	farCascadeInterval: {
+		presets: [4, 3, 2, 2],
+		changes: 'live',
+		values: { min: 1, max: 8, whole: true, heavierBelow: true },
+	},
 	// FXAA on Low, which phones draw: MSAA's samples cost them more memory traffic.
 	antialias: {
 		presets: ['fxaa', 'msaa', 'msaa', 'msaa'],
@@ -171,6 +185,19 @@ export interface QualitySettings {
 	 * number from 65,536 (64 KiB) to 67,108,864 (64 MiB), and changes during play.
 	 */
 	uploadBytesPerFrame: number;
+	/**
+	 * The texels on each side of the square of shadow map texels that blend into each point's
+	 * shadow: 3 or 5. A larger square gives softer shadow edges and costs more per pixel that
+	 * receives shadows. It changes during play.
+	 */
+	shadowFilter: 3 | 5;
+	/**
+	 * How often each far shadow cascade draws: once in this many frames, a whole number from 1 to
+	 * 8. The nearest cascade draws in every frame, and the far ones take turns. A higher value
+	 * costs less, and far shadows then lag their moving casters by a few frames. It changes during
+	 * play.
+	 */
+	farCascadeInterval: number;
 	/**
 	 * How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa`
 	 * smooths edges in the final pass, and `none` leaves them sharp. The mode is fixed when the

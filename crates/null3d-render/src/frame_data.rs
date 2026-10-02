@@ -40,6 +40,8 @@ pub struct FrameUniform {
     pub camera_world: [f32; 4],
     /// The size of the render target in pixels, and one over each.
     pub target_size: [f32; 4],
+    /// The distances of the camera's near and far planes, and two spares.
+    pub camera_range: [f32; 4],
 }
 
 const _: () = assert!(std::mem::size_of::<FrameUniform>() == FRAME_UNIFORM_BYTES as usize);

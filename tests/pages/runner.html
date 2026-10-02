@@ -6,18 +6,48 @@
 		<title>null3d runner</title>
 		<style>
 			body { margin: 0; font: 14px system-ui, sans-serif; background: #101418; color: #e8e8e8; }
-			/* The status line sits above the stage where test pages open, so it never covers a page. */
+			/*
+			 * The status line sits above the stage where test pages open, so it never covers a page. It
+			 * keeps to one line, so the stage keeps one size for every page of a run.
+			 */
 			#layout { position: fixed; inset: 0; display: flex; flex-direction: column; }
-			#status { padding: 4px 8px; background: #000; }
-			#stage { position: relative; flex: 1; overflow: auto; }
-			#items { margin: 8px; padding: 0; list-style: none; }
+			#status { padding: 4px 8px; background: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+			#stage { position: relative; flex: 1; }
+			/*
+			 * The report scrolls under the frame of the page that runs, or, for a plan that only checks
+			 * results, over it. The frame keeps its full size either way, because a frame that is hidden,
+			 * tiny or off screen gets fewer animation frames or none.
+			 */
+			#report { position: absolute; inset: 0; overflow: auto; -webkit-overflow-scrolling: touch; padding: 8px; background: #101418; }
+			#stage.report-on-top #report { z-index: 1; }
+			#run { margin: 0 0 6px; font-size: 12px; color: #9aa4ae; }
+			/* Small enough that a whole run's grid fits on a phone's screen. */
+			#grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(12px, 1fr)); gap: 2px; touch-action: manipulation; }
+			@media (min-width: 700px) { #grid { grid-template-columns: repeat(auto-fill, minmax(18px, 1fr)); } }
+			#grid > i { aspect-ratio: 1; min-height: 12px; background: #3a4048; border-radius: 2px; }
+			#grid > i.running { background: #f0c020; outline: 2px solid #fff; outline-offset: -1px; }
+			#grid > i.passed { background: #2e9e4f; }
+			#grid > i.failed { background: #d93a3a; }
+			#grid > i.earlier { background: #1c2026; }
+			#detail { min-height: 1.4em; margin: 6px 0; font-size: 12px; overflow-wrap: anywhere; }
+			#failures, #log { margin: 0 0 8px; padding: 0; list-style: none; font-size: 12px; overflow-wrap: anywhere; }
+			#failures li { color: #ff8a8a; }
+			#log { color: #9aa4ae; }
 			iframe.page { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
 		</style>
 	</head>
 	<body>
 		<div id="layout">
 			<div id="status">starting</div>
-			<div id="stage"><ul id="items"></ul></div>
+			<div id="stage">
+				<div id="report">
+					<p id="run"></p>
+					<div id="grid"></div>
+					<p id="detail"></p>
+					<ul id="failures"></ul>
+					<ul id="log"></ul>
+				</div>
+			</div>
 		</div>
 		<script type="module" src="./runner.ts"></script>
 	</body>
