@@ -7,6 +7,7 @@
 //   bun run parity
 //   bun run parity -- --scene s1,s2 --tier webgpu
 //   bun run parity -- --pair threejs-webgl,threejs-webgpu
+//   bun run parity -- --scene s2 --tier webgpu --switches shadows=3
 //   bun run parity -- --save-baselines
 // Options:
 //   --scene <list>   scenes: s1, s1-static, s1-cells, s2, s3, s4; the default is every scene that
@@ -16,6 +17,8 @@
 //   --pair <a>,<b>   compare page kind a with page kind b, the reference, instead of the tiers.
 //                    Page kinds: threejs-webgl, threejs-webgpu, null3d-webgl2, null3d-webgpu,
 //                    null3d-compat
+//   --switches <q>   page switches that every hold page gets, such as shadows=3: S2 with the
+//                    sun's shadows
 //   --save-baselines save how much three.js's two renderers differ on each scene in
 //                    bench/parity-baselines.json, where the device runner reads it for devices
 //                    that cannot draw with both
@@ -61,8 +64,9 @@ async function loadFrame(
 	baseUrl: string,
 	scene: BenchScene,
 	kind: PageKind,
+	switches: string,
 ): Promise<HoldFrame | string> {
-	const path = holdPagePath(scene, kind);
+	const path = holdPagePath(scene, kind, switches);
 	const page = await browser.newPage();
 	const { errors: pageErrors } = watchConsole(page);
 	try {
@@ -145,7 +149,7 @@ async function main(): Promise<void> {
 				const frames = new Map<PageKind, HoldFrame | string>();
 				const frameOf = async (kind: PageKind) => {
 					if (!frames.has(kind))
-						frames.set(kind, await loadFrame(browser, server.url, scene, kind));
+						frames.set(kind, await loadFrame(browser, server.url, scene, kind, options.switches));
 					return frames.get(kind) as HoldFrame | string;
 				};
 				let baseline: number | null | undefined;

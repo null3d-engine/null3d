@@ -16,12 +16,16 @@ import {
 	parityFiles,
 	passesWithBaseline,
 	type RgbaImage,
+	SHADOW_MAX_DIFFERENT_PERCENT,
 	TIERS,
 } from '../lib/parity';
 import { type PageReport, runPage } from './open-page';
 
-/** Each feature scene: the manifest's image test that draws it, and its three.js twin page. */
-const FEATURE_SCENES = [
+/**
+ * Each feature scene: the manifest's image test that draws it, its three.js twin page, and the
+ * share of pixels in percent under which it passes, when it is not three.js's own limit.
+ */
+const FEATURE_SCENES: readonly { test: string; twin: string; limit?: number }[] = [
 	{ test: 'ortho-camera', twin: '/bench/pages/threejs/ortho-camera.html' },
 	{ test: 'standard-maps', twin: '/bench/pages/threejs/material-maps.html' },
 	{ test: 'alpha-mask', twin: '/bench/pages/threejs/alpha-mask.html' },
@@ -29,7 +33,12 @@ const FEATURE_SCENES = [
 	{ test: 'texture-background', twin: '/bench/pages/threejs/texture-background.html' },
 	{ test: 'fog-linear', twin: '/bench/pages/threejs/fog.html?fog=linear' },
 	{ test: 'fog-exp2', twin: '/bench/pages/threejs/fog.html?fog=exp2' },
-] as const;
+	{
+		test: 'shadows',
+		twin: '/bench/pages/threejs/shadows.html',
+		limit: SHADOW_MAX_DIFFERENT_PERCENT,
+	},
+];
 
 const OUTPUT_DIR = join(import.meta.dirname, '../../test-results/parity');
 /** The dev server, which serves the image test pages. */
@@ -50,7 +59,7 @@ async function imageOf(page: Page, path: string): Promise<RgbaImage> {
 	return { width, height, data: Buffer.from(pixels, 'base64') };
 }
 
-for (const { test: name, twin } of FEATURE_SCENES) {
+for (const { test: name, twin, limit } of FEATURE_SCENES) {
 	test.describe(`${name} against three.js`, () => {
 		const threeImages = new Map<Renderer, RgbaImage>();
 		/** How much three.js's two renderers differ on the scene, as a share of its pixels. */
@@ -84,10 +93,10 @@ for (const { test: name, twin } of FEATURE_SCENES) {
 				mkdirSync(OUTPUT_DIR, { recursive: true });
 				for (const { file, png } of files) writeFileSync(join(OUTPUT_DIR, file), png);
 				const images = files.map(({ file }) => `test-results/parity/${file}`).join(', ');
-				const difference = differenceText(comparison, baseline);
+				const difference = differenceText(comparison, baseline, false, limit);
 				console.log(`${name} on ${tier}: ${difference}`);
 				expect(
-					passesWithBaseline(comparison.share, baseline),
+					passesWithBaseline(comparison.share, baseline, limit),
 					`${difference}. Images: ${images}`,
 				).toBe(true);
 			});

@@ -34,6 +34,8 @@ A CI run that finds a missing or changed image saves it too. `bun run images:rev
 - A test of a feature scene can have a three.js twin: a page in `bench/pages/threejs/` that draws the same scene. Both engines build the scene from one data module in `bench/scenes/`, such as `ortho-camera.ts`.
 - `bench/tests/parity.spec.ts` lists each such test with its twin. On each tier it compares the test's image with the twin's by three.js's rule, as `bun run parity` compares the benchmark scenes. It runs in `bun run test:bench`, on SwiftShader in CI. The twin loads from the production build of the benchmark pages. The test's image loads from the dev server, because the image test page loads its sketch by address.
 - A comparison passes when fewer than 0.1% of the pixels differ, or when no more differ than between three.js's two renderers on the same scene. Each run saves both images and their diff in `test-results/parity/`.
+- A scene with shadows passes when fewer than 0.5% of its pixels differ: `SHADOW_MAX_DIFFERENT_PERCENT` in `bench/lib/parity.ts`. three.js softens each shadow edge with five rotated taps of one shadow map. null3D uses one filtered tap of a cascade, whose texels have another size. The shadows fall in the same places, and only the pixels that an edge crosses differ.
+- The shadow scene, `bench/scenes/shadows.ts`, is the `shadows` image test with three cascades. Its twin draws one map of 4,096 texels on each side, in a box that holds every shadow in the view. It runs on all three tiers. The filter kernels of M1-F3 may bring its difference down.
 
 ## References
 

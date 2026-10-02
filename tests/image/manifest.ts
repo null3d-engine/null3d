@@ -16,6 +16,7 @@ import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
+import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
 import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
@@ -387,12 +388,13 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	// unlit box in a shadow. Both GPU paths draw the same shadows, so every tier must draw the
 	// WebGPU image. WebGL2 takes the 8-bit path, which averages antialiased edges after the tone
 	// mapping, so about 0.16% of the pixels differ, all at edges, on the Mac and with SwiftShader.
-	// A shadow drawn wrong changes several percent.
+	// A shadow drawn wrong changes several percent. The parity test compares the three cascades with
+	// three.js.
 	...[3, 1, 2, 4].map((cascades) => ({
 		name: cascades === 3 ? 'shadows' : `shadows-cascades-${cascades}`,
 		sketch: `tests/pages/sketches/shadows-sketch.ts?cascades=${cascades}`,
 		hold: 0,
-		size: [480, 270] as const,
+		size: [SHADOW_IMAGE.width, SHADOW_IMAGE.height] as const,
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	})),
@@ -403,7 +405,7 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		name: 'shadows-custom',
 		sketch: 'tests/pages/sketches/shadows-sketch.ts?custom',
 		hold: 0,
-		size: [480, 270],
+		size: [SHADOW_IMAGE.width, SHADOW_IMAGE.height],
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},

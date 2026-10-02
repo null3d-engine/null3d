@@ -28,6 +28,7 @@ import {
 	passesWithBaseline,
 	type RgbaImage,
 	readJobCounts,
+	SHADOW_MAX_DIFFERENT_PERCENT,
 	TIER_PAIRS,
 	TIERS,
 } from './parity';
@@ -381,6 +382,7 @@ describe('parseParityArgs', () => {
 				{ label: 'webgl2', candidate: 'null3d-webgl2', reference: 'threejs-webgl' },
 			],
 			saveBaselines: false,
+			switches: '',
 		});
 	});
 
@@ -389,8 +391,24 @@ describe('parseParityArgs', () => {
 			scenes: ['s2', 's1'],
 			comparisons: [{ label: 'webgl2', candidate: 'null3d-webgl2', reference: 'threejs-webgl' }],
 			saveBaselines: false,
+			switches: '',
 		});
 		expect(parseParityArgs(['--save-baselines']).saveBaselines).toBe(true);
+	});
+
+	test('gives every hold page the switches of --switches, and keeps baselines plain', () => {
+		expect(parseParityArgs(['--scene', 's2', '--switches', 'shadows=3']).switches).toBe(
+			'shadows=3',
+		);
+		expect(holdPagePath('s2', 'null3d-webgpu', 'shadows=3')).toBe(
+			'/bench/pages/null3d/s2.html?gpu=webgpu&hold&preset=high&shadows=3',
+		);
+		expect(() => parseParityArgs(['--switches', '?shadows=3'])).toThrow(
+			'--switches: give page switches without the ?',
+		);
+		expect(() => parseParityArgs(['--switches', 'shadows=3', '--save-baselines'])).toThrow(
+			'use --save-baselines without --switches',
+		);
 	});
 
 	test('compares any two kinds of page with --pair, the second one being the reference', () => {
@@ -404,6 +422,7 @@ describe('parseParityArgs', () => {
 				},
 			],
 			saveBaselines: false,
+			switches: '',
 		});
 	});
 
@@ -440,6 +459,14 @@ describe('passesWithBaseline', () => {
 		expect(passesWithBaseline(0.05, 0.04)).toBe(false);
 		expect(differenceText({ share: 0.02 }, 0.04)).toBe(
 			"2.000% of pixels differ; three.js's rule allows under 0.1%, and three.js's two renderers differ by 4.000%",
+		);
+	});
+
+	test('takes a scene limit of its own, such as the limit for shadows', () => {
+		expect(passesWithBaseline(0.0022, 0.0002, SHADOW_MAX_DIFFERENT_PERCENT)).toBe(true);
+		expect(passesWithBaseline(0.005, 0.0002, SHADOW_MAX_DIFFERENT_PERCENT)).toBe(false);
+		expect(differenceText({ share: 0.0022 }, 0.0002, false, SHADOW_MAX_DIFFERENT_PERCENT)).toBe(
+			"0.220% of pixels differ; the scene's limit allows under 0.5%, and three.js's two renderers differ by 0.020%",
 		);
 	});
 });
