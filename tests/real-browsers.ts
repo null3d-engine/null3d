@@ -14,6 +14,7 @@
 //   bun tests/real-browsers.ts --plan startup --android brave --lan ipad-safari,ipad-brave
 //   bun tests/real-browsers.ts --plan depth --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
 //   bun tests/real-browsers.ts --plan overload --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
+//   bun tests/real-browsers.ts --plan skinning --android chrome --lan ipad-safari
 // Options:
 //   --plan <name>       the plan to run: checks (the default), parity, bench, memory, which loads
 //                       the engine page 20 times at each shared memory maximum from 256 to 4096 MiB,
@@ -22,7 +23,9 @@
 //                       precision tests and counts the fighting pixels of surfaces 1 cm apart from
 //                       1 m to 10 km in each depth mode, overload, which raises the GPU work of a
 //                       scene until the GPU falls behind and compares the presented and completed
-//                       rates on each GPU path, or scale, which finds the largest S1 count at which
+//                       rates on each GPU path, skinning, which times two ways to skin a crowd on
+//                       WebGL2 with 1 to 4 shadow cascades: in every pass, or once per frame with
+//                       transform feedback, or scale, which finds the largest S1 count at which
 //                       three.js holds 30 frames per second
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
@@ -87,6 +90,8 @@ import {
 	neededPath,
 	overloadSummary,
 	PLANS,
+	REPORT_ON_TOP_PLANS,
+	skinningSummary,
 	startupSummary,
 } from './lib/plans.ts';
 import { RUNS_DIR } from './lib/report-collector.ts';
@@ -99,8 +104,10 @@ import {
 	type Runner,
 	readDevice,
 	readResult,
+	readShard,
 	receivedAt,
 	runName,
+	SHARD_FORMAT,
 	type Shard,
 	setTurns,
 	shardItems,
@@ -186,10 +193,9 @@ export function parseArgs(args: readonly string[]): Options {
 		return n;
 	};
 	const shard = (value: string | undefined): Shard => {
-		const [, index = 0, count = 0] = /^(\d+)\/(\d+)$/.exec(value ?? '')?.map(Number) ?? [];
-		if (!(index >= 1 && index <= count))
-			throw new Error(`--shard: use <i>/<n>, such as 1/2, with i from 1 to n\n${USAGE}`);
-		return { index, count };
+		const read = readShard(value);
+		if (!read) throw new Error(`--shard: use ${SHARD_FORMAT}\n${USAGE}`);
+		return read;
 	};
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i] as string;
@@ -622,7 +628,7 @@ async function runPlan(
 	local: DevServer,
 ): Promise<number> {
 	const run = runName(options.plan);
-	const plan = writePlan(run, items);
+	const plan = writePlan(run, items, REPORT_ON_TOP_PLANS.has(options.plan));
 	const recovery = new QuietRecovery(plan, macReopener(run, launches, local.url));
 	const heatReadings = new Map<string, HeatSample[]>();
 	try {
@@ -729,9 +735,14 @@ async function runPlan(
 	writeFileSync(join(RUNS_DIR, run, 'summary.json'), JSON.stringify(summary, null, '\t'));
 	for (const { name } of runners) {
 		const resultOf = (id: string) => readResult(run, name, id);
-		const tables = [benchSummary, memorySummary, startupSummary, depthSummary, overloadSummary].map(
-			(summary) => summary(plan.items, resultOf),
-		);
+		const tables = [
+			benchSummary,
+			memorySummary,
+			startupSummary,
+			depthSummary,
+			overloadSummary,
+			skinningSummary,
+		].map((summary) => summary(plan.items, resultOf));
 		for (const table of tables) if (table) console.log(`\n${name}\n${table}\n`);
 		const heat = wholeHeatText(heatReadings.get(name) ?? []);
 		if (heat) console.log(`${name}, heat through the run: ${heat}`);

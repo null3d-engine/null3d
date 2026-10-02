@@ -8,7 +8,7 @@ summary: "quality.preset, quality.set, quality.setPreset, the preset check, fram
 
 # Quality API
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy` and `uploadBytesPerFrame`, and `quality.settings` also holds `antialias`. The other settings of the preset table are not built yet. Neither are the frame-budget governor and its budgets (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy`, `uploadBytesPerFrame`, `shadowFilter` and `farCascadeInterval`, and `quality.settings` also holds `antialias`. The other settings of the preset table are not built yet. Neither are the frame-budget governor and its budgets (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
 
 `ctx.quality` gives a sketch the quality preset that the engine runs and its settings. The sketch can change the settings that change during play, switch to another preset, and hear when either changes. [Quality presets](../concepts/quality-presets.md) explains how the engine chooses and checks the preset, and lists each preset's values.
 
@@ -177,6 +177,8 @@ The quality settings that a sketch reads and changes through `ctx.quality`. Each
 | `maxRenderScale: number` | The highest render scale, where the engine starts. It takes a number from 0.25 to 1, and changes during play. With `minRenderScale` at the same value, the scene always draws at that scale. |
 | `maxAnisotropy: number` | The highest anisotropy that textures sample with. A texture whose own `anisotropy` option is higher samples at this value. It takes a whole number from 1 to 16, and changes during play. |
 | `uploadBytesPerFrame: number` | The texel bytes that one frame may upload, so that loading many textures does not make one frame slow. A larger texture goes up in bands of rows over several frames. It takes a whole number from 65,536 (64 KiB) to 67,108,864 (64 MiB), and changes during play. |
+| `shadowFilter: 3 \| 5` | The texels on each side of the square of shadow map texels that blend into each point's shadow: 3 or 5. A larger square gives softer shadow edges and costs more per pixel that receives shadows. It changes during play. |
+| `farCascadeInterval: number` | How often each far shadow cascade draws: once in this many frames, a whole number from 1 to 8. The nearest cascade draws in every frame, and the far ones take turns. A higher value costs less, and far shadows then lag their moving casters by a few frames. It changes during play. |
 | `antialias: 'none' \| 'fxaa' \| 'msaa'` | How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa` smooths edges in the final pass, and `none` leaves them sharp. The mode is fixed when the engine starts: the page's `antialias` option of `createEngine` sets it, and `set` does not take it. |
 
 <!-- null3d:api:end -->

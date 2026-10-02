@@ -12,6 +12,7 @@ import {
 	type Scene,
 } from '../scene/scene';
 import type { CoreGlue } from '../shared/core';
+import type { DebugView } from './debug';
 import { DebugDraw, MAX_POINTS, packedColor } from './draw';
 import { type DebugHost, SketchDebug } from './sketch-debug';
 
@@ -49,7 +50,12 @@ function fakeCore() {
 	const frames: Point[][] = [];
 	const reserves: number[] = [];
 	const matrices = new Map<number, number[]>();
+	const views: number[] = [];
 	const glue = {
+		setDebugView(view: number): number {
+			views.push(view);
+			return 0;
+		},
 		reserveDebugLines(points: number): number {
 			const positions = Math.ceil(end / 8) * 8;
 			const colors = positions + points * 24;
@@ -93,7 +99,7 @@ function fakeCore() {
 		lastErrorDetail: (index: number) => failure[1 + index] as number,
 	};
 	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
-	return { core, draw: new DebugDraw(core, HOST), frames, reserves, matrices, memory };
+	return { core, draw: new DebugDraw(core, HOST), frames, reserves, matrices, memory, views };
 }
 
 /** The frames' points, with positions rounded to millimeters for comparison. */
@@ -415,9 +421,32 @@ describe('debug drawing', () => {
 	});
 });
 
+describe('debug.view', () => {
+	test("switches the core's shading to each view by its code", () => {
+		const { draw, views } = fakeCore();
+		for (const view of ['normals', 'depth', 'overdraw', 'wireframe', 'lit'] as const)
+			draw.view(view);
+		expect(views).toEqual([
+			C.DEBUG_VIEW_NORMALS,
+			C.DEBUG_VIEW_DEPTH,
+			C.DEBUG_VIEW_OVERDRAW,
+			C.DEBUG_VIEW_WIREFRAME,
+			C.DEBUG_VIEW_LIT,
+		]);
+	});
+
+	test('refuses a view that it does not know with E1213', () => {
+		const { draw, views } = fakeCore();
+		expect(() => draw.view('flat' as DebugView)).toThrow(
+			`E1213: debug.view() got "flat", which is not 'lit', 'normals', 'depth', 'wireframe' or 'overdraw'.`,
+		);
+		expect(views).toEqual([]);
+	});
+});
+
 describe('release builds', () => {
 	test('give the sketch drawing calls that do nothing', () => {
-		const shapes = ['arrow', 'axes', 'box', 'frustum', 'grid', 'light', 'line', 'sphere'];
+		const shapes = ['arrow', 'axes', 'box', 'frustum', 'grid', 'light', 'line', 'sphere', 'view'];
 		const release = new SketchDebug(HOST);
 		const own = (object: object) =>
 			Object.keys(Object.getOwnPropertyDescriptors(Object.getPrototypeOf(object)));
@@ -434,5 +463,6 @@ describe('release builds', () => {
 				.sort(),
 		).toEqual(shapes);
 		expect(() => release.line([0, 0, 0], [1, 1, 1], 'not a color')).not.toThrow();
+		expect(() => release.view('flat' as DebugView)).not.toThrow();
 	});
 });

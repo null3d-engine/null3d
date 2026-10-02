@@ -14,6 +14,7 @@ import {
 	type OutArray,
 	PARITY_CANVAS,
 	type SceneLights,
+	SHADOWS,
 	VIEW_LIGHTS,
 	WARMUP_SECONDS,
 } from '../../scenes/spec';
@@ -43,6 +44,7 @@ export type Three = Pick<
 	| 'Float32BufferAttribute'
 	| 'Fog'
 	| 'FogExp2'
+	| 'HemisphereLight'
 	| 'InstancedMesh'
 	| 'LinearFilter'
 	| 'LinearMipmapLinearFilter'
@@ -60,6 +62,7 @@ export type Three = Pick<
 	| 'RingGeometry'
 	| 'Scene'
 	| 'SphereGeometry'
+	| 'SpotLight'
 	| 'SRGBColorSpace'
 	| 'TextureLoader'
 	| 'TorusGeometry'
@@ -269,6 +272,21 @@ export function lightScene(
 }
 
 /**
+ * Turns on the renderer's shadows, and has the sun cast them into one map of the benchmark scenes'
+ * shadow size, in a box around the origin that holds every scene.
+ */
+function castSunShadows(renderer: Renderer, sun: ThreeModule.DirectionalLight): void {
+	renderer.shadowMap.enabled = true;
+	sun.castShadow = true;
+	const { mapSize, threeHalfSize: half } = SHADOWS;
+	sun.shadow.mapSize.set(mapSize, mapSize);
+	const box = sun.shadow.camera;
+	[box.left, box.right, box.top, box.bottom] = [-half, half, half, -half];
+	[box.near, box.far] = [0, 2 * sun.position.length()];
+	box.updateProjectionMatrix();
+}
+
+/**
  * Builds the scene with `build` and runs the mode that the page address asks for. The result goes
  * to the page and to the dev server's collector: as the `hold` report with `?hold`, else as the
  * `bench` report. A failure publishes its message as the result's error.
@@ -302,6 +320,7 @@ export function runThreePage(
 				: CANVAS;
 		const scene = new three.Scene();
 		const sun = lightScene(three, scene, pageOptions.lights, pageOptions.background);
+		if (options.shadows !== null) castSunShadows(renderer, sun);
 		const camera = new three.PerspectiveCamera(
 			CAMERA.fov,
 			size().width / size().height,

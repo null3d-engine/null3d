@@ -28,6 +28,7 @@ use null3d_render::arrays::{ArrayName, ArraysError, MeshArrays, from_arrays};
 use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
+use null3d_render::debug_view::DebugView;
 use null3d_render::fog::Fog;
 use null3d_render::frame::{CanvasOutput, FrameBuilder, FrameInput, RecordError, SceneSettings};
 use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
@@ -38,6 +39,7 @@ use null3d_render::graph::RenderScale;
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
+use null3d_render::shadows::ShadowQuality;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
@@ -1319,6 +1321,21 @@ pub fn set_render_scaling(scaling: bool) -> u32 {
     })
 }
 
+/// The shadow settings that the quality settings give every light: the texels on each side of the
+/// shadow filter, and how many frames pass between two draws of a far cascade. The TypeScript API
+/// checks both.
+#[wasm_bindgen(js_name = setShadowQuality)]
+pub fn set_shadow_quality(filter: u32, far_interval: u32) -> u32 {
+    with_engine(|e| {
+        let quality = ShadowQuality {
+            filter,
+            far_interval,
+        };
+        e.renderer.settings_mut().set_shadow_quality(quality);
+        0
+    })
+}
+
 /// The tone mapping, by code, and the exposure, from the next frame on. The TypeScript API checks
 /// both, so an unknown code keeps the tone mapping as it was.
 #[wasm_bindgen(js_name = setOutput)]
@@ -1349,6 +1366,21 @@ pub fn set_background_texture(texture: u32) -> u32 {
             }
             Err(failure) => failure,
         }
+    })
+}
+
+/// Draws the scene with a debug view (`debug_view::code`), or with its materials with `LIT`, from
+/// the next frame on. A change rebuilds the draw tables. The TypeScript API checks the code, so an
+/// unknown one keeps the view as it was.
+#[wasm_bindgen(js_name = setDebugView)]
+pub fn set_debug_view(view: u32) -> u32 {
+    with_engine(|e| {
+        if let Some(view) = DebugView::from_code(view)
+            && e.renderer.settings_mut().set_debug_view(view)
+        {
+            e.structure_changed = true;
+        }
+        0
     })
 }
 

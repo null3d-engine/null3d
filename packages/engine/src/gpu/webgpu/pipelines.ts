@@ -2,7 +2,7 @@
 // layouts of its template's groups, so switching pipelines never forces a rebind of the per-frame
 // group. The engine defines its own layouts and templates, from the shaders that the device loaded,
 // and a page can add more, as the texture test page does. Only development builds define the
-// template of the debug lines, so release builds hold none of its code.
+// templates of the debug lines and the debug views, so release builds hold none of their code.
 
 import {
 	LAYOUT_CULL,
@@ -25,6 +25,7 @@ import {
 	TEMPLATE_BACKGROUND,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
+	TEMPLATE_DEBUG_VIEW,
 	TEMPLATE_FINAL,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_STANDARD_MAPS,
@@ -39,6 +40,7 @@ import {
 } from '../../generated/gpu';
 import {
 	DEBUG_LINES_SHADER,
+	DEBUG_VIEW_SHADER,
 	type DeviceShaders,
 	type ShaderVariants,
 	type WgslShader,
@@ -302,7 +304,7 @@ export class Pipelines {
 			layouts: [LAYOUT_FRAME, LAYOUT_TEXTURES],
 			vertexBuffers: [],
 		});
-		if (DEV)
+		if (DEV) {
 			this.defineTemplate(TEMPLATE_DEBUG_LINES, {
 				label: 'debug lines',
 				shader: DEBUG_LINES_SHADER,
@@ -310,6 +312,15 @@ export class Pipelines {
 				layouts: [LAYOUT_FRAME],
 				vertexBuffers: [LINE_VERTICES],
 			});
+			this.defineTemplate(TEMPLATE_DEBUG_VIEW, {
+				label: 'mesh debug view',
+				shader: DEBUG_VIEW_SHADER,
+				pipeline: 'main',
+				layouts: [LAYOUT_FRAME],
+				meshLocations: [0, 1],
+				vertexBuffers: INSTANCE_BUFFERS,
+			});
+		}
 		this.cullLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_CULL)] });
 		this.cull = variantFor(shaders.cull, 0, 'wgsl')?.wgsl ?? undefined;
 		this.lightLayout = device.createPipelineLayout({
