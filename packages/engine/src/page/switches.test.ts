@@ -23,6 +23,7 @@ describe('parseSwitches', () => {
 			preset: undefined,
 			hold: undefined,
 			bench: false,
+			glTiming: false,
 		});
 	});
 
@@ -35,6 +36,10 @@ describe('parseSwitches', () => {
 	it('reads ?bench with or without a value', () => {
 		expect(parseSwitches('?bench').bench).toBe(true);
 		expect(parseSwitches('?gpu=webgl2&bench=1').bench).toBe(true);
+	});
+
+	it('reads ?gl-timing, which times each WebGL call for benchmark pages', () => {
+		expect(parseSwitches('?gpu=webgl2&gl-timing').glTiming).toBe(true);
 	});
 
 	it('keeps the text of ?hold for the engine to check, and an empty text for a bare ?hold', () => {

@@ -93,6 +93,8 @@ export interface RendererOptions {
 	scene?: { memory: WebAssembly.Memory; control: ArrayBufferLike };
 	/** The images that texture uploads read, which the thread keeps across GPU devices. */
 	imageTable?: ImageTable;
+	/** True to time each WebGL call of the scene's renderer, for a benchmark page (?gl-timing). */
+	glTiming?: boolean;
 }
 
 /** WebGPU's default `maxBufferSize`, which every device offers. */
@@ -291,7 +293,9 @@ export async function createRenderer(
 		if (scene && shaders)
 			return new WebGL2SceneRenderer(
 				canvas,
-				gl,
+				options.glTiming
+					? (await import('../gpu/webgl2/call-timing')).timeGlCalls(gl, metrics)
+					: gl,
 				scene.memory,
 				scene.control,
 				metrics,

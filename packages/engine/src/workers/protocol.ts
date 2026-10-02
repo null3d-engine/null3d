@@ -62,6 +62,8 @@ export interface RendererSetup {
 	queue?: number;
 	/** Hold mode: the thread runs no frame loop, and draws the held frame once, when a capture asks. */
 	hold?: boolean;
+	/** True when ?gl-timing asks the WebGL2 path to time each WebGL call for a benchmark page. */
+	glTiming?: boolean;
 }
 
 export type SketchWorkerInit = CoreHandoff & {

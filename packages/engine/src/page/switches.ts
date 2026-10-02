@@ -3,8 +3,8 @@
 // and ?compression=. Five more set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs=
 // for the job worker count, ?memory= for the shared memory's maximum, ?queue= for the frames that
 // may wait on the GPU and ?cells=off for culling without grid cells. ?hold starts hold mode for
-// image tests, ?preset= fixes the quality preset, and ?bench publishes the running engine for
-// benchmark tools.
+// image tests, ?preset= fixes the quality preset, ?bench publishes the running engine for
+// benchmark tools, and ?gl-timing times each WebGL call for benchmark pages.
 
 import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
@@ -116,6 +116,11 @@ export interface Switches {
 	hold: string | undefined;
 	/** True when ?bench asks the engine to publish itself on the page for a benchmark tool. */
 	bench: boolean;
+	/**
+	 * True when ?gl-timing asks the WebGL2 path to time each WebGL call on the thread that draws,
+	 * for a benchmark page to read.
+	 */
+	glTiming: boolean;
 }
 
 /** The most job workers the engine core runs. */
@@ -164,5 +169,6 @@ export function parseSwitches(search: string): Switches {
 		preset: oneOf(params.get('preset'), QUALITY_PRESETS),
 		hold: params.get('hold') ?? undefined,
 		bench: params.has('bench'),
+		glTiming: params.has('gl-timing'),
 	};
 }
