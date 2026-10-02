@@ -79,3 +79,8 @@ export const PixelRatio = 25;
  * the first frame, and the previous frame stays on screen meanwhile.
  */
 export const PipelineHold = 26;
+/**
+ * The render scale of the newest frame that the sketch thread recorded, in thousandths of the
+ * canvas's size, for the page's stats overlay.
+ */
+export const RenderScale = 27;

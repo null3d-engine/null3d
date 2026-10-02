@@ -1,10 +1,11 @@
-// The debug drawing API that a sketch reaches as ctx.debug, and what release builds give in its
-// place: calls that do nothing. The drawing itself lives in draw.ts, which only development builds
-// keep, so a release build holds none of it.
+// The debug API that a sketch reaches as ctx.debug. sketch-debug.ts gives release builds calls that
+// draw nothing, with the stats overlay and the frame figures. Only development builds keep draw.ts,
+// which adds the drawing, so a release build holds none of it.
 
 import type { Vec3Like } from '../math/types';
 import type { ColorInput } from '../scene/color';
 import type { Camera, DirectionalLight, Object3D } from '../scene/scene';
+import type { FrameStats } from './stats';
 
 /**
  * Options for `debug.grid`.
@@ -38,17 +39,32 @@ export interface DebugLightOptions {
 }
 
 /**
- * Debug drawing: lines that show where things are, such as bounds, directions and axes. Each call
- * draws for one frame only, so call it in `onUpdate` in every frame that needs the drawing. Lines
- * are one pixel wide, and objects in front of them hide them. Colors take the same forms as material
- * colors, and positions are in world space.
+ * Debug drawing and frame figures. The drawing calls draw lines that show where things are, such
+ * as bounds, directions and axes. Each draws for one frame only, so call it in `onUpdate` in every
+ * frame that needs the drawing. Lines are one pixel wide, and objects in front of them hide them.
+ * Colors take the same forms as material colors, and positions are in world space. The overlay of
+ * `stats` shows frame figures on the page, and `frameStats` gives the sketch the same figures.
  *
- * Only development builds draw. In a release build every call does nothing, and the build holds
- * none of the drawing code.
+ * Only development builds draw. In a release build every drawing call does nothing, and the build
+ * holds none of the drawing code. The calls `stats` and `frameStats` work in every build.
  *
  * @category api/debug
  */
 export interface Debug {
+	/**
+	 * Shows an overlay of frame figures over the top-left corner of the canvas, or hides it with
+	 * `false`: the GPU path, the quality preset, the render scale, the frame rates, and CPU time per
+	 * frame of each thread and phase. The page draws the overlay and updates it twice a second. Its
+	 * code downloads at the first call.
+	 */
+	stats(show?: boolean): void;
+	/**
+	 * The figures that the stats overlay shows, for the sketch: means per frame over about the last
+	 * half second. Call it each time you need figures, and read them from the object it returns. It
+	 * allocates nothing, so a sketch can call it every frame. Its code downloads at the first call,
+	 * so the figures are 0 until about half a second after that call.
+	 */
+	frameStats(): FrameStats;
 	/** Draws a line from one point to another. The default color is yellow. */
 	line(from: Vec3Like, to: Vec3Like, color?: ColorInput): void;
 	/**
@@ -89,17 +105,3 @@ export interface Debug {
 	 */
 	light(light: DirectionalLight, options?: DebugLightOptions): void;
 }
-
-const nothing = (): void => {};
-
-/** The debug drawing of release builds: every call does nothing. */
-export const RELEASE_DEBUG: Debug = {
-	line: nothing,
-	box: nothing,
-	sphere: nothing,
-	arrow: nothing,
-	axes: nothing,
-	grid: nothing,
-	frustum: nothing,
-	light: nothing,
-};

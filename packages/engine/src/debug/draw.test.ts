@@ -12,8 +12,16 @@ import {
 	type Scene,
 } from '../scene/scene';
 import type { CoreGlue } from '../shared/core';
-import { RELEASE_DEBUG } from './debug';
 import { DebugDraw, MAX_POINTS, packedColor } from './draw';
+import { type DebugHost, SketchDebug } from './sketch-debug';
+
+/** The host of a debug object whose stats nobody reads. */
+const HOST: DebugHost = {
+	showStats: () => {},
+	metrics: new ArrayBuffer(0),
+	threads: [],
+	sources: { tier: 'webgpu', preset: () => 'high', renderScaleThousandths: () => 1000 },
+};
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
 
@@ -85,7 +93,7 @@ function fakeCore() {
 		lastErrorDetail: (index: number) => failure[1 + index] as number,
 	};
 	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
-	return { core, draw: new DebugDraw(core), frames, reserves, matrices, memory };
+	return { core, draw: new DebugDraw(core, HOST), frames, reserves, matrices, memory };
 }
 
 /** The frames' points, with positions rounded to millimeters for comparison. */
@@ -408,15 +416,23 @@ describe('debug drawing', () => {
 });
 
 describe('release builds', () => {
-	test('give the sketch calls that do nothing', () => {
-		expect(Object.keys(RELEASE_DEBUG).sort()).toEqual(
-			['arrow', 'axes', 'box', 'frustum', 'grid', 'light', 'line', 'sphere'].sort(),
-		);
+	test('give the sketch drawing calls that do nothing', () => {
+		const shapes = ['arrow', 'axes', 'box', 'frustum', 'grid', 'light', 'line', 'sphere'];
+		const release = new SketchDebug(HOST);
+		const own = (object: object) =>
+			Object.keys(Object.getOwnPropertyDescriptors(Object.getPrototypeOf(object)));
+		expect(
+			own(release)
+				.filter((name) => shapes.includes(name))
+				.sort(),
+		).toEqual(shapes);
+		// The development build's drawing replaces every one of them.
 		const { draw } = fakeCore();
-		const drawn = Object.keys(Object.getOwnPropertyDescriptors(Object.getPrototypeOf(draw)))
-			.filter((name) => Object.hasOwn(RELEASE_DEBUG, name))
-			.sort();
-		expect(drawn).toEqual(Object.keys(RELEASE_DEBUG).sort());
-		expect(() => RELEASE_DEBUG.line([0, 0, 0], [1, 1, 1], 'not a color')).not.toThrow();
+		expect(
+			own(draw)
+				.filter((name) => shapes.includes(name))
+				.sort(),
+		).toEqual(shapes);
+		expect(() => release.line([0, 0, 0], [1, 1, 1], 'not a color')).not.toThrow();
 	});
 });

@@ -501,12 +501,12 @@ debug.frustum(camera, color);                   // in the canvas's shape
 debug.light(sun, { position, size, color });    // a directional light's direction
 debug.skeleton(obj);                            // (0.2)
 
-debug.stats(true);                       // later in 0.1: overlay of frame phases per thread, tier, preset
-const s = debug.frameStats();            // later in 0.1: numbers for tests and logs
+debug.stats(true);                       // overlay on the canvas: fps, CPU ms per thread and phase, tier, preset, render scale
+const s = debug.frameStats();            // the same figures: s.presentedFps, s.completedFps, s.cpuMs, s.threads, s.drawCalls
 debug.view('normals');                   // later in 0.1: 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw'
 ```
 
-Debug drawing exists in development builds only. In a production build every call does nothing, and the build holds none of the drawing code. Lines are one pixel wide, and objects in front of them hide them. For numbers now, call `engine.measure(seconds)` on the page (section 1).
+Debug drawing exists in development builds only. In a production build every drawing call does nothing, and the build holds none of the drawing code. Lines are one pixel wide, and objects in front of them hide them. `debug.stats` and `debug.frameStats` work in every build. The figures are means over the last half second. They are 0 for about half a second after the first call. `frameStats()` allocates nothing, so you can call it every frame. The object changes, so copy it with `JSON.parse(JSON.stringify(s))` before you send it. For GPU time and memory, call `engine.measure(seconds)` on the page (section 1).
 
 ## 20. Math, color and time (`api/math`, `api/time`)
 

@@ -67,6 +67,8 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					...senders,
 					pageUrl: message.pageUrl,
 					fps: message.fps,
+					threads: message.threads,
+					showStats: (show) => replyToPage({ type: 'stats', show }),
 				},
 				message.hold,
 			);

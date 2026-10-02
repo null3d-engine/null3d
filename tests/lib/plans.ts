@@ -81,6 +81,7 @@ import {
 	roundText,
 } from './preset-checks.ts';
 import { failureText, type ItemResult, lastSteps, type PlanItem, slug } from './runs.ts';
+import { type StatsResult, statsProblems } from './stats-checks.ts';
 import { type WarmUpResult, warmUpProblems } from './warm-up-checks.ts';
 
 /** The GPU interface that a page draws with. */
@@ -108,6 +109,7 @@ export type Check =
 	| { kind: 'preset-change'; tier: Tier }
 	/** The warm-up page: pipelines build before the first frame, and a warm-up during play. */
 	| { kind: 'warm-up'; tier: Tier }
+	| { kind: 'stats'; tier: Tier }
 	| { kind: 'hold'; tier: Tier }
 	| { kind: 'parity'; tier: Tier; scene: BenchScene; pair: PagePair }
 	| { kind: 'bench'; tier: Tier; scene: BenchScene; page: BenchPageKind; jobs?: number }
@@ -312,6 +314,9 @@ export function checksPlan(): PlanItem<Check>[] {
 			'warm-up',
 			{ kind: 'warm-up', tier: 'webgl2' },
 			{ switches: ['gpu=webgl2', 'compile=wait'] },
+		),
+		...TIERS.map((tier) =>
+			pageItem(`stats-${tier}`, 'stats', { kind: 'stats', tier }, { switches: [`gpu=${tier}`] }),
 		),
 		...IMAGE_RUNS.map(imageItem),
 		...TIERS.map((tier) =>
@@ -909,6 +914,8 @@ export function judge(
 		}
 		case 'warm-up':
 			return warmUpProblems(result as unknown as WarmUpResult, check.tier);
+		case 'stats':
+			return statsProblems(result as unknown as StatsResult);
 		case 'restarts':
 			return restartProblems(result as unknown as RestartResult);
 		case 'memory':

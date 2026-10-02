@@ -2,6 +2,7 @@
 // helpers in both.
 
 export type { Debug, DebugGridOptions, DebugLightOptions } from './debug/debug';
+export type { FrameStats, FrameStatsThread } from './debug/stats';
 export { EngineError } from './errors/engine-error';
 export type { ErrorCode } from './errors/fixes';
 /**

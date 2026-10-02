@@ -88,6 +88,8 @@ export type SketchWorkerInit = CoreHandoff & {
 	fps?: number;
 	/** The port that texture images go through to the thread that draws, when that is another. */
 	imagePort?: MessagePort;
+	/** Each engine thread's name and the roles it runs, for `debug.frameStats`. */
+	threads: [string, number[]][];
 };
 
 export type RenderWorkerInit = CoreHandoff &
@@ -136,6 +138,8 @@ export type WorkerReply =
 	 * the preset check's result once it has run.
 	 */
 	| { type: 'quality'; update: QualityUpdate }
+	/** The sketch asked to show or hide the stats overlay, which the page draws. */
+	| { type: 'stats'; show: boolean }
 	| ({ type: 'captured' } & CapturedFrame)
 	| { type: 'captured-image'; image: Blob }
 	| { type: 'capture-failed'; message: string };
