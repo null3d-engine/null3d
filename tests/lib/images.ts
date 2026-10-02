@@ -64,6 +64,16 @@ export const REAL_GPU: Environment = 'chrome-real-gpu';
  */
 export const DEVICE_TOLERANCE: Tolerance = { threshold: 0.1, maxDiffRatio: 0.005 };
 
+/**
+ * The GPU tiers of each device that lacks some, by the device's name in its runners' names. A device
+ * draws only these tiers, so it keeps references only on them. The Galaxy S24+ has no WebGPU.
+ */
+const DEVICE_TIERS: Readonly<Record<string, readonly Tier[]>> = { 'sm-s926b': ['webgl2'] };
+
+/** True when a device draws on a tier: on each tier, unless the table of device tiers lists fewer. */
+export const drawsTier = (device: string, tier: Tier) =>
+	DEVICE_TIERS[device]?.includes(tier) ?? true;
+
 /** The size of a sketch test's image, unless its entry gives another. */
 export const SKETCH_SIZE = [320, 180] as const;
 
@@ -333,13 +343,15 @@ export function referenceOf(run: ImageRun, place: Place): Reference {
 
 /**
  * The places whose references a run needs: each environment of Playwright's runs, and each device
- * that keeps its own references of the test. Other browsers and devices compare with the real-GPU
- * set, which its environment needs already.
+ * that keeps its own references of the test and draws on the run's tier. Other browsers and
+ * devices compare with the real-GPU set, which its environment needs already.
  */
 function placesNeeding(run: ImageRun): Place[] {
 	return [
 		...ENVIRONMENTS.map((environment) => ({ environment })),
-		...run.reference.devices.map((device) => ({ runner: device, device })),
+		...run.reference.devices
+			.filter((device) => drawsTier(device, run.tier))
+			.map((device) => ({ runner: device, device })),
 	];
 }
 
