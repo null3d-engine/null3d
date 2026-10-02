@@ -46,6 +46,9 @@
 //                       whose results its check compares with
 //   --shields on|off    the state of Brave's Shields for the dev server's site, which the runner
 //                       cannot read: it goes into each Brave result and the run's summary
+//   --switches <q>      page switches that every page of the plan gets, such as half=on or
+//                       half=on&preset=ultra: the checks plan's image tests then compare the
+//                       scene shaders at half precision with the usual references
 //   --android <list>    browsers on the Android phone: chrome, chrome-beta, brave, firefox, samsung
 //   --lan <list>        names of runner pages that wait on the local network, as device-browser,
 //                       such as ipad-safari; pages on one device take turns
@@ -70,6 +73,7 @@ import {
 	isNull3dPage,
 	parseStoredBaselines,
 	readJobCounts,
+	readSwitches,
 	STORED_BASELINES_FILE,
 	type StoredBaselines,
 } from '../bench/lib/parity.ts';
@@ -151,6 +155,8 @@ export interface Options {
 	shields?: ShieldsState;
 	/** The one shard of a fixed plan to run, when given. */
 	shard?: Shard;
+	/** Page switches that every page of the plan gets, joined by `&`, when given. */
+	switches?: string;
 	/** macOS app names, such as Safari. */
 	mac: string[];
 	android: string[];
@@ -158,7 +164,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--shard <i>/<n>] [--shields on|off] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--shard <i>/<n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -209,6 +215,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--seconds') options.seconds = wholeNumber(arg, args[++i]);
 		else if (arg === '--shard') options.shard = shard(args[++i]);
 		else if (arg === '--shields') options.shields = oneOf(arg, args[++i], SHIELDS_STATES);
+		else if (arg === '--switches') options.switches = readSwitches(args[++i], arg);
 		else if (arg === '--plan') options.plan = args[++i] ?? '';
 		else if (arg === '--android') options.android = list(args[++i]);
 		else if (arg === '--lan') options.lan = list(args[++i]);
@@ -595,10 +602,10 @@ function wholeHeatText(samples: readonly HeatSample[]): string | undefined {
 
 /**
  * A fixed plan's items with the command line's settings, or only its shard's items, or undefined
- * for the phone-scale search.
+ * for the phone-scale search. With `--switches`, each item's page gets them after its own.
  */
 export function planItems(options: Options): PlanItem<Check>[] | undefined {
-	const items = PLANS[options.plan]?.({
+	const planned = PLANS[options.plan]?.({
 		count: options.count,
 		runs: options.runs,
 		jobs: options.jobs,
@@ -606,7 +613,14 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 		scenes: options.scenes,
 		seconds: options.seconds,
 	});
-	const { shard } = options;
+	const { shard, switches } = options;
+	const items =
+		switches === undefined
+			? planned
+			: planned?.map((item) => ({
+					...item,
+					path: `${item.path}${item.path.includes('?') ? '&' : '?'}${switches}`,
+				}));
 	if (!items || !shard) return items;
 	const part = shardItems(items, shard, (item) => itemsNeeded(item.check));
 	if (part.length === 0)

@@ -34,8 +34,12 @@ enable draw_index;
 // keeps its own names few. It never imports a module whole, which would reserve the module's name
 // in their WGSL too. Names that only the MAPS builds declare stay free for custom materials, which
 // build without maps.
-#import null3d::lighting::{PbrMaterial, dfg_lut, direct_light, indirect_diffuse}
-#import null3d::lighting::{multiscatter_compensation, pbr_material}
+#import null3d::lighting::{PbrMaterial, dfg_lut, multiscatter_compensation, pbr_material}
+#ifdef HALF
+#import null3d::half::{direct_light, indirect_diffuse}
+#else
+#import null3d::lighting::{direct_light, indirect_diffuse}
+#endif
 #import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::globals::{Material}
 #import null3d::lights::{clustered_light}

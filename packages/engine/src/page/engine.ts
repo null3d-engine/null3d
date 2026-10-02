@@ -7,7 +7,7 @@ import { DEV } from '../errors/checks';
 import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
-import { FORMAT_CANVAS } from '../generated/gpu';
+import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import type { PresetCheck } from '../quality/check';
 import {
 	choosePreset,
@@ -205,6 +205,12 @@ export interface EngineCapabilities {
 	 * averages the samples after the tone mapping.
 	 */
 	hdr: boolean;
+	/**
+	 * True when the scene shaders do their color math at half precision: lighting, tone mapping and
+	 * sRGB encoding. On WebGPU it needs the device feature `shader-f16`, and WebGL2 runs that math at
+	 * `mediump`. Positions, depth and shadow lookups keep full precision either way.
+	 */
+	halfPrecision: boolean;
 	/**
 	 * The most objects and instance rows, counted together, that a scene can draw on this device.
 	 * On WebGPU every device draws at least 2,097,152, and a device with larger GPU buffers draws
@@ -938,6 +944,7 @@ async function startEngine(
 				: report.webgpu.features,
 		limits: tier === 'webgl2' ? {} : report.webgpu.limits,
 		hdr: device.sceneColor !== FORMAT_CANVAS,
+		halfPrecision: (device.shaderBits & PERMUTATION_HALF) !== 0,
 		maxInstances: maxInstances(device),
 		depth: device.depth,
 	};

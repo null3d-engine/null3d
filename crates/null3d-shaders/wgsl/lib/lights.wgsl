@@ -1,6 +1,10 @@
 #define_import_path null3d::lights
-#import null3d::lighting::{PbrMaterial, Reflected, direct_light, distance_attenuation}
-#import null3d::lighting::{spot_attenuation}
+#import null3d::lighting::{PbrMaterial, Reflected, distance_attenuation, spot_attenuation}
+#ifdef HALF
+#import null3d::half::{direct_light}
+#else
+#import null3d::lighting::{direct_light}
+#endif
 #import null3d::mesh::{frame}
 
 // The point and spot lights of clustered forward shading. Each frame the engine cuts the camera's

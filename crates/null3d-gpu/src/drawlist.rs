@@ -592,9 +592,13 @@ pub mod permutation {
     pub const DEBUG_VIEW_LOW: u32 = 1024;
     /// The high bit of the debug view's number.
     pub const DEBUG_VIEW_HIGH: u32 = 2048;
+    /// The fragment shader does its color math at half precision: lighting, tone mapping and
+    /// sRGB encoding. WebGPU builds use 16-bit floats, which need the device feature
+    /// `shader-f16`, and WebGL2 builds run that math at `mediump`.
+    pub const HALF: u32 = 8192;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 12] = [
+    pub const NAMES: [(&str, u32); 13] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -607,13 +611,15 @@ pub mod permutation {
         ("VERTEX_TANGENT", VERTEX_TANGENT),
         ("DEBUG_VIEW_LOW", DEBUG_VIEW_LOW),
         ("DEBUG_VIEW_HIGH", DEBUG_VIEW_HIGH),
+        ("HALF", HALF),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
-    /// the draw index where WebGL2 has multi-draw, and tone mapping in the shader where the device
-    /// draws scene color in 8 bits. The shader build writes the engine's variants into one module
-    /// for each GPU path and each value of these bits, and a page loads only its own.
-    pub const DEVICE: u32 = DRAW_INDEX | TONE_MAP;
+    /// the draw index where WebGL2 has multi-draw, tone mapping in the shader where the device
+    /// draws scene color in 8 bits, and half precision where the device draws with it. The shader
+    /// build writes the engine's variants into one module for each GPU path and each value of
+    /// these bits, and a page loads only its own.
+    pub const DEVICE: u32 = DRAW_INDEX | TONE_MAP | HALF;
 
     /// Every bit.
     pub const ALL: u32 = {

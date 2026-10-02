@@ -118,6 +118,7 @@ export const PERMUTATION_FXAA = 256;
 export const PERMUTATION_VERTEX_TANGENT = 512;
 export const PERMUTATION_DEBUG_VIEW_LOW = 1024;
 export const PERMUTATION_DEBUG_VIEW_HIGH = 2048;
+export const PERMUTATION_HALF = 8192;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;

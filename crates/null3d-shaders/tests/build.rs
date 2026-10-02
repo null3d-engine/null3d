@@ -348,6 +348,69 @@ fn half_floats_without_enable_are_rejected_at_the_first_one() {
     assert_optional_feature(valued, 3, "0.5h", "The value `0.5h` uses 16-bit floats");
 }
 
+/// A library module that does its math in 16-bit floats, with a constant and a function.
+const TINT_MODULE: &str = "enable f16;\n#define_import_path null3d::tint\n\nconst SCALE: f16 = 0.5h;\n\nfn tint(c: vec3f) -> vec3f {\n    return vec3f(vec3h(c) * SCALE);\n}\n";
+
+/// A shader whose fragment stage calls the 16-bit module.
+const TINTED: &str = "#import null3d::tint::{tint}\n\n@vertex\nfn vs_main() -> @builtin(position) vec4f {\n    return vec4f(0.0);\n}\n\n@fragment\nfn fs_main() -> @location(0) vec4f {\n    return vec4f(tint(vec3f(1.0)), 1.0);\n}\n";
+
+#[test]
+fn a_library_module_keeps_its_half_floats_only_in_webgpu_builds_of_the_half_bit() {
+    let inputs = project(
+        TINTED,
+        &[
+            (
+                "webgpu",
+                "{ permutations = [\"HALF\"], targets = [\"wgsl\"] }",
+            ),
+            (
+                "webgl2",
+                "{ permutations = [\"HALF\"], targets = [\"glsl\"] }",
+            ),
+        ],
+        &[("tint.wgsl", TINT_MODULE)],
+    );
+    let output = build(&inputs).expect("the half precision module builds");
+    let half = wgsl(&output, "webgpu_half");
+    assert!(half.starts_with("enable f16;"), "{half}");
+    assert!(half.contains("vec3<f16>"), "{half}");
+    let full = wgsl(&output, "webgpu");
+    assert!(!full.contains("f16") && full.contains("0.5f"), "{full}");
+    for name in ["webgl2", "webgl2_half"] {
+        let glsl = output.shaders["shader"][name].glsl.as_ref().expect("GLSL");
+        let fragment = &glsl["main"].fragment.source;
+        let mediump = |item: &str| format!("precision mediump float;\n{item}");
+        assert!(
+            fragment.contains(&mediump("const float SCALE = 0.5;\nprecision highp float;")),
+            "{fragment}"
+        );
+        assert!(
+            fragment.contains(&mediump("vec3 tint(vec3 c) {")),
+            "{fragment}"
+        );
+        assert!(fragment.starts_with("#version 300 es\n\nprecision highp float;"));
+    }
+}
+
+#[test]
+fn a_half_precision_variant_has_one_target() {
+    let inputs = project(
+        TINTED,
+        &[(
+            "both",
+            "{ permutations = [\"HALF\"], targets = [\"wgsl\", \"glsl\"] }",
+        )],
+        &[("tint.wgsl", TINT_MODULE)],
+    );
+    let problem = only_problem(build(&inputs));
+    assert!(
+        problem
+            .message
+            .contains("HALF permutation bit and more than one target"),
+        "{problem}"
+    );
+}
+
 #[test]
 fn an_enable_line_for_an_optional_webgpu_feature_is_rejected() {
     let shader = |extension: &str| {
