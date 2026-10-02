@@ -5,6 +5,14 @@
 // record that progress as the page's result. The runner page, in the browser, and the runner tool,
 // in Node, share these helpers, so they use no API of either.
 
+/**
+ * The rest after a page ended the tab, before the next page: the device frees the dead tab's memory,
+ * and Safari, which reloads a page that crashed, does so again only for a crash some time after the
+ * last. On an iPad, Safari reloaded the runner page after a crash 2.3 minutes after the one before,
+ * and not after one 1 minute after.
+ */
+export const REST_AFTER_TAB_END_SECONDS = 150;
+
 /** The name of the record of a page's progress, beside its result. */
 export const progressName = (id: string) => `${id}.progress`;
 

@@ -16,6 +16,7 @@
 //   bun tests/real-browsers.ts --plan overload --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
 //   bun tests/real-browsers.ts --plan skinning --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan tab-memory --allow-no-webgpu --android chrome
+//   bun tests/real-browsers.ts --plan tab-memory --lan ipad-safari --attended
 //   bun tests/real-browsers.ts --plan soak --lan ipad-safari --minutes 30
 //   bun tests/real-browsers.ts --plan warm-up-time --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari
@@ -68,6 +69,9 @@
 //   --android <list>    browsers on the Android phone: chrome, chrome-beta, brave, firefox, samsung
 //   --lan <list>        names of runner pages that wait on the local network, as device-browser,
 //                       such as ipad-safari; pages on one device take turns
+//   --attended          someone is at the devices of --lan, so a plan whose pages end their tab,
+//                       such as tab-memory, may run there: Safari stops reloading a tab that
+//                       crashes again soon after the last crash, and only a person can reopen it
 // Before a run on a phone or tablet, the runner prints a checklist of the device settings that
 // results depend on.
 import { execFileSync } from 'node:child_process';
@@ -183,6 +187,8 @@ export interface Options {
 	only?: string[];
 	/** How many times over to run the items, when given. */
 	rounds?: number;
+	/** Someone is at the network devices, to reopen a runner page that a crash closed. */
+	attended?: boolean;
 	/** macOS app names, such as Safari. */
 	mac: string[];
 	android: string[];
@@ -190,7 +196,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--android <browsers>] [--lan <runners>] [--attended] [<macOS app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -247,6 +253,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--plan') options.plan = args[++i] ?? '';
 		else if (arg === '--android') options.android = list(args[++i]);
 		else if (arg === '--lan') options.lan = list(args[++i]);
+		else if (arg === '--attended') options.attended = true;
 		else if (arg.startsWith('--')) throw new Error(`unknown option ${arg}\n${USAGE}`);
 		else options.mac.push(arg);
 	}
@@ -670,7 +677,9 @@ function wholeHeatText(samples: readonly HeatSample[]): string | undefined {
 
 /**
  * A fixed plan's items with the command line's settings: the items that --only names, or only its
- * shard's items, the number of rounds over. Undefined for the phone-scale search.
+ * shard's items, the number of rounds over. Undefined for the phone-scale search. Items whose pages
+ * end their tab run on a network device only with --attended: a phone over USB gets a new runner
+ * page from the runner tool, but a tablet's runner page that Safari did not reload stays closed.
  */
 export function planItems(options: Options): PlanItem<Check>[] | undefined {
 	const all = PLANS[options.plan]?.({
@@ -686,6 +695,10 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 	const needs = (item: PlanItem<Check>) => itemsNeeded(item.check);
 	const { shard, only, rounds = 1 } = options;
 	const items = only ? pickItems(all, only, needs) : all;
+	if (options.lan.length > 0 && !options.attended && items.some((item) => item.endsTab))
+		throw new Error(
+			`the ${options.plan} plan crashes the tab on purpose, and after a crash soon after another, Safari on a tablet stops reloading the runner page; run it on --lan devices with --attended, while someone can reopen the page`,
+		);
 	if (!shard) return repeatItems(items, rounds);
 	const part = shardItems(items, shard, needs);
 	if (part.length === 0)

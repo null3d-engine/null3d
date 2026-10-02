@@ -117,7 +117,7 @@ import {
 } from './preset-checks.ts';
 import { failureText, type ItemResult, lastSteps, type PlanItem, slug } from './runs.ts';
 import { type StatsResult, statsProblems } from './stats-checks.ts';
-import { progressName } from './tab-end.ts';
+import { progressName, REST_AFTER_TAB_END_SECONDS } from './tab-end.ts';
 import { type WarmUpResult, warmUpProblems } from './warm-up-checks.ts';
 import {
 	WARM_UP_TABLE_HEAD,
@@ -679,10 +679,11 @@ export function memoryPlan({ runs = MEMORY_LOADS }: PlanSettings = {}): PlanItem
  */
 const TAB_MEMORY_TIMEOUT_SECONDS = 300;
 /**
- * How long the tab memory page may post nothing before its tab counts as dead: a step that gives no
- * answer for a minute ends the growth, and the page then publishes its result.
+ * How long a runner page may post nothing on a tab memory page before its tab counts as dead. A step
+ * that gives no answer for a minute ends the growth, and the page then publishes its result. The
+ * page after a dead tab starts only after the runner page's rest, which counts as quiet too.
  */
-const TAB_MEMORY_QUIET_SECONDS = 120;
+const TAB_MEMORY_QUIET_SECONDS = REST_AFTER_TAB_END_SECONDS + 60;
 /**
  * What the tab memory plan grows, in its order: the GPU path that the browser picks first, then the
  * other, and WebAssembly memory last. A device without WebGPU skips the WebGPU growths.

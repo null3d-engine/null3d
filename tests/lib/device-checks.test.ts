@@ -4,6 +4,7 @@ import { describe, expect, it } from 'bun:test';
 import type { SoakMinute, SoakReport } from '../../bench/pages/lib/device-soak.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import { readGrowthSwitches, WASM_MOST_MIB } from '../pages/lib/tab-memory.ts';
+import { parseArgs, planItems } from '../real-browsers.ts';
 import { ENGINE_MODES } from './engine-checks.ts';
 import {
 	judge,
@@ -59,8 +60,18 @@ describe('the tab memory plan', () => {
 		expect(first?.path).toBe(
 			'/tests/pages/tab-memory.html?kind=texture&gpu=webgpu&progress=/__null3d/runs/{run}/{runner}/{item}.progress',
 		);
-		expect(items.every((item) => item.endsTab === true && item.quietSeconds === 120)).toBe(true);
+		expect(items.every((item) => item.endsTab === true && item.quietSeconds === 210)).toBe(true);
 		expect(tabMemoryPlan({ runs: 2 }).at(-1)?.id).toBe('tab-memory-wasm-2');
+	});
+
+	it('runs on a tablet over the network only while someone can reopen its runner page', () => {
+		const lan = ['--plan', 'tab-memory', '--lan', 'ipad-safari'];
+		expect(() => planItems(parseArgs(lan))).toThrow('--attended');
+		expect(planItems(parseArgs([...lan, '--attended']))).toHaveLength(5);
+		expect(planItems(parseArgs(['--plan', 'tab-memory', '--android', 'chrome']))).toHaveLength(5);
+		expect(
+			planItems(parseArgs(['--plan', 'soak', '--lan', 'ipad-safari']))?.length,
+		).toBeGreaterThan(0);
 	});
 
 	const [texture, , , , wasm] = items;

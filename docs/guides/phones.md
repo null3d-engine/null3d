@@ -48,7 +48,17 @@ Text and fine lines in the scene get softer at a lower scale. The scaling also t
 
 ## Memory
 
-A phone closes a tab that uses too much memory, with no warning. On a page with worker threads, the engine's threads share one WebAssembly memory, whose maximum the preset sets. The browser reserves address space for the whole maximum, and every other engine and WebAssembly module on the page shares what is left. [Page API: createEngine](../api/engine.md#memory) says when to ask for more.
+A phone closes a tab that uses too much memory, with no warning. The engine's tab memory test grew one kind of GPU memory in a tab, in steps of 32 MiB, until the tab died:
+
+| Device and browser | GPU textures | GPU buffers |
+| --- | --- | --- |
+| 11-inch iPad Pro, Safari, WebGPU | 2,016 MiB | the GPU stopped answering at 512 MiB |
+| 11-inch iPad Pro, Safari, WebGL2 | 2,528 MiB | 2,496 MiB |
+| Galaxy S24+, Chrome, WebGL2 | 7,296 MiB | 7,616 MiB |
+
+No allocation failed first, and no error came. A scene holds its textures, buffers, render targets and WebAssembly memory at once, and a device with less memory gives a tab less. So on phones and tablets, keep a scene's textures under 1 GiB. On an iPad's WebGPU path, keep its GPU buffers under 256 MiB.
+
+On a page with worker threads, the engine's threads share one WebAssembly memory, whose maximum the preset sets. The browser reserves address space for the whole maximum, and every other engine and WebAssembly module on the page shares what is left. [Page API: createEngine](../api/engine.md#memory) says when to ask for more.
 
 To use less memory, share meshes and materials, draw many copies with instance batches, and create objects during setup. `engine.measure` reports the WebAssembly memory in use.
 

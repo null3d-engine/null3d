@@ -23,7 +23,7 @@
 
 import { fillRunner, loadOf, takeDownloads } from '../lib/load-routes';
 import { patientFetch } from '../lib/patient-fetch';
-import { progressName, tabEndedResult } from '../lib/tab-end';
+import { progressName, REST_AFTER_TAB_END_SECONDS, tabEndedResult } from '../lib/tab-end';
 
 interface PlanItem {
 	id: string;
@@ -41,11 +41,6 @@ const LISTEN_POLL_MS = 2000;
 const RESULT_POLL_MS = 200;
 const PAUSE_BETWEEN_PAGES_MS = 1000;
 const REFRESH_SAMPLES = 61;
-/**
- * The rest after a page ended the tab: the device frees the dead tab's memory, and Safari, which
- * reloads a page that crashed, does so again only for a crash some time after the last.
- */
-const REST_AFTER_TAB_END_MS = 45_000;
 
 const byId = (id: string) => document.getElementById(id) as HTMLElement;
 const statusLine = byId('status');
@@ -291,7 +286,7 @@ async function resumeAt(run: string, items: readonly PlanItem[]): Promise<number
 	const facts = progress.ok ? (JSON.parse(progress.text) as Record<string, unknown>) : undefined;
 	await post(run, item.id, tabEndedResult(facts, 'runner page'));
 	show(`${item.id} ended the tab; resting before the next page`);
-	await sleep(REST_AFTER_TAB_END_MS);
+	await sleep(REST_AFTER_TAB_END_SECONDS * 1000);
 	return index + 1;
 }
 
