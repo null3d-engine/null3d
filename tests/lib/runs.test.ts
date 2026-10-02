@@ -137,6 +137,10 @@ describe('waitForRunners', () => {
 		expect(quietLimitMs(item('a', 95))).toBe(125_000);
 	});
 
+	it('allows a page that posts its progress its quiet time instead', () => {
+		expect(quietLimitMs({ ...item('a', 300), quietSeconds: 120 })).toBe(150_000);
+	});
+
 	it('finds the page a runner works on: the first page of the plan without a result', () =>
 		withRun(['a', 'b', 'c'], (plan) => {
 			expect(currentItem(plan, 'mac-safari')?.index).toBe(0);
@@ -150,10 +154,10 @@ describe('waitForRunners', () => {
 
 describe('QuietRecovery', () => {
 	/** A recovery for one runner, with the plan items where it opened new runner pages. */
-	function recovery(plan: Plan, canReopen = true) {
-		const opened: number[] = [];
+	function recovery(plan: Plan, canReopen = true, afterTabEnd = canReopen) {
+		const opened: (number | undefined)[] = [];
 		const quiet = new QuietRecovery(plan, {
-			canReopen: () => canReopen,
+			canReopen: (_, tabEnded) => (tabEnded ? afterTabEnd : canReopen),
 			inspect: () => 'screen not locked',
 			reopen: (_, from) => opened.push(from) > 0,
 		});
@@ -205,6 +209,39 @@ describe('QuietRecovery', () => {
 		expect(tablet.quiet.onQuiet('ipad-safari', 60, at(p, 0))).toBe(false);
 		expect(tablet.opened).toEqual([]);
 		expect(recovery(p).quiet.onQuiet('mac-safari', 60, undefined)).toBe(false);
+	});
+
+	it('records a page that ended its tab from its progress, and goes on after it', () => {
+		const p = plan(['a', 'b', 'c', 'd', 'e']);
+		for (const item of p.items.slice(0, 4)) item.endsTab = true;
+		// A phone: a new runner page only after a page that ended its tab.
+		const { quiet, opened } = recovery(p, false, true);
+		try {
+			writeRunnerFile(p.run, 'sm-s926b-chrome', 'a.progress', {
+				receivedAt: 'then',
+				livedMiB: 1536,
+				stepMiB: 32,
+			});
+			for (const index of [0, 1, 2])
+				expect(quiet.onQuiet('sm-s926b-chrome', 150, at(p, index))).toBe(true);
+			expect(opened).toEqual([undefined, undefined, undefined]);
+			expect(readResult(p.run, 'sm-s926b-chrome', 'a')).toMatchObject({
+				ok: true,
+				end: 'tab',
+				livedMiB: 1536,
+				recordedBy: 'runner tool',
+			});
+			expect(readResult(p.run, 'sm-s926b-chrome', 'a')?.receivedAt).not.toBe('then');
+			// A page without progress died before it posted any.
+			expect(readResult(p.run, 'sm-s926b-chrome', 'b')).toMatchObject({ ok: true, end: 'tab' });
+			// A stopped page that does not end its tab still ends a phone's turn.
+			expect(quiet.onQuiet('sm-s926b-chrome', 60, at(p, 4))).toBe(false);
+			const tablet = recovery(p, false, false);
+			expect(tablet.quiet.onQuiet('ipad-safari', 150, at(p, 3))).toBe(false);
+			expect(readResult(p.run, 'ipad-safari', 'd')).toMatchObject({ end: 'tab' });
+		} finally {
+			rmSync(join(RUNS_DIR, p.run), { recursive: true, force: true });
+		}
 	});
 });
 
@@ -298,7 +335,13 @@ describe('runName', () => {
 
 describe("the runner page's report", () => {
 	it('goes over the frames of the plans that check results, and never over a timed page', () => {
-		expect([...REPORT_ON_TOP_PLANS].sort()).toEqual(['checks', 'depth', 'memory', 'parity']);
+		expect([...REPORT_ON_TOP_PLANS].sort()).toEqual([
+			'checks',
+			'depth',
+			'memory',
+			'parity',
+			'tab-memory',
+		]);
 		for (const plan of REPORT_ON_TOP_PLANS) expect(Object.keys(PLANS)).toContain(plan);
 	});
 });

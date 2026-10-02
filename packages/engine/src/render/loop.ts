@@ -212,7 +212,7 @@ export class Presenter {
 		this.renderer.drawFrame(emptySceneInput(frame, this.input), this.record);
 		Atomics.store(this.slots, Slot.FramePresented, frame);
 		const lastPresented = this.lastPresented[0] as number;
-		if (lastPresented < 0) this.markFirstFrame();
+		if (lastPresented < 0) this.markFirstFrame(performance.now() - start);
 		else this.record.interval(timestamp - lastPresented);
 		this.lastPresented[0] = timestamp;
 		this.record.commit(performance.now() - start);
@@ -223,8 +223,8 @@ export class Presenter {
 	 * the screen. Its closure stays out of `draw`, which would otherwise allocate the closure's
 	 * variables on every frame until the browser optimizes it.
 	 */
-	private markFirstFrame(): void {
-		this.record.markFirstFrame();
+	private markFirstFrame(drawMs: number): void {
+		this.record.markFirstFrame(drawMs);
 		void this.renderer.finished().then(() => this.record.markFirstFrameDone());
 	}
 }

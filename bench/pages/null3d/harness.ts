@@ -1,8 +1,10 @@
 // Runs a null3d benchmark scene page. The scene itself runs in the sketch worker, built from the
 // same shared scene module as the three.js twins. With `?hold`, the engine's hold mode steps the
 // scene to the held time and draws that frame on a canvas of the parity size, and the page
-// publishes the frame's pixels. With `?demo`, it runs the scene until the page closes. Otherwise it
-// warms up, measures the engine, and publishes the frame metrics. The engine's own switches, such
+// publishes the frame's pixels. With `?demo`, it runs the scene until the page closes. With
+// `?soak=`, it runs the scene for that many minutes, measures the engine once a minute, and
+// publishes each minute's figures. Otherwise it warms up, measures the engine, and publishes the
+// frame metrics. The engine's own switches, such
 // as `?gpu=webgpu`, `?latency=low` or `?preset=low`, pick the GPU path, the thread mode and the
 // quality preset.
 import { createEngine, type Engine, type SecondRates } from '@null3d/engine';
@@ -14,6 +16,7 @@ import {
 } from '../../../packages/engine/src/gpu/webgl2/call-timing';
 import { run, toBase64 } from '../../../tests/pages/lib/result';
 import { CANVAS, MEASURE_SECONDS, PARITY_CANVAS, WARMUP_SECONDS } from '../../scenes/spec';
+import { soakEngine } from '../lib/device-soak';
 import { fillWindow, fitToWindow, showPageName } from '../lib/fit';
 import type { GlTiming } from '../lib/gl-timing';
 import { pageReport, readRunOptions } from '../lib/options';
@@ -96,6 +99,7 @@ export function runNull3dPage(
 			return report;
 		}
 		try {
+			if (options.soak !== null) return { ...report, soak: await soakEngine(engine, options.soak) };
 			if (options.hold !== null) {
 				const { width, height, pixels } = await engine.captureFrame();
 				return { ...report, width, height, pixels: toBase64(pixels) };

@@ -199,6 +199,7 @@ async function start(
 				sharedUploads: false,
 				depth: 'reversed',
 				parallelCompile: true,
+				freshShaders: false,
 				sceneColor: FORMAT_RGBA16_FLOAT,
 				antialias: C.ANTIALIAS_MSAA,
 				transparent: false,

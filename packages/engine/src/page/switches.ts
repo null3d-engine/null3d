@@ -1,11 +1,11 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?wake=message, ?hdr=off
-// and ?compression=. Six more set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs=
-// for the job worker count, ?memory= for the shared memory's maximum, ?queue= for the frames that
-// may wait on the GPU, ?cells=off for culling without grid cells and ?prepass=on or off for the
-// depth prepass. ?hold starts hold mode for image tests, ?preset= fixes the quality preset, ?bench
-// publishes the running engine for benchmark tools, and ?gl-timing times each WebGL call for
-// benchmark pages.
+// ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?shaders=fresh,
+// ?wake=message, ?hdr=off and ?compression=. Six more set what the benchmarks vary: ?fps= for a
+// fixed frame rate, ?jobs= for the job worker count, ?memory= for the shared memory's maximum,
+// ?queue= for the frames that may wait on the GPU, ?cells=off for culling without grid cells and
+// ?prepass=on or off for the depth prepass. ?hold starts hold mode for image tests, ?preset= fixes
+// the quality preset, ?bench publishes the running engine for benchmark tools, and ?gl-timing times
+// each WebGL call for benchmark pages.
 
 import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
@@ -79,6 +79,12 @@ export interface Switches {
 	 * draw, as it does in a browser without `KHR_parallel_shader_compile`.
 	 */
 	parallelCompile: boolean;
+	/**
+	 * True when ?shaders=fresh gives each shader's text a comment that no earlier start used, so the
+	 * browser compiles every shader again instead of reusing what it compiled before, as on a first
+	 * visit.
+	 */
+	freshShaders: boolean;
 	/**
 	 * True when ?wake=message makes the engine's threads wake each other with messages, as they do
 	 * in a browser without `Atomics.waitAsync`.
@@ -177,6 +183,7 @@ export function parseSwitches(search: string): Switches {
 			?.split(',')
 			.flatMap((name) => oneOf(name, COMPRESSION_FAMILIES) ?? []),
 		parallelCompile: params.get('compile') !== 'wait',
+		freshShaders: params.get('shaders') === 'fresh',
 		wakeByMessage: params.get('wake') === 'message',
 		hdr: params.get('hdr') !== 'off',
 		cells: params.get('cells') !== 'off',

@@ -145,8 +145,8 @@ export const QUALITY_SETTINGS = {
 		values: 'flag',
 	},
 	// The shared memory's maximum, from 256 MiB to the 4 GiB that the threaded core declares. Every
-	// preset keeps the loader's default until measurements of the memory that tabs can use on
-	// phones and tablets set one per preset (D-04).
+	// preset keeps the loader's default (D-04). A phone filled the whole 4 GiB in one tab; the
+	// tablet's limit is not measured yet, and may lower the lighter presets' values (D-12).
 	memoryMaximumMiB: {
 		presets: [1024, 1024, 1024, 1024],
 		changes: 'load',

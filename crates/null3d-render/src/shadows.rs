@@ -66,8 +66,14 @@ pub const MAX_CASCADES: usize = 4;
 /// The longest far cascade update interval, in frames.
 pub const MAX_INTERVAL: u32 = 8;
 
-/// How far the split distances lean from an even spread toward a logarithmic one, from 0 to 1.
-const SPLIT_LAMBDA: f32 = 0.8;
+/// How far the split distances lean from an even spread toward a logarithmic one, from 0 to 1: the
+/// practical split of Zhang et al. A higher value gives the ground just in front of the camera
+/// finer texels, which a camera at eye height needs, and the middle distance coarser ones, where a
+/// camera high above the ground sees most of it. The value sits a little past halfway, where
+/// three.js's cascaded shadows split: halfway made the shadows at eye height visibly coarse, and
+/// this value gives the middle distance most of halfway's texels. The shadows docs page gives the
+/// texel sizes behind the choice.
+const SPLIT_LAMBDA: f32 = 0.65;
 
 /// The steps that a box's radius rounds up to, as a share of the radius: fine enough to waste no
 /// texels, and coarse enough that rounding in the camera's scale never changes the radius.
@@ -760,9 +766,20 @@ mod tests {
                 before = split;
             }
         }
-        // Near slices are much shorter than far ones.
+        // Each split blends the even spread and the logarithmic one, so near slices are shorter
+        // than far ones.
+        for lambda in [0.0, 0.5, SPLIT_LAMBDA, 1.0] {
+            let splits = split_distances(0.1, 200.0, 3, lambda);
+            for (i, &split) in splits[..2].iter().enumerate() {
+                let share = (i + 1) as f32 / 3.0;
+                let even = 0.1 + 199.9 * share;
+                let logarithmic = 0.1 * 2000f32.powf(share);
+                let blend = lambda * logarithmic + (1.0 - lambda) * even;
+                assert!((split - blend).abs() < 1e-3, "{lambda}: {splits:?}");
+            }
+        }
         let splits = split_distances(0.1, 200.0, 3, SPLIT_LAMBDA);
-        assert!(splits[0] < 20.0 && splits[1] < 60.0, "{splits:?}");
+        assert!(splits[0] < splits[1] - splits[0], "{splits:?}");
     }
 
     #[test]

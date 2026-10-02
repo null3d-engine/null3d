@@ -88,9 +88,12 @@ export function parseDownloadsPath(url: string): Load | undefined {
  */
 export const runnerKey = (name: string) => `{run}.{runner}.${name}`;
 
-/** A plan item's address with the run and the runner filled in, where it has `{run}` and `{runner}`. */
-export function fillRunner(path: string, run: string, runner: string): string {
-	return path.replaceAll('{run}', run).replaceAll('{runner}', runner);
+/**
+ * A plan item's address with the run, the runner and the item's own name filled in, where it has
+ * `{run}`, `{runner}` and `{item}`.
+ */
+export function fillRunner(path: string, run: string, runner: string, item = ''): string {
+	return path.replaceAll('{run}', run).replaceAll('{runner}', runner).replaceAll('{item}', item);
 }
 
 /**
