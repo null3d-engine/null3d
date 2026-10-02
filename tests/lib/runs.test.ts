@@ -51,6 +51,7 @@ import {
 	type PlanItem,
 	quietLimitMs,
 	readResult,
+	readShard,
 	runName,
 	shardItems,
 	turnBatches,
@@ -215,6 +216,12 @@ describe('shardItems', () => {
 	const needsOf = (planItem: { check: string[] }) => planItem.check;
 	const shardIds = (plan: ReturnType<typeof item>[], index: number, count: number) =>
 		shardItems(plan, { index, count }, needsOf).map(({ id }) => id);
+
+	it('reads a shard written as <i>/<n>', () => {
+		expect(readShard('2/3')).toEqual({ index: 2, count: 3 });
+		for (const text of ['0/2', '3/2', '1', '1/2/3', 'a/b', undefined])
+			expect(readShard(text)).toBeNull();
+	});
 
 	it('deals the items out evenly, in the order of the plan', () => {
 		const plan = ['a', 'b', 'c', 'd', 'e'].map((id) => item(id));

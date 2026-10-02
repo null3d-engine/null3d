@@ -126,6 +126,15 @@ export interface Shard {
 	count: number;
 }
 
+/** What a tool's `--shard` option takes, for its error message. */
+export const SHARD_FORMAT = '<i>/<n>, such as 1/2, with i from 1 to n';
+
+/** Reads a shard written as `<i>/<n>`, or null when the text is not one. */
+export function readShard(text: string | undefined): Shard | null {
+	const [, index = 0, count = 0] = /^(\d+)\/(\d+)$/.exec(text ?? '')?.map(Number) ?? [];
+	return index >= 1 && index <= count ? { index, count } : null;
+}
+
 /**
  * The items of one shard of a plan, in the plan's order. An item stays in the shard of the items
  * that `needs` names for it, so each group of items that need each other moves as one. The groups,
