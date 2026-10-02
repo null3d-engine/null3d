@@ -59,9 +59,23 @@ export function heavyCheckProblems(mode: PresetMode, chosen: QualityPreset): str
 	return problems;
 }
 
+/** The change that the tests make on the preset change page: one that needs a new pipeline. */
+export const PRESET_CHANGE = { from: 'medium', to: 'low' } as const satisfies Record<
+	string,
+	QualityPreset
+>;
+
+/**
+ * The preset change page's switches for that change. The engine's own ?preset= switch fixes the
+ * start, so no crash marker that an earlier page left can lower it.
+ */
+export const PRESET_CHANGE_SWITCHES = [`preset=${PRESET_CHANGE.from}`, `to=${PRESET_CHANGE.to}`];
+
 /** What the preset change page reports. */
 export interface PresetChangeResult {
 	tier: string;
+	/** The preset that the engine ran after its first frame, before the change. */
+	started: QualityPreset;
 	mode: { preset: QualityPreset };
 	/** The preset and settings that the sketch reports once its change resolved. */
 	sketch?: { preset: QualityPreset; settings: Record<string, number | string | null> };
@@ -81,13 +95,15 @@ const BOXES_COVER = 0.05;
 /**
  * What is wrong with the preset change page's change from the preset `from` to `to`, which needs a
  * new pipeline; empty when nothing is. Every setting takes the new preset's value, apart from the
- * page's pixel ratio cap and the settings fixed when the engine starts.
+ * page's pixel ratio cap and the settings fixed when the engine starts. An engine that started at
+ * another preset made another change, so that start is the only problem reported.
  */
 export function presetChangeProblems(
 	result: PresetChangeResult,
 	from: QualityPreset,
 	to: QualityPreset,
 ): string[] {
+	if (result.started !== from) return [`the engine started at ${result.started}, not ${from}`];
 	const problems: string[] = [];
 	if (result.sketch?.preset !== to || result.mode.preset !== to)
 		problems.push(`the engine runs ${result.mode.preset}, not ${to}`);

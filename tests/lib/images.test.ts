@@ -51,6 +51,7 @@ const TESTS: readonly ImageTest[] = [
 		name: 'grid',
 		page: 'pages/grid.html',
 		size: [4, 2],
+		switches: ['preset=low'],
 		sameOnEveryTier: true,
 		devices: ['ipad'],
 		expect: { visible: [1, 2] },
@@ -124,7 +125,7 @@ describe('the manifest', () => {
 			3 * ENGINE_MODES.length,
 		);
 		expect(manifestRun('s1', 'compat', 'low latency').path).toBe(
-			'/bench/pages/null3d/s1.html?gpu=compat&latency=low&hold=2',
+			'/bench/pages/null3d/s1.html?gpu=compat&latency=low&hold=2&preset=high',
 		);
 		expect(new Set(IMAGE_RUNS.map((r) => r.id)).size).toBe(IMAGE_RUNS.length);
 	});
@@ -169,7 +170,7 @@ describe('the manifest', () => {
 });
 
 describe('the runs of a test', () => {
-	it('opens a sketch on the image page with its tier, mode, hold time, switches and size', () => {
+	it('opens a sketch on the image page with its tier, mode, hold time, preset, switches and size', () => {
 		expect(RUNS.map((r) => r.id)).toEqual([
 			'boxes-webgpu-pipelined',
 			'boxes-webgpu-low-latency',
@@ -184,12 +185,13 @@ describe('the runs of a test', () => {
 		]);
 		// The sketch's own query stays in its switch, and the slashes stay readable.
 		expect(run('boxes-webgl2-low-latency').path).toBe(
-			'/tests/pages/image.html?gpu=webgl2&latency=low&hold=1.5&size=4x2&sketch=/sketches/boxes.ts%3Fview%3Dfar',
+			'/tests/pages/image.html?gpu=webgl2&latency=low&hold=1.5&preset=high&size=4x2&sketch=/sketches/boxes.ts%3Fview%3Dfar',
 		);
 		expect(run('boxes-copied-webgl2-pipelined').path).toBe(
-			'/tests/pages/image.html?gpu=webgl2&hold=1.5&uploads=copy&size=4x2&sketch=/sketches/boxes.ts%3Fview%3Dfar',
+			'/tests/pages/image.html?gpu=webgl2&hold=1.5&preset=high&uploads=copy&size=4x2&sketch=/sketches/boxes.ts%3Fview%3Dfar',
 		);
-		expect(run('grid-compat').path).toBe('/pages/grid.html?gpu=compat');
+		// A test that names its own preset draws with it alone.
+		expect(run('grid-compat').path).toBe('/pages/grid.html?gpu=compat&preset=low');
 		expect(run('grid-compat').mode).toBeUndefined();
 	});
 

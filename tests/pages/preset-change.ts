@@ -1,9 +1,12 @@
-// Starts the engine at the preset that ?from= names, with a row of boxes whose pipeline the first
-// frame builds. It captures a frame, then measures while the sketch switches to the preset that ?to=
-// names, and captures again once the switch has resolved. The sketch draws the boxes with a new
+// Starts the engine at the preset that the engine's ?preset= switch names, Medium without it, with a
+// row of boxes whose pipeline the first frame builds. The switch, unlike the page's option, keeps the
+// engine's crash marker from lowering the start: a note that an earlier page left would otherwise
+// start a lighter preset. The page captures a frame, then measures while the sketch switches to the
+// preset that ?to= names, and captures again once the switch has resolved. The sketch draws the boxes with a new
 // pipeline at the new preset, as start-time settings change pipelines. With ?swap, the sketch
-// changes the pipeline without a preset change instead. The page reports what the measurement
-// counted and, for each capture, the share of its pixels that differ from the background.
+// changes the pipeline without a preset change instead. The page reports the preset that the engine
+// started at, what the measurement counted and, for each capture, the share of its pixels that
+// differ from the background.
 import { createEngine, type QualityPreset } from '@null3d/engine';
 import { run } from './lib/result';
 
@@ -26,10 +29,11 @@ run('preset-change', async () => {
 	const engine = await createEngine({
 		canvas,
 		sketch: new URL('./sketches/preset-change-sketch.ts', import.meta.url),
-		preset: (params.get('from') ?? 'medium') as QualityPreset,
+		preset: (params.get('preset') ?? 'medium') as QualityPreset,
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	const started = engine.mode.preset;
 	const before = await engine.captureFrame();
 	const answered = new Promise<unknown>((resolve) => {
 		const off = engine.onSketchMessage((name, data) => {
@@ -49,6 +53,7 @@ run('preset-change', async () => {
 	await engine.destroy();
 	return {
 		tier: engine.capabilities.tier,
+		started,
 		mode,
 		sketch,
 		skippedDraws: measured.skippedDraws,
