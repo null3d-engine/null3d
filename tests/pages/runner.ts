@@ -2,10 +2,17 @@
 // window, and posts every page's result to the dev server. It needs no WebDriver, so it runs in any
 // browser on any device. Open it with ?run=<run>&runner=<name> to run once and then close the tab,
 // or with ?listen&runner=<name> to wait: a waiting page starts each run whose turn list names it.
+// With &from=<index>, a page opened for one run starts at that item of the plan, as when the runner
+// tool replaces a runner page that stopped answering. Each runner page claims its runner's results
+// when it starts a run, and a page whose claim a newer page took stops: a replaced page can still be
+// running, hidden, where the runner tool cannot close it. A request to the dev server that gets no
+// answer in time goes out again, because Safari can lose one that it sends as a removed frame
+// closes its connections.
 // Pixels travel as the page read them back, never re-encoded through a canvas, which privacy
 // protections can alter. For a startup load, the result also tells what the server sent for it.
 
 import { fillRunner, loadOf, takeDownloads } from '../lib/load-routes';
+import { patientFetch } from '../lib/patient-fetch';
 
 interface PlanItem {
 	id: string;
@@ -26,6 +33,15 @@ const statusLine = document.getElementById('status') as HTMLElement;
 const list = document.getElementById('items') as HTMLElement;
 const stage = document.getElementById('stage') as HTMLElement;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** This page's name in its claims and results. Not a UUID: phones open the page without HTTPS. */
+const pageId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
+/** A newer runner page claimed this runner's results, so this page must stop. */
+class TakenOver extends Error {
+	constructor() {
+		super('a newer runner page took over this run');
+	}
+}
 
 function show(text: string): void {
 	statusLine.textContent = `${runner}: ${text}`;
@@ -38,11 +54,20 @@ function log(text: string): void {
 }
 
 async function post(run: string, name: string, body: unknown): Promise<void> {
-	const response = await fetch(`/__null3d/runs/${run}/${runner}/${name}`, {
+	const response = await patientFetch(`/__null3d/runs/${run}/${runner}/${name}?page=${pageId}`, {
 		method: 'POST',
 		body: JSON.stringify(body),
 	});
+	if (response.status === 409) throw new TakenOver();
 	if (!response.ok) throw new Error(`the dev server refused ${name}: ${response.status}`);
+}
+
+/** Claims this runner's results in a run for this page, so that an older page's are refused. */
+async function claim(run: string): Promise<void> {
+	const response = await patientFetch(`/__null3d/runs/${run}/${runner}?page=${pageId}`, {
+		method: 'POST',
+	});
+	if (!response.ok) throw new Error(`the dev server refused the claim: ${response.status}`);
 }
 
 /** The display's refresh rate, from the median interval between animation frames. */
@@ -123,7 +148,7 @@ async function openInFrame(path: string, timeoutSeconds: number): Promise<Result
  */
 async function runItem(item: PlanItem, run: string): Promise<Result> {
 	const path = fillRunner(item.path, run, runner);
-	const page = await fetch(path, { cache: 'no-store' });
+	const page = await patientFetch(path, { cache: 'no-store' });
 	if (!page.ok) return { ok: false, error: `page not found (HTTP ${page.status})` };
 	const load = loadOf(path);
 	// The check above was a download of the load, which starts afresh after it.
@@ -132,12 +157,19 @@ async function runItem(item: PlanItem, run: string): Promise<Result> {
 	return load ? { ...result, downloads: await takeDownloads(load) } : result;
 }
 
-async function runPlan(run: string): Promise<void> {
-	const plan = (await (await fetch(`/__null3d/runs/${run}/plan`)).json()) as { items: PlanItem[] };
+/** Runs a run's items from the item at `from`. Only a run from its first item reads the device. */
+async function runPlan(run: string, from = 0): Promise<void> {
+	const plan = JSON.parse((await patientFetch(`/__null3d/runs/${run}/plan`)).text) as {
+		items: PlanItem[];
+	};
+	await claim(run);
 	list.replaceChildren();
-	show(`run ${run}: reading the device`);
-	await post(run, 'device', await deviceInfo());
+	if (from === 0) {
+		show(`run ${run}: reading the device`);
+		await post(run, 'device', await deviceInfo());
+	}
 	for (const [index, item] of plan.items.entries()) {
+		if (index < from) continue;
 		show(`run ${run}: ${index + 1} of ${plan.items.length}, ${item.id}`);
 		const result = await runItem(item, run);
 		await post(run, item.id, result);
@@ -157,11 +189,11 @@ async function listen(): Promise<void> {
 	let ranOne = false;
 	for (;;) {
 		try {
-			const current = (await (
-				await fetch('/__null3d/runs/current', { cache: 'no-store' })
-			).json()) as { run?: string; turns?: string[] };
+			const current = JSON.parse(
+				(await patientFetch('/__null3d/runs/current', { cache: 'no-store' })).text,
+			) as { run?: string; turns?: string[] };
 			const due = current.run !== undefined && current.turns?.includes(runner) === true;
-			if (due && !(await fetch(`/__null3d/runs/${current.run}/${runner}/done`)).ok) {
+			if (due && !(await patientFetch(`/__null3d/runs/${current.run}/${runner}/done`)).ok) {
 				if (ranOne) {
 					location.reload();
 					return;
@@ -170,6 +202,7 @@ async function listen(): Promise<void> {
 				await runPlan(current.run as string);
 			} else show('waiting for a run');
 		} catch (e) {
+			if (e instanceof TakenOver) return show(`stopped: ${e.message}`);
 			show(`waiting for the dev server (${(e as Error).message})`);
 		}
 		await sleep(LISTEN_POLL_MS);
@@ -177,11 +210,16 @@ async function listen(): Promise<void> {
 }
 
 const run = params.get('run');
+const from = Number(params.get('from') ?? 0);
 if (params.has('listen')) void listen();
 else if (run)
-	runPlan(run)
+	runPlan(run, Number.isSafeInteger(from) && from > 0 ? from : 0)
 		// A page opened for one run closes its tab, so finished runs leave no tabs behind. Browsers
 		// allow it because each test page loads in a new frame, which adds nothing to the tab's history.
 		.then(() => window.close())
-		.catch((e) => show(`stopped: ${(e as Error).message}`));
+		.catch((e) => {
+			show(`stopped: ${(e as Error).message}`);
+			// A replaced page leaves, so it holds no GPU memory beside the page that took over.
+			if (e instanceof TakenOver) window.close();
+		});
 else show('open this page with ?run=<run>&runner=<name>, or with ?listen&runner=<name>');

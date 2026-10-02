@@ -48,10 +48,33 @@ pub enum Shading {
     /// The standard material with its texture maps. A standard material draws with it when it
     /// has a live map and its mesh has texture coordinates; nothing creates it.
     StandardMaps,
-    /// A custom material: the standard material's template with the sketch's own WGSL, under its
-    /// own template id, from [`template::CUSTOM_FIRST`] up. Its surface function reads the first
-    /// texture coordinates.
-    Custom(u32),
+    /// A custom material: the standard material's template with the sketch's own WGSL, or a full
+    /// shader of the sketch's, under its own template id, from [`template::CUSTOM_FIRST`] up.
+    Custom(CustomShading),
+}
+
+/// How a custom material's shader draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct CustomShading {
+    /// Its render pipeline template.
+    pub template: u32,
+    /// The optional vertex attributes (`vertex::*` bits) that its vertex stage reads.
+    pub attributes: u32,
+    /// True when its shader reads the material's base color and opacity, as the standard
+    /// material's template does in its `VERTEX_COLOR` and `ALPHA_MASK` builds.
+    pub base_color: bool,
+}
+
+impl CustomShading {
+    /// A custom material from the standard material's template, which reads the first texture
+    /// coordinates and the base color.
+    pub const fn standard(template: u32) -> Shading {
+        Shading::Custom(Self {
+            template,
+            attributes: vertex::UV0,
+            base_color: true,
+        })
+    }
 }
 
 impl Shading {
@@ -63,7 +86,7 @@ impl Shading {
             Shading::TexCoords => template::INSTANCED_TEXCOORDS,
             Shading::UnlitMap => template::INSTANCED_UNLIT_MAP,
             Shading::StandardMaps => template::INSTANCED_STANDARD_MAPS,
-            Shading::Custom(template) => template,
+            Shading::Custom(custom) => custom.template,
         }
     }
 
@@ -72,16 +95,19 @@ impl Shading {
     pub const fn attributes(self) -> u32 {
         match self {
             Shading::Lit | Shading::Unlit => 0,
-            Shading::TexCoords | Shading::UnlitMap | Shading::StandardMaps | Shading::Custom(_) => {
-                vertex::UV0
-            }
+            Shading::TexCoords | Shading::UnlitMap | Shading::StandardMaps => vertex::UV0,
+            Shading::Custom(custom) => custom.attributes,
         }
     }
 
     /// True when its shader reads the material's base color and opacity, which vertex colors
     /// multiply and a mask compares with the material's alpha cutoff.
     pub const fn reads_base_color(self) -> bool {
-        !matches!(self, Shading::TexCoords)
+        match self {
+            Shading::TexCoords => false,
+            Shading::Custom(custom) => custom.base_color,
+            _ => true,
+        }
     }
 }
 
@@ -577,7 +603,9 @@ mod tests {
     fn custom_values_start_at_zero_and_change_apart_from_the_rows() {
         let mut table = MaterialTable::with_capacity(3);
         for _ in 0..3 {
-            table.create(Shading::Custom(64), 0, [1.0; 4]).unwrap();
+            table
+                .create(CustomShading::standard(64), 0, [1.0; 4])
+                .unwrap();
         }
         assert_eq!(
             table.take_values_changed(),

@@ -2,13 +2,16 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
+import { glslProgramsOf } from '../pages/lib/shader-list.ts';
 import {
 	braveShieldsOf,
 	deviceChecklist,
 	parseArgs,
 	planItems,
+	QuietRecovery,
 	summaryLine,
 } from '../real-browsers.ts';
 import { ENGINE_MODES, type EngineMode } from './engine-checks.ts';
@@ -30,6 +33,7 @@ import {
 	overloadPlan,
 	PLANS,
 	parityPlan,
+	SHADERS_PAGE_SECONDS,
 	STARTUP_RUNS,
 	startupPlan,
 	startupSummary,
@@ -41,8 +45,12 @@ const NO_WEBGPU = { webgpu: true, webgl2: false };
 import { RUNS_DIR } from './report-collector.ts';
 import {
 	batchTimeoutMs,
+	currentItem,
 	type ItemResult,
+	type Plan,
+	type PlanItem,
 	quietLimitMs,
+	readResult,
 	runName,
 	shardItems,
 	turnBatches,
@@ -68,28 +76,131 @@ describe('turnBatches', () => {
 });
 
 describe('waitForRunners', () => {
-	it('gives up on a runner page that started and then went quiet, as when its tab closed', async () => {
-		const run = `${runName('test')}-wait-${process.pid}`;
-		const plan = writePlan(run, [{ id: 'a', path: '/a', timeoutSeconds: 1, check: {} }]);
+	const item = (id: string, timeoutSeconds = 1) => ({
+		id,
+		path: `/${id}`,
+		timeoutSeconds,
+		check: {},
+	});
+	/** Runs a test on a fresh run of these items, and removes the run's files after it. */
+	async function withRun(ids: string[], test: (plan: Plan) => Promise<void> | void): Promise<void> {
+		const run = `${runName('test')}-wait-${process.pid}-${ids.join('')}`;
 		try {
-			writeRunnerFile(run, 'quiet-phone', 'device', {});
-			writeRunnerFile(run, 'done-phone', 'device', {});
-			writeRunnerFile(run, 'done-phone', 'done', {});
-			const quiet: string[] = [];
-			const finished = await waitForRunners(plan, ['quiet-phone', 'done-phone'], {
-				quietMs: 50,
-				onQuiet: (runner) => quiet.push(runner),
-			});
-			expect(finished).toEqual(['done-phone']);
-			expect(quiet).toEqual(['quiet-phone']);
+			await test(
+				writePlan(
+					run,
+					ids.map((id) => item(id)),
+				),
+			);
 		} finally {
 			rmSync(join(RUNS_DIR, run), { recursive: true, force: true });
 		}
+	}
+
+	it('gives up on a runner page that started and then went quiet, as when its tab closed', () =>
+		withRun(['a'], async (plan) => {
+			writeRunnerFile(plan.run, 'quiet-phone', 'device', {});
+			writeRunnerFile(plan.run, 'done-phone', 'device', {});
+			writeRunnerFile(plan.run, 'done-phone', 'done', {});
+			const quiet: [string, string | undefined][] = [];
+			const finished = await waitForRunners(plan, ['quiet-phone', 'done-phone'], {
+				quietMs: () => 50,
+				onQuiet: (runner, _, at) => quiet.push([runner, at?.item.id]) < 0,
+			});
+			expect(finished).toEqual(['done-phone']);
+			expect(quiet).toEqual([['quiet-phone', 'a']]);
+		}));
+
+	it('waits again for a runner whose quiet page the caller replaced', () =>
+		withRun(['a', 'b'], async (plan) => {
+			writeRunnerFile(plan.run, 'mac-safari', 'device', {});
+			writeRunnerFile(plan.run, 'mac-safari', 'a', { ok: true });
+			const quietOn: (string | undefined)[] = [];
+			const finished = await waitForRunners(plan, ['mac-safari'], {
+				quietMs: () => 50,
+				onQuiet: (runner, _, at) => {
+					quietOn.push(at?.item.id);
+					// The new runner page finishes the run a moment later.
+					setTimeout(() => writeRunnerFile(plan.run, runner, 'done', {}), 100);
+					return true;
+				},
+			});
+			expect(quietOn).toEqual(['b']);
+			expect(finished).toEqual(['mac-safari']);
+		}));
+
+	it('allows the current page its timeout, and time to open it', () => {
+		expect(quietLimitMs(item('a', 95))).toBe(125_000);
 	});
 
-	it('allows the slowest page its timeout, and time to load the next page', () => {
-		const item = (timeoutSeconds: number) => ({ id: 'a', path: '/a', timeoutSeconds, check: {} });
-		expect(quietLimitMs({ run: 'r', createdAt: '', items: [item(95), item(30)] })).toBe(125_000);
+	it('finds the page a runner works on: the first page of the plan without a result', () =>
+		withRun(['a', 'b', 'c'], (plan) => {
+			expect(currentItem(plan, 'mac-safari')?.index).toBe(0);
+			writeRunnerFile(plan.run, 'mac-safari', 'a', { ok: true });
+			expect(currentItem(plan, 'mac-safari')).toEqual({ index: 1, item: item('b') });
+			writeRunnerFile(plan.run, 'mac-safari', 'b', { ok: false });
+			writeRunnerFile(plan.run, 'mac-safari', 'c', { ok: true });
+			expect(currentItem(plan, 'mac-safari')).toBeUndefined();
+		}));
+});
+
+describe('QuietRecovery', () => {
+	/** A recovery for one runner, with the plan items where it opened new runner pages. */
+	function recovery(plan: Plan, canReopen = true) {
+		const opened: number[] = [];
+		const quiet = new QuietRecovery(plan, {
+			canReopen: () => canReopen,
+			inspect: () => 'screen not locked',
+			reopen: (_, from) => opened.push(from) > 0,
+		});
+		return { quiet, opened };
+	}
+	const plan = (ids: string[]): Plan => ({
+		run: `${runName('test')}-recovery-${process.pid}-${ids.join('')}`,
+		createdAt: '',
+		items: ids.map((id) => ({ id, path: `/${id}`, timeoutSeconds: 30, check: {} })),
+	});
+	const at = (p: Plan, index: number) => ({ index, item: p.items[index] as PlanItem });
+
+	it('runs the page again in a new runner page, and notes it on the page', () => {
+		const p = plan(['a', 'b']);
+		const { quiet, opened } = recovery(p);
+		expect(quiet.onQuiet('mac-safari', 60, at(p, 1))).toBe(true);
+		expect(opened).toEqual([1]);
+		expect(quiet.noteFor('mac-safari', 'b')).toBe(
+			'the runner page stopped answering on this page, and a new runner page ran it again',
+		);
+		expect(quiet.noteFor('mac-safari', 'a')).toBeUndefined();
+	});
+
+	it('fails a page where the runner page stops twice, and goes on from the next page', () => {
+		const p = plan(['a', 'b', 'c']);
+		const { quiet, opened } = recovery(p);
+		try {
+			quiet.onQuiet('mac-safari', 60, at(p, 1));
+			expect(quiet.onQuiet('mac-safari', 61, at(p, 1))).toBe(true);
+			expect(opened).toEqual([1, 2]);
+			expect(readResult(p.run, 'mac-safari', 'b')).toMatchObject({
+				ok: false,
+				error: 'the runner page stopped answering on this page 2 times, for 61 s the last time',
+			});
+			expect(quiet.noteFor('mac-safari', 'b')).toBeUndefined();
+		} finally {
+			rmSync(join(RUNS_DIR, p.run), { recursive: true, force: true });
+		}
+	});
+
+	it('ends the turn after a few new runner pages, and never replaces one it cannot open', () => {
+		const p = plan(['a', 'b', 'c', 'd']);
+		const { quiet, opened } = recovery(p);
+		expect(quiet.onQuiet('mac-safari', 60, at(p, 0))).toBe(true);
+		expect(quiet.onQuiet('mac-safari', 60, at(p, 2))).toBe(true);
+		expect(quiet.onQuiet('mac-safari', 60, at(p, 3))).toBe(false);
+		expect(opened).toEqual([0, 2]);
+		const tablet = recovery(p, false);
+		expect(tablet.quiet.onQuiet('ipad-safari', 60, at(p, 0))).toBe(false);
+		expect(tablet.opened).toEqual([]);
+		expect(recovery(p).quiet.onQuiet('mac-safari', 60, undefined)).toBe(false);
 	});
 });
 
@@ -441,6 +552,14 @@ describe('the checks plan', () => {
 		expect(judge(shaders.check, pageMissing, noWebGL2)).toBe('skip');
 		expect(judge(shaders.check, pageMissing, NO_WEBGPU)).toEqual([pageMissing.error]);
 		expect(judge(webgpu.check, pageMissing, noWebGL2)).toEqual([pageMissing.error]);
+	});
+
+	it('gives the shaders page more time than other pages, in proportion to its GLSL programs', async () => {
+		const shaders = items.find((item) => item.id === 'shaders');
+		const programs = glslProgramsOf(await everyShader()).length;
+		expect(programs).toBeGreaterThan(100);
+		expect(shaders?.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);
+		expect(SHADERS_PAGE_SECONDS).toBeGreaterThan(30 + programs / 4);
 	});
 
 	it("runs the shader library's values on both GPU paths, and names each wrong value", () => {

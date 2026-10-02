@@ -152,7 +152,7 @@ const DOCS = {
 	E1215: {
 		title: 'Invalid custom material WGSL',
 		cause:
-			'materials.shader() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. In this version, the WGSL of a custom material declares a surface function.',
+			'materials.shader() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function or a vertex offset. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh.',
 		example:
 			'E1215: materials.shader() got WGSL as text, which the null3D Vite plugin did not compile.',
 		since: '0.1',
@@ -215,7 +215,7 @@ const DOCS = {
 	E1404: {
 		title: 'Engine thread failed',
 		cause:
-			'An engine thread hit an error it could not handle after the engine started, so the engine may have stopped.',
+			'An engine thread, or the drawing on the page, hit an error it could not handle. After the start the engine may have stopped. During the start, createEngine() stops the engine and rejects with this error.',
 		example: 'E1404: the render worker failed: out of memory.',
 		since: '0.1',
 	},

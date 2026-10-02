@@ -16,7 +16,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `tools/` | The WebAssembly build, the docs generator, the skills check and the commit hooks |
 | `examples/` | Feature demos: one sketch of under 150 lines each, listed in `examples/demos.ts`. The examples page runs each demo live, and the image test manifest draws each one in hold mode |
 | `bench/`, `templates/`, `porting-corpus/` | Benchmarks, starter projects and the three.js porting corpus, as the milestones add them |
-| `.dev/` | Maintainer guides: [benchmarks](.dev/benchmarks.md), [device sessions](.dev/devices.md), [image tests](.dev/image-tests.md), [implementation notes](.dev/implementation-notes.md) and [releases](.dev/releases.md) |
+| `.dev/` | Maintainer guides: [benchmarks](.dev/benchmarks.md), [device sessions](.dev/devices.md), [image tests](.dev/image-tests.md), [implementation notes](.dev/implementation-notes.md), [pull requests and parallel work](.dev/pull-requests.md) and [releases](.dev/releases.md) |
 | `.dev/decisions/` | [Decision records](.dev/decisions/README.md): the data behind measured design choices. Read the record before you change a choice it settled |
 
 ## Commands
@@ -36,7 +36,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run test:bench` | The production build of the benchmark pages of both engines in Chrome, through Playwright |
 | `bun run parity` | Compare each benchmark scene's hold frame in null3D with three.js's, per GPU tier; `--save-baselines` stores how much three.js's two renderers differ, for devices that lack one of them |
 | `bun run bench:run` | The benchmark protocol in a visible Chrome window: fresh runs of each scene in both engines and of the scene code both run, with a summary of each engine's whole frame, own work, busiest thread and frame pacing; `--sweep` runs each scene from one object up, on both null3D paths in both latency modes and both three.js renderers, and compares each path with three.js's faster renderer and with three.js on the same API; `--jobs 1,2,4` runs the null3D pages at each job worker count; `--compare <baseline>,<new>` runs the null3D pages of two built checkouts in turns and fails when the new build is slower, as the benchmark job in CI does; `--dev` runs the dev server's pages instead of the production build |
-| `bun run bench:allocation` | Sample what the sketch worker and the render worker allocate per frame in S1, with Chrome's heap profiler; `--gpu webgl2` samples the WebGL2 path, `--scene s1-cells` samples S1-cells, which skips whole grid cells, `--blend` makes S1's boxes see through so each frame sorts them for the transparent pass, and `--dev` the dev server's pages |
+| `bun run bench:allocation` | Sample what the sketch worker and the render worker allocate per frame in S1, with Chrome's heap profiler; `--gpu webgl2` samples the WebGL2 path, `--scene s1-cells` samples S1-cells, which skips whole grid cells, `--scene s3` samples S3, whose 256 point lights move, `--blend` makes S1's boxes see through so each frame sorts them for the transparent pass, and `--dev` the dev server's pages |
 | `bun run bench:profile` | Sample Chrome's CPU profiler on the render worker while each benchmark scene runs, and split the time of the draw-list replay into the engine's own code and the browser calls it makes; `--gpu webgpu` profiles the WebGPU path, `--thread sketch` profiles the sketch worker's frame step instead, `--android` profiles Chrome on a phone connected by USB, and `--dev` the dev server's pages |
 | `bun run bench:startup` | Starts of the engine test page's production build in Chrome, from navigation to the first frame: the medians of each stage, requests and bytes. By default it times cold loads on Slow 4G. `--loads cold,warm`, `--network slow-4g,full` and `--modes all` add warm loads, full speed and every thread mode. `--android` runs them all in Chrome on a phone connected by USB |
 | `bun run bench:soak` | S1 in Chrome for 10 minutes, with the JavaScript heap of the page and of each engine worker and the WebAssembly memory sampled every 30 seconds. It fails when the sketch worker's or the render worker's heap grows after the warm-up, or when the WebAssembly memory does; `--gpu webgl2` and `--minutes` change the GPU path and the length, and `--dev` runs the dev server's pages |
@@ -49,14 +49,13 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run docs:style` | Check the writing rules in all published Markdown |
 | `bun run skills` | Sync `.claude/skills/` from `skills/`, then check the skills |
 | `bun run skills:check` | Check the skills without syncing |
-| `bun run shaders` | Build every shader variant in the shader manifest and write the generated TypeScript modules: the main module, and the engine's shaders in one module for each GPU path and each value of the bits a device fixes |
-| `bun run shaders:check` | Fail when a committed shader module is out of date |
+| `bun run shaders` | Build every shader variant in the shader manifest and write the generated TypeScript modules, when they are missing or out of date: the main module, and the engine's shaders in one module for each GPU path and each value of the bits a device fixes. Git ignores the modules, and the build, the type check, the tests and the dev server run this step first |
 | `bun run check` | Lint and format check (Biome) |
 | `bun run check:fix` | Lint and format, fixing what Biome can |
 | `bun run typecheck` | TypeScript check |
 | `bun run release` | Print the next version and its changelog. `--apply` writes them, as the Release workflow does, and `--notes <version>` prints one release's notes |
 
-A file that grows more than 2% after Brotli against main's build needs a reason: a `Size-Growth:` trailer, as "Commit gates" says. A file over its budget fails every build. The budgets are 600 KB after Brotli for each WebAssembly file, and 80 KB for the engine's JavaScript that a page downloads. Only the owner raises a budget, in writing. [Benchmarks](.dev/benchmarks.md#download-size) says how the check builds main.
+A file that grows more than 2% after Brotli against main's build needs a reason: a `Size-Growth:` trailer, as "Commit gates" says. A file over its budget fails every build. The budgets are 600 KB after Brotli for each WebAssembly file, and 100 KB for the engine's JavaScript that a page downloads. Only the owner raises a budget, in writing. [Benchmarks](.dev/benchmarks.md#download-size) says how the check builds main.
 
 ## Design principles
 
@@ -106,13 +105,14 @@ The benchmarks compare null3D with three.js in the same browser. [Benchmarks](.d
 - The benchmarks measure a production build of the benchmark pages, as developers ship the engine, so the development checks do not count. The tools take `--dev` for the dev server's pages.
 - Every tool finds the dev server on port 5173, and uses the one that already answers there. A second copy of the repository, such as a git worktree, would test the first copy's code. Give each copy its own ports with `NULL3D_PORT`, for example `NULL3D_PORT=6173 bun run test:browser`. Its dev server takes that port, the HTTPS server the next one, and the production preview the one after. Tools that drive Chrome through its debugging protocol take the one after that.
 - The benchmark job in CI compares main with the last commit on main that it passed, one job at a time. With the `benchmark` label, it compares a pull request with its merge base. It fails when a page gets slower than its rule allows. [Benchmarks](.dev/benchmarks.md#the-benchmark-job-in-ci) says how to read it.
+- After a pull that changes the Vite plugin or the Vite config, run `bun run build` and restart the dev server before a browser run. The dev server keeps the plugin it started with, as [Device sessions](.dev/devices.md#the-runner) says.
 - Run one device runner at a time. Runs share one file that tells waiting runner pages which run to start.
 - Keep hot paths free of allocation with the habits in the implementation notes, and check them with `bun run bench:allocation`.
 
 ## Docs and skills stay in sync
 
 1. One source per fact. The API reference comes from TypeScript doc comments, the three.js mapping from `docs/data/threejs-mapping.json`, and the page inventory from `tools/lib/docs.ts`. Skills link to docs pages by ID and do not copy facts.
-2. Generated files are committed. Run `bun run docs` and `bun run skills` after changing a source, and stage what they write.
+2. Generated files are committed. Run `bun run docs` and `bun run skills` after changing a source, and stage what they write. The shader modules (`packages/engine/src/generated/shaders*.ts`) are the exception, because git ignores them. Every command that reads them builds them first when they are missing or out of date. The engine's npm package gets them when it is packed.
 3. A placeholder page carries a marker comment, and `bun run docs` rewrites it. When you write the real page, remove the marker. The generator then leaves the page alone, apart from its API reference (rule 5).
 4. Every docs page has front matter: `id`, `title`, `status` (`planned`, `experimental`, `stable` or `generated`), `since` and `summary`.
 5. The API reference on the `api/` pages comes from the TSDoc comments on the engine's public exports. Each export needs a summary and a `@category api/<page>` tag that names its page. Each public member needs a summary too. A public declaration may name only types that the engine exports. On a written API page, the reference goes between the `<!-- null3d:api:start -->` and `<!-- null3d:api:end -->` markers.
@@ -169,4 +169,4 @@ Maintainers also add a `Task:` footer with the milestone task ID.
 
 ## Releases
 
-Pull requests merge through GitHub's merge queue, by squash only. The queue runs CI on each pull request on top of main and the pull requests ahead of it. Two changes that pass alone therefore cannot break main together. A pull request joins the queue once its own checks pass, even when it is behind main. The squash writes one line on main: the pull request's title, or the commit's subject when the pull request has one commit. That line becomes a changelog entry, so the PR title workflow checks it with commitlint and the docs style check. [Releases](.dev/releases.md) covers how a release is made.
+Pull requests merge through GitHub's merge queue, by squash only. The queue runs CI on each pull request on top of main and the pull requests ahead of it. Two changes that pass alone therefore cannot break main together. A pull request joins the queue once its own checks pass, even when it is behind main. The squash writes one line on main: the pull request's title, or the commit's subject when the pull request has one commit. That line becomes a changelog entry, so the PR title workflow checks it with commitlint and the docs style check. [Pull requests and parallel work](.dev/pull-requests.md) covers merging main into a branch and a pull request that the queue removes. It also covers several copies of the repository on one machine. [Releases](.dev/releases.md) covers how a release is made.

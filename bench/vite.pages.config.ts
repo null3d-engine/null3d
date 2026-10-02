@@ -8,8 +8,12 @@ import { readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import null3d from '@null3d/vite-plugin';
 import { defineConfig } from 'vite';
+import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
 
 const root = resolve(process.env.NULL3D_BENCH_ROOT || join(import.meta.dirname, '..'));
+// The pages import the shader modules, which git does not keep. Another copy's build (`bun run
+// build`) makes that copy's modules, or the copy keeps them in git.
+if (!process.env.NULL3D_BENCH_ROOT) ensureShaderModules(root);
 const pagesDir = join(root, 'bench/pages');
 /** Every page under the benchmark pages' folder, by its path there without the extension. */
 const pages = readdirSync(pagesDir, { recursive: true, encoding: 'utf8' })

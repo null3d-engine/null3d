@@ -16,7 +16,7 @@ use null3d_render::arrays::{MeshArrays, from_arrays};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
 use null3d_render::geometry::Geometry;
-use null3d_render::materials::{Shading, feature};
+use null3d_render::materials::{CustomShading, Shading, feature};
 use null3d_render::pipelines::DepthBias;
 
 /// One triangle, with a color at each vertex when `colored`.
@@ -148,32 +148,57 @@ fn mapped_triangle() -> Geometry {
 }
 
 /// Custom materials draw with their own template, which materials of one template share, and
-/// only meshes with texture coordinates draw with them.
+/// only meshes with the vertex attributes that their shaders read draw with them. A full shader
+/// reads vertex colors itself and takes no mask, so neither feature changes its build.
 fn check_custom<B: FrameBuilder>(mut world: World<B>) {
     let first = template::CUSTOM_FIRST;
     let mapped = mapped_triangle();
-    add(&mut world, &mapped, Shading::Custom(first), 0);
-    add(&mut world, &mapped, Shading::Custom(first), 0);
+    add(&mut world, &mapped, CustomShading::standard(first), 0);
+    add(&mut world, &mapped, CustomShading::standard(first), 0);
     add(
         &mut world,
         &mapped,
-        Shading::Custom(first + 1),
+        CustomShading::standard(first + 1),
         feature::DOUBLE_SIDED,
     );
-    add(&mut world, &triangle(false), Shading::Custom(first + 2), 0);
+    add(
+        &mut world,
+        &triangle(false),
+        CustomShading::standard(first + 2),
+        0,
+    );
+    let full = Shading::Custom(CustomShading {
+        template: first + 3,
+        attributes: vertex::COLOR,
+        base_color: false,
+    });
+    let colors_and_mask = feature::VERTEX_COLORS | feature::ALPHA_MASK;
+    add(&mut world, &triangle(true), full, colors_and_mask);
+    let masked = CustomShading::standard(first + 4);
+    add(&mut world, &mapped, masked, feature::ALPHA_MASK);
     world.record(true);
     MockBackend::default()
         .replay(world.renderer.list(1).words())
         .unwrap();
-    let mut made: Vec<(u32, u32)> = world
+    let mut made: Vec<(u32, u32, u32)> = world
         .commands()
         .iter()
         .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[1] >= first)
-        .map(|(_, o)| (o[1], o[6]))
+        .map(|(_, o)| (o[1], o[2] & !permutation::DRAW_INDEX, o[6]))
         .collect();
     made.sort_unstable();
     made.dedup();
-    assert_eq!(made, vec![(first, 0), (first + 1, state_flags::CULL_NONE)]);
+    // The canvas takes 8-bit color, so every pipeline tone maps.
+    let tone_map = permutation::TONE_MAP;
+    assert_eq!(
+        made,
+        vec![
+            (first, tone_map, 0),
+            (first + 1, tone_map, state_flags::CULL_NONE),
+            (first + 3, tone_map, 0),
+            (first + 4, tone_map | permutation::ALPHA_MASK, 0),
+        ]
+    );
 }
 
 #[test]
@@ -190,11 +215,13 @@ fn custom_materials_draw_with_their_own_templates_on_webgl2() {
 
 /// Each render pipeline that a list creates for meshes without vertex colors: its template,
 /// permutation bits without the pass's own, which the device fixes, state flags and depth bias,
-/// sorted, once each.
+/// sorted, once each. The final pass draws no mesh, so its pipeline is left out.
 fn plain_pipelines(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32, u32, u32)> {
     let mut made: Vec<_> = commands
         .iter()
-        .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[7] & vertex::COLOR == 0)
+        .filter(|(op, o)| {
+            *op == Op::CreateRenderPipeline && o[1] != template::FINAL && o[7] & vertex::COLOR == 0
+        })
         .map(|(_, o)| (o[1], o[2] & !permutation::DEVICE, o[6], o[8], o[9]))
         .collect();
     made.sort_unstable();
@@ -270,7 +297,7 @@ fn check_custom_values<B: FrameBuilder>(
     row: impl Fn(u32) -> u32,
 ) {
     for _ in 0..2 {
-        let custom = Shading::Custom(template::CUSTOM_FIRST);
+        let custom = CustomShading::standard(template::CUSTOM_FIRST);
         add(&mut world, &mapped_triangle(), custom, 0);
     }
     world.record(true);

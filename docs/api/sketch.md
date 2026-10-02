@@ -87,7 +87,7 @@ An option out of its range fails the start with [E1214](../errors/E1214.md), bef
 
 ## The engine field
 
-`engine.viewport` holds the canvas's size in CSS pixels, as `width` and `height`. Its `pixelRatio` gives the device pixels per CSS pixel that the engine draws with. That is the display's ratio, capped by the `maxPixelRatio` setting of [`ctx.quality`](quality.md). The engine reads the size at the start of each frame, so it stays the same throughout a frame. The object changes in place, so read its fields when you need them.
+`engine.viewport` holds the canvas's size in CSS pixels, as `width` and `height`. Its `pixelRatio` gives the device pixels per CSS pixel that the engine draws with. That is the display's ratio, capped by the `maxPixelRatio` setting of [`ctx.quality`](quality.md). It is lower on a canvas too large for the GPU's largest texture at that ratio. The engine reads the size at the start of each frame, so it stays the same throughout a frame. The object changes in place, so read its fields when you need them.
 
 `engine.capabilities` holds the values of `engine.capabilities` on the page: the GPU path, its optional features and limits, the depth mode, and the most objects the device draws. [Page API: createEngine](engine.md#what-the-engine-reports) describes them. Check a capability before you use an optional feature, and never check GPU or browser names.
 
@@ -270,6 +270,6 @@ The canvas's size. The engine reads it at the start of each frame, so it stays t
 | --- | --- |
 | `readonly width: number` | The canvas width in CSS pixels. |
 | `readonly height: number` | The canvas height in CSS pixels. |
-| `readonly pixelRatio: number` | Device pixels per CSS pixel that the engine draws with: the display's ratio, capped by the `maxPixelRatio` quality setting. |
+| `readonly pixelRatio: number` | Device pixels per CSS pixel that the engine draws with: the display's ratio, capped by the `maxPixelRatio` quality setting. It is lower on a canvas too large for the GPU's largest texture at that ratio. |
 
 <!-- null3d:api:end -->

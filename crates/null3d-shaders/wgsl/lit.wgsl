@@ -3,7 +3,8 @@ enable draw_index;
 // Meshes drawn by instance with the standard material: glTF's metallic-roughness model, shaded
 // with the formulas of three.js's MeshStandardMaterial. null3d::mesh finds each instance on both
 // GPU paths, and null3d::lighting holds the formulas. `light_surface` gathers the scene's lights,
-// so the rest of the shader does not change with where the lights come from.
+// so the rest of the shader does not change with where the lights come from. null3d::lights finds
+// the point and spot lights of each surface's cluster.
 //
 // The fragment shader works in two steps. First a surface function fills a `Surface` from a
 // `SurfaceInput`: `defaultSurface` reads the material's own values and maps, and a custom
@@ -23,17 +24,24 @@ enable draw_index;
 // change between pixels, as three.js's getTangentFrame makes it.
 //
 // Custom materials build this template with their WGSL added after its last line, and with the
-// shader def CUSTOM_SURFACE when that WGSL declares `fn surface`. When it declares
-// `struct Uniforms`, the build adds `load_material_uniforms` after it, and CUSTOM_UNIFORMS makes the
-// template fill `material` with the uniforms. Their WGSL shares this file's names, so the template
-// imports library items by name and keeps its own names few. It never imports a module whole,
-// which would reserve the module's name in their WGSL too. Names that only the MAPS builds declare
-// stay free for custom materials, which build without maps.
+// shader defs CUSTOM and UV0, which reads the first texture coordinates. CUSTOM_SURFACE makes the
+// fragment shader call their `fn surface`, and CUSTOM_VERTEX_OFFSET makes the vertex shader move
+// each vertex by their `fn vertexOffset`. Their WGSL reads the built-in values `frame`, `camera` and
+// `object` of null3d::builtins, which each stage fills under CUSTOM; the frame's uniform block is
+// `engine_frame` here. When their WGSL declares `struct Uniforms`, the build adds
+// `load_material_uniforms` after it, and CUSTOM_UNIFORMS makes each stage fill `material` with the
+// uniforms. Their WGSL shares this file's names, so the template imports library items by name and
+// keeps its own names few. It never imports a module whole, which would reserve the module's name
+// in their WGSL too. Names that only the MAPS builds declare stay free for custom materials, which
+// build without maps.
 #import null3d::lighting::{PbrMaterial, dfg_lut, direct_light, indirect_diffuse}
 #import null3d::lighting::{multiscatter_compensation, pbr_material}
+#import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::globals::{Material}
+#import null3d::lights::{clustered_light}
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
-#import null3d::mesh::{custom_value, frame, material_of, relative_position, world_normal}
+#import null3d::mesh::{custom_value, frame as engine_frame, material_of}
+#import null3d::mesh::{relative_position, world_normal}
 #ifdef MAPS
 #import null3d::mesh::{map_layer, map_ready, straight_texel, world_direction}
 #endif
@@ -48,9 +56,10 @@ const FLAT_SHADING: u32 = 1u;
 var<private> material_row: Material;
 
 #ifdef CUSTOM_UNIFORMS
-/// The custom material's uniforms, which the fragment shader reads once.
+/// The custom material's uniforms, which each stage reads once.
 var<private> material: Uniforms;
 #endif
+
 
 #ifdef MAPS
 /// The bit of a material's flags for the map of slot 0 on the second texture coordinates; the
@@ -125,7 +134,7 @@ struct VertexIn {
     @location(2) uv0: vec2f,
     /// The second texture coordinates, or the first on a mesh without a second set.
     @location(3) uv1: vec2f,
-#else ifdef CUSTOM_SURFACE
+#else ifdef UV0
     @location(2) uv0: vec2f,
 #endif
 #ifdef VERTEX_TANGENT
@@ -148,7 +157,7 @@ struct VertexOut {
 #ifdef MAPS
     /// The first texture coordinates, then the second.
     @location(4) uv: vec4f,
-#else ifdef CUSTOM_SURFACE
+#else ifdef UV0
     /// The first texture coordinates.
     @location(4) uv: vec2f,
 #endif
@@ -156,13 +165,35 @@ struct VertexOut {
     @location(5) tangent: vec3f,
     @location(6) bitangent: vec3f,
 #endif
+#ifdef CUSTOM
+    /// The object's origin, relative to the camera.
+    @location(8) @interpolate(flat, either) origin: vec3f,
+#endif
 }
+
+#ifdef CUSTOM
+/// What a vertex offset function knows of a vertex of the mesh, in the mesh's own space, before
+/// the object's transform and instancing move it.
+struct VertexInput {
+    /// The vertex's position.
+    position: vec3f,
+    /// The vertex's unit normal.
+    normal: vec3f,
+    /// The vertex's first texture coordinates.
+    uv: vec2f,
+}
+#endif
 
 /// What a surface function knows of the point of the surface that a pixel shows. Positions and
 /// directions are in world space, relative to the camera.
 struct SurfaceInput {
     /// The position relative to the camera, which stays precise far from the world's origin.
     relativePosition: vec3f,
+#ifdef CUSTOM
+    /// The position in the world. Far from the world's origin, it holds fewer digits than
+    /// `relativePosition`.
+    worldPosition: vec3f,
+#endif
     /// The unit normal of the mesh, or of the triangle's face with flat shading, turned toward the
     /// camera on the back faces of double-sided materials.
     normal: vec3f,
@@ -176,7 +207,7 @@ struct SurfaceInput {
     uv: vec2f,
     /// The mesh's second texture coordinates, or the first on a mesh without a second set.
     uv1: vec2f,
-#else ifdef CUSTOM_SURFACE
+#else ifdef UV0
     /// The mesh's first texture coordinates.
     uv: vec2f,
 #endif
@@ -312,8 +343,20 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
+#ifdef CUSTOM
+    let origin = relative_position(found, vec3f(0.0));
+    fill_builtins(origin);
+#endif
+#ifdef CUSTOM_UNIFORMS
+    material = load_material_uniforms(found.material);
+#endif
     var out: VertexOut;
+#ifdef CUSTOM_VERTEX_OFFSET
+    let offset = vertexOffset(VertexInput(v.position, v.normal, v.uv0));
+    out.relative = relative_position(found, v.position + offset);
+#else
     out.relative = relative_position(found, v.position);
+#endif
     out.clip = clip_of(found, out.relative);
     out.normal = world_normal(found, v.normal);
     out.material = found.material;
@@ -322,7 +365,7 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #endif
 #ifdef MAPS
     out.uv = vec4f(v.uv0, v.uv1);
-#else ifdef CUSTOM_SURFACE
+#else ifdef UV0
     out.uv = v.uv0;
 #endif
 #ifdef VERTEX_TANGENT
@@ -332,14 +375,18 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.tangent = tangent;
     out.bitangent = normalize(cross(out.normal, tangent) * v.tangent.w);
 #endif
+#ifdef CUSTOM
+    out.origin = origin;
+#endif
     return out;
 }
 
 /// The light that a surface reflects toward the camera from the scene's lights: the sun, less
-/// where its shadows fall, the ambient light, and `extra` irradiance such as a light map's, which
-/// `occlusion` darkens with the ambient light. `relative` is the surface's position relative to the
-/// camera, `to_view` points from the surface toward the camera, and `dfg` holds the split-sum
-/// terms at the surface's roughness and view angle.
+/// where its shadows fall, the point and spot lights of the surface's cluster, the ambient light,
+/// and `extra` irradiance such as a light map's, which `occlusion` darkens with the ambient light.
+/// `relative` is the surface's position relative to the camera, `to_view` points from the surface
+/// toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and view
+/// angle.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
@@ -350,7 +397,7 @@ fn light_surface(
     occlusion: f32,
 ) -> vec3f {
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
-    var sun_color = frame.sun_color.rgb;
+    var sun_color = engine_frame.sun_color.rgb;
 #ifdef RECEIVE_SHADOWS
     sun_color *= sun_shadow(relative, normal);
 #endif
@@ -358,12 +405,14 @@ fn light_surface(
         m,
         normal,
         to_view,
-        -frame.sun_direction.xyz,
+        -engine_frame.sun_direction.xyz,
         sun_color,
         compensation,
     );
-    let ambient = indirect_diffuse(m, frame.ambient.rgb + extra, dfg);
-    return sun.diffuse + sun.specular + ambient * occlusion;
+    let clustered = clustered_light(m, relative, normal, to_view, compensation);
+    let ambient = indirect_diffuse(m, engine_frame.ambient.rgb + extra, dfg);
+    let direct = sun.diffuse + sun.specular + clustered.diffuse + clustered.specular;
+    return direct + ambient * occlusion;
 }
 
 /// The color of a pixel that shows the surface: the light it reflects and the light it gives off,
@@ -402,6 +451,9 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec2f) -> vec4f {
 @fragment
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     material_row = material_of(in.material);
+#ifdef CUSTOM
+    fill_builtins(in.origin);
+#endif
 #ifdef CUSTOM_UNIFORMS
     material = load_material_uniforms(in.material);
 #endif
@@ -409,7 +461,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     input.relativePosition = in.relative;
     // Toward the camera: from the point for a perspective camera, and one direction for an
     // orthographic camera, whose view rays are parallel.
-    let eye = frame.camera_position;
+    let eye = engine_frame.camera_position;
     input.viewDirection = normalize(eye.xyz - in.relative * eye.w);
     // A face's normal comes from how the position changes between pixels. The two GPU paths count
     // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
@@ -424,10 +476,13 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef VERTEX_COLOR
     input.vertexColor = in.vertex_color;
 #endif
+#ifdef CUSTOM
+    input.worldPosition = in.relative + engine_frame.camera_world.xyz;
+#endif
 #ifdef MAPS
     input.uv = in.uv.xy;
     input.uv1 = in.uv.zw;
-#else ifdef CUSTOM_SURFACE
+#else ifdef UV0
     input.uv = in.uv;
 #endif
 #ifdef VERTEX_TANGENT

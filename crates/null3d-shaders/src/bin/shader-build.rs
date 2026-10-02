@@ -1,8 +1,9 @@
 //! The shader build command. It builds every shader variant in the manifest and writes the
-//! generated TypeScript modules, or with `--check` fails when a committed module is out of date.
+//! generated TypeScript modules. `bun run shaders` runs it when the modules are missing or out of
+//! date.
 //!
 //! ```text
-//! cargo run -p null3d-shaders --bin shader-build [-- --check] [-- --root <repository>]
+//! cargo run -p null3d-shaders --bin shader-build [-- --root <repository>]
 //! ```
 
 use std::path::PathBuf;
@@ -10,15 +11,13 @@ use std::process::ExitCode;
 
 use null3d_shaders::{COMMAND, OUTPUT_DIR, Written};
 
-const USAGE: &str = "usage: shader-build [--check] [--root <repository root>]";
+const USAGE: &str = "usage: shader-build [--root <repository root>]";
 
 fn main() -> ExitCode {
-    let mut check = false;
     let mut root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--check" => check = true,
             "--root" => match args.next() {
                 Some(path) => root = PathBuf::from(path),
                 None => return usage("--root needs a folder"),
@@ -31,21 +30,10 @@ fn main() -> ExitCode {
         }
     }
 
-    let result = if check {
-        null3d_shaders::check(&root)
-            .map(|()| format!("The shader modules in {OUTPUT_DIR} are up to date."))
-    } else {
-        null3d_shaders::write(&root).map(|written| match written {
-            Written::Updated => format!("Wrote the shader modules in {OUTPUT_DIR}."),
-            Written::Unchanged => {
-                format!("The shader modules in {OUTPUT_DIR} were already up to date.")
-            }
-        })
-    };
-    match result {
-        Ok(message) => {
-            println!("{message}");
-            ExitCode::SUCCESS
+    match null3d_shaders::write(&root) {
+        Ok(Written::Updated) => println!("Wrote the shader modules in {OUTPUT_DIR}."),
+        Ok(Written::Unchanged) => {
+            println!("The shader modules in {OUTPUT_DIR} were already up to date.");
         }
         Err(error) => {
             eprintln!("{error}\n");
@@ -53,9 +41,10 @@ fn main() -> ExitCode {
                 "The shader build failed with {} problem(s). Fix them, then run `{COMMAND}` again.",
                 error.problems.len()
             );
-            ExitCode::FAILURE
+            return ExitCode::FAILURE;
         }
     }
+    ExitCode::SUCCESS
 }
 
 fn usage(problem: &str) -> ExitCode {

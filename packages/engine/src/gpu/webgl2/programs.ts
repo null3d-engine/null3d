@@ -14,6 +14,7 @@ import {
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
+	TEMPLATE_SHADOW_DEPTH,
 } from '../../generated/gpu';
 import {
 	DEBUG_LINES_SHADER,
@@ -96,7 +97,8 @@ export interface Program {
 /** A render pipeline: its program, and the fixed-function state and vertex format it asks for. */
 export interface Pipeline {
 	readonly program: Program;
-	readonly cullNone: boolean;
+	/** The faces it culls: GL's `BACK` or `FRONT`, or 0 for none. */
+	readonly cull: number;
 	/** True when it draws with a depth target, whose test it then runs. */
 	readonly depth: boolean;
 	/** True when it writes depth. */
@@ -125,6 +127,7 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = { shader: shaders.unlit_map, pipeline: 'main' };
 	templates[TEMPLATE_INSTANCED_STANDARD_MAPS] = { shader: shaders.standard_maps, pipeline: 'main' };
 	templates[TEMPLATE_FINAL] = { shader: shaders.final, pipeline: 'main' };
+	templates[TEMPLATE_SHADOW_DEPTH] = { shader: shaders.shadow_depth, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND] = { shader: shaders.background, pipeline: 'main' };
 	if (DEV)
 		templates[TEMPLATE_DEBUG_LINES] = {

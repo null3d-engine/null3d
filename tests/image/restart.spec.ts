@@ -1,5 +1,8 @@
 import { type CDPSession, expect, test } from '@playwright/test';
+import * as Slot from '../../packages/engine/src/shared/slot.ts';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
+import { prefixEngineScripts, restoreEngineScripts } from '../lib/engine-scripts.ts';
+import { gpuObjectsHeld, watchGpuObjects } from '../lib/gpu-ledger.ts';
 import { pageResult } from '../lib/page-result.ts';
 import type { RestartResult } from '../lib/plans.ts';
 
@@ -22,14 +25,20 @@ async function reachable(cdp: CDPSession, prototype: string): Promise<number> {
 
 // A page starts the engine again after it stops it, and after a collection it reaches none of a
 // stopped engine's memory, except the single-threaded build's core, which the page keeps for the
-// next engine.
+// next engine. Each stop destroys every GPU object that the engine made, with its device or its
+// WebGL2 context, on whichever thread drew: a browser frees what a stopped worker still holds only
+// when it collects the worker's objects. The count of GPU objects is exact, so a few starts show an
+// object that any start leaves behind.
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {
-		test(`the engine starts again after it stops, and lets go of its memory, ${mode.name} on ${gpu}`, async ({
+		test(`the engine starts again after it stops, and lets go of its memory and its GPU objects, ${mode.name} on ${gpu}`, async ({
 			page,
 		}) => {
+			await watchGpuObjects(page);
 			await page.goto(`shared-memory.html?room=off&cycles=${CYCLES}&gpu=${gpu}&${mode.query}`);
 			const result = await pageResult<RestartResult & { error?: string }>(page, 60_000);
+			await restoreEngineScripts(page);
+			await expect.poll(() => gpuObjectsHeld(page)).toEqual({});
 			expect(result.error).toBeUndefined();
 			expect(result.kinds.engine?.error).toBeUndefined();
 			expect(result.kinds.engine?.cycles).toBe(CYCLES);
@@ -40,4 +49,110 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			expect(await reachable(cdp, 'Worker.prototype')).toBe(0);
 		});
 	}
+}
+
+/**
+ * Makes each GPU texture fail as the iPad's did once its GPU memory ran out, in every thread, so
+ * the thread that draws fails at its first frame, while the engine starts.
+ */
+const TEXTURES_FAIL = `if (typeof GPUDevice !== 'undefined') GPUDevice.prototype.createTexture = () => {
+	throw new DOMException('GPUDevice.createTexture: Unable to create texture.', 'InvalidStateError');
+};`;
+
+// When the thread that draws fails while the engine starts, the start fails with that error instead
+// of waiting for frames that never come. The engine has stopped by then, so after a collection the
+// page reaches none of its memory and none of its workers.
+for (const mode of ENGINE_MODES) {
+	test(`a start whose drawing fails rejects, and lets go of its memory, ${mode.name}`, async ({
+		page,
+	}) => {
+		await prefixEngineScripts(page, TEXTURES_FAIL);
+		await page.goto(`shared-memory.html?room=off&cycles=1&gpu=webgpu&${mode.query}`);
+		const result = await pageResult<RestartResult & { error?: string }>(page, 60_000);
+		await restoreEngineScripts(page);
+		const engine = result.kinds.engine;
+		expect(engine?.error).toMatch(/^E140[45]: .*Unable to create texture/);
+		const cdp = await page.context().newCDPSession(page);
+		await cdp.send('HeapProfiler.collectGarbage');
+		const kept = mode.build === 'single' ? 1 : 0;
+		expect(await reachable(cdp, 'WebAssembly.Memory.prototype')).toBe(kept);
+		expect(await reachable(cdp, 'Worker.prototype')).toBe(0);
+	});
+}
+
+/** How long the page goes on after its capture before it stops the engine. */
+const STOP_AFTER_MS = 500;
+/** The longest that the render worker holds a frame while it waits for the page to stop. */
+const HOLD_MS = 10_000;
+/** How long it holds the frame after the stop began, so the page's stop runs its steps meanwhile. */
+const SETTLE_MS = 200;
+/** What the render worker logs when the stop began while it held a frame. */
+const HELD = 'null3D test: the engine stopped while the render worker held a frame';
+
+/**
+ * Makes the render worker hold the first frame that it takes after it answers a capture, after it
+ * found the frame's draw list and before it replays it, until the page stops the engine. It then
+ * asks the core, through the render worker's own instance of it, for the address of the frame's
+ * list, and fails the frame when the core no longer holds the list there: the core gives 0 once
+ * the engine is gone.
+ */
+const HOLD_FRAME_UNTIL_STOP = `if (self.name === 'null3d-render' && !self.__null3dHoldFrame) {
+	self.__null3dHoldFrame = true;
+	let control;
+	let core;
+	let armed = false;
+	self.addEventListener('message', (event) => {
+		if (event.data?.type === 'init') control = event.data.control;
+	});
+	WebAssembly.Instance = new Proxy(WebAssembly.Instance, {
+		construct(target, args) {
+			const made = Reflect.construct(target, args);
+			if (made.exports.drawListAddress) core = made.exports;
+			return made;
+		},
+	});
+	const post = self.postMessage.bind(self);
+	self.postMessage = (message, options) => {
+		if (message?.type === 'captured') armed = true;
+		return post(message, options);
+	};
+	const store = Atomics.store;
+	Atomics.store = (array, index, value) => {
+		if (armed && array.buffer === control && array.byteOffset === 0 && index === ${Slot.FramesTaken}) {
+			armed = false;
+			const slots = new Int32Array(control);
+			const parity = value & 1;
+			const list = Atomics.load(slots, ${Slot.DrawListAddress0} + parity);
+			const until = performance.now() + ${HOLD_MS};
+			while (Atomics.load(slots, ${Slot.Running}) !== 0 && performance.now() < until);
+			if (Atomics.load(slots, ${Slot.Running}) === 0) console.log('${HELD}');
+			const settled = performance.now() + ${SETTLE_MS};
+			while (performance.now() < settled);
+			if (core.drawListAddress(parity) !== list)
+				throw new Error('the core freed the draw list while the render worker held its frame');
+		}
+		return store(array, index, value);
+	};
+}`;
+
+// With the sketch on the main thread, the page's core lives in the memory that the render worker
+// reads each frame's draw list from. When the engine stops while the render worker is inside a
+// frame, the page must keep the core until the render worker has stopped, or the frame's replay
+// reads a draw list that the core has freed.
+for (const gpu of ['webgpu', 'webgl2'] as const) {
+	test(`a stop during a frame of the render worker keeps the frame's draw list, sketch on the main thread on ${gpu}`, async ({
+		page,
+	}) => {
+		const logs: string[] = [];
+		page.on('worker', (worker) => worker.on('console', (message) => logs.push(message.text())));
+		await prefixEngineScripts(page, HOLD_FRAME_UNTIL_STOP);
+		await page.goto(
+			`scene.html?gpu=${gpu}&seconds=0.25&stop-after=${STOP_AFTER_MS}&sketch-thread=main`,
+		);
+		const result = await pageResult<{ error?: string; failures: string[] }>(page, 60_000);
+		await restoreEngineScripts(page);
+		expect(logs).toContain(HELD);
+		expect(result.error).toBeUndefined();
+		expect(result.failures).toEqual([]);
+	});
 }

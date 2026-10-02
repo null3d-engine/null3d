@@ -23,6 +23,20 @@ struct Frame {
     output: null3d::tonemap::Output,
     /// The scene's fog, seen from this camera.
     fog: Fog,
+    /// The row that gives a position's slice depth in the light grid of clustered lighting (see
+    /// null3d::lights).
+    cluster_depth: vec4f,
+    /// The light grid's tiles across, tiles up, slices, and slices per doubling of the slice
+    /// depth. The slices are 0 when no point or spot light reaches the view.
+    cluster_grid: vec4f,
+    /// The sketch time in seconds, the seconds since the frame before, the frame's number as the
+    /// bits of a `u32`, and a spare.
+    clock: vec4f,
+    /// The camera's position in the world, absolute rather than relative to it, and a spare. Far
+    /// from the world's origin, it holds fewer digits than positions relative to the camera.
+    camera_world: vec4f,
+    /// The size of the render target in pixels, and one over each.
+    target_size: vec4f,
 }
 
 /// One material's row of the material table, as the core writes it (`materials.rs` in the

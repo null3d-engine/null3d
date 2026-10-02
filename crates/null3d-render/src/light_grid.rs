@@ -48,8 +48,14 @@
 use null3d_core::jobs::JobSystem;
 use null3d_core::lights::VisibleLight;
 use null3d_core::shared::SharedMut;
+use null3d_gpu::drawlist::sizes::LIGHT_RECORD_BYTES;
 
 use crate::camera::{Mat4, ViewDepth};
+use crate::frame::words_as_bytes;
+use crate::view::ViewFrame;
+
+// The core's light records are what the shaders read.
+const _: () = assert!(size_of::<VisibleLight>() == LIGHT_RECORD_BYTES as usize);
 
 /// Bits of a cluster's word that hold where its lights start in the grid's words. The bits above
 /// them hold the count.
@@ -600,6 +606,108 @@ impl LightGrid {
     }
 }
 
+/// A frame builder's light grid: the grid of the camera's view each frame, and what the GPU holds
+/// of it. Only the camera's view lists point and spot lights: every other view's uniform block
+/// says that its grid lists none.
+#[derive(Debug)]
+pub(crate) struct CameraLights {
+    grid: LightGrid,
+    /// The grid's words and lights as the GPU holds them, after the last upload.
+    held_words: Vec<u32>,
+    held_lights: Vec<VisibleLight>,
+    held: bool,
+    /// The room that uploads take in a frame's arena: a power of two at least as large as the
+    /// largest upload so far, so the arenas grow only when the lights reach further than before.
+    room: usize,
+}
+
+impl CameraLights {
+    pub(crate) fn new(limits: LightLimits) -> Self {
+        let grid = LightGrid::new(DEFAULT_GRID, limits);
+        Self {
+            held_words: Vec::with_capacity(grid.max_words() as usize),
+            held_lights: Vec::with_capacity(limits.lights as usize),
+            held: false,
+            room: 0,
+            grid,
+        }
+    }
+
+    /// The grid of the camera's view.
+    pub(crate) fn grid(&self) -> &LightGrid {
+        &self.grid
+    }
+
+    /// Lists the frame's point and spot lights in the grid of the camera's view, `frame`, and
+    /// gives the view's uniform block the values that find each position's cluster.
+    pub(crate) fn assign(
+        &mut self,
+        jobs: &JobSystem,
+        frame: &mut ViewFrame,
+        lights: &[VisibleLight],
+    ) {
+        let view = GridView {
+            view_proj: frame.uniform.view_proj,
+            depth: frame.depth,
+        };
+        self.grid.assign(jobs, &view, lights);
+        self.room = self.room.max(self.upload_bytes().next_power_of_two());
+        let uniform = self.grid.uniform();
+        frame.uniform.cluster_depth = uniform.depth;
+        frame.uniform.cluster_grid = uniform.grid;
+    }
+
+    /// True when the grid lists lights and they differ from what the GPU holds. They count as
+    /// held from then on, so the caller uploads them.
+    pub(crate) fn take_new(&mut self) -> bool {
+        let (words, lights) = (self.grid.words(), self.grid.lights());
+        if self.grid.uniform().grid[2] == 0.0
+            || (self.held && words == &self.held_words[..] && lights == &self.held_lights[..])
+        {
+            return false;
+        }
+        self.held_words.clear();
+        self.held_words.extend_from_slice(words);
+        self.held_lights.clear();
+        self.held_lights.extend_from_slice(lights);
+        self.held = true;
+        true
+    }
+
+    /// The grid's words, as bytes for an upload.
+    pub(crate) fn words_bytes(&self) -> &[u8] {
+        words_as_bytes(self.grid.words())
+    }
+
+    /// The grid's light records, as bytes for an upload.
+    pub(crate) fn lights_bytes(&self) -> &[u8] {
+        let lights = self.grid.lights();
+        // SAFETY: a light record is `repr(C)` and made of 32-bit values only, so it has no padding
+        // and every byte of it is initialized.
+        unsafe { std::slice::from_raw_parts(lights.as_ptr().cast::<u8>(), size_of_val(lights)) }
+    }
+
+    /// The bytes that the next upload copies: the grid's words and lights of this frame, or none
+    /// when the grid lists no light.
+    fn upload_bytes(&self) -> usize {
+        if self.grid.uniform().grid[2] == 0.0 {
+            return 0;
+        }
+        self.words_bytes().len() + self.lights_bytes().len()
+    }
+
+    /// The room to keep in a frame's arena for the upload, at least [`CameraLights::upload_bytes`]
+    /// once the frame's lights are assigned.
+    pub(crate) fn upload_room(&self) -> usize {
+        self.room
+    }
+
+    /// Forgets what the GPU holds, after the thread that draws replaced the GPU.
+    pub(crate) fn forget_gpu(&mut self) {
+        self.held = false;
+    }
+}
+
 /// The first and last tiles between consecutive planes of `planes` that a sphere reaches, or
 /// `None` when it reaches none.
 fn span_of(planes: &[[f32; 4]], center: [f32; 3], reach: f32) -> Option<(u8, u8)> {
@@ -636,6 +744,33 @@ fn for_each_tile(rect: u32, mut f: impl FnMut(usize, usize)) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_shaders_read_the_grid_as_the_grid_writes_it() {
+        use null3d_gpu::drawlist::sizes;
+        let lights = include_str!("../../null3d-shaders/wgsl/lib/lights.wgsl");
+        let shift = |per_row: u32| {
+            assert!(per_row.is_power_of_two());
+            per_row.trailing_zeros()
+        };
+        for line in [
+            format!("const START_BITS: u32 = {START_BITS}u;"),
+            format!(
+                "const WORD_ROW_SHIFT: u32 = {}u;",
+                shift(sizes::INDICES_PER_TEXTURE_ROW)
+            ),
+            format!(
+                "const LIGHT_ROW_SHIFT: u32 = {}u;",
+                shift(sizes::LIGHTS_PER_TEXTURE_ROW)
+            ),
+        ] {
+            assert!(lights.contains(&line), "lib/lights.wgsl lacks {line}");
+        }
+        // The shader finds its cluster from the frame's two vectors, and the start of a
+        // cluster's lights fits below the count for every list the limits allow.
+        assert_eq!(size_of::<GridUniform>(), 32);
+        assert!(DEFAULT_GRID.clusters() + MAX_INDICES < 1 << START_BITS);
+    }
 
     #[test]
     fn clusters_count_across_then_up_then_along() {

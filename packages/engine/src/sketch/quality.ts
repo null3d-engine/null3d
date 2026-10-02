@@ -8,6 +8,7 @@
 // the thread that draws can change them. A setting that the sketch chose itself keeps its value
 // when the engine's preset check lowers the preset.
 
+import { EngineError } from '../errors/engine-error';
 import type { PresetCheck } from '../quality/check';
 import {
 	checkSettings,
@@ -64,9 +65,17 @@ export interface Quality {
 	 */
 	readonly settings: Readonly<QualitySettings>;
 	/**
+	 * The render scale that the engine draws the scene at: the part of the canvas's width and
+	 * height, from `minRenderScale` to `maxRenderScale`. The engine lowers it when frames take too
+	 * long and raises it again when they have time to spare. A change of the range applies to the
+	 * frame being drawn.
+	 */
+	readonly renderScale: number;
+	/**
 	 * Changes settings from the next frame on, and resolves at once. It takes the settings that
 	 * change during play, each with a value that the setting takes, and throws E1213 for any other
-	 * setting or value. A setting that it does not get keeps its value.
+	 * setting or value, or for a `minRenderScale` above `maxRenderScale`. A setting that it does not
+	 * get keeps its value.
 	 */
 	set(settings: Partial<QualitySettings>): Promise<void>;
 	/**
@@ -96,7 +105,8 @@ export const RESTART_CHANGE = 2;
 
 /**
  * The sketch's quality API. `apply` applies each change. `settle` resolves once the thread that
- * draws has taken the first frame after a restart, with all of its pipelines built.
+ * draws has taken the first frame after a restart, with all of its pipelines built. `scale` reads
+ * the render scale.
  */
 export class SketchQuality implements Quality {
 	preset: QualityPreset;
@@ -119,6 +129,7 @@ export class SketchQuality implements Quality {
 		start: QualityStart,
 		private readonly apply: ApplyQuality,
 		private readonly settle: () => Promise<void> = () => Promise.resolve(),
+		private readonly scale: () => number = () => 1,
 	) {
 		this.preset = start.preset;
 		this.settings = { ...start.settings };
@@ -130,8 +141,19 @@ export class SketchQuality implements Quality {
 		this.highest = start.highest;
 	}
 
+	get renderScale(): number {
+		return this.scale();
+	}
+
 	set(settings: Partial<QualitySettings>): Promise<void> {
 		checkSettings('quality.set()', settings, LIVE_SETTINGS);
+		const lowest = settings.minRenderScale ?? this.settings.minRenderScale;
+		const highest = settings.maxRenderScale ?? this.settings.maxRenderScale;
+		if (lowest > highest)
+			throw new EngineError(
+				'E1213',
+				`quality.set() would give minRenderScale ${lowest}, above maxRenderScale ${highest}. Give both in one call to change them together.`,
+			);
 		for (const [name, value] of Object.entries(settings))
 			if (value !== undefined) this.owned.add(name as QualitySettingName);
 		return this.update(this.preset, settings);

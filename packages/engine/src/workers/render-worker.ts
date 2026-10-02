@@ -3,10 +3,9 @@
 
 import { messageOf } from '../errors/message';
 import { captureFrame, captureImage, startDrawing } from '../render/draw';
-import type { Drawing } from '../render/recovery';
-import type { Renderer } from '../render/renderer';
 import { controlViews } from '../shared/control';
 import { setWakeByMessage } from '../shared/wake';
+import { DrawingHost } from './drawing-host';
 import {
 	type RendererRequest,
 	type RenderWorkerInit,
@@ -17,7 +16,7 @@ import {
 	startWorkerCore,
 } from './protocol';
 
-let drawing: Drawing<Renderer> | undefined;
+const host = new DrawingHost();
 let controlSlots: Int32Array | undefined;
 
 const step = startSteps('render');
@@ -29,11 +28,14 @@ startWorker('render', step, async (event: MessageEvent<RenderWorkerInit | Render
 			controlSlots = controlViews(message.control).slots;
 			setWakeByMessage(message.wakeByMessage);
 			const { glue: core } = await startWorkerCore(message, step);
-			drawing = await startDrawing({
-				...message,
-				scene: message.memory && { memory: message.memory, control: message.control },
-				fail: (reason) => replyToPage({ type: 'lost', role: 'render', reason }),
-			});
+			const drawing = await host.start(
+				startDrawing({
+					...message,
+					scene: message.memory && { memory: message.memory, control: message.control },
+					fail: (reason) => replyToPage({ type: 'lost', role: 'render', reason }),
+				}),
+			);
+			if (!drawing) return;
 			replyToPage({
 				type: 'ready',
 				role: 'render',
@@ -42,16 +44,19 @@ startWorker('render', step, async (event: MessageEvent<RenderWorkerInit | Render
 				tier: drawing.renderer.tier,
 			});
 		} catch (e) {
+			await host.release();
 			replyToPage({
 				type: 'error',
 				role: 'render',
 				message: messageOf(e),
 			});
 		}
-	} else if (message.type === 'capture' && drawing && controlSlots) {
+	} else if (message.type === 'capture' && host.drawing && controlSlots) {
 		const capture = message.image ? captureImage : captureFrame;
-		await replyWithCapture(capture(drawing, controlSlots));
+		await replyWithCapture(capture(host.drawing, controlSlots));
 	} else if (message.type === 'lose-gpu') {
-		drawing?.simulateLoss();
+		host.drawing?.simulateLoss();
+	} else if (message.type === 'stop-drawing') {
+		await host.stop('render');
 	}
 });

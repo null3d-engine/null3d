@@ -3,6 +3,7 @@
 
 import { FORMAT_RG11B10_UFLOAT } from '../generated/gpu';
 import { loadGlslShaders, loadWgslShaders } from '../generated/shaders';
+import { type CanvasHolder, clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
 import { type Completion, FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import {
@@ -33,7 +34,7 @@ export interface FrameInput {
 	background: readonly [number, number, number];
 }
 
-export interface Renderer {
+export interface Renderer extends CanvasHolder {
 	readonly tier: Tier;
 	/** True when the canvas keeps premultiplied alpha, so a captured image keeps the frame's alpha. */
 	readonly transparent: boolean;
@@ -42,6 +43,8 @@ export interface Renderer {
 	 * metrics buffer.
 	 */
 	readonly completions: Completion | undefined;
+	/** The canvas it draws on. */
+	readonly canvas: RenderCanvas;
 	/** Resizes the drawing buffer, in device pixels. Only the thread that owns the canvas calls this. */
 	resize(width: number, height: number): void;
 	/**
@@ -55,7 +58,11 @@ export interface Renderer {
 	readonly building: boolean;
 	/** Draws a frame to the canvas, adding its phase times and counters to the frame's record. */
 	drawFrame(input: FrameInput, record: FrameRecorder): void;
-	/** Draws one frame into an offscreen target and returns its pixels as RGBA8 rows, top row first. */
+	/**
+	 * Draws the frame taken last into an offscreen target and returns its pixels as RGBA8 rows, top
+	 * row first. A renderer that first waits for its pipelines reads the frame taken last again once
+	 * they are built, since frames go on during the wait and `input` falls behind.
+	 */
 	capture(input: FrameInput): Promise<{ width: number; height: number; pixels: Uint8Array }>;
 	/** Resolves with the browser's reason if it takes the GPU away; destroying the renderer does not. */
 	readonly lost: Promise<string>;
@@ -109,7 +116,7 @@ class WebGPURenderer implements Renderer {
 	constructor(
 		readonly tier: Tier,
 		private readonly device: GPUDevice,
-		private readonly canvas: RenderCanvas,
+		readonly canvas: RenderCanvas,
 		metrics: ArrayBufferLike | undefined,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
@@ -184,6 +191,10 @@ class WebGPURenderer implements Renderer {
 		return this.device.queue.onSubmittedWorkDone();
 	}
 
+	drawBlank(): void {
+		clearWebGPUCanvas(this.device, this.context);
+	}
+
 	destroy(): void {
 		this.timer?.destroy();
 		this.context.unconfigure();
@@ -199,7 +210,7 @@ class WebGL2Renderer implements Renderer {
 	readonly lost: Promise<string>;
 
 	constructor(
-		private readonly canvas: RenderCanvas,
+		readonly canvas: RenderCanvas,
 		private readonly gl: WebGL2RenderingContext,
 		metrics: ArrayBufferLike | undefined,
 	) {
@@ -249,6 +260,10 @@ class WebGL2Renderer implements Renderer {
 
 	finished(): Promise<void> {
 		return contextFinished(this.gl);
+	}
+
+	drawBlank(): void {
+		clearWebGL2Canvas(this.gl);
 	}
 
 	destroy(): void {

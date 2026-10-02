@@ -10,6 +10,9 @@
 		"directory": "packages/engine"
 	},
 	"type": "module",
+	"scripts": {
+		"prepack": "bun ../../tools/shaders.ts"
+	},
 	"exports": {
 		".": "./src/index.ts",
 		"./internal": "./src/internal.ts",

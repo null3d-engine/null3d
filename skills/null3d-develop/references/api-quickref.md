@@ -105,7 +105,7 @@ export default defineSketch(async (ctx) => {
 | Call | Returns | Notes |
 | --- | --- | --- |
 | `scene.createGroup({ name, position, rotation, scale, parent, dynamic, layers })` | Group | Empty node for hierarchy |
-| `scene.createMesh({ mesh, material, position, rotation, scale, parent, dynamic, layers, castShadows, receiveShadows, name })` | Mesh | Static unless `dynamic: true`. Shadows draw on WebGPU; WebGL2 later in 0.1 |
+| `scene.createMesh({ mesh, material, position, rotation, scale, parent, dynamic, layers, castShadows, receiveShadows, name })` | Mesh | Static unless `dynamic: true` |
 | `scene.createInstances(mesh, count, { material, dynamic, colors, layers })` | InstanceBatch | Section 5 |
 | `scene.instantiate(prefab, { position, rotation, scale, parent })` (0.2) | Node | Creates a loaded glTF model |
 | `scene.clone(obj)` (0.2) | same type | Deep copy of a built object |
@@ -232,8 +232,8 @@ light.setVisible(false); light.destroy();    // lights are objects: section 4
 - three.js aims a directional light from its position to a target. Pass the target minus the position as `direction`, or call `lookAt`.
 - A light lights a camera's view when their layer masks share a bit. Without lights, standard materials draw black.
 - Units follow three.js r155 and later: point and spot intensity in candela. The same colors and intensities give the same light as in three.js.
-- For now, surfaces show one directional light (the first visible one) and every ambient light. Later in 0.1, point, spot and hemisphere lights light surfaces through clustered lighting.
-- Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`, in cascades that fit the camera's view. Defaults: 3 cascades, 2,048 texels, 200 m, bias 0.5 and normal bias 1, both in texels of each cascade. Unlit materials show no shadows. WebGPU draws them now, and WebGL2 later in 0.1. Instance batches do not cast or receive them yet (`concepts/shadows`).
+- Point and spot lights light the surfaces their ranges reach, through clustered lighting, so keep each range as short as the look allows. Surfaces show the first visible directional light, every ambient light, and the point and spot lights. Later in 0.1, hemisphere lights light surfaces.
+- Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`, in cascades that fit the camera's view. Defaults: 3 cascades, 2,048 texels, 200 m, bias 0.5 and normal bias 1, both in texels of each cascade. Unlit materials show no shadows. Both GPU paths draw them. Instance batches do not cast or receive them yet (`concepts/shadows`).
 
 ## 8. Geometry (`api/geometry`)
 
@@ -282,7 +282,7 @@ const brick = materials.standard({   // maps are fixed at creation; the mesh nee
 });
 const decal = materials.unlit({ map: color, alphaMode: 'mask', alphaCutoff: 0.5 });  // map alpha cuts the shape
 
-const stripes = materials.shader({ ...standardOptions, wgsl, uniforms });  // any standard option but the maps; wgsl: a tagged /* wgsl */ literal or .wgsl import with fn surface
+const stripes = materials.shader({ ...standardOptions, wgsl, uniforms });  // any standard option but the maps; wgsl: a tagged /* wgsl */ literal or .wgsl import with fn surface, fn vertexOffset or both
 stripes.set({ speed: 2, roughness: 0.3 });  // uniforms of struct Uniforms and standard values alike
 ```
 
@@ -291,7 +291,7 @@ stripes.set({ speed: 2, roughness: 0.3 });  // uniforms of struct Uniforms and s
 - `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option but the texture maps feeds `defaultSurface()`. `references/shaders.md` has the contract.
 - A map reads the texture coordinates that its texture's `uvSet` names, and a mesh without a second set gives its first. A mesh without texture coordinates draws the material without its maps. A normal map takes its frame from the mesh's tangents (`computeTangents: true`) where the mesh has them, and otherwise from the pixels around it, as three.js does.
 - `alphaMode: 'mask'` with `alphaCutoff` draws nothing where the alpha falls below the cutoff, as three.js's `alphaTest`. `alphaMode: 'blend'` is three.js's `transparent: true`, and `blending` picks `'normal'`, `'additive'` or `'multiply'`. Blended objects cost culling and sorting in every frame, so use `'mask'` for cut-out shapes. `depthWrite`, `depthTest` and `depthBias: { constant, slopeScale }` set the depth state.
-- Later in 0.1: in `materials.shader` texture maps, textures, vertex offsets and full shaders.
+- Later in 0.1: in `materials.shader` texture maps, textures and full shaders.
 - `envIntensity` (0.2) comes with environment lighting, and `materials.shadowCatcher` in 0.2.
 - `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `blending`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
 
@@ -453,6 +453,8 @@ Passes are declarations: the engine checks them, orders them, and shares memory 
 quality.preset;                         // 'low' | 'medium' | 'high' | 'ultra': the preset the engine runs
 quality.settings.maxPixelRatio;         // the settings in use
 quality.set({ maxPixelRatio: 1.5 });    // from the next frame; E1213 for another setting or value
+quality.renderScale;                    // the part of the canvas's width and height the scene draws at now
+quality.set({ minRenderScale: 0.5, maxRenderScale: 1 });  // the range dynamic resolution moves in; 1 and 1 turn it off
 quality.set({ maxAnisotropy: 4, uploadBytesPerFrame: 2 * 1024 * 1024 });  // texture sampling cap, upload bytes per frame
 quality.settings.antialias;             // 'msaa' | 'fxaa' | 'none', fixed at the start; set it with createEngine's option
 quality.set({ shadowCascades: 2 });     // planned: the preset table gives each setting's status
@@ -464,7 +466,7 @@ engine.mode.preset;                     // on the page: the preset, crashedStart
 engine.mode.presetCheck;                // what the preset check measured: { from, targetFps, rounds }, or null
 ```
 
-The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. When the engine chose the preset itself, it checks it with the scene that the setup built. It lowers the preset until the GPU holds the frame rate, before `createEngine` resolves, and keeps the settings that the setup changed with `quality.set`. The `setPreset` call keeps the last frame on screen until the new preset's pipelines are built. So call it from a menu or a loading screen. The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
+The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. When the engine chose the preset itself, it checks it with the scene that the setup built. It lowers the preset until the GPU holds the frame rate, before `createEngine` resolves, and keeps the settings that the setup changed with `quality.set`. The `setPreset` call keeps the last frame on screen until the new preset's pipelines are built. So call it from a menu or a loading screen. Dynamic resolution lowers the render scale by 0.05 after about a second over budget, and raises it after 5 seconds with time to spare. Hold mode draws at `maxRenderScale`. The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
 
 ## 18. Messages and UI (`api/page`, `api/ui`)
 

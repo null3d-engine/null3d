@@ -7,7 +7,7 @@ function fakeBackend() {
 	return {
 		building: false,
 		replayed: 0,
-		counts: { uploadBytes: 0, drawCalls: 0, pipelines: 0, skippedDraws: 0 },
+		counts: { uploadBytes: 0, drawCalls: 0, pipelines: 0, skippedDraws: 0, objects: 0 },
 		prepare: (_words: Uint32Array, start: number) => start,
 		replay() {
 			this.replayed++;
@@ -64,5 +64,16 @@ describe('FrameReplay', () => {
 		expect(replay.prepare(3)).toBe(true);
 		Atomics.store(slots, Slot.PipelineHold, 4);
 		expect(replay.prepare(4)).toBe(false);
+	});
+
+	it('waits for the builds, then gives the frame taken last, whose list the sketch has not reused', async () => {
+		const { slots, backend, replay } = setup();
+		Atomics.store(slots, Slot.FramesTaken, 3);
+		backend.building = true;
+		const taken = replay.builtTaken();
+		// Frames go on during the wait, and the sketch thread records frame 5 into frame 3's list.
+		Atomics.store(slots, Slot.FramesTaken, 4);
+		backend.building = false;
+		expect(await taken).toBe(4);
 	});
 });

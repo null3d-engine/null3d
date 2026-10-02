@@ -35,7 +35,7 @@ use null3d_core::culling::Frustum;
 use null3d_gpu::drawlist::sizes::SHADOW_UNIFORM_BYTES;
 use null3d_gpu::drawlist::{DrawList, Op, address, buffer_usage, compare, filter, format};
 
-use crate::camera::{Affine, Lens, Mat4};
+use crate::camera::{Affine, Lens, Mat4, ViewDepth};
 use crate::frame::{RecordError, UploadArena};
 use crate::frame_data::FrameUniform;
 use crate::pipelines::PassTargets;
@@ -319,11 +319,20 @@ pub struct ShadowFrame {
 }
 
 impl ShadowFrame {
-    /// The values of a cascade's view: its matrix, and its culling frustum, which has no plane on
-    /// the light's side. Its culling moves sources by the offsets from the camera, as the camera's
-    /// view does.
+    /// The values of a cascade's view: its matrix, its culling frustum, which has no plane on the
+    /// light's side, and its depth, which runs from the box's face toward the light. Its culling
+    /// moves sources by the offsets from the camera, as the camera's view does.
     pub fn view_frame(&self, cascade: usize) -> ViewFrame {
         let cascade = &self.cascades.cascades[cascade];
+        // Clip depth falls from 1 at the light's face to 0 over the box's length in meters.
+        let m = &cascade.view_proj;
+        let length = 1.0 / cascade.depth_per_meter;
+        let depth = ViewDepth {
+            row: [-m[2], -m[6], -m[10], 1.0 - m[14]].map(|v| v * length),
+            near: 0.0,
+            far: length,
+            perspective: false,
+        };
         ViewFrame {
             uniform: FrameUniform {
                 view_proj: cascade.view_proj,
@@ -332,6 +341,7 @@ impl ShadowFrame {
             },
             frustum: cascade.frustum,
             camera: self.camera,
+            depth,
             layers: self.layers,
         }
     }

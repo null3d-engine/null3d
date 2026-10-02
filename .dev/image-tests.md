@@ -58,6 +58,7 @@ A CI run that finds a missing or changed image saves it too. `bun run images:rev
 
 ## CI
 
-- CI splits the browser tests, the manifest among them, into shards that run at once, as the `browser` job's matrix lists them. Add a shard when one takes more than about 10 minutes.
+- CI splits the browser tests, the manifest among them, into shards that run at once, as the `browser` job's matrix lists them. CI's `build` job builds the WebAssembly files once, and each shard downloads them. Add a shard when one takes more than about 5 minutes.
+- Playwright splits the tests by count, not by time. A file that runs its tests in parallel, such as `images.spec.ts`, can split between shards, and any other file stays in one shard. The manifest's image tests are quicker than most other tests, so the shards that hold them finish first.
 - A shard that fails uploads its `test-results/` folder with the candidates. `bun run images:review --ci <run>` downloads them with the GitHub CLI.
 - In the merge queue, the `real-browsers` jobs run the manifest in Safari and Firefox on GitHub's macOS machines, each in shards of its own. [Device sessions](devices.md#browser-apps-on-the-mac) says how they split. A shard that fails uploads its runs and candidates as `real-browser-runs-<browser>-<shard>`, and `bun run images:review --ci <run>` downloads those too.

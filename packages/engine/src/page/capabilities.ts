@@ -340,7 +340,7 @@ function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {
 	try {
 		const canvas =
 			typeof OffscreenCanvas === 'function'
-				? new OffscreenCanvas(4, 4)
+				? new OffscreenCanvas(1, 1)
 				: document.createElement('canvas');
 		const gl = canvas.getContext('webgl2', { powerPreference }) as WebGL2RenderingContext | null;
 		if (!gl) return empty;

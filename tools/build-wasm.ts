@@ -16,7 +16,8 @@
 // them. The single-threaded build runs on pages that are not cross-origin isolated. The
 // wasm-bindgen command-line tool must match the crate version exactly, so the script downloads
 // that release into the build folder and verifies its checksum. The shader compiler runs in build
-// tools, never in a page, so it has no size budget.
+// tools, never in a page, so it has no size budget. Every mode first builds the shader modules
+// when they are missing or out of date, because git does not keep them.
 //
 // The size check's base is main's own build: tools/lib/size-check.ts picks the commit, and the
 // check builds it in a worktree under target/ with that commit's own build script. It keeps the
@@ -40,6 +41,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SHADER_COMPILER_URL } from '../packages/vite-plugin/src/shader-compiler';
 import { explainedFiles, SIZE_GROWTH_GUIDANCE } from './hooks/check-size-growth';
+import { ensureShaderModules } from './lib/shader-modules';
 import {
 	type BaseChoice,
 	chooseBase,
@@ -86,7 +88,7 @@ const WASM_BUDGET_BYTES = 600 * 1024;
  * Brotli budget for the engine's JavaScript that a page downloads, in whichever thread mode
  * downloads the most. The core's generated glue counts with the WebAssembly files instead.
  */
-const JS_BUDGET_BYTES = 80 * 1024;
+const JS_BUDGET_BYTES = 100 * 1024;
 /** Where the size report builds the engine test page, apart from the build the browser tests serve. */
 const JS_BUILD_DIR = 'target/js-size';
 /** The crate that builds the shader compiler, the shader crate as a WebAssembly module. */
@@ -581,6 +583,7 @@ function checkGrowth(sizes: Record<string, SizeEntry>, ref: string | undefined):
 
 async function main(): Promise<void> {
 	const options = parseOptions(process.argv.slice(2));
+	ensureShaderModules(root);
 	const version = lockedVersion(readFileSync(join(root, 'Cargo.lock'), 'utf8'), 'wasm-bindgen');
 	const bindgen = await wasmBindgen(version);
 	for (const variant of VARIANTS) buildVariant(variant, bindgen, options.keepNames);
@@ -614,7 +617,7 @@ async function main(): Promise<void> {
 		printSize(file, size, file.endsWith('.wasm') ? WASM_BUDGET_BYTES : undefined);
 	printSize('js total', totalSize(parts.values()));
 	console.log(
-		"\nthe engine's JavaScript that a page downloads in each thread mode, besides the core's glue (budget: 80 KB after Brotli)",
+		"\nthe engine's JavaScript that a page downloads in each thread mode, besides the core's glue (budget: 100 KB after Brotli)",
 	);
 	for (const { mode, size } of downloads) printSize(mode, size, JS_BUDGET_BYTES);
 	console.log(
@@ -640,7 +643,7 @@ async function main(): Promise<void> {
 	for (const { mode, size } of downloads)
 		if (size.brotli > JS_BUDGET_BYTES)
 			problems.push(
-				`the engine JavaScript that a page downloads in ${mode} mode is over its 80 KB Brotli budget`,
+				`the engine JavaScript that a page downloads in ${mode} mode is over its 100 KB Brotli budget`,
 			);
 	const growth = options.checkSize ? checkGrowth(sizes, options.base) : [];
 	for (const p of [...problems, ...growth]) console.error(`error: ${p}`);

@@ -122,8 +122,8 @@ export default defineSketch((context) => {
 		});
 	});
 
-	// Feature: clustered lighting. The street lights are scene objects; they light surfaces once
-	// the engine shades point lights through its grid of view clusters.
+	// The street lights are point lights, which the engine shades through its grid of view
+	// clusters.
 	for (let i = 0; i < data.lights.length / 3; i++)
 		scene.createPointLight({
 			color: S4_STREET_LIGHT.color,

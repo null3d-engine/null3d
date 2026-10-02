@@ -45,7 +45,6 @@ run('warm-up', async () => {
 	return {
 		mode: engine.mode,
 		tier: engine.capabilities.tier,
-		hdr: engine.capabilities.hdr,
 		firstFramePipelines: play.load.firstFramePipelines,
 		warmUpMs: play.load.warmUpMs,
 		engineStartMs: play.load.engineStartMs,

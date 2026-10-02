@@ -1,6 +1,6 @@
-//! The `shader-build` command, run against a copy of the repository's shader inputs, and the
-//! committed modules checked against a fresh build.
+//! The `shader-build` command, run against copies of the repository's shader inputs.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -29,13 +29,12 @@ impl Scratch {
         Self(root)
     }
 
-    fn run(&self, check: bool) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_shader-build"));
-        command.arg("--root").arg(&self.0);
-        if check {
-            command.arg("--check");
-        }
-        command.output().expect("the shader-build command runs")
+    fn run(&self) -> Output {
+        Command::new(env!("CARGO_BIN_EXE_shader-build"))
+            .arg("--root")
+            .arg(&self.0)
+            .output()
+            .expect("the shader-build command runs")
     }
 }
 
@@ -62,46 +61,62 @@ fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 
+/// Every generated module in a folder, by file name.
+fn modules(folder: &Path) -> BTreeMap<String, String> {
+    fs::read_dir(folder)
+        .unwrap()
+        .map(|entry| entry.unwrap())
+        .map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            (name, fs::read_to_string(entry.path()).unwrap())
+        })
+        .collect()
+}
+
 #[test]
-fn check_fails_after_the_generated_file_is_edited_and_passes_after_regeneration() {
+fn the_build_writes_the_modules_and_replaces_a_hand_edit() {
     let scratch = Scratch::new();
     let output = scratch.0.join(OUTPUT_PATH);
 
-    let missing = scratch.run(true);
-    assert_eq!(missing.status.code(), Some(1), "{}", text(&missing.stderr));
-    assert!(text(&missing.stderr).contains("Run `bun run shaders` to create it."));
-
-    let written = scratch.run(false);
+    let written = scratch.run();
     assert!(written.status.success(), "{}", text(&written.stderr));
     assert!(
         text(&written.stdout)
             .contains("Wrote the shader modules in packages/engine/src/generated.")
     );
     let fresh = fs::read_to_string(&output).unwrap();
-    assert!(scratch.run(true).status.success());
 
     let edited = fresh.replacen("#version 300 es", "#version 310 es", 1);
     assert_ne!(edited, fresh);
     fs::write(&output, &edited).unwrap();
-    let stale = scratch.run(true);
-    assert_eq!(stale.status.code(), Some(1));
-    let message = text(&stale.stderr);
-    assert!(message.contains(OUTPUT_PATH), "{message}");
-    assert!(message.contains("differs from a fresh build"), "{message}");
-    assert!(message.contains("Run `bun run shaders`"), "{message}");
-
-    let rewritten = scratch.run(false);
+    let rewritten = scratch.run();
     assert!(rewritten.status.success());
+    assert!(text(&rewritten.stdout).contains("Wrote the shader modules"));
     assert_eq!(fs::read_to_string(&output).unwrap(), fresh);
-    assert!(scratch.run(true).status.success());
-    let unchanged = scratch.run(false);
+
+    let unchanged = scratch.run();
     assert!(text(&unchanged.stdout).contains("already up to date"));
+}
+
+#[test]
+fn separate_runs_write_the_same_modules() {
+    let first = Scratch::new();
+    let second = Scratch::new();
+    assert!(first.run().status.success());
+    assert!(second.run().status.success());
+    let built = modules(&first.0.join(OUTPUT_DIR));
+    assert!(
+        built.contains_key("shaders.ts") && built.len() > 1,
+        "{:?}",
+        built.keys()
+    );
+    assert!(built == modules(&second.0.join(OUTPUT_DIR)));
 }
 
 #[test]
 fn the_build_writes_a_module_for_each_target_and_value_of_the_bits_a_device_fixes() {
     let scratch = Scratch::new();
-    assert!(scratch.run(false).status.success());
+    assert!(scratch.run().status.success());
     let folder = scratch.0.join(OUTPUT_DIR);
     for module in [
         "shaders-wgsl.ts",
@@ -127,22 +142,15 @@ fn the_build_writes_a_module_for_each_target_and_value_of_the_bits_a_device_fixe
 }
 
 #[test]
-fn a_device_module_that_the_build_no_longer_makes_fails_the_check_and_is_deleted() {
+fn the_build_deletes_a_device_module_that_it_no_longer_makes() {
     let scratch = Scratch::new();
-    assert!(scratch.run(false).status.success());
+    assert!(scratch.run().status.success());
     let stale = scratch.0.join(OUTPUT_DIR).join("shaders-glsl-skin.ts");
     fs::write(&stale, "export {};\n").unwrap();
-    let check = scratch.run(true);
-    assert_eq!(check.status.code(), Some(1));
-    let message = text(&check.stderr);
-    assert!(
-        message
-            .contains("shaders-glsl-skin.ts: the shader build no longer makes this device module"),
-        "{message}"
-    );
-    assert!(scratch.run(false).status.success());
+    let rebuilt = scratch.run();
+    assert!(rebuilt.status.success());
+    assert!(text(&rebuilt.stdout).contains("Wrote the shader modules"));
     assert!(!stale.exists());
-    assert!(scratch.run(true).status.success());
 }
 
 #[test]
@@ -155,7 +163,7 @@ fn a_shader_error_fails_the_command_with_the_file_and_line() {
         "var world = position;\n    world.xy = vec2f(0.0);",
     );
     fs::write(&shader, broken).unwrap();
-    let result = scratch.run(false);
+    let result = scratch.run();
     assert_eq!(result.status.code(), Some(1));
     let message = text(&result.stderr);
     let line = source
@@ -179,11 +187,4 @@ fn unknown_arguments_are_rejected() {
         .unwrap();
     assert_eq!(result.status.code(), Some(2));
     assert!(text(&result.stderr).contains("unknown argument `--fix`"));
-}
-
-#[test]
-fn the_committed_modules_match_a_fresh_build() {
-    if let Err(error) = null3d_shaders::check(&repository()) {
-        panic!("{error}");
-    }
 }

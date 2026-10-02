@@ -27,6 +27,19 @@ pub struct FrameUniform {
     pub output: OutputUniform,
     /// The scene's fog, seen from the view's camera.
     pub fog: FogUniform,
+    /// The row that gives a position's slice depth in the light grid: see
+    /// [`crate::light_grid::GridUniform`].
+    pub cluster_depth: [f32; 4],
+    /// The light grid's tiles across, tiles up, slices and slices per doubling of the slice depth.
+    /// The slices are 0 for a view whose grid lists no light.
+    pub cluster_grid: [f32; 4],
+    /// The sketch time in seconds, the seconds since the frame before, the frame's number as the
+    /// bits of a `u32`, and a spare: what custom materials read as `frame`.
+    pub clock: [f32; 4],
+    /// The camera's position in the world, absolute rather than relative to it, and a spare.
+    pub camera_world: [f32; 4],
+    /// The size of the render target in pixels, and one over each.
+    pub target_size: [f32; 4],
 }
 
 const _: () = assert!(std::mem::size_of::<FrameUniform>() == FRAME_UNIFORM_BYTES as usize);

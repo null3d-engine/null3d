@@ -2,15 +2,15 @@
 
 All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so one source serves both backends. The null3D Vite plugin compiles the WGSL in your code: `.wgsl` files that you import, and template literals tagged `/* wgsl */`. The WebGL2 build sets the shader def `WEBGL2`. Engine docs: `guides/custom-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`.
 
-Custom materials with surface functions and uniforms are built: sections 1, 2, 4 (uniforms) and 8 to 10 apply now. The rest of sections 3 to 5 describes parts that come later in 0.1: do not ship code that uses them until their docs pages say they are built.
+Custom materials with surface functions, uniforms, vertex offsets, the built-in values and full shaders are built. Sections 1 to 5 and 8 to 10 apply now, apart from the parts that say later in 0.1. Do not ship code that uses those until their docs pages say they are built.
 
 ## Contents
 
 1. Choose the kind of shader
 2. Surface functions
-3. Built-in values (later in 0.1)
+3. Built-in values
 4. Uniforms, textures and per-instance data
-5. Vertex offsets and full shaders (later in 0.1)
+5. Vertex offsets and full shaders
 6. Custom post effects (0.2)
 7. Custom passes (0.2)
 8. Portable WGSL rules
@@ -22,8 +22,8 @@ Custom materials with surface functions and uniforms are built: sections 1, 2, 4
 | Goal | Kind | Keeps lights, shadows, fog and instancing |
 | --- | --- | --- |
 | Change how a surface looks (color, roughness, patterns, dissolve, water) | Surface function | Yes |
-| Move vertices (waves, wind, swelling) | Vertex offset, alone or with a surface function (later in 0.1) | Yes |
-| Something the lighting model cannot express (holograms, custom lighting) | Full shader (later in 0.1) | No: you write everything |
+| Move vertices (waves, wind, swelling) | Vertex offset, alone or with a surface function | Yes (shadows use the unmoved vertices) |
+| Something the lighting model cannot express (holograms, custom lighting) | Full shader | No: you write everything |
 | A full-screen image effect | Post effect (section 6) | Not applicable |
 | An extra render or compute step | Custom pass (section 7) | Not applicable |
 
@@ -39,6 +39,7 @@ The engine calls your function once per pixel and lights the result.
 // Declared by the engine (do not declare these yourself):
 struct SurfaceInput {
   relativePosition: vec3f, // position relative to the camera; always precise
+  worldPosition: vec3f,    // absolute world position; fewer digits far from the origin
   normal: vec3f,           // unit normal, or the face's with flatShading; faces the camera on double-sided back faces
   viewDirection: vec3f,    // unit direction from the surface toward the camera
   vertexColor: vec4f,      // vertex color with vertexColors on a mesh that has colors, else (1, 1, 1, 1)
@@ -89,20 +90,24 @@ stripes.set({ roughness: 0.4 });
 
 Materials from the same WGSL share one shader and its pipelines. Make one WGSL per look, and many materials from it.
 
-Planned additions, not built yet: `worldPosition`, `uv1`, `fragCoord` and `instance` in `SurfaceInput`, and alpha modes that use `s.alpha`.
+Planned additions, not built yet: `uv1`, `fragCoord` and `instance` in `SurfaceInput`, and alpha modes that use `s.alpha`.
 
-Names: your WGSL shares a file with the engine's standard material. Do not declare `SurfaceInput`, `Surface`, `defaultSurface`, `shade`, `light_surface`, `material`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs` or `fs`. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
+Names: your WGSL shares a file with the engine's standard material. Do not declare `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs` or `fs`. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
 
-## 3. Built-in values (later in 0.1)
+## 3. Built-in values
+
+Globals that the vertex offset and the surface function both read (`shaders/builtins`):
 
 | Name | Fields | Notes |
 | --- | --- | --- |
-| `frame` | `time`, `deltaTime`, `frameIndex` (u32), `resolution` (vec2f, render-target pixels) | Same values for every draw in a frame |
-| `camera` | `position` (absolute world position), `view`, `projection`, `viewProjection`, `near`, `far` | Matrices are `mat4x4f` |
-| `object` | `worldMatrix`, `normalMatrix`, `id` (u32) | For instances, the instance's values |
-| `material` | Your uniforms, as `struct Uniforms` declares them (built) | See section 4 |
+| `frame` | `time`, `deltaTime` (seconds), `index` (u32, from 1), `resolution` (vec2f, pixels at the render scale, as `@builtin(position)` counts them) | The sketch's `time`; the held time in hold mode |
+| `camera` | `position` (absolute world position), `viewProjection` (`mat4x4f`, from positions relative to the camera to clip space) | |
+| `object` | `position` (the object's or instance's origin in the world) | Gives each object a look of its own from one material |
+| `material` | Your uniforms, as `struct Uniforms` declares them | See section 4 |
 
-The engine renders relative to the camera. `input.relativePosition` is therefore exact near the camera, even in very large worlds. Use it for distances, fades and view-dependent effects. Until `worldPosition` exists, use `input.uv` for a pattern that must stay on the surface as the camera moves.
+Later in 0.1: `camera.view`, `projection`, `near` and `far`, and `object.worldMatrix`, `normalMatrix` and `id`.
+
+The engine renders relative to the camera. `input.relativePosition` is therefore exact near the camera, even in very large worlds. Use it for distances, fades and view-dependent effects. The world position of the input, `camera.position` and `object.position` are absolute. Far from the origin they hold fewer digits (1 mm steps at 10 km), so keep world-space patterns coarse there.
 
 ## 4. Uniforms, textures and per-instance data
 
@@ -156,21 +161,50 @@ const dissolve = materials.shader({
 - Textures come with a `textures` option; their WGSL form is not settled yet.
 - Per-instance data: `createInstances(mesh, count, { material, attributes: { tint: 4 } })` (0.2).
 
-## 5. Vertex offsets and full shaders (later in 0.1)
+## 5. Vertex offsets and full shaders
 
-A vertex offset moves vertices in object space before the engine applies transforms and instancing. It goes in the same WGSL as the surface function:
+Vertex offsets and full shaders are built. A vertex offset moves vertices in the mesh's own space before the engine applies transforms and instancing. It goes in the same WGSL as the surface function, and reads the same uniforms:
 
 ```wgsl
+struct Uniforms { height: f32 }
+
 fn vertexOffset(input: VertexInput) -> vec3f {
-  // VertexInput: position, normal, uv
-  let w = sin(input.position.x * 2.0) * 0.1;
+  // VertexInput: position, normal, uv, in the mesh's own space
+  let w = sin(input.position.x * 2.0) * material.height;
   return vec3f(0.0, w, 0.0);
 }
 ```
 
-Vertices that move outside the mesh's bounding sphere can be culled wrongly. Give the mesh a sphere that holds them with `mesh.setBounds(center, radius)`, at setup, because the call rebuilds the draw tables.
+- Exactly this signature; the build rejects another.
+- Normals stay the mesh's own. Use `flatShading: true` to light faces by their moved positions, or bend `s.normal` in the surface function.
+- Shadows use the unmoved vertices.
+- Vertices that move outside the mesh's bounding sphere can be culled wrongly. Give the object a sphere that holds them with `mesh.setBounds(center, radius)`, at setup, because the call rebuilds the draw tables.
 
-A full shader is WGSL with `@vertex` and `@fragment` entry points. The shader library's `null3d::vertex` module helps it keep instancing and camera-relative positions working. Full shaders do not receive lighting, shadows or fog unless you import the helpers (`null3d::lighting`, `null3d::fog`).
+A full shader is WGSL with one `@vertex` entry point that takes an `InstanceIn`, and one `@fragment` entry point:
+
+```wgsl
+#import null3d::builtins::{fill_builtins, frame}
+#import null3d::mesh::{InstanceIn, clip_position, find_instance, finish, world_normal}
+
+struct Varyings { @builtin(position) clip: vec4f, @location(0) normal: vec3f }
+
+@vertex
+fn vs(@location(0) position: vec3f, @location(1) normal: vec3f, i: InstanceIn) -> Varyings {
+  let found = find_instance(i);   // works on both GPU paths, for objects and instances
+  return Varyings(clip_position(found, position), world_normal(found, normal));
+}
+
+@fragment
+fn fs(in: Varyings) -> @location(0) vec4f {
+  fill_builtins(vec3f(0.0));      // fills frame, camera and object for this stage
+  let pulse = 0.5 + 0.5 * sin(frame.time);
+  return finish(abs(normalize(in.normal)) * pulse, in.clip.xy);  // linear color in, output out
+}
+```
+
+- Mesh locations: 0 position, 1 normal, 2 uv, 3 uv1, 4 tangent, 5 color. A mesh draws only with every attribute the shader reads.
+- `null3d::mesh` gives `find_instance`, `clip_position`, `relative_position`, `world_normal` and `finish`; positions are relative to the camera.
+- Full shaders get no lighting, shadows or fog, no standard values and no uniforms. Import `null3d::lighting` or `null3d::fog` helpers for your own.
 
 ## 6. Custom post effects (0.2)
 

@@ -8,7 +8,7 @@ summary: "The surface record; vertex-offset functions; per-instance attributes."
 
 # Surface functions
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Textures, vertex offsets, per-instance attributes and the built-in values `frame`, `camera` and `object` are not built yet. Coding agents must not use them in a surface function.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Textures and per-instance attributes are not built yet. Coding agents must not use them in a custom material.
 
 A surface function changes how a material's surface looks, and keeps the engine's lighting. You write it in WGSL. For each pixel, the engine gives it a `SurfaceInput`, and it returns a `Surface`: the base color, roughness, metalness, normal and light of that point. The engine then lights the surface with the scene's lights and shadows, as it lights a standard material. The function works on every GPU path, because the null3D Vite plugin builds it into the standard material's shader for WebGPU and WebGL2.
 
@@ -38,7 +38,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 `materials.shader(options)` makes a custom material. Its `wgsl` option holds the WGSL, and its other options are those of `materials.standard`, but the texture maps, which custom materials do not take yet. [Materials](../api/materials.md) lists them.
 
 - Write the WGSL in a template literal right after a `/* wgsl */` comment, or in a `.wgsl` file that your sketch imports. The plugin compiles it while Vite serves or builds the project. [Custom shaders](../guides/custom-shaders.md) says how.
-- The WGSL declares `fn surface(input: SurfaceInput) -> Surface`, and no `@vertex` or `@fragment` entry point. WGSL with entry points is a whole shader, which custom materials do not take yet.
+- The WGSL declares `fn surface(input: SurfaceInput) -> Surface`, `fn vertexOffset(input: VertexInput) -> vec3f` ([vertex offsets](#vertex-offsets)), or both, and no `@vertex` or `@fragment` entry point. For a look that the engine's lighting cannot give, write a [full shader](../guides/custom-shaders.md#full-shaders) instead.
 - `set()` changes the standard values, such as `color` and `roughness`, as it does for a standard material. The surface function sees them through `defaultSurface`.
 - Materials made from the same WGSL share one shader. Make one material for each look, as you do for standard materials.
 - A mesh needs texture coordinates to draw with a custom material. The geometry generators give every mesh texture coordinates. For a mesh from `geometry.fromArrays`, pass `uvs`.
@@ -50,6 +50,7 @@ The engine fills a `SurfaceInput` for each pixel. Positions and directions are i
 | Field | Type | What it holds |
 | --- | --- | --- |
 | `relativePosition` | `vec3f` | The position of the point, relative to the camera |
+| `worldPosition` | `vec3f` | The position of the point in the world, with fewer digits far from the origin ([Built-in shader inputs](builtins.md#positions-relative-to-the-camera)) |
 | `normal` | `vec3f` | The unit normal of the mesh, or of the triangle's face with `flatShading`. On the back face of a double-sided material, it faces the camera |
 | `viewDirection` | `vec3f` | The unit direction from the point toward the camera |
 | `vertexColor` | `vec4f` | The mesh's vertex color when the material has `vertexColors` and the mesh has colors, else white |
@@ -125,6 +126,36 @@ banded.set({ count: 6, roughness: 0.3 });
 
 `set()` throws E1216 for a name that is not a uniform, and for a value of the wrong kind. The build stops at a field of another type, or at the first field past the 32 numbers.
 
+## Vertex offsets
+
+A vertex offset moves each vertex of the mesh before the engine places the object in the world. You write `fn vertexOffset`, which returns how far to move the vertex, in the mesh's own space. The engine then applies the object's transform and instancing, and lights the moved surface:
+
+```wgsl
+struct Uniforms { height: f32, waves: f32 }
+
+fn vertexOffset(input: VertexInput) -> vec3f {
+    let phase = input.uv.x * material.waves * 6.2831853;
+    return vec3f(0.0, 0.0, sin(phase) * material.height);
+}
+```
+
+The engine calls the function once for each vertex, with a `VertexInput`:
+
+| Field | Type | What it holds |
+| --- | --- | --- |
+| `position` | `vec3f` | The vertex's position, in the mesh's own space |
+| `normal` | `vec3f` | The vertex's unit normal, in the mesh's own space |
+| `uv` | `vec2f` | The vertex's first texture coordinates |
+
+- One WGSL can hold a vertex offset and a surface function. They share the uniforms, and functions of your own that both call.
+- The engine keeps the mesh's normals, so a moved surface lights as the unmoved one did. Give the material `flatShading: true` to light each face by its moved position, or bend `s.normal` in a surface function.
+- Culling tests the mesh's bounding sphere. Vertices that move out of it can make the object vanish at the edge of the view. Give the object a sphere that holds them with `setBounds(center, radius)`, at setup, as [Objects and transforms](../api/objects.md) describes.
+- Shadows follow the mesh's own vertices, not the moved ones.
+
+## Built-in values
+
+Besides its inputs, a custom material reads the built-in values `frame`, `camera`, `object` and `material` anywhere in its WGSL. The sketch time, `frame.time`, animates a look. The origin of each object, `object.position`, gives each object its own look from one material. [Built-in shader inputs](builtins.md) lists every field.
+
 ## Library functions
 
 A surface function can import the engine's [shader library](library.md), such as its noise and color functions. Import the items that you use by name:
@@ -144,7 +175,7 @@ fn surface(input: SurfaceInput) -> Surface {
 
 Your WGSL shares one file with the engine's standard material, so a few rules apply besides the [WGSL rules for portable shaders](wgsl-rules.md):
 
-- Do not declare the names that the engine declares: `SurfaceInput`, `Surface`, `defaultSurface`, `shade`, `light_surface`, `material`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs` and `fs`. The build stops at your line when a name clashes.
+- Do not declare a name that the engine declares. The build stops at your line when a name clashes. The engine's names are `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs` and `fs`.
 - Import library items by name, as in `#import null3d::noise::{fbm3}`. An import of a whole module reserves the module's name. After `#import null3d::color`, no name in the file can be `color`.
 - The WGSL cannot hold directives such as `enable`.
 - Call `dpdx`, `dpdy`, `fwidth` and `textureSample` in uniform control flow, outside branches that differ between pixels. Chrome rejects the shader otherwise.
@@ -154,6 +185,7 @@ When the WGSL breaks a rule, the build stops with the file, line and column of t
 ## Related pages
 
 - [Custom shaders](../guides/custom-shaders.md): WGSL in sketch code, and how the Vite plugin compiles it.
+- [Built-in shader inputs](builtins.md): `frame`, `camera`, `object` and `material`.
 - [Materials](../api/materials.md): `materials.shader` and the standard options.
 - [Materials and pipelines](../concepts/materials.md): why materials share shaders.
 - [Shader library and imports](library.md): the functions that a surface function can import.

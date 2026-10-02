@@ -290,6 +290,35 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		switches: ['uploads=copy'],
 		reference: 'scene',
 	},
+	// The same scene at render scales of 1, 0.75 and 0.5. Each range reaches down to 0.5, so the
+	// final pass scales the image up on every GPU path, even the 8-bit one, and hold mode draws at
+	// the range's highest scale. At 1 each pixel shows its own texel, so the image is the scene's.
+	{
+		name: 'render-scale-100',
+		sketch: 'tests/pages/sketches/boxes-sketch.ts?scale=1',
+		hold: 0,
+		reference: 'scene',
+	},
+	{ name: 'render-scale-75', sketch: 'tests/pages/sketches/boxes-sketch.ts?scale=0.75', hold: 0 },
+	{
+		name: 'render-scale-50',
+		sketch: 'tests/pages/sketches/boxes-sketch.ts?scale=0.5',
+		hold: 0,
+		modes: ALL_MODES,
+	},
+	// The 8-bit path's final pass only copies the colors that it scales up, so it draws the HDR
+	// path's image, apart from the edges that it resolves after the tone mapping.
+	{
+		name: 'render-scale-50-8-bit',
+		sketch: 'tests/pages/sketches/boxes-sketch.ts?scale=0.5',
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['hdr=off'],
+		reference: 'render-scale-50',
+		expect: { hdr: false },
+		tolerance: EIGHT_BIT_TOLERANCE,
+		deviceTolerance: EIGHT_BIT_TOLERANCE,
+	},
 	...toneMappingTests(),
 	...antialiasTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
@@ -355,23 +384,28 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	{ name: 'layers', sketch: 'tests/pages/sketches/layers-sketch.ts', hold: 0.1 },
 	// The main directional light's shadows with 1 to 4 cascades, near the camera and far from it:
 	// casters that receive shadows, a receiver that casts none, a caster that receives none, and an
-	// unlit box in a shadow. WebGL2 draws no shadows yet.
+	// unlit box in a shadow. Both GPU paths draw the same shadows, so every tier must draw the
+	// WebGPU image. WebGL2 takes the 8-bit path, which averages antialiased edges after the tone
+	// mapping, so about 0.16% of the pixels differ, all at edges, on the Mac and with SwiftShader.
+	// A shadow drawn wrong changes several percent.
 	...[3, 1, 2, 4].map((cascades) => ({
 		name: cascades === 3 ? 'shadows' : `shadows-cascades-${cascades}`,
 		sketch: `tests/pages/sketches/shadows-sketch.ts?cascades=${cascades}`,
 		hold: 0,
 		size: [480, 270] as const,
-		tiers: ['webgpu', 'compat'] as const,
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
 	})),
 	// The same scene with custom materials on the ground and the red boxes, whose surface function
 	// keeps the standard look: they cast and receive shadows as the standard material does, so the
-	// references are copies of the shadows test's.
+	// references are copies of the shadows test's, with its tolerance for WebGL2's edges.
 	{
 		name: 'shadows-custom',
 		sketch: 'tests/pages/sketches/shadows-sketch.ts?custom',
 		hold: 0,
 		size: [480, 270],
-		tiers: ['webgpu', 'compat'],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
 	},
 	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the
 	// slab's front corner and the far plane cutting the bar at the back. The parity test compares
@@ -460,6 +494,23 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
+	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
+	// lights through an orthographic camera.
+	...(
+		[
+			['lights-1', 'lights=1'],
+			['lights-16', 'lights=16'],
+			['lights-256', 'lights=256'],
+			['lights-spot', 'scene=spot'],
+			['lights-ortho', 'lights=16&camera=ortho'],
+		] as const
+	).map(([name, query]) => ({
+		name,
+		sketch: `tests/pages/sketches/lights-sketch.ts?${query}`,
+		hold: 0,
+		size: [480, 270] as const,
+	})),
 	// Custom materials with surface functions: pairs of a standard material and a surface function
 	// that keeps its look, which must match, then surface functions that change the look. Each
 	// thread mode sends the shaders to the thread that draws in its own way.
@@ -477,6 +528,32 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/custom-uniforms-sketch.ts',
 		hold: 0,
 		size: [480, 270],
+	},
+	// Custom materials with vertex offsets: waves that uniforms shape, a swelling with a surface
+	// function from the same WGSL, and a twist beside the same torus with the standard material.
+	{
+		name: 'custom-vertex-offset',
+		sketch: 'tests/pages/sketches/custom-vertex-offset-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	// The built-in values of custom materials, at a held time: frame, camera and object, and the
+	// surface's world position, in a surface function and a vertex offset.
+	// A full shader as a custom material, at a held time: a hologram on meshes and instances, and a
+	// shader that reads vertex colors, which a mesh without colors does not draw.
+	{
+		name: 'custom-full-shader',
+		sketch: 'tests/pages/sketches/custom-full-shader-sketch.ts',
+		hold: 1,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
+	{
+		name: 'custom-builtins',
+		sketch: 'tests/pages/sketches/custom-builtins-sketch.ts',
+		hold: 1.5,
+		size: [480, 270],
+		modes: ALL_MODES,
 	},
 	// The README's dissolve: a surface function with uniforms and the mask alpha mode, at four
 	// stages of its progress.

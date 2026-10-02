@@ -29,7 +29,10 @@ async function probe(): Promise<WorkerProbe> {
 		offscreenWebGPU: false,
 	};
 	try {
-		result.offscreenWebGL2 = new OffscreenCanvas(4, 4).getContext('webgl2') !== null;
+		const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
+		result.offscreenWebGL2 = gl !== null;
+		// A browser holds only a few WebGL contexts at once, and frees this one when it collects it.
+		gl?.getExtension('WEBGL_lose_context')?.loseContext();
 	} catch {
 		result.offscreenWebGL2 = false;
 	}
@@ -37,7 +40,7 @@ async function probe(): Promise<WorkerProbe> {
 		const adapter = await navigator.gpu?.requestAdapter({ featureLevel: 'compatibility' });
 		if (adapter) {
 			const device = await adapter.requestDevice();
-			const context = new OffscreenCanvas(4, 4).getContext('webgpu');
+			const context = new OffscreenCanvas(1, 1).getContext('webgpu');
 			if (context) {
 				context.configure({ device, format: navigator.gpu.getPreferredCanvasFormat() });
 				result.offscreenWebGPU = true;

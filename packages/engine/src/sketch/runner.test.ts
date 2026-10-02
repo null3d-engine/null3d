@@ -38,16 +38,25 @@ const RING = 64;
 /** The fake core's first ring block, past room for every scene field. */
 const RING_BLOCK = 16;
 
+/** The calls whose arguments the fake core keeps. */
+const KEPT_ARGUMENTS = new Set(['recordFrame', 'setRenderScaling']);
+
 /** How the log shows a change of one of the core's texture settings. */
 const textureOption = (option: number, value: number) => `setTextureOption ${option} ${value}`;
 
 /**
  * A core that keeps the scene arrays and the command ring in memory, hands out slots, and logs each
- * frame step it takes and each texture setting it gets. Its transform updates clear the dirty bits,
- * as the core's do. With `grows`, each frame step grows the memory, which detaches the views of a
- * memory that is not shared, as the single-threaded build's is. Its other calls do nothing.
+ * frame step it takes and each texture setting it gets. It keeps the arguments of some calls in
+ * `calls`. Its transform updates clear the dirty bits, as the core's do. With `grows`, each frame
+ * step grows the memory, which detaches the views of a memory that is not shared, as the
+ * single-threaded build's is. Its other calls do nothing.
  */
-function fakeGlue(log: string[], memory: WebAssembly.Memory, grows = false): CoreGlue {
+function fakeGlue(
+	log: string[],
+	memory: WebAssembly.Memory,
+	calls: unknown[][] = [],
+	grows = false,
+): CoreGlue {
 	// Each scene field, then each ring field, in its own 4 KB block.
 	const block = (index: number) => 4096 * (index + 1);
 	let slots = 0;
@@ -67,6 +76,7 @@ function fakeGlue(log: string[], memory: WebAssembly.Memory, grows = false): Cor
 		get: (_, name: string) =>
 			kept[name as keyof CoreGlue] ??
 			((...args: number[]) => {
+				if (KEPT_ARGUMENTS.has(name)) calls.push([name, ...args]);
 				if (FRAME_STEPS.has(name)) log.push(name);
 				if (grows && FRAME_STEPS.has(name)) memory.grow(1);
 				if (name === 'setTextureOption') log.push(textureOption(args[0] ?? -1, args[1] ?? -1));
@@ -76,16 +86,23 @@ function fakeGlue(log: string[], memory: WebAssembly.Memory, grows = false): Cor
 	});
 }
 
-/** How the thread that draws behaves in a test: the intervals it records, in ms. */
+/**
+ * How the thread that draws behaves in a test: the intervals it records, in ms. With `replayMs`,
+ * each frame's replay lasts that long after the frame is taken, and `overwritten` gets each frame
+ * whose list the sketch recorded again during its replay.
+ */
 interface FakeDrawing {
 	presentedMs: number;
 	completedMs: number;
+	replayMs?: number;
+	overwritten?: number[];
 }
 
 /**
  * A stand-in for the thread that draws: each few ms it takes the newest published frame, reports
- * its pipelines built, and records a presented and a completed frame with the given intervals.
- * Returns a function that stops it.
+ * its pipelines built, and records a presented and a completed frame with the given intervals. As
+ * the real thread does, it marks a frame taken before it replays the frame's list. Returns a
+ * function that stops it.
  */
 function drawFrames(
 	control: ReturnType<typeof controlViews>,
@@ -95,11 +112,24 @@ function drawFrames(
 	const { slots } = control;
 	const render = new FrameRecorder(metrics, Role.Render);
 	const completion = new FrameRecorder(metrics, Role.Completion);
+	let replaying = 0;
+	let replayEnd = 0;
 	const timer = setInterval(() => {
+		if (replaying !== 0) {
+			// The frame two after shares the list.
+			if (Atomics.load(slots, Slot.FramesPublished) >= replaying + 2)
+				drawing.overwritten?.push(replaying);
+			else if (performance.now() < replayEnd) return;
+			replaying = 0;
+		}
 		const published = Atomics.load(slots, Slot.FramesPublished);
 		if (published <= Atomics.load(slots, Slot.FramesTaken)) return;
 		Atomics.store(slots, Slot.PipelinesBuilt, published);
 		Atomics.store(slots, Slot.FramesTaken, published);
+		if (drawing.replayMs) {
+			replaying = published;
+			replayEnd = performance.now() + drawing.replayMs;
+		}
 		for (const [recorder, ms] of [
 			[render, drawing.presentedMs],
 			[completion, drawing.completedMs],
@@ -133,9 +163,16 @@ async function start(
 		quality = MEDIUM,
 		drawing,
 		grows = false,
-	}: { quality?: QualityStart; drawing?: FakeDrawing; grows?: boolean } = {},
+		holdSeconds,
+	}: {
+		quality?: QualityStart;
+		drawing?: FakeDrawing;
+		grows?: boolean;
+		holdSeconds?: number;
+	} = {},
 ) {
 	const log: string[] = [];
+	const calls: unknown[][] = [];
 	const updates: QualityUpdate[] = [];
 	const control = controlViews(createControlBuffer(false));
 	control.slotFloats[Slot.CanvasCssWidth] = 320;
@@ -145,36 +182,41 @@ async function start(
 	const stopDrawing = drawing ? drawFrames(control, metrics, drawing) : () => {};
 	if (drawing) Atomics.store(control.slots, Slot.Running, 1);
 	const memory = new WebAssembly.Memory({ initial: 2 });
-	const runner = new SketchRunner(() => {}, metrics, {
-		glue: fakeGlue(log, memory, grows),
-		memory,
-		control,
-		keyCodes: [],
-		jobWorkers: 0,
-		device: {
-			webgl2: true,
-			storageBindingBytes: 0,
-			capabilities: 0,
-			maxTextureSize: 4096,
-			sharedUploads: false,
-			depth: 'reversed',
-			parallelCompile: true,
-			sceneColor: FORMAT_RGBA16_FLOAT,
-			antialias: C.ANTIALIAS_MSAA,
-			transparent: false,
-			shaderBits: 0,
-			cellCulling: true,
+	const runner = new SketchRunner(
+		() => {},
+		metrics,
+		{
+			glue: fakeGlue(log, memory, calls, grows),
+			memory,
+			control,
+			keyCodes: [],
+			jobWorkers: 0,
+			device: {
+				webgl2: true,
+				storageBindingBytes: 0,
+				capabilities: 0,
+				maxTextureSize: 4096,
+				sharedUploads: false,
+				depth: 'reversed',
+				parallelCompile: true,
+				sceneColor: FORMAT_RGBA16_FLOAT,
+				antialias: C.ANTIALIAS_MSAA,
+				transparent: false,
+				shaderBits: 0,
+				cellCulling: true,
+			},
+			capabilities: CAPABILITIES,
+			quality,
+			applyQuality: (update) => {
+				updates.push(update);
+				log.push(`page ${JSON.stringify(update.settings)}`);
+			},
+			sendImage: () => {},
+			sendShader: () => {},
+			pageUrl: 'http://localhost/',
 		},
-		capabilities: CAPABILITIES,
-		quality,
-		applyQuality: (update) => {
-			updates.push(update);
-			log.push(`page ${JSON.stringify(update.settings)}`);
-		},
-		sendImage: () => {},
-		sendShader: () => {},
-		pageUrl: 'http://localhost/',
-	});
+		holdSeconds,
+	);
 	let context: SketchContext | undefined;
 	try {
 		await runner.setup(
@@ -187,7 +229,7 @@ async function start(
 		stopDrawing();
 		throw error;
 	}
-	return { runner, log, control, updates, stopDrawing, context: context as SketchContext };
+	return { runner, log, calls, control, updates, stopDrawing, context: context as SketchContext };
 }
 
 describe('SketchRunner', () => {
@@ -335,6 +377,64 @@ describe('SketchRunner', () => {
 		}
 	});
 
+	it("draws at the range's highest render scale, and lets the core scale while the scale can drop", async () => {
+		const { runner, calls } = await start(() => ({}));
+		runner.step(0);
+		expect(calls[0]).toEqual(['setRenderScaling', true]);
+		const record = calls.find((call) => call[0] === 'recordFrame');
+		expect(record?.[4]).toBe(1000);
+	});
+
+	it('draws the frame being drawn at a range that the sketch fixes in its update', async () => {
+		const { runner, calls } = await start(({ quality }) => ({
+			onUpdate: () => {
+				quality.set({ minRenderScale: 0.5, maxRenderScale: 0.5 });
+				expect(quality.renderScale).toBe(0.5);
+			},
+		}));
+		runner.step(0);
+		const records = calls.filter((call) => call[0] === 'recordFrame');
+		expect(records.map((call) => call[4])).toEqual([500]);
+		expect(calls.filter((call) => call[0] === 'setRenderScaling').at(-1)).toEqual([
+			'setRenderScaling',
+			true,
+		]);
+	});
+
+	it('holds at the highest render scale, with the passes of its range', async () => {
+		const whole = await start(
+			({ quality }) => {
+				quality.set({ minRenderScale: 1 });
+				return {};
+			},
+			undefined,
+			{ holdSeconds: 0 },
+		);
+		expect(whole.calls.filter((call) => call[0] === 'setRenderScaling').at(-1)).toEqual([
+			'setRenderScaling',
+			false,
+		]);
+		expect(whole.calls.find((call) => call[0] === 'recordFrame')?.[4]).toBe(1000);
+		const preset = await start(() => ({}), undefined, { holdSeconds: 0 });
+		expect(preset.calls.filter((call) => call[0] === 'setRenderScaling')).toEqual([
+			['setRenderScaling', true],
+		]);
+		expect(preset.calls.find((call) => call[0] === 'recordFrame')?.[4]).toBe(1000);
+		const scaled = await start(
+			({ quality }) => {
+				quality.set({ minRenderScale: 0.5, maxRenderScale: 0.75 });
+				return {};
+			},
+			undefined,
+			{ holdSeconds: 0 },
+		);
+		expect(scaled.calls.filter((call) => call[0] === 'setRenderScaling').at(-1)).toEqual([
+			'setRenderScaling',
+			true,
+		]);
+		expect(scaled.calls.find((call) => call[0] === 'recordFrame')?.[4]).toBe(750);
+	});
+
 	it("gives the core the preset's texture settings before the setup, then only those that change", async () => {
 		const { log, context } = await start((ctx, log) => {
 			log.push('setup');
@@ -359,6 +459,20 @@ describe('SketchRunner', () => {
 			textureOption(C.TEXTURE_OPTION_MAX_ANISOTROPY, 2),
 			`page ${JSON.stringify({ ...medium, maxPixelRatio: 1, maxAnisotropy: 2, uploadBytesPerFrame: 65_536 })}`,
 		]);
+	});
+
+	it('records no setup frame into the list of a frame that the thread that draws still replays', async () => {
+		const drawing = { presentedMs: 16, completedMs: 16, replayMs: 10, overwritten: [] as number[] };
+		const { stopDrawing } = await start(
+			async ({ scene }) => {
+				await Promise.all([scene.warmUp(), scene.warmUp(), scene.warmUp(), scene.warmUp()]);
+				return {};
+			},
+			undefined,
+			{ drawing },
+		);
+		stopDrawing();
+		expect(drawing.overwritten).toEqual([]);
 	});
 
 	it('refuses options out of range with E1214, before the setup function runs', async () => {

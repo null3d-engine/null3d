@@ -141,7 +141,22 @@ function blankComments(source: string): string {
 }
 
 /** The functions that a custom material's WGSL may declare for the engine to call. */
-const MATERIAL_FUNCTIONS: ReadonlySet<string> = new Set(['surface']);
+const MATERIAL_FUNCTIONS: ReadonlySet<string> = new Set(['surface', 'vertexOffset']);
+
+/**
+ * True when WGSL is a mesh shader of its own: its `@vertex` entry point takes an `InstanceIn`, as
+ * `null3d::mesh` finds each instance of a mesh with. Such a shader draws as a custom material.
+ */
+function isMeshShader(source: string): boolean {
+	const text = blankComments(source);
+	for (const match of text.matchAll(FUNCTION)) {
+		if (!/@\s*vertex\b/.test(match[1] ?? '')) continue;
+		const open = text.indexOf('(', match.index + match[0].length);
+		const close = open < 0 ? -1 : text.indexOf('{', open);
+		if (close > open && /\bInstanceIn\b/.test(text.slice(open, close))) return true;
+	}
+	return false;
+}
 
 /** True when WGSL declares a function of a custom material, such as `fn surface`. */
 function declaresMaterialFunction(source: string): boolean {
@@ -194,7 +209,7 @@ function pipelinesOf(
 	if (entries.length === 0) {
 		return problem(
 			0,
-			`the WGSL has no entry point and no function of a custom material. For a custom material, declare \`fn surface(input: SurfaceInput) -> Surface\`. For a shader of your own, give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
+			`the WGSL has no entry point and no function of a custom material. For a custom material, declare \`fn surface(input: SurfaceInput) -> Surface\`, \`fn vertexOffset(input: VertexInput) -> vec3f\`, or both. For a shader of your own, give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
 		);
 	}
 	if (secondVertex) {
@@ -245,9 +260,10 @@ export type WgslCompile =
  * the message about WGSL that is neither.
  */
 export function compileWgsl(path: string, source: string, hint: string): WgslCompile {
-	if (entryPoints(source).length === 0 && declaresMaterialFunction(source)) {
+	const material = entryPoints(source).length === 0 && declaresMaterialFunction(source);
+	if (material || isMeshShader(source)) {
 		const result = compileMaterial({ path, source });
-		// The standard material builds for both GPU paths.
+		// Custom materials build for both GPU paths.
 		if (!result.ok) return { ok: false, problems: result.problems, builds: ['webgpu', 'webgl2'] };
 		return { ok: true, shader: { kind: 'material', ...result.material } };
 	}

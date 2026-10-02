@@ -30,7 +30,8 @@ import {
 } from '../generated/core';
 import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
-import { SKETCH_SETTINGS } from '../quality/presets';
+import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
+import { DynamicResolution, FULL_SCALE, thousandths } from '../quality/resolution';
 import { Assets } from '../scene/assets';
 import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
@@ -77,6 +78,8 @@ export interface SketchCore {
 	sendShader: ShaderSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
 	pageUrl: string;
+	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
+	fps?: number;
 }
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
@@ -180,6 +183,10 @@ export class SketchRunner {
 	private restoreRandom: (() => void) | undefined;
 	private readonly input: InputReader;
 	private readonly quality: SketchQuality;
+	/** Dynamic resolution, which moves the render scale during play; none in hold mode. */
+	private readonly resolution: DynamicResolution | undefined;
+	/** The render scale in thousandths where no dynamic resolution moves it: the highest. */
+	private heldScale = FULL_SCALE;
 	/** The sketch's debug drawing, in development builds only. */
 	private readonly debugDraw: DebugDraw | undefined;
 	readonly context: SketchContext;
@@ -235,14 +242,19 @@ export class SketchRunner {
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
 		textures.applyQuality(sketch.quality.settings, SKETCH_SETTINGS);
+		this.resolution =
+			holdSeconds === undefined ? new DynamicResolution(metrics, sketch.fps) : undefined;
 		this.quality = new SketchQuality(
 			sketch.quality,
 			(update, changed) => {
+				this.applyRenderScale(update.settings);
 				textures.applyQuality(update.settings, changed);
 				sketch.applyQuality(update);
 			},
 			() => this.settle(true),
+			() => this.renderScale() / FULL_SCALE,
 		);
+		this.applyRenderScale(this.quality.settings);
 		this.readViewport();
 		this.debugDraw = DEV ? new DebugDraw(this.core) : undefined;
 		const debug: Debug = this.debugDraw ?? RELEASE_DEBUG;
@@ -378,12 +390,13 @@ export class SketchRunner {
 
 	/**
 	 * Records a frame of the scene as the setup has built it so far, with no update, and publishes
-	 * it for the thread that draws. The frame before the last shares its list, so it waits for that
-	 * frame to be taken first.
+	 * it for the thread that draws. The frame before the last shares its list. The thread that
+	 * draws marks a frame taken before it replays the frame's list, so that list is free only once
+	 * the last frame is taken, as in the frame loop.
 	 */
 	private async publishSetupFrame(): Promise<number> {
 		const { slots } = this.sketch.control;
-		await reached(slots, Slot.FramesTaken, this.recorded.frame - 1);
+		await reached(slots, Slot.FramesTaken, this.recorded.frame);
 		const frame = this.frame(false);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);
@@ -431,6 +444,26 @@ export class SketchRunner {
 			console.error(error);
 		}
 		if (this.holding) throw error;
+	}
+
+	/** The render scale of the frame being drawn, in thousandths. */
+	private renderScale(): number {
+		return this.resolution ? this.resolution.controller.scale : this.heldScale;
+	}
+
+	/**
+	 * Gives dynamic resolution the render scale's range, and tells the core whether the scale can
+	 * drop below the whole canvas. Hold mode draws at the highest scale of the range, with the
+	 * passes that play draws the range with.
+	 */
+	private applyRenderScale(settings: QualitySettings): void {
+		const low = thousandths(settings.minRenderScale);
+		const high = thousandths(settings.maxRenderScale);
+		this.heldScale = high;
+		this.resolution?.controller.setRange(low, high);
+		const { glue } = this.sketch;
+		if (glue.setRenderScaling(low < FULL_SCALE) !== 0)
+			this.report(coreFailure(glue, 'quality.set'));
 	}
 
 	/** Calls each of the sketch's handlers with `value`, and reports each error that one throws. */
@@ -526,6 +559,12 @@ export class SketchRunner {
 		this.record.begin(frame);
 		this.phaseStart = start;
 		this.readViewport();
+		// Dynamic resolution judges the frames so far before the sketch's update, which then sees
+		// the render scale of this frame.
+		if (play && this.resolution) {
+			this.resolution.now[0] = start;
+			this.resolution.frame();
+		}
 		// Handlers that hear of a restart may create objects with new pipelines, so their frame
 		// waits for them.
 		let restart = false;
@@ -565,7 +604,10 @@ export class SketchRunner {
 		// Job workers woken now start while the engine applies the frame's commands; woken before
 		// the sketch's update, they would spin through it and sleep again.
 		glue.prepareJobs();
-		if (glue.beginFrame(frame) !== 0) this.report(coreFailure(glue, QUEUED_CHANGE));
+		// Whole milliseconds and microseconds cross into the core without a number object each.
+		const timeMs = Math.round(time.now * 1000);
+		const stepUs = Math.round(dt * 1_000_000);
+		if (glue.beginFrame(frame, timeMs, stepUs) !== 0) this.report(coreFailure(glue, QUEUED_CHANGE));
 		this.core.refresh();
 		this.endPhase(Phase.Commands);
 		this.updateTransforms(false);
@@ -605,7 +647,8 @@ export class SketchRunner {
 				this.report(error);
 			}
 		}
-		if (glue.recordFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
+		if (glue.recordFrame(frame, width, height, this.renderScale()) !== 0)
+			this.report(coreFailure(glue, 'the frame'));
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		// A frame whose list needs more room than any before moves the list, so each frame gives
