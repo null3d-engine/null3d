@@ -1,8 +1,10 @@
 // Runs the image test manifest in Chrome: each test on each of its GPU tiers, in each of its thread
 // modes, against the references of the environment that the Playwright project names. The tests
 // run in parallel, so CI can split them into shards. A missing or different image fails its test
-// and is saved as a candidate for bun run images:review.
+// and is saved as a candidate for bun run images:review. NULL3D_SWITCHES gives every page more
+// switches, such as half=on, and the images must still match the usual references.
 import { expect, type Page, test } from '@playwright/test';
+import { readSwitches } from '../../bench/lib/parity.ts';
 import { watchConsole } from '../../packages/cli/src/page.js';
 import {
 	clearCandidate,
@@ -53,9 +55,19 @@ async function runProblems(
 	return problems;
 }
 
+/** The switches that NULL3D_SWITCHES adds to every page, or none. */
+const extraSwitches =
+	process.env.NULL3D_SWITCHES && readSwitches(process.env.NULL3D_SWITCHES, 'NULL3D_SWITCHES');
+
+/** A run with the switches of NULL3D_SWITCHES after its own. */
+const withExtraSwitches = (run: ImageRun): ImageRun =>
+	extraSwitches ? { ...run, path: `${run.path}&${extraSwitches}` } : run;
+
 for (const imageTest of IMAGE_TESTS)
 	for (const tier of tiersOf(imageTest)) {
-		const runs = IMAGE_RUNS.filter((run) => run.test === imageTest.name && run.tier === tier);
+		const runs = IMAGE_RUNS.filter((run) => run.test === imageTest.name && run.tier === tier).map(
+			withExtraSwitches,
+		);
 		test(`${imageTest.name} on ${tier}`, async ({ page }, testInfo) => {
 			test.setTimeout(timeoutOf(runs));
 			expect(await runProblems(page, runs, testInfo.project.name)).toEqual([]);
@@ -67,7 +79,7 @@ for (const imageTest of IMAGE_TESTS)
 // end the wait, and every threaded mode draws the same image.
 const textureRuns = IMAGE_RUNS.filter(
 	(run) => run.test === 'textures' && run.tier === 'webgl2' && run.mode?.build === 'threaded',
-).map((run) => ({ ...run, path: `${run.path}&wake=message` }));
+).map((run) => withExtraSwitches({ ...run, path: `${run.path}&wake=message` }));
 test('textures on webgl2 with ?wake=message', async ({ page }, testInfo) => {
 	test.setTimeout(timeoutOf(textureRuns));
 	expect(await runProblems(page, textureRuns, testInfo.project.name)).toEqual([]);

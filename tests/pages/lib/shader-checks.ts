@@ -140,16 +140,29 @@ export async function checkGlslPrograms(
 	return { programs: pending.length, multiDraw, parallel: parallel !== null, skipped, renderer };
 }
 
-/** Compiles WGSL modules, each with its name, when the browser has WebGPU. */
+/** True for a WGSL module that does math in 16-bit floats, which needs `shader-f16`. */
+const enablesF16 = (code: string) => /^enable f16;/m.test(code);
+
+/**
+ * Compiles WGSL modules, each with its name, when the browser has WebGPU. The modules that use
+ * 16-bit floats compile where the adapter offers `shader-f16`, and count as skipped elsewhere, as
+ * the engine never loads them there.
+ */
 export async function checkWgslModules(
 	modules: readonly (readonly [string, string])[],
 	failures: ShaderFailure[],
-): Promise<{ webgpu: boolean; modules: number }> {
+): Promise<{ webgpu: boolean; modules: number; skipped: number }> {
 	const adapter = await navigator.gpu?.requestAdapter();
-	if (!adapter) return { webgpu: false, modules: 0 };
-	const device = await adapter.requestDevice();
+	if (!adapter) return { webgpu: false, modules: 0, skipped: 0 };
+	const f16 = adapter.features.has('shader-f16');
+	const device = await adapter.requestDevice({ requiredFeatures: f16 ? ['shader-f16'] : [] });
 	let checked = 0;
+	let skipped = 0;
 	for (const [name, code] of modules) {
+		if (!f16 && enablesF16(code)) {
+			skipped++;
+			continue;
+		}
 		device.pushErrorScope('validation');
 		const module = device.createShaderModule({ code });
 		const info = await module.getCompilationInfo();
@@ -163,5 +176,5 @@ export async function checkWgslModules(
 		checked++;
 	}
 	device.destroy();
-	return { webgpu: true, modules: checked };
+	return { webgpu: true, modules: checked, skipped };
 }

@@ -10,6 +10,7 @@ interface ShaderResult {
 	renderer: string;
 	webgpu: boolean;
 	wgslModules: number;
+	wgslSkipped: number;
 	failures: { shader: string; stage: string; log: string }[];
 }
 
@@ -31,6 +32,8 @@ test('the generated GLSL compiles and links in WebGL2 and the WGSL compiles in W
 	// which Chrome on a real GPU always has.
 	if (result.multiDraw) expect(result.skipped).toEqual([]);
 	if (realGpu) {
+		// Chrome on the Mac's GPU offers 16-bit floats, so it compiles the half precision modules too.
+		expect(result.wgslSkipped).toBe(0);
 		expect(result.multiDraw).toBe(true);
 		expect(result.renderer.toLowerCase()).not.toContain('swiftshader');
 	}

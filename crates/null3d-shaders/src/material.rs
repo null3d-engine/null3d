@@ -298,9 +298,16 @@ impl Compiler {
                 defs.extend(declared.iter().map(|hook| hook.def.to_owned()));
                 defs.extend(uniforms.as_ref().map(|_| UNIFORMS_DEF.to_owned()));
                 defs.sort();
+                // Custom materials draw at full precision, so their builds stay half as many.
+                let permutations = variant
+                    .permutations
+                    .iter()
+                    .filter(|bit| *bit != "HALF")
+                    .cloned()
+                    .collect();
                 let variant = Variant {
                     defs,
-                    permutations: variant.permutations.clone(),
+                    permutations,
                     targets: variant.targets.clone(),
                 };
                 (name.clone(), variant)
