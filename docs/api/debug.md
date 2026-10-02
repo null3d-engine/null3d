@@ -8,9 +8,9 @@ summary: "debug.line, box, sphere, arrow, axes, grid, frustum and light; debug.s
 
 # Debug drawing and stats
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The debug views of `debug.view` are not built yet, so coding agents must not use them. Skeleton drawing, `debug.skeleton`, comes with animation in null3D 0.2.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Skeleton drawing, `debug.skeleton`, comes with animation in null3D 0.2.
 
-Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows, axes, grids, camera frustums and lights. The overlay of `debug.stats` shows the engine's frame figures over the canvas, and `debug.frameStats` gives them to the sketch. On the page, `engine.measure` measures the running engine.
+Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows, axes, grids, camera frustums and lights. Debug views draw the whole scene with one debug shading, such as its normals or its wireframe. The overlay of `debug.stats` shows the engine's frame figures over the canvas, and `debug.frameStats` gives them to the sketch. On the page, `engine.measure` measures the running engine.
 
 ## Debug drawing
 
@@ -64,13 +64,52 @@ Colors take the same forms as material colors: a hex string such as `'#ff0000'`,
 
 ### Release builds
 
-Debug drawing works in development builds only. In a production build, every drawing call does nothing, and the build holds neither the drawing code nor the shader of the lines. The calls themselves still run. So work that only feeds debug drawing still costs time: wrap it in `if (import.meta.env.DEV)`, which Vite sets to false in production builds. The stats overlay and `debug.frameStats` work in every build.
+Debug drawing works in development builds only. In a production build, every drawing call and `debug.view` do nothing. The build holds neither the drawing code nor the shaders of the lines and the views. The calls themselves still run. So work that only feeds debug drawing still costs time: wrap it in `if (import.meta.env.DEV)`, which Vite sets to false in production builds. The stats overlay and `debug.frameStats` work in every build.
 
 ### Limits
 
 - Lines are one pixel wide on every GPU, because WebGPU draws lines no wider. Wide lines come with [lines](lines.md) in null3D 0.2.
 - A frame draws at most 131,072 lines. The engine leaves out the lines after that, and warns once in the console.
 - A frame without debug drawing runs no debug pass, uploads nothing and allocates nothing.
+
+## Debug views
+
+```mermaid
+flowchart LR
+    call["debug.view('normals')"] --> core["Every mesh's pipeline<br/>takes the debug shading"]
+    core --> frame["The next frame draws the view,<br/>clears to black, no tone mapping"]
+```
+
+`debug.view(name)` draws every mesh with one debug shading in place of its material, from the next frame on. `debug.view('lit')` draws the materials again.
+
+```ts
+export default defineSketch(({ debug, input }) => {
+  const views = ['lit', 'normals', 'depth', 'overdraw', 'wireframe'] as const;
+  let shown = 0;
+  return {
+    onUpdate() {
+      if (input.wasPressed('KeyV')) {
+        shown = (shown + 1) % views.length;
+        debug.view(views[shown]);
+      }
+    },
+  };
+});
+```
+
+| View | What it shows |
+| --- | --- |
+| `'lit'` | The materials' own shading, as without a debug view |
+| `'normals'` | Each surface's normal in world space as a color: x as red, y as green and z as blue, each from -1 to 1 as 0 to 1 |
+| `'depth'` | The distance from the camera as a gray: white at the near plane, black at the far plane. A perspective camera's distance takes a logarithmic scale, so near and far objects both show. An orthographic camera's scale is linear |
+| `'overdraw'` | Light that each surface adds to the pixels it covers, with no depth test. Bright pixels are covered many times, so they cost the most shading |
+| `'wireframe'` | The edges of each triangle as lines one pixel wide, in the material's color |
+
+- A debug view clears to black and hides the background texture. It uses no tone mapping and no exposure, so its colors reach the canvas as the table gives them.
+- The views ignore what a material changes: maps, vertex colors, alpha, blending, depth options and custom shaders, vertex offsets included. A mesh keeps its place and the faces it culls.
+- The first frame of a view builds its GPU pipelines, so objects can be missing from a few frames after a change.
+- The wireframe view keeps an edge list for each mesh once it has shown, which takes twice the GPU memory of the mesh's triangle indices.
+- Debug views work in development builds only. In a release build, `debug.view` does nothing, and the build holds neither their code nor their shader. A name that the engine does not know fails with [E1213](../errors/E1213.md).
 
 ## Stats overlay and frame figures
 
