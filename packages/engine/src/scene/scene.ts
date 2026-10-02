@@ -224,7 +224,7 @@ export interface DirectionalLightOptions extends LightOptions {
 	direction?: Vec3;
 	/**
 	 * True makes the light cast shadows, like `setCastShadows(true)`. The default is false. The
-	 * first directional light created casts them; WebGL2 draws no shadows yet.
+	 * first directional light created casts them.
 	 */
 	castShadows?: boolean;
 	/** How the light's shadows draw, like `setShadow`. Each setting has a default. */
@@ -1107,7 +1107,7 @@ export class DirectionalLight extends Light {
 
 	/**
 	 * Makes the light cast shadows, or stop. The default is false. The first directional light
-	 * created casts them; WebGL2 draws no shadows yet.
+	 * created casts them.
 	 */
 	setCastShadows(cast: boolean): void {
 		this.setFlag('setCastShadows', C.FLAG_CAST_SHADOWS, cast);

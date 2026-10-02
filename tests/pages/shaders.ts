@@ -1,36 +1,25 @@
 // Compiles every variant of the generated shader modules in this browser. Each GLSL program must
 // compile and link in WebGL2, and every uniform block and texture that the reflection names must
 // exist in the linked program. Each WGSL module must compile in WebGPU when the browser has it.
-// Failures carry the browser's info logs.
+// Failures carry the browser's info logs. The result gives the time the GLSL programs took.
 import { everyShader } from '@null3d/engine/internal';
 import { run } from './lib/result';
 import { checkGlslPrograms, checkWgslModules, type ShaderFailure } from './lib/shader-checks';
+import { glslProgramsOf, wgslModulesOf } from './lib/shader-list';
 
 run('shaders', async () => {
-	// Every variant of every shader, with its name, from the main module and each device module.
-	const VARIANTS = Object.entries(await everyShader()).flatMap(([shaderName, variants]) =>
-		Object.entries(variants).map(
-			([variantName, variant]) => [`${shaderName}.${variantName}`, variant] as const,
-		),
-	);
+	// Every shader of the main module and of each device module.
+	const shaders = await everyShader();
 	const failures: ShaderFailure[] = [];
-	const glsl = checkGlslPrograms(
-		VARIANTS.flatMap(([name, variant]) =>
-			Object.entries(variant.glsl ?? {}).map(
-				([pipeline, program]) => [`${name}.${pipeline}`, program] as const,
-			),
-		),
-		failures,
-	);
-	const wgsl = await checkWgslModules(
-		VARIANTS.flatMap(([name, variant]) =>
-			variant.wgsl ? [[name, variant.wgsl.source] as const] : [],
-		),
-		failures,
-	);
+	const glslStart = performance.now();
+	const glsl = await checkGlslPrograms(glslProgramsOf(shaders), failures);
+	const glslSeconds = Math.round(performance.now() - glslStart) / 1000;
+	const wgsl = await checkWgslModules(wgslModulesOf(shaders), failures);
 	return {
 		glslPrograms: glsl.programs,
+		glslSeconds,
 		multiDraw: glsl.multiDraw,
+		parallelCompile: glsl.parallel,
 		skipped: glsl.skipped,
 		renderer: glsl.renderer,
 		webgpu: wgsl.webgpu,

@@ -352,7 +352,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "mesh.setCastShadows(true) / setReceiveShadows(true), or the castShadows and receiveShadows options of createMesh",
-      "notes": "Both are false by default, as in three.js. The directional light's shadows draw on WebGPU; WebGL2 draws none yet. Unlit materials show no shadows. Instance batches neither cast nor receive them yet.",
+      "notes": "Both are false by default, as in three.js. The directional light casts them on both GPU paths. Unlit materials show no shadows. Instance batches neither cast nor receive them yet.",
       "docs": "api/objects",
       "detect": "\\.(castShadow|receiveShadow)\\s*="
     },

@@ -9,6 +9,9 @@
 //! when the frame writes new data, as the index list textures' slots do. A frame uniform's slot
 //! also holds the offset from the view's camera to each cell in use, which the vertex shader adds
 //! to an instance's matrix, so it draws positions relative to the camera.
+//!
+//! The shadow passes draw the same way, from the casters' layout: one [`Opaque`] records the
+//! views of cameras, and another the shadow cascades, whose frame groups bind no shadow map.
 
 use null3d_core::cells::MAX_CELLS;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
@@ -62,9 +65,12 @@ struct ViewDraws {
     slots: FrameSlots,
 }
 
-/// Each view's rings, and how the device draws many buckets.
+/// Each view's rings, and how the device draws many buckets. The views are of one kind, in order
+/// from the first: the views of cameras, or the shadow cascades.
 #[derive(Debug)]
 pub(super) struct Opaque {
+    /// The first view, whose rings are the first of `views`.
+    first: ViewId,
     views: Vec<ViewDraws>,
     /// True when the device has `WEBGL_multi_draw`.
     multi_draw: bool,
@@ -158,12 +164,19 @@ fn record_stride(multi_draw: bool) -> u32 {
 }
 
 impl Opaque {
-    /// No view's rings yet, for a device that has `WEBGL_multi_draw` or not.
-    pub(super) fn new(multi_draw: bool) -> Self {
+    /// No view's rings yet, for views from `first` on, on a device that has `WEBGL_multi_draw` or
+    /// not.
+    pub(super) fn new(first: ViewId, multi_draw: bool) -> Self {
         Self {
+            first,
             views: Vec::new(),
             multi_draw,
         }
+    }
+
+    /// The place of a view's rings in `views`.
+    fn slot(&self, view: ViewId) -> usize {
+        view.index() - self.first.index()
     }
 
     /// The number of views whose rings exist.
@@ -174,19 +187,18 @@ impl Opaque {
     /// Where a view's frame group reads the frame uniform and the cell offsets of the frame being
     /// recorded: the dynamic offset of the ring slot that [`Opaque::upload`] took for them.
     pub(super) fn frame_slot(&self, view: ViewId) -> u32 {
-        self.views[view.index()].slots.uniform * FRAME_SLOT_BYTES
+        self.views[self.slot(view)].slots.uniform * FRAME_SLOT_BYTES
     }
 
     /// Creates the ring of frame uniforms of each view from the first one without it up to
-    /// `views`, with the group that binds its uniform block, its cell offsets, the material
-    /// table's texture and three.js's table of the split-sum terms of specular light.
+    /// `views` of them. Each new view then needs its frame group ([`Opaque::bind_frame`]).
     pub(super) fn add_views(
         &mut self,
         list: &mut DrawList,
         views: usize,
     ) -> Result<(), RecordError> {
         while self.views.len() < views {
-            let view = ViewId::from_index(self.views.len());
+            let view = ViewId::from_index(self.first.index() + self.views.len());
             list.push(
                 Op::CreateBuffer,
                 &[
@@ -195,38 +207,75 @@ impl Opaque {
                     usage::UNIFORM | usage::COPY_DST,
                 ],
             )?;
-            // The frame's slot offset moves the uniform block and the cell offsets together, and
-            // the backend gives dynamic offsets to a group's buffers in their order here.
-            list.push(
-                Op::CreateBindGroup,
-                &[
-                    ids::frame_group(view),
-                    bind_layout::FRAME,
-                    4,
-                    0,
-                    resource_kind::BUFFER,
-                    ids::frame(view),
-                    0,
-                    sizes::FRAME_UNIFORM_BYTES,
-                    2,
-                    resource_kind::BUFFER,
-                    ids::frame(view),
-                    OFFSETS_AT,
-                    OFFSETS_BYTES,
-                    1,
-                    resource_kind::TEXTURE,
-                    ids::MATERIALS,
-                    0,
-                    0,
-                    3,
-                    resource_kind::TEXTURE,
-                    ids::DFG,
-                    0,
-                    0,
-                ],
-            )?;
             self.views.push(ViewDraws::default());
         }
+        Ok(())
+    }
+
+    /// Records the creation of a view's frame group, which binds its uniform block, its cell
+    /// offsets and the material table's texture. A camera's view also binds three.js's table of
+    /// the split-sum terms of specular light, and `shadow_map`, with the comparison sampler and
+    /// the cascades' uniform block that read it. A shadow cascade's view binds no shadow map, so
+    /// no pass reads the texture it draws into.
+    pub(super) fn bind_frame(
+        list: &mut DrawList,
+        view: ViewId,
+        shadow_map: Option<u32>,
+    ) -> Result<(), RecordError> {
+        // The frame's slot offset moves the uniform block and the cell offsets together, and
+        // the backend gives dynamic offsets to a group's buffers in their order here.
+        let frame = ids::frame(view);
+        let common = [
+            0,
+            resource_kind::BUFFER,
+            frame,
+            0,
+            sizes::FRAME_UNIFORM_BYTES,
+            2,
+            resource_kind::BUFFER,
+            frame,
+            OFFSETS_AT,
+            OFFSETS_BYTES,
+            1,
+            resource_kind::TEXTURE,
+            ids::MATERIALS,
+            0,
+            0,
+        ];
+        let group = ids::frame_group(view);
+        let Some(map) = shadow_map else {
+            let mut words = [0; 18];
+            words[..3].copy_from_slice(&[group, bind_layout::DEPTH, 3]);
+            words[3..].copy_from_slice(&common);
+            list.push(Op::CreateBindGroup, &words)?;
+            return Ok(());
+        };
+        let mut words = [0; 38];
+        words[..3].copy_from_slice(&[group, bind_layout::FRAME, 7]);
+        words[3..18].copy_from_slice(&common);
+        words[18..].copy_from_slice(&[
+            3,
+            resource_kind::TEXTURE,
+            ids::DFG,
+            0,
+            0,
+            4,
+            resource_kind::TEXTURE,
+            map,
+            0,
+            0,
+            5,
+            resource_kind::SAMPLER,
+            ids::SHADOW_SAMPLER,
+            0,
+            0,
+            6,
+            resource_kind::BUFFER,
+            ids::SHADOWS,
+            0,
+            sizes::SHADOW_UNIFORM_BYTES,
+        ]);
+        list.push(Op::CreateBindGroup, &words)?;
         Ok(())
     }
 
@@ -274,7 +323,8 @@ impl Opaque {
                 }
             }
         }
-        let state = &mut self.views[view.index()];
+        let slot = self.slot(view);
+        let state = &mut self.views[slot];
         let draws_bytes = RING * layout.draws_slot_bytes;
         if state.draws_bytes < draws_bytes {
             state.draws_bytes = grown_size(draws_bytes, u32::MAX);
@@ -319,7 +369,8 @@ impl Opaque {
         frame: ViewUpload<'_>,
         layout: &Layout,
     ) -> Result<(), RecordError> {
-        let state = &mut self.views[view.index()];
+        let slot = self.slot(view);
+        let state = &mut self.views[slot];
         let uniform = frame.values.uniform;
         let new_uniform = !state.uniform.holds_any()
             || uniform != state.uploaded
@@ -380,7 +431,7 @@ impl Opaque {
     /// Binds a view's frame group and instance textures for the frame being recorded, as the
     /// view's scene passes draw from them.
     pub(super) fn bind_view(&self, list: &mut DrawList, view: ViewId) -> Result<(), RecordError> {
-        let slots = self.views[view.index()].slots;
+        let slots = self.views[self.slot(view)].slots;
         let frame_slot = self.frame_slot(view);
         list.push(
             Op::SetBindGroup,
@@ -394,7 +445,8 @@ impl Opaque {
     /// Where the transparent pass's draw records start in the buffer of a view's draw records,
     /// for the frame being recorded.
     pub(super) fn sorted_records_at(&self, view: ViewId, layout: &Layout) -> u32 {
-        self.views[view.index()].slots.listed * layout.draws_slot_bytes + layout.sorted_records_at
+        self.views[self.slot(view)].slots.listed * layout.draws_slot_bytes
+            + layout.sorted_records_at
     }
 
     /// Records a view's opaque pass inside the render pass that the render graph began: every
@@ -410,7 +462,7 @@ impl Opaque {
         layout: &Layout,
         meshes: &MeshBuffers,
     ) -> Result<(), RecordError> {
-        let slots = self.views[view.index()].slots;
+        let slots = self.views[self.slot(view)].slots;
         let (buckets, draws, multi_draw) = (&layout.buckets, &layout.draws, self.multi_draw);
         let visible = visible_in(draws, starts);
         let shift = |d: usize| buckets[draws[d].bucket as usize].shift;
