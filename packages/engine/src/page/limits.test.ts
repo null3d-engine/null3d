@@ -16,6 +16,7 @@ import {
 	DEPTH_WITHOUT_CLIP_CONTROL,
 	type DeviceOptions,
 	type DeviceReport,
+	maxCanvasSize,
 	maxInstances,
 	portableMaxInstances,
 	rowLimitWarning,
@@ -56,6 +57,8 @@ function report(webgl2: Partial<DeviceReport['webgl2']>, features: string[] = []
 		webgl2: {
 			extensions: {},
 			maxTextureSize: 4096,
+			maxRenderbufferSize: 4096,
+			maxViewportDims: [4096, 4096],
 			sharedMemoryUploads: { bufferSubData: true, texSubImage2D: true },
 			floatRenderTargets: HDR_TARGETS,
 			...webgl2,
@@ -200,6 +203,36 @@ describe('storageBindingBytes', () => {
 		const huge = { maxStorageBufferBindingSize: 4294967292, maxBufferSize: 4294967292 };
 		expect(storageBindingBytes(huge)).toBe(C.LIMIT_MAX_USEFUL_BINDING_BYTES);
 		expect(maxInstances(webgpu(storageBindingBytes(huge)))).toBe(65535 * 128);
+	});
+});
+
+describe('maxCanvasSize', () => {
+	it("keeps to each WebGPU feature level's default texture limit", () => {
+		expect(maxCanvasSize('webgpu', report({}))).toBe(8192);
+		expect(maxCanvasSize('webgpu-compat', report({}))).toBe(4096);
+	});
+
+	it("takes WebGL2's smallest texture, renderbuffer or viewport limit", () => {
+		const large: Partial<DeviceReport['webgl2']> = {
+			maxTextureSize: 16384,
+			maxRenderbufferSize: 16384,
+			maxViewportDims: [16384, 16384],
+		};
+		expect(maxCanvasSize('webgl2', report(large))).toBe(16384);
+		expect(maxCanvasSize('webgl2', report({ ...large, maxTextureSize: 8192 }))).toBe(8192);
+		expect(maxCanvasSize('webgl2', report({ ...large, maxRenderbufferSize: 8192 }))).toBe(8192);
+		expect(maxCanvasSize('webgl2', report({ ...large, maxViewportDims: [16384, 4096] }))).toBe(
+			4096,
+		);
+	});
+
+	it('counts a missing WebGL2 limit as the least that WebGL2 allows', () => {
+		const missing = report({
+			maxTextureSize: null,
+			maxRenderbufferSize: null,
+			maxViewportDims: null,
+		});
+		expect(maxCanvasSize('webgl2', missing)).toBe(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE);
 	});
 });
 

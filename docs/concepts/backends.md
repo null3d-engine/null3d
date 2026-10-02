@@ -111,11 +111,11 @@ The WebGPU path stays inside WebGPU's default limits, and inside compatibility m
 
 | Limit | Budget |
 | --- | --- |
-| Bind groups | 4 (the engine uses 3) |
+| Bind groups | 4 (the engine uses 2) |
 | Compute threads per workgroup | 128 |
 | Uniform binding size | 16 KB |
 | Color attachments | 4 |
-| Texture size | 4096 pixels, the widest and tallest texture that the engine makes |
+| Texture size | 4096 pixels for loaded textures. The canvas and the render targets of its size reach 8,192 pixels on core WebGPU and 4,096 in compatibility mode (`engine.capabilities.maxCanvasSize`) |
 | Texture array layers | 256 |
 | Buffer size | 256 MB |
 | Storage binding size | 128 MB |

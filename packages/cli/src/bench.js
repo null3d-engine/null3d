@@ -288,9 +288,11 @@ function pathLines(path, { page, warmupSeconds, measureSeconds }) {
 	];
 	if (summary) {
 		const gpu =
-			summary.gpuMs == null
-				? 'n/a, the browser does not time the GPU here'
-				: `${ms(summary.gpuMs)} ms`;
+			summary.gpuMs != null
+				? `${ms(summary.gpuMs)} ms`
+				: pathName(path) === 'webgl2'
+					? 'n/a, the engine times the GPU only on WebGPU'
+					: 'n/a, the browser does not time the GPU here';
 		lines.push(
 			'CPU time per frame, the median of the runs:',
 			`  the busiest thread in each frame: ${ms(summary.cpuMs.median)} ms (runs from ${ms(summary.cpuMs.min)} to ${ms(summary.cpuMs.max)} ms)`,
