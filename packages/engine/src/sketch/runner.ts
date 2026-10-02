@@ -235,8 +235,8 @@ export class SketchRunner {
 			device.cellCulling,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
-		const { shadowTiles, shadowTileSize } = sketch.quality.settings;
-		glue.setShadowTiles(shadowTiles, shadowTileSize, false);
+		const { shadowTiles, shadowTileSize, pointLightShadows } = sketch.quality.settings;
+		glue.setShadowTiles(shadowTiles, shadowTileSize, pointLightShadows);
 		if (sketch.jobWorkers > 0) {
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.notify(slots, Slot.JobsReady);

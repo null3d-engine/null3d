@@ -206,6 +206,15 @@ describe('creating lights', () => {
 		expect(tableRow(spot).values[C.LIGHT_VALUE_SHADOW_NORMAL_BIAS]).toBe(3);
 	});
 
+	test("a point light's shadow biases land in the light table", () => {
+		const { scene, tableRow } = fakeCore();
+		const lamp = scene.createPointLight({ range: 5, castShadows: true, shadow: { bias: 1.25 } });
+		expect(tableRow(lamp).values[C.LIGHT_VALUE_SHADOW_BIAS]).toBe(1.25);
+		lamp.setShadow({ normalBias: 2 });
+		expect(tableRow(lamp).values[C.LIGHT_VALUE_SHADOW_NORMAL_BIAS]).toBe(2);
+		expect(thrown(() => lamp.setShadow({ normalBias: -1 })).code).toBe('E1108');
+	});
+
 	test('castShadows travels with the create command', () => {
 		const { scene, commands } = fakeCore();
 		const lights = [

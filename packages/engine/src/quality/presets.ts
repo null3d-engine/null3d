@@ -130,6 +130,12 @@ export const QUALITY_SETTINGS = {
 		changes: 'start',
 		values: [256, 512, 1024, 2048],
 	},
+	// Point lights cast shadows into six tiles each, so only the heavier presets turn them on.
+	pointLightShadows: {
+		presets: [false, false, true, true],
+		changes: 'start',
+		values: 'flag',
+	},
 	// The shared memory's maximum, from 256 MiB to the 4 GiB that the threaded core declares. Every
 	// preset keeps the loader's default until measurements of the memory that tabs can use on
 	// phones and tablets set one per preset (D-04).
@@ -228,6 +234,12 @@ export interface QualitySettings {
 	 * `createEngine` sets it, and `set` does not take it.
 	 */
 	shadowTileSize: number;
+	/**
+	 * True when point lights cast shadows. Each point light that casts them takes six tiles of the
+	 * shadow atlas, one for each face of a cube around it, within `shadowTiles`. The
+	 * `pointLightShadows` option of `createEngine` sets it, and `set` does not take it.
+	 */
+	pointLightShadows: boolean;
 }
 
 /** The names of the settings in the preset table that change as `changes` says. */

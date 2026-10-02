@@ -281,15 +281,18 @@ export interface PointLightOptions extends LightOptions {
 	/** How fast the light fades with distance, at least 0. The default, 2, is the physical rate. */
 	decay?: number;
 	/**
-	 * True makes the light cast shadows, like `setCastShadows(true)`. The default is false. This
-	 * version stores the setting but draws no shadows yet.
+	 * True makes the light cast shadows, like `setCastShadows(true)`. The default is false. Point
+	 * lights cast them where the quality preset's `pointLightShadows` is on, as on High and Ultra.
 	 */
 	castShadows?: boolean;
+	/** How the light's shadows draw, like `setShadow`. Each setting has a default. */
+	shadow?: LightShadowOptions;
 }
 
 /**
- * The shadows of a spot light. The light draws its casters' depth into a tile of the shadow atlas,
- * a view from the light that holds its cone.
+ * The shadows of a point or spot light. A spot light draws its casters' depth into a tile of the
+ * shadow atlas, a view from the light that holds its cone. A point light draws into six tiles, one
+ * for each face of a cube around it.
  *
  * @category api/lights
  */
@@ -1166,11 +1169,16 @@ export class PointLight extends Light {
 	}
 
 	/**
-	 * Makes the light cast shadows, or stop. The default is false. This version stores the setting
-	 * but draws no shadows yet.
+	 * Makes the light cast shadows, or stop. The default is false. Point lights cast them where the
+	 * quality preset's `pointLightShadows` is on, and each takes six tiles of `shadowTiles`.
 	 */
 	setCastShadows(cast: boolean): void {
 		this.setFlag('setCastShadows', C.FLAG_CAST_SHADOWS, cast);
+	}
+
+	/** Changes how the light's shadows draw. Settings that `shadow` leaves out keep their values. */
+	setShadow(shadow: LightShadowOptions): void {
+		this.shadow('setShadow', shadow);
 	}
 }
 

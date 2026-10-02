@@ -23,11 +23,6 @@ export const PLANNED_SETTINGS = {
 		changes: 'start',
 		values: [512, 1024, 2048, 4096],
 	},
-	pointLightShadows: {
-		presets: [false, false, true, true],
-		changes: 'start',
-		values: 'flag',
-	},
 	depthPrepass: {
 		presets: [false, false, true, true],
 		changes: 'start',
@@ -93,8 +88,8 @@ export const SETTING_DOCS: {
 	farCascadeInterval: { label: 'Far cascade updates', print: everyNth },
 	shadowTiles: { label: 'Spot and point light shadow tiles' },
 	shadowTileSize: { label: 'Shadow tile size in texels' },
-	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	pointLightShadows: { label: 'Point light shadows', print: yesNo },
+	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	maxAnisotropy: { label: 'Anisotropic filtering cap', print: (value) => `${value}x` },
 	uploadBytesPerFrame: {

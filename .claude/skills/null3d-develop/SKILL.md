@@ -133,7 +133,7 @@ Materials:
 | A custom look that still gets lights, shadows and fog | `materials.shader({ wgsl })` with `fn surface` in the WGSL | `shaders/surface-functions` |
 | A fully custom effect, such as a hologram | `materials.shader({ wgsl })` with a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one | `guides/custom-shaders` |
 
-Lighting and shadows: surfaces show one directional light, the ambient lights, and point and spot lights through clustered lighting. Hemisphere lights light surfaces later in 0.1. One directional light with shadows covers most outdoor scenes. Point and spot lights are cheap without shadows, because lighting is clustered. A spot light with shadows takes a tile of the shadow atlas. The tile draws again only when its light or a caster in its range moves. Point light shadows come later in 0.1. Shadow quality follows the preset. Environment maps come in 0.2. (`api/lights`, `concepts/lighting`, `concepts/shadows`)
+Lighting and shadows: surfaces show one directional light, the ambient lights, and point and spot lights through clustered lighting. Hemisphere lights light surfaces later in 0.1. One directional light with shadows covers most outdoor scenes. Point and spot lights are cheap without shadows, because lighting is clustered. A spot light with shadows takes a tile of the shadow atlas, and a point light six, on High and Ultra only. A tile draws again only when its light or a caster in its range moves. Shadow quality follows the preset. Environment maps come in 0.2. (`api/lights`, `concepts/lighting`, `concepts/shadows`)
 
 Interaction:
 
