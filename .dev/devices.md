@@ -193,7 +193,7 @@ The team's tablet is an iPad Pro 11-inch with 8 cores. Safari there reports a Ma
 The team has no iPhone, so the iPad stands in for Apple's phones. It proves some things and not others.
 
 - Safari on the iPad and on the iPhone is one engine: WebKit, with the same WebGPU and WebGL2 code on Metal. So correctness and feature support carry over. So do Safari's faults, such as the waits of its WebGL2 path for the GPU and the late release of shared memory.
-- Memory does not carry over. iPhones have less RAM, and their tabs die sooner. The iPad's tab died at 2016 MiB of GPU textures, and Safari also limits how many shared memories of 1 GiB a page can hold at once.
+- Memory does not carry over. iPhones have less RAM, and their tabs die sooner. The iPad's tab died at 2016 MiB of GPU textures. Safari also limits how many shared memories of 1 GiB a page can hold at once.
 - Speed does not carry over. An iPhone has a smaller GPU, and it throttles earlier as it warms.
 - The screen differs. An iPhone has a pixel ratio of 3, against the iPad's 2, and Pro models refresh at 120 Hz.
 - An iPhone without iOS 26 has no WebGPU, so the engine draws with WebGL2 there.
