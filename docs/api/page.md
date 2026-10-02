@@ -10,7 +10,7 @@ summary: "page.post and page.onMessage in the sketch; engine.postToSketch and en
 
 > Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
-The sketch runs in a worker, and the page runs on the browser's main thread. They share no variables, so they talk through messages. The page keeps the HTML, and the sketch keeps the scene.
+By default the sketch runs in a worker, and the page runs on the browser's main thread. They share no variables, so they talk through messages. The page keeps the HTML, and the sketch keeps the scene.
 
 | Side | Sends with | Receives with |
 | --- | --- | --- |
@@ -58,7 +58,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 
 ## What a message can carry
 
-In the threaded build, a message goes from one thread to another, and the browser copies its data as `postMessage` does. Numbers, strings, arrays, plain objects and typed arrays all travel. The browser throws an error for data that it cannot copy, such as a function.
+When the sketch runs in a worker, a message goes from one thread to another, and the browser copies its data as `postMessage` does. Numbers, strings, arrays, plain objects and typed arrays all travel. The browser throws an error for data that it cannot copy, such as a function.
 
 Engine objects, such as a mesh or a material, belong to the sketch. To name one in a message, send a name or a number that stands for it.
 
@@ -67,7 +67,7 @@ The optional `transfer` list names objects to move instead of copy, such as the 
 ## When messages arrive
 
 - Messages from one side arrive in the order that side sent them.
-- In the threaded build, the sketch's handlers run as soon as the sketch worker receives the message, between two frames. The sketch's next frame includes any change that a handler makes to the scene.
+- When the sketch runs in a worker, its handlers run as soon as the worker receives the message, between two frames. The sketch's next frame includes any change that a handler makes to the scene.
 - Messages also arrive while the engine is paused. Changes to the scene then show when the engine resumes.
 - The page can send messages only after `createEngine` resolves, and by then the sketch's setup function has run. Register the sketch's handlers in the setup function. A message that arrives while the sketch has no handler is lost.
 
@@ -75,11 +75,11 @@ The sketch can send messages from the start of its setup. Until the page registe
 
 The `onSketchMessage` option of `createEngine` gets every message as it arrives, from the start of the sketch's setup. With the option, the engine keeps no messages for later handlers. Use the option for progress that the sketch reports while it loads.
 
-## The single-threaded build
+## A sketch on the page's thread
 
-On a page without cross-origin isolation, the engine runs the sketch on the page's thread (see [Hosting and cross-origin isolation](../getting-started/hosting.md)). A message then reaches the other side during the call that sends it, unless it waits for the page's first handler. The data is not copied, and the `transfer` list moves nothing.
+On a page without cross-origin isolation, the engine runs the sketch on the page's thread (see [Hosting and cross-origin isolation](../getting-started/hosting.md)). So does the `sketchThread: 'main'` option of `createEngine` ([Where the sketch runs](../concepts/architecture.md#where-the-sketch-runs)). A message then reaches the other side during the call that sends it, unless it waits for the page's first handler. The data is not copied, and the `transfer` list moves nothing.
 
-Write message code that works in both builds:
+Write message code that works on both threads:
 
 - Do not change an object after you send it.
 - Do not use an object again after you send it in a `transfer` list.
