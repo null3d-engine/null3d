@@ -232,7 +232,7 @@ light.setVisible(false); light.destroy();    // lights are objects: section 4
 - three.js aims a directional light from its position to a target. Pass the target minus the position as `direction`, or call `lookAt`.
 - A light lights a camera's view when their layer masks share a bit. Without lights, standard materials draw black.
 - Units follow three.js r155 and later: point and spot intensity in candela. The same colors and intensities give the same light as in three.js.
-- For now, surfaces show one directional light (the first visible one) and every ambient light. Later in 0.1, point, spot and hemisphere lights light surfaces through clustered lighting.
+- Point and spot lights light the surfaces their ranges reach, through clustered lighting, so keep each range as short as the look allows. Surfaces show the first visible directional light, every ambient light, and the point and spot lights. Later in 0.1, hemisphere lights light surfaces.
 - Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`, in cascades that fit the camera's view. Defaults: 3 cascades, 2,048 texels, 200 m, bias 0.5 and normal bias 1, both in texels of each cascade. Unlit materials show no shadows. Both GPU paths draw them. Instance batches do not cast or receive them yet (`concepts/shadows`).
 
 ## 8. Geometry (`api/geometry`)

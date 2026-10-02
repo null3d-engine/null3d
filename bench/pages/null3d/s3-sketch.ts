@@ -1,7 +1,7 @@
 // The null3d version of S3, the lights: still boxes (20,000 unless the page asks for another count)
 // in one static batch on a floor, lit by 256 point lights with a range that move every frame. The
-// point lights are scene objects, and the engine culls them by their ranges each frame. The lights
-// shade surfaces once the engine has clustered lighting; this sketch needs no change for that.
+// point lights are scene objects. Each frame the engine culls them by their ranges and shades them
+// through its grid of view clusters.
 import { defineSketch, type PointLight } from '@null3d/engine';
 import {
 	createS3,

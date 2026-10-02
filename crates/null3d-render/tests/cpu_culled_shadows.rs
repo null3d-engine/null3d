@@ -174,14 +174,16 @@ fn each_cascade_lists_the_casters_and_draws_their_depth_into_its_layer() {
         }
         assert!(listed.iter().all(|&n| n > 0), "{listed:?}");
 
-        // The camera's frame group binds the shadow map, its comparison sampler and the
-        // cascades. The cascades' groups have the depth-only layout, which leaves the map out.
-        let [frame] = &bind_groups(&commands, layout::FRAME)[..] else {
-            panic!("one camera view")
-        };
-        assert_eq!(frame[&4], (resource_kind::TEXTURE, map[0]));
-        assert_eq!(frame[&5].0, resource_kind::SAMPLER);
-        assert_eq!(frame[&6].0, resource_kind::BUFFER);
+        // The camera's frame groups, one for each slot of the light textures' ring, bind the
+        // shadow map, its comparison sampler and the cascades. The cascades' groups have the
+        // depth-only layout, which leaves the map out.
+        let frames = bind_groups(&commands, layout::FRAME);
+        assert_eq!(frames.len(), 3, "one camera view");
+        for frame in &frames {
+            assert_eq!(frame[&4], (resource_kind::TEXTURE, map[0]));
+            assert_eq!(frame[&5].0, resource_kind::SAMPLER);
+            assert_eq!(frame[&6].0, resource_kind::BUFFER);
+        }
         let depth_groups = bind_groups(&commands, layout::DEPTH);
         assert_eq!(depth_groups.len(), 3);
         for group in &depth_groups {
@@ -275,10 +277,15 @@ fn turning_shadows_off_rebuilds_the_layouts_and_leaves_a_map_of_one_texel() {
     };
     assert_eq!(map[1..4], [1, 1, 1]);
     assert_eq!(map[5], texture_usage::TEXTURE_BINDING);
-    let [frame] = &bind_groups(&commands, layout::FRAME)[..] else {
-        panic!("the camera's frame group binds the new map")
-    };
-    assert_eq!(frame[&4], (resource_kind::TEXTURE, map[0]));
+    let frames = bind_groups(&commands, layout::FRAME);
+    assert_eq!(
+        frames.len(),
+        3,
+        "the camera's frame groups bind the new map"
+    );
+    for frame in &frames {
+        assert_eq!(frame[&4], (resource_kind::TEXTURE, map[0]));
+    }
     assert!(depth_passes(&commands).is_empty());
     assert!(
         operands(&commands, Op::CreateRenderPipeline)

@@ -10,6 +10,7 @@ use null3d_core::handle::Handle;
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::SunShadow;
 use null3d_core::scene::{Command, flags};
+use null3d_gpu::caps::OFFSET_ALIGNMENT;
 use null3d_gpu::drawlist::{NO_TARGET, Op, sizes};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::camera::Perspective;
@@ -30,7 +31,9 @@ const FRAME: u32 = 1;
 const DRAWS: u32 = 2;
 /// Bytes of one frame's slot in the frame uniform ring: the uniform block, aligned for binding,
 /// then the offsets from the camera to 512 cells.
-const FRAME_SLOT: u32 = 256 + 512 * 16;
+const FRAME_SLOT: u32 = OFFSETS_AT + 512 * 16;
+/// Where a frame's slot holds the offsets from the camera to the cells.
+const OFFSETS_AT: u32 = sizes::FRAME_UNIFORM_BYTES.next_multiple_of(OFFSET_ALIGNMENT);
 /// Scene slots up to the highest the world uses: slot 0 is never used, then the camera and four
 /// objects.
 const SCENE_ROWS: u32 = 6;
@@ -138,7 +141,7 @@ fn two_views_list_their_own_visible_objects_and_draw_them_in_passes_of_their_own
         );
         assert_eq!(passes[0][0], passes[1][0]);
         assert_eq!(passes[0][2], passes[1][2]);
-        assert_eq!(count(&commands, Op::CreateTexture), 13 + 3);
+        assert_eq!(count(&commands, Op::CreateTexture), 19 + 3);
         // Each pass binds its view's frame uniform and index list textures.
         let bound = |group: u32| -> Vec<u32> {
             commands
@@ -228,6 +231,7 @@ fn a_view_added_after_the_frame_culled_draws_from_the_next_frame() {
         structure_changed: false,
         jobs: &world.jobs,
         lines: DebugLines::NONE,
+        lights: &[],
     };
     world.renderer.cull(&input).unwrap();
     let late = world
@@ -301,9 +305,9 @@ fn the_first_frame_creates_everything_and_replays_on_both_draw_paths() {
         // drops.
         assert_eq!(count(&commands, Op::CreateRenderPipeline), 3);
         // The color and depth targets, the shadow map (one texel while no light casts shadows),
-        // the resident texture, the two rings of three, the cluster texture, the material table
-        // and the table of specular terms.
-        assert_eq!(count(&commands, Op::CreateTexture), 13);
+        // the resident texture, the two rings of three, the cluster texture, the material table,
+        // the table of specular terms, and the two rings of three light textures.
+        assert_eq!(count(&commands, Op::CreateTexture), 19);
         // Buckets: lit boxes (the object, and the batch in the streamed texture), lit balls, and
         // unlit boxes. The hidden ball culls away; everything else is in view. Nothing is static
         // but the scene, so no bucket has clusters.
@@ -367,7 +371,9 @@ fn the_index_list_holds_each_buckets_sources_in_order() {
 /// The id of the bind group of the streamed texture of ring slot `streamed` and the index list
 /// of ring slot `listed`.
 fn instances_group(streamed: u32, listed: u32) -> u32 {
-    3 + streamed * 3 + listed
+    // After the camera view's three frame groups, one per slot of the light textures' ring, and
+    // its draw record group.
+    5 + streamed * 3 + listed
 }
 
 /// The instances bind group a frame's list binds.
@@ -466,7 +472,7 @@ fn steady_frames_upload_the_moving_rows_into_the_ring_and_keep_an_unchanged_inde
     assert!(texture_writes(&commands, RESIDENT).is_empty());
 
     // With no active moving rows, the streamed ring keeps its slot.
-    let streamed = (bound_instances(&commands) - 3) / 3;
+    let streamed = (bound_instances(&commands) - instances_group(0, 0)) / 3;
     world
         .batches
         .get_mut(world.batch)
@@ -480,7 +486,10 @@ fn steady_frames_upload_the_moving_rows_into_the_ring_and_keep_an_unchanged_inde
     for slot in 0..3 {
         assert!(texture_writes(&commands, STREAMED + slot).is_empty());
     }
-    assert_eq!((bound_instances(&commands) - 3) / 3, streamed);
+    assert_eq!(
+        (bound_instances(&commands) - instances_group(0, 0)) / 3,
+        streamed
+    );
 }
 
 #[test]
@@ -1082,7 +1091,7 @@ fn far_from_the_origin_static_objects_stay_resident_and_list_their_cell() {
             .collect();
         assert_eq!(
             frame_writes,
-            vec![(0, sizes::FRAME_UNIFORM_BYTES), (256, 2 * 16)],
+            vec![(0, sizes::FRAME_UNIFORM_BYTES), (OFFSETS_AT, 2 * 16)],
             "frame {frame}"
         );
     }

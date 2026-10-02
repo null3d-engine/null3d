@@ -3,7 +3,8 @@ enable draw_index;
 // Meshes drawn by instance with the standard material: glTF's metallic-roughness model, shaded
 // with the formulas of three.js's MeshStandardMaterial. null3d::mesh finds each instance on both
 // GPU paths, and null3d::lighting holds the formulas. `light_surface` gathers the scene's lights,
-// so the rest of the shader does not change with where the lights come from.
+// so the rest of the shader does not change with where the lights come from. null3d::lights finds
+// the point and spot lights of each surface's cluster.
 //
 // The fragment shader works in two steps. First a surface function fills a `Surface` from a
 // `SurfaceInput`: `defaultSurface` reads the material's own values and maps, and a custom
@@ -35,8 +36,10 @@ enable draw_index;
 #import null3d::lighting::{PbrMaterial, dfg_lut, direct_light, indirect_diffuse}
 #import null3d::lighting::{multiscatter_compensation, pbr_material}
 #import null3d::globals::{Material}
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, fogged, frame as engine_frame, material_of}
-#import null3d::mesh::{custom_value, finish, fragment_color, relative_position, world_normal}
+#import null3d::lights::{clustered_light}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
+#import null3d::mesh::{custom_value, frame as engine_frame, material_of}
+#import null3d::mesh::{relative_position, world_normal}
 #ifdef MAPS
 #import null3d::mesh::{map_layer, map_ready, straight_texel, world_direction}
 #endif
@@ -419,10 +422,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 }
 
 /// The light that a surface reflects toward the camera from the scene's lights: the sun, less
-/// where its shadows fall, the ambient light, and `extra` irradiance such as a light map's, which
-/// `occlusion` darkens with the ambient light. `relative` is the surface's position relative to the
-/// camera, `to_view` points from the surface toward the camera, and `dfg` holds the split-sum
-/// terms at the surface's roughness and view angle.
+/// where its shadows fall, the point and spot lights of the surface's cluster, the ambient light,
+/// and `extra` irradiance such as a light map's, which `occlusion` darkens with the ambient light.
+/// `relative` is the surface's position relative to the camera, `to_view` points from the surface
+/// toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and view
+/// angle.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
@@ -445,8 +449,10 @@ fn light_surface(
         sun_color,
         compensation,
     );
+    let clustered = clustered_light(m, relative, normal, to_view, compensation);
     let ambient = indirect_diffuse(m, engine_frame.ambient.rgb + extra, dfg);
-    return sun.diffuse + sun.specular + ambient * occlusion;
+    let direct = sun.diffuse + sun.specular + clustered.diffuse + clustered.specular;
+    return direct + ambient * occlusion;
 }
 
 /// The color of a pixel that shows the surface: the light it reflects and the light it gives off,
