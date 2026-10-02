@@ -214,6 +214,8 @@ async function start(
 			sendImage: () => {},
 			sendShader: () => {},
 			pageUrl: 'http://localhost/',
+			threads: [['sketch-worker', [Role.Sketch, Role.Render]]],
+			showStats: (show) => log.push(`stats ${show}`),
 		},
 		holdSeconds,
 	);
@@ -583,6 +585,40 @@ describe('SketchRunner and quality presets', () => {
 			const played = runner.step(0);
 			expect(heard).toEqual(['low']);
 			expect(Atomics.load(control.slots, Slot.PipelineHold)).toBe(played);
+		} finally {
+			stopDrawing();
+		}
+	});
+
+	it('asks the page for the stats overlay once per change, and gives the sketch frame figures', async () => {
+		const { runner, context, control, log, stopDrawing } = await start(() => ({}), undefined, {
+			drawing: { presentedMs: 20, completedMs: 25 },
+		});
+		try {
+			const { debug } = context;
+			debug.stats(true);
+			debug.stats();
+			debug.stats(false);
+			debug.stats(false);
+			expect(log.filter((entry) => entry.startsWith('stats'))).toEqual([
+				'stats true',
+				'stats false',
+			]);
+			expect(debug.frameStats().frames).toBe(0);
+			expect(debug.frameStats().preset).toBe('medium');
+			let time = 0;
+			for (let k = 0; k < 200 && debug.frameStats().frames === 0; k++) {
+				Atomics.store(control.slots, Slot.FramesPublished, runner.step(time));
+				time += 20;
+				await new Promise((resolve) => setTimeout(resolve, 3));
+			}
+			const stats = debug.frameStats();
+			expect(stats.frames).toBeGreaterThan(0);
+			expect(stats.presentedFps).toBeCloseTo(50, 6);
+			expect(stats.completedFps).toBeCloseTo(40, 6);
+			expect(stats.renderScale).toBe(1);
+			expect(stats.threads.map((thread) => thread.name)).toEqual(['sketch-worker']);
+			expect(Atomics.load(control.slots, Slot.RenderScale)).toBe(1000);
 		} finally {
 			stopDrawing();
 		}

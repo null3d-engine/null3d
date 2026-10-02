@@ -129,8 +129,9 @@ impl SortedView {
         &self.offsets
     }
 
-    /// Forgets the rows, for a frame whose view has no camera or no blended rows.
+    /// Forgets the rows and their draws, for a frame whose view has no camera or no blended rows.
     fn clear(&mut self) {
+        self.sorted.clear();
         self.draws.clear();
     }
 }

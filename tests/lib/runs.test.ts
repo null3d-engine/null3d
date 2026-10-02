@@ -374,6 +374,66 @@ describe('the checks plan', () => {
 		expect(judge(heavy.check, phone, NONE_MISSING, context)).toEqual([]);
 	});
 
+	it("checks the stats overlay and the sketch's frame figures on both GPU paths", () => {
+		const stats = items.filter((item) => item.check.kind === 'stats');
+		expect(stats.map(({ id, path }) => [id, path])).toEqual([
+			['stats-webgpu', '/tests/pages/stats.html?gpu=webgpu'],
+			['stats-webgl2', '/tests/pages/stats.html?gpu=webgl2'],
+		]);
+		const check = (stats[0] as (typeof stats)[number]).check;
+		const thread = (name: string) => ({ name, busyMs: 1.5, phases: { update: 0.25 } });
+		const good = {
+			ok: true,
+			tier: 'webgpu',
+			mode: {
+				latency: 'pipelined',
+				sketchThread: 'worker',
+				renderThread: 'render-worker',
+				jobWorkers: 1,
+				preset: 'high',
+			},
+			overlay: {
+				text: [
+					'webgpu  high  scale 1.00',
+					'60.0 fps presented, 60.0 completed',
+					'sketch-worker  1.50 ms',
+					'render-worker  1.50 ms',
+					'job workers (1)  busiest 1.50 ms',
+				].join('\n'),
+				offset: [0, 0],
+				pointerEvents: 'none',
+			},
+			figures: {
+				frames: 30,
+				presentedFps: 60,
+				completedFps: 60,
+				cpuMs: 1.5,
+				tier: 'webgpu',
+				preset: 'high',
+				renderScale: 1,
+				threads: [thread('sketch-worker'), thread('render-worker'), thread('job-0')],
+			},
+		};
+		expect(judge(check, good, NONE_MISSING)).toEqual([]);
+		const bad = {
+			...good,
+			overlay: { ...good.overlay, offset: [0, 12], text: 'webgpu  high  scale 1.00' },
+			figures: { ...good.figures, frames: 0, threads: [thread('sketch-worker')] },
+		};
+		expect(judge(check, bad, NONE_MISSING)).toEqual([
+			"the overlay sits 0, 12 px from the canvas's corner",
+			'the overlay does not show "fps presented"',
+			'the overlay does not show "sketch-worker"',
+			'the overlay does not show "render-worker"',
+			'the overlay does not show "job workers (1)"',
+			'the sketch got no frame figures',
+			'the figures name the threads sketch-worker',
+		]);
+		expect(judge(check, { ...good, overlay: null }, NONE_MISSING)).toEqual([
+			'the page shows no stats overlay',
+		]);
+	});
+
 	it('checks the formats of KTX2 files on both GPU paths, and notes what each device got', () => {
 		const ktx2 = items.filter((item) => item.check.kind === 'ktx2');
 		expect(ktx2.map(({ id, path }) => [id, path])).toEqual([

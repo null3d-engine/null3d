@@ -123,7 +123,9 @@ It also saves the errors and warnings that the page logged, with their stacks, i
 
 ## Measure
 
-`engine.measure(seconds)` measures the running engine: CPU time per frame by thread and phase, GPU time, frame intervals, uploads, draw calls and memory. [Debug drawing and stats](../api/debug.md#frame-measurement) shows an example, and the [performance guide](performance.md) explains the numbers.
+In the sketch, `debug.stats(true)` shows frame figures over the canvas. They are the frame rates, and the CPU time per frame of each thread and phase. The call `debug.frameStats()` gives the sketch the same figures, for logs and tests. Both work in production builds too. [Debug drawing and stats](../api/debug.md#stats-overlay-and-frame-figures) lists the figures.
+
+`engine.measure(seconds)` measures the running engine from the page: CPU time per frame by thread and phase, GPU time, frame intervals, uploads, draw calls and memory. [Debug drawing and stats](../api/debug.md#frame-measurement) shows an example, and the [performance guide](performance.md) explains the numbers.
 
 To test a page's handling of a lost GPU, call `engine.simulateGpuLoss()`. The engine starts a new GPU device and draws the whole scene again, as it does after a real loss.
 
@@ -144,5 +146,5 @@ To test a page's handling of a lost GPU, call `engine.simulateGpuLoss()`. The en
 
 - [Error codes](../errors/index.md): every code, with its cause and fix.
 - [Testing your sketch](testing.md): hold mode, image tests and switches.
-- [Debug drawing and stats](../api/debug.md): lines over the scene, and `engine.measure`.
+- [Debug drawing and stats](../api/debug.md): lines over the scene, the stats overlay, and `engine.measure`.
 - [Performance guide](performance.md): what to do when frames take too long.
