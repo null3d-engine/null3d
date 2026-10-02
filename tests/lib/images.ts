@@ -11,7 +11,12 @@
 import { copyFileSync, existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { type RgbaImage, TIERS, type Tier } from '../../bench/lib/parity.ts';
+import {
+	REFERENCE_PRESET_SWITCH,
+	type RgbaImage,
+	TIERS,
+	type Tier,
+} from '../../bench/lib/parity.ts';
 import { ENVIRONMENTS, type Environment } from '../../packages/cli/src/browser.js';
 import {
 	compareImages,
@@ -67,14 +72,6 @@ const TIMEOUT_SECONDS = 30;
 
 /** The page that draws each sketch test. */
 export const IMAGE_PAGE = '/tests/pages/image.html';
-
-/**
- * The quality preset switch of every image test that names no preset itself. The references come
- * from a desktop, where the engine chooses High, within each GPU path's ceiling. A phone or a tablet
- * would choose a lighter preset, whose anti-aliasing and anisotropy change the image, so each test
- * names High and every device draws the references' settings.
- */
-export const IMAGE_PRESET_SWITCH = 'preset=high';
 
 /** Settings that every kind of image test takes. */
 interface ImageTestSettings {
@@ -171,7 +168,10 @@ function modesOf(test: ImageTest): readonly (EngineMode | undefined)[] {
 /** A switch value with the characters that would end it escaped. Slashes stay, for easy reading. */
 const switchValue = (value: string) => encodeURIComponent(value).replaceAll('%2F', '/');
 
-/** The page of one run, with its switches. A sketch test's sketch comes last, as the longest switch. */
+/**
+ * The page of one run, with its switches, at the references' preset unless the test names its own. A
+ * sketch test's sketch comes last, as the longest switch.
+ */
 function pathOf(test: ImageTest, tier: Tier, mode: EngineMode | undefined): string {
 	const [width, height] = sizeOf(test);
 	const ownSwitches = test.switches ?? [];
@@ -179,7 +179,7 @@ function pathOf(test: ImageTest, tier: Tier, mode: EngineMode | undefined): stri
 		`gpu=${tier}`,
 		mode?.query,
 		test.hold === undefined ? undefined : `hold=${test.hold}`,
-		ownSwitches.some((entry) => entry.startsWith('preset=')) ? undefined : IMAGE_PRESET_SWITCH,
+		ownSwitches.some((entry) => entry.startsWith('preset=')) ? undefined : REFERENCE_PRESET_SWITCH,
 		...ownSwitches,
 		...('sketch' in test
 			? [`size=${width}x${height}`, `sketch=${switchValue(`/${test.sketch}`)}`]

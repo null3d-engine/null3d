@@ -73,6 +73,8 @@ import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts'
 import {
 	HEAVY_SPHERES,
 	heavyCheckProblems,
+	PRESET_CHANGE,
+	PRESET_CHANGE_SWITCHES,
 	type PresetChangeResult,
 	type PresetMode,
 	presetChangeProblems,
@@ -294,7 +296,7 @@ export function checksPlan(): PlanItem<Check>[] {
 				`preset-change-${tier}`,
 				'preset-change',
 				{ kind: 'preset-change', tier },
-				{ switches: [`gpu=${tier}`, 'from=medium', 'to=low'] },
+				{ switches: [`gpu=${tier}`, ...PRESET_CHANGE_SWITCHES] },
 			),
 		),
 		...TIERS.map((tier) =>
@@ -941,7 +943,11 @@ export function judge(
 				: heavyCheckProblems(quality.mode, chosenPreset(quality));
 		}
 		case 'preset-change':
-			return presetChangeProblems(result as unknown as PresetChangeResult, 'medium', 'low');
+			return presetChangeProblems(
+				result as unknown as PresetChangeResult,
+				PRESET_CHANGE.from,
+				PRESET_CHANGE.to,
+			);
 		case 'bench': {
 			const frames = Number(result.frames ?? 0);
 			const cpu = (result.cpuMs as { median?: number } | undefined)?.median ?? 0;
