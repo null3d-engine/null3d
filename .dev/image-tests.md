@@ -25,7 +25,8 @@ This guide covers the image test manifest, its references, and the review that m
 2. Run the test on the Mac: `bun run test:images -g <name>`. It has no reference yet, so it fails and saves its image.
 3. Look at the image with `bun run images:review`. Make it the reference with `bun run images:review --accept <name>`.
 4. Make its SwiftShader reference the same way: `CI=1 bun run test:images -g <name>`, then review and accept the image. On the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
-5. Run the checks plan in Safari and Firefox on the Mac. Run it on the phone and the iPad too, when their GPUs may draw the test another way.
+5. Run `bun run check` before you push. It fails when a test lacks a reference in either set, and it names each missing file and the command that makes it.
+6. Run the checks plan in Safari and Firefox on the Mac. Run it on the phone and the iPad too, when their GPUs may draw the test another way.
 
 A CI run that finds a missing or changed image saves it too. `bun run images:review --ci <run>` fetches those images for review.
 
@@ -38,6 +39,8 @@ A CI run that finds a missing or changed image saves it too. `bun run images:rev
 ## References
 
 - References live in `tests/image/references/<set>/<tier>/<test>.png`. Each environment has a full set. `chromium-swiftshader` is Chromium on SwiftShader, the software GPU that CI draws with. `chrome-real-gpu` is Chrome on the Mac's GPU.
+- A new test needs its references in both sets before you push it. A pull request's own CI draws only with SwiftShader. The Safari and Firefox jobs of the merge queue compare with the `chrome-real-gpu` set, so a missing Mac reference fails there, after a full queue run.
+- `bun run check` runs `tests/check-references.ts`, which needs no browser and takes under a second. A test needs a reference in each environment's set, and in the set of each device in its `devices`. A test that borrows references, or a tier that must draw the first tier's image, needs none of its own. The check lists each missing reference with the command that makes it. It also lists each file that no test compares with, such as the reference of a removed test. CI runs it in each pull request's own run, so a missing reference fails there, before the merge queue.
 - SwiftShader and the Mac's GPU differ at object edges, in up to 0.35% of S1's pixels.
 - Playwright's runs use the SwiftShader set in CI, and the real-GPU set elsewhere. With `CI=1`, a run on the Mac uses CI's SwiftShader setup and draws CI's images.
 - A comparison passes when at most 0.1% of the pixels differ by more than pixelmatch's threshold of 0.1. A test can set its own tolerance.
