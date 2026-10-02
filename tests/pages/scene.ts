@@ -3,12 +3,14 @@
 // frame. Without it, the page measures the engine's frames for a second first. With ?lose-gpu, it
 // also acts out a loss of the GPU before that, so the capture shows the scene the engine drew again
 // on a new device. ?sketch= draws another sketch module, by its path from this page, with the
-// sketch's own query after it.
+// sketch's own query after it. ?stop-after= sets a pause in ms between the capture and the stop,
+// while the engine goes on drawing.
 import { createEngine } from '@null3d/engine';
 import { run, toBase64 } from './lib/result';
 
 const params = new URLSearchParams(location.search);
 const seconds = Number(params.get('seconds') ?? '1');
+const stopAfterMs = Number(params.get('stop-after') ?? '0');
 /** How long the engine has to start a new device and draw again after a loss. */
 const RECOVERY_MS = 1000;
 
@@ -21,7 +23,7 @@ run('scene', async () => {
 		maxPixelRatio: 1,
 	});
 	const failures: string[] = [];
-	engine.onFailure((error) => failures.push(error.code));
+	engine.onFailure((error) => failures.push(`${error.code} ${error.message}`));
 	const live = engine.mode.hold === null;
 	if (live && params.has('lose-gpu')) {
 		await engine.measure(seconds);
@@ -30,6 +32,7 @@ run('scene', async () => {
 	}
 	const stats = live ? await engine.measure(seconds) : undefined;
 	const capture = await engine.captureFrame();
+	if (stopAfterMs > 0) await new Promise((resolve) => setTimeout(resolve, stopAfterMs));
 	await engine.destroy();
 	return {
 		mode: engine.mode,
