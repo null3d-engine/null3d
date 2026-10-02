@@ -65,13 +65,30 @@ async function receive(
 }
 
 /**
+ * The file that names the runner page which claimed a run's device last. Its name starts with a dot,
+ * which no item's name can, so it never stands for a result.
+ */
+const claimPath = (run: string, device: string) => join(RUNS_DIR, run, device, '.runner-page');
+
+/** Whether `page` may store a run's device's results: no runner page claimed it, or `page` did last. */
+function holdsClaim(run: string, device: string, page: string): boolean {
+	const claim = claimPath(run, device);
+	return !existsSync(claim) || readFileSync(claim, 'utf8') === page;
+}
+
+/**
  * Endpoints for results from browsers that Playwright cannot drive, such as Safari on a tablet, on
  * the dev server and on `vite preview`, which serves the production builds:
  * - `POST /__null3d/report?name=` appends a test page's report to one JSON-lines file per page.
  * - `GET /__null3d/runs/current` tells waiting runner pages which run to start.
  * - `GET /__null3d/runs/<run>/plan` returns a run's list of pages.
- * - `POST /__null3d/runs/<run>/<device>/<name>` stores one result of a device as its own file,
- *   and `GET` on the same path reads it back.
+ * - `POST /__null3d/runs/<run>/<device>?page=<page>` claims a run's device for the runner page that
+ *   calls itself `page`, as each runner page does when it starts.
+ * - `POST /__null3d/runs/<run>/<device>/<name>?page=<page>` stores one result of a device as its
+ *   own file, and `GET` on the same path reads it back. A result from a runner page other than the
+ *   one that claimed the device last is refused with 409 and stores nothing: a runner page that the
+ *   runner tool replaced can still be running, hidden behind the new one, and its late results
+ *   would overwrite the new page's.
  */
 export function collectorRoutes(middlewares: Connect.Server): void {
 	middlewares.use('/__null3d/report', (req, res) => {
@@ -83,22 +100,31 @@ export function collectorRoutes(middlewares: Connect.Server): void {
 		});
 	});
 	middlewares.use('/__null3d/runs', (req, res) => {
-		const parts = new URL(req.url ?? '/', 'http://localhost').pathname.split('/').filter(Boolean);
+		const url = new URL(req.url ?? '/', 'http://localhost');
+		const parts = url.pathname.split('/').filter(Boolean);
+		const page = url.searchParams.get('page');
 		if (parts.length === 1 && parts[0] === 'current') {
 			const current = existsSync(CURRENT_RUN_FILE) ? readFileSync(CURRENT_RUN_FILE, 'utf8') : '{}';
 			return send(res, 200, current);
 		}
-		if (!parts.every((part) => NAME.test(part))) return send(res, 400);
+		if (!parts.every((part) => NAME.test(part)) || (page !== null && !NAME.test(page)))
+			return send(res, 400);
 		const [run, device, name] = parts as [string, string?, string?];
 		if (parts.length === 2 && device === 'plan') {
 			const plan = join(RUNS_DIR, run, 'plan.json');
 			return existsSync(plan) ? send(res, 200, readFileSync(plan, 'utf8')) : send(res, 404);
+		}
+		if (parts.length === 2 && device && page !== null && req.method === 'POST') {
+			mkdirSync(join(RUNS_DIR, run, device), { recursive: true });
+			writeFileSync(claimPath(run, device), page);
+			return send(res, 204);
 		}
 		if (parts.length !== 3 || !device || !name) return send(res, 404);
 		if (req.method === 'GET') {
 			const file = join(RUNS_DIR, run, device, `${name}.json`);
 			return existsSync(file) ? send(res, 200, readFileSync(file, 'utf8')) : send(res, 404);
 		}
+		if (page !== null && !holdsClaim(run, device, page)) return send(res, 409);
 		void receive(req, res, (json) => {
 			mkdirSync(join(RUNS_DIR, run, device), { recursive: true });
 			writeFileSync(join(RUNS_DIR, run, device, `${name}.json`), json);
