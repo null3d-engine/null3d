@@ -93,8 +93,9 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
 /**
  * Each kind of benchmark page: its folder, the switches that pick its GPU path and, for the null3D
  * pages that end in -low, the low-latency mode, for those that end in -cells-off, culling with no
- * grid cells skipped, for those that end in -timed, the time of each WebGL call, and for those that
- * end in -synced, that time with a wait for the browser's GPU process after each call, and the GPU
+ * grid cells skipped, for those that end in -timed, the time of each WebGL call, for those that end
+ * in -synced, that time with a wait for the browser's GPU process after each call, and for those
+ * that end in -direct, -unpack and -ring, each way to write data textures again, and the GPU
  * interface it draws with.
  */
 const PAGES = {
@@ -111,6 +112,21 @@ const PAGES = {
 	'null3d-webgl2-synced': {
 		folder: 'null3d',
 		switches: 'gpu=webgl2&gl-timing=sync',
+		api: 'webgl2',
+	},
+	'null3d-webgl2-direct': {
+		folder: 'null3d',
+		switches: 'gpu=webgl2&texture-rewrites=direct',
+		api: 'webgl2',
+	},
+	'null3d-webgl2-unpack': {
+		folder: 'null3d',
+		switches: 'gpu=webgl2&texture-rewrites=unpack',
+		api: 'webgl2',
+	},
+	'null3d-webgl2-ring': {
+		folder: 'null3d',
+		switches: 'gpu=webgl2&texture-rewrites=ring',
 		api: 'webgl2',
 	},
 } as const satisfies Record<string, { folder: string; switches: string; api: 'webgpu' | 'webgl2' }>;

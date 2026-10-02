@@ -17,7 +17,7 @@ import {
 } from '../generated/gpu';
 import type { QualitySettings } from '../quality/presets';
 import type { Tier } from '../render/renderer';
-import type { CompressionFamily, DepthMode, Switches } from './switches';
+import type { CompressionFamily, DepthMode, Switches, TextureRewrites } from './switches';
 
 /** The anti-aliasing mode, as the quality settings name it. */
 export type AntialiasMode = QualitySettings['antialias'];
@@ -67,6 +67,8 @@ export interface CoreDevice {
 	 * thread that draws copies the data out first.
 	 */
 	sharedUploads: boolean;
+	/** WebGL2: how the thread that draws writes again into a data texture that the GPU may read. */
+	textureRewrites: TextureRewrites;
 	/** How the GPU path stores depth: always `reversed` on WebGPU. */
 	depth: DepthMode;
 	/**
@@ -135,7 +137,7 @@ function compression(
  */
 export type DeviceOptions = Pick<
 	Switches,
-	'copyUploads' | 'depth' | 'hdr' | 'parallelCompile' | 'compression' | 'cells'
+	'copyUploads' | 'textureRewrites' | 'depth' | 'hdr' | 'parallelCompile' | 'compression' | 'cells'
 > & {
 	/** The anti-aliasing mode. */
 	antialias: AntialiasMode;
@@ -230,6 +232,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 				(report.webgpu.transientAttachments ? C.CAPABILITY_TRANSIENT_ATTACHMENTS : 0),
 			maxTextureSize: 0,
 			sharedUploads: true,
+			textureRewrites: 'direct',
 			depth: 'reversed',
 			shaderBits: toneMap,
 			...common,
@@ -247,6 +250,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),
 		sharedUploads:
 			!options.copyUploads && uploads !== null && uploads.bufferSubData && uploads.texSubImage2D,
+		textureRewrites: options.textureRewrites ?? 'unpack',
 		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, options.depth),
 		shaderBits: (multiDraw ? PERMUTATION_DRAW_INDEX : 0) | toneMap,
 		...common,

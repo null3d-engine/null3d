@@ -5,11 +5,15 @@
 // WebGL refuses views on shared memory, uploads first copy their words out of it into a staging
 // buffer.
 //
-// A texture's first write goes straight into it. Later writes into a data texture of 32-bit
-// values, which may land in a texture that the GPU still reads for an earlier frame, go through a
-// pixel unpack buffer, so the GPU copies them in order with its other work. A direct write there
-// makes Safari wait until the GPU has finished every frame that reads the texture. Color textures
-// keep direct writes: through an unpack buffer, Chrome on the Mac stored sRGB texels brighter.
+// A write into a texture that the GPU still reads for an earlier frame makes Safari wait until the
+// GPU has finished every frame that reads it. The device's rewrite mode sets how a data texture of
+// 32-bit values takes its later writes. In `direct` mode they go straight into it. In `unpack`
+// mode they go through a pixel unpack buffer, so the GPU copies them in order with its other work.
+// In `ring` mode, a texture written in frames close together becomes a ring of copies: each frame
+// that writes it turns to the next copy, which no frame in flight reads, and first writes into it
+// the rows that the other copies took since, from the texture's texels kept on the CPU. A
+// texture's first write, and writes into color textures, always go straight into it: through an
+// unpack buffer, Chrome on the Mac stored sRGB texels brighter.
 //
 // GL counts rows from the bottom, and the engine keeps GL's row order in what a render pass draws.
 // The backend flips viewport and scissor rectangles, which the draw list gives from the top, so each
@@ -21,7 +25,7 @@
 
 import * as G from '../../generated/gpu';
 import type { DeviceShaders } from '../../generated/shaders';
-import type { DepthMode } from '../../page/switches';
+import type { DepthMode, TextureRewrites } from '../../page/switches';
 import { ImageTable } from '../../shared/images';
 import { floatOfBits } from '../float-bits';
 import { forEachFallbackAttribute, forEachVertexAttribute, vertexStride } from '../vertex-format';
@@ -58,6 +62,16 @@ const CULL_BACK = 0x0405;
 const UNPACK_RING = 3;
 /** Each write's place in a pixel unpack buffer is aligned to this, the largest texel's size. */
 const UNPACK_ALIGNMENT = 16;
+/**
+ * Copies in the ring of a data texture that frames close together write: one for the frame being
+ * replayed and one for each frame that the GPU may still be reading.
+ */
+const TEXTURE_RING = 3;
+/**
+ * A data texture written again within this many replays of its last write turns into a ring in
+ * `ring` mode. The frame builders' own rings write each of their textures less often.
+ */
+const RECENT_WRITE = TEXTURE_RING - 1;
 
 /** Where drawing into the canvas goes during a capture: an offscreen stand-in of the same size. */
 export interface CanvasTarget {
@@ -91,7 +105,8 @@ interface GlFormat {
  * one layer of a texture. Its size is the size of the level that it draws into.
  */
 interface GlTexture {
-	readonly texture: WebGLTexture | null;
+	/** The texture that draws read: in a ring, the copy of the frame being replayed. */
+	texture: WebGLTexture | null;
 	readonly renderbuffer: WebGLRenderbuffer | null;
 	/** `TEXTURE_2D` or `TEXTURE_2D_ARRAY` for a texture or a view, and 0 for a renderbuffer. */
 	readonly target: number;
@@ -107,11 +122,36 @@ interface GlTexture {
 	readonly view: boolean;
 	/** True once a write has gone into the texture, so later writes go through an unpack buffer. */
 	written: boolean;
+	/** In `ring` mode, a data texture's texels on the CPU and its ring of copies. */
+	kept: KeptTexels | null;
 	/** The framebuffer of passes that draw into this color target, and the depth target in it. */
 	framebuffer: WebGLFramebuffer | null;
 	framebufferDepth: GlTexture | null;
 	/** A framebuffer with only this target in it: for passes that draw depth only, and resolves. */
 	soloFramebuffer: WebGLFramebuffer | null;
+}
+
+/**
+ * A 2D data texture of 32-bit values in `ring` mode: its texels as its writes left them, and, once
+ * frames close together write it, its ring of copies.
+ */
+interface KeptTexels {
+	/** The texels as 32-bit words, for copying, and as the values that uploads read. */
+	readonly words: Int32Array;
+	readonly values: Float32Array | Uint32Array;
+	/** Words in a row of texels. */
+	readonly rowWords: number;
+	/** The rows from the first up to the last that a write reached. */
+	rows: number;
+	/** The ring's copies, the texture's own first, or none before the texture turns into a ring. */
+	readonly ring: WebGLTexture[];
+	/** The copy that draws read. */
+	current: number;
+	/** For each copy, the rows from and to which writes changed since the copy was last current. */
+	readonly staleFrom: number[];
+	readonly staleTo: number[];
+	/** The replay that wrote into the texture last. */
+	lastWrite: number;
 }
 
 interface BindEntry {
@@ -216,6 +256,22 @@ function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat 
 	return formats;
 }
 
+/** The CPU side of a data texture in `ring` mode, before frames close together write it. */
+function keptTexels(width: number, height: number, texelBytes: number, float: boolean): KeptTexels {
+	const buffer = new ArrayBuffer(width * height * texelBytes);
+	return {
+		words: new Int32Array(buffer),
+		values: float ? new Float32Array(buffer) : new Uint32Array(buffer),
+		rowWords: (width * texelBytes) >>> 2,
+		rows: 0,
+		ring: [],
+		current: 0,
+		staleFrom: [],
+		staleTo: [],
+		lastWrite: -1 - RECENT_WRITE,
+	};
+}
+
 function glTexture(
 	texture: WebGLTexture | null,
 	renderbuffer: WebGLRenderbuffer | null,
@@ -240,6 +296,7 @@ function glTexture(
 		layer,
 		view,
 		written: false,
+		kept: null,
 		framebuffer: null,
 		framebufferDepth: null,
 		soloFramebuffer: null,
@@ -297,6 +354,8 @@ export class WebGL2Backend {
 	/** The ring slot of the replay under way, and the bytes that its writes have taken in it. */
 	private unpackSlot = 0;
 	private unpackUsed = 0;
+	/** The replays so far, which tell how recently a data texture was written. */
+	private replays = 0;
 	/** The framebuffer through which a mip level is drawn, and the sampler that reads the level before. */
 	private mipFramebuffer: WebGLFramebuffer | null = null;
 	private mipSampler: WebGLSampler | null = null;
@@ -386,7 +445,7 @@ export class WebGL2Backend {
 	 * `images` holds the images that uploads read, which the thread that draws keeps across GPU
 	 * devices; by default the backend has its own. `parallelCompile` lets programs compile in the
 	 * background where the context has `KHR_parallel_shader_compile`. `canvasAlpha` says whether
-	 * the canvas's context has alpha.
+	 * the canvas's context has alpha. `rewrites` is how a data texture takes its later writes.
 	 */
 	constructor(
 		private readonly gl: WebGL2RenderingContext,
@@ -397,6 +456,7 @@ export class WebGL2Backend {
 		images?: ImageTable,
 		parallelCompile = true,
 		canvasAlpha = false,
+		private readonly rewrites: TextureRewrites = 'unpack',
 	) {
 		this.templates = engineTemplates(shaders);
 		this.mipTemplate = mipmapTemplate(shaders);
@@ -585,7 +645,8 @@ export class WebGL2Backend {
 		}
 		this.uints = words;
 		this.floats = floats;
-		this.unpackSlot = (this.unpackSlot + 1) % UNPACK_RING;
+		this.replays++;
+		this.unpackSlot = this.replays % UNPACK_RING;
 		this.unpackUsed = 0;
 		const gl = this.gl;
 		for (let i = start; i < end; ) {
@@ -941,20 +1002,42 @@ export class WebGL2Backend {
 			this.textures[id] = glTexture(null, renderbuffer, 0, width, height, format, 1, 0, 0, false);
 			return;
 		}
-		const texture = gl.createTexture();
-		if (!texture) throw new Error('WebGL2 could not create a texture');
 		// WebGL2 fixes a texture's kind at its first binding, as compatibility mode fixes its view.
 		const target = words[a + 8] === G.VIEW_2D_ARRAY ? gl.TEXTURE_2D_ARRAY : gl.TEXTURE_2D;
+		const texture = this.newTexture(target, mips, format.internal, width, height, layers);
+		const record = glTexture(texture, null, target, width, height, format, mips, 0, 0, false);
+		if (
+			this.rewrites === 'ring' &&
+			target === gl.TEXTURE_2D &&
+			mips === 1 &&
+			(format.type === gl.FLOAT || format.type === gl.UNSIGNED_INT)
+		)
+			record.kept = keptTexels(width, height, format.bytes, format.type === gl.FLOAT);
+		this.textures[id] = record;
+	}
+
+	/** Makes a texture's storage, which it binds for editing. */
+	private newTexture(
+		target: number,
+		mips: number,
+		internal: number,
+		width: number,
+		height: number,
+		layers: number,
+	): WebGLTexture {
+		const gl = this.gl;
+		const texture = gl.createTexture();
+		if (!texture) throw new Error('WebGL2 could not create a texture');
 		this.editTexture(UPLOAD_UNIT, target, texture);
 		if (target === gl.TEXTURE_2D_ARRAY)
-			gl.texStorage3D(target, mips, format.internal, width, height, layers);
-		else gl.texStorage2D(target, mips, format.internal, width, height);
+			gl.texStorage3D(target, mips, internal, width, height, layers);
+		else gl.texStorage2D(target, mips, internal, width, height);
 		// Shaders sample through sampler objects, which set their own filters. The texture's own
 		// filters serve texelFetch, which needs a complete texture: 32-bit float and integer
 		// textures are complete only with nearest filters.
 		gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 		gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-		this.textures[id] = glTexture(texture, null, target, width, height, format, mips, 0, 0, false);
+		return texture;
 	}
 
 	/** A texture by id, which a view, a write, an upload or a copy can use: not a render-only one. */
@@ -994,11 +1077,17 @@ export class WebGL2Backend {
 		if (old.texture) {
 			for (const other of this.textures)
 				if (other?.view && other.texture === old.texture) this.forgetFramebuffers(other);
-			gl.deleteTexture(old.texture);
-			for (let unit = 0; unit < this.unitTextures.length; unit++)
-				if (this.unitTextures[unit] === old.texture) this.unitTextures[unit] = null;
+			const ring = old.kept?.ring;
+			if (ring?.length) for (const copy of ring) this.deleteTexture(copy);
+			else this.deleteTexture(old.texture);
 		}
 		if (old.renderbuffer) gl.deleteRenderbuffer(old.renderbuffer);
+	}
+
+	private deleteTexture(texture: WebGLTexture): void {
+		this.gl.deleteTexture(texture);
+		for (let unit = 0; unit < this.unitTextures.length; unit++)
+			if (this.unitTextures[unit] === texture) this.unitTextures[unit] = null;
 	}
 
 	/** Deletes the framebuffers that draw into a target, and those that pair it as their depth. */
@@ -1054,8 +1143,8 @@ export class WebGL2Backend {
 	 * Writes a box of texels, layer after layer, from tightly packed rows in engine memory. A
 	 * compressed format's rows are rows of blocks: WebGL2 takes the box in texels, cut by the
 	 * level's edge, and the bytes of its whole blocks. The texture's first write reads engine
-	 * memory directly. Later writes into a texture of 32-bit values read a pixel unpack buffer, as
-	 * the GPU may still read the texture.
+	 * memory directly. Later writes into a texture of 32-bit values follow the rewrite mode, as the
+	 * GPU may still read the texture.
 	 */
 	private writeTexture(words: Uint32Array, a: number): void {
 		const gl = this.gl;
@@ -1071,8 +1160,20 @@ export class WebGL2Backend {
 		const width = words[a + 5] as number;
 		const height = words[a + 6] as number;
 		const depth = words[a + 7] as number;
+		const kept = texture.kept;
+		if (kept) {
+			if (kept.lastWrite !== this.replays) {
+				if (kept.ring.length > 0 || this.replays - kept.lastWrite <= RECENT_WRITE)
+					this.turnRing(texture, kept);
+				kept.lastWrite = this.replays;
+			}
+			this.keep(kept, source, x, y, width, height, texture.format.bytes >>> 2);
+		}
 		this.editTexture(UPLOAD_UNIT, texture.target, texture.texture);
-		const unpacked = texture.written && (type === gl.FLOAT || type === gl.UNSIGNED_INT);
+		const unpacked =
+			this.rewrites === 'unpack' &&
+			texture.written &&
+			(type === gl.FLOAT || type === gl.UNSIGNED_INT);
 		texture.written = true;
 		const array = texture.target === gl.TEXTURE_2D_ARRAY;
 		if (unpacked) {
@@ -1144,6 +1245,80 @@ export class WebGL2Backend {
 			else gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, format, type, data, index);
 		}
 		this.counts.uploadBytes += bytes;
+	}
+
+	/**
+	 * Copies a written box of texels from engine memory into the texels kept on the CPU, and marks
+	 * its rows as changed in every copy of the ring but the current one.
+	 */
+	private keep(
+		kept: KeptTexels,
+		source: number,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		texelWords: number,
+	): void {
+		const ints = this.ints;
+		const words = kept.words;
+		const rowWords = width * texelWords;
+		for (let row = 0; row < height; row++) {
+			const to = (y + row) * kept.rowWords + x * texelWords;
+			const from = (source >>> 2) + row * rowWords;
+			for (let k = 0; k < rowWords; k++) words[to + k] = ints[from + k] as number;
+		}
+		kept.rows = Math.max(kept.rows, y + height);
+		for (let copy = 0; copy < kept.ring.length; copy++) {
+			if (copy === kept.current) continue;
+			kept.staleFrom[copy] = Math.min(kept.staleFrom[copy] as number, y);
+			kept.staleTo[copy] = Math.max(kept.staleTo[copy] as number, y + height);
+		}
+	}
+
+	/**
+	 * Turns a data texture to the next copy of its ring, which no frame in flight reads, and writes
+	 * into it the rows that changed since it was last current. The first turn makes the ring, whose
+	 * new copies need every written row.
+	 */
+	private turnRing(texture: GlTexture, kept: KeptTexels): void {
+		const gl = this.gl;
+		const { internal, format, type, bytes } = texture.format;
+		const ring = kept.ring;
+		if (ring.length === 0) {
+			ring.push(texture.texture as WebGLTexture);
+			kept.staleFrom.push(0);
+			kept.staleTo.push(0);
+			for (let copy = 1; copy < TEXTURE_RING; copy++) {
+				ring.push(this.newTexture(gl.TEXTURE_2D, 1, internal, texture.width, texture.height, 1));
+				kept.staleFrom.push(0);
+				kept.staleTo.push(kept.rows);
+			}
+		}
+		kept.current = (kept.current + 1) % ring.length;
+		const copy = ring[kept.current] as WebGLTexture;
+		texture.texture = copy;
+		const from = kept.staleFrom[kept.current] as number;
+		const to = kept.staleTo[kept.current] as number;
+		if (to > from) {
+			this.editTexture(UPLOAD_UNIT, gl.TEXTURE_2D, copy);
+			const rows = to - from;
+			gl.texSubImage2D(
+				gl.TEXTURE_2D,
+				0,
+				0,
+				from,
+				texture.width,
+				rows,
+				format,
+				type,
+				kept.values,
+				from * kept.rowWords,
+			);
+			this.counts.uploadBytes += rows * texture.width * bytes;
+		}
+		kept.staleFrom[kept.current] = texture.height;
+		kept.staleTo[kept.current] = 0;
 	}
 
 	/**

@@ -10,6 +10,7 @@ describe('parseSwitches', () => {
 			sketchThread: undefined,
 			latency: undefined,
 			copyUploads: false,
+			textureRewrites: undefined,
 			depth: undefined,
 			compression: undefined,
 			parallelCompile: true,
@@ -26,6 +27,12 @@ describe('parseSwitches', () => {
 			bench: false,
 			glTiming: undefined,
 		});
+	});
+
+	it('reads how ?texture-rewrites= writes data textures again, and ignores other values', () => {
+		expect(parseSwitches('?texture-rewrites=ring').textureRewrites).toBe('ring');
+		expect(parseSwitches('?texture-rewrites=unpack').textureRewrites).toBe('unpack');
+		expect(parseSwitches('?texture-rewrites=copy').textureRewrites).toBeUndefined();
 	});
 
 	it('turns the depth prepass on or off with ?prepass=, and leaves it to the page otherwise', () => {

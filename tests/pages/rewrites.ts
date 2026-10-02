@@ -1,0 +1,38 @@
+// Starts the engine with the rewrites sketch, waits until its boxes have stopped moving and the
+// engine has drawn them still, and reads the frame back.
+import { createEngine } from '@null3d/engine';
+import { run, toBase64 } from './lib/result';
+
+/** A frame of the sketch after both bursts of moves, with frames to spare for drawing. */
+const STILL_FRAME = 160;
+
+run('rewrites', async () => {
+	const canvas = document.querySelector('canvas');
+	if (!canvas) throw new Error('the page has no canvas');
+	const engine = await createEngine({
+		canvas,
+		sketch: new URL('./sketches/rewrites-sketch.ts', import.meta.url),
+		maxPixelRatio: 1,
+	});
+	await engine.firstFrame;
+	for (;;) {
+		const frame = await new Promise<number>((resolve) => {
+			const off = engine.onSketchMessage((name, data) => {
+				if (name !== 'frame') return;
+				off();
+				resolve(data as number);
+			});
+			engine.postToSketch('frame');
+		});
+		if (frame >= STILL_FRAME) break;
+		await new Promise((resolve) => setTimeout(resolve, 100));
+	}
+	const frame = await engine.captureFrame();
+	await engine.destroy();
+	return {
+		tier: engine.capabilities.tier,
+		width: frame.width,
+		height: frame.height,
+		pixels: toBase64(frame.pixels),
+	};
+});

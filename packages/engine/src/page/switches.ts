@@ -1,11 +1,11 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?wake=message, ?hdr=off
-// and ?compression=. Six more set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs=
-// for the job worker count, ?memory= for the shared memory's maximum, ?queue= for the frames that
-// may wait on the GPU, ?cells=off for culling without grid cells and ?prepass=on or off for the
-// depth prepass. ?hold starts hold mode for image tests, ?preset= fixes the quality preset, ?bench
-// publishes the running engine for benchmark tools, and ?gl-timing times each WebGL call for
-// benchmark pages.
+// ?sketch-thread=main, ?latency=, ?uploads=copy, ?texture-rewrites=, ?depth=, ?compile=wait,
+// ?wake=message, ?hdr=off and ?compression=. Six more set what the benchmarks vary: ?fps= for a
+// fixed frame rate, ?jobs= for the job worker count, ?memory= for the shared memory's maximum,
+// ?queue= for the frames that may wait on the GPU, ?cells=off for culling without grid cells and
+// ?prepass=on or off for the depth prepass. ?hold starts hold mode for image tests, ?preset= fixes
+// the quality preset, ?bench publishes the running engine for benchmark tools, and ?gl-timing times
+// each WebGL call for benchmark pages.
 
 import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
@@ -16,6 +16,13 @@ export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
  * caused it.
  */
 export type GlTimingMode = 'calls' | 'sync';
+/**
+ * How the WebGL2 path writes again into a data texture that the GPU may still read for an earlier
+ * frame: `direct`ly, through a ring of pixel unpack buffers that the GPU copies from in order with
+ * its other work (`unpack`), or into the next of a `ring` of copies of the texture, which no frame
+ * in flight reads.
+ */
+export type TextureRewrites = 'direct' | 'unpack' | 'ring';
 /**
  * How the engine trades latency for speed. In `pipelined` mode, the render worker draws each frame
  * while the sketch computes the next one. In `low` mode, the sketch worker draws each frame right after
@@ -63,6 +70,8 @@ export interface Switches {
 	latency: LatencyMode | undefined;
 	/** True when ?uploads=copy makes the WebGL2 path copy uploads out of shared memory first. */
 	copyUploads: boolean;
+	/** How ?texture-rewrites= asks the WebGL2 path to write data textures again, or undefined. */
+	textureRewrites: TextureRewrites | undefined;
 	/**
 	 * The depth mode that ?depth= asks the WebGL2 path to draw with, or undefined for the device's
 	 * own. A device without `EXT_clip_control` cannot draw `reversed`, and draws its own instead.
@@ -171,6 +180,7 @@ export function parseSwitches(search: string): Switches {
 		sketchThread: oneOf(params.get('sketch-thread'), ['worker', 'main'] as const),
 		latency: oneOf(params.get('latency'), ['pipelined', 'low'] as const),
 		copyUploads: params.get('uploads') === 'copy',
+		textureRewrites: oneOf(params.get('texture-rewrites'), ['direct', 'unpack', 'ring'] as const),
 		depth: oneOf(params.get('depth'), ['reversed', 'reversed-gl', 'standard'] as const),
 		compression: params
 			.get('compression')
