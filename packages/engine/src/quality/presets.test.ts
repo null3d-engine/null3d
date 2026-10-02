@@ -98,6 +98,7 @@ describe('the preset table', () => {
 			'antialias',
 			'shadowFilter',
 			'farCascadeInterval',
+			'governor',
 			'maxAnisotropy',
 			'uploadBytesPerFrame',
 			'memoryMaximumMiB',
@@ -124,6 +125,7 @@ describe('the preset table', () => {
 			'uploadBytesPerFrame',
 			'shadowFilter',
 			'farCascadeInterval',
+			'governor',
 			'antialias',
 		]);
 		expect(LIVE_SETTINGS).toEqual([
@@ -134,6 +136,7 @@ describe('the preset table', () => {
 			'uploadBytesPerFrame',
 			'shadowFilter',
 			'farCascadeInterval',
+			'governor',
 		]);
 	});
 
@@ -156,7 +159,7 @@ describe('the preset table', () => {
 
 describe('presetSettings', () => {
 	it("gives a sketch each preset's values", () => {
-		const full = { maxRenderScale: 1 };
+		const full = { maxRenderScale: 1, governor: true };
 		expect(presetSettings('low')).toEqual({
 			maxPixelRatio: 1.5,
 			minRenderScale: 0.5,
@@ -250,7 +253,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter or farCascadeInterval.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval or governor.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(

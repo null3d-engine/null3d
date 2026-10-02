@@ -103,6 +103,13 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 1, max: 8, whole: true, heavierBelow: true },
 	},
+	// The frame-budget governor (governor.ts), which lowers the live settings above when frames take
+	// too long and raises them again when they have time to spare.
+	governor: {
+		presets: [true, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
 	// FXAA on Low, which phones draw: MSAA's samples cost them more memory traffic.
 	antialias: {
 		presets: ['fxaa', 'msaa', 'msaa', 'msaa'],
@@ -178,6 +185,14 @@ export interface QualitySettings {
 	 * play.
 	 */
 	farCascadeInterval: number;
+	/**
+	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
+	 * toward `minRenderScale`, then how often far shadow cascades draw, then the shadow filter. It
+	 * raises them again, in the reverse order, once frames have time to spare. `quality.governor`
+	 * reports its steps. False keeps the render scale at `maxRenderScale` and the shadow settings as
+	 * set, as benchmarks and captures need. It changes during play.
+	 */
+	governor: boolean;
 	/**
 	 * How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa`
 	 * smooths edges in the final pass, and `none` leaves them sharp. The mode is fixed when the

@@ -775,6 +775,12 @@ impl SceneSettings {
         self.lighting.sun_shadow = shadow;
     }
 
+    /// The shadow cascades of the main directional light in the last gathered frame, or 0 when it
+    /// casts no shadows.
+    pub fn sun_shadow_cascades(&self) -> u32 {
+        self.lighting.sun_shadow.map_or(0, |shadow| shadow.cascades)
+    }
+
     /// The shadow filter and the far cascades' update interval, from the next frame on.
     pub fn set_shadow_quality(&mut self, quality: ShadowQuality) {
         self.lighting.shadow_quality = quality;

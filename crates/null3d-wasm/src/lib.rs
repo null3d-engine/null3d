@@ -1321,6 +1321,13 @@ pub fn set_render_scaling(scaling: bool) -> u32 {
     })
 }
 
+/// The shadow cascades of the main directional light in the last culled frame, or 0 when no
+/// directional light casts shadows. The quality governor lightens only the shadows that exist.
+#[wasm_bindgen(js_name = sunShadowCascades)]
+pub fn sun_shadow_cascades() -> u32 {
+    value_with_engine(|e| Ok(e.renderer.settings().sun_shadow_cascades()))
+}
+
 /// The shadow settings that the quality settings give every light: the texels on each side of the
 /// shadow filter, and how many frames pass between two draws of a far cascade. The TypeScript API
 /// checks both.

@@ -182,3 +182,39 @@ Pending. A live change of the shadow map size needs shadow maps that draw. Their
 - The check's frames, and the frames of warm-ups in the setup, run none of the sketch's code. The engine numbers them with its own frames, but the sketch's `time.frame` and the pointer's frame count only the frames that run the sketch.
 - `FrameSummary.skippedDraws` counts the draws that a building pipeline kept from drawing. The preset change test holds it at 0 on every GPU path and thread mode.
 - The check's code (`sketch/preset-check.ts`) loads after the first frame, as D-14's option B proposes. The size report prints its files apart from the downloads before the first frame.
+
+## The governor's thresholds (M1-G5)
+
+Status: proposed by M1-G5 on 2026-10-03. M1-G6 tunes them with the S4 traces of the three devices.
+
+### Proposed values
+
+The governor keeps the thresholds of dynamic resolution (M1-G4) for every step. Each scales from the measured refresh rate, with a target of at most 60 frames per second:
+
+| Rule | Value |
+| --- | --- |
+| Over budget | The longer of the mean presented and completed intervals is 110% of the budget or more, or the GPU delay is 200% or more |
+| Step down | After 1 s over budget |
+| Room to spare | Intervals within 102% of the budget, with a GPU delay within 125% |
+| Step up | After 5 s with room. A step up that fails within 3 s doubles the next wait, up to 80 s |
+| Settle after a step | 1 s |
+| Grace | 2 s after the first frame, after a pause, and while textures wait to upload |
+| Order | Render scale in steps of 0.05, then the far cascades' interval doubled up to 8, then the shadow filter from 5 to 3. Up in the reverse order |
+
+The rules ask for a step up only after about five seconds under 80% of the budget. A presented interval never falls below the refresh period, so a frame interval under 80% of the budget never happens at the display's rate. The GPU delay is no better. A WebGL2 fence's time rounds up to the next frame callback, and Firefox reports WebGPU completions a display frame late. So "room" means frames at the target rate with a GPU delay within 125% of the budget. The failed-step-up rule then keeps the settings below the point where frames fall behind.
+
+### Data
+
+The stress test (`tests/pages/governor.html`) on the Mac in Chrome, both GPU paths, 60 Hz:
+
+- The walk took every step down, one every 1.9 to 2 s, and every step back up, one every 6 s. No frame stuck: the 99th percentile of presented intervals was 50 ms under the load and 16.7 ms after it. No pipeline built and no draw was skipped. Each capture's largest block difference from the first frame was about 2 to 6 levels. A frame drawn without its shadows differs by about 113.
+- The hold grew the plane's loop until the lower rate fell under 45 fps, at about 33,000 to 66,000 steps per pixel. The governor then held 55 to 60 fps in the last 15 seconds, at render scales of 0.5 to 0.8. At the heavier load it reached 0.5, tried 0.55 once, fell behind and stepped back within 2 s.
+- CI's software GPU draws the scene at about 40 fps on WebGL2 without a load, so its walk runs with `?fps=30`.
+
+The S24+ and the iPad rows are still to come, from `bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari`.
+
+### Open for the owner
+
+- The shadow steps help only a scene whose shadows cost much. The render scale helps only a GPU-bound scene. A CPU-bound scene walks down every step for nothing. The governor could undo a step that did not shorten the frames.
+- A slow sketch on the thread that draws slows the frame callbacks, as in low latency and single-threaded modes. The refresh meter reads them as a slower display. The budget then grows, and the governor misses the overload.
+- The S4 benchmark keeps its render scale at 1, to match its three.js twin's pixels. So on devices only the shadow steps can act there.
