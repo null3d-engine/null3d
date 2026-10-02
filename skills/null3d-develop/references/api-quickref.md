@@ -217,16 +217,16 @@ scene.createSpotLight({ position, target, angle, penumbra, range: 20, decay, col
   castShadows: true, shadow: { bias: 0.5, normalBias: 1 } });  // or direction
 scene.createHemisphereLight({ skyColor, groundColor, intensity });
 // every light also takes the node options: name, position, rotation, parent, dynamic, layers
-// castShadows: directional and spot lights cast shadows; point lights store it, and cast later in 0.1
+// castShadows: directional, spot and point lights; point lights cast where pointLightShadows is on
 
 light.setIntensity(v); light.setColor(c);   // every light; setColor allocates, so animate the intensity
 light.setDirection(x, y, z);                 // directional and spot lights: the way the light travels
 light.setRange(r); light.setDecay(d);        // point and spot lights
 light.setAngle(a); light.setPenumbra(p);     // spot lights; angle in radians, up to π/2
 light.setGroundColor(c);                     // hemisphere lights; setColor sets the sky
-light.setCastShadows(true);                  // directional and spot lights cast; point lights store it
+light.setCastShadows(true);                  // directional, spot and point lights
 sun.setShadow({ cascades: 2, distance: 80 }); // directional lights; changes only the settings given
-spot.setShadow({ bias: 1 });                  // spot lights take bias and normalBias alone
+spot.setShadow({ bias: 1 });                  // spot and point lights take bias and normalBias alone
 light.setVisible(false); light.destroy();    // lights are objects: section 4
 ```
 
@@ -236,7 +236,7 @@ light.setVisible(false); light.destroy();    // lights are objects: section 4
 - Units follow three.js r155 and later: point and spot intensity in candela. The same colors and intensities give the same light as in three.js.
 - Point and spot lights light the surfaces their ranges reach, through clustered lighting, so keep each range as short as the look allows. Surfaces show the first visible directional light, every ambient light, and the point and spot lights. Later in 0.1, hemisphere lights light surfaces.
 - Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`, in cascades that fit the camera's view. Defaults: 3 cascades, 2,048 texels, 200 m, bias 0.5 and normal bias 1, both in texels of each cascade. Unlit materials show no shadows. Both GPU paths draw them. Instance batches do not cast or receive them yet (`concepts/shadows`).
-- Spot light shadows: each spot light with `castShadows` takes a tile of the shared shadow atlas. The preset's `shadowTiles` caps the tiles, and the lights that look largest on screen get them first. `shadowTileSize` sets each tile's texels; both are `createEngine` options. A tile draws again only when its light or a caster within the light's range moves, so still scenes cost nothing per frame. The biases count texels of the tile (`concepts/shadows`).
+- Spot and point light shadows: each spot light with `castShadows` takes a tile of the shared shadow atlas, and each point light six. Point lights cast only where the preset's `pointLightShadows` is on (High and Ultra), or with that `createEngine` option. The preset's `shadowTiles` caps the tiles, and the lights that look largest on screen get them first. `shadowTileSize` sets each tile's texels. All three are `createEngine` options. A tile draws again only when its light or a caster within the light's range moves, so still scenes cost nothing per frame. The biases count texels of the tile (`concepts/shadows`).
 
 ## 8. Geometry (`api/geometry`)
 

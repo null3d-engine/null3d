@@ -33,11 +33,6 @@ export const PLANNED_SETTINGS = {
 		changes: 'live',
 		values: { min: 1, max: 8, whole: true, heavierBelow: true },
 	},
-	pointLightShadows: {
-		presets: [false, false, true, true],
-		changes: 'start',
-		values: 'flag',
-	},
 	depthPrepass: {
 		presets: [false, false, true, true],
 		changes: 'start',

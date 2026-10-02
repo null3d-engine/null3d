@@ -6,13 +6,14 @@
 mod common;
 
 use common::{World, count};
-use null3d_core::lights::LightTable;
+use null3d_core::lights::{LightTable, kind};
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::drawlist::{NO_TARGET, Op, format, view};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
 use null3d_render::gpu_driven::GpuDrivenRenderer;
+use null3d_render::light_grid::LightGrid;
 use null3d_render::shadow_tiles::{ShadowTiles, TileSettings};
 use null3d_render::view::ViewId;
 
@@ -26,17 +27,24 @@ const TWO_TILES: TileSettings = TileSettings {
 /// What each builder tells the tests.
 trait Tiles: FrameBuilder {
     fn tiles(&self) -> &ShadowTiles;
+    fn grid(&self) -> &LightGrid;
 }
 
 impl Tiles for GpuDrivenRenderer {
     fn tiles(&self) -> &ShadowTiles {
         self.shadow_tiles()
     }
+    fn grid(&self) -> &LightGrid {
+        self.light_grid()
+    }
 }
 
 impl Tiles for CpuCulledRenderer {
     fn tiles(&self) -> &ShadowTiles {
         self.shadow_tiles()
+    }
+    fn grid(&self) -> &LightGrid {
+        self.light_grid()
     }
 }
 
@@ -256,4 +264,110 @@ fn without_tiles_in_the_budget_spot_lights_cast_no_shadows() {
             .all(|l| tiles.tile_of(l.light, &world.shadow_lights) == 0.0)
     );
     assert!(world.renderer.view_frame(ViewId::tile(0)).is_none());
+}
+
+/// Eight tiles of 128 texels, with point light shadows.
+const POINT_TILES: TileSettings = TileSettings {
+    tiles: 8,
+    size: 128,
+    point_shadows: true,
+};
+
+/// Checks that a point light draws six tiles, then none while the scene stands still, and six again
+/// when a caster in its range moves, on either builder.
+fn a_point_light_draws_six_tiles_when_its_casters_move<B: Tiles>(renderer: B) {
+    let mut world = world(renderer, POINT_TILES);
+    let lit_box = world.objects[0];
+    world.add_point([-3.0, 3.0, 0.0], 5.0);
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    let first = step(&mut world, &mut mock, true);
+    assert_eq!(world.renderer.tiles().shape().unwrap().layers, 6);
+    assert_eq!(world.renderer.tiles().drawn(), 6);
+    assert_eq!(depth_passes(&first), 6);
+    let still = step(&mut world, &mut mock, false);
+    assert_eq!(depth_passes(&still), 0);
+    world.scene.set_position(lit_box, [-3.0, 0.2, 0.0]).unwrap();
+    let moved = step(&mut world, &mut mock, false);
+    assert_eq!(depth_passes(&moved), 6);
+    // Its record names its first tile, and the tiles' block says that it has six.
+    let row = world.lights[0].light;
+    assert_eq!(world.renderer.grid().lights()[0].shadow, 1.0);
+    assert_eq!(
+        world.renderer.tiles().tile_of(row, &world.shadow_lights),
+        1.0
+    );
+    let params = world.renderer.tiles().uniform().params;
+    assert!(params[..6].iter().all(|p| p[3] == 6.0));
+}
+
+#[test]
+fn webgpu_point_lights_draw_six_tiles_when_their_casters_move() {
+    a_point_light_draws_six_tiles_when_its_casters_move(GpuDrivenRenderer::new(Default::default()));
+}
+
+#[test]
+fn webgl2_point_lights_draw_six_tiles_when_their_casters_move() {
+    for multi_draw in [true, false] {
+        let config = CpuCulledConfig {
+            multi_draw,
+            ..CpuCulledConfig::default()
+        };
+        a_point_light_draws_six_tiles_when_its_casters_move(CpuCulledRenderer::new(config));
+    }
+}
+
+#[test]
+fn point_lights_take_blocks_from_the_first_tile_and_spot_lights_from_the_last() {
+    let mut world = world(GpuDrivenRenderer::new(Default::default()), POINT_TILES);
+    world.add_spot([3.0, 4.0, 0.0], 6.0);
+    world.add_point([-3.0, 3.0, 0.0], 5.0);
+    world.add_spot([0.0, 4.0, -5.0], 6.0);
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    step(&mut world, &mut mock, true);
+    // One point light and two spot lights fill the eight tiles.
+    assert_eq!(world.renderer.tiles().shape().unwrap().layers, 8);
+    assert_eq!(world.renderer.tiles().drawn(), 8);
+    let tiles = world.renderer.tiles();
+    let mut firsts: Vec<(u32, f32)> = world
+        .shadow_lights
+        .iter()
+        .map(|l| (l.kind, tiles.tile_of(l.light, &world.shadow_lights)))
+        .collect();
+    firsts.sort_by(|a, b| a.1.total_cmp(&b.1));
+    assert_eq!(firsts[0], (kind::POINT, 1.0));
+    assert_eq!([firsts[1].1, firsts[2].1], [7.0, 8.0]);
+}
+
+#[test]
+fn point_lights_cast_no_shadows_where_the_preset_turns_them_off() {
+    let off = TileSettings {
+        point_shadows: false,
+        ..POINT_TILES
+    };
+    let mut world = world(GpuDrivenRenderer::new(Default::default()), off);
+    world.add_point([-3.0, 3.0, 0.0], 5.0);
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    let commands = step(&mut world, &mut mock, true);
+    assert!(world.renderer.tiles().shape().is_none());
+    assert_eq!(depth_passes(&commands), 0);
+}
+
+#[test]
+fn a_point_light_beyond_the_budget_casts_none_and_a_spot_light_takes_a_tile() {
+    let five = TileSettings {
+        tiles: 5,
+        ..POINT_TILES
+    };
+    let mut world = world(GpuDrivenRenderer::new(Default::default()), five);
+    world.add_point([-3.0, 3.0, 0.0], 5.0);
+    world.add_spot([3.0, 4.0, 0.0], 6.0);
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    step(&mut world, &mut mock, true);
+    // Six tiles do not fit five, so only the spot light casts.
+    assert_eq!(world.renderer.tiles().shape().unwrap().layers, 5);
+    assert_eq!(world.renderer.tiles().drawn(), 1);
 }
