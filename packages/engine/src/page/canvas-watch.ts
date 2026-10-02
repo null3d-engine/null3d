@@ -3,6 +3,10 @@
 // change; the thread that owns the canvas applies the size at frame start, and the sketch reads the
 // CSS size and the ratio for pointer positions and its viewport. A hidden page that shows again
 // counts as a resume, so the sketch's next step counts no time.
+//
+// The size of the drawing buffer never passes the largest texture that the GPU path draws into. A
+// larger canvas draws at a lower pixel ratio, which the page writes as the ratio, so the sketch
+// still maps pointer positions to the buffer.
 
 import { controlViews, Slot } from '../shared/control';
 
@@ -18,13 +22,43 @@ export interface CanvasWatch {
 
 type DevicePixels = { width: number; height: number };
 
-/** Watches the canvas's size and the page's visibility, and writes them into the control block. */
+/** WebGPU's default limit on a texture's width and height, within which the engine stays. */
+export const WEBGPU_MAX_TEXTURE_SIZE = 8192;
+
+/**
+ * Fixes the CSS width or height of a canvas where it follows the size of the drawing buffer, as it
+ * does on a canvas that no CSS sizes. The engine sizes the buffer to the CSS size times the pixel
+ * ratio, so such a canvas would grow by that ratio at each resize, until the GPU could not draw
+ * into it. The test doubles the buffer for a moment, which keeps its shape: a side whose CSS size
+ * changes follows the buffer, and keeps the size it had. Call it before the canvas has a context.
+ */
+function fixSelfSizedCanvas(canvas: HTMLCanvasElement): void {
+	const style = getComputedStyle(canvas);
+	const cssWidth = style.width;
+	const cssHeight = style.height;
+	const { width, height } = canvas;
+	canvas.width = Math.max(1, width) * 2;
+	canvas.height = Math.max(1, height) * 2;
+	const followsWidth = style.width !== cssWidth;
+	const followsHeight = style.height !== cssHeight;
+	canvas.width = width;
+	canvas.height = height;
+	if (followsWidth) canvas.style.width = cssWidth;
+	if (followsHeight) canvas.style.height = cssHeight;
+}
+
+/**
+ * Watches the canvas's size and the page's visibility, and writes them into the control block.
+ * `maxSize` is the largest width and height of a texture that the GPU path draws into.
+ */
 export function watchCanvas(
 	canvas: HTMLCanvasElement,
 	control: ArrayBufferLike,
 	maxPixelRatio: number,
+	maxSize: number,
 ): CanvasWatch {
 	const { slots, slotFloats } = controlViews(control);
+	fixSelfSizedCanvas(canvas);
 	let cap = maxPixelRatio;
 	/** The sizes of the last write, which a new cap writes again. */
 	let last: { cssWidth: number; cssHeight: number; devicePixels?: DevicePixels } | undefined;
@@ -35,11 +69,12 @@ export function watchCanvas(
 		const exact = devicePixels && ratio === globalThis.devicePixelRatio;
 		const width = exact ? devicePixels.width : Math.round(cssWidth * ratio);
 		const height = exact ? devicePixels.height : Math.round(cssHeight * ratio);
+		const fit = Math.min(1, maxSize / Math.max(width, height));
 		slotFloats[Slot.CanvasCssWidth] = cssWidth;
 		slotFloats[Slot.CanvasCssHeight] = cssHeight;
-		slotFloats[Slot.PixelRatio] = ratio;
-		Atomics.store(slots, Slot.CanvasWidth, Math.max(1, width));
-		Atomics.store(slots, Slot.CanvasHeight, Math.max(1, height));
+		slotFloats[Slot.PixelRatio] = ratio * fit;
+		Atomics.store(slots, Slot.CanvasWidth, Math.max(1, Math.round(width * fit)));
+		Atomics.store(slots, Slot.CanvasHeight, Math.max(1, Math.round(height * fit)));
 		Atomics.add(slots, Slot.ResizeSerial, 1);
 	};
 	const observer = new ResizeObserver((entries) => {
