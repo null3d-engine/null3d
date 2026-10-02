@@ -29,7 +29,8 @@ export function readShadows(moduleUrl: string): number {
  * Sets the background, the sun and the ambient light, and makes the active camera. The three.js
  * twins draw with no tone mapping, three.js's default, so the null3D pages turn off the engine's
  * default of ACES. The twins also draw every pixel of the canvas, so the null3D pages keep the
- * render scale at 1. With `cascades` above 0 the sun casts shadows in that many cascades, at the
+ * render scale at 1. They never lighten their shadows either, so the null3D pages turn off the
+ * quality governor. With `cascades` above 0 the sun casts shadows in that many cascades, at the
  * benchmark scenes' shadow size.
  */
 export function setUpView(
@@ -39,7 +40,7 @@ export function setUpView(
 	cascades = 0,
 ): Camera {
 	post.set({ toneMapping: 'none' });
-	quality.set({ minRenderScale: 1 });
+	quality.set({ minRenderScale: 1, governor: false });
 	scene.setBackground(background);
 	const { mapSize, distance } = SHADOWS;
 	scene.createDirectionalLight({

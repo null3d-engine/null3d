@@ -80,7 +80,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | High "culling" or "record" with many blended objects | Every frame culls and sorts each view's blended objects on the job workers, and on WebGPU writes each visible one's data | Use `alphaMode: 'mask'` for cut-out shapes, which draw with the opaque objects; keep `'blend'` for what must show through; put blended particles in one instance batch with one material, which draws in few calls when nothing crosses it (`concepts/materials`) |
 | Hitch when something new appears, or it appears a moment late | A rebuild (`rebuilds` above zero), or a pipeline build (`pipelines` above zero) | Create materials and objects during loading; create a later stage hidden, `await scene.warmUp()`, then show it |
 | Hitch while loading during play | Uploads and decoding | Load before play, or stream smaller files; the per-frame upload budget spreads uploads, and `quality.set({ uploadBytesPerFrame })` lowers it |
-| Frame rate drops after a few minutes on a phone | Heat | Aim for 70% of the budget; test 10-minute runs. The governor steps quality down later in 0.1 |
+| Frame rate drops after a few minutes on a phone | Heat | Aim for 70% of the budget; test 10-minute runs. The governor lowers the render scale, then the shadow updates; lighten your own work in `quality.onChange` by `quality.governor.steps` |
 
 ## 5. Phones and tablets
 
@@ -118,10 +118,10 @@ The number of objects and instance rows one scene can draw depends on the GPU pa
 The engine starts each device on one of four presets: Low, Medium, High or Ultra (`concepts/quality-presets`). Phones start at Low, tablets at Medium and desktops at High. The preset sets the pixel ratio cap, the render scale range and the anti-aliasing mode. It also sets the shadow filter, the far shadow cascades' update rate, the anisotropy cap, the texture upload budget and the engine's memory maximum. The preset table marks its other settings, such as the shadow cascade count and map size, as planned.
 
 - The sketch reads the preset in `quality.preset`, and the page in `engine.mode.preset`. The preset stays the same during play.
-- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval })` changes these settings during play, for example from a settings menu. Other settings throw E1213.
+- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval, governor })` changes these settings during play, for example from a settings menu. Other settings throw E1213.
 - Do not raise the preset of a phone. Check each preset that your users can get with `?preset=low` to `?preset=ultra`.
 
-Keep your own values per preset in one table. Apply them in the setup, and again in `quality.onChange`, which runs when a setting changes. Later in 0.1, a governor lowers settings in a fixed order when frames run over budget: render scale first, then shadow updates, then effects. It never changes the preset during play. It raises the settings again after a stable period, so quality does not flicker. Your systems can join in through `setBudget` (0.2):
+Keep your own values per preset in one table. Apply them in the setup, and again in `quality.onChange`, which runs when a setting changes. When frames run over budget for about a second, the governor lowers a live setting by one step. It lowers the render scale first, then the far shadow cascades' updates, then the shadow filter. It never changes the preset during play. It raises the settings again in the reverse order, each after 5 seconds with time to spare, so quality does not flicker. After each shadow step, `quality.onChange` runs, and `quality.governor.steps` counts the steps. Lighten your own systems there. To measure the scene's own cost, turn the governor off: `quality.set({ governor: false })`. Your systems get budgets of their own through `setBudget` (0.2):
 
 ```ts
 quality.setBudget({ name: 'ai', ms: 2, onScale: (s) => { aiUpdateEvery = s < 0.5 ? 4 : s < 0.8 ? 2 : 1; } });  // (0.2)

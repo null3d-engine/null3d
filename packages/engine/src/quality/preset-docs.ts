@@ -84,6 +84,7 @@ export const SETTING_DOCS: {
 	shadowTiles: { label: 'Spot and point light shadow tiles' },
 	shadowTileSize: { label: 'Shadow tile size in texels' },
 	pointLightShadows: { label: 'Point light shadows', print: yesNo },
+	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	maxAnisotropy: { label: 'Anisotropic filtering cap', print: (value) => `${value}x` },
 	uploadBytesPerFrame: {

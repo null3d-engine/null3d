@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `parity`, `bench`, `memory`, `depth`, `overload`, `scale`, `skinning` and `startup`. `bun run devices` runs the checks on the phone and on the iPad.
+- The plans are `checks` (the default), `parity`, `bench`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning` and `startup`. `bun run devices` runs the checks on the phone and on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -104,6 +104,13 @@ To collect the numbers, rest each device first and close its other tabs:
 - The plan runs each crowd of 50, 100, 200 and 500 characters with 1, 2, 3 and 4 cascades: 16 pages. The run's summary gives each page's characters per pass, each path's figures, and the share of the frame time that transform feedback saves.
 - Run it on the phone and the iPad from a checkout of the branch that holds the page: `bun tests/real-browsers.ts --plan skinning --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool.
 - The page takes `?characters=`, `?cascades=`, `?rounds=` and `?warmup=` (milliseconds), to time one load by hand.
+
+## The governor plan
+
+- The `governor` plan runs the quality governor's stress test (`tests/pages/governor.html`) in two stages on each GPU path. The browser tests run the same page (`tests/image/governor.spec.ts`).
+- The walk forces every live step down and back up. The sketch spins its thread for two frame budgets in each frame, a load that no setting lightens. The governor lowers the render scale from 1 to 0.9 first. Then the far cascades go from every 4th frame to every 8th, and the shadow filter from 5 to 3. After the load stops, it takes each step back up. The page captures a frame after each step and compares it with the first in blocks of 16 pixels. It also measures the frames all along: no frame may stick, and no pipeline may build.
+- The hold shows the governor holding a target under stress. A plane in front of the camera runs a loop for each pixel, so the GPU's work follows the render scale. With the governor off, the page grows the loop until the GPU draws under 75% of the target. With the governor on, the render scale must bring the rate back: 70% of the last 15 seconds must hold 90% of the target. One failed step up costs about two seconds, which the share allows.
+- Run it on the phone and the iPad: `bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari`. Each stage takes about a minute. `?work=` fixes the hold's load, and the engine's `?fps=30` lowers the target. CI skips both stages: its software GPU takes 300 to 400 ms for some frames of the scene without a load.
 
 ## Browser apps on the Mac
 

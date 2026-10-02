@@ -30,8 +30,8 @@ import {
 } from '../generated/core';
 import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
+import { FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
-import { DynamicResolution, FULL_SCALE, thousandths } from '../quality/resolution';
 import { Assets } from '../scene/assets';
 import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
@@ -187,9 +187,16 @@ export class SketchRunner {
 	private restoreRandom: (() => void) | undefined;
 	private readonly input: InputReader;
 	private readonly quality: SketchQuality;
-	/** Dynamic resolution, which moves the render scale during play; none in hold mode. */
-	private readonly resolution: DynamicResolution | undefined;
-	/** The render scale in thousandths where no dynamic resolution moves it: the highest. */
+	/**
+	 * The frame-budget governor, which moves the render scale and the shadow settings during play.
+	 * In hold mode it takes no step, and the settings apply as set.
+	 */
+	private readonly governor = new Governor();
+	/** The governor's part of the frame loop; none in hold mode. */
+	private readonly governorLoop: GovernorLoop | undefined;
+	/** The governor's count of shadow changes when the core last took its shadow settings. */
+	private shadowChanges = 0;
+	/** The render scale in thousandths where the governor does not move it: the highest. */
 	private heldScale = FULL_SCALE;
 	/** The sketch's debug drawing, in development builds only, which is also its `ctx.debug`. */
 	private readonly debugDraw: DebugDraw | undefined;
@@ -249,8 +256,19 @@ export class SketchRunner {
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
 		textures.applyQuality(sketch.quality.settings, SKETCH_SETTINGS);
-		this.resolution =
-			holdSeconds === undefined ? new DynamicResolution(metrics, sketch.fps) : undefined;
+		this.governorLoop =
+			holdSeconds === undefined
+				? new GovernorLoop(
+						this.governor,
+						metrics,
+						{
+							shadowCasters: () => glue.shadowCasters(),
+							loading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
+						},
+						sketch.fps,
+					)
+				: undefined;
+		const { governor } = this;
 		this.quality = new SketchQuality(
 			sketch.quality,
 			(update, changed) => {
@@ -260,6 +278,17 @@ export class SketchRunner {
 			},
 			() => this.settle(true),
 			() => this.renderScale() / FULL_SCALE,
+			{
+				get steps() {
+					return governor.steps;
+				},
+				get farCascadeInterval() {
+					return governor.farInterval;
+				},
+				get shadowFilter() {
+					return governor.filter as 3 | 5;
+				},
+			},
 		);
 		this.applyFrameSettings(this.quality.settings);
 		this.readViewport();
@@ -465,26 +494,44 @@ export class SketchRunner {
 
 	/** The render scale of the frame being drawn, in thousandths. */
 	private renderScale(): number {
-		return this.resolution ? this.resolution.controller.scale : this.heldScale;
+		return this.governorLoop ? this.governor.scale : this.heldScale;
 	}
 
 	/**
-	 * Applies the settings that the frames read: gives dynamic resolution the render scale's range,
-	 * and tells the core whether the scale can drop below the whole canvas, and how shadows filter
-	 * and update. Hold mode draws at the highest scale of the range, with the passes that play draws
-	 * the range with.
+	 * Applies the settings that the frames read: gives the governor the render scale's range and
+	 * the shadow settings, and tells the core whether the scale can drop below the whole canvas, and
+	 * how shadows filter and update after the governor's steps. With the governor off, the range
+	 * holds the highest scale alone. Hold mode draws at the highest scale of the range, with the
+	 * passes that play draws the range with.
 	 */
 	private applyFrameSettings(settings: QualitySettings): void {
 		const low = thousandths(settings.minRenderScale);
 		const high = thousandths(settings.maxRenderScale);
 		this.heldScale = high;
-		this.resolution?.controller.setRange(low, high);
+		const { governor } = this;
+		governor.setOn(settings.governor);
+		governor.setRange(low, high);
+		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval);
+		this.shadowChanges = governor.shadowChanges;
 		const { glue } = this.sketch;
 		if (
-			glue.setRenderScaling(low < FULL_SCALE) !== 0 ||
-			glue.setShadowQuality(settings.shadowFilter, settings.farCascadeInterval) !== 0
+			glue.setRenderScaling((settings.governor ? low : high) < FULL_SCALE) !== 0 ||
+			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0
 		)
 			this.report(coreFailure(glue, 'quality.set'));
+	}
+
+	/**
+	 * Gives the core the shadow settings after a step of the governor, and tells the sketch's change
+	 * handlers of it.
+	 */
+	private applyGovernedShadows(): void {
+		const { governor } = this;
+		const { glue } = this.sketch;
+		this.shadowChanges = governor.shadowChanges;
+		if (glue.setShadowQuality(governor.filter, governor.farInterval) !== 0)
+			this.report(coreFailure(glue, 'the quality governor'));
+		this.quality.governed();
 	}
 
 	/** Calls each of the sketch's handlers with `value`, and reports each error that one throws. */
@@ -580,11 +627,12 @@ export class SketchRunner {
 		this.record.begin(frame);
 		this.phaseStart = start;
 		this.readViewport();
-		// Dynamic resolution judges the frames so far before the sketch's update, which then sees
-		// the render scale of this frame.
-		if (play && this.resolution) {
-			this.resolution.now[0] = start;
-			this.resolution.frame();
+		// The governor judges the frames so far before the sketch's update, which then sees the
+		// render scale of this frame, and whose change handlers hear of a shadow step.
+		if (play && this.governorLoop) {
+			this.governorLoop.now[0] = start;
+			this.governorLoop.frame();
+			if (this.governor.shadowChanges !== this.shadowChanges) this.applyGovernedShadows();
 		}
 		// Handlers that hear of a restart may create objects with new pipelines, so their frame
 		// waits for them.

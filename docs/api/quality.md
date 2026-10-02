@@ -8,7 +8,7 @@ summary: "quality.preset, quality.set, quality.setPreset, the preset check, fram
 
 # Quality API
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy`, `uploadBytesPerFrame`, `shadowFilter` and `farCascadeInterval`, and `quality.settings` also holds `antialias`. The other settings of the preset table are not built yet. Neither are the frame-budget governor and its budgets (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy`, `uploadBytesPerFrame`, `shadowFilter`, `farCascadeInterval` and `governor`, and `quality.settings` also holds `antialias`. The other settings of the preset table are not built yet. Neither are frame budgets for a sketch's own systems (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
 
 `ctx.quality` gives a sketch the quality preset that the engine runs and its settings. The sketch can change the settings that change during play, switch to another preset, and hear when either changes. [Quality presets](../concepts/quality-presets.md) explains how the engine chooses and checks the preset, and lists each preset's values.
 
@@ -58,6 +58,9 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `maxRenderScale` | A number from 0.25 to 1: the highest render scale, where the engine starts. | During play. |
 | `maxAnisotropy` | A whole number from 1 to 16. A texture whose `anisotropy` option is higher samples at this value. | During play. Textures sample with the new cap from the next frame. |
 | `uploadBytesPerFrame` | A whole number of texel bytes from 65,536 (64 KiB) to 67,108,864 (64 MiB). | During play, from the next frame. |
+| `shadowFilter` | 3 or 5: the texels on each side of the square that blends each shadow's edge. 5 gives softer edges and costs more for each pixel that receives shadows. | During play. |
+| `farCascadeInterval` | A whole number from 1 to 8: each far shadow cascade draws once in this many frames. The nearest cascade draws in every frame. | During play. |
+| `governor` | `true` or `false`: whether the frame-budget governor lowers the render scale and the shadow settings when frames take too long. | During play. Off, the scene draws at `maxRenderScale` with the shadow settings as set. |
 | `antialias` | `'msaa'`: 4 samples per pixel. `'fxaa'`: the final pass smooths edges. `'none'`: no smoothing. | At the start only. The scene's targets and pipelines depend on it, so the page's `antialias` option sets it. |
 
 [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) compares the anti-aliasing modes on each GPU path.
@@ -91,9 +94,42 @@ console.log(quality.renderScale); // 0.75
 
 [Quality presets](../concepts/quality-presets.md#dynamic-resolution) says when the engine moves the scale.
 
+## The frame-budget governor
+
+When frames take too long, the engine lowers the render scale first, then the live shadow settings. It raises them again once frames have time to spare. [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order and the rules. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now:
+
+| Member | What it holds |
+| --- | --- |
+| `steps` | The governor's steps past the render scale: 0 while the shadow settings apply as set. |
+| `farCascadeInterval` | How often each far shadow cascade draws now: the setting's value, or up to twice as long for each step, at most every 8th frame. |
+| `shadowFilter` | The shadow filter now: the setting's value, or 3 after the last step. |
+
+The `quality.onChange` handlers run after each of these steps. So a sketch can lighten its own work with the engine's:
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+const SPARKS = { low: 500, medium: 2000, high: 5000, ultra: 10000 };
+
+export default defineSketch(({ quality }) => {
+  let sparks = SPARKS[quality.preset];
+  quality.onChange(() => {
+    // Half the sparks for each step that the governor took past the render scale.
+    sparks = SPARKS[quality.preset] >> quality.governor.steps;
+  });
+  return {
+    onUpdate() {
+      // Move `sparks` sparks.
+    },
+  };
+});
+```
+
+A step of the render scale does not call the handlers: read `quality.renderScale` for it. Turn the governor off where every frame must draw the same way, such as a benchmark or a recorded video: `quality.set({ governor: false })`.
+
 ## Quality events
 
-`quality.onChange(handler)` calls the handler at the start of the first frame after the settings or the preset change. It returns a function that removes the handler. Keep handlers cheap: they run when quality changes, not every frame. After a change of preset, the handler's frame waits for its pipelines too. So objects that a handler creates for the new preset appear with it.
+`quality.onChange(handler)` calls the handler at the start of the first frame after the settings or the preset change. It also calls it after each shadow step of the frame-budget governor. It returns a function that removes the handler. Keep handlers cheap: they run when quality changes, not every frame. After a change of preset, the handler's frame waits for its pipelines too. So objects that a handler creates for the new preset appear with it.
 
 ## Related pages
 
@@ -152,9 +188,22 @@ The quality preset and settings, as a sketch reads and changes them through `ctx
 | `readonly preset: QualityPreset` | The preset that the engine runs. |
 | `readonly settings: Readonly<QualitySettings>` | The settings in use: the preset's values, with the values of the page's options and the changes that `set` made. |
 | `readonly renderScale: number` | The render scale that the engine draws the scene at: the part of the canvas's width and height, from `minRenderScale` to `maxRenderScale`. The engine lowers it when frames take too long and raises it again when they have time to spare. A change of the range applies to the frame being drawn. |
+| `readonly governor: QualityGovernor` | What the frame-budget governor has lowered below `settings`. When frames take too long, the governor lowers the render scale, then the shadow settings, one step at a time. The `onChange` handlers run after each step of the shadow settings, but not after a step of the render scale. Hold mode has no governor, so it draws with the settings as set. |
 | `set(settings: Partial<QualitySettings>): Promise<void>` | Changes settings from the next frame on, and resolves at once. It takes the settings that change during play, each with a value that the setting takes, and throws E1213 for any other setting or value, or for a `minRenderScale` above `maxRenderScale`. A setting that it does not get keeps its value. |
 | `setPreset(preset: QualityPreset): Promise<void>` | Switches to another preset at a point that the sketch picks, such as a menu or a loading screen. Every setting that changes during play takes the new preset's value, including the settings that `set` changed, apart from those that the page's options give. The settings fixed when the engine starts, such as `antialias`, keep their values. The GPU path caps the preset, as it caps the page's choice. The promise resolves once the engine has drawn a frame at the new preset with all of its pipelines built. Until then the last frame stays on screen, and the sketch's frames wait. A name that is no preset throws E1213. |
 | `onChange(handler: (quality: Quality) => void): () => void` | Calls `handler` at the start of the first frame after the settings change. Returns a function that removes the handler. |
+
+### `QualityGovernor`
+
+Interface `QualityGovernor`.
+
+What the frame-budget governor has lowered, in `quality.governor`. It lowers the render scale first, which `quality.renderScale` reports, then the shadow settings here.
+
+| Member | Description |
+| --- | --- |
+| `readonly steps: number` | The steps past the render scale that the governor has taken: 0 while the shadow settings apply as set. Each step lowers the frame's cost after the render scale has reached `minRenderScale`, so a sketch can lighten its own work too, such as its particles. |
+| `readonly farCascadeInterval: number` | How often each far shadow cascade draws now: `settings.farCascadeInterval`, or up to twice as long for each of the governor's steps, at most every 8th frame. |
+| `readonly shadowFilter: 3 \| 5` | The shadow filter that shadows draw with now: `settings.shadowFilter`, or 3 after the last step. |
 
 ### `QualityPreset`
 
@@ -179,6 +228,7 @@ The quality settings that a sketch reads and changes through `ctx.quality`. Each
 | `uploadBytesPerFrame: number` | The texel bytes that one frame may upload, so that loading many textures does not make one frame slow. A larger texture goes up in bands of rows over several frames. It takes a whole number from 65,536 (64 KiB) to 67,108,864 (64 MiB), and changes during play. |
 | `shadowFilter: 3 \| 5` | The texels on each side of the square of shadow map texels that blend into each point's shadow: 3 or 5. A larger square gives softer shadow edges and costs more per pixel that receives shadows. It changes during play. |
 | `farCascadeInterval: number` | How often each far shadow cascade draws: once in this many frames, a whole number from 1 to 8. The nearest cascade draws in every frame, and the far ones take turns. A higher value costs less, and far shadows then lag their moving casters by a few frames. It changes during play. |
+| `governor: boolean` | Whether the frame-budget governor runs. When frames take too long, it lowers the render scale toward `minRenderScale`, then how often far shadow cascades draw, then the shadow filter. It raises them again, in the reverse order, once frames have time to spare. `quality.governor` reports its steps. False keeps the render scale at `maxRenderScale` and the shadow settings as set, as benchmarks and captures need. It changes during play. |
 | `antialias: 'none' \| 'fxaa' \| 'msaa'` | How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa` smooths edges in the final pass, and `none` leaves them sharp. The mode is fixed when the engine starts: the page's `antialias` option of `createEngine` sets it, and `set` does not take it. |
 | `shadowTiles: number` | The most tiles of the shadow atlas, which spot and point lights cast their shadows into: a spot light takes one tile. When more lights cast shadows than the tiles hold, the lights that look largest from the camera get them. It takes a whole number from 0, which turns the shadows of spot and point lights off, to 24. The `shadowTiles` option of `createEngine` sets it, and `set` does not take it. |
 | `shadowTileSize: number` | Texels on each side of each tile of the shadow atlas: 256, 512, 1,024 or 2,048. Larger tiles give sharper shadows and take more memory, 4 bytes per texel. The `shadowTileSize` option of `createEngine` sets it, and `set` does not take it. |

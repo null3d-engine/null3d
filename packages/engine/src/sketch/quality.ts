@@ -52,6 +52,28 @@ export interface QualityUpdate {
 export type ApplyQuality = (update: QualityUpdate, changed: readonly QualitySettingName[]) => void;
 
 /**
+ * What the frame-budget governor has lowered, in `quality.governor`. It lowers the render scale
+ * first, which `quality.renderScale` reports, then the shadow settings here.
+ *
+ * @category api/quality
+ */
+export interface QualityGovernor {
+	/**
+	 * The steps past the render scale that the governor has taken: 0 while the shadow settings apply
+	 * as set. Each step lowers the frame's cost after the render scale has reached
+	 * `minRenderScale`, so a sketch can lighten its own work too, such as its particles.
+	 */
+	readonly steps: number;
+	/**
+	 * How often each far shadow cascade draws now: `settings.farCascadeInterval`, or up to twice as
+	 * long for each of the governor's steps, at most every 8th frame.
+	 */
+	readonly farCascadeInterval: number;
+	/** The shadow filter that shadows draw with now: `settings.shadowFilter`, or 3 after the last step. */
+	readonly shadowFilter: 3 | 5;
+}
+
+/**
  * The quality preset and settings, as a sketch reads and changes them through `ctx.quality`.
  *
  * @category api/quality
@@ -71,6 +93,13 @@ export interface Quality {
 	 * frame being drawn.
 	 */
 	readonly renderScale: number;
+	/**
+	 * What the frame-budget governor has lowered below `settings`. When frames take too long, the
+	 * governor lowers the render scale, then the shadow settings, one step at a time. The
+	 * `onChange` handlers run after each step of the shadow settings, but not after a step of the
+	 * render scale. Hold mode has no governor, so it draws with the settings as set.
+	 */
+	readonly governor: QualityGovernor;
 	/**
 	 * Changes settings from the next frame on, and resolves at once. It takes the settings that
 	 * change during play, each with a value that the setting takes, and throws E1213 for any other
@@ -125,11 +154,18 @@ export class SketchQuality implements Quality {
 	private readonly options: Partial<QualitySettings>;
 	private readonly highest: QualityPreset;
 
+	readonly governor: QualityGovernor;
+
+	/**
+	 * `governor` reports the governor's steps. Without it, the settings apply as set, as in hold
+	 * mode.
+	 */
 	constructor(
 		start: QualityStart,
 		private readonly apply: ApplyQuality,
 		private readonly settle: () => Promise<void> = () => Promise.resolve(),
 		private readonly scale: () => number = () => 1,
+		governor?: QualityGovernor,
 	) {
 		this.preset = start.preset;
 		this.settings = { ...start.settings };
@@ -139,6 +175,16 @@ export class SketchQuality implements Quality {
 			if (!LIVE_SETTINGS.includes(name)) kept[name] ??= first[name];
 		this.options = kept as Partial<QualitySettings>;
 		this.highest = start.highest;
+		const { settings } = this;
+		this.governor = governor ?? {
+			steps: 0,
+			get farCascadeInterval() {
+				return settings.farCascadeInterval;
+			},
+			get shadowFilter() {
+				return settings.shadowFilter;
+			},
+		};
 	}
 
 	get renderScale(): number {
@@ -189,6 +235,11 @@ export class SketchQuality implements Quality {
 	onChange(handler: (quality: Quality) => void): () => void {
 		this.handlers.add(handler);
 		return () => this.handlers.delete(handler);
+	}
+
+	/** Tells the change handlers of a step of the governor's shadow settings, at the next frame. */
+	governed(): void {
+		this.change = Math.max(this.change, LIVE_CHANGE);
 	}
 
 	/** Tells the page of the preset and the settings, with the check's result when given. */
