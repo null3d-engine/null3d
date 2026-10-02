@@ -2,7 +2,8 @@
 // thread that draws sizes the canvas's drawing buffer to the canvas's CSS size times the device pixel
 // ratio, so the image stays sharp, or times `maxPixelRatio` when that is lower. Each thread mode
 // resizes another canvas: the page's own, or the one a worker took over. A sketch that changes the
-// cap during play resizes the buffer too.
+// cap during play resizes the buffer too. A canvas that no CSS sizes keeps its size, and a canvas
+// larger than the GPU's largest texture draws at a lower ratio.
 import { expect, type Page, test } from '@playwright/test';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
@@ -62,7 +63,59 @@ async function expectBuffers(page: Page, ratio: number): Promise<void> {
 	}
 }
 
+/** The default size of a canvas's drawing buffer, which is its CSS size when no CSS sizes it. */
+const DEFAULT_CANVAS = { width: 300, height: 150 };
+
+/** Frames that the engine draws before a test reads a size that must not change. */
+const SETTLE_FRAMES = 10;
+
+/** WebGPU's default limit on a texture's width and height, within which the engine stays. */
+const WEBGPU_MAX_TEXTURE_SIZE = 8192;
+
+/** Runs in the page: WebGL2's largest texture width and height. */
+const webgl2MaxTextureSize = () =>
+	(globalThis as { webgl2MaxTextureSize?: () => number }).webgl2MaxTextureSize?.();
+
+/** The thread modes where the page draws into its canvas, and where a worker draws into it. */
+const CANVAS_MODES = ENGINE_MODES.filter(({ query }) => query === '' || query === 'render=main');
+
 for (const gpu of ['webgpu', 'webgl2'] as const) {
+	// The drawing buffer sets the CSS size of a canvas that no CSS sizes. Unless the engine fixes that
+	// size, each resize grows the canvas by the pixel ratio, until the GPU cannot draw into it.
+	for (const mode of CANVAS_MODES) {
+		test(`a canvas that no CSS sizes keeps its size on ${gpu}, ${mode.name}`, async ({ page }) => {
+			const ratio = await openPage(page, `gpu=${gpu}&css=none&${mode.query}`);
+			for (let frame = 0; frame < SETTLE_FRAMES; frame++) await page.evaluate(canvasSize);
+			expect(await page.evaluate(canvasSize)).toEqual({
+				css: DEFAULT_CANVAS,
+				buffer: {
+					width: Math.round(DEFAULT_CANVAS.width * ratio),
+					height: Math.round(DEFAULT_CANVAS.height * ratio),
+				},
+			});
+		});
+	}
+
+	test(`a canvas wider than the largest texture draws at a lower ratio on ${gpu}`, async ({
+		page,
+	}) => {
+		// Wider than any GPU's largest texture at the screen's ratio, and thin, so its targets stay small.
+		const css = { width: 20_000, height: 8 };
+		const ratio = await openPage(page, `gpu=${gpu}&css=${css.width}x${css.height}`);
+		const maxSize =
+			gpu === 'webgpu'
+				? WEBGPU_MAX_TEXTURE_SIZE
+				: Number(await page.evaluate(webgl2MaxTextureSize));
+		const fit = maxSize / (css.width * ratio);
+		expect(fit).toBeLessThan(1);
+		await expect
+			.poll(() => page.evaluate(canvasSize), { timeout: RESIZE_TIMEOUT_MS })
+			.toEqual({
+				css,
+				buffer: { width: maxSize, height: Math.round(css.height * ratio * fit) },
+			});
+	});
+
 	for (const mode of ENGINE_MODES) {
 		test(`a resized canvas stays sharp on ${gpu}, ${mode.name}`, async ({ page }) => {
 			const ratio = await openPage(page, `gpu=${gpu}&${mode.query}`);

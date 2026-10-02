@@ -80,7 +80,8 @@ export interface SketchViewport {
 	readonly height: number;
 	/**
 	 * Device pixels per CSS pixel that the engine draws with: the display's ratio, capped by the
-	 * `maxPixelRatio` quality setting.
+	 * `maxPixelRatio` quality setting. It is lower on a canvas too large for the GPU's largest
+	 * texture at that ratio.
 	 */
 	readonly pixelRatio: number;
 }
