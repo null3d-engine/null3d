@@ -17,10 +17,10 @@ const EXP2: u32 = 2u;
 /// on every GPU path.
 struct Fog {
     /// The linear fog color in `xyz`, and the density of exponential squared fog in `w`.
-    color_density: vec4f,
+    color: vec4f,
     /// The camera's unit view direction in `xyz`, which fog depth follows, and where linear fog
     /// starts in `w`.
-    forward_near: vec4f,
+    forward: vec4f,
     /// Where linear fog hides everything.
     far: f32,
     /// The kind of fog: `NONE`, `LINEAR` or `EXP2`.
@@ -52,7 +52,7 @@ fn apply_fog(c: vec3f, fog_color: vec3f, factor: f32) -> vec3f {
 /// The factor of the scene's `fog` at a point, by its position relative to the camera: 0 where
 /// the scene has no fog.
 fn fog_factor(fog: Fog, relative_position: vec3f) -> f32 {
-    let depth = fog_depth(relative_position, fog.forward_near.xyz);
-    let linear = select(0.0, fog_linear(depth, fog.forward_near.w, fog.far), fog.kind == LINEAR);
-    return select(linear, fog_exp2(depth, fog.color_density.w), fog.kind == EXP2);
+    let depth = fog_depth(relative_position, fog.forward.xyz);
+    let linear = select(0.0, fog_linear(depth, fog.forward.w, fog.far), fog.kind == LINEAR);
+    return select(linear, fog_exp2(depth, fog.color.w), fog.kind == EXP2);
 }

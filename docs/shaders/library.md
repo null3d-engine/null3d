@@ -754,8 +754,8 @@ Exponential squared fog, as three.js's `FogExp2`.
 
 ```wgsl
 struct Fog {
-    color_density: vec4f,
-    forward_near: vec4f,
+    color: vec4f,
+    forward: vec4f,
     far: f32,
     kind: u32,
 }
@@ -763,8 +763,8 @@ struct Fog {
 
 The scene's fog, as the engine writes it into each frame's values for the camera that draws. Each three-component value shares a `vec4f` with a scalar, so the frame's values lay out the same on every GPU path.
 
-- `color_density`: The linear fog color in `xyz`, and the density of exponential squared fog in `w`.
-- `forward_near`: The camera's unit view direction in `xyz`, which fog depth follows, and where linear fog starts in `w`.
+- `color`: The linear fog color in `xyz`, and the density of exponential squared fog in `w`.
+- `forward`: The camera's unit view direction in `xyz`, which fog depth follows, and where linear fog starts in `w`.
 - `far`: Where linear fog hides everything.
 - `kind`: The kind of fog: `NONE`, `LINEAR` or `EXP2`.
 

@@ -156,7 +156,7 @@ const NO_FOG: u32 = 4u;
 /// the scene's fog. A material with fog off keeps its color.
 fn fogged(c: vec3f, relative: vec3f, m: Material) -> vec3f {
     let fog_on = (u32(m.strengths.z) & NO_FOG) == 0u;
-    return apply_fog(c, frame.fog.color_density.xyz, select(0.0, fog_factor(frame.fog, relative), fog_on));
+    return apply_fog(c, frame.fog.color.xyz, select(0.0, fog_factor(frame.fog, relative), fog_on));
 }
 
 /// True when a map's layer, as a material's row holds it, draws: its image is on the GPU.
