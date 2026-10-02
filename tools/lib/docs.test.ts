@@ -230,7 +230,7 @@ describe('the quality presets page', () => {
 			'| Anti-aliasing (`antialias`) | FXAA | MSAA 4x | MSAA 4x | MSAA 4x | at the start | built |',
 		);
 		expect(page).toContain(
-			'| Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame |',
+			'| Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame | during play | built |',
 		);
 		expect(page).toContain(
 			"| Target frame rate | The display's refresh rate, at most 60 frames per second |",

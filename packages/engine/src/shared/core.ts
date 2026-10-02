@@ -254,6 +254,11 @@ export interface CoreGlue extends CoreErrors {
 	setOutput(toneMapping: number, exposure: number): number;
 	/** Whether the render scale can drop below the whole canvas, from the next frame on. */
 	setRenderScaling(scaling: boolean): number;
+	/**
+	 * The shadow filter's texels on each side, 3 or 5, and the frames between two draws of a far
+	 * shadow cascade, from 1 to 8, from the next frame on.
+	 */
+	setShadowQuality(filter: number, farInterval: number): number;
 	/** Draws the texture `texture` behind every object in the camera's view, or none with 0. */
 	setBackgroundTexture(texture: number): number;
 	/**
@@ -338,6 +343,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBackground',
 	'setOutput',
 	'setRenderScaling',
+	'setShadowQuality',
 	'setBackgroundTexture',
 	'setFog',
 	'setDebugView',

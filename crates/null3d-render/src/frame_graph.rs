@@ -72,7 +72,7 @@ use crate::graph::{
 };
 use crate::output::{Antialias, Output, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache};
-use crate::shadows::MAX_CASCADES;
+use crate::shadows::{MAX_CASCADES, ShadowFrame};
 use crate::view::{View, ViewId};
 
 /// The format of the scene's depth targets.
@@ -122,12 +122,27 @@ const LAYER_VIEWS: u32 = 128;
 const NO_VIEWS: u32 = u32::MAX;
 
 /// The shadow passes of a directional light: its cascades, the texels on each side of each
-/// cascade's layer, and the light's layer mask, which selects the casters.
+/// cascade's layer, the light's layer mask, which selects the casters, and the cascades that draw
+/// in the frame, one bit each. A cascade that does not draw runs no render pass, so its layer
+/// keeps what it holds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ShadowPasses {
     pub(crate) cascades: u32,
     pub(crate) map_size: u32,
     pub(crate) layers: u32,
+    pub(crate) drawn: u32,
+}
+
+impl ShadowPasses {
+    /// The passes of `shadow`'s frame.
+    pub(crate) fn of(shadow: &ShadowFrame) -> Self {
+        Self {
+            cascades: shadow.cascades.count as u32,
+            map_size: shadow.settings.map_size,
+            layers: shadow.layers,
+            drawn: shadow.drawn,
+        }
+    }
 }
 
 /// What a declared pass records.
@@ -304,12 +319,13 @@ impl FrameGraph {
 
     /// Sets the directional light's shadow passes for the next frames, or none. A new cascade count
     /// or map size declares the passes again, which makes the shadow map again. A new layer mask
-    /// only changes the passes' masks. A builder that binds no shadow map draws no shadows.
+    /// only changes the passes' masks, and new cascades to draw change only which passes run. A
+    /// builder that binds no shadow map draws no shadows.
     pub(crate) fn set_shadows(&mut self, shadows: Option<ShadowPasses>) {
         let shadows = shadows.filter(|_| self.shadow_map).map(|s| ShadowPasses {
             cascades: s.cascades.clamp(1, MAX_CASCADES as u32),
             map_size: s.map_size.max(1),
-            layers: s.layers,
+            ..s
         });
         let shape = |s: Option<ShadowPasses>| s.map(|s| (s.cascades, s.map_size));
         if shape(shadows) != shape(self.shadows) {
@@ -680,6 +696,7 @@ impl FrameGraph {
                         list.push(Op::EndComputePass, &[])?;
                     }
                 }
+                StepKind::Render { .. } if !self.runs(plan.passes(step)) => {}
                 StepKind::Render { size, .. } => {
                     self.begin_render_pass(list, plan, step, clear)?;
                     self.set_render_area(list, size)?;
@@ -695,6 +712,16 @@ impl FrameGraph {
         }
         list.push(Op::Submit, &[])?;
         Ok(())
+    }
+
+    /// True when a render pass of `passes` runs in this frame: always, unless every one of them
+    /// draws a shadow cascade that keeps its layer in this frame.
+    fn runs(&self, passes: &[PassId]) -> bool {
+        let drawn = self.shadows.map_or(0, |s| s.drawn);
+        passes.iter().any(|pass| match self.roles[pass.index()] {
+            Role::Shadow(view) => view.cascade_index().is_some_and(|k| drawn & (1 << k) != 0),
+            _ => true,
+        })
     }
 
     /// Begins a render pass with the step's attachments and their load and store operations.

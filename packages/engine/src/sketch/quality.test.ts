@@ -220,13 +220,16 @@ describe('SketchQuality.lower', () => {
 			maxPixelRatio: 1,
 			minRenderScale: low.minRenderScale,
 			maxRenderScale: low.maxRenderScale,
+			shadowFilter: low.shadowFilter,
+			farCascadeInterval: low.farCascadeInterval,
 			maxAnisotropy: 16,
 			uploadBytesPerFrame: MEDIUM.uploadBytesPerFrame,
 			antialias: MEDIUM.antialias,
 			depthPrepass: MEDIUM.depthPrepass,
 		});
-		// The preset changed, and of the settings only the lowest render scale did.
-		expect(changes.at(-1)).toEqual(['minRenderScale']);
+		// The preset changed, and of the settings only the lowest render scale and the far cascades'
+		// interval did.
+		expect(changes.at(-1)).toEqual(['minRenderScale', 'farCascadeInterval']);
 	});
 });
 
@@ -240,8 +243,9 @@ describe('SketchQuality.setPreset', () => {
 		expect(quality.settings).toEqual(fromMedium('low'));
 		expect(Object.keys(quality.settings)).toEqual([...SKETCH_SETTINGS]);
 		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
-		// Every preset has the same highest render scale.
-		expect(changes.at(-1)).toEqual(LIVE_SETTINGS.filter((name) => name !== 'maxRenderScale'));
+		// Every preset has the same highest render scale, and Low and Medium the same shadow filter.
+		const same = ['maxRenderScale', 'shadowFilter'];
+		expect(changes.at(-1)).toEqual(LIVE_SETTINGS.filter((name) => !same.includes(name)));
 		expect(settled.count).toBe(1);
 		// The next frame holds for its pipelines, and its handlers hear of a new preset.
 		expect(quality.takeRestart()).toBe(true);

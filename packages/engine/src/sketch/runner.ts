@@ -252,14 +252,14 @@ export class SketchRunner {
 		this.quality = new SketchQuality(
 			sketch.quality,
 			(update, changed) => {
-				this.applyRenderScale(update.settings);
+				this.applyFrameSettings(update.settings);
 				textures.applyQuality(update.settings, changed);
 				sketch.applyQuality(update);
 			},
 			() => this.settle(true),
 			() => this.renderScale() / FULL_SCALE,
 		);
-		this.applyRenderScale(this.quality.settings);
+		this.applyFrameSettings(this.quality.settings);
 		this.readViewport();
 		const host: DebugHost = {
 			showStats: sketch.showStats,
@@ -467,17 +467,21 @@ export class SketchRunner {
 	}
 
 	/**
-	 * Gives dynamic resolution the render scale's range, and tells the core whether the scale can
-	 * drop below the whole canvas. Hold mode draws at the highest scale of the range, with the
-	 * passes that play draws the range with.
+	 * Applies the settings that the frames read: gives dynamic resolution the render scale's range,
+	 * and tells the core whether the scale can drop below the whole canvas, and how shadows filter
+	 * and update. Hold mode draws at the highest scale of the range, with the passes that play draws
+	 * the range with.
 	 */
-	private applyRenderScale(settings: QualitySettings): void {
+	private applyFrameSettings(settings: QualitySettings): void {
 		const low = thousandths(settings.minRenderScale);
 		const high = thousandths(settings.maxRenderScale);
 		this.heldScale = high;
 		this.resolution?.controller.setRange(low, high);
 		const { glue } = this.sketch;
-		if (glue.setRenderScaling(low < FULL_SCALE) !== 0)
+		if (
+			glue.setRenderScaling(low < FULL_SCALE) !== 0 ||
+			glue.setShadowQuality(settings.shadowFilter, settings.farCascadeInterval) !== 0
+		)
 			this.report(coreFailure(glue, 'quality.set'));
 	}
 
