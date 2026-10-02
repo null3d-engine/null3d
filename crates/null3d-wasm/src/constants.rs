@@ -10,13 +10,13 @@ use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::{address, filter, format, sizes, upload_flags};
 use null3d_render::arrays::ArrayName;
 use null3d_render::cpu_culled::{CpuCulledConfig, MAX_SOURCE_BITS};
-use null3d_render::fog;
 use null3d_render::frame::{NO_MATERIAL, NO_MESH};
 use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
 use null3d_render::materials::{feature, param};
 use null3d_render::output::{Antialias, ToneMapping};
 use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET, MAX_LAYERS};
+use null3d_render::{debug_view, fog};
 
 /// Fields of `sceneArrays`.
 pub mod scene_field {
@@ -347,6 +347,17 @@ pub fn typescript() -> String {
                 ("ADDITIVE", feature::ADDITIVE),
                 ("MULTIPLY", feature::MULTIPLY),
                 ("NO_FOG", feature::NO_FOG),
+            ],
+        ),
+        // The debug views that `setDebugView` takes.
+        (
+            "DEBUG_VIEW",
+            &[
+                ("LIT", debug_view::code::LIT),
+                ("NORMALS", debug_view::code::NORMALS),
+                ("DEPTH", debug_view::code::DEPTH),
+                ("OVERDRAW", debug_view::code::OVERDRAW),
+                ("WIREFRAME", debug_view::code::WIREFRAME),
             ],
         ),
         // The kinds of fog that `setFog` takes.

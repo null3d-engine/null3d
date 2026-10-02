@@ -58,6 +58,13 @@ import {
 } from '../pages/lib/overload.ts';
 import { ROOM_KEPT } from '../pages/lib/room.ts';
 import { glslProgramsOf } from '../pages/lib/shader-list.ts';
+import {
+	frameSaving,
+	SKINNING_CASCADES,
+	SKINNING_CHARACTERS,
+	type SkinningResult,
+	skinningProblems,
+} from '../pages/lib/skinning.ts';
 import { type CaptureResult, captureProblems } from './capture-checks.ts';
 import {
 	ENGINE_MODES,
@@ -115,6 +122,8 @@ export type Check =
 	| { kind: 'bench'; tier: Tier; scene: BenchScene; page: BenchPageKind; jobs?: number }
 	/** The GPU-bound page, with the ?queue= setting it ran with, if any. */
 	| { kind: 'overload'; tier: Tier; queue?: string }
+	/** The skinning page, which draws on WebGL2 alone, with its crowd and its cascades. */
+	| { kind: 'skinning'; tier: 'webgl2'; characters: number; cascades: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
 	| { kind: 'startup'; mode: EngineMode; load: LoadKind; first?: true };
 
@@ -523,6 +532,32 @@ export function overloadPlan(): PlanItem<Check>[] {
 	];
 }
 
+/**
+ * How long the skinning page may take: the build, the image check, the warm-up, and the timed
+ * batches of both paths, on a phone whose frames take a tenth of a second at the largest crowd.
+ */
+const SKINNING_TIMEOUT_SECONDS = 120;
+
+/**
+ * The skinning page at each crowd size and cascade count, from the lightest load. Each page draws
+ * one pose on both skinning paths and compares the images, then times the two paths in turns.
+ */
+export function skinningPlan(): PlanItem<Check>[] {
+	return SKINNING_CHARACTERS.flatMap((characters) =>
+		SKINNING_CASCADES.map((cascades) =>
+			pageItem(
+				`skinning-${characters}-${cascades}`,
+				'skinning',
+				{ kind: 'skinning', tier: 'webgl2', characters, cascades },
+				{
+					switches: [`characters=${characters}`, `cascades=${cascades}`],
+					timeoutSeconds: SKINNING_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	);
+}
+
 /** The shared memory maximums that the memory plan tries, in MiB, from low to high. */
 export const MEMORY_MAXIMUMS_MIB = [256, 512, 1024, 2048, 4096] as const;
 /** Loads of the engine page at each maximum in the memory plan. */
@@ -612,6 +647,17 @@ export function startupPlan({ runs = STARTUP_RUNS }: PlanSettings = {}): PlanIte
 	];
 }
 
+/**
+ * The plans whose pages only check results, without timing them, so the runner page may draw its
+ * report over their frames. Any other plan keeps each page's frame on top.
+ */
+export const REPORT_ON_TOP_PLANS: ReadonlySet<string> = new Set([
+	'checks',
+	'parity',
+	'memory',
+	'depth',
+]);
+
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
 	checks: checksPlan,
 	parity: parityPlan,
@@ -620,6 +666,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	depth: depthPlan,
 	startup: startupPlan,
 	overload: overloadPlan,
+	skinning: skinningPlan,
 };
 
 /**
@@ -987,6 +1034,8 @@ export function judge(
 				];
 			return overloaded.completedFps ? [] : ['no frame completions were counted'];
 		}
+		case 'skinning':
+			return skinningProblems(result as ItemResult & SkinningResult);
 	}
 }
 
@@ -1227,6 +1276,51 @@ export function overloadSummary(
 	return [
 		'| Path | Queue | Display | Spheres | Presented fps | Completed fps | Parted | Submit to completion, median / p95 ms | Frames in flight | GPU ms |',
 		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+		...rows,
+	].join('\n');
+}
+
+/** Milliseconds to two decimal places, or a dash when there are none. */
+const msText = (ms: number | null) => (ms === null ? '-' : ms.toFixed(2));
+
+/**
+ * The skinning page's results as a Markdown table: for each crowd and cascade count, the
+ * characters that the main pass and each cascade drew, then each path's frame time, JavaScript
+ * time and GPU time per frame, the share of the frame time that transform feedback saves, and the
+ * pixels in which the two paths' images differ. Undefined when the plan has no skinning pages.
+ */
+export function skinningSummary(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): string | undefined {
+	const rows = items.flatMap(({ id, check }) => {
+		if (check.kind !== 'skinning') return [];
+		const where = `${check.characters} | ${check.cascades}`;
+		const result = resultOf(id);
+		if (!result?.ok)
+			return [`| ${where} | ${result ? failureText(result) : NO_RESULT} | | | | | |`];
+		const skinning = result as ItemResult & SkinningResult;
+		const path = (name: keyof SkinningResult['paths']) => {
+			const { frameMs, cpuMs, gpuMs } = skinning.paths[name];
+			return `${msText(frameMs)} / ${msText(cpuMs)} / ${msText(gpuMs)}`;
+		};
+		const cells = [
+			where,
+			`${skinning.drawn.join(' / ')} (${skinning.skinned})`,
+			path('vertex-shader'),
+			path('transform-feedback'),
+			`${(100 * frameSaving(skinning)).toFixed(1)}%`,
+			`${skinning.image.differing} of ${skinning.image.pixels}`,
+			skinning.multiDraw ? 'yes' : 'no',
+		];
+		return [`| ${cells.join(' | ')} |`];
+	});
+	if (rows.length === 0) return undefined;
+	return [
+		'Each path: frame ms / JavaScript ms / GPU ms per frame, medians. Drawn: the main pass, then each cascade, with the characters skinned once in brackets.',
+		'',
+		'| Characters | Cascades | Drawn | Vertex shader | Transform feedback | Saved | Pixels that differ | Multi-draw |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- |',
 		...rows,
 	].join('\n');
 }

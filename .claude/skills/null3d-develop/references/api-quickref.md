@@ -235,8 +235,8 @@ light.setVisible(false); light.destroy();    // lights are objects: section 4
 - A light lights a camera's view when their layer masks share a bit. Without lights, standard materials draw black.
 - Units follow three.js r155 and later: point and spot intensity in candela. The same colors and intensities give the same light as in three.js.
 - Point and spot lights light the surfaces their ranges reach, through clustered lighting, so keep each range as short as the look allows. Surfaces show the first visible directional light, every ambient light, and the point and spot lights. Later in 0.1, hemisphere lights light surfaces.
-- Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`, in cascades that fit the camera's view. Defaults: 3 cascades, 2,048 texels, 200 m, bias 0.5 and normal bias 1, both in texels of each cascade. Unlit materials show no shadows. Both GPU paths draw them. Instance batches do not cast or receive them yet (`concepts/shadows`).
-- Spot light shadows: each spot light with `castShadows` takes a tile of the shared shadow atlas. The preset's `shadowTiles` caps the tiles, and the lights that look largest on screen get them first. `shadowTileSize` sets each tile's texels; both are `createEngine` options. A tile draws again only when its light or a caster within the light's range moves, so still scenes cost nothing per frame. The biases count texels of the tile (`concepts/shadows`).
+- Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`. Its cascades fit the camera's view and keep still edges as it turns. The nearest cascade draws every frame, and far ones every few frames (`farCascadeInterval`). `shadowFilter` softens edges over 3 or 5 texels. Both follow the preset. Defaults: 3 cascades, 2,048 texels, 200 m, bias 0.5 and normal bias 1, both in texels of each cascade. Unlit materials show no shadows. Both GPU paths draw them. Instance batches do not cast or receive them yet (`concepts/shadows`).
+- Spot light shadows: each spot light with `castShadows` takes a tile of the shared shadow atlas. The preset's `shadowTiles` caps the tiles, and the lights that look largest on screen get them first. `shadowTileSize` sets each tile's texels; both are `createEngine` options. A tile draws again only when its light or a caster within the light's range moves, so still scenes cost nothing per frame. The biases count texels of the tile, and `shadowFilter` softens its edges too (`concepts/shadows`).
 
 ## 8. Geometry (`api/geometry`)
 
@@ -460,6 +460,7 @@ quality.renderScale;                    // the part of the canvas's width and he
 quality.set({ minRenderScale: 0.5, maxRenderScale: 1 });  // the range dynamic resolution moves in; 1 and 1 turn it off
 quality.set({ maxAnisotropy: 4, uploadBytesPerFrame: 2 * 1024 * 1024 });  // texture sampling cap, upload bytes per frame
 quality.settings.antialias;             // 'msaa' | 'fxaa' | 'none', fixed at the start; set it with createEngine's option
+quality.set({ shadowFilter: 5, farCascadeInterval: 1 });  // shadow edge softness, 3 or 5 texels; far cascades every frame
 quality.set({ shadowCascades: 2 });     // planned: the preset table gives each setting's status
 await quality.setPreset('low');         // the live settings take Low's values; start-time ones stay; resolves once its frame is on screen
 const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
@@ -503,10 +504,10 @@ debug.skeleton(obj);                            // (0.2)
 
 debug.stats(true);                       // overlay on the canvas: fps, CPU ms per thread and phase, tier, preset, render scale
 const s = debug.frameStats();            // the same figures: s.presentedFps, s.completedFps, s.cpuMs, s.threads, s.drawCalls
-debug.view('normals');                   // later in 0.1: 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw'
+debug.view('normals');                   // 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw'; 'lit' draws the materials again
 ```
 
-Debug drawing exists in development builds only. In a production build every drawing call does nothing, and the build holds none of the drawing code. Lines are one pixel wide, and objects in front of them hide them. `debug.stats` and `debug.frameStats` work in every build. The figures are means over the last half second. They are 0 for about half a second after the first call. `frameStats()` allocates nothing, so you can call it every frame. The object changes, so copy it with `JSON.parse(JSON.stringify(s))` before you send it. For GPU time and memory, call `engine.measure(seconds)` on the page (section 1).
+Debug drawing and `debug.view` exist in development builds only. In a production build every drawing call and `debug.view` do nothing, and the build holds none of their code. A debug view replaces every material until the next call, clears to black and skips tone mapping. Lines are one pixel wide, and objects in front of them hide them. `debug.stats` and `debug.frameStats` work in every build. The figures are means over the last half second. They are 0 for about half a second after the first call. `frameStats()` allocates nothing, so you can call it every frame. The object changes, so copy it with `JSON.parse(JSON.stringify(s))` before you send it. For GPU time and memory, call `engine.measure(seconds)` on the page (section 1).
 
 ## 20. Math, color and time (`api/math`, `api/time`)
 

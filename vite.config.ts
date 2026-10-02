@@ -1,5 +1,5 @@
 import null3d from '@null3d/vite-plugin';
-import { defineConfig, type Plugin, searchForWorkspaceRoot } from 'vite';
+import { defineConfig, type Plugin, searchForWorkspaceRoot, type UserConfig } from 'vite';
 import { loadServer } from './tests/lib/load-server.ts';
 import { reportCollector } from './tests/lib/report-collector.ts';
 import { HTTP_PORT, HTTPS_PORT } from './tests/lib/server.ts';
@@ -13,9 +13,6 @@ import { ensureShaderModules } from './tools/lib/shader-modules.ts';
 // address prefix per load.
 
 const https = process.env.NULL3D_HTTPS === '1';
-
-// The pages import the shader modules, which git does not keep.
-ensureShaderModules(import.meta.dirname);
 
 /**
  * Files the server refuses, besides Vite's defaults: private notes, build output and agent state
@@ -54,7 +51,7 @@ const indexRedirect: Plugin = {
 	},
 };
 
-export default defineConfig({
+const config: UserConfig = {
 	root: import.meta.dirname,
 	// The HTTP and HTTPS servers can run at once, so each keeps its own prebundled dependencies.
 	cacheDir: https ? 'node_modules/.vite-https' : 'node_modules/.vite',
@@ -90,4 +87,11 @@ export default defineConfig({
 			input: { [builtPage]: `${import.meta.dirname}/tests/pages/${builtPage}.html` },
 		},
 	},
+};
+
+export default defineConfig(({ isPreview }) => {
+	// The pages import the shader modules, which git does not keep. `vite preview` serves builds
+	// that already hold them, so it runs without the Rust toolchain that builds them.
+	if (!isPreview) ensureShaderModules(import.meta.dirname);
+	return config;
 });

@@ -111,6 +111,8 @@ debug.arrow(muzzle, aim, 10);                        // where a shot goes, from 
 
 Only development builds draw the lines. [Debug drawing and stats](../api/debug.md) lists every call.
 
+To check normals, depth, overdraw or triangle edges, draw the whole scene with a debug view. In the sketch, `debug.view('wireframe')` draws every triangle's edges, and `debug.view('lit')` draws the materials again. [Debug views](../api/debug.md#debug-views) lists the views.
+
 ## Reproduce a frame
 
 A bug that shows at one moment is easier to fix when every run reaches it. Hold mode steps the sketch to a set time in fixed steps, with seeded random numbers and no input. The command `bunx @null3d/cli shot` holds your page in a headless browser. When the hold fails, it prints the sketch time and the frame of the first error:

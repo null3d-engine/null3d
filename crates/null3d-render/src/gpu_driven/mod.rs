@@ -446,7 +446,9 @@ impl GpuDrivenRenderer {
             .shadow_frame(input.scene, parity, input.canvas);
         let camera = self.settings.camera_position(input.scene, parity);
         let tile_settings = self.settings.tile_settings();
-        self.tiles.plan(input, tile_settings, camera.as_ref());
+        let filter = self.settings.shadow_quality().filter;
+        self.tiles
+            .plan(input, tile_settings, filter, camera.as_ref());
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows.
         let shadows = shadow.is_some() || self.tiles.shape().is_some();
         let upload_everything =
@@ -534,11 +536,7 @@ impl GpuDrivenRenderer {
             self.create_fixed(list)?;
         }
         self.graph
-            .set_shadows(shadow.as_ref().map(|s| ShadowPasses {
-                cascades: s.cascades.count as u32,
-                map_size: s.settings.map_size,
-                layers: s.layers,
-            }));
+            .set_shadows(shadow.as_ref().map(ShadowPasses::of));
         self.graph.set_tiles(self.tiles.shape().map(|s| TilePasses {
             tiles: s.layers,
             size: s.size,
@@ -605,7 +603,8 @@ impl GpuDrivenRenderer {
         }
 
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
-        self.graph.upload(list, arena, self.settings.output())?;
+        self.graph
+            .upload(list, arena, self.settings.drawn_output())?;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::DFG)?;
         }
@@ -717,7 +716,7 @@ impl GpuDrivenRenderer {
         }
         if let Some(shadow) = &shadow {
             shadows::upload(list, arena, ids::SHADOWS, shadow)?;
-            for cascade in 0..cascades {
+            for cascade in (0..cascades).filter(|&cascade| shadow.draws(cascade)) {
                 let view = ViewId::cascade(cascade);
                 let frame = shadow.view_frame(cascade);
                 opaque::upload(list, arena, view, &frame)?;
@@ -774,7 +773,7 @@ impl GpuDrivenRenderer {
             _ => frames[view.index()].is_some(),
         };
         let layout_of = |view: ViewId| if view.is_camera() { layout } else { casters };
-        // A tile that does not draw keeps its depth: its render pass is left out.
+        // A cascade or a tile that does not draw keeps its depth: its render pass is left out.
         let skips = |role: Role| matches!(role, Role::Shadow(view) if !drawn(view));
         let (sorted, transparent) = (&self.sorted, &self.transparent);
         let (settings, meshes) = (&self.settings, &self.meshes);
@@ -903,6 +902,7 @@ impl FrameBuilder for GpuDrivenRenderer {
     fn reset_gpu(&mut self) {
         self.created = false;
         self.graph.reset_gpu();
+        self.settings.forget_shadow_maps();
         self.layout.forget_gpu();
         self.casters.forget_gpu();
         self.culling.forget_gpu();

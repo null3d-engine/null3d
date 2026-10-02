@@ -46,7 +46,7 @@ Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness
 | `polygonOffset`, `polygonOffsetFactor`, `polygonOffsetUnits` | `depthBias: { constant, slopeScale }` | Keep the three.js intent; the engine converts signs for reversed depth |
 | `blending: NormalBlending / AdditiveBlending / MultiplyBlending` | `blending: 'normal' / 'additive' / 'multiply'` with `alphaMode: 'blend'` | Subtractive and custom blending are not supported. three.js blends an opaque material with additive or multiply blending too; null3D needs `alphaMode: 'blend'` |
 | `vertexColors`, `flatShading` | Same names | Fixed when the material is created: make one material for each combination. `vertexColors` needs a mesh with colors |
-| `wireframe` | `debug.view('wireframe')` (later in 0.1), or `scene.createLines({ fromEdges })` (0.2) | |
+| `wireframe` | `debug.view('wireframe')` for debugging, or `scene.createLines({ fromEdges })` (0.2) | |
 | `fog: false` | Same name | |
 | `toneMapped: false` | Not in 1.0 | Draw the objects in a declared pass after post-processing (0.2) |
 | `dithering` | Always on in the final pass | |
@@ -90,8 +90,8 @@ Both become surface-function recipes (section 8), later in 0.1. Toon shading nee
 
 | three.js | null3D |
 | --- | --- |
-| `MeshNormalMaterial` | `debug.view('normals')` (later in 0.1) for debugging; a surface function that outputs the normal as color for a styled look |
-| `MeshDepthMaterial`, `MeshDistanceMaterial` | `debug.view('depth')` (later in 0.1); custom shadow materials are not needed |
+| `MeshNormalMaterial` | `debug.view('normals')` for debugging (world-space normals; three.js shows view-space ones); a surface function that outputs the normal as color for a styled look |
+| `MeshDepthMaterial`, `MeshDistanceMaterial` | `debug.view('depth')` for debugging; custom shadow materials are not needed |
 | `ShadowMaterial` | `materials.shadowCatcher({ opacity })` (0.2) |
 | `PointsMaterial` | Options of `scene.createPoints`: `size`, `sizeAttenuation`, `texture`, `colors` (0.2) |
 | `LineBasicMaterial`, `LineDashedMaterial`, `LineMaterial` | Options of `scene.createLines`: `width`, `widthUnits`, `dashed`, `colors` (0.2) |

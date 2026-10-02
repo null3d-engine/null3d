@@ -2,13 +2,20 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { decode } from 'fast-png';
+import { featureImagePath } from '../../tests/image/manifest.ts';
 import {
 	BENCH_SCENES,
 	compareFrames,
 	compareImages,
 	comparisonName,
+	DEFAULT_PARITY_SCENES,
+	decodeFeatureResult,
 	decodeHoldResult,
 	differenceText,
+	FEATURE_SCENES,
+	featurePagePath,
+	featurePair,
+	featureScene,
 	formatStoredBaselines,
 	gpuApiOf,
 	gpuApiOfPage,
@@ -19,6 +26,7 @@ import {
 	LEFT_OUT_OF_PARITY,
 	MAX_DIFFERENT_PERCENT,
 	PAGE_KINDS,
+	PARITY_SCENE_NAMES,
 	PARITY_SCENES,
 	PIXEL_THRESHOLD,
 	pagePath,
@@ -28,6 +36,7 @@ import {
 	passesWithBaseline,
 	type RgbaImage,
 	readJobCounts,
+	SHADOW_MAX_DIFFERENT_PERCENT,
 	TIER_PAIRS,
 	TIERS,
 } from './parity';
@@ -193,6 +202,108 @@ describe('decodeHoldResult', () => {
 		expect(() => decodeHoldResult(holdResult(image, { scene: 1 }))).toThrow(
 			'the result does not name its scene',
 		);
+	});
+});
+
+describe('decodeFeatureResult', () => {
+	test("reads an image page's or a twin's pixels as a frame of the scene it is asked for", () => {
+		const image = paint(solid(3, 2, GRAY), 0, 0, 1, 1, [9, 8, 7, 255]);
+		const result = { ok: true, ...holdResult(image, {}), scene: undefined, n: undefined };
+		const frame = decodeFeatureResult(result, 'shadows');
+		expect(frame).toMatchObject({ scene: 'shadows', n: 0, width: 3, height: 2 });
+		expect([...frame.data]).toEqual([...image.data]);
+	});
+
+	test('refuses a failed page and a result that is not a whole frame, as hold results', () => {
+		expect(() => decodeFeatureResult({ ok: false, error: 'no GPU' }, 'shadows')).toThrow('no GPU');
+		expect(() =>
+			decodeFeatureResult(holdResult(solid(3, 2, GRAY), { pixels: undefined }), 'shadows'),
+		).toThrow('the result has no pixels');
+	});
+});
+
+describe('feature scenes', () => {
+	const imagePath = (tier: string) => `/tests/pages/image.html?gpu=${tier}&sketch=/s.ts%3Fa%3D1`;
+
+	test("draw each image test of the manifest on every tier, with the scene's sketch switches", () => {
+		for (const scene of FEATURE_SCENES)
+			for (const tier of TIERS) expect(featureImagePath(scene, tier)).toContain(`gpu=${tier}`);
+		const shadows = featureScene('shadows');
+		const tone = featureScene('tone-aces');
+		if (!shadows || !tone) throw new Error('the feature scenes lost the shadows or ACES');
+		const sketchOf = (path: string) => new URL(path, 'http://x').searchParams.get('sketch');
+		expect(sketchOf(featureImagePath(shadows, 'webgl2'))).toBe(
+			'/tests/pages/sketches/shadows-sketch.ts?cascades=3&tone=none',
+		);
+		expect(sketchOf(featureImagePath(tone, 'webgpu'))).toBe(
+			'/tests/pages/sketches/bright-sketch.ts?tone=aces&stops=0',
+		);
+	});
+
+	test('name image tests of their own, each once, apart from the benchmark scenes', () => {
+		const names = FEATURE_SCENES.map((scene) => scene.test);
+		expect(new Set(names).size).toBe(names.length);
+		for (const name of names) expect(BENCH_SCENES as readonly string[]).not.toContain(name);
+		for (const feature of [
+			'standard-grid',
+			'lights-16',
+			'lights-spot',
+			'fog-linear',
+			'fog-exp2',
+			'tone-aces',
+			'tone-none-half-exposure',
+			'ortho-camera',
+			'shadows',
+		])
+			expect(names).toContain(feature);
+	});
+
+	test('give only the shadows a looser limit, and draw tone mapping without anti-aliasing', () => {
+		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
+		expect(SHADOW_MAX_DIFFERENT_PERCENT).toBeGreaterThan(MAX_DIFFERENT_PERCENT);
+		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);
+		expect(looser.map((scene) => scene.test)).toEqual(['shadows']);
+		const tone = featureScene('tone-agx');
+		expect(tone).toMatchObject({ switches: 'antialias=none', webglOnly: true });
+		expect(tone?.twin).toContain('antialias=none');
+		expect(featureScene('s1')).toBeUndefined();
+	});
+
+	test("draw null3D's side as the image test on each null3D kind's tier, with the scene's switches", () => {
+		const shadows = featureScene('shadows');
+		const tone = featureScene('tone-aces');
+		if (!shadows || !tone) throw new Error('the feature scenes lost the shadows or ACES');
+		expect(featurePagePath(shadows, 'null3d-compat', imagePath)).toBe(imagePath('compat'));
+		expect(featurePagePath(tone, 'null3d-webgl2', imagePath)).toBe(
+			`${imagePath('webgl2')}&antialias=none`,
+		);
+		expect(featurePagePath(shadows, 'null3d-webgpu-low', imagePath)).toBeNull();
+	});
+
+	test("draw three.js's side as the twin with the renderer, or WebGLRenderer alone", () => {
+		const shadows = featureScene('shadows');
+		const fog = featureScene('fog-exp2');
+		const tone = featureScene('tone-aces');
+		if (!shadows || !fog || !tone) throw new Error('the feature scenes lost a scene');
+		expect(featurePagePath(shadows, 'threejs-webgpu', imagePath)).toBe(
+			'/bench/pages/threejs/shadows.html?renderer=webgpu',
+		);
+		expect(featurePagePath(fog, 'threejs-webgl', imagePath)).toBe(
+			'/bench/pages/threejs/fog.html?fog=exp2&renderer=webgl',
+		);
+		expect(featurePagePath(tone, 'threejs-webgpu', imagePath)).toContain('renderer=webgl');
+	});
+
+	test("compare each tier with its own renderer's twin, or with WebGLRenderer's alone", () => {
+		const shadows = featureScene('shadows');
+		const tone = featureScene('tone-aces');
+		if (!shadows || !tone) throw new Error('the feature scenes lost the shadows or ACES');
+		for (const tier of TIERS) expect(featurePair(shadows, tier)).toEqual(TIER_PAIRS[tier]);
+		for (const tier of TIERS)
+			expect(featurePair(tone, tier)).toEqual({
+				candidate: TIER_PAIRS[tier].candidate,
+				reference: 'threejs-webgl',
+			});
 	});
 });
 
@@ -372,30 +483,66 @@ describe('stored baselines', () => {
 });
 
 describe('parseParityArgs', () => {
-	test('compares every scene on every GPU tier by default', () => {
+	test('compares every scene on every GPU tier by default: benchmark scenes, then features', () => {
+		const features = FEATURE_SCENES.map((scene) => scene.test);
 		expect(parseParityArgs([])).toEqual({
-			scenes: ['s1', 's1-static', 's1-cells', 's2'],
+			scenes: ['s1', 's1-static', 's1-cells', 's2', ...features],
 			comparisons: [
-				{ label: 'webgpu', candidate: 'null3d-webgpu', reference: 'threejs-webgpu' },
-				{ label: 'compat', candidate: 'null3d-compat', reference: 'threejs-webgpu' },
-				{ label: 'webgl2', candidate: 'null3d-webgl2', reference: 'threejs-webgl' },
+				{
+					label: 'webgpu',
+					tier: 'webgpu',
+					candidate: 'null3d-webgpu',
+					reference: 'threejs-webgpu',
+				},
+				{
+					label: 'compat',
+					tier: 'compat',
+					candidate: 'null3d-compat',
+					reference: 'threejs-webgpu',
+				},
+				{ label: 'webgl2', tier: 'webgl2', candidate: 'null3d-webgl2', reference: 'threejs-webgl' },
 			],
 			saveBaselines: false,
+			switches: '',
 		});
+		expect(DEFAULT_PARITY_SCENES).toEqual(parseParityArgs([]).scenes);
+	});
+
+	test('names a feature scene by its image test', () => {
+		expect(parseParityArgs(['--scene', 'shadows,s1']).scenes).toEqual(['shadows', 's1']);
+		expect(PARITY_SCENE_NAMES).toContain('tone-agx-half-exposure');
 	});
 
 	test('reads scenes and tiers as lists, and skips the separator that bun run passes', () => {
 		expect(parseParityArgs(['--', '--scene', 's2,s1', '--tier', 'webgl2'])).toEqual({
 			scenes: ['s2', 's1'],
-			comparisons: [{ label: 'webgl2', candidate: 'null3d-webgl2', reference: 'threejs-webgl' }],
+			comparisons: [
+				{ label: 'webgl2', tier: 'webgl2', candidate: 'null3d-webgl2', reference: 'threejs-webgl' },
+			],
 			saveBaselines: false,
+			switches: '',
 		});
 		expect(parseParityArgs(['--save-baselines']).saveBaselines).toBe(true);
 	});
 
+	test('gives every hold page the switches of --switches, and keeps baselines plain', () => {
+		expect(parseParityArgs(['--scene', 's2', '--switches', 'shadows=3']).switches).toBe(
+			'shadows=3',
+		);
+		expect(holdPagePath('s2', 'null3d-webgpu', 'shadows=3')).toBe(
+			'/bench/pages/null3d/s2.html?gpu=webgpu&hold&preset=high&shadows=3',
+		);
+		expect(() => parseParityArgs(['--switches', '?shadows=3'])).toThrow(
+			'--switches: give page switches without the ?',
+		);
+		expect(() => parseParityArgs(['--switches', 'shadows=3', '--save-baselines'])).toThrow(
+			'use --save-baselines without --switches',
+		);
+	});
+
 	test('compares any two kinds of page with --pair, the second one being the reference', () => {
 		expect(parseParityArgs(['--pair', 'threejs-webgl,threejs-webgpu'])).toEqual({
-			scenes: ['s1', 's1-static', 's1-cells', 's2'],
+			scenes: [...DEFAULT_PARITY_SCENES],
 			comparisons: [
 				{
 					label: 'threejs-webgl vs threejs-webgpu',
@@ -404,6 +551,7 @@ describe('parseParityArgs', () => {
 				},
 			],
 			saveBaselines: false,
+			switches: '',
 		});
 	});
 
@@ -414,7 +562,7 @@ describe('parseParityArgs', () => {
 
 	test('refuses unknown names, a pair that is not two pages, and --tier with --pair', () => {
 		expect(() => parseParityArgs(['--scene', 's9'])).toThrow(
-			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3, s4.',
+			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3, s4, standard-grid,',
 		);
 		expect(() => parseParityArgs(['--tier', 'webgl1'])).toThrow('"webgl1" is not a tier.');
 		expect(() => parseParityArgs(['--pair', 'threejs-webgl'])).toThrow(
@@ -440,6 +588,14 @@ describe('passesWithBaseline', () => {
 		expect(passesWithBaseline(0.05, 0.04)).toBe(false);
 		expect(differenceText({ share: 0.02 }, 0.04)).toBe(
 			"2.000% of pixels differ; three.js's rule allows under 0.1%, and three.js's two renderers differ by 4.000%",
+		);
+	});
+
+	test('takes a scene limit of its own, such as the limit for shadows', () => {
+		expect(passesWithBaseline(0.0022, 0.0002, SHADOW_MAX_DIFFERENT_PERCENT)).toBe(true);
+		expect(passesWithBaseline(0.005, 0.0002, SHADOW_MAX_DIFFERENT_PERCENT)).toBe(false);
+		expect(differenceText({ share: 0.0022 }, 0.0002, false, SHADOW_MAX_DIFFERENT_PERCENT)).toBe(
+			"0.220% of pixels differ; the scene's limit allows under 0.5%, and three.js's two renderers differ by 0.020%",
 		);
 	});
 });

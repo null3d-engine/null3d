@@ -21,6 +21,7 @@ use null3d_render::frame::FrameBuilder;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::materials::{Shading, feature};
 use null3d_render::pipelines::{DepthBias, DrawKey};
+use null3d_render::shadows::ShadowQuality;
 use null3d_render::view::ViewId;
 
 /// Three cascades of 1,024 texels on each side, out to 60 m, on the default layer.
@@ -530,4 +531,50 @@ fn a_blended_object_casts_shadows_and_receives_them_in_the_transparent_pass() {
         .collect();
     assert_eq!(cascades.len(), 3);
     assert!(cascades.iter().all(|(_, draws)| *draws == 2));
+}
+
+#[test]
+fn far_cascades_cull_and_draw_in_turn_and_keep_their_layers_in_between() {
+    let mut world = shadowed(SUN);
+    let quality = ShadowQuality {
+        filter: 3,
+        far_interval: 2,
+    };
+    world.renderer.settings_mut().set_shadow_quality(quality);
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+    let layers: Vec<u32> = operands(&first, Op::CreateTextureView)
+        .iter()
+        .map(|v| v[0])
+        .collect();
+    // Each frame's cascades that draw depth into their layers, and its culling dispatches.
+    let drawn = |commands: &[(Op, Vec<u32>)]| -> (Vec<usize>, usize) {
+        let cascades = operands(commands, Op::BeginRenderPass)
+            .iter()
+            .filter(|p| p[0] == NO_TARGET)
+            .map(|p| layers.iter().position(|&l| l == p[2]).unwrap())
+            .collect();
+        (cascades, count(commands, Op::Dispatch))
+    };
+    let mut turns = vec![drawn(&first)];
+    for _ in 0..4 {
+        turns.push(drawn(&world.step(&mut mock, false)));
+    }
+    // The first frame draws every cascade. Then the near one culls and draws in every frame, and
+    // the far ones take turns: the camera's culling and one per cascade that draws.
+    assert_eq!(
+        turns,
+        [
+            (vec![0, 1, 2], 4),
+            (vec![0, 2], 3),
+            (vec![0, 1], 3),
+            (vec![0, 2], 3),
+            (vec![0, 1], 3)
+        ]
+    );
+    // New GPU objects draw every cascade again.
+    world.renderer.reset_gpu();
+    let mut mock = MockBackend::default();
+    let (cascades, _) = drawn(&world.step(&mut mock, false));
+    assert_eq!(cascades, [0, 1, 2]);
 }

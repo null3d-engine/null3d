@@ -800,11 +800,7 @@ impl CpuCulledRenderer {
             self.create_fixed(list)?;
         }
         self.graph
-            .set_shadows(self.shadow.as_ref().map(|s| ShadowPasses {
-                cascades: s.cascades.count as u32,
-                map_size: s.settings.map_size,
-                layers: s.layers,
-            }));
+            .set_shadows(self.shadow.as_ref().map(ShadowPasses::of));
         self.graph.set_tiles(self.tiles.shape().map(|s| TilePasses {
             tiles: s.layers,
             size: s.size,
@@ -846,7 +842,8 @@ impl CpuCulledRenderer {
         }
         let rebuilt = self.layout.built_in == input.frame;
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
-        self.graph.upload(list, arena, self.settings.output())?;
+        self.graph
+            .upload(list, arena, self.settings.drawn_output())?;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::DFG)?;
         }
@@ -937,9 +934,10 @@ impl CpuCulledRenderer {
         let (layout, casters, meshes) = (&self.layout, &self.casters, &self.meshes);
         let (transparent, background) = (&self.transparent, &self.background);
         let light_slot = self.light_textures.slot();
-        // A tile that does not draw keeps its depth: its render pass is left out.
+        // A cascade or a tile that does not draw keeps its depth: its render pass is left out.
         let skips = |role: Role| match role {
             Role::Shadow(view) if view.tile_index().is_some() => tile_culling.frame(view).is_none(),
+            Role::Shadow(view) => cascade_culling.frame(view).is_none(),
             _ => false,
         };
         self.graph.record(
@@ -1057,7 +1055,9 @@ impl FrameBuilder for CpuCulledRenderer {
         self.shadow = self.settings.shadow_frame(scene, parity, canvas);
         let camera = self.settings.camera_position(scene, parity);
         let tile_settings = self.settings.tile_settings();
-        self.tiles.plan(input, tile_settings, camera.as_ref());
+        let filter = self.settings.shadow_quality().filter;
+        self.tiles
+            .plan(input, tile_settings, filter, camera.as_ref());
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows.
         let shadows = self.shadow.is_some() || self.tiles.shape().is_some();
         if input.structure_changed || !self.layout.built || shadows != self.layouts_shadowed {
@@ -1097,7 +1097,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 cells,
                 &|view| {
                     let cascade = view.cascade_index()?;
-                    let shadow = shadow.filter(|s| cascade < s.cascades.count)?;
+                    let shadow = shadow.filter(|s| s.draws(cascade))?;
                     Some(shadow.view_frame(cascade))
                 },
                 None,
@@ -1130,6 +1130,7 @@ impl FrameBuilder for CpuCulledRenderer {
     fn reset_gpu(&mut self) {
         self.created = false;
         self.graph.reset_gpu();
+        self.settings.forget_shadow_maps();
         self.layout.built = false;
         self.meshes.forget();
         self.pipelines.forget();

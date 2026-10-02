@@ -33,6 +33,7 @@ import {
 	overloadPlan,
 	PLANS,
 	parityPlan,
+	REPORT_ON_TOP_PLANS,
 	SHADERS_PAGE_SECONDS,
 	STARTUP_RUNS,
 	startupPlan,
@@ -51,6 +52,7 @@ import {
 	type PlanItem,
 	quietLimitMs,
 	readResult,
+	readShard,
 	runName,
 	shardItems,
 	turnBatches,
@@ -216,6 +218,12 @@ describe('shardItems', () => {
 	const shardIds = (plan: ReturnType<typeof item>[], index: number, count: number) =>
 		shardItems(plan, { index, count }, needsOf).map(({ id }) => id);
 
+	it('reads a shard written as <i>/<n>', () => {
+		expect(readShard('2/3')).toEqual({ index: 2, count: 3 });
+		for (const text of ['0/2', '3/2', '1', '1/2/3', 'a/b', undefined])
+			expect(readShard(text)).toBeNull();
+	});
+
 	it('deals the items out evenly, in the order of the plan', () => {
 		const plan = ['a', 'b', 'c', 'd', 'e'].map((id) => item(id));
 		expect(shardIds(plan, 1, 2)).toEqual(['a', 'c', 'e']);
@@ -246,6 +254,13 @@ describe('shardItems', () => {
 describe('runName', () => {
 	it('sorts by time and is safe as a folder name', () => {
 		expect(runName('checks', new Date('2026-09-27T10:15:30.123Z'))).toBe('20260927-101530-checks');
+	});
+});
+
+describe("the runner page's report", () => {
+	it('goes over the frames of the plans that check results, and never over a timed page', () => {
+		expect([...REPORT_ON_TOP_PLANS].sort()).toEqual(['checks', 'depth', 'memory', 'parity']);
+		for (const plan of REPORT_ON_TOP_PLANS) expect(Object.keys(PLANS)).toContain(plan);
 	});
 });
 

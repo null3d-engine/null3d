@@ -23,16 +23,6 @@ export const PLANNED_SETTINGS = {
 		changes: 'start',
 		values: [512, 1024, 2048, 4096],
 	},
-	shadowFilter: {
-		presets: [3, 3, 5, 5],
-		changes: 'start',
-		values: [3, 5],
-	},
-	farCascadeInterval: {
-		presets: [4, 3, 2, 2],
-		changes: 'live',
-		values: { min: 1, max: 8, whole: true, heavierBelow: true },
-	},
 	pointLightShadows: {
 		presets: [false, false, true, true],
 		changes: 'start',
@@ -99,7 +89,7 @@ export const SETTING_DOCS: {
 	},
 	shadowCascades: { label: 'Shadow cascades' },
 	shadowMapSize: { label: 'Shadow map size in texels' },
-	shadowFilter: { label: 'Shadow filter', print: (value) => `${value} x ${value} taps` },
+	shadowFilter: { label: 'Shadow filter', print: (value) => `${value} x ${value} texels` },
 	farCascadeInterval: { label: 'Far cascade updates', print: everyNth },
 	shadowTiles: { label: 'Spot and point light shadow tiles' },
 	shadowTileSize: { label: 'Shadow tile size in texels' },

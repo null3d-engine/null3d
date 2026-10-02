@@ -587,9 +587,14 @@ pub mod permutation {
     /// The normal map's frame comes from the mesh's tangents, not from how the texture
     /// coordinates change between pixels.
     pub const VERTEX_TANGENT: u32 = 512;
+    /// The low bit of the debug view's number in the debug view template's variants: 0 normals,
+    /// 1 depth, 2 overdraw, 3 wireframe.
+    pub const DEBUG_VIEW_LOW: u32 = 1024;
+    /// The high bit of the debug view's number.
+    pub const DEBUG_VIEW_HIGH: u32 = 2048;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 10] = [
+    pub const NAMES: [(&str, u32); 12] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -600,6 +605,8 @@ pub mod permutation {
         ("MORPH", MORPH),
         ("FXAA", FXAA),
         ("VERTEX_TANGENT", VERTEX_TANGENT),
+        ("DEBUG_VIEW_LOW", DEBUG_VIEW_LOW),
+        ("DEBUG_VIEW_HIGH", DEBUG_VIEW_HIGH),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -765,9 +772,9 @@ pub mod sizes {
     /// Bytes per compacted instance: three rows of the world matrix, then a vector of ids.
     pub const INSTANCE_STRIDE: u32 = 64;
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
-    /// settings, the fog's 48 bytes, the light grid's two vectors, and three vectors that custom
-    /// materials read.
-    pub const FRAME_UNIFORM_BYTES: u32 = 272;
+    /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
+    /// materials read, and the camera's near and far distances.
+    pub const FRAME_UNIFORM_BYTES: u32 = 288;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -814,11 +821,11 @@ pub mod sizes {
     /// floats, then its sRGB color, four bytes from red to alpha.
     pub const LINE_VERTEX_BYTES: u32 = 16;
     /// Bytes of the uniform block of the directional light's shadow cascades: four matrices, then
-    /// four vectors.
-    pub const SHADOW_UNIFORM_BYTES: u32 = 320;
+    /// five vectors.
+    pub const SHADOW_UNIFORM_BYTES: u32 = 336;
     /// Bytes of the uniform block of the shadow atlas's tiles: a matrix for each of the 24 tiles,
-    /// then a vector for each.
-    pub const SHADOW_TILES_UNIFORM_BYTES: u32 = 1920;
+    /// then a vector for each, then the filter's vector.
+    pub const SHADOW_TILES_UNIFORM_BYTES: u32 = 1936;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
@@ -850,6 +857,10 @@ pub mod template {
     /// samples a layer of a texture array. The bind group of index 0 is the frame's and that of
     /// index 1 the texture's. The draw's first vertex is the layer times three.
     pub const BACKGROUND: u32 = 9;
+    /// The debug views of instanced meshes: normals, depth, overdraw or wireframe, which the
+    /// permutation's debug view bits pick, in place of each mesh's material. Only development
+    /// builds of the engine have it.
+    pub const DEBUG_VIEW: u32 = 12;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
@@ -1126,6 +1137,7 @@ pub fn typescript_constants() -> String {
                 ("FINAL", template::FINAL),
                 ("SHADOW_DEPTH", template::SHADOW_DEPTH),
                 ("BACKGROUND", template::BACKGROUND),
+                ("DEBUG_VIEW", template::DEBUG_VIEW),
                 ("CULL", template::CULL),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],

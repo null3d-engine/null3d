@@ -73,7 +73,7 @@ describe('the preset table', () => {
 	it('orders each list of choices from the lightest to the heaviest', () => {
 		expect(QUALITY_SETTINGS.antialias.values).toEqual(['none', 'fxaa', 'msaa']);
 		expect(PLANNED_SETTINGS.shadowMapSize.values).toEqual([512, 1024, 2048, 4096]);
-		expect(PLANNED_SETTINGS.shadowFilter.values).toEqual([3, 5]);
+		expect(QUALITY_SETTINGS.shadowFilter.values).toEqual([3, 5]);
 	});
 
 	it('keeps every preset within the portable GPU budget', () => {
@@ -96,6 +96,8 @@ describe('the preset table', () => {
 			'minRenderScale',
 			'maxRenderScale',
 			'antialias',
+			'shadowFilter',
+			'farCascadeInterval',
 			'shadowTiles',
 			'shadowTileSize',
 			'maxAnisotropy',
@@ -122,6 +124,8 @@ describe('the preset table', () => {
 			'maxRenderScale',
 			'maxAnisotropy',
 			'uploadBytesPerFrame',
+			'shadowFilter',
+			'farCascadeInterval',
 			'antialias',
 			'shadowTiles',
 			'shadowTileSize',
@@ -132,6 +136,8 @@ describe('the preset table', () => {
 			'maxRenderScale',
 			'maxAnisotropy',
 			'uploadBytesPerFrame',
+			'shadowFilter',
+			'farCascadeInterval',
 		]);
 	});
 
@@ -159,6 +165,8 @@ describe('presetSettings', () => {
 			maxPixelRatio: 1.5,
 			minRenderScale: 0.5,
 			...full,
+			shadowFilter: 3,
+			farCascadeInterval: 4,
 			maxAnisotropy: 2,
 			uploadBytesPerFrame: 2 * MIB,
 			antialias: 'fxaa',
@@ -169,6 +177,8 @@ describe('presetSettings', () => {
 			maxPixelRatio: 2,
 			minRenderScale: 0.6,
 			...full,
+			shadowFilter: 3,
+			farCascadeInterval: 3,
 			maxAnisotropy: 4,
 			uploadBytesPerFrame: 4 * MIB,
 			antialias: 'msaa',
@@ -179,6 +189,8 @@ describe('presetSettings', () => {
 			maxPixelRatio: 2,
 			minRenderScale: 0.75,
 			...full,
+			shadowFilter: 5,
+			farCascadeInterval: 2,
 			maxAnisotropy: 8,
 			uploadBytesPerFrame: 8 * MIB,
 			antialias: 'msaa',
@@ -189,6 +201,8 @@ describe('presetSettings', () => {
 			maxPixelRatio: Number.POSITIVE_INFINITY,
 			minRenderScale: 1,
 			...full,
+			shadowFilter: 5,
+			farCascadeInterval: 2,
 			maxAnisotropy: 16,
 			uploadBytesPerFrame: 16 * MIB,
 			antialias: 'msaa',
@@ -250,7 +264,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy or uploadBytesPerFrame.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter or farCascadeInterval.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(

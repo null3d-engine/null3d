@@ -135,6 +135,9 @@ pub struct TileUniform {
     /// Each tile's texel size per meter of distance from its light, its light's bias and normal
     /// bias in texels, and the tiles of its light: 1 for a spot light, 6 for a point light.
     pub params: [[f32; 4]; MAX_TILES],
+    /// The texels on each side of a tile, the size of one texel in texture coordinates, and the
+    /// texels on each side of the shadow filter's square.
+    pub kernel: [f32; 4],
 }
 
 impl Default for TileUniform {
@@ -142,6 +145,7 @@ impl Default for TileUniform {
         Self {
             view_proj: [[0.0; 16]; MAX_TILES],
             params: [[0.0; 4]; MAX_TILES],
+            kernel: [0.0; 4],
         }
     }
 }
@@ -246,13 +250,15 @@ impl ShadowTiles {
         &self.uniform
     }
 
-    /// Plans the tiles of the frame `input`, with `settings`, for a camera at `camera`, or for no
-    /// camera: then no tile draws. Allocates only when more lights cast shadows, or the scene
-    /// holds more objects, than in any frame before.
+    /// Plans the tiles of the frame `input`, with `settings` and the shadow filter's square of
+    /// `filter` texels, for a camera at `camera`, or for no camera: then no tile draws. Allocates
+    /// only when more lights cast shadows, or the scene holds more objects, than in any frame
+    /// before.
     pub fn plan(
         &mut self,
         input: &FrameInput<'_>,
         settings: TileSettings,
+        filter: u32,
         camera: Option<&CellPosition>,
     ) {
         self.frames = [None; MAX_TILES];
@@ -271,6 +277,8 @@ impl ShadowTiles {
         self.assign(input.lights, shadows);
         self.mark_moved_casters(input, shadows);
         self.uniform = TileUniform::default();
+        let size = shape.size as f32;
+        self.uniform.kernel = [size, 1.0 / size, filter as f32, 0.0];
         for k in 0..self.lit.len() {
             let lit = self.lit[k];
             let light = &shadows[lit.shadow as usize];

@@ -135,6 +135,11 @@ impl DepthSorted {
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
+
+    /// Forgets the sorted rows, for a view that sorts none in a frame, and keeps the room.
+    pub fn clear(&mut self) {
+        self.len = 0;
+    }
 }
 
 /// Culls runs of rows from several sets for one view, on the calling thread and the job workers,

@@ -15,6 +15,7 @@ use null3d_core::scene::Command;
 use null3d_gpu::drawlist::{Op, state_flags};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
+use null3d_render::debug_view::DebugView;
 use null3d_render::frame::FrameBuilder;
 
 /// The pipelines' state flags, by pipeline id, which the lists create.
@@ -120,6 +121,36 @@ fn check<B: FrameBuilder>(mut world: World<B>, name: &str) {
         states.blended_draws(&world_commands(&world)),
         [(GRID, 1), (sphere, 1), (GRID, 1), (PLANE, 1), (BOX, 1)],
         "{name}: culled row"
+    );
+
+    // In the normals view nothing blends, so the pass sorts no rows, and keeps none of the frame
+    // before.
+    assert!(
+        world
+            .renderer
+            .settings_mut()
+            .set_debug_view(DebugView::Normals)
+    );
+    step(&mut world, &mut mock, true);
+    assert_eq!(
+        states.blended_draws(&world_commands(&world)),
+        [],
+        "{name}: normals view"
+    );
+
+    // Once the last blended object and batch are gone, the pass sorts no rows either.
+    assert!(world.renderer.settings_mut().set_debug_view(DebugView::Lit));
+    let gone = blended.objects.map(Command::destroy);
+    world.scene.apply_commands(&gone, world.frame).unwrap();
+    world
+        .batches
+        .destroy(blended.batch, world.frame, world.scene.cell_table_mut())
+        .unwrap();
+    step(&mut world, &mut mock, true);
+    assert_eq!(
+        states.blended_draws(&world_commands(&world)),
+        [],
+        "{name}: nothing blends"
     );
 }
 

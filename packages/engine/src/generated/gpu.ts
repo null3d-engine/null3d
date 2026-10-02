@@ -116,6 +116,8 @@ export const PERMUTATION_SKIN = 64;
 export const PERMUTATION_MORPH = 128;
 export const PERMUTATION_FXAA = 256;
 export const PERMUTATION_VERTEX_TANGENT = 512;
+export const PERMUTATION_DEBUG_VIEW_LOW = 1024;
+export const PERMUTATION_DEBUG_VIEW_HIGH = 2048;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;
@@ -143,6 +145,7 @@ export const TEMPLATE_INSTANCED_STANDARD_MAPS = 6;
 export const TEMPLATE_FINAL = 7;
 export const TEMPLATE_SHADOW_DEPTH = 8;
 export const TEMPLATE_BACKGROUND = 9;
+export const TEMPLATE_DEBUG_VIEW = 12;
 export const TEMPLATE_CULL = 16;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
@@ -163,7 +166,7 @@ export const TEXTURE_USAGE_RENDER_ATTACHMENT = 16;
 export const TEXTURE_USAGE_TRANSIENT_ATTACHMENT = 32;
 
 export const SIZE_INSTANCE_STRIDE = 64;
-export const SIZE_FRAME_UNIFORM_BYTES = 272;
+export const SIZE_FRAME_UNIFORM_BYTES = 288;
 export const SIZE_OUTPUT_UNIFORM_BYTES = 16;
 export const SIZE_CULL_WORKGROUP_SIZE = 128;
 export const SIZE_INDIRECT_WORDS = 5;
@@ -180,8 +183,8 @@ export const SIZE_MAX_CELLS = 512;
 export const SIZE_CELL_SHIFT = 23;
 export const SIZE_MAX_CULL_RANGES = 257;
 export const SIZE_LINE_VERTEX_BYTES = 16;
-export const SIZE_SHADOW_UNIFORM_BYTES = 320;
-export const SIZE_SHADOW_TILES_UNIFORM_BYTES = 1920;
+export const SIZE_SHADOW_UNIFORM_BYTES = 336;
+export const SIZE_SHADOW_TILES_UNIFORM_BYTES = 1936;
 
 /** Bytes of one block of texels of each format, by format code: one texel unless compressed. */
 export const FORMAT_BLOCK_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4, 16, 16, 16, 16, 8, 8, 16, 16];
