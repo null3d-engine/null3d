@@ -123,10 +123,29 @@ fn check<B: FrameBuilder>(mut world: World<B>, name: &str) {
         "{name}: culled row"
     );
 
-    // Once nothing blends, as in the normals view, the pass sorts no rows, and keeps none of the
-    // frame before.
-    let settings = world.renderer.settings_mut();
-    assert!(settings.set_debug_view(DebugView::Normals));
+    // In the normals view nothing blends, so the pass sorts no rows, and keeps none of the frame
+    // before.
+    assert!(
+        world
+            .renderer
+            .settings_mut()
+            .set_debug_view(DebugView::Normals)
+    );
+    step(&mut world, &mut mock, true);
+    assert_eq!(
+        states.blended_draws(&world_commands(&world)),
+        [],
+        "{name}: normals view"
+    );
+
+    // Once the last blended object and batch are gone, the pass sorts no rows either.
+    assert!(world.renderer.settings_mut().set_debug_view(DebugView::Lit));
+    let gone = blended.objects.map(Command::destroy);
+    world.scene.apply_commands(&gone, world.frame).unwrap();
+    world
+        .batches
+        .destroy(blended.batch, world.frame, world.scene.cell_table_mut())
+        .unwrap();
     step(&mut world, &mut mock, true);
     assert_eq!(
         states.blended_draws(&world_commands(&world)),
