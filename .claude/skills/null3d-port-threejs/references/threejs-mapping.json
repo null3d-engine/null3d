@@ -550,7 +550,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createHemisphereLight({ skyColor, groundColor, intensity })",
-      "notes": "The sky lies along the light's +Y axis: turn the light to tilt it, where three.js moves it. The light is stored but does not light surfaces yet.",
+      "notes": "The sky lies along the light's +Y axis: turn the light to tilt it, where three.js moves it. The light is stored, and lights surfaces from 0.2. Until then, an ambient light gives the fill.",
       "docs": "api/lights",
       "detect": "\\bHemisphereLight\\b"
     },
@@ -1188,7 +1188,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "scene.createInstances(meshOrPrefab, count, { material, dynamic }); write batch.positions / rotations / scales / colors",
-      "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it.",
+      "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. The colors array is stored, and draws from 0.2.",
       "docs": "concepts/instances",
       "detect": "\\bInstancedMesh\\b|\\.set(Matrix|Color)At\\s*\\(|\\binstance(Matrix|Color)\\b"
     },
