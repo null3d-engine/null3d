@@ -46,7 +46,7 @@ import type {
 	WorkerReply,
 } from '../workers/protocol';
 import { abortable } from './abortable';
-import { watchCanvas } from './canvas-watch';
+import { WEBGPU_MAX_TEXTURE_SIZE, watchCanvas } from './canvas-watch';
 import {
 	type CapabilityReport,
 	type PowerPreference,
@@ -84,7 +84,10 @@ import {
  * @category api/engine
  */
 export interface EngineOptions {
-	/** The canvas to draw into, sized by CSS. */
+	/**
+	 * The canvas to draw into, sized by CSS. On a canvas that no CSS sizes, the engine sets the CSS
+	 * width and height that it shows when the engine starts.
+	 */
 	canvas: HTMLCanvasElement;
 	/** The sketch module, which runs in the sketch worker; `new URL('./sketch.ts', import.meta.url)`. */
 	sketch: URL | string;
@@ -931,7 +934,12 @@ async function startEngine(
 		errorFixes: ERROR_FIXES,
 		wakeByMessage,
 	};
-	const canvasWatch = watchCanvas(options.canvas, control, quality.settings.maxPixelRatio);
+	const canvasWatch = watchCanvas(
+		options.canvas,
+		control,
+		quality.settings.maxPixelRatio,
+		device.webgl2 ? device.maxTextureSize : WEBGPU_MAX_TEXTURE_SIZE,
+	);
 	canvasWatch.listen(true);
 	// Hold mode keeps input out, so a held frame never depends on it.
 	const takesInput = hold === undefined;

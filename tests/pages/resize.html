@@ -5,11 +5,12 @@
 		<title>null3d test: resize</title>
 		<style>
 			html, body { margin: 0; overflow: hidden; }
-			canvas { width: 50vw; height: 50vh; display: block; }
+			canvas { display: block; }
+			canvas.half { width: 50vw; height: 50vh; }
 		</style>
 	</head>
 	<body>
-		<canvas></canvas>
+		<canvas class="half"></canvas>
 		<pre id="status">running</pre>
 		<script type="module" src="./resize.ts"></script>
 	</body>

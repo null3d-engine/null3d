@@ -61,7 +61,12 @@ An error that the sketch's setup throws also rejects the start ([Sketch API](ske
 
 ## Options
 
-`canvas` and `sketch` are required. The canvas takes its size from CSS, and `sketch` is the address of the sketch module, usually `new URL('./sketch.ts', import.meta.url)`.
+`canvas` and `sketch` are required. `sketch` is the address of the sketch module, usually `new URL('./sketch.ts', import.meta.url)`.
+
+The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer to that size times the screen's pixel ratio, up to the cap that `maxPixelRatio` or the preset sets.
+
+- A canvas that no CSS sizes shows its drawing buffer at one CSS pixel per buffer pixel, so each new buffer would make it larger. The engine sets the CSS width and height that the canvas shows when the engine starts.
+- The drawing buffer is never wider or taller than the GPU's largest texture. A larger canvas draws at a lower pixel ratio, which `engine.viewport.pixelRatio` in the sketch reports.
 
 | Option | Default | What it does |
 | --- | --- | --- |
@@ -273,7 +278,7 @@ Options for `createEngine`.
 
 | Member | Description |
 | --- | --- |
-| `canvas: HTMLCanvasElement` | The canvas to draw into, sized by CSS. |
+| `canvas: HTMLCanvasElement` | The canvas to draw into, sized by CSS. On a canvas that no CSS sizes, the engine sets the CSS width and height that it shows when the engine starts. |
 | `sketch: URL \| string` | The sketch module, which runs in the sketch worker; `new URL('./sketch.ts', import.meta.url)`. |
 | `preset?: 'auto' \| QualityPreset` | The quality preset: `auto`, the default, lets the engine choose one for the device, and `low`, `medium`, `high` or `ultra` names one. The GPU path caps it: WebGL2 and WebGPU's compatibility mode run at most `medium`. After a start that crashed the tab, the engine starts a preset lower. Another value fails with E1213. The `?preset=` switch wins over it. |
 | `maxPixelRatio?: number` | Cap for the device pixel ratio, a number from 0.5 up. Without it, the quality preset sets the cap. `ctx.quality.set` changes it during play. |
