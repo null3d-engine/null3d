@@ -187,3 +187,15 @@ The team's tablet is an iPad Pro 11-inch with 8 cores. Safari there reports a Ma
 - Safari on the iPad keeps memory from earlier runs until it quits. On 2 October 2026, a checks run failed 433 of its 490 pages. Its first page failed with "Out of memory", and every later page with E1109. Safari had run out of room for shared memory before the run began. After a quit and a fresh start, the same plan passed 490 of 490. A run that fails from its first page this way says nothing about the code.
 - Brave with Shields on reports 3 cores, where Safari reports 8, so the engine starts fewer job workers there.
 - The iPad's scale at 60 Hz was measured in Safari 26.6 on 29 September 2026. three.js's WebGPU renderer holds 30 frames per second up to 240,000 objects, and its WebGL renderer up to 140,000.
+
+### What the iPad says about the iPhone
+
+The team has no iPhone, so the iPad stands in for Apple's phones. It proves some things and not others.
+
+- Safari on the iPad and on the iPhone is one engine: WebKit, with the same WebGPU and WebGL2 code on Metal. So correctness and feature support carry over. So do Safari's faults, such as the waits of its WebGL2 path for the GPU and the late release of shared memory.
+- Memory does not carry over. iPhones have less RAM, and their tabs die sooner. The iPad's tab died at 2016 MiB of GPU textures, and Safari also limits how many shared memories of 1 GiB a page can hold at once.
+- Speed does not carry over. An iPhone has a smaller GPU, and it throttles earlier as it warms.
+- The screen differs. An iPhone has a pixel ratio of 3, against the iPad's 2, and Pro models refresh at 120 Hz.
+- An iPhone without iOS 26 has no WebGPU, so the engine draws with WebGL2 there.
+
+So the iPad shows that the engine works on an iPhone. It does not show that the engine is fast enough there, or that it stays within the iPhone's memory. That needs an iPhone in the device runs, with a runner page of its own, such as `--lan iphone-safari`.
