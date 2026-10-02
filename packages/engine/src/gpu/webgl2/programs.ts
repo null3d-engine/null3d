@@ -3,11 +3,13 @@
 // permutation is created, and pipelines for other vertex formats share it, because WebGL2 keeps a
 // mesh's vertex layout in its vertex array, not in the program. Its link result is read only when
 // it is first drawn with, so the driver can compile a frame's programs in parallel. Only
-// development builds define the template of the debug lines, so release builds hold none of it.
+// development builds define the templates of the debug lines and the debug views, so release
+// builds hold none of them.
 
 import {
 	TEMPLATE_BACKGROUND,
 	TEMPLATE_DEBUG_LINES,
+	TEMPLATE_DEBUG_VIEW,
 	TEMPLATE_FINAL,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_STANDARD_MAPS,
@@ -18,6 +20,7 @@ import {
 } from '../../generated/gpu';
 import {
 	DEBUG_LINES_SHADER,
+	DEBUG_VIEW_SHADER,
 	DEPTH_MAPPING_UNIFORM,
 	type DeviceShaders,
 	type GlslProgram,
@@ -129,12 +132,14 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_FINAL] = { shader: shaders.final, pipeline: 'main' };
 	templates[TEMPLATE_SHADOW_DEPTH] = { shader: shaders.shadow_depth, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND] = { shader: shaders.background, pipeline: 'main' };
-	if (DEV)
+	if (DEV) {
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,
 			pipeline: 'main',
 			vertices: LINE_VERTICES,
 		};
+		templates[TEMPLATE_DEBUG_VIEW] = { shader: DEBUG_VIEW_SHADER, pipeline: 'main' };
+	}
 	return templates;
 }
 

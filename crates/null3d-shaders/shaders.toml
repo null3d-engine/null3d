@@ -125,6 +125,16 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 
+# The debug views, which development builds of the engine draw in place of every material: the
+# normals, the depth, the overdraw or the wireframe, by the two debug view bits. It reads each
+# instance as the mesh templates do, and stays in shaders.ts, where only development builds import
+# it, so release builds hold none of it.
+[shaders.debug_view]
+file = "debug_view.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HIGH"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HIGH"], targets = ["glsl"] }
+
 # The depth of shadow casters, drawn from the main directional light into one cascade's layer of
 # the shadow map.
 [shaders.shadow_depth]

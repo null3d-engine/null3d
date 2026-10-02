@@ -168,6 +168,7 @@ Debug drawing and frame figures. The drawing calls draw lines that show where th
 | --- | --- |
 | `stats(show?: boolean): void` | Shows an overlay of frame figures over the top-left corner of the canvas, or hides it with `false`: the GPU path, the quality preset, the render scale, the frame rates, and CPU time per frame of each thread and phase. The page draws the overlay and updates it twice a second. Its code downloads at the first call. |
 | `frameStats(): FrameStats` | The figures that the stats overlay shows, for the sketch: means per frame over about the last half second. Call it each time you need figures, and read them from the object it returns. It allocates nothing, so a sketch can call it every frame. Its code downloads at the first call, so the figures are 0 until about half a second after that call. |
+| `view(view: DebugView): void` | Draws the whole scene with one debug shading in place of every material, from the next frame on, until the next call. `'lit'` draws the materials again. `'normals'` shows each surface's world-space normal as a color, and `'depth'` its distance from the camera as a gray, white at the near plane and black at the far plane. `'overdraw'` adds light for each surface that covers a pixel, so bright pixels cost the most shading. `'wireframe'` draws each triangle's edges in its material's color. Debug views clear to black and use no tone mapping. Only development builds draw them: in a release build the call does nothing. A view's first frame builds its pipelines, so objects can be missing for a few frames after a change. |
 | `line(from: Vec3Like, to: Vec3Like, color?: ColorInput): void` | Draws a line from one point to another. The default color is yellow. |
 | `box(min: Vec3Like, max: Vec3Like, color?: ColorInput): void` | Draws the edges of a box that lines up with the world's axes, from its lowest corner `min` to its highest corner `max`. The default color is yellow. |
 | `sphere(center: Vec3Like, radius: number, color?: ColorInput): void` | Draws a sphere as three circles around its center, one in each plane of the world's axes. The default color is yellow. |
@@ -200,6 +201,14 @@ Options for `debug.light`.
 | `position?: Vec3Like` | Where to draw the light, such as a place in view for a directional light, whose own position does not change its light. The default is the light's position. |
 | `size?: number` | The size of the drawing in meters. The default is 1. |
 | `color?: ColorInput` | The color of the drawing. The default is the light's own color. |
+
+### `DebugView`
+
+```ts
+type DebugView = 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw';
+```
+
+A debug view of `debug.view`: the materials' own shading with `'lit'`, or one debug shading in place of every material.
 
 ### `FrameMetrics`
 
