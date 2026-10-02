@@ -41,6 +41,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SHADER_COMPILER_URL } from '../packages/vite-plugin/src/shader-compiler';
 import { explainedFiles, SIZE_GROWTH_GUIDANCE } from './hooks/check-size-growth';
+import { ensureShaderModules } from './lib/shader-modules';
 import {
 	type BaseChoice,
 	chooseBase,
@@ -61,7 +62,6 @@ import {
 	type SizeEntry,
 	totalSize,
 } from './lib/size-report';
-import { ensureShaderModules } from './shaders';
 
 const root = process.cwd();
 const CRATE = 'null3d-wasm';

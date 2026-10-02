@@ -5,7 +5,7 @@
 import { spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { isShaderModule, MODULE_DIR } from './shaders';
+import { isShaderModule, MODULE_DIR } from './lib/shader-modules';
 
 const PACKAGE_DIR = 'packages/engine';
 

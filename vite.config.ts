@@ -3,7 +3,7 @@ import { defineConfig, type Plugin, searchForWorkspaceRoot } from 'vite';
 import { loadServer } from './tests/lib/load-server.ts';
 import { reportCollector } from './tests/lib/report-collector.ts';
 import { HTTP_PORT, HTTPS_PORT } from './tests/lib/server.ts';
-import { ensureShaderModules } from './tools/shaders.ts';
+import { ensureShaderModules } from './tools/lib/shader-modules.ts';
 
 // One dev server for every browser page in the repository: the test pages under tests/pages, the
 // benchmark pages under bench/pages and the demos under examples, with the isolation headers.
@@ -15,7 +15,7 @@ import { ensureShaderModules } from './tools/shaders.ts';
 const https = process.env.NULL3D_HTTPS === '1';
 
 // The pages import the shader modules, which git does not keep.
-ensureShaderModules();
+ensureShaderModules(import.meta.dirname);
 
 /**
  * Files the server refuses, besides Vite's defaults: private notes, build output and agent state

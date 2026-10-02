@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fixture } from './lib/fixture';
+import { fixture } from './fixture';
 import {
 	crateFolders,
 	ensureShaderModules,
@@ -10,7 +10,7 @@ import {
 	MODULE_DIR,
 	moduleHash,
 	RECORD,
-} from './shaders';
+} from './shader-modules';
 
 /** A repository with the shader crate, its path dependencies and one generated module. */
 function repository(): string {
