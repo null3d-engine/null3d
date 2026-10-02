@@ -386,6 +386,32 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 			hold: 0,
 		}),
 	),
+	// PROBE: CI experiments, removed before the final push.
+	...(['inside', 'front', 'behind'] as const).map(
+		(floor): ImageTest => ({
+			name: `probe-wire-${floor}`,
+			sketch: `tests/pages/sketches/debug-view-sketch.ts?view=wireframe&floor=${floor}`,
+			hold: 0,
+		}),
+	),
+	{
+		name: 'probe-over-floor',
+		sketch: 'tests/pages/sketches/debug-view-sketch.ts?view=overdraw&only-floor',
+		hold: 0,
+	},
+	{
+		name: 'probe-over-floor-8-bit',
+		sketch: 'tests/pages/sketches/debug-view-sketch.ts?view=overdraw&only-floor',
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['hdr=off'],
+	},
+	{
+		name: 'probe-over-floor-no-aa',
+		sketch: 'tests/pages/sketches/debug-view-sketch.ts?view=overdraw&only-floor',
+		hold: 0,
+		switches: ['antialias=none'],
+	},
 	// Objects, a parent and its child, and instance batches on three layers, some of them moved to
 	// other layers after they were created, and a camera that draws two of the layers. A child keeps
 	// its own layers, so the child of a parent that the camera leaves out still draws.

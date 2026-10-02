@@ -3,7 +3,17 @@
 // view shows every gray, and a see-through box covers two objects, so overdraw shows the layers.
 import { type DebugView, defineSketch } from '@null3d/engine';
 
-const view = (new URL(import.meta.url).searchParams.get('view') ?? 'normals') as DebugView;
+const params = new URL(import.meta.url).searchParams;
+const view = (params.get('view') ?? 'normals') as DebugView;
+// PROBE: floor placements and a floor-only scene for CI experiments.
+const FLOORS: Record<string, { height: number; z: number; width: number }> = {
+	default: { width: 12, height: 80, z: -30 },
+	inside: { width: 6, height: 6, z: -3 },
+	front: { width: 12, height: 75, z: -32.5 },
+	behind: { width: 12, height: 30, z: -5 },
+};
+const floor = FLOORS[params.get('floor') ?? 'default'] ?? FLOORS.default!;
+const onlyFloor = params.has('only-floor');
 
 export default defineSketch(({ scene, materials, geometry, debug }) => {
 	scene.setBackground('#3a5f8a');
@@ -19,11 +29,15 @@ export default defineSketch(({ scene, materials, geometry, debug }) => {
 	scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
 	scene.createAmbientLight({ intensity: 0.3 });
 	scene.createMesh({
-		mesh: geometry.plane({ width: 12, height: 80 }),
+		mesh: geometry.plane({ width: floor!.width, height: floor!.height }),
 		material: materials.standard({ color: '#7a8b6f' }),
 		rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
-		position: [0, 0, -30],
+		position: [0, 0, floor!.z],
 	});
+	if (onlyFloor) {
+		debug.view(view);
+		return {};
+	}
 	scene.createMesh({
 		mesh: geometry.box(),
 		material: materials.standard({ color: '#e8554e' }),
