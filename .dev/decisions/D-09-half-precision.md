@@ -1,6 +1,6 @@
 # D-09: Half precision on phones
 
-Status: proposed. The S24+ and iPad rows are pending. Date: 2026-10-03. Task: M1-H5. Test: T-22.
+Status: proposed. WebGL2 is decided. The iPad rows, and with them WebGPU, are pending. Date: 2026-10-03. Task: M1-H5. Test: T-22.
 
 ## Question
 
@@ -34,6 +34,8 @@ The HALF permutation bit is a bit that the device fixes, like the draw index and
 - SwiftShader (`CI=1`): all 299 tests passed.
 - The Mac's GPU: 285 of 299 passed. S4 failed on each tier, by the same share of pixels as with half precision off: 0.300%, 0.174% and 0.180%. Its references on main no longer match this Mac. The other 11 failures were the tests that allow no change of color. These are the scenes 100 km and 1,000 km out, which compare with the image at the origin, and the debug drawing test. Half precision changed 0.2% to 6.6% of their pixels, nearly all by one step of 255, below the output's dither. Those tests check positions, which stay at full precision, so they now keep `?half=off`, and they pass.
 - Six tests also draw with `?half=on` in every run, against their own test's references: `standard-grid-half`, `standard-maps-half`, `lights-16-half`, `shadows-half`, `tone-agx-half` and `tone-aces-8-bit-half`. All pass on both reference sets.
+- The S24+ in Chrome 154 ran the device checks with `--switches half=on` on 3 October 2026 (run `20261002-211135-checks`). It has no WebGPU, so it drew WebGL2 only. 202 of its 203 checks passed. 138 of its 168 WebGL2 image tests drew at `mediump`, and the rest keep `?half=off`.
+- The one failure was `shadows-cascades-1`: 0.508% of its pixels differed from the reference, and the device tolerance allows 0.5%. Half precision moved every shadow test further from its reference. In the S24+'s last run at full precision (`20261002-133711-checks`), the shadow tests differed by 0.17%. With half precision on, they differed by 0.25% to 0.51%.
 
 ### The Mac
 
@@ -46,22 +48,36 @@ The HALF permutation bit is a bit that the device fixes, like the draw index and
 
 S4's opaque pass took 0.932 ms at full precision and 0.918 ms at half, and its final pass 0.883 ms and 0.870 ms. Chrome has no GPU timer for WebGL2 there, and both settings held 129 to 144 frames per second on the 144 Hz display. The Mac is no phone, so its rows do not count for the rule.
 
-### The iPad (WebGPU and WebGL2) and the S24+ (WebGL2)
+### The S24+ (WebGL2)
 
-Pending. The coordinator runs these from a checkout of the branch, after `bun run build` and a restart of the dev server. The page kinds that end in `-half` add `?half=on`, so each run takes turns between the two settings:
+`bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s3,s4 --pages null3d-webgl2,null3d-webgl2-half --switches preset=ultra`, Chrome 154 on the Galaxy S24+ (Xclipse 940), 3 October 2026 (run `20261002-205909-bench`). There were 5 runs of each page, which took turns between the two settings. All 20 passed. The phone stayed cool, at a skin temperature of 36 °C at most, and it never throttled.
+
+| Scene | Setting | CPU ms per frame, median | Busiest thread, ms | Frames per second | Frame interval p95, ms |
+| --- | --- | --- | --- | --- | --- |
+| S3 | Full precision | 3.73 | 3.70 | 59.9 | 16.79 |
+| S3 | Half precision | 3.72 | 3.71 | 59.9 | 16.80 |
+| S4 | Full precision | 4.16 | 4.14 | 59.9 | 16.79 |
+| S4 | Half precision | 4.07 | 4.05 | 59.9 | 16.81 |
+
+The phone held 60 frames per second at its 60 Hz refresh with both settings, even at the Ultra preset. So the display set the frame rate, not the GPU, and the frame time cannot show a GPU saving. Nothing in the run showed a gain from half precision. The CPU times differ by less than the spread between runs. In the governor's S4 stage, both settings held the 60 fps target all the time, at full render scale.
+
+### The iPad (WebGPU and WebGL2)
+
+Pending. Safari on the iPad was stuck after an earlier crash test, so its runs did not start. The coordinator runs these from a checkout of the branch, after `bun run build` and a restart of the dev server. The page kinds that end in `-half` add `?half=on`, so each run takes turns between the two settings:
 
 ```sh
 # iPad, Safari: GPU time per pass on WebGPU, frame time on WebGL2
 bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s3,s4 --pages null3d-webgpu,null3d-webgpu-half,null3d-webgl2,null3d-webgl2-half
-# S24+, Chrome: S4 at the device's full pixel ratio, where the GPU sets the frame rate
-bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s3,s4 --pages null3d-webgl2,null3d-webgl2-half --switches preset=ultra
-# Both devices: the image tests at the device tolerance, with half precision on
-bun tests/real-browsers.ts --allow-no-webgpu --android chrome --lan ipad-safari --switches half=on
+# iPad: the image tests at the device tolerance, with half precision on
+bun tests/real-browsers.ts --lan ipad-safari --switches half=on
 ```
 
 ## Decision
 
-Pending the device rows. Until then half precision stays off on both paths, and `?half=on` turns it on.
+- WebGL2: half precision stays off. On the S24+ it showed no gain, and one image test failed with it on. The rule needs both a saving and every image test passing on each device of the path, so no iPad result can turn it on.
+- WebGPU: pending the iPad, the only device in the lab with WebGPU and `shader-f16`. Until then half precision stays off there too.
+
+`?half=on` keeps half precision on both paths for measurement.
 
 ## Consequences
 
