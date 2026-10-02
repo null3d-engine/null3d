@@ -45,6 +45,7 @@
 //                       is s1
 //   --seconds <n>       the bench plan's warm-up and measured seconds, each, instead of the
 //                       protocol's 5 and 30; 300 gives the protocol's 10-minute sustained run
+//   --switches <q>      more switches for every bench plan page, such as preset=medium
 //   --shard <i>/<n>     run only the i-th of n shards of a fixed plan, as CI does on each of its
 //                       machines: the plan's items split evenly, and an item stays with the items
 //                       whose results its check compares with
@@ -78,6 +79,7 @@ import {
 	isNull3dPage,
 	parseStoredBaselines,
 	readJobCounts,
+	readSwitches,
 	STORED_BASELINES_FILE,
 	type StoredBaselines,
 } from '../bench/lib/parity.ts';
@@ -158,6 +160,8 @@ export interface Options {
 	scenes?: BenchScene[];
 	/** The bench plan's warm-up and measured seconds, each, when given. */
 	seconds?: number;
+	/** More switches for every bench plan page, such as `preset=medium`, when given. */
+	switches?: string;
 	/** The state of Brave's Shields for the dev server's site, when given. */
 	shields?: ShieldsState;
 	/** The one shard of a fixed plan to run, when given. */
@@ -173,7 +177,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--switches <q>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -222,6 +226,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--pages') options.pages = known(arg, list(args[++i]), BENCH_PAGE_KINDS);
 		else if (arg === '--scenes') options.scenes = known(arg, list(args[++i]), BENCH_SCENES);
 		else if (arg === '--seconds') options.seconds = wholeNumber(arg, args[++i]);
+		else if (arg === '--switches') options.switches = readSwitches(args[++i], arg);
 		else if (arg === '--shard') options.shard = shard(args[++i]);
 		else if (arg === '--only') options.only = list(args[++i]);
 		else if (arg === '--rounds') options.rounds = wholeNumber(arg, args[++i]);
@@ -252,6 +257,7 @@ export function parseArgs(args: readonly string[]): Options {
 		['--pages', options.pages],
 		['--scenes', options.scenes],
 		['--seconds', options.seconds],
+		['--switches', options.switches],
 	] as const)
 		if (given && options.plan !== 'bench')
 			throw new Error(`${flag} works with --plan bench only\n${USAGE}`);
@@ -630,6 +636,7 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 		pages: options.pages,
 		scenes: options.scenes,
 		seconds: options.seconds,
+		switches: options.switches,
 	});
 	if (!all) return undefined;
 	const needs = (item: PlanItem<Check>) => itemsNeeded(item.check);

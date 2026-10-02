@@ -21,6 +21,14 @@ export interface RunOptions {
 	 * for no shadows. three.js draws one shadow map whatever the count.
 	 */
 	shadows: number | null;
+	/**
+	 * `?shadowCascades=`, `?shadowMapSize=` and `?shadowFilter=`: quality settings that replace the
+	 * preset's on a null3D page, such as a candidate preset's values on a phone, or null to keep the
+	 * preset's. The engine checks each value.
+	 */
+	shadowCascades: number | null;
+	shadowMapSize: number | null;
+	shadowFilter: number | null;
 }
 
 /** The value of a switch that must be one of a few words. */
@@ -62,7 +70,10 @@ export function pageReport(params: URLSearchParams): 'hold' | 'demo' | 'bench' {
 	return params.has('hold') ? 'hold' : params.has('demo') ? 'demo' : 'bench';
 }
 
-/** Reads `?hold`, `?demo`, `?n=`, `?seconds=` and `?shadows=`. */
+/** A whole number that the engine checks itself. */
+const whole = (v: number) => Number.isSafeInteger(v) && v > 0;
+
+/** Reads `?hold`, `?demo`, `?n=`, `?seconds=`, `?shadows=` and the shadow quality settings. */
 export function readRunOptions(params: URLSearchParams): RunOptions {
 	return {
 		hold:
@@ -93,5 +104,8 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 			(v) => Number.isInteger(v) && v >= 1 && v <= 4,
 			'a cascade count from 1 to 4',
 		),
+		shadowCascades: readNumber(params, 'shadowCascades', whole, 'a cascade count from 1 to 4'),
+		shadowMapSize: readNumber(params, 'shadowMapSize', whole, 'a size such as 2048'),
+		shadowFilter: readNumber(params, 'shadowFilter', whole, 'a filter size of 3 or 5'),
 	};
 }

@@ -258,6 +258,11 @@ export interface CoreGlue extends CoreErrors {
 	setLightColor(light: number, which: number, r: number, g: number, b: number): number;
 	/** Sets one of a light's numbers: `which` is one of the `LIGHT_VALUE_*` codes. */
 	setLightValue(light: number, which: number, value: number): number;
+	/**
+	 * Sets the number that each light created from now on starts with: `which` is one of the
+	 * `LIGHT_VALUE_*` codes.
+	 */
+	setLightDefault(which: number, value: number): number;
 	setBackground(r: number, g: number, b: number): number;
 	/** The tone mapping, by code, and the exposure, from the next frame on. */
 	setOutput(toneMapping: number, exposure: number): number;
@@ -356,6 +361,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'destroyLight',
 	'setLightColor',
 	'setLightValue',
+	'setLightDefault',
 	'setBackground',
 	'setOutput',
 	'setRenderScaling',

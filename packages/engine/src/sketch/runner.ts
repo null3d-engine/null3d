@@ -24,6 +24,8 @@ import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import {
+	LIGHT_VALUE_SHADOW_CASCADES,
+	LIGHT_VALUE_SHADOW_MAP_SIZE,
 	TEXTURE_OPTION_UPLOAD_ALL,
 	TEXTURE_STAT_IMAGES_SENT,
 	TEXTURE_STAT_WAITING,
@@ -236,8 +238,12 @@ export class SketchRunner {
 			device.depthPrepass,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
-		const { shadowTiles, shadowTileSize, pointLightShadows } = sketch.quality.settings;
+		const { shadowTiles, shadowTileSize, pointLightShadows, shadowCascades, shadowMapSize } =
+			sketch.quality.settings;
 		glue.setShadowTiles(shadowTiles, shadowTileSize, pointLightShadows);
+		// Directional lights that name no cascades or map size take the preset's.
+		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES, shadowCascades);
+		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE, shadowMapSize);
 		if (sketch.jobWorkers > 0) {
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.notify(slots, Slot.JobsReady);

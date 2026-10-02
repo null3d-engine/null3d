@@ -57,6 +57,8 @@ export function runNull3dPage(
 		const n = wholeCount(options.count ?? defaultCount);
 		sketchUrl.searchParams.set('n', String(n));
 		if (options.shadows !== null) sketchUrl.searchParams.set('shadows', String(options.shadows));
+		if (options.shadowFilter !== null)
+			sketchUrl.searchParams.set('shadowFilter', String(options.shadowFilter));
 
 		// A bare `?hold` holds at the scene's hold time, which the page passes as the engine's option.
 		// A page that fills the window leaves the pixel ratio's cap to the quality preset.
@@ -64,6 +66,8 @@ export function runNull3dPage(
 			canvas,
 			sketch: sketchUrl,
 			...(!filled && { maxPixelRatio: CANVAS.pixelRatio }),
+			shadowCascades: options.shadowCascades ?? undefined,
+			shadowMapSize: options.shadowMapSize ?? undefined,
 			hold: options.hold ?? undefined,
 		});
 		const log = pageOptions.trace ? new QualityLog() : undefined;

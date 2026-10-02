@@ -1328,6 +1328,17 @@ pub fn set_light_value(light: u32, which: u32, value: f32) -> u32 {
     })
 }
 
+/// Sets the number that each light created from now on starts with, such as the shadow cascades
+/// of the quality preset.
+#[wasm_bindgen(js_name = setLightDefault)]
+pub fn set_light_default(which: u32, value: f32) -> u32 {
+    with_engine(|e| {
+        e.lights
+            .set_default(which, value)
+            .map_or_else(core_failure, |()| 0)
+    })
+}
+
 /// The linear background color.
 #[wasm_bindgen(js_name = setBackground)]
 pub fn set_background(r: f32, g: f32, b: f32) -> u32 {

@@ -46,6 +46,10 @@ When frames take too long, the engine draws the scene at a lower render scale: a
 
 Text and fine lines in the scene get softer at a lower scale. The scaling also takes the place of FXAA, which Low uses to smooth edges. Draw your interface in HTML over the canvas, where it stays sharp. To keep the whole canvas on a device, set `quality.set({ minRenderScale: 1 })`. The savings of the pixel ratio cap and the render scale multiply. At a ratio of 1.5 and a scale of 0.5, the phone above fills 0.19 million pixels.
 
+## Shadows
+
+A directional light's shadows draw the shadow casters once for each cascade, into a map whose texels the GPU fills each frame. The preset sets the cascade count and the map size of each light whose options name neither. Low draws fewer cascades than Medium, with smaller maps, and blends fewer texels at each shadow's edge. So leave `cascades` and `mapSize` out of the light's `shadow` options, and phones draw lighter shadows by themselves. [Shadows](../concepts/shadows.md#settings) lists the options, and [Quality presets](../concepts/quality-presets.md#the-settings-of-each-preset) each preset's values.
+
 ## Memory
 
 A phone closes a tab that uses too much memory, with no warning. On a page with worker threads, the engine's threads share one WebAssembly memory, whose maximum the preset sets. The browser reserves address space for the whole maximum, and every other engine and WebAssembly module on the page shares what is left. [Page API: createEngine](../api/engine.md#memory) says when to ask for more.

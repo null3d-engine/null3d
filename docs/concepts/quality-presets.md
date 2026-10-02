@@ -152,9 +152,9 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Lowest render scale (`minRenderScale`) | 0.5 | 0.6 | 0.75 | 1 | during play | built |
 | Highest render scale (`maxRenderScale`) | 1 | 1 | 1 | 1 | during play | built |
 | Anti-aliasing (`antialias`) | FXAA | MSAA 4x | MSAA 4x | MSAA 4x | at the start | built |
-| Shadow cascades (`shadowCascades`) | 1 | 2 | 3 | 4 | at the start | planned |
-| Shadow map size in texels (`shadowMapSize`) | 1024 | 2048 | 2048 | 4096 | at the start | planned |
-| Shadow filter (`shadowFilter`) | 3 x 3 texels | 3 x 3 texels | 5 x 5 texels | 5 x 5 texels | during play | built |
+| Shadow cascades (`shadowCascades`) | 2 | 3 | 3 | 4 | at the start | built |
+| Shadow map size in texels (`shadowMapSize`) | 1024 | 2048 | 2048 | 4096 | at the start | built |
+| Shadow filter (`shadowFilter`) | 3 x 3 texels | 5 x 5 texels | 5 x 5 texels | 5 x 5 texels | during play | built |
 | Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame | during play | built |
 | Spot and point light shadow tiles (`shadowTiles`) | 4 | 8 | 16 | 24 | at the start | built |
 | Shadow tile size in texels (`shadowTileSize`) | 512 | 512 | 1024 | 1024 | at the start | built |

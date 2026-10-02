@@ -1,6 +1,6 @@
 # D-11: Preset values, the governor's thresholds, and frames in flight
 
-Status: frames in flight decided by the owner on 2026-09-30. The preset check's thresholds proposed by M1-G3. The preset values and the governor's thresholds are still open. Date: 2026-09-30. Tasks: M1-G1 (frames in flight), then M1-G3, M1-G5 and M1-G6.
+Status: frames in flight decided by the owner on 2026-09-30. The preset check's thresholds proposed by M1-G3, the governor's thresholds by M1-G5, and the preset values by M1-G6. The device rows of the preset values are pending. Date: 2026-09-30. Tasks: M1-G1 (frames in flight), then M1-G3, M1-G5 and M1-G6.
 
 This record settles three questions. M1-G1 answers the third, frames in flight, with the GPU-bound page. The preset values and the governor's thresholds follow from the S4 traces of M1-G5 and M1-G6, and from the live shadow-map resize test of M1-G3. Those tasks add their sections here. M1-G3 adds the preset check's thresholds at the end.
 
@@ -217,4 +217,55 @@ The S24+ and the iPad rows are still to come, from `bun tests/real-browsers.ts -
 
 - The shadow steps help only a scene whose shadows cost much. The render scale helps only a GPU-bound scene. A CPU-bound scene walks down every step for nothing. The governor could undo a step that did not shorten the frames.
 - A slow sketch on the thread that draws slows the frame callbacks, as in low latency and single-threaded modes. The refresh meter reads them as a slower display. The budget then grows, and the governor misses the overload.
-- The S4 benchmark keeps its render scale at 1, to match its three.js twin's pixels. So on devices only the shadow steps can act there.
+- The S4 benchmark kept its render scale at 1, to match its three.js twin's pixels. Since M1-G6 it keeps the preset's range of render scales, as exit gate item 3 measures it.
+
+## The preset values (M1-G6)
+
+Status: proposed by M1-G6 on 2026-10-03, from the Mac's runs. The S24+ and iPad runs at each candidate preset are still to come, and they decide the values. The governor keeps the thresholds of M1-G5 until those traces show flicker or late steps.
+
+### Rule
+
+Each device's chosen preset holds its target on S4 for a 10-minute run, with dynamic resolution at the preset's default range of render scales. Its completed rate stays at the target in at least 95% of the seconds after warm-up. The chooser picks Low on the S24+ (WebGL2), Medium on the iPad (WebGPU) and High on the Mac. Within that rule, a preset draws the sharpest shadows that its devices hold.
+
+### Proposed values
+
+The engine now applies the shadow cascade count and map size of each preset. A directional light whose `shadow` options name neither takes the preset's values when it is created. `createEngine` takes `shadowCascades` and `shadowMapSize`, like the other settings fixed at the start. Three values move from the plan's starting values:
+
+| Setting | Low | Medium | High | Ultra | Starting values |
+| --- | --- | --- | --- | --- | --- |
+| Shadow cascades | 2 | 3 | 3 | 4 | 1, 2, 3, 4 |
+| Shadow map size in texels | 1,024 | 2,048 | 2,048 | 4,096 | unchanged |
+| Shadow filter | 3 x 3 | 5 x 5 | 5 x 5 | 5 x 5 | 3 x 3 on Medium |
+
+The other rows keep their starting values. Why each value moved:
+
+- Low takes 2 cascades, not 1. One cascade spreads its 1,024 texels over the whole 200 m of shadow. A vehicle's shadow in S4 then drew as a smear of a few texels. With two, the near cascade ends at about 24 m, so the shadows near the camera get texels about eight times finer. Before this change, every light drew 3 cascades of 2,048 texels. With them, the S24+ held 60 fps at Low in S4's 10-minute run on 2 October, at a render scale of 1. Two cascades of 1,024 texels draw the casters one time fewer, and fill a sixth of those texels.
+- Medium keeps 3 cascades, not 2. With 2, the near cascade ends at about 24 m instead of 14 m, so its texels grow by about two thirds. The owner saw jagged shadow edges on the iPad at Medium with 3 cascades, before this change.
+- Medium takes the 5 x 5 filter, for those edges. The iPad draws at a pixel ratio of 2, where the 3 x 3 filter's edges show their steps. The governor lowers the filter to 3 x 3 as its last step when frames run long.
+
+Shadow map memory, 4 bytes per texel in each cascade: Low 8 MiB, Medium and High 48 MiB, Ultra 256 MiB.
+
+### Data
+
+Chrome 154 drew S4 through Playwright on the MacBook Pro M5 Max, on WebGPU and WebGL2. The window was 1,400 x 778 CSS pixels at a pixel ratio of 1, on a 144 Hz display. Each page ran three times for 10 s, with `bun run bench:run --scenes s4 --pages null3d-webgpu,null3d-webgl2 --switches preset=<preset> --runs 3 --seconds 10`. Other helpers built and tested on the same Mac.
+
+| Preset | Shadows | GPU ms per frame, WebGPU | Busiest thread ms, WebGPU | Busiest thread ms, WebGL2 |
+| --- | --- | --- | --- | --- |
+| Low, starting values | 1 cascade of 1,024 texels, 3 x 3 | 1.29 | 0.09 | 0.24 |
+| Low, proposed | 2 cascades of 1,024 texels, 3 x 3 | 1.18 | 0.11 | 0.17 |
+| Medium, starting values | 2 cascades of 2,048 texels, 3 x 3 | 1.14 | 0.12 | 0.26 |
+| Medium, proposed | 3 cascades of 2,048 texels, 5 x 5 | 1.34 | 0.10 | 0.18 |
+| High, unchanged | 3 cascades of 2,048 texels, 5 x 5 | 1.34 and 1.40 | 0.14 and 0.13 | 0.26 and 0.24 |
+
+Every run held its target of 60 fps in every measured second, at a render scale of 1, with no quality step. The figures are medians of the three runs. The starting values ran first, and the proposed values later the same morning.
+
+The Mac holds every preset with room to spare, so its timings cannot choose between them. Its GPU time per frame stays within the noise of the runs. The phone and the tablet decide.
+
+### Runs on the S24+ and the iPad
+
+S4 and S3 run at each candidate, from a checkout of this branch. `?shadowCascades=`, `?shadowMapSize=` and `?shadowFilter=` replace a preset's shadow values on a benchmark page. The device runner's `--switches` gives them to every page of its bench plan. The candidates:
+
+- S24+, Chrome and Brave, WebGL2: Low as proposed, and Low with the 3 cascades of 2,048 texels from before this change. Then Medium, to see the room above Low.
+- iPad, Safari, WebGPU: Medium as proposed; Medium with the 3 x 3 filter; and High.
+
+Then the 10-minute gate run of the chosen preset on each device. Their rows go here.
