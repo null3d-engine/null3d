@@ -499,11 +499,7 @@ impl GpuDrivenRenderer {
             self.create_fixed(list)?;
         }
         self.graph
-            .set_shadows(shadow.as_ref().map(|s| ShadowPasses {
-                cascades: s.cascades.count as u32,
-                map_size: s.settings.map_size,
-                layers: s.layers,
-            }));
+            .set_shadows(shadow.as_ref().map(ShadowPasses::of));
         self.graph.sync_views(self.settings.views());
         self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.set_transparent(!self.sorted.is_empty());
@@ -635,7 +631,7 @@ impl GpuDrivenRenderer {
         self.cascade_frames = [None; MAX_CASCADES];
         if let Some(shadow) = &shadow {
             shadows::upload(list, arena, ids::SHADOWS, shadow)?;
-            for cascade in 0..cascades {
+            for cascade in (0..cascades).filter(|&cascade| shadow.draws(cascade)) {
                 let view = ViewId::cascade(cascade);
                 let frame = shadow.view_frame(cascade);
                 opaque::upload(list, arena, view, &frame)?;
@@ -812,6 +808,7 @@ impl FrameBuilder for GpuDrivenRenderer {
     fn reset_gpu(&mut self) {
         self.created = false;
         self.graph.reset_gpu();
+        self.settings.forget_shadow_maps();
         self.layout.forget_gpu();
         self.casters.forget_gpu();
         self.culling.forget_gpu();

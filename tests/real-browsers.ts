@@ -104,8 +104,10 @@ import {
 	type Runner,
 	readDevice,
 	readResult,
+	readShard,
 	receivedAt,
 	runName,
+	SHARD_FORMAT,
 	type Shard,
 	setTurns,
 	shardItems,
@@ -191,10 +193,9 @@ export function parseArgs(args: readonly string[]): Options {
 		return n;
 	};
 	const shard = (value: string | undefined): Shard => {
-		const [, index = 0, count = 0] = /^(\d+)\/(\d+)$/.exec(value ?? '')?.map(Number) ?? [];
-		if (!(index >= 1 && index <= count))
-			throw new Error(`--shard: use <i>/<n>, such as 1/2, with i from 1 to n\n${USAGE}`);
-		return { index, count };
+		const read = readShard(value);
+		if (!read) throw new Error(`--shard: use ${SHARD_FORMAT}\n${USAGE}`);
+		return read;
 	};
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i] as string;

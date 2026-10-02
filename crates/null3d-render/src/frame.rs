@@ -35,7 +35,7 @@ use crate::materials::{
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, DrawKey};
-use crate::shadows::{ShadowFrame, ShadowSettings, fit_cascades};
+use crate::shadows::{CascadeSchedule, ShadowFrame, ShadowQuality, ShadowSettings, fit_cascades};
 use crate::textures::TextureStore;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
 
@@ -439,6 +439,7 @@ struct Lighting {
     ambient: [f32; 4],
     /// The main directional light's shadows, or `None` when it casts none.
     sun_shadow: Option<SunShadow>,
+    shadow_quality: ShadowQuality,
     /// Linear background color, or `None` before the sketch sets one.
     background: Option<[f32; 3]>,
     fog: Fog,
@@ -470,6 +471,8 @@ pub struct SceneSettings {
     /// The views, the camera's first.
     views: Vec<View>,
     lighting: Lighting,
+    /// Which shadow cascades draw in each frame, and what the shadow map's layers hold.
+    shadow_schedule: CascadeSchedule,
     canvas: CanvasOutput,
     output: Output,
     /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
@@ -500,9 +503,11 @@ impl SceneSettings {
                 sun_color: [0.0; 4],
                 ambient: [0.0; 4],
                 sun_shadow: None,
+                shadow_quality: ShadowQuality::default(),
                 background: None,
                 fog: Fog::None,
             },
+            shadow_schedule: CascadeSchedule::default(),
             canvas,
             output: Output::default(),
             clock: [0.0; 4],
@@ -770,11 +775,36 @@ impl SceneSettings {
         self.lighting.sun_shadow = shadow;
     }
 
-    /// The cascades of the main directional light's shadows in a frame whose targets have the
-    /// canvas's size, fitted to the camera's view, or `None` when the light casts no shadows or
-    /// the camera has nothing to draw from.
+    /// The shadow filter and the far cascades' update interval, from the next frame on.
+    pub fn set_shadow_quality(&mut self, quality: ShadowQuality) {
+        self.lighting.shadow_quality = quality;
+    }
+
+    /// Forgets what the shadow map's layers hold, so every cascade draws in the next frame with
+    /// shadows. A builder calls it when it makes its GPU objects again.
+    pub fn forget_shadow_maps(&mut self) {
+        self.shadow_schedule.reset();
+    }
+
+    /// The main directional light's shadows in the next frame, whose targets have the canvas's
+    /// size: its cascades, fitted to the camera's view, with the cascades that draw in this frame,
+    /// or `None` when the light casts no shadows or the camera has nothing to draw from. Call it
+    /// once per frame, as it moves the cascades' update schedule on.
     pub fn shadow_frame(
-        &self,
+        &mut self,
+        scene: &SceneStorage,
+        parity: usize,
+        canvas: (u32, u32),
+    ) -> Option<ShadowFrame> {
+        let frame = self.fit_shadows(scene, parity, canvas);
+        if frame.is_none() {
+            self.shadow_schedule.reset();
+        }
+        frame
+    }
+
+    fn fit_shadows(
+        &mut self,
         scene: &SceneStorage,
         parity: usize,
         canvas: (u32, u32),
@@ -784,19 +814,31 @@ impl SceneSettings {
         let slot = scene.resolve(camera).ok()?;
         let world = scene.world(parity).matrix(slot as usize);
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
+        let quality = self.lighting.shadow_quality;
         let settings = ShadowSettings {
             cascades: shadow.cascades,
             map_size: shadow.map_size,
             bias: shadow.bias,
             normal_bias: shadow.normal_bias,
             distance: shadow.distance,
+            filter: quality.filter,
         };
         let [x, y, z, _] = self.lighting.sun_direction;
+        let position = scene.cell_position(slot, parity);
+        let absolute = position.absolute();
+        let mut cascades = fit_cascades(world, absolute, &lens, aspect, [x, y, z], &settings);
+        let drawn = self.shadow_schedule.plan(
+            &mut cascades,
+            absolute,
+            shadow.map_size,
+            quality.far_interval,
+        );
         Some(ShadowFrame {
-            cascades: fit_cascades(world, &lens, aspect, [x, y, z], &settings),
+            cascades,
             settings,
-            camera: scene.cell_position(slot, parity),
+            camera: position,
             layers: shadow.layers,
+            drawn,
         })
     }
 

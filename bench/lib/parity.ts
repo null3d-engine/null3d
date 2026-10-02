@@ -22,7 +22,7 @@ export const PIXEL_THRESHOLD = 0.1;
 export const MAX_DIFFERENT_PERCENT = 0.1;
 /**
  * The limit for scenes with shadows, which three.js's rule would fail on shadow edges alone. three.js
- * softens each edge with five rotated taps of its shadow map, and null3D with one filtered tap of a
+ * softens each edge with five rotated taps of its shadow map, and null3D with a 3 x 3 filter of a
  * cascade whose texels have another size. The shadows fall in the same places, and only the pixels
  * that an edge crosses differ. `.dev/image-tests.md` records the measured shares.
  */
