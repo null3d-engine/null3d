@@ -3,6 +3,7 @@
 
 import { FORMAT_RG11B10_UFLOAT } from '../generated/gpu';
 import { loadGlslShaders, loadWgslShaders } from '../generated/shaders';
+import { type CanvasHolder, clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
 import { type Completion, FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import {
@@ -33,7 +34,7 @@ export interface FrameInput {
 	background: readonly [number, number, number];
 }
 
-export interface Renderer {
+export interface Renderer extends CanvasHolder {
 	readonly tier: Tier;
 	/** True when the canvas keeps premultiplied alpha, so a captured image keeps the frame's alpha. */
 	readonly transparent: boolean;
@@ -42,6 +43,8 @@ export interface Renderer {
 	 * metrics buffer.
 	 */
 	readonly completions: Completion | undefined;
+	/** The canvas it draws on. */
+	readonly canvas: RenderCanvas;
 	/** Resizes the drawing buffer, in device pixels. Only the thread that owns the canvas calls this. */
 	resize(width: number, height: number): void;
 	/**
@@ -113,7 +116,7 @@ class WebGPURenderer implements Renderer {
 	constructor(
 		readonly tier: Tier,
 		private readonly device: GPUDevice,
-		private readonly canvas: RenderCanvas,
+		readonly canvas: RenderCanvas,
 		metrics: ArrayBufferLike | undefined,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
@@ -188,6 +191,10 @@ class WebGPURenderer implements Renderer {
 		return this.device.queue.onSubmittedWorkDone();
 	}
 
+	drawBlank(): void {
+		clearWebGPUCanvas(this.device, this.context);
+	}
+
 	destroy(): void {
 		this.timer?.destroy();
 		this.context.unconfigure();
@@ -203,7 +210,7 @@ class WebGL2Renderer implements Renderer {
 	readonly lost: Promise<string>;
 
 	constructor(
-		private readonly canvas: RenderCanvas,
+		readonly canvas: RenderCanvas,
 		private readonly gl: WebGL2RenderingContext,
 		metrics: ArrayBufferLike | undefined,
 	) {
@@ -253,6 +260,10 @@ class WebGL2Renderer implements Renderer {
 
 	finished(): Promise<void> {
 		return contextFinished(this.gl);
+	}
+
+	drawBlank(): void {
+		clearWebGL2Canvas(this.gl);
 	}
 
 	destroy(): void {

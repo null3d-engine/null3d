@@ -44,7 +44,7 @@ startWorker('render', step, async (event: MessageEvent<RenderWorkerInit | Render
 				tier: drawing.renderer.tier,
 			});
 		} catch (e) {
-			host.release();
+			await host.release();
 			replyToPage({
 				type: 'error',
 				role: 'render',
