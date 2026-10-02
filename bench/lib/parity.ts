@@ -93,7 +93,8 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
 /**
  * Each kind of benchmark page: its folder, the switches that pick its GPU path and, for the null3D
  * pages that end in -low, the low-latency mode, for those that end in -cells-off, culling with no
- * grid cells skipped, and for those that end in -timed, the time of each WebGL call, and the GPU
+ * grid cells skipped, for those that end in -timed, the time of each WebGL call, and for those that
+ * end in -synced, that time with a wait for the browser's GPU process after each call, and the GPU
  * interface it draws with.
  */
 const PAGES = {
@@ -107,6 +108,11 @@ const PAGES = {
 	'null3d-webgpu-cells-off': { folder: 'null3d', switches: 'gpu=webgpu&cells=off', api: 'webgpu' },
 	'null3d-webgl2-cells-off': { folder: 'null3d', switches: 'gpu=webgl2&cells=off', api: 'webgl2' },
 	'null3d-webgl2-timed': { folder: 'null3d', switches: 'gpu=webgl2&gl-timing', api: 'webgl2' },
+	'null3d-webgl2-synced': {
+		folder: 'null3d',
+		switches: 'gpu=webgl2&gl-timing=sync',
+		api: 'webgl2',
+	},
 } as const satisfies Record<string, { folder: string; switches: string; api: 'webgpu' | 'webgl2' }>;
 
 export type PageKind = keyof typeof PAGES;

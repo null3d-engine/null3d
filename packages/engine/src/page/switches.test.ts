@@ -23,7 +23,7 @@ describe('parseSwitches', () => {
 			preset: undefined,
 			hold: undefined,
 			bench: false,
-			glTiming: false,
+			glTiming: undefined,
 		});
 	});
 
@@ -39,7 +39,8 @@ describe('parseSwitches', () => {
 	});
 
 	it('reads ?gl-timing, which times each WebGL call for benchmark pages', () => {
-		expect(parseSwitches('?gpu=webgl2&gl-timing').glTiming).toBe(true);
+		expect(parseSwitches('?gpu=webgl2&gl-timing').glTiming).toBe('calls');
+		expect(parseSwitches('?gl-timing=sync').glTiming).toBe('sync');
 	});
 
 	it('keeps the text of ?hold for the engine to check, and an empty text for a bare ?hold', () => {

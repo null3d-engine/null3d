@@ -10,6 +10,12 @@ import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
 /**
+ * How the WebGL2 path times its calls for benchmarks: each call alone, or each call followed by a
+ * call that waits for the browser's GPU process, so a wait there counts toward the call that
+ * caused it.
+ */
+export type GlTimingMode = 'calls' | 'sync';
+/**
  * How the engine trades latency for speed. In `pipelined` mode, the render worker draws each frame
  * while the sketch computes the next one. In `low` mode, the sketch worker draws each frame right after
  * its update.
@@ -117,10 +123,11 @@ export interface Switches {
 	/** True when ?bench asks the engine to publish itself on the page for a benchmark tool. */
 	bench: boolean;
 	/**
-	 * True when ?gl-timing asks the WebGL2 path to time each WebGL call on the thread that draws,
-	 * for a benchmark page to read.
+	 * How ?gl-timing asks the WebGL2 path to time each WebGL call on the thread that draws, for a
+	 * benchmark page to read: `calls` for a bare ?gl-timing, `sync` for ?gl-timing=sync, or
+	 * undefined to time none.
 	 */
-	glTiming: boolean;
+	glTiming: GlTimingMode | undefined;
 }
 
 /** The most job workers the engine core runs. */
@@ -169,6 +176,10 @@ export function parseSwitches(search: string): Switches {
 		preset: oneOf(params.get('preset'), QUALITY_PRESETS),
 		hold: params.get('hold') ?? undefined,
 		bench: params.has('bench'),
-		glTiming: params.has('gl-timing'),
+		glTiming: !params.has('gl-timing')
+			? undefined
+			: params.get('gl-timing') === 'sync'
+				? 'sync'
+				: 'calls',
 	};
 }

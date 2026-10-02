@@ -403,6 +403,7 @@ describe('the pages', () => {
 			'null3d-webgpu-cells-off',
 			'null3d-webgl2-cells-off',
 			'null3d-webgl2-timed',
+			'null3d-webgl2-synced',
 		]);
 		expect(TIERS.map(gpuApiOf)).toEqual(['webgpu', 'webgpu', 'webgl2']);
 	});
@@ -440,6 +441,7 @@ describe('the pages', () => {
 			'null3d-webgpu-cells-off',
 			'null3d-webgl2-cells-off',
 			'null3d-webgl2-timed',
+			'null3d-webgl2-synced',
 		]);
 		expect(isNull3dPage('scene-code')).toBe(false);
 		expect(PAGE_KINDS.map(gpuApiOfPage)).toEqual([
@@ -451,6 +453,7 @@ describe('the pages', () => {
 			'webgpu',
 			'webgl2',
 			'webgpu',
+			'webgl2',
 			'webgl2',
 			'webgl2',
 		]);

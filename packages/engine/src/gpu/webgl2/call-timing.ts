@@ -1,12 +1,15 @@
 // The time of each WebGL call on the thread that draws, for benchmarks that ask for it with
 // ?gl-timing. A browser that runs WebGL in a process of its own, as Safari does, answers a call that
 // returns a value only after that process has run every call before it, so the call that waits
-// shows where the thread that draws blocks. The engine loads this module only with the switch: the
-// timed context wraps every call, and allocates for each one.
+// shows where the thread that draws blocks. With ?gl-timing=sync, each call ends with such a call,
+// `getError`, so the time that the browser's process takes for a call, and any wait there for the
+// GPU, counts toward that call. The engine loads this module only with the switch: the timed
+// context wraps every call, and allocates for each one.
 //
 // The thread that draws counts calls only while the page measures. It answers requests for the
 // counts on a broadcast channel, so a benchmark page reads them without a message to the worker.
 
+import type { GlTimingMode } from '../../page/switches';
 import { FrameRecorder, Role } from '../../shared/metrics';
 
 /** The broadcast channel on which the thread that draws answers requests for its call times. */
@@ -35,15 +38,17 @@ export interface GlTimingReport {
 type Method = (...args: unknown[]) => unknown;
 
 /**
- * Returns a stand-in for `gl` that times each call while the page measures, and starts answering
- * requests for the times. Constants and properties read through to `gl`. Without `metrics` it
- * times every call.
+ * Returns a stand-in for `gl` that times each call while the page measures, in `mode`, and starts
+ * answering requests for the times. Constants and properties read through to `gl`. Without
+ * `metrics` it times every call.
  */
 export function timeGlCalls(
 	gl: WebGL2RenderingContext,
 	metrics: ArrayBufferLike | undefined,
+	mode: GlTimingMode,
 ): WebGL2RenderingContext {
 	const recorder = metrics && new FrameRecorder(metrics, Role.Render);
+	const sync = mode === 'sync';
 	const times = new Map<string, GlCallTimes>();
 	let frames = 0;
 
@@ -57,6 +62,7 @@ export function timeGlCalls(
 			try {
 				return method.apply(target, args);
 			} finally {
+				if (sync) gl.getError();
 				const ms = performance.now() - start;
 				figures.ms += ms;
 				figures.calls++;
