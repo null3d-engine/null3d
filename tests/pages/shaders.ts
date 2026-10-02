@@ -1,6 +1,7 @@
 // Compiles every variant of the generated shader modules in this browser. Each GLSL program must
 // compile and link in WebGL2, and every uniform block and texture that the reflection names must
-// exist in the linked program. Each WGSL module must compile in WebGPU when the browser has it.
+// exist in the linked program. Each WGSL module must compile in WebGPU when the browser has it,
+// with the device feature `shader-f16` for the modules at half precision where the adapter has it.
 // Failures carry the browser's info logs. The result gives the time the GLSL programs took.
 import { everyShader } from '@null3d/engine/internal';
 import { run } from './lib/result';
@@ -24,6 +25,7 @@ run('shaders', async () => {
 		renderer: glsl.renderer,
 		webgpu: wgsl.webgpu,
 		wgslModules: wgsl.modules,
+		wgslSkipped: wgsl.skipped,
 		failures,
 	};
 });

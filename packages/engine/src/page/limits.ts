@@ -4,7 +4,8 @@
 // formats that KTX2 files can become, the target that scene passes draw into, the anti-aliasing
 // mode and whether the canvas is transparent. On WebGPU the core also learns whether the device has
 // transient attachments. The permutation bits that the device fixes pick the shader module that
-// the thread that draws loads. They also set how many objects and instance rows a scene can draw,
+// the thread that draws loads: among them, whether the scene shaders do their color math at half
+// precision. They also set how many objects and instance rows a scene can draw,
 // and past how many development builds warn that other devices of the same GPU path draw fewer.
 
 import * as C from '../generated/core';
@@ -13,6 +14,7 @@ import {
 	FORMAT_RG11B10_UFLOAT,
 	FORMAT_RGBA16_FLOAT,
 	PERMUTATION_DRAW_INDEX,
+	PERMUTATION_HALF,
 	PERMUTATION_TONE_MAP,
 } from '../generated/gpu';
 import type { QualitySettings } from '../quality/presets';
@@ -87,8 +89,9 @@ export interface CoreDevice {
 	transparent: boolean;
 	/**
 	 * The permutation bits that the device fixes, in every pipeline it builds: the draw index where
-	 * WebGL2 has multi-draw, and tone mapping in the shader on the 8-bit path. They pick the module
-	 * of shader builds that the thread that draws loads.
+	 * WebGL2 has multi-draw, tone mapping in the shader on the 8-bit path, and half precision where
+	 * the scene shaders do their color math in it. They pick the module of shader builds that the
+	 * thread that draws loads.
 	 */
 	shaderBits: number;
 	/** False when the core culls every object and instance row, with no grid cells skipped first. */
@@ -137,7 +140,14 @@ function compression(
  */
 export type DeviceOptions = Pick<
 	Switches,
-	'copyUploads' | 'depth' | 'hdr' | 'parallelCompile' | 'freshShaders' | 'compression' | 'cells'
+	| 'copyUploads'
+	| 'depth'
+	| 'hdr'
+	| 'half'
+	| 'parallelCompile'
+	| 'freshShaders'
+	| 'compression'
+	| 'cells'
 > & {
 	/** The anti-aliasing mode. */
 	antialias: AntialiasMode;
@@ -206,6 +216,21 @@ export function sceneColorFormat(
 }
 
 /**
+ * The half precision bit of the device's shaders: set where the scene shaders do their color math
+ * at half precision. `wanted` comes from the ?half= switch, and without it each GPU path keeps full
+ * precision. WebGPU needs the device feature `shader-f16` for it, and WebGL2 runs that math at
+ * `mediump`, which every WebGL2 device has.
+ */
+export function halfPrecision(
+	tier: Tier,
+	report: DeviceReport,
+	wanted: boolean | undefined,
+): number {
+	if (wanted !== true) return 0;
+	return tier === 'webgl2' || report.webgpu.features.includes('shader-f16') ? PERMUTATION_HALF : 0;
+}
+
+/**
  * The device and the canvas as the engine uses them on a tier, from the capability report and the
  * options. The test switches make the WebGL2 path copy uploads out of shared memory even where
  * WebGL reads it, force a WebGL2 depth mode, make WebGL2 wait for each program's compile, or force
@@ -216,6 +241,7 @@ export function sceneColorFormat(
 export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOptions): CoreDevice {
 	const sceneColor = sceneColorFormat(tier, report, options);
 	const toneMap = sceneColor === FORMAT_CANVAS ? PERMUTATION_TONE_MAP : 0;
+	const half = halfPrecision(tier, report, options.half);
 	const common = {
 		parallelCompile: options.parallelCompile,
 		freshShaders: options.freshShaders,
@@ -235,7 +261,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 			maxTextureSize: 0,
 			sharedUploads: true,
 			depth: 'reversed',
-			shaderBits: toneMap,
+			shaderBits: toneMap | half,
 			...common,
 		};
 	}
@@ -252,7 +278,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		sharedUploads:
 			!options.copyUploads && uploads !== null && uploads.bufferSubData && uploads.texSubImage2D,
 		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, options.depth),
-		shaderBits: (multiDraw ? PERMUTATION_DRAW_INDEX : 0) | toneMap,
+		shaderBits: (multiDraw ? PERMUTATION_DRAW_INDEX : 0) | toneMap | half,
 		...common,
 	};
 }
