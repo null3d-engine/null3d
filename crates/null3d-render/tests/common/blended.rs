@@ -20,6 +20,8 @@ pub struct Blended {
     pub box_object: Handle,
     pub sphere: u32,
     pub batch: Handle,
+    /// The box, the sphere and the plane.
+    pub objects: [Handle; 3],
 }
 
 /// Adds a mesh and a blended unlit material of `blend` bits, and returns their engine ids.
@@ -57,9 +59,9 @@ pub fn add_scene<B: FrameBuilder>(world: &mut World<B>) -> Blended {
     let (mesh, material) = blended_pair(world, &box_mesh, 0);
     let box_object = add_blended(world, mesh, material, -5.0);
     let (mesh, material) = blended_pair(world, &sphere_mesh, feature::ADDITIVE);
-    add_blended(world, mesh, material, 0.0);
+    let sphere_object = add_blended(world, mesh, material, 0.0);
     let (mesh, material) = blended_pair(world, &grid(1, 1), feature::MULTIPLY);
-    add_blended(world, mesh, material, 5.0);
+    let plane = add_blended(world, mesh, material, 5.0);
     let (mesh, material) = blended_pair(world, &grid(2, 2), 0);
     let batch = world
         .batches
@@ -73,5 +75,6 @@ pub fn add_scene<B: FrameBuilder>(world: &mut World<B>) -> Blended {
         box_object,
         sphere,
         batch,
+        objects: [box_object, sphere_object, plane],
     }
 }

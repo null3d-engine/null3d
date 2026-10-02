@@ -121,6 +121,21 @@ fn check<B: FrameBuilder>(mut world: World<B>, name: &str) {
         [(GRID, 1), (sphere, 1), (GRID, 1), (PLANE, 1), (BOX, 1)],
         "{name}: culled row"
     );
+
+    // Once the last blended object and batch are gone, the pass sorts no rows, and keeps none of
+    // the frame before.
+    let gone = blended.objects.map(Command::destroy);
+    world.scene.apply_commands(&gone, world.frame).unwrap();
+    world
+        .batches
+        .destroy(blended.batch, world.frame, world.scene.cell_table_mut())
+        .unwrap();
+    step(&mut world, &mut mock, true);
+    assert_eq!(
+        states.blended_draws(&world_commands(&world)),
+        [],
+        "{name}: nothing blends"
+    );
 }
 
 /// The commands of the frame that recorded last.
