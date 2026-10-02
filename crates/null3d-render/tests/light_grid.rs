@@ -4,6 +4,8 @@
 //! reads holds lights, the GPU's parameters for them, and what the job workers list.
 #![allow(clippy::disallowed_methods)] // Native job workers are threads.
 
+use std::mem::offset_of;
+use std::ops::Range;
 use std::thread;
 
 use null3d_core::culling::Frustum;
@@ -366,13 +368,21 @@ fn gpu_cases() -> [(Lens, Affine, usize, u64, f32, f32, LightLimits); 3] {
     ]
 }
 
+/// How far a decimal of the parameters may differ from the file, as a share of its size or of 1,
+/// whichever is larger. The parameters' planes and slice bounds come from tangents, logarithms and
+/// powers, which the math library of each system rounds in its own way, so the file that one
+/// system writes differs from another's in the last bits of those decimals. The lights and grids
+/// do not differ.
+const PARAMS_TOLERANCE: f32 = 1e-6;
+
 /// The file of the GPU's light clustering test page, as 32-bit words: the number of cases, then
 /// for each case the parameters' words and their count before them, the light list's words and
 /// the light count before them, and the grid's words that the job workers list and their count
-/// before them.
-fn gpu_fixture() -> Vec<u32> {
+/// before them. Also the ranges of words that are the parameters' decimals.
+fn gpu_fixture() -> (Vec<u32>, Vec<Range<usize>>) {
     let cases = gpu_cases();
     let mut out = vec![cases.len() as u32];
+    let mut decimals = Vec::new();
     for (lens, world, count, seed, depth, range, limits) in cases {
         let view = view(lens, &world);
         let lights = lights_in(&mut Rng(seed), &view, &world, count, depth, range);
@@ -383,7 +393,9 @@ fn gpu_fixture() -> Vec<u32> {
         let listed = grid.lights();
         assert_eq!(params.shape[3] as usize, listed.len());
         out.push(params.as_words().len() as u32);
+        let first_decimal = out.len() + offset_of!(ClusterParams, depth_row) / 4;
         out.extend_from_slice(params.as_words());
+        decimals.push(first_decimal..out.len());
         out.push(listed.len() as u32);
         for light in listed {
             // SAFETY: a light record is `repr(C)` and made of 32-bit values only.
@@ -393,7 +405,7 @@ fn gpu_fixture() -> Vec<u32> {
         out.push(grid.words().len() as u32);
         out.extend_from_slice(grid.words());
     }
-    out
+    (out, decimals)
 }
 
 #[test]
@@ -402,13 +414,27 @@ fn the_gpu_test_page_reads_what_the_job_workers_list() {
         env!("CARGO_MANIFEST_DIR"),
         "/../../tests/fixtures/light-clusters.bin"
     );
-    let expected: Vec<u8> = gpu_fixture().iter().flat_map(|w| w.to_le_bytes()).collect();
+    let (expected, decimals) = gpu_fixture();
     if std::env::var_os("NULL3D_UPDATE_GENERATED").is_some() {
-        std::fs::write(path, &expected).unwrap();
+        let bytes: Vec<u8> = expected.iter().flat_map(|w| w.to_le_bytes()).collect();
+        std::fs::write(path, bytes).unwrap();
     }
-    let actual = std::fs::read(path).unwrap_or_default();
+    let bytes = std::fs::read(path).unwrap_or_default();
+    let actual: Vec<u32> = bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|&b| u32::from_le_bytes(b))
+        .collect();
+    let close = |at: usize, a: u32, b: u32| {
+        let (x, y) = (f32::from_bits(a), f32::from_bits(b));
+        a == b
+            || (decimals.iter().any(|range| range.contains(&at))
+                && (x - y).abs() <= PARAMS_TOLERANCE * x.abs().max(y.abs()).max(1.0))
+    };
     assert!(
-        actual == expected,
+        actual.len() == expected.len()
+            && (actual.iter().zip(&expected).enumerate()).all(|(at, (&a, &b))| close(at, a, b)),
         "{path} is out of date: run `NULL3D_UPDATE_GENERATED=1 cargo test -p null3d-render --test light_grid`"
     );
 }
