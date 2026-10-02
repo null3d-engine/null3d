@@ -156,9 +156,21 @@ export function pagePath(scene: BenchScene, kind: BenchPageKind, switches = ''):
 	return `/bench/pages/${page.folder}/${scene}.html?${[page.switches, switches].filter(Boolean).join('&')}`;
 }
 
-/** The dev-server path of the page that draws one scene's hold frame. */
+/**
+ * The quality preset switch of every page whose frame a test compares with an image from elsewhere.
+ * The references and three.js's frames come from desktops, where the engine chooses High within
+ * each GPU path's ceiling. A phone or a tablet would choose a lighter preset, whose anti-aliasing
+ * and anisotropy change the image, so each such page names High and every device draws the
+ * desktop's settings. The switch also keeps the engine's crash marker from lowering the preset.
+ */
+export const REFERENCE_PRESET_SWITCH = 'preset=high';
+
+/**
+ * The dev-server path of the page that draws one scene's hold frame, at the references' preset. A
+ * three.js twin that copies the preset's settings reads the same switch.
+ */
 export function holdPagePath(scene: BenchScene, kind: PageKind): string {
-	return pagePath(scene, kind, 'hold');
+	return pagePath(scene, kind, `hold&${REFERENCE_PRESET_SWITCH}`);
 }
 
 /** The name that a comparison's image files start with. */

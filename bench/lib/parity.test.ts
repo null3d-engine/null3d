@@ -256,16 +256,22 @@ describe('the scenes', () => {
 });
 
 describe('the pages', () => {
-	test('each hold page lives in its engine folder with its GPU switch and hold mode', () => {
+	test('each hold page lives in its engine folder with its GPU switch, hold mode and preset', () => {
 		expect(holdPagePath('s1', 'threejs-webgl')).toBe(
-			'/bench/pages/threejs/s1.html?renderer=webgl&hold',
+			'/bench/pages/threejs/s1.html?renderer=webgl&hold&preset=high',
 		);
 		expect(holdPagePath('s1-static', 'threejs-webgpu')).toBe(
-			'/bench/pages/threejs/s1-static.html?renderer=webgpu&hold',
+			'/bench/pages/threejs/s1-static.html?renderer=webgpu&hold&preset=high',
 		);
-		expect(holdPagePath('s2', 'null3d-webgl2')).toBe('/bench/pages/null3d/s2.html?gpu=webgl2&hold');
-		expect(holdPagePath('s2', 'null3d-webgpu')).toBe('/bench/pages/null3d/s2.html?gpu=webgpu&hold');
-		expect(holdPagePath('s1', 'null3d-compat')).toBe('/bench/pages/null3d/s1.html?gpu=compat&hold');
+		expect(holdPagePath('s2', 'null3d-webgl2')).toBe(
+			'/bench/pages/null3d/s2.html?gpu=webgl2&hold&preset=high',
+		);
+		expect(holdPagePath('s2', 'null3d-webgpu')).toBe(
+			'/bench/pages/null3d/s2.html?gpu=webgpu&hold&preset=high',
+		);
+		expect(holdPagePath('s1', 'null3d-compat')).toBe(
+			'/bench/pages/null3d/s1.html?gpu=compat&hold&preset=high',
+		);
 		expect(pagePath('s1', 'scene-code', 'n=1000')).toBe('/bench/pages/scene-code/s1.html?n=1000');
 	});
 
