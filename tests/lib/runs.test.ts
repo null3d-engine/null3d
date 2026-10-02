@@ -304,6 +304,17 @@ describe('the checks plan', () => {
 		expect(planItems(parseArgs(['--plan', 'scale', 'Safari']))).toBeUndefined();
 	});
 
+	it('starts the preset change page at its preset through the switch, and fails another start', () => {
+		const change = items.find((item) => item.id === 'preset-change-webgl2');
+		if (!change) throw new Error('the plan lacks the preset change page');
+		expect(change.path).toBe('/tests/pages/preset-change.html?gpu=webgl2&preset=medium&to=low');
+		// A phone that started at its own preset ran Low, and changed nothing.
+		const result = { ok: true, tier: 'webgl2', started: 'low', mode: { preset: 'low' } };
+		expect(judge(change.check, result, NONE_MISSING)).toEqual([
+			'the engine started at low, not medium',
+		]);
+	});
+
 	it("notes each device's quality preset, and fails one that the chooser does not give", () => {
 		const quality = items.find((item) => item.id === 'quality');
 		if (!quality) throw new Error('the plan lacks the quality page');
@@ -506,7 +517,7 @@ describe('the checks plan', () => {
 		expect(images.map((item) => item.id)).toEqual(IMAGE_RUNS.map((run) => `image-${run.id}`));
 		const compat = items.find((item) => item.id === 'image-replay-textures-compat');
 		if (!compat) throw new Error('the plan lacks the texture pages');
-		expect(compat.path).toBe('/tests/pages/replay-textures.html?gpu=compat');
+		expect(compat.path).toBe('/tests/pages/replay-textures.html?gpu=compat&preset=high');
 		expect(judge(compat.check, { ok: false, error: 'no WebGPU adapter' }, NO_WEBGPU)).toBe('skip');
 		const failed = { ok: true, errors: ['a view is invalid'], pixels: '', width: 0, height: 0 };
 		expect(judge(compat.check, failed, NONE_MISSING)).toEqual([
@@ -814,7 +825,9 @@ describe('the parity plan', () => {
 			scene: 's1',
 			pair: { candidate: 'null3d-compat', reference: 'threejs-webgpu' },
 		});
-		for (const { path } of items) expect(path).toMatch(/^\/bench\/pages\/.+\.html\?.+&hold$/);
+		// Every page draws at the references' preset, which a phone would otherwise not choose.
+		for (const { path } of items)
+			expect(path).toMatch(/^\/bench\/pages\/.+\.html\?.+&hold&preset=high$/);
 		const pairs = items.flatMap(({ id, check }) =>
 			check.kind === 'parity' ? [`${id} ${check.pair.reference}`] : [],
 		);
@@ -826,7 +839,7 @@ describe('the parity plan', () => {
 			]),
 		);
 		expect(item('parity-s2-null3d-webgl2').path).toBe(
-			'/bench/pages/null3d/s2.html?gpu=webgl2&hold',
+			'/bench/pages/null3d/s2.html?gpu=webgl2&hold&preset=high',
 		);
 	});
 
@@ -1446,7 +1459,7 @@ describe('the depth plan', () => {
 			'image-depth-precision-reversed-webgl2',
 		]);
 		expect(items.find((item) => item.id.endsWith('reversed-gl-webgl2'))?.path).toBe(
-			'/tests/pages/depth-precision.html?gpu=webgl2&hold=0&depth=reversed-gl',
+			'/tests/pages/depth-precision.html?gpu=webgl2&hold=0&preset=high&depth=reversed-gl',
 		);
 		expect(items.every((item) => item.check.kind === 'image')).toBe(true);
 	});

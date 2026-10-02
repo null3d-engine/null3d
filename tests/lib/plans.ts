@@ -73,6 +73,8 @@ import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts'
 import {
 	HEAVY_SPHERES,
 	heavyCheckProblems,
+	PRESET_CHANGE,
+	PRESET_CHANGE_SWITCHES,
 	type PresetChangeResult,
 	type PresetMode,
 	presetChangeProblems,
@@ -128,6 +130,8 @@ export interface JudgeContext {
 	note?(text: string): void;
 	/** The runner whose results these are, and its device, where image tests find their references. */
 	runner?: { name: string; device: string };
+	/** Brave only: the state of its Shields, or null when the run did not record it. */
+	braveShields?: 'on' | 'off' | null;
 	/** Where image tests find references and save candidates, when not in the repository's folders. */
 	harnessDirs?: HarnessDirs;
 }
@@ -294,7 +298,7 @@ export function checksPlan(): PlanItem<Check>[] {
 				`preset-change-${tier}`,
 				'preset-change',
 				{ kind: 'preset-change', tier },
-				{ switches: [`gpu=${tier}`, 'from=medium', 'to=low'] },
+				{ switches: [`gpu=${tier}`, ...PRESET_CHANGE_SWITCHES] },
 			),
 		),
 		...TIERS.map((tier) =>
@@ -902,7 +906,7 @@ export function judge(
 		case 'engine':
 			return engineProblems(result as unknown as EngineResult, check.mode, check.tier);
 		case 'capture':
-			return captureProblems(result as unknown as CaptureResult, check.mode);
+			return captureProblems(result as unknown as CaptureResult, check.mode, context?.braveShields);
 		case 'ktx2': {
 			const ktx2 = result as unknown as Ktx2Result;
 			context?.note?.(ktx2FormatsNote(ktx2, check.tier));
@@ -946,7 +950,11 @@ export function judge(
 				: heavyCheckProblems(quality.mode, chosenPreset(quality));
 		}
 		case 'preset-change':
-			return presetChangeProblems(result as unknown as PresetChangeResult, 'medium', 'low');
+			return presetChangeProblems(
+				result as unknown as PresetChangeResult,
+				PRESET_CHANGE.from,
+				PRESET_CHANGE.to,
+			);
 		case 'bench': {
 			const frames = Number(result.frames ?? 0);
 			const cpu = (result.cpuMs as { median?: number } | undefined)?.median ?? 0;

@@ -687,6 +687,7 @@ async function runPlan(
 			imageDir: join(RUNS_DIR, run, name),
 			storedBaselines,
 			runner: { name, device: runner.device },
+			braveShields,
 		};
 		// The images this runner saved for review in an earlier run are stale once this run is judged.
 		clearCandidates({ runner: name, device: runner.device });
