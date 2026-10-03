@@ -56,6 +56,7 @@ describe('the smoke plan', () => {
 			'isolation',
 			'shaders',
 			'uploads',
+			'mip-levels',
 			'shader-library-webgpu',
 			'shader-library-webgl2',
 			'preset-change-webgl2',
@@ -313,5 +314,74 @@ describe('the warm-up time plan', () => {
 		const results = new Map(s4.map((item, k) => [item.id, result(loads[k] as WarmUpTimeResult)]));
 		const table = warmUpTimeSummary(s4, (id) => results.get(id))?.split('\n');
 		expect(table?.at(-1)).toBe('| s4 | webgl2 | low | no | 6 | 1000 | 2000 | 40 | 1040 |');
+	});
+});
+
+describe('the GPU pages of the checks plan', () => {
+	const items = checksPlan();
+	const checkOf = (id: string) => {
+		const found = items.find((item) => item.id === id);
+		if (!found) throw new Error(`the checks plan has no ${id}`);
+		return found.check;
+	};
+	const notes: string[] = [];
+	const context = {
+		resultOf: () => undefined,
+		imageDir: '',
+		note: (text: string) => notes.push(text),
+	};
+
+	it('passes a shader input that the driver removed, with a note, and fails one never declared', () => {
+		notes.length = 0;
+		const removed = { shader: 'debug_view.webgl2_receive_shadows.main', stage: 'fragment' };
+		const result = {
+			ok: true,
+			glslPrograms: 279,
+			webgpu: true,
+			failures: [],
+			removed: [{ ...removed, name: '_group_0_binding_9_fs' }],
+		};
+		expect(judge(checkOf('shaders'), result, NONE_MISSING, context)).toEqual([]);
+		expect(notes.join('\n')).toContain('_group_0_binding_9_fs');
+		const undeclared = { ...removed, log: 'the source declares no texture uniform _x' };
+		expect(
+			judge(checkOf('shaders'), { ...result, failures: [undeclared] }, NONE_MISSING, context),
+		).toEqual([`${removed.shader} fragment: ${undeclared.log}`]);
+	});
+
+	it("fails the mip levels page only on the engine's way, and notes the ways that work", () => {
+		notes.length = 0;
+		const level = (wrong: number) => ({ level: 1, status: '0x8cd5', left: [], right: [], wrong });
+		const way = (name: string, wrong: number) => ({
+			way: name,
+			format: 'srgb',
+			layers: 4,
+			layer: 2,
+			levels: [level(wrong)],
+			errors: [],
+			ok: wrong === 0,
+		});
+		const result = {
+			ok: true,
+			ways: [way('engine', 0), way('engine-copy', 0), way('blit', 1024)],
+			working: ['engine'],
+			failing: ['blit'],
+		};
+		expect(judge(checkOf('mip-levels'), result, NONE_MISSING, context)).toEqual([]);
+		expect(notes).toEqual(['mip levels and array copies on WebGL2: working engine; failing blit']);
+		const black = { ...result, ways: [way('engine', 1024), way('engine-copy', 0)] };
+		expect(judge(checkOf('mip-levels'), black, NONE_MISSING, context)).toEqual([
+			'engine (srgb, layer 2 of 4): level 1: 1024 wrong texels,  | ',
+		]);
+		expect(
+			judge(
+				checkOf('mip-levels'),
+				{ ok: false, error: 'no WebGL2 context' },
+				{
+					webgpu: false,
+					webgl2: true,
+				},
+			),
+		).toBe('skip');
 	});
 });
