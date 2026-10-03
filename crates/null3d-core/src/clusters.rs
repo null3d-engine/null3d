@@ -236,10 +236,7 @@ impl RowClusters {
             }
             (None, RowCells::Each(cells)) => {
                 let cells = &cells[..n];
-                ends.fill(0);
-                for &cell in cells {
-                    ends[cell as usize] += 1;
-                }
+                count_cells(cells, ends);
                 let needed: usize = ends
                     .iter()
                     .map(|&count| (count as usize).div_ceil(CLUSTER_ROWS as usize))
@@ -247,19 +244,7 @@ impl RowClusters {
                 if needed > self.xs.len() {
                     return false;
                 }
-                // A stable counting sort: each count becomes its cell's start, and placing the
-                // rows moves it to its cell's end.
-                let mut total = 0;
-                for at in ends.iter_mut() {
-                    let count = *at;
-                    *at = total;
-                    total += count;
-                }
-                for (row, &cell) in cells.iter().enumerate() {
-                    let at = &mut ends[cell as usize];
-                    grouped[*at as usize] = row as u32;
-                    *at += 1;
-                }
+                group_by_cell(cells, ends, &mut grouped[..n]);
                 let mut start = 0;
                 for (cell, &end) in ends.iter().enumerate() {
                     let (s, e) = (start, end as usize);
@@ -310,10 +295,36 @@ impl RowClusters {
     }
 }
 
+/// Counts the rows in each cell: `counts[cell]` for every cell index below [`MAX_CELLS`].
+pub(crate) fn count_cells(cells: &[u32], counts: &mut [u32]) {
+    counts.fill(0);
+    for &cell in cells {
+        counts[cell as usize] += 1;
+    }
+}
+
+/// Lists rows `0..cells.len()` grouped by cell, in increasing cell index and in row order
+/// within a cell: a stable counting sort. `ends` holds each cell's count from [`count_cells`]
+/// and ends holding where each cell's rows end in `grouped`.
+pub(crate) fn group_by_cell(cells: &[u32], ends: &mut [u32], grouped: &mut [u32]) {
+    // Each count becomes its cell's start, and placing the rows moves it to its cell's end.
+    let mut total = 0;
+    for at in ends.iter_mut() {
+        let count = *at;
+        *at = total;
+        total += count;
+    }
+    for (row, &cell) in cells.iter().enumerate() {
+        let at = &mut ends[cell as usize];
+        grouped[*at as usize] = row as u32;
+        *at += 1;
+    }
+}
+
 /// Sorts rows along a Morton curve through the box around their finite centres, and writes them
-/// in curve order to `out`. The rows are `members`, or rows `0..out.len()` for `None`. The other
-/// slices are working space as long as `out`.
-fn morton_sort(
+/// in curve order to `out`, with their codes in curve order in `codes`. The rows are `members`,
+/// or rows `0..out.len()` for `None`. The other slices are working space as long as `out`.
+pub(crate) fn morton_sort(
     [xs, ys, zs]: [&[f32]; 3],
     members: Option<&[u32]>,
     codes: &mut [u32],
@@ -358,7 +369,7 @@ fn morton_sort(
 }
 
 /// Grows `v` to `len` entries of `fill`, or fails when memory cannot grow.
-fn grow<T: Copy>(v: &mut Vec<T>, len: usize, fill: T) -> Result<(), TryReserveError> {
+pub(crate) fn grow<T: Copy>(v: &mut Vec<T>, len: usize, fill: T) -> Result<(), TryReserveError> {
     if v.len() < len {
         v.try_reserve_exact(len - v.len())?;
         v.resize(len, fill);
