@@ -27,6 +27,11 @@ export interface RunOptions {
 	 */
 	shadows: number | null;
 	/**
+	 * `?far=`: the frames between two draws of a far shadow cascade, from 1 to 8, in the scenes that
+	 * draw shadows, or null for the quality preset's.
+	 */
+	far: number | null;
+	/**
 	 * `?shadowCascades=`, `?shadowMapSize=` and `?shadowFilter=`: quality settings that replace the
 	 * preset's on a null3D page, such as a candidate preset's values on a phone, or null to keep the
 	 * preset's. The engine checks each value.
@@ -86,7 +91,7 @@ export function pageReport(params: URLSearchParams): 'hold' | 'demo' | 'soak' | 
 const whole = (v: number) => Number.isSafeInteger(v) && v > 0;
 
 /**
- * Reads `?hold`, `?demo`, `?n=`, `?seconds=`, `?soak=`, `?shadows=`, `?governor=` and the shadow
+ * Reads `?hold`, `?demo`, `?n=`, `?seconds=`, `?soak=`, `?shadows=`, `?far=`, `?governor=` and the shadow
  * quality settings.
  */
 export function readRunOptions(params: URLSearchParams): RunOptions {
@@ -124,6 +129,12 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 			'shadows',
 			(v) => Number.isInteger(v) && v >= 1 && v <= 4,
 			'a cascade count from 1 to 4',
+		),
+		far: readNumber(
+			params,
+			'far',
+			(v) => Number.isInteger(v) && v >= 1 && v <= 8,
+			'a whole number of frames from 1 to 8',
 		),
 		shadowCascades: readNumber(params, 'shadowCascades', whole, 'a cascade count from 1 to 4'),
 		shadowMapSize: readNumber(params, 'shadowMapSize', whole, 'a size such as 2048'),

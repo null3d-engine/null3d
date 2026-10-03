@@ -84,7 +84,7 @@ const sun = scene.createDirectionalLight({
   castShadows: true,
   shadow: { cascades: 3, mapSize: 2048, distance: 100 },
 });
-sun.setShadow({ bias: 1, normalBias: 1.5 });
+sun.setShadow({ bias: 0.02, normalBias: 0.04 });
 ```
 
 Spot and point lights cast shadows with `castShadows` too. Their `shadow` option and `setShadow` take the biases alone:
@@ -96,7 +96,7 @@ const lamp = scene.createSpotLight({
   range: 15,
   intensity: 80,
   castShadows: true,
-  shadow: { bias: 1 },
+  shadow: { bias: 0.02 },
 });
 ```
 
@@ -114,8 +114,8 @@ Point lights cast them where the quality preset's `pointLightShadows` is on, as 
 | `new AmbientLight(color, intensity)` | `createAmbientLight({ color, intensity })` |
 | `scene.add(light)` or `group.add(light)` | Nothing for the scene; the `parent` option or `setParent(group)` for a group |
 | `light.visible = false` | `light.setVisible(false)` |
-| `light.castShadow = true`, `light.shadow.mapSize`, `light.shadow.bias` | `castShadows: true`, and `shadow: { mapSize, bias, normalBias }` in texels of each cascade. [Shadows](../concepts/shadows.md) covers the differences. |
-| `spotLight.castShadow = true` or `pointLight.castShadow = true`, and `shadow.bias` | `castShadows: true`, and `shadow: { bias, normalBias }` in texels of the light's tile. The quality preset sets the tile size. |
+| `light.castShadow = true`, `light.shadow.mapSize`, `light.shadow.bias` | `castShadows: true`, and `shadow: { mapSize, bias, normalBias }`, both biases in meters. [Shadows](../concepts/shadows.md) covers the differences. |
+| `spotLight.castShadow = true` or `pointLight.castShadow = true`, and `shadow.bias` | `castShadows: true`, and `shadow: { bias, normalBias }` in meters. The quality preset sets the tile size. |
 
 A three.js `distance` of 0 means a light with no end. null3D needs a finite range, so pick the distance where the light no longer matters.
 
@@ -171,8 +171,8 @@ The shadows of a directional light. The camera's view splits into cascades by di
 | --- | --- |
 | `cascades?: number` | The cascades, a whole number from 1 to 4. More cascades keep shadows sharp further from the camera, and each draws the shadow casters once more. The default is the quality preset's `shadowCascades`. |
 | `mapSize?: number` | Texels on each side of each cascade's shadow map: 256, 512, 1,024, 2,048 or 4,096. The default is the quality preset's `shadowMapSize`. |
-| `bias?: number` | How far each receiving surface moves toward the light before its shadow test, in texels of its cascade, at least 0. Raise it when surfaces show stripes of shadow on themselves. The default is 0.5. |
-| `normalBias?: number` | How far each receiving surface moves along its normal before its shadow test, in texels of its cascade, at least 0. The default is 1. |
+| `bias?: number` | How far each receiving surface moves toward the light before its shadow test, in meters, at least 0. One texel of the surface's cascade caps it. A surface takes this times the tangent of its angle to the light, up to twice it. Raise it when surfaces show stripes of shadow on themselves. The default is 0.01. |
+| `normalBias?: number` | How far each receiving surface moves along its normal before its shadow test, in meters, at least 0. One texel of the surface's cascade caps it. A surface takes this times the sine of its angle to the light. The default is 0.02. |
 | `distance?: number` | The distance from the camera in meters, along its view, out to which shadows fall, above 0. Shadows fade out over the last tenth of it. The camera's far plane ends them sooner. The default is 200. |
 
 ### `HemisphereLight`
@@ -228,8 +228,8 @@ The shadows of a point or spot light. A spot light draws its casters' depth into
 
 | Member | Description |
 | --- | --- |
-| `bias?: number` | How far each receiving surface moves toward the light before its shadow test, in texels of the light's tile at the surface's distance, at least 0. Raise it when surfaces show stripes of shadow on themselves. The default is 0.5. |
-| `normalBias?: number` | How far each receiving surface moves along its normal before its shadow test, in texels of the light's tile at the surface's distance, at least 0. The default is 1. |
+| `bias?: number` | How far each receiving surface moves toward the light before its shadow test, in meters, at least 0. One texel of the light's tile at the surface's distance caps it. A surface takes this times the tangent of its angle to the light, up to twice it. Raise it when surfaces show stripes of shadow on themselves. The default is 0.01. |
+| `normalBias?: number` | How far each receiving surface moves along its normal before its shadow test, in meters, at least 0. One texel of the light's tile at the surface's distance caps it. A surface takes this times the sine of its angle to the light. The default is 0.02. |
 
 ### `PointLight`
 

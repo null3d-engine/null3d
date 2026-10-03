@@ -44,19 +44,20 @@ Image tests compare one frame with its reference. So they catch a change, but no
 
 ### The figures and the faults they catch
 
-On 3 October 2026, Chrome on the Mac's GPU and SwiftShader on the Mac gave these figures:
+D-16 gives shadow biases in meters, and picks each receiver's cascade by its distance from the camera ([D-16](decisions/D-16-moving-casters-and-bias.md)). After it, on 3 October 2026, Chrome on the Mac's GPU and SwiftShader on the Mac gave these figures:
 
 | Scene | Pixels changed, % | Edge offset, px | Stair steps, px |
 | --- | --- | --- | --- |
-| Shadow scene | 0 (SwiftShader 0.007) | 0.120 (SwiftShader 0.132 to 0.138) | 0.29 (SwiftShader 0.27); the reference 0.11 |
-| S2, three cascades | 0.0009 (SwiftShader 0.0004) | 0.077 to 0.085 | |
-| S4 | 0.003 to 0.004 | 0.090 to 0.098 | |
+| Shadow scene | 0.0008 (SwiftShader 0.0015) | 0.100 to 0.109 (SwiftShader 0.092 to 0.108) | 0.15 (SwiftShader 0.155); the reference 0.095 |
+| S2, three cascades | 0 | 0.099 to 0.117 (SwiftShader 0.095 to 0.127) | |
+| S4 | 0.0017 to 0.0022 (SwiftShader 0.0004 to 0.0009) | 0.100 (SwiftShader 0.100 to 0.103) | |
 
 Two faults, put back on purpose in builds of their own, show what the figures catch:
 
-- Cascades that no longer snap to whole texels, as before #198, changed 0.47% of the shadow scene's pixels, 0.14% of S2's and 1.9% of S4's. The limit is 0.05% for every scene.
-- The split that leaned 80% toward the logarithmic spread, as before #211, raised the long edge's stair steps from 0.29 px to 0.53 px. It raised the edge offset from 0.12 px to 0.17 px in the shadow scene, and from 0.095 px to 0.14 px in S4. S2's rose only from 0.080 px to 0.087 px, because its trees cast few shadows in the middle distance.
-- The limit of the stair steps is 0.4 px. The limits of the edge offset are 0.15 px for the shadow scene, 0.10 px for S2 and 0.12 px for S4.
+- Cascades that no longer snap to whole texels, as before #198, changed 0.52% of the shadow scene's pixels (SwiftShader 0.49% to 0.50%). They changed 0.30% to 0.36% of S2's and 3.6% of S4's. The limit is 0.05% for every scene.
+- The second fault is the split that leaned 80% toward the logarithmic spread, as before #211. It raised the long edge's stair steps from 0.15 px to 0.23 px on both GPUs. It raised S4's edge offset from 0.100 px to between 0.116 px and 0.123 px. It lowered the shadow scene's edge offset to between 0.070 px and 0.082 px. It left S2's alone, because S2's trees cast few shadows in the middle distance.
+- The limit of the stair steps is 0.19 px. The limit of S4's edge offset is 0.11 px. The edge offset limits of the shadow scene and S2 are 0.15 px. They catch only large faults, as the split fault does not raise those figures.
+- Before D-16, the stair steps measured 0.29 px, and the split fault raised them to 0.53 px. S2's edge offset measured 0.073 px to 0.085 px. Biases in meters, capped at one texel, raised S2's figure, so its limit rose from 0.10 px.
 
 ### Why the checks work this way
 
@@ -75,7 +76,7 @@ Two faults, put back on purpose in builds of their own, show what the figures ca
 - An image test keeps the engine's defaults, so its references do not depend on the parity check. Where a twin draws with no tone mapping and the test's sketch keeps ACES, the list gives the sketch `tone=none` (`sketchSwitches`). `featureImagePath` in `tests/image/manifest.ts` builds that page.
 - The tone mappings compare without anti-aliasing on both sides (`antialias=none`). null3D averages the samples of an edge before it tone maps them, and WebGLRenderer after, so a bright edge differs by design. The tone mapping test still compares each tile's color with anti-aliasing on. Only WebGLRenderer draws the tone mapping twin, so those scenes have no baseline. WebGLRenderer clears to a background color with no tone mapping or exposure, and null3D tone maps its background. So the twin draws its background as a plane with a basic material.
 - A comparison passes when fewer than 0.1% of the pixels differ, or when no more differ than between three.js's two renderers on the same scene. Each run saves both images and their diff in `test-results/parity/`.
-- The shadow scene passes when fewer than 0.5% of its pixels differ: `SHADOW_MAX_DIFFERENT_PERCENT` in `bench/lib/parity.ts`. three.js's `PCFShadowMap` softens each shadow edge with five rotated taps of one shadow map. null3D blends a 3 x 3 square of a cascade's texels, whose texels have another size. The shadows fall in the same places, and only the pixels that an edge crosses differ. On 3 October 2026 with the 3 x 3 filter, on SwiftShader, 0.243% of the pixels differed on core WebGPU, 0.282% in compatibility mode and 0.256% on WebGL2. three.js's two renderers differed by 0.023%. The same day, Chrome on the Mac's GPU gave 0.229% on WebGPU, 0.264% in compatibility mode and 0.235% on WebGL2, and three.js's two renderers differed by 0.022%. The split that leans 65% toward the logarithmic spread gave these figures. With a lean of 80%, on 2 October, the figures were 0.326%, 0.363% and 0.331% on SwiftShader, and 0.313%, 0.351% and 0.317% on the Mac. Before the filter, with one filtered tap, about 0.18% differed on each tier: the softer edges spread wider than three.js's.
+- The shadow scene passes when fewer than 0.5% of its pixels differ: `SHADOW_MAX_DIFFERENT_PERCENT` in `bench/lib/parity.ts`. three.js's `PCFShadowMap` softens each shadow edge with five rotated taps of one shadow map. null3D blends a 3 x 3 square of a cascade's texels, whose texels have another size. The shadows fall in the same places, and only the pixels that an edge crosses differ. On 3 October 2026 with the 3 x 3 filter, on SwiftShader, 0.243% of the pixels differed on core WebGPU, 0.282% in compatibility mode and 0.256% on WebGL2. three.js's two renderers differed by 0.023%. The same day, Chrome on the Mac's GPU gave 0.229% on WebGPU, 0.264% in compatibility mode and 0.235% on WebGL2, and three.js's two renderers differed by 0.022%. The split that leans 65% toward the logarithmic spread gave these figures. Later that day, biases in meters and cascades picked by distance from the camera ([D-16](decisions/D-16-moving-casters-and-bias.md)) brought them down. SwiftShader gave 0.186% on core WebGPU, 0.230% in compatibility mode and 0.192% on WebGL2. The Mac gave 0.172%, 0.211% and 0.177%. With a lean of 80%, on 2 October, the figures were 0.326%, 0.363% and 0.331% on SwiftShader, and 0.313%, 0.351% and 0.317% on the Mac. Before the filter, with one filtered tap, about 0.18% differed on each tier: the softer edges spread wider than three.js's.
 - The shadow scene, `bench/scenes/shadows.ts`, is the `shadows` image test with three cascades. Its twin draws one map of 4,096 texels on each side, in a box that holds every shadow in the view.
 - On SwiftShader on 2 October 2026, every other scene stayed under 0.1% on every tier. The closest was the orthographic camera in compatibility mode, at 0.098%. three.js's own renderers differed by 0.155% on that scene.
 

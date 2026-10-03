@@ -478,9 +478,7 @@ impl GpuDrivenRenderer {
         arena: &mut UploadArena,
     ) -> Result<bool, RecordError> {
         let parity = input.parity();
-        let shadow = self
-            .settings
-            .shadow_frame(input.scene, parity, input.canvas);
+        let shadow = self.settings.shadow_frame(input);
         let camera = self.settings.camera_position(input.scene, parity);
         let tile_settings = self.settings.tile_settings();
         let filter = self.settings.shadow_quality().filter;

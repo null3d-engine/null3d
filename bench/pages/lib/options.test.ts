@@ -5,7 +5,7 @@ import { readChoice, readRunOptions } from './options';
 describe('readRunOptions', () => {
 	const read = (query: string) => readRunOptions(new URLSearchParams(query));
 
-	test('reads hold, demo, the count, the seconds, the soak, the shadow cascades and the governor', () => {
+	test('reads hold, demo, the count, the seconds, the soak, the shadow cascades, the far cascade interval and the governor', () => {
 		expect(read('')).toEqual({
 			hold: null,
 			demo: false,
@@ -13,18 +13,20 @@ describe('readRunOptions', () => {
 			seconds: null,
 			soak: null,
 			shadows: null,
+			far: null,
 			shadowCascades: null,
 			shadowMapSize: null,
 			shadowFilter: null,
 			governor: true,
 		});
-		expect(read('?hold&n=1000&seconds=2.5&shadows=3')).toEqual({
+		expect(read('?hold&n=1000&seconds=2.5&shadows=3&far=1')).toEqual({
 			hold: HOLD_TIME,
 			demo: false,
 			count: 1000,
 			seconds: 2.5,
 			soak: null,
 			shadows: 3,
+			far: 1,
 			shadowCascades: null,
 			shadowMapSize: null,
 			shadowFilter: null,
@@ -61,6 +63,9 @@ describe('readRunOptions', () => {
 			'hold=soon',
 			'shadows=0',
 			'shadows=5',
+			'far=0',
+			'far=9',
+			'far=1.5',
 			'shadows=2.5',
 			'shadowMapSize=big',
 			'shadowCascades=0',

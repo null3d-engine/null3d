@@ -29,15 +29,20 @@ struct ShadowCascades {
     /// The vector whose dot product with a position relative to the camera gives its distance
     /// along the camera's view, then the cascade count.
     forward: vec4f,
-    /// How far each cascade's receivers move along their normals, in meters.
-    normal_offsets: vec4f,
-    /// How far each cascade's receivers move their depth toward the light.
-    depth_biases: vec4f,
-    /// The texels on each side of each layer, the size of one texel in texture coordinates, the
-    /// texels on each side of the filter's square: 3 or 5, or less for the comparison sampler's
-    /// own blend of four texels, and what each distance along the view adds: 0 unless another
-    /// camera than the one that draws fitted the cascades, as the debug API's shadow camera does.
+    /// The size in meters of one texel of each cascade's layer.
+    texels: vec4f,
+    /// The light's bias toward the light and its normal bias, in meters, then 1 when receivers pick
+    /// their cascade by their distance from the camera, or 0 by their distance along its view, and
+    /// 0.
+    biases: vec4f,
+    /// The texels on each side of each layer, the size of one texel in texture coordinates, and
+    /// the texels on each side of the filter's square: 3 or 5, or less for the comparison
+    /// sampler's own blend of four texels.
     kernel: vec4f,
+    /// The camera that draws, relative to the camera that fitted the cascades, whose distances
+    /// pick each receiver's cascade: 0 unless another camera fitted them, as the debug API's
+    /// shadow camera does.
+    origin: vec4f,
 }
 
 /// The tiles of the shadow atlas, as the core writes them each frame.
@@ -45,7 +50,7 @@ struct ShadowTiles {
     /// Each tile's matrix from positions relative to the camera into its clip space.
     view_proj: array<mat4x4f, 24>,
     /// Each tile's texel size per meter of distance from its light, the light's bias and normal
-    /// bias in texels, and the light's tiles: 1 for a spot light, 6 for a point light.
+    /// bias in meters, and the light's tiles: 1 for a spot light, 6 for a point light.
     params: array<vec4f, 24>,
     /// The filter's values for the atlas's tiles, as the cascades' `kernel` holds them.
     kernel: vec4f,
@@ -60,21 +65,52 @@ struct ShadowTiles {
 /// The share of the shadow distance over which shadows fade out.
 const FADE_SHARE: f32 = 0.1;
 
+/// The most that a surface at a steep angle to the light scales its depth bias by.
+const MAX_SLOPE: f32 = 2.0;
+
+/// How far a receiver moves before its shadow lookup, relative to its position. `normal` is its unit
+/// normal, `to_light` the unit direction toward the light, `biases` the light's bias toward the
+/// light and normal bias in meters, and `texel` the size of a shadow map texel at the point. Each
+/// bias keeps its size in meters in every cascade, so it does not jump where one cascade gives way
+/// to the next. One texel caps it, as a finer map needs less. Then it scales by the surface's angle
+/// to the light: the normal bias by the angle's sine, and the bias toward the light by its tangent,
+/// up to `MAX_SLOPE`. A surface that faces the light moves little, so a caster's
+/// shadow starts where it stands on such a surface. One at a steep angle moves further, as its depth
+/// changes faster across each texel.
+fn bias_offset(normal: vec3f, to_light: vec3f, biases: vec2f, texel: f32) -> vec3f {
+    let cosine = clamp(dot(normal, to_light), 0.0, 1.0);
+    let sine = sqrt(1.0 - cosine * cosine);
+    let slope = min(sine, MAX_SLOPE * cosine) / max(cosine, 1e-4);
+    let capped = min(biases, vec2f(texel));
+    return to_light * (capped.x * slope) + normal * (capped.y * sine);
+}
+
 /// How much of the main directional light reaches a point: 1 in full light, 0 in full shadow.
-/// `relative` is the point's position relative to the camera, and `normal` its unit normal, which
-/// moves the point off its own surface before the lookup.
-fn sun_shadow(relative: vec3f, normal: vec3f) -> f32 {
-    let along = dot(relative, cascades.forward.xyz) + cascades.kernel.w;
+/// `relative` is the point's position relative to the camera, `normal` its unit normal, which
+/// moves the point off its own surface before the lookup, and `to_light` the unit direction toward
+/// the light.
+fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
     let count = u32(cascades.forward.w);
+    let seen = relative + cascades.origin.xyz;
+    let along = dot(seen, cascades.forward.xyz);
+    let end = cascades.ends[max(count, 1u) - 1u];
+    if count == 0u || along >= end {
+        return 1.0;
+    }
+    // Behind a perspective camera, a receiver's cascade comes from its distance from the camera,
+    // which turning the camera leaves alone, so its shadow stays the same as the view turns. Behind
+    // an orthographic camera, whose cascades have texels of one size, it comes from its distance
+    // along the view.
+    let distance = mix(along, length(seen) * length(cascades.forward.xyz), cascades.biases.z);
     var cascade = 0u;
-    while cascade < count && along >= cascades.ends[cascade] {
+    while cascade + 1u < count && distance >= cascades.ends[cascade] {
         cascade += 1u;
     }
     // The filter reads up to three texels beyond the point, which must stay inside the layer.
     let inside = 0.5 - 3.0 * cascades.kernel.y;
     for (; cascade < count; cascade += 1u) {
-        let moved = relative + normal * cascades.normal_offsets[cascade];
-        let clip = cascades.view_proj[cascade] * vec4f(moved, 1.0);
+        let offset = bias_offset(normal, to_light, cascades.biases.xy, cascades.texels[cascade]);
+        let clip = cascades.view_proj[cascade] * vec4f(relative + offset, 1.0);
         if any(abs(clip.xy) > vec2f(2.0 * inside)) {
             // A box that kept its place while the camera turned can miss the point; the next
             // cascade's box is larger.
@@ -85,9 +121,7 @@ fn sun_shadow(relative: vec3f, normal: vec3f) -> f32 {
         // WebGL2 keeps the rows of a drawn texture bottom first.
         uv.y = 1.0 - uv.y;
 #endif
-        let depth = clip.z + cascades.depth_biases[cascade];
-        let lit = filtered(false, cascades.kernel, uv, cascade, depth);
-        let end = cascades.ends[count - 1u];
+        let lit = filtered(false, cascades.kernel, uv, cascade, clip.z);
         return mix(lit, 1.0, smoothstep(end * (1.0 - FADE_SHARE), end, along));
     }
     return 1.0;
@@ -165,12 +199,11 @@ fn cube_face(direction: vec3f) -> u32 {
 /// How much of a point or spot light reaches a point: 1 in full light, 0 in full shadow. `first`
 /// is the light's first tile. `relative` is the point's position relative to the camera, `normal`
 /// its unit normal, `to_light` the unit direction toward the light, and `gap` the distance to it.
-/// The biases count texels of the tile at the point's distance from the light. A point outside its
-/// tile's view is lit.
+/// The light's biases are in meters, up to one texel of the tile at the point's distance from the
+/// light (`bias_offset`). A point outside its tile's view is lit.
 fn light_shadow(first: u32, relative: vec3f, normal: vec3f, to_light: vec3f, gap: f32) -> f32 {
     let params = tiles.params[first];
-    let texel = params.x * gap;
-    let moved = relative + normal * (params.z * texel) + to_light * (params.y * texel);
+    let moved = relative + bias_offset(normal, to_light, params.yz, params.x * gap);
     var tile = first;
     if params.w > 1.5 {
         tile += cube_face(moved - (relative + to_light * gap));

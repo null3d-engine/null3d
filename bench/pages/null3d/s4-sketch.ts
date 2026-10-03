@@ -28,7 +28,13 @@ import {
 	s4VehicleScale,
 	s4VehiclesAt,
 } from '../../scenes/spec';
-import { followPath, readGovernor, setUpView, watchQuality } from './sketch-common';
+import {
+	followPath,
+	readFarInterval,
+	readGovernor,
+	setUpView,
+	watchQuality,
+} from './sketch-common';
 
 export default defineSketch((context) => {
 	const { scene, materials, geometry, textures, time } = context;
@@ -43,6 +49,10 @@ export default defineSketch((context) => {
 		s4Camera,
 	);
 	context.quality.set({ governor: readGovernor(import.meta.url) });
+	// ?far= fixes how often the far shadow cascades draw, to measure what drawing them less often
+	// saves.
+	const far = readFarInterval(import.meta.url);
+	if (far !== undefined) context.quality.set({ farCascadeInterval: far });
 	// The page's ?shadowFilter= switch tries another filter than the preset's.
 	const filter = new URL(import.meta.url).searchParams.get('shadowFilter');
 	if (filter) context.quality.set({ shadowFilter: Number(filter) as 3 | 5 });

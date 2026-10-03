@@ -62,6 +62,7 @@ import {
 	writePlan,
 	writeRunnerFile,
 } from './runs.ts';
+import { VISUAL_LIMITS } from './visual-checks.ts';
 
 describe('turnBatches', () => {
 	it('lets one browser per device run at a time, in the order given', () => {
@@ -1280,7 +1281,7 @@ describe('the bench plan', () => {
 		);
 		expect(judge(visual.check, figures(1.86, 0.14), NONE_MISSING, context)).toEqual([
 			'1.860% of the pixels changed their shadow between frames, over the limit of 0.05%',
-			"shadow edges stray 0.140 px from the reference's, over the limit of 0.12 px",
+			`shadow edges stray 0.140 px from the reference's, over the limit of ${VISUAL_LIMITS.s4?.edgeOffsetPixels} px`,
 		]);
 	});
 

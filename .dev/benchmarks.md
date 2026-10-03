@@ -173,6 +173,7 @@ A change can make a scene faster and make it look worse, such as a smaller shado
 - `--switches <switches>` gives every page of a run more switches. On the Mac, run S2 without shadows, then with each cascade count: `bun run bench:run --scenes s2 --pages null3d-webgpu,null3d-compat,threejs-webgpu,threejs-webgl --switches shadows=1`. Each count's difference from the run without shadows is the cost of its cascades, in CPU time and in GPU time.
 - `bun run parity --scene s2 --switches shadows=3` compares the hold frames on each tier. On 30 September 2026 on the Mac, 0.147% of the pixels differed on both WebGPU tiers, and three.js's two renderers differed by 0.270%. WebGL2 drew no shadows then, so it has no figure yet.
 - Each cascade adds a culling dispatch and a depth pass on the GPU. On the CPU it adds the recording of both, and its uniforms: about the same work whatever the number of casters.
+- `?far=<n>` on S4's null3D pages sets `farCascadeInterval`, from 1 to 8. `--switches far=1` draws every cascade in every frame. Its difference from the preset's run is what drawing the far cascades in turn saves. S4's cars drive through every cascade. Since [D-16](decisions/D-16-moving-casters-and-bias.md), its far cascades therefore draw in every frame anyway, and both runs draw the same passes.
 
 ## The depth prepass
 

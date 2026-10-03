@@ -79,7 +79,8 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     // A surface that faces away from the sun gets none of its light, so it shows full shadow, as
     // lit shading darkens it, and the depth tests of its own back faces never show.
     let normal = normalize(in.normal);
-    let lit = select(0.0, sun_shadow(in.relative, normal), dot(normal, frame.sun_direction.xyz) < 0.0);
+    let to_light = -frame.sun_direction.xyz;
+    let lit = select(0.0, sun_shadow(in.relative, normal, to_light), dot(normal, to_light) > 0.0);
 #endif
     let linear = srgb_to_linear(vec3f(lit));
 #else
