@@ -43,10 +43,22 @@ No Khronos model under an accepted licence uses `EXT_meshopt_compression`, so th
 ## Add or change an asset
 
 1. In the sample-assets repository, follow its README: add the asset's entry to `manifest.json`, run `bun scripts/import.ts <asset id>`, then `bun scripts/manifest.ts --write`, then `bun scripts/manifest.ts`.
-2. Accept CC0 and CC BY only. Leave out an asset whose licence is non-commercial, no-derivatives or unclear, and add it to that README's list of assets left out, with the reason. The README already lists BrainStem, Sponza, VirtualCity, DamagedHelmet, Duck, Mixamo characters, CesiumMan, CompareBaseColor and DragonAttenuation.
+2. Accept CC0 and CC BY only. Leave out an asset whose licence is non-commercial, no-derivatives or unclear, and add it to the list of assets left out below, with the reason. The sample-assets README lists only the assets it holds.
 3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 300 MB in all. They are 183 MB now.
 4. Commit and push in the sample-assets repository, and wait for its check to pass.
 5. Here, run `bun run samples:fetch --pin main`, or give a commit. It copies that commit's manifest, records the commit in the lock, and fetches it. Commit `tools/samples/lock.json` and `tools/samples/manifest.json` together.
+
+## Assets left out
+
+Well-known sample models that may not go into the sample-assets repository, and why. Nothing in the engine repository uses them.
+
+| Asset | Reason |
+| --- | --- |
+| BrainStem, Sponza, VirtualCity, DamagedHelmet, Duck (Khronos) | Their licences do not allow redistribution and commercial use, or they have a non-commercial part |
+| Mixamo characters | Adobe's terms do not allow redistribution of the files |
+| CesiumMan, CompareBaseColor (Khronos) | They carry logos under trademark terms beyond CC BY. RiggedFigure and Fox cover the same skinning cases |
+| DragonAttenuation (Khronos) | The dragon is under the Stanford Graphics licence, which is not CC0 or CC BY |
+| Larger Khronos showcase models | No test needs them, and they would add size |
 
 ## Why a separate repository and a download script
 
