@@ -3,7 +3,8 @@
 // never frees the shared memory of a thread that it stops inside such a wait, not even after a
 // reload, so the page wakes the job workers and ends their loops itself, synchronously: when the
 // engine stops, and when the page leaves without stopping the engine, as a page in a frame does
-// when its frame goes away.
+// when its frame goes away. A page that leaves also waits a moment for the woken workers to leave
+// their loops, because the browser stops them as soon as the page has gone.
 
 import { Slot } from '../shared/control';
 
@@ -25,4 +26,20 @@ export function stopJobWorkers(memory: WebAssembly.Memory, slots: Int32Array): v
 	const word = wake / Int32Array.BYTES_PER_ELEMENT;
 	Atomics.add(words, word, 1);
 	Atomics.notify(words, word);
+}
+
+/**
+ * How long a page that leaves waits for the job workers to leave their loops. A woken worker that
+ * has no chunk to finish leaves within microseconds; one that runs a chunk finishes it first.
+ */
+export const LEAVE_WAIT_MS = 100;
+
+/**
+ * Waits, without yielding, until no job worker is inside the job system's loop, or until `ms` have
+ * passed. A page that leaves has no later task in which to wait. Returns true when none is.
+ */
+export function waitForJobWorkersToLeave(slots: Int32Array, ms = LEAVE_WAIT_MS): boolean {
+	const deadline = performance.now() + ms;
+	while (Atomics.load(slots, Slot.JobsServing) > 0) if (performance.now() > deadline) return false;
+	return true;
 }

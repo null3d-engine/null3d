@@ -1,4 +1,4 @@
-import { type CDPSession, expect, test } from '@playwright/test';
+import { type CDPSession, expect, type Page, test } from '@playwright/test';
 import * as Slot from '../../packages/engine/src/shared/slot.ts';
 import { ENGINE_MODES, THREADED_MODES } from '../lib/engine-checks.ts';
 import { prefixEngineScripts, restoreEngineScripts } from '../lib/engine-scripts.ts';
@@ -23,6 +23,33 @@ async function reachable(cdp: CDPSession, prototype: string): Promise<number> {
 	return count.result.value as number;
 }
 
+/**
+ * How long a test collects garbage and counts again until the page has let go of an engine. A
+ * worker that has just stopped can hold its objects until its last messages have arrived, so one
+ * collection right after a stop can still find them.
+ */
+const RELEASE_TIMEOUT_MS = 10_000;
+
+/**
+ * Collects garbage and counts the shared memories and the workers that the page reaches, again
+ * and again until it reaches `memories` memories and no worker, within the bound.
+ */
+async function expectReleased(page: Page, memories: number): Promise<void> {
+	const cdp = await page.context().newCDPSession(page);
+	await expect
+		.poll(
+			async () => {
+				await cdp.send('HeapProfiler.collectGarbage');
+				return {
+					memories: await reachable(cdp, 'WebAssembly.Memory.prototype'),
+					workers: await reachable(cdp, 'Worker.prototype'),
+				};
+			},
+			{ timeout: RELEASE_TIMEOUT_MS },
+		)
+		.toEqual({ memories, workers: 0 });
+}
+
 // A page starts the engine again after it stops it, and after a collection it reaches none of a
 // stopped engine's memory, except the single-threaded build's core, which the page keeps for the
 // next engine. Each stop destroys every GPU object that the engine made, with its device or its
@@ -42,11 +69,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			expect(result.error).toBeUndefined();
 			expect(result.kinds.engine?.error).toBeUndefined();
 			expect(result.kinds.engine?.cycles).toBe(CYCLES);
-			const cdp = await page.context().newCDPSession(page);
-			await cdp.send('HeapProfiler.collectGarbage');
-			const kept = mode.build === 'single' ? 1 : 0;
-			expect(await reachable(cdp, 'WebAssembly.Memory.prototype')).toBe(kept);
-			expect(await reachable(cdp, 'Worker.prototype')).toBe(0);
+			await expectReleased(page, mode.build === 'single' ? 1 : 0);
 		});
 	}
 }
@@ -72,11 +95,7 @@ for (const mode of ENGINE_MODES) {
 		await restoreEngineScripts(page);
 		const engine = result.kinds.engine;
 		expect(engine?.error).toMatch(/^E140[45]: .*Unable to create texture/);
-		const cdp = await page.context().newCDPSession(page);
-		await cdp.send('HeapProfiler.collectGarbage');
-		const kept = mode.build === 'single' ? 1 : 0;
-		expect(await reachable(cdp, 'WebAssembly.Memory.prototype')).toBe(kept);
-		expect(await reachable(cdp, 'Worker.prototype')).toBe(0);
+		await expectReleased(page, mode.build === 'single' ? 1 : 0);
 	});
 }
 
@@ -114,10 +133,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 				),
 			)
 			.toMatch(COPY_LOADED);
-		const cdp = await page.context().newCDPSession(page);
-		await cdp.send('HeapProfiler.collectGarbage');
-		expect(await reachable(cdp, 'WebAssembly.Memory.prototype')).toBe(0);
-		expect(await reachable(cdp, 'Worker.prototype')).toBe(0);
+		await expectReleased(page, 0);
 	});
 }
 

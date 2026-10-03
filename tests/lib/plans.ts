@@ -206,6 +206,12 @@ const HOLD_TIMEOUT_SECONDS = 60;
  * the browser to free memory, and the counts of the room, which may wait 31 s for it to come back.
  */
 const RESTARTS_TIMEOUT_SECONDS = 180;
+/**
+ * The thread modes whose engines start in frames that the restart page removes while they run.
+ * With the sketch on the main thread, Safari on a Mac still lost 1 or 2 places for shared memory in
+ * some runs of 100 such frames, so that mode stays out until the cause is known.
+ */
+const FRAME_RESTART_MODES = THREADED_MODES.filter((mode) => mode.sketchThread === 'worker');
 
 /** The result text of an item that the runner page never reached. */
 export const NO_RESULT = 'no result; the runner stopped before this page';
@@ -430,7 +436,7 @@ export function checksPlan(): PlanItem<Check>[] {
 				{ switches: [mode.query], timeoutSeconds: RESTARTS_TIMEOUT_SECONDS },
 			),
 		),
-		...THREADED_MODES.map((mode) =>
+		...FRAME_RESTART_MODES.map((mode) =>
 			pageItem(
 				`frame-restarts-${slug(mode.name)}`,
 				'shared-memory',

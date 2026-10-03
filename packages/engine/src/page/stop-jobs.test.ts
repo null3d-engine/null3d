@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
-import { stopJobWorkers } from './stop-jobs';
+import { stopJobWorkers, waitForJobWorkersToLeave } from './stop-jobs';
 
 /** Where the test's job system keeps its wake word and its stop flag. */
 const WAKE = 64;
@@ -33,6 +33,13 @@ describe('stopJobWorkers', () => {
 		stopJobWorkers(memory, slots);
 		expect(stopped()).toBe(0);
 		expect(wake()).toBe(0);
+	});
+
+	it('waits for the job workers to leave their loop, within a bound', () => {
+		const { slots } = engine(true);
+		expect(waitForJobWorkersToLeave(slots, 1)).toBe(true);
+		Atomics.store(slots, Slot.JobsServing, 1);
+		expect(waitForJobWorkersToLeave(slots, 1)).toBe(false);
 	});
 
 	it('wakes a thread that waits on the wake word', async () => {

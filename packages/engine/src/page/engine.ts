@@ -70,7 +70,7 @@ import { MainThreadWatch } from './main-thread';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
 import { StatsSwitch } from './stats-switch';
-import { stopJobWorkers } from './stop-jobs';
+import { stopJobWorkers, waitForJobWorkersToLeave } from './stop-jobs';
 import {
 	type DepthMode,
 	type GpuSwitch,
@@ -1073,7 +1073,11 @@ async function startEngine(
 	const stopJobs = () => {
 		if (core.memory) stopJobWorkers(core.memory, slots);
 	};
-	if (threads?.jobs.length) globalThis.addEventListener?.('pagehide', stopJobs);
+	const stopJobsAsPageLeaves = () => {
+		stopJobs();
+		waitForJobWorkersToLeave(slots);
+	};
+	if (threads?.jobs.length) globalThis.addEventListener?.('pagehide', stopJobsAsPageLeaves);
 	/**
 	 * Stops every loop and then the workers, and wakes each thread that waits, so it sees the stop.
 	 * Then it drops the page's engine and lets go of the page's threaded core. A second call returns
@@ -1083,7 +1087,7 @@ async function startEngine(
 		stopping ??= (async () => {
 			Atomics.store(slots, Slot.Running, 0);
 			stopJobs();
-			globalThis.removeEventListener?.('pagehide', stopJobs);
+			globalThis.removeEventListener?.('pagehide', stopJobsAsPageLeaves);
 			statsSwitch.show(false);
 			for (const slot of [
 				Slot.Running,

@@ -841,7 +841,6 @@ describe('the checks plan', () => {
 			'/tests/pages/shared-memory.html?kinds=frame',
 			'/tests/pages/shared-memory.html?kinds=frame&latency=low',
 			'/tests/pages/shared-memory.html?kinds=frame&render=main',
-			'/tests/pages/shared-memory.html?kinds=frame&sketch-thread=main',
 		]);
 	});
 

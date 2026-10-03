@@ -91,3 +91,8 @@ export const RenderScale = 27;
  */
 export const JobsWakeAddress = 28;
 export const JobsStopAddress = 29;
+/**
+ * The job workers inside the job system's loop. A page that leaves waits until none is, because
+ * the browser stops each worker as soon as the page has gone.
+ */
+export const JobsServing = 30;
