@@ -5,6 +5,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DeviceFacts } from './device-record.ts';
+import type { GpuPath, MissingAllowed } from './gpu-paths.ts';
 import { CURRENT_RUN_FILE, RUNS_DIR } from './report-collector.ts';
 
 export interface PlanItem<Check = unknown> {
@@ -27,6 +28,8 @@ export interface PlanItem<Check = unknown> {
 	 * its progress name, and a dead tab then counts as its result, not as a stopped runner page.
 	 */
 	endsTab?: true;
+	/** The GPU path that the page needs, which the runner page skips it for on a device that lacks it. */
+	gpu?: GpuPath;
 	/** What the command-line tool checks in the result. */
 	check: Check;
 }
@@ -41,7 +44,22 @@ export interface Plan<Check = unknown> {
 	 * page, the report would add to what the browser composites.
 	 */
 	reportOnTop?: true;
+	/**
+	 * The runner page measures the display's refresh rate before each page, and adds it to the
+	 * page's result as `runnerRefreshHz`. Only plans that time frames or loads set it: their figures
+	 * depend on the rate, and the measurement adds a second to each page.
+	 */
+	measureRefresh?: true;
+	/**
+	 * Lets a device lack GPU paths. Once the result of the item that `report` names gives the
+	 * device's GPU paths, the runner page skips each later page that needs a path the device lacks,
+	 * where `allowed` lets it lack that path, and posts a skip as the page's result.
+	 */
+	skipMissing?: { report: string; allowed: MissingAllowed };
 }
+
+/** How the runner page runs a plan's pages. */
+export type PlanFlags = Pick<Plan, 'reportOnTop' | 'measureRefresh' | 'skipMissing'>;
 
 /** The run that waiting runner pages start, and the runners that may start it now. */
 export interface CurrentRun {
@@ -72,6 +90,31 @@ export function lastSteps(trail: unknown): string {
 export const failureText = (result: ItemResult) =>
 	`${result.error ?? 'the page failed without a message'}${lastSteps(result.trail)}`;
 
+/** How many of a runner's latest pages the out-of-memory guard looks at. */
+export const OOM_WINDOW_PAGES = 5;
+/**
+ * How many pages among a runner's latest that fail for lack of memory end its turn. As many in a row
+ * end it too, since they lie among the latest pages.
+ */
+export const OOM_STOP_PAGES = 3;
+
+/** The engine's code for a shared memory that the browser refused, and the browser's own words. */
+const OUT_OF_MEMORY = /\bE1109\b|out of memory/i;
+
+/** Whether a page failed because the browser refused it memory. */
+export const outOfMemory = (result: ItemResult | undefined): boolean =>
+	result?.ok === false && OUT_OF_MEMORY.test(String(result.error ?? ''));
+
+/**
+ * Whether a runner's browser keeps refusing memory, from whether each of its pages failed for lack
+ * of memory, oldest first: enough of the latest pages did that the rest of its turn would fail too.
+ */
+export function keepsRefusingMemory(failedForMemory: readonly boolean[]): boolean {
+	let count = 0;
+	for (const failed of failedForMemory.slice(-OOM_WINDOW_PAGES)) if (failed) count++;
+	return count >= OOM_STOP_PAGES;
+}
+
 /** A run name from its plan's name and the time: sortable, and safe as a folder name. */
 export function runName(planName: string, now = new Date()): string {
 	const stamp = now.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
@@ -81,14 +124,9 @@ export function runName(planName: string, now = new Date()): string {
 export function writePlan<Check>(
 	run: string,
 	items: PlanItem<Check>[],
-	reportOnTop = false,
+	flags: PlanFlags = {},
 ): Plan<Check> {
-	const plan: Plan<Check> = {
-		run,
-		createdAt: new Date().toISOString(),
-		items,
-		...(reportOnTop && { reportOnTop }),
-	};
+	const plan: Plan<Check> = { run, createdAt: new Date().toISOString(), items, ...flags };
 	mkdirSync(join(RUNS_DIR, run), { recursive: true });
 	writeFileSync(join(RUNS_DIR, run, 'plan.json'), JSON.stringify(plan, null, '\t'));
 	return plan;
@@ -319,18 +357,28 @@ export interface WaitOptions<Check = unknown> {
 	onQuiet?: (runner: string, quietSeconds: number, at: PlanPlace<Check> | undefined) => boolean;
 	/** The quiet time for a page, by default the page's timeout and time to open it. */
 	quietMs?: (item: PlanItem<Check>) => number;
+	/**
+	 * Looks at a runner's new results, and returns true when its turn must end now, as when its
+	 * browser keeps refusing memory. The wait then stops waiting for it.
+	 */
+	endTurn?: (runner: string) => boolean;
 }
 
 /**
- * Waits until each runner has finished the run, or has gone quiet after it started, or the plan's
- * time runs out. A runner that never starts waits for the plan's time, as a page on a tablet may
- * need someone to open it. A runner page that `onQuiet` replaces adds its quiet time to the plan's
- * time. Returns the runners that finished.
+ * Waits until each runner has finished the run, or has gone quiet after it started, or `endTurn`
+ * ended its turn, or the plan's time runs out. A runner that never starts waits for the plan's time,
+ * as a page on a tablet may need someone to open it. A runner page that `onQuiet` replaces adds its
+ * quiet time to the plan's time. Returns the runners that finished.
  */
 export async function waitForRunners<Check>(
 	plan: Plan<Check>,
 	runners: readonly string[],
-	{ onFinish = () => {}, onQuiet = () => false, quietMs = quietLimitMs }: WaitOptions<Check> = {},
+	{
+		onFinish = () => {},
+		onQuiet = () => false,
+		quietMs = quietLimitMs,
+		endTurn = () => false,
+	}: WaitOptions<Check> = {},
 ): Promise<string[]> {
 	let deadline = Date.now() + batchTimeoutMs(plan);
 	const done: string[] = [];
@@ -342,6 +390,10 @@ export async function waitForRunners<Check>(
 			const written = lastWrite(plan.run, runner);
 			const last =
 				written === undefined ? undefined : Math.max(written, reopenedAt.get(runner) ?? 0);
+			if (written !== undefined && endTurn(runner)) {
+				waiting.delete(runner);
+				continue;
+			}
 			if (finished(plan.run, runner)) {
 				waiting.delete(runner);
 				done.push(runner);

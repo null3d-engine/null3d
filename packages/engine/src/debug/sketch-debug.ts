@@ -59,6 +59,7 @@ export class SketchDebug implements Debug {
 	frustum(_camera: Camera, _color?: ColorInput): void {}
 	light(_light: DirectionalLight, _options?: DebugLightOptions): void {}
 	view(_view: DebugView): void {}
+	shadowCamera(_camera?: Camera): void {}
 
 	stats(show = true): void {
 		if (show === this.showing) return;

@@ -39,6 +39,10 @@ struct ShadowCascades {
     /// the texels on each side of the filter's square: 3 or 5, or less for the comparison
     /// sampler's own blend of four texels.
     kernel: vec4f,
+    /// The camera that draws, relative to the camera that fitted the cascades, whose distances
+    /// pick each receiver's cascade: 0 unless another camera fitted them, as the debug API's
+    /// shadow camera does.
+    origin: vec4f,
 }
 
 /// The tiles of the shadow atlas, as the core writes them each frame.
@@ -87,7 +91,8 @@ fn bias_offset(normal: vec3f, to_light: vec3f, biases: vec2f, texel: f32) -> vec
 /// the light.
 fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
     let count = u32(cascades.forward.w);
-    let along = dot(relative, cascades.forward.xyz);
+    let seen = relative + cascades.origin.xyz;
+    let along = dot(seen, cascades.forward.xyz);
     let end = cascades.ends[max(count, 1u) - 1u];
     if count == 0u || along >= end {
         return 1.0;
@@ -96,7 +101,7 @@ fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
     // which turning the camera leaves alone, so its shadow stays the same as the view turns. Behind
     // an orthographic camera, whose cascades have texels of one size, it comes from its distance
     // along the view.
-    let distance = mix(along, length(relative) * length(cascades.forward.xyz), cascades.biases.z);
+    let distance = mix(along, length(seen) * length(cascades.forward.xyz), cascades.biases.z);
     var cascade = 0u;
     while cascade + 1u < count && distance >= cascades.ends[cascade] {
         cascade += 1u;

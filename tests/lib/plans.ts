@@ -15,6 +15,7 @@ import {
 	gpuApiOfPage,
 	type HoldFrame,
 	holdPagePath,
+	isNull3dPage,
 	JOBS_PAGES,
 	PARITY_SCENES,
 	TIERS as PARITY_TIERS,
@@ -22,6 +23,7 @@ import {
 	pagePath,
 	parityFiles,
 	passesWithBaseline,
+	REFERENCE_PRESET_SWITCH,
 	SCENE_CODE,
 	type StoredBaselines,
 	TIER_PAIRS,
@@ -31,6 +33,7 @@ import {
 	benchReport,
 	type SummaryRow,
 	summaryRow,
+	type VisualFigures,
 } from '../../bench/lib/report.ts';
 import {
 	groupSamples,
@@ -40,6 +43,7 @@ import {
 	startupProblems,
 	startupTable,
 } from '../../bench/lib/startup.ts';
+import { SCENE_COUNTS, visualPagePath } from '../../bench/lib/visual.ts';
 import {
 	SOAK_SAMPLE_SECONDS,
 	SOAK_TABLE_HEAD,
@@ -47,14 +51,7 @@ import {
 	soakProblems,
 	soakRow,
 } from '../../bench/pages/lib/device-soak.ts';
-import {
-	createS4,
-	MEASURE_SECONDS,
-	S1_DEFAULT_COUNT,
-	S2_NODE_COUNT,
-	S3_DEFAULT_COUNT,
-	WARMUP_SECONDS,
-} from '../../bench/scenes/spec.ts';
+import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import {
@@ -62,7 +59,7 @@ import {
 	type DeviceHints,
 	deviceKind,
 } from '../../packages/engine/src/quality/chooser.ts';
-import type { Tier as GpuPath } from '../../packages/engine/src/shared/tier.ts';
+import type { Tier as EngineTier } from '../../packages/engine/src/shared/tier.ts';
 import { IMAGE_RUNS, manifestRun } from '../image/manifest.ts';
 import { distanceLabel, PRECISION, type PrecisionFacts } from '../pages/lib/depth-precision.ts';
 import {
@@ -102,6 +99,7 @@ import {
 	jobWorkersProblem,
 	THREADED_MODES,
 } from './engine-checks.ts';
+import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './gpu-paths.ts';
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts';
 import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
@@ -115,9 +113,22 @@ import {
 	presetChangeProblems,
 	roundText,
 } from './preset-checks.ts';
-import { failureText, type ItemResult, lastSteps, type PlanItem, slug } from './runs.ts';
+import {
+	failureText,
+	type ItemResult,
+	lastSteps,
+	type PlanFlags,
+	type PlanItem,
+	slug,
+} from './runs.ts';
 import { type StatsResult, statsProblems } from './stats-checks.ts';
 import { progressName, REST_AFTER_TAB_END_SECONDS } from './tab-end.ts';
+import {
+	saveVisualResult,
+	VISUAL_LIMITS,
+	type VisualResult,
+	visualProblems,
+} from './visual-checks.ts';
 import { type WarmUpResult, warmUpProblems } from './warm-up-checks.ts';
 import {
 	WARM_UP_TABLE_HEAD,
@@ -156,6 +167,8 @@ export type Check =
 	| { kind: 'hold'; tier: Tier }
 	| { kind: 'parity'; tier: Tier; scene: BenchScene; pair: PagePair }
 	| { kind: 'bench'; tier: Tier; scene: BenchScene; page: BenchPageKind; jobs?: number }
+	/** The visual page of a benchmark scene: its shadow figures and frames, on one GPU path. */
+	| { kind: 'visual'; tier: Tier; scene: BenchScene }
 	/** The GPU-bound page, with the ?queue= setting it ran with, if any. */
 	| { kind: 'overload'; tier: Tier; queue?: string }
 	/** The quality governor's stress test: one stage on one GPU path. */
@@ -255,6 +268,8 @@ export interface BenchSwitches {
 	n?: number;
 	/** The job workers a null3D page starts, or undefined for the engine's own count. */
 	jobs?: number;
+	/** True makes a null3D page capture a PNG file of its frame after the measured seconds. */
+	capture?: boolean;
 }
 
 /**
@@ -271,12 +286,15 @@ const BENCH_BUILD: Load = { kind: 'warm', key: runnerKey('bench') };
 export function benchItem(
 	id: string,
 	page: BenchPageKind,
-	{ seconds, n, jobs }: BenchSwitches = {},
+	{ seconds, n, jobs, capture }: BenchSwitches = {},
 	scene: BenchScene = 's1',
 ): PlanItem<Check> {
-	const switches = Object.entries({ seconds, n, jobs }).flatMap(([name, value]) =>
-		value === undefined ? [] : [`${name}=${value}`],
-	);
+	const switches = [
+		...Object.entries({ seconds, n, jobs }).flatMap(([name, value]) =>
+			value === undefined ? [] : [`${name}=${value}`],
+		),
+		...(capture ? ['capture'] : []),
+	];
 	const tier = gpuApiOfPage(page);
 	return {
 		id,
@@ -556,12 +574,48 @@ export interface PlanSettings {
 	minutes?: number;
 }
 
+/** The name of a visual check's folder of frames in a run, and of its figures in the summary. */
+const visualName = ({ scene, tier }: { scene: string; tier: Tier }) => `${scene}-${tier}`;
+
+/** A visual page's figures for the bench summary, with the limits of its scene. */
+function visualFigures(scene: string, result: VisualResult): VisualFigures {
+	const limits = VISUAL_LIMITS[scene];
+	return {
+		changedPercent: result.stability.changedPercent,
+		edgeOffsetPixels: result.edges.offsetPixels,
+		...(limits && {
+			changedLimit: limits.changedPercent,
+			edgeOffsetLimit: limits.edgeOffsetPixels,
+		}),
+	};
+}
+
+/** How long a visual page may take on a slow device: twelve starts of a scene in hold mode. */
+const VISUAL_TIMEOUT_SECONDS = 600;
+
+/**
+ * The visual check of a benchmark scene on one GPU path: the visual page at the scene's count or
+ * `count`, with the frames it captures. It draws the desktop's preset, as the image tests do, so
+ * every device measures the shadow settings that the figures' limits come from.
+ */
+function visualItem(scene: BenchScene, tier: Tier, count?: number): PlanItem<Check> {
+	return {
+		id: `visual-${scene}-${tier}`,
+		path: `${visualPagePath(scene, tier, { n: count, images: true })}&${REFERENCE_PRESET_SWITCH}`,
+		timeoutSeconds: VISUAL_TIMEOUT_SECONDS,
+		check: { kind: 'visual', tier, scene },
+	};
+}
+
 /**
  * The benchmark protocol in browsers that Playwright cannot drive: `runs` fresh runs of each page
  * of each scene, each a 5-second warm-up and 30 measured seconds, or `seconds` of each, with
- * `count` instances when given. With job worker counts, each run times the pages once at each count, and the pages are
- * null3D's two GPU paths unless the settings name others. The pages take turns run by run, so a
- * device that slows as it warms up slows every page alike.
+ * `count` instances when given. With job worker counts, each run times the pages once at each
+ * count, and the pages are null3D's two GPU paths unless the settings name others. The pages take
+ * turns run by run, so a device that slows as it warms up slows every page alike. Unless the plan
+ * sweeps job worker counts, the first run of each null3D page captures its frame after its measured
+ * seconds. After the timed runs, the visual check of each scene on each GPU path of the null3D
+ * pages measures its shadows and captures frames from hold mode, which no timed run waits for.
  */
 export function benchPlan({
 	count,
@@ -575,18 +629,28 @@ export function benchPlan({
 	const runsOfPages = jobs
 		? jobs.flatMap((workers) => kinds.map((page) => ({ page, jobs: workers })))
 		: kinds.map((page) => ({ page, jobs: undefined }));
-	return Array.from({ length: runs }, (_, run) =>
+	const timed = Array.from({ length: runs }, (_, run) =>
 		scenes.flatMap((scene) =>
 			runsOfPages.map(({ page, jobs: workers }) =>
 				benchItem(
 					`bench-${scene}-${page}${workers === undefined ? '' : `-jobs${workers}`}-${run + 1}`,
 					page,
-					{ n: count, jobs: workers, seconds },
+					{ n: count, jobs: workers, seconds, capture: !jobs && run === 0 && isNull3dPage(page) },
 					scene,
 				),
 			),
 		),
 	).flat();
+	// A sweep of job worker counts times the pages and nothing else.
+	const tiers = jobs
+		? []
+		: TIERS.filter((tier) =>
+				kinds.some((page) => isNull3dPage(page) && gpuApiOfPage(page) === tier),
+			);
+	return [
+		...timed,
+		...scenes.flatMap((scene) => tiers.map((tier) => visualItem(scene, tier, count))),
+	];
 }
 
 /** The image test manifest's depth precision tests, by name. */
@@ -832,15 +896,6 @@ const WARM_UP_PLAIN_LOADS = 2;
 const WARM_UP_TIMEOUT_SECONDS = 90;
 
 /** Each benchmark scene's count on its own page. */
-const SCENE_COUNTS: Readonly<Record<BenchScene, number>> = {
-	s1: S1_DEFAULT_COUNT,
-	's1-static': S1_DEFAULT_COUNT,
-	's1-cells': S1_DEFAULT_COUNT,
-	s2: S2_NODE_COUNT,
-	s3: S3_DEFAULT_COUNT,
-	s4: createS4().count,
-};
-
 /** The sketches whose warm-up the plan times: each benchmark scene at its own count, then each demo. */
 function warmUpSketches(): { scene: string; sketch: string }[] {
 	return [
@@ -947,6 +1002,16 @@ export const REPORT_ON_TOP_PLANS: ReadonlySet<string> = new Set([
 	'tab-memory',
 ]);
 
+/**
+ * The checks of pages that push the browser to its memory limit on purpose. A refused memory is what
+ * they measure, so the device runner's out-of-memory guard does not count their pages.
+ */
+export const MEMORY_LIMIT_CHECKS: ReadonlySet<Check['kind']> = new Set([
+	'memory',
+	'room',
+	'tab-memory',
+]);
+
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
 	checks: checksPlan,
 	smoke: smokePlan,
@@ -1001,11 +1066,7 @@ const NO_WEBGPU_ERRORS = [
 /** The starts of the errors that mean the browser offers no WebGL2: the test pages' and the engine's. */
 const NO_WEBGL2_ERRORS = ['no WebGL2 context', 'E1301'];
 
-/** The GPU paths a device may lack: a page that needs one it lacks is a skip, not a failure. */
-export type MissingAllowed = Readonly<Record<Tier, boolean>>;
-
-/** Nothing may be missing: every page must run. */
-export const NONE_MISSING: MissingAllowed = { webgpu: false, webgl2: false };
+export { type MissingAllowed, NONE_MISSING };
 
 /**
  * The GPU path a check needs, which a device may lack: its tier, or WebGL2 for the shaders page,
@@ -1015,6 +1076,36 @@ export function neededPath(check: Check): Tier | undefined {
 	if (check.kind === 'image') return gpuApiOf(check.run.tier);
 	if ('tier' in check) return check.tier;
 	return check.kind === 'shaders' ? 'webgl2' : undefined;
+}
+
+/**
+ * The GPU path a page needs: the one that its `?gpu=` switch forces, or else its check's. A page
+ * that does not force WebGPU's core path draws with any WebGPU adapter, as compatibility mode does.
+ */
+export function gpuPathOf({ path, check }: PlanItem<Check>): GpuPath | undefined {
+	const forced = /[?&]gpu=(webgpu|compat|webgl2)\b/.exec(path)?.[1] as GpuPath | undefined;
+	if (forced) return forced;
+	const needed = neededPath(check);
+	return needed === 'webgpu' ? 'compat' : needed;
+}
+
+/**
+ * A plan's items with the GPU path that each page needs, and the flag that lets the runner page
+ * skip the pages for the paths that the device lacks, by the report of the plan's capabilities
+ * page. A plan without that page, or a run that lets no path be missing, runs every page.
+ */
+export function withGpuPaths(
+	items: readonly PlanItem<Check>[],
+	allowed: MissingAllowed,
+): { items: PlanItem<Check>[]; flags: PlanFlags } {
+	const report = items.find((item) => item.check.kind === 'capabilities')?.id;
+	return {
+		items: items.map((item) => {
+			const gpu = gpuPathOf(item);
+			return gpu ? { ...item, gpu } : item;
+		}),
+		flags: report && (allowed.webgpu || allowed.webgl2) ? { skipMissing: { report, allowed } } : {},
+	};
 }
 
 /** True when a page failed because the browser lacks the GPU path `path` altogether. */
@@ -1196,9 +1287,10 @@ export function restartProblems(result: RestartResult): string[] {
 }
 
 /**
- * What is wrong with a page's result; empty when nothing is. A check whose GPU path the browser
- * lacks is a skip when `missing` allows it: some devices have no WebGPU in any browser, and some
- * virtual machines give a browser no WebGL2. A parity check and a second load of the capabilities
+ * What is wrong with a page's result; empty when nothing is. A page that the runner page skipped,
+ * and a check whose GPU path the browser lacks, are skips when `missing` allows it: some devices
+ * have no WebGPU in any browser, some offer only its compatibility mode, and some virtual machines
+ * give a browser no WebGL2. A parity check and a second load of the capabilities
  * page need the context, to reach the result that they compare with.
  */
 export function judge(
@@ -1207,6 +1299,7 @@ export function judge(
 	missing: MissingAllowed,
 	context?: JudgeContext,
 ): string[] | 'skip' {
+	if (skippedPath(result)) return 'skip';
 	if (!result.ok) {
 		const path = neededPath(check);
 		if (path && missing[path] && missingPath(path, result.error)) return 'skip';
@@ -1297,7 +1390,18 @@ export function judge(
 				PRESET_CHANGE.from,
 				PRESET_CHANGE.to,
 			);
+		case 'visual': {
+			const visual = result as unknown as VisualResult;
+			if (context) saveVisualResult(join(context.imageDir, 'frames', visualName(check)), visual);
+			return visualProblems(check.scene, visual);
+		}
 		case 'bench': {
+			if (context && typeof result.frame === 'string') {
+				const folder = join(context.imageDir, 'frames');
+				mkdirSync(folder, { recursive: true });
+				const name = `${check.scene}-${check.page}-live.png`;
+				writeFileSync(join(folder, name), Buffer.from(result.frame, 'base64'));
+			}
 			const frames = Number(result.frames ?? 0);
 			const cpu = (result.cpuMs as { median?: number } | undefined)?.median ?? 0;
 			const workers = (result.mode as { jobWorkers?: number } | undefined)?.jobWorkers;
@@ -1363,7 +1467,7 @@ export function judge(
 /** What the quality page reports: the preset, the GPU path and the device hints it chose from. */
 interface QualityResult {
 	mode: PresetMode & { crashedStarts: number };
-	tier: GpuPath;
+	tier: EngineTier;
 	hints: DeviceHints;
 }
 
@@ -1399,12 +1503,26 @@ export function benchSummary(
 	items: readonly PlanItem<Check>[],
 	resultOf: (id: string) => ItemResult | undefined,
 ): string | undefined {
-	const groups = new Map<string, Omit<SummaryRow, 'summary'> & { results: BenchResult[] }>();
+	type Group = Omit<SummaryRow, 'summary'> & { results: BenchResult[]; visualKey?: string };
+	const groups = new Map<string, Group>();
+	const visual = new Map<string, VisualResult>();
 	for (const item of items) {
-		if (item.check.kind !== 'bench') continue;
-		const { scene, page, jobs } = item.check;
+		const { check } = item;
+		if (check.kind === 'visual') {
+			const result = resultOf(item.id);
+			if (result?.ok && result.stability)
+				visual.set(visualName(check), result as unknown as VisualResult);
+		}
+		if (check.kind !== 'bench') continue;
+		const { scene, page, jobs } = check;
 		const key = `${scene} ${page} ${jobs ?? ''}`;
-		const group = groups.get(key) ?? { scene, kind: page, jobs, results: [] };
+		const group = groups.get(key) ?? {
+			scene,
+			kind: page,
+			jobs,
+			results: [],
+			...(isNull3dPage(page) && { visualKey: visualName(check) }),
+		};
 		const result = resultOf(item.id);
 		if (result?.ok) group.results.push(result as unknown as BenchResult);
 		groups.set(key, group);
@@ -1412,7 +1530,13 @@ export function benchSummary(
 	if (groups.size === 0) return undefined;
 	const rows: SummaryRow[] = [...groups.values()]
 		.filter((group) => group.results.length > 0)
-		.map(({ results, ...row }) => summaryRow(row, results));
+		.map(({ results, visualKey, ...row }) => {
+			const figures = visualKey === undefined ? undefined : visual.get(visualKey);
+			return {
+				...summaryRow(row, results),
+				...(figures && { visual: visualFigures(row.scene, figures) }),
+			};
+		});
 	return benchReport(rows).join('\n');
 }
 

@@ -5,6 +5,7 @@ import * as C from '../generated/core';
 import { orthographicView } from '../scene/lens';
 import { CoreMemory } from '../scene/memory';
 import {
+	type Camera,
 	DirectionalLight,
 	Object3D,
 	OrthographicCamera,
@@ -99,7 +100,12 @@ function fakeCore() {
 		lastErrorDetail: (index: number) => failure[1 + index] as number,
 	};
 	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
-	return { core, draw: new DebugDraw(core, HOST), frames, reserves, matrices, memory, views };
+	const shadowCameras: (Camera | undefined)[] = [];
+	const scene = {
+		setShadowCamera: (camera: Camera | undefined) => shadowCameras.push(camera),
+	} as unknown as Scene;
+	const draw = new DebugDraw(core, HOST, scene);
+	return { core, draw, frames, reserves, matrices, memory, views, shadowCameras };
 }
 
 /** The frames' points, with positions rounded to millimeters for comparison. */
@@ -424,13 +430,14 @@ describe('debug drawing', () => {
 describe('debug.view', () => {
 	test("switches the core's shading to each view by its code", () => {
 		const { draw, views } = fakeCore();
-		for (const view of ['normals', 'depth', 'overdraw', 'wireframe', 'lit'] as const)
+		for (const view of ['normals', 'depth', 'overdraw', 'wireframe', 'shadows', 'lit'] as const)
 			draw.view(view);
 		expect(views).toEqual([
 			C.DEBUG_VIEW_NORMALS,
 			C.DEBUG_VIEW_DEPTH,
 			C.DEBUG_VIEW_OVERDRAW,
 			C.DEBUG_VIEW_WIREFRAME,
+			C.DEBUG_VIEW_SHADOWS,
 			C.DEBUG_VIEW_LIT,
 		]);
 	});
@@ -438,15 +445,43 @@ describe('debug.view', () => {
 	test('refuses a view that it does not know with E1213', () => {
 		const { draw, views } = fakeCore();
 		expect(() => draw.view('flat' as DebugView)).toThrow(
-			`E1213: debug.view() got "flat", which is not 'lit', 'normals', 'depth', 'wireframe' or 'overdraw'.`,
+			`E1213: debug.view() got "flat", which is not 'lit', 'normals', 'depth', 'wireframe', 'overdraw' or 'shadows'.`,
 		);
 		expect(views).toEqual([]);
 	});
 });
 
+describe('debug.shadowCamera', () => {
+	test('places the cascades from a camera, then from the active camera again', () => {
+		const { draw, shadowCameras } = fakeCore();
+		const camera = new OrthographicCamera(
+			{} as Scene,
+			9,
+			'map',
+			orthographicView({ height: 4 }),
+			1,
+			10,
+		);
+		draw.shadowCamera(camera);
+		draw.shadowCamera();
+		expect(shadowCameras).toEqual([camera, undefined]);
+	});
+});
+
 describe('release builds', () => {
 	test('give the sketch drawing calls that do nothing', () => {
-		const shapes = ['arrow', 'axes', 'box', 'frustum', 'grid', 'light', 'line', 'sphere', 'view'];
+		const shapes = [
+			'arrow',
+			'axes',
+			'box',
+			'frustum',
+			'grid',
+			'light',
+			'line',
+			'shadowCamera',
+			'sphere',
+			'view',
+		];
 		const release = new SketchDebug(HOST);
 		const own = (object: object) =>
 			Object.keys(Object.getOwnPropertyDescriptors(Object.getPrototypeOf(object)));

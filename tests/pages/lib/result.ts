@@ -119,7 +119,11 @@ export async function publish(name: string, result: Record<string, unknown>): Pr
 	if (status)
 		status.textContent = demo
 			? `${document.title}: running`
-			: JSON.stringify({ ...report, pixels: undefined }, null, 2);
+			: JSON.stringify(
+					{ ...report, pixels: undefined, images: undefined, frame: undefined },
+					null,
+					2,
+				);
 	// Inside the runner page's frame, the runner posts the result with its run.
 	if (window.parent !== window) return;
 	try {

@@ -1,14 +1,14 @@
 ---
 id: getting-started/install
 title: Install null3D
-status: planned
+status: experimental
 since: "0.1"
 summary: "The npm packages; the Vite plugin; package versions always match; the optional `null3d` command."
 ---
 
 # Install null3D
 
-> Planned for null3D 0.1. No release has these packages yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The packages are not on npm until the 0.1 release, so the install commands below fail before then.
 
 null3D installs from npm like any other library, and you import it in your code as you would import `three`. You need no command-line tool to build or run a null3D sketch.
 
