@@ -168,7 +168,16 @@ Measured on 3 October 2026, Chrome 154 on the Mac's GPU and Playwright's Chromiu
 | `rgba32float` with a linear filter | Offered, blended | Offered, blended | Offered, blended |
 
 - On each GPU, the three paths drew the same pixels exactly. SwiftShader's image differed from the Mac GPU's in 1.9% of the pixels, by up to 27 of 255, all in filtered cells. So each GPU kind keeps its own reference, as for every image test.
-- Safari, Firefox, the iPad and the phones have not run the page yet. Add their rows here when they do.
+
+Measured on 3 October 2026 through the device runner, Safari 26.6.2 and Firefox 157 on the Mac. Each run compares with the Mac's Chrome reference, at the device tolerance of 0.5% of the pixels:
+
+| Browser | Core WebGPU | Compatibility mode | WebGL2 | `rgba32float` with a linear filter |
+| --- | --- | --- | --- | --- |
+| Safari 26.6.2 | Pass | Pass | Pass | Offered and blended on all three paths |
+| Firefox 157 | Pass | Pass | Pass | Offered and blended on all three paths |
+
+- Safari first failed both WebGPU paths: it dropped the copy of a 2D layer into the last 3D slice ("Browser faults"). The WebGPU backend now copies through a buffer, and these results come from after that fix.
+- The iPad and the phones have not run the page yet. Add their rows here when they do.
 
 ### Draw-list numbers held for M2
 
@@ -332,6 +341,10 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 
 - Safari 26 drops a whole submit if its commands hold two or more copies from one buffer that was mapped when they were recorded. WebGPU allows that, and Chrome and Firefox accept it. The staging ring therefore records a frame's copies after it unmaps the buffer, just before the frame's next command.
 - The uploads test page reports each frame's WebGPU errors, which show such a failure.
+- Safari 26.6.2 on a Mac drops a copy from a 2D texture into a 3D texture when the copy starts past the first slice. It reports no error, and the slice keeps its old texels. This happened in core WebGPU and in compatibility mode, from one layer or from a layer of an array. A copy into the first slice lands. Copies out of a 3D texture, into a 2D texture or between 3D slices, land too. Chrome 154 and Firefox 157 land every case. A page with only these copies showed it.
+- So the WebGPU backend sends every copy from a 2D texture into a 3D texture through a buffer. It copies the texels into the buffer, then into the slice. Safari lands those copies. The backend keeps one buffer for it and grows it when a copy needs more. Such copies fill color grading tables when content loads, not in the frame loop. Before the fix, the `replay-cube-3d` test failed in Safari on both WebGPU tiers. The copied slice read black, which was 2.5% of the image. Options rejected:
+  - The buffer path for Safari only. The backend cannot tell browsers apart (hard rule 14). A feature test would need a copy and a readback at every start.
+  - A test page that fills the slice another way. Users' copies would then still fail in Safari.
 - SwiftShader takes a line's direction from its projected ends before it clips the line. A line with one end behind the camera draws reversed and fills no pixels, while a line that crosses only the far plane draws. The wireframe debug view lost a floor's edges on CI that way. So the debug view sketch starts its floor in front of the camera, below the view's bottom edge.
 - SwiftShader, the software GPU of the CI machines, loses depth precision past 100 m even in reversed depth from 0 to 1. The depth precision scene fights there at 250 m, 4 km and 10 km, on WebGPU too. The image tests therefore expect no fighting in reversed depth only on a real GPU.
 - Arm's Mali GPUs reject a GLSL array constructor with its size in the type, such as `vec3[9](a, b, ...)`, when its values are not constants. The compiler reports `S0032: no default precision defined for variable 'vec3[9]'`. It does so although the shader sets `precision highp float;`. GLSL ES 3.00 allows the constructor, and Adreno, Apple and SwiftShader accept it. A Google Pixel with a Mali-G715 failed the library test shader this way. The shader builds the nine light colors for `lighting::sh_irradiance` there. The line number in the error counts lines in the shader that Chrome's translator (ANGLE) gives the driver, not in ours.
