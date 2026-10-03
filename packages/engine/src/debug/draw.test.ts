@@ -310,6 +310,36 @@ describe('debug drawing', () => {
 		expect(frames.length).toBe(1);
 	});
 
+	test("a skeleton draws each skin joint to its parent joint, in the pose and the object's place", () => {
+		const { draw, frames, matrices } = fakeCore();
+		const hero = objectAt(9);
+		matrices.set(9, [1, 0, 0, 10, 0, 1, 0, 0, 0, 0, 1, 0]);
+		// Joints 0, 1 and 3 belong to a skin; joint 2 does not, so the line from 3 goes to 1. At bind
+		// time the joints stood at the origin, 1 m up, 2 m up and 1.5 m up.
+		const bindPlaces = new Float64Array([0, 0, 0, 0, 1, 0, 0, 2, 0, 0, 1.5, 0]);
+		const shift = (x: number) => [1, 0, 0, x, 0, 1, 0, 0, 0, 0, 1, 0];
+		// The pose moves joint 1 and joint 3 half a meter along x.
+		const skin = new Float32Array([...shift(0), ...shift(0.5), ...shift(0), ...shift(0.5)]);
+		hero.animation = {
+			instance: 1,
+			rig: { bones: [true, true, false, true], parents: [-1, 0, 1, 1], bindPlaces },
+			matrices: () => skin,
+		} as unknown as NonNullable<Object3D['animation']>;
+		draw.skeleton(hero);
+		draw.flush(1, 1);
+		expect(rounded(frames[0] as Point[])).toEqual([
+			{ position: [10.5, 1, 0], color: 0xffff0000 },
+			{ position: [10, 0, 0], color: 0xff00ff00 },
+			{ position: [10.5, 1.5, 0], color: 0xffff0000 },
+			{ position: [10.5, 1, 0], color: 0xff00ff00 },
+		]);
+		// One color draws both ends, and an object without an animator draws nothing.
+		draw.skeleton(hero, '#ff0000');
+		draw.skeleton(objectAt(9));
+		draw.flush(1, 1);
+		expect((frames[1] as Point[]).map((p) => p.color)).toEqual(new Array(4).fill(0xff0000ff));
+	});
+
 	test('a grid draws its lines as three.js does, with the center lines in their own color', () => {
 		const { draw, frames } = fakeCore();
 		draw.grid(4, 4, { center: [0, -1, 10], color: '#ffffff', centerColor: '#000000' });
