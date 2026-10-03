@@ -105,7 +105,15 @@ export default defineSketch(({ scene, geometry, materials, input, page, time }) 
 		}
 		const rays = (scene as unknown as { pointerEvents: { rays: number } }).pointerEvents.rays;
 		const panFrames = panStart < 0 ? 0 : time.frame - panStart;
-		page.post('reply', { lines, rays, step: STEP, panClicks, panFrames });
+		const { x, y, buttons } = input.pointer;
+		page.post('reply', {
+			lines,
+			rays,
+			step: STEP,
+			panClicks,
+			panFrames,
+			pointer: { x, y, buttons },
+		});
 	});
 	/** Handlers that only count, and the loop that feeds the pointer events' log by hand. */
 	function startLoop() {

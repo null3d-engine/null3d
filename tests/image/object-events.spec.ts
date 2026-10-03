@@ -17,6 +17,8 @@ interface Reply {
 	panClicks: { frame: number; shown: number; turn: number; hit: string }[];
 	/** The frames since the pan started. */
 	panFrames: number;
+	/** The pointer as the sketch last read it. */
+	pointer: { x: number; y: number; buttons: number };
 }
 
 /** Places on the 320 x 180 canvas, in CSS pixels, from the sketch's camera and boxes. */
@@ -127,8 +129,12 @@ for (const mode of ENGINE_MODES)
 		// No object listens yet: moves and clicks cast no ray.
 		await page.mouse.move(MIDDLE.x, MIDDLE.y);
 		await page.mouse.click(RIGHT.x, RIGHT.y);
+		// Once the sketch has read the click, it has dispatched it, with no handler to cast for.
+		await expect
+			.poll(async () => (await send()).pointer)
+			.toEqual({ x: RIGHT.x, y: RIGHT.y, buttons: 0 });
+		expect((await send()).rays).toBe(0);
 		await page.mouse.move(OUTSIDE.x, OUTSIDE.y);
-		await expect.poll(async () => (await send()).rays).toBe(0);
 		await send('listen');
 		const lines = await moveAndClick(page, send);
 		const { rays } = await send('unlisten');

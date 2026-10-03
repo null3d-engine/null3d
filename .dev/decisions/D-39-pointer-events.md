@@ -80,4 +80,5 @@ The event is one object that the engine reuses, and the docs say so. three.js ap
 - The input reader fills the log while one is set, and gives the frame on screen for resting pointers. The page writes `EVENT_POINTER_LEAVE`.
 - E1205 also covers an event type that objects do not have.
 - `docs/api/input.md` describes the events, `docs/api/objects.md` the calls, and `docs/api/raycast.md` points to both. The develop skill's click-to-select recipe uses `on('click')`, and the porting skill maps react-three-fiber's mesh events.
+- The dispatch is part of the sketch's start download, about 2 KB after Brotli, as D-14's estimate for M2 counts it. A sketch's first `on` call returns at once, and its handlers must hear the next frame's events. A file that loads on first use would lose those events or delay the frame.
 - A way to keep an object out of pointer events, such as react-three-fiber's `raycast={() => null}`, does not exist yet. A ray of one's own on chosen layers does that work.

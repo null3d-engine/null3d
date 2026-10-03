@@ -706,8 +706,8 @@ export class SketchRunner {
 		// waits for them.
 		let restart = false;
 		// The sketch's part of the frame: the input the page wrote and its pointer events on
-		// objects, preference changes, the fixed steps and the update. It stays in this function: a call that passed the step on would
-		// allocate a number for it in every frame.
+		// objects, preference changes, the fixed steps and the update. It stays in this function: a
+		// call that passed the step on would allocate a number for it in every frame.
 		if (play) {
 			if (this.holdSeconds === undefined) {
 				this.input.beginFrame(frame, frame - time.frame);
