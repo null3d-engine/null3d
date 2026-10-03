@@ -88,11 +88,11 @@ pub mod value {
     /// The part of a spot light's cone, from 0 to 1, over which its light fades out toward the
     /// edge. The default is 0.
     pub const PENUMBRA: u32 = 4;
-    /// How far a receiver's depth moves toward the light before its shadow test, in texels of its
-    /// cascade or its shadow tile. The default is 0.5.
+    /// How far a receiver's point moves toward the light before its shadow test, in meters, up to
+    /// one texel of its cascade or its shadow tile. The default is 0.01.
     pub const SHADOW_BIAS: u32 = 5;
-    /// How far a receiver's point moves along its normal before its shadow test, in texels of its
-    /// cascade or its shadow tile. The default is 1.
+    /// How far a receiver's point moves along its normal before its shadow test, in meters, up to
+    /// one texel of its cascade or its shadow tile. The default is 0.02.
     pub const SHADOW_NORMAL_BIAS: u32 = 6;
     /// The cascades of a directional light's shadows, from 1 to 4. The default is 3, and the
     /// quality preset sets its own through [`super::LightTable::set_default`].
@@ -108,8 +108,9 @@ pub mod value {
 }
 
 /// The numbers of a new light, by [`value`], until [`LightTable::set_default`] changes them.
-const DEFAULT_VALUES: [f32; value::LAST as usize + 1] =
-    [1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.5, 1.0, 3.0, 2048.0, 200.0];
+const DEFAULT_VALUES: [f32; value::LAST as usize + 1] = [
+    1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.01, 0.02, 3.0, 2048.0, 200.0,
+];
 
 /// The cone cosines of a point light's [`VisibleLight`] record. Every direction's cosine is above
 /// both, so a shader that fades spot lights with a smooth step between them lets a point light's
@@ -166,9 +167,9 @@ pub struct LightShadow {
     pub angle: f32,
     /// The distance in meters where the light ends.
     pub range: f32,
-    /// Its bias, in texels of its tile.
+    /// Its bias toward the light, in meters.
     pub bias: f32,
-    /// Its normal bias, in texels of its tile.
+    /// Its normal bias, in meters.
     pub normal_bias: f32,
     /// The light's layer mask: its tiles draw the casters whose masks share a bit with it.
     pub layers: u32,
@@ -218,9 +219,9 @@ pub struct SunShadow {
     pub cascades: u32,
     /// Texels on each side of each cascade's shadow map, at least 1.
     pub map_size: u32,
-    /// Its bias, in texels of each cascade.
+    /// Its bias toward the light, in meters.
     pub bias: f32,
-    /// Its normal bias, in texels of each cascade.
+    /// Its normal bias, in meters.
     pub normal_bias: f32,
     /// The distance along the camera's view out to which its shadows fall.
     pub distance: f32,

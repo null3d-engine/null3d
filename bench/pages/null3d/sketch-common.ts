@@ -37,6 +37,15 @@ export interface ViewOptions {
 }
 
 /**
+ * Reads the frames between two draws of a far shadow cascade from the sketch module's address,
+ * where the page harness puts them when the page asks, or undefined for the quality preset's.
+ */
+export function readFarInterval(moduleUrl: string): number | undefined {
+	const far = new URL(moduleUrl).searchParams.get('far');
+	return far === null ? undefined : Number(far);
+}
+
+/**
  * False when the sketch module's address turns the quality governor off, where the page harness
  * puts `governor=off` for a page with `?governor=off`.
  */

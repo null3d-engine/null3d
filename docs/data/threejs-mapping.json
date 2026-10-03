@@ -539,7 +539,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity, castShadows, shadow })",
-      "notes": "distance becomes range, which every spot light needs. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in texels of the light's tile in the shadow atlas. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. Spot light cookies (light.map) come after 1.0.",
+      "notes": "distance becomes range, which every spot light needs. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in meters. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. Spot light cookies (light.map) come after 1.0.",
       "docs": "api/lights",
       "detect": "\\bSpotLight\\b"
     },
@@ -605,7 +605,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "shadow: { mapSize, bias, normalBias, cascades, distance } in the directional light's options, or light.setShadow()",
-      "notes": "mapSize is one number, the texels on each side. bias and normalBias count texels of each cascade, not depth units and meters, so start from the defaults. radius and blurSamples become the shadowFilter quality setting, 3 or 5 texels on each side. shadow.camera has no equivalent: the cascades fit the camera's view.",
+      "notes": "mapSize is one number, the texels on each side. bias and normalBias are in meters, where three.js gives bias in depth units, so start from the defaults. radius and blurSamples become the shadowFilter quality setting, 3 or 5 texels on each side. shadow.camera has no equivalent: the cascades fit the camera's view.",
       "docs": "concepts/shadows",
       "detect": "\\.shadow\\.(mapSize|bias|normalBias|camera|radius|blurSamples)\\b"
     },

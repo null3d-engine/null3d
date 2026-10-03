@@ -406,7 +406,7 @@ fn light_surface(
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
     var sun_color = engine_frame.sun_color.rgb;
 #ifdef RECEIVE_SHADOWS
-    sun_color *= sun_shadow(relative, normal);
+    sun_color *= sun_shadow(relative, normal, -engine_frame.sun_direction.xyz);
 #endif
     let sun = direct_light(
         m,

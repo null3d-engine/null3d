@@ -114,12 +114,16 @@ export async function publish(name: string, result: Record<string, unknown>): Pr
 	const report = { page: name, userAgent: navigator.userAgent, url: location.href, ...result };
 	window.__null3dResult = report;
 	const status = document.getElementById('status');
+	// A demo keeps its scene on screen, so its status stays one line, unless the page failed.
+	const demo = new URLSearchParams(location.search).has('demo') && !('error' in result);
 	if (status)
-		status.textContent = JSON.stringify(
-			{ ...report, pixels: undefined, images: undefined, frame: undefined },
-			null,
-			2,
-		);
+		status.textContent = demo
+			? `${document.title}: running`
+			: JSON.stringify(
+					{ ...report, pixels: undefined, images: undefined, frame: undefined },
+					null,
+					2,
+				);
 	// Inside the runner page's frame, the runner posts the result with its run.
 	if (window.parent !== window) return;
 	try {

@@ -48,6 +48,12 @@ High and Ultra start only on desktops, which T-25 did not measure. On the iPad, 
 
 **GPU buffers.** The presets set no buffer budget. Until a rerun shows whether the stall repeats, keep a scene's GPU buffers on the iPad's WebGPU path under 256 MiB, half the stall point.
 
+**Shadow maps.** The shadow maps share the GPU memory that the texture budget plans for. M1-G6 set each preset's shadow cascades and map size (#215). They add 8 MiB on Low and 48 MiB on Medium, which fit well inside the room under 1008 MiB. "Each preset's memory" below gives the figures for every preset.
+
+## How three.js handles it
+
+three.js sets no memory budget. `renderer.info.memory` counts the geometries and textures that the renderer holds, but not their bytes. An app that runs out of memory on a phone learns of it when the browser closes the tab. null3D sets each preset's WebAssembly maximum, and plans its texture budget, from the failure points above. A scene that keeps within its preset then stays under half of what the weakest measured device survived. The engine does not apply the texture budget yet (see "Consequences").
+
 ## Consequences
 
 - `memoryMaximumMiB` in `packages/engine/src/quality/presets.ts` stays 1024 MiB on every preset. The planned `textureMemoryMiB` in `preset-docs.ts` keeps its values.
@@ -56,7 +62,7 @@ High and Ultra start only on desktops, which T-25 did not measure. On the iPad, 
 - Rerun `--only tab-memory-buffer-webgpu-1` on the iPad in the same way, to see whether its WebGPU buffer stall repeats.
 - A 4 GB iPad, if one becomes available, runs the whole plan. D-04 left T-07 open for one, and it may fail at about half the iPad Pro's points.
 - [Phones and tablets](../../docs/guides/phones.md#memory) gives the measured points.
-- T-25 closes in section 17 of the plan with the failure points.
+- T-25 closed on 2026-10-03 with the failure points.
 - The record is in the table in README.md.
 
 ## Each preset's memory (M1-G6)

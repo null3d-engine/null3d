@@ -36,7 +36,9 @@ use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, DrawKey};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
-use crate::shadows::{CascadeSchedule, ShadowFrame, ShadowQuality, ShadowSettings, fit_cascades};
+use crate::shadows::{
+    CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings, fit_cascades,
+};
 use crate::textures::TextureStore;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
 
@@ -484,6 +486,8 @@ pub struct SceneSettings {
     lighting: Lighting,
     /// Which shadow cascades draw in each frame, and what the shadow map's layers hold.
     shadow_schedule: CascadeSchedule,
+    /// The casters that move in every frame, which keep far cascades drawing.
+    moving_casters: MovingCasters,
     canvas: CanvasOutput,
     output: Output,
     /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
@@ -524,6 +528,7 @@ impl SceneSettings {
                 fog: Fog::None,
             },
             shadow_schedule: CascadeSchedule::default(),
+            moving_casters: MovingCasters::default(),
             canvas,
             output: Output::default(),
             clock: [0.0; 4],
@@ -841,25 +846,17 @@ impl SceneSettings {
     /// size: its cascades, fitted to the camera's view, with the cascades that draw in this frame,
     /// or `None` when the light casts no shadows or the camera has nothing to draw from. Call it
     /// once per frame, as it moves the cascades' update schedule on.
-    pub fn shadow_frame(
-        &mut self,
-        scene: &SceneStorage,
-        parity: usize,
-        canvas: (u32, u32),
-    ) -> Option<ShadowFrame> {
-        let frame = self.fit_shadows(scene, parity, canvas);
+    pub fn shadow_frame(&mut self, input: &FrameInput<'_>) -> Option<ShadowFrame> {
+        let frame = self.fit_shadows(input);
         if frame.is_none() {
             self.shadow_schedule.reset();
+            self.moving_casters.forget();
         }
         frame
     }
 
-    fn fit_shadows(
-        &mut self,
-        scene: &SceneStorage,
-        parity: usize,
-        canvas: (u32, u32),
-    ) -> Option<ShadowFrame> {
+    fn fit_shadows(&mut self, input: &FrameInput<'_>) -> Option<ShadowFrame> {
+        let (scene, parity, canvas) = (input.scene, input.parity(), input.canvas);
         let shadow = self.lighting.sun_shadow?;
         let (camera, lens) = self.views[ViewId::CAMERA.index()].camera()?;
         let slot = scene.resolve(camera).ok()?;
@@ -886,11 +883,14 @@ impl SceneSettings {
         if fitter != slot {
             cascades.seen_from(fitted, absolute, shadow.map_size);
         }
+        self.moving_casters.update(scene, input.structure_changed);
+        let moving = &self.moving_casters;
         let drawn = self.shadow_schedule.plan(
             &mut cascades,
             absolute,
             shadow.map_size,
             quality.far_interval,
+            |bounds| moving.touch(scene, parity, shadow.layers, bounds),
         );
         Some(ShadowFrame {
             cascades,

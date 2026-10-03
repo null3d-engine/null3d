@@ -81,10 +81,13 @@ const skipWhereTooSlow = (page: string) =>
 		'SwiftShader takes minutes to draw its first frames',
 	);
 /**
- * The warm-up and measured seconds of a page's short benchmark run. On SwiftShader, null3D draws S4
- * at a few frames a second, and S3's 256 lights at about one, with each frame done more than two
- * seconds after it starts. The first frames of S3's three.js twin on WebGPU take seconds, so its run
- * is longer on every GPU. These runs need longer to measure frames.
+ * The warm-up and measured seconds of a page's short benchmark run. null3D counts a frame only when
+ * the sketch stepped it and the renderer drew it inside the measured time, and the renderer draws a
+ * frame about one frame after the step. So the measured time must hold more than two frames at the
+ * page's slowest rate. On SwiftShader, null3D draws S2 with shadows at about 2 frames a second, so
+ * one second can count none. It draws S4 at a few frames a second, and S3's 256 lights at about
+ * one, with each frame done more than two seconds after it starts. The first frames of S3's three.js
+ * twin on WebGPU take seconds, so its run is longer on every GPU.
  */
 function shortRunSeconds(scene: (typeof SCENES)[number], kind: PageKind): number {
 	if ((scene === 's3' || scene === 's4') && SWIFTSHADER) return 8;
@@ -237,7 +240,7 @@ for (const kind of [
 	}) => {
 		const result = await runPage<BenchReport>(
 			page,
-			pagePath('s2', kind, `seconds=1&n=${SHORT_RUN_COUNT}&shadows=2`),
+			pagePath('s2', kind, `seconds=${shortRunSeconds('s2', kind)}&n=${SHORT_RUN_COUNT}&shadows=2`),
 		);
 		expect(result.frames).toBeGreaterThan(0);
 		const { width, height } = PARITY_CANVAS;
