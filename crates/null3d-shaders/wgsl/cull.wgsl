@@ -44,7 +44,9 @@ struct CullParams {
 
 /// A bucket: one pipeline, mesh and material, with its slice of the compacted instance buffer and
 /// its indirect draws, one per part of the mesh, from `first_draw` on. Its instances are culled
-/// with the local sphere of `radius` around `center_x`, `center_y` and `center_z`.
+/// with the local sphere of `radius` around `center_x`, `center_y` and `center_z`. A skinned
+/// object's bucket names the first joint of its skin, which the vertex shaders that skin read
+/// beside the material.
 struct Bucket {
     base: u32,
     material: u32,
@@ -54,6 +56,7 @@ struct Bucket {
     center_x: f32,
     center_y: f32,
     center_z: f32,
+    first_joint: u32,
 }
 
 @group(0) @binding(0) var<uniform> params: CullParams;
@@ -140,5 +143,5 @@ fn main(
     visible[dst] = r0;
     visible[dst + 1u] = r1;
     visible[dst + 2u] = r2;
-    visible[dst + 3u] = bitcast<vec4f>(vec4u(bucket.material, 0u, 0u, 0u));
+    visible[dst + 3u] = bitcast<vec4f>(vec4u(bucket.material, bucket.first_joint, 0u, 0u));
 }

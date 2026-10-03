@@ -240,6 +240,7 @@ export class SketchRunner {
 			device.transparent,
 			device.cellCulling,
 			device.depthPrepass,
+			device.vertexSkinning,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
 		const { shadowTiles, shadowTileSize, pointLightShadows, shadowCascades, shadowMapSize } =

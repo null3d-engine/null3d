@@ -7,12 +7,19 @@ enable draw_index;
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
 #import null3d::mesh::{material_of, relative_position}
 #import null3d::vertex::{mesh_position}
+#ifdef SKIN
+#import null3d::mesh::{skin_of, skinned_direction, skinned_point}
+#endif
 
 /// The vertex attributes that the template reads.
 struct VertexIn {
     @location(0) position: vec3f,
 #ifdef VERTEX_COLOR
     @location(5) vertex_color: vec4f,
+#endif
+#ifdef SKIN
+    @location(6) joints: vec4u,
+    @location(7) weights: vec4f,
 #endif
 }
 
@@ -31,7 +38,13 @@ struct VertexOut {
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
-    out.relative = relative_position(found, mesh_position(v.position));
+#ifdef SKIN
+    let skin = skin_of(found, v.joints, v.weights);
+    let position = skinned_point(skin, mesh_position(v.position));
+#else
+    let position = mesh_position(v.position);
+#endif
+    out.relative = relative_position(found, position);
     out.clip = clip_of(found, out.relative);
     out.material = found.material;
 #ifdef VERTEX_COLOR

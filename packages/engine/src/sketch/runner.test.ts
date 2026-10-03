@@ -215,6 +215,7 @@ async function start(
 				shaderBits: 0,
 				cellCulling: true,
 				depthPrepass: false,
+				vertexSkinning: false,
 			},
 			capabilities: CAPABILITIES,
 			quality,

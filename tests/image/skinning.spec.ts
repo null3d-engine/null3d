@@ -1,30 +1,46 @@
-// The skinning page, which measures two ways to skin characters on WebGL2: in the vertex shader of
-// every pass, or once per frame with transform feedback. Phones and tablets run its timings through
-// the runner's skinning plan. Here a small crowd checks that both paths draw the same image and
-// that both get timed.
+// The skinning pages, which measure two ways to skin characters: in the vertex shader of every
+// pass, or once per frame, with transform feedback on WebGL2 and with a compute pass on WebGPU.
+// Phones and tablets run their timings through the runner's skinning plans. Here a small crowd
+// checks that both paths of each page draw the same image and that both get timed.
 import { expect, test } from '@playwright/test';
 import { loadResult } from '../lib/page-result.ts';
 import { failureText } from '../lib/runs.ts';
-import { SKINNING_PATHS, type SkinningResult, skinningProblems } from '../pages/lib/skinning.ts';
+import {
+	pathTiming,
+	SKIN_ONCE,
+	type SkinningGpu,
+	type SkinningResult,
+	skinningPaths,
+	skinningProblems,
+} from '../pages/lib/skinning.ts';
 
-test('skinning once with transform feedback draws what skinning in every pass draws', async ({
-	page,
-}) => {
-	const result = await loadResult(
+const PAGES: Record<SkinningGpu, string> = {
+	webgl2: 'skinning.html',
+	webgpu: 'skinning-webgpu.html',
+};
+
+for (const gpu of ['webgl2', 'webgpu'] as const) {
+	test(`skinning once with ${SKIN_ONCE[gpu]} draws what skinning in every pass draws, on ${gpu}`, async ({
 		page,
-		'skinning.html?characters=20&cascades=2&rounds=2&warmup=100',
-		60_000,
-	);
-	expect(result.ok ? [] : [failureText(result)]).toEqual([]);
-	const skinning = result as typeof result & SkinningResult;
-	expect(skinningProblems(skinning)).toEqual([]);
-	// Every character stands in view and in the far cascade, and transform feedback skins each once.
-	expect(skinning.drawn[0]).toBe(20);
-	expect(skinning.skinned).toBe(20);
-	for (const path of SKINNING_PATHS) expect(skinning.paths[path].batches).toBe(2);
-	const { 'vertex-shader': each, 'transform-feedback': once } = skinning.paths;
-	expect(once.skinnedVertices).toBe(20 * skinning.vertices);
-	expect(each.skinnedVertices).toBe(
-		skinning.drawn.reduce((sum, count) => sum + count, 0) * skinning.vertices,
-	);
-});
+	}) => {
+		const result = await loadResult(
+			page,
+			`${PAGES[gpu]}?characters=20&cascades=2&rounds=2&warmup=100`,
+			60_000,
+		);
+		expect(result.ok ? [] : [failureText(result)]).toEqual([]);
+		const skinning = result as typeof result & SkinningResult;
+		expect(skinning.gpu).toBe(gpu);
+		expect(skinningProblems(skinning)).toEqual([]);
+		// Every character stands in view and in the far cascade, and the path that skins once skins
+		// each once.
+		expect(skinning.drawn[0]).toBe(20);
+		expect(skinning.skinned).toBe(20);
+		const [each, once] = skinningPaths(gpu).map((path) => pathTiming(skinning, path));
+		for (const timing of [each, once]) expect(timing?.batches).toBe(2);
+		expect(once?.skinnedVertices).toBe(20 * skinning.vertices);
+		expect(each?.skinnedVertices).toBe(
+			skinning.drawn.reduce((sum, count) => sum + count, 0) * skinning.vertices,
+		);
+	});
+}

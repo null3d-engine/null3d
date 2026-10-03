@@ -14,6 +14,9 @@ enable draw_index;
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
 #import null3d::mesh::{map_layer, map_ready, material_of, relative_position, straight_texel}
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
+#ifdef SKIN
+#import null3d::mesh::{skin_of, skinned_direction, skinned_point}
+#endif
 
 // The maps' bind group comes after the frame's group, and on WebGL2 after the groups of the draw
 // records and the data textures.
@@ -37,6 +40,10 @@ struct VertexIn {
 #ifdef VERTEX_COLOR
     @location(5) vertex_color: vec4f,
 #endif
+#ifdef SKIN
+    @location(6) joints: vec4u,
+    @location(7) weights: vec4f,
+#endif
 }
 
 struct VertexOut {
@@ -56,7 +63,13 @@ struct VertexOut {
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
-    out.relative = relative_position(found, mesh_position(v.position));
+#ifdef SKIN
+    let skin = skin_of(found, v.joints, v.weights);
+    let position = skinned_point(skin, mesh_position(v.position));
+#else
+    let position = mesh_position(v.position);
+#endif
+    out.relative = relative_position(found, position);
     out.clip = clip_of(found, out.relative);
     out.uv = vec4f(mesh_uv(v.uv0), mesh_second_uv(v.uv1));
     out.material = found.material;
