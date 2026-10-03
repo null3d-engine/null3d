@@ -354,6 +354,18 @@ impl LightTable {
         Ok(row)
     }
 
+    /// Adds a light for the scene object `object` with the kind, colors and numbers of `light`, and
+    /// returns its row. It counts as created now, as for [`LightTable::create`]. Fails with
+    /// [`CoreError::InvalidHandle`] for a row that holds no light.
+    pub fn duplicate(&mut self, light: u32, object: Handle) -> Result<u32, CoreError> {
+        let source = *self.row(light)?;
+        let row = self.create(object, source.kind)?;
+        let copy = &mut self.rows[row as usize];
+        copy.colors = source.colors;
+        copy.values = source.values;
+        Ok(row)
+    }
+
     /// Adds a free row at the end, with room in the free list, the visible list and the shadow
     /// list for every row.
     fn grow(&mut self) -> Result<(), CoreError> {
@@ -654,6 +666,28 @@ mod tests {
         for (which, number) in [(0, 2.5), (1, 12.0), (2, 1.5), (3, 0.4), (4, 0.25)] {
             assert_eq!(table.value(light, which).unwrap(), number);
         }
+    }
+
+    #[test]
+    fn a_duplicate_copies_the_kind_colors_and_numbers_for_its_own_object() {
+        let mut table = LightTable::new();
+        let light = table.create(Handle::new(1, 0), kind::SPOT).unwrap();
+        table
+            .set_color(light, color::MAIN, [0.1, 0.2, 0.3])
+            .unwrap();
+        table.set_value(light, value::RANGE, 12.0).unwrap();
+        table.set_value(light, value::PENUMBRA, 0.4).unwrap();
+        let copy = table.duplicate(light, Handle::new(9, 0)).unwrap();
+        assert_ne!(copy, light);
+        assert_eq!(table.kind(copy), kind::SPOT);
+        assert_eq!(table.object(copy).unwrap(), Handle::new(9, 0));
+        assert_eq!(table.color(copy, color::MAIN).unwrap(), [0.1, 0.2, 0.3]);
+        assert_eq!(table.value(copy, value::RANGE).unwrap(), 12.0);
+        assert_eq!(table.value(copy, value::PENUMBRA).unwrap(), 0.4);
+        assert_eq!(
+            table.duplicate(7, Handle::new(9, 0)),
+            Err(CoreError::InvalidHandle { raw: 7 })
+        );
     }
 
     #[test]

@@ -60,6 +60,11 @@ export interface CoreGlue extends CoreErrors {
 	sceneArrays(field: number): number;
 	reserveObject(): number;
 	/**
+	 * Reserves `count` object slots at once, or none, and returns the address of their handles:
+	 * `count` 32-bit words, valid until the next call that reserves staging words.
+	 */
+	reserveObjects(count: number): number;
+	/**
 	 * Copies a world matrix into the 12 numbers at `worldMatrixAddress`, with the translation from
 	 * the origin in 64 bits.
 	 */
@@ -116,6 +121,20 @@ export interface CoreGlue extends CoreErrors {
 		colors: boolean,
 		mesh: number,
 		material: number,
+	): number;
+	/**
+	 * Creates one part of a model as a batch: `part` places the mesh in the space of each row, 12
+	 * numbers of a 3 × 4 matrix by rows. With a `source` batch other than 0, it reads that batch's
+	 * rows and takes its capacity, dynamic flag and colors.
+	 */
+	createBatchPart(
+		source: number,
+		capacity: number,
+		dynamic: boolean,
+		colors: boolean,
+		mesh: number,
+		material: number,
+		part: Float32Array,
 	): number;
 	destroyBatch(batch: number, frame: number): number;
 	batchArrays(batch: number, field: number): number;
@@ -268,6 +287,8 @@ export interface CoreGlue extends CoreErrors {
 	 * codes. Returns the light's id.
 	 */
 	createLight(handle: number, kind: number): number;
+	/** Adds a light for object `handle` with the kind, colors and numbers of `light`. */
+	copyLight(light: number, handle: number): number;
 	destroyLight(light: number): number;
 	/** Sets one of a light's linear colors: `which` is one of the `LIGHT_COLOR_*` codes. */
 	setLightColor(light: number, which: number, r: number, g: number, b: number): number;
@@ -388,6 +409,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'sceneCapacity',
 	'sceneArrays',
 	'reserveObject',
+	'reserveObjects',
 	'worldMatrix',
 	'worldMatrixAddress',
 	'commandRing',
@@ -407,6 +429,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'debugLineArrays',
 	'drawDebugLines',
 	'createBatch',
+	'createBatchPart',
 	'destroyBatch',
 	'batchArrays',
 	'setBatchActiveCount',
@@ -433,6 +456,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOrthographicCamera',
 	'clearShadowCamera',
 	'createLight',
+	'copyLight',
 	'destroyLight',
 	'setLightColor',
 	'setLightValue',

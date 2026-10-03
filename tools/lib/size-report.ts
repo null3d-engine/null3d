@@ -52,6 +52,8 @@ export interface EnginePart {
  * worker, so a page downloads it only for the thread that draws. The sketch runner and the scene API
  * load on demand on the page, which runs the sketch only in single-threaded mode. The KTX2 loader
  * loads on demand in the thread that runs the sketch, when the sketch loads its first KTX2 file.
+ * The glTF loader loads there too with the sketch's first glTF file, and starts the glTF worker,
+ * which parses files.
  * The preset check loads after the first frame, in the thread that runs the sketch, so no download
  * before the first frame counts it. The stats overlay loads on the page when the sketch first asks
  * for it, and the frame figures that it and `debug.frameStats` read load with it, or in the thread
@@ -68,6 +70,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	},
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
+	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
 	{
 		name: 'page-preset-check.js',
 		module: 'sketch/preset-check.ts',
@@ -83,6 +86,8 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		loadedBy: 'sketch-worker-renderer.js',
 	},
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
+	{ name: 'sketch-worker-gltf.js', module: 'scene/gltf.ts', loadedBy: 'sketch-worker.js' },
+	{ name: 'gltf-worker.js', module: 'workers/gltf-worker.ts', loadedBy: 'sketch-worker-gltf.js' },
 	{
 		name: 'sketch-worker-preset-check.js',
 		module: 'sketch/preset-check.ts',

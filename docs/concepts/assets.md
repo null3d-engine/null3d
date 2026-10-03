@@ -8,17 +8,37 @@ summary: "glTF, KTX2, meshopt; prefabs and instantiate; upload budgets; memory."
 
 # Assets and prefabs
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Textures, KTX2 files, meshes with integer attributes and the upload budget are built. Not built yet: glTF models (`assets.loadGltf`), meshopt compression, prefabs, `scene.instantiate`, and the texture memory budget. Coding agents must not use them.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Models, prefabs, textures, KTX2 files, integer vertex types and the upload budget are built. Not built yet: meshopt and Draco compression, the skins, animations and morph targets of glTF files, and the texture memory budget. Coding agents must not use them.
 
 ```mermaid
 flowchart LR
+    gltf["glTF files"] -->|"assets.loadGltf:<br/>parsed in a worker"| prefab["A prefab: meshes,<br/>materials, textures<br/>and nodes, made once"]
+    prefab -->|"scene.instantiate,<br/>scene.createInstances"| copies["Copies that share<br/>the prefab's GPU data"]
     files["Image and KTX2 files"] -->|"assets.loadTexture:<br/>decoded or transcoded<br/>outside the frame"| textures["Textures in the<br/>device's own format"]
     arrays["Vertex arrays:<br/>floats or 8-bit and<br/>16-bit integers"] -->|"geometry.fromArrays"| meshes["Meshes that keep<br/>their integer types"]
+    prefab --> textures
+    prefab --> meshes
     textures -->|"a byte budget<br/>per frame"| gpu["GPU memory"]
     meshes --> gpu
 ```
 
-Assets are the textures and meshes that a scene draws. Files download and decode outside the sketch's frames. A texture from a KTX2 file stays compressed in the format that the device supports. A mesh keeps its vertex data in the types that it came in, so integer data stays half or a quarter the size of floats. Texture uploads share a byte budget per frame, so a scene that loads many textures does not make one frame slow.
+Assets are the models, textures and meshes that a scene draws. A glTF model loads into a prefab, a template whose meshes, materials and textures exist once on the GPU. Each copy of the model creates only its objects, and draws with the prefab's data. Files download and decode outside the sketch's frames. A texture from a KTX2 file stays compressed in the format that the device supports. A mesh keeps its vertex data in the types that it came in, so integer data stays half or a quarter the size of floats. Texture uploads share a byte budget per frame, so a scene that loads many textures does not make one frame slow.
+
+## Models and prefabs
+
+`assets.loadGltf` loads a glTF 2.0 model. A worker parses the file outside the sketch's frames, so a large model never stalls a frame. The loader then makes each mesh, material and texture of the file once, and returns a prefab. Then `scene.instantiate(prefab)` creates the model's objects under one new group, with one batch of queued changes. Each copy shares the prefab's GPU data, so ten copies of a model add only their own objects.
+
+```ts
+// sketch.ts
+const ship = await assets.loadGltf('/models/ship.glb');
+const first = scene.instantiate(ship, { position: [0, 0, 0] });
+const second = scene.instantiate(ship, { position: [8, 0, 0] });
+const many = scene.createInstances(ship, 200); // one row places a whole ship
+```
+
+For hundreds or thousands of copies, `scene.createInstances(prefab, count)` draws them with instance batches instead of objects, one batch for each mesh of the model. The batches share their rows, so one write to a row moves every part of that copy. [Scene](../api/scene.md#models-and-copies) covers the three ways to copy, and [Assets](../api/assets.md#gltf-models) lists what each part of a file becomes.
+
+The loader reads `.glb` files, and `.gltf` files with the files they name. It reads these extensions: `KHR_mesh_quantization`, `KHR_texture_basisu`, `KHR_texture_transform`, `KHR_materials_unlit`, `KHR_materials_emissive_strength`, `KHR_lights_punctual` and `EXT_mesh_gpu_instancing`. A file that requires another extension fails with E1417. The loader leaves out other extensions that a file only uses, and the model draws without them.
 
 ## Textures
 
@@ -62,4 +82,8 @@ Each texture reports its GPU memory in `memoryBytes`. The engine counts this mem
 | --- | --- |
 | `TextureLoader`, and `KTX2Loader` with its transcoder path | `assets.loadTexture(url)` for both. The engine ships the transcoder |
 | A `BufferAttribute` of an `Int16Array` with `normalized: true` | `{ array: new Int16Array(values), normalized: true }` in `geometry.fromArrays` |
-| `GLTFLoader` with a quantized mesh | Not built yet. A glTF node's transform becomes the object's transform |
+| `new GLTFLoader().loadAsync(url)`, then `scene.add(gltf.scene)` | `const prefab = await assets.loadGltf(url)`, then `scene.instantiate(prefab)` |
+| `gltf.scene.clone()` or `SkeletonUtils.clone` for each copy | `scene.instantiate(prefab)` for each copy, which shares the GPU data |
+| `GLTFLoader` with `KTX2Loader` and its transcoder path | `assets.loadGltf(url)`. The engine ships the transcoder |
+| `GLTFLoader` with a quantized mesh | `assets.loadGltf(url)`. A glTF node's transform becomes the object's transform, so the integers stay on the GPU |
+| An `InstancedMesh` for each mesh of a model, kept in step by hand | `scene.createInstances(prefab, count)`: one set of rows for all the model's meshes |

@@ -251,6 +251,22 @@ pub(crate) fn compose4(position: [f32x4; 3], rotation: [f32x4; 4], scale: [f32x4
     ]
 }
 
+/// Four [`mul`] results `m × b` at once, one per lane of `m`, with the same `b` for every lane.
+/// Each element takes the same operations in the same order as [`mul`], so the results match it
+/// bit for bit.
+#[inline(always)]
+pub(crate) fn mul4(m: &Affine4, b: &Affine) -> Affine4 {
+    let zero = f32x4::splat(0.0);
+    m.map(|row| {
+        [0, 1, 2, 3].map(|c| {
+            row[0] * f32x4::splat(b[c])
+                + row[1] * f32x4::splat(b[4 + c])
+                + row[2] * f32x4::splat(b[8 + c])
+                + if c == 3 { row[3] } else { zero }
+        })
+    })
+}
+
 /// Four [`max_axis_scale`] results at once, one per lane, computed the same way.
 #[inline(always)]
 pub(crate) fn max_axis_scale4(m: &Affine4) -> f32x4 {

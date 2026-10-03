@@ -548,6 +548,23 @@ impl SceneStorage {
         self.slots.reserve()
     }
 
+    /// Reserves `out.len()` slots at once and writes their handles' raw values into `out`, as
+    /// [`SceneStorage::reserve`] would one by one. Fails with [`CoreError::CapacityExceeded`]
+    /// before it reserves any when the free slots are too few.
+    pub fn reserve_many(&mut self, out: &mut [u32]) -> Result<(), CoreError> {
+        let free = self.slots.capacity() - self.slots.live_count();
+        if out.len() > free as usize {
+            return Err(CoreError::CapacityExceeded {
+                resource: Resource::Slots,
+                capacity: self.slots.capacity(),
+            });
+        }
+        for raw in out {
+            *raw = self.slots.reserve()?.raw();
+        }
+        Ok(())
+    }
+
     /// The slot of a live handle.
     pub fn resolve(&self, handle: Handle) -> Result<u32, CoreError> {
         self.slots.resolve(handle)
@@ -1532,6 +1549,29 @@ mod tests {
     fn translation(scene: &SceneStorage, h: Handle) -> [f32; 3] {
         let m = scene.world_matrix(h).unwrap();
         [m[3], m[7], m[11]]
+    }
+
+    #[test]
+    fn many_slots_reserve_at_once_or_none_do() {
+        let mut scene = SceneStorage::with_capacity(4);
+        let mut handles = [0; 3];
+        scene.reserve_many(&mut handles).unwrap();
+        assert!(
+            handles
+                .iter()
+                .all(|&raw| scene.slots().is_live(Handle::from_raw(raw)))
+        );
+        let mut more = [0; 2];
+        assert!(matches!(
+            scene.reserve_many(&mut more),
+            Err(CoreError::CapacityExceeded {
+                resource: Resource::Slots,
+                capacity: 4
+            })
+        ));
+        assert_eq!(scene.slots().live_count(), 3);
+        scene.reserve_many(&mut more[..1]).unwrap();
+        assert_eq!(scene.slots().live_count(), 4);
     }
 
     #[test]
