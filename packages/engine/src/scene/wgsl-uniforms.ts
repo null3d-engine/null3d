@@ -193,8 +193,8 @@ type CompiledUniforms<Wgsl> = Wgsl extends {
 /**
  * The uniforms that WGSL declares as the fields of its `struct Uniforms`, each name with its type,
  * such as `{ tint: 'vec3f'; width: 'f32' }`. TypeScript sees them in a template literal that a
- * `wgsl` block comment tags, and in a `.wgsl` file once the null3D Vite plugin has written the
- * file's declaration. WGSL whose uniforms TypeScript cannot see, such as text in a `string`
+ * `wgsl` block comment tags. It sees them in a `.wgsl` file once the null3D Vite plugin has written
+ * the file's declaration. WGSL whose uniforms TypeScript cannot see, such as text in a `string`
  * variable, gives a record that takes any name.
  *
  * @category api/materials
@@ -204,7 +204,7 @@ export type WgslUniforms<Wgsl> = [Wgsl] extends [string]
 	: CompiledUniforms<Wgsl>;
 
 /**
- * The values of WGSL's uniforms by name, each optional and of the kind that its type takes, as the
+ * The values of WGSL's uniforms by name, each optional and of the kind that its type takes. The
  * `uniforms` option and `set` of a custom material take them. A name that the WGSL does not declare
  * fails the type check. WGSL whose uniforms TypeScript cannot see takes any name, and the engine
  * checks the names when it runs.

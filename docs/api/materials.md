@@ -215,7 +215,7 @@ const paint = materials.shader({ wgsl: tinted, uniforms: { tint: '#ff6a00', stre
 paint.set({ strength: 0.8, roughness: 0.3 });
 ```
 
-TypeScript reads the uniforms' names and types from the WGSL, so `uniforms` and `set` take only the names that `struct Uniforms` declares, each with a value of its kind. `paint.set({ strenght: 0.8 })` fails the type check. [Typed uniforms](../guides/custom-shaders.md#typed-uniforms) explains how TypeScript sees the WGSL of a tagged literal and of a `.wgsl` file.
+TypeScript reads the uniforms' names and types from the WGSL. The `uniforms` option and `set` take only the names that `struct Uniforms` declares. Each name takes a value of its kind, and a misspelled name fails the type check. [Typed uniforms](../guides/custom-shaders.md#typed-uniforms) covers tagged literals and `.wgsl` files.
 
 With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls below `alphaCutoff` draw nothing. Materials made from the same WGSL share one shader, and each has its own uniforms. A mesh needs texture coordinates to draw with a custom material. WGSL as plain text, which the plugin did not compile, throws E1215. So does a whole shader that is not a [full shader](../guides/custom-shaders.md#full-shaders) of a material. A uniform that the WGSL does not declare, or a value of the wrong kind, throws E1216. The WGSL can also move the mesh's vertices with a vertex offset. [Surface functions](../shaders/surface-functions.md) describes the WGSL.
 
@@ -439,7 +439,7 @@ The value that a uniform of each type takes. An `f32`, `i32` or `u32` uniform ta
 type UniformValues<Wgsl> = WgslUniforms<Wgsl> extends infer Uniforms extends { readonly [name: string]: UniformType; } ? string extends keyof Uniforms ? { readonly [name: string]: UniformValue | undefined; } : { readonly [Name in keyof Uniforms]?: UniformValueByType[Uniforms[Name]]; } : never;
 ```
 
-The values of WGSL's uniforms by name, each optional and of the kind that its type takes, as the `uniforms` option and `set` of a custom material take them. A name that the WGSL does not declare fails the type check. WGSL whose uniforms TypeScript cannot see takes any name, and the engine checks the names when it runs.
+The values of WGSL's uniforms by name, each optional and of the kind that its type takes. The `uniforms` option and `set` of a custom material take them. A name that the WGSL does not declare fails the type check. WGSL whose uniforms TypeScript cannot see takes any name, and the engine checks the names when it runs.
 
 ### `UnlitOptions`
 
@@ -479,6 +479,6 @@ Where a material's maps sit on the texture coordinates, as three.js's texture `o
 type WgslUniforms<Wgsl> = [Wgsl] extends [string] ? TextUniforms<Wgsl> : CompiledUniforms<Wgsl>;
 ```
 
-The uniforms that WGSL declares as the fields of its `struct Uniforms`, each name with its type, such as `{ tint: 'vec3f'; width: 'f32' }`. TypeScript sees them in a template literal that a `wgsl` block comment tags, and in a `.wgsl` file once the null3D Vite plugin has written the file's declaration. WGSL whose uniforms TypeScript cannot see, such as text in a `string` variable, gives a record that takes any name.
+The uniforms that WGSL declares as the fields of its `struct Uniforms`, each name with its type, such as `{ tint: 'vec3f'; width: 'f32' }`. TypeScript sees them in a template literal that a `wgsl` block comment tags. It sees them in a `.wgsl` file once the null3D Vite plugin has written the file's declaration. WGSL whose uniforms TypeScript cannot see, such as text in a `string` variable, gives a record that takes any name.
 
 <!-- null3d:api:end -->
