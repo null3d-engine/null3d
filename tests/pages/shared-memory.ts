@@ -66,6 +66,8 @@ interface KindResult {
 	/** Starts that the browser refused at first, and the time they waited for it, in all. */
 	lateStarts: number;
 	lateStartsMs: number;
+	/** For each frame that the page removed while its engine ran, the job workers still in the job loop. */
+	jobsServingAtLeave: number[];
 	/** Each count of the room after the cycles, the last of them, and the time they took. */
 	roomCounts?: number[];
 	roomLater?: number;
@@ -191,10 +193,6 @@ async function startAndStopEngine(): Promise<void> {
 	}
 }
 
-/** The steps that the page in `frame` noted, with their times since that page started. */
-const frameTrail = (frame: HTMLIFrameElement): string[] =>
-	(frame.contentWindow as Window | null)?.__null3dProgress ?? [];
-
 /**
  * Starts the engine in a frame, in the mode the page's switches ask for, and removes the frame
  * once the engine has drawn its first frame. With `destroy`, the frame stops the engine first.
@@ -224,8 +222,10 @@ async function startEngineInFrame(destroy: boolean): Promise<void> {
 				? new EngineError('E1109', message.error ?? 'refused')
 				: new Error(message.error);
 	} catch (e) {
-		// The frame's own steps tell how far its start got.
-		for (const step of frameTrail(frame)) progress(`in the frame: ${step}`);
+		// The frame's own steps and the engine's control slots tell how far its start got.
+		const view = frame.contentWindow as Window | null;
+		for (const step of view?.__null3dProgress ?? []) progress(`in the frame: ${step}`);
+		progress(`in the frame: control slots: ${view?.__engineFrameSlots?.() ?? 'out of reach'}`);
 		throw e;
 	} finally {
 		frame.remove();
@@ -318,6 +318,7 @@ run('shared-memory', async () => {
 		let cycleStart = 0;
 		let failure: Pick<KindResult, 'error' | 'trail'> = {};
 		late.starts = 0;
+		window.__jobsServingAtLeave = [];
 		late.ms = 0;
 		try {
 			for (; done < cycles; done++) {
@@ -348,6 +349,7 @@ run('shared-memory', async () => {
 			...failure,
 			lateStarts: late.starts,
 			lateStartsMs: Math.round(late.ms),
+			jobsServingAtLeave: window.__jobsServingAtLeave,
 			roomCounts,
 			roomLater: roomCounts?.at(-1),
 			roomWaitMs,
