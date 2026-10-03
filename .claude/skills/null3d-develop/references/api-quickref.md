@@ -48,7 +48,7 @@ const engine = await createEngine({
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
   transparent: false,    // true for a see-through canvas, with premultiplied alpha
   sketchThread: 'worker',  // or 'main': sketch code on the page's thread, for DOM-heavy apps and debugging
-  largeWorld: false,     // (0.2) planet-scale scenes: cell-relative positions, batch origins
+  largeWorld: false,     // (0.2) true for planet-scale scenes: setters keep positions exact far out
 });
 // createEngine rejects with an EngineError when the browser cannot run the engine (error.code)
 
@@ -108,7 +108,7 @@ export default defineSketch(async (ctx) => {
 | --- | --- | --- |
 | `scene.createGroup({ name, position, rotation, scale, parent, dynamic, layers })` | Group | Empty node for hierarchy |
 | `scene.createMesh({ mesh, material, position, rotation, scale, parent, dynamic, layers, castShadows, receiveShadows, name })` | Mesh | Static unless `dynamic: true` |
-| `scene.createInstances(mesh, count, { material, dynamic, colors, layers })` | InstanceBatch | Section 5 |
+| `scene.createInstances(mesh, count, { material, dynamic, colors, layers, origin })` | InstanceBatch; rows are relative to `origin` (0.2) | Section 5 |
 | `scene.instantiate(prefab, { name, position, rotation, scale, parent, dynamic, layers, castShadows, receiveShadows })` (0.2) | PrefabInstance | A group holding one copy of a loaded glTF model, made with one batch of changes; `instance.find(name)` gives the copy's object of a node |
 | `scene.clone(obj)` (0.2) | same type | Copies the object and every object below it, lights and cameras included, under the same parent |
 | `scene.find(name)` | Object3D or undefined | The first live object with the name; use at setup, not per frame |

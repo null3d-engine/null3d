@@ -151,7 +151,7 @@ The GPU draws each kind of object with a pipeline, which takes time to build. Th
 
 ## Instance batches
 
-An instance batch is one object that draws many copies of one mesh with one material. Its rows live in typed arrays that sketch code writes directly, with no call per row. A static batch, the default, uploads the rows you mark with `markDirty`. A batch created with `dynamic: true` uploads every row in every frame. Every row of a batch shares the batch's layers, which the `layers` option and `setLayers(mask)` set, as [Render layers](../concepts/render-layers.md) explains. [Instances and batching](../concepts/instances.md) explains batches in full.
+An instance batch is one object that draws many copies of one mesh with one material. Its rows live in typed arrays that sketch code writes directly, with no call per row. A static batch, the default, uploads the rows you mark with `markDirty`. A batch created with `dynamic: true` uploads every row in every frame. Every row of a batch shares the batch's layers, which the `layers` option and `setLayers(mask)` set, as [Render layers](../concepts/render-layers.md) explains. Rows are relative to the batch's `origin`, which keeps rows precise far from the world's origin: [Batch origins](../concepts/large-worlds.md#batch-origins). [Instances and batching](../concepts/instances.md) explains batches in full.
 
 ## Limits
 
