@@ -373,3 +373,28 @@ The per-frame check of static objects in pull request #93 costs more. The same m
 | S2 | WebGL2 | 0.223 / 0.185 ms | -12% | 0.210 / 0.175 ms |
 
 In S2 that check costs the sketch worker about 0.06 ms per frame on WebGPU and 0.03 ms on WebGL2. On the dev server's pages, the benchmarks and the CI job would have charged that to null3D, though no shipped page pays it.
+
+## Addendum, 2026-10-02: S3, S4 and S1 at phone scale on each device
+
+On 2 October 2026, the runner's bench plan ran S3 and S4 on the S24+ and the iPad. It also ran S1 at phone scale on the S24+ again. Five runs of each page took turns, at 60 Hz. The table gives the busiest thread's CPU time per frame, medians of runs. The S24+ rows compare with three.js's WebGL renderer, the only one it has, and the iPad rows with three.js's WebGPU renderer.
+
+| Device, browser, path | Scene | null3D | Low latency | three.js | Share |
+| --- | --- | --- | --- | --- | --- |
+| S24+, Chrome 154, WebGL2 | S1, 300,000 boxes | 19.00 ms, 35.5 fps | 20.54 ms | 37.47 ms, 25.6 fps | 51% |
+| S24+, Brave, Shields on, WebGL2 | S1, 300,000 boxes | 20.62 ms | | 38.81 ms | 53% |
+| S24+, Chrome 154, WebGL2 | S4 | 4.35 ms | 1.51 ms | 6.42 ms | 68% |
+| S24+, Brave, Shields on, WebGL2 | S4 | 4.30 ms | 1.64 ms | 6.35 ms | 68% |
+| S24+, Chrome 154, WebGL2 | S3 | 1.81 ms | 0.95 ms | cannot draw | |
+| S24+, Brave, Shields on, WebGL2 | S3 | 3.81 ms | 1.48 ms | cannot draw | |
+| iPad Pro, Safari 26.6, WebGPU | S4 | 0.18 ms | | 11.30 ms | 1.6% |
+| iPad Pro, Safari 26.6, WebGPU | S3 | 0.34 ms | | 2.00 ms | 17% |
+
+- In S1 at phone scale, null3D's own work in Chrome was 3.47 ms against three.js's 23.39 ms, 15%. In Brave it was 21%. S1 at that scale always heats the phone: Samsung's throttle level reached 4, and the skin 45.2 °C. Both engines ran under it.
+- On the S24+, S4 held 60 frames per second in every measured second in both browsers. The render scale stayed at 1, with no quality step. A run of 5 minutes of warm-up and 5 measured held 60 in 300 of 300 seconds, at 4.32 ms per frame. The phone stayed at throttle level 0.
+- WebGLRenderer cannot draw S3 on the S24+ or the iPad. Its shader for 256 point lights needs more than the 1,024 uniform vectors that the GPU gives a fragment shader.
+- On the iPad, S4 on WebGPU held 60 frames per second in 146 of 146 seconds. A run of 5 minutes of warm-up and 5 measured held its target in 300 of 300 seconds, at 0.20 ms per frame. That run measured the display at 50 Hz, against 65 Hz in earlier runs, so its target was 50. Check Low Power Mode and Limit Frame Rate before an iPad run.
+- On the iPad, WebGL2 was slow. S3 took 25.9 ms per frame on the render worker, at 35 frames per second. S4 took 15.2 ms, with runs from 0.94 to 26.8 ms, and held 60 in 40% of its seconds. three.js's WebGL renderer took 7.74 ms in S4, at 15 frames per second. A profile found the render worker waiting for the GPU inside WebGL calls. WebGL2 is the fallback for iPads without WebGPU.
+
+Runs: S24+ in Chrome `target/runs/20261002-053620-bench` (S4), `20261002-054912-bench` (S3) and `20261002-062931-bench` (the long S4 run); in Brave `20261002-130920-bench`; the iPad `20261002-151739-bench` and `20261002-160138-bench`.
+
+On the MacBook Pro in Chrome at 144 Hz, 3 October 2026, five runs: S4 on WebGPU took 0.08 ms per frame. three.js took 2.38 ms with its WebGL renderer and 4.87 ms with its WebGPU renderer. It held its target in 146 of 146 seconds. S3 on WebGPU took 0.09 ms, against 0.44 ms for three.js's WebGPU renderer.

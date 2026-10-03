@@ -8,7 +8,7 @@ summary: "createInstances; typed-array views; markDirty; automatic batching; per
 
 # Instances and batching
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Drawing each row in its own color and custom per-instance attributes are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Three parts are not built yet: drawing each row in its own color, shadows of batch rows, and custom per-instance attributes. Coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -162,11 +162,11 @@ Keep each row's own data, such as a velocity, in your own typed arrays in the sa
 
 ## Culling
 
-Each row has its own bounding sphere. The sphere's center is the row's position, and its radius is the mesh's radius times the row's largest scale. The engine culls row by row in each view, and skips the rows outside the view. On WebGPU a compute pass on the GPU culls. On WebGL2 the job workers cull. They test a static batch at rest in groups of 64 nearby rows, each group inside one grid cell. A group that is partly in view draws whole, and the GPU clips the rows outside. In a scene over several grid cells, both paths skip the rows of static batches in the cells out of view ([Culling](culling.md)). On WebGL2, a frame where you mark a static batch's rows tests the batch row by row, with no cell skipped. So does the frame after it.
+Each row has its own bounding sphere. The sphere's center is the row's position, and its radius is the mesh's radius times the row's largest scale. The engine culls row by row in each view, and skips the rows outside the view. On WebGPU a compute pass on the GPU culls. The rows of a batch whose material blends are the exception. On both paths, the job workers cull them one by one and sort them back to front. On WebGL2 the job workers cull. They test a static batch at rest in groups of 64 nearby rows, each group inside one grid cell. A group that is partly in view draws whole, and the GPU clips the rows outside. In a scene over several grid cells, both paths skip the rows of static batches in the cells out of view ([Culling](culling.md)). On WebGL2, a frame where you mark a static batch's rows tests the batch row by row, with no cell skipped. So does the frame after it.
 
 ## Automatic batching
 
-The engine groups what it draws by mesh and material. Objects from `scene.createMesh` and batch rows that share a mesh and a material draw together. They share instanced or indirect draws. So 500 crates from `createMesh` with one mesh and one material draw as cheaply as a batch of 500 rows. On WebGPU, an object with bounds of its own from `setBounds`, and an object that is never culled, each draw apart from the others. On WebGL2 the groups split further. There, the rows of a dynamic batch and of a static batch at rest draw apart from objects with the same mesh and material.
+The engine groups what it draws by mesh and material. Objects from `scene.createMesh` and batch rows that share a mesh and a material draw together. They share instanced or indirect draws. So 500 crates from `createMesh` with one mesh and one material draw as cheaply as a batch of 500 rows. Some groups split. On WebGPU, an object with bounds of its own from `setBounds` draws apart from the others. Objects that are never culled draw apart from the culled ones, in a group of their own for each mesh and material. Objects that receive shadows draw with other pipelines than batch rows, so they draw apart from them. On WebGL2, the rows of a dynamic batch and of a static batch at rest draw apart from objects with the same mesh and material. Blended objects and rows draw in the transparent pass, sorted back to front.
 
 The difference is the sketch's own work on the CPU:
 
@@ -176,10 +176,11 @@ The difference is the sketch's own work on the CPU:
 | Hierarchy | Parents and children | None: each row is in world space |
 | Identity | A name and a handle each | A row number |
 
-Some calls change the scene's structure: creating or destroying a batch or an object of any kind, lights included, and `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows`. So do `texture.destroy()`, and `texture.update()` with an image of another size. The next frame then rebuilds the engine's draw tables, which costs more than a normal frame. `setBounds` rebuilds on every call, even with the same bounds. Transform setters, row writes, `setVisible`, `setLayers`, `setActiveCount` and `setRenderOrder` never rebuild the tables. Neither do the other setters of lights and cameras, or `material.set`. So create batches in the setup, and pool rows during play instead of creating batches.
+Some calls change the scene's structure: creating or destroying a batch or an object of any kind, lights included, and `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows`. So do `texture.destroy()`, and `texture.update()` with an image of another size. So does turning shadows on or off, and in development builds a new [debug view](../api/debug.md). The next frame then rebuilds the engine's draw tables, which costs more than a normal frame. These calls rebuild even when the value does not change. Transform setters, row writes, `setVisible`, `setLayers`, `setActiveCount` and `setRenderOrder` never rebuild the tables. Neither do the other setters of lights and cameras, or `material.set`. So create batches in the setup, and pool rows during play instead of creating batches.
 
 ## Limits
 
+- Batch rows neither cast nor receive shadows in this version. Use separate objects from `scene.createMesh` for copies that need shadows.
 - An engine holds up to 256 instance batches. One more throws [E1102](../errors/E1102.md).
 - Every row counts toward the device's limit of objects and instance rows, whether it draws or not. `engine.capabilities.maxInstances` gives the limit. The scene's 16,384 object slots always count toward it too, used or not. So the batches of a scene hold at most the limit less 16,384 rows. A `createInstances` call that would pass it throws [E1501](../errors/E1501.md).
 - Each row takes about 210 bytes of engine memory, or about 260 with colors. When the engine cannot get more memory, `createInstances` throws [E1109](../errors/E1109.md).
