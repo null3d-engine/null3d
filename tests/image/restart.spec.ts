@@ -1,26 +1,86 @@
-import { type CDPSession, expect, test } from '@playwright/test';
+import { type CDPSession, expect, type Page, test } from '@playwright/test';
 import * as Slot from '../../packages/engine/src/shared/slot.ts';
-import { ENGINE_MODES } from '../lib/engine-checks.ts';
+import { ENGINE_MODES, THREADED_MODES } from '../lib/engine-checks.ts';
 import { prefixEngineScripts, restoreEngineScripts } from '../lib/engine-scripts.ts';
 import { gpuObjectsHeld, watchGpuObjects } from '../lib/gpu-ledger.ts';
+import { retainerChains, takeHeapSnapshot } from '../lib/heap-retainers.ts';
 import { pageResult } from '../lib/page-result.ts';
 import type { RestartResult } from '../lib/plans.ts';
 
 /** How many times each test starts and stops the engine on one page. */
 const CYCLES = 3;
 
-/** How many objects the page can still reach whose prototype chain holds `prototype`. */
+/** The DevTools handles of each count, which the count releases once it has its number. */
+const COUNT_GROUP = 'restart-count';
+
+/**
+ * How many objects the page can still reach whose prototype chain holds `prototype`. The list that
+ * DevTools returns holds each object it found until the count releases it. Without that release, a
+ * count made just before the engine let go kept the engine's memory and workers alive for good, and
+ * every later count found them.
+ */
 async function reachable(cdp: CDPSession, prototype: string): Promise<number> {
-	const { result } = await cdp.send('Runtime.evaluate', { expression: prototype });
-	const { objects } = await cdp.send('Runtime.queryObjects', {
-		prototypeObjectId: result.objectId as string,
-	});
-	const count = await cdp.send('Runtime.callFunctionOn', {
-		objectId: objects.objectId as string,
-		functionDeclaration: 'function () { return this.length; }',
-		returnByValue: true,
-	});
-	return count.result.value as number;
+	try {
+		const { result } = await cdp.send('Runtime.evaluate', {
+			expression: prototype,
+			objectGroup: COUNT_GROUP,
+		});
+		const { objects } = await cdp.send('Runtime.queryObjects', {
+			prototypeObjectId: result.objectId as string,
+			objectGroup: COUNT_GROUP,
+		});
+		const count = await cdp.send('Runtime.callFunctionOn', {
+			objectId: objects.objectId as string,
+			functionDeclaration: 'function () { return this.length; }',
+			returnByValue: true,
+		});
+		return count.result.value as number;
+	} finally {
+		await cdp.send('Runtime.releaseObjectGroup', { objectGroup: COUNT_GROUP });
+	}
+}
+
+/**
+ * How long a test collects garbage and counts again until the page has let go of an engine. A
+ * worker that has just stopped can hold its objects until its last messages have arrived, so one
+ * collection right after a stop can still find them, most often on a busy machine.
+ */
+const RELEASE_TIMEOUT_MS = 20_000;
+/** The pause between two counts. */
+const RELEASE_POLL_MS = 200;
+
+/** The most chains of references that a failure names for each kind of object that the page kept. */
+const CHAINS_SHOWN = 2;
+
+/**
+ * Collects garbage and counts the shared memories and the workers that the page reaches, again
+ * and again until it reaches `memories` memories and no worker, within the bound. When the page
+ * still holds more, the failure names what keeps them alive, from a heap snapshot.
+ */
+async function expectReleased(page: Page, memories: number): Promise<void> {
+	const cdp = await page.context().newCDPSession(page);
+	const expected = { memories, workers: 0 };
+	const count = async () => {
+		await cdp.send('HeapProfiler.collectGarbage');
+		return {
+			memories: await reachable(cdp, 'WebAssembly.Memory.prototype'),
+			workers: await reachable(cdp, 'Worker.prototype'),
+		};
+	};
+	const deadline = performance.now() + RELEASE_TIMEOUT_MS;
+	let held = await count();
+	while (held.memories !== memories || held.workers !== 0) {
+		if (performance.now() > deadline) break;
+		await new Promise((resolve) => setTimeout(resolve, RELEASE_POLL_MS));
+		held = await count();
+	}
+	if (held.memories === memories && held.workers === 0) return;
+	const heap = await takeHeapSnapshot(cdp);
+	const chains = [
+		...(held.memories > memories ? retainerChains(heap, 'Memory').slice(0, CHAINS_SHOWN) : []),
+		...(held.workers > 0 ? retainerChains(heap, 'Worker').slice(0, CHAINS_SHOWN) : []),
+	];
+	expect(held, `what keeps them alive:\n\n${chains.join('\n\n')}`).toEqual(expected);
 }
 
 // A page starts the engine again after it stops it, and after a collection it reaches none of a
@@ -42,11 +102,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			expect(result.error).toBeUndefined();
 			expect(result.kinds.engine?.error).toBeUndefined();
 			expect(result.kinds.engine?.cycles).toBe(CYCLES);
-			const cdp = await page.context().newCDPSession(page);
-			await cdp.send('HeapProfiler.collectGarbage');
-			const kept = mode.build === 'single' ? 1 : 0;
-			expect(await reachable(cdp, 'WebAssembly.Memory.prototype')).toBe(kept);
-			expect(await reachable(cdp, 'Worker.prototype')).toBe(0);
+			await expectReleased(page, mode.build === 'single' ? 1 : 0);
 		});
 	}
 }
@@ -72,11 +128,7 @@ for (const mode of ENGINE_MODES) {
 		await restoreEngineScripts(page);
 		const engine = result.kinds.engine;
 		expect(engine?.error).toMatch(/^E140[45]: .*Unable to create texture/);
-		const cdp = await page.context().newCDPSession(page);
-		await cdp.send('HeapProfiler.collectGarbage');
-		const kept = mode.build === 'single' ? 1 : 0;
-		expect(await reachable(cdp, 'WebAssembly.Memory.prototype')).toBe(kept);
-		expect(await reachable(cdp, 'Worker.prototype')).toBe(0);
+		await expectReleased(page, mode.build === 'single' ? 1 : 0);
 	});
 }
 
@@ -114,10 +166,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 				),
 			)
 			.toMatch(COPY_LOADED);
-		const cdp = await page.context().newCDPSession(page);
-		await cdp.send('HeapProfiler.collectGarbage');
-		expect(await reachable(cdp, 'WebAssembly.Memory.prototype')).toBe(0);
-		expect(await reachable(cdp, 'Worker.prototype')).toBe(0);
+		await expectReleased(page, 0);
 	});
 }
 
@@ -195,5 +244,31 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		expect(logs).toContain(HELD);
 		expect(result.error).toBeUndefined();
 		expect(result.failures).toEqual([]);
+	});
+}
+
+/** The job workers that the page's trail notes as started, and as stopped. */
+const JOB_STARTED = /null3d-job-\d+: started/g;
+const JOB_STOPPED = /null3d-job-\d+: stopped/g;
+
+// A page that leaves while its engine runs, as a page in a frame does when the frame goes away,
+// still ends the job workers' blocking waits: the browser then stops the workers wherever they are,
+// and Safari never frees the shared memory of a thread that it stops inside such a wait. So on
+// pagehide every job worker leaves its loop and says so, before anything stops the engine.
+for (const mode of THREADED_MODES) {
+	test(`a page that leaves without stopping the engine ends the job workers' waits, ${mode.name}`, async ({
+		page,
+	}) => {
+		await page.goto(`engine-frame.html?gpu=webgl2&${mode.query}`);
+		await expect
+			.poll(() => page.evaluate('window.__engineFrame?.engineFrame'), { timeout: 30_000 })
+			.toBe('running');
+		const trail = async () =>
+			String(await page.evaluate("window.__null3dProgress?.join('\\n') ?? ''"));
+		const jobs = (await trail()).match(JOB_STARTED)?.length ?? 0;
+		expect(jobs).toBeGreaterThan(0);
+		expect((await trail()).match(JOB_STOPPED)).toBeNull();
+		await page.evaluate("dispatchEvent(new PageTransitionEvent('pagehide'))");
+		await expect.poll(async () => (await trail()).match(JOB_STOPPED)?.length ?? 0).toBe(jobs);
 	});
 }

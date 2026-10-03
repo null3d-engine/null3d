@@ -37,7 +37,14 @@ startWorker('job', step, async (event: MessageEvent<JobWorkerInit>) => {
 				if (wait.async) await wait.value;
 			}
 		}
-		if (Atomics.load(slots, Slot.Running) !== 0) core.jobWorkerLoop(message.index);
+		if (Atomics.load(slots, Slot.Running) !== 0) {
+			Atomics.add(slots, Slot.JobsServing, 1);
+			try {
+				core.jobWorkerLoop(message.index);
+			} finally {
+				Atomics.sub(slots, Slot.JobsServing, 1);
+			}
+		}
 		replyToPage({ type: 'stopped', role: 'job', index: message.index });
 	} catch (e) {
 		replyToPage({

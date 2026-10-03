@@ -430,6 +430,14 @@ impl JobSystem {
         wait::wake_all(&self.wake.0);
     }
 
+    /// The wake word and the stop flag, for a thread outside the core that stops the job workers
+    /// by writing the shared memory, as the page does when it leaves. Setting the flag to 1, then
+    /// adding 1 to the wake word and waking every thread that waits on it, does what
+    /// [`JobSystem::shutdown`] does.
+    pub fn stop_words(&self) -> (&AtomicU32, &AtomicBool) {
+        (&self.wake.0, &self.shutdown)
+    }
+
     /// True after [`JobSystem::shutdown`].
     pub fn is_shut_down(&self) -> bool {
         self.shutdown.load(Ordering::Acquire)
@@ -714,6 +722,34 @@ mod tests {
         jobs.worker_loop(1);
         jobs.shutdown();
         jobs.worker_loop(0);
+        assert!(jobs.is_shut_down());
+    }
+
+    #[test]
+    #[allow(clippy::disallowed_methods)] // The test runs job workers on native threads.
+    fn writing_the_stop_words_stops_sleeping_workers() {
+        let jobs = std::sync::Arc::new(JobSystem::with_config(JobConfig {
+            workers: 2,
+            spin_rounds: 0,
+            ..JobConfig::default()
+        }));
+        let threads: Vec<_> = (0..2)
+            .map(|i| {
+                let jobs = std::sync::Arc::clone(&jobs);
+                std::thread::spawn(move || jobs.worker_loop(i))
+            })
+            .collect();
+        while jobs.sleepers.load(Ordering::SeqCst) < 2 {
+            std::thread::yield_now();
+        }
+        // What the page does when it leaves: it has the shared memory, not the job system.
+        let (wake, stop) = jobs.stop_words();
+        stop.store(true, Ordering::SeqCst);
+        wake.fetch_add(1, Ordering::SeqCst);
+        crate::wait::wake_all(wake);
+        for thread in threads {
+            thread.join().expect("a job worker panicked");
+        }
         assert!(jobs.is_shut_down());
     }
 }

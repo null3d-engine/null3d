@@ -1,6 +1,15 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { controlViews, createControlBuffer, Slot } from './control';
-import { notifySlot, setWakeByMessage, slotChange, WAKE, type WakeTarget, wakeFrom } from './wake';
+import {
+	notifySlot,
+	RECHECK_MS,
+	setWakeByMessage,
+	slotChange,
+	slotChangeOrRecheck,
+	WAKE,
+	type WakeTarget,
+	wakeFrom,
+} from './wake';
 
 /** A wake target that records what it was sent. */
 function recorder(): WakeTarget & { sent: unknown[] } {
@@ -63,5 +72,40 @@ describe('waits with Atomics.waitAsync', () => {
 		notifySlot(slots, Slot.FramesTaken, target);
 		await change;
 		expect(target.sent).toEqual([]);
+	});
+});
+
+describe('waits of a start', () => {
+	test('end at the slot change', async () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		const change = slotChangeOrRecheck(slots, Slot.PipelinesBuilt, 0);
+		if (!change) throw new Error('the wait ended before the slot changed');
+		Atomics.store(slots, Slot.PipelinesBuilt, 1);
+		notifySlot(slots, Slot.PipelinesBuilt);
+		expect(await settled(change)).toBe(true);
+	});
+
+	test('end after a short time when the browser misses the wake', async () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		// Safari's fault: the wait stays pending after the notify that should end it.
+		const missed = spyOn(Atomics, 'waitAsync').mockImplementation(() => ({
+			async: true,
+			value: new Promise<'ok'>(() => {}),
+		}));
+		try {
+			const started = performance.now();
+			const change = slotChangeOrRecheck(slots, Slot.PipelinesBuilt, 0);
+			if (!change) throw new Error('the wait ended before the slot changed');
+			await change;
+			expect(performance.now() - started).toBeGreaterThanOrEqual(RECHECK_MS - 5);
+		} finally {
+			missed.mockRestore();
+		}
+	});
+
+	test('need no wait when the slot holds another value already', () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		Atomics.store(slots, Slot.PipelinesBuilt, 2);
+		expect(slotChangeOrRecheck(slots, Slot.PipelinesBuilt, 0)).toBeUndefined();
 	});
 });

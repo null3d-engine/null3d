@@ -21,10 +21,13 @@ export const MAX_MAXIMUM_MIB = QUALITY_SETTINGS.memoryMaximumMiB.values.max;
 /** WebAssembly memory comes in pages of 64 KiB, 16 to a MiB. */
 const PAGES_PER_MIB = 16;
 /**
- * How long to wait before each further try to create the shared memory, in ms: about 3 seconds in
- * all, which covers the time a slow machine takes to free a stopped engine's memory.
+ * How long to wait before each further try to create the shared memory, in ms: about 10 seconds in
+ * all. Safari frees a stopped engine's memory only after collections that the refusals start, which
+ * took more than 6 seconds on a slow machine, and on a phone that starts engines one after another.
  */
-export const MEMORY_RETRY_MS: readonly number[] = [50, 100, 200, 400, 800, 1600];
+export const MEMORY_RETRY_MS: readonly number[] = [50, 100, 200, 400, 800, 1600, 3200, 3200];
+/** The whole wait of the tries, in whole seconds, as the error that ends them gives it. */
+const RETRY_SECONDS = Math.round(MEMORY_RETRY_MS.reduce((sum, ms) => sum + ms, 0) / 1000);
 
 export interface LoadedCore {
 	build: Build;
@@ -99,7 +102,7 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
  * shared memory when the address space it keeps for them, or its budget of their pages, is full.
  * A stopped engine's memory counts against both until the engine's workers have finished, which
  * Safari does a moment after the engine stops. So after each refusal the loader waits longer and
- * tries again, for about 3 seconds in all, and a refusal after that fails with E1109. `create` and
+ * tries again, for about 10 seconds in all, and a refusal after that fails with E1109. `create` and
  * `pause` stand in for the browser in tests.
  */
 export async function createSharedMemory(
@@ -117,7 +120,7 @@ export async function createSharedMemory(
 				const mib = Math.ceil((descriptor.maximum ?? descriptor.initial) / PAGES_PER_MIB);
 				throw new EngineError(
 					'E1109',
-					`the browser refused the engine's shared memory of ${mib} MiB ${tries} times: ${(e as Error).message}.`,
+					`the browser refused the engine's shared memory of ${mib} MiB ${tries} times over ${RETRY_SECONDS} seconds: ${(e as Error).message}.`,
 				);
 			}
 			await pause(delay);
