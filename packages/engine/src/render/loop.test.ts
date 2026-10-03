@@ -388,6 +388,37 @@ describe('the hold to the display rate', () => {
 		expect(runTimed(30, 60)).toHaveLength(CALLS);
 	});
 
+	/**
+	 * Runs the render loop's callbacks at each rate of `rates` in turn, `CALLS` times each, with the
+	 * page's measurement of a display at `displayHz`, and returns the refresh rate that the metrics
+	 * held at the end of each rate.
+	 */
+	function recordedRates(displayHz: number, rates: number[]): number[] {
+		const { control, metrics, slots, renderer, reader } = setup();
+		Atomics.store(slots, Slot.DisplayInterval, Math.round(1_000_000 / displayHz));
+		loop = runRenderLoop(renderer, control, metrics, undefined);
+		let time = 0;
+		return rates.map((hz) => {
+			for (let call = 0; call < CALLS; call++) {
+				time += 1000 / hz;
+				const callbacks = pending;
+				pending = [];
+				for (const callback of callbacks) callback(time);
+			}
+			return reader.refreshHz;
+		});
+	}
+
+	it("records the page's display rate once a timer runs the worker's callbacks", () => {
+		// While the worker waits for the GPU, Safari's timer calls it less often: at 45 or at 48
+		// times a second, the rate of no display or of one. The frame budget still follows the display.
+		expect(recordedRates(60, [TIMER_HZ, 45, 48])).toEqual([60, 60, 60]);
+	});
+
+	it('records the rate of callbacks that follow the display, whatever rate the page measured', () => {
+		expect(recordedRates(30, [60, 120])).toEqual([60, 120]);
+	});
+
 	it('holds the direct loop to the display rate too', () => {
 		const { control, metrics, slots, drawn, renderer } = setup();
 		Atomics.store(slots, Slot.DisplayInterval, Math.round(1_000_000 / 60));

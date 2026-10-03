@@ -1,5 +1,6 @@
 // Benchmark results: the comparison of null3d with three.js's faster renderer, the table of a sweep
-// of job worker counts, the phone scene's traces of each second, and a line chart as SVG. The median and spread of repeated runs of one page
+// of job worker counts, the phone scene's traces of each second, the WebGL call times of the -timed
+// pages, and a line chart as SVG. The median and spread of repeated runs of one page
 // come from the benchmark protocol in the command-line tool's package, which its bench command
 // shares. Everything here is pure, so the benchmark command and the runner's results share it.
 //
@@ -14,6 +15,7 @@ import {
 	summarizeRuns,
 	type TimedRun,
 } from '../../packages/cli/src/protocol.js';
+import { type GlTiming, sumGlTiming } from '../pages/lib/gl-timing';
 import { summarizeTrace, type TraceSecond, type TraceSummary } from '../pages/lib/trace';
 import { SCENE_CODE } from './parity';
 
@@ -27,10 +29,15 @@ export interface BenchResult extends TimedRun {
 	scene: string;
 	renderer: string;
 	n: number;
-	/** null3d pages: how the engine ran, such as how many job workers it started. */
-	mode?: { jobWorkers: number };
+	/**
+	 * null3d pages: how the engine ran, such as how many job workers it started and the quality
+	 * preset it drew with.
+	 */
+	mode?: { jobWorkers: number; preset?: string };
 	/** Pages that record one: the trace of each measured second. */
 	trace?: TraceSecond[];
+	/** The -timed pages: the time of each WebGL call on the thread that draws. */
+	glTiming?: GlTiming;
 }
 
 /** null3d's value of a measure against three.js's lowest value of it over its renderers. */
@@ -138,6 +145,8 @@ export interface SummaryRow {
 	trace?: TraceSummary;
 	/** The visual check of the row's scene on the row's GPU path, for a null3D page. */
 	visual?: VisualFigures;
+	/** The -timed pages: every run's WebGL call times, summed up. */
+	glTiming?: GlTiming;
 }
 
 /**
@@ -165,10 +174,11 @@ function visualText(value: number | undefined, limit: number | undefined): strin
  * traces' seconds when the page records traces.
  */
 export function summaryRow(
-	row: Omit<SummaryRow, 'summary' | 'trace'>,
+	row: Omit<SummaryRow, 'summary' | 'trace' | 'glTiming'>,
 	results: readonly BenchResult[],
 ): SummaryRow {
 	const traced = results.filter((result) => result.trace);
+	const glTiming = sumGlTiming(results.map((result) => result.glTiming));
 	const refreshHz = results.find((result) => result.stats?.refreshHz)?.stats?.refreshHz ?? null;
 	return {
 		...row,
@@ -179,6 +189,7 @@ export function summaryRow(
 				refreshHz,
 			),
 		}),
+		...(glTiming && { glTiming }),
 	};
 }
 
@@ -201,6 +212,48 @@ export function traceTable(rows: readonly SummaryRow[]): string {
 		lines.push(
 			`| ${scene} | ${kind} | ${trace.seconds} | ${trace.targetFps ?? 'n/a'} | ${held} | ${trace.lowestFps} | ${trace.lowestRenderScale} | ${trace.steps} |`,
 		);
+	}
+	return lines.join('\n');
+}
+
+/** The WebGL calls of each -timed page that its table lists: those with the most time. */
+const GL_TIMING_ROWS = 16;
+/** The calls of a page's slowest frame that its table lists: those that took this long or more. */
+const SLOW_CALL_MS = 0.5;
+
+/**
+ * The WebGL call times of a run's -timed and -synced pages as two Markdown tables. The first gives,
+ * for each page, the calls that took the most time on the thread that draws, with their time and
+ * count per measured frame and their longest single call. A call that waits for the browser's GPU
+ * process shows here. The second gives the slow calls of each page's slowest frame, with their
+ * place among the frame's calls.
+ */
+export function glTimingTable(rows: readonly SummaryRow[]): string {
+	const lines = [
+		'| Scene | Page | WebGL call | ms per frame | Calls per frame | Longest call, ms |',
+		'| --- | --- | --- | --- | --- | --- |',
+	];
+	for (const { scene, kind, glTiming } of rows) {
+		if (!glTiming) continue;
+		const frames = Math.max(1, glTiming.frames);
+		for (const call of glTiming.calls.slice(0, GL_TIMING_ROWS))
+			lines.push(
+				`| ${scene} | ${kind} | ${call.name} | ${(call.ms / frames).toFixed(3)} | ${(call.calls / frames).toFixed(1)} | ${call.longestMs.toFixed(2)} |`,
+			);
+	}
+	lines.push(
+		'',
+		"| Scene | Page | Slowest frame's call | Place in the frame's calls | ms |",
+		'| --- | --- | --- | --- | --- |',
+	);
+	for (const { scene, kind, glTiming } of rows) {
+		const frame = glTiming?.slowestFrame ?? [];
+		frame.forEach((call, k) => {
+			if (call.ms >= SLOW_CALL_MS)
+				lines.push(
+					`| ${scene} | ${kind} | ${call.name} | ${k + 1} of ${frame.length} | ${call.ms.toFixed(2)} |`,
+				);
+		});
 	}
 	return lines.join('\n');
 }
@@ -282,7 +335,8 @@ export function jobsTable(rows: readonly SummaryRow[]): string {
 export function benchReport(rows: readonly SummaryRow[]): string[] {
 	if (rows.some((row) => row.jobs !== undefined)) return [jobsTable(rows)];
 	const traces = rows.some((row) => row.trace) ? ['', traceTable(rows)] : [];
-	return [summaryTable(rows), '', ...comparisonLines(rows), ...traces];
+	const calls = rows.some((row) => row.glTiming) ? ['', glTimingTable(rows)] : [];
+	return [summaryTable(rows), '', ...comparisonLines(rows), ...traces, ...calls];
 }
 
 /** three.js's pages, and the name of each renderer. */

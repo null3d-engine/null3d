@@ -1,0 +1,228 @@
+// The browser that the runner page detects, the warning for a runner named for another browser,
+// and the row for the record of tested devices. The user agents and client hints of Safari, Chrome,
+// Brave and Firefox come from real runs; the others are the forms that those browsers send.
+import { describe, expect, it } from 'bun:test';
+import { summaryLine } from '../real-browsers.ts';
+import {
+	browserMismatch,
+	type DeviceFacts,
+	detectBrowser,
+	RECORD_COLUMNS,
+	testedDeviceRow,
+} from './device-record.ts';
+
+/** Client hints as Chromium-based browsers give them, with the brands in their own order. */
+const hints = (brands: Record<string, string>, more: Record<string, string> = {}) => ({
+	fullVersionList: Object.entries(brands).map(([brand, version]) => ({ brand, version })),
+	...more,
+});
+
+const UA = {
+	iPhoneSafari:
+		'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1',
+	iPadSafari:
+		'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.2 Safari/605.1.15',
+	iPadBrave:
+		'Mozilla/5.0 (iPad; CPU OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.7 Mobile/15E148 Safari/604.1 Brave',
+	androidChrome:
+		'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36',
+	macChrome:
+		'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36',
+	macFirefox:
+		'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:156.0) Gecko/20100101 Firefox/156.0',
+	samsungInternet:
+		'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/28.0 Chrome/130.0.0.0 Mobile Safari/537.36',
+	androidOpera:
+		'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36 OPR/90.1.4782.86',
+	androidEdge:
+		'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36 EdgA/140.0.3485.54',
+	androidFirefox: 'Mozilla/5.0 (Android 14; Mobile; rv:143.0) Gecko/143.0 Firefox/143.0',
+	iPhoneChrome:
+		'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/140.0.7339.122 Mobile/15E148 Safari/604.1',
+};
+
+describe('the browser that the runner page detects', () => {
+	it("reads Safari's version from its user agent, which gives iOS 18.7 on iOS 26", () => {
+		expect(detectBrowser({ userAgent: UA.iPhoneSafari })).toEqual({
+			name: 'Safari',
+			version: '26.4',
+		});
+		expect(detectBrowser({ userAgent: UA.iPadSafari })).toEqual({
+			name: 'Safari',
+			version: '26.6.2',
+		});
+	});
+
+	it("reads a Chromium browser's full version from its client hints, not its frozen user agent", () => {
+		const chrome = hints({
+			Chromium: '154.0.8037.57',
+			'Google Chrome': '154.0.8037.57',
+			'Not A(Brand': '99.0.0.0',
+		});
+		expect(detectBrowser({ userAgent: UA.androidChrome, userAgentData: chrome })).toEqual({
+			name: 'Chrome',
+			version: '154.0.8037.57',
+		});
+		const brave = hints({ Brave: '153.0.0.0', 'Not_A Brand': '8.0.0.0', Chromium: '153.0.0.0' });
+		expect(detectBrowser({ userAgent: UA.macChrome, userAgentData: brave, brave: true })).toEqual({
+			name: 'Brave',
+			version: '153.0.0.0',
+		});
+		const samsung = hints({ 'Samsung Internet': '28.0', Chromium: '130.0.6723.86' });
+		expect(detectBrowser({ userAgent: UA.samsungInternet, userAgentData: samsung })).toEqual({
+			name: 'Samsung Internet',
+			version: '28.0',
+		});
+	});
+
+	it("names Brave on iOS without a version, because the version there is Safari's", () => {
+		expect(detectBrowser({ userAgent: UA.iPadBrave, brave: true })).toEqual({
+			name: 'Brave',
+			version: null,
+		});
+		expect(detectBrowser({ userAgent: UA.androidChrome, brave: true })).toEqual({
+			name: 'Brave',
+			version: null,
+		});
+	});
+
+	it('tells the other browsers apart by their user agent tokens', () => {
+		const name = (userAgent: string) => detectBrowser({ userAgent });
+		expect(name(UA.macFirefox)).toEqual({ name: 'Firefox', version: '156.0' });
+		expect(name(UA.androidFirefox)).toEqual({ name: 'Firefox', version: '143.0' });
+		expect(name(UA.samsungInternet)).toEqual({ name: 'Samsung Internet', version: '28.0' });
+		expect(name(UA.androidOpera)).toEqual({ name: 'Opera', version: '90.1.4782.86' });
+		expect(name(UA.androidEdge)).toEqual({ name: 'Edge', version: '140.0.3485.54' });
+		expect(name(UA.iPhoneChrome)).toEqual({ name: 'Chrome', version: '140.0.7339.122' });
+		expect(name(UA.androidChrome)).toEqual({ name: 'Chrome', version: '154.0.0.0' });
+		expect(name('a browser nobody knows')).toEqual({ name: 'unknown', version: null });
+	});
+});
+
+describe('the warning for a runner named for another browser', () => {
+	const chrome = { name: 'Chrome', version: '153.0.8010.52' } as const;
+
+	it('warns when the device opened another browser than its runner names', () => {
+		expect(browserMismatch('tb-safari', chrome)).toBe(
+			"tb-safari: the runner's name says Safari, but its page ran in Chrome 153.0.8010.52",
+		);
+	});
+
+	it('stays quiet when they agree, or when the name or the page names no browser', () => {
+		expect(browserMismatch('tbpixel-chrome', chrome)).toBeUndefined();
+		expect(browserMismatch('mac-google-chrome', chrome)).toBeUndefined();
+		expect(browserMismatch('sm-s926b-brave', { name: 'Brave', version: null })).toBeUndefined();
+		expect(browserMismatch('tb-android', chrome)).toBeUndefined();
+		expect(browserMismatch('tb-safari', { name: 'unknown', version: null })).toBeUndefined();
+	});
+
+	it("puts the detected browser in the runner's summary line", () => {
+		expect(summaryLine('tb-android', { pass: 3, skip: 1, fail: 0, browser: 'Chrome 153' })).toBe(
+			'tb-android (Chrome 153): 3 passed, 1 skipped, 0 failed',
+		);
+	});
+});
+
+describe('the row for the record of tested devices', () => {
+	const cells = (row: string) =>
+		row
+			.slice(1, -1)
+			.split('|')
+			.map((cell) => cell.trim());
+
+	it('fills each column from the device file and the counts, and leaves the known issues empty', () => {
+		const pixel: DeviceFacts = {
+			userAgent: UA.androidChrome,
+			userAgentData: hints(
+				{ 'Google Chrome': '153.0.8010.52', Chromium: '153.0.8010.52' },
+				{ model: 'Pixel 8', platform: 'Android', platformVersion: '17.0.0' },
+			),
+			brave: false,
+			browser: { name: 'Chrome', version: '153.0.8010.52' },
+			gpu: {
+				webgpu: { vendor: 'arm', architecture: 'valhall', device: '', description: '' },
+				compatibility: true,
+				webgl2: { renderer: 'ANGLE (ARM, Mali-G715, OpenGL ES 3.2)' },
+			},
+			hardwareConcurrency: 9,
+			screen: { width: 412, height: 915 },
+			devicePixelRatio: 2.625,
+			origin: 'https://local.testingbot.com:3001',
+		};
+		const row = testedDeviceRow({
+			run: '20261003-004511-checks',
+			launch: 'lan',
+			device: pixel,
+			pass: 202,
+			skip: 0,
+			fail: 338,
+		});
+		expect(cells(row)).toEqual([
+			'Pixel 8, 412 x 915 at 2.625x, 9 cores',
+			'Android 17',
+			'Chrome 153.0.8010.52',
+			'ANGLE (ARM, Mali-G715, OpenGL ES 3.2); WebGPU adapter: arm valhall',
+			'WebGPU, compatibility mode, WebGL2',
+			"TestingBot's device cloud",
+			'checks 2026-10-03',
+			'202 passed, 0 skipped, 338 failed',
+			'',
+		]);
+		expect(cells(row)).toHaveLength(RECORD_COLUMNS.length);
+	});
+
+	it("leaves the OS empty where the user agent freezes it, and finds an iPad behind a Mac's user agent", () => {
+		const iPad: DeviceFacts = {
+			userAgent: UA.iPadSafari,
+			brave: false,
+			maxTouchPoints: 5,
+			hardwareConcurrency: 8,
+			screen: { width: 834, height: 1194 },
+			devicePixelRatio: 2,
+		};
+		const row = cells(
+			testedDeviceRow({
+				run: '20261002-125319-checks',
+				launch: 'lan',
+				device: iPad,
+				pass: 490,
+				skip: 0,
+				fail: 0,
+			}),
+		);
+		expect(row.slice(0, 3)).toEqual(['iPad, 834 x 1194 at 2x, 8 cores', '', 'Safari 26.6.2']);
+		// An older run's device file has no GPU facts, so those cells stay empty too.
+		expect(row.slice(3, 6)).toEqual(['', '', '']);
+		const mac = cells(
+			testedDeviceRow({
+				run: '20260930-154610-checks',
+				launch: 'mac',
+				device: { ...iPad, maxTouchPoints: 0, userAgent: UA.macFirefox },
+				pass: 293,
+				skip: 0,
+				fail: 0,
+			}),
+		);
+		expect([mac[0], mac[2], mac[5]]).toEqual([
+			'Mac, 834 x 1194 at 2x, 8 cores',
+			'Firefox 156.0',
+			"the owner's Mac",
+		]);
+	});
+
+	it('escapes a pipe in a value, so it cannot end its cell', () => {
+		const row = testedDeviceRow({
+			run: '20261003-002933-checks',
+			launch: 'android',
+			device: {
+				userAgent: UA.androidChrome,
+				gpu: { webgpu: null, compatibility: false, webgl2: { renderer: 'A | B' } },
+			},
+			pass: 1,
+			skip: 0,
+			fail: 0,
+		});
+		expect(row).toContain('A \\| B');
+		expect(row).toContain("| the owner's phone |");
+	});
+});

@@ -340,6 +340,7 @@ describe("the runner page's report", () => {
 			'depth',
 			'memory',
 			'parity',
+			'smoke',
 			'tab-memory',
 		]);
 		for (const plan of REPORT_ON_TOP_PLANS) expect(Object.keys(PLANS)).toContain(plan);

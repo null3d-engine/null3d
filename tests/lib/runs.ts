@@ -4,6 +4,7 @@
 // move everything in between.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { DeviceFacts } from './device-record.ts';
 import { CURRENT_RUN_FILE, RUNS_DIR } from './report-collector.ts';
 
 export interface PlanItem<Check = unknown> {
@@ -137,7 +138,10 @@ export function receivedAt(
 }
 
 /** What the runner page learned about its browser and device. */
-export function readDevice(run: string, runner: string): Record<string, unknown> | undefined {
+export function readDevice(
+	run: string,
+	runner: string,
+): (DeviceFacts & Record<string, unknown>) | undefined {
 	return readJson(join(RUNS_DIR, run, runner, 'device.json'));
 }
 

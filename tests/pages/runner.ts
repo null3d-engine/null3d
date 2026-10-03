@@ -21,6 +21,7 @@
 // Pixels travel as the page read them back, never re-encoded through a canvas, which privacy
 // protections can alter. For a startup load, the result also tells what the server sent for it.
 
+import { detectBrowser, type GpuFacts, type UserAgentData } from '../lib/device-record';
 import { fillRunner, loadOf, takeDownloads } from '../lib/load-routes';
 import { patientFetch } from '../lib/patient-fetch';
 import { progressName, REST_AFTER_TAB_END_SECONDS, tabEndedResult } from '../lib/tab-end';
@@ -182,32 +183,70 @@ async function refreshRate(): Promise<number> {
 	return Math.round(1000 / (intervals[Math.floor(intervals.length / 2)] as number));
 }
 
-/** What the browser tells about itself and its device. Browsers may hide the GPU and the model. */
+/**
+ * The GPU as the browser names it: WebGPU's adapter details, whether WebGPU's compatibility mode
+ * gives an adapter, and the WebGL2 renderer. The page asks for no device and loses its WebGL2
+ * context at once, so no GPU memory stays held during the run.
+ */
+async function gpuInfo(): Promise<GpuFacts> {
+	const adapter = await navigator.gpu?.requestAdapter().catch(() => null);
+	const compatibility = await navigator.gpu
+		?.requestAdapter({ featureLevel: 'compatibility' })
+		.catch(() => null);
+	const gl = document.createElement('canvas').getContext('webgl2');
+	const debug = gl?.getExtension('WEBGL_debug_renderer_info');
+	const renderer = gl?.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : gl.RENDERER);
+	gl?.getExtension('WEBGL_lose_context')?.loseContext();
+	const { vendor, architecture, device, description } = adapter?.info ?? {};
+	return {
+		webgpu: adapter
+			? {
+					vendor: vendor ?? '',
+					architecture: architecture ?? '',
+					device: device ?? '',
+					description: description ?? '',
+				}
+			: null,
+		compatibility: Boolean(compatibility),
+		webgl2: gl ? { renderer: String(renderer ?? '') } : null,
+	};
+}
+
+/**
+ * What the browser tells about itself and its device: the browser it detects itself to be, and
+ * the GPU. Browsers may hide the GPU and the model.
+ */
 async function deviceInfo(): Promise<Record<string, unknown>> {
 	const nav = navigator as Navigator & {
-		userAgentData?: { getHighEntropyValues(hints: string[]): Promise<Record<string, unknown>> };
+		userAgentData?: { getHighEntropyValues(hints: string[]): Promise<UserAgentData> };
 		deviceMemory?: number;
 		brave?: { isBrave(): Promise<boolean> };
 	};
+	const userAgentData = await nav.userAgentData
+		?.getHighEntropyValues([
+			'architecture',
+			'bitness',
+			'model',
+			'platform',
+			'platformVersion',
+			'fullVersionList',
+		])
+		.catch(() => undefined);
+	const brave = (await nav.brave?.isBrave().catch(() => false)) ?? false;
 	return {
 		userAgent: navigator.userAgent,
-		userAgentData: await nav.userAgentData
-			?.getHighEntropyValues([
-				'architecture',
-				'bitness',
-				'model',
-				'platform',
-				'platformVersion',
-				'fullVersionList',
-			])
-			.catch(() => undefined),
-		brave: (await nav.brave?.isBrave().catch(() => false)) ?? false,
+		userAgentData,
+		brave,
+		browser: detectBrowser({ userAgent: navigator.userAgent, userAgentData, brave }),
+		gpu: await gpuInfo(),
 		hardwareConcurrency: navigator.hardwareConcurrency,
 		deviceMemory: nav.deviceMemory ?? null,
+		maxTouchPoints: navigator.maxTouchPoints,
 		screen: { width: screen.width, height: screen.height },
 		devicePixelRatio,
 		refreshRateHz: await refreshRate(),
 		crossOriginIsolated,
+		origin: location.origin,
 		startedAt: new Date().toISOString(),
 	};
 }

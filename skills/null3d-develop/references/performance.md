@@ -162,7 +162,7 @@ Every preset leaves it off. S2 is a benchmark scene with little overdraw. In Chr
 
 ### Half precision
 
-The scene shaders can do their color math at half precision: lighting, tone mapping and sRGB encoding. Positions, depth and shadow lookups keep full precision. It stays off on both GPU paths. On a WebGL2 phone it saved no frame time and moved shadow edges. The WebGPU path has no measurement yet. `?half=on` turns it on to measure a scene. WebGPU takes it only on devices with the `shader-f16` feature. `engine.capabilities.halfPrecision` says what the engine took. Custom materials always use full precision. There is no `createEngine` option for it.
+The scene shaders can do their color math at half precision: lighting, tone mapping and sRGB encoding. Positions, depth and shadow lookups keep full precision. It stays off on both GPU paths. On a WebGL2 phone it saved no frame time and moved shadow edges. On an iPad's WebGPU path it saved under 2% of the GPU time. `?half=on` turns it on to measure a scene. WebGPU takes it only on devices with the `shader-f16` feature. `engine.capabilities.halfPrecision` says what the engine took. Custom materials always use full precision. There is no `createEngine` option for it.
 
 ### Your own systems
 
