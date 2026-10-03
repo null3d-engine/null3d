@@ -112,6 +112,8 @@ export const LAYOUT_DEPTH = 7;
 export const LAYOUT_LIGHT_CLUSTERS = 8;
 export const LAYOUT_BLOOM = 9;
 export const LAYOUT_FINAL_BLOOM = 10;
+export const LAYOUT_JOINTS = 11;
+export const LAYOUT_SKIN = 12;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -177,6 +179,7 @@ export const TEMPLATE_CULL = 16;
 export const TEMPLATE_LIGHT_COUNT = 17;
 export const TEMPLATE_LIGHT_PLACE = 18;
 export const TEMPLATE_LIGHT_WRITE = 19;
+export const TEMPLATE_SKIN = 20;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;

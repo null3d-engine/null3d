@@ -11,6 +11,7 @@
 use std::collections::TryReserveError;
 use std::ops::Range;
 
+use null3d_core::animation::Animations;
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
 use null3d_core::culling::{CULL_CHUNK, CullRun, ROW_CELLS};
 use null3d_core::handle::Handle;
@@ -183,6 +184,9 @@ pub struct FrameInput<'a> {
     /// The newest frame that the thread that draws drew with every pipeline built, or 0 before
     /// any.
     pub pipelines_built: u32,
+    /// Skeletons, clips and animated instances, with the skinning matrices of the frame's
+    /// animation step, once the scene has any.
+    pub animations: Option<&'a Animations>,
 }
 
 impl FrameInput<'_> {
@@ -1211,6 +1215,13 @@ impl MeshBuffers {
         (vertices, vertices + 1)
     }
 
+    /// The bytes of a page's vertex buffer on the GPU, or 0 before it exists.
+    pub(crate) fn vertex_bytes(&self, page: u32) -> u32 {
+        self.pages
+            .get(page as usize)
+            .map_or(0, |buffers| buffers.vertex_bytes)
+    }
+
     /// The most that the next [`MeshBuffers::upload`] copies into the arena.
     pub(crate) fn pending_bytes(&self, pages: &[Page]) -> usize {
         pages
@@ -1250,12 +1261,18 @@ impl MeshBuffers {
                     ..PageBuffers::default()
                 };
                 let copied = buffer_usage::COPY_DST;
+                // The skinning pass reads skinned meshes' vertices as storage.
+                let read = if crate::skinning::has_joints(page.format) {
+                    buffer_usage::STORAGE
+                } else {
+                    0
+                };
                 list.push(
                     Op::CreateBuffer,
                     &[
                         vertex_id,
                         buffers.vertex_bytes,
-                        buffer_usage::VERTEX | copied,
+                        buffer_usage::VERTEX | copied | read,
                     ],
                 )?;
                 list.push(

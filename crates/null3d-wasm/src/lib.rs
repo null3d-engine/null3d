@@ -47,6 +47,7 @@ use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
 use null3d_render::shadow_tiles::TileSettings;
 use null3d_render::shadows::ShadowQuality;
+use null3d_render::skinning;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
@@ -163,6 +164,7 @@ impl Engine {
             lights: self.lights.visible(),
             shadow_lights: self.lights.shadows(),
             pipelines_built,
+            animations: self.animations.as_ref(),
         };
         (self.renderer.as_mut(), input)
     }
@@ -1860,6 +1862,8 @@ pub fn update_animations(step_us: u32) -> u32 {
     with_engine(|e| {
         if let Some(animations) = e.animations.as_mut() {
             animations.update(jobs, step_us as f32 * 1e-6);
+            let meshes = e.renderer.settings().meshes();
+            skinning::update_bounds(&mut e.scene, animations, meshes);
         }
         0
     })

@@ -100,6 +100,7 @@ mod layout;
 mod lights;
 mod opaque;
 mod shadow;
+mod skin;
 mod transparent;
 
 use std::collections::TryReserveError;
@@ -134,6 +135,7 @@ use crate::view::{ViewFrame, ViewId};
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES};
 use layout::{Drawn, Layout};
 use lights::LightClusters;
+use skin::Skinning;
 use transparent::Transparent;
 
 /// The most sources the builder can draw, scene slots and instance rows together, on a device whose
@@ -228,15 +230,22 @@ mod ids {
     pub const LIGHT_PARAMS: u32 = LIGHTS + 1;
     /// The uniform buffer of bloom's steps and of the final pass's bloom build.
     pub const BLOOM: u32 = LIGHT_PARAMS + 1;
+    /// The skinned vertices that the skinning pass writes and the passes that draw skinned meshes
+    /// read.
+    pub const SKINNED: u32 = BLOOM + 1;
+    /// The skinning pass's table of formats and parts, one segment per mesh page.
+    pub const SKIN_TABLE: u32 = SKINNED + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = BLOOM + 1;
+    pub const PAGES: u32 = SKIN_TABLE + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
     /// The custom values of materials: one row of texels per material.
     pub const CUSTOM_VALUES: u32 = DFG + 1;
+    /// Every animated instance's skinning matrices (see [`crate::skinning`]).
+    pub const JOINTS: u32 = CUSTOM_VALUES + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = CUSTOM_VALUES + 1;
+    pub const TARGETS: u32 = JOINTS + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow map.
@@ -251,6 +260,8 @@ mod ids {
     pub const LIGHT_COUNT: u32 = 2;
     pub const LIGHT_PLACE: u32 = 3;
     pub const LIGHT_WRITE: u32 = 4;
+    /// The skinning pass's pipeline.
+    pub const SKIN: u32 = 5;
 
     /// Each view's bind groups: the frame group of its render pipelines, then its culling group.
     pub const fn frame_group(view: ViewId) -> u32 {
@@ -269,8 +280,11 @@ mod ids {
     }
     /// The bind group of each step of bloom, after the groups of the depth prepass.
     pub const BLOOM_GROUPS: u32 = LIGHT_GROUP + 1 + MAX_VIEWS as u32;
-    /// The bind groups of materials' maps, after bloom's.
-    pub const TEXTURE_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
+    /// The skinning pass's bind group for each mesh page that holds skinned meshes, by its place
+    /// among those pages, after bloom's.
+    pub const SKIN_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
+    /// The bind groups of materials' maps, after the skinning pass's.
+    pub const TEXTURE_GROUPS: u32 = SKIN_GROUPS + super::skin::MAX_PAGES;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -347,6 +361,8 @@ pub struct GpuDrivenRenderer {
     lights: CameraLights,
     /// The pass that lists the lights of each cluster of the camera's light grid.
     light_clusters: LightClusters,
+    /// The pass that skins the skinned meshes that some view draws.
+    skinning: Skinning,
     /// Each camera view's values in the frame being recorded, or `None` for a view with no camera.
     frames: Vec<Option<ViewFrame>>,
     /// Each shadow cascade's values in the frame being recorded, or `None` for a cascade that the
@@ -426,6 +442,7 @@ impl GpuDrivenRenderer {
             background: BackgroundPass::default(),
             lights: CameraLights::on_gpu(config.light_limits),
             light_clusters: LightClusters::default(),
+            skinning: Skinning::default(),
             frames: Vec::new(),
             cascade_frames: [None; MAX_CASCADES],
             tiles: ShadowTiles::new(),
@@ -505,6 +522,8 @@ impl GpuDrivenRenderer {
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
             self.settings.update_map_groups();
+            self.skinning
+                .rebuild(input.scene, input.animations, self.settings.meshes());
             let targets = self.graph.scene_targets();
             self.layout.rebuild(
                 &self.settings,
@@ -516,6 +535,7 @@ impl GpuDrivenRenderer {
                 limit,
                 shadows,
                 self.graph.depth_prepass(),
+                &self.skinning,
             )?;
             self.sorted
                 .rebuild(
@@ -541,6 +561,7 @@ impl GpuDrivenRenderer {
                     limit,
                     shadows,
                     false,
+                    &self.skinning,
                 )?;
             } else {
                 self.casters.clear();
@@ -585,6 +606,7 @@ impl GpuDrivenRenderer {
             &mut self.pipelines,
             self.graph.scene_targets(),
         );
+        created_pipelines |= self.skinning.create_pipeline(list)?;
         created_pipelines |= self.pipelines.create_new(list)? > 0;
         if !self.created {
             self.create_fixed(list)?;
@@ -595,6 +617,7 @@ impl GpuDrivenRenderer {
             tiles: s.layers,
             size: s.size,
         }));
+        self.graph.set_skinning(self.skinning.active());
         self.graph.sync_views(self.settings.views());
         self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.set_transparent(!self.sorted.is_empty());
@@ -669,6 +692,14 @@ impl GpuDrivenRenderer {
         let pages_remade = self
             .meshes
             .upload(list, arena, self.settings.meshes().pages())?;
+        let skinned_remade = self.skinning.apply(
+            list,
+            input.animations,
+            &self.meshes,
+            pages_remade,
+            self.config.storage_binding_bytes,
+        )?;
+        let buffers_remade = pages_remade || skinned_remade;
         let table = MaterialStorage::Buffer {
             table: ids::MATERIALS,
             values: ids::CUSTOM_VALUES,
@@ -692,7 +723,7 @@ impl GpuDrivenRenderer {
         // A view's bundle names the buffers, the bind groups and the layout it draws, so each new
         // view, and every view after a new layout, new mesh buffers or new map groups, records its
         // bundle.
-        let first_to_apply = if upload_everything || pages_remade || groups_remade {
+        let first_to_apply = if upload_everything || buffers_remade || groups_remade {
             0
         } else {
             first_new
@@ -707,12 +738,12 @@ impl GpuDrivenRenderer {
                 opaque::record_bundle(list, view, &self.layout, &self.meshes, scene_targets, true)?;
             }
         }
-        let first_cascade_to_apply = if upload_everything || pages_remade {
+        let first_cascade_to_apply = if upload_everything || buffers_remade {
             0
         } else {
             first_new_cascade
         };
-        let first_tile_to_apply = if upload_everything || pages_remade {
+        let first_tile_to_apply = if upload_everything || buffers_remade {
             0
         } else {
             first_new_tile
@@ -729,6 +760,11 @@ impl GpuDrivenRenderer {
         }
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
+        self.layout.update_skinned(list, arena, input.scene)?;
+        if shadows {
+            self.casters.update_skinned(list, arena, input.scene)?;
+        }
+        self.skinning.begin_frame();
         self.layout.update_order(list, arena, &self.cells, input)?;
         self.light_clusters.upload(list, arena, &mut self.lights)?;
         self.transparent.size(list, &self.sorted, views)?;
@@ -748,6 +784,9 @@ impl GpuDrivenRenderer {
                     input.scene,
                     cells,
                 )?;
+                let offsets = self.culling.offsets();
+                self.skinning
+                    .see(frame, offsets, input.scene, parity, false);
             }
         }
         self.cascade_frames = [None; MAX_CASCADES];
@@ -775,6 +814,9 @@ impl GpuDrivenRenderer {
                 input.scene,
                 cells,
             )?;
+            let offsets = self.culling.offsets();
+            self.skinning
+                .see(&frame, offsets, input.scene, parity, true);
         }
         if let Some(shadow) = &shadow {
             shadows::upload(list, arena, ids::SHADOWS, shadow)?;
@@ -793,9 +835,13 @@ impl GpuDrivenRenderer {
                     input.scene,
                     cells,
                 )?;
+                let offsets = self.culling.offsets();
+                self.skinning
+                    .see(&frame, offsets, input.scene, parity, true);
                 self.cascade_frames[cascade] = Some(frame);
             }
         }
+        self.skinning.upload(list, arena, input.animations)?;
         let (scene, batches) = (input.scene, input.batches);
         self.sorted
             .gather(scene, batches, parity)
@@ -829,6 +875,7 @@ impl GpuDrivenRenderer {
             (&self.layout, &self.casters, &self.culling, &self.lines);
         let (frames, cascade_frames, tiles) = (&self.frames, &self.cascade_frames, &self.tiles);
         let (background, light_clusters) = (&self.background, &self.light_clusters);
+        let skinning = &self.skinning;
         let drawn = |view: ViewId| match (view.cascade_index(), view.tile_index()) {
             (Some(cascade), _) => cascade_frames[cascade].is_some(),
             (_, Some(tile)) => tiles.frame(tile).is_some(),
@@ -845,6 +892,7 @@ impl GpuDrivenRenderer {
             skips,
             |list, role| match role {
                 Role::LightClusters => light_clusters.record(list),
+                Role::Skin => skinning.record(list),
                 Role::Cull(view) if drawn(view) => culling.record(list, view, layout_of(view)),
                 Role::Prepass(view) if drawn(view) => opaque::record(list, view, true),
                 Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
@@ -920,7 +968,9 @@ impl GpuDrivenRenderer {
         let lights = self.lights.upload_room();
         let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
         let sorted = Transparent::upload_bound(&self.sorted, camera_views);
+        let skinning = self.skinning.upload_bound();
         meshes
+            + skinning
             + materials
             + tables
             + lights
@@ -981,6 +1031,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.tiles.forget_gpu();
         self.lines.forget_gpu();
         self.lights.forget_gpu();
+        self.skinning.forget_gpu();
         self.transparent.forget_gpu();
         self.meshes.forget();
         self.pipelines.forget();

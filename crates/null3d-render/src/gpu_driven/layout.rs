@@ -20,16 +20,20 @@ use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use super::ids;
+use super::skin::Skinning;
 use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
 use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
 };
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
+use crate::skinning::skinned_format;
 
 /// Bytes of one bucket record in the culling shader: base, material, radius, first draw, draw
 /// count, and the centre of the local sphere that culls the bucket's sources.
 const BUCKET_BYTES: u32 = 32;
+/// Words of one bucket record.
+const BUCKET_WORDS: u32 = BUCKET_BYTES / 4;
 /// Bytes of one world matrix: three rows of four floats.
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 
@@ -112,10 +116,14 @@ pub(super) struct Bucket {
 /// One indexed indirect draw of each view: a part of a bucket's mesh.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Draw {
+    /// The mesh page whose indices it draws, and whose vertices unless `vertices` names others.
     pub(super) page: u32,
     pub(super) index_count: u32,
     pub(super) first_index: u32,
     pub(super) base_vertex: u32,
+    /// The buffer and byte offset of the vertices it draws in place of its page's: a skinned
+    /// part's region of the skinned vertex buffer.
+    pub(super) vertices: Option<(u32, u32)>,
 }
 
 // Buckets never outnumber sources, so every bucket fits below a cell index in a table entry, and
@@ -219,6 +227,9 @@ pub(super) struct Layout {
     batch_rows: Vec<BatchRows>,
     /// The per-frame reset of every indirect draw: instance counts at zero.
     pub(super) indirect_template: Vec<u32>,
+    /// Each bucket of a skinned object, with the object's slot, in bucket order. Their bounds
+    /// change with the pose in every frame.
+    skinned: Vec<(u32, u32)>,
     /// Bucket records in the culling shader's layout.
     bucket_records: Vec<u32>,
     /// Scratch for rebuilds: every bucket key with its source count, sorted and merged into one
@@ -289,7 +300,9 @@ impl Layout {
     /// table, the bucket records and the cell order.
     pub(super) fn upload_bound(&self) -> usize {
         let rows = self.sources as usize * 4 + self.owned(self.sources) as usize * 8;
-        rows + self.buckets.len() * BUCKET_BYTES as usize
+        // A frame that writes every record writes the skinned objects' bounds again after them.
+        let writes = if self.skinned.is_empty() { 1 } else { 2 };
+        rows + self.buckets.len() * BUCKET_BYTES as usize * writes
     }
 
     /// Makes room for the bucket table, the layer table and the cell order of `sources` sources.
@@ -308,6 +321,7 @@ impl Layout {
     pub(super) fn clear(&mut self) {
         self.buckets.clear();
         self.draws.clear();
+        self.skinned.clear();
         self.indirect_template.clear();
         self.bucket_records.clear();
     }
@@ -401,7 +415,8 @@ impl Layout {
     /// Assigns every source to a bucket and lays the buckets out, from the frame's world state,
     /// with each bucket's pipeline id from `pipelines`, for a pass that draws into `targets`. With
     /// `shadows`, the scene's receivers draw with pipelines that read the shadow maps. With
-    /// `prepass`, the buckets that the depth prepass draws get its pipelines too. It reuses
+    /// `prepass`, the buckets that the depth prepass draws get its pipelines too. Skinned objects
+    /// draw the skinned vertices that `skinning` lays out. It reuses
     /// the layout's tables and scratch space, which grow only with the scene. A scene of more than
     /// `limit` sources fails.
     #[allow(clippy::too_many_arguments)]
@@ -416,6 +431,7 @@ impl Layout {
         limit: u32,
         shadows: bool,
         prepass: bool,
+        skinning: &Skinning,
     ) -> Result<(), RecordError> {
         let scene_rows = scene.capacity() + 1;
         self.batch_bases.clear();
@@ -438,8 +454,12 @@ impl Layout {
 
         let meshes = settings.meshes();
         let drawn = self.drawn;
-        let key_of = |mesh: u32, material: u32, bounds: u32, object: u32| -> Option<BucketKey> {
-            let pipeline = settings.pipeline_of(mesh, material)?;
+        let key_of = |mesh: u32, material: u32, bounds: u32, object: u32, skinned: bool| {
+            let mut pipeline = settings.pipeline_of(mesh, material)?;
+            if skinned {
+                // The pass that skins writes plain vertices of the mesh's skinned format.
+                pipeline.vertex_format = skinned_format(pipeline.vertex_format);
+            }
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             if drawn == Drawn::Casters {
                 let caster = settings.caster_of(pipeline);
@@ -469,11 +489,12 @@ impl Layout {
                 scene.materials()[slot],
                 bounds,
                 object,
+                skinning.parts_of(slot as u32).is_some(),
             )
         };
         // Instance batches cast no shadows yet.
         let batch_key = |batch: &InstanceBatch| match drawn {
-            Drawn::Scene => key_of(batch.mesh(), batch.material(), MESH_BOUNDS, 0),
+            Drawn::Scene => key_of(batch.mesh(), batch.material(), MESH_BOUNDS, 0, false),
             Drawn::Casters => None,
         };
 
@@ -487,11 +508,18 @@ impl Layout {
 
         self.buckets.clear();
         self.draws.clear();
+        self.skinned.clear();
         let mut base = 0;
         for &((pipeline, group, _, mesh, material, bounds), count) in &self.key_counts {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let parts = meshes.parts(slot);
             let (center, radius) = local_sphere(scene, bounds, slot.radius);
+            let skinned = bounds
+                .checked_sub(OWN_BOUNDS)
+                .and_then(|object| Some((object, skinning.parts_of(object)?)));
+            if let Some((object, _)) = skinned {
+                self.skinned.push((self.buckets.len() as u32, object));
+            }
             let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
             self.buckets.push(Bucket {
                 pipeline,
@@ -505,11 +533,20 @@ impl Layout {
                 center,
                 radius,
             });
-            self.draws.extend(parts.iter().map(|part| Draw {
-                page: part.page,
-                index_count: part.index_count,
-                first_index: part.first_index,
-                base_vertex: part.base_vertex,
+            self.draws.extend(parts.iter().enumerate().map(|(k, part)| {
+                // A skinned part draws its region of skinned vertices, from its first vertex.
+                let region = skinned.and_then(|(_, regions)| regions.get(k));
+                Draw {
+                    page: part.page,
+                    index_count: part.index_count,
+                    first_index: part.first_index,
+                    base_vertex: if region.is_some() {
+                        0
+                    } else {
+                        part.base_vertex
+                    },
+                    vertices: region.map(|region| (ids::SKINNED, region.region)),
+                }
             }));
             base += count;
         }
@@ -571,6 +608,32 @@ impl Layout {
             ]);
         }
         self.built = true;
+        Ok(())
+    }
+
+    /// Uploads the bounds of the skinned objects' buckets, which the animation step moved: one
+    /// write of the records from the first such bucket to the last.
+    pub(super) fn update_skinned(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+        scene: &SceneStorage,
+    ) -> Result<(), RecordError> {
+        let (Some(&(first, _)), Some(&(last, _))) = (self.skinned.first(), self.skinned.last())
+        else {
+            return Ok(());
+        };
+        for &(bucket, slot) in &self.skinned {
+            let (center, radius) = local_sphere(scene, OWN_BOUNDS + slot, 0.0);
+            let record = &mut self.bucket_records[(bucket * BUCKET_WORDS) as usize..];
+            record[2] = radius.to_bits();
+            record[5..8].copy_from_slice(&center.map(f32::to_bits));
+        }
+        let words = &self.bucket_records
+            [(first * BUCKET_WORDS) as usize..((last + 1) * BUCKET_WORDS) as usize];
+        let (at, bytes) = arena.push(words_as_bytes(words))?;
+        let (_, records) = self.table_ids();
+        list.push(Op::WriteBuffer, &[records, first * BUCKET_BYTES, at, bytes])?;
         Ok(())
     }
 
@@ -828,6 +891,7 @@ mod tests {
                 u32::MAX,
                 false,
                 false,
+                &Skinning::default(),
             )
             .unwrap();
         let mesh_radius = settings.meshes().mesh(mesh - 1).unwrap().radius;

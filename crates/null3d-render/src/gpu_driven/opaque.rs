@@ -107,7 +107,7 @@ pub(super) fn record_bundle(
         ],
     )?;
     list.push(Op::SetBindGroup, &[0, frame_group, 0])?;
-    let (mut pipeline, mut page, mut group) = (None, None, 0);
+    let (mut pipeline, mut vertices, mut indices, mut group) = (None, None, None, 0);
     for bucket in &layout.buckets {
         let id = if prepass {
             bucket.prepass
@@ -136,11 +136,19 @@ pub(super) fn record_bundle(
         )?;
         for index in bucket.first_draw..bucket.first_draw + bucket.draws {
             let draw = layout.draws[index as usize];
-            if page != Some(draw.page) {
-                let (vertices, indices) = meshes.ids(draw.page);
-                list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
-                list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
-                page = Some(draw.page);
+            let (page_vertices, page_indices) = meshes.ids(draw.page);
+            // A skinned part draws its own region of skinned vertices with its page's indices.
+            let source = draw.vertices.unwrap_or((page_vertices, 0));
+            if vertices != Some(source) {
+                list.push(Op::SetVertexBuffer, &[0, source.0, source.1, 0])?;
+                vertices = Some(source);
+            }
+            if indices != Some(page_indices) {
+                list.push(
+                    Op::SetIndexBuffer,
+                    &[page_indices, index_format::UINT16, 0, 0],
+                )?;
+                indices = Some(page_indices);
             }
             list.push(
                 Op::DrawIndexedIndirect,

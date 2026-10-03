@@ -42,6 +42,8 @@ pub struct MeshPart {
     pub index_count: u32,
     /// Added to every index when drawing; always 0 with `Packing::Pages`, whose indices are rebased.
     pub base_vertex: u32,
+    /// The vertices that the part holds, from its first one in its page on.
+    pub vertex_count: u32,
 }
 
 /// Where one mesh lives.
@@ -55,6 +57,11 @@ pub struct MeshSlot {
     pub vertex_count: u32,
     /// The distance from the mesh's origin to its farthest vertex, for bounding spheres.
     pub radius: f32,
+    /// The joints that a skinned mesh's vertices name: its largest joint number plus one, or 0
+    /// for a mesh without joints and weights.
+    pub joints: u32,
+    /// Where the mesh's joint spheres start in the storage's list of them.
+    first_sphere: u32,
 }
 
 /// One shared buffer or page: interleaved vertices of one format, as the GPU reads their bytes,
@@ -98,6 +105,8 @@ pub struct MeshStorage {
     pages: Vec<Page>,
     parts: Vec<MeshPart>,
     meshes: Vec<MeshSlot>,
+    /// The joint spheres of every skinned mesh, mesh after mesh (see [`joint_spheres`]).
+    spheres: Vec<[f32; 4]>,
     /// Each part's edge list as a part of its page, in the order of `parts`, once made.
     edge_parts: Vec<MeshPart>,
     /// True once every part has an edge list, so each new part gets one too.
@@ -122,6 +131,7 @@ impl MeshStorage {
             pages: Vec::new(),
             parts: Vec::new(),
             meshes: Vec::new(),
+            spheres: Vec::new(),
             edge_parts: Vec::new(),
             edges: false,
             drawing_edges: false,
@@ -134,6 +144,13 @@ impl MeshStorage {
 
     pub fn mesh(&self, id: u32) -> Option<&MeshSlot> {
         self.meshes.get(id as usize)
+    }
+
+    /// The joint spheres of a skinned mesh, one per joint it names (see [`joint_spheres`]), or
+    /// none for a mesh without joints.
+    pub fn joint_spheres(&self, mesh: &MeshSlot) -> &[[f32; 4]] {
+        let first = mesh.first_sphere as usize;
+        &self.spheres[first..first + mesh.joints as usize]
     }
 
     /// The parts of a mesh, in triangle order: their triangles, or their edge lists while draws
@@ -225,12 +242,16 @@ impl MeshStorage {
                 (x * x + y * y + z * z).sqrt()
             })
             .fold(0.0f32, f32::max);
+        let first_sphere = self.spheres.len() as u32;
+        self.spheres.extend(joint_spheres(geometry));
         self.meshes.push(MeshSlot {
             format: geometry.format,
             first_part,
             part_count: self.parts.len() as u32 - first_part,
             vertex_count,
             radius,
+            joints: self.spheres.len() as u32 - first_sphere,
+            first_sphere,
         });
         Ok(self.meshes.len() as u32 - 1)
     }
@@ -286,6 +307,7 @@ impl MeshStorage {
             first_index,
             index_count: indices.len() as u32,
             base_vertex,
+            vertex_count: count,
         }
     }
 
@@ -315,6 +337,73 @@ impl MeshStorage {
             part.finish(self, geometry);
         }
     }
+}
+
+/// The bounding sphere of each joint's vertices in a skinned mesh, in the mesh's space, by joint
+/// number up to the largest that a vertex names: a centre and a radius, or a radius of -1 for a
+/// joint that moves no vertex. Each sphere holds every vertex that its joint moves with a weight
+/// above 0. A skinned vertex is a weighted average of its joints' matrices applied to it, and each
+/// matrix keeps the vertex inside its joint's moved sphere, so the spheres of a pose's joints hold
+/// every skinned vertex. A geometry without both joints and weights has none.
+pub fn joint_spheres(geometry: &Geometry) -> Vec<[f32; 4]> {
+    let format = geometry.format;
+    let attribute = |location: usize| {
+        let ty = vertex::type_of(format, location)?;
+        Some((ty, vertex::offset(format, location)? as usize))
+    };
+    let (Some((joint_type, joint_at)), Some((weight_type, weight_at))) = (
+        attribute(vertex::ATTRIBUTES[6].location as usize),
+        attribute(vertex::ATTRIBUTES[7].location as usize),
+    ) else {
+        return Vec::new();
+    };
+    let stride = geometry.stride();
+    let (joint_size, weight_size) = (joint_type.bytes() as usize, weight_type.bytes() as usize);
+    // Each influence of each vertex: its joint and its position, for those with a weight.
+    let influences = |v: usize| {
+        let at = v * stride;
+        let bytes = &geometry.vertices;
+        (0..4).filter_map(move |k| {
+            let weight = weight_type.decode(&bytes[at + weight_at + k * weight_size..]);
+            let joint = joint_type.decode(&bytes[at + joint_at + k * joint_size..]);
+            (weight > 0.0).then_some(joint as usize)
+        })
+    };
+    let count = (0..geometry.vertex_count())
+        .flat_map(influences)
+        .max()
+        .map_or(0, |joint| joint + 1);
+    let mut lows = vec![[f32::INFINITY; 3]; count];
+    let mut highs = vec![[f32::NEG_INFINITY; 3]; count];
+    for v in 0..geometry.vertex_count() {
+        let p = geometry.position(v);
+        for joint in influences(v) {
+            for c in 0..3 {
+                lows[joint][c] = lows[joint][c].min(p[c]);
+                highs[joint][c] = highs[joint][c].max(p[c]);
+            }
+        }
+    }
+    let mut spheres: Vec<[f32; 4]> = lows
+        .iter()
+        .zip(&highs)
+        .map(|(low, high)| {
+            if low[0] > high[0] {
+                return [0.0, 0.0, 0.0, -1.0];
+            }
+            let centre = [0, 1, 2].map(|c| 0.5 * (low[c] + high[c]));
+            [centre[0], centre[1], centre[2], 0.0]
+        })
+        .collect();
+    for v in 0..geometry.vertex_count() {
+        let p = geometry.position(v);
+        for joint in influences(v) {
+            let sphere = &mut spheres[joint];
+            let d = [0, 1, 2].map(|c| p[c] - sphere[c]);
+            sphere[3] = sphere[3].max((d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt());
+        }
+    }
+    spheres
 }
 
 /// The part of a mesh that [`MeshStorage::split`] builds.

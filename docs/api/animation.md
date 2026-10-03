@@ -8,7 +8,7 @@ summary: "The animator; play, crossFade, layers, joint masks, additive clips, ev
 
 # Animation
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. The engine cannot load animated glTF models yet, so no object has an animator yet. Skinned meshes do not draw yet. Morph weights (`setMorphWeight`) and `debug.skeleton` are not built. Coding agents must not use these parts.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. The engine cannot load animated glTF models yet, so no object has an animator yet. WebGPU skins skinned meshes; WebGL2 draws them in their rest pose. Morph weights (`setMorphWeight`) and `debug.skeleton` are not built. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR
@@ -121,6 +121,14 @@ Within a layer, the engine blends clips as three.js's `AnimationMixer` does, joi
 
 Rotations between keys use normalized linear interpolation. Rotations in a blend use a corrected form of it, which stays within 0.0001 radians of three.js's spherical interpolation. On the engine's test skeleton, poses match three.js's within 0.0001, and skinning matrices within 0.0004. Fades, masked layers and additive clips match three.js's results within 0.0002.
 
+## Skinned meshes
+
+A skinned mesh's vertices follow the joints of an animated object. Each vertex names up to four joints, with a weight for each. Its skinned place is the sum of its joints' skinning matrices applied to it, each times its weight. The mesh's own world matrix then places it, as three.js draws a `SkinnedMesh`.
+
+On WebGPU, a compute pass skins each skinned mesh once per frame, before the shadow passes and the scene passes. Those passes then draw the skinned vertices as a plain mesh, so every material skins, custom materials included. A skinned mesh that no view draws in a frame, neither the camera nor a shadow cascade, is not skinned in that frame.
+
+A skinned mesh culls with a sphere that its pose moves. The engine keeps a sphere for each joint around the vertices it moves. Each frame it moves those spheres with the pose and takes the sphere around them all. So a limb that swings out never leaves the mesh's bounds, and the test costs one matrix per joint, not one per vertex. Skinned meshes cast and receive shadows that follow their poses.
+
 ## How it compares with three.js
 
 | three.js | null3D |
@@ -133,6 +141,7 @@ Rotations between keys use normalized linear interpolation. Rotations in a blend
 | `AnimationUtils.makeClipAdditive(clip)` and an additive blend mode | `play('name', { additive: true })` |
 | Clips with tracks filtered out, for upper and lower body | Layers with `setLayerMask` |
 | `mixer.addEventListener('loop' or 'finished')` | `anim.onEvent('loop' or 'finished', handler)`, and events from the clip's data |
+| `SkinnedMesh` skinned in the vertex shader of each pass that draws it | WebGPU skins each skinned mesh once per frame, for every pass that draws it |
 
 Where three.js and null3D differ:
 

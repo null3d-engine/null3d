@@ -20,6 +20,7 @@ import { LIGHTS_IMAGE } from '../../bench/scenes/lights.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
+import { SKINNING_HOLD, SKINNING_IMAGE } from '../../bench/scenes/skinning.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import { GRID_IMAGE } from '../../bench/scenes/standard-grid.ts';
 import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
@@ -552,6 +553,30 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		switches: ['shadowTileSize=1024', 'pointLightShadows'],
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// Skinning: three characters skinned to chains of joints, each in another pose of one clip. The
+	// parity test compares the image with three.js's SkinnedMesh. WebGPU skins them in a compute
+	// pass; the WebGL2 path does not skin yet. ?shadows stands them on a ground under a sun whose
+	// shadows must follow each pose. Both WebGPU tiers draw the same image.
+	...(['', 'shadows'] as const).map(
+		(variant): ImageTest => ({
+			name: variant ? `skinning-${variant}` : 'skinning',
+			sketch: `tests/pages/sketches/skinning-sketch.ts${variant ? `?${variant}` : ''}`,
+			hold: SKINNING_HOLD,
+			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+			tiers: ['webgpu', 'compat'],
+			sameOnEveryTier: true,
+		}),
+	),
+	// The same characters from a quantized mesh, which the skinning pass reads type by type: it
+	// draws the image of floats, within the steps of 8-bit normals.
+	{
+		name: 'skinning-quantized',
+		sketch: 'tests/pages/sketches/skinning-sketch.ts?quantized',
+		hold: SKINNING_HOLD,
+		size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+		tiers: ['webgpu', 'compat'],
+		reference: 'skinning',
 	},
 	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the
 	// slab's front corner and the far plane cutting the bar at the back. The parity test compares

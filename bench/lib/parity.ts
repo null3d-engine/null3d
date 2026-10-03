@@ -196,6 +196,8 @@ export interface FeatureScene {
 	webglOnly?: boolean;
 	/** The percentage of pixels under which the scene passes, where it is not three.js's limit. */
 	limit?: number;
+	/** The tiers whose image tests draw the scene, where those are not all three. */
+	tiers?: readonly Tier[];
 }
 
 const TWINS = '/bench/pages/threejs';
@@ -241,6 +243,13 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	},
 	// Bloom at two settings against three.js's UnrealBloomPass. The composer's targets have no MSAA,
 	// so null3D's page draws without anti-aliasing too.
+	// Skinning against three.js's SkinnedMesh. The WebGL2 path does not skin yet.
+	{
+		test: 'skinning',
+		twin: `${TWINS}/skinning.html`,
+		sketchSwitches: NO_TONE,
+		tiers: ['webgpu', 'compat'],
+	},
 	...(['soft', 'strong'] as const).map(
 		(bloom): FeatureScene => ({
 			test: `bloom-${bloom}`,
@@ -250,6 +259,11 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		}),
 	),
 ];
+
+/** The tiers on which null3D draws a feature scene, whose parity therefore counts there. */
+export function featureTiers(scene: FeatureScene): readonly Tier[] {
+	return scene.tiers ?? TIERS;
+}
 
 /** The feature scene of an image test, or undefined when no twin draws that test's scene. */
 export function featureScene(test: string): FeatureScene | undefined {

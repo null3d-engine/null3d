@@ -115,6 +115,9 @@ const SCENE_COLOR: &str = "sceneColor";
 const SCENE_DEPTH: &str = "sceneDepth";
 /// The shadow map: a depth texture array with one layer per cascade, kept between frames.
 const SHADOW_MAP: &str = "shadowMap";
+/// The buffer of skinned vertices, which the skinning pass writes and the passes that draw skinned
+/// meshes read.
+const SKINNED: &str = "skinnedVertices";
 /// Each cascade's culling pass, the buffer of its compacted instances and indirect draws, and its
 /// shadow pass.
 const SHADOW_CULLING: [&str; MAX_CASCADES] = [
@@ -218,6 +221,9 @@ pub(crate) struct TilePasses {
 pub(crate) enum Role {
     /// Lists the lights of each cluster of the camera's light grid on the GPU.
     LightClusters,
+    /// Skins the skinned meshes that some view draws, on the GPU, into the skinned vertex buffer
+    /// that the shadow and scene passes draw.
+    Skin,
     /// Culls a view on the GPU into its compacted instances and indirect draws.
     Cull(ViewId),
     /// Draws the depth of a view's opaque objects, before its opaque pass shades them.
@@ -283,6 +289,8 @@ pub(crate) struct FrameGraph {
     opaque: Vec<PassId>,
     /// True when each view has a depth prepass.
     prepass: bool,
+    /// True when a skinning pass skins meshes before the passes that draw them.
+    skinning: bool,
     /// Each view's depth prepass, by view, with the depth prepass.
     prepasses: Vec<PassId>,
     /// MSAA samples of the scene's color and depth targets.
@@ -369,6 +377,7 @@ impl FrameGraph {
             roles: Vec::new(),
             opaque: Vec::new(),
             prepass: false,
+            skinning: false,
             prepasses: Vec::new(),
             samples: antialias.samples(),
             gpu_culling,
@@ -435,6 +444,15 @@ impl FrameGraph {
     pub(crate) fn set_depth_prepass(&mut self, on: bool) {
         self.prepass = on;
         self.declared = false;
+    }
+
+    /// Switches the skinning pass on while the scene draws skinned meshes that a compute pass
+    /// skins, and off otherwise. The passes are declared again when it changes.
+    pub(crate) fn set_skinning(&mut self, on: bool) {
+        if on != self.skinning {
+            self.skinning = on;
+            self.declared = false;
+        }
     }
 
     /// True when each view has a depth prepass.
@@ -580,6 +598,11 @@ impl FrameGraph {
         }
     }
 
+    /// True when the skinning pass runs: with skinned meshes, where the GPU culls.
+    fn skins(&self) -> bool {
+        self.skinning && self.gpu_culling
+    }
+
     fn add(&mut self, pass: Pass, role: Role) -> PassId {
         self.roles.push(role);
         self.graph.add_pass(pass)
@@ -628,6 +651,10 @@ impl FrameGraph {
                     .creates_buffer(view_name(index, "visible", "visible"));
                 self.add(pass, Role::Cull(ViewId::from_index(index)));
             }
+            if self.skinning {
+                let skin = Pass::new("Skinning", PassKind::Compute).creates_buffer(SKINNED);
+                self.add(skin, Role::Skin);
+            }
         }
         if let Some(shadows) = self.shadows {
             self.declare_shadows(shadows);
@@ -650,6 +677,9 @@ impl FrameGraph {
                 if self.gpu_culling {
                     prepass = prepass.reads(view_name(index, "visible", "visible"));
                 }
+                if self.skins() {
+                    prepass = prepass.reads(SKINNED);
+                }
                 let prepass = self.add(prepass, Role::Prepass(ViewId::from_index(index)));
                 self.prepasses.push(prepass);
                 pass = pass.writes(depth_name);
@@ -661,6 +691,9 @@ impl FrameGraph {
                 if index == ViewId::CAMERA.index() {
                     pass = pass.reads(LIGHT_GRID);
                 }
+            }
+            if self.skins() {
+                pass = pass.reads(SKINNED);
             }
             if self.shadow_map {
                 pass = pass.reads(SHADOW_MAP).reads(SHADOW_ATLAS);
@@ -743,6 +776,9 @@ impl FrameGraph {
                 self.add(culling, Role::Cull(view));
                 pass = pass.reads(SHADOW_VISIBLE[cascade]);
             }
+            if self.skins() {
+                pass = pass.reads(SKINNED);
+            }
             let pass = self.add(pass, Role::Shadow(view));
             self.shadow_passes.push(pass);
         }
@@ -767,6 +803,9 @@ impl FrameGraph {
                     .creates_buffer(visible.clone());
                 self.add(culling, Role::Cull(view));
                 pass = pass.reads(visible);
+            }
+            if self.skins() {
+                pass = pass.reads(SKINNED);
             }
             self.add(pass, Role::Shadow(view));
         }

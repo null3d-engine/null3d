@@ -8,6 +8,7 @@ pub mod graph;
 
 use std::f64::consts::{PI, TAU};
 
+use null3d_core::animation::Animations;
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::JobSystem;
@@ -25,6 +26,7 @@ use null3d_render::geometry::{Geometry, box_geometry, sphere_geometry};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::{ALL_LAYERS, RenderScale};
 use null3d_render::materials::{MapSlot, Shading};
+use null3d_render::skinning;
 use null3d_render::textures::{Sampling, TextureDesc};
 use null3d_render::view::{View, ViewId};
 
@@ -61,6 +63,10 @@ pub struct World<B: FrameBuilder = GpuDrivenRenderer> {
     pub light_table: Option<LightTable>,
     /// The render scale of the frames that record next.
     pub render_scale: RenderScale,
+    /// The animation table, whose step runs at the start of each frame's core work, as the
+    /// engine's does, and the seconds that each step advances.
+    pub animations: Option<Animations>,
+    pub animation_step: f32,
 }
 
 impl World {
@@ -172,6 +178,8 @@ impl<B: FrameBuilder> World<B> {
             pipelines_built: u32::MAX,
             light_table: None,
             render_scale: RenderScale::FULL,
+            animations: None,
+            animation_step: 0.0,
         }
     }
 
@@ -253,6 +261,11 @@ impl<B: FrameBuilder> World<B> {
         if frame > 1 {
             self.scene.begin_frame(frame);
         }
+        if let Some(animations) = self.animations.as_mut() {
+            animations.update(&self.jobs, self.animation_step);
+            let meshes = self.renderer.settings().meshes();
+            skinning::update_bounds(&mut self.scene, animations, meshes);
+        }
         self.scene.update_transforms(&self.jobs);
         self.batches
             .update(&self.jobs, frame, self.scene.cell_table_mut());
@@ -279,6 +292,7 @@ impl<B: FrameBuilder> World<B> {
             lights: &self.lights,
             shadow_lights: &self.shadow_lights,
             pipelines_built: self.pipelines_built,
+            animations: self.animations.as_ref(),
         };
         let recorded = self
             .renderer
