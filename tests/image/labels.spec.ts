@@ -1,10 +1,10 @@
 // HTML labels follow the frame on screen. The sketch's camera rolls a fixed step each frame, with a
 // label on a box off the view's center, and the page samples the label's element in each frame it
 // shows. The element must sit within one pixel of the box's place in the frame whose labels it
-// shows, in every thread mode. In pipelined modes the sketch records a frame ahead of the one on screen, and a roll moves
-// the box several pixels, so a label placed from the frame being recorded would fail. In hold mode,
-// the element must sit within one pixel of the center of the box's pixels in the drawn frame, as
-// three.js's CSS2DRenderer places a label over its object.
+// shows, in every thread mode. In pipelined modes the sketch records a frame ahead of the one on
+// screen, and a roll moves the box several pixels, so a label placed from the frame being recorded
+// would fail. In hold mode, the element must sit within one pixel of the center of the box's pixels
+// in the drawn frame, as three.js's CSS2DRenderer places a label over its object.
 import { expect, test } from '@playwright/test';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
