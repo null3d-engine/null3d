@@ -258,7 +258,7 @@ export function libraryPage(
 
 # ${title}
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. A custom material's surface function can call these modules. Full shaders are not built yet, so the engine cannot draw with a whole shader of your own.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. A custom material's surface function, vertex offset or full shader can call these modules.
 
 ${INTRO}
 ${rows.join('\n')}

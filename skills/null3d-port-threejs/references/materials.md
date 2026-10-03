@@ -2,7 +2,7 @@
 
 Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `concepts/color-management`, `shaders/surface-functions`.
 
-Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness`, `emissive`, `emissiveIntensity` and the texture maps of section 1 now, and shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity` and `map`. Both take `uvTransform`, `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending` and the depth options, and the standard material takes `flatShading`. The other options below come later in 0.1 unless a row gives another version. Custom materials with a surface function (`materials.shader`) are built; their texture maps, uniforms and textures come later in 0.1.
+Versions: every `materials.standard` option in section 1 is built, unless its row gives a version, and the material shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity`, `map` and `uvTransform`. Both take `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest` and `depthBias`, and the standard material also takes `flatShading`. Custom materials (`materials.shader`) are built: surface functions, vertex offsets, uniforms and full shaders. They take every standard option but the texture maps. Texture maps and textures in custom materials come in 0.2, so the recipes that sample a texture wait for them.
 
 ## Contents
 
@@ -13,7 +13,7 @@ Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness
 5. MeshToonMaterial and MeshMatcapMaterial
 6. Other three.js materials
 7. Texture settings
-8. Recipes: toon, matcap, clipping plane, alpha map (later in 0.1)
+8. Recipes: toon, clipping plane, matcap and alpha map
 9. Checking material parity
 
 ## 1. MeshStandardMaterial
@@ -35,8 +35,8 @@ Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness
 | `envMap`, `envMapIntensity` | Scene environment, `envIntensity` (0.2) | Per-material environment maps are not supported; one scene environment lights everything |
 | `envMapRotation` | `scene.setEnvironment(env, { rotation })` (0.2) | |
 | `bumpMap`, `bumpScale` | A normal map made offline: `bunx @null3d/cli assets normal-from-bump` (0.2) | |
-| `displacementMap`, `displacementScale`, `displacementBias` | A `vertexOffset` function (later in 0.1; section 8 of `references/shaders.md`) | Enlarge bounds with `setBounds` |
-| `alphaMap` | Alpha packed into `map` offline, or a surface function (later in 0.1) | three.js reads the alpha map's G channel (recipe in section 8) |
+| `displacementMap`, `displacementScale`, `displacementBias` | A `vertexOffset` function: procedural now, from a height texture in 0.2 (section 8 of `references/shaders.md`) | Enlarge bounds with `setBounds` |
+| `alphaMap` | Alpha packed into `map`'s alpha offline, or a surface function that samples the alpha map (0.2) | three.js reads the alpha map's G channel (recipe in section 8) |
 | `transparent: true`, `opacity` | `alphaMode: 'blend'`, `opacity` | Blended objects draw after the opaque ones, farthest first; an instance batch's rows sort one by one |
 | `alphaTest` | `alphaMode: 'mask'`, `alphaCutoff` | Pass the `alphaTest` value as `alphaCutoff`, whose default is 0.5, as in glTF |
 | `alphaHash` | `alphaMode: 'mask'` | Hashed transparency is not supported |
@@ -50,7 +50,7 @@ Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness
 | `fog: false` | Same name | |
 | `toneMapped: false` | Not in 1.0 | Draw the objects in a declared pass after post-processing (0.2) |
 | `dithering` | Always on in the final pass | |
-| `clippingPlanes`, `clipShadows` | A surface function (later in 0.1; section 8) | |
+| `clippingPlanes`, `clipShadows` | A surface function with `alphaMode: 'mask'` (section 8) | Shadows keep the whole mesh |
 | `shadowSide`, `precision`, `premultipliedAlpha` | Not needed | To store a texture's colors multiplied by alpha: `loadTexture(url, { premultipliedAlpha: true })` |
 
 ## 2. MeshPhysicalMaterial
@@ -84,7 +84,7 @@ Both become `materials.standard` with `metalness: 0`. The standard material adds
 
 ## 5. MeshToonMaterial and MeshMatcapMaterial
 
-Both become surface-function recipes (section 8), later in 0.1. Toon shading needs light-band steps; the recipe reads the main light direction from the engine's lighting helpers. Matcap looks up a texture by view-space normal and ignores scene lights, as three.js's matcap does.
+Both become surface-function recipes (section 8). Toon shading needs light-band steps. Surface functions cannot read the scene's lights yet, so the recipe takes the light's direction as a uniform. Matcap looks up a texture by view-space normal and ignores scene lights, as three.js's matcap does. It needs textures in custom materials and the camera's view matrix, both in 0.2.
 
 ## 6. Other three.js materials
 
@@ -96,7 +96,7 @@ Both become surface-function recipes (section 8), later in 0.1. Toon shading nee
 | `PointsMaterial` | Options of `scene.createPoints`: `size`, `sizeAttenuation`, `texture`, `colors` (0.2) |
 | `LineBasicMaterial`, `LineDashedMaterial`, `LineMaterial` | Options of `scene.createLines`: `width`, `widthUnits`, `dashed`, `colors` (0.2) |
 | `SpriteMaterial` | Options of `scene.createSprites`: `texture` or `atlas`, `sizeMode`, `rotation` (0.2) |
-| `ShaderMaterial`, `RawShaderMaterial` | `materials.shader` in WGSL: a surface function now, a full shader later in 0.1 (`references/shaders.md`) |
+| `ShaderMaterial`, `RawShaderMaterial` | `materials.shader` in WGSL: a surface function, or a full shader (`references/shaders.md`) |
 | `NodeMaterial` and TSL materials | `materials.shader` with a surface function (`references/shaders.md`) |
 
 ## 7. Texture settings
@@ -118,7 +118,9 @@ Both become surface-function recipes (section 8), later in 0.1. Toon shading nee
 
 Texture formats: `loadTexture` decodes PNG, JPEG and WebP files, and AVIF files where the browser supports them. It also loads KTX2 files of ETC1S or UASTC data, in the device's compressed format. Convert PNG and JPEG textures to KTX2 with `basisu -mipmap`, or with `bunx @null3d/cli assets optimize` (0.2). Use UASTC for normal maps and important color maps, and ETC1S where download size matters most. HDR environment files become prefiltered KTX2 with `bunx @null3d/cli assets env` (0.2).
 
-## 8. Recipes (later in 0.1)
+## 8. Recipes
+
+The toon and clipping recipes work now. The matcap and alpha map recipes sample a texture, so they wait for textures in custom materials (0.2).
 
 Toon shading with three bands:
 
@@ -140,7 +142,7 @@ const toon = materials.shader({
 });
 ```
 
-Matcap:
+Matcap (0.2), which needs textures in custom materials and `camera.view`:
 
 ```ts
 const matcap = materials.shader({
@@ -175,7 +177,7 @@ const clipped = materials.shader({
 });
 ```
 
-Alpha map (three.js reads the G channel):
+Alpha map (0.2), which needs textures in custom materials. three.js reads the G channel:
 
 ```ts
 const leaf = materials.shader({

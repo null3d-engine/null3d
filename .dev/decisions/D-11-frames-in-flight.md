@@ -195,11 +195,13 @@ The governor keeps the thresholds of dynamic resolution (M1-G4) for every step. 
 | --- | --- |
 | Over budget | The longer of the mean presented and completed intervals is 110% of the budget or more, or the GPU delay is 200% or more |
 | Step down | After 1 s over budget |
-| Room to spare | Intervals within 102% of the budget, with a GPU delay within 125% |
+| Room to spare | Intervals within 102% of the budget on average since the room started, with each window under the over-budget line and a GPU delay within 125% |
 | Step up | After 5 s with room. A step up that fails within 3 s doubles the next wait, up to 80 s |
 | Settle after a step | 1 s |
 | Grace | 2 s after the first frame, after a pause, and while textures wait to upload |
 | Order | Render scale in steps of 0.05, then the far cascades' interval doubled up to 8, then the shadow filter from 5 to 3. Up in the reverse order |
+
+Why this order: the render scale lightens the GPU's work on every pixel, whatever the scene holds. A step of the scale also makes no GPU object. Scene passes draw into the top-left corner of targets that keep the canvas's size. So a new scale needs no texture, view, bind group or pipeline. The shadow steps help only a scene whose shadows cost much, so they come after the scale has reached `minRenderScale`.
 
 The rules ask for a step up only after about five seconds under 80% of the budget. A presented interval never falls below the refresh period, so a frame interval under 80% of the budget never happens at the display's rate. The GPU delay is no better. A WebGL2 fence's time rounds up to the next frame callback, and Firefox reports WebGPU completions a display frame late. So "room" means frames at the target rate with a GPU delay within 125% of the budget. The failed-step-up rule then keeps the settings below the point where frames fall behind.
 
@@ -211,7 +213,36 @@ The stress test (`tests/pages/governor.html`) on the Mac in Chrome, both GPU pat
 - The hold grew the plane's loop until the lower rate fell under 45 fps, at about 33,000 to 66,000 steps per pixel. The governor then held 55 to 60 fps in the last 15 seconds, at render scales of 0.5 to 0.8. At the heavier load it reached 0.5, tried 0.55 once, fell behind and stepped back within 2 s.
 - The Mac's software GPU draws the scene at about 40 fps on WebGL2 without a load, and passes the walk with `?fps=30`. CI's takes 300 to 400 ms for some frames, so CI skips both stages.
 
-The S24+ and the iPad rows are still to come, from `bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari`.
+The S24+ passed both stages on WebGL2.
+
+The iPad (Safari 26.6, 3 October 2026) failed all 4 pages at first, and the fault was the governor's inputs, not its rules:
+
+- The hold: the page held 44 to 46 fps against the 60 fps target for the last 15 seconds on both paths. The render scale never dropped. Safari runs a drawing worker's frame callbacks from a timer, which slows while the worker waits for the GPU. The refresh meter read the slow callbacks as a slow display, and the budget grew with the frames. In Playwright's WebKit on the Mac, the meter read 29 to 48 Hz under the load. The page's own callbacks kept the display's 72 Hz.
+- The walk: each step went down in order. Only 1 of the 4 steps came back up on WebGPU, and none on WebGL2. At 60 fps, Safari's timer skips a callback about every 16th frame, so some intervals are 31 ms. In WebKit, `?fps=60` holds the frames as a 60 Hz display does. There, quarter-second windows measured 97% to 105% of the budget. A window over 102% started the 5 seconds of room again every second or two.
+
+The fixes: the metrics hold the page's display rate once a worker's callbacks have matched no display's rate. Room is the mean since the room started. Two options were rejected:
+
+- A looser room line for each window. At 105% it would count 57 fps as room.
+- The highest rate measured since the start. It would miss a real drop of the display's rate, such as a low power mode at 30 Hz.
+
+In WebKit after the fixes, the walk took every step down and back up on both paths, one step up every 6 s. The hold lowered the scale to 0.5 on WebGPU and 0.7 on WebGL2. Chrome on the Mac still passed all 4 pages.
+
+The iPad then passed all 4 pages (`bun tests/real-browsers.ts --plan governor --lan ipad-safari`, 3 October 2026). The refresh rate held 60 Hz in every measurement:
+
+| Stage | Path | Result |
+| --- | --- | --- |
+| Walk | WebGPU | All 9 steps, down and back up |
+| Walk | WebGL2 | All 9 steps, down and back up |
+| Hold | WebGPU | Lowest scale 0.85; the last 15 seconds at 57 to 60 fps |
+| Hold | WebGL2 | Lowest scale 0.65; the last 15 seconds at 59 to 61 fps |
+
+### How three.js handles it
+
+three.js draws at the pixel ratio that the app sets with `renderer.setPixelRatio`, and never changes it by itself. A change of pixel ratio resizes the canvas's drawing buffer, and the app resizes its own render targets to match. three.js lowers no shadow setting by itself either.
+
+Dynamic resolution is left to the app. In React Three Fiber, drei's `PerformanceMonitor` watches the frame rate and calls the app back when it falls or rises. The app then sets the pixel ratio. drei's `AdaptiveDpr` lowers the pixel ratio while React Three Fiber's performance state is low. That state falls when something calls its `regress()`, for example camera controls that move.
+
+null3D builds the loop in, so an app gets it with no code of its own. The governor lowers the render scale first, then the shadow settings, and raises them again only after seconds with room to spare. A failed step up doubles its next wait, so the settings do not swing. Each step changes no GPU object, and the governor allocates nothing. A sketch reads the steps in `quality.governor`, and the live setting `governor` turns the loop off.
 
 ### Open for the owner
 

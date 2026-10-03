@@ -36,10 +36,12 @@
 //                     the runs above
 //   --compare <a>,<b> two checkouts, each built with bun run build: the baseline a and the new
 //                     build b. Each checkout's pages get a production build of their own, served
-//                     on its own port, NULL3D_PORT's and the next. The command fails when b is
-//                     slower than the rules in bench/lib/compare.ts allow and no Bench-Expected
-//                     trailer in the commits from a to b names it. The run also writes its
-//                     record, runs.json, from which --merge can judge it again
+//                     on its own port, NULL3D_PORT's and the next. Every page runs at the High
+//                     preset, within each GPU path's ceiling, with the quality governor off,
+//                     unless --switches names them. The command fails when b is slower than
+//                     the rules in bench/lib/compare.ts allow and no Bench-Expected trailer in
+//                     the commits from a to b names it. The run also writes its record,
+//                     runs.json, from which --merge can judge it again
 //   --shard <i>/<n>   with --compare, the i-th of n shares of the pages: every n-th page of the
 //                     scenes and pages above, from the i-th. CI runs each share on a machine of
 //                     its own. The command fails when b is slower on a page of the share
@@ -70,6 +72,7 @@ import {
 	type Build,
 	type BuildRun,
 	type ComparisonRecord,
+	comparisonSwitches,
 	judgeRecord,
 	mergeRecords,
 	roundOrder,
@@ -496,7 +499,10 @@ async function runComparison(
 			console.log(`${scene}: skipped, because one of the checkouts has no page for it`);
 	const pages = share.filter((page) => hasScene(page.scene));
 	const switches = withSwitches(
-		options.seconds === null ? [] : [`seconds=${options.seconds}`],
+		[
+			...(options.seconds === null ? [] : [`seconds=${options.seconds}`]),
+			...comparisonSwitches(options.switches),
+		],
 		options,
 	);
 	const timeoutMs = pageTimeoutMs(options.seconds);

@@ -10,7 +10,7 @@ summary: "The WGSL modules that ship with the engine: math, noise, color, lighti
 
 # Shader library and imports
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. A custom material's surface function can call these modules. Full shaders are not built yet, so the engine cannot draw with a whole shader of your own.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. A custom material's surface function, vertex offset or full shader can call these modules.
 
 The shader library is a set of WGSL modules that ship with the engine. A shader imports a module with an `#import` line, and the build adds the functions that the shader calls. The build then translates the shader for WebGL2, so each function works on both GPU paths. The engine's own shaders use the same modules.
 
@@ -754,23 +754,19 @@ Exponential squared fog, as three.js's `FogExp2`.
 
 ```wgsl
 struct Fog {
-    color: vec3f,
-    kind: u32,
-    forward: vec3f,
-    density: f32,
-    near: f32,
+    color: vec4f,
+    forward: vec4f,
     far: f32,
+    kind: u32,
 }
 ```
 
-The scene's fog, as the engine writes it into each frame's values for the camera that draws.
+The scene's fog, as the engine writes it into each frame's values for the camera that draws. Each three-component value shares a `vec4f` with a scalar, so the frame's values lay out the same on every GPU path.
 
-- `color`: The linear fog color.
-- `kind`: The kind of fog: `NONE`, `LINEAR` or `EXP2`.
-- `forward`: The camera's unit view direction, which fog depth follows.
-- `density`: The density of exponential squared fog.
-- `near`: Where linear fog starts.
+- `color`: The linear fog color in `xyz`, and the density of exponential squared fog in `w`.
+- `forward`: The camera's unit view direction in `xyz`, which fog depth follows, and where linear fog starts in `w`.
 - `far`: Where linear fog hides everything.
+- `kind`: The kind of fog: `NONE`, `LINEAR` or `EXP2`.
 
 ### `fog_depth`
 

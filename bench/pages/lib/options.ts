@@ -34,6 +34,11 @@ export interface RunOptions {
 	shadowCascades: number | null;
 	shadowMapSize: number | null;
 	shadowFilter: number | null;
+	/**
+	 * False with `?governor=off`, which keeps the quality governor off in a null3D scene that turns
+	 * it on, such as S4, so that a comparison of two builds measures the same work in every run.
+	 */
+	governor: boolean;
 }
 
 /** The value of a switch that must be one of a few words. */
@@ -80,7 +85,10 @@ export function pageReport(params: URLSearchParams): 'hold' | 'demo' | 'soak' | 
 /** A whole number that the engine checks itself. */
 const whole = (v: number) => Number.isSafeInteger(v) && v > 0;
 
-/** Reads `?hold`, `?demo`, `?n=`, `?seconds=`, `?soak=`, `?shadows=` and the shadow quality settings. */
+/**
+ * Reads `?hold`, `?demo`, `?n=`, `?seconds=`, `?soak=`, `?shadows=`, `?governor=` and the shadow
+ * quality settings.
+ */
 export function readRunOptions(params: URLSearchParams): RunOptions {
 	return {
 		hold:
@@ -120,5 +128,6 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 		shadowCascades: readNumber(params, 'shadowCascades', whole, 'a cascade count from 1 to 4'),
 		shadowMapSize: readNumber(params, 'shadowMapSize', whole, 'a size such as 2048'),
 		shadowFilter: readNumber(params, 'shadowFilter', whole, 'a filter size of 3 or 5'),
+		governor: !params.has('governor') || readChoice(params, 'governor', ['off']) !== 'off',
 	};
 }

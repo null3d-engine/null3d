@@ -28,7 +28,7 @@ import {
 	s4VehicleScale,
 	s4VehiclesAt,
 } from '../../scenes/spec';
-import { followPath, setUpView, watchQuality } from './sketch-common';
+import { followPath, readGovernor, setUpView, watchQuality } from './sketch-common';
 
 export default defineSketch((context) => {
 	const { scene, materials, geometry, textures, time } = context;
@@ -36,11 +36,13 @@ export default defineSketch((context) => {
 	// every object receives them. The quality preset sets their cascades and map size.
 	// S4 measures how a preset holds its frame rate on phones with dynamic resolution, so it keeps
 	// the preset's render scale range, and the quality governor lowers the render scale and then
-	// the shadows when frames take too long.
+	// the shadows when frames take too long. A comparison of two builds turns the governor off, so
+	// that a step in one run cannot change what it draws.
 	const moveCamera = followPath(
 		setUpView(context, S4_VIEW_LIGHTS, S4_FOG.color, { dynamicResolution: true }),
 		s4Camera,
 	);
+	context.quality.set({ governor: readGovernor(import.meta.url) });
 	// The page's ?shadowFilter= switch tries another filter than the preset's.
 	const filter = new URL(import.meta.url).searchParams.get('shadowFilter');
 	if (filter) context.quality.set({ shadowFilter: Number(filter) as 3 | 5 });

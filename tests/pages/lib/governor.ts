@@ -165,6 +165,10 @@ export interface GovernorChunk {
 	completedFps: number | null;
 	/** The presented frame intervals' 99th percentile, in ms. */
 	intervalP99Ms: number;
+	/** The refresh rate that the governor's budget follows, in hertz, or null before it is measured. */
+	refreshHz: number | null;
+	/** The median time from a frame's submit until the GPU finished it, in ms, or null for none. */
+	gpuDelayMs: number | null;
 	pipelines: number;
 	skippedDraws: number;
 }
@@ -279,11 +283,15 @@ export function governorProblems(result: GovernorResult): string[] {
 /** A one-line summary of a governor page's result, for the runner's report. */
 export function governorSummary(result: GovernorResult): string {
 	const lowest = Math.min(1, ...result.states.map((state) => state.renderScale));
+	const refresh = result.chunks.flatMap((chunk) => (chunk.refreshHz ? [chunk.refreshHz] : []));
+	const budget = refresh.length
+		? `, refresh ${Math.min(...refresh)} to ${Math.max(...refresh)} Hz`
+		: '';
 	if (result.stage === 'walk')
-		return `${result.states.length} steps, ${result.captures.length} captures, target ${result.targetHz} fps`;
+		return `${result.states.length} steps, ${result.captures.length} captures, target ${result.targetHz} fps${budget}`;
 	const last = result.perSecond.slice(-GOVERNOR.heldSeconds);
 	const rates = last.map((second) =>
 		Math.round(Math.min(second.presentedFps, second.completedFps ?? 0)),
 	);
-	return `loop ${result.work}, lowest scale ${lowest}, last seconds ${rates.join(' ')} fps of ${result.targetHz}`;
+	return `loop ${result.work}, lowest scale ${lowest}, last seconds ${rates.join(' ')} fps of ${result.targetHz}${budget}`;
 }

@@ -45,9 +45,12 @@ export type BaseChoice =
 
 /**
  * The base of the size check. `--base <ref>` names it. A push to main in CI compares with the commit
- * before. Otherwise the base is HEAD's merge base with main, or with the branch that a pull request
- * targets. CI builds a pull request as GitHub's merge of it into that branch, so there the merge
- * base is the branch's commit that the pull request was merged into.
+ * before. A merge queue run compares with the commit that its group builds on, which holds the pull
+ * requests ahead of it in the queue: the queue squashes each pull request into one commit on top of
+ * that commit, so it is the commit before. Otherwise the base is HEAD's merge base with main, or
+ * with the branch that a pull request targets. CI builds a pull request as GitHub's merge of it
+ * into that branch, so there the merge base is the branch's commit that the pull request was merged
+ * into.
  */
 export function chooseBase(
 	ref: string | undefined,
@@ -55,6 +58,11 @@ export function chooseBase(
 ): BaseChoice {
 	if (ref) return { ref, why: 'the commit that --base names' };
 	if (env.GITHUB_EVENT_NAME === 'push') return { ref: 'HEAD^', why: 'the commit before on main' };
+	if (env.GITHUB_EVENT_NAME === 'merge_group')
+		return {
+			ref: 'HEAD^',
+			why: 'the commit that the merge group builds on, with the pull requests ahead of it',
+		};
 	const branch = env.GITHUB_BASE_REF || 'main';
 	return { branch, why: `the merge base with origin/${branch}` };
 }

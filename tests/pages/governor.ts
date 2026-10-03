@@ -29,6 +29,8 @@ function chunkOf(stats: FrameMetrics): GovernorChunk {
 		presentedFps: stats.presentedFps,
 		completedFps: stats.completedFps,
 		intervalP99Ms: stats.intervalMs.p99,
+		refreshHz: stats.refreshHz,
+		gpuDelayMs: stats.gpuLatencyMs?.median ?? null,
 		pipelines: stats.pipelines,
 		skippedDraws: stats.skippedDraws,
 	};

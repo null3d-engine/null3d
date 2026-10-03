@@ -34,13 +34,23 @@ These facts were checked in September 2026. Browser support changes often, so th
 
 On WebGPU, the GPU culls the scene itself. The engine records one draw for each group of objects that share a pipeline, a mesh and a material, and replays these draws every frame. The GPU fills in each draw's count. The CPU's cost per frame grows with the number of those groups, and stays almost flat as the object count grows.
 
-On WebGL2 there are no compute shaders, so the job workers cull in parallel on the CPU and group the visible objects the same way. Each object's matrix sits in a data texture on the GPU. Static objects upload theirs only when they change. Moving instance batches write theirs each frame into the next of three textures. A frame then never writes a texture that the GPU may still read. Each frame lists the visible objects, 4 bytes each, and uploads the list only when it changed. The `visibleEntries` figure of `engine.measure` counts the entries of each frame's list. A static instance batch that has stopped changing is culled in groups of 64 nearby rows, with one test and one list entry per group. A group partly in view draws all its rows, and the GPU clips the ones outside. On both paths, a scene spread over several grid cells skips the still objects of the cells out of view first ([Culling](culling.md)). Where the browser has the `WEBGL_multi_draw` extension, one call draws every group with the same shading and the same mesh buffer. Firefox lacks the extension, so there each group takes one call.
+On WebGL2 there are no compute shaders, so the job workers cull in parallel on the CPU and group the visible objects the same way. Each object's matrix sits in a data texture on the GPU, which a frame updates only where matrices changed. Dynamic instance batches write theirs each frame into the next of three textures. A frame then never writes a texture that the GPU may still read. Each frame lists the visible objects, 4 bytes each, and uploads the list only when it changed. The `visibleEntries` figure of `engine.measure` counts the entries of each frame's list. A static instance batch that has stopped changing is culled in groups of 64 nearby rows, with one test and one list entry per group. A group partly in view draws all its rows, and the GPU clips the ones outside. On both paths, a scene spread over several grid cells skips the still objects of the cells out of view first ([Culling](culling.md)). Where the browser has the `WEBGL_multi_draw` extension, one call draws every group with the same shading, the same texture maps and the same mesh buffer. Firefox lacks the extension, so there each group takes one call.
 
-Every feature works on both paths, or its page describes its WebGL2 fallback. The page downloads only the shaders of the path that it draws with.
+Every feature works on both paths, or its page describes its WebGL2 fallback. The page downloads only the shaders of the path that it draws with. Other work differs by path too:
+
+| Work | WebGPU | WebGL2 |
+| --- | --- | --- |
+| Lists of the lights of each cluster | A compute pass on the GPU | The job workers |
+| Culling for shadow cascades and shadow tiles | A compute pass for each, on the GPU | The job workers |
+| Sorting see-through objects back to front | The job workers | The job workers |
+| The [depth prepass](quality-presets.md#the-depth-prepass) | Drawn when `depthPrepass` is on | Never drawn |
+| GPU time in `engine.measure` | Where the device has timestamp queries | Not measured |
+
+Shadows, debug views and custom materials draw the same on both paths. A debug view's wireframe draws an edge list of each mesh, because neither API fills triangles as lines.
 
 ## Quality presets on each tier
 
-WebGL2 and WebGPU's compatibility mode run at most the Medium [quality preset](quality-presets.md), even when the page or the `?preset=` switch asks for more. So on those tiers the preset's pixel ratio cap is at most 2. Its anisotropic filtering cap is at most 4x, and its texture upload budget at most 4 MiB per frame.
+WebGL2 and WebGPU's compatibility mode run at most the Medium [quality preset](quality-presets.md), even when the page, the `?preset=` switch or `quality.setPreset` asks for more. So on those tiers the preset's pixel ratio cap is at most 2. Its anisotropic filtering cap is at most 4x, and its texture upload budget at most 4 MiB per frame. An option that the page sets, such as `maxPixelRatio`, still replaces the preset's value.
 
 ## Color and anti-aliasing on each tier
 
@@ -57,8 +67,10 @@ The scene's color target differs from tier to tier:
 | Tier | Scene color | How it reaches the canvas |
 | --- | --- | --- |
 | WebGPU core | `rg11b10ufloat` where the device can draw into it and the canvas is opaque; `rgba16float` elsewhere | The final pass applies the exposure and the tone mapping, encodes sRGB and dithers, into the canvas. With MSAA, the render pass first averages the samples into a texture. |
-| WebGPU compatibility mode | With MSAA, 8 bits per channel. With FXAA or none, as on core WebGPU. | With MSAA, each shader tone maps and encodes its own result, and the render pass averages the samples straight into the canvas, with no pass of its own. With FXAA or none, as on core WebGPU. |
-| WebGL2 | `RGBA16F` where the float target test passes; 8 bits per channel elsewhere | As on core WebGPU with the float target. Without it, each shader tone maps its own result: MSAA averages the samples into the canvas, and with FXAA or none the final pass reads the color as it is. |
+| WebGPU compatibility mode | With MSAA, 8 bits per channel. With FXAA or none, as on core WebGPU. | With MSAA, each shader tone maps and encodes its own result. The render pass averages the samples into the canvas, or into a texture that the final pass copies while the render scale can drop below 1. With FXAA or none, as on core WebGPU. |
+| WebGL2 | `RGBA16F` where the float target test passes; 8 bits per channel elsewhere | As on core WebGPU with the float target. Without it, each shader tone maps its own result. MSAA then averages the samples as in compatibility mode. With FXAA or none, the final pass reads the color as it is, and FXAA smooths its edges. |
+
+On every tier, the final pass also scales the image up to the canvas when the [render scale](quality-presets.md#dynamic-resolution) is below 1. It blends the nearest four pixels, and skips FXAA there, because the scaling softens edges already. WebGL2 and compatibility mode run Low or Medium, whose lowest render scale is below 1, so there the final pass usually runs.
 
 High dynamic range (HDR) color keeps light brighter than white until the tone mapping. It needs a float target that the GPU can draw into, with 4 samples for MSAA. Compatibility mode allows no MSAA on 16-bit float targets, so there MSAA takes the 8-bit path, and FXAA and none keep HDR color. Some WebGL2 devices draw into no float target at all. On WebGL2, `engine.report.webgl2.floatRenderTargets` gives the result of the engine's test. The target must be complete and keep values above 1. For MSAA it must also take 4 samples.
 
@@ -78,7 +90,7 @@ The engine draws reversed depth: the near plane stores 1 and the far plane store
 
 WebGL2 maps depth into a range from -1 to 1, which loses most of the precision that reversed depth gives. The `EXT_clip_control` extension sets the range from 0 to 1, as on WebGPU. In September 2026, Chrome, Safari and Brave had it on a MacBook Pro. So did Chrome on a Galaxy S24+, and Safari and Brave on an iPad Pro. Firefox on macOS did not. Without the extension, the engine keeps reversed depth in the range from -1 to 1. In every browser tested, that fought in fewer pixels than standard depth.
 
-The distances come from the engine's depth precision test on a MacBook Pro, with the camera's near plane at 0.1 m. The field `engine.capabilities.depth` says which depth the device draws: `reversed`, or `reversed-gl` on WebGL2 without the extension. In both, depth textures such as [shadow maps](shadows.md) hold the same values as on WebGPU. Shaders that read depth then work the same on every tier.
+The distances come from the engine's depth precision test on a MacBook Pro, with the camera's near plane at 0.1 m. The field `engine.capabilities.depth` says which depth the device draws: `reversed`, or `reversed-gl` on WebGL2 without the extension. In both, depth textures such as [shadow maps](shadows.md) hold the same values as on WebGPU. Shaders that read depth then work the same on every tier. The `?depth=standard` switch below gives a third value, `standard`.
 
 ## Capability flags
 
@@ -86,18 +98,15 @@ The engine reads what the device can do at startup and exposes it as `engine.cap
 
 ```ts
 engine.capabilities;
-// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, maxInstances, depth }
+// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, maxInstances, depth, halfPrecision }
 ```
 
-The features it tests include:
+The `features` field lists the WebGPU adapter's optional features. On WebGL2 it lists the extensions that the engine asks for and the browser has. The `limits` field gives the WebGPU adapter's limits, and is empty on WebGL2. The engine acts on these tests:
 
-- compute shaders and indirect draws
-- storage buffers in vertex shaders
-- multi-draw
+- the tier itself, which gives compute shaders and indirect draws on WebGPU
 - each texture compression family: BC, ETC2 and ASTC
-- filtering of 32-bit float textures
-- GPU timer queries
-- MSAA on 16-bit float targets
+- multi-draw on WebGL2 (`WEBGL_multi_draw`)
+- GPU timer queries on WebGPU (`timestamp-query`)
 - rendering into 16-bit and 32-bit float textures on WebGL2 (`engine.report.webgl2.floatRenderTargets`)
 - transient attachments on WebGPU (`engine.report.webgpu.transientAttachments`)
 
@@ -111,11 +120,11 @@ The WebGPU path stays inside WebGPU's default limits, and inside compatibility m
 
 | Limit | Budget |
 | --- | --- |
-| Bind groups | 4 (the engine uses 3) |
+| Bind groups | 4 (the engine uses 2) |
 | Compute threads per workgroup | 128 |
 | Uniform binding size | 16 KB |
 | Color attachments | 4 |
-| Texture size | 4096 pixels, the widest and tallest texture that the engine makes |
+| Texture size | 4096 pixels for loaded textures. The canvas and the render targets of its size reach 8,192 pixels on core WebGPU and 4,096 in compatibility mode (`engine.capabilities.maxCanvasSize`) |
 | Texture array layers | 256 |
 | Buffer size | 256 MB |
 | Storage binding size | 128 MB |
@@ -147,6 +156,8 @@ On WebGL2, uploads read straight from the engine's shared memory. A browser that
 
 On WebGL2, the engine compiles shader programs in the background where the browser has the `KHR_parallel_shader_compile` extension. The switch `?compile=wait` makes it wait for each compile at the program's first draw instead, as a browser without the extension does.
 
+The switch `?half=on` makes the scene shaders do their color math at half precision, where the device can. It is off by default, and serves measurements. The switch `?hdr=off` makes the engine draw the 8-bit color path on a device that draws HDR color, so one device can test both. The switch `?prepass=on` or `?prepass=off` turns the depth prepass on or off.
+
 The switch `?depth=` forces a WebGL2 depth mode: `reversed`, `reversed-gl` or `standard`, which draws depth as three.js's WebGL renderer does by default. A browser without `EXT_clip_control` cannot draw `reversed`, so it draws its own mode instead. Shadow maps hold the same depth values as on WebGPU in `reversed` and `reversed-gl`. In `standard` they would hold them the other way around, so WebGL2 draws no shadows in that mode.
 
 KTX2 textures take the compressed format of the first family that the device has: ASTC, BC7 or ETC2 by the file's data ([Textures](../api/textures.md#ktx2-files)). The switch `?compression=` keeps them to the families that it lists, such as `?compression=bc`, or to none with `?compression=none`. One device can then test the format of each kind of device.
@@ -163,7 +174,7 @@ A WebGPU device can be lost, for example after a driver reset, and so can a WebG
 | Chrome and Edge | 91 |
 | Firefox | 89 |
 
-WebAssembly SIMD sets these minimums. An older browser gets a clear "browser not supported" message instead of a slow path. On a cross-origin isolated page, the engine runs worker threads, which wait for each other with `Atomics.waitAsync`. Firefox has it from version 145. In older versions, the threads wake each other with messages instead. The switch `?wake=message` does the same in any browser, for tests.
+WebAssembly SIMD sets these minimums. In an older browser, `createEngine` fails with [E1303](../errors/E1303.md) instead of taking a slow path, and the page can show its own message. On a cross-origin isolated page, the engine runs worker threads, which wait for each other with `Atomics.waitAsync`. Firefox has it from version 145. In older versions, the threads wake each other with messages instead. The switch `?wake=message` does the same in any browser, for tests.
 
 ## Related pages
 

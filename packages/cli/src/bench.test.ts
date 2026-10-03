@@ -170,7 +170,7 @@ describe('benchSummary', () => {
 		const paths = pathReports(['webgl2', 'compat'], [[FAILED, measured('webgl2', 1)], [FAILED]]);
 		const text = benchSummary(report(paths, { ok: false, errors: ['page error: boom'] }), 'b.json');
 		expect(text).toStartWith('/ on webgl2: 1 of 2 runs of 30 s, each after 5 s of warm-up.\n');
-		expect(text).toContain('GPU time per frame: n/a, the browser does not time the GPU here.');
+		expect(text).toContain('GPU time per frame: n/a, the engine times the GPU only on WebGPU.');
 		expect(text).toContain(
 			'\n\n/ on compat: 0 of 1 run of 30 s, each after 5 s of warm-up.\nRun 1 failed: the browser tab crashed\n',
 		);

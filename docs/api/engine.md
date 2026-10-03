@@ -32,9 +32,15 @@ try {
 
 ## The start
 
-`createEngine` tests what the browser offers, and picks the build and the GPU path from those tests, never from browser or GPU names. It starts the engine's threads, loads the sketch module and runs the sketch's setup. It resolves once the setup has run, and `engine.firstFrame` resolves once the GPU has finished the first frame.
+`createEngine` tests what the browser offers, and picks the build and the GPU path from those tests, never from browser or GPU names. It starts the engine's threads, loads the sketch module and runs the sketch's setup. It resolves once the setup has run, and `engine.firstFrame` resolves once the GPU has finished the first frame. When the engine chose the preset itself, `createEngine` also waits for the [preset check](../concepts/quality-presets.md#the-preset-check). The check draws the first frames, so the first frame is then on the screen before `createEngine` resolves.
 
-`onProgress` reports each stage of the start: `core` once the engine core is compiled and the GPU paths are tested, `sketch` after the sketch's setup, and `first-frame`. An `AbortSignal` in `signal` cancels a start in progress: `createEngine` then stops the engine's threads and rejects with the signal's reason.
+`onProgress` reports each stage of the start, in this order:
+
+- `core`, once the engine core is compiled and the GPU paths are tested;
+- `sketch`, after the sketch's setup, and after the preset check when one runs;
+- `first-frame`, once the GPU has finished the first frame.
+
+An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` stops the engine's threads and rejects with the signal's reason.
 
 `createEngine` rejects with an `EngineError` when the engine cannot start:
 
@@ -42,18 +48,18 @@ try {
 | --- | --- |
 | [E1407](../errors/E1407.md) | The `hold` option or the `?hold=` switch gives a time that is not a number of seconds from 0 to 600. |
 | [E1415](../errors/E1415.md) | The sketch would run on the page's main thread, where another engine still runs its sketch. |
-| [E1213](../errors/E1213.md) | The `preset` option names no preset, `maxPixelRatio` is not a number from 0.5 up, or `antialias` is not `'msaa'`, `'fxaa'` or `'none'`. |
+| [E1213](../errors/E1213.md) | An option of the quality settings is out of its range: `preset`, `maxPixelRatio`, `antialias`, the shadow options or `depthPrepass`. The options table gives each range. |
 | [E1409](../errors/E1409.md) | The `memory` option asks for a maximum that is not a whole number of MiB from 256 to 4096. |
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
 | [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
-| [E1406](../errors/E1406.md) | A file of the engine core did not download. |
-| [E1402](../errors/E1402.md) | Development builds only: the engine core's file comes from another build than the engine's JavaScript. |
+| [E1406](../errors/E1406.md) | The engine core's WebAssembly file did not download. |
 | [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 3 seconds of tries. |
+| [E1402](../errors/E1402.md) | Development builds only: the engine core's file comes from another build than the engine's JavaScript. |
 | [E1410](../errors/E1410.md) | The sketch module did not load: it did not download, or its code threw an error while it loaded. |
 | [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
 | [E1214](../errors/E1214.md) | An option of `defineSketch` is out of its range. |
 | [E1405](../errors/E1405.md) | An engine thread did not start. |
-| [E1404](../errors/E1404.md) | An engine thread, or the drawing on the page, failed during the start. For example, the GPU had no memory for the first frame's textures. |
+| [E1404](../errors/E1404.md) | An engine thread, or the drawing on the page, failed during the start. For example, the GPU had no memory for the first frame's textures. A worker that fails before it is ready reports E1405 instead. |
 | [E1302](../errors/E1302.md) | The browser took the GPU away during the start, and no new device started. |
 | [E1408](../errors/E1408.md) | In hold mode, the sketch or the engine failed before the engine read the held frame back. |
 
@@ -66,23 +72,25 @@ An error that the sketch's setup throws also rejects the start ([Sketch API](ske
 The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer to that size times the screen's pixel ratio, up to the cap that `maxPixelRatio` or the preset sets.
 
 - A canvas that no CSS sizes shows its drawing buffer at one CSS pixel per buffer pixel, so each new buffer would make it larger. The engine sets the CSS width and height that the canvas shows when the engine starts.
-- The drawing buffer is never wider or taller than the GPU's largest texture. A larger canvas draws at a lower pixel ratio, which `engine.viewport.pixelRatio` in the sketch reports.
+- The drawing buffer is never wider or taller than `engine.capabilities.maxCanvasSize`. That is 8,192 pixels on WebGPU and 4,096 in its compatibility mode. On WebGL2 it is the smallest of the device's texture, renderbuffer and viewport limits. A larger canvas draws at a lower pixel ratio, which `engine.viewport.pixelRatio` in the sketch reports.
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `preset` | `'auto'` | The quality preset, which the engine chooses for the device unless the page names one: [Quality presets](../concepts/quality-presets.md) |
+| `preset` | `'auto'` | The quality preset, which the engine chooses for the device unless the page names one: [Quality presets](../concepts/quality-presets.md). The `?preset=` switch wins over it. |
 | `maxPixelRatio` | The preset's cap | Caps the screen's pixel ratio that the engine draws at, in place of the preset's cap |
 | `antialias` | The preset's mode | `'msaa'`, `'fxaa'` or `'none'`, in place of the preset's anti-aliasing mode: [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) |
-| `gpu` | `'auto'` | Forces a GPU path, for tests only. The `?gpu=` switch in the page's address wins over it. |
+| `shadowTiles`, `shadowTileSize`, `pointLightShadows` | The preset's values | The shadows of spot and point lights, in place of the preset's settings: [Shadows](../concepts/shadows.md#settings). Each is fixed while the engine runs. |
+| `depthPrepass` | `false` on every preset | `true` draws the depth of the opaque objects before they are shaded, on WebGPU: [The depth prepass](../concepts/quality-presets.md#the-depth-prepass). The `?prepass=` switch wins over it. |
+| `gpu` | `'auto'` | Forces a GPU path, for tests only. The `?gpu=` switch in the page's address wins over it, and also takes `compat` for WebGPU's compatibility mode. |
 | `powerPreference` | `'high-performance'` | Picks the GPU on a device that has two. `'low-power'` saves battery. |
-| `latency` | `'pipelined'` | The latency mode, `'pipelined'` or `'low'`: [Architecture](../concepts/architecture.md#latency-modes). The `?latency=` switch wins over it, and the single-threaded build ignores it. |
+| `latency` | `'pipelined'` | The latency mode, `'pipelined'` or `'low'`: [Architecture](../concepts/architecture.md#latency-modes). The `?latency=` switch wins over it, and the single-threaded build ignores it. Where no worker can draw, the engine runs pipelined. |
 | `transparent` | false | Makes a see-through canvas: [A transparent canvas](#a-transparent-canvas) |
 | `sketchThread` | `'worker'` | The thread that runs the sketch. `'main'` runs it on the page's main thread, where it can reach the DOM: [Where the sketch runs](../concepts/architecture.md#where-the-sketch-runs). The `?sketch-thread=` switch wins over it, and the single-threaded build always runs the sketch on the main thread. |
 | `memory` | `{ maximumMiB: 1024 }` | The most memory that the engine's threads share: [Memory](#memory) |
 | `onProgress` | None | Reports each stage of the start |
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
 | `signal` | None | Cancels the start |
-| `hold` | None | Holds the sketch at a time for image tests: [Testing your sketch](../guides/testing.md) |
+| `hold` | None | Holds the sketch at a time for image tests: [Testing your sketch](../guides/testing.md). The `?hold=` switch wins over it. |
 
 ## A transparent canvas
 
@@ -114,19 +122,19 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 
 ## What the engine reports
 
-- `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives whether the scene draws HDR color (`hdr`), the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). [GPU tiers and backends](../concepts/backends.md) explains each.
-- `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the number of job workers and the held time in hold mode. It gives the quality preset, the starts that crashed the tab before this one, and the memory maximum too.
+- `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives whether the scene draws HDR color (`hdr`), the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). The `halfPrecision` field says whether the scene shaders do their color math at half precision, which only the `?half=on` switch turns on. [GPU tiers and backends](../concepts/backends.md) explains each.
+- `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the number of job workers and the held time in hold mode. It gives the quality preset, what the preset check measured, the starts that crashed the tab before this one, and the memory maximum too.
 - `engine.report` holds every result of the start's tests, as plain JSON.
 
 ## The running engine
 
 - `setPaused(true)` stops the sketch's frames, and `setPaused(false)` resumes them. The first step after a pause is 0 seconds.
 - `detach()` takes the canvas off the page and pauses the engine, and `attach(container)` puts it back. Use them when a single-page app leaves the view with the canvas and comes back. The engine keeps its threads, its GPU resources and the scene.
-- `onFailure(handler)` receives a failure after the start: a GPU that the engine could not get back ([E1302](../errors/E1302.md)), or an engine thread that failed ([E1404](../errors/E1404.md)). Without a handler, the engine logs the failure to the console.
+- `onFailure(handler)` receives a failure after the start. It can be a GPU that the engine could not get back ([E1302](../errors/E1302.md)), or an engine thread that failed ([E1404](../errors/E1404.md)). It can also be a job worker that did not start ([E1405](../errors/E1405.md)). Without a handler, the engine logs the failure to the console.
 - `simulateGpuLoss()` acts out a loss of the GPU, so you can test how the page handles one. The engine starts a new GPU device and draws the whole scene again.
 - `measure(seconds)` measures the running engine: CPU time per frame by thread, GPU time, frame intervals, uploads, draw calls, memory and load time. [Performance guide](../guides/performance.md) explains the numbers.
 - `capture()` resolves with a PNG image of the next frame that the engine draws: [Screenshots](#screenshots).
-- `captureFrame()` draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
+- `captureFrame()` draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. In hold mode it returns the held frame and draws nothing. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
 - `postToSketch` and `onSketchMessage` send and receive [messages](page.md).
 - `destroy()` stops the engine and its threads, and the engine cannot start again. Wait for its promise before you start another engine on the same page, because the browser frees the engine's memory only then.
 
@@ -151,7 +159,7 @@ The thread that draws reads the frame back from the GPU and encodes the image. W
 
 - While the engine is paused, and in hold mode, the image shows the frame on the canvas.
 - A page in a hidden tab draws no frames, so its image comes when the tab shows again.
-- After `destroy()`, `capture()` fails with [E1414](../errors/E1414.md).
+- After `destroy()`, `capture()` fails with [E1414](../errors/E1414.md). So does a capture whose frame the engine could not read back or encode.
 
 ## Related pages
 
@@ -239,6 +247,7 @@ The GPU path the engine chose, and what it offers.
 | `hdr: boolean` | True when the scene draws high dynamic range color, which the final pass tone maps into the canvas. False on the 8-bit path, where each shader tone maps its own output: in WebGPU's compatibility mode with MSAA, and on WebGL2 devices whose float targets fail the engine's test. Both paths show the same colors. Edges differ a little with MSAA, because the 8-bit path averages the samples after the tone mapping. |
 | `halfPrecision: boolean` | True when the scene shaders do their color math at half precision: lighting, tone mapping and sRGB encoding. On WebGPU it needs the device feature `shader-f16`, and WebGL2 runs that math at `mediump`. Positions, depth and shadow lookups keep full precision either way. |
 | `maxInstances: number` | The most objects and instance rows, counted together, that a scene can draw on this device. On WebGPU every device draws at least 2,097,152, and a device with larger GPU buffers draws more, up to 8,388,480. On WebGL2 the number follows the largest texture the device allows: 2,097,152 at 4,096 pixels, and 1,048,576 at the 2,048 that every WebGL2 device allows. Engine memory can run out first: see E1109. |
+| `maxCanvasSize: number` | The widest and tallest drawing buffer, in device pixels, that the GPU path draws into: 8,192 on WebGPU, 4,096 in its compatibility mode, and on WebGL2 the smallest of the device's texture, renderbuffer and viewport limits. A canvas larger than that at the screen's pixel ratio draws at a lower ratio, which `engine.viewport.pixelRatio` in the sketch reports. |
 | `depth: DepthMode` | How the GPU path stores depth. WebGPU, and WebGL2 in browsers with `EXT_clip_control`, draw `reversed` depth, which stays precise far from the camera. |
 
 ### `EngineError`
@@ -443,6 +452,8 @@ What the browser's WebGL2 offers, in `CapabilityReport.webgl2`.
 | `supportedExtensions: string[]` | The list as the browser reports it, in its order; some browsers shuffle it, so it is only recorded. |
 | `maxSamples: number \| null` | The most samples per pixel for antialiasing, or null without WebGL2. |
 | `maxTextureSize: number \| null` | The largest texture width and height in pixels, or null without WebGL2. |
+| `maxRenderbufferSize: number \| null` | The largest renderbuffer width and height in pixels, or null without WebGL2. |
+| `maxViewportDims: [width: number, height: number] \| null` | The largest viewport width and height in pixels, or null without WebGL2. |
 | `maxUniformBlockSize: number \| null` | The largest uniform block in bytes, or null without WebGL2. |
 | `sharedMemoryUploads: { bufferSubData: boolean; texSubImage2D: boolean; } \| null` | Whether WebGL accepts views on shared memory for buffer and texture uploads. Null without shared memory. |
 | `floatRenderTargets: { rgba16f: { complete: boolean; readsBack: boolean; samples: number; }; rgba32f: { complete: boolean; readsBack: boolean; samples: number; }; } \| null` | Whether the device renders into float textures, which high dynamic range color needs. The engine tests a 16-bit and a 32-bit float RGBA texture. `complete` says whether a framebuffer with the texture is complete. `readsBack` says whether a clear to a known color, with a value above 1, reads back as floats. `samples` is the most samples per pixel for antialiasing that the format takes, or 0 where the device does not render into it. WebGL2 renders into both formats with `EXT_color_buffer_float`, and into the 16-bit one with `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit format passes both tests, and with MSAA takes 4 samples. Null without WebGL2. |

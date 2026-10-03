@@ -8,6 +8,7 @@
 // poorly, so GPU time is reported and never judged.
 import type { Shard } from '../../tests/lib/runs.ts';
 import { findAckValues, isBareAck } from '../../tools/hooks/commit-ack.ts';
+import { REFERENCE_PRESET_SWITCH } from './parity';
 import { type BenchResult, median, ownWorkMs, summarizeRuns } from './report';
 
 /** The two builds of a comparison. */
@@ -38,6 +39,22 @@ export function roundOrder(round: number): readonly Build[] {
 export interface DroppedRun {
 	run: BuildRun;
 	reason: string;
+}
+
+/**
+ * The page switches of every comparison, so that both builds draw the same work in every run. The
+ * engine otherwise chooses the quality preset itself and checks it with the first frames' rate, and
+ * on a busy machine that check lowers it in some runs and not in others. A named preset turns the
+ * check and the crash marker off, and the desktop's preset, High within each GPU path's ceiling,
+ * keeps the work that a desktop draws. The governor stays off, because a step during the measured
+ * seconds would change what the rest of the run draws. .dev/benchmarks.md gives the measurements.
+ */
+export const COMPARISON_SWITCHES: readonly string[] = [REFERENCE_PRESET_SWITCH, 'governor=off'];
+
+/** The comparison's own switches, less those that the command's `switches` set themselves. */
+export function comparisonSwitches(switches: string): string[] {
+	const named = new Set(switches.split('&').map((entry) => entry.split('=')[0]));
+	return COMPARISON_SWITCHES.filter((entry) => !named.has(entry.split('=')[0]));
 }
 
 /** The runs that a comparison uses and those it leaves out. */
@@ -396,6 +413,82 @@ function names(
 	);
 }
 
+// The quality that each run drew with.
+
+/** The quality preset and the quality steps of one run, which the summary lists round by round. */
+export interface RunQuality {
+	build: Build;
+	scene: string;
+	kind: string;
+	round: number;
+	/** The preset that the engine drew with, or null when the page did not report one. */
+	preset: string | null;
+	/** Quality steps during the measured seconds, or null for a page that records no trace. */
+	steps: number | null;
+}
+
+/** The preset and the quality steps of each run that published a result. */
+export function runQualities(runs: readonly BuildRun[]): RunQuality[] {
+	return runs
+		.filter((run) => run.result.ok)
+		.map(({ build, scene, kind, round, result }) => ({
+			build,
+			scene,
+			kind,
+			round,
+			preset: result.mode?.preset ?? null,
+			steps: result.trace ? result.trace.reduce((sum, second) => sum + second.steps, 0) : null,
+		}));
+}
+
+const presetText = (preset: string | null | undefined) =>
+	preset === undefined ? 'no run' : (preset ?? 'not reported');
+
+/**
+ * The presets and the quality steps of a comparison's runs, as lines of its report. A page whose
+ * runs all drew at one preset takes a few words. A page whose runs differ lists each round's preset
+ * in each build, because a round whose builds drew different work compares nothing.
+ */
+export function qualityLines(qualities: readonly RunQuality[]): string[] {
+	const pages = new Map<string, RunQuality[]>();
+	for (const quality of qualities)
+		pages.set(pageName(quality), [...(pages.get(pageName(quality)) ?? []), quality]);
+	const same = new Map<string, string[]>();
+	const mixed: string[] = [];
+	for (const [page, runs] of pages) {
+		const presets = new Set(runs.map((run) => presetText(run.preset)));
+		const [only] = presets;
+		if (presets.size === 1 && only !== undefined) {
+			same.set(only, [...(same.get(only) ?? []), page]);
+			continue;
+		}
+		const rounds = [...new Set(runs.map((run) => run.round))].sort((a, b) => a - b);
+		const preset = (round: number, build: Build) =>
+			presetText(runs.find((run) => run.round === round && run.build === build)?.preset);
+		mixed.push(
+			`- ${page}: ${rounds.map((round) => `round ${round} ${BUILDS.map((build) => `${build} ${preset(round, build)}`).join(', ')}`).join('; ')}`,
+		);
+	}
+	const lines: string[] = [];
+	if (same.size > 0)
+		lines.push(
+			'',
+			`Quality preset in every run of both builds: ${[...same].map(([preset, names]) => `${preset} on ${names.join(', ')}`).join('; ')}.`,
+		);
+	if (mixed.length > 0)
+		lines.push('', 'Pages whose runs drew at different quality presets, round by round:', ...mixed);
+	const traced = qualities.filter((quality) => quality.steps !== null);
+	const stepped = traced.filter((quality) => (quality.steps ?? 0) > 0);
+	if (traced.length > 0)
+		lines.push(
+			'',
+			stepped.length === 0
+				? `Quality steps in the measured seconds: none in any run of ${[...new Set(traced.map(pageName))].join(', ')}.`
+				: `Quality steps in the measured seconds: ${stepped.map((q) => `${q.build} ${pageName(q)} round ${q.round} took ${q.steps}`).join('; ')}.`,
+		);
+	return lines;
+}
+
 // The verdict and the report.
 
 /** Whether the new build passes, and why it fails when it does not. */
@@ -507,7 +600,8 @@ export function compareReport(
 			'',
 			`Not compared: ${notCompared.map((page) => `${pageName(page)}, as ${missingText(page)}`).join('; ')}.`,
 		);
-	const { refreshHz, dropped } = context.selection;
+	const { kept, refreshHz, dropped } = context.selection;
+	lines.push(...qualityLines(runQualities([...kept, ...dropped.map(({ run }) => run)])));
 	const rates = [...new Set(Object.values(refreshHz))];
 	const rateText =
 		rates.length === 1
@@ -662,6 +756,7 @@ export function judgeRecord(record: ComparisonRecord, known: KnownNames): Judged
 		shard: record.shard,
 		refreshHz: selection.refreshHz,
 		dropped,
+		quality: runQualities(record.results),
 		summaries,
 		...comparison,
 		verdict,
