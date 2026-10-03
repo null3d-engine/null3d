@@ -881,6 +881,24 @@ describe('the checks plan', () => {
 		expect(judge(restart.check, result({ kinds: { engine: failed } }), NONE_MISSING)).toEqual([
 			"start and stop 3 of 10 failed: the engine start took more than 20 s; the page's last steps: 10 ms core; 11 ms null3d-sketch: started",
 		]);
+		const notes: string[] = [];
+		const context = { resultOf: () => undefined, imageDir: '', note: (t: string) => notes.push(t) };
+		const lostOnce = (again: object) =>
+			result({ kinds: { engine: { ...engine, roomLater: 2, again: { ...engine, ...again } } } });
+		expect(
+			judge(restart.check, lostOnce({ room: 2, roomLater: 2 }), NONE_MISSING, context),
+		).toEqual([]);
+		expect(notes).toEqual([
+			'the room fell once and then held, so the browser lost address space, not memory that stopped engines hold: it had room for 6 shared memories before 10 starts and stops, and for 2 after, and for 2 after 10 more',
+		]);
+		expect(judge(restart.check, lostOnce({ room: 4, roomLater: 1 }), NONE_MISSING)).toEqual([
+			'the browser did not get back the memory of stopped engines in two rounds: it had room for 6 shared memories before 10 starts and stops, and for 2 after, then for 1 after 10 more within 31 s',
+		]);
+		expect(
+			judge(restart.check, lostOnce({ room: 2, ...failed, error: 'E1109: refused' }), NONE_MISSING),
+		).toEqual([
+			"start and stop 3 of 10 in the second round failed: E1109: refused; the page's last steps: 10 ms core; 11 ms null3d-sketch: started",
+		]);
 		const inFrames = items.find((item) => item.id === 'frame-restarts-pipelined');
 		if (!inFrames) throw new Error('the plan lacks the restart pages with frames');
 		expect(

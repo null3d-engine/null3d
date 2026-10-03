@@ -8,9 +8,14 @@
 // for the room to come back, each within a bound, before it reports. The page also reports how many
 // of the memories it gave to workers, and how many of those workers, it can still reach.
 //
+// Safari can also lose room once without holding any memory: the room is a count of free 1 GiB
+// address ranges, and small buffers that land in freed ranges split them for good. So when the room
+// does not come back, the page starts and stops the engines a second time from the room it has now.
+// Engines whose memory the browser keeps take room on every round, and a range lost once does not.
+//
 // ?kinds= tests other ways a thread holds a shared memory, such as a worker stopped inside a
-// blocking wait (see ./lib/memory-holder.ts). ?cycles= sets the number of starts and stops, and
-// ?room=off skips the counts of the room.
+// blocking wait (see ./lib/memory-holder.ts). ?cycles= sets the number of starts and stops in each
+// round, ?room=off skips the counts of the room, and ?room=each also counts it after each start.
 import { createEngine, EngineError } from '@null3d/engine';
 import { coreUrls, probeCapabilities } from '@null3d/engine/internal';
 import type { EngineFrameMessage } from './engine-frame';
@@ -57,8 +62,10 @@ const LATE_START_PAUSE_MS = 1_000;
 type Kind = 'engine' | 'frame' | 'frame-destroyed' | 'dropped' | 'probe' | HoldKind;
 const KINDS = (params.get('kinds')?.split(',') ?? ['engine']) as Kind[];
 const COUNT_ROOM = params.get('room') !== 'off';
+const COUNT_EACH = params.get('room') === 'each';
 
-interface KindResult {
+/** One round of starts and stops, and the counts of the room after it. */
+interface RoundResult {
 	cycles: number;
 	error?: string;
 	/** The page's steps in the cycle that failed. */
@@ -66,12 +73,22 @@ interface KindResult {
 	/** Starts that the browser refused at first, and the time they waited for it, in all. */
 	lateStarts: number;
 	lateStartsMs: number;
-	/** For each frame that the page removed while its engine ran, the job workers still in the job loop. */
-	jobsServingAtLeave: number[];
 	/** Each count of the room after the cycles, the last of them, and the time they took. */
 	roomCounts?: number[];
 	roomLater?: number;
 	roomWaitMs?: number;
+	/** Each start and stop of the engine on the page. */
+	starts: StartRecord[];
+}
+
+interface KindResult extends RoundResult {
+	/**
+	 * The second round, which runs when the room did not come back after the first. It starts from
+	 * the room that the first round left.
+	 */
+	again?: RoundResult & { room: number };
+	/** For each frame that the page removed while its engine ran, the job workers still in the job loop. */
+	jobsServingAtLeave: number[];
 	/** The memories the page gave workers, and those it can still reach. */
 	memoriesGiven: number;
 	memoriesReachable: number;
@@ -168,11 +185,33 @@ async function holdAndStop(kind: HoldKind): Promise<void> {
  */
 const canvases: HTMLCanvasElement[] = [];
 
+/**
+ * What each start and stop of the engine on the page did: when its first frame came and how long
+ * its stop took, and how many job workers had reported ready by the stop and stopped by its end.
+ */
+interface StartRecord {
+	firstFrameMs: number;
+	stopMs: number;
+	jobs: number;
+	jobsReadyAtStop: number;
+	jobsStopped: number;
+	roomAfter?: number;
+}
+const starts: StartRecord[] = [];
+
+/** The job workers that a slice of the page's trail names with `reply`. */
+const jobsWith = (steps: readonly string[], reply: string) =>
+	new Set(steps.flatMap((s) => s.match(new RegExp(`(null3d-job-\\d+): ${reply}$`))?.[1] ?? []))
+		.size;
+
 /** Starts the engine on a new canvas, waits for its first frame, and stops it. */
 async function startAndStopEngine(): Promise<void> {
 	const canvas = document.createElement('canvas');
 	canvases.push(canvas);
 	document.body.append(canvas);
+	const trail = window.__null3dProgress ?? [];
+	const from = trail.length;
+	const began = performance.now();
 	try {
 		const engine = await withTimeout(
 			createEngine({
@@ -183,13 +222,29 @@ async function startAndStopEngine(): Promise<void> {
 			ENGINE_TIMEOUT_MS,
 			'the engine start',
 		);
+		let stopAt = 0;
+		let stopIndex = 0;
 		try {
 			await withTimeout(engine.firstFrame, ENGINE_TIMEOUT_MS, 'the first frame');
 		} finally {
+			stopAt = performance.now();
+			stopIndex = trail.length;
 			await engine.destroy();
+			const steps = trail.slice(from);
+			starts.push({
+				firstFrameMs: Math.round(stopAt - began),
+				stopMs: Math.round(performance.now() - stopAt),
+				jobs: jobsWith(steps, 'started'),
+				jobsReadyAtStop: jobsWith(trail.slice(from, stopIndex), 'ready'),
+				jobsStopped: jobsWith(steps, 'stopped'),
+			});
 		}
 	} finally {
 		canvas.remove();
+	}
+	if (COUNT_EACH) {
+		const last = starts.at(-1);
+		if (last) last.roomAfter = (await countRoomAndRelease()).room;
 	}
 }
 
@@ -306,6 +361,51 @@ function reachableWorkers(): Record<string, number> {
 	return counts;
 }
 
+/**
+ * Starts and stops `cycles` times in the way `kind` says, then, given the room before, counts the
+ * room after pauses until it comes back to within the room that the page may lose, or the pauses
+ * end.
+ */
+async function round(kind: Kind, cycles: number, roomBefore?: number): Promise<RoundResult> {
+	let done = 0;
+	let cycleStart = 0;
+	let failure: Pick<RoundResult, 'error' | 'trail'> = {};
+	late.starts = 0;
+	late.ms = 0;
+	try {
+		for (; done < cycles; done++) {
+			cycleStart = window.__null3dProgress?.length ?? 0;
+			progress(`${kind}: cycle ${done + 1}`);
+			await cycle(kind);
+		}
+	} catch (e) {
+		failure = { error: (e as Error).message, trail: window.__null3dProgress?.slice(cycleStart) };
+	}
+	let roomCounts: number[] | undefined;
+	let roomWaitMs: number | undefined;
+	if (roomBefore !== undefined) {
+		const waitStart = performance.now();
+		roomCounts = [];
+		for (const pause of ROOM_PAUSES_MS) {
+			await sleep(pause);
+			const { room } = await countRoomAndRelease();
+			roomCounts.push(room);
+			if (room >= roomBefore - ROOM_KEPT) break;
+		}
+		roomWaitMs = Math.round(performance.now() - waitStart);
+	}
+	return {
+		cycles: done,
+		...failure,
+		lateStarts: late.starts,
+		lateStartsMs: Math.round(late.ms),
+		roomCounts,
+		roomLater: roomCounts?.at(-1),
+		roomWaitMs,
+		starts: starts.splice(0),
+	};
+}
+
 run('shared-memory', async () => {
 	const before = COUNT_ROOM ? await countRoomAndRelease() : undefined;
 	const room = before?.room ?? MOST_HELD;
@@ -314,45 +414,19 @@ run('shared-memory', async () => {
 	);
 	const kinds: Partial<Record<Kind, KindResult>> = {};
 	for (const kind of KINDS) {
-		let done = 0;
-		let cycleStart = 0;
-		let failure: Pick<KindResult, 'error' | 'trail'> = {};
-		late.starts = 0;
 		window.__jobsServingAtLeave = [];
-		late.ms = 0;
-		try {
-			for (; done < cycles; done++) {
-				cycleStart = window.__null3dProgress?.length ?? 0;
-				progress(`${kind}: cycle ${done + 1}`);
-				await cycle(kind);
-			}
-		} catch (e) {
-			failure = { error: (e as Error).message, trail: window.__null3dProgress?.slice(cycleStart) };
-		}
-		let roomCounts: number[] | undefined;
-		let roomWaitMs: number | undefined;
-		if (before) {
-			const waitStart = performance.now();
-			roomCounts = [];
-			for (const pause of ROOM_PAUSES_MS) {
-				await sleep(pause);
-				const { room } = await countRoomAndRelease();
-				roomCounts.push(room);
-				if (room >= before.room - ROOM_KEPT) break;
-			}
-			roomWaitMs = Math.round(performance.now() - waitStart);
-		}
+		const first = await round(kind, cycles, before?.room);
+		const left = first.roomLater;
+		const again =
+			before && left !== undefined && left < before.room - ROOM_KEPT && !first.error
+				? { room: left, ...(await round(kind, cycles, left)) }
+				: undefined;
 		// Where the browser offers a collection, as Chrome does with --js-flags=--expose-gc.
 		(globalThis as { gc?: () => void }).gc?.();
 		kinds[kind] = {
-			cycles: done,
-			...failure,
-			lateStarts: late.starts,
-			lateStartsMs: Math.round(late.ms),
+			...first,
+			again,
 			jobsServingAtLeave: window.__jobsServingAtLeave,
-			roomCounts,
-			roomLater: roomCounts?.at(-1),
-			roomWaitMs,
 			memoriesGiven: given.length,
 			memoriesReachable: given.filter((ref) => ref.deref() !== undefined).length,
 			workersStarted: started.length,
