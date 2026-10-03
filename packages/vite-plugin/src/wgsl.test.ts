@@ -256,7 +256,8 @@ describe.skipIf(!ENABLED)('compileWgsl', () => {
 	it('builds a surface function into every variant of the standard material', () => {
 		const built = material(compileWgsl('src/stripes.wgsl', SURFACE, HINT));
 		expect(built.functions).toEqual(['surface']);
-		expect(Object.keys(built.variants).sort()).toEqual([
+		// Each WebGL2 build has a twin that skins, for skinned meshes.
+		const plain = [
 			'webgl2',
 			'webgl2_alpha_mask',
 			'webgl2_alpha_mask_receive_shadows',
@@ -305,7 +306,9 @@ describe.skipIf(!ENABLED)('compileWgsl', () => {
 			'webgpu_vertex_color_alpha_mask',
 			'webgpu_vertex_color_alpha_mask_receive_shadows',
 			'webgpu_vertex_color_receive_shadows',
-		]);
+		];
+		const skinned = plain.filter((name) => name.startsWith('webgl2')).map((name) => `${name}_skin`);
+		expect(Object.keys(built.variants).sort()).toEqual([...plain, ...skinned].sort());
 		const webgpu = built.variants.webgpu;
 		expect(webgpu?.wgsl?.source).toMatch(/fn surface\(\w+: SurfaceInput\) -> Surface/);
 		expect(webgpu?.wgsl?.pipelines).toEqual({ main: { vertex: 'vs', fragment: 'fs' } });

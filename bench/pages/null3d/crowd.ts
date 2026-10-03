@@ -2,8 +2,8 @@
 // engine's animator, with a masked layer, an additive layer and event handlers. Each frame, the
 // sketch moves one layer's weight of every character, and now and then a character cross-fades to
 // another clip, as a game's code does. Each character is a skinned mesh, a box at each joint, in a
-// row in front of S1's boxes, which WebGPU skins each frame. The engine cannot load animated models
-// yet, so the characters come from the engine's internal rig and skin calls.
+// row in front of S1's boxes, which both GPU paths skin each frame. The engine cannot load animated
+// models yet, so the characters come from the engine's internal rig and skin calls.
 import type { Animator, SketchContext } from '@null3d/engine';
 import { animateObject, createAnimationRig, skinObject } from '@null3d/engine/internal';
 import { CROWD_CLIPS, crowdMesh, crowdRig } from '../../../tests/pages/lib/crowd-rig';

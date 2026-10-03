@@ -38,10 +38,11 @@ enable draw_index;
 //
 // The SKIN builds skin each vertex in the vertex shader: `skin_of` blends the skinning matrices of
 // the vertex's four joints by their weights, from the joint texture, which holds each animated
-// instance's matrices, three texels per joint and JOINTS_PER_ROW joints per row. Each instance
-// brings the first joint of its skin beside its material. The texture is the bind group after the
-// maps' in the builds that sample maps (JOINTS_AFTER_MAPS), and the group after the frame's in the
-// others.
+// instance's matrices, three texels per joint and JOINTS_PER_ROW joints per row. On WebGPU each
+// instance brings the first joint of its skin beside its material, and the texture is the bind
+// group after the maps' in the builds that sample maps (JOINTS_AFTER_MAPS), and the group after the
+// frame's in the others. On WebGL2 the texture follows the data textures in their group, and a
+// texture of indices beside it gives each source row its first joint, laid out as the index list is.
 //
 // The fragment shaders write linear color into the HDR scene color, which the final pass tone maps.
 // On the 8-bit path (the TONE_MAP builds) `finish` applies the frame's exposure and tone mapping,
@@ -89,6 +90,10 @@ struct CellOffsets {
 @group(2) @binding(1) var streamed_rows: texture_2d<f32>;
 @group(2) @binding(2) var visible: texture_2d<u32>;
 @group(2) @binding(3) var cluster_rows: texture_2d<u32>;
+#ifdef SKIN
+/// The first joint of the instance that skins each source row.
+@group(2) @binding(5) var first_joints: texture_2d<u32>;
+#endif
 #else
 @group(0) @binding(1) var<storage, read> materials: array<Material>;
 /// The materials' custom values: row `id` holds material `id`'s, one texel per `vec4f`. Vertex
@@ -247,7 +252,11 @@ fn instance_of(record: vec4u, instance: u32) -> Instance {
     out.row_y.w += offset.y;
     out.row_z.w += offset.z;
     out.material = record.y;
+#ifdef SKIN
+    out.first_joint = textureLoad(first_joints, vec2u(row & index_row, row >> INDEX_ROW_SHIFT), 0).x;
+#else
     out.first_joint = 0u;
+#endif
     return out;
 }
 #endif
@@ -311,7 +320,9 @@ fn world_direction(found: Instance, direction: vec3f) -> vec3f {
 /// Joints per row of the joint texture.
 const JOINTS_PER_ROW: u32 = 1024u;
 
-#ifdef JOINTS_AFTER_MAPS
+#ifdef WEBGL2
+@group(2) @binding(4) var joint_matrices: texture_2d<f32>;
+#else ifdef JOINTS_AFTER_MAPS
 @group(2) @binding(0) var joint_matrices: texture_2d<f32>;
 #else
 @group(1) @binding(0) var joint_matrices: texture_2d<f32>;
@@ -331,12 +342,16 @@ fn joint_row(joint: u32, row: u32) -> vec4f {
 }
 
 /// The skinning matrix of a vertex of the instance's mesh: its joints' matrices, each times its
-/// weight, added up. The weights are used as they are, as three.js uses them.
+/// weight, added up. The weights are used as they are, as three.js uses them. A joint without
+/// weight is not read, as the skinning pass skips it, so it may name any joint.
 fn skin_of(found: Instance, joints: vec4u, weights: vec4f) -> Skin {
     var s = Skin(vec4f(0.0), vec4f(0.0), vec4f(0.0));
     for (var k = 0u; k < 4u; k++) {
-        let joint = found.first_joint + joints[k];
         let w = weights[k];
+        if w == 0.0 {
+            continue;
+        }
+        let joint = found.first_joint + joints[k];
         s.row_x += w * joint_row(joint, 0u);
         s.row_y += w * joint_row(joint, 1u);
         s.row_z += w * joint_row(joint, 2u);
