@@ -637,16 +637,21 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'skinning',
 	},
 	// The middle character sees through, so the transparent pass draws it skinned, in front of its
-	// shadow, with each way to skin. Compatibility mode blends on the 8-bit path, which differs in
-	// the see-through pixels, so each tier has its own image.
+	// shadow, with each way to skin, and on WebGL2 in the vertex shader. Compatibility mode blends
+	// on the 8-bit path, which differs in the see-through pixels, so each tier has its own image.
 	...(['', '-vertex'] as const).map(
 		(way): ImageTest => ({
 			name: `skinning-blend${way}`,
 			sketch: 'tests/pages/sketches/skinning-sketch.ts?shadows&blend',
 			hold: SKINNING_HOLD,
 			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
-			tiers: ['webgpu', 'compat'],
-			...(way ? { switches: ['skinning=vertex'], reference: 'skinning-blend' } : {}),
+			...(way
+				? {
+						tiers: ['webgpu', 'compat'],
+						switches: ['skinning=vertex'],
+						reference: 'skinning-blend',
+					}
+				: {}),
 		}),
 	),
 	// The same scenes skinned in the vertex shader of each pass, which D-20 measures against the
