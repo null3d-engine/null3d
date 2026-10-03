@@ -97,6 +97,7 @@ describe("each page's GPU path", () => {
 			'compat',
 		);
 		expect(gpuPathOf(item('/tests/pages/shaders.html', { kind: 'shaders' }))).toBe('webgl2');
+		expect(gpuPathOf(item('/tests/pages/mip-levels.html', { kind: 'mip-levels' }))).toBe('webgl2');
 		expect(gpuPathOf(item('/tests/pages/capabilities.html', { kind: 'capabilities' }))).toBe(
 			undefined,
 		);
