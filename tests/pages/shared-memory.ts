@@ -191,6 +191,10 @@ async function startAndStopEngine(): Promise<void> {
 	}
 }
 
+/** The steps that the page in `frame` noted, with their times since that page started. */
+const frameTrail = (frame: HTMLIFrameElement): string[] =>
+	(frame.contentWindow as Window | null)?.__null3dProgress ?? [];
+
 /**
  * Starts the engine in a frame, in the mode the page's switches ask for, and removes the frame
  * once the engine has drawn its first frame. With `destroy`, the frame stops the engine first.
@@ -219,6 +223,10 @@ async function startEngineInFrame(destroy: boolean): Promise<void> {
 			throw message.code === 'E1109'
 				? new EngineError('E1109', message.error ?? 'refused')
 				: new Error(message.error);
+	} catch (e) {
+		// The frame's own steps tell how far its start got.
+		for (const step of frameTrail(frame)) progress(`in the frame: ${step}`);
+		throw e;
 	} finally {
 		frame.remove();
 	}

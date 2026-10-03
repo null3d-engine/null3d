@@ -4,7 +4,7 @@
 // a page that never stops its engine. Opened on its own, the page publishes the same message on
 // window, and its trail notes each worker's replies.
 import { createEngine, EngineError } from '@null3d/engine';
-import './lib/result';
+import { progress } from './lib/result';
 
 declare global {
 	interface Window {
@@ -30,8 +30,10 @@ try {
 	const engine = await createEngine({
 		canvas,
 		sketch: new URL('./sketches/empty-sketch.ts', import.meta.url),
+		onProgress: progress,
 	});
 	await engine.firstFrame;
+	progress('first frame');
 	if (new URLSearchParams(location.search).get('stop') === 'destroy') {
 		await engine.destroy();
 		tell({ engineFrame: 'stopped' });
