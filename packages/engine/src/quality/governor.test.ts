@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { SHADOW_CASTERS_TILES } from '../generated/core';
 import { FramePacer } from '../render/pacer';
 import { createMetricsBuffer, FrameRecorder, Role } from '../shared/metrics';
+import { HELD_PERCENT, TARGET_CAP_HZ } from '../shared/stats';
 import {
 	BUDGET_US,
 	bloomDivisor,
@@ -33,6 +34,10 @@ const SLOW = { frame: 2 * BUDGET, delay: 1.5 * BUDGET };
 const QUEUED = { frame: BUDGET, delay: 2.5 * BUDGET };
 /** Frames at the target rate whose GPU took more than about one frame for each. */
 const BUSY = { frame: BUDGET, delay: 1.5 * BUDGET };
+/** Frames at `fps` frames per second whose GPU finished each within one frame. */
+const atRate = (fps: number) => ({ frame: 1000 / fps, delay: BUDGET });
+/** True when a second at `fps` holds the target, as the benchmark reports count it. */
+const holds = (fps: number) => fps * 100 >= HELD_PERCENT * TARGET_CAP_HZ;
 
 type Frames = { frame: number; delay: number };
 
@@ -108,6 +113,35 @@ describe('the render scale steps', () => {
 		expect(scales.at(-1)).toBe(FULL_SCALE - first.length * SCALE_STEP);
 	});
 
+	it('drops a step when the frames run under the rate at which a second holds the target', () => {
+		// On the warm iPad, S4 ran at 54 to 57 frames per second for minutes at one render scale.
+		// The frames came 8% slower than the target: a missed second for the benchmark report.
+		expect(holds(55)).toBe(false);
+		const { run, controller } = controlled(500, FULL_SCALE, 850);
+		run(atRate(55), DROP_AFTER_MS);
+		expect(controller.scale).toBe(800);
+	});
+
+	it('rests where the frames hold the target without room to spare', () => {
+		// Between the line at which a second holds the target and the line of room, the governor
+		// takes no step either way.
+		expect(holds(57)).toBe(true);
+		const { run, controller } = controlled(500, FULL_SCALE, 800);
+		run(atRate(57), 60_000);
+		run(atRate(58), 60_000);
+		expect(controller.scale).toBe(800);
+	});
+
+	it('takes no step for a short stall amid frames at the target rate', () => {
+		// A quarter second of frames at a third of the rate takes the second's mean past the line,
+		// but a lower setting would not help a stall.
+		const { run, controller } = controlled();
+		run(EASY, 2000);
+		run({ frame: 3 * BUDGET, delay: BUDGET }, WINDOW_MS);
+		run(EASY, 2000);
+		expect(controller.scale).toBe(FULL_SCALE);
+	});
+
 	it('keeps the scale while the frames hold the budget', () => {
 		const { run, controller } = controlled(500, FULL_SCALE, 800);
 		run(EASY, 4000);
@@ -146,6 +180,18 @@ describe('the render scale steps', () => {
 		expect(controller.scale).toBe(750);
 	});
 
+	it('counts a step down late in the trial of a step up as its failure', () => {
+		// On the warm iPad, a step up held the target at first and fell behind 9 to 15 s later.
+		const { run, controller, untilStep } = controlled(500, 650, 600);
+		const raised = untilStep(EASY);
+		expect(controller.scale).toBe(650);
+		run(EASY, 12_000);
+		const dropped = untilStep(atRate(55));
+		expect(controller.scale).toBe(600);
+		expect(dropped - raised).toBeLessThanOrEqual(FAILED_RAISE_MS);
+		expect(untilStep(EASY) - dropped).toBe(raiseGap(2 * RAISE_AFTER_MS));
+	});
+
 	it('waits no longer than the longest wait before a step up', () => {
 		const { controller, untilStep } = controlled(500, FULL_SCALE, 700);
 		const gaps: number[] = [];
@@ -168,12 +214,13 @@ describe('the render scale steps', () => {
 	});
 
 	it('waits the shortest time again after a drop that no step up caused', () => {
-		const { run, untilStep } = controlled(500, FULL_SCALE, 700);
+		const { run, untilStep } = controlled(500, 750, 700);
 		untilStep(EASY);
 		untilStep(SLOW);
-		// The next step up holds, and some seconds later the scene gets heavier.
+		// The next step up reaches the highest scale and holds through its trial, and some seconds
+		// later the scene gets heavier.
 		untilStep(EASY);
-		run(EASY, 2 * FAILED_RAISE_MS);
+		run(EASY, FAILED_RAISE_MS);
 		const dropped = untilStep(SLOW);
 		expect(untilStep(EASY) - dropped).toBe(raiseGap(RAISE_AFTER_MS));
 	});
@@ -461,5 +508,130 @@ describe('the governor in the frame loop', () => {
 		run(2 * BUDGET, BUDGET, 700);
 		run(1000, BUDGET, 1000);
 		expect(run(2 * BUDGET, BUDGET, 700)).toBe(FULL_SCALE);
+	});
+});
+
+/** The seconds of a trace, written as a run's per-second rates. */
+const seconds = (rates: string) => rates.split(' ').map(Number);
+
+/**
+ * Replays a run on a device for `total` seconds. Each second's frames come at the rate that `next`
+ * gives for the governor's scale and the scale of the second before, and the GPU finishes each
+ * frame within one. Returns each second's rate and the scale it drew at.
+ */
+function replay(start: number, total: number, next: (scale: number, before: number) => number) {
+	const { controller, run } = controlled(500, FULL_SCALE, start);
+	const out: { fps: number; scale: number }[] = [];
+	let before = start;
+	for (let k = 0; k < total; k++) {
+		const scale = controller.scale;
+		const fps = next(scale, before);
+		before = scale;
+		run(atRate(fps), 1000);
+		out.push({ fps, scale });
+	}
+	return out;
+}
+
+/** The seconds of a replay that held the target, and its moves between two scales. */
+function judgeReplay(out: { fps: number; scale: number }[], low: number, high: number) {
+	const held = out.filter(({ fps }) => holds(fps)).length;
+	const moves = out.filter((second, k) => {
+		const last = out[k - 1]?.scale;
+		return (
+			last !== undefined &&
+			second.scale !== last &&
+			Math.min(second.scale, last) === low &&
+			Math.max(second.scale, last) === high
+		);
+	}).length;
+	return { held, moves, lowest: Math.min(...out.map(({ scale }) => scale)) };
+}
+
+describe("replays of the iPad's S4 runs at Low", () => {
+	// Safari 26.6.2 on WebGPU, warm, at render scale 0.85: 54 to 57 frames per second for minutes.
+	// The run held the target in 49 of its 300 seconds. At 0.8 it ran at 57 to 60.
+	const webgpu = {
+		850: seconds(
+			'54 56 55 56 56 56 57 56 55 55 55 55 55 54 56 55 56 57 56 56 56 55 56 55 55 55 55 55 55 55 56 55 56 56 57 57 57 56 56 57 55 56 55 55 55 55 56 55 56 56 55 56 56 55 55 55 55 55 54 ' +
+				'55 55 56 55 55 56 55 55 55 55 55 56 56 57 57 57 57 56 57 55 55 55 55 55 56 55 56 55 56 55 56 55 56 55 55 55 54 55 54 55 55 56 56 56 56 56 54 56 55 55 55 55 55 55 55 56 56 56 56 56 55 56 55 55 56 55 55 55 55 55 56 55 57 56 57 57 57 56 57 55 55 55 55 56 55 55 56 55 56 56 55 56 55 56 54 55 55 54 55 55 55 56 56 56 56 56 56 55 55 55 55 55 55 55 55 56 57 56 56 56 55 56 55 55 56 55 55 55 55 55 56 55 57 56 57 57 57 56 57 55 56 55 55 55 55 56 55 56 56 55 56 55 56 55 55 55 54 55 54 55 56 55 56 56 57 56 56 55 55 55 55 55 55 55 55 56 56 56 57 55 56 55 56 55 55 55 55 55 55 55 56 55 56 57 56 57 57 56 57 55 56 55 54 56 55 55 56 55 56 56 55 56 55 56 54 55 55 54 55',
+		),
+		800: seconds('57 58 58 59 59 60 59 59 58 58 58 57 58 58 58 58 59 60 59 59'),
+	};
+
+	it('holds the target on WebGPU in at least 95% of the seconds', () => {
+		// The scales above 0.85 ran slower in the warm-up, and those under 0.8 are taken to hold
+		// the full rate, as 0.8 nearly did. Each scale's seconds play on from where they stopped.
+		const played = new Map<number, number>();
+		const out = replay(850, 300, (scale) => {
+			if (scale > 850) return 50;
+			if (scale < 800) return 60;
+			const rates = webgpu[scale as 850 | 800];
+			const second = played.get(scale) ?? 0;
+			played.set(scale, second + 1);
+			return rates[second % rates.length] as number;
+		});
+		const { held, moves, lowest } = judgeReplay(out, 800, 850);
+		// 297 of the 300 seconds: one step down at once, and one failed try of 0.85. The frames at
+		// 0.8 then hold the target without the room for a step up.
+		expect(held).toBeGreaterThanOrEqual(0.95 * out.length);
+		expect(lowest).toBe(800);
+		expect(moves).toBeLessThanOrEqual(3);
+		expect(out.slice(-240).every(({ scale }) => scale === 800)).toBe(true);
+	});
+
+	// Safari 26.6.2 on WebGL2, warm: at 0.65, the frames held the target at first after each step
+	// up, then fell behind 9 to 15 seconds later. The run moved between 0.6 and 0.65 nine times.
+	const webgl2 = {
+		650: [
+			'59 61 60 60 59 60 59 60 57 60 60 60 59 60 61 60 59 60 60 60 59 60 60 60 60 59 60 60 59 60 60 60 60 59 60 61 59 59 61 59 60 60 59 60 60 61 60 58 60 60 61 59 60 60 60 60 59 60 59 60 61 59 59 60 61 59 60 60 59 60 60 60 61 59 60 61 59 60 60 59 59 57 59 60 59 59 58 58 59 60 60 59 60 57 55 55',
+			'60 59 59 57 59 59 58 59 60 60 60 60 57 56',
+			'59 60 60 60 58 59 60 61 59 60 61 60 60 57',
+			'59 59 58 57 58 58 55 60 56',
+			'60',
+		].map(seconds),
+		600: seconds(
+			'60 60 59 60 60 61 59 59 60 60 60 60 59 61 60 59 60 60 60 59 60 60 60 59 59 60 60 59 60 60 60 59 60 60 59 61 60 60 60 59 60 60 60 60 59 61 60 60 59 60 60 61 60 60 60 60 ' +
+				'60 59 60 60 61 59 60 60 60 61 59 60 60 60 60 59 59 61 60 60 59 61 60 59 60 60 61 59 59 61 60 60 59 60 60 60 59 60 60 59 60 61 60 60 60 60 ' +
+				'59 60 60 60 59 60 60 59 60 60 60 60 60 59 60 60 60 61 59 60 60 59 60 60 60 60 60 60 59 60 60 60 61 59 60 60 60 60 60 60 60 59 60 59 60 58 60 60 60 59 60 60 61 59 60',
+		),
+	};
+
+	it('tries the higher of two scales less and less often on WebGL2 when it fails late', () => {
+		// Each step up from 0.6 to 0.65 replays the run's next visit of 0.65, and then falls to 56
+		// frames per second, as the frames did before each step down in the run. A step back down
+		// to 0.65 from above goes on with the visit.
+		let visit = 0;
+		let second = 0;
+		let played600 = 0;
+		const out = replay(650, 2 * 300, (scale, before) => {
+			if (scale > 650) return 50;
+			if (scale < 600) return 60;
+			if (scale === 600) return webgl2[600][played600++ % webgl2[600].length] as number;
+			if (before === 600) {
+				visit = Math.min(visit + 1, webgl2[650].length - 1);
+				second = 0;
+			}
+			const rates = webgl2[650][visit] as number[];
+			return second < rates.length ? (rates[second++] as number) : 56;
+		});
+		const { held, lowest } = judgeReplay(out, 600, 650);
+		// 583 of the 600 seconds, counting the failed tries of 0.7, whose rate the run never measured.
+		expect(held).toBeGreaterThanOrEqual(0.95 * out.length);
+		expect(lowest).toBe(600);
+		// The run moved between the two scales nine times in 300 seconds, and stayed at 0.6 for 13 to
+		// 45 seconds before each try.
+		// Here each stay at 0.6 is twice as long as the one before, up to the longest wait.
+		const stays: number[] = [];
+		out.forEach(({ scale }, k) => {
+			if (scale !== 600) return;
+			if (out[k - 1]?.scale !== 600) stays.push(0);
+			stays[stays.length - 1] = (stays.at(-1) as number) + 1;
+		});
+		const full = stays.slice(0, -1);
+		full.slice(1).forEach((stay, k) => {
+			expect(stay).toBeGreaterThanOrEqual(Math.min(2 * (full[k] as number) - 2, 80));
+		});
+		expect(Math.min(...full.slice(-3))).toBeGreaterThanOrEqual(LONGEST_RAISE_AFTER_MS / 1000);
 	});
 });

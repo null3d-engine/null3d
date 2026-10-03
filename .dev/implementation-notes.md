@@ -71,7 +71,8 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - Chrome's worker callbacks follow the display, so Chrome keeps the worker's own meter, which a busy page thread cannot slow. A page that draws on its own thread (`?render=main`) has only one meter. In Safari, that meter still slows with the GPU.
 - Held to a 60 Hz display, Safari's timer calls the worker about 64 times a second. About every 16th frame then waits an extra callback, and comes 31 ms after the last. A quarter-second window holds one or two such gaps.
 - In Playwright's WebKit, held to 60 frames per second with `?fps=60`, the windows measured 97% to 105% of the budget. Room tested window by window broke every second or two, and the walk took no step up in 60 s. The iPad took 1 of its 4 steps up on WebGPU, and none on WebGL2.
-- So the frames' room is their mean since the room started. Each window must still stay under the over-budget line, with the GPU delay within its limit. When the mean is over the line at the end of a wait, the stretch starts again. Long frames from long ago then never hold a later step up back.
+- So the frames' room is their mean since the room started. Each window's GPU delay must stay within its limit. When the mean is over the line at the end of a wait, the stretch starts again. Long frames from long ago then never hold a later step up back.
+- A step down judges the last second, as the benchmark reports count seconds. It needs a mean frame rate under 95% of the target, the share in `HELD_PERCENT` of `shared/stats.ts`. Every window of that second must also miss the room line, so a single stall takes no step. The governor and the reports read the same constant, so the governor cannot rest where the reports count a miss ([D-11](decisions/D-11-frames-in-flight.md#the-warm-ipads-gate-at-low-m1-k5)).
 - Scene passes of a relative size set the viewport and the scissor after `BeginRenderPass`. A pass at the whole canvas records neither, so its draw list is the same as without a render scale.
 - Those passes draw into the top-left corner of targets that keep the canvas's size. A new scale therefore makes no texture, view, bind group or pipeline, so a step costs nothing and allocates nothing. The live test counts the GPU objects over frames that each change the scale.
 - The governor judges in whole numbers, milliseconds and microseconds in 32-bit integer arrays. It runs only a few times a second, so the browser may leave it unoptimized. There each fraction it computed would become a number object.
@@ -128,7 +129,7 @@ Warm loads and loads at full speed stayed within the spread between runs. The fi
 
 ## Cube, 3D and high dynamic range textures
 
-M2-E1 added these texture kinds to the GPU layer for environment maps, skies and color grading tables. The engine's scene code does not use them yet.
+M2-E1 added these texture kinds to the GPU layer for environment maps, skies and color grading tables. Color grading tables (M2-F3, [D-33](decisions/D-33-color-grading.md)) are the first scene code that uses 3D textures. The texture store keeps each table as a 3D texture of its own, with no bind group of the store's. The final pass binds it.
 
 - `CreateTexture` names the kind as its binding view: 2D, a 2D array, a cube or a 3D texture. Compatibility mode and WebGL2 both fix the kind when the texture is made, so the draw list gives it then.
 - A cube texture has 6 square layers, its faces, in WebGPU's order: +X, -X, +Y, -Y, +Z, -Z. WebGL2's face targets come in the same order, so the WebGL2 backend adds the layer to `TEXTURE_CUBE_MAP_POSITIVE_X`.

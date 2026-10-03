@@ -19,6 +19,9 @@ use null3d_core::animation::{
     AnimationError, Animations, Channel, Clip, Interpolation, MATRIX_FLOATS, MAX_JOINTS, Play,
     REST_FLOATS, Skeleton, SourceTrack, TrackProblem, resample,
 };
+use null3d_core::bvh::query::{QueryHit, QueryScene, SceneQueries};
+use null3d_core::bvh::scene::Source;
+use null3d_core::bvh::top::WorldRay;
 use null3d_core::error::CoreError;
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
@@ -41,6 +44,7 @@ use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
+use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::RenderScale;
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
@@ -55,8 +59,8 @@ pub mod constants;
 
 use constants::{
     CLIP_PENDING, TRACK_WORDS, animation_field, animation_problem, arrays_problem, batch_field,
-    camera_target, debug_line_field, mesh_arrays, play_flag, ring_field, scene_field, shading,
-    texture_option, texture_stat,
+    camera_target, debug_line_field, mesh_arrays, play_flag, query, ring_field, scene_field,
+    shading, texture_option, texture_stat,
 };
 
 /// The engine version, as the loader reports it.
@@ -130,6 +134,36 @@ struct Engine {
     /// The clips that job workers resample in the background, by `createClipLater` ticket, each
     /// with its skeleton's id.
     clip_jobs: Vec<Option<(u32, Arc<ClipJob>)>>,
+    /// The trees and lists of raycasts and overlap queries, which allocate on the first query.
+    queries: SceneQueries,
+    /// A query's input (`constants::query`).
+    query_input: [f64; query::INPUT_FLOATS as usize],
+    /// The hit records that queries write, `query::HIT_FLOATS` numbers each.
+    query_hits: Vec<f64>,
+    /// The rays of a batch, `query::RAY_FLOATS` numbers each.
+    query_rays: Vec<f64>,
+    /// The post-processing values that TypeScript writes (`constants::post_value`), with three.js's
+    /// defaults until it writes others.
+    post_values: Box<[f32; constants::post_value::COUNT as usize]>,
+}
+
+/// The post-processing values before TypeScript writes any: an exposure of 1, `UnrealBloomPass`'s
+/// strength, radius and threshold, a table at its full intensity over colors from 0 to 1, and
+/// `VignetteShader`'s offset and darkness.
+const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = [
+    1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+];
+
+impl Engine {
+    /// The post-processing value at `place` (`constants::post_value`).
+    fn post_value(&self, place: u32) -> f32 {
+        self.post_values[place as usize]
+    }
+
+    /// Three post-processing values from `place` on.
+    fn post_values3(&self, place: u32) -> [f32; 3] {
+        std::array::from_fn(|k| self.post_value(place + k as u32))
+    }
 }
 
 impl Engine {
@@ -382,8 +416,20 @@ pub fn init_engine(
         lines: LineStore::default(),
         animations: None,
         clip_jobs: Vec::new(),
+        queries: SceneQueries::new(),
+        query_input: [0.0; query::INPUT_FLOATS as usize],
+        query_hits: vec![0.0; query::HIT_FLOATS as usize],
+        query_rays: Vec::new(),
+        post_values: Box::new(POST_DEFAULTS),
     });
     0
+}
+
+/// The address of the post-processing values (`constants::post_value`), which TypeScript writes
+/// before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`.
+#[wasm_bindgen(js_name = postValues)]
+pub fn post_values() -> u32 {
+    value_with_engine(|e| Ok(address(&e.post_values[..])))
 }
 
 // The page calls this when it stops an engine that runs on the page's own thread, as the
@@ -1219,6 +1265,22 @@ pub fn create_texture(
     })
 }
 
+// Creates a 3D texture of `width` x `height` x `depth` texels in `format`, linear 8-bit color or
+// half floats, with no texels yet, and returns its handle. It is read with a linear filter and
+// clamped at its edges, as a color grading table is. Its texels come from `setTextureData`, slice
+// after slice.
+/// Creates a 3D texture and returns its handle.
+#[wasm_bindgen(js_name = createVolumeTexture)]
+pub fn create_volume_texture(width: u32, height: u32, depth: u32, format: u32) -> u32 {
+    value_with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        textures
+            .create_volume(width, height, depth, format)
+            .map(Handle::raw)
+            .map_err(texture_failure)
+    })
+}
+
 // Gives a texture an image of `width` x `height` pixels, uploaded with the `upload_flags` in
 // `flags`, and returns the image's id. TypeScript sends the image to the thread that draws under
 // that id, in id order, and the image uploads once the thread has it. An image of another size
@@ -1538,11 +1600,12 @@ pub fn set_shadow_quality(filter: u32, far_interval: u32) -> u32 {
     })
 }
 
-/// The tone mapping, by code, and the exposure, from the next frame on. The TypeScript API checks
-/// both, so an unknown code keeps the tone mapping as it was.
+/// The tone mapping, by code, and the exposure from the post-processing values, from the next
+/// frame on. The TypeScript API checks both, so an unknown code keeps the tone mapping as it was.
 #[wasm_bindgen(js_name = setOutput)]
-pub fn set_output(tone_mapping: u32, exposure: f32) -> u32 {
+pub fn set_output(tone_mapping: u32) -> u32 {
     with_engine(|e| {
+        let exposure = e.post_value(constants::post_value::EXPOSURE);
         let settings = e.renderer.settings_mut();
         let tone_mapping =
             ToneMapping::from_code(tone_mapping).unwrap_or_else(|| settings.output().tone_mapping);
@@ -1554,17 +1617,59 @@ pub fn set_output(tone_mapping: u32, exposure: f32) -> u32 {
     })
 }
 
-/// Turns bloom on with its strength, radius and threshold, or off, from the next frame on. The
-/// TypeScript API checks the values.
+/// Turns bloom on with its strength, radius and threshold from the post-processing values, or off,
+/// from the next frame on. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setBloom)]
-pub fn set_bloom(on: bool, strength: f32, radius: f32, threshold: f32) -> u32 {
+pub fn set_bloom(on: bool) -> u32 {
     with_engine(|e| {
+        let [strength, radius, threshold] = e.post_values3(constants::post_value::BLOOM_STRENGTH);
         let bloom = on.then_some(Bloom {
             strength,
             radius,
             threshold,
         });
         e.renderer.settings_mut().set_bloom(bloom);
+        0
+    })
+}
+
+/// Grades the canvas color with the color grading table in 3D texture `texture`, or with none
+/// when `texture` is 0, from the next frame on. The post-processing values give its intensity, the
+/// share of the graded color, and its domain, the colors that the table's first and last texels
+/// along each axis stand for. The TypeScript API checks the values. Fails for a texture that is
+/// not live.
+#[wasm_bindgen(js_name = setLut)]
+pub fn set_lut(texture: u32) -> u32 {
+    with_engine(|e| {
+        let intensity = e.post_value(constants::post_value::LUT_INTENSITY);
+        let domain_min = e.post_values3(constants::post_value::LUT_DOMAIN_MIN);
+        let domain_max = e.post_values3(constants::post_value::LUT_DOMAIN_MAX);
+        let settings = e.renderer.settings_mut();
+        let texture = match texture_or_none(settings, texture) {
+            Ok(texture) => texture,
+            Err(failure) => return failure,
+        };
+        let lut = (!texture.is_none()).then_some(Lut {
+            texture,
+            intensity,
+            domain_min,
+            domain_max,
+        });
+        settings.set_lut(lut);
+        0
+    })
+}
+
+/// Turns the vignette on with three.js's offset and darkness from the post-processing values, or
+/// off, from the next frame on. The TypeScript API checks the values.
+#[wasm_bindgen(js_name = setVignette)]
+pub fn set_vignette(on: bool) -> u32 {
+    with_engine(|e| {
+        let vignette = on.then_some(Vignette {
+            offset: e.post_value(constants::post_value::VIGNETTE_OFFSET),
+            darkness: e.post_value(constants::post_value::VIGNETTE_DARKNESS),
+        });
+        e.renderer.settings_mut().set_vignette(vignette);
         0
     })
 }
@@ -2062,5 +2167,210 @@ pub fn update_animations(step_us: u32) -> u32 {
             animations.update(jobs, step_us as f32 * 1e-6);
         }
         0
+    })
+}
+
+// --- Raycasts and overlap queries ---
+//
+// TypeScript writes a query's input into the input array and reads the hit records that the query
+// writes (`constants::query`). Each query first brings the scene's trees up to date with the last
+// world output, which costs nothing more within a frame. A query returns its hit count, or
+// `query::FAILED`. The hit array moves when it grows, so TypeScript reads its address again when
+// a query returns more hits than the capacity it last read. The doc comments stay short:
+// wasm-bindgen copies them into the glue that every page downloads.
+
+/// Grows `array` to `len` numbers.
+fn grow_query_array(array: &mut Vec<f64>, len: usize) -> Result<(), u32> {
+    if array.len() < len {
+        array.try_reserve_exact(len - array.len()).map_err(|_| {
+            core_failure(CoreError::OutOfMemory {
+                bytes: u32::try_from(len * 8).unwrap_or(u32::MAX),
+            })
+        })?;
+        array.resize(len, 0.0);
+    }
+    Ok(())
+}
+
+/// Writes a hit record: a hit, or a miss.
+fn write_hit(out: &mut [f64], hit: Option<&QueryHit>) {
+    let Some(hit) = hit else {
+        out.fill(0.0);
+        out[query::HIT_ROW as usize] = -1.0;
+        out[query::HIT_TRIANGLE as usize] = -1.0;
+        out[query::HIT_DISTANCE as usize] = -1.0;
+        return;
+    };
+    let (slot, batch, row) = match hit.source {
+        Source::Object(slot) => (f64::from(slot), 0.0, -1.0),
+        Source::Row { batch, row } => (0.0, f64::from(batch.raw()), f64::from(row)),
+    };
+    out[query::HIT_SLOT as usize] = slot;
+    out[query::HIT_BATCH as usize] = batch;
+    out[query::HIT_ROW as usize] = row;
+    out[query::HIT_TRIANGLE as usize] = f64::from(hit.triangle);
+    out[query::HIT_DISTANCE as usize] = f64::from(hit.distance);
+    let point = query::HIT_POINT as usize;
+    out[point..point + 3].copy_from_slice(&hit.point);
+    let normal = query::HIT_NORMAL as usize;
+    for k in 0..3 {
+        out[normal + k] = f64::from(hit.normal[k]);
+    }
+}
+
+/// Writes the records of `hits` and returns their count.
+fn write_hits(out: &mut Vec<f64>, hits: &[QueryHit]) -> Result<u32, u32> {
+    let floats = query::HIT_FLOATS as usize;
+    grow_query_array(out, hits.len().max(1) * floats)?;
+    for (record, hit) in out.chunks_exact_mut(floats).zip(hits) {
+        write_hit(record, Some(hit));
+    }
+    Ok(hits.len() as u32)
+}
+
+/// A ray from an origin and a direction, which becomes a unit vector, with its far limit.
+fn ray_from(numbers: &[f64], t_max: f64) -> WorldRay {
+    let d = [numbers[3], numbers[4], numbers[5]];
+    let length = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+    WorldRay {
+        origin: [numbers[0], numbers[1], numbers[2]],
+        direction: d.map(|v| (v / length) as f32),
+        t_min: 0.0,
+        t_max: t_max as f32,
+    }
+}
+
+/// The parts of the engine that a query uses, with the scene's trees brought up to date.
+struct QueryParts<'a> {
+    queries: &'a mut SceneQueries,
+    view: QueryScene<'a, SceneSettings>,
+    input: &'a [f64; query::INPUT_FLOATS as usize],
+    hits: &'a mut Vec<f64>,
+    rays: &'a [f64],
+    jobs: &'static JobSystem,
+}
+
+/// Runs a query on the engine after a sync of its trees; returns its hit count, or
+/// `query::FAILED` with the last error set.
+fn run_query(f: impl FnOnce(QueryParts<'_>) -> Result<u32, u32>) -> u32 {
+    let Some(jobs) = JOBS.get() else {
+        fail(codes::NOT_READY, [0, 0]);
+        return query::FAILED;
+    };
+    let mut count = query::FAILED;
+    let status = with_engine(|e| {
+        let view = QueryScene {
+            scene: &e.scene,
+            batches: &e.batches,
+            meshes: e.renderer.settings(),
+        };
+        if let Err(error) = e.queries.sync(&view, jobs) {
+            return core_failure(error);
+        }
+        let parts = QueryParts {
+            queries: &mut e.queries,
+            view,
+            input: &e.query_input,
+            hits: &mut e.query_hits,
+            rays: &e.query_rays,
+            jobs,
+        };
+        match f(parts) {
+            Ok(n) => {
+                count = n;
+                0
+            }
+            Err(code) => code,
+        }
+    });
+    if status == 0 { count } else { query::FAILED }
+}
+
+/// The address of a query array, or the hit array's capacity in records.
+#[wasm_bindgen(js_name = queryArrays)]
+pub fn query_arrays(field: u32) -> u32 {
+    value_with_engine(|e| {
+        Ok(match field {
+            query::INPUT => address(&e.query_input),
+            query::RAYS => address(&e.query_rays),
+            query::HIT_CAPACITY => (e.query_hits.len() / query::HIT_FLOATS as usize) as u32,
+            _ => address(&e.query_hits),
+        })
+    })
+}
+
+/// Makes room for a batch of `count` rays.
+#[wasm_bindgen(js_name = reserveRays)]
+pub fn reserve_rays(count: u32) -> u32 {
+    with_engine(|e| {
+        let n = count as usize;
+        let grown = grow_query_array(&mut e.query_rays, n * query::RAY_FLOATS as usize)
+            .and_then(|()| grow_query_array(&mut e.query_hits, n * query::HIT_FLOATS as usize));
+        match grown {
+            Ok(()) => 0,
+            Err(code) => code,
+        }
+    })
+}
+
+/// Casts the input's ray on the layers of `layers`.
+#[wasm_bindgen(js_name = raycast)]
+pub fn raycast(kind: u32, layers: u32) -> u32 {
+    run_query(|q| {
+        let input = q.input;
+        let ray = ray_from(input, input[query::INPUT_LIMIT as usize]);
+        match kind {
+            query::ANY => Ok(u32::from(q.queries.raycast_any(&q.view, &ray, layers))),
+            query::ALL => write_hits(q.hits, q.queries.raycast_all(&q.view, &ray, layers)),
+            _ => {
+                let hit = q.queries.raycast(&q.view, &ray, layers);
+                write_hit(&mut q.hits[..query::HIT_FLOATS as usize], hit.as_ref());
+                Ok(u32::from(hit.is_some()))
+            }
+        }
+    })
+}
+
+/// Casts the first `count` rays of the ray array on the job workers.
+#[wasm_bindgen(js_name = raycastBatch)]
+pub fn raycast_batch(count: u32, layers: u32) -> u32 {
+    run_query(|q| {
+        let (ray_floats, hit_floats) = (query::RAY_FLOATS as usize, query::HIT_FLOATS as usize);
+        let room = (q.rays.len() / ray_floats).min(q.hits.len() / hit_floats) as u32;
+        if count > room {
+            return Err(core_failure(CoreError::OutOfRange {
+                value: count,
+                limit: room,
+            }));
+        }
+        let (rays, t_max) = (q.rays, q.input[query::INPUT_LIMIT as usize]);
+        let at = |i: u32| ray_from(&rays[i as usize * ray_floats..], t_max);
+        let results = q
+            .queries
+            .raycast_batch(&q.view, q.jobs, count, &at, layers)
+            .map_err(core_failure)?;
+        let mut found = 0;
+        for (record, hit) in q.hits.chunks_exact_mut(hit_floats).zip(results) {
+            write_hit(record, hit.as_ref());
+            found += u32::from(hit.is_some());
+        }
+        Ok(found)
+    })
+}
+
+/// Finds the objects on the layers of `layers` with a triangle in the input's sphere or box.
+#[wasm_bindgen(js_name = overlap)]
+pub fn overlap(kind: u32, layers: u32) -> u32 {
+    run_query(|q| {
+        let input = q.input;
+        let a = [input[0], input[1], input[2]];
+        let found = if kind == query::BOX {
+            q.queries
+                .overlap_box(&q.view, a, [input[3], input[4], input[5]], layers)
+        } else {
+            let radius = input[query::INPUT_LIMIT as usize] as f32;
+            q.queries.overlap_sphere(&q.view, a, radius, layers)
+        };
+        write_hits(q.hits, found)
     })
 }

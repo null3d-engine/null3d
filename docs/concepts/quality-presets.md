@@ -212,7 +212,7 @@ const engine = await createEngine({ canvas, sketch, depthPrepass: true });
 ```mermaid
 flowchart LR
     frames["Frame rates and GPU delay"] --> controller["Render scale controller"]
-    controller -- "down 0.05 after about 1 s over budget" --> scale["Render scale, from<br/>minRenderScale to maxRenderScale"]
+    controller -- "down 0.05 after 1 s under 95% of the target rate" --> scale["Render scale, from<br/>minRenderScale to maxRenderScale"]
     controller -- "up 0.05 after 5 s with time to spare" --> scale
     scale --> scene["Scene passes draw into a corner<br/>of targets the canvas's size"]
     scene --> final["The final pass scales the corner<br/>up to the whole canvas"]
@@ -223,9 +223,12 @@ The engine can draw the scene at a render scale below the canvas's size. Its fin
 During play, the engine moves the scale between the `minRenderScale` and `maxRenderScale` settings:
 
 - It watches how often frames reach the screen and how often the GPU finishes one. It also watches how long the GPU takes to finish each frame.
-- Frames are over budget when they come at least 10% slower than the target rate. They are also over budget when the GPU finishes each one two frames late or later. The target is the display's refresh rate, at most 60 frames per second, or the lower rate that the `?fps=` switch holds. Safari calls a drawing worker from a timer, which slows when the GPU falls behind. There the engine takes the display's rate from the page's frame callbacks.
-- After about a second over budget, the scale drops by 0.05. The engine then waits a second, so it judges frames at the new scale.
-- After 5 seconds at the target rate on average, with the GPU done with each frame within about one frame, the scale rises by 0.05. The average covers the whole 5 seconds. In Safari, some frames wait an extra callback even at the full rate. A rise that takes the frames over budget again doubles the wait before the next rise, up to 80 seconds. So the scale settles below the point where frames fall behind.
+- A second of frames is over budget when its frame rate, on average, is under 95% of the target rate. At a target of 60, that is under 57 frames per second. The engine's benchmark reports count such a second as a miss too. Each quarter of the second must also run at least 2% slower than the target, so one short stall amid full-rate frames does not count. A second is over budget too when the GPU finishes each frame two frames late or later.
+- The target is the display's refresh rate, at most 60 frames per second, or the lower rate that the `?fps=` switch holds. Safari calls a drawing worker from a timer, which slows when the GPU falls behind. There the engine takes the display's rate from the page's frame callbacks.
+- After a second over budget, the scale drops by 0.05. The engine then waits a second, so it judges frames at the new scale.
+- After 5 seconds at the target rate on average, with the GPU done with each frame within about one frame, the scale rises by 0.05. The average covers the whole 5 seconds. In Safari, some frames wait an extra callback even at the full rate.
+- Frames at 57 to 59 frames per second hold the target but have no time to spare, so the scale stays where it is.
+- A rise is on trial for 30 seconds. If the scale drops back within that time, the next rise to that scale waits twice as long, up to 80 seconds. Each scale keeps its own wait, so a rise to a scale that has not failed still comes after 5 seconds. A phone that heats up can hold a higher scale for a few seconds and then fall behind. So the scale settles below the point where frames fall behind.
 - It takes no step in the first 2 seconds of play, or while textures wait to upload. It starts to judge the frames again after a pause.
 
 The scene's render targets keep the canvas's size at every scale, and the scene draws into their top-left corner. So a new scale makes no GPU object and allocates no memory. `engine.measure()` counts the GPU objects that the engine made, in `gpuObjects`.
@@ -255,7 +258,7 @@ A `minRenderScale` of 1 keeps the whole canvas. Hold mode draws at `maxRenderSca
 
 ```mermaid
 flowchart LR
-    over["About 1 s over budget"] --> scale["1. Render scale: 0.05 lower,<br/>down to minRenderScale"]
+    over["1 s over budget"] --> scale["1. Render scale: 0.05 lower,<br/>down to minRenderScale"]
     scale -- "still over budget" --> far["2. Far shadow cascades:<br/>half as often, down to every 8th frame"]
     far -- "still over budget" --> filter["3. Shadow filter: 3 x 3 texels"]
     room["5 s with time to spare"] --> back["One step back up,<br/>in the reverse order"]
@@ -266,7 +269,7 @@ Dynamic resolution is the first part of the frame-budget governor. The scale can
 1. The far shadow cascades draw half as often, for example every 4th frame instead of every 2nd, and at most every 8th frame. This step needs a directional light with two cascades or more.
 2. The shadow filter blends 3 x 3 texels instead of 5 x 5.
 
-Each step follows the rules of dynamic resolution. Frames must stay over budget for about a second before a step down, and keep time to spare for 5 seconds before a step up. A wait follows each step, and no step happens early in play, after a pause, or during uploads. The governor raises the settings in the reverse order, so the render scale comes back last. It takes shadow steps only where a directional light casts shadows. It never changes the preset, nor a setting that is fixed while the preset runs, such as the shadow map's size.
+Each step follows the rules of dynamic resolution. Frames must stay over budget for a second before a step down, and keep time to spare for 5 seconds before a step up. A wait follows each step, and no step happens early in play, after a pause, or during uploads. The governor raises the settings in the reverse order, so the render scale comes back last. It takes shadow steps only where a directional light casts shadows. It never changes the preset, nor a setting that is fixed while the preset runs, such as the shadow map's size.
 
 Phones slow down as they heat up, often after a few minutes of play. The governor responds as it does to any slow frames: after a second over budget, it lowers the next setting. The target is the display's refresh rate, at most 60 frames per second. When the browser lowers the rate of its frames to save battery, the rate that the engine measures falls, and the target falls with it.
 

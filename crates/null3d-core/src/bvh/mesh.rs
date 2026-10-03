@@ -10,7 +10,9 @@
 //! tool, which stores the result in the file (see [`super::format`]).
 
 use super::build::{SahScratch, build_sah};
-use super::{Aabb, Node, Ray, child, refit_nodes, walk_any, walk_near_first};
+use super::{
+    Aabb, BoxQuery, Node, Ray, child, refit_nodes, walk_any, walk_near_first, walk_overlap,
+};
 use crate::CoreError;
 
 /// The most triangles per leaf.
@@ -288,6 +290,26 @@ impl MeshBvh {
             }
             false
         });
+    }
+
+    /// Calls `visit` with each triangle whose leaf box touches the box `b`, in no set order,
+    /// until `visit` returns true. Returns true when it did. Each triangle's own test is the
+    /// caller's.
+    pub fn overlap(&self, b: &Aabb, mut visit: impl FnMut(u32) -> bool) -> bool {
+        if self.nodes.is_empty() || b.is_empty() {
+            return false;
+        }
+        let query = BoxQuery::new(b);
+        walk_overlap(
+            &self.nodes,
+            0,
+            |node| query.test(node),
+            |first, count| {
+                self.order[first as usize..(first + count) as usize]
+                    .iter()
+                    .any(|&tri| visit(tri))
+            },
+        )
     }
 
     /// Refits the boxes to the mesh's current positions, keeping the tree's shape: for a mesh
