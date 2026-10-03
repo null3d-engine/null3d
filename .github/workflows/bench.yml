@@ -5,11 +5,19 @@ name: Benchmarks
 # that comparison. Linux machines build both commits once. Mac machines then split the pages into
 # shards, each running both builds of its share, and a last job merges the shards into one report
 # and one verdict. A shard that fails can run again alone. Each commit's pages run as a production
-# build, as a developer ships the engine, so development checks count in neither. On main it runs
-# one run at a time, against the last commit on main that a run measured with success. For a pull
+# build, as a developer ships the engine, so development checks count in neither. For a pull
 # request it runs on demand, against the pull request's merge base: add the benchmark label, or
-# start it from the Actions tab with the pull request's number. .dev/benchmarks.md says how to read
-# the summary and how to mark an expected slowdown.
+# start it from the Actions tab with the pull request's number.
+#
+# On main it runs one run at a time, against the last commit on main that a run measured. Some
+# pushes get no run of their own, so the last measured commit, not the commit before, makes sure
+# that each change is measured. A run measured its commit when its report merged the shards into a
+# whole comparison, whether the verdict passed or failed. So a slowdown fails the one run that holds
+# it, and the next run compares with that commit. A cancelled run, a run whose builds failed and a
+# run whose shards left pages out measured nothing. When the commits change the benchmark pages or
+# the comparison's switches, the two builds measure in different ways: the run reports "measurement
+# changed" and fails no page. .dev/benchmarks.md says how to read the summary and how to mark an
+# expected slowdown.
 
 on:
   push:
@@ -233,8 +241,8 @@ jobs:
 
   report:
     # Merges the shards' records into the comparison of every page, with the verdict and the
-    # Bench-Expected trailers. It runs when a shard fails too, and fails when a shard's record is
-    # missing, so a rerun of the failed shards runs it again.
+    # Bench-Expected trailers. It runs when a shard fails too. It fails when a shard's record is
+    # missing, so a rerun of the failed shards runs it again, and when the verdict fails.
     name: benchmark report
     needs: [commits, shard]
     if: ${{ !cancelled() && (needs.shard.result == 'success' || needs.shard.result == 'failure') }}
@@ -258,8 +266,18 @@ jobs:
           pattern: bench-shard-*
           path: target/bench/shards
 
-      - name: Merge the shards and judge the new build
+      # Main's later runs read this step's result: a success means that the run measured its
+      # commit. It fails only when a shard's record is missing, and the next step gives the verdict.
+      - name: Merge the shards into one comparison
         run: bun run bench:run --merge target/bench/shards
+
+      - name: Judge the new build
+        run: |
+          summary="$(ls target/bench/*-compare/summary.json)"
+          if ! jq -e '.verdict.pass' "$summary" > /dev/null; then
+            jq -r '"The new build fails:", (.verdict.failures[] | "- " + .)' "$summary"
+            exit 1
+          fi
 
       - name: Show the summary on the job's page
         if: always()
