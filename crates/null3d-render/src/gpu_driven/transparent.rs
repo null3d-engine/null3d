@@ -16,20 +16,15 @@ use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, index_format, sizes};
 
 use super::ids;
-use super::skin::Skinning;
+use super::skin::{DrawGroups, Skinning};
 use crate::frame::{MeshBuffers, RecordError, SceneSettings, UploadArena, grown_size, put_u32};
 use crate::sorted::{SortedLayout, SortedSource, SortedView};
 use crate::view::{ViewFrame, ViewId};
 
-/// The group index of the maps' bind group in the mesh pipelines that sample a map.
-const TEXTURES_GROUP: u32 = 1;
 /// Rows from which the job workers write the instances too.
 const PARALLEL_ROWS: usize = 8192;
 /// Rows per chunk of that write.
 const ROWS_PER_CHUNK: u32 = 2048;
-/// The group index of the joint texture's bind group in pipelines that skin in the vertex shader
-/// and sample a map.
-const JOINTS_AFTER_MAPS: u32 = 2;
 /// Words that one draw of a sorted run records at most, beside those of its mesh's parts: its
 /// pipeline, its maps' bind group, the joint texture's bind group and its slice of the instances.
 const RUN_WORDS: usize = 2 + 4 + 4 + 5;
@@ -209,9 +204,9 @@ impl Transparent {
         }
         let stride = sizes::INSTANCE_STRIDE;
         list.push(Op::SetBindGroup, &[0, ids::frame_group(view), 0])?;
-        let (mut pipeline, mut textures) = (None, 0);
+        let mut pipeline = None;
         let (mut vertices, mut indices) = (None, None);
-        let mut joints_after_maps = false;
+        let mut groups = DrawGroups::default();
         let storage = settings.meshes();
         for draw in draws {
             let bucket = layout.buckets[draw.bucket as usize];
@@ -219,20 +214,9 @@ impl Transparent {
                 list.push(Op::SetPipeline, &[bucket.pipeline])?;
                 pipeline = Some(bucket.pipeline);
             }
-            if bucket.textures != 0 && bucket.textures != textures {
-                list.push(Op::SetBindGroup, &[TEXTURES_GROUP, bucket.textures, 0])?;
-                textures = bucket.textures;
-            }
             let skinned = bucket.skinned_slot();
-            if skinned.is_some() && skinning.in_vertex_shader() {
-                if bucket.textures != 0 && !joints_after_maps {
-                    list.push(Op::SetBindGroup, &[JOINTS_AFTER_MAPS, ids::JOINTS_GROUP, 0])?;
-                    joints_after_maps = true;
-                } else if bucket.textures == 0 && textures != ids::JOINTS_GROUP {
-                    list.push(Op::SetBindGroup, &[TEXTURES_GROUP, ids::JOINTS_GROUP, 0])?;
-                    textures = ids::JOINTS_GROUP;
-                }
-            }
+            let skins = skinned.is_some() && skinning.in_vertex_shader();
+            groups.set(list, bucket.textures, skins)?;
             let regions = skinned.and_then(|slot| skinning.parts_of(slot));
             list.push(
                 Op::SetVertexBuffer,
