@@ -83,26 +83,40 @@ export interface CompiledShader {
 	readonly webgl2: ShaderVariant | null;
 }
 
+/** A type that a uniform of a custom material can have, as a field of its `struct Uniforms`. */
+export type UniformType = 'f32' | 'i32' | 'u32' | 'vec2f' | 'vec3f' | 'vec4f';
+
+/** A uniform of a custom material, and where the engine writes its value. */
+export interface CompiledUniform<
+	Name extends string = string,
+	Type extends UniformType = UniformType,
+> {
+	/** The field's name, which `set()` and the `uniforms` option take. */
+	readonly name: Name;
+	/** The field's type. */
+	readonly type: Type;
+	/** The float of the material's row of custom values where the uniform starts. */
+	readonly offset: number;
+}
+
 /**
  * A custom material from a project's modules, which `materials.shader` draws with: functions such
  * as `fn surface`, built into every variant of the engine's standard material, or a full shader,
- * whose `@vertex` entry point takes an `InstanceIn` from `null3d::mesh`.
+ * whose `@vertex` entry point takes an `InstanceIn` from `null3d::mesh`. `Uniforms` gives each
+ * uniform's type by name, as the declaration that the plugin writes beside a `.wgsl` file does, so
+ * that `materials.shader` checks the names and values of its `uniforms` option and of `set()`.
  */
-export interface CompiledMaterial {
+export interface CompiledMaterial<
+	Uniforms extends Readonly<Record<string, UniformType>> = Readonly<Record<string, UniformType>>,
+> {
 	/** Marks the WGSL of a custom material. */
 	readonly kind: 'material';
 	/** The functions that the WGSL declares for the engine to call, such as `surface`. */
 	readonly functions: readonly string[];
-	/**
-	 * The fields of the WGSL's `struct Uniforms`: each one's name, its type (`f32`, `i32`, `u32`,
-	 * `vec2f`, `vec3f` or `vec4f`), and the float of the material's row of custom values where it
-	 * starts.
-	 */
+	/** The fields of the WGSL's `struct Uniforms`, in order. */
 	readonly uniforms: readonly {
-		readonly name: string;
-		readonly type: 'f32' | 'i32' | 'u32' | 'vec2f' | 'vec3f' | 'vec4f';
-		readonly offset: number;
-	}[];
+		readonly [Name in keyof Uniforms & string]: CompiledUniform<Name, Uniforms[Name]>;
+	}[keyof Uniforms & string][];
 	/** The standard material's variants with the WGSL's functions, or a full shader's, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
 	/** The vertex shader locations that the vertex stage reads from a mesh's vertices. */

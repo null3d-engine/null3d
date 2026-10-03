@@ -8,7 +8,7 @@ summary: "WGSL in sketch code; shader errors; surface functions; full shaders; u
 
 # Custom shaders
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Custom materials with surface functions, vertex offsets, uniforms and full shaders are built. Textures in custom materials are not built yet, so coding agents must not use them. Hot reload that keeps the page running comes in null3D 0.2.
+> Ships in null3D 0.1, with typed uniforms in 0.2. The API is experimental, so it can still change between versions. Custom materials with surface functions, vertex offsets, uniforms and full shaders are built. Textures in custom materials are not built yet, so coding agents must not use them. Hot reload that keeps the page running comes in null3D 0.2.
 
 ```mermaid
 flowchart LR
@@ -126,7 +126,7 @@ fn fs_main() -> @location(0) vec4f {
 `;
 ```
 
-The plugin puts the compiled shader where the literal was. Your code therefore receives a compiled shader, although TypeScript still sees a string. The tag follows these rules:
+The plugin puts the compiled shader where the literal was. Your code therefore receives a compiled shader, although TypeScript still sees a string. TypeScript reads the uniforms from that string, as [Typed uniforms](#typed-uniforms) explains. The tag follows these rules:
 
 - The comment comes directly before the literal. Spaces and line breaks may come between them.
 - The literal cannot hold `${...}`. The plugin compiles the WGSL before any of your code runs, so write each value in the WGSL itself.
@@ -180,6 +180,57 @@ The plugin's client types tell TypeScript what a `.wgsl` import gives. Add them 
     "types": ["@null3d/vite-plugin/client"]
   }
 }
+```
+
+### Typed uniforms
+
+TypeScript knows the uniforms of a custom material's WGSL. The `uniforms` option of `materials.shader` and the material's `set()` take only the names that `struct Uniforms` declares. Each name takes a value of the kind that its type takes. A wrong name or a value of the wrong kind fails the type check, before the page runs:
+
+```ts
+// sketch.ts
+const rings = /* wgsl */ `
+struct Uniforms { tint: vec3f, width: f32, offset: vec2f }
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let ring = step(1.0 - material.width, fract(input.uv.y * 6.0 + material.offset.y));
+    s.baseColor = mix(s.baseColor, material.tint, ring);
+    return s;
+}
+`;
+
+// In the setup:
+const banded = materials.shader({ wgsl: rings, uniforms: { tint: '#ff6a00', width: 0.5 } });
+banded.set({ width: 0.3, roughness: 0.4 });
+banded.set({ widht: 0.3 }); // Type error: widht is not a uniform. Did you mean width?
+banded.set({ offset: [0, 1, 2] }); // Type error: a vec2f takes two numbers.
+```
+
+| Uniform type | Value in TypeScript |
+| --- | --- |
+| `f32` | A number |
+| `i32`, `u32` | A whole number |
+| `vec2f` | Two numbers, `[x, y]` |
+| `vec3f` | Three numbers, or a color as `color` takes it |
+| `vec4f` | Four numbers |
+
+TypeScript finds the uniforms in each form of WGSL in its own way:
+
+- For a template literal tagged `/* wgsl */`, TypeScript reads `struct Uniforms` from the literal's text. Keep the literal in a `const`, or write it in the call. A variable of type `string` hides the text, and then any name passes the type check.
+- For a `.wgsl` file, the plugin writes a declaration beside the file each time it compiles it, such as `glow.wgsl.d.ts` beside `glow.wgsl`. Commit the declarations with your WGSL, so that a type check without Vite sees them. Until the plugin writes a file's declaration, its import takes any name. The `wgslDeclarations: false` option of the plugin turns the declarations off, for a project without TypeScript.
+
+The engine also checks each name and value when the call runs, so JavaScript gets the same checks. It throws [E1216](../errors/E1216.md) for a name that is not a uniform, and for a value of the wrong kind.
+
+A list of values for several materials needs a type. In a plain array, TypeScript makes `[0, 1]` a list of any length. `UniformValues<typeof rings>` types the `uniforms` option, and `ShaderValues<typeof rings>` types what `set()` takes:
+
+```ts
+import type { ShaderValues, UniformValues } from '@null3d/engine';
+
+const looks: UniformValues<typeof rings>[] = [
+  { tint: '#ff6a00', offset: [0, 0.5] },
+  { tint: '#4080ff', width: 0.8 },
+];
+const changes: ShaderValues<typeof rings>[] = [{ width: 0.2, roughness: 0.3 }];
 ```
 
 ## Related pages
