@@ -10,7 +10,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `docs/data/threejs-mapping.json` | The single source of the three.js to null3D mapping |
 | `skills/` | Agent skills for building with null3D and for porting three.js apps (the source) |
 | `.claude/skills/` | A generated copy of `skills/` for Claude Code. Never edit it. |
-| `crates/` | The Rust crates: core, GPU layer, renderer, shaders, the WebAssembly entry point, and the shader compiler that build tools load |
+| `crates/` | The Rust crates: core, GPU layer, renderer, shaders, the WebAssembly entry point, and the modules that build tools load: the shader compiler and the asset tool's formats |
 | `packages/` | npm packages: `engine`, `vite-plugin`, `controls`, and `cli`, which is the `null3d` command. Code in the repository reads their TypeScript source, and a pack builds their JavaScript, as [Releases](.dev/releases.md#the-npm-packages) says |
 | `tests/` | Browser tests: test pages, the image test manifest and its reference images, the Playwright tests and the real-browser runner |
 | `tools/` | The WebAssembly build, the docs generator, the skills check and the commit hooks |
@@ -24,7 +24,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | Command | Use |
 | --- | --- |
 | `bun install` | Install the tools and set up the git hooks |
-| `bun run build` | Build both WebAssembly files, the threaded one and the single-threaded one, and the shader compiler for the Vite plugin. Print their sizes and the sizes of the engine's JavaScript in a production build |
+| `bun run build` | Build both WebAssembly files, the threaded one and the single-threaded one, the shader compiler for the Vite plugin, and the asset tool's formats for the command-line tool. Print their sizes and the sizes of the engine's JavaScript in a production build |
 | `bun run build:check-size` | Build, then compare each file's size after Brotli compression with main's build. Fail when a file grew more than 2% and no `Size-Growth:` trailer explains it. `--base <ref>` compares with another commit |
 | `bun run test` | Unit tests for the engine, the benchmark scenes and the repository tools |
 | `bun run test:browser` | The browser tests in Chrome, through Playwright: the image test manifest on every GPU tier, and the engine's behavior. The engine, errors and sketch shaders tests run again on a production build served by `vite preview`. CI splits the tests into shards with `--shard=1/2` |
