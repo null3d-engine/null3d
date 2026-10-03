@@ -1,5 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { ISOLATION_HEADERS } from '../../packages/vite-plugin/src/index.ts';
+import { LATER_PARTS, TRANSCODER_FILES } from '../../tools/lib/size-report.ts';
 import {
 	ENGINE_MODES,
 	type EngineMode,
@@ -94,6 +95,44 @@ for (const mode of ENGINE_MODES) {
 		}
 	});
 }
+
+/** The text as a regular expression that matches it alone. */
+const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The address of each file that loads only when a sketch first uses its feature, on the dev server
+ * and in a production build, which names a file after its module and adds a hash. The size report
+ * lists these files apart from the start, and the transcoder's files with them.
+ */
+const FIRST_USE_FILES: readonly RegExp[] = [
+	...LATER_PARTS.filter(({ afterFirstFrame }) => !afterFirstFrame).map(({ module }) => {
+		const stem = (module.split('/').at(-1) as string).replace(/\.ts$/, '');
+		return new RegExp(`/${escaped(module)}$|/${escaped(stem)}-[\\w-]{8}\\.js$`);
+	}),
+	...TRANSCODER_FILES.map((file) => {
+		const dot = file.lastIndexOf('.');
+		return new RegExp(`/${escaped(file.slice(0, dot))}(-[\\w-]{8})?${escaped(file.slice(dot))}$`);
+	}),
+];
+
+// A page that uses no feature that loads on first use downloads none of their files, on either GPU
+// path and in every thread mode. The engine test page uses none, and the startup benchmark times it.
+for (const gpu of ['webgpu', 'webgl2'] as const)
+	for (const mode of ENGINE_MODES)
+		test(`a page that uses no feature that loads on first use downloads none of their files, ${mode.name} on ${gpu}`, async ({
+			page,
+		}) => {
+			const requests: string[] = [];
+			page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
+			await page.goto(`engine.html?gpu=${gpu}&seconds=1&${mode.query}`);
+			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
+			expect(result.error).toBeUndefined();
+			expect(engineProblems(result, mode, gpu)).toEqual([]);
+			expect(requests.some((path) => /\/null3d_bg(-[\w-]+)?\.wasm$/.test(path))).toBe(true);
+			expect(requests.filter((path) => FIRST_USE_FILES.some((file) => file.test(path)))).toEqual(
+				[],
+			);
+		});
 
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {
