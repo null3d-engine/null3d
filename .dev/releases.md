@@ -63,8 +63,8 @@ A rehearsal ran every Mac step before the gate commit, on a MacBook Pro M5 Max i
 | 3 | S4 against three.js, own work | null3D 0.09 ms on WebGPU and 0.23 ms on WebGL2. three.js 1.67 ms on WebGL and 3.65 ms on WebGPU, so 5% and 13% of its faster renderer | Recorded |
 | 4 | WebAssembly builds | Threaded 144.4 KB, single-threaded 143.6 KB, of 600 KB | Pass |
 | 4 | Engine JavaScript per thread mode | 77.7 to 83.9 KB, of 100 KB | Pass |
-| 4 | Allocation, S4 on WebGPU | The replay 418 of 320 bytes per frame, the wake-up timer 29.9 of 4 and the GPU completion callback 14.2 of 4. After the fix below: the replay 254 of 320, both callbacks 0.0 | Failed, then pass |
-| 4 | Allocation, S4 on WebGL2 | The benchmark sketch's camera step 49.0 of 48 bytes per frame. After the fix below: 24.8 of 48 | Failed, then pass |
+| 4 | Allocation, S4 on WebGPU | The replay 418 of 320 bytes per frame, the wake-up timer 29.9 of 4 and the GPU completion callback 14.2 of 4. After the fix below: the replay 263 of 320, both callbacks 0.0 | Failed, then pass |
+| 4 | Allocation, S4 on WebGL2 | The benchmark sketch's camera step 49.0 of 48 bytes per frame. After the fix below: 24.0 of 48 | Failed, then pass |
 | 4 | Soak, S4 in Chrome, 10 minutes | After the 2-minute warm-up: sketch worker heap +16 KB, render worker heap +37 KB, of 256 KB each. WebAssembly memory +0.00 MB | Pass |
 | 5 | T-28 on the Mac: first frame done, median of 3, pipelined, WebGPU | Slow 4G: cold 3918 ms, warm 650 ms. Full speed: cold 87 ms, warm 79 ms. 12 requests and 237.1 KB on a cold load | Recorded |
 | 6 | `bun run docs:check` | Docs OK, 78 inventory pages | Pass |
@@ -81,18 +81,18 @@ Notes on the figures:
 
 The allocation budgets were set on S1, and S4 is the first scene with shadow passes in the check. A heap profile of each place, and the browser's log of the code it compiles and throws away, found three causes. Two were in the engine and one in the benchmark sketch. [Implementation notes](implementation-notes.md#hot-paths-without-allocation) holds the habit that each one taught.
 
-- The WebGPU replay passed each render pass's clear color to the pass setup as four numbers. The browser inlined that call in S1 but not in S4, so each of S4's four render passes boxed the fog color's three fractions. The setup now reads the color from the draw list's floats. S4's replay fell from about 420 to about 250 bytes per frame, and S1's stayed at about 208.
+- The WebGPU replay passed each render pass's clear color to the pass setup as four numbers. The browser inlined that call in S1 but not in S4, so each of S4's four render passes boxed the fog color's three fractions. The setup now reads the color from the draw list's floats. S4's replay fell from about 420 to about 260 bytes per frame, and S1's stayed at about 210.
 - The replay bound some vertex buffers whole, with the size `undefined`, and others in part, through one call. So the browser threw its optimized replay code away every 1.5 seconds and compiled it again. Each compile left about 10 KB of objects in the wake-up timer or the GPU completion callback, whichever ran first. Each case now has one call without the size and one with it. The browser's log showed 26 of these events in one run before the change, and none after it.
 - The benchmark sketch's camera step stayed on the browser's middle tier for the whole 45-second run. That tier never inlined the camera's `lookAt`, so its three fractions were boxed in every frame. The step now computes the rotation with `quat.lookAt` and passes it to `setRotation`. About two boxed numbers per frame remain, within the step's budget of 48 bytes.
 
-Per frame, S4 draws 4 render passes and S1 draws 2. S4's 2 extra passes are depth-only shadow passes, and it makes 13 buffer uploads to S1's 4. After the fix, S4's replay allocates about 46 bytes per frame more than S1's. About 35 of them are objects of 16 bytes or more, which fits one pass encoder from the browser for each extra pass. The rest are one or two number objects. That fits in the replay's budget of 320 bytes, so no budget changed. The fix's runs, on the same Mac:
+Per frame, S4 draws 4 render passes and S1 draws 2. S4's 2 extra passes are depth-only shadow passes, and it makes 13 buffer uploads to S1's 4. After the fix, S4's replay allocates 46 to 48 bytes per frame more than S1's. About 35 of them are objects of 16 bytes or more, which fits one pass encoder from the browser for each extra pass. The rest are one or two number objects. That fits in the replay's budget of 320 bytes, so no budget changed. The fix's runs on the same Mac, after a merge of main at d69b2cd4 (#235):
 
 | Scene and path | Sketch worker, bytes per frame | Render worker, bytes per frame | Result |
 | --- | --- | --- | --- |
-| S1, WebGPU | 287 | 557, with the replay at 208 of 320 | Pass |
-| S1, WebGL2 | 381 | 160 | Pass |
-| S4, WebGPU | 226 | 598, with the replay at 254 of 320 | Pass |
-| S4, WebGL2 | 222 | 163 | Pass |
+| S1, WebGPU | 264 | 561, with the replay at 215 of 320 | Pass |
+| S1, WebGL2 | 344 | 167 | Pass |
+| S4, WebGPU | 237 | 604, with the replay at 263 of 320 | Pass |
+| S4, WebGL2 | 237 | 164 | Pass |
 
 ### What the gate still needs
 
