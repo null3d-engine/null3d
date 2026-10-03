@@ -167,6 +167,46 @@ impl Skinning {
     }
 }
 
+/// The group index of the maps' bind group in the mesh pipelines that sample a map.
+const MAPS_GROUP: u32 = 1;
+/// The group index of the joint texture's bind group in the pipelines that skin in the vertex
+/// shader and sample a map; the others read it in the maps' place.
+const JOINTS_AFTER_MAPS: u32 = 2;
+
+/// The bind groups after the frame's that a bundle or a pass has set while it records its draws:
+/// a material's maps, and the joint texture of the pipelines that skin in the vertex shader.
+#[derive(Debug, Default)]
+pub(super) struct DrawGroups {
+    /// The group at the maps' index, or 0 for none yet.
+    maps: u32,
+    /// True once the joint texture's group sits after the maps' group.
+    joints_after_maps: bool,
+}
+
+impl DrawGroups {
+    /// Sets the groups that a draw's pipeline reads where they differ from those set: the maps'
+    /// group `maps`, or 0 for a pipeline that samples none, and with `skins`, the joint texture's.
+    pub(super) fn set(
+        &mut self,
+        list: &mut DrawList,
+        maps: u32,
+        skins: bool,
+    ) -> Result<(), RecordError> {
+        if maps != 0 && maps != self.maps {
+            list.push(Op::SetBindGroup, &[MAPS_GROUP, maps, 0])?;
+            self.maps = maps;
+        }
+        if skins && maps != 0 && !self.joints_after_maps {
+            list.push(Op::SetBindGroup, &[JOINTS_AFTER_MAPS, ids::JOINTS_GROUP, 0])?;
+            self.joints_after_maps = true;
+        } else if skins && maps == 0 && self.maps != ids::JOINTS_GROUP {
+            list.push(Op::SetBindGroup, &[MAPS_GROUP, ids::JOINTS_GROUP, 0])?;
+            self.maps = ids::JOINTS_GROUP;
+        }
+        Ok(())
+    }
+}
+
 /// A format field: the attribute's word offset in a vertex of `format` and its type code, or
 /// [`NONE`] for an attribute that the format lacks.
 fn field(format: u32, location: usize) -> u32 {
