@@ -113,6 +113,12 @@ The core resamples each clip as a background task on the job workers. The job sy
 | Resample in the glTF worker | No | The worker would need a second copy of the core's WebAssembly, 550 KB, or a resampler in TypeScript beside the core's |
 | Background tasks on the job workers (chosen) | No | The resampler that D-26 tested runs as it is |
 
+### The correction between rotation keys
+
+Sampling corrects rotations between keys for tracks that turn more than 0.2 radians between frames, and only there. Accuracy against three.js is the point of loading a file's clips, so the correction stays on. It costs about 5% of the frame step in `bench_animation_crowd`, whose second clip turns joints up to 0.32 radians between keys ("Faults the comparison found").
+
+The rejected option computes part of the correction at load time. The polynomial terms that depend only on the two keys' dot product would be stored for each group and frame, beside the keys. That doubles the rotation memory of the marked tracks, which D-26 kept small for crowds, and saves perhaps half of the 5%. It was not measured. A crowd scene whose clips turn fast could justify it later.
+
 ### Cubic spline keys
 
 The core evaluates glTF's cubic spline keys as three.js's `GLTFCubicSplineInterpolant` does, with tangents scaled by the time between keys, while it resamples. A clip with such a track keeps a source grid only at the finest multiple of it up to 30 keys per second. Keys every half second thus get 30 keys per second, 14 between each two, and the file's keys stay exact. InterpolationTest's cubic spline clips match three.js within 2.5e-4.
