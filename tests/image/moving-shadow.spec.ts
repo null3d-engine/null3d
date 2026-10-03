@@ -14,8 +14,12 @@ interface Result {
 	offsets: (number | null)[];
 }
 
-/** How far, in pixels, a frame's offset may stray from the median of every-frame cascades. */
-const MAX_STRAY = 3;
+/**
+ * How far, in pixels, a frame's offset may stray from the median of every-frame cascades. The
+ * shadow's edges step across the far cascade's coarse texels as the box drives, so a shadow that
+ * follows its box still strays by about a texel. A shadow a few frames behind strays by several.
+ */
+const MAX_STRAY = 5;
 
 async function offsets(page: Page, gpu: string, far: number): Promise<number[]> {
 	await page.goto(`moving-shadow.html?gpu=${gpu}&far=${far}`);
