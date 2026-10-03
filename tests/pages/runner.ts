@@ -5,7 +5,8 @@
 // With &from=<index>, a page opened for one run starts at that item of the plan, as when the runner
 // tool replaces a runner page that stopped answering. Each runner page claims its runner's results
 // when it starts a run, and a page whose claim a newer page took stops: a replaced page can still be
-// running, hidden, where the runner tool cannot close it. A request to the dev server that gets no
+// running, hidden, where the runner tool cannot close it. A page whose turn the runner tool ended, as
+// when its browser keeps refusing memory, stops too. A request to the dev server that gets no
 // answer in time goes out again, because Safari can lose one that it sends as a removed frame
 // closes its connections.
 // A runner page that opens without &from= starts at the first page of the plan that has no result,
@@ -54,6 +55,22 @@ class TakenOver extends Error {
 	constructor() {
 		super('a newer runner page took over this run');
 	}
+}
+
+/**
+ * The runner tool ended this runner's turn, as when its browser keeps refusing memory, so this page
+ * must stop. Its output says why, and what to do.
+ */
+class TurnEnded extends Error {
+	constructor() {
+		super("the runner tool ended this runner's turn; its output says why");
+	}
+}
+
+/** Throws when the dev server says that this page must stop. */
+function stopIfRefused(status: number): void {
+	if (status === 409) throw new TakenOver();
+	if (status === 410) throw new TurnEnded();
 }
 
 function show(text: string): void {
@@ -152,7 +169,7 @@ async function post(run: string, name: string, body: unknown): Promise<void> {
 		method: 'POST',
 		body: JSON.stringify(body),
 	});
-	if (response.status === 409) throw new TakenOver();
+	stopIfRefused(response.status);
 	if (!response.ok) throw new Error(`the dev server refused ${name}: ${response.status}`);
 }
 
@@ -161,6 +178,7 @@ async function claim(run: string): Promise<void> {
 	const response = await patientFetch(`/__null3d/runs/${run}/${runner}?page=${pageId}`, {
 		method: 'POST',
 	});
+	stopIfRefused(response.status);
 	if (!response.ok) throw new Error(`the dev server refused the claim: ${response.status}`);
 }
 
@@ -293,12 +311,15 @@ async function resumeAt(run: string, items: readonly PlanItem[]): Promise<number
 /**
  * Runs a run's items from the item at `from`, or where the run stopped without it. Only a run from
  * its first item reads the device. Before an item that may end its tab, the page notes that the
- * item started, under the item's progress.
+ * item started, under the item's progress. In a plan that asks for it, the page measures the
+ * display's refresh rate before each item, with no test page loaded, and adds it to the item's
+ * result.
  */
 async function runPlan(run: string, from?: number): Promise<void> {
 	const plan = JSON.parse((await patientFetch(`/__null3d/runs/${run}/plan`)).text) as {
 		items: PlanItem[];
 		reportOnTop?: boolean;
+		measureRefresh?: boolean;
 	};
 	await claim(run);
 	stage.classList.toggle('report-on-top', plan.reportOnTop === true);
@@ -314,8 +335,9 @@ async function runPlan(run: string, from?: number): Promise<void> {
 		show(`${report.counts()}; now ${item.id}`);
 		if (item.endsTab)
 			await post(run, progressName(item.id), { startedAt: new Date().toISOString() });
+		const runnerRefreshHz = plan.measureRefresh ? await refreshRate() : undefined;
 		const result = await runItem(item, run);
-		await post(run, item.id, result);
+		await post(run, item.id, runnerRefreshHz ? { ...result, runnerRefreshHz } : result);
 		report.finish(index, result);
 		show(report.counts());
 		await sleep(PAUSE_BETWEEN_PAGES_MS);
@@ -331,6 +353,7 @@ async function runPlan(run: string, from?: number): Promise<void> {
  */
 async function listen(): Promise<void> {
 	let ranOne = false;
+	let ended = '';
 	for (;;) {
 		try {
 			const current = JSON.parse(
@@ -344,10 +367,14 @@ async function listen(): Promise<void> {
 				}
 				ranOne = true;
 				await runPlan(current.run as string);
-			} else show('waiting for a run');
+			} else show(`waiting for a run${ended}`);
 		} catch (e) {
 			if (e instanceof TakenOver) return show(`stopped: ${e.message}`);
-			show(`waiting for the dev server (${(e as Error).message})`);
+			// A page whose turn the tool ended waits for the next run, which reloads it first.
+			if (e instanceof TurnEnded) {
+				ended = ` (${e.message})`;
+				show(`waiting for a run${ended}`);
+			} else show(`waiting for the dev server (${(e as Error).message})`);
 		}
 		await sleep(LISTEN_POLL_MS);
 	}
@@ -363,7 +390,8 @@ else if (run)
 		.then(() => window.close())
 		.catch((e) => {
 			show(`stopped: ${(e as Error).message}`);
-			// A replaced page leaves, so it holds no GPU memory beside the page that took over.
-			if (e instanceof TakenOver) window.close();
+			// A replaced page leaves, so it holds no GPU memory beside the page that took over. A page
+			// whose turn the tool ended leaves too, and gives its memory back to the browser.
+			if (e instanceof TakenOver || e instanceof TurnEnded) window.close();
 		});
 else show('open this page with ?run=<run>&runner=<name>, or with ?listen&runner=<name>');

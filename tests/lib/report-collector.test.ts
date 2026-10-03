@@ -1,8 +1,9 @@
 // The report collector on a server of its own. A page can leave while its report is on the way, as
 // when a test ends or the startup tool closes its tab, and the server must stay up. A runner page
-// that a newer one replaced can still send results, and the collector must refuse them.
+// that a newer one replaced can still send results, and the collector must refuse them, as it must
+// refuse a runner page whose turn the runner tool ended.
 import { afterAll, beforeAll, expect, test } from 'bun:test';
-import { readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import {
 	createServer,
 	type IncomingMessage,
@@ -13,7 +14,7 @@ import {
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import type { Connect } from 'vite';
-import { collectorRoutes, RUNS_DIR } from './report-collector.ts';
+import { collectorRoutes, endTurnClaim, RUNS_DIR } from './report-collector.ts';
 
 type Handler = (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
 
@@ -98,6 +99,26 @@ test("a replaced runner page's late result is refused and leaves the newer page'
 		const stored = JSON.parse(readFileSync(join(RUNS_DIR, run, 'mac-safari/item.json'), 'utf8'));
 		expect(stored).toMatchObject({ ok: true, from: 'new' });
 		expect((await post('/item?page=bad/name', { ok: true })).status).toBe(400);
+	} finally {
+		rmSync(join(RUNS_DIR, run), { recursive: true, force: true });
+	}
+});
+
+test('a runner page whose turn the runner tool ended is refused with 410, even when it claims again', async () => {
+	const run = `ended-test-${process.pid}`;
+	const runs = `http://127.0.0.1:${port}/__null3d/runs/${run}/ipad-safari`;
+	const post = (path: string, body?: unknown) =>
+		fetch(`${runs}${path}`, {
+			method: 'POST',
+			body: body === undefined ? undefined : JSON.stringify(body),
+		});
+	try {
+		expect((await post('?page=tablet')).status).toBe(204);
+		expect((await post('/a?page=tablet', { ok: false, error: 'E1109' })).status).toBe(204);
+		endTurnClaim(run, 'ipad-safari');
+		expect((await post('/b?page=tablet', { ok: false, error: 'E1109' })).status).toBe(410);
+		expect((await post('?page=reloaded')).status).toBe(410);
+		expect(existsSync(join(RUNS_DIR, run, 'ipad-safari/b.json'))).toBe(false);
 	} finally {
 		rmSync(join(RUNS_DIR, run), { recursive: true, force: true });
 	}

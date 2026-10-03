@@ -891,6 +891,16 @@ export const REPORT_ON_TOP_PLANS: ReadonlySet<string> = new Set([
 	'tab-memory',
 ]);
 
+/**
+ * The checks of pages that push the browser to its memory limit on purpose. A refused memory is what
+ * they measure, so the device runner's out-of-memory guard does not count their pages.
+ */
+export const MEMORY_LIMIT_CHECKS: ReadonlySet<Check['kind']> = new Set([
+	'memory',
+	'room',
+	'tab-memory',
+]);
+
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
 	checks: checksPlan,
 	parity: parityPlan,
