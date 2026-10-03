@@ -5,9 +5,11 @@
 // templates of the debug lines and the debug views, so release builds hold none of their code.
 
 import {
+	LAYOUT_BLOOM,
 	LAYOUT_CULL,
 	LAYOUT_DEPTH,
 	LAYOUT_FINAL,
+	LAYOUT_FINAL_BLOOM,
 	LAYOUT_FRAME,
 	LAYOUT_LIGHT_CLUSTERS,
 	LAYOUT_MATERIAL_MAPS,
@@ -25,10 +27,12 @@ import {
 	STATE_NO_DEPTH_TEST,
 	STATE_NO_DEPTH_WRITE,
 	TEMPLATE_BACKGROUND,
+	TEMPLATE_BLOOM,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_DEBUG_VIEW,
 	TEMPLATE_FINAL,
+	TEMPLATE_FINAL_BLOOM,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_STANDARD_MAPS,
 	TEMPLATE_INSTANCED_TEXCOORDS,
@@ -275,13 +279,30 @@ export class Pipelines {
 			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 		]);
 		// The final pass reads the scene color with textureLoad, which takes any float format.
-		this.defineLayout(LAYOUT_FINAL, 'final', [
-			{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+		const finalEntries: GPUBindGroupLayoutEntry[] = [
+			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
 			{
 				binding: 1,
-				visibility: GPUShaderStage.FRAGMENT,
+				visibility: fragment,
 				texture: { sampleType: 'unfilterable-float', viewDimension: '2d' },
 			},
+		];
+		this.defineLayout(LAYOUT_FINAL, 'final', finalEntries);
+		// Bloom's levels, which the final pass's bloom build reads with a linear filter, after its
+		// weights.
+		this.defineLayout(LAYOUT_FINAL_BLOOM, 'final bloom', [
+			...finalEntries,
+			{ binding: 2, visibility: fragment, buffer: { type: 'uniform' } },
+			...[3, 4, 5, 6, 7].map(
+				(binding): GPUBindGroupLayoutEntry => ({ binding, visibility: fragment, texture: {} }),
+			),
+			{ binding: 8, visibility: fragment, sampler: {} },
+		]);
+		// A step of bloom: its settings, the texture it reads, and the linear sampler.
+		this.defineLayout(LAYOUT_BLOOM, 'bloom', [
+			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: fragment, texture: {} },
+			{ binding: 2, visibility: fragment, sampler: {} },
 		]);
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
@@ -317,6 +338,20 @@ export class Pipelines {
 			shader: shaders.final,
 			pipeline: 'main',
 			layouts: [LAYOUT_FINAL],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_FINAL_BLOOM, {
+			label: 'final bloom',
+			shader: shaders.final,
+			pipeline: 'main',
+			layouts: [LAYOUT_FINAL_BLOOM],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_BLOOM, {
+			label: 'bloom',
+			shader: shaders.bloom,
+			pipeline: 'main',
+			layouts: [LAYOUT_BLOOM],
 			vertexBuffers: [],
 		});
 		this.defineTemplate(TEMPLATE_BACKGROUND, {
@@ -376,6 +411,13 @@ export class Pipelines {
 	/** True when a template has this id. */
 	has(id: number): boolean {
 		return this.templates[id] !== undefined;
+	}
+
+	/** The shader variants of a template that exists. */
+	variants(id: number): ShaderVariants {
+		const template = this.templates[id];
+		if (!template) throw new Error(`unknown render template ${id}`);
+		return template.shader;
 	}
 
 	/** Adds a render pipeline template under an id that no other template has. */

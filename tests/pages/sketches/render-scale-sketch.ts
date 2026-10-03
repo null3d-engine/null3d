@@ -1,9 +1,12 @@
 // Boxes whose render scale the page moves during play. On the page's 'scales' message, the sketch
 // fixes the render scale at each of the given scales in turn, one per frame, then posts the scale
-// that the engine drew each of those frames at.
+// that the engine drew each of those frames at. ?bloom turns bloom on, with every pixel glowing.
 import { defineSketch } from '@null3d/engine';
 
-export default defineSketch(({ scene, materials, geometry, page, quality }) => {
+const BLOOM = new URL(import.meta.url).searchParams.has('bloom');
+
+export default defineSketch(({ scene, materials, geometry, page, quality, post }) => {
+	if (BLOOM) post.set({ bloom: { threshold: 0 } });
 	scene.setBackground('#101418');
 	const camera = scene.createPerspectiveCamera({
 		fov: 60,

@@ -110,6 +110,7 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::background::BackgroundPass;
+use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
@@ -123,6 +124,7 @@ use crate::graph::RenderGraph;
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
+use crate::output::{Antialias, SceneColor};
 use crate::pipelines::PipelineCache;
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
 use crate::shadows::{self, MAX_CASCADES, ShadowUniform};
@@ -173,6 +175,7 @@ fn out_of_memory(_: std::collections::TryReserveError) -> RecordError {
 /// The builder's GPU objects. It owns every id it uses; each view has a range of its own, the
 /// shadow cascades' views after the camera views.
 mod ids {
+    use crate::bloom::STEPS;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
 
     pub const MATERIALS: u32 = 1;
@@ -223,8 +226,10 @@ mod ids {
     pub const LIGHTS: u32 = LIGHT_GRID + 1;
     /// The parameters of the light clustering pass, which fills the light grid.
     pub const LIGHT_PARAMS: u32 = LIGHTS + 1;
+    /// The uniform buffer of bloom's steps and of the final pass's bloom build.
+    pub const BLOOM: u32 = LIGHT_PARAMS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = LIGHT_PARAMS + 1;
+    pub const PAGES: u32 = BLOOM + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -236,8 +241,10 @@ mod ids {
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow map.
     pub const SHADOW_SAMPLER: u32 = 1;
+    /// The linear sampler of bloom's steps and of the final pass's bloom build.
+    pub const BLOOM_SAMPLER: u32 = 2;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 2;
+    pub const SAMPLERS: u32 = 3;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -260,8 +267,10 @@ mod ids {
     pub const fn prepass_group(view: ViewId) -> u32 {
         LIGHT_GROUP + 1 + view.index() as u32
     }
-    /// The bind groups of materials' maps, after the groups of the depth prepass.
-    pub const TEXTURE_GROUPS: u32 = LIGHT_GROUP + 1 + MAX_VIEWS as u32;
+    /// The bind group of each step of bloom, after the groups of the depth prepass.
+    pub const BLOOM_GROUPS: u32 = LIGHT_GROUP + 1 + MAX_VIEWS as u32;
+    /// The bind groups of materials' maps, after bloom's.
+    pub const TEXTURE_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -394,6 +403,11 @@ impl GpuDrivenRenderer {
                         final_pass: FinalIds {
                             settings: ids::FINAL_SETTINGS,
                             group: ids::FINAL_GROUP,
+                        },
+                        bloom: BloomIds {
+                            buffer: ids::BLOOM,
+                            sampler: ids::BLOOM_SAMPLER,
+                            first_group: ids::BLOOM_GROUPS,
                         },
                     },
                 );
@@ -563,6 +577,8 @@ impl GpuDrivenRenderer {
             &mut self.pipelines,
             self.graph.scene_targets(),
         );
+        self.graph
+            .set_bloom(self.settings.bloom(), self.settings.bloom_divisor());
         self.graph.request_pipelines(&mut self.pipelines);
         self.background.request_pipeline(
             &self.settings,
@@ -974,5 +990,10 @@ impl FrameBuilder for GpuDrivenRenderer {
 
     fn list(&self, frame: u32) -> &DrawList {
         self.lists.list(frame)
+    }
+
+    fn set_canvas_output(&mut self, scene_color: SceneColor, antialias: Antialias) {
+        let canvas = self.settings.switch_canvas(scene_color, antialias);
+        self.graph.set_canvas(canvas);
     }
 }

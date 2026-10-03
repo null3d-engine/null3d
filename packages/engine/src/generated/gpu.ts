@@ -106,6 +106,8 @@ export const LAYOUT_TEXTURES = 5;
 export const LAYOUT_MATERIAL_MAPS = 6;
 export const LAYOUT_DEPTH = 7;
 export const LAYOUT_LIGHT_CLUSTERS = 8;
+export const LAYOUT_BLOOM = 9;
+export const LAYOUT_FINAL_BLOOM = 10;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -121,6 +123,7 @@ export const PERMUTATION_DEBUG_VIEW_LOW = 1024;
 export const PERMUTATION_DEBUG_VIEW_HIGH = 2048;
 export const PERMUTATION_PREPASS = 4096;
 export const PERMUTATION_HALF = 8192;
+export const PERMUTATION_BLOOM = 16384;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;
@@ -151,6 +154,8 @@ export const TEMPLATE_FINAL = 7;
 export const TEMPLATE_SHADOW_DEPTH = 8;
 export const TEMPLATE_BACKGROUND = 9;
 export const TEMPLATE_DEBUG_VIEW = 12;
+export const TEMPLATE_BLOOM = 13;
+export const TEMPLATE_FINAL_BLOOM = 14;
 export const TEMPLATE_CULL = 16;
 export const TEMPLATE_LIGHT_COUNT = 17;
 export const TEMPLATE_LIGHT_PLACE = 18;

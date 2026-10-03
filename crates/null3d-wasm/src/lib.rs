@@ -25,6 +25,7 @@ use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::sizes;
 use null3d_render::arrays::{ArrayName, ArraysError, MeshArrays, from_arrays};
+use null3d_render::bloom::Bloom;
 use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
@@ -1426,6 +1427,45 @@ pub fn set_output(tone_mapping: u32, exposure: f32) -> u32 {
             tone_mapping,
             exposure,
         });
+        0
+    })
+}
+
+/// Turns bloom on with its strength, radius and threshold, or off, from the next frame on. The
+/// TypeScript API checks the values.
+#[wasm_bindgen(js_name = setBloom)]
+pub fn set_bloom(on: bool, strength: f32, radius: f32, threshold: f32) -> u32 {
+    with_engine(|e| {
+        let bloom = on.then_some(Bloom {
+            strength,
+            radius,
+            threshold,
+        });
+        e.renderer.settings_mut().set_bloom(bloom);
+        0
+    })
+}
+
+/// Draws the scene into a target of format `scene_color` with anti-aliasing mode `antialias`, by
+/// code, from the next frame on: the HDR color that an effect needs, on a device that started on
+/// the 8-bit path. The next frame makes the targets and the pipelines that draw into them again.
+#[wasm_bindgen(js_name = setCanvasOutput)]
+pub fn set_canvas_output(scene_color: u32, antialias: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.set_canvas_output(
+            SceneColor::from_format(scene_color),
+            Antialias::from_code(antialias).unwrap_or_default(),
+        );
+        e.structure_changed = true;
+        0
+    })
+}
+
+/// How many times fewer taps than three.js's bloom's blurs read, from the next frame on.
+#[wasm_bindgen(js_name = setBloomSamples)]
+pub fn set_bloom_samples(divisor: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_bloom_divisor(divisor);
         0
     })
 }

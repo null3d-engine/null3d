@@ -845,6 +845,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'startup',
 	'governor',
 	'skinning',
+	'bloom',
 	'overload',
 	'soak',
 ]);

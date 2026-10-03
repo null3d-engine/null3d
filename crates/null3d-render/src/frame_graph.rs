@@ -44,6 +44,14 @@
 //! can drop below the whole canvas, the final pass copies the scene color into the canvas. In the
 //! FXAA mode the final pass smooths edges on either path.
 //!
+//! On the HDR path, bloom's passes come between the transparent passes and the final pass (see
+//! [`crate::bloom`]): the bright pass reads the scene color, and each step after it reads the step
+//! before it, each into a target of its own at a fraction of the render size. The final pass then
+//! runs in its bloom build, which reads bloom's levels too. They are declared with the other
+//! passes and switched on only while the sketch turns bloom on, so a frame without bloom has none
+//! of their targets. The 8-bit path has no bloom: its scene color holds display color, which no
+//! longer knows how bright a pixel was.
+//!
 //! # Render scale
 //!
 //! Passes of a relative size draw into the top-left corner of their targets at the render scale,
@@ -70,7 +78,8 @@ use std::borrow::Cow;
 
 use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_usage, view};
 
-use crate::final_pass::{FinalIds, FinalPass};
+use crate::bloom::{self, Bloom, BloomIds, BloomPass, LEVELS, STEPS};
+use crate::final_pass::{BloomInputs, FinalIds, FinalPass};
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
 use crate::graph::{
     CANVAS, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph, RenderScale, Size,
@@ -90,6 +99,7 @@ pub(crate) const DEPTH_FORMAT: u32 = format::DEPTH32_FLOAT;
 pub(crate) struct GraphIds {
     pub(crate) first_texture: u32,
     pub(crate) final_pass: FinalIds,
+    pub(crate) bloom: BloomIds,
 }
 
 /// The buffers that the culling passes read: the world matrices and the bucket tables, which the
@@ -125,6 +135,48 @@ const SHADOW_CASCADES: [&str; MAX_CASCADES] = [
     "ShadowCascade2",
     "ShadowCascade3",
 ];
+/// Each step of bloom's chain, and the target it creates: the bright pass, then each level's blur
+/// across and its blur down. Each step reads the target of the step before it, and the bright pass
+/// the scene color.
+const BLOOM_PASSES: [&str; STEPS] = [
+    "BloomBright",
+    "BloomBlurX0",
+    "BloomBlurY0",
+    "BloomBlurX1",
+    "BloomBlurY1",
+    "BloomBlurX2",
+    "BloomBlurY2",
+    "BloomBlurX3",
+    "BloomBlurY3",
+    "BloomBlurX4",
+    "BloomBlurY4",
+];
+const BLOOM_TARGETS: [&str; STEPS] = [
+    "bloomBright",
+    "bloomX0",
+    "bloomY0",
+    "bloomX1",
+    "bloomY1",
+    "bloomX2",
+    "bloomY2",
+    "bloomX3",
+    "bloomY3",
+    "bloomX4",
+    "bloomY4",
+];
+/// The step whose target holds one of bloom's levels, which the final pass reads: its blur down.
+const fn bloom_level(level: usize) -> usize {
+    2 + 2 * level
+}
+/// The target that step `step` of bloom reads: the scene color for the bright pass, else the
+/// target of the step before it.
+const fn bloom_source(step: usize) -> &'static str {
+    if step == 0 {
+        SCENE_COLOR
+    } else {
+        BLOOM_TARGETS[step - 1]
+    }
+}
 /// The shadow atlas of point and spot lights: a depth texture array with one layer per tile,
 /// kept between frames.
 const SHADOW_ATLAS: &str = "shadowAtlas";
@@ -181,8 +233,13 @@ pub(crate) enum Role {
     /// Resolves the scene color into the canvas on the 8-bit path. It records nothing: the color
     /// attachment of its render pass resolves.
     Resolve,
+    /// A step of bloom's chain, by its place in the chain. The graph records it itself.
+    Bloom(u8),
     /// Tone maps the HDR scene color into the canvas. The graph records it itself.
     Final,
+    /// Tone maps the HDR scene color into the canvas, with bloom's levels added. The graph records
+    /// it itself.
+    FinalBloom,
 }
 
 /// A name for a view's pass or resource: `camera` for the camera's view, and `other` followed by
@@ -242,8 +299,19 @@ pub(crate) struct FrameGraph {
     scales: bool,
     /// The render scale of the frame being recorded.
     scale: RenderScale,
-    /// The resolve pass and the final pass, once declared.
-    outputs: Option<(PassId, PassId)>,
+    /// The resolve pass, the final pass and, on the HDR path, the final pass with bloom, once
+    /// declared.
+    outputs: Option<(PassId, PassId, Option<PassId>)>,
+    /// Bloom's steps and their GPU objects, on the HDR path.
+    bloom_pass: Option<BloomPass>,
+    /// The GPU objects that bloom's steps take, once the scene color holds HDR color.
+    bloom_ids: BloomIds,
+    /// Bloom's passes, once declared, by their place in the chain.
+    bloom_passes: Vec<PassId>,
+    /// Bloom's settings while the sketch turns it on.
+    bloom: Option<Bloom>,
+    /// The sample divisor of bloom's blurs.
+    bloom_divisor: u32,
     /// The number of views the declarations cover.
     views: usize,
     /// The debug lines pass, once the passes are declared.
@@ -309,6 +377,13 @@ impl FrameGraph {
             scales: false,
             scale: RenderScale::FULL,
             outputs: None,
+            bloom_pass: scene_color
+                .is_hdr()
+                .then(|| BloomPass::new(ids.bloom, scene_color.format(), !gpu_culling)),
+            bloom_passes: Vec::new(),
+            bloom_ids: ids.bloom,
+            bloom: None,
+            bloom_divisor: 1,
             views: 0,
             debug_lines: None,
             transparent: Vec::new(),
@@ -326,6 +401,27 @@ impl FrameGraph {
             declared: false,
             final_pass: FinalPass::new(ids.final_pass, scene_color, antialias),
         }
+    }
+
+    /// Draws the scene into a target of `canvas`'s scene color, with the samples of its
+    /// anti-aliasing mode, from the next frame on. The passes are declared again, and the plan's
+    /// targets made again where they changed. The final pass takes the new mode, and bloom's steps
+    /// exist only for HDR color.
+    pub(crate) fn set_canvas(&mut self, canvas: CanvasOutput) {
+        let CanvasOutput {
+            scene_color,
+            antialias,
+            ..
+        } = canvas;
+        self.scene_color = scene_color;
+        self.samples = antialias.samples();
+        self.resolves = !scene_color.is_hdr() && antialias == Antialias::Msaa;
+        self.final_pass.set_mode(scene_color, antialias);
+        let rows_from_bottom = !self.gpu_culling;
+        self.bloom_pass = scene_color
+            .is_hdr()
+            .then(|| BloomPass::new(self.bloom_ids, scene_color.format(), rows_from_bottom));
+        self.declared = false;
     }
 
     /// Makes the scene passes sample a shadow map, which the builder binds with every view's
@@ -397,7 +493,12 @@ impl FrameGraph {
     /// Bytes that one frame may copy into its arena for the graph's own passes. The final pass can
     /// start to run in any frame, once the render scale can drop.
     pub(crate) fn upload_bound(&self) -> usize {
-        FinalPass::UPLOAD_BYTES
+        let bloom = if self.bloom_pass.is_some() {
+            BloomPass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        FinalPass::UPLOAD_BYTES + bloom
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -414,13 +515,38 @@ impl FrameGraph {
         self.enable_outputs();
     }
 
-    /// Switches on the pass that takes the scene color to the canvas, and off the other.
+    /// Switches on the pass that takes the scene color to the canvas, and off the others, and
+    /// bloom's passes while bloom draws.
     fn enable_outputs(&mut self) {
-        if let Some((resolve, final_pass)) = self.outputs {
+        let blooms = self.bloom_draws();
+        if let Some((resolve, final_pass, final_bloom)) = self.outputs {
             let final_runs = self.final_runs();
             self.graph.set_enabled(resolve, !final_runs);
-            self.graph.set_enabled(final_pass, final_runs);
+            self.graph.set_enabled(final_pass, final_runs && !blooms);
+            if let Some(final_bloom) = final_bloom {
+                self.graph.set_enabled(final_bloom, final_runs && blooms);
+            }
         }
+        for &pass in &self.bloom_passes {
+            self.graph.set_enabled(pass, blooms);
+        }
+    }
+
+    /// Turns bloom on with its settings, or off with `None`, for the next frames, with each blur
+    /// reading `divisor` times fewer taps than three.js's. The graph compiles again only when
+    /// bloom turns on or off. The 8-bit path draws no bloom.
+    pub(crate) fn set_bloom(&mut self, bloom: Option<Bloom>, divisor: u32) {
+        let was = self.bloom_draws();
+        self.bloom = bloom;
+        self.bloom_divisor = divisor.clamp(1, bloom::MAX_SAMPLE_DIVISOR);
+        if self.bloom_draws() != was {
+            self.enable_outputs();
+        }
+    }
+
+    /// True while bloom draws: the sketch turned it on, and the scene color holds HDR color.
+    pub(crate) fn bloom_draws(&self) -> bool {
+        self.bloom.is_some() && self.bloom_pass.is_some()
     }
 
     /// Declares the passes again when the number of views changed, and gives each view's opaque
@@ -470,6 +596,7 @@ impl FrameGraph {
         self.prepasses.clear();
         self.transparent.clear();
         self.shadow_passes.clear();
+        self.bloom_passes.clear();
         let color = Target::color(self.scene_color.format()).samples(self.samples);
         let depth = Target::depth(DEPTH_FORMAT).samples(self.samples);
         if self.shadow_map {
@@ -567,10 +694,33 @@ impl FrameGraph {
             .reads(SCENE_COLOR)
             .writes(CANVAS);
         let final_pass = self.add(final_pass, Role::Final);
-        self.outputs = Some((resolve, final_pass));
+        let final_bloom = self.bloom_pass.is_some().then(|| self.declare_bloom());
+        self.outputs = Some((resolve, final_pass, final_bloom));
         self.enable_outputs();
         self.views = views.len();
         self.declared = true;
+    }
+
+    /// Declares bloom's steps, each reading the target of the step before it, and the final pass
+    /// with bloom, which reads every level, and returns that final pass.
+    fn declare_bloom(&mut self) -> PassId {
+        let target = Target::color(self.scene_color.format());
+        for step in 0..STEPS {
+            let pass = Pass::new(BLOOM_PASSES[step], PassKind::Fullscreen)
+                .size(bloom::step_size(step))
+                .reads(bloom_source(step))
+                .creates(BLOOM_TARGETS[step], target);
+            let pass = self.add(pass, Role::Bloom(step as u8));
+            self.bloom_passes.push(pass);
+        }
+        let mut final_bloom = Pass::new("FinalBloom", PassKind::Fullscreen)
+            .size(Size::Canvas)
+            .reads(SCENE_COLOR)
+            .writes(CANVAS);
+        for level in 0..LEVELS {
+            final_bloom = final_bloom.reads(BLOOM_TARGETS[bloom_level(level)]);
+        }
+        self.add(final_bloom, Role::FinalBloom)
     }
 
     /// Declares each cascade's culling pass on WebGPU, and its shadow pass, which draws into the
@@ -651,7 +801,11 @@ impl FrameGraph {
     /// asks before it records the pipelines that its frame creates. Frames that resolve into the
     /// canvas ask too, so the pipeline is ready once the render scale can drop.
     pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) {
-        self.final_pass.request_pipeline(pipelines);
+        let blooms = self.bloom_draws();
+        self.final_pass.request_pipeline(pipelines, blooms);
+        if let (true, Some(bloom)) = (blooms, self.bloom_pass.as_mut()) {
+            bloom.request_pipeline(pipelines);
+        }
     }
 
     /// Records what the graph's own passes need before the frame's passes, from copies in the
@@ -678,12 +832,44 @@ impl FrameGraph {
             .map(|surface| self.texture_id(surface))
             .expect("the final pass samples the scene color");
         let render_size = Size::Full.viewport(self.canvas, self.scale);
+        let bloom = match (self.bloom, self.bloom_pass.as_mut()) {
+            (Some(settings), Some(pass)) => {
+                let (graph, first_texture) = (&self.graph, self.first_texture);
+                let sampled = |name: &str| {
+                    let surface = plan.sampled_texture_of(graph.find_resource(name)?)?;
+                    Some(match surface {
+                        Surface::Canvas => 0,
+                        Surface::Texture(index) => first_texture + u32::from(index),
+                    })
+                };
+                let sources: [u32; STEPS] = std::array::from_fn(|step| {
+                    sampled(bloom_source(step)).expect("each step of bloom reads a planned texture")
+                });
+                let levels = std::array::from_fn(|level| {
+                    sampled(BLOOM_TARGETS[bloom_level(level)])
+                        .expect("the final pass reads each of bloom's levels")
+                });
+                pass.prepare(
+                    list,
+                    arena,
+                    self.canvas,
+                    self.scale,
+                    settings,
+                    self.bloom_divisor,
+                    &sources,
+                    self.textures_made,
+                )?;
+                Some(BloomInputs::new(pass.ids(), levels))
+            }
+            _ => None,
+        };
         self.final_pass.prepare(
             list,
             arena,
             output,
             render_size,
             scene_color,
+            bloom,
             self.textures_made,
         )
     }
@@ -789,7 +975,13 @@ impl FrameGraph {
                     self.set_render_area(list, size)?;
                     for &pass in plan.passes(step) {
                         match self.roles[pass.index()] {
-                            Role::Final => self.final_pass.record(list)?,
+                            Role::Final => self.final_pass.record(list, false)?,
+                            Role::FinalBloom => self.final_pass.record(list, true)?,
+                            Role::Bloom(step) => self
+                                .bloom_pass
+                                .as_ref()
+                                .expect("bloom's passes run only on the HDR path")
+                                .record(list, usize::from(step))?,
                             role => record(list, role)?,
                         }
                     }
@@ -928,6 +1120,9 @@ impl FrameGraph {
         self.made_views = 0;
         self.canvas = (0, 0);
         self.final_pass.reset_gpu();
+        if let Some(bloom) = self.bloom_pass.as_mut() {
+            bloom.reset_gpu();
+        }
     }
 }
 
@@ -978,6 +1173,11 @@ mod tests {
         final_pass: FinalIds {
             settings: 9,
             group: 9,
+        },
+        bloom: BloomIds {
+            buffer: 10,
+            sampler: 10,
+            first_group: 10,
         },
     };
 
@@ -1072,7 +1272,10 @@ mod tests {
                 Some(Surface::Texture(_))
             ));
             assert_eq!(plan.steps().len(), 2);
-            assert_eq!(frames.upload_bound(), FinalPass::UPLOAD_BYTES);
+            assert_eq!(
+                frames.upload_bound(),
+                FinalPass::UPLOAD_BYTES + BloomPass::UPLOAD_BYTES
+            );
         }
     }
 
@@ -1100,7 +1303,12 @@ mod tests {
                 for step in plan.steps() {
                     assert!(plan.attachments(step).iter().all(|a| a.resolve.is_none()));
                 }
-                assert_eq!(frames.upload_bound(), FinalPass::UPLOAD_BYTES);
+                let bloom = if scene_color == format::CANVAS {
+                    0
+                } else {
+                    BloomPass::UPLOAD_BYTES
+                };
+                assert_eq!(frames.upload_bound(), FinalPass::UPLOAD_BYTES + bloom);
             }
         }
     }
@@ -1397,5 +1605,95 @@ mod tests {
             &steps(&frames)[1..],
             [vec!["Opaque", "Transparent"], vec!["Final"]]
         );
+    }
+
+    #[test]
+    fn bloom_runs_its_steps_between_the_scene_and_the_final_pass_only_while_it_is_on() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync_views(&[View::default()]);
+        let mut list = DrawList::with_capacity(4096);
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        let without = frames.graph().plan().unwrap().textures().len();
+        assert_eq!(steps(&frames).last().unwrap(), &["Final"]);
+
+        frames.set_bloom(Some(Bloom::default()), 1);
+        frames.request_pipelines(&mut PipelineCache::default());
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        let names = steps(&frames);
+        let mut expected: Vec<Vec<String>> = BLOOM_PASSES
+            .iter()
+            .map(|name| vec![name.to_string()])
+            .collect();
+        expected.push(vec!["FinalBloom".into()]);
+        assert_eq!(names[names.len() - expected.len()..], expected[..]);
+        // Each step draws at its size into a target of its own: the bright pass and level 0's blur
+        // down share one texture, as their steps do not overlap, and every other target has one.
+        let plan = frames.graph().plan().unwrap();
+        let textures = plan.textures();
+        assert_eq!(textures.len(), without + STEPS - 1);
+        let texture = |name: &str| plan.texture_of(frames.graph().find_resource(name).unwrap());
+        assert_eq!(texture("bloomBright"), texture("bloomY0"));
+        for step in 1..STEPS {
+            let surface = texture(BLOOM_TARGETS[step]).unwrap();
+            let Surface::Texture(index) = surface else {
+                panic!("bloom draws into textures")
+            };
+            assert_eq!(textures[usize::from(index)].size, bloom::step_size(step));
+            assert_ne!(
+                texture(BLOOM_TARGETS[step - 1]),
+                Some(surface),
+                "no step reads its target"
+            );
+        }
+
+        // A new render scale makes no GPU object: the frame only uploads new settings.
+        let mut arena = UploadArena::default();
+        let output = Output::default();
+        arena.reset(frames.upload_bound());
+        frames.upload(&mut list, &mut arena, output).unwrap();
+        list.clear();
+        frames.set_scaling(true);
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::from_thousandths(500))
+            .unwrap();
+        arena.reset(frames.upload_bound());
+        frames.upload(&mut list, &mut arena, output).unwrap();
+        let ops: Vec<Op> = null3d_gpu::drawlist::decode(list.words())
+            .map(|command| command.unwrap().op)
+            .collect();
+        assert!(ops.iter().all(|&op| op == Op::WriteBuffer), "{ops:?}");
+        list.clear();
+        frames
+            .record(&mut list, [0.0; 4], |_| false, |_, _| Ok(()))
+            .unwrap();
+        // Each step draws its corner: half of each side, rounded up.
+        let viewports = operands(&list, Op::SetViewport);
+        assert_eq!(viewports[1][2..4], [80, 45]);
+        assert_eq!(viewports.last().unwrap()[2..4], [5, 3]);
+
+        // Off again, the steps and their targets are gone.
+        frames.set_bloom(None, 1);
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
+    }
+
+    #[test]
+    fn the_8_bit_path_draws_no_bloom() {
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
+        frames.sync_views(&[View::default()]);
+        frames.set_bloom(Some(Bloom::default()), 1);
+        assert!(!frames.bloom_draws());
+        let mut list = DrawList::with_capacity(1024);
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        assert!(frames.graph().find_pass("BloomBright").is_none());
+        assert_eq!(steps(&frames), [vec!["Opaque", "Resolve"]]);
     }
 }

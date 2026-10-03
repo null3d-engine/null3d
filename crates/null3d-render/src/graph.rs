@@ -160,10 +160,10 @@ impl PassKind {
 pub enum Size {
     /// The render size: the canvas at the render scale.
     Full,
-    /// Half the render size each way, rounded up.
-    Half,
-    /// A quarter of the render size each way, rounded up.
-    Quarter,
+    /// The render size halved this many times each way, rounding up at each halving, from 1 up:
+    /// [`Size::HALF`] and [`Size::QUARTER`] are 1 and 2. A chain of effect passes, such as
+    /// bloom's, takes one more halving at each step.
+    Halved(u8),
     /// The whole canvas at any render scale, as the final pass draws it.
     Canvas,
     /// A fixed size in pixels, such as a shadow map's.
@@ -176,6 +176,11 @@ pub enum Size {
 }
 
 impl Size {
+    /// Half the render size each way, rounded up.
+    pub const HALF: Self = Self::Halved(1);
+    /// A quarter of the render size each way, rounded up.
+    pub const QUARTER: Self = Self::Halved(2);
+
     /// The size of a texture of this size for a canvas of `canvas` device pixels. Relative sizes
     /// are made for the whole canvas, the largest render size, so no render scale needs a new
     /// texture. Every size is at least one pixel each way.
@@ -183,8 +188,7 @@ impl Size {
         let canvas = (canvas.0.max(1), canvas.1.max(1));
         match self {
             Self::Full | Self::Canvas => canvas,
-            Self::Half => Self::divide(canvas, 2),
-            Self::Quarter => Self::divide(canvas, 4),
+            Self::Halved(times) => Self::halve(canvas, times),
             Self::Fixed { width, height } => (width.max(1), height.max(1)),
         }
     }
@@ -196,13 +200,15 @@ impl Size {
         let render = (scale.of(canvas.0), scale.of(canvas.1));
         match self {
             Self::Full => render,
-            Self::Half => Self::divide(render, 2),
-            Self::Quarter => Self::divide(render, 4),
+            Self::Halved(times) => Self::halve(render, times),
             Self::Canvas | Self::Fixed { .. } => self.extent(canvas),
         }
     }
 
-    fn divide((width, height): (u32, u32), by: u32) -> (u32, u32) {
+    /// A size halved `times` times, rounding up. Rounding up at each halving gives the same
+    /// size as one division by the power of two, rounded up.
+    fn halve((width, height): (u32, u32), times: u8) -> (u32, u32) {
+        let by = 1u32 << times.min(31);
         (width.div_ceil(by), height.div_ceil(by))
     }
 
@@ -210,8 +216,9 @@ impl Size {
     pub(crate) fn name(self) -> String {
         match self {
             Self::Full => "full size".into(),
-            Self::Half => "half size".into(),
-            Self::Quarter => "quarter size".into(),
+            Self::Halved(1) => "half size".into(),
+            Self::Halved(2) => "quarter size".into(),
+            Self::Halved(times) => format!("1/{} size", 1u64 << times.min(63)),
             Self::Canvas => "canvas size".into(),
             Self::Fixed { width, height } => format!("{width} x {height}"),
         }

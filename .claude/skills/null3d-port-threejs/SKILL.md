@@ -118,7 +118,7 @@ When parity images differ, check these first.
 - Shadows. three.js shadow cameras are hand-fitted; null3D cascades fit the view. Tune `mapSize`, `cascades` and bias rather than copying `shadow.camera`. The `shadowFilter` quality setting replaces `shadowMap.type` and `shadow.radius`.
 - Pixel ratio. Many three.js apps render at the full device pixel ratio (3 on many phones); null3D's presets cap it (`concepts/quality-presets`). For parity tests, fix the pixel ratio to 1 in both.
 - Material approximations. Lambert, Phong and Toon materials become standard materials or surface functions; small differences are expected (`references/materials.md`).
-- Post effects. Bloom and ambient occlusion are implemented differently; match the look by tuning, one effect at a time.
+- Post effects. Bloom runs `UnrealBloomPass`'s own steps, so copy its strength, radius and threshold. Ambient occlusion is implemented differently; match its look by tuning, one effect at a time.
 
 ## 5. When there is no equivalent
 

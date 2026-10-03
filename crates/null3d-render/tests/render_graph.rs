@@ -282,7 +282,7 @@ fn passes_run_after_what_they_read_in_any_order_of_declaration() {
     );
     graph.add_pass(
         Pass::new("Blur", PassKind::Fullscreen)
-            .size(Size::Half)
+            .size(Size::HALF)
             .reads("color")
             .creates("blurred", HDR),
     );
@@ -351,7 +351,7 @@ fn a_pass_that_can_join_the_open_render_pass_runs_next() {
     );
     graph.add_pass(
         Pass::new("Bloom", PassKind::Fullscreen)
-            .size(Size::Half)
+            .size(Size::HALF)
             .creates("glow", HDR),
     );
     graph.add_pass(
@@ -571,7 +571,7 @@ fn targets_that_cannot_share_a_render_pass_fail_with_code_1505() {
     graph.add_pass(Pass::new("Scene", PassKind::Scene).creates("color", HDR));
     graph.add_pass(
         Pass::new("Blur", PassKind::Fullscreen)
-            .size(Size::Half)
+            .size(Size::HALF)
             .writes("color"),
     );
     check(
@@ -652,19 +652,19 @@ fn blur_chain() -> RenderGraph {
     graph.add_pass(Pass::new("Scene", PassKind::Scene).creates("color", HDR));
     graph.add_pass(
         Pass::new("Down", PassKind::Fullscreen)
-            .size(Size::Half)
+            .size(Size::HALF)
             .reads("color")
             .creates("half a", HDR),
     );
     graph.add_pass(
         Pass::new("Across", PassKind::Fullscreen)
-            .size(Size::Half)
+            .size(Size::HALF)
             .reads("half a")
             .creates("half b", HDR),
     );
     graph.add_pass(
         Pass::new("Back", PassKind::Fullscreen)
-            .size(Size::Half)
+            .size(Size::HALF)
             .reads("half b")
             .creates("half c", HDR),
     );
@@ -682,7 +682,7 @@ fn half_size_targets_with_separate_lifetimes_share_one_texture() {
     let graph = blur_chain();
     let half = PlannedTexture {
         target: HDR,
-        size: Size::Half,
+        size: Size::HALF,
         usage: usage::RENDER_ATTACHMENT | usage::TEXTURE_BINDING,
     };
     assert_eq!(texture_of(&graph, "half a"), half);
@@ -706,19 +706,19 @@ fn targets_of_other_shapes_never_share() {
     graph.add_pass(Pass::new("Scene", PassKind::Scene).creates("color", HDR));
     graph.add_pass(
         Pass::new("Down", PassKind::Fullscreen)
-            .size(Size::Half)
+            .size(Size::HALF)
             .reads("color")
             .creates("half", HDR),
     );
     graph.add_pass(
         Pass::new("Quarter", PassKind::Fullscreen)
-            .size(Size::Quarter)
+            .size(Size::QUARTER)
             .reads("half")
             .creates("quarter", HDR),
     );
     graph.add_pass(
         Pass::new("Mask", PassKind::Fullscreen)
-            .size(Size::Half)
+            .size(Size::HALF)
             .reads("quarter")
             .creates("mask", Target::color(format::RGBA8_UNORM)),
     );
@@ -855,7 +855,7 @@ fn a_pass_that_samples_a_target_of_the_render_pass_or_draws_at_another_size_star
     );
     graph.add_pass(
         Pass::new("Small", PassKind::Scene)
-            .size(Size::Half)
+            .size(Size::HALF)
             .creates("small", HDR),
     );
     graph.add_pass(
@@ -1164,15 +1164,15 @@ fn sizes_follow_the_canvas_and_the_render_scale() {
     let canvas = (1001, 600);
     assert_eq!(Size::Full.extent(canvas), (1001, 600));
     assert_eq!(Size::Canvas.extent(canvas), (1001, 600));
-    assert_eq!(Size::Half.extent(canvas), (501, 300));
-    assert_eq!(Size::Quarter.extent(canvas), (251, 150));
+    assert_eq!(Size::HALF.extent(canvas), (501, 300));
+    assert_eq!(Size::QUARTER.extent(canvas), (251, 150));
     assert_eq!(SHADOW_MAP.extent(canvas), (2048, 2048));
     assert_eq!(Size::Full.extent((0, 0)), (1, 1));
 
     // A lower render scale draws into a corner of the same textures.
     let half = RenderScale::from_thousandths(500);
     assert_eq!(Size::Full.viewport(canvas, half), (501, 300));
-    assert_eq!(Size::Half.viewport(canvas, half), (251, 150));
+    assert_eq!(Size::HALF.viewport(canvas, half), (251, 150));
     assert_eq!(Size::Canvas.viewport(canvas, half), (1001, 600));
     assert_eq!(SHADOW_MAP.viewport(canvas, half), (2048, 2048));
     assert_eq!(Size::Full.viewport(canvas, RenderScale::FULL), canvas);
@@ -1181,7 +1181,7 @@ fn sizes_follow_the_canvas_and_the_render_scale() {
         canvas
     );
     assert_eq!(
-        Size::Quarter.viewport(canvas, RenderScale::from_thousandths(0)),
+        Size::QUARTER.viewport(canvas, RenderScale::from_thousandths(0)),
         (1, 1)
     );
     // Whole thousandths give exact sizes, rounded up.
@@ -1244,7 +1244,7 @@ fn the_error_table_shows_the_messages_the_graph_prints() {
     mismatch.add_pass(Pass::new("Opaque", PassKind::Scene).creates("sceneColor", HDR));
     mismatch.add_pass(
         Pass::new("Blur", PassKind::Fullscreen)
-            .size(Size::Half)
+            .size(Size::HALF)
             .writes("sceneColor"),
     );
 

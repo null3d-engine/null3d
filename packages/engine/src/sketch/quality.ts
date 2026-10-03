@@ -53,14 +53,14 @@ export type ApplyQuality = (update: QualityUpdate, changed: readonly QualitySett
 
 /**
  * What the frame-budget governor has lowered, in `quality.governor`. It lowers the render scale
- * first, which `quality.renderScale` reports, then the shadow settings here.
+ * first, which `quality.renderScale` reports, then the shadow settings and bloom's samples here.
  *
  * @category api/quality
  */
 export interface QualityGovernor {
 	/**
-	 * The steps past the render scale that the governor has taken: 0 while the shadow settings apply
-	 * as set. Each step lowers the frame's cost after the render scale has reached
+	 * The steps past the render scale that the governor has taken: 0 while the shadow settings and
+	 * bloom's samples apply as set. Each step lowers the frame's cost after the render scale has reached
 	 * `minRenderScale`, so a sketch can lighten its own work too, such as its particles.
 	 */
 	readonly steps: number;
@@ -71,6 +71,11 @@ export interface QualityGovernor {
 	readonly farCascadeInterval: number;
 	/** The shadow filter that shadows draw with now: `settings.shadowFilter`, or 3 after the last step. */
 	readonly shadowFilter: 3 | 5;
+	/**
+	 * The share of three.js's taps that bloom's blurs read now: `settings.bloomSamples`, or half as
+	 * many for each of the governor's steps after the shadow steps, at least a quarter.
+	 */
+	readonly bloomSamples: number;
 }
 
 /**
@@ -95,8 +100,8 @@ export interface Quality {
 	readonly renderScale: number;
 	/**
 	 * What the frame-budget governor has lowered below `settings`. When frames take too long, the
-	 * governor lowers the render scale, then the shadow settings, one step at a time. The
-	 * `onChange` handlers run after each step of the shadow settings, but not after a step of the
+	 * governor lowers the render scale, then the shadow settings, then bloom's samples, one step at
+	 * a time. The `onChange` handlers run after each of those steps, but not after a step of the
 	 * render scale. Hold mode has no governor, so it draws with the settings as set.
 	 */
 	readonly governor: QualityGovernor;
@@ -181,6 +186,9 @@ export class SketchQuality implements Quality {
 			},
 			get shadowFilter() {
 				return settings.shadowFilter;
+			},
+			get bloomSamples() {
+				return settings.bloomSamples;
 			},
 		};
 	}

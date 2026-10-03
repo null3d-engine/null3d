@@ -79,6 +79,7 @@ use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{DrawList, Op, format, permutation, sizes, texture_usage, view};
 
 use crate::background::BackgroundPass;
+use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
@@ -92,6 +93,7 @@ use crate::graph::RenderGraph;
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
+use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
 use crate::shadows::{self, MAX_CASCADES, ShadowFrame, ShadowUniform};
@@ -109,6 +111,7 @@ use transparent::Transparent;
 /// shadow cascades' views after the camera views.
 mod ids {
     use super::data::RING;
+    use crate::bloom::STEPS;
     use crate::view::{MAX_VIEW_IDS, ViewId};
 
     /// Each view's buffers: its ring of frame uniforms, then its draw records, from
@@ -129,8 +132,10 @@ mod ids {
     pub const FINAL_SETTINGS: u32 = SHADOWS + 1;
     /// The uniform block of the shadow atlas's tiles, which receivers read beside the atlas.
     pub const SHADOW_TILES: u32 = FINAL_SETTINGS + 1;
+    /// The uniform buffer of bloom's steps and of the final pass's bloom build.
+    pub const BLOOM: u32 = SHADOW_TILES + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = SHADOW_TILES + 1;
+    pub const PAGES: u32 = BLOOM + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -159,8 +164,10 @@ mod ids {
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow map.
     pub const SHADOW_SAMPLER: u32 = 1;
+    /// The linear sampler of bloom's steps and of the final pass's bloom build.
+    pub const BLOOM_SAMPLER: u32 = 2;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 2;
+    pub const SAMPLERS: u32 = 3;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -181,8 +188,10 @@ mod ids {
     pub const fn instances_group(view: ViewId) -> u32 {
         draws_group(view) + 1
     }
-    /// The bind groups of materials' maps, after the final pass's group.
-    pub const TEXTURE_GROUPS: u32 = FINAL_GROUP + 1;
+    /// The bind group of each step of bloom, after the final pass's group.
+    pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1;
+    /// The bind groups of materials' maps, after bloom's.
+    pub const TEXTURE_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -320,6 +329,11 @@ impl CpuCulledRenderer {
                         final_pass: FinalIds {
                             settings: ids::FINAL_SETTINGS,
                             group: ids::FINAL_GROUP,
+                        },
+                        bloom: BloomIds {
+                            buffer: ids::BLOOM,
+                            sampler: ids::BLOOM_SAMPLER,
+                            first_group: ids::BLOOM_GROUPS,
                         },
                     },
                 );
@@ -789,6 +803,8 @@ impl CpuCulledRenderer {
             &mut self.pipelines,
             self.graph.scene_targets(),
         );
+        self.graph
+            .set_bloom(self.settings.bloom(), self.settings.bloom_divisor());
         self.graph.request_pipelines(&mut self.pipelines);
         self.background.request_pipeline(
             &self.settings,
@@ -1157,5 +1173,10 @@ impl FrameBuilder for CpuCulledRenderer {
 
     fn list(&self, frame: u32) -> &DrawList {
         self.lists.list(frame)
+    }
+
+    fn set_canvas_output(&mut self, scene_color: SceneColor, antialias: Antialias) {
+        let canvas = self.settings.switch_canvas(scene_color, antialias);
+        self.graph.set_canvas(canvas);
     }
 }

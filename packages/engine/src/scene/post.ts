@@ -1,5 +1,5 @@
 // The post-processing settings that a sketch sets through `ctx.post`: the exposure and the tone
-// mapping, which the engine applies to the scene's color on its way to the canvas.
+// mapping, which the engine applies to the scene's color on its way to the canvas, and bloom.
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
@@ -25,8 +25,30 @@ const CODES: Readonly<Record<ToneMapping, number>> = {
 };
 
 /** The settings that `post.set` takes, and the text of an error that lists them. */
-const SETTINGS = ['toneMapping', 'exposure'] as const;
+const SETTINGS = ['toneMapping', 'exposure', 'bloom'] as const;
+const BLOOM_SETTINGS = ['strength', 'radius', 'threshold'] as const;
 const TONE_MAPPINGS = "'aces', 'agx', 'neutral' or 'none'";
+
+/**
+ * Bloom's settings, with the meanings of three.js's `UnrealBloomPass`. A setting that a call leaves
+ * out keeps its value.
+ *
+ * @category api/post
+ */
+export interface BloomSettings {
+	/** How bright the glow is: 0 or more, and 1 by default. */
+	strength?: number;
+	/**
+	 * How far the glow spreads, from 0 to 1: higher values move its light from the narrow levels
+	 * of its blur to the wide ones. It is 0.5 by default.
+	 */
+	radius?: number;
+	/**
+	 * The luminance from which a pixel glows, in linear color before the exposure: 0 or more, and 1
+	 * by default. At 1, only colors brighter than white glow, such as strong emissive light.
+	 */
+	threshold?: number;
+}
 
 /**
  * Settings for `post.set`. A setting that the call leaves out keeps its value.
@@ -44,6 +66,12 @@ export interface PostSettings {
 	 * 2 is one stop brighter, and 0.5 one stop darker. It is 0 or more, and 1 by default.
 	 */
 	exposure?: number;
+	/**
+	 * Light that spreads from the brightest parts of the scene, as three.js's `UnrealBloomPass`
+	 * spreads it. Settings turn bloom on, `{}` with the values it had, and `false` turns it off. It
+	 * is off by default.
+	 */
+	bloom?: BloomSettings | false;
 }
 
 /**
@@ -55,26 +83,70 @@ export interface PostSettings {
 export class Post {
 	private toneMapping = C.TONE_MAPPING_ACES;
 	private exposure = 1;
+	private bloom = false;
+	private strength = 1;
+	private radius = 0.5;
+	private threshold = 1;
+	private warnedNoBloom = false;
 
-	constructor(private readonly core: CoreMemory) {}
+	/**
+	 * `hdrEffects` is false on a device that has no HDR target, where effects that need HDR color
+	 * stay off.
+	 */
+	constructor(
+		private readonly core: CoreMemory,
+		private readonly hdrEffects = true,
+	) {}
 
 	/**
 	 * Changes the settings that `settings` gives, from the next frame on. It allocates nothing, so
-	 * a sketch can change the exposure every frame. It throws E1213 for a setting or a tone mapping
-	 * it does not know, or a negative exposure, and E1203 for an exposure that is not a number.
+	 * a sketch can change the exposure or bloom every frame. It throws E1213 for a setting or a
+	 * tone mapping it does not know, or a value out of its range, and E1203 for a value that is not
+	 * a number.
 	 */
 	set(settings: PostSettings): void {
 		if (DEV) checkSettings(settings);
-		const { toneMapping, exposure } = settings;
+		const { toneMapping, exposure, bloom } = settings;
 		if (toneMapping !== undefined && Object.hasOwn(CODES, toneMapping))
 			this.toneMapping = CODES[toneMapping];
 		if (exposure !== undefined) this.exposure = exposure;
+		const glue = this.core.glue;
+		this.core.check(glue.setOutput(this.toneMapping, this.exposure), 'post.set', undefined, true);
+		if (bloom === undefined) return;
+		this.bloom = bloom !== false;
+		if (bloom !== false) {
+			if (bloom.strength !== undefined) this.strength = bloom.strength;
+			if (bloom.radius !== undefined) this.radius = bloom.radius;
+			if (bloom.threshold !== undefined) this.threshold = bloom.threshold;
+		}
+		if (DEV && this.bloom && !this.hdrEffects && !this.warnedNoBloom) {
+			this.warnedNoBloom = true;
+			console.warn(
+				'null3D: bloom stays off on this device: it needs HDR color, and the device has no HDR target. See the post-processing concepts page.',
+			);
+		}
 		this.core.check(
-			this.core.glue.setOutput(this.toneMapping, this.exposure),
+			glue.setBloom(this.bloom, this.strength, this.radius, this.threshold),
 			'post.set',
 			undefined,
 			true,
 		);
+	}
+
+	/** @internal True while the sketch has bloom on. */
+	get bloomOn(): boolean {
+		return this.bloom;
+	}
+}
+
+/** Throws E1203 for a value that is not a finite number, and E1213 for one out of its range. */
+function checkNumber(name: string, value: number | undefined, max = Number.POSITIVE_INFINITY) {
+	if (value === undefined) return;
+	if (!Number.isFinite(value))
+		throw new EngineError('E1203', `post.set() got ${value} for ${name}.`);
+	if (value < 0 || value > max) {
+		const range = max === Number.POSITIVE_INFINITY ? 'below 0' : `outside 0 to ${max}`;
+		throw new EngineError('E1213', `post.set() got ${value} for ${name}, ${range}.`);
 	}
 }
 
@@ -84,17 +156,28 @@ function checkSettings(settings: PostSettings): void {
 		if (!(SETTINGS as readonly string[]).includes(key))
 			throw new EngineError(
 				'E1213',
-				`post.set() got the setting ${key}, and this version has only toneMapping and exposure.`,
+				`post.set() got the setting ${key}, and this version has only toneMapping, exposure and bloom.`,
 			);
-	const { toneMapping, exposure } = settings;
+	const { toneMapping, exposure, bloom } = settings;
 	if (toneMapping !== undefined && !Object.hasOwn(CODES, toneMapping))
 		throw new EngineError(
 			'E1213',
 			`post.set() got the tone mapping ${JSON.stringify(toneMapping)}, which is not ${TONE_MAPPINGS}.`,
 		);
-	if (exposure === undefined) return;
-	if (!Number.isFinite(exposure))
-		throw new EngineError('E1203', `post.set() got ${exposure} for exposure.`);
-	if (exposure < 0)
-		throw new EngineError('E1213', `post.set() got the exposure ${exposure}, below 0.`);
+	checkNumber('exposure', exposure);
+	if (bloom === undefined || bloom === false) return;
+	if (typeof bloom !== 'object' || bloom === null)
+		throw new EngineError(
+			'E1213',
+			`post.set() got ${String(bloom)} for bloom, which takes bloom settings or false.`,
+		);
+	for (const key in bloom)
+		if (!(BLOOM_SETTINGS as readonly string[]).includes(key))
+			throw new EngineError(
+				'E1213',
+				`post.set() got the bloom setting ${key}, and bloom has only strength, radius and threshold.`,
+			);
+	checkNumber('bloom.strength', bloom.strength);
+	checkNumber('bloom.radius', bloom.radius, 1);
+	checkNumber('bloom.threshold', bloom.threshold);
 }

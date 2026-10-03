@@ -14,6 +14,7 @@
 // bun run check fails until the test has both references.
 import { BENCH_SCENES, type FeatureScene } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
+import { BLOOM_IMAGE } from '../../bench/scenes/bloom.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
 import { LIGHTS_IMAGE } from '../../bench/scenes/lights.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
@@ -93,6 +94,45 @@ function toneMappingTests(): ImageTest[] {
 			deviceTolerance: EIGHT_BIT_TOLERANCE,
 		},
 	]);
+}
+
+/** The sketch of the bloom tests: glowing shapes on a dark ground (bench/scenes/bloom.ts). */
+const BLOOM_SKETCH = 'tests/pages/sketches/bloom-sketch.ts';
+
+/** The bloom tests' image size: the parity images' size, as the parity test compares them. */
+const BLOOM_SIZE = [BLOOM_IMAGE.width, BLOOM_IMAGE.height] as const;
+
+/**
+ * Bloom at two strengths, and the scene without it, on every tier. Compatibility mode starts on
+ * the 8-bit path for MSAA, and bloom moves it to HDR color with FXAA, at the start or during play.
+ * Both must draw the same image. A device with no HDR target draws no bloom: the page's switch
+ * that turns HDR off stands in for one, and must draw the scene without bloom. Bloom at half the
+ * render scale draws its levels into the corners of the same targets. The parity test compares
+ * the soft and strong images with three.js's UnrealBloomPass.
+ */
+function bloomTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${BLOOM_SKETCH}${query}`,
+		hold: 1,
+		size: BLOOM_SIZE,
+	});
+	return [
+		test('bloom-off', ''),
+		test('bloom-soft', '?bloom=soft'),
+		test('bloom-strong', '?bloom=strong'),
+		{ ...test('bloom-later', '?bloom=strong&later'), reference: 'bloom-strong' },
+		test('bloom-scale-50', '?scale=0.5&bloom=strong'),
+		{
+			...test('bloom-8-bit', '?bloom=strong'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'bloom-off',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
 }
 
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
@@ -337,6 +377,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	...toneMappingTests(),
 	...antialiasTests(),
+	...bloomTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
 	// alpha: the output spec checks the alpha of the captured pixels.
 	{

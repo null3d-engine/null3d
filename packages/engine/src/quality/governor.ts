@@ -1,12 +1,13 @@
 // The frame-budget governor. When frames take too long, it lowers the live settings one step at a
 // time, in a fixed order: the render scale first, then how often far shadow cascades draw, then the
-// shadow filter. When the frames have time to spare again, it raises them in the reverse order. It
-// never changes a setting that is fixed while a preset runs.
+// shadow filter, then bloom's samples. When the frames have time to spare again, it raises them in
+// the reverse order. It never changes a setting that is fixed while a preset runs.
 //
 // The render scale is a part of the canvas's width and height, in whole thousandths, which the core
 // turns into an exact size in pixels. Scene passes draw into that corner of targets the size of the
 // canvas, and the final pass scales it up to the canvas, so a new scale makes no GPU object. The
-// shadow steps are numbers in a uniform and a schedule, so they make none either.
+// shadow steps are numbers in a uniform and a schedule, and bloom's samples numbers in a uniform,
+// so they make none either.
 //
 // The governor judges the frames in windows of a quarter second. It takes a step down after about a
 // second over the frame budget, and a step up only after several seconds in which the frames kept
@@ -15,7 +16,8 @@
 // budget doubles the wait before the next step up, so the settings settle below the point where the
 // frames fall behind instead of swinging across it. A shadow step happens only where the scene has a light
 // that casts shadows, and only where the step changes what the frame draws: the far cascades need a
-// directional light with two cascades or more, and the filter any light that casts shadows.
+// directional light with two cascades or more, and the filter any light that casts shadows. A
+// bloom step happens only while the sketch has bloom on: each halves the taps of bloom's blurs.
 //
 // The frame loop calls it once per frame, and it allocates nothing. The governor judges only a few
 // times a second, so the browser may never optimize it, and unoptimized code makes a number object
@@ -47,6 +49,16 @@ export function thousandths(scale: number): number {
 export const LONGEST_FAR_INTERVAL = QUALITY_SETTINGS.farCascadeInterval.values.max;
 /** The lightest shadow filter, in texels on each side. */
 export const LIGHTEST_FILTER = QUALITY_SETTINGS.shadowFilter.values[0];
+/** The fewest of three.js's taps that bloom's blurs read: one in this many. */
+export const LONGEST_BLOOM_DIVISOR = 1 / QUALITY_SETTINGS.bloomSamples.values[0];
+
+/**
+ * The divisor of bloom's taps for a share of them from the `bloomSamples` setting: 1 for all of
+ * them, 2 for half, 4 for a quarter.
+ */
+export function bloomDivisor(samples: number): number {
+	return Math.min(LONGEST_BLOOM_DIVISOR, Math.max(1, Math.round(1 / samples)));
+}
 
 /**
  * The governor's steps of the far cascades' interval from `interval` on: each step doubles it, up to
@@ -135,8 +147,10 @@ export class Governor {
 	farInterval = 1;
 	/** The shadow filter that frames draw with: the setting's, or the lightest after a step. */
 	filter: number = LIGHTEST_FILTER;
-	/** Counts each change of `farInterval` or `filter`, so the frame loop sees when to apply them. */
-	shadowChanges = 0;
+	/** How many times fewer taps than three.js's bloom's blurs read: the setting's, or more after a step. */
+	bloomDivisor = 1;
+	/** Counts each change of `farInterval`, `filter` or `bloomDivisor`, so the frame loop applies them. */
+	stepChanges = 0;
 	/** False while the governor is off: the scale stays at the highest and the settings as set. */
 	on = true;
 	/** The figures of the window to judge, by the `WINDOW_END` to `BUDGET_US` indices. */
@@ -149,6 +163,9 @@ export class Governor {
 	private cascades = 0;
 	/** True when point or spot lights cast shadows, which the filter's step lightens too. */
 	private tiles = false;
+	/** The divisor of bloom's taps that the bloom steps start from, and whether bloom is on. */
+	private bloomSetting = 1;
+	private bloom = false;
 
 	constructor() {
 		this.restart(0);
@@ -185,6 +202,17 @@ export class Governor {
 		this.applySteps();
 	}
 
+	/**
+	 * Sets the divisor of bloom's taps that the bloom steps start from, and whether the sketch has
+	 * bloom on, which the steps need.
+	 */
+	setBloom(on: boolean, divisor: number): void {
+		if (on === this.bloom && divisor === this.bloomSetting) return;
+		this.bloom = on;
+		this.bloomSetting = divisor;
+		this.applySteps();
+	}
+
 	/** Turns the governor on or off. Off, the scale goes to the highest and the settings apply as set. */
 	setOn(on: boolean): void {
 		this.on = on;
@@ -194,9 +222,9 @@ export class Governor {
 		this.applySteps();
 	}
 
-	/** The steps past the render scale that the scene's shadows and the settings allow. */
+	/** The steps past the render scale that the scene's shadows, bloom and the settings allow. */
 	get maxSteps(): number {
-		return this.intervalSteps() + this.filterSteps();
+		return this.intervalSteps() + this.filterSteps() + this.bloomSteps();
 	}
 
 	/**
@@ -276,7 +304,7 @@ export class Governor {
 		this.settle(moved, now);
 	}
 
-	/** One step up: the shadow steps back first, then the render scale. */
+	/** One step up: the bloom and shadow steps back first, then the render scale. */
 	private raise(now: number): void {
 		let moved = true;
 		if (this.steps > 0) this.moveSteps(-1);
@@ -309,21 +337,37 @@ export class Governor {
 		return (this.cascades > 0 || this.tiles) && this.filterSetting > LIGHTEST_FILTER ? 1 : 0;
 	}
 
+	/** Bloom's steps while it is on: each doubles the divisor of its taps, up to the longest. */
+	private bloomSteps(): number {
+		let steps = 0;
+		if (this.bloom)
+			for (let divisor = this.bloomSetting; divisor < LONGEST_BLOOM_DIVISOR; divisor *= 2) steps++;
+		return steps;
+	}
+
 	/**
-	 * Brings the steps within what the settings and the scene allow, and works out the shadow
-	 * settings that frames draw with: the far cascades' interval doubles with each of its steps, and
-	 * the filter takes the lightest after them.
+	 * Brings the steps within what the settings and the scene allow, and works out the settings
+	 * that frames draw with: the far cascades' interval doubles with each of its steps, the filter
+	 * takes the lightest after them, and then bloom's divisor doubles with each of its steps.
 	 */
 	private applySteps(): void {
 		const intervalSteps = this.intervalSteps();
-		this.steps = Math.min(this.steps, intervalSteps + this.filterSteps());
+		const shadowSteps = intervalSteps + this.filterSteps();
+		this.steps = Math.min(this.steps, shadowSteps + this.bloomSteps());
 		const doublings = Math.min(this.steps, intervalSteps);
 		const farInterval = Math.min(LONGEST_FAR_INTERVAL, this.intervalSetting * 2 ** doublings);
 		const filter = this.steps > intervalSteps ? LIGHTEST_FILTER : this.filterSetting;
-		if (farInterval === this.farInterval && filter === this.filter) return;
+		const bloomDivisor = this.bloomSetting * 2 ** Math.max(0, this.steps - shadowSteps);
+		if (
+			farInterval === this.farInterval &&
+			filter === this.filter &&
+			bloomDivisor === this.bloomDivisor
+		)
+			return;
 		this.farInterval = farInterval;
 		this.filter = filter;
-		this.shadowChanges++;
+		this.bloomDivisor = bloomDivisor;
+		this.stepChanges++;
 	}
 }
 

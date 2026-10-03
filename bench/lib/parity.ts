@@ -239,6 +239,16 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		sketchSwitches: NO_TONE,
 		limit: SHADOW_MAX_DIFFERENT_PERCENT,
 	},
+	// Bloom at two settings against three.js's UnrealBloomPass. The composer's targets have no MSAA,
+	// so null3D's page draws without anti-aliasing too.
+	...(['soft', 'strong'] as const).map(
+		(bloom): FeatureScene => ({
+			test: `bloom-${bloom}`,
+			twin: `${TWINS}/bloom.html?bloom=${bloom}`,
+			switches: 'antialias=none',
+			webglOnly: true,
+		}),
+	),
 ];
 
 /** The feature scene of an image test, or undefined when no twin draws that test's scene. */

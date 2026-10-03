@@ -179,6 +179,8 @@ export type Check =
 	| { kind: 'governor'; tier: Tier; stage: GovernorStage }
 	/** The skinning page, which draws on WebGL2 alone, with its crowd and its cascades. */
 	| { kind: 'skinning'; tier: 'webgl2'; characters: number; cascades: number }
+	/** The bloom cost page: bloom off and on in turns, at one render scale. */
+	| { kind: 'bloom'; tier: Tier; scale: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
 	| { kind: 'startup'; mode: EngineMode; load: LoadKind; first?: true }
 	/** The tab memory page, which grows one kind of memory until something gives. */
@@ -758,6 +760,28 @@ export function skinningPlan(): PlanItem<Check>[] {
 	);
 }
 
+/** How long the bloom cost page may take: the warm-up and six measurements, plus the start. */
+const BLOOM_TIMEOUT_SECONDS = 60;
+/** The render scales at which the bloom plan measures bloom. */
+export const BLOOM_SCALES = [1, 0.5] as const;
+
+/**
+ * What bloom costs on each GPU path at each render scale: the bloom scene fills the window, and the
+ * page times its frames with bloom off and on in turns. D-21 records the results.
+ */
+export function bloomPlan(): PlanItem<Check>[] {
+	return TIERS.flatMap((tier) =>
+		BLOOM_SCALES.map((scale) =>
+			pageItem(
+				`bloom-${tier}-${scale * 100}`,
+				'bloom-cost',
+				{ kind: 'bloom', tier, scale },
+				{ switches: [`gpu=${tier}`, `scale=${scale}`], timeoutSeconds: BLOOM_TIMEOUT_SECONDS },
+			),
+		),
+	);
+}
+
 /** How long a stage of the governor's stress test may take: its waits, plus the start. */
 const GOVERNOR_TIMEOUT_SECONDS = 150;
 
@@ -1054,6 +1078,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	startup: startupPlan,
 	overload: overloadPlan,
 	skinning: skinningPlan,
+	bloom: bloomPlan,
 	'tab-memory': tabMemoryPlan,
 	soak: soakPlan,
 	'warm-up-time': warmUpTimePlan,
@@ -1514,6 +1539,13 @@ export function judge(
 		}
 		case 'skinning':
 			return skinningProblems(result as ItemResult & SkinningResult);
+		case 'bloom': {
+			const bloom = result as ItemResult & { failures?: string[]; on?: { intervalMs?: number } };
+			return [
+				...(bloom.failures ?? []).map((code) => `the engine failed with ${code}`),
+				...(bloom.on?.intervalMs ? [] : ['the page measured no frame with bloom on']),
+			];
+		}
 		case 'tab-memory':
 			return growthProblems(result, context?.progress);
 		case 'soak':
