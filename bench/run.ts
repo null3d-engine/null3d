@@ -40,14 +40,17 @@
 //                     preset, within each GPU path's ceiling, with the quality governor off,
 //                     unless --switches names them. The command fails when b is slower than
 //                     the rules in bench/lib/compare.ts allow and no Bench-Expected trailer in
-//                     the commits from a to b names it. The run also writes its record,
+//                     the commits from a to b names it. When those commits change the benchmark
+//                     pages or the comparison's switches, the measurement changed: the command
+//                     reports every page and fails none. The run also writes its record,
 //                     runs.json, from which --merge can judge it again
 //   --shard <i>/<n>   with --compare, the i-th of n shares of the pages: every n-th page of the
 //                     scenes and pages above, from the i-th. CI runs each share on a machine of
 //                     its own. The command fails when b is slower on a page of the share
 //   --merge <folder>  judges the records of every share under the folder as one comparison, with
-//                     no browser, and fails as --compare does. Each page of the plan must be in
-//                     exactly one share
+//                     no browser. Each page of the plan must be in exactly one share. It fails
+//                     only when the records do not make a whole comparison: summary.json holds
+//                     the verdict, which CI's next step reads
 //   --dev             the dev server's pages, where the engine runs its development checks,
 //                     instead of the production build; with --compare, each checkout's dev server
 //                     serves its own pages
@@ -74,7 +77,9 @@ import {
 	type ComparisonRecord,
 	comparisonSwitches,
 	judgeRecord,
+	measurementChanges,
 	mergeRecords,
+	PAGE_SOURCES,
 	roundOrder,
 	shardPages,
 } from './lib/compare';
@@ -432,13 +437,14 @@ function git(dir: string, ...args: string[]): string {
 }
 
 /**
- * Each checkout's commit as its short hash and subject, and the messages of the commits that the
- * new build adds to the baseline, where expected-change trailers are. A checkout outside git goes
- * by its folder, with no messages.
+ * Each checkout's commit as its short hash and subject, the messages of the commits that the new
+ * build adds to the baseline, where expected-change trailers are, and the page sources that those
+ * commits change. A checkout outside git goes by its folder, with no messages and no page changes.
  */
 function commitsOf(roots: Record<Build, string>): {
 	labels: Record<Build, string>;
 	messages: string[];
+	pageFiles: string[];
 } {
 	const shas: Partial<Record<Build, string>> = {};
 	const labels = { ...roots };
@@ -448,12 +454,33 @@ function commitsOf(roots: Record<Build, string>): {
 			shas[build] = sha;
 			labels[build] = `${sha.slice(0, 7)} "${git(roots[build], 'log', '-1', '--format=%s', sha)}"`;
 		} catch {}
-	if (!shas.baseline || !shas.new) return { labels, messages: [] };
+	if (!shas.baseline || !shas.new) return { labels, messages: [], pageFiles: [] };
+	const range = `${shas.baseline}..${shas.new}`;
 	try {
-		const log = git(roots.new, 'log', '--format=%B%x00', `${shas.baseline}..${shas.new}`);
-		return { labels, messages: log.split('\0').filter((message) => message.trim() !== '') };
+		const log = git(roots.new, 'log', '--format=%B%x00', range);
+		const changed = git(roots.new, 'diff', '--name-only', range, '--', ...PAGE_SOURCES);
+		return {
+			labels,
+			messages: log.split('\0').filter((message) => message.trim() !== ''),
+			pageFiles: changed.split('\n').filter(Boolean),
+		};
 	} catch {
-		return { labels, messages: [] };
+		return { labels, messages: [], pageFiles: [] };
+	}
+}
+
+/**
+ * The comparison switches of a checkout's commit, or none when its comparison had none. They come
+ * from the checkout's own comparison code.
+ */
+async function switchesOf(root: string): Promise<readonly string[]> {
+	try {
+		const code = (await import(join(root, 'bench/lib/compare.ts'))) as {
+			COMPARISON_SWITCHES?: readonly string[];
+		};
+		return code.COMPARISON_SWITCHES ?? [];
+	} catch {
+		return [];
 	}
 }
 
@@ -539,7 +566,7 @@ async function runComparison(
 	} finally {
 		for (const server of servers) server.stop();
 	}
-	const { labels, messages } = commitsOf(roots);
+	const { labels, messages, pageFiles } = commitsOf(roots);
 	const { warmup, measure } = runSeconds(options.seconds);
 	return {
 		shard: options.shard,
@@ -547,6 +574,7 @@ async function runComparison(
 		pages: share,
 		commits: labels,
 		messages,
+		measurementChanges: measurementChanges(pageFiles, await switchesOf(roots.baseline)),
 		browser: `${machineText(browser, options.browser)}, on each commit's ${pagesText(options.dev)}`,
 		runs: options.runs,
 		warmupSeconds: warmup,
@@ -557,16 +585,16 @@ async function runComparison(
 
 /**
  * Judges a comparison's record, and writes the record and its summary to `dir`. Returns the
- * report, and sets the exit code when the new build fails.
+ * report, and sets the exit code when the new build fails and `failSlower` is true.
  */
-function judgeComparison(record: ComparisonRecord, dir: string): string {
+function judgeComparison(record: ComparisonRecord, dir: string, failSlower: boolean): string {
 	const { report, verdict, summary } = judgeRecord(record, {
 		scenes: BENCH_SCENES,
 		kinds: BENCH_PAGE_KINDS,
 	});
 	writeFileSync(join(dir, RECORD_FILE), JSON.stringify(record, null, '\t'));
 	writeFileSync(join(dir, 'summary.json'), JSON.stringify(summary, null, '\t'));
-	if (!verdict.pass) process.exitCode = 1;
+	if (failSlower && !verdict.pass) process.exitCode = 1;
 	return report.join('\n');
 }
 
@@ -583,7 +611,11 @@ async function runInBrowser(options: BenchOptions, dir: string): Promise<string>
 	const browser = await launchBrowser(options.browser);
 	try {
 		if (options.compare)
-			return judgeComparison(await runComparison(browser, options, options.compare, dir), dir);
+			return judgeComparison(
+				await runComparison(browser, options, options.compare, dir),
+				dir,
+				true,
+			);
 		const server = await serveBenchPages({ dev: options.dev });
 		try {
 			const report = options.sweep
@@ -611,7 +643,7 @@ async function main(): Promise<void> {
 	const dir = join(REPO_ROOT, 'target/bench', runName(kind));
 	mkdirSync(dir, { recursive: true });
 	const report = options.merge
-		? judgeComparison(mergeRecords(readRecords(options.merge)), dir)
+		? judgeComparison(mergeRecords(readRecords(options.merge)), dir, false)
 		: await runInBrowser(options, dir);
 	writeFileSync(join(dir, 'summary.md'), `${report}\n`);
 	console.log(`\n${report}\n\nresults: ${relative(REPO_ROOT, dir)}`);
