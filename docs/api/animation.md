@@ -127,7 +127,7 @@ A skinned mesh's vertices follow the joints of an animated object. Each vertex n
 
 On WebGPU, a compute pass skins each skinned mesh once per frame, before the shadow passes and the scene passes. Those passes then draw the skinned vertices as a plain mesh, so every material skins, custom materials included. A skinned mesh that no view draws in a frame, neither the camera nor a shadow cascade, is not skinned in that frame.
 
-A skinned mesh culls with a sphere that its pose moves. The engine keeps a sphere for each joint around the vertices it moves. Each frame it moves those spheres with the pose and takes the sphere around them all. So a limb that swings out never leaves the mesh's bounds, and the test costs one matrix per joint, not one per vertex. Skinned meshes cast and receive shadows that follow their poses.
+A skinned mesh culls with a sphere that its pose moves. The engine keeps a sphere for each joint around the vertices it moves. Each frame it moves those spheres with the pose and takes the sphere around them all. So a limb that swings out never leaves the mesh's bounds. The work is one matrix product per joint, however many vertices the mesh has. Skinned meshes cast and receive shadows that follow their poses.
 
 ## How it compares with three.js
 
