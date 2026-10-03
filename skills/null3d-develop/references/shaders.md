@@ -154,7 +154,8 @@ const dissolve = materials.shader({
 // later: dissolve.set({ progress: 0.6 });
 ```
 
-- `set()` changes only the uniforms you pass, cheaply at any time, and the others keep their values. It takes standard values in the same call. A typed `set()` generated from the struct comes in 0.2.
+- `set()` changes only the uniforms you pass, cheaply at any time, and the others keep their values. It takes standard values in the same call.
+- (0.2) TypeScript types the `uniforms` option and `set()` from the struct. A misspelled name or a value of the wrong kind fails the type check, so run it after you edit the WGSL. For tagged WGSL, keep the literal in a `const` or write it in the call: a variable typed `string` hides the struct, and then any name passes. A `.wgsl` file gets its types from the `.wgsl.d.ts` declaration that the Vite plugin writes beside it, so commit that file. Type a list of values with `UniformValues<typeof wgsl>`, or `ShaderValues<typeof wgsl>` for `set()`, because a plain array literal widens `[0, 1]` to `number[]`. (`guides/custom-shaders`, Typed uniforms)
 - Field types: `f32`, `i32`, `u32` (numbers; whole numbers for the integers), `vec2f`, `vec3f`, `vec4f` (arrays). A `vec3f` also takes a color string or hex number, converted from sRGB to linear. Arrays are used as given.
 - The fields fit in 32 numbers; each `vec3f` and `vec4f` starts a group of four. The build rejects other types and fields past the limit.
 - No field may be named as a standard value (`color`, `opacity`, `metalness`, `roughness`, `emissive`, `emissiveIntensity`). A wrong name or value in `uniforms` or `set()` throws E1216.

@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes a surface function, a vertex offset and their uniforms, or a full shader, without texture maps. Coding agents must not use the parts that are not built.
+> Ships in null3D 0.1, with typed uniforms in 0.2. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes a surface function, a vertex offset and their uniforms, or a full shader, without texture maps. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -215,6 +215,8 @@ const paint = materials.shader({ wgsl: tinted, uniforms: { tint: '#ff6a00', stre
 paint.set({ strength: 0.8, roughness: 0.3 });
 ```
 
+TypeScript reads the uniforms' names and types from the WGSL, so `uniforms` and `set` take only the names that `struct Uniforms` declares, each with a value of its kind. `paint.set({ strenght: 0.8 })` fails the type check. [Typed uniforms](../guides/custom-shaders.md#typed-uniforms) explains how TypeScript sees the WGSL of a tagged literal and of a `.wgsl` file.
+
 With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls below `alphaCutoff` draw nothing. Materials made from the same WGSL share one shader, and each has its own uniforms. A mesh needs texture coordinates to draw with a custom material. WGSL as plain text, which the plugin did not compile, throws E1215. So does a whole shader that is not a [full shader](../guides/custom-shaders.md#full-shaders) of a material. A uniform that the WGSL does not declare, or a value of the wrong kind, throws E1216. The WGSL can also move the mesh's vertices with a vertex offset. [Surface functions](../shaders/surface-functions.md) describes the WGSL.
 
 ## Ranges
@@ -331,24 +333,26 @@ Material factories. The standard material follows glTF's metallic-roughness mode
 | --- | --- |
 | `standard(options: StandardOptions = {}): Material<StandardValues>` | A lit material with glTF's metallic-roughness model, like three.js's `MeshStandardMaterial`. |
 | `unlit(options: UnlitOptions = {}): Material<UnlitValues>` | A material that ignores lights and shows its color unlit, like three.js's `MeshBasicMaterial`. The exposure and the tone mapping still apply to it, as three.js applies them to that material. |
-| `shader(options: ShaderOptions): Material<ShaderValues>` | A custom material: the standard material with a surface function in WGSL, which changes how each pixel of the surface looks before the engine lights it, or a full shader of your own. It takes every option of `materials.standard` but the texture maps, and the first values of the uniforms that its WGSL declares. `set` changes the standard values and the uniforms. Meshes need texture coordinates to draw with a surface function, and the attributes that a full shader reads. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole shader whose `@vertex` entry point takes no `InstanceIn`. Throws E1216 for a uniform that the WGSL does not declare, for a value of the wrong kind, and for a uniform named as a standard value, such as `color`. |
+| `shader<const Wgsl extends string \| CompiledWgsl>(options: ShaderOptions<Wgsl>): Material<ShaderValues<Wgsl>>` | A custom material: the standard material with a surface function in WGSL, which changes how each pixel of the surface looks before the engine lights it, or a full shader of your own. It takes every option of `materials.standard` but the texture maps, and the first values of the uniforms that its WGSL declares. `set` changes the standard values and the uniforms. Meshes need texture coordinates to draw with a surface function, and the attributes that a full shader reads. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole shader whose `@vertex` entry point takes no `InstanceIn`. Throws E1216 for a uniform that the WGSL does not declare, for a value of the wrong kind, and for a uniform named as a standard value, such as `color`. When TypeScript can see the WGSL's `struct Uniforms`, a wrong name or a value of the wrong kind also fails the type check. |
 
 ### `ShaderOptions`
 
 Interface `ShaderOptions`, which extends `StandardBaseOptions`.
 
-Options of `materials.shader`: the material's WGSL, the first values of its uniforms, and every option of `materials.standard` but its texture maps, which `defaultSurface` applies. Custom materials take no texture maps in this version, so the values of maps have no effect on them.
+Options of `materials.shader`: the material's WGSL, the first values of its uniforms, and every option of `materials.standard` but its texture maps, which `defaultSurface` applies. Custom materials take no texture maps in this version, so the values of maps have no effect on them. `Wgsl` is the type of the material's WGSL, which gives the uniforms' names and types.
 
 | Member | Description |
 | --- | --- |
-| `wgsl: string \| CompiledWgsl` | The material's WGSL, compiled by the null3D Vite plugin. It declares `fn surface(input: SurfaceInput) -> Surface`, which the engine calls for each pixel, and which can start from `defaultSurface(input)`. The engine lights the surface that it returns. It can declare `struct Uniforms`, whose fields the surface function reads from `material`, and `fn vertexOffset`, which moves the mesh's vertices. A full shader has a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one, instead. Materials made from the same WGSL share their shader. |
-| `uniforms?: Readonly<Record<string, UniformValue \| undefined>>` | The first value of each uniform, by name. A uniform without one starts at 0. |
+| `wgsl: Wgsl` | The material's WGSL, compiled by the null3D Vite plugin. It declares `fn surface(input: SurfaceInput) -> Surface`, which the engine calls for each pixel, and which can start from `defaultSurface(input)`. The engine lights the surface that it returns. It can declare `struct Uniforms`, whose fields the surface function reads from `material`, and `fn vertexOffset`, which moves the mesh's vertices. A full shader has a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one, instead. Materials made from the same WGSL share their shader. |
+| `uniforms?: NoInfer<[keyof UniformValues<Wgsl>] extends [never] ? { readonly [name: string]: never; } : UniformValues<Wgsl>>` | The first value of each uniform, by name. A uniform without one starts at 0. When TypeScript can see the WGSL's uniforms, a name that the WGSL does not declare fails the type check, and WGSL without uniforms takes none. |
 
 ### `ShaderValues`
 
-Interface `ShaderValues`, which extends `Omit`.
+```ts
+type ShaderValues<Wgsl = string | CompiledWgsl> = [Wgsl] extends [unknown] ? Omit<StandardValues, 'uvTransform'> & UniformValues<Wgsl> : never;
+```
 
-The values of a custom material, which `set` changes at any time: the standard values but the texture coordinate transform of maps, and the uniforms that its WGSL's `struct Uniforms` declares, by name.
+The values of a custom material, which `set` changes at any time: the standard values but the texture coordinate transform of maps, and the uniforms that its WGSL's `struct Uniforms` declares, by name. `Wgsl` is the type of the material's WGSL, which gives the uniforms' names and types, as `WgslUniforms` says.
 
 ### `StandardBaseOptions`
 
@@ -398,13 +402,44 @@ The values of a standard material, which `set` changes at any time.
 | `lightMapIntensity?: number` | The factor of the light map's light: 0 or more. The default is 1. |
 | `uvTransform?: UvTransform` | Where the maps sit on the texture coordinates. The default leaves them as they are. |
 
+### `UniformType`
+
+```ts
+type UniformType = 'f32' | 'i32' | 'u32' | 'vec2f' | 'vec3f' | 'vec4f';
+```
+
+A type that a uniform of custom WGSL can have, as a field of its `struct Uniforms`.
+
 ### `UniformValue`
 
 ```ts
 type UniformValue = number | string | readonly number[];
 ```
 
-The value of a custom material's uniform. An `f32`, `i32` or `u32` uniform takes a number, and a `vec2f`, `vec3f` or `vec4f` uniform takes an array of 2, 3 or 4 numbers. A `vec3f` uniform also takes an sRGB color as `color` takes it, which the engine converts to linear.
+The value of a uniform whose type TypeScript cannot see. An `f32`, `i32` or `u32` uniform takes a number, and a `vec2f`, `vec3f` or `vec4f` uniform takes an array of 2, 3 or 4 numbers. A `vec3f` uniform also takes an sRGB color as `color` takes it, which the engine converts to linear.
+
+### `UniformValueByType`
+
+Interface `UniformValueByType`.
+
+The value that a uniform of each type takes. An `f32`, `i32` or `u32` uniform takes a number, and `i32` and `u32` take whole numbers. A `vec2f` or `vec4f` uniform takes 2 or 4 numbers. A `vec3f` uniform takes 3 numbers, or an sRGB color as `color` takes it, which the engine converts to linear.
+
+| Member | Description |
+| --- | --- |
+| `f32: number` | A number. |
+| `i32: number` | A whole number. |
+| `u32: number` | A whole number, 0 or more. |
+| `vec2f: readonly [number, number]` | Two numbers. |
+| `vec3f: ColorInput` | Three numbers, or a color. |
+| `vec4f: readonly [number, number, number, number]` | Four numbers. |
+
+### `UniformValues`
+
+```ts
+type UniformValues<Wgsl> = WgslUniforms<Wgsl> extends infer Uniforms extends { readonly [name: string]: UniformType; } ? string extends keyof Uniforms ? { readonly [name: string]: UniformValue | undefined; } : { readonly [Name in keyof Uniforms]?: UniformValueByType[Uniforms[Name]]; } : never;
+```
+
+The values of WGSL's uniforms by name, each optional and of the kind that its type takes, as the `uniforms` option and `set` of a custom material take them. A name that the WGSL does not declare fails the type check. WGSL whose uniforms TypeScript cannot see takes any name, and the engine checks the names when it runs.
 
 ### `UnlitOptions`
 
@@ -437,5 +472,13 @@ Where a material's maps sit on the texture coordinates, as three.js's texture `o
 | `offset?: readonly [number, number]` | The shift along u and v. The default is `[0, 0]`. |
 | `repeat?: readonly [number, number]` | How many times the maps repeat along u and v. The default is `[1, 1]`. |
 | `rotation?: number` | The turn in radians, about the coordinates' origin. The default is 0. |
+
+### `WgslUniforms`
+
+```ts
+type WgslUniforms<Wgsl> = [Wgsl] extends [string] ? TextUniforms<Wgsl> : CompiledUniforms<Wgsl>;
+```
+
+The uniforms that WGSL declares as the fields of its `struct Uniforms`, each name with its type, such as `{ tint: 'vec3f'; width: 'f32' }`. TypeScript sees them in a template literal that a `wgsl` block comment tags, and in a `.wgsl` file once the null3D Vite plugin has written the file's declaration. WGSL whose uniforms TypeScript cannot see, such as text in a `string` variable, gives a record that takes any name.
 
 <!-- null3d:api:end -->

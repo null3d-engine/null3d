@@ -54,6 +54,7 @@ import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import { arraysProblem, meshFromArrays } from './mesh-arrays';
 import type { Texture } from './textures';
+import type { UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
 
 /**
  * A mesh the engine can draw: its id in the engine core, and its bounding radius.
@@ -698,33 +699,27 @@ export interface CompiledWgsl {
 }
 
 /**
- * The value of a custom material's uniform. An `f32`, `i32` or `u32` uniform takes a number, and a
- * `vec2f`, `vec3f` or `vec4f` uniform takes an array of 2, 3 or 4 numbers. A `vec3f` uniform also
- * takes an sRGB color as `color` takes it, which the engine converts to linear.
- *
- * @category api/materials
- */
-export type UniformValue = number | string | readonly number[];
-
-/**
  * The values of a custom material, which `set` changes at any time: the standard values but the
  * texture coordinate transform of maps, and the uniforms that its WGSL's `struct Uniforms`
- * declares, by name.
+ * declares, by name. `Wgsl` is the type of the material's WGSL, which gives the uniforms' names
+ * and types, as `WgslUniforms` says.
  *
  * @category api/materials
  */
-export interface ShaderValues extends Omit<StandardValues, 'uvTransform'> {
-	[uniform: string]: UniformValue | undefined;
-}
+export type ShaderValues<Wgsl = string | CompiledWgsl> = [Wgsl] extends [unknown]
+	? Omit<StandardValues, 'uvTransform'> & UniformValues<Wgsl>
+	: never;
 
 /**
  * Options of `materials.shader`: the material's WGSL, the first values of its uniforms, and every
  * option of `materials.standard` but its texture maps, which `defaultSurface` applies. Custom
  * materials take no texture maps in this version, so the values of maps have no effect on them.
+ * `Wgsl` is the type of the material's WGSL, which gives the uniforms' names and types.
  *
  * @category api/materials
  */
-export interface ShaderOptions extends StandardBaseOptions {
+export interface ShaderOptions<Wgsl extends string | CompiledWgsl = string | CompiledWgsl>
+	extends StandardBaseOptions {
 	/**
 	 * The material's WGSL, compiled by the null3D Vite plugin. It declares
 	 * `fn surface(input: SurfaceInput) -> Surface`, which the engine calls for each pixel, and
@@ -734,15 +729,23 @@ export interface ShaderOptions extends StandardBaseOptions {
 	 * point that takes an `InstanceIn`, and a `@fragment` one, instead. Materials made from the
 	 * same WGSL share their shader.
 	 */
-	wgsl: string | CompiledWgsl;
-	/** The first value of each uniform, by name. A uniform without one starts at 0. */
-	uniforms?: Readonly<Record<string, UniformValue | undefined>>;
+	wgsl: Wgsl;
+	/**
+	 * The first value of each uniform, by name. A uniform without one starts at 0. When TypeScript
+	 * can see the WGSL's uniforms, a name that the WGSL does not declare fails the type check, and
+	 * WGSL without uniforms takes none.
+	 */
+	uniforms?: NoInfer<
+		[keyof UniformValues<Wgsl>] extends [never]
+			? { readonly [name: string]: never }
+			: UniformValues<Wgsl>
+	>;
 }
 
 /** A uniform of a custom material: its type, and the float of the row of custom values it starts at. */
 interface CompiledUniform {
 	readonly name: string;
-	readonly type: 'f32' | 'i32' | 'u32' | 'vec2f' | 'vec3f' | 'vec4f';
+	readonly type: UniformType;
 	readonly offset: number;
 }
 
@@ -1162,9 +1165,12 @@ export class Materials {
 	 * reads. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole
 	 * shader whose `@vertex` entry point takes no `InstanceIn`. Throws E1216 for a uniform that the
 	 * WGSL does not declare, for a value of the wrong kind, and for a uniform named as a standard
-	 * value, such as `color`.
+	 * value, such as `color`. When TypeScript can see the WGSL's `struct Uniforms`, a wrong name or
+	 * a value of the wrong kind also fails the type check.
 	 */
-	shader(options: ShaderOptions): Material<ShaderValues> {
+	shader<const Wgsl extends string | CompiledWgsl>(
+		options: ShaderOptions<Wgsl>,
+	): Material<ShaderValues<Wgsl>> {
 		const call = 'materials.shader';
 		const compiled = this.compiledMaterial(options.wgsl, call);
 		const uniforms = new Map(compiled.uniforms.map((u) => [u.name, u]));
