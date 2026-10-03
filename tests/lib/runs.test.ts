@@ -836,7 +836,7 @@ describe('the checks plan', () => {
 		).toEqual(['the page is not cross-origin isolated', 'the threaded build did not load']);
 	});
 
-	it('starts and stops the engine again and again in every mode', () => {
+	it('starts and stops the engine again and again in every mode, and in frames', () => {
 		const restarts = items.filter((item) => item.check.kind === 'restarts');
 		expect(restarts.map((item) => item.path)).toEqual([
 			'/tests/pages/shared-memory.html',
@@ -844,6 +844,9 @@ describe('the checks plan', () => {
 			'/tests/pages/shared-memory.html?threads=off',
 			'/tests/pages/shared-memory.html?render=main',
 			'/tests/pages/shared-memory.html?sketch-thread=main',
+			'/tests/pages/shared-memory.html?kinds=frame',
+			'/tests/pages/shared-memory.html?kinds=frame&latency=low',
+			'/tests/pages/shared-memory.html?kinds=frame&render=main',
 		]);
 	});
 
@@ -877,6 +880,18 @@ describe('the checks plan', () => {
 		expect(judge(restart.check, result({ kinds: { engine: failed } }), NONE_MISSING)).toEqual([
 			"start and stop 3 of 10 failed: the engine start took more than 20 s; the page's last steps: 10 ms core; 11 ms null3d-sketch: started",
 		]);
+		const inFrames = items.find((item) => item.id === 'frame-restarts-pipelined');
+		if (!inFrames) throw new Error('the plan lacks the restart pages with frames');
+		expect(
+			judge(
+				inFrames.check,
+				result({ kinds: { frame: { ...engine, roomLater: 0 } } }),
+				NONE_MISSING,
+			),
+		).toEqual([
+			'the browser did not get back the memory of engines in removed frames within 31 s: it had room for 6 shared memories before 10 starts in frames, and for 0 after',
+		]);
+		expect(judge(inFrames.check, result({}), NONE_MISSING)).toEqual(['the page started no engine']);
 	});
 
 	it('quotes the last steps of a page that gave no result', () => {

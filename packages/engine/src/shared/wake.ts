@@ -54,6 +54,29 @@ export function slotChange(
 	});
 }
 
+/**
+ * How long a wait outside the frame loop lasts before its caller checks the slot again, in ms.
+ * Safari can leave a worker's Atomics.waitAsync waiting after the notify that should end it, until
+ * the worker's event loop turns for another reason. The timer turns it.
+ */
+export const RECHECK_MS = 50;
+
+/**
+ * A promise that settles as `slotChange`'s does, or after `RECHECK_MS` at the latest, or undefined
+ * when the slot holds another value already. It makes a timer for each wait, so it suits the waits
+ * of a start, not those of the frame loop.
+ */
+export function slotChangeOrRecheck(
+	slots: Int32Array,
+	slot: number,
+	value: number,
+): Promise<unknown> | undefined {
+	const change = slotChange(slots, slot, value);
+	return (
+		change && Promise.race([change, new Promise((resolve) => setTimeout(resolve, RECHECK_MS))])
+	);
+}
+
 /** Ends each of this thread's waits for a wake message. */
 export function wakeWaiters(): void {
 	const { waiters } = state;

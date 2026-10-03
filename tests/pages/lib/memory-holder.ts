@@ -48,7 +48,11 @@ const WAIT_MODULE = new Uint8Array([
 	0x0b,
 ]);
 
-self.onmessage = async ({ data }: MessageEvent<HoldMessage>) => {
+/**
+ * Holds the memory that the page sends. Only a worker listens: the page imports this file for its
+ * kinds, and a handler on the page's window would hear every message that a frame posts.
+ */
+const hold = async ({ data }: MessageEvent<HoldMessage>) => {
 	const words = new Int32Array(data.memory.buffer);
 	const flags = new Int32Array(data.flags);
 	const ready = () => Atomics.store(flags, 0, 1);
@@ -98,3 +102,5 @@ self.onmessage = async ({ data }: MessageEvent<HoldMessage>) => {
 			break;
 	}
 };
+
+if (!('document' in globalThis)) self.onmessage = hold;

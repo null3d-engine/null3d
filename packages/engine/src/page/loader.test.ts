@@ -197,7 +197,7 @@ describe('createSharedMemory', () => {
 		expect(busy.pauses).toEqual([50, 100, 200]);
 	});
 
-	it('fails with E1109 after about 3 seconds of refusals', async () => {
+	it('fails with E1109 after about 10 seconds of refusals', async () => {
 		const full = browser(Number.POSITIVE_INFINITY);
 		let error: EngineError | undefined;
 		try {
@@ -208,9 +208,9 @@ describe('createSharedMemory', () => {
 		expect(error).toBeInstanceOf(EngineError);
 		expect(error?.code).toBe('E1109');
 		expect(error?.message).toContain(
-			"the browser refused the engine's shared memory of 1024 MiB 7 times: Out of memory.",
+			"the browser refused the engine's shared memory of 1024 MiB 9 times over 10 seconds: Out of memory.",
 		);
 		expect(full.pauses).toEqual([...MEMORY_RETRY_MS]);
-		expect(full.pauses.reduce((sum, ms) => sum + ms, 0)).toBe(3_150);
+		expect(full.pauses.reduce((sum, ms) => sum + ms, 0)).toBe(9_550);
 	});
 });

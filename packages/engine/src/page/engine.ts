@@ -70,6 +70,7 @@ import { MainThreadWatch } from './main-thread';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
 import { StatsSwitch } from './stats-switch';
+import { stopJobWorkers, waitForJobWorkersToLeave } from './stop-jobs';
 import {
 	type DepthMode,
 	type GpuSwitch,
@@ -1074,6 +1075,19 @@ async function startEngine(
 	let localCore: CoreGlue | undefined;
 	let stopping: Promise<void> | undefined;
 	/**
+	 * Ends the job workers' loops at once. A page that leaves without stopping the engine, such as a
+	 * page in a frame that goes away, does it too, because the browser then stops the workers
+	 * wherever they are.
+	 */
+	const stopJobs = () => {
+		if (core.memory) stopJobWorkers(core.memory, slots);
+	};
+	const stopJobsAsPageLeaves = () => {
+		stopJobs();
+		waitForJobWorkersToLeave(slots);
+	};
+	if (threads?.jobs.length) globalThis.addEventListener?.('pagehide', stopJobsAsPageLeaves);
+	/**
 	 * Stops every loop and then the workers, and wakes each thread that waits, so it sees the stop.
 	 * Then it drops the page's engine and lets go of the page's threaded core. A second call returns
 	 * the first call's promise.
@@ -1081,6 +1095,8 @@ async function startEngine(
 	const stop = () => {
 		stopping ??= (async () => {
 			Atomics.store(slots, Slot.Running, 0);
+			stopJobs();
+			globalThis.removeEventListener?.('pagehide', stopJobsAsPageLeaves);
 			statsSwitch.show(false);
 			for (const slot of [
 				Slot.Running,
@@ -1136,7 +1152,16 @@ async function startEngine(
 			// The page starts its core before the workers get theirs. The first core in a new shared
 			// memory fills it with the core's data, and a core that starts while another fills it
 			// waits, which the page's thread must never do.
-			const started = await abortable(startCore(build, core.module, core.memory), start.signal);
+			const coreStart = startCore(build, core.module, core.memory);
+			const started = await abortable(coreStart, start.signal).catch((error: unknown) => {
+				// A start that ends while the page's core starts lets go of that core once it has
+				// started, or the core would keep the engine's memory.
+				void coreStart.then(
+					({ glue }) => glue.releaseInstance?.(),
+					() => undefined,
+				);
+				throw error;
+			});
 			localCore = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
 			wasmMemory = memory;
