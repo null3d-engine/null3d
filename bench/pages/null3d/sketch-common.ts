@@ -2,7 +2,7 @@
 // view (background, sun, ambient light and camera) from the shared scene module, a camera that
 // follows a path, and the quality reports that a page's trace records. A sketch poses its scene at
 // the sketch time, which hold mode steps to the held time.
-import type { Camera, Quality, SketchContext } from '@null3d/engine';
+import { type Camera, type Quality, quat, type SketchContext } from '@null3d/engine';
 import {
 	BACKGROUND,
 	CAMERA,
@@ -25,6 +25,26 @@ export function readShadows(moduleUrl: string): number {
 	return Number(new URL(moduleUrl).searchParams.get('shadows') ?? '0');
 }
 
+/** How a benchmark scene's view draws, where it differs from its three.js twin's. */
+export interface ViewOptions {
+	/** The sun's shadow cascades at the benchmark scenes' shadow size, or 0, the default, for none. */
+	cascades?: number;
+	/**
+	 * True keeps the quality preset's render scale range and its frame-budget governor, as an app
+	 * does, so the scene holds its frame rate with dynamic resolution.
+	 */
+	dynamicResolution?: boolean;
+}
+
+/**
+ * Reads the frames between two draws of a far shadow cascade from the sketch module's address,
+ * where the page harness puts them when the page asks, or undefined for the quality preset's.
+ */
+export function readFarInterval(moduleUrl: string): number | undefined {
+	const far = new URL(moduleUrl).searchParams.get('far');
+	return far === null ? undefined : Number(far);
+}
+
 /**
  * False when the sketch module's address turns the quality governor off, where the page harness
  * puts `governor=off` for a page with `?governor=off`.
@@ -36,19 +56,18 @@ export function readGovernor(moduleUrl: string): boolean {
 /**
  * Sets the background, the sun and the ambient light, and makes the active camera. The three.js
  * twins draw with no tone mapping, three.js's default, so the null3D pages turn off the engine's
- * default of ACES. The twins also draw every pixel of the canvas, so the null3D pages keep the
- * render scale at 1. They never lighten their shadows either, so the null3D pages turn off the
- * quality governor. With `cascades` above 0 the sun casts shadows in that many cascades, at the
- * benchmark scenes' shadow size.
+ * default of ACES. The twins also draw every pixel of the canvas and never lighten their shadows,
+ * so the null3D pages keep the render scale at 1 and turn off the quality governor, unless the
+ * scene asks for dynamic resolution.
  */
 export function setUpView(
 	{ scene, post, quality }: SketchContext,
 	{ sun, ambient }: SceneLights = VIEW_LIGHTS,
 	background: string = BACKGROUND,
-	cascades = 0,
+	{ cascades = 0, dynamicResolution = false }: ViewOptions = {},
 ): Camera {
 	post.set({ toneMapping: 'none' });
-	quality.set({ minRenderScale: 1, governor: false });
+	if (!dynamicResolution) quality.set({ minRenderScale: 1, governor: false });
 	scene.setBackground(background);
 	const { mapSize, distance } = SHADOWS;
 	scene.createDirectionalLight({
@@ -68,17 +87,30 @@ export function setUpView(
 	return camera;
 }
 
-/** Moves a camera along a path of the shared scene module. It allocates nothing per call. */
+/**
+ * Moves a camera along a path of the shared scene module. It allocates nothing per call. The browser
+ * boxes each fraction passed to a call that it does not inline, and it may never inline `lookAt`
+ * into a function that runs once per frame. So the rotation comes from the quaternion helper, which
+ * reads arrays, and goes to `setRotation`, which is as small as `setPosition`. A camera looks down
+ * its -Z axis, so the helper gets the target as its eye.
+ */
 export function followPath(
 	camera: Camera,
 	path: (t: number, outPosition: OutArray, outTarget: OutArray) => void,
 ): (t: number) => void {
 	const position = new Float64Array(3);
 	const target = new Float64Array(3);
+	const rotation = quat.create();
 	return (t) => {
 		path(t, position, target);
+		quat.lookAt(rotation, target, position);
 		camera.setPosition(position[0] as number, position[1] as number, position[2] as number);
-		camera.lookAt(target[0] as number, target[1] as number, target[2] as number);
+		camera.setRotation(
+			rotation[0] as number,
+			rotation[1] as number,
+			rotation[2] as number,
+			rotation[3] as number,
+		);
 	};
 }
 

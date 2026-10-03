@@ -7,14 +7,35 @@
 //
 // Each case below calls its function by its full path, and the page's table of references names
 // the same functions in the same order; a unit test checks that the two agree.
+//
+// Each variant holds the cases of one library module, which the def of the module's name in
+// capitals selects, and the page draws each variant over the rows of its module's cases. The
+// whole library in one shader is about four times the largest engine shader, and the PowerVR
+// driver of the Pixel 11 could not build a pipeline from it.
+#ifdef COLOR
 #import null3d::color
+#endif
+#ifdef DEPTH
 #import null3d::depth
+#endif
+#ifdef FOG
 #import null3d::fog
+#endif
+#ifdef LIGHTING
 #import null3d::lighting
+#endif
+#ifdef MATH
 #import null3d::math
+#endif
+#ifdef NOISE
 #import null3d::noise
+#endif
+#ifdef SDF
 #import null3d::sdf
+#endif
+#ifdef VERTEX
 #import null3d::vertex
+#endif
 
 /// Each case's function number, then its inputs, one row per case.
 @group(0) @binding(0) var cases: texture_2d<u32>;
@@ -58,17 +79,22 @@ fn whole(v: vec4u) -> Results {
     return Results(v, vec4u(0u), vec4u(0u), vec4u(0u));
 }
 
+#ifdef VERTEX
 fn transform(r: array<vec4f, 8>) -> null3d::vertex::Transform {
     return null3d::vertex::Transform(r[0], r[1], r[2]);
 }
+#endif
 
+#ifdef LIGHTING
 fn material(r: array<vec4f, 8>) -> null3d::lighting::PbrMaterial {
     return null3d::lighting::pbr_material(r[0].xyz, r[0].w, r[1].x, r[1].y);
 }
+#endif
 
 /// Runs the function numbered `function` on the inputs, given both as bits and as floats.
 fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
     switch function {
+#ifdef MATH
         case 0u: { return scalar(null3d::math::square(f[0].x)); }
         case 1u: { return scalar(null3d::math::max_component(f[0].xyz)); }
         case 2u: { return scalar(null3d::math::min_component(f[0].xyz)); }
@@ -86,6 +112,8 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
             let turns = vec4f(null3d::math::PI, null3d::math::TAU, null3d::math::HALF_PI, null3d::math::INV_PI);
             return floats(turns, vec4f(null3d::math::EPSILON, 0.0, 0.0, 0.0), vec4f(0.0), vec4f(0.0));
         }
+#endif
+#ifdef NOISE
         case 11u: { return whole(vec4u(null3d::noise::pcg(u[0].x), 0u, 0u, 0u)); }
         case 12u: { return whole(vec4u(null3d::noise::pcg3d(u[0].xyz), 0u)); }
         case 13u: { return scalar(null3d::noise::to_unit(u[0].x)); }
@@ -108,6 +136,8 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         case 28u: { return scalar(null3d::noise::worley2(f[0].xy)); }
         case 29u: { return scalar(null3d::noise::fbm3(f[0].xyz, u[1].x)); }
         case 30u: { return scalar(null3d::noise::fbm2(f[0].xy, u[1].x)); }
+#endif
+#ifdef COLOR
         case 31u: { return triple(null3d::color::linear_to_srgb(f[0].xyz)); }
         case 32u: { return triple(null3d::color::srgb_to_linear(f[0].xyz)); }
         case 33u: { return scalar(null3d::color::luminance(f[0].xyz)); }
@@ -118,6 +148,8 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         case 38u: { return triple(null3d::color::agx_contrast(f[0].xyz)); }
         case 39u: { return triple(null3d::color::tone_map_agx(f[0].xyz)); }
         case 40u: { return triple(null3d::color::tone_map_neutral(f[0].xyz)); }
+#endif
+#ifdef LIGHTING
         case 41u: {
             return triple(null3d::lighting::lambert(f[0].xyz, f[1].xyz, f[2].xyz, f[3].xyz, f[4].xyz));
         }
@@ -173,10 +205,14 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
             let r = null3d::lighting::indirect_specular(material(f), f[2].xyz, f[3].xyz, f[4].xy);
             return triples(r.diffuse, r.specular);
         }
+#endif
+#ifdef FOG
         case 60u: { return scalar(null3d::fog::fog_depth(f[0].xyz, f[1].xyz)); }
         case 61u: { return scalar(null3d::fog::fog_linear(f[0].x, f[0].y, f[0].z)); }
         case 62u: { return scalar(null3d::fog::fog_exp2(f[0].x, f[0].y)); }
         case 63u: { return triple(null3d::fog::apply_fog(f[0].xyz, f[1].xyz, f[2].x)); }
+#endif
+#ifdef VERTEX
         case 64u: { return triple(null3d::vertex::transform_point(transform(f), f[3].xyz)); }
         case 65u: { return triple(null3d::vertex::transform_direction(transform(f), f[3].xyz)); }
         case 66u: { return triple(null3d::vertex::transform_normal(transform(f), f[3].xyz)); }
@@ -186,6 +222,8 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         }
         case 68u: { return quad(null3d::vertex::to_clip(mat4x4f(f[0], f[1], f[2], f[3]), f[4].xyz)); }
         case 69u: { return quad(null3d::vertex::OUTSIDE_CLIP); }
+#endif
+#ifdef DEPTH
         case 70u: { return scalar(null3d::depth::perspective_depth_to_view_z(f[0].x, f[0].y, f[0].z)); }
         case 71u: { return scalar(null3d::depth::view_z_to_perspective_depth(f[0].x, f[0].y, f[0].z)); }
         case 72u: { return scalar(null3d::depth::orthographic_depth_to_view_z(f[0].x, f[0].y, f[0].z)); }
@@ -194,6 +232,8 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         case 75u: {
             return triple(null3d::depth::view_position(f[0].xy, f[0].z, mat4x4f(f[1], f[2], f[3], f[4])));
         }
+#endif
+#ifdef SDF
         case 76u: { return scalar(null3d::sdf::sphere(f[0].xyz, f[0].w)); }
         case 77u: { return scalar(null3d::sdf::box(f[0].xyz, f[1].xyz)); }
         case 78u: { return scalar(null3d::sdf::round_box(f[0].xyz, f[1].xyz, f[1].w)); }
@@ -212,6 +252,8 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         case 91u: { return scalar(null3d::sdf::smooth_intersect(f[0].x, f[0].y, f[0].z)); }
         case 92u: { return scalar(null3d::sdf::rounded(f[0].x, f[0].y)); }
         case 93u: { return scalar(null3d::sdf::onion(f[0].x, f[0].y)); }
+#endif
+#ifdef FOG
         case 94u: {
             let scene_fog = null3d::fog::Fog(
                 vec4f(f[0].xyz, f[2].w),
@@ -221,6 +263,7 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
             );
             return scalar(null3d::fog::fog_factor(scene_fog, f[4].xyz));
         }
+#endif
         default: { return whole(vec4u(0xffffffffu)); }
     }
 }

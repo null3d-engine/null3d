@@ -167,7 +167,7 @@ fn point_and_spot_lights_that_cast_shadows_list_where_they_stand_in_view_or_not(
     assert_eq!(s.at.local, [0.0, 3.0, -20.0]);
     assert_close(s.direction, [0.0, -1.0, 0.0]);
     assert_eq!((s.angle, s.range), (0.5, 8.0));
-    assert_eq!((s.bias, s.normal_bias), (2.0, 1.0));
+    assert_eq!((s.bias, s.normal_bias), (2.0, 0.02));
     assert_eq!(s.layers, 0b11);
     assert_eq!(
         *b,
@@ -182,8 +182,8 @@ fn point_and_spot_lights_that_cast_shadows_list_where_they_stand_in_view_or_not(
             direction: [0.0; 3],
             angle: 0.0,
             range: 1.0,
-            bias: 0.5,
-            normal_bias: 1.0,
+            bias: 0.01,
+            normal_bias: 0.02,
             layers: DEFAULT_LAYERS,
         }
     );
@@ -389,7 +389,7 @@ fn the_main_light_reports_its_shadows_when_it_casts_them() {
     );
     assert_eq!(
         (shadow.bias, shadow.normal_bias, shadow.distance),
-        (0.5, 1.0, 200.0)
+        (0.01, 0.02, 200.0)
     );
 
     for (code, number) in [
@@ -413,4 +413,33 @@ fn the_main_light_reports_its_shadows_when_it_casts_them() {
         .set_value(sun_row, value::SHADOW_CASCADES, 9.0)
         .unwrap();
     assert_eq!(world.frame(None).sun_shadow.unwrap().cascades, 4);
+}
+
+#[test]
+fn new_lights_start_with_the_tables_defaults() {
+    let mut world = World::new();
+    let (_, before) = world.light(kind::DIRECTIONAL, [0.0; 3], NO_TURN);
+    world
+        .lights
+        .set_default(value::SHADOW_CASCADES, 2.0)
+        .unwrap();
+    world
+        .lights
+        .set_default(value::SHADOW_MAP_SIZE, 1024.0)
+        .unwrap();
+    let (_, after) = world.light(kind::DIRECTIONAL, [0.0; 3], NO_TURN);
+    let numbers = |lights: &LightTable, row| {
+        [value::SHADOW_CASCADES, value::SHADOW_MAP_SIZE]
+            .map(|code| lights.value(row, code).unwrap())
+    };
+    // A light that exists keeps its numbers, and a new one starts with the new defaults.
+    assert_eq!(numbers(&world.lights, before), [3.0, 2048.0]);
+    assert_eq!(numbers(&world.lights, after), [2.0, 1024.0]);
+    // A number of its own still wins.
+    world
+        .lights
+        .set_value(after, value::SHADOW_CASCADES, 4.0)
+        .unwrap();
+    assert_eq!(numbers(&world.lights, after), [4.0, 1024.0]);
+    assert!(world.lights.set_default(value::LAST + 1, 1.0).is_err());
 }

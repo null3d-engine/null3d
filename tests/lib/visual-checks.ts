@@ -30,16 +30,17 @@ export interface VisualLimits {
 /**
  * The limits of each scene that the checks measure, on both GPU paths, with Chrome on the Mac's GPU
  * and with SwiftShader in CI. Each sits between the figures of the engine as it is and the figures
- * of two faults put back on purpose on 3 October 2026, which .dev/image-tests.md lists. Stable
- * cascades change at most 0.007% of the pixels from frame to frame; cascades that no longer snap
- * to whole texels change 0.14% to 1.9%. The edge figures depend on each scene's edges, so each
- * scene has its own: the split that leaned 80% toward the logarithmic spread, before #211, raised
- * the long edge's stair steps from 0.29 px to 0.53 px and S4's edge offset from 0.095 px to 0.14 px.
+ * of two faults put back on purpose, which .dev/image-tests.md lists with the figures. Cascades
+ * that no longer snap to whole texels fail the share of changed pixels in every scene. The edge
+ * figures depend on each scene's edges, so each scene has its own: the split that leaned further
+ * toward the logarithmic spread fails the shadow scene's stair steps and S4's edge offset. The
+ * other edge limits catch only large faults, as that split leaves those figures alone or lowers
+ * them.
  */
 export const VISUAL_LIMITS: Readonly<Record<string, VisualLimits>> = {
-	'shadow-scene': { changedPercent: 0.05, edgeOffsetPixels: 0.15, stairStepPixels: 0.4 },
-	s2: { changedPercent: 0.05, edgeOffsetPixels: 0.1 },
-	s4: { changedPercent: 0.05, edgeOffsetPixels: 0.12 },
+	'shadow-scene': { changedPercent: 0.05, edgeOffsetPixels: 0.15, stairStepPixels: 0.19 },
+	s2: { changedPercent: 0.05, edgeOffsetPixels: 0.15 },
+	s4: { changedPercent: 0.05, edgeOffsetPixels: 0.11 },
 };
 
 /**

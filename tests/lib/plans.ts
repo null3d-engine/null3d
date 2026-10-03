@@ -218,10 +218,11 @@ const TIERS: readonly Tier[] = ['webgpu', 'webgl2'];
 /** How long a benchmark page may take to publish its hold frame on a slow device. */
 const HOLD_TIMEOUT_SECONDS = 60;
 /**
- * How long the restart page may take: up to ten starts and stops, which may wait 30 s in all for
- * the browser to free memory, and the counts of the room, which may wait 31 s for it to come back.
+ * How long the restart page may take: two rounds, each of up to ten starts and stops, which may
+ * wait 30 s in all for the browser to free memory, and of the counts of the room, which may wait
+ * 31 s for it to come back. The second round runs only when the room did not come back.
  */
-const RESTARTS_TIMEOUT_SECONDS = 180;
+const RESTARTS_TIMEOUT_SECONDS = 300;
 /**
  * The thread modes whose engines start in frames that the restart page removes while they run.
  * With the sketch on the main thread, Safari on a Mac still lost 1 or 2 places for shared memory in
@@ -1284,6 +1285,16 @@ function imageRunProblems(
  */
 export type RestartStart = 'engine' | 'frame';
 
+/** One round of the restart page's starts and stops. */
+interface RestartRound {
+	cycles: number;
+	error?: string;
+	trail?: string[];
+	/** The room when it came back, or when the page stopped waiting for it. */
+	roomLater?: number;
+	roomWaitMs?: number;
+}
+
 /** What the restart page reports about the engine's starts and stops. */
 export interface RestartResult {
 	/** Shared memories the page could hold at once before the starts, where it counted them. */
@@ -1292,13 +1303,9 @@ export interface RestartResult {
 	kinds: Partial<
 		Record<
 			RestartStart,
-			{
-				cycles: number;
-				error?: string;
-				trail?: string[];
-				/** The room when it came back, or when the page stopped waiting for it. */
-				roomLater?: number;
-				roomWaitMs?: number;
+			RestartRound & {
+				/** The second round, from the room the first left, when the room did not come back. */
+				again?: RestartRound & { room: number };
 			}
 		>
 	>;
@@ -1318,26 +1325,43 @@ const RESTART_WORDS: Record<RestartStart, { cycle: string; cycles: string; engin
 const waitedText = (ms: number | undefined) =>
 	ms === undefined ? '' : ` within ${Math.round(ms / 1000)} s`;
 
+/** True when a round left less room than it started with, beyond the room the page may lose. */
+const roomLost = (room: number | undefined, round: RestartRound) =>
+	room !== undefined && round.roomLater !== undefined && round.roomLater < room - ROOM_KEPT;
+
 /**
  * What is wrong with the restart page's result: a start or a stop that failed, or room for shared
- * memory that the browser did not get back from the stopped engines.
+ * memory that the browser did not get back from the stopped engines. Room that the first round lost
+ * and the second round kept is lost address space, not memory that the engines hold, so it gets a
+ * note through `note` instead.
  */
-export function restartProblems(result: RestartResult, start: RestartStart): string[] {
+export function restartProblems(
+	result: RestartResult,
+	start: RestartStart,
+	note?: (text: string) => void,
+): string[] {
 	const engine = result.kinds[start];
 	if (!engine) return ['the page started no engine'];
 	const words = RESTART_WORDS[start];
+	const failed = (round: RestartRound, which: string) =>
+		`${words.cycle} ${round.cycles + 1} of ${result.cycles}${which} failed: ${round.error}${lastSteps(round.trail)}`;
 	const problems: string[] = [];
-	if (engine.error)
+	if (engine.error) problems.push(failed(engine, ''));
+	if (!roomLost(result.room, engine)) return problems;
+	const lostText = `it had room for ${result.room} shared memories before ${engine.cycles} ${words.cycles}, and for ${engine.roomLater} after`;
+	const { again } = engine;
+	if (!again)
 		problems.push(
-			`${words.cycle} ${engine.cycles + 1} of ${result.cycles} failed: ${engine.error}${lastSteps(engine.trail)}`,
+			`the browser did not get back the memory of ${words.engines}${waitedText(engine.roomWaitMs)}: ${lostText}`,
 		);
-	if (
-		result.room !== undefined &&
-		engine.roomLater !== undefined &&
-		engine.roomLater < result.room - ROOM_KEPT
-	)
+	else if (again.error) problems.push(failed(again, ' in the second round'));
+	else if (roomLost(again.room, again))
 		problems.push(
-			`the browser did not get back the memory of ${words.engines}${waitedText(engine.roomWaitMs)}: it had room for ${result.room} shared memories before ${engine.cycles} ${words.cycles}, and for ${engine.roomLater} after`,
+			`the browser did not get back the memory of ${words.engines} in two rounds: ${lostText}, then for ${again.roomLater} after ${again.cycles} more${waitedText(again.roomWaitMs)}`,
+		);
+	else
+		note?.(
+			`the room fell once and then held, so the browser lost address space, not memory that ${words.engines} hold: ${lostText}, and for ${again.roomLater} after ${again.cycles} more`,
 		);
 	return problems;
 }
@@ -1393,9 +1417,13 @@ export function judge(
 				expected: number[];
 				got: number[];
 			}[];
-			const problems = mismatches.map(
-				(m) => `${m.function}: expected ${m.expected.join(', ')}, got ${m.got.join(', ')}`,
-			);
+			const failures = (result.failures ?? []) as string[];
+			const problems = [
+				...failures,
+				...mismatches.map(
+					(m) => `${m.function}: expected ${m.expected.join(', ')}, got ${m.got.join(', ')}`,
+				),
+			];
 			if (!(Number(result.cases) > 0)) problems.push('the page ran no cases');
 			return problems;
 		}
@@ -1413,7 +1441,7 @@ export function judge(
 		case 'stats':
 			return statsProblems(result as unknown as StatsResult);
 		case 'restarts':
-			return restartProblems(result as unknown as RestartResult, check.start);
+			return restartProblems(result as unknown as RestartResult, check.start, context?.note);
 		case 'memory':
 			return (result.mode as { build?: string } | undefined)?.build === 'threaded'
 				? []

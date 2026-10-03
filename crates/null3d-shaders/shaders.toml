@@ -196,11 +196,20 @@ variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
 
 # A test shader for the shader library, which the library test page draws with: each case runs one
-# library function on the GPU. The engine does not import it, so its download does not hold it.
+# library function on the GPU. Each variant holds the functions of one library module, so that no
+# driver has to compile the whole library as one shader. The engine does not import it, so its
+# download does not hold it.
 [shaders.test_library]
 file = "test_library.wgsl"
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.main = { targets = ["wgsl", "glsl"] }
+variants.color = { defs = ["COLOR"], targets = ["wgsl", "glsl"] }
+variants.depth = { defs = ["DEPTH"], targets = ["wgsl", "glsl"] }
+variants.fog = { defs = ["FOG"], targets = ["wgsl", "glsl"] }
+variants.lighting = { defs = ["LIGHTING"], targets = ["wgsl", "glsl"] }
+variants.math = { defs = ["MATH"], targets = ["wgsl", "glsl"] }
+variants.noise = { defs = ["NOISE"], targets = ["wgsl", "glsl"] }
+variants.sdf = { defs = ["SDF"], targets = ["wgsl", "glsl"] }
+variants.vertex = { defs = ["VERTEX"], targets = ["wgsl", "glsl"] }
 
 # A test shader for the build itself.
 [shaders.test_mesh]

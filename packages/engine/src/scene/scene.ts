@@ -240,23 +240,26 @@ export interface DirectionalLightOptions extends LightOptions {
 export interface DirectionalShadowOptions {
 	/**
 	 * The cascades, a whole number from 1 to 4. More cascades keep shadows sharp further from the
-	 * camera, and each draws the shadow casters once more. The default is 3.
+	 * camera, and each draws the shadow casters once more. The default is the quality preset's
+	 * `shadowCascades`.
 	 */
 	cascades?: number;
 	/**
 	 * Texels on each side of each cascade's shadow map: 256, 512, 1,024, 2,048 or 4,096. The default
-	 * is 2,048.
+	 * is the quality preset's `shadowMapSize`.
 	 */
 	mapSize?: number;
 	/**
-	 * How far each receiving surface moves toward the light before its shadow test, in texels of
-	 * its cascade, at least 0. Raise it when surfaces show stripes of shadow on themselves. The
-	 * default is 0.5.
+	 * How far each receiving surface moves toward the light before its shadow test, in meters, at
+	 * least 0. One texel of the surface's cascade caps it. A surface takes this times the tangent of
+	 * its angle to the light, up to twice it. Raise it when surfaces show stripes of shadow on
+	 * themselves. The default is 0.01.
 	 */
 	bias?: number;
 	/**
-	 * How far each receiving surface moves along its normal before its shadow test, in texels of
-	 * its cascade, at least 0. The default is 1.
+	 * How far each receiving surface moves along its normal before its shadow test, in meters, at
+	 * least 0. One texel of the surface's cascade caps it. A surface takes this times the sine of its
+	 * angle to the light. The default is 0.02.
 	 */
 	normalBias?: number;
 	/**
@@ -298,14 +301,16 @@ export interface PointLightOptions extends LightOptions {
  */
 export interface LightShadowOptions {
 	/**
-	 * How far each receiving surface moves toward the light before its shadow test, in texels of
-	 * the light's tile at the surface's distance, at least 0. Raise it when surfaces show stripes of
-	 * shadow on themselves. The default is 0.5.
+	 * How far each receiving surface moves toward the light before its shadow test, in meters, at
+	 * least 0. One texel of the light's tile at the surface's distance caps it. A surface takes this
+	 * times the tangent of its angle to the light, up to twice it. Raise it when surfaces show stripes
+	 * of shadow on themselves. The default is 0.01.
 	 */
 	bias?: number;
 	/**
-	 * How far each receiving surface moves along its normal before its shadow test, in texels of the
-	 * light's tile at the surface's distance, at least 0. The default is 1.
+	 * How far each receiving surface moves along its normal before its shadow test, in meters, at
+	 * least 0. One texel of the light's tile at the surface's distance caps it. A surface takes this
+	 * times the sine of its angle to the light. The default is 0.02.
 	 */
 	normalBias?: number;
 }

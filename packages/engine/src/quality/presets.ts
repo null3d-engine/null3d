@@ -90,9 +90,10 @@ export const QUALITY_SETTINGS = {
 		values: { min: 64 * 1024, max: 64 * MIB, whole: true },
 	},
 	// The texels on each side of the square that blends each shadow's edge. The shaders read it
-	// from a uniform, so it changes during play with no new pipeline.
+	// from a uniform, so it changes during play with no new pipeline. Tablets draw at a pixel ratio
+	// of 2, where the smaller square's edges look jagged, so Medium takes the larger one too.
 	shadowFilter: {
-		presets: [3, 3, 5, 5],
+		presets: [3, 5, 5, 5],
 		changes: 'live',
 		values: [3, 5],
 	},
@@ -115,6 +116,21 @@ export const QUALITY_SETTINGS = {
 		presets: ['fxaa', 'msaa', 'msaa', 'msaa'],
 		changes: 'start',
 		values: ['none', 'fxaa', 'msaa'],
+	},
+	// The cascades of a directional light's shadows, and the texels on each side of each cascade's
+	// layer of the shadow map, for each light that names neither. A light takes them when it is
+	// created, and the shadow map's size follows from them. One cascade spreads its texels over the
+	// whole shadow distance, which blurs the near shadows, so Low keeps two. Medium keeps three,
+	// as two make the near shadows coarser on a tablet's sharp screen.
+	shadowCascades: {
+		presets: [2, 3, 3, 4],
+		changes: 'start',
+		values: { min: 1, max: 4, whole: true },
+	},
+	shadowMapSize: {
+		presets: [1024, 2048, 2048, 4096],
+		changes: 'start',
+		values: [512, 1024, 2048, 4096],
 	},
 	// The tiles of the shadow atlas that spot and point lights cast their shadows into: a spot light
 	// takes one, and a point light six. The lights that look largest from the camera get them
@@ -208,9 +224,9 @@ export interface QualitySettings {
 	shadowFilter: 3 | 5;
 	/**
 	 * How often each far shadow cascade draws: once in this many frames, a whole number from 1 to
-	 * 8. The nearest cascade draws in every frame, and the far ones take turns. A higher value
-	 * costs less, and far shadows then lag their moving casters by a few frames. It changes during
-	 * play.
+	 * 8. The nearest cascade draws in every frame, and the far ones take turns. A far cascade that a
+	 * dynamic object touches draws in every frame, so moving shadows follow their casters. A higher
+	 * value costs less where far cascades hold still casters alone. It changes during play.
 	 */
 	farCascadeInterval: number;
 	/**
@@ -228,6 +244,20 @@ export interface QualitySettings {
 	 * take it.
 	 */
 	antialias: 'none' | 'fxaa' | 'msaa';
+	/**
+	 * The cascades of a directional light's shadows, a whole number from 1 to 4, for each light whose
+	 * `shadow` options name none. More cascades keep shadows sharp further from the camera, and each
+	 * draws the shadow casters once more. The `shadowCascades` option of `createEngine` sets it, and
+	 * `set` does not take it.
+	 */
+	shadowCascades: number;
+	/**
+	 * Texels on each side of each cascade's shadow map, for each directional light whose `shadow`
+	 * options name no `mapSize`: 512, 1,024, 2,048 or 4,096. A larger map gives sharper shadow edges
+	 * and takes more memory, 4 bytes per texel in each cascade. The `shadowMapSize` option of
+	 * `createEngine` sets it, and `set` does not take it.
+	 */
+	shadowMapSize: number;
 	/**
 	 * The most tiles of the shadow atlas, which spot and point lights cast their shadows into: a
 	 * spot light takes one tile. When more lights cast shadows than the tiles hold, the lights that

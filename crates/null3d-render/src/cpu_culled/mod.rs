@@ -1052,7 +1052,7 @@ impl FrameBuilder for CpuCulledRenderer {
             input.canvas,
             input.render_scale,
         );
-        self.shadow = self.settings.shadow_frame(scene, parity, canvas);
+        self.shadow = self.settings.shadow_frame(input);
         let camera = self.settings.camera_position(scene, parity);
         let tile_settings = self.settings.tile_settings();
         let filter = self.settings.shadow_quality().filter;
