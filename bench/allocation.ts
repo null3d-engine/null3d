@@ -8,7 +8,8 @@
 // start to the end of the samples, it moves the mouse over the canvas and presses a key and the
 // mouse button, so the samples cover the sketch's reading of input. It draws with WebGPU, or with
 // WebGL2 when `--gpu webgl2` asks for it. `--scene s1-cells` runs S1-cells, whose views skip whole
-// grid cells, and `--scene s3` runs S3, whose 256 point lights move every frame. `--blend` makes
+// grid cells, `--scene s3` runs S3, whose 256 point lights move every frame, and `--scene s4` runs
+// S4, the phone scene, with its shadows, street lights and quality governor. `--blend` makes
 // S1's boxes see through, so each frame sorts every visible row for the transparent pass. It
 // samples the production build of the benchmark pages, as a developer ships the engine, and names
 // the build's functions through its source maps; `--dev` samples the dev server's pages, with the
@@ -18,6 +19,7 @@
 //   bun run bench:allocation --gpu webgl2
 //   bun run bench:allocation --scene s1-cells --gpu webgl2
 //   bun run bench:allocation --scene s3
+//   bun run bench:allocation --scene s4 --gpu webgl2
 //   bun run bench:allocation --blend --n 30000 --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
@@ -137,8 +139,8 @@ async function main(): Promise<void> {
 		return at >= 0 ? Number(args[at + 1]) : fallback;
 	};
 	const scene = args.includes('--scene') ? args[args.indexOf('--scene') + 1] : 's1';
-	if (scene !== 's1' && scene !== 's1-cells' && scene !== 's3')
-		throw new Error(`--scene takes s1, s1-cells or s3, not ${scene}`);
+	if (scene !== 's1' && scene !== 's1-cells' && scene !== 's3' && scene !== 's4')
+		throw new Error(`--scene takes s1, s1-cells, s3 or s4, not ${scene}`);
 	const n = option('--n', scene === 's3' ? S3_DEFAULT_COUNT : 100_000);
 	const seconds = option('--seconds', 5);
 	const gpu = args.includes('--gpu') ? args[args.indexOf('--gpu') + 1] : 'webgpu';
