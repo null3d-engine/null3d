@@ -8,7 +8,8 @@
 //   scene's camera places the shadow cascades. Each 1/60 s of sketch time past ?at= moves and turns
 //   the scene's camera by one step of `CHECK_MOTION`, so hold mode at successive times draws the
 //   frames of a slow walk;
-// - reference: the scene's frame with the largest shadow map and the widest filter.
+// - reference: the scene's frame with the largest shadow map and the widest filter;
+// - normals: the scene's own frame in the normals view, which shows where sides meet the ground.
 //
 // The scene's sketch must pose its scene at the sketch time, as the benchmark sketches do, and draw
 // from a perspective camera.
@@ -88,7 +89,7 @@ export default defineSketch(async (context) => {
 				time: frozen,
 			} as Partial<SketchContext>),
 		)) ?? {};
-	debug.view('shadows');
+	debug.view(check === 'normals' ? 'normals' : 'shadows');
 	if (check === 'reference') await quality.set({ shadowFilter: REFERENCE_FILTER });
 	if (check !== 'stability' || !main) return callbacks;
 

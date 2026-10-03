@@ -11,7 +11,9 @@ Two faults showed in S4 on the iPad (WebGPU, Medium):
 
 After the first fix, the owner checked S4 on the iPad again. The cars' shadows followed the cars, but thin lines of light remained at objects' bases, and they appeared and vanished as the camera turned.
 
-How should moving casters' shadows follow them in every frame, and how should the biases change so that shadows meet their casters without bringing back stripes of self-shadow (acne)?
+After the biases moved to meters, the owner checked S4 on the iPad a third time. The lines were rarer and thinner, but some remained.
+
+How should moving casters' shadows follow them in every frame, and how should the biases change so that shadows meet their casters without bringing back stripes of self-shadow (acne)? What else keeps a lit line at a base?
 
 ## Rule
 
@@ -107,11 +109,49 @@ Biases in meters make the lines in far cascades thinner. The next table gives th
 
 WebGL2 read within 0.02 of each figure. Larger biases in meters thicken the lines again: 0.02 and 0.03 m read 0.58 from above, and 0.03 and 0.05 m read 0.59. With no bias at all, the `shadows`, `spot-shadows` and `point-shadows` scenes showed no acne. The casters draw only their faces that point away from the light. So a closed mesh's lit faces compare with its far side. Acne would need a caster drawn with both faces, such as a double-sided plane. A user who sees it there raises the biases, up to one texel.
 
+### Lit lines at the base, after the iPad's check
+
+The owner checked S4 on the iPad (WebGPU, Medium) on 3 October 2026, with the biases in meters. Thin lit lines at the bases of objects were rarer and thinner than before, but some remained. They also seemed to move as the camera turned.
+
+Casters draw only their faces that point away from the light, and a box's bottom face is one of those. It lies on the ground, so the map holds it at the ground's depth under the box. The filter reads a square of texels around each point. Near a box's base, some of those reads land under the box. Where the ground there is level with the point, or further from the light, the read compares equal or lower depths. It then comes out lit. So the ground just past the base shows a thin lit line, even with no bias. Coarser texels reach further under the box, so the line widens in far cascades.
+
+The contact check measures the line ([Image tests](../image-tests.md)). It finds each foot of a dark side on the ground in the normals view. Then it adds the light between the foot and the start of the shadow, in pixels of full light. The table gives the figures of the `shadow-contact` scene's views and of S4's hold frame, on WebGPU and WebGL2 (Chrome on the Mac, 3 October 2026):
+
+| View | Before | Before, with no bias | After |
+| --- | --- | --- | --- |
+| Near the camera, first cascade | 0.159 and 0.152 | 0.072 and 0.064 | 0.020 and 0.016 |
+| From far away, last cascade | 0.204 and 0.198 | 0.147 and 0.153 | 0.077 and 0.080 |
+| Just past the end of the first cascade | 0.194 and 0.183 | 0.093 and 0.088 | 0.045 and 0.039 |
+| The same, turned 25 degrees on the spot | 0.182 and 0.187 | | 0.032 and 0.033 |
+| S4's hold frame | 0.050 and 0.040 | | 0.024 and 0.027 |
+
+SwiftShader gave 0.159 and 0.169 before and 0.023 and 0.025 after near the camera. It gave 0.224 and 0.223 before and 0.087 and 0.088 after in the last cascade. Just past the first cascade, it gave 0.254 and 0.252 before and 0.061 after. In S4's frame, it gave 0.072 before and 0.042 and 0.043 after.
+
+With no bias, half to three quarters of the line remained. So the biases were not its main cause, and smaller biases could not remove it. A turn did not widen the line either: it measured about the same at both angles. A turn moves the base's pixels across the texels, so the line breaks up in other places, and it seems to move. With the fix, little light remains at either angle.
+
+The options were:
+
+1. In the shadow pass, move each caster's faces that point away from the light toward the light. The move is part of a texel of the map at the face. The bottom face then stays in front of the ground.
+2. Draw the casters' front faces, as Unity's and Unreal's shadows do. The box's top then sits in the map above the ground at its base, and no read comes out lit. But every lit face then compares with itself. That needs biases of about a texel of each cascade. Such biases bring back the jumps between cascades that the biases in meters removed. It also brings acne back to every lit surface at a steep angle to the light.
+3. Compare each of the filter's samples with the depth of the receiver's plane at the sample, which the surface's normal gives ("receiver plane depth bias"). On its own, it makes the line worse. The bottom face then compares equal at every read under the box. Together with option 1, it closed the line a little more, and it removed older acne on a floor that casts shadows. But where option 1's offset fell short, it left more light than no change at all. With a 256-texel map and an offset capped at 10 cm, it raised the figures of the three views by 38% to 53%.
+
+Option 1 took three choices:
+
+- How much of the offset each face takes. A full texel for every face that points away from the light closed the line in every view. But it shadowed the boxes' own lit tops near their edges, as the walls below those edges moved toward the light too. In the last cascade, the shadow on the tops past their edges rose from 0.21 to 0.69 pixels. So each face takes the square of the cosine of its angle away from the light. A box's bottom under S4's sun takes about two thirds of a texel. A wall that the light only grazes takes almost none. With that share, the tops' figure rose only to 0.24 pixels.
+- How large the offset is: one texel of the map at the face, times that share. Half a texel left about twice as much light at the bases near the camera.
+- A cap in meters. A floor that casts shadows compares its lit top with its own bottom. A far cascade's texels can be larger than the floor is thick, and then the offset shadows the floor's top. The `far` view with a floor 20 cm thick that casts shadows shows it. With the 512-texel map, a full texel for every face, uncapped, put 54.6% of the frame in shadow, against 9.05% with no offset. With a 256-texel map, the weighted offset put 72.9% in shadow, uncapped, against 9.2% with no offset. A cap of 10 cm put 15.9% in shadow, and a cap of 5 cm 9.4%. With the 512-texel map, the 5 cm cap gave 9.10%. Larger caps close a little more of the line in the last cascade, so the cap is the largest that keeps such a floor clear.
+
+A double-sided caster keeps its depth. Both its faces draw, so the map holds its lit face, which would then shadow itself. Spot and point lights take the same offset, in texels of their tiles at the face's distance from the light.
+
+The offset brings no new acne on the surfaces that the light grazes. The `shadow-contact` scene's `lit` view looks at the boxes' lit sides, one at 19 degrees to the light. Its share in shadow stayed at 34.74%, with the offset uncapped too. S4's share in shadow rose from 23.31% to 23.35%. S4's frame shows older acne in the shadows view: rings and stripes on low casters that lie flat, such as pavements. The reference frame, with a 4,096-texel map, shows none. The frames before and after this change both show them. They come from the same comparison of a flat caster's top with its own bottom, across coarse texels. On the contact scene's floor, option 3 removed such acne, at the cost given above.
+
 ## Decision
 
 Option (b): a far cascade draws in every frame while a moving caster touches its box, or touched the box its layer holds. It is the only option that adds no memory, no pass and no shader read, and it costs a cascade's draw only where a moving caster needs it. Option (c) would save at most about half of that draw on the Mac, for 32 to 192 MiB of memory and a new depth path on WebGL2. Option (a) would double the filter's reads on most of S4's pixels.
 
 The receivers scale their biases by their angle to the light. After the iPad's second check, options 1 and 4 of the bias options apply together. The biases are in meters, capped at one texel of the point's cascade or tile. A receiver behind a perspective camera picks its cascade by its distance from the camera. The defaults become 0.01 m for `bias` and 0.02 m for `normalBias`. Spot and point lights take the same biases in meters, capped at one texel of their tile at the point's distance from the light.
+
+After the iPad's third check, option 1 of the contact options applies. The shadow pass moves each caster's faces that point away from the light toward it. A face moves by one texel of the map at the face, times the square of the cosine of its angle away from the light. It moves at most 5 cm. Double-sided casters keep their depth.
 
 ## Consequences
 
@@ -122,4 +162,7 @@ The receivers scale their biases by their angle to the light. After the iPad's s
 - The benchmark pages take `?far=<n>`, which S4 applies as its `farCascadeInterval`.
 - `concepts/shadows` describes the changes, and the API notes give the biases in meters and their defaults.
 - A user's bias above one texel acts as one texel. The cap binds the defaults only where a texel is under 2 cm. A 2,048 map's first cascade has 2.8 cm texels with the default distance, so the defaults act in full there.
-- The owner checked S4 on the iPad (WebGPU, Medium) on 3 October 2026 and approved the change. The cars' shadows stay on the cars, and the shadows at the edges of the screen are soft and hold still. Thin lit lines where objects meet their shadows are rarer and thinner than before, but some remain. They also shift as the camera turns. That fault has its own fix and its own section.
+- The owner checked S4 on the iPad (WebGPU, Medium) on 3 October 2026 and approved the change. The cars' shadows stay on the cars, and the shadows at the edges of the screen are soft and hold still. Thin lit lines where objects meet their shadows are rarer and thinner than before, but some remain. They also shift as the camera turns. [Lit lines at the base, after the iPad's check](#lit-lines-at-the-base-after-the-ipads-check) gives their cause and fix.
+- The `CASTER_OFFSET` builds of `crates/null3d-shaders/wgsl/shadow_depth.wgsl` move the faces, with `CASTER_OFFSET_TEXELS` and `CASTER_OFFSET_MAX`. `caster_of` in `crates/null3d-render/src/frame.rs` picks them for casters that draw only their back faces. Each shadow pass's frame uniform holds the light as its camera and the map's texels as its target size (`ShadowFrame::view_frame` and `TileView::frame`). The pass reads each vertex's normal, which every vertex format has.
+- The contact check (`contactFigures` in `tests/pages/lib/shadow-check.ts`) runs in the visual page. `tests/image/shadow-contact.spec.ts` holds the contact scene's figures under `CONTACT_LIMITS`, and S4's gap has a limit in `VISUAL_LIMITS`. The benchmark summary and the device runner's bench plan print S4's gap beside the other visual figures.
+- An iPad check of S4 at Medium on WebGPU, after this change, is still to come.

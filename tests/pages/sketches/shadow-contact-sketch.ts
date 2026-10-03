@@ -8,11 +8,15 @@
 // one. Both look at the side where the shadow falls, so the line where it meets the box shows.
 // `turn` looks at that side from 27 m away, just past where the first cascade ends. ?yaw=<degrees>
 // turns the camera left on the spot. From about 17 degrees, the box's distance along the view falls
-// inside the first cascade, while its distance from the camera stays the same.
+// inside the first cascade, while its distance from the camera stays the same. `lit` stands at eye
+// height on the sun's side, where the box's lit sides face it, one of them at 19 degrees to the
+// sun's light. ?groundCasts makes the ground cast shadows too, as a slab 20 cm thick, whose top
+// then compares with its own bottom.
 //
 // ?moving adds a blue box that drives to and fro along x at 10 m/s, dynamic, behind the still red
 // ones. ?far=<n> sets the frames between two draws of a far cascade, 1 by default, and turns off
-// the governor, which would lengthen it. ?bias= and ?normalBias= set the light's biases.
+// the governor, which would lengthen it. ?bias= and ?normalBias= set the light's biases, and
+// ?mapSize= the shadow map's texels on each side, 512 by default.
 import { defineSketch } from '@null3d/engine';
 import { CONTACT_AIM_HEIGHT, CONTACT_TURN } from '../lib/shadow-turn';
 
@@ -26,6 +30,10 @@ const BIASES = {
 };
 /** True when the sketch module's ?moving switch adds the driving box. */
 const MOVING = params.has('moving');
+/** Texels on each side of the shadow map, from the sketch module's ?mapSize switch. */
+const MAP_SIZE = Number(params.get('mapSize') ?? 512);
+/** True when the sketch module's ?groundCasts switch makes the ground cast shadows. */
+const GROUND_CASTS = params.has('groundCasts');
 
 /** A car's size along x, y and z, in meters: S4's commonest vehicle. */
 const CAR = [4.2, 1.5, 1.8] as const;
@@ -40,6 +48,7 @@ const VIEWS = {
 	near: { fov: 50, from: [-5, 1.7, -6] },
 	far: { fov: 6, from: [-50, 45, -70] },
 	turn: { fov: CONTACT_TURN.fovDegrees, from: CONTACT_TURN.from },
+	lit: { fov: 50, from: [6, 1.7, 7] },
 } as const;
 /** How far the camera turns left on the spot, in degrees, from the sketch module's ?yaw switch. */
 const YAW = (Number(params.get('yaw') ?? 0) * Math.PI) / 180;
@@ -71,7 +80,7 @@ export default defineSketch(({ scene, materials, geometry, quality, time }) => {
 		color: '#ffffff',
 		intensity: 3,
 		castShadows: true,
-		shadow: { cascades: 3, mapSize: 512, distance: 200, ...BIASES },
+		shadow: { cascades: 3, mapSize: MAP_SIZE, distance: 200, ...BIASES },
 	});
 	scene.createAmbientLight({ color: '#ffffff', intensity: 0.4 });
 
@@ -80,6 +89,7 @@ export default defineSketch(({ scene, materials, geometry, quality, time }) => {
 		material: materials.standard({ color: '#c8ccd0' }),
 		position: [0, -0.1, 0],
 		receiveShadows: true,
+		castShadows: GROUND_CASTS,
 	});
 	const car = geometry.box({ width: CAR[0], height: CAR[1], depth: CAR[2] });
 	const red = materials.standard({ color: '#e8554e' });
