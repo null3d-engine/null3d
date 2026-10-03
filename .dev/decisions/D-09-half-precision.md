@@ -95,6 +95,14 @@ Pending. The device checks with `--switches half=on` ran on 3 October 2026 (run 
 
 `?half=on` keeps half precision on both paths for measurement. A new phone or tablet GPU can be measured with the same two runs.
 
+T-22 closes with this decision. The iPad's image check cannot change it, because no device met the speed half of the rule.
+
+## How three.js handles it
+
+three.js's WebGL renderer takes a `precision` option, `highp`, `mediump` or `lowp`, and a material can set its own. The choice applies to the whole shader: positions, depth and shadow lookups as well as color. The default is `highp` where the device supports it.
+
+null3D keeps positions, light distances, shadow lookups and fog depth at full precision on every setting. Only the color math can drop to half precision. Even this narrow use gave no gain on the lab's phone and tablet. On the phone, it also moved the shadow images further from their references. So both GPU paths draw at full precision, as three.js does by default.
+
 ## Consequences
 
 - The HALF builds double the builds of the standard material and the final pass. The device modules grow from 6 to 12, and the shaders page compiles 261 GLSL programs instead of 163. A page still downloads one module.

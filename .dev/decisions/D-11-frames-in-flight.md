@@ -4,6 +4,18 @@ Status: frames in flight decided by the owner on 2026-09-30. The preset check's 
 
 This record settles three questions. M1-G1 answers the third, frames in flight, with the GPU-bound page. The preset values and the governor's thresholds follow from the S4 traces of M1-G5 and M1-G6, and from the live shadow-map resize test of M1-G3. Those tasks add their sections here. M1-G3 adds the preset check's thresholds at the end.
 
+## Where each part stands
+
+On 3 October 2026:
+
+| Part | State | What is left |
+| --- | --- | --- |
+| Frames in flight | Decided by the owner, 2026-09-30: at most two frames unfinished on the GPU, on both paths | The iPad's rows of the GPU-bound page. The four Mac browsers and the S24+ support the decision, so these rows can only confirm it or reopen it |
+| The preset check's thresholds | Proposed by M1-G3 | The owner's answer on the grace, the window and the target on 120 Hz displays (below) |
+| The governor's thresholds | Proposed by M1-G5. The stress test passes on the Mac, the S24+ and, after #222, the iPad | M1-G6's S4 traces show whether they flicker or step late |
+| The preset values | Proposed by M1-G6 in pull request #215, open while its device runs repeat | Pending: the S24+ and iPad reruns, and each device's 10-minute S4 run. #215 adds their section and its rows here |
+| The live shadow-map resize test | Not built | No setting that changes during play resizes a shadow map, so the presets do not need it (below) |
+
 ## Question
 
 When the GPU falls behind, do browsers let frames queue on it? If they do, should the thread that draws hold new frames back while two are unfinished?
@@ -97,13 +109,13 @@ Run 20260930-074130-overload, Galaxy S24+, 60 Hz display, from the main checkout
 
 Without the limit, frames queued on the phone's GPU as they did in Chrome and Brave on the Mac. About 8 frames waited, with 360 ms of delay. The limit cut the delay to about 100 ms at the same frame rate.
 
-The iPad's rows are still to come. The phone and the tablet run the page from the main checkout:
+The iPad's rows are pending. No run has measured them yet. The tablet runs the page from the main checkout:
 
 ```sh
-bun tests/real-browsers.ts --plan overload --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave --shields on
+bun tests/real-browsers.ts --plan overload --lan ipad-safari,ipad-brave --shields on
 ```
 
-The S24+ has no WebGPU, so its WebGPU pages count as skipped.
+The S24+ has no WebGPU, so its WebGPU pages counted as skipped.
 
 How the data was produced: `NULL3D_PORT=63173 bun tests/real-browsers.ts --plan overload Safari Firefox "Google Chrome" "Brave Browser"`. The runs were on 30 September 2026, from the worktree of the branch `feat/frame-completion`. The Mac has a 120 Hz built-in display and a 144 Hz external display, and each browser drew on the display its window was on. Safari runs a worker's frame callbacks from a timer, at about 64 Hz. The Firefox limits came from the same plan with limits 3 and 4 added for one run. The Chrome rounds opened the page in Playwright's Chrome, which starts its window on the built-in display. Other helpers built and tested on the same Mac during every run. The results are in the worktree's `target/runs`.
 
@@ -127,6 +139,10 @@ The cost falls on Firefox's WebGPU path, because Firefox reports completions lat
 - `FrameSummary.completedFps` and `gpuLatencyMs` cover every frame. The performance guide explains the presented rate, the completed rate and GPU time. The develop skill tells agents to judge a phone's GPU by the completed rate.
 - `bench/allocation.ts` budgets the tracker's objects.
 - Revisit the limit on Firefox's WebGPU path when Firefox reports completions sooner.
+
+### How three.js handles it
+
+three.js submits each frame when the app's animation loop asks for it, and sets no limit on the frames that wait on the GPU. The browser decides how many queue. Without the limit, the table above shows 6 to 8 frames waiting in Chrome and Brave, and 80 to 89 in Firefox. In Firefox, a player's input then took seconds to reach the screen.
 
 ## The preset check's thresholds (M1-G3)
 
@@ -174,7 +190,7 @@ CI's software GPU drew 8 spheres at 1 to 6 frames per second, so the check lower
 
 ### The live shadow-map resize test
 
-Pending. A live change of the shadow map size needs shadow maps that draw. Their first part (#120) holds the cascade math and the render graph's array targets, and the cascades draw from #134 on. Once #134 merges, the test resizes the shadow maps during rendering on both paths. Until it passes, the shadow map size is fixed while a preset runs. It changes only through `quality.setPreset` or `quality.set`, whose first frame waits for its pipelines and targets.
+Not built. The shadow maps draw since #134, but no setting that changes during play resizes them. The governor's shadow steps change how often the far cascades redraw and the filter's size, never a map's size. So the shadow map size stays fixed while a preset runs. It changes only through `quality.setPreset` or `quality.set`, whose first frame waits for its pipelines and targets. The test becomes a condition again only if a later change lets the governor or a live setting resize a shadow map.
 
 ### Consequences
 

@@ -10,6 +10,8 @@ How many shader variants does the engine build, and how do they reach a page? A 
 
 Stay within the 60 KB budget for the engine's JavaScript in each thread mode, with M1's permutation bits. Keep S4's warm-up on the S24+ within a target that T-26's data sets. T-26 set it at 250 ms of pipeline wait with fresh shaders, about twice the time measured.
 
+The budget was 60 KB when this rule was set. The owner has since raised it to 100 KB for the features that followed ([D-14](D-14-js-budget.md)). The sizes below compare the options at the time, so they keep the 60 KB budget as their measure.
+
 ## Data
 
 ### Sizes
@@ -85,6 +87,11 @@ In the same run, the separate file's first frame came 30 ms later on WebGPU and 
 | Mac: Firefox 156 | No |
 | iPad: Safari 26.6, Brave | Yes |
 | Galaxy S24+: Chrome 154, Brave | No |
+| Pixel 8 (Mali-G715): Chrome 153 | No |
+| Redmi Note 13 4G (Adreno 610): Chrome 138 | No |
+| iPhone 16 Pro: Safari 26.4 | Yes |
+
+The last three rows come from TestingBot's device cloud on 3 October 2026 ([tested devices](../tested-devices.md)). So Apple's browsers compile WebGL2 programs in the background, and Chrome on the Android phones measured does not.
 
 The warm-up test page builds 10 pipelines on WebGL2, and 11 on WebGPU, where the culling pass is the eleventh. The device runner's checks plan ran it on the MacBook Pro M5 Max. The runs are 20260930-050804-checks and 20260930-052609-checks. `load.warmUpMs` is the time from the first build's start until no build was running. Each browser had compiled these shaders before, so its own shader cache may shorten the times.
 
@@ -121,9 +128,17 @@ How the data was produced: on 2026-10-02, `bun tests/real-browsers.ts --plan war
 
 How many: each file holds 2^m variants of a template with m material bits: 16 for the standard material with M1's four material bits. A scene builds only the variants that its materials use.
 
+Background compiles: the engine uses `KHR_parallel_shader_compile` where the browser has it, and the first draw waits for each program where it does not. Both kinds of device met the target. The iPad has the extension, and its WebGL2 pipeline wait was 35 to 61 ms on a repeat visit. The S24+ lacks it, and its wait was 29 to 115 ms. So the engine needs no other path for browsers without the extension. T-12 and T-26 close with this record.
+
+## How three.js handles it
+
+three.js's WebGL renderer builds a program for each combination of a material's features. It builds it when an object first draws with that material. Its `#define` lines play the part of null3D's permutation bits. The GLSL comes from shader chunks in the download. So a page carries every chunk, whether its scene uses it or not. By default, the first draw of each new material waits while its program compiles. An app can call `renderer.compileAsync` to compile a scene's programs ahead of time. It uses `KHR_parallel_shader_compile` where the browser has it.
+
+null3D does the same work at build time. A page downloads one file with only the variants that its device can use, and the first frame waits for the scene's pipelines. A sketch can call `scene.warmUp()` to build them before its loading screen ends.
+
 ## Consequences
 
-- The shader manifest marks the engine's shaders (`lit`, `unlit`, `unlit_map`, `texcoords`, `final`, `mipmap` and `cull`) with `by_device = true`. The shader build writes their builds into `generated/shaders-<target>[-<bit>...].ts`. Today these are `shaders-wgsl.ts`, `shaders-glsl.ts` and `shaders-glsl-draw-index.ts` for HDR devices, and the same three with `-tone-map` for the 8-bit path. A module holds the builds of each shader that a device with its bits asks for. So a shader without device bits, such as `cull`, `mipmap` or the final pass's `final`, is in every module of its target. The main module, `generated/shaders.ts`, keeps the types, the test shaders and the GPU timer's mark shader. It also keeps the debug lines shader, which only development builds import. It also has the loaders `loadWgslShaders(bits)` and `loadGlslShaders(bits)`. Each loader imports only its own target's modules.
+- The shader manifest marks the engine's shaders (`lit`, `unlit`, `unlit_map`, `texcoords`, `final`, `mipmap` and `cull`) with `by_device = true`. The shader build writes their builds into `generated/shaders-<target>[-<bit>...].ts`. These are `shaders-wgsl.ts`, `shaders-glsl.ts` and `shaders-glsl-draw-index.ts` for HDR devices, and the same three with `-tone-map` for the 8-bit path. Half precision ([D-09](D-09-half-precision.md)) is a third bit that a device fixes, so each of the six has a `-half` twin: twelve modules in all. A module holds the builds of each shader that a device with its bits asks for. So a shader without device bits, such as `cull`, `mipmap` or the final pass's `final`, is in every module of its target. The main module, `generated/shaders.ts`, keeps the types, the test shaders and the GPU timer's mark shader. It also keeps the debug lines shader, which only development builds import. It also has the loaders `loadWgslShaders(bits)` and `loadGlslShaders(bits)`. Each loader imports only its own target's modules.
 - The core device carries the bits that the device fixes (`shaderBits`). The thread that draws starts the download while it waits for its WebGPU device or its WebGL2 context. It then gives the loaded shaders to the backend.
 - The size report names each shader file (`SHADER_PARTS` in `tools/lib/size-report.ts`) and counts the largest in each thread mode's download. A new value of the device's bits adds a module, which the report must name.
 - A new material bit doubles each file: check the size report when one is added.
