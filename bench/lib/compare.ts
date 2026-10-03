@@ -57,6 +57,49 @@ export function comparisonSwitches(switches: string): string[] {
 	return COMPARISON_SWITCHES.filter((entry) => !named.has(entry.split('=')[0]));
 }
 
+/**
+ * The files that each build's benchmark pages are made from, as git pathspecs: what the pages draw
+ * and how they time it. Test files are left out, because no page runs them.
+ */
+export const PAGE_SOURCES: readonly string[] = [
+	'bench/pages',
+	'bench/scenes',
+	':(exclude)*.test.ts',
+];
+
+/** How many changed page files a measurement change names before it gives the count of the rest. */
+const NAMED_FILES = 5;
+
+const switchesText = (switches: readonly string[]) =>
+	switches.length > 0 ? `\`${switches.join('&')}\`` : 'none';
+
+/**
+ * Why the two builds of a comparison measure in different ways, or none. Each build runs its own
+ * commit's pages, so a change to the pages between the two commits changes what one build draws or
+ * how it is timed, not the engine. A change to the comparison's switches means that the baseline's
+ * pages get switches that its own runs never had. `pageFiles` lists the page sources that the new
+ * commit changes, and `baselineSwitches` the comparison switches of the baseline commit.
+ */
+export function measurementChanges(
+	pageFiles: readonly string[],
+	baselineSwitches: readonly string[],
+	newSwitches: readonly string[] = COMPARISON_SWITCHES,
+): string[] {
+	const changes: string[] = [];
+	if (pageFiles.length > 0) {
+		const named = pageFiles.slice(0, NAMED_FILES).join(', ');
+		const rest = pageFiles.length - NAMED_FILES;
+		changes.push(
+			`the benchmark pages changed: ${named}${rest > 0 ? ` and ${rest} more ${rest === 1 ? 'file' : 'files'}` : ''}`,
+		);
+	}
+	if (switchesText(baselineSwitches) !== switchesText(newSwitches))
+		changes.push(
+			`the comparison's switches changed from ${switchesText(baselineSwitches)} to ${switchesText(newSwitches)}`,
+		);
+	return changes;
+}
+
 /** The runs that a comparison uses and those it leaves out. */
 export interface RunSelection {
 	kept: BuildRun[];
@@ -491,10 +534,15 @@ export function qualityLines(qualities: readonly RunQuality[]): string[] {
 
 // The verdict and the report.
 
-/** Whether the new build passes, and why it fails when it does not. */
+/**
+ * Whether the new build passes, and why it fails when it does not. When the measurement changed,
+ * the failures are reported and not judged, and the new build passes.
+ */
 export interface Verdict {
 	pass: boolean;
 	failures: string[];
+	/** Why the two builds measure in different ways, or none. */
+	measurementChanges: string[];
 }
 
 const runsText = (count: number) => `${count} ${count === 1 ? 'run' : 'runs'}`;
@@ -509,9 +557,13 @@ const newBuildShort = (page: MissingPage) => page.kept.new < MIN_ROUNDS;
 /**
  * The new build fails when a page gets slower than its rule allows and no trailer names it, and
  * when it kept too few runs of a page to compare. A page that the baseline's runs keep from its
- * comparison is left out without failing, so a commit that mends a broken page can pass.
+ * comparison is left out without failing, so a commit that mends a broken page can pass. When the
+ * measurement changed, nothing fails: the two builds' times do not measure the engine alone.
  */
-export function judge({ comparisons, missing }: BuildComparison): Verdict {
+export function judge(
+	{ comparisons, missing }: BuildComparison,
+	measurementChanges: readonly string[] = [],
+): Verdict {
 	const failures = [
 		...missing.filter(newBuildShort).map((page) => `${pageName(page)}: ${missingText(page)}`),
 		...comparisons
@@ -521,7 +573,11 @@ export function judge({ comparisons, missing }: BuildComparison): Verdict {
 					`${pageName(c)}, ${MEASURES[c.measure].name}: ${percentText(c)} slower (medians ${ms3(c.baseline.median)} ms and ${ms3(c.new.median)} ms)`,
 			),
 	];
-	return { pass: failures.length === 0, failures };
+	return {
+		pass: failures.length === 0 || measurementChanges.length > 0,
+		failures,
+		measurementChanges: [...measurementChanges],
+	};
 }
 
 /** Milliseconds with three decimals, as a comparison needs for the timer's 5-microsecond steps. */
@@ -558,6 +614,26 @@ export interface ReportContext {
 	rules?: Readonly<Record<Measure, Rule>>;
 }
 
+const problemsText = (count: number) => (count === 1 ? 'one problem' : `${count} problems`);
+
+/** The verdict's lines of the report. */
+function verdictLines({ pass, failures, measurementChanges }: Verdict): string[] {
+	if (measurementChanges.length > 0)
+		return [
+			`**Measurement changed**: the run reports every page and judges none, because the two builds measure in different ways. Main's next run compares with this commit.`,
+			...measurementChanges.map((change) => `- ${change}`),
+			...(failures.length > 0
+				? ['', `Not judged: ${problemsText(failures.length)}.`, ...failures.map((f) => `- ${f}`)]
+				: []),
+		];
+	return [
+		pass
+			? `**Passed**: no page is slower than its rule allows without a ${EXPECTED_TRAILER} trailer that names it.`
+			: `**Failed**: ${problemsText(failures.length)}.`,
+		...failures.map((failure) => `- ${failure}`),
+	];
+}
+
 /** The comparison as a short Markdown summary: the verdict, the table, GPU time and the runs. */
 export function compareReport(
 	result: BuildComparison,
@@ -574,10 +650,7 @@ export function compareReport(
 		'',
 		`The new build, ${context.new}, against the baseline, ${context.baseline}, in ${context.browser}. Each page ran ${context.runs} times per build, in rounds that run each page once in each build, with ${context.warmupSeconds} s of warm-up and ${context.measureSeconds} s measured.`,
 		'',
-		verdict.pass
-			? `**Passed**: no page is slower than its rule allows without a ${EXPECTED_TRAILER} trailer that names it.`
-			: `**Failed**: ${verdict.failures.length === 1 ? 'one problem' : `${verdict.failures.length} problems`}.`,
-		...verdict.failures.map((failure) => `- ${failure}`),
+		...verdictLines(verdict),
 		'',
 		'| Scene | Page | Measure | Baseline ms, median (lowest to highest run) | New ms | Change | Result |',
 		'| --- | --- | --- | --- | --- | --- | --- |',
@@ -643,6 +716,8 @@ export interface ComparisonRecord {
 	commits: Record<Build, string>;
 	/** The messages of the commits that the new build adds to the baseline, where trailers are. */
 	messages: string[];
+	/** Why the two builds measure in different ways, or none: see `measurementChanges`. */
+	measurementChanges: string[];
 	/** The browser, the machine and the pages, in a few words. */
 	browser: string;
 	runs: number;
@@ -663,6 +738,7 @@ export function shardPages<T extends PlanPage>(plan: readonly T[], { index, coun
 const SHARED_FIELDS = {
 	plan: 'plan of pages',
 	commits: 'commits',
+	measurementChanges: 'measurement changes',
 	runs: 'number of rounds',
 	warmupSeconds: 'warm-up',
 	measureSeconds: 'measured time',
@@ -723,7 +799,7 @@ export function judgeRecord(record: ComparisonRecord, known: KnownNames): Judged
 	const trailers = readExpectedChanges(record.messages, known);
 	const selection = selectRuns(record.results);
 	const comparison = compareBuilds(selection, trailers.changes);
-	const verdict = judge(comparison);
+	const verdict = judge(comparison, record.measurementChanges);
 	const report = compareReport(comparison, verdict, {
 		baseline: record.commits.baseline,
 		new: record.commits.new,

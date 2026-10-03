@@ -29,15 +29,18 @@ The benchmarks measure the engine as developers ship it. A production build leav
 ## The benchmark job in CI
 
 - The Benchmarks workflow compares a new commit with a baseline on GitHub's machines. On main it runs one run at a time, so it leaves GitHub's other Mac machines to pull requests and the merge queue.
-- A push to main waits while a run goes on, and a newer push replaces the run that waits. So the baseline of a push is the last commit on main that a run measured with success, which `bench/ci-baseline.ts` finds. The next run then measures the change of every push that got no run.
-- Without such a commit, the baseline is the commit before. After a failed run, the next run still compares with the last commit that passed. Main's run then fails until a commit fixes the slowdown or names it in a `Bench-Expected:` trailer.
+- A push to main waits while a run goes on, and a newer push replaces the run that waits. So the baseline of a push is the last commit on main that a run measured, which `bench/ci-baseline.ts` finds. The next run then measures the change of every push that got no run. The commit before would leave those changes unmeasured.
+- A run measured its commit when the report's step `Merge the shards into one comparison` passed, whether the verdict then passed or failed. A cancelled run, a run whose builds failed and a run whose shards left a page out measured nothing, and the next run skips them.
+- A failed verdict counts too, so a slowdown fails the one run that holds it. The next run compares with that commit and judges only the changes after it. Until 3 October 2026, only a run that passed counted. One false alarm then kept the baseline on an old commit, and every later run compared with it. Main's run failed 7 times in a row on S1 WebGL2. The owner's Mac measured no change between those commits.
+- Without such a commit, the baseline is the commit before.
+- Each build runs its own commit's benchmark pages: `bench/pages` and `bench/scenes`, less their tests. The commits from the baseline to the new commit can change those pages or the comparison's switches. Then the two builds measure in different ways, and the summary says **Measurement changed**. It names the change and lists the pages that would fail as not judged. The run passes, and the next run on main compares with its commit. After #217, the new pages took a fixed preset and the baseline's pages chose their own. The next run failed on that alone.
 - For a pull request it runs on demand, against the pull request's merge base. Add the `benchmark` label, and each push runs it again while the label stays. You can also start the workflow from the Actions tab with a pull request's number, a branch or a commit.
 - GitHub's machines are shared, and their speed changes from run to run. So each Mac machine runs the pages of both commits. A page's new build is judged only against the baseline that ran on the same machine.
 - The workflow has four kinds of jobs:
   - `choose the commits` picks the baseline and the new commit.
   - `build (baseline)` and `build (new)` each build one commit on a Linux machine, with that commit's `bun run build`. That build also makes the commit's shader modules, unless the commit keeps them in git. The built files are the same on every platform, so each job packs them into an artifact.
   - The `benchmark (shard i of 3)` jobs run on Mac machines. Each one makes a git worktree of each commit, unpacks its build there, and runs `bun run bench:run --compare <baseline>,<new> --shard i/3` in Chrome. The command builds each commit's benchmark pages for production, into `target/bench-pages-baseline` and `target/bench-pages-new`, and serves each build on a port of its own. The shards need no Rust toolchain, because `vite preview` does not build the shader modules that a dev server needs.
-  - `benchmark report` downloads the record of each shard, `runs.json`, and runs `bun run bench:run --merge`. It judges every page as one comparison would, with the same rules and the same trailers. Its summary and artifact are the run's result.
+  - `benchmark report` downloads the record of each shard, `runs.json`, and runs `bun run bench:run --merge`. It judges every page as one comparison would, with the same rules and the same trailers, and writes the verdict to `summary.json`. The step `Judge the new build` then fails when the verdict does. Its summary and artifact are the run's result.
 - A commit from before `bench/vite.pages.config.ts` existed has its pages built with the new commit's config.
 - S1, S1-static, S1-cells, S2, S3 and S4 run on null3D's two GPU paths. Each scene on each path is one page, so the plan has 12 pages. A shard runs every third page, from its own place in the plan. So each shard runs 4 pages of 3 or 4 scenes.
 - A scene that one of the two commits has no page for runs in neither. So a pull request that adds a benchmark is compared on the other scenes.
@@ -92,7 +95,7 @@ Bench-Expected: s1/null3d-webgl2: the batch pass now writes normals, about 0.1 m
 
 Build two checkouts, such as a git worktree of main beside your branch, with `bun run build` in each. Then run `bun run bench:run --compare ../main,. --runs 10 --seconds 5`, the job's settings. The baseline's pages are served on the port that `NULL3D_PORT` names, and the new build's pages on the next one. With `--dev`, each checkout's dev server takes its port instead.
 
-Add `--shard 2/3` to run only the pages of one shard, as a CI shard does. Each run writes its record to `runs.json` beside its summary. `bun run bench:run --merge <folder>` judges the records under a folder as one comparison, as the report job does. It needs no browser.
+Add `--shard 2/3` to run only the pages of one shard, as a CI shard does. Each run writes its record to `runs.json` beside its summary. `bun run bench:run --merge <folder>` judges the records under a folder as one comparison, as the report job does. It needs no browser, and fails only when the records miss a page: the verdict is in `summary.json`.
 
 ## Visual figures and captured frames
 
@@ -222,6 +225,7 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 - The WebAssembly memory's size comes from `Runtime.queryObjects` on the page, because the engine keeps the memory out of the page's global scope.
 - The soak judges the run after a 2-minute warm-up. The sketch worker's and the render worker's heaps may each grow by 256 KB. The growth is the median of the last three samples less the median of the first three.
 - The WebAssembly memory may not grow at all, and the engine must still draw at the end.
+- `--scene s4` soaks S4, the phone scene, as M1's exit gate asks. Its shadows, street lights, moving vehicles and quality governor run frame code that S1 never reaches. S4 has a fixed count of objects, so the soak ignores `--n` there. `bun run bench:allocation --scene s4` samples the same scene, on WebGPU or with `--gpu webgl2`.
 
 ## Allocation and profiling
 
