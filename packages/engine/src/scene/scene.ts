@@ -250,13 +250,14 @@ export interface DirectionalShadowOptions {
 	mapSize?: number;
 	/**
 	 * How far each receiving surface moves toward the light before its shadow test, in texels of
-	 * its cascade, at least 0. Raise it when surfaces show stripes of shadow on themselves. The
-	 * default is 0.5.
+	 * its cascade, at least 0. A surface takes this times the tangent of its angle to the light, up
+	 * to twice it. Raise it when surfaces show stripes of shadow on themselves. The default is 0.2.
 	 */
 	bias?: number;
 	/**
 	 * How far each receiving surface moves along its normal before its shadow test, in texels of
-	 * its cascade, at least 0. The default is 1.
+	 * its cascade, at least 0. A surface takes this times the sine of its angle to the light. The
+	 * default is 0.3.
 	 */
 	normalBias?: number;
 	/**
@@ -299,13 +300,15 @@ export interface PointLightOptions extends LightOptions {
 export interface LightShadowOptions {
 	/**
 	 * How far each receiving surface moves toward the light before its shadow test, in texels of
-	 * the light's tile at the surface's distance, at least 0. Raise it when surfaces show stripes of
-	 * shadow on themselves. The default is 0.5.
+	 * the light's tile at the surface's distance, at least 0. A surface takes this times the tangent
+	 * of its angle to the light, up to twice it. Raise it when surfaces show stripes of shadow on
+	 * themselves. The default is 0.2.
 	 */
 	bias?: number;
 	/**
 	 * How far each receiving surface moves along its normal before its shadow test, in texels of the
-	 * light's tile at the surface's distance, at least 0. The default is 1.
+	 * light's tile at the surface's distance, at least 0. A surface takes this times the sine of its
+	 * angle to the light. The default is 0.3.
 	 */
 	normalBias?: number;
 }

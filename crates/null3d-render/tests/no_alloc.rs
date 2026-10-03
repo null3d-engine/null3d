@@ -29,6 +29,7 @@ use null3d_render::materials::Shading;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::parallel_record::ParallelRecorder;
 use null3d_render::shadow_tiles::TileSettings;
+use null3d_render::shadows::ShadowQuality;
 use null3d_render::view::ViewId;
 
 #[global_allocator]
@@ -53,16 +54,23 @@ fn recording_steady_frames_allocates_nothing() {
 }
 
 /// Records warm-up frames of `world` with every object casting and receiving the sun's shadows
-/// in four cascades, then steady frames and frames whose structure changes, and returns what
-/// those allocated.
+/// in four cascades, far ones that draw every other frame, and a dynamic caster that keeps them
+/// drawing, then steady frames and frames whose structure changes, and returns what those
+/// allocated.
 fn shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     let casts = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
-    let commands: Vec<Command> = world
+    let mut commands: Vec<Command> = world
         .objects
         .iter()
         .map(|&object| Command::set_flags(object, casts, casts))
         .collect();
+    commands.push(Command::set_dynamic(world.objects[0], true));
     world.scene.apply_commands(&commands, world.frame).unwrap();
+    let quality = ShadowQuality {
+        filter: 3,
+        far_interval: 2,
+    };
+    world.renderer.settings_mut().set_shadow_quality(quality);
     let shadow = SunShadow {
         cascades: 4,
         map_size: 1024,

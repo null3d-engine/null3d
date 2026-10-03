@@ -26,6 +26,11 @@ export interface RunOptions {
 	 * for no shadows. three.js draws one shadow map whatever the count.
 	 */
 	shadows: number | null;
+	/**
+	 * `?far=`: the frames between two draws of a far shadow cascade, from 1 to 8, in the scenes that
+	 * draw shadows, or null for the quality preset's.
+	 */
+	far: number | null;
 }
 
 /** The value of a switch that must be one of a few words. */
@@ -69,7 +74,7 @@ export function pageReport(params: URLSearchParams): 'hold' | 'demo' | 'soak' | 
 	return params.has('soak') ? 'soak' : 'bench';
 }
 
-/** Reads `?hold`, `?demo`, `?n=`, `?seconds=`, `?soak=` and `?shadows=`. */
+/** Reads `?hold`, `?demo`, `?n=`, `?seconds=`, `?soak=`, `?shadows=` and `?far=`. */
 export function readRunOptions(params: URLSearchParams): RunOptions {
 	return {
 		hold:
@@ -105,6 +110,12 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 			'shadows',
 			(v) => Number.isInteger(v) && v >= 1 && v <= 4,
 			'a cascade count from 1 to 4',
+		),
+		far: readNumber(
+			params,
+			'far',
+			(v) => Number.isInteger(v) && v >= 1 && v <= 8,
+			'a whole number of frames from 1 to 8',
 		),
 	};
 }

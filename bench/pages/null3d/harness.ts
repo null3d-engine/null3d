@@ -34,7 +34,7 @@ export interface Null3dPageOptions {
  * Runs `sketch`, a sketch module next to the page, as the scene `sceneName` with `defaultCount`
  * objects, or with the count `?n=` asks for. A scene built of whole parts passes `wholeCount`, which
  * turns an asked-for count into the count the scene draws. The sketch module reads `n`, and
- * `shadows` when the page asks for shadows, from its own address.
+ * `shadows` and `far` when the page asks for them, from its own address.
  */
 export function runNull3dPage(
 	sceneName: string,
@@ -60,6 +60,7 @@ export function runNull3dPage(
 		const n = wholeCount(options.count ?? defaultCount);
 		sketchUrl.searchParams.set('n', String(n));
 		if (options.shadows !== null) sketchUrl.searchParams.set('shadows', String(options.shadows));
+		if (options.far !== null) sketchUrl.searchParams.set('far', String(options.far));
 
 		// A bare `?hold` holds at the scene's hold time, which the page passes as the engine's option.
 		// A page that fills the window leaves the pixel ratio's cap to the quality preset.

@@ -107,7 +107,7 @@ pub mod value {
 
 /// The numbers of a new light, by [`value`].
 const DEFAULT_VALUES: [f32; value::LAST as usize + 1] =
-    [1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.5, 1.0, 3.0, 2048.0, 200.0];
+    [1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.2, 0.3, 3.0, 2048.0, 200.0];
 
 /// The cone cosines of a point light's [`VisibleLight`] record. Every direction's cosine is above
 /// both, so a shader that fades spot lights with a smooth step between them lets a point light's

@@ -26,6 +26,15 @@ export function readShadows(moduleUrl: string): number {
 }
 
 /**
+ * Reads the frames between two draws of a far shadow cascade from the sketch module's address,
+ * where the page harness puts them when the page asks, or undefined for the quality preset's.
+ */
+export function readFarInterval(moduleUrl: string): number | undefined {
+	const far = new URL(moduleUrl).searchParams.get('far');
+	return far === null ? undefined : Number(far);
+}
+
+/**
  * Sets the background, the sun and the ambient light, and makes the active camera. The three.js
  * twins draw with no tone mapping, three.js's default, so the null3D pages turn off the engine's
  * default of ACES. The twins also draw every pixel of the canvas, so the null3D pages keep the

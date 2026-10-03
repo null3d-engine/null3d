@@ -167,7 +167,7 @@ fn point_and_spot_lights_that_cast_shadows_list_where_they_stand_in_view_or_not(
     assert_eq!(s.at.local, [0.0, 3.0, -20.0]);
     assert_close(s.direction, [0.0, -1.0, 0.0]);
     assert_eq!((s.angle, s.range), (0.5, 8.0));
-    assert_eq!((s.bias, s.normal_bias), (2.0, 1.0));
+    assert_eq!((s.bias, s.normal_bias), (2.0, 0.3));
     assert_eq!(s.layers, 0b11);
     assert_eq!(
         *b,
@@ -182,8 +182,8 @@ fn point_and_spot_lights_that_cast_shadows_list_where_they_stand_in_view_or_not(
             direction: [0.0; 3],
             angle: 0.0,
             range: 1.0,
-            bias: 0.5,
-            normal_bias: 1.0,
+            bias: 0.2,
+            normal_bias: 0.3,
             layers: DEFAULT_LAYERS,
         }
     );
@@ -389,7 +389,7 @@ fn the_main_light_reports_its_shadows_when_it_casts_them() {
     );
     assert_eq!(
         (shadow.bias, shadow.normal_bias, shadow.distance),
-        (0.5, 1.0, 200.0)
+        (0.2, 0.3, 200.0)
     );
 
     for (code, number) in [

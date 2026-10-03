@@ -28,7 +28,7 @@ import {
 	s4VehicleScale,
 	s4VehiclesAt,
 } from '../../scenes/spec';
-import { followPath, setUpView, watchQuality } from './sketch-common';
+import { followPath, readFarInterval, setUpView, watchQuality } from './sketch-common';
 
 export default defineSketch((context) => {
 	const { scene, materials, geometry, textures, time } = context;
@@ -39,6 +39,10 @@ export default defineSketch((context) => {
 	// S4 measures how the quality governor holds the frame rate on phones, so it runs, and lightens
 	// the shadows when frames take too long. The render scale stays at 1, as for the other scenes.
 	context.quality.set({ governor: true });
+	// ?far= fixes how often the far shadow cascades draw, to measure what drawing them less often
+	// saves.
+	const far = readFarInterval(import.meta.url);
+	if (far !== undefined) context.quality.set({ farCascadeInterval: far });
 	const reportQuality = watchQuality(context);
 
 	scene.setFog({ type: 'linear', color: S4_FOG.color, near: S4_FOG.near, far: S4_FOG.far });

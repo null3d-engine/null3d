@@ -59,10 +59,25 @@ struct ShadowTiles {
 /// The share of the shadow distance over which shadows fade out.
 const FADE_SHARE: f32 = 0.1;
 
+/// The most that a surface at a steep angle to the light scales its depth bias by.
+const MAX_SLOPE: f32 = 2.0;
+
+/// The shares of a light's biases that a surface with unit normal `normal` takes, for the unit
+/// direction `to_light` toward the light: the sine of the angle between them for the normal bias,
+/// and its tangent, up to `MAX_SLOPE`, for the depth bias. A surface that faces the light takes
+/// little of either, so a caster's shadow starts where it stands on such a surface. One at a steep
+/// angle takes more, as its depth changes faster across each texel.
+fn bias_shares(normal: vec3f, to_light: vec3f) -> vec2f {
+    let cosine = clamp(dot(normal, to_light), 0.0, 1.0);
+    let sine = sqrt(1.0 - cosine * cosine);
+    return vec2f(sine, min(sine, MAX_SLOPE * cosine) / max(cosine, 1e-4));
+}
+
 /// How much of the main directional light reaches a point: 1 in full light, 0 in full shadow.
-/// `relative` is the point's position relative to the camera, and `normal` its unit normal, which
-/// moves the point off its own surface before the lookup.
-fn sun_shadow(relative: vec3f, normal: vec3f) -> f32 {
+/// `relative` is the point's position relative to the camera, `normal` its unit normal, which
+/// moves the point off its own surface before the lookup, and `to_light` the unit direction toward
+/// the light.
+fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
     let along = dot(relative, cascades.forward.xyz);
     let count = u32(cascades.forward.w);
     var cascade = 0u;
@@ -71,8 +86,9 @@ fn sun_shadow(relative: vec3f, normal: vec3f) -> f32 {
     }
     // The filter reads up to three texels beyond the point, which must stay inside the layer.
     let inside = 0.5 - 3.0 * cascades.kernel.y;
+    let shares = bias_shares(normal, to_light);
     for (; cascade < count; cascade += 1u) {
-        let moved = relative + normal * cascades.normal_offsets[cascade];
+        let moved = relative + normal * (cascades.normal_offsets[cascade] * shares.x);
         let clip = cascades.view_proj[cascade] * vec4f(moved, 1.0);
         if any(abs(clip.xy) > vec2f(2.0 * inside)) {
             // A box that kept its place while the camera turned can miss the point; the next
@@ -84,7 +100,7 @@ fn sun_shadow(relative: vec3f, normal: vec3f) -> f32 {
         // WebGL2 keeps the rows of a drawn texture bottom first.
         uv.y = 1.0 - uv.y;
 #endif
-        let depth = clip.z + cascades.depth_biases[cascade];
+        let depth = clip.z + cascades.depth_biases[cascade] * shares.y;
         let lit = filtered(false, cascades.kernel, uv, cascade, depth);
         let end = cascades.ends[count - 1u];
         return mix(lit, 1.0, smoothstep(end * (1.0 - FADE_SHARE), end, along));
@@ -164,12 +180,13 @@ fn cube_face(direction: vec3f) -> u32 {
 /// How much of a point or spot light reaches a point: 1 in full light, 0 in full shadow. `first`
 /// is the light's first tile. `relative` is the point's position relative to the camera, `normal`
 /// its unit normal, `to_light` the unit direction toward the light, and `gap` the distance to it.
-/// The biases count texels of the tile at the point's distance from the light. A point outside its
-/// tile's view is lit.
+/// The biases count texels of the tile at the point's distance from the light, scaled by the
+/// surface's angle to the light (`bias_shares`). A point outside its tile's view is lit.
 fn light_shadow(first: u32, relative: vec3f, normal: vec3f, to_light: vec3f, gap: f32) -> f32 {
     let params = tiles.params[first];
     let texel = params.x * gap;
-    let moved = relative + normal * (params.z * texel) + to_light * (params.y * texel);
+    let shares = bias_shares(normal, to_light) * texel;
+    let moved = relative + normal * (params.z * shares.x) + to_light * (params.y * shares.y);
     var tile = first;
     if params.w > 1.5 {
         tile += cube_face(moved - (relative + to_light * gap));

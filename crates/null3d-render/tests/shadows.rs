@@ -577,4 +577,27 @@ fn far_cascades_cull_and_draw_in_turn_and_keep_their_layers_in_between() {
     let mut mock = MockBackend::default();
     let (cascades, _) = drawn(&world.step(&mut mock, false));
     assert_eq!(cascades, [0, 1, 2]);
+
+    // A dynamic caster in every box keeps every cascade drawing, so its shadow follows it.
+    let ball = world.objects[2];
+    let dynamic = [Command::set_dynamic(ball, true)];
+    world.scene.apply_commands(&dynamic, world.frame).unwrap();
+    let mut turns = vec![drawn(&world.step(&mut mock, true)).0];
+    for _ in 0..3 {
+        turns.push(drawn(&world.step(&mut mock, false)).0);
+    }
+    assert_eq!(turns, [[0, 1, 2]; 4]);
+    // A hidden caster draws nowhere, and a still one again: the far cascades take turns.
+    let hidden = [Command::set_visible(ball, false)];
+    world.scene.apply_commands(&hidden, world.frame).unwrap();
+    // The layers that held the caster draw once more without it.
+    assert_eq!(drawn(&world.step(&mut mock, false)).0, [0, 1, 2]);
+    assert_eq!(drawn(&world.step(&mut mock, false)).0.len(), 2);
+    let still = [
+        Command::set_visible(ball, true),
+        Command::set_dynamic(ball, false),
+    ];
+    world.scene.apply_commands(&still, world.frame).unwrap();
+    world.step(&mut mock, true);
+    assert_eq!(drawn(&world.step(&mut mock, false)).0.len(), 2);
 }

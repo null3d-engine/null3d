@@ -208,9 +208,9 @@ export interface QualitySettings {
 	shadowFilter: 3 | 5;
 	/**
 	 * How often each far shadow cascade draws: once in this many frames, a whole number from 1 to
-	 * 8. The nearest cascade draws in every frame, and the far ones take turns. A higher value
-	 * costs less, and far shadows then lag their moving casters by a few frames. It changes during
-	 * play.
+	 * 8. The nearest cascade draws in every frame, and the far ones take turns. A far cascade that a
+	 * dynamic object touches draws in every frame, so moving shadows follow their casters. A higher
+	 * value costs less where far cascades hold still casters alone. It changes during play.
 	 */
 	farCascadeInterval: number;
 	/**

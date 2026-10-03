@@ -5,7 +5,7 @@ import { readChoice, readRunOptions } from './options';
 describe('readRunOptions', () => {
 	const read = (query: string) => readRunOptions(new URLSearchParams(query));
 
-	test('reads hold, demo, the count, the seconds, the soak and the shadow cascades', () => {
+	test('reads hold, demo, the count, the seconds, the soak, the shadow cascades and the far cascade interval', () => {
 		expect(read('')).toEqual({
 			hold: null,
 			demo: false,
@@ -13,14 +13,16 @@ describe('readRunOptions', () => {
 			seconds: null,
 			soak: null,
 			shadows: null,
+			far: null,
 		});
-		expect(read('?hold&n=1000&seconds=2.5&shadows=3')).toEqual({
+		expect(read('?hold&n=1000&seconds=2.5&shadows=3&far=1')).toEqual({
 			hold: HOLD_TIME,
 			demo: false,
 			count: 1000,
 			seconds: 2.5,
 			soak: null,
 			shadows: 3,
+			far: 1,
 		});
 		expect(read('?soak=30').soak).toBe(30);
 		expect(read('?hold=3.25').hold).toBe(3.25);
@@ -43,6 +45,9 @@ describe('readRunOptions', () => {
 			'hold=soon',
 			'shadows=0',
 			'shadows=5',
+			'far=0',
+			'far=9',
+			'far=1.5',
 			'shadows=2.5',
 		]) {
 			expect(() => read(query)).toThrow(/is not valid: use/);

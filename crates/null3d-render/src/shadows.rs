@@ -35,8 +35,12 @@
 //! The nearest cascade draws in every frame. The far cascades draw once every few frames, in turn,
 //! and keep their layers of the map in between ([`CascadeSchedule`]). A cascade that skips a
 //! frame keeps the box it last drew with, fixed in the world, and its matrix follows the camera
-//! from that box. Receivers therefore read each layer with the matrix it was drawn with. Far
-//! shadows then lag their casters by a few frames, where the lag is hardest to see.
+//! from that box. Receivers therefore read each layer with the matrix it was drawn with.
+//!
+//! A kept layer holds its casters where they stood when it drew, so a caster that moves in every
+//! frame would leave its shadow behind. A far cascade therefore draws in every frame while a
+//! moving caster ([`MovingCasters`]) touches its box, or touched the box when its layer drew. Only
+//! far cascades whose boxes hold still casters alone keep their layers.
 //!
 //! # Receivers
 //!
@@ -49,8 +53,9 @@
 //! Past the shadow distance nothing is shadowed, and shadows fade out over the last tenth of the
 //! distance.
 
-use null3d_core::cells::CellPosition;
+use null3d_core::cells::{CELL_SIZE, CellPosition};
 use null3d_core::culling::Frustum;
+use null3d_core::scene::{NO_PARENT, SceneStorage, flags};
 use null3d_gpu::drawlist::sizes::SHADOW_UNIFORM_BYTES;
 use null3d_gpu::drawlist::{DrawList, Op, address, buffer_usage, compare, filter, format};
 
@@ -140,6 +145,17 @@ pub struct CascadeBox {
     pub radius: f32,
     /// How far the box reaches toward the light past the sphere.
     pub margin: f32,
+}
+
+impl CascadeBox {
+    /// True when a sphere at `center` from the world's origin, of radius `radius`, draws into the
+    /// box: it reaches into the box across the light, and is not wholly beyond its far face.
+    /// Spheres past the face toward the light count, as they draw flattened onto that face.
+    pub fn touches(&self, center: [f64; 3], radius: f32) -> bool {
+        let reach = f64::from(self.radius) + f64::from(radius);
+        let along = |k: usize| dot_far(center, self.axes[k]) - self.center[k];
+        along(0).abs() <= reach && along(1).abs() <= reach && along(2) >= -reach
+    }
 }
 
 /// One cascade in one frame.
@@ -429,11 +445,15 @@ const _: () = assert!(MAX_INTERVAL == 8 && CYCLE.is_multiple_of(3 * 5 * 7 * 8));
 /// The nearest cascade draws in every frame. Each far cascade draws once every few frames, and
 /// neighboring far cascades take their turns in different frames, so the frames share the cost. A
 /// cascade draws at once when its layer holds nothing yet: when the shadows start, when the
-/// cascade count or the map size changes, and when the GPU objects are made again.
+/// cascade count or the map size changes, and when the GPU objects are made again. A far cascade
+/// also draws in every frame where a moving caster touches the box its layer holds, or touched it
+/// when the layer drew, so moving shadows follow their casters.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct CascadeSchedule {
     /// The box that each cascade's layer holds, or `None` before it draws.
     drawn: [Option<CascadeBox>; MAX_CASCADES],
+    /// True for each layer that drew with a moving caster in its box.
+    moving: [bool; MAX_CASCADES],
     /// The cascade count and the map size that the layers hold.
     shape: (usize, u32),
     /// The frame's place in the schedule's cycle.
@@ -449,15 +469,17 @@ impl CascadeSchedule {
 
     /// Picks the cascades of `cascades` that draw in this frame, for a camera at `position` from
     /// the world's origin, with `map_size` texels on each side of each layer and far cascades that
-    /// draw every `interval` frames. Returns them as a mask with one bit per cascade, the nearest
-    /// in bit 0. Each cascade that does not draw takes the box that its layer holds, relative to
-    /// the camera, so receivers read the layer as it was drawn.
+    /// draw every `interval` frames. `moving` tells whether a moving caster touches a box. Returns
+    /// the cascades that draw as a mask with one bit per cascade, the nearest in bit 0. Each
+    /// cascade that does not draw takes the box that its layer holds, relative to the camera, so
+    /// receivers read the layer as it was drawn.
     pub fn plan(
         &mut self,
         cascades: &mut Cascades,
         position: [f64; 3],
         map_size: u32,
         interval: u32,
+        moving: impl Fn(&CascadeBox) -> bool,
     ) -> u32 {
         let shape = (cascades.count, map_size);
         if shape != self.shape {
@@ -473,11 +495,15 @@ impl CascadeSchedule {
         let mut drawn = 0;
         for (k, cascade) in cascades.cascades[..cascades.count].iter_mut().enumerate() {
             match self.drawn[k] {
-                Some(bounds) if !Self::due(frame, k, interval) => {
+                Some(bounds)
+                    if !Self::due(frame, k, interval) && !self.moving[k] && !moving(&bounds) =>
+                {
                     *cascade = cascade_in(&bounds, position, cascade.end, map_size);
                 }
                 _ => {
                     self.drawn[k] = Some(cascade.bounds);
+                    // A layer that draws in every frame anyway needs no test.
+                    self.moving[k] = k > 0 && interval > 1 && moving(&cascade.bounds);
                     drawn |= 1 << k;
                 }
             }
@@ -488,6 +514,78 @@ impl CascadeSchedule {
     /// Forgets what the layers hold, so every cascade draws in the next frame.
     pub fn reset(&mut self) {
         *self = Self::default();
+    }
+}
+
+/// The scene objects that cast shadows and move in every frame: each dynamic object, and each
+/// object under a dynamic one, that has a mesh and casts shadows. The list follows the scene's
+/// structure, so it changes only in frames where the structure changed.
+#[derive(Debug, Default)]
+pub struct MovingCasters {
+    slots: Vec<u32>,
+    /// True once the list matches the scene's structure.
+    built: bool,
+}
+
+impl MovingCasters {
+    /// Lists the scene's moving casters again when its structure changed, or when the list was
+    /// never built. Allocates only when the list grows past its largest size so far.
+    pub fn update(&mut self, scene: &SceneStorage, structure_changed: bool) {
+        if self.built && !structure_changed {
+            return;
+        }
+        self.built = true;
+        self.slots.clear();
+        let (parents, slot_flags, meshes) = (scene.parents(), scene.flags(), scene.meshes());
+        let moves = |slot: usize| {
+            let mut at = slot;
+            loop {
+                if slot_flags[at] & flags::DYNAMIC != 0 {
+                    return true;
+                }
+                match parents[at] {
+                    NO_PARENT => return false,
+                    parent => at = parent as usize,
+                }
+            }
+        };
+        let high = scene.slots().high_water() as usize;
+        for slot in 0..high {
+            if meshes[slot] != 0 && slot_flags[slot] & flags::CAST_SHADOWS != 0 && moves(slot) {
+                self.slots.push(slot as u32);
+            }
+        }
+    }
+
+    /// Forgets the list, so the next update builds it again.
+    pub fn forget(&mut self) {
+        self.built = false;
+    }
+
+    /// True when a visible moving caster on the layers `layers` touches `bounds`, in the world
+    /// output of frame parity `parity`. Casters beyond the box's face toward the light count, as
+    /// they draw into it flattened onto that face.
+    pub fn touch(
+        &self,
+        scene: &SceneStorage,
+        parity: usize,
+        layers: u32,
+        bounds: &CascadeBox,
+    ) -> bool {
+        let spheres = scene.world(parity).spheres();
+        let (slot_flags, slot_layers, cells) = (scene.flags(), scene.layers(), scene.cells());
+        let table = scene.cell_table();
+        let size = f64::from(CELL_SIZE);
+        self.slots.iter().any(|&slot| {
+            let s = slot as usize;
+            if slot_flags[s] & flags::VISIBLE == 0 || slot_layers[s] & layers == 0 {
+                return false;
+            }
+            let cell = table.coords(cells[s]);
+            let local = [spheres.xs[s], spheres.ys[s], spheres.zs[s]];
+            let center = std::array::from_fn(|k| f64::from(cell[k]) * size + f64::from(local[k]));
+            bounds.touches(center, spheres.radii[s])
+        })
     }
 }
 
@@ -1077,13 +1175,13 @@ mod tests {
         // The first frame draws every cascade, as no layer holds anything yet.
         let mut first = fit_at(FAR_OUT, 0.0);
         let fresh = first;
-        assert_eq!(schedule.plan(&mut first, FAR_OUT, 2048, 4), 0b1111);
+        assert_eq!(schedule.plan(&mut first, FAR_OUT, 2048, 4, still), 0b1111);
         assert_eq!(first, fresh);
         // The camera moves and turns: only the near cascade and the next in turn draw.
         let moved = [FAR_OUT[0] + 3.7, FAR_OUT[1], FAR_OUT[2] - 2.9];
         let mut second = fit_at(moved, 25.0);
         let fresh = second;
-        assert_eq!(schedule.plan(&mut second, moved, 2048, 4), 0b0101);
+        assert_eq!(schedule.plan(&mut second, moved, 2048, 4, still), 0b0101);
         assert_eq!(second.cascades[0], fresh.cascades[0]);
         assert_eq!(second.cascades[2], fresh.cascades[2]);
         // The others keep the boxes of the first frame, with their own slices' ends, and map each
@@ -1106,13 +1204,69 @@ mod tests {
         }
         // A new map size draws every cascade again, and so does a reset.
         assert_eq!(
-            schedule.plan(&mut fit_at(moved, 25.0), moved, 1024, 4),
+            schedule.plan(&mut fit_at(moved, 25.0), moved, 1024, 4, still),
             0b1111
         );
         schedule.reset();
         assert_eq!(
-            schedule.plan(&mut fit_at(moved, 25.0), moved, 1024, 4),
+            schedule.plan(&mut fit_at(moved, 25.0), moved, 1024, 4, still),
             0b1111
         );
+    }
+
+    /// No moving caster touches any box.
+    fn still(_: &CascadeBox) -> bool {
+        false
+    }
+
+    #[test]
+    fn a_far_cascade_draws_in_every_frame_while_a_moving_caster_touches_it() {
+        let settings = ShadowSettings {
+            cascades: 4,
+            ..SETTINGS
+        };
+        let fit = || {
+            fit_cascades(
+                &turned(0.0),
+                FAR_OUT,
+                &LENS,
+                1.5,
+                DOWN_AND_ACROSS,
+                &settings,
+            )
+        };
+        // A moving caster in the second cascade's box alone.
+        let second = fit().cascades[1].bounds;
+        let touching = std::cell::Cell::new(true);
+        let moving = |bounds: &CascadeBox| touching.get() && *bounds == second;
+        let mut schedule = CascadeSchedule::default();
+        let mut plan = || schedule.plan(&mut fit(), FAR_OUT, 2048, 4, moving);
+        assert_eq!(plan(), 0b1111);
+        // The second cascade draws out of turn, beside the third, whose turn it is.
+        assert_eq!(plan(), 0b0111);
+        // The caster leaves, but the layer still holds its shadow: it draws once more.
+        touching.set(false);
+        assert_eq!(plan(), 0b1011);
+        // With still casters alone, the far cascades keep their layers again.
+        assert_eq!(plan(), 0b0001);
+        assert_eq!(plan(), 0b0011);
+    }
+
+    #[test]
+    fn a_sphere_touches_a_box_that_it_draws_into() {
+        let bounds = CascadeBox {
+            axes: [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]],
+            center: [2048.0, 0.0, 10.0],
+            radius: 20.0,
+            margin: 5.0,
+        };
+        let box_test = |at: [f64; 3], r: f32| bounds.touches(at, r);
+        // Inside, above the box toward the light, and just touching a side all count.
+        assert!(box_test([2048.0, 10.0, 0.0], 1.0));
+        assert!(box_test([2048.0, 500.0, 0.0], 1.0));
+        assert!(box_test([2048.0 + 20.5, 10.0, 0.0], 1.0));
+        // Past a side, or beyond the far face, nothing draws into the box.
+        assert!(!box_test([2048.0 + 21.5, 10.0, 0.0], 1.0));
+        assert!(!box_test([2048.0, -11.5, 0.0], 1.0));
     }
 }
