@@ -3,7 +3,7 @@
 // The top row takes the uniforms' first values, from left to right: the defaults of 0, a tint as a
 // color, more rings, and wider rings. The bottom row changes them with set() after creation, and
 // changes a standard value with them.
-import { defineSketch } from '@null3d/engine';
+import { defineSketch, type ShaderValues, type UniformValues } from '@null3d/engine';
 
 const rings = /* wgsl */ `
 struct Uniforms {
@@ -38,7 +38,7 @@ export default defineSketch(({ scene, materials, geometry }) => {
 	scene.createAmbientLight({ color: '#ffffff', intensity: 0.4 });
 	const sphere = geometry.sphere({ radius: 0.6, widthSegments: 32, heightSegments: 16 });
 
-	const firsts = [
+	const firsts: UniformValues<typeof rings>[] = [
 		{},
 		{ tint: '#ff6a00', width: 0.5, count: 4 },
 		{ tint: [0.1, 0.8, 0.3], width: 0.5, count: 10 },
@@ -49,7 +49,7 @@ export default defineSketch(({ scene, materials, geometry }) => {
 		scene.createMesh({ mesh: sphere, material, position: [-3.3 + k * 2.2, 1.5, 0] });
 	});
 
-	const changed = [
+	const changed: ShaderValues<typeof rings>[] = [
 		{ tint: '#ffffff', width: 0.3, count: 6, offset: [0, 0.08] },
 		{ tint: '#ff2020', width: 0.5, count: 3, roughness: 0.2, color: '#303440' },
 		{ glow: [1, 0.6, 0.1, 1.5], width: 0.25, count: 8, tint: '#000000' },

@@ -8,7 +8,7 @@ summary: "The surface record; vertex-offset functions; per-instance attributes."
 
 # Surface functions
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Textures and per-instance attributes are not built yet. Coding agents must not use them in a custom material.
+> Ships in null3D 0.1, with typed uniforms in 0.2. The API is experimental, so it can still change between versions. Textures and per-instance attributes are not built yet. Coding agents must not use them in a custom material.
 
 A surface function changes how a material's surface looks, and keeps the engine's lighting. You write it in WGSL. For each pixel, the engine gives it a `SurfaceInput`, and it returns a `Surface`: the base color, roughness, metalness, normal and light of that point. The engine then lights the surface with the scene's lights and shadows, as it lights a standard material. The function works on every GPU path, because the null3D Vite plugin builds it into the standard material's shader for WebGPU and WebGL2.
 
@@ -123,6 +123,7 @@ banded.set({ count: 6, roughness: 0.3 });
 - The uniforms fit in 32 numbers. Each `vec3f` and `vec4f` starts a group of four, and each `vec2f` starts at an even place, so order small fields after large ones to fit more.
 - A field cannot have the name of a standard value, such as `color` or `roughness`, because `set()` takes those too.
 - Each material made from the WGSL has its own values, so one WGSL serves many looks.
+- In TypeScript, the `uniforms` option and `set()` take only the struct's names, each with a value of its kind. A wrong name fails the type check, as [Typed uniforms](../guides/custom-shaders.md#typed-uniforms) explains.
 
 `set()` throws E1216 for a name that is not a uniform, and for a value of the wrong kind. The build stops at a field of another type, or at the first field past the 32 numbers.
 
