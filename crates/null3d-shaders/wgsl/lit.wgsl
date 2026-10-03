@@ -46,6 +46,7 @@ enable draw_index;
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
 #import null3d::mesh::{custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
+#import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
 #ifdef MAPS
 #import null3d::mesh::{map_layer, map_ready, straight_texel, world_direction}
 #endif
@@ -356,11 +357,12 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     material = load_material_uniforms(found.material);
 #endif
     var out: VertexOut;
+    let position = mesh_position(v.position);
 #ifdef CUSTOM_VERTEX_OFFSET
-    let offset = vertexOffset(VertexInput(v.position, v.normal, v.uv0));
-    out.relative = relative_position(found, v.position + offset);
+    let offset = vertexOffset(VertexInput(position, v.normal, mesh_uv(v.uv0)));
+    out.relative = relative_position(found, position + offset);
 #else
-    out.relative = relative_position(found, v.position);
+    out.relative = relative_position(found, position);
 #endif
     out.clip = clip_of(found, out.relative);
     out.normal = world_normal(found, v.normal);
@@ -369,9 +371,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.vertex_color = v.vertex_color;
 #endif
 #ifdef MAPS
-    out.uv = vec4f(v.uv0, v.uv1);
+    out.uv = vec4f(mesh_uv(v.uv0), mesh_second_uv(v.uv1));
 #else ifdef UV0
-    out.uv = v.uv0;
+    out.uv = mesh_uv(v.uv0);
 #endif
 #ifdef VERTEX_TANGENT
     // As three.js does: the tangent through the world matrix, and the bitangent at right angles

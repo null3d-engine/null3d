@@ -5,9 +5,11 @@
 // templates of the debug lines and the debug views, so release builds hold none of their code.
 
 import {
+	LAYOUT_BLOOM,
 	LAYOUT_CULL,
 	LAYOUT_DEPTH,
 	LAYOUT_FINAL,
+	LAYOUT_FINAL_BLOOM,
 	LAYOUT_FRAME,
 	LAYOUT_LIGHT_CLUSTERS,
 	LAYOUT_MATERIAL_MAPS,
@@ -25,10 +27,12 @@ import {
 	STATE_NO_DEPTH_TEST,
 	STATE_NO_DEPTH_WRITE,
 	TEMPLATE_BACKGROUND,
+	TEMPLATE_BLOOM,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_DEBUG_VIEW,
 	TEMPLATE_FINAL,
+	TEMPLATE_FINAL_BLOOM,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_STANDARD_MAPS,
 	TEMPLATE_INSTANCED_TEXCOORDS,
@@ -39,6 +43,15 @@ import {
 	TEMPLATE_LIGHT_WRITE,
 	TEMPLATE_SHADOW_DEPTH,
 	VERTEX_INSTANCE_LOCATION,
+	VERTEX_TYPE_F32,
+	VERTEX_TYPE_SINT8,
+	VERTEX_TYPE_SINT16,
+	VERTEX_TYPE_SNORM8,
+	VERTEX_TYPE_SNORM16,
+	VERTEX_TYPE_UINT8,
+	VERTEX_TYPE_UINT16,
+	VERTEX_TYPE_UNORM8,
+	VERTEX_TYPE_UNORM16,
 } from '../../generated/gpu';
 import {
 	DEBUG_LINES_SHADER,
@@ -51,7 +64,13 @@ import type { CustomShader } from '../../shared/images';
 import { DEV } from '../dev';
 import { LINE_VERTICES } from '../line-vertices';
 import { variantFor } from '../variants';
-import { variantLocations, vertexAttribute, vertexStride } from '../vertex-format';
+import {
+	plainScale,
+	type VertexAttribute,
+	variantLocations,
+	vertexAttribute,
+	vertexStride,
+} from '../vertex-format';
 
 /** The WebGPU build of a shader variant. */
 export function wgslOf<Pipeline extends string>(variant: {
@@ -143,14 +162,45 @@ function depthCompare(stateFlags: number): GPUCompareFunction {
 	return stateFlags & STATE_DEPTH_EQUAL ? 'equal' : 'greater';
 }
 
-/** WebGPU's vertex formats of 32-bit floats, by float count. */
-const FLOAT_FORMATS: (GPUVertexFormat | undefined)[] = [
-	undefined,
-	'float32',
-	'float32x2',
-	'float32x3',
-	'float32x4',
-];
+/**
+ * WebGPU's vertex format of each vertex attribute type, by code, for attributes that shaders read
+ * as floats. WebGPU has no format that reads plain integers as whole floats, so it reads them as
+ * their normalized twins, and the shader multiplies them back (`plainScale`).
+ */
+const FLOAT_READS: Readonly<Record<number, string>> = {
+	[VERTEX_TYPE_F32]: 'float32',
+	[VERTEX_TYPE_UNORM8]: 'unorm8',
+	[VERTEX_TYPE_SNORM8]: 'snorm8',
+	[VERTEX_TYPE_UNORM16]: 'unorm16',
+	[VERTEX_TYPE_SNORM16]: 'snorm16',
+	[VERTEX_TYPE_UINT8]: 'unorm8',
+	[VERTEX_TYPE_SINT8]: 'snorm8',
+	[VERTEX_TYPE_UINT16]: 'unorm16',
+	[VERTEX_TYPE_SINT16]: 'snorm16',
+};
+
+/** WebGPU's vertex format of each plain integer type, by code, for attributes read as integers. */
+const WHOLE_READS: Readonly<Record<number, string>> = {
+	[VERTEX_TYPE_UINT8]: 'uint8',
+	[VERTEX_TYPE_SINT8]: 'sint8',
+	[VERTEX_TYPE_UINT16]: 'uint16',
+	[VERTEX_TYPE_SINT16]: 'sint16',
+};
+
+/** The WebGPU vertex format that reads an attribute. */
+export function gpuVertexFormat(attribute: VertexAttribute): GPUVertexFormat {
+	const base = attribute.integer ? WHOLE_READS[attribute.type] : FLOAT_READS[attribute.type];
+	if (!base) throw new Error(`no WebGPU vertex format reads vertex type ${attribute.type}`);
+	return (attribute.size === 1 ? base : `${base}x${attribute.size}`) as GPUVertexFormat;
+}
+
+/** The id of the pipeline constant that scales the attribute at a location: 1000 plus it. */
+const SCALE_ID = 1000;
+
+/** The mesh locations that a template's variant reads, or undefined for a template without meshes. */
+function meshLocations(t: RenderTemplate, permutation: number): number[] | undefined {
+	return t.meshLocations && variantLocations(t.meshLocations, permutation);
+}
 
 /**
  * The vertex buffers of a template's pipeline: a mesh's vertices first, for a template that draws
@@ -162,14 +212,13 @@ function vertexBuffers(
 	vertexFormat: number,
 	permutation: number,
 ): GPUVertexBufferLayout[] {
-	if (!t.meshLocations) return t.vertexBuffers;
-	const locations = variantLocations(t.meshLocations, permutation);
+	const locations = meshLocations(t, permutation);
+	if (!locations) return t.vertexBuffers;
 	const attributes = locations.map((shaderLocation): GPUVertexAttribute => {
 		const attribute = vertexAttribute(vertexFormat, shaderLocation);
 		if (!attribute)
 			throw new Error(`vertex format ${vertexFormat} has no attribute at ${shaderLocation}`);
-		const format = FLOAT_FORMATS[attribute.floats] as GPUVertexFormat;
-		return { shaderLocation, offset: attribute.offset, format };
+		return { shaderLocation, offset: attribute.offset, format: gpuVertexFormat(attribute) };
 	});
 	const mesh: GPUVertexBufferLayout = {
 		arrayStride: vertexStride(vertexFormat),
@@ -177,6 +226,29 @@ function vertexBuffers(
 		attributes,
 	};
 	return [mesh, ...t.vertexBuffers];
+}
+
+/**
+ * The pipeline constants that scale a mesh's plain integer attributes back to whole values, for
+ * each location the variant reads whose constant its WGSL declares. Shaders that declare none
+ * read such attributes as fractions.
+ */
+function scaleConstants(
+	t: RenderTemplate,
+	shader: WgslShader,
+	vertexFormat: number,
+	permutation: number,
+): Record<string, number> | undefined {
+	let constants: Record<string, number> | undefined;
+	for (const location of meshLocations(t, permutation) ?? []) {
+		const attribute = vertexAttribute(vertexFormat, location);
+		const scale = attribute ? plainScale(attribute) : 1;
+		const id = SCALE_ID + location;
+		if (scale === 1 || !shader.source.includes(`@id(${id})`)) continue;
+		constants ??= {};
+		constants[id] = scale;
+	}
+	return constants;
 }
 
 export class Pipelines {
@@ -275,13 +347,30 @@ export class Pipelines {
 			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 		]);
 		// The final pass reads the scene color with textureLoad, which takes any float format.
-		this.defineLayout(LAYOUT_FINAL, 'final', [
-			{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+		const finalEntries: GPUBindGroupLayoutEntry[] = [
+			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
 			{
 				binding: 1,
-				visibility: GPUShaderStage.FRAGMENT,
+				visibility: fragment,
 				texture: { sampleType: 'unfilterable-float', viewDimension: '2d' },
 			},
+		];
+		this.defineLayout(LAYOUT_FINAL, 'final', finalEntries);
+		// Bloom's levels, which the final pass's bloom build reads with a linear filter, after its
+		// weights.
+		this.defineLayout(LAYOUT_FINAL_BLOOM, 'final bloom', [
+			...finalEntries,
+			{ binding: 2, visibility: fragment, buffer: { type: 'uniform' } },
+			...[3, 4, 5, 6, 7].map(
+				(binding): GPUBindGroupLayoutEntry => ({ binding, visibility: fragment, texture: {} }),
+			),
+			{ binding: 8, visibility: fragment, sampler: {} },
+		]);
+		// A step of bloom: its settings, the texture it reads, and the linear sampler.
+		this.defineLayout(LAYOUT_BLOOM, 'bloom', [
+			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: fragment, texture: {} },
+			{ binding: 2, visibility: fragment, sampler: {} },
 		]);
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
@@ -317,6 +406,20 @@ export class Pipelines {
 			shader: shaders.final,
 			pipeline: 'main',
 			layouts: [LAYOUT_FINAL],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_FINAL_BLOOM, {
+			label: 'final bloom',
+			shader: shaders.final,
+			pipeline: 'main',
+			layouts: [LAYOUT_FINAL_BLOOM],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_BLOOM, {
+			label: 'bloom',
+			shader: shaders.bloom,
+			pipeline: 'main',
+			layouts: [LAYOUT_BLOOM],
 			vertexBuffers: [],
 		});
 		this.defineTemplate(TEMPLATE_BACKGROUND, {
@@ -376,6 +479,13 @@ export class Pipelines {
 	/** True when a template has this id. */
 	has(id: number): boolean {
 		return this.templates[id] !== undefined;
+	}
+
+	/** The shader variants of a template that exists. */
+	variants(id: number): ShaderVariants {
+		const template = this.templates[id];
+		if (!template) throw new Error(`unknown render template ${id}`);
+		return template.shader;
 	}
 
 	/** Adds a render pipeline template under an id that no other template has. */
@@ -441,6 +551,7 @@ export class Pipelines {
 				module,
 				entryPoint: entryPoints?.vertex,
 				buffers: vertexBuffers(t, vertexFormat, permutation),
+				constants: scaleConstants(t, shader, vertexFormat, permutation),
 			},
 			fragment: colorFormat
 				? {

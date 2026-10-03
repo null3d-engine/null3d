@@ -30,9 +30,10 @@ import {
 	TEXTURE_STAT_IMAGES_SENT,
 	TEXTURE_STAT_WAITING,
 } from '../generated/core';
+import { FORMAT_CANVAS } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
-import { FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
+import { bloomDivisor, FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
 import { Assets } from '../scene/assets';
 import { CoreMemory } from '../scene/memory';
@@ -185,8 +186,16 @@ export class SketchRunner {
 	private readonly governor = new Governor();
 	/** The governor's part of the frame loop; none in hold mode. */
 	private readonly governorLoop: GovernorLoop | undefined;
-	/** The governor's count of shadow changes when the core last took its shadow settings. */
-	private shadowChanges = 0;
+	/** The governor's count of changes when the core last took the settings that its steps move. */
+	private stepChanges = 0;
+	/** The sketch's post-processing settings, which say whether bloom is on. */
+	private readonly post: Post;
+	/** True while the sketch has bloom on, as the governor knows it. */
+	private bloomOn = false;
+	/** The divisor of bloom's taps that the `bloomSamples` setting gives. */
+	private bloomSetting = 1;
+	/** True once the core draws HDR color for an effect, on a device that started on the 8-bit path. */
+	private hdrForEffects = false;
 	/** The render scale in thousandths where the governor does not move it: the highest. */
 	private heldScale = FULL_SCALE;
 	/** The sketch's debug drawing, in development builds only, which is also its `ctx.debug`. */
@@ -285,6 +294,9 @@ export class SketchRunner {
 				get shadowFilter() {
 					return governor.filter as 3 | 5;
 				},
+				get bloomSamples() {
+					return 1 / governor.bloomDivisor;
+				},
 			},
 		);
 		this.applyFrameSettings(this.quality.settings);
@@ -300,6 +312,7 @@ export class SketchRunner {
 			},
 		};
 		const scene = new Scene(this.core, this.recorded, device.webgl2, () => this.warmUp());
+		this.post = new Post(this.core, device.effectsSceneColor !== FORMAT_CANVAS);
 		this.debugDraw = DEV ? new DebugDraw(this.core, host, scene) : undefined;
 		const debug = this.debugDraw ?? new SketchDebug(host);
 		this.context = {
@@ -311,7 +324,7 @@ export class SketchRunner {
 			textures,
 			assets: new Assets(textures, sketch.pageUrl),
 			input: this.input,
-			post: new Post(this.core),
+			post: this.post,
 			quality: this.quality,
 			preferences: {
 				get reducedMotion() {
@@ -510,26 +523,53 @@ export class SketchRunner {
 		governor.setOn(settings.governor);
 		governor.setRange(low, high);
 		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval);
-		this.shadowChanges = governor.shadowChanges;
+		this.bloomSetting = bloomDivisor(settings.bloomSamples);
+		governor.setBloom(this.bloomOn, this.bloomSetting);
+		this.stepChanges = governor.stepChanges;
 		const { glue } = this.sketch;
 		if (
 			glue.setRenderScaling((settings.governor ? low : high) < FULL_SCALE) !== 0 ||
-			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0
+			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0 ||
+			glue.setBloomSamples(governor.bloomDivisor) !== 0
 		)
 			this.report(coreFailure(glue, 'quality.set'));
 	}
 
 	/**
-	 * Gives the core the shadow settings after a step of the governor, and tells the sketch's change
-	 * handlers of it.
+	 * Gives the core the shadow settings and bloom's samples after a step of the governor, and tells
+	 * the sketch's change handlers of it.
 	 */
-	private applyGovernedShadows(): void {
+	private applyGovernedSteps(): void {
 		const { governor } = this;
 		const { glue } = this.sketch;
-		this.shadowChanges = governor.shadowChanges;
-		if (glue.setShadowQuality(governor.filter, governor.farInterval) !== 0)
+		this.stepChanges = governor.stepChanges;
+		if (
+			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0 ||
+			glue.setBloomSamples(governor.bloomDivisor) !== 0
+		)
 			this.report(coreFailure(glue, 'the quality governor'));
 		this.quality.governed();
+	}
+
+	/**
+	 * Follows the sketch's bloom: the governor's bloom steps need it on. The first time an effect
+	 * that needs HDR color turns on, on a device that started on the 8-bit path only for MSAA, the
+	 * core moves to HDR color with FXAA for the engine's life. Returns true then: the frame has new
+	 * targets and pipelines, so the thread that draws holds it until they are built, and the frame
+	 * before stays on screen meanwhile.
+	 */
+	private followEffects(): boolean {
+		const on = this.post.bloomOn;
+		if (on === this.bloomOn) return false;
+		this.bloomOn = on;
+		this.governor.setBloom(on, this.bloomSetting);
+		const { device, glue } = this.sketch;
+		if (!on || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS) return false;
+		if (device.effectsSceneColor === FORMAT_CANVAS) return false;
+		this.hdrForEffects = true;
+		if (glue.setCanvasOutput(device.effectsSceneColor, device.effectsAntialias) !== 0)
+			this.report(coreFailure(glue, 'post.set'));
+		return true;
 	}
 
 	/** Calls each of the sketch's handlers with `value`, and reports each error that one throws. */
@@ -649,7 +689,7 @@ export class SketchRunner {
 		if (play && this.governorLoop) {
 			this.governorLoop.now[0] = start;
 			this.governorLoop.frame();
-			if (this.governor.shadowChanges !== this.shadowChanges) this.applyGovernedShadows();
+			if (this.governor.stepChanges !== this.stepChanges) this.applyGovernedSteps();
 		}
 		// Handlers that hear of a restart may create objects with new pipelines, so their frame
 		// waits for them.
@@ -709,6 +749,8 @@ export class SketchRunner {
 			this.endPhase(Phase.Update);
 			this.updateTransforms(true);
 		}
+		if (this.followEffects()) restart = true;
+		if (this.governor.stepChanges !== this.stepChanges) this.applyGovernedSteps();
 		glue.updateBatches(frame);
 		this.endPhase(Phase.Batches);
 		const width = Math.max(1, Atomics.load(slots, Slot.CanvasWidth));

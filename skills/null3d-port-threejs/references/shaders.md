@@ -99,7 +99,7 @@ These exist now: the surface input's `relativePosition`, `worldPosition`, `norma
 
 ## 5. ShaderMaterial and RawShaderMaterial
 
-1. List the uniforms. Each becomes a field of `struct Uniforms` in the WGSL, with its first value in `uniforms` (numbers, `'#rrggbb'` colors, arrays). Texture uniforms wait for textures in custom materials (0.2). Updates such as `material.uniforms.uSpeed.value = 2` become `material.set({ speed: 2 })`.
+1. List the uniforms. Each becomes a field of `struct Uniforms` in the WGSL, with its first value in `uniforms` (numbers, `'#rrggbb'` colors, arrays). Texture uniforms wait for textures in custom materials (0.2). Updates such as `material.uniforms.uSpeed.value = 2` become `material.set({ speed: 2 })`. three.js's `uniforms` record takes any name, and a name that the GLSL does not use changes nothing. In null3D (0.2), a name that `struct Uniforms` lacks fails the type check, and the engine throws E1216 when it runs.
 2. Read the vertex shader. If it only applies `projectionMatrix * modelViewMatrix * vec4(position, 1.0)` and passes varyings along, drop it: the engine does both. If it moves vertices, port that part as `vertexOffset`.
 3. Read the fragment shader, and map its varyings to `SurfaceInput` fields. Map its output to `Surface` fields: lit look to `baseColor`, `roughness` and `metalness`; unlit look to `emissive` with `baseColor` set to zero; transparency to `alpha` plus the right `alphaMode`.
 4. Set the material options that were ShaderMaterial flags: `transparent` becomes `alphaMode: 'blend'`, `side: DoubleSide` becomes `doubleSided: true`, `blending: AdditiveBlending` becomes `blending: 'additive'`, `depthWrite: false` stays `depthWrite: false`.

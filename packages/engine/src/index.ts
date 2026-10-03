@@ -79,7 +79,7 @@ export type {
 } from './scene/assets';
 export type { ColorInput } from './scene/color';
 export type { Exp2FogOptions, FogOptions, LinearFogOptions } from './scene/fog';
-export type { Post, PostSettings, ToneMapping } from './scene/post';
+export type { BloomSettings, Post, PostSettings, ToneMapping } from './scene/post';
 export type {
 	OverlapHit,
 	QueryOptions,
@@ -98,6 +98,7 @@ export type {
 	CylinderOptions,
 	DepthBias,
 	Geometry,
+	IntegerArray,
 	Material,
 	MaterialFeatures,
 	MaterialOptions,
@@ -114,10 +115,11 @@ export type {
 	StandardOptions,
 	StandardValues,
 	TorusOptions,
-	UniformValue,
 	UnlitOptions,
 	UnlitValues,
 	UvTransform,
+	VertexArray,
+	VertexValues,
 } from './scene/resources';
 export type {
 	AmbientLight,
@@ -163,6 +165,13 @@ export type {
 	Textures,
 	TextureWrap,
 } from './scene/textures';
+export type {
+	UniformType,
+	UniformValue,
+	UniformValueByType,
+	UniformValues,
+	WgslUniforms,
+} from './scene/wgsl-uniforms';
 export type { PhaseName } from './shared/metrics';
 export type { Percentiles } from './shared/stats';
 export type { Tier } from './shared/tier';

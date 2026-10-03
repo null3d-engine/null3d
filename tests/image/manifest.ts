@@ -14,6 +14,7 @@
 // bun run check fails until the test has both references.
 import { BENCH_SCENES, type FeatureScene } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
+import { BLOOM_IMAGE } from '../../bench/scenes/bloom.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
 import { LIGHTS_IMAGE } from '../../bench/scenes/lights.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
@@ -95,6 +96,45 @@ function toneMappingTests(): ImageTest[] {
 	]);
 }
 
+/** The sketch of the bloom tests: glowing shapes on a dark ground (bench/scenes/bloom.ts). */
+const BLOOM_SKETCH = 'tests/pages/sketches/bloom-sketch.ts';
+
+/** The bloom tests' image size: the parity images' size, as the parity test compares them. */
+const BLOOM_SIZE = [BLOOM_IMAGE.width, BLOOM_IMAGE.height] as const;
+
+/**
+ * Bloom at two strengths, and the scene without it, on every tier. Compatibility mode starts on
+ * the 8-bit path for MSAA, and bloom moves it to HDR color with FXAA, at the start or during play.
+ * Both must draw the same image. A device with no HDR target draws no bloom: the page's switch
+ * that turns HDR off stands in for one, and must draw the scene without bloom. Bloom at half the
+ * render scale draws its levels into the corners of the same targets. The parity test compares
+ * the soft and strong images with three.js's UnrealBloomPass.
+ */
+function bloomTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${BLOOM_SKETCH}${query}`,
+		hold: 1,
+		size: BLOOM_SIZE,
+	});
+	return [
+		test('bloom-off', ''),
+		test('bloom-soft', '?bloom=soft'),
+		test('bloom-strong', '?bloom=strong'),
+		{ ...test('bloom-later', '?bloom=strong&later'), reference: 'bloom-strong' },
+		test('bloom-scale-50', '?scale=0.5&bloom=strong'),
+		{
+			...test('bloom-8-bit', '?bloom=strong'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'bloom-off',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
 const EDGES_SKETCH = 'tests/pages/sketches/edges-sketch.ts';
 
@@ -140,6 +180,22 @@ const VERTEX_FORMATS = {
 	size: [400, 300],
 	modes: ['pipelined', 'single-threaded'],
 } as const;
+
+/** The vertex types sketch, and how its tests draw it. */
+const VERTEX_TYPES = {
+	sketch: 'tests/pages/sketches/vertex-types-sketch.ts',
+	hold: 0,
+	size: [480, 270],
+} as const;
+
+/**
+ * How far the image of meshes with integer attributes may stray from their float twins' image: a
+ * change of at most one step of 255 in each channel. Pixelmatch's color distance of such a change
+ * is at most 0.54, and this threshold allows 0.56. A change of two steps in red or green goes past
+ * it. Anti-aliased edges, where a GPU's rounding of a vertex can cover a sample or not, do not
+ * count.
+ */
+const ONE_STEP = { threshold: 0.004, maxDiffRatio: 0 };
 
 /** The geometry generators sketch, and how its tests draw it. */
 const GENERATORS = {
@@ -347,6 +403,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	...toneMappingTests(),
 	...antialiasTests(),
+	...bloomTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
 	// alpha: the output spec checks the alpha of the captured pixels.
 	{
@@ -545,6 +602,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Compatibility mode takes the 8-bit path, which averages the samples of antialiased edges after
 	// the tone mapping, so its edges differ from the HDR path's and it keeps references of its own.
 	{ name: 'vertex-formats-compat', ...VERTEX_FORMATS, tiers: ['compat'], expect: { hdr: false } },
+	// Meshes whose positions, normals, tangents, texture coordinates, colors, joints and weights
+	// are 8-bit and 16-bit integers, normalized and plain, and their float twins, which hold the
+	// values that shaders read from the integers. Each tier must draw the integers as it draws the
+	// twins. WebGL2 reads plain integers as whole numbers itself, WebGPU reads them as fractions
+	// that the shader scales back, and joints take WebGL2's integer attributes.
+	{
+		name: 'vertex-types-float',
+		...VERTEX_TYPES,
+		sketch: `${VERTEX_TYPES.sketch}?float`,
+		switches: [FULL_PRECISION],
+	},
+	{
+		name: 'vertex-types',
+		...VERTEX_TYPES,
+		reference: 'vertex-types-float',
+		switches: [FULL_PRECISION],
+		tolerance: ONE_STEP,
+	},
 	// The nine geometry generators, each lit and with its texture coordinates shown as colors.
 	// WebGL2 must draw the WebGPU image, apart from the antialiased edges that dithering keeps
 	// pixelmatch from passing over.

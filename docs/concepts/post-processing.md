@@ -1,15 +1,88 @@
 ---
 id: concepts/post-processing
 title: The post-processing chain
-status: planned
+status: experimental
 since: "0.2"
-summary: "HDR target; bloom; ambient occlusion; the single final pass; custom effects."
+summary: "HDR scene color, bloom at half size and below, and one final pass for exposure, tone mapping, FXAA and dithering."
 ---
-
-<!-- null3d:placeholder -->
 
 # The post-processing chain
 
-> Planned for null3D 0.2. This page is a placeholder. No release has this feature yet, so the APIs it names do not exist. Coding agents must not use them.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. In this version the chain has HDR scene color, bloom and the final pass. Ambient occlusion, color grading, the vignette, outlines and custom effects are not built yet. Coding agents must not use them.
 
-This page will cover: HDR target; bloom; ambient occlusion; the single final pass; custom effects.
+```mermaid
+flowchart LR
+    scene["Scene passes:<br/>linear HDR color"] --> bright["Bright pass:<br/>half size, threshold"]
+    bright --> levels["Five blurred levels:<br/>each half the size<br/>of the one before"]
+    scene --> final["Final pass: adds bloom,<br/>then exposure, tone mapping,<br/>FXAA and dithering"]
+    levels --> final
+    final --> canvas["Canvas"]
+```
+
+The scene passes draw linear color with no upper limit into a float target, the scene color. Effects that need that range, such as bloom, read it before the final pass. The final pass then does all of its work for each pixel in one pass. It adds the effects' results and applies the exposure and the tone mapping. Then it smooths edges with FXAA, encodes sRGB and dithers.
+
+Every full-screen pass reads and writes the whole screen once more. On a phone at its full resolution that is tens of megabytes per frame, so the engine keeps such passes few. Bloom's passes draw at half the render size and below, and the final pass reads their results without a pass of its own.
+
+Turn effects on with `post.set` in the sketch:
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, post }) => {
+  post.set({ bloom: { strength: 0.8, radius: 0.4, threshold: 1 } });
+  scene.setBackground('#06080c');
+  const camera = scene.createPerspectiveCamera({ position: [0, 1, 6], target: [0, 0, 0] });
+  scene.setActiveCamera(camera);
+  // Emissive light above 1 is brighter than white, so it passes the threshold and glows.
+  const lamp = materials.standard({ color: '#000000', emissive: '#ffd080', emissiveIntensity: 8 });
+  scene.createMesh({ mesh: geometry.sphere({ radius: 0.5 }), material: lamp });
+  return {};
+});
+```
+
+## Bloom
+
+Bloom spreads light from the brightest parts of the scene into their surroundings, as a camera lens does. It follows three.js's `UnrealBloomPass` step by step:
+
+1. The bright pass reads the scene color at half size. It keeps each pixel whose luminance reaches `threshold`, and turns the others black.
+2. Five levels blur the bright pass, each with a Gaussian blur across and then down. Each level has half the size of the level before it and a wider blur, so the levels spread the light ever further.
+3. The final pass adds the levels to the scene color before the tone mapping. The strength scales their sum. The radius moves weight from the narrow levels to the wide ones.
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `strength` | A number from 0 up. | 1 |
+| `radius` | A number from 0 to 1. | 0.5 |
+| `threshold` | A luminance from 0 up, in linear color before the exposure. | 1 |
+
+- The settings mean what `UnrealBloomPass`'s settings mean, with the same kernels and weights. In the engine's parity tests, null3D's bloom matches three.js's in all but under 0.1% of the pixels on every GPU path.
+- At a threshold of 1, only light brighter than white glows. An emissive material with an `emissiveIntensity` above 1 gives such light, and so does a strong light on a bright surface. At a threshold of 0, every pixel glows a little.
+- Bloom adds light before the tone mapping, so it never clips at white on its own. On a transparent canvas it also adds coverage, so the glow shows over the page.
+- `post.set({ bloom: false })` turns bloom off. The settings keep their values, so `post.set({ bloom: {} })` turns it on again with them.
+
+### Cost
+
+Bloom draws eleven small passes and adds five texture reads to each pixel of the final pass. Its targets take about 0.66 times the scene color's memory at full resolution, in the scene color's format. They follow the render scale, so a lower scale costs less, and a new scale makes no new target. The targets exist only while bloom is on.
+
+The `bloomSamples` quality setting is the share of `UnrealBloomPass`'s texture reads that each blur makes: 1, 0.5 or 0.25. A lower share reads the same blur in fewer, coarser steps, so the glow keeps its size. When frames take too long and bloom is on, the frame-budget governor halves the share, after its other steps. [Quality presets](quality-presets.md) lists the governor's steps.
+
+## Effects on devices without HDR color
+
+Bloom needs the scene's linear color. Two kinds of device draw it with no float target at first, on the 8-bit path that [color management](color-management.md#the-8-bit-path) describes:
+
+- WebGPU in compatibility mode with MSAA: this mode cannot multisample a float target. When a sketch turns bloom on, the engine moves to HDR color with FXAA for the rest of its life. Meanwhile the last image stays on screen until the new pipelines are built. On a desktop that takes two or three frames. `engine.capabilities.hdr` reports the path that the engine started on.
+- WebGL2 devices whose float targets fail the engine's test. They have no HDR target, so bloom stays off. Development builds warn once in the console.
+
+The devices that the engine was tested on all draw HDR color with WebGL2, and with core WebGPU.
+
+## Porting from three.js
+
+- Delete `EffectComposer`, `RenderPass` and `OutputPass`. The scene pass and the final pass are built in.
+- `new UnrealBloomPass(resolution, strength, radius, threshold)` becomes `post.set({ bloom: { strength, radius, threshold } })`. The resolution is the canvas's, so it needs no setting.
+- `renderer.toneMapping` and `toneMappingExposure` become `post.set({ toneMapping, exposure })`. three.js applies no tone mapping by default, and null3D applies ACES.
+
+## Related pages
+
+- [Post-processing API](../api/post.md): `post.set` and its settings.
+- [Color management](color-management.md): HDR color, the final pass and the 8-bit path.
+- [The render graph](render-graph.md): how the passes of a frame are declared and ordered.
+- [Quality presets](quality-presets.md): `bloomSamples` and the frame-budget governor.

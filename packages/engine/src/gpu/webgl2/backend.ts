@@ -23,8 +23,15 @@ import * as G from '../../generated/gpu';
 import type { DeviceShaders } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
 import { ImageTable } from '../../shared/images';
+import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
-import { forEachFallbackAttribute, forEachVertexAttribute, vertexStride } from '../vertex-format';
+import {
+	forEachFallbackAttribute,
+	forEachVertexAttribute,
+	isNormalized,
+	type VertexAttribute,
+	vertexStride,
+} from '../vertex-format';
 import { type DepthSetup, setDepthMode } from './depth';
 import {
 	createProgram,
@@ -161,6 +168,38 @@ function glAttribute(
 	}
 }
 
+/** GL's types of vertex attribute values. */
+const GL_FLOAT = 0x1406;
+const GL_BYTE = 0x1400;
+const GL_UNSIGNED_BYTE = 0x1401;
+const GL_SHORT = 0x1402;
+const GL_UNSIGNED_SHORT = 0x1403;
+
+/** GL's type of each vertex attribute type's values, by code. */
+const GL_VERTEX_TYPES: Readonly<Record<number, number>> = {
+	[G.VERTEX_TYPE_F32]: GL_FLOAT,
+	[G.VERTEX_TYPE_UNORM8]: GL_UNSIGNED_BYTE,
+	[G.VERTEX_TYPE_SNORM8]: GL_BYTE,
+	[G.VERTEX_TYPE_UNORM16]: GL_UNSIGNED_SHORT,
+	[G.VERTEX_TYPE_SNORM16]: GL_SHORT,
+	[G.VERTEX_TYPE_UINT8]: GL_UNSIGNED_BYTE,
+	[G.VERTEX_TYPE_SINT8]: GL_BYTE,
+	[G.VERTEX_TYPE_UINT16]: GL_UNSIGNED_SHORT,
+	[G.VERTEX_TYPE_SINT16]: GL_SHORT,
+};
+
+/**
+ * Points a vertex array's location at a mesh attribute. Attributes that shaders read as whole
+ * numbers take the integer pointer. The others take the float pointer, which reads normalized
+ * integers as fractions and plain integers as whole values, as glTF reads them.
+ */
+function pointAttribute(gl: WebGL2RenderingContext, stride: number, a: VertexAttribute): void {
+	const type = GL_VERTEX_TYPES[a.type] as number;
+	gl.enableVertexAttribArray(a.location);
+	if (a.integer) gl.vertexAttribIPointer(a.location, a.size, type, stride, a.offset);
+	else gl.vertexAttribPointer(a.location, a.size, type, isNormalized(a), stride, a.offset);
+}
+
 /**
  * How GL stores each texture format, by format code, for a canvas with alpha or without. A
  * compressed format is there only when the context turned on its extension, which the backend
@@ -290,6 +329,11 @@ export class WebGL2Backend {
 	 * draws draw nothing.
 	 */
 	private readonly parked = new Map<number, Uint32Array>();
+	/**
+	 * The device shaders that load another module when a pipeline needs builds with other fixed
+	 * bits. Without it, every pipeline's build must be in the shaders that the backend got.
+	 */
+	moreShaders: DeviceShaderSet | undefined;
 	/** True while the current pipeline's program is compiling: draws draw nothing until it is set again. */
 	private skipDraws = false;
 	private readonly anisotropic: EXT_texture_filter_anisotropic | null;
@@ -504,20 +548,25 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * True when a render pipeline template can create programs now: an engine template, or a custom
-	 * material's whose shader arrived, which it defines at its first use.
+	 * True when a render pipeline template can create a program of `permutation` now: an engine
+	 * template whose build for it is loaded, or a custom material's whose shader arrived, which it
+	 * defines at its first use.
 	 */
-	private templateReady(template: number): boolean {
-		if (this.templates[template]) return true;
-		const shader = this.images.shaders.get(template);
-		if (shader) this.templates[template] = { shader: shader.variants, pipeline: 'main' };
-		return shader !== undefined;
+	private templateReady(template: number, permutation: number): boolean {
+		let defined = this.templates[template];
+		if (!defined) {
+			const shader = this.images.shaders.get(template);
+			if (!shader) return false;
+			defined = { shader: shader.variants, pipeline: 'main' };
+			this.templates[template] = defined;
+		}
+		return this.moreShaders?.ready(defined.shader, permutation, 'glsl') ?? true;
 	}
 
 	/** Creates each parked pipeline whose custom material's shader has arrived. */
 	private unpark(): void {
 		for (const [id, operands] of this.parked) {
-			if (!this.templateReady(operands[1] as number)) continue;
+			if (!this.templateReady(operands[1] as number, operands[2] as number)) continue;
 			this.parked.delete(id);
 			this.counts.pipelines--;
 			this.createPipeline(operands, 0, true);
@@ -546,7 +595,7 @@ export class WebGL2Backend {
 	private createPipeline(words: Uint32Array, a: number, background: boolean): void {
 		const template = words[a + 1] as number;
 		const flags = words[a + 6] as number;
-		if (!this.templateReady(template)) {
+		if (!this.templateReady(template, words[a + 2] as number)) {
 			// The command's header, before its operands, gives its length in words.
 			this.parked.set(words[a] as number, words.slice(a, a - 1 + ((words[a - 1] as number) >>> 8)));
 			this.counts.pipelines++;
@@ -1973,10 +2022,7 @@ export class WebGL2Backend {
 		this.useVertexArray(vao);
 		gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
 		const stride = vertexStride(format);
-		const point = (location: number, floats: number, offset: number) => {
-			gl.enableVertexAttribArray(location);
-			gl.vertexAttribPointer(location, floats, gl.FLOAT, false, stride, offset);
-		};
+		const point = (attribute: VertexAttribute) => pointAttribute(gl, stride, attribute);
 		forEachVertexAttribute(format, point);
 		forEachFallbackAttribute(format, point);
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indices);

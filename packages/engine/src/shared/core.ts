@@ -160,9 +160,10 @@ export interface CoreGlue extends CoreErrors {
 	meshArrays(words: number): number;
 	/**
 	 * A mesh from the arrays at `meshArrays`'s address, as `layout` (the `MESH_ARRAYS_*` bits)
-	 * describes them. Returns the mesh id.
+	 * describes them. `types` gives each array's type in its attribute's field of a vertex format.
+	 * Returns the mesh id.
 	 */
-	createMeshFromArrays(vertices: number, indices: number, layout: number): number;
+	createMeshFromArrays(vertices: number, indices: number, layout: number, types: number): number;
 	meshRadius(mesh: number): number;
 	/**
 	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
@@ -294,6 +295,15 @@ export interface CoreGlue extends CoreErrors {
 	setBackground(r: number, g: number, b: number): number;
 	/** The tone mapping, by code, and the exposure, from the next frame on. */
 	setOutput(toneMapping: number, exposure: number): number;
+	/** Turns bloom on with its strength, radius and threshold, or off, from the next frame on. */
+	setBloom(on: boolean, strength: number, radius: number, threshold: number): number;
+	/** How many times fewer taps than three.js's bloom's blurs read, from the next frame on. */
+	setBloomSamples(divisor: number): number;
+	/**
+	 * Draws the scene into a target of another format, by code, with another anti-aliasing mode, by
+	 * code, from the next frame on.
+	 */
+	setCanvasOutput(sceneColor: number, antialias: number): number;
 	/** Whether the render scale can drop below the whole canvas, from the next frame on. */
 	setRenderScaling(scaling: boolean): number;
 	/**
@@ -447,6 +457,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setLightDefault',
 	'setBackground',
 	'setOutput',
+	'setBloom',
+	'setBloomSamples',
+	'setCanvasOutput',
 	'setRenderScaling',
 	'setShadowQuality',
 	'shadowCasters',

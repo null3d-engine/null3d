@@ -30,12 +30,9 @@ fn with_workers<R>(workers: u32, f: impl FnOnce(&JobSystem) -> R) -> R {
     })
 }
 
-/// The bits of one attribute of every vertex: `count` floats from float `first` of each vertex.
-fn attribute_bits(g: &Geometry, first: usize, count: usize) -> Vec<u32> {
-    g.vertices
-        .chunks(g.vertex_floats())
-        .flat_map(|v| v[first..first + count].iter().map(|f| f.to_bits()))
-        .collect()
+/// The bits of the attribute at `location` of every vertex.
+fn attribute_bits(g: &Geometry, location: usize) -> Vec<u32> {
+    g.attribute(location).iter().map(|f| f.to_bits()).collect()
 }
 
 #[test]
@@ -44,8 +41,8 @@ fn normals_and_tangents_match_three_js_bit_for_bit() {
     let uvs = floats(&three::indexed::UVS);
     let g = from_arrays(
         &MeshArrays {
-            positions: &positions,
-            uvs: Some(&uvs),
+            positions: (&positions[..]).into(),
+            uvs: Some((&uvs[..]).into()),
             indices: Some(&three::indexed::INDICES),
             compute_normals: true,
             compute_tangents: true,
@@ -55,21 +52,21 @@ fn normals_and_tangents_match_three_js_bit_for_bit() {
     )
     .unwrap();
     assert_eq!(g.format, vertex::UV0 | vertex::TANGENT);
-    assert_eq!(attribute_bits(&g, 3, 3), three::indexed::NORMALS);
-    assert_eq!(attribute_bits(&g, 8, 4), three::indexed::TANGENTS);
+    assert_eq!(attribute_bits(&g, 1), three::indexed::NORMALS);
+    assert_eq!(attribute_bits(&g, 4), three::indexed::TANGENTS);
 
     // Without indices, each vertex takes its triangle's normal, as three.js's soup of triangles.
     let positions = floats(&three::soup::POSITIONS);
     let g = from_arrays(
         &MeshArrays {
-            positions: &positions,
+            positions: (&positions[..]).into(),
             compute_normals: true,
             ..MeshArrays::default()
         },
         &JobSystem::new(0),
     )
     .unwrap();
-    assert_eq!(attribute_bits(&g, 3, 3), three::soup::NORMALS);
+    assert_eq!(attribute_bits(&g, 1), three::soup::NORMALS);
 }
 
 #[test]
@@ -92,8 +89,8 @@ fn the_job_workers_compute_the_same_bits_as_one_thread() {
         }
     }
     let arrays = MeshArrays {
-        positions: &positions,
-        uvs: Some(&uvs),
+        positions: (&positions[..]).into(),
+        uvs: Some((&uvs[..]).into()),
         indices: Some(&indices),
         compute_normals: true,
         compute_tangents: true,
@@ -101,6 +98,5 @@ fn the_job_workers_compute_the_same_bits_as_one_thread() {
     };
     let alone = with_workers(0, |jobs| from_arrays(&arrays, jobs).unwrap());
     let helped = with_workers(3, |jobs| from_arrays(&arrays, jobs).unwrap());
-    let bits = |g: &Geometry| g.vertices.iter().map(|f| f.to_bits()).collect::<Vec<u32>>();
-    assert_eq!(bits(&alone), bits(&helped));
+    assert_eq!(alone.vertices, helped.vertices);
 }

@@ -154,7 +154,7 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | drei `<PerformanceMonitor>`, `<AdaptiveDpr>`, `<AdaptiveEvents>`; `<Canvas performance>` | Remove them: the engine's frame-budget governor does this work (section 5) |
 | drei `<Stats>` | `debug.stats(true)` in the sketch; `engine.measure()` on the page for GPU time |
 | Mesh events: `onClick`, `onPointerOver`, `onPointerOut` | `obj.on('click' | 'pointerenter' | 'pointerleave', fn)` (0.2), then `page.post` if React needs to know |
-| `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping now, bloom and other effects in 0.2 (`references/post-processing.md`) |
+| `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping and bloom (0.2), the other effects later in 0.2 (`references/post-processing.md`) |
 | `@react-three/rapier` | Rapier inside the sketch worker (null3d-develop recipe 11) |
 | Components that change props every frame through React state | `onUpdate` logic; React sends intent, not frames |
 

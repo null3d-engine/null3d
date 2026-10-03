@@ -828,6 +828,30 @@ A world transform as the engine stores it: the rows of a 3 x 4 affine matrix tha
 - `y`: The row that gives y.
 - `z`: The row that gives z.
 
+### `mesh_position`
+
+```wgsl
+fn mesh_position(p: vec3f) -> vec3f
+```
+
+A mesh's position as its vertex shader reads it, at location 0, in the mesh's own units. Plain integer positions keep their whole values on every GPU path, as glTF reads them.
+
+### `mesh_uv`
+
+```wgsl
+fn mesh_uv(uv: vec2f) -> vec2f
+```
+
+A mesh's first texture coordinates as its vertex shader reads them, at location 2. Plain integer coordinates keep their whole values on every GPU path, as glTF reads them.
+
+### `mesh_second_uv`
+
+```wgsl
+fn mesh_second_uv(uv: vec2f) -> vec2f
+```
+
+A mesh's second texture coordinates as its vertex shader reads them, at location 3. Plain integer coordinates keep their whole values on every GPU path, as glTF reads them.
+
 ### `OUTSIDE_CLIP`
 
 ```wgsl

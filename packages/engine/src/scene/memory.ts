@@ -8,7 +8,11 @@
 import { coreFailure } from '../errors/core-failure';
 import type { CoreGlue } from '../shared/core';
 
-type ViewConstructor<T> = new (buffer: ArrayBufferLike, byteOffset: number, length: number) => T;
+export type ViewConstructor<T> = new (
+	buffer: ArrayBufferLike,
+	byteOffset: number,
+	length: number,
+) => T;
 
 /** The engine core and its memory, with view helpers. */
 export class CoreMemory {
@@ -32,7 +36,8 @@ export class CoreMemory {
 		return true;
 	}
 
-	private view<T>(type: ViewConstructor<T>, address: number, length: number): T {
+	/** A view of `length` values of `type` on engine memory from `address`. */
+	view<T>(type: ViewConstructor<T>, address: number, length: number): T {
 		return new type(this.memory.buffer, address, length);
 	}
 

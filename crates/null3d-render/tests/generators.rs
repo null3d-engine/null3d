@@ -16,10 +16,9 @@ fn digest(words: impl IntoIterator<Item = u32>) -> u64 {
         })
 }
 
-/// The digest of one attribute of every vertex: `count` floats from float `first` of each.
-fn attribute(g: &Geometry, first: usize, count: usize) -> u64 {
-    let values = g.vertices.chunks(g.vertex_floats());
-    digest(values.flat_map(|v| v[first..first + count].iter().map(|f| f.to_bits())))
+/// The digest of the attribute at `location` of every vertex.
+fn attribute(g: &Geometry, location: usize) -> u64 {
+    digest(g.attribute(location).iter().map(|f| f.to_bits()))
 }
 
 fn shape(name: &str) -> Shape {
@@ -52,9 +51,9 @@ fn every_generator_builds_three_js_arrays_bit_for_bit() {
             continue;
         }
         let arrays = [
-            ("positions", attribute(&g, 0, 3), case.positions),
-            ("normals", attribute(&g, 3, 3), case.normals),
-            ("texture coordinates", attribute(&g, 6, 2), case.uvs),
+            ("positions", attribute(&g, 0), case.positions),
+            ("normals", attribute(&g, 1), case.normals),
+            ("texture coordinates", attribute(&g, 2), case.uvs),
             ("indices", digest(g.indices.iter().copied()), case.triangles),
         ];
         for (array, found, expected) in arrays {

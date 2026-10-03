@@ -17,6 +17,33 @@ struct Transform {
     z: vec4f,
 }
 
+// What vertex shaders multiply a mesh's positions and texture coordinates by. A mesh may keep them
+// as plain 8-bit or 16-bit integers, which glTF reads as whole numbers. WebGL2 reads them so, but
+// WebGPU has no such vertex format: it reads them as fractions of the type's largest value, and
+// the engine sets that value here in each pipeline that draws such a mesh. Each constant's id is
+// 1000 plus its attribute's location.
+@id(1000) override position_scale: f32 = 1.0;
+@id(1002) override uv_scale: f32 = 1.0;
+@id(1003) override second_uv_scale: f32 = 1.0;
+
+/// A mesh's position as its vertex shader reads it, at location 0, in the mesh's own units. Plain
+/// integer positions keep their whole values on every GPU path, as glTF reads them.
+fn mesh_position(p: vec3f) -> vec3f {
+    return p * position_scale;
+}
+
+/// A mesh's first texture coordinates as its vertex shader reads them, at location 2. Plain
+/// integer coordinates keep their whole values on every GPU path, as glTF reads them.
+fn mesh_uv(uv: vec2f) -> vec2f {
+    return uv * uv_scale;
+}
+
+/// A mesh's second texture coordinates as its vertex shader reads them, at location 3. Plain
+/// integer coordinates keep their whole values on every GPU path, as glTF reads them.
+fn mesh_second_uv(uv: vec2f) -> vec2f {
+    return uv * second_uv_scale;
+}
+
 /// A clip-space position outside the clip volume on every axis. A triangle whose three corners
 /// all get it draws nothing.
 const OUTSIDE_CLIP = vec4f(2.0, 2.0, 2.0, 1.0);

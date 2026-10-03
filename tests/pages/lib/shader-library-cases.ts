@@ -1380,6 +1380,26 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 			return scalar(0);
 		},
 	},
+	// null3d::vertex, the attribute readers. The test page sets no pipeline constants, so each
+	// scale keeps its default of 1, as on WebGL2 and for float attributes on WebGPU.
+	{
+		name: 'vertex::mesh_position',
+		cases: samples((random) => new Inputs().setF(0, values(random, 3, -100, 100))),
+		expected: (i) => floats(xyz(i.f(0))),
+		tolerance: 0,
+	},
+	{
+		name: 'vertex::mesh_uv',
+		cases: samples((random) => new Inputs().setF(0, values(random, 2, -2, 2))),
+		expected: (i) => floats(i.f(0).slice(0, 2)),
+		tolerance: 0,
+	},
+	{
+		name: 'vertex::mesh_second_uv',
+		cases: samples((random) => new Inputs().setF(0, values(random, 2, -2, 2))),
+		expected: (i) => floats(i.f(0).slice(0, 2)),
+		tolerance: 0,
+	},
 ];
 
 function box(p: V3, half: V3): number {

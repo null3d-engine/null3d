@@ -14,6 +14,11 @@
 // a transparent canvas's background, the pass maps the color that covers it and keeps the coverage
 // as the canvas's premultiplied alpha. WebGL2 keeps GL's row order, bottom row first, in the scene
 // color and the canvas alike.
+//
+// The BLOOM build adds bloom's five levels to the scene color before the output transform, each
+// read with a linear filter and weighted as three.js's UnrealBloomPass weights its mips. Bloom is
+// smooth, so a pixel reads it once at its own place, also where it blends four texels of the
+// corner. Bloom adds coverage as its brightest channel, so it glows over a transparent canvas.
 #import null3d::tonemap
 
 /// The settings flag that says the scene color holds display color.
@@ -21,6 +26,56 @@ const DISPLAY_COLOR: u32 = 1u;
 
 @group(0) @binding(0) var<uniform> settings: null3d::tonemap::Output;
 @group(0) @binding(1) var scene_color: texture_2d<f32>;
+
+#ifdef BLOOM
+/// Each level's weight, with the strength in it: levels 0 to 3, then level 4 in `last.x`.
+struct Bloom {
+    weights: vec4f,
+    last: vec4f,
+}
+
+@group(0) @binding(2) var<uniform> bloom: Bloom;
+@group(0) @binding(3) var bloom_level0: texture_2d<f32>;
+@group(0) @binding(4) var bloom_level1: texture_2d<f32>;
+@group(0) @binding(5) var bloom_level2: texture_2d<f32>;
+@group(0) @binding(6) var bloom_level3: texture_2d<f32>;
+@group(0) @binding(7) var bloom_level4: texture_2d<f32>;
+@group(0) @binding(8) var bloom_sampler: sampler;
+
+/// Where level `halvings - 1` holds `uv`, a place on the drawn corner from 0 to 1, in a texture of
+/// `size` texels. The level drew into the corner of its texture that the render size halved
+/// `halvings` times gives, and the place stays within that corner's texel centers.
+fn level_uv(size: vec2u, halvings: u32, uv: vec2f, render: vec2f) -> vec2f {
+    let extent = vec2f(size);
+    let corner = ceil(render / f32(1u << halvings));
+#ifdef WEBGL2
+    // WebGL2 counts rows from the bottom, and draws a corner into its target's top rows.
+    let origin = vec2f(0.0, extent.y - corner.y);
+#else
+    let origin = vec2f(0.0);
+#endif
+    return (origin + clamp(uv * corner, vec2f(0.5), corner - 0.5)) / extent;
+}
+
+/// Bloom at `uv` on the drawn corner, with its coverage.
+fn glow(uv: vec2f, render: vec2f) -> vec4f {
+    let at0 = level_uv(textureDimensions(bloom_level0), 1u, uv, render);
+    let at1 = level_uv(textureDimensions(bloom_level1), 2u, uv, render);
+    let at2 = level_uv(textureDimensions(bloom_level2), 3u, uv, render);
+    let at3 = level_uv(textureDimensions(bloom_level3), 4u, uv, render);
+    let at4 = level_uv(textureDimensions(bloom_level4), 5u, uv, render);
+    let light = bloom.weights.x * textureSampleLevel(bloom_level0, bloom_sampler, at0, 0.0).rgb
+        + bloom.weights.y * textureSampleLevel(bloom_level1, bloom_sampler, at1, 0.0).rgb
+        + bloom.weights.z * textureSampleLevel(bloom_level2, bloom_sampler, at2, 0.0).rgb
+        + bloom.weights.w * textureSampleLevel(bloom_level3, bloom_sampler, at3, 0.0).rgb
+        + bloom.last.x * textureSampleLevel(bloom_level4, bloom_sampler, at4, 0.0).rgb;
+    return vec4f(light, max(light.r, max(light.g, light.b)));
+}
+#else
+fn glow(uv: vec2f, render: vec2f) -> vec4f {
+    return vec4f(0.0);
+}
+#endif
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
@@ -161,9 +216,12 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let packed = settings.render_size;
     let render = vec2f(f32(packed & 0xffffu), f32(packed >> 16u));
     let whole = all(render == size);
+    // The pixel's place on the drawn corner, from 0 to 1 in the rows' own order, which every
+    // target of the frame shares.
+    let light = glow(position.xy / size, render);
     var color = vec4f(0.0);
     if whole {
-        color = display(pixel_color(position.xy), position.xy);
+        color = display(pixel_color(position.xy) + light, position.xy);
     }
 #ifdef WEBGL2
     let from_top = vec2f(position.x, size.y - position.y);
@@ -183,7 +241,8 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
         let corner = vec2f(f32(tap & 1u), f32(tap >> 1u));
         let weights = mix(1.0 - share, share, corner);
         let texel = corner_texel(min(first + corner, render - 1.0), size);
-        color += weights.x * weights.y * display(textureLoad(scene_color, texel, 0), position.xy);
+        let texel_color = textureLoad(scene_color, texel, 0) + light;
+        color += weights.x * weights.y * display(texel_color, position.xy);
     }
     return color;
 }
