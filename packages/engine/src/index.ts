@@ -79,6 +79,7 @@ export type {
 } from './scene/assets';
 export type { ColorInput } from './scene/color';
 export type { Exp2FogOptions, FogOptions, LinearFogOptions } from './scene/fog';
+export type { Ray } from './scene/frame-cameras';
 export type { BloomSettings, Post, PostSettings, ToneMapping } from './scene/post';
 export type {
 	AlphaMode,

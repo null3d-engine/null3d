@@ -126,6 +126,9 @@ struct Engine {
     lines: LineStore,
     /// Skeletons, clips and animated instances, from the first `initAnimations` on.
     animations: Option<Animations>,
+    /// The world matrix that `worldMatrix` copies last, which TypeScript reads in place, so a read
+    /// passes no array across and allocates nothing.
+    world_matrix: [f64; 12],
 }
 
 impl Engine {
@@ -373,6 +376,7 @@ pub fn init_engine(
         },
         structure_changed: true,
         rebuilt: false,
+        world_matrix: [0.0; 12],
         staging: Vec::new(),
         lines: LineStore::default(),
         animations: None,
@@ -450,20 +454,26 @@ pub fn reserve_object() -> u32 {
     value_with_engine(|e| e.scene.reserve().map(Handle::raw).map_err(core_failure))
 }
 
-/// Copies an object's world matrix of the current frame (12 numbers, rows of a 3 × 4 matrix), with
-/// its translation from the origin in 64-bit floats.
+/// Copies an object's world matrix of the current frame into the engine's matrix words (see
+/// `worldMatrixAddress`): 12 numbers, rows of a 3 × 4 matrix, with its translation from the origin
+/// in 64-bit floats.
 #[wasm_bindgen(js_name = worldMatrix)]
-pub fn world_matrix(handle: u32, out: &mut [f64]) -> u32 {
+pub fn world_matrix(handle: u32) -> u32 {
     with_engine(
         |e| match e.scene.absolute_world_matrix(Handle::from_raw(handle)) {
             Ok(matrix) => {
-                let n = out.len().min(matrix.len());
-                out[..n].copy_from_slice(&matrix[..n]);
+                e.world_matrix = matrix;
                 0
             }
             Err(error) => core_failure(error),
         },
     )
+}
+
+/// The address of the 12 64-bit floats that `worldMatrix` writes.
+#[wasm_bindgen(js_name = worldMatrixAddress)]
+pub fn world_matrix_address() -> u32 {
+    value_with_engine(|e| Ok(address(&e.world_matrix)))
 }
 
 /// The command ring (see `constants::ring_field`): the record array's address, its capacity in

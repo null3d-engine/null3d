@@ -36,6 +36,7 @@ import type { CoreDevice } from '../page/limits';
 import { bloomDivisor, FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
 import { Assets } from '../scene/assets';
+import { FrameCameras } from '../scene/frame-cameras';
 import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
 import { Geometry, Materials } from '../scene/resources';
@@ -311,7 +312,13 @@ export class SketchRunner {
 				renderScaleThousandths: () => this.renderScale(),
 			},
 		};
-		const scene = new Scene(this.core, this.recorded, device.webgl2, () => this.warmUp());
+		const scene = new Scene(
+			this.core,
+			this.recorded,
+			device.webgl2,
+			() => this.warmUp(),
+			new FrameCameras(this.core, sketch.control, this.input),
+		);
 		this.post = new Post(this.core, device.effectsSceneColor !== FORMAT_CANVAS);
 		this.debugDraw = DEV ? new DebugDraw(this.core, host, scene) : undefined;
 		const debug = this.debugDraw ?? new SketchDebug(host);
@@ -783,6 +790,8 @@ export class SketchRunner {
 		if (glue.recordFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		Atomics.store(slots, Slot.RenderScale, scale);
+		// Input names frames in the sketch's count, which leaves out the setup's frames.
+		if (play) this.context.scene.keepFrameCamera(time.frame, width, height);
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		// A frame whose list needs more room than any before moves the list, so each frame gives

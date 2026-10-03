@@ -221,6 +221,8 @@ class TouchState implements InputTouch {
 	y = 0;
 	dx = 0;
 	dy = 0;
+	/** The frame on screen at the finger's last event. */
+	frame = 0;
 }
 
 /** Reads the input ring once per frame, and answers the sketch's input calls. */
@@ -334,6 +336,21 @@ export class InputReader implements Input {
 		const height = slotFloats[Slot.CanvasCssHeight] as number;
 		pointer.ndcX = width > 0 ? (pointer.x / width) * 2 - 1 : 0;
 		pointer.ndcY = height > 0 ? 1 - (pointer.y / height) * 2 : 0;
+	}
+
+	/**
+	 * The frame that was on screen at the last event of the pointer or a finger at (`x`, `y`) in CSS
+	 * pixels, or 0 when neither is there. A point that the sketch read from the input then names the
+	 * frame that its event's user saw.
+	 */
+	frameAt(x: number, y: number): number {
+		const { pointer, touches } = this;
+		if (pointer.id >= 0 && pointer.x === x && pointer.y === y) return pointer.frame;
+		for (let k = 0; k < touches.length; k++) {
+			const touch = touches[k] as TouchState;
+			if (touch.x === x && touch.y === y) return touch.frame;
+		}
+		return 0;
 	}
 
 	isDown(name: string): boolean {
@@ -474,7 +491,8 @@ export class InputReader implements Input {
 		const y = floats[base + FIELD_Y] as number;
 		const id = ints[base + FIELD_ID] as number;
 		const flags = ints[base + FIELD_FLAGS] as number;
-		if ((flags & FLAG_TOUCH) !== 0) this.onTouch(type, id, x, y);
+		const frame = Math.max(0, (ints[base + FIELD_FRAME] as number) - this.setupFrames);
+		if ((flags & FLAG_TOUCH) !== 0) this.onTouch(type, id, x, y, frame);
 		if ((flags & FLAG_PRIMARY) === 0) return;
 		const { pointer } = this;
 		// A new pointer, such as a finger after the mouse, moves the pointer without movement. The
@@ -494,7 +512,7 @@ export class InputReader implements Input {
 		pointer.x = x;
 		pointer.y = y;
 		pointer.isTouch = (flags & FLAG_TOUCH) !== 0;
-		pointer.frame = Math.max(0, (ints[base + FIELD_FRAME] as number) - this.setupFrames);
+		pointer.frame = frame;
 		const buttons = ints[base + FIELD_BUTTONS] as number;
 		const changed = buttons ^ this.mouseButtons;
 		this.mouseButtons = buttons;
@@ -517,7 +535,7 @@ export class InputReader implements Input {
 			pointer.pinch += scroll;
 	}
 
-	private onTouch(type: InputEventType, id: number, x: number, y: number): void {
+	private onTouch(type: InputEventType, id: number, x: number, y: number, frame: number): void {
 		const { touches } = this;
 		let at = 0;
 		while (at < touches.length && (touches[at] as TouchState).id !== id) at++;
@@ -532,6 +550,7 @@ export class InputReader implements Input {
 			touch.y = y;
 			touch.dx = 0;
 			touch.dy = 0;
+			touch.frame = frame;
 			touches.push(touch);
 			return;
 		}
@@ -545,6 +564,7 @@ export class InputReader implements Input {
 		touch.dy += y - touch.y;
 		touch.x = x;
 		touch.y = y;
+		touch.frame = frame;
 	}
 
 	/** A button is down while any pad holds it, and its value is the largest of any pad. */
