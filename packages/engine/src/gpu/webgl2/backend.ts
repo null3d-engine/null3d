@@ -300,6 +300,8 @@ export class WebGL2Backend {
 	/** The framebuffer through which a mip level is drawn, and the sampler that reads the level before. */
 	private mipFramebuffer: WebGLFramebuffer | null = null;
 	private mipSampler: WebGLSampler | null = null;
+	/** The texture that each mip level is drawn into before it copies into its level, by format. */
+	private readonly mipSpares = new Map<number, GlTexture>();
 	/** Where drawing into the canvas goes during a capture; the canvas itself otherwise. */
 	canvasTarget: CanvasTarget | undefined;
 	/**
@@ -1201,13 +1203,17 @@ export class WebGL2Backend {
 	/**
 	 * Makes mip levels 1 and up of one layer of a texture array, as the WebGPU backend does: a
 	 * triangle over each level samples the level before it with a linear filter. While a level is
-	 * drawn, the level before is the texture's base and highest level, so the draw reads no level
-	 * that it writes. A blit per level would average the stored bytes of sRGB texels in Firefox,
-	 * not their linear values, and `generateMipmap` would remake every layer.
+	 * drawn, the level before is the texture's base and highest level. The triangle draws into a
+	 * spare texture, which then copies into the level, so no draw writes the texture it reads.
+	 * Chrome on Adreno 830 refuses a draw into one level of a texture that the draw samples at
+	 * another level, although WebGL allows it. A blit per level fails there too, and in Firefox
+	 * it averages the stored bytes of sRGB texels, not their linear values. `generateMipmap` would
+	 * remake every layer.
 	 */
 	private generateMipmaps(id: number, layer: number): void {
 		const gl = this.gl;
 		const texture = this.textureOf(id);
+		const spare = this.mipSpare(texture);
 		const program = this.mipmapProgram();
 		if (program.firstInstance && program.firstInstanceValue !== layer) {
 			gl.uniform1ui(program.firstInstance, layer);
@@ -1220,7 +1226,10 @@ export class WebGL2Backend {
 			gl.samplerParameteri(this.mipSampler, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 			gl.samplerParameteri(this.mipSampler, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 		}
-		gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.mipFramebuffer);
+		// The copies read the spare through the same framebuffer that the draws write.
+		gl.bindFramebuffer(gl.FRAMEBUFFER, this.mipFramebuffer);
+		const attachment = texture.format.attachment;
+		gl.framebufferTexture2D(gl.FRAMEBUFFER, attachment, gl.TEXTURE_2D, spare.texture, 0);
 		this.useVertexArray(this.emptyVertexArray());
 		this.setScissorTest(false);
 		this.setDepthTest(false);
@@ -1230,20 +1239,40 @@ export class WebGL2Backend {
 		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, texture.texture);
 		this.bindUnitSampler(MIP_UNIT, this.mipSampler);
 		this.samplersChanged = true;
-		const attachment = texture.format.attachment;
 		for (let level = 1; level < texture.mips; level++) {
 			gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_BASE_LEVEL, level - 1);
 			gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAX_LEVEL, level - 1);
-			gl.framebufferTextureLayer(gl.DRAW_FRAMEBUFFER, attachment, texture.texture, level, layer);
 			const width = Math.max(1, texture.width >> level);
 			const height = Math.max(1, texture.height >> level);
 			this.setGlViewport(0, 0, width, height);
 			gl.drawArrays(gl.TRIANGLES, 0, 3);
+			gl.copyTexSubImage3D(gl.TEXTURE_2D_ARRAY, level, 0, 0, layer, 0, 0, width, height);
 		}
 		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_BASE_LEVEL, 0);
 		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAX_LEVEL, texture.mips - 1);
-		// A framebuffer that is not bound keeps what it holds alive, so the texture leaves it.
-		gl.framebufferTextureLayer(gl.DRAW_FRAMEBUFFER, attachment, null, 0, 0);
+		// A framebuffer that is not bound keeps what it holds alive, so the spare leaves it.
+		gl.framebufferTexture2D(gl.FRAMEBUFFER, attachment, gl.TEXTURE_2D, null, 0);
+	}
+
+	/**
+	 * The spare texture of the texture's format, at least as large as the texture's level 1. A
+	 * smaller spare gives way to one that fits both sizes.
+	 */
+	private mipSpare(texture: GlTexture): GlTexture {
+		const gl = this.gl;
+		const format = texture.format;
+		const old = this.mipSpares.get(format.internal);
+		const width = Math.max(1, texture.width >> 1, old?.width ?? 0);
+		const height = Math.max(1, texture.height >> 1, old?.height ?? 0);
+		if (old && old.width === width && old.height === height) return old;
+		if (old?.texture) gl.deleteTexture(old.texture);
+		const spare = gl.createTexture();
+		if (!spare) throw new Error('WebGL2 could not create a texture');
+		this.editTexture(UPLOAD_UNIT, gl.TEXTURE_2D, spare);
+		gl.texStorage2D(gl.TEXTURE_2D, 1, format.internal, width, height);
+		const made = glTexture(spare, null, gl.TEXTURE_2D, width, height, format, 1, 0, 0, false);
+		this.mipSpares.set(format.internal, made);
+		return made;
 	}
 
 	/** Attaches one mip level and layer of a texture to a framebuffer. */
@@ -1906,5 +1935,6 @@ export class WebGL2Backend {
 		for (const buffer of this.unpackBuffers) if (buffer) gl.deleteBuffer(buffer);
 		if (this.mipFramebuffer) gl.deleteFramebuffer(this.mipFramebuffer);
 		if (this.mipSampler) gl.deleteSampler(this.mipSampler);
+		for (const spare of this.mipSpares.values()) gl.deleteTexture(spare.texture);
 	}
 }

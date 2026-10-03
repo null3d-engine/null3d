@@ -363,13 +363,13 @@ describe('the GPU pages of the checks plan', () => {
 		});
 		const result = {
 			ok: true,
-			ways: [way('engine', 0), way('blit', 1024)],
+			ways: [way('engine', 0), way('engine-copy', 0), way('blit', 1024)],
 			working: ['engine'],
 			failing: ['blit'],
 		};
 		expect(judge(checkOf('mip-levels'), result, NONE_MISSING, context)).toEqual([]);
-		expect(notes).toEqual(['mip levels on WebGL2: working engine; failing blit']);
-		const black = { ...result, ways: [way('engine', 1024)] };
+		expect(notes).toEqual(['mip levels and array copies on WebGL2: working engine; failing blit']);
+		const black = { ...result, ways: [way('engine', 1024), way('engine-copy', 0)] };
 		expect(judge(checkOf('mip-levels'), black, NONE_MISSING, context)).toEqual([
 			'engine (srgb, layer 2 of 4): level 1: 1024 wrong texels,  | ',
 		]);

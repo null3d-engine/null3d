@@ -1,11 +1,14 @@
 // Makes the mip levels of one layer of a texture array on WebGL2 in several ways, reads every level
 // back and reports what each way wrote. The engine's way goes through the engine's backend. The
-// other ways use the same mip shader in plain WebGL2 calls: the engine's steps again, a spare
+// other ways use the same mip shader in plain WebGL2 calls: the engine's former steps, a spare
 // texture to draw into, a spare copy of the level to read from, both spares, `generateMipmap`,
 // and a blit from each level to the next. Level 0 of each layer holds two colors, one in each
 // half, so every made level must hold the same two colors. A level that reads black, or that
-// shows another layer's colors, names the step that fails on the device. The page also reports
-// the GL errors of each way and the framebuffer status of each level it reads.
+// shows another layer's colors, names the step that fails on the device. The page then copies
+// every level of each layer into an array of twice the layers, as the texture store grows an
+// array: through the engine's backend, through the same calls in plain WebGL2, and through a
+// buffer on the GPU. The page also reports the GL errors of each way and the framebuffer status
+// of each level it reads.
 import { type DeviceShaders, loadGlslShaders, WebGL2Backend } from '@null3d/engine/internal';
 import * as G from '../../packages/engine/src/generated/gpu';
 import { TestMemory } from './lib/drawlist';
@@ -141,49 +144,88 @@ function readWay(
 	return { ...way, levels, errors, ok };
 }
 
+/** A way's texture to read back, and the facts the result gives about it. */
+interface Made {
+	texture: WebGLTexture;
+	way: Omit<WayResult, 'levels' | 'ok' | 'errors'>;
+}
+
 /** The engine's ways: each makes a texture through the backend and the levels of one layer. */
-const ENGINE_WAYS: readonly { way: string; format: Format; layers: number; layer: number }[] = [
-	{ way: 'engine', format: 'srgb', layers: LAYERS, layer: 2 },
-	{ way: 'engine', format: 'rgba8', layers: LAYERS, layer: 2 },
-	{ way: 'engine', format: 'srgb', layers: LAYERS, layer: 0 },
-	{ way: 'engine', format: 'srgb', layers: 1, layer: 0 },
+const ENGINE_WAYS: readonly { format: Format; layers: number; layer: number }[] = [
+	{ format: 'srgb', layers: LAYERS, layer: 2 },
+	{ format: 'rgba8', layers: LAYERS, layer: 2 },
+	{ format: 'srgb', layers: LAYERS, layer: 0 },
+	{ format: 'srgb', layers: 1, layer: 0 },
 ];
 
-/** Makes each engine way's levels through the backend, and returns the textures it made. */
-function engineWays(gl: WebGL2RenderingContext, shaders: DeviceShaders): WebGLTexture[] {
-	const made: WebGLTexture[] = [];
-	const create = gl.createTexture.bind(gl);
-	gl.createTexture = () => {
-		const texture = create();
-		if (texture) made.push(texture);
-		return texture;
+/**
+ * The layers of a grown array that the page reads back. Layer 0 is left out, as a copy that reads
+ * the wrong layer still gets it right.
+ */
+const COPIED_LAYERS = [1, 3];
+
+const USAGE =
+	G.TEXTURE_USAGE_TEXTURE_BINDING |
+	G.TEXTURE_USAGE_COPY_DST |
+	G.TEXTURE_USAGE_COPY_SRC |
+	G.TEXTURE_USAGE_RENDER_ATTACHMENT;
+
+/** Adds the commands that make a texture array with level 0 of every layer written. */
+function pushArray(memory: TestMemory, id: number, format: Format, layers: number): void {
+	const data = levelZero(layers);
+	const at = memory.put(data);
+	const code = format === 'srgb' ? G.FORMAT_RGBA8_UNORM_SRGB : G.FORMAT_RGBA8_UNORM;
+	memory.push(G.OP_CREATE_TEXTURE, id, SIZE, SIZE, layers, code, USAGE, 1, MIPS, G.VIEW_2D_ARRAY);
+	memory.push(G.OP_WRITE_TEXTURE, id, 0, 0, 0, 0, SIZE, SIZE, layers, at, data.byteLength);
+}
+
+/**
+ * Makes each engine way's levels through the backend. Then grows an array as the texture store
+ * does: a new array of twice the layers takes a copy of every level of every layer. Returns the
+ * texture arrays to read back, which the page tells from the backend's other textures by their
+ * storage.
+ */
+function engineWays(gl: WebGL2RenderingContext, shaders: DeviceShaders): Made[] {
+	const arrays: WebGLTexture[] = [];
+	const storage = gl.texStorage3D.bind(gl);
+	gl.texStorage3D = (...args: Parameters<WebGL2RenderingContext['texStorage3D']>) => {
+		storage(...args);
+		arrays.push(gl.getParameter(gl.TEXTURE_BINDING_2D_ARRAY) as WebGLTexture);
 	};
 	const canvas = gl.canvas as OffscreenCanvas;
 	const backend = new WebGL2Backend(gl, canvas, shaders, true, 'reversed');
-	const textures: WebGLTexture[] = [];
-	for (const [k, { format, layers, layer }] of ENGINE_WAYS.entries()) {
-		const id = k + 1;
-		const memory = new TestMemory(SIZE * SIZE * LAYERS * 4 + 4096, 64);
-		const data = levelZero(layers);
-		const at = memory.put(data);
-		const usage =
-			G.TEXTURE_USAGE_TEXTURE_BINDING |
-			G.TEXTURE_USAGE_COPY_DST |
-			G.TEXTURE_USAGE_COPY_SRC |
-			G.TEXTURE_USAGE_RENDER_ATTACHMENT;
-		const code = format === 'srgb' ? G.FORMAT_RGBA8_UNORM_SRGB : G.FORMAT_RGBA8_UNORM;
-		memory.push(G.OP_CREATE_TEXTURE, id, SIZE, SIZE, layers, code, usage, 1, MIPS, G.VIEW_2D_ARRAY);
-		memory.push(G.OP_WRITE_TEXTURE, id, 0, 0, 0, 0, SIZE, SIZE, layers, at, data.byteLength);
-		memory.push(G.OP_GENERATE_MIPMAPS, id, layer);
+	const replay = (memory: TestMemory) => {
 		memory.push(G.OP_SUBMIT);
-		const before = made.length;
 		backend.replay(memory.words, memory.floats, 0, memory.listLength, memory.buffer);
-		if (made.length !== before + 1)
-			throw new Error(`the backend made ${made.length - before} textures`);
-		textures.push(made.at(-1) as WebGLTexture);
+	};
+	const made: Made[] = [];
+	for (const [k, { format, layers, layer }] of ENGINE_WAYS.entries()) {
+		const memory = new TestMemory(SIZE * SIZE * LAYERS * 4 + 4096, 64);
+		pushArray(memory, k + 1, format, layers);
+		memory.push(G.OP_GENERATE_MIPMAPS, k + 1, layer);
+		replay(memory);
+		const texture = arrays.at(-1) as WebGLTexture;
+		made.push({ texture, way: { way: 'engine', format, layers, layer } });
 	}
-	gl.createTexture = create;
-	return textures;
+	const memory = new TestMemory(SIZE * SIZE * LAYERS * 4 + 4096, 512);
+	const source = 20;
+	const grown = 21;
+	pushArray(memory, source, 'srgb', LAYERS);
+	for (let layer = 0; layer < LAYERS; layer++) memory.push(G.OP_GENERATE_MIPMAPS, source, layer);
+	const code = G.FORMAT_RGBA8_UNORM_SRGB;
+	const twice = 2 * LAYERS;
+	memory.push(G.OP_CREATE_TEXTURE, grown, SIZE, SIZE, twice, code, USAGE, 1, MIPS, G.VIEW_2D_ARRAY);
+	for (let level = 0; level < MIPS; level++) {
+		const size = Math.max(1, SIZE >> level);
+		const at = [source, level, 0, 0, 0, grown, level, 0, 0, 0, size, size, LAYERS];
+		memory.push(G.OP_COPY_TEXTURE_TO_TEXTURE, ...at);
+	}
+	replay(memory);
+	const texture = arrays.at(-1) as WebGLTexture;
+	for (const layer of COPIED_LAYERS)
+		made.push({ texture, way: { way: 'engine-copy', format: 'srgb', layers: twice, layer } });
+	gl.texStorage3D = storage;
+	return made;
 }
 
 /** The mip shader's program, compiled as the engine compiles it, with its uniforms. */
@@ -214,28 +256,39 @@ function mipProgram(gl: WebGL2RenderingContext, shaders: DeviceShaders) {
 	return { program, layer: gl.getUniformLocation(program, 'naga_vs_first_instance') };
 }
 
-/** A texture array as the engine makes one, with level 0 of every layer written. */
-function arrayTexture(gl: WebGL2RenderingContext, format: Format, layers: number): WebGLTexture {
+/**
+ * A texture array as the engine makes one, with level 0 of every layer written, or with nothing
+ * written when `written` is false.
+ */
+function arrayTexture(
+	gl: WebGL2RenderingContext,
+	format: Format,
+	layers: number,
+	written = true,
+): WebGLTexture {
 	const texture = gl.createTexture();
 	gl.activeTexture(gl.TEXTURE1);
 	gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
 	gl.texStorage3D(gl.TEXTURE_2D_ARRAY, MIPS, internalOf(gl, format), SIZE, SIZE, layers);
 	gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 	gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-	const data = levelZero(layers);
-	gl.texSubImage3D(
-		gl.TEXTURE_2D_ARRAY,
-		0,
-		0,
-		0,
-		0,
-		SIZE,
-		SIZE,
-		layers,
-		gl.RGBA,
-		gl.UNSIGNED_BYTE,
-		data,
-	);
+	if (written) {
+		const data = levelZero(layers);
+		const { RGBA, UNSIGNED_BYTE } = gl;
+		gl.texSubImage3D(
+			gl.TEXTURE_2D_ARRAY,
+			0,
+			0,
+			0,
+			0,
+			SIZE,
+			SIZE,
+			layers,
+			RGBA,
+			UNSIGNED_BYTE,
+			data,
+		);
+	}
 	gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
 	gl.activeTexture(gl.TEXTURE0);
 	return texture;
@@ -403,6 +456,79 @@ function plainWays(gl: WebGL2RenderingContext, shaders: DeviceShaders): Record<s
 	};
 }
 
+/** Copies every level of every layer of one texture array into another, in plain WebGL2 calls. */
+type CopyLayers = (from: WebGLTexture, into: WebGLTexture, layers: number) => void;
+
+function plainCopies(gl: WebGL2RenderingContext): Record<string, CopyLayers> {
+	const read = gl.createFramebuffer();
+	const size = (level: number) => Math.max(1, SIZE >> level);
+	/** Calls `copy` with each level and layer of `from` attached to the read framebuffer. */
+	const eachLayer = (
+		from: WebGLTexture,
+		into: WebGLTexture,
+		layers: number,
+		copy: (level: number, layer: number) => void,
+	) => {
+		gl.bindFramebuffer(gl.READ_FRAMEBUFFER, read);
+		gl.activeTexture(gl.TEXTURE2);
+		gl.bindTexture(gl.TEXTURE_2D_ARRAY, into);
+		for (let level = 0; level < MIPS; level++)
+			for (let layer = 0; layer < layers; layer++) {
+				gl.framebufferTextureLayer(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, from, level, layer);
+				copy(level, layer);
+			}
+		gl.framebufferTextureLayer(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, null, 0, 0);
+		gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+		gl.activeTexture(gl.TEXTURE0);
+	};
+	return {
+		// The engine's copy: each source layer is attached to a framebuffer that WebGL copies from.
+		'copy-layer': (from, into, layers) =>
+			eachLayer(from, into, layers, (level, layer) =>
+				gl.copyTexSubImage3D(
+					gl.TEXTURE_2D_ARRAY,
+					level,
+					0,
+					0,
+					layer,
+					0,
+					0,
+					size(level),
+					size(level),
+				),
+			),
+		// Each layer read into a buffer on the GPU, which then uploads into the new array's layer.
+		'buffer-copy': (from, into, layers) => {
+			const buffer = gl.createBuffer();
+			gl.bindBuffer(gl.PIXEL_PACK_BUFFER, buffer);
+			gl.bufferData(gl.PIXEL_PACK_BUFFER, SIZE * SIZE * 4, gl.STREAM_COPY);
+			gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+			eachLayer(from, into, layers, (level, layer) => {
+				const side = size(level);
+				gl.bindBuffer(gl.PIXEL_PACK_BUFFER, buffer);
+				gl.readPixels(0, 0, side, side, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+				gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+				gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, buffer);
+				gl.texSubImage3D(
+					gl.TEXTURE_2D_ARRAY,
+					level,
+					0,
+					0,
+					layer,
+					side,
+					side,
+					1,
+					gl.RGBA,
+					gl.UNSIGNED_BYTE,
+					0,
+				);
+				gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
+			});
+			gl.deleteBuffer(buffer);
+		},
+	};
+}
+
 /** The renderer's names, where the browser gives them. */
 function renderer(gl: WebGL2RenderingContext): Record<string, unknown> {
 	const info = gl.getExtension('WEBGL_debug_renderer_info');
@@ -421,7 +547,7 @@ run('mip-levels', async () => {
 	const shaders = await loadGlslShaders(0);
 	progress('the engine makes its levels');
 	const ways: WayResult[] = [];
-	const engineTextures = engineWays(gl, shaders);
+	const engineMade = engineWays(gl, shaders);
 	const engineErrors = glErrors(gl);
 	// Plain calls follow, so nothing the backend keeps bound may stay bound.
 	gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
@@ -435,13 +561,8 @@ run('mip-levels', async () => {
 	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
 	for (let unit = 0; unit < 4; unit++) gl.bindSampler(unit, null);
 	const framebuffer = gl.createFramebuffer();
-	for (const [k, way] of ENGINE_WAYS.entries())
-		ways.push(
-			readWay(gl, framebuffer, engineTextures[k] as WebGLTexture, {
-				...way,
-				errors: k === 0 ? engineErrors : [],
-			}),
-		);
+	for (const [k, { texture, way }] of engineMade.entries())
+		ways.push(readWay(gl, framebuffer, texture, { ...way, errors: k === 0 ? engineErrors : [] }));
 	progress('plain WebGL2 ways');
 	const plain = plainWays(gl, shaders);
 	for (const [name, make] of Object.entries(plain))
@@ -465,6 +586,34 @@ run('mip-levels', async () => {
 			ways.push(result);
 			gl.deleteTexture(texture);
 		}
+	progress('plain WebGL2 copies');
+	for (const [name, copy] of Object.entries(plainCopies(gl))) {
+		// A source whose levels `generateMipmap` made, which works where the other ways fail.
+		const from = arrayTexture(gl, 'srgb', LAYERS);
+		gl.bindTexture(gl.TEXTURE_2D_ARRAY, from);
+		gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
+		gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+		const into = arrayTexture(gl, 'srgb', 2 * LAYERS, false);
+		let error: string | undefined;
+		try {
+			copy(from, into, LAYERS);
+		} catch (e) {
+			error = (e as Error).message;
+		}
+		for (const layer of COPIED_LAYERS)
+			ways.push(
+				readWay(gl, framebuffer, into, {
+					way: name,
+					format: 'srgb',
+					layers: 2 * LAYERS,
+					layer,
+					errors: [],
+					...(error ? { error } : {}),
+				}),
+			);
+		gl.deleteTexture(from);
+		gl.deleteTexture(into);
+	}
 	const names = [...new Set(ways.map(({ way }) => way))];
 	const works = (name: string) => ways.every(({ way, ok }) => way !== name || ok);
 	return {
