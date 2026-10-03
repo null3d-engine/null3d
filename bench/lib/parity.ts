@@ -29,6 +29,13 @@ export const MAX_DIFFERENT_PERCENT = 0.1;
  */
 export const SHADOW_MAX_DIFFERENT_PERCENT = 0.5;
 
+/**
+ * The outline scenes' limit, in percent of the pixels: above the scene's own edges on SwiftShader's
+ * WebGPU, and below the 0.24% to 0.84% that a fault which drew hidden edges in the visible color
+ * gave.
+ */
+export const OUTLINE_MAX_DIFFERENT_PERCENT = 0.15;
+
 /** The squared RGB distance from black to white, which scales a squared distance to [0, 1]. */
 const MAX_SQUARED_DISTANCE = 255 * 255 * 3;
 /** A diff image shows each matching pixel at this share of the reference pixel's value. */
@@ -297,13 +304,16 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		webglOnly: true,
 	},
 	// Outlines with three.js's defaults and with glow, against three.js's OutlinePass. The
-	// composer's targets have no MSAA, so null3D's page draws without anti-aliasing too.
+	// composer's targets have no MSAA, so null3D's page draws without anti-aliasing too. SwiftShader's
+	// WebGPU draws the ground's far edge and the plain box's top edge a row apart from WebGL, which
+	// alone differs in 0.105% of the pixels, so the scenes have a limit of their own.
 	...(['plain', 'glow'] as const).map(
 		(outline): FeatureScene => ({
 			test: `outline-${outline}`,
 			twin: `${TWINS}/outline.html?outline=${outline}`,
 			switches: 'antialias=none',
 			webglOnly: true,
+			limit: OUTLINE_MAX_DIFFERENT_PERCENT,
 		}),
 	),
 ];

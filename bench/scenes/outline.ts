@@ -37,7 +37,12 @@ export interface OutlineShape {
 	outlined: boolean;
 }
 
-/** The ground, the wall, the sphere half behind it, the box in the open and the plain box. */
+/**
+ * The ground, the wall, the sphere half behind it, the box in the open and the plain box. The box
+ * in the open floats a little above the ground. Where it rests on the ground, three.js's mask
+ * marks its lowest rows as hidden, because the depth that OutlinePass packs into a half float
+ * target loses precision, and the parity test would measure that fault.
+ */
 export const OUTLINE_SHAPES: readonly OutlineShape[] = [
 	{ kind: 'box', size: [12, 0.2, 6], position: [0, -0.6, 0], color: '#6a6e74', outlined: false },
 	{ kind: 'box', size: [1.4, 2, 0.3], position: [-1.3, 0.5, 1], color: '#a07850', outlined: false },
@@ -48,7 +53,7 @@ export const OUTLINE_SHAPES: readonly OutlineShape[] = [
 		color: '#5080c0',
 		outlined: true,
 	},
-	{ kind: 'box', size: [1, 1, 1], position: [1, 0, 0], color: '#c05050', outlined: true },
+	{ kind: 'box', size: [1, 1, 1], position: [1, 0.1, 0], color: '#c05050', outlined: true },
 	{
 		kind: 'box',
 		size: [0.8, 1.4, 0.8],

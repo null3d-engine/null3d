@@ -1163,7 +1163,8 @@ impl FrameGraph {
 
     /// Records the plan's render and compute passes, then submits them. The graph records the
     /// final pass, and `record` the commands of each other declared pass. Each render pass clears
-    /// its color targets to `clear`. A render pass whose passes all have roles that `skips` names
+    /// its color targets to `clear`, except the outline mask's pass, which clears to zero: no
+    /// object covers the mask there. A render pass whose passes all have roles that `skips` names
     /// is left out, so its targets keep what earlier frames drew.
     pub(crate) fn record(
         &self,
@@ -1196,6 +1197,10 @@ impl FrameGraph {
                     if passes.iter().all(|&pass| skips(self.roles[pass.index()])) {
                         continue;
                     }
+                    let masks = passes
+                        .iter()
+                        .any(|&pass| self.roles[pass.index()] == Role::OutlineMask);
+                    let clear = if masks { [0.0; 4] } else { clear };
                     self.begin_render_pass(list, plan, step, clear)?;
                     self.set_render_area(list, size)?;
                     for &pass in plan.passes(step) {
@@ -2022,6 +2027,26 @@ mod tests {
                 (outline::MASK_FORMAT, LoadOp::Clear, LoadOp::Load, true)
             );
             assert!(mask[0].resolve.is_some(), "the multisampled mask resolves");
+            list.clear();
+            let background = [0.25f32, 0.5, 0.75, 1.0].map(f32::to_bits);
+            frames
+                .record(&mut list, [0.25, 0.5, 0.75, 1.0], |_| false, |_, _| Ok(()))
+                .unwrap();
+            let passes = operands(&list, Op::BeginRenderPass);
+            let cleared_to_zero: Vec<_> =
+                passes.iter().filter(|pass| pass[3..7] == [0; 4]).collect();
+            assert_eq!(cleared_to_zero.len(), 1, "only the mask clears to zero");
+            let flags = cleared_to_zero[0][8];
+            assert_eq!(
+                flags & (pass_flags::CLEAR_COLOR | pass_flags::CLEAR_DEPTH),
+                pass_flags::CLEAR_COLOR,
+                "the mask clears its color and keeps the scene's depth"
+            );
+            assert_eq!(
+                passes[0][3..7],
+                background,
+                "the scene clears to the background"
+            );
             let texture = |name: &str| plan.texture_of(graph.find_resource(name).unwrap());
             for step in 1..outline::STEPS {
                 assert_ne!(

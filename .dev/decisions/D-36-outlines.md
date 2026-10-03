@@ -11,13 +11,38 @@ Status: decided, 2026-10-04. Date: 2026-10-04. Task: M2-F4.
 ## Rule
 
 - Outlines draw on every tier ([D-21](D-21-effect-chain.md)'s rule for effects).
-- A port that copies `OutlinePass`'s colors, strength, thickness and glow keeps its look: the parity test passes three.js's rule, under 0.1% of the pixels.
+- A port that copies `OutlinePass`'s colors, strength, thickness and glow keeps its look. On the Mac's GPU, the parity test passes three.js's rule, under 0.1% of the pixels. The outline scenes have a limit of 0.15%, because SwiftShader's WebGPU draws two of the scene's own edges a row apart from WebGL.
 - Outlines cost nothing while nothing is outlined. Steady frames with outlines allocate nothing, and a new render scale makes no GPU object.
 - No draw samples a texture that it draws into (the Adreno rule of the [implementation notes](../implementation-notes.md)).
 
 ## Data
 
-PARITY_AND_COST
+### Parity with three.js
+
+Pixels that differ from three.js by its rule, 4 October 2026:
+
+| Scene | GPU | Core WebGPU | Compatibility mode | WebGL2 |
+| --- | --- | --- | --- | --- |
+| `outline-plain`: three.js's defaults | Chrome on the Mac's GPU | 0.015% | 0.015% | 0.000% |
+| `outline-plain` | SwiftShader | 0.105% | 0.105% | 0.000% |
+| `outline-glow`: a wide orange edge, a blue hidden edge and glow | Chrome on the Mac's GPU | 0.015% | 0.015% | 0.000% |
+| `outline-glow` | SwiftShader | 0.104% | 0.104% | 0.000% |
+
+The parity test (`bun run parity -- --scene outline-plain,outline-glow`, and with `CI=1` for SwiftShader) compares null3D's images with the twin `bench/pages/threejs/outline.html`. The twin draws the same scene (`bench/scenes/outline.ts`) with an `EffectComposer`: a `RenderPass`, an `OutlinePass` with the same settings, and an `OutputPass` with ACES. Both sides draw without anti-aliasing, as the composer's targets have no MSAA.
+
+On SwiftShader's WebGPU, most of the pixels that differ lie on the ground's far edge and on the top edge of the box without an outline. So the outline scenes pass under a limit of 0.15%.
+
+The outlined box floats 10 cm above the ground. When it rested on the ground, the scenes differed in 0.081% to 0.095% (`outline-plain`) and 0.305% to 0.320% (`outline-glow`) on the Mac. three.js drew its hidden color along the box's lowest rows, which nothing hides. `OutlinePass` packs the depth of the other objects into the four channels of a half float target, and the unpacked depth is too coarse near a contact line. null3D tests against the scene's own depth, so the box's lowest rows count as visible.
+
+A fault put back on purpose shows what the test catches. The render graph cleared the mask to the scene's background color, so the mask's green channel held a little of the background. The edge step then found a visible part next to every edge, and drew the hidden parts in the visible color. The scenes differed in 0.24% to 0.26% (`outline-plain`) and 0.82% to 0.84% (`outline-glow`) on the Mac, so the fault fails the limit on every tier.
+
+### Cost
+
+- While nothing is outlined, or outlines are off, no outline pass runs and no outline target exists. The final pass reads one more flag of its settings and binds blank textures.
+- The mask pass draws each outlined object twice, from the outline view's culled lists. It writes one color target of the render size and reads the scene's depth. three.js draws the depth of every other object again, then the outlined objects.
+- Texture reads per pixel of the canvas, over the steps: 1 in the edge step, 4.5 in the thickness's blur, 1.1 in the glow's, and 3 in the final pass. That is 9.6. three.js reads 9.9, because it first copies the mask to half size.
+- Target memory per pixel of the canvas, at most: 4 bytes of mask (16 more with 4 MSAA samples, which resolve into it), 6 bytes for the edge step and the thickness's blur at half size, and 1 byte for the glow's blur at a quarter size, in `rgba16float`. The scene's depth must also be stored for the mask pass.
+- GPU time on phones and tablets is not measured yet.
 
 ## Decision
 
@@ -41,10 +66,11 @@ PARITY_AND_COST
 - The scene's depth must outlive the scene's render pass while outlines draw. Where the device has transient attachments, the depth loses that usage then, and on a tile-based GPU it is written to memory.
 - On the 8-bit path the scene color holds display color. The final pass maps the overlay alone through the tone mapping and adds it after, which matches the HDR path over dark pixels and gives weaker edges over bright ones.
 - An outlined skinned object draws its mask in its pose of the frame. On WebGPU the mask pass reads the vertices that the skinning pass wrote, as the scene and shadow passes do ([D-20](D-20-webgpu-skinning.md)). With the switch that skins in the vertex shader, the mask template's `SKIN` build skins them, as the depth template's does.
+- The mask clears to zero, where every other render pass clears its color to the scene's background. A cleared mask must hold no coverage and no visible part.
 - The outline's passes and targets are switched on only while outlines are on and some object is outlined. Then the final pass runs in the build of its declaration that reads the outline's textures: one declaration for each pair of bloom and outline.
 
 ## Consequences
 
 - Code: `crates/null3d-render/src/outline.rs`, the outlined layouts of both builders (`gpu_driven/layout.rs`, `cpu_culled/layout.rs`), the outline view (`ViewId::OUTLINE`), the frame graph's outline passes and final pass declarations, `wgsl/outline_mask.wgsl`, `wgsl/outline_edge.wgsl`, the final pass's overlay, the `OUTLINED` scene flag, the core call `setOutline`, `post.set`'s `outline`, and `setOutlined` on meshes and prefab copies.
-- Tests: the render crate's `outline.rs` and the outline graph and allocation tests, the image tests `outline-plain`, `outline-glow`, `outline-scale-50` and `outline-8-bit`, and the parity scenes `outline-plain` and `outline-glow`.
+- Tests: the render crate's `outline.rs` and the outline graph and allocation tests, the image tests `outline-plain`, `outline-glow`, `outline-scale-50` and `outline-8-bit`, and the parity scenes `outline-plain` and `outline-glow` with their limit (`OUTLINE_MAX_DIFFERENT_PERCENT` in `bench/lib/parity.ts`).
 - Docs: `api/post`, `api/objects`, `concepts/post-processing`, `guides/performance`, the mapping's `outline` entry, and both skills.

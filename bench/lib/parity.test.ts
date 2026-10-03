@@ -26,6 +26,7 @@ import {
 	JOBS_PAGES,
 	LEFT_OUT_OF_PARITY,
 	MAX_DIFFERENT_PERCENT,
+	OUTLINE_MAX_DIFFERENT_PERCENT,
 	PAGE_KINDS,
 	PARITY_SCENE_NAMES,
 	PARITY_SCENES,
@@ -265,11 +266,18 @@ describe('feature scenes', () => {
 			expect(names).toContain(feature);
 	});
 
-	test('give the shadows and two glTF models a looser limit, and draw tone mapping without anti-aliasing', () => {
+	test('give the shadows, two glTF models and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
 		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		expect(SHADOW_MAX_DIFFERENT_PERCENT).toBeGreaterThan(MAX_DIFFERENT_PERCENT);
+		expect(featureScene('outline-glow')?.limit).toBe(OUTLINE_MAX_DIFFERENT_PERCENT);
 		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);
-		expect(looser.map((scene) => scene.test)).toEqual(['gltf-instancing', 'gltf-ktx2', 'shadows']);
+		expect(looser.map((scene) => scene.test)).toEqual([
+			'gltf-instancing',
+			'gltf-ktx2',
+			'shadows',
+			'outline-plain',
+			'outline-glow',
+		]);
 		for (const scene of looser) expect(scene.limit).toBeGreaterThan(MAX_DIFFERENT_PERCENT);
 		const tone = featureScene('tone-agx');
 		expect(tone).toMatchObject({ switches: 'antialias=none', webglOnly: true });
