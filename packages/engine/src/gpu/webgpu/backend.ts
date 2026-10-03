@@ -30,10 +30,13 @@ TEXTURE_FORMATS[G.FORMAT_ETC2_RGB8_UNORM] = 'etc2-rgb8unorm';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGB8_UNORM_SRGB] = 'etc2-rgb8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM] = 'etc2-rgba8unorm';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM_SRGB] = 'etc2-rgba8unorm-srgb';
+TEXTURE_FORMATS[G.FORMAT_RGB9E5_UFLOAT] = 'rgb9e5ufloat';
 
 const VIEW_DIMENSIONS: (GPUTextureViewDimension | undefined)[] = [];
 VIEW_DIMENSIONS[G.VIEW_2D] = '2d';
 VIEW_DIMENSIONS[G.VIEW_2D_ARRAY] = '2d-array';
+VIEW_DIMENSIONS[G.VIEW_CUBE] = 'cube';
+VIEW_DIMENSIONS[G.VIEW_3D] = '3d';
 
 const ADDRESS_MODES: (GPUAddressMode | undefined)[] = [];
 ADDRESS_MODES[G.ADDRESS_CLAMP_TO_EDGE] = 'clamp-to-edge';
@@ -197,7 +200,8 @@ export class WebGPUBackend {
 
 	/**
 	 * Creates a texture with a view for bind groups, in the view dimension that compatibility mode
-	 * fixes at creation, and a view to draw into when it has one layer and one mip level.
+	 * fixes at creation, and a view to draw into when it has one layer and one mip level. A 3D
+	 * texture's layers are its depth; every other kind is 2D, a cube's faces among its layers.
 	 */
 	private createTexture(words: Uint32Array, a: number): void {
 		const id = words[a] as number;
@@ -208,6 +212,7 @@ export class WebGPUBackend {
 		const dimension = lookUp(VIEW_DIMENSIONS, words[a + 8] as number, 'view dimension');
 		const bound = (usage & G.TEXTURE_USAGE_TEXTURE_BINDING) !== 0;
 		const texture = this.device.createTexture({
+			dimension: dimension === '3d' ? '3d' : '2d',
 			size: [words[a + 1] as number, words[a + 2] as number, layers],
 			format: this.format(words[a + 4] as number) as GPUTextureFormat,
 			usage,

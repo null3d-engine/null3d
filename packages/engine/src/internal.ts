@@ -18,6 +18,9 @@ export {
 	UploadRoutes,
 } from './gpu/webgpu/upload-routes';
 export { probeCapabilities } from './page/capabilities';
+export { loadCore } from './page/loader';
+export { stopJobWorkersAt } from './page/stop-jobs';
 export { texCoordsMaterial } from './scene/resources';
 export type { TextureUploads } from './scene/textures';
+export type { AnimationGlue, CoreGlue } from './shared/core';
 export { coreUrls, startCore } from './shared/core';

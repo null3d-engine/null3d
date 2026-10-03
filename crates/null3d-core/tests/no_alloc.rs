@@ -1,7 +1,8 @@
 //! Frame code allocates nothing: a counting global allocator watches the test thread and every
 //! job worker while whole frames run (structural commands, transforms, late transform updates,
 //! batch updates, culling, cluster builds, the frame's lights, parallel loops with arena scratch
-//! memory, background tasks, and the frame handoff).
+//! memory, background tasks, the frame handoff, and animation sampling, blending and skinning
+//! matrices).
 #![allow(clippy::disallowed_methods)] // The self-check reads the clock.
 
 mod common;
@@ -9,7 +10,8 @@ mod common;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use common::{Rng, Workers, mul4, perspective, translation};
+use common::{Rng, Workers, character, mul4, perspective, translation};
+use null3d_core::animation::Animations;
 use null3d_core::arena::{ArenaPool, FrameArena};
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
 use null3d_core::clusters::{ClusterScratch, RowCells, RowClusters};
@@ -386,21 +388,53 @@ fn frame(world: &mut World, jobs: &JobSystem, frame: u32, rng: &mut Rng) {
     drop(read);
 }
 
+/// A crowd of 64 animated characters of 40 joints: each blends two clips, with one, two or no
+/// clips at full weight, so every path of the frame step runs.
+fn crowd(jobs: &JobSystem) -> (Animations, [u32; 2]) {
+    let (skeleton, clips) = character(40);
+    let mut animations = Animations::new(jobs, 64, 64 * 40).unwrap();
+    let id = animations.add_skeleton(skeleton).unwrap();
+    let mut ids = [0; 2];
+    for (k, clip) in clips.into_iter().enumerate() {
+        ids[k] = animations.add_clip(id, clip).unwrap();
+    }
+    for _ in 0..64 {
+        animations.add_instance(id).unwrap();
+    }
+    (animations, ids)
+}
+
+/// Sketch code moves each character's clip times and weights, then the frame step runs.
+fn animate(animations: &mut Animations, clips: [u32; 2], jobs: &JobSystem, frame: u32) {
+    for i in 0..animations.instances() {
+        let t = (frame + i) as f32 / 60.0;
+        let weight = [1.0, 0.6, 0.0][(i % 3) as usize];
+        animations.set_sample(i, 0, clips[0], t % 1.0, weight);
+        animations.set_sample(i, 1, clips[1], (t * 1.3) % 0.75, 1.0 - weight * 0.5);
+    }
+    animations.update(jobs);
+}
+
 /// The allocator calls of a run of frames on `jobs`, counted after warm-up frames that build the
 /// hierarchy order and fill both buffers. It checks that the frames culled something too.
 fn frame_allocations(jobs: &JobSystem) -> u64 {
     let mut world = build();
+    let (mut animations, clips) = crowd(jobs);
     let mut rng = Rng::new(4);
     for f in 1..=3 {
         frame(&mut world, jobs, f, &mut rng);
+        animate(&mut animations, clips, jobs, f);
     }
     CountingAllocator::arm();
     for f in 4..=200 {
         frame(&mut world, jobs, f, &mut rng);
+        animate(&mut animations, clips, jobs, f);
     }
     let allocations = CountingAllocator::disarm();
     assert!(!world.scene_culled.is_empty() && !world.batch_culled.is_empty());
     assert!(!world.bucketed.is_empty());
+    let moved = animations.instance_matrices(0);
+    assert!(moved != animations.instance_matrices(1) && moved.iter().all(|v| v.is_finite()));
     allocations
 }
 

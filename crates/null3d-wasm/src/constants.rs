@@ -1,6 +1,7 @@
 //! Numbers TypeScript shares with the engine core, written out as a generated TypeScript module so
 //! neither side copies them by hand.
 
+use null3d_core::animation::{Channel, DEFAULT_RATE, Interpolation, MAX_BLEND, REST_FLOATS};
 use null3d_core::handle::{GENERATION_BITS, SLOT_BITS};
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{color as light_color, kind as light_kind, value as light_value};
@@ -163,6 +164,43 @@ pub mod arrays_problem {
     pub const INDEX_OUT_OF_RANGE: u32 = 6;
     /// Plus the array's code; the second detail is the place of the value in the array.
     pub const NOT_FINITE: u32 = 16;
+}
+
+/// The arrays of the animation table that `animationArrays` returns.
+pub mod animation_field {
+    /// The clip of each sample slot, as 32-bit unsigned integers.
+    pub const SLOT_CLIPS: u32 = 0;
+    /// The time in seconds of each sample slot.
+    pub const SLOT_TIMES: u32 = 1;
+    /// The weight of each sample slot.
+    pub const SLOT_WEIGHTS: u32 = 2;
+    /// The skinning matrices: twelve floats per joint of each instance.
+    pub const MATRICES: u32 = 3;
+}
+
+/// The words of each track's header in `createClip`'s staging words: joint, channel,
+/// interpolation and key count.
+pub const TRACK_WORDS: u32 = 4;
+
+/// The first detail of an E1218 failure: what is wrong with the animation data. The second detail
+/// says where, as each problem documents.
+pub mod animation_problem {
+    /// The second detail is the joint count.
+    pub const JOINTS: u32 = 1;
+    /// The second detail is the joint whose parent is not before it.
+    pub const PARENT: u32 = 2;
+    /// The second detail is 0 for the rest pose and 1 for the inverse bind matrices.
+    pub const LENGTH: u32 = 3;
+    /// The second detail is the joint whose value is NaN or infinite.
+    pub const NOT_FINITE: u32 = 4;
+    /// The second detail is the frame count the clip would need.
+    pub const FRAMES: u32 = 5;
+    /// The second detail is the skeleton id.
+    pub const UNKNOWN_SKELETON: u32 = 6;
+    /// The second detail is the clip's joint count.
+    pub const WRONG_SKELETON: u32 = 7;
+    /// Plus the track problem's number (`TrackProblem`); the second detail is the track.
+    pub const TRACK: u32 = 16;
 }
 
 /// What a per-frame count returns where the core does not count, such as visible entries where the
@@ -515,6 +553,43 @@ pub fn typescript() -> String {
                 ("COLORS", ArrayName::Colors as u32),
                 ("TANGENTS", ArrayName::Tangents as u32),
                 ("INDICES", ArrayName::Indices as u32),
+            ],
+        ),
+        (
+            "ANIMATION_FIELD",
+            &[
+                ("SLOT_CLIPS", animation_field::SLOT_CLIPS),
+                ("SLOT_TIMES", animation_field::SLOT_TIMES),
+                ("SLOT_WEIGHTS", animation_field::SLOT_WEIGHTS),
+                ("MATRICES", animation_field::MATRICES),
+            ],
+        ),
+        // The animation table's layout and the numbers of `createClip`'s track headers.
+        (
+            "ANIMATION",
+            &[
+                ("MAX_BLEND", MAX_BLEND as u32),
+                ("REST_FLOATS", REST_FLOATS as u32),
+                ("TRACK_WORDS", TRACK_WORDS),
+                ("DEFAULT_RATE", DEFAULT_RATE as u32),
+                ("TRANSLATION", Channel::Translation as u32),
+                ("ROTATION", Channel::Rotation as u32),
+                ("SCALE", Channel::Scale as u32),
+                ("LINEAR", Interpolation::Linear as u32),
+                ("STEP", Interpolation::Step as u32),
+            ],
+        ),
+        (
+            "ANIMATION_PROBLEM",
+            &[
+                ("JOINTS", animation_problem::JOINTS),
+                ("PARENT", animation_problem::PARENT),
+                ("LENGTH", animation_problem::LENGTH),
+                ("NOT_FINITE", animation_problem::NOT_FINITE),
+                ("FRAMES", animation_problem::FRAMES),
+                ("UNKNOWN_SKELETON", animation_problem::UNKNOWN_SKELETON),
+                ("WRONG_SKELETON", animation_problem::WRONG_SKELETON),
+                ("TRACK", animation_problem::TRACK),
             ],
         ),
         (
