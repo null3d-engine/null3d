@@ -27,6 +27,14 @@ export interface RunOptions {
 	 */
 	shadows: number | null;
 	/**
+	 * `?shadowCascades=`, `?shadowMapSize=` and `?shadowFilter=`: quality settings that replace the
+	 * preset's on a null3D page, such as a candidate preset's values on a phone, or null to keep the
+	 * preset's. The engine checks each value.
+	 */
+	shadowCascades: number | null;
+	shadowMapSize: number | null;
+	shadowFilter: number | null;
+	/**
 	 * False with `?governor=off`, which keeps the quality governor off in a null3D scene that turns
 	 * it on, such as S4, so that a comparison of two builds measures the same work in every run.
 	 */
@@ -74,7 +82,13 @@ export function pageReport(params: URLSearchParams): 'hold' | 'demo' | 'soak' | 
 	return params.has('soak') ? 'soak' : 'bench';
 }
 
-/** Reads `?hold`, `?demo`, `?n=`, `?seconds=`, `?soak=`, `?shadows=` and `?governor=`. */
+/** A whole number that the engine checks itself. */
+const whole = (v: number) => Number.isSafeInteger(v) && v > 0;
+
+/**
+ * Reads `?hold`, `?demo`, `?n=`, `?seconds=`, `?soak=`, `?shadows=`, `?governor=` and the shadow
+ * quality settings.
+ */
 export function readRunOptions(params: URLSearchParams): RunOptions {
 	return {
 		hold:
@@ -111,6 +125,9 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 			(v) => Number.isInteger(v) && v >= 1 && v <= 4,
 			'a cascade count from 1 to 4',
 		),
+		shadowCascades: readNumber(params, 'shadowCascades', whole, 'a cascade count from 1 to 4'),
+		shadowMapSize: readNumber(params, 'shadowMapSize', whole, 'a size such as 2048'),
+		shadowFilter: readNumber(params, 'shadowFilter', whole, 'a filter size of 3 or 5'),
 		governor: !params.has('governor') || readChoice(params, 'governor', ['off']) !== 'off',
 	};
 }

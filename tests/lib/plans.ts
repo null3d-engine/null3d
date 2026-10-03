@@ -1407,9 +1407,13 @@ export function judge(
 				expected: number[];
 				got: number[];
 			}[];
-			const problems = mismatches.map(
-				(m) => `${m.function}: expected ${m.expected.join(', ')}, got ${m.got.join(', ')}`,
-			);
+			const failures = (result.failures ?? []) as string[];
+			const problems = [
+				...failures,
+				...mismatches.map(
+					(m) => `${m.function}: expected ${m.expected.join(', ')}, got ${m.got.join(', ')}`,
+				),
+			];
 			if (!(Number(result.cases) > 0)) problems.push('the page ran no cases');
 			return problems;
 		}

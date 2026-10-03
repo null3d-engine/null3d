@@ -53,6 +53,7 @@
 			"!**/target",
 			"!skills/*/evals",
 			"!docs/data",
+			"!tools/samples/manifest.json",
 			"!skills/null3d-port-threejs/references/threejs-mapping.json",
 			"!packages/engine/src/generated",
 			"!packages/engine/vendor"

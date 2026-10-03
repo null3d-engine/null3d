@@ -94,9 +94,11 @@ pub mod value {
     /// How far a receiver's point moves along its normal before its shadow test, in texels of its
     /// cascade or its shadow tile. The default is 1.
     pub const SHADOW_NORMAL_BIAS: u32 = 6;
-    /// The cascades of a directional light's shadows, from 1 to 4. The default is 3.
+    /// The cascades of a directional light's shadows, from 1 to 4. The default is 3, and the
+    /// quality preset sets its own through [`super::LightTable::set_default`].
     pub const SHADOW_CASCADES: u32 = 7;
-    /// Texels on each side of each cascade's shadow map. The default is 2,048.
+    /// Texels on each side of each cascade's shadow map. The default is 2,048, and the quality
+    /// preset sets its own through [`super::LightTable::set_default`].
     pub const SHADOW_MAP_SIZE: u32 = 8;
     /// The distance in meters from the camera, along its view, out to which a directional light's
     /// shadows fall. The default is 200.
@@ -105,7 +107,7 @@ pub mod value {
     pub const LAST: u32 = SHADOW_DISTANCE;
 }
 
-/// The numbers of a new light, by [`value`].
+/// The numbers of a new light, by [`value`], until [`LightTable::set_default`] changes them.
 const DEFAULT_VALUES: [f32; value::LAST as usize + 1] =
     [1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.5, 1.0, 3.0, 2048.0, 200.0];
 
@@ -274,6 +276,8 @@ pub struct LightTable {
     created: u32,
     visible: Vec<VisibleLight>,
     shadows: Vec<LightShadow>,
+    /// The numbers that each new light starts with, by [`value`].
+    defaults: [f32; value::LAST as usize + 1],
 }
 
 impl Default for LightTable {
@@ -291,7 +295,18 @@ impl LightTable {
             created: 0,
             visible: Vec::new(),
             shadows: Vec::new(),
+            defaults: DEFAULT_VALUES,
         }
+    }
+
+    /// Sets the number, by [`value`], that each light created from now on starts with, such as the
+    /// shadow cascades that the quality preset gives. Lights that exist keep their numbers.
+    pub fn set_default(&mut self, which: u32, number: f32) -> Result<(), CoreError> {
+        *self
+            .defaults
+            .get_mut(which as usize)
+            .ok_or(past(which, value::LAST))? = number;
+        Ok(())
     }
 
     /// One past the highest row: loops over rows stop here.
@@ -310,8 +325,9 @@ impl LightTable {
     }
 
     /// Adds a light of `kind` for the scene object `object`, white with an intensity of 1 and the
-    /// defaults of [`value`], and returns its row. Fails with [`CoreError::OutOfRange`] for a kind
-    /// that [`kind`] does not name, and with [`CoreError::OutOfMemory`] when memory cannot grow.
+    /// table's defaults of [`value`], and returns its row. Fails with [`CoreError::OutOfRange`] for
+    /// a kind that [`kind`] does not name, and with [`CoreError::OutOfMemory`] when memory cannot
+    /// grow.
     pub fn create(&mut self, object: Handle, light_kind: u32) -> Result<u32, CoreError> {
         if light_kind == kind::NONE || light_kind > kind::AMBIENT {
             return Err(CoreError::OutOfRange {
@@ -331,7 +347,7 @@ impl LightTable {
             object,
             order: self.created,
             colors: [[1.0; 3]; 2],
-            values: DEFAULT_VALUES,
+            values: self.defaults,
         };
         self.created = self.created.wrapping_add(1);
         Ok(row)
