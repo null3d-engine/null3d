@@ -53,28 +53,9 @@ It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same ske
 
 ## Quickstart
 
-Nothing is on npm yet, but the benchmark scenes and the demos run from a clone of this repository. First install the tools that [Development](#development) lists.
+The first release, 0.1, puts the packages on npm. Until then, [run the demos from a clone](#run-the-demos-from-a-clone) of this repository.
 
-```sh
-git clone https://github.com/null3d-engine/null3d.git
-cd null3d
-bun install
-bun run build
-bun run dev
-```
-
-Then open one of these pages in Chrome:
-
-| Page | What it shows |
-| --- | --- |
-| `http://localhost:5173/bench/pages/null3d/s1.html?demo` | S1: 100,000 boxes, each moved every frame by sketch code |
-| `http://localhost:5173/bench/pages/null3d/s2.html?demo` | S2: a scene graph of 5,096 objects |
-| `http://localhost:5173/bench/pages/threejs/s1.html?renderer=webgl&demo` | S1 in three.js, to compare |
-| `http://localhost:5173/examples/` | The feature demos: one short sketch for each feature |
-
-`bun run bench:run` measures S1 in both engines and prints a table of CPU time per frame.
-
-This is what a complete null3D project will look like. You install the engine from npm and import it, as you would `three`:
+Install the engine from npm and import it, as you would `three`:
 
 ```sh
 bun add @null3d/engine
@@ -129,7 +110,30 @@ export default defineSketch(async ({ scene, geometry, materials }) => {
 });
 ```
 
-Run `bunx vite` and open the page. The first release, 0.1, will put both packages on npm. Until then, [Development](#development) shows how to work on the engine itself.
+Run `bunx vite` and open the page. [Install null3D](docs/getting-started/install.md) and [Your first scene](docs/getting-started/first-scene.md) explain each step.
+
+### Run the demos from a clone
+
+The benchmark scenes and the demos run from a clone of this repository. First install the tools that [Development](#development) lists.
+
+```sh
+git clone https://github.com/null3d-engine/null3d.git
+cd null3d
+bun install
+bun run build
+bun run dev
+```
+
+Then open one of these pages in Chrome:
+
+| Page | What it shows |
+| --- | --- |
+| `http://localhost:5173/bench/pages/null3d/s1.html?demo` | S1: 100,000 boxes, each moved every frame by sketch code |
+| `http://localhost:5173/bench/pages/null3d/s2.html?demo` | S2: a scene graph of 5,096 objects |
+| `http://localhost:5173/bench/pages/threejs/s1.html?renderer=webgl&demo` | S1 in three.js, to compare |
+| `http://localhost:5173/examples/` | The feature demos: one short sketch for each feature |
+
+`bun run bench:run` measures S1 in both engines and prints a table of CPU time per frame.
 
 ## How it works
 
@@ -163,7 +167,7 @@ flowchart LR
 
 | Version | Adds |
 | --- | --- |
-| 0.1 | Clustered forward lighting with MSAA, cascaded shadows, fog, quality presets, dynamic resolution, render layers, KTX2 textures in the device's compressed format, orbit and map camera controls, debug drawing, WGSL imports from an engine shader library, and a headless test runner |
+| 0.1 | Physically based standard materials, custom materials in WGSL, clustered forward lighting, cascaded shadows and spot and point shadows, fog, ACES, AgX and neutral tone mapping, MSAA and FXAA, quality presets, dynamic resolution, render layers, KTX2 textures in the device's compressed format, orbit and map camera controls, debug drawing, WGSL imports from an engine shader library, and a headless test runner |
 | 0.2 | glTF with KTX2 textures and meshopt compression, the `bunx @null3d/cli assets` optimizer, skeletal and morph animation, raycasting, pointer events on objects, environment lighting, skies, post-processing with custom effects, custom render passes, sprites, points, wide lines, HTML labels, large-world mode, and occlusion culling on both GPU paths |
 | 0.3 | The docs site and `bunx @null3d/cli docs`, starter templates, an MCP server, an in-page inspector, an ESLint plugin, and the three.js porting tools |
 
@@ -211,7 +215,7 @@ The minimum versions are Safari 16.4, Chrome and Edge 91, and Firefox 89. Worker
 
 ## Porting from three.js
 
-The API uses three.js names where the ideas match. A few of the 147 entries in the mapping:
+The API uses three.js names where the ideas match. A few entries of the mapping:
 
 | three.js | null3D | Since |
 | --- | --- | --- |
@@ -245,6 +249,13 @@ const velocity = new Float32Array(drones.count * 3); // your own data, one row p
 // In onUpdate:
 const p = drones.positions;
 for (let i = 0; i < p.length; i++) p[i] += velocity[i] * dt;
+```
+
+A KTX2 texture, which stays compressed on the GPU in the format that the device supports (0.1):
+
+```ts
+const floorMap = await assets.loadTexture('/tex/floor.ktx2', { wrap: 'repeat' });
+const floor = materials.standard({ map: floorMap, roughness: 0.8 });
 ```
 
 A dissolve effect as a surface function, which keeps the engine's lighting (0.1):
@@ -301,8 +312,7 @@ Each release lists its changes in `CHANGELOG.md`. Until 1.0, the API can change 
 
 | Release | What it adds |
 | --- | --- |
-| Now, before 0.1 | The threaded core, both GPU backends with instanced meshes and one light, and benchmarks against three.js on a laptop, an Android phone and an iPad |
-| 0.1 | Cameras, materials, KTX2 textures, clustered lights, shadows, fog, quality presets, dynamic resolution, camera controls, the first TypeScript API, the Vite plugin, and the first `null3d` commands for tests, screenshots and benchmarks |
+| 0.1, built and not yet on npm | Cameras, materials, KTX2 textures, clustered lights, shadows, fog, tone mapping, quality presets, dynamic resolution, camera controls, the first TypeScript API, the Vite plugin, and the first `null3d` commands for tests, screenshots and benchmarks |
 | 0.2 | glTF loading, the asset optimizer, animation, raycasting, environment lighting, post-processing, sprites, lines and large worlds |
 | 0.3 | The docs site, the rest of the `null3d` command, templates, agent tooling and the porting tools |
 | 1.0 | A stable API, testing on many devices, size budgets and public benchmarks |
