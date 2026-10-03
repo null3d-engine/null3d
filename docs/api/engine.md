@@ -53,7 +53,7 @@ An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` st
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
 | [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
 | [E1406](../errors/E1406.md) | The engine core's WebAssembly file did not download. |
-| [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 3 seconds of tries. |
+| [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 10 seconds of tries. |
 | [E1402](../errors/E1402.md) | Development builds only: the engine core's file comes from another build than the engine's JavaScript. |
 | [E1410](../errors/E1410.md) | The sketch module did not load: it did not download, or its code threw an error while it loaded. |
 | [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
@@ -137,6 +137,7 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 - `captureFrame()` draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. In hold mode it returns the held frame and draws nothing. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
 - `postToSketch` and `onSketchMessage` send and receive [messages](page.md).
 - `destroy()` stops the engine and its threads, and the engine cannot start again. Wait for its promise before you start another engine on the same page, because the browser frees the engine's memory only then.
+- A page that goes away without `destroy()`, such as a page in a frame that your app removes, still gives back the engine's memory. When the page hides, the engine wakes its job workers and ends their loops. Safari never frees the memory of a worker that it stops while the worker waits for work. Without this, an iPad would run out of room after a few such pages. A page that the browser brings back from its back-forward cache runs on, with the job workers' share of the work on the sketch thread.
 
 Each `on...` call returns a function that removes its handler. `engine.labels` and `engine.requestPointerLock` come in null3D 0.2.
 
