@@ -22,8 +22,10 @@ A frame has three kinds of cost, and each has its own fixes.
 | Cost | Where it runs | Grows with | Typical fixes |
 | --- | --- | --- | --- |
 | Sketch code | Sketch worker | Your `onUpdate` loops, allocations, messages | Typed-array loops, no allocation, fewer messages |
-| Engine CPU work | Job workers and the sketch worker | Moving objects, hierarchy depth, animation, culling on WebGL2 | Static objects, instances, fewer levels, LODs |
-| GPU work | GPU | Pixels, shader cost, overdraw, shadow maps, draw buckets | Pixel-ratio cap, presets, cheaper materials, fewer shadowed lights, `depthPrepass` for heavy overdraw |
+| Engine CPU work | Job workers and the sketch worker | Moving objects, hierarchy depth, animation, culling and light lists on WebGL2 | Static objects, instances, fewer levels, LODs, fewer point and spot lights |
+| GPU work | GPU | Pixels, shader cost, overdraw, shadow maps, draw buckets | Pixel-ratio cap, presets, cheaper materials, fewer shadowed lights, `depthPrepass` for heavy overdraw (section 7) |
+
+On WebGPU, compute passes on the GPU cull the objects and list the lights of each cluster. Clusters are the cells of the view that clustered lighting uses. On WebGL2, the job workers do both on the CPU. So many objects and many point or spot lights cost CPU time on WebGL2, and GPU time on WebGPU. Both paths list the same lights for each cluster (`concepts/lighting`).
 
 In pipelined mode the render worker draws frame N while the sketch worker computes frame N+1. The slower of the two sets the frame rate. The figures of `engine.measure()` show both.
 
@@ -80,7 +82,8 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | High "culling" or "record" with many blended objects | Every frame culls and sorts each view's blended objects on the job workers, and on WebGPU writes each visible one's data | Use `alphaMode: 'mask'` for cut-out shapes, which draw with the opaque objects; keep `'blend'` for what must show through; put blended particles in one instance batch with one material, which draws in few calls when nothing crosses it (`concepts/materials`) |
 | Hitch when something new appears, or it appears a moment late | A rebuild (`rebuilds` above zero), or a pipeline build (`pipelines` above zero) | Create materials and objects during loading; create a later stage hidden, `await scene.warmUp()`, then show it |
 | Hitch while loading during play | Uploads and decoding | Load before play, or stream smaller files; the per-frame upload budget spreads uploads, and `quality.set({ uploadBytesPerFrame })` lowers it |
-| Frame rate drops after a few minutes on a phone | Heat | Aim for 70% of the budget; test 10-minute runs. The governor lowers the render scale, then the shadow updates; lighten your own work in `quality.onChange` by `quality.governor.steps` |
+| 30 frames per second on a 60 Hz display, with the busiest thread's `cpuMs` a little over one refresh | In pipelined mode, a frame that misses one refresh waits for the next | Cut the CPU work below the refresh interval. Or measure `latency: 'low'`: on a warm Galaxy S24+ it showed 40 frames per second where pipelined mode showed 32. On the iPad keep pipelined mode (`guides/performance`) |
+| Frame rate drops after a few minutes on a phone | Heat | Aim for 70% of the budget; test 10-minute runs. The governor lowers the render scale, then the live shadow settings; lighten your own work in `quality.onChange` by `quality.governor.steps` |
 
 ## 5. Phones and tablets
 
@@ -93,7 +96,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 - After a start that crashed the tab, the engine starts one preset lower, and at Low after two. A phone that ran out of memory shows it in `engine.mode.crashedStarts`.
 - The preset check measures the scene that the setup built, then lowers the preset where the GPU misses the frame rate. Build the first view and load its textures in the setup, or the check measures an empty scene. `engine.mode.presetCheck` shows what it measured (`concepts/quality-presets`).
 - A player's preset choice goes through `quality.setPreset`. It waits for the new preset's pipelines behind the last frame, so call it from a menu or a loading screen. The `skippedDraws` figure of `engine.measure()` counts draws that a building pipeline kept from drawing. It stays at 0 when warm-ups come first.
-- Shadows: use one or two cascades on phones, and a `distance` no longer than the scene needs. Far cascades draw every few frames by preset, and every frame while a dynamic object touches them. Raise `farCascadeInterval` to draw them less often, and set `shadowFilter: 3` for cheaper edges. Each shadowed point light (later in 0.1) draws the scene six times; avoid them on phones.
+- Shadows: use one or two cascades on phones, and a `distance` no longer than the scene needs. Far cascades draw every few frames by preset, and every frame while a dynamic object touches them. Raise `farCascadeInterval` to draw them less often, and set `shadowFilter: 3` for cheaper edges. A shadowed spot light draws its casters into one tile of the shadow atlas, and a point light into six. Low and Medium turn point light shadows off and give the atlas fewer tiles, so avoid shadowed point lights on phones.
 - Transparent and additive effects covering the screen (smoke, glass) cost the most on phone GPUs.
 - Memory is tight: a 4 GB iPad reports a 256 MB largest buffer and closes tabs that use too much. Share materials, destroy textures you no longer need, and load large textures from KTX2 files, which stay compressed on the GPU. Prefabs to free with `destroy()` come in 0.2.
 - For comparison runs, fix the refresh rate at 60 Hz and start with a cool, charged device (engine docs `guides/phones`).
@@ -107,7 +110,8 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | One static object | a few hundred bytes of engine data | Instances for many copies |
 | One instance row | About 210 bytes of engine memory, 260 with per-row colors, plus your own arrays | Only the columns you need; colors only where the batch needs them |
 | A new mesh, instance batch, or mesh drawn with a new material, during play | A one-time growth of engine memory in the next frame | Create them during setup; size a batch for its most rows and show fewer with `setActiveCount` |
-| Shadow map 2048 x 2048, depth 32-bit (later in 0.1) | about 16 MB | Smaller maps on Low and Medium presets |
+| Directional light shadows: one map per cascade, 2048 x 2048 at 4 bytes per texel by default | about 16 MB per cascade, 48 MB for the default 3 cascades | Fewer cascades and a smaller `mapSize` in the light's `shadow` option on phones |
+| Spot and point light shadows: one atlas tile per spot light, six per point light | 1 MB per 512 x 512 tile, 4 MB per 1024 x 1024 tile | The preset sets the tile count and size; fewer shadowed lights |
 
 `engine.measure()` reports the engine's WebAssembly memory and the JavaScript heaps in `memory`. In the sketch, `textures.memoryBytes` gives the GPU memory that textures hold.
 
@@ -115,13 +119,54 @@ The number of objects and instance rows one scene can draw depends on the GPU pa
 
 ## 7. Quality presets, the governor and your own systems
 
-The engine starts each device on one of four presets: Low, Medium, High or Ultra (`concepts/quality-presets`). Phones start at Low, tablets at Medium and desktops at High. The preset sets the pixel ratio cap, the render scale range and the anti-aliasing mode. It also sets the shadow filter, the far shadow cascades' update rate, the anisotropy cap, the texture upload budget and the engine's memory maximum. The preset table marks its other settings, such as the shadow cascade count and map size, as planned.
+The engine starts each device on one of four presets: Low, Medium, High or Ultra (`concepts/quality-presets`). Phones start at Low, tablets at Medium and desktops at High. WebGL2 and WebGPU's compatibility mode run at most Medium. When the page names no preset, the engine checks its choice after the first frame, before `createEngine` resolves. It lowers the preset until one holds the target frame rate.
 
-- The sketch reads the preset in `quality.preset`, and the page in `engine.mode.preset`. The preset stays the same during play.
-- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval, governor })` changes these settings during play, for example from a settings menu. Other settings throw E1213.
+The preset sets these groups of settings. The `concepts/quality-presets` page has each value:
+
+| Group | Settings | Changes |
+| --- | --- | --- |
+| Pixels | `maxPixelRatio`, `minRenderScale`, `maxRenderScale` | During play |
+| Textures | `maxAnisotropy`, `uploadBytesPerFrame` | During play |
+| Directional light shadows | `shadowFilter`, `farCascadeInterval` | During play |
+| Frame budget | `governor` | During play |
+| Anti-aliasing | `antialias`: FXAA on Low, MSAA above | At the start |
+| Spot and point light shadows | `shadowTiles`, `shadowTileSize`, `pointLightShadows` (High and Ultra only) | At the start |
+| Depth prepass | `depthPrepass`, off on every preset | At the start |
+| Engine memory | `memoryMaximumMiB` | Before the engine loads |
+
+The table marks its other rows as planned, such as the cascade count, the map size and the light caps. Set cascades and map size on the light itself, in its `shadow` option.
+
+- The sketch reads the preset in `quality.preset`, and the page in `engine.mode.preset`. Only `quality.setPreset` changes it during play, and it waits for the new preset's pipelines. Call it from a menu or a loading screen.
+- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval, governor })` changes the live settings during play, for example from a settings menu. Other settings throw E1213. `createEngine` options set the ones fixed at the start, such as `antialias` and `depthPrepass`.
 - Do not raise the preset of a phone. Check each preset that your users can get with `?preset=low` to `?preset=ultra`.
 
-Keep your own values per preset in one table. Apply them in the setup, and again in `quality.onChange`, which runs when a setting changes. When frames run over budget for about a second, the governor lowers a live setting by one step. It lowers the render scale first, then the far shadow cascades' updates, then the shadow filter. It never changes the preset during play. It raises the settings again in the reverse order, each after 5 seconds with time to spare, so quality does not flicker. After each shadow step, `quality.onChange` runs, and `quality.governor.steps` counts the steps. Lighten your own systems there. To measure the scene's own cost, turn the governor off: `quality.set({ governor: false })`. Your systems get budgets of their own through `setBudget` (0.2):
+### The governor
+
+The frame-budget governor keeps the frame rate when the scene is too heavy for the device. It aims for the display's refresh rate, up to 60 frames per second. It judges the frames four times a second, by the slower of the presented and the completed rates. So it also sees a GPU that falls behind while the renderer keeps presenting.
+
+When frames run over budget for about a second, the governor takes one step down, in this order:
+
+1. The render scale falls in steps of 0.05, down to `minRenderScale`. The scene draws at fewer pixels, and the engine scales the image up to the canvas.
+2. The far shadow cascades draw half as often, up to every 8th frame.
+3. The shadow filter drops to 3 x 3 texels, for cheaper shadow edges.
+
+It raises the settings in the reverse order, each after about 5 seconds with time to spare, so quality does not flicker. A step up that fails doubles the wait before the next one. The governor takes no step in the first 2 seconds, or while textures wait to upload. It takes a shadow step only where a light casts shadows. It never changes the preset or the settings fixed at the start.
+
+Read the current render scale in `quality.renderScale`, and the shadow settings that frames draw with in `quality.governor`. After each shadow step, `quality.onChange` runs, and `quality.governor.steps` counts the steps past the render scale. Lighten your own systems there. To measure the scene's own cost, turn the governor off: `quality.set({ governor: false })`. The scene then draws at `maxRenderScale`, with the shadow settings as set.
+
+### The depth prepass
+
+With `createEngine({ depthPrepass: true })`, each camera view first draws the depth of its opaque objects. The opaque pass then shades each pixel once, for its nearest surface. The prepass costs a second pass over the objects' vertices. It saves GPU time only where objects hide many others and their shading costs much, such as a street of lit buildings.
+
+Every preset leaves it off. S2 is a benchmark scene with little overdraw. In Chrome on a MacBook Pro, the prepass raised its GPU time per frame from 0.28 ms to 0.41 ms. Only WebGPU draws the prepass. On WebGL2, two shader programs can compute different depths where the near plane cuts a triangle, so `quality.settings.depthPrepass` is false there. Blended objects, alpha-cutoff materials and custom materials stay out of the prepass. Turn it on only after you compare the scene's GPU time with `?prepass=on` and `?prepass=off`.
+
+### Half precision
+
+The scene shaders can do their color math at half precision: lighting, tone mapping and sRGB encoding. Positions, depth and shadow lookups keep full precision. It stays off on both GPU paths. On a WebGL2 phone it saved no frame time and moved shadow edges. The WebGPU path has no measurement yet. `?half=on` turns it on to measure a scene. WebGPU takes it only on devices with the `shader-f16` feature. `engine.capabilities.halfPrecision` says what the engine took. Custom materials always use full precision. There is no `createEngine` option for it.
+
+### Your own systems
+
+Keep your own values per preset in one table. Apply them in the setup, and again in `quality.onChange`, which runs when a setting changes. Your systems get budgets of their own through `setBudget` (0.2):
 
 ```ts
 quality.setBudget({ name: 'ai', ms: 2, onScale: (s) => { aiUpdateEvery = s < 0.5 ? 4 : s < 0.8 ? 2 : 1; } });  // (0.2)
