@@ -8,7 +8,7 @@ summary: "Cascades that stay still as the camera turns; the shadow atlas of spot
 
 # Shadows
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. In this version the first directional light, spot lights and point lights cast shadows. Instance batches neither cast nor receive shadows yet. A masked material's map does not cut holes in its shadow yet, so it casts its mesh's whole shape. The quality presets set the filter and the far cascades' update rate, but not the cascade count or the map size yet. Coding agents must not rely on these parts.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. In this version the first directional light, spot lights and point lights cast shadows. Instance batches neither cast nor receive shadows yet. A masked material's map does not cut holes in its shadow yet, so it casts its mesh's whole shape. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -131,11 +131,13 @@ The `shadow` option of `createDirectionalLight` and the light's `setShadow` call
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| `cascades` | 3 | The cascades, from 1 to 4. More cascades keep shadows sharp further from the camera, and each draws the casters once more. |
-| `mapSize` | 2,048 | Texels on each side of each cascade's layer: 256, 512, 1,024, 2,048 or 4,096. |
+| `cascades` | The preset's `shadowCascades` | The cascades, from 1 to 4. More cascades keep shadows sharp further from the camera, and each draws the casters once more. |
+| `mapSize` | The preset's `shadowMapSize` | Texels on each side of each cascade's layer: 256, 512, 1,024, 2,048 or 4,096. |
 | `distance` | 200 | How far from the camera, in meters along its view, shadows fall. The camera's far plane ends them sooner. Shadows fade out over the last tenth of the distance. |
 | `bias` | 0.01 | How far each receiving surface moves toward the light before its test, in meters, up to one texel of its cascade, scaled by its angle to the light. |
 | `normalBias` | 0.02 | How far each receiving surface moves along its normal before its test, in meters, up to one texel of its cascade, scaled by its angle to the light. |
+
+The quality preset gives the default cascade count and map size: the lighter presets draw fewer cascades and smaller maps ([Quality presets](quality-presets.md#the-settings-of-each-preset)). A light that names its own keeps them on every preset. So leave both out, unless your scene needs other values on every device.
 
 A shorter `distance` gives the cascades smaller boxes, so shadows get sharper. Set it to the distance at which shadows still matter in your scene.
 
@@ -257,4 +259,4 @@ WebGPU and WebGL2 draw the same shadows. Both keep the shadow map and the shadow
 - [Objects and transforms](../api/objects.md): `setCastShadows` and `setReceiveShadows`.
 - [Lighting and environment](lighting.md): how lights reach surfaces.
 - [Render graph](render-graph.md): the passes that draw each frame.
-- [Quality presets](quality-presets.md): `shadowFilter`, `farCascadeInterval` and their values on each preset.
+- [Quality presets](quality-presets.md): `shadowCascades`, `shadowMapSize`, `shadowFilter`, `farCascadeInterval` and their values on each preset.

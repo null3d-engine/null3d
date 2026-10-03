@@ -414,3 +414,32 @@ fn the_main_light_reports_its_shadows_when_it_casts_them() {
         .unwrap();
     assert_eq!(world.frame(None).sun_shadow.unwrap().cascades, 4);
 }
+
+#[test]
+fn new_lights_start_with_the_tables_defaults() {
+    let mut world = World::new();
+    let (_, before) = world.light(kind::DIRECTIONAL, [0.0; 3], NO_TURN);
+    world
+        .lights
+        .set_default(value::SHADOW_CASCADES, 2.0)
+        .unwrap();
+    world
+        .lights
+        .set_default(value::SHADOW_MAP_SIZE, 1024.0)
+        .unwrap();
+    let (_, after) = world.light(kind::DIRECTIONAL, [0.0; 3], NO_TURN);
+    let numbers = |lights: &LightTable, row| {
+        [value::SHADOW_CASCADES, value::SHADOW_MAP_SIZE]
+            .map(|code| lights.value(row, code).unwrap())
+    };
+    // A light that exists keeps its numbers, and a new one starts with the new defaults.
+    assert_eq!(numbers(&world.lights, before), [3.0, 2048.0]);
+    assert_eq!(numbers(&world.lights, after), [2.0, 1024.0]);
+    // A number of its own still wins.
+    world
+        .lights
+        .set_value(after, value::SHADOW_CASCADES, 4.0)
+        .unwrap();
+    assert_eq!(numbers(&world.lights, after), [4.0, 1024.0]);
+    assert!(world.lights.set_default(value::LAST + 1, 1.0).is_err());
+}

@@ -69,6 +69,8 @@ export function runNull3dPage(
 		sketchUrl.searchParams.set('n', String(n));
 		if (options.shadows !== null) sketchUrl.searchParams.set('shadows', String(options.shadows));
 		if (options.far !== null) sketchUrl.searchParams.set('far', String(options.far));
+		if (options.shadowFilter !== null)
+			sketchUrl.searchParams.set('shadowFilter', String(options.shadowFilter));
 		if (!options.governor) sketchUrl.searchParams.set('governor', 'off');
 
 		// A bare `?hold` holds at the scene's hold time, which the page passes as the engine's option.
@@ -77,6 +79,8 @@ export function runNull3dPage(
 			canvas,
 			sketch: sketchUrl,
 			...(!filled && { maxPixelRatio: CANVAS.pixelRatio }),
+			shadowCascades: options.shadowCascades ?? undefined,
+			shadowMapSize: options.shadowMapSize ?? undefined,
 			hold: options.hold ?? undefined,
 		});
 		const log = pageOptions.trace ? new QualityLog() : undefined;

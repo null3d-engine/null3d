@@ -19,7 +19,10 @@ import { followPath, readCount, readShadows, setUpView } from './sketch-common';
 export default defineSketch((context) => {
 	const { scene, materials, geometry, time } = context;
 	const cascades = readShadows(import.meta.url);
-	const moveCamera = followPath(setUpView(context, VIEW_LIGHTS, BACKGROUND, cascades), s2Camera);
+	const moveCamera = followPath(
+		setUpView(context, VIEW_LIGHTS, BACKGROUND, { cascades }),
+		s2Camera,
+	);
 	const data = createS2(2, s2Trees(readCount(import.meta.url)));
 	const meshes = Array.from({ length: S2_MESH_COUNT }, (_, k) => {
 		const [width, height, depth] = s2MeshSize(k);

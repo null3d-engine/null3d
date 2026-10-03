@@ -10,6 +10,7 @@ interface LibraryResult {
 	tier: string;
 	functions: number;
 	cases: number;
+	failures: string[];
 	mismatches: Mismatch[];
 }
 
@@ -21,6 +22,7 @@ for (const tier of ['webgpu', 'compat', 'webgl2'] as const) {
 		expect(result.tier).toBe(tier);
 		expect(result.functions).toBe(FUNCTIONS.length);
 		expect(result.cases).toBe(allCases().length);
+		expect(result.failures).toEqual([]);
 		expect(result.mismatches).toEqual([]);
 	});
 }
