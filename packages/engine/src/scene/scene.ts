@@ -31,6 +31,7 @@ import { type ColorInput, linearColor } from './color';
 import { type FogOptions, setSceneFog } from './fog';
 import {
 	FrameCameras,
+	LENS_ASPECT,
 	LENS_CENTER_X,
 	LENS_CENTER_Y,
 	LENS_NEAR,
@@ -983,10 +984,10 @@ export abstract class Camera extends Object3D {
 	}
 
 	/**
-	 * @internal Writes the lens at `at` of `entry`, as the frame cameras keep it, for a canvas of
-	 * `aspect`, its width over its height.
+	 * @internal Writes the lens at `at` of `entry`, as the frame cameras keep it, for the canvas
+	 * whose aspect ratio the entry holds.
 	 */
-	abstract writeLens(entry: Float64Array, at: number, aspect: number): void;
+	abstract writeLens(entry: Float64Array, at: number): void;
 
 	/**
 	 * @internal Gives the engine core this camera's lens and layers, which the active camera draws
@@ -1033,10 +1034,10 @@ export class PerspectiveCamera extends Camera {
 	}
 
 	/** @internal */
-	writeLens(entry: Float64Array, at: number, aspect: number): void {
+	writeLens(entry: Float64Array, at: number): void {
 		const halfHeight = Math.tan((this.verticalFov * Math.PI) / 360);
 		entry[at + LENS_ORTHO] = 0;
-		entry[at + LENS_SCALE_X] = halfHeight * aspect;
+		entry[at + LENS_SCALE_X] = halfHeight * (entry[at + LENS_ASPECT] as number);
 		entry[at + LENS_SCALE_Y] = halfHeight;
 		entry[at + LENS_CENTER_X] = 0;
 		entry[at + LENS_CENTER_Y] = 0;
@@ -1106,10 +1107,11 @@ export class OrthographicCamera extends Camera {
 	}
 
 	/** @internal */
-	writeLens(entry: Float64Array, at: number, aspect: number): void {
+	writeLens(entry: Float64Array, at: number): void {
 		const view = this.view;
+		const width = view.width > 0 ? view.width : view.height * (entry[at + LENS_ASPECT] as number);
 		entry[at + LENS_ORTHO] = 1;
-		entry[at + LENS_SCALE_X] = (view.width > 0 ? view.width : view.height * aspect) / 2;
+		entry[at + LENS_SCALE_X] = width / 2;
 		entry[at + LENS_SCALE_Y] = view.height / 2;
 		entry[at + LENS_CENTER_X] = view.centerX;
 		entry[at + LENS_CENTER_Y] = view.centerY;

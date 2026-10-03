@@ -32,9 +32,10 @@ export interface EventFrames {
 export interface FrameLens {
 	/**
 	 * Writes the lens at `at` of `entry`: whether it is orthographic, the scales from device
-	 * coordinates to the view, the view's center, and the near distance, for a canvas of `aspect`.
+	 * coordinates to the view, the view's center, and the near distance, for the canvas whose aspect
+	 * ratio the entry holds at `LENS_ASPECT`.
 	 */
-	writeLens(entry: Float64Array, at: number, aspect: number): void;
+	writeLens(entry: Float64Array, at: number): void;
 	readonly handle: number;
 	/** The camera's name for error messages. */
 	readonly label: string;
@@ -61,7 +62,12 @@ export const LENS_CENTER_X = 3;
 export const LENS_CENTER_Y = 4;
 /** The distance along the view to the near plane. */
 export const LENS_NEAR = 5;
-const CSS_WIDTH = LENS + 6;
+/**
+ * The canvas's width over its height in device pixels, which the lens reads. It travels in the
+ * entry, as a fraction passed to a call that the browser does not inline would allocate.
+ */
+export const LENS_ASPECT = 6;
+const CSS_WIDTH = LENS + 7;
 const CSS_HEIGHT = CSS_WIDTH + 1;
 /** The camera's world matrix: 12 numbers, row by row, with the translation in 64 bits. */
 const MATRIX = CSS_HEIGHT + 1;
@@ -90,7 +96,7 @@ export class FrameCameras {
 		const ring = this.ring;
 		ring[at + FRAME] = 0;
 		if (camera === undefined || this.core.readWorldMatrix(camera.handle, this.matrix) !== 0) return;
-		this.fill(ring, at, camera, width / height);
+		this.fill(ring, at, camera, width, height);
 		ring[at + FRAME] = frame;
 	}
 
@@ -156,15 +162,25 @@ export class FrameCameras {
 		const { slots } = this.control;
 		const width = Math.max(1, Atomics.load(slots, Slot.CanvasWidth));
 		const height = Math.max(1, Atomics.load(slots, Slot.CanvasHeight));
-		this.fill(this.current, 0, camera, width / height);
+		this.fill(this.current, 0, camera, width, height);
 		return this.current;
 	}
 
-	/** Writes `camera`'s handle and lens, the canvas's CSS size and the matrix read last at `at`. */
-	private fill(entry: Float64Array, at: number, camera: FrameLens, aspect: number): void {
+	/**
+	 * Writes `camera`'s handle and lens for a canvas of `width` by `height` device pixels, the
+	 * canvas's CSS size and the matrix read last at `at`.
+	 */
+	private fill(
+		entry: Float64Array,
+		at: number,
+		camera: FrameLens,
+		width: number,
+		height: number,
+	): void {
 		const { slotFloats } = this.control;
 		entry[at + HANDLE] = camera.handle;
-		camera.writeLens(entry, at + LENS, aspect);
+		entry[at + LENS + LENS_ASPECT] = width / height;
+		camera.writeLens(entry, at + LENS);
 		entry[at + CSS_WIDTH] = slotFloats[Slot.CanvasCssWidth] as number;
 		entry[at + CSS_HEIGHT] = slotFloats[Slot.CanvasCssHeight] as number;
 		entry.set(this.matrix, at + MATRIX);
