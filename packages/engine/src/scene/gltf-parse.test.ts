@@ -519,7 +519,7 @@ describe('skins and clips', () => {
 			['Arm', -1, false],
 			['Shoulder', 0, true],
 			['Elbow', 1, true],
-			['Hand', 2, false],
+			['Hand', 2, true],
 			['Sword', 3, false],
 		]);
 		// Each skin joint carries its inverse bind matrix by rows; the others have none.

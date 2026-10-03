@@ -341,6 +341,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
 		hold: 0,
 	},
+	// The skeletons of two animated glTF models, drawn with debug.skeleton at a held time: the Fox
+	// sample model running, and an arm made in code waving, with a cubic spline clip. Their meshes are
+	// hidden, so the image shows the joints alone, where the animation step posed them. The
+	// single-threaded mode has no job workers, so the loader resamples the clips itself.
+	{
+		name: 'gltf-skeleton',
+		sketch: 'tests/pages/sketches/gltf-skeleton-sketch.ts',
+		hold: 0.6,
+		size: [400, 225],
+		modes: ['pipelined', 'single-threaded'],
+	},
 	// A picture behind a lit box and an unlit box, as three.js draws a texture background: it fills
 	// the view, upright, and every object draws over it. The parity test compares it with its
 	// three.js twin.

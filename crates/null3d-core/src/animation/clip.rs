@@ -19,7 +19,7 @@
 
 use std::simd::prelude::*;
 
-use super::pose::normalized;
+use super::pose::{arc_weight, normalized};
 use super::resample::QUANTIZED_ONE;
 use super::{AnimationError, POSE_FIELDS, Pose, field, filled};
 
@@ -338,15 +338,26 @@ fn sample_rotations(
         return;
     }
     let (a, b) = frame_pair(groups, frame, ROTATION_KEY);
+    // The keys' dot product, scaled from quantized units to 1.
+    let unit = f32x4::splat((1.0 / (QUANTIZED_ONE * QUANTIZED_ONE)) as f32);
     for (g, joints) in groups.joints.iter().enumerate() {
-        let t = weight_of(groups, g, fraction);
         let at = g * ROTATION_KEY;
-        let lerp = |c: usize| {
+        let key = |keys: &[i16], c: usize| -> f32x4 {
             let o = at + 4 * c;
-            let ka: f32x4 = i16x4::from_slice(&a[o..o + 4]).cast();
-            let kb: f32x4 = i16x4::from_slice(&b[o..o + 4]).cast();
-            ka + (kb - ka) * t
+            i16x4::from_slice(&keys[o..o + 4]).cast()
         };
+        let ka: [f32x4; 4] = std::array::from_fn(|c| key(a, c));
+        let kb: [f32x4; 4] = std::array::from_fn(|c| key(b, c));
+        // Resampling keeps each key in the hemisphere of the key before, so the dot product is
+        // positive, and the correction makes the blend follow the arc as `slerp` does. Files
+        // whose joints turn fast between keys, such as Fox's run at 24 keys per second, turn a
+        // joint up to 1.5 radians from one key to the next.
+        let dot = (ka[0] * kb[0] + ka[1] * kb[1] + ka[2] * kb[2] + ka[3] * kb[3]) * unit;
+        let t = arc_weight(
+            weight_of(groups, g, fraction),
+            dot.abs().simd_min(f32x4::splat(1.0)),
+        );
+        let lerp = |c: usize| ka[c] + (kb[c] - ka[c]) * t;
         let (x, y, z, w) = normalized(lerp(0), lerp(1), lerp(2), lerp(3));
         scatter(pose, lanes, field::ROTATION, joints, [x, y, z, w]);
     }

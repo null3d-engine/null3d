@@ -62,6 +62,8 @@ export interface AnimationData {
 	joints: RigJoint[];
 	/** The clips, in the file's order, with names that differ. */
 	clips: ClipData[];
+	/** For each skin of the file, the skeleton's joint of each of its joints; none for an unused skin. */
+	skins: number[][];
 }
 
 /** The identity as a row-major 3 × 4 matrix. */
@@ -288,7 +290,7 @@ export function parseAnimation(
 			notes.push(`the instancing of node "${node.name}" moves with clips, and draws at rest`);
 		}
 	});
-	return { joints, clips };
+	return { joints, clips, skins: skinJoints };
 }
 
 /**

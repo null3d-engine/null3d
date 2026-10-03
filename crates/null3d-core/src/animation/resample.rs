@@ -18,6 +18,10 @@ pub const DEFAULT_RATE: f32 = 30.0;
 /// broken files.
 pub const MAX_FRAMES: u32 = 1 << 20;
 
+/// How far past a whole number of frames a clip's end may lie and still end on that frame, in
+/// frames, as far as a key may lie from the source grid.
+const FRAME_TOLERANCE: f64 = 1e-3;
+
 /// How far after a frame's time, as a share of the time, a key still counts as at the frame: a
 /// few times the rounding of a 32-bit float.
 const KEY_TIME_TOLERANCE: f64 = 1e-6;
@@ -159,7 +163,7 @@ fn source_grid(tracks: &[SourceTrack<'_>], max_rate: f64) -> Option<f64> {
     if rate > max_rate * (1.0 + 1e-6) {
         return None;
     }
-    let tolerance = 1e-3 / rate;
+    let tolerance = FRAME_TOLERANCE / rate;
     let on_grid = tracks.iter().flat_map(|t| t.times).all(|&time| {
         let time = f64::from(time);
         (time - (time * rate).round() / rate).abs() <= tolerance
@@ -424,7 +428,12 @@ pub fn resample(
         .fold(0.0, f64::max);
     let frames = if duration > 0.0 {
         let keys_per_second = keys_per_second(tracks, rate);
-        let intervals = (duration * keys_per_second - 1e-6).ceil().max(1.0);
+        // The clip's end is a 32-bit float, which can round past its last frame by a few
+        // millionths of a frame: a key within a thousandth of a frame counts as on it, as the
+        // grid's keys do (`source_grid`).
+        let intervals = (duration * keys_per_second - FRAME_TOLERANCE)
+            .ceil()
+            .max(1.0);
         if intervals >= f64::from(MAX_FRAMES) {
             return Err(AnimationError::Frames {
                 frames: intervals.min(f64::from(u32::MAX)) as u32,

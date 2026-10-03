@@ -146,6 +146,18 @@ fn clips_keep_a_source_grid_up_to_the_rate_and_resample_others() {
     };
     let clip = resample(&skeleton, &[track], DEFAULT_RATE).unwrap();
     assert_eq!((clip.frames(), clip.rate()), (31, 30.0));
+    // 32 thirtieths of a second as a 32-bit float lies a little past 32 frames, and still ends on
+    // the 32nd, so the clip keeps the file's keys (the KayKit Knight's clips end so).
+    let times: Vec<f32> = (0..=32).map(|k| k as f32 / 30.0).collect();
+    let values: Vec<f32> = times.iter().flat_map(|t| [*t, 0.0, 0.0]).collect();
+    let ends_late = SourceTrack {
+        times: &times,
+        values: &values,
+        ..track
+    };
+    let clip = resample(&skeleton, &[ends_late], DEFAULT_RATE).unwrap();
+    assert_eq!(clip.frames(), 33);
+    assert!((clip.rate() - 30.0).abs() < 1e-5, "{}", clip.rate());
     // A clip whose keys all sit at time 0 has one frame and no animated track.
     let still = SourceTrack {
         times: &[0.0],

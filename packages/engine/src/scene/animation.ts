@@ -705,23 +705,8 @@ function startRig(scene: Scene, data: RigData): RigStart {
 				);
 	}
 	const { core } = animations;
-	const { joints } = data;
-	const count = joints.length;
-	// Each joint's parent, then rest poses, then inverse bind matrices, as the core reads them.
-	const restAt = count;
-	const bindAt = restAt + count * C.ANIMATION_REST_FLOATS;
-	const words = new Float32Array(bindAt + count * BIND_FLOATS);
-	const parents = new Uint32Array(words.buffer, 0, count);
-	joints.forEach((joint, j) => {
-		parents[j] = joint.parent < 0 ? NO_PARENT : joint.parent;
-		words.set(
-			[...joint.translation, ...joint.rotation, ...joint.scale],
-			restAt + j * C.ANIMATION_REST_FLOATS,
-		);
-		words.set(joint.inverseBind, bindAt + j * BIND_FLOATS);
-	});
-	stage(core, RIG_CALL, words);
-	const skeleton = core.checkGrowth(core.glue.createSkeleton(count), RIG_CALL);
+	stage(core, RIG_CALL, skeletonWords(data.joints));
+	const skeleton = core.checkGrowth(core.glue.createSkeleton(data.joints.length), RIG_CALL);
 	return { animations, core, skeleton, rate: data.rate ?? 0 };
 }
 
@@ -750,8 +735,37 @@ function finishRig(start: RigStart, data: RigData, ids: readonly number[]): Anim
 	return new AnimationRig(start.skeleton, named, data.joints);
 }
 
+/**
+ * A skeleton's staging words, as `createSkeleton` reads them: each joint's parent, then the rest
+ * poses, then the inverse bind matrices.
+ */
+export function skeletonWords(joints: readonly RigJoint[]): Float32Array {
+	const count = joints.length;
+	const restAt = count;
+	const bindAt = restAt + count * C.ANIMATION_REST_FLOATS;
+	const words = new Float32Array(bindAt + count * BIND_FLOATS);
+	const parents = new Uint32Array(words.buffer, 0, count);
+	joints.forEach((joint, j) => {
+		parents[j] = joint.parent < 0 ? NO_PARENT : joint.parent;
+		words.set(
+			[...joint.translation, ...joint.rotation, ...joint.scale],
+			restAt + j * C.ANIMATION_REST_FLOATS,
+		);
+		words.set(joint.inverseBind, bindAt + j * BIND_FLOATS);
+	});
+	return words;
+}
+
 /** Writes one clip's tracks into the staging words, as `createClip` reads them. */
 function stageClip(core: CoreMemory, clip: RigClip): void {
+	stage(core, `the clip "${clip.name}"`, clipWords(clip));
+}
+
+/**
+ * A clip's staging words, as `createClip` and `createClipLater` read them: a header per track
+ * (joint, channel, interpolation, key count), then each track's key times and values.
+ */
+export function clipWords(clip: RigClip): Float32Array {
 	const { tracks } = clip;
 	const keys = tracks.reduce((sum, t) => sum + t.times.length + t.values.length, 0);
 	const words = new Float32Array(tracks.length * C.ANIMATION_TRACK_WORDS + keys);
@@ -767,7 +781,7 @@ function stageClip(core: CoreMemory, clip: RigClip): void {
 		words.set(track.values, at + track.times.length);
 		at += track.times.length + track.values.length;
 	});
-	stage(core, `the clip "${clip.name}"`, words);
+	return words;
 }
 
 /**

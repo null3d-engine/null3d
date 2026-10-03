@@ -9,10 +9,14 @@
 //   arguments that reach its special cases, as counts and digests of their bits.
 // - three_animation.rs (in the core's tests): a small skeleton, clips with linear, step and glTF
 //   cubic spline tracks on grids of 30, 24 and 2 keys per second and at uneven times, and the
-//   local pose and skinning
-//   matrices that three.js's AnimationMixer and Skeleton give for single clips and blends. Scripts
-//   of plays, fades, masked layers and additive clips give the poses after chosen steps.
-import { mkdirSync, writeFileSync } from 'node:fs';
+//   local pose and skinning matrices that three.js's AnimationMixer and Skeleton give for single
+//   clips and blends. Scripts of plays, fades, masked layers and additive clips give the poses
+//   after chosen steps.
+// - tests/pages/lib/gltf-poses.json: the skinning matrices and moved meshes' world matrices that
+//   three.js's GLTFLoader and AnimationMixer give for the clips of glTF sample models at chosen
+//   times (tests/pages/lib/gltf-poses.ts), which the poses page compares with. It reads the sample
+//   content, so run `bun run samples:fetch` first.
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
 	AnimationClip,
@@ -31,7 +35,8 @@ import {
 	InterpolateLinear,
 	type KeyframeTrack,
 	LoopOnce,
-	type Matrix4,
+	Matrix4,
+	type Object3D,
 	PlaneGeometry,
 	Quaternion,
 	QuaternionKeyframeTrack,
@@ -44,6 +49,14 @@ import {
 	VectorKeyframeTrack,
 } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import {
+	POSE_MODELS,
+	type PoseCase,
+	type PoseFixture,
+	poseTime,
+	SAMPLES_PREFIX,
+} from '../tests/pages/lib/gltf-poses';
+import { repositoryRoot, samplesDir } from '../tools/lib/samples';
 
 const FIXTURES = join(import.meta.dirname, '../crates/null3d-render/tests/fixtures');
 const CORE_FIXTURES = join(import.meta.dirname, '../crates/null3d-core/tests/fixtures');
@@ -893,6 +906,138 @@ pub static SCRIPTS: [Script; ${SCRIPTS.length}] = [\n`;
 	return `${out}];\n`;
 }
 
+/** A glTF file with its images, textures and samplers left out, which three.js cannot load in Bun. */
+function withoutImages(bytes: Uint8Array, binary: boolean): ArrayBuffer | string {
+	const strip = (json: Record<string, unknown>) => {
+		json.images = undefined;
+		json.textures = undefined;
+		json.samplers = undefined;
+		for (const material of (json.materials ?? []) as Record<string, unknown>[]) {
+			const pbr = (material.pbrMetallicRoughness ?? {}) as Record<string, unknown>;
+			pbr.baseColorTexture = undefined;
+			pbr.metallicRoughnessTexture = undefined;
+			material.normalTexture = undefined;
+			material.occlusionTexture = undefined;
+			material.emissiveTexture = undefined;
+		}
+		return JSON.stringify(json);
+	};
+	if (!binary) return strip(JSON.parse(new TextDecoder().decode(bytes)));
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	const jsonLength = view.getUint32(12, true);
+	const json = JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + jsonLength)));
+	const text = new TextEncoder().encode(strip(json));
+	const padded = Math.ceil(text.length / 4) * 4;
+	const rest = bytes.subarray(20 + jsonLength);
+	const out = new Uint8Array(20 + padded + rest.length);
+	out.set(bytes.subarray(0, 12));
+	const outView = new DataView(out.buffer);
+	outView.setUint32(8, out.length, true);
+	outView.setUint32(12, padded, true);
+	outView.setUint32(16, 0x4e4f534a, true);
+	out.fill(0x20, 20, 20 + padded);
+	out.set(text, 20);
+	out.set(rest, 20 + padded);
+	return out.buffer;
+}
+
+/**
+ * A column-major 4 × 4 matrix's first three rows, by rows, to 7 significant digits: finer than the
+ * comparison needs, and a small file.
+ */
+function rows32(m: Matrix4): number[] {
+	return rows(m.elements).map((v) => Number(v.toPrecision(7)));
+}
+
+/**
+ * What three.js's GLTFLoader and AnimationMixer give for the pose cases of `gltf-poses.ts`: each
+ * skin's skinning matrices, and the world matrix of each mesh without a skin that a clip moves.
+ */
+async function gltfPosesFixture(): Promise<string> {
+	// three.js's file loader, which reads a .gltf file's data: buffers, reports progress with the
+	// browser's ProgressEvent, which Bun lacks.
+	const scope = globalThis as { ProgressEvent?: unknown };
+	scope.ProgressEvent ??= class extends Event {
+		constructor(type: string, init: Record<string, unknown> = {}) {
+			super(type);
+			Object.assign(this, init);
+		}
+	};
+	const root = repositoryRoot();
+	const fixture: PoseFixture = { revision: REVISION, models: [] };
+	for (const model of POSE_MODELS) {
+		const path = join(samplesDir(root), model.url.slice(SAMPLES_PREFIX.length));
+		const source = withoutImages(new Uint8Array(readFileSync(path)), path.endsWith('.glb'));
+		const gltf = await new GLTFLoader().parseAsync(source, '');
+		const { parser, scene, animations } = gltf;
+		const json = parser.json as {
+			nodes: { mesh?: number; skin?: number; children?: number[]; name?: string }[];
+			skins?: { joints: number[]; inverseBindMatrices?: number }[];
+			animations?: { channels: { target: { node?: number; path: string } }[] }[];
+		};
+		const node = (k: number) => parser.getDependency('node', k) as Promise<Object3D>;
+		const skins = await Promise.all(
+			(json.skins ?? []).map(async (skin) => {
+				const joints = await Promise.all(skin.joints.map(node));
+				const binds =
+					skin.inverseBindMatrices === undefined
+						? null
+						: (
+								(await parser.getDependency('accessor', skin.inverseBindMatrices)) as {
+									array: Float32Array;
+								}
+							).array;
+				const inverses = joints.map((_, j) =>
+					binds ? new Matrix4().fromArray(binds, j * 16) : new Matrix4(),
+				);
+				return { joints, inverses };
+			}),
+		);
+		// The meshes without a skin that move: on a node that a clip moves or a skin names, or below one.
+		const moving = new Set<number>();
+		for (const skin of json.skins ?? []) for (const j of skin.joints) moving.add(j);
+		for (const animation of json.animations ?? [])
+			for (const channel of animation.channels)
+				if (channel.target.node !== undefined && channel.target.path !== 'weights')
+					moving.add(channel.target.node);
+		const below = (k: number): number[] => [k, ...(json.nodes[k]?.children ?? []).flatMap(below)];
+		for (const k of [...moving]) for (const b of below(k)) moving.add(b);
+		const moved = await Promise.all(
+			[...moving]
+				.filter((k) => json.nodes[k]?.mesh !== undefined && json.nodes[k]?.skin === undefined)
+				.map(async (k) => [json.nodes[k]?.name ?? '', await node(k)] as const),
+		);
+		const cases: PoseCase[] = [];
+		const mixer = new AnimationMixer(scene);
+		for (const [name, shares] of Object.entries(model.clips)) {
+			const clip = animations.find((a) => a.name === name);
+			if (!clip) throw new Error(`${model.url} has no clip named ${name}`);
+			for (const share of shares) {
+				const time = poseTime(share, clip.duration);
+				mixer.stopAllAction();
+				const action = mixer.clipAction(clip);
+				action.reset().play();
+				action.time = time;
+				mixer.update(0);
+				scene.updateMatrixWorld(true);
+				const product = new Matrix4();
+				cases.push({
+					clip: name,
+					time,
+					skins: skins.map((skin) =>
+						skin.joints.flatMap((joint, j) =>
+							rows32(product.multiplyMatrices(joint.matrixWorld, skin.inverses[j] as Matrix4)),
+						),
+					),
+					moved: Object.fromEntries(moved.map(([n, object]) => [n, rows32(object.matrixWorld)])),
+				});
+			}
+		}
+		fixture.models.push({ url: model.url, cases });
+	}
+	return `${JSON.stringify(fixture)}\n`;
+}
+
 mkdirSync(FIXTURES, { recursive: true });
 mkdirSync(CORE_FIXTURES, { recursive: true });
 for (const [folder, file, text] of [
@@ -907,3 +1052,6 @@ for (const [folder, file, text] of [
 	if (formatted.exitCode !== 0) throw new Error(`rustfmt failed: ${formatted.stderr.toString()}`);
 	console.log(`wrote ${dirname(path)}/${file}`);
 }
+const poses = join(import.meta.dirname, '../tests/pages/lib/gltf-poses.json');
+writeFileSync(poses, await gltfPosesFixture());
+console.log(`wrote ${poses}`);

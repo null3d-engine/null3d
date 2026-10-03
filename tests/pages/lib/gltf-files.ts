@@ -280,8 +280,8 @@ function untranslate(x: number, y: number, z: number): number[] {
 /**
  * An arm. The root node Arm holds Shoulder, which holds Elbow, which holds Hand, which holds a
  * Sword mesh. Arm also holds a Rock mesh that no clip moves. Shoulder, Elbow and Hand each sit
- * 1 m above their parent. Sleeve, a tall box skinned to the skin's joints Elbow and Shoulder (in
- * that order), sits at the scene's root: its lower half follows Shoulder, and its upper half
+ * 1 m above their parent. Sleeve, a tall box skinned to the skin's joints Elbow, Shoulder and Hand
+ * (in that order), sits at the scene's root: its lower half follows Shoulder, and its upper half
  * follows Elbow at three quarters and Shoulder at one quarter. The clip Wave bends Elbow along a
  * cubic spline and steps Shoulder, and an unnamed clip grows Hand.
  */
@@ -321,9 +321,13 @@ export function armBuilder(): GltfBuilder {
 	const rock = b.node({ name: 'Rock', mesh: boxMesh, translation: [2, 0, 0] }, true);
 	b.node({ name: 'Arm', translation: [0, 0, 1], children: [shoulder, rock] });
 	b.node({ name: 'Sleeve', mesh: sleeveMesh, skin: 0 });
-	const binds = new Float32Array([...untranslate(0, 2, 1), ...untranslate(0, 1, 1)]);
-	const bindMatrices = b.accessor(binds, 16, { type: 'MAT4', count: 2 });
-	b.json.skins = [{ joints: [elbow, shoulder], inverseBindMatrices: bindMatrices }];
+	const binds = new Float32Array([
+		...untranslate(0, 2, 1),
+		...untranslate(0, 1, 1),
+		...untranslate(0, 3, 1),
+	]);
+	const bindMatrices = b.accessor(binds, 16, { type: 'MAT4', count: 3 });
+	b.json.skins = [{ joints: [elbow, shoulder, hand], inverseBindMatrices: bindMatrices }];
 	const s = Math.SQRT1_2;
 	// Two cubic keys of Elbow's rotation, each an in-tangent, a value and an out-tangent.
 	const bend = new Float32Array([
