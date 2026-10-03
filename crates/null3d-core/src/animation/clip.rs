@@ -327,6 +327,9 @@ fn scatter<const N: usize>(
     }
 }
 
+/// The dot product of two rotation keys that lie about 0.2 radians apart: cos(0.1).
+const SMALL_TURN_DOT: f32 = 0.995;
+
 fn sample_rotations(
     groups: &Groups<i16>,
     frame: usize,
@@ -352,11 +355,14 @@ fn sample_rotations(
         // positive, and the correction makes the blend follow the arc as `slerp` does. Files
         // whose joints turn fast between keys, such as Fox's run at 24 keys per second, turn a
         // joint up to 1.5 radians from one key to the next.
+        // Below about 0.2 radians between keys, plain interpolation already stays within 3.2e-5
+        // radians of `slerp`, so groups that turn no further skip the correction.
         let dot = (ka[0] * kb[0] + ka[1] * kb[1] + ka[2] * kb[2] + ka[3] * kb[3]) * unit;
-        let t = arc_weight(
-            weight_of(groups, g, fraction),
-            dot.abs().simd_min(f32x4::splat(1.0)),
-        );
+        let mut t = weight_of(groups, g, fraction);
+        let dot = dot.abs().simd_min(f32x4::splat(1.0));
+        if dot.simd_lt(f32x4::splat(SMALL_TURN_DOT)).any() {
+            t = arc_weight(t, dot);
+        }
         let lerp = |c: usize| ka[c] + (kb[c] - ka[c]) * t;
         let (x, y, z, w) = normalized(lerp(0), lerp(1), lerp(2), lerp(3));
         scatter(pose, lanes, field::ROTATION, joints, [x, y, z, w]);
