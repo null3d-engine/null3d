@@ -684,24 +684,130 @@ pub mod state_flags {
         | NO_COLOR_WRITE;
 }
 
-/// Vertex formats. Every vertex has a position and a normal, three floats each. A format adds
-/// optional attributes after them, and is the set of those attributes as bits. Each attribute sits
-/// at its place in [`ATTRIBUTES`](vertex::ATTRIBUTES) order, so a format's layout follows from its
-/// bits alone. Every attribute is 32-bit floats, and each has a fixed vertex shader location.
+/// Vertex formats. Every vertex has a position and a normal. A format adds optional attributes
+/// after them, each with its bit, and gives every attribute a type: 32-bit floats, or one of the
+/// 8-bit and 16-bit integer types that glTF's `KHR_mesh_quantization` allows for it. Normalized
+/// integers read as fractions, from 0 to 1 or from -1 to 1, and plain integers read as their whole
+/// values. Each attribute's type is a field of the format above the attribute bits, which holds
+/// the type's place in the attribute's list of types. The first type in each list is the default,
+/// so a format of floats is the set of its attribute bits alone.
+///
+/// Each attribute sits at its place in [`ATTRIBUTES`](vertex::ATTRIBUTES) order and takes whole
+/// 4-byte words, as glTF aligns them, so a format's layout follows from the format alone. GPUs
+/// read each attribute's whole slot, padding included, and shaders take the components they
+/// declare. Each attribute has a fixed vertex shader location: its place in that order.
 pub mod vertex {
-    /// The first texture coordinates: two floats.
+    /// The first texture coordinates: two values.
     pub const UV0: u32 = 1;
-    /// The second texture coordinates: two floats.
+    /// The second texture coordinates: two values.
     pub const UV1: u32 = 2;
-    /// A tangent and its handedness, +1 or -1, as three.js and glTF store them: four floats.
+    /// A tangent and its handedness, +1 or -1, as three.js and glTF store them: four values.
     pub const TANGENT: u32 = 4;
-    /// A linear color and its alpha: four floats.
+    /// A linear color and its alpha: four values.
     pub const COLOR: u32 = 8;
-    /// Every optional attribute. Formats run from 0, a position and a normal only, to this.
-    pub const ALL: u32 = UV0 | UV1 | TANGENT | COLOR;
+    /// The four joints that move a skinned vertex, as whole numbers.
+    pub const JOINTS: u32 = 16;
+    /// How much each of the four joints moves a skinned vertex.
+    pub const WEIGHTS: u32 = 32;
+    /// Every optional attribute's bit.
+    pub const ALL: u32 = UV0 | UV1 | TANGENT | COLOR | JOINTS | WEIGHTS;
     /// The first vertex shader location of the per-instance attributes, after every location
     /// that a vertex attribute can take.
     pub const INSTANCE_LOCATION: u32 = 8;
+    /// The location of the position.
+    pub const POSITION: usize = 0;
+    /// The location of the normal.
+    pub const NORMAL: usize = 1;
+
+    /// How an attribute's values sit in a vertex. The codes are the TypeScript constants'.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    #[repr(u32)]
+    pub enum Type {
+        F32 = 0,
+        Unorm8 = 1,
+        Snorm8 = 2,
+        Unorm16 = 3,
+        Snorm16 = 4,
+        Uint8 = 5,
+        Sint8 = 6,
+        Uint16 = 7,
+        Sint16 = 8,
+    }
+
+    impl Type {
+        /// Every type, by code.
+        pub const ALL: [Type; 9] = [
+            Type::F32,
+            Type::Unorm8,
+            Type::Snorm8,
+            Type::Unorm16,
+            Type::Snorm16,
+            Type::Uint8,
+            Type::Sint8,
+            Type::Uint16,
+            Type::Sint16,
+        ];
+
+        /// Bytes of one value.
+        pub const fn bytes(self) -> u32 {
+            match self {
+                Type::F32 => 4,
+                Type::Unorm8 | Type::Snorm8 | Type::Uint8 | Type::Sint8 => 1,
+                Type::Unorm16 | Type::Snorm16 | Type::Uint16 | Type::Sint16 => 2,
+            }
+        }
+
+        /// True for integers that read as fractions.
+        pub const fn normalized(self) -> bool {
+            matches!(
+                self,
+                Type::Unorm8 | Type::Snorm8 | Type::Unorm16 | Type::Snorm16
+            )
+        }
+
+        /// The largest value of an integer type, which a normalized read divides by, or 1 for
+        /// floats.
+        pub const fn max(self) -> u32 {
+            match self {
+                Type::F32 => 1,
+                Type::Unorm8 | Type::Uint8 => u8::MAX as u32,
+                Type::Snorm8 | Type::Sint8 => i8::MAX as u32,
+                Type::Unorm16 | Type::Uint16 => u16::MAX as u32,
+                Type::Snorm16 | Type::Sint16 => i16::MAX as u32,
+            }
+        }
+
+        /// What a shader reads from a value of the type that holds the number `whole`: a fraction
+        /// for a normalized integer, which glTF clamps at -1, and `whole` itself otherwise.
+        pub fn read(self, whole: f32) -> f32 {
+            if self.normalized() {
+                (whole / self.max() as f32).max(-1.0)
+            } else {
+                whole
+            }
+        }
+
+        /// The value that the little-endian `bytes` hold, as a shader reads it.
+        pub fn decode(self, bytes: &[u8]) -> f32 {
+            self.read(match self {
+                Type::F32 => f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+                Type::Unorm8 | Type::Uint8 => f32::from(bytes[0]),
+                Type::Snorm8 | Type::Sint8 => f32::from(bytes[0].cast_signed()),
+                Type::Unorm16 | Type::Uint16 => f32::from(u16::from_le_bytes([bytes[0], bytes[1]])),
+                Type::Snorm16 | Type::Sint16 => f32::from(i16::from_le_bytes([bytes[0], bytes[1]])),
+            })
+        }
+    }
+
+    /// The types of positions and texture coordinates, by code: floats, and 8-bit and 16-bit
+    /// integers, normalized or plain.
+    const ANY: &[Type] = &Type::ALL;
+    /// The types of normals and tangents: floats, and normalized signed integers.
+    const DIRECTION: &[Type] = &[Type::F32, Type::Snorm8, Type::Snorm16];
+    /// The types of colors and joint weights: floats, and normalized unsigned integers.
+    const FRACTION: &[Type] = &[Type::F32, Type::Unorm8, Type::Unorm16];
+    /// The types of joint indices: plain unsigned integers.
+    const INDEX: &[Type] = &[Type::Uint8, Type::Uint16];
 
     /// One vertex attribute.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -709,85 +815,206 @@ pub mod vertex {
         /// The attribute's format bit, or 0 for the position and the normal, which every
         /// format has.
         pub bit: u32,
-        /// Its 32-bit floats.
-        pub floats: u32,
-        /// The vertex shader location that reads it.
+        /// Its values per vertex.
+        pub components: u32,
+        /// The vertex shader location that reads it: its place in [`ATTRIBUTES`].
         pub location: u32,
+        /// The first bit of its type field in a format.
+        pub shift: u32,
+        /// The types it may have, by the value of its type field. The first is the default.
+        pub types: &'static [Type],
+        /// True when shaders read it as whole numbers, false when they read floats.
+        pub integer: bool,
+    }
+
+    impl Attribute {
+        /// Bits of its type field: enough for the place of its last type.
+        pub const fn width(&self) -> u32 {
+            u32::BITS - ((self.types.len() - 1) as u32).leading_zeros()
+        }
+
+        /// The bits of its type field.
+        pub const fn mask(&self) -> u32 {
+            ((1 << self.width()) - 1) << self.shift
+        }
+
+        /// Bytes that it takes in a vertex with the type `ty`: whole 4-byte words.
+        pub const fn size(&self, ty: Type) -> u32 {
+            (self.components * ty.bytes()).next_multiple_of(4)
+        }
+
+        /// Its type field for `ty`, or `None` when it may not have that type.
+        pub const fn field(&self, ty: Type) -> Option<u32> {
+            let mut k = 0;
+            while k < self.types.len() {
+                if self.types[k] as u32 == ty as u32 {
+                    return Some((k as u32) << self.shift);
+                }
+                k += 1;
+            }
+            None
+        }
     }
 
     /// Every attribute, in the order they sit in a vertex: the position, the normal, then the
-    /// optional attributes in bit order.
-    pub const ATTRIBUTES: [Attribute; 6] = [
+    /// optional attributes in bit order. The type fields follow the attribute bits in the same
+    /// order.
+    pub const ATTRIBUTES: [Attribute; 8] = [
         Attribute {
             bit: 0,
-            floats: 3,
+            components: 3,
             location: 0,
+            shift: 6,
+            types: ANY,
+            integer: false,
         },
         Attribute {
             bit: 0,
-            floats: 3,
+            components: 3,
             location: 1,
+            shift: 10,
+            types: DIRECTION,
+            integer: false,
         },
         Attribute {
             bit: UV0,
-            floats: 2,
+            components: 2,
             location: 2,
+            shift: 12,
+            types: ANY,
+            integer: false,
         },
         Attribute {
             bit: UV1,
-            floats: 2,
+            components: 2,
             location: 3,
+            shift: 16,
+            types: ANY,
+            integer: false,
         },
         Attribute {
             bit: TANGENT,
-            floats: 4,
+            components: 4,
             location: 4,
+            shift: 20,
+            types: DIRECTION,
+            integer: false,
         },
         Attribute {
             bit: COLOR,
-            floats: 4,
+            components: 4,
             location: 5,
+            shift: 22,
+            types: FRACTION,
+            integer: false,
+        },
+        Attribute {
+            bit: JOINTS,
+            components: 4,
+            location: 6,
+            shift: 24,
+            types: INDEX,
+            integer: true,
+        },
+        Attribute {
+            bit: WEIGHTS,
+            components: 4,
+            location: 7,
+            shift: 25,
+            types: FRACTION,
+            integer: false,
         },
     ];
 
-    /// Floats per vertex of a format.
-    pub const fn floats(format: u32) -> u32 {
-        let mut floats = 0;
+    /// Every bit that a format may set: the attribute bits and the type fields.
+    pub const BITS: u32 = {
+        let mut bits = ALL;
         let mut k = 0;
         while k < ATTRIBUTES.len() {
-            let attribute = ATTRIBUTES[k];
-            if (attribute.bit & format) == attribute.bit {
-                floats += attribute.floats;
+            bits |= ATTRIBUTES[k].mask();
+            k += 1;
+        }
+        bits
+    };
+
+    /// True when a format has the attribute at `location`.
+    pub const fn has(format: u32, location: usize) -> bool {
+        location < ATTRIBUTES.len()
+            && (format & ATTRIBUTES[location].bit) == ATTRIBUTES[location].bit
+    }
+
+    /// The type of the attribute at `location` in a format, or `None` when the format lacks it or
+    /// its type field names no type.
+    pub const fn type_of(format: u32, location: usize) -> Option<Type> {
+        if !has(format, location) {
+            return None;
+        }
+        let attribute = ATTRIBUTES[location];
+        let place = ((format & attribute.mask()) >> attribute.shift) as usize;
+        if place < attribute.types.len() {
+            Some(attribute.types[place])
+        } else {
+            None
+        }
+    }
+
+    /// The format with the attribute at `location` added, or changed, to the type `ty`, or `None`
+    /// when the attribute may not have that type.
+    pub const fn with(format: u32, location: usize, ty: Type) -> Option<u32> {
+        let attribute = ATTRIBUTES[location];
+        match attribute.field(ty) {
+            Some(field) => Some((format & !attribute.mask()) | attribute.bit | field),
+            None => None,
+        }
+    }
+
+    /// True when a format sets only known bits, names a type in each of its attributes' fields,
+    /// and leaves the fields of the attributes it lacks at 0, so each layout has one format.
+    pub const fn valid(format: u32) -> bool {
+        if format & !BITS != 0 {
+            return false;
+        }
+        let mut k = 0;
+        while k < ATTRIBUTES.len() {
+            let present = has(format, k);
+            if (present && type_of(format, k).is_none())
+                || (!present && format & ATTRIBUTES[k].mask() != 0)
+            {
+                return false;
             }
             k += 1;
         }
-        floats
+        true
     }
 
     /// Bytes per vertex of a format.
     pub const fn stride(format: u32) -> u32 {
-        floats(format) * 4
-    }
-
-    /// The first float of an optional attribute (`bit`) in a vertex of a format, or `None` when
-    /// the format lacks it.
-    pub const fn offset(format: u32, bit: u32) -> Option<u32> {
-        if bit == 0 || (format & bit) != bit {
-            return None;
-        }
-        let mut floats = 0;
+        let mut bytes = 0;
         let mut k = 0;
         while k < ATTRIBUTES.len() {
-            let attribute = ATTRIBUTES[k];
-            if attribute.bit == bit {
-                return Some(floats);
-            }
-            if (attribute.bit & format) == attribute.bit {
-                floats += attribute.floats;
+            if let Some(ty) = type_of(format, k) {
+                bytes += ATTRIBUTES[k].size(ty);
             }
             k += 1;
         }
-        None
+        bytes
+    }
+
+    /// The first byte of the attribute at `location` in a vertex of a format, or `None` when the
+    /// format lacks it.
+    pub const fn offset(format: u32, location: usize) -> Option<u32> {
+        if !has(format, location) {
+            return None;
+        }
+        let mut bytes = 0;
+        let mut k = 0;
+        while k < location {
+            if let Some(ty) = type_of(format, k) {
+                bytes += ATTRIBUTES[k].size(ty);
+            }
+            k += 1;
+        }
+        Some(bytes)
     }
 }
 
@@ -1034,7 +1261,7 @@ pub fn typescript_constants() -> String {
         out.push_str(&format!("export const OP_{} = {};\n", op.name(), op as u8));
     }
     out.push_str(&format!("\nexport const NO_TARGET = {NO_TARGET};\n\n"));
-    let groups: [(&str, &[(&str, u32)]); 17] = [
+    let groups: [(&str, &[(&str, u32)]); 18] = [
         (
             "FORMAT",
             &[
@@ -1139,8 +1366,24 @@ pub fn typescript_constants() -> String {
                 ("UV1", vertex::UV1),
                 ("TANGENT", vertex::TANGENT),
                 ("COLOR", vertex::COLOR),
+                ("JOINTS", vertex::JOINTS),
+                ("WEIGHTS", vertex::WEIGHTS),
                 ("ALL", vertex::ALL),
                 ("INSTANCE_LOCATION", vertex::INSTANCE_LOCATION),
+            ],
+        ),
+        (
+            "VERTEX_TYPE",
+            &[
+                ("F32", vertex::Type::F32 as u32),
+                ("UNORM8", vertex::Type::Unorm8 as u32),
+                ("SNORM8", vertex::Type::Snorm8 as u32),
+                ("UNORM16", vertex::Type::Unorm16 as u32),
+                ("SNORM16", vertex::Type::Snorm16 as u32),
+                ("UINT8", vertex::Type::Uint8 as u32),
+                ("SINT8", vertex::Type::Sint8 as u32),
+                ("UINT16", vertex::Type::Uint16 as u32),
+                ("SINT16", vertex::Type::Sint16 as u32),
             ],
         ),
         (
@@ -1254,10 +1497,28 @@ pub fn typescript_constants() -> String {
     ));
     let attributes: Vec<String> = vertex::ATTRIBUTES
         .iter()
-        .map(|a| format!("[{}, {}, {}]", a.bit, a.floats, a.location))
+        .map(|a| {
+            let types: Vec<String> = a.types.iter().map(|&t| (t as u32).to_string()).collect();
+            format!(
+                "[{}, {}, {}, [{}], {}]",
+                a.bit,
+                a.components,
+                a.shift,
+                types.join(", "),
+                a.integer
+            )
+        })
+        .collect();
+    let types: Vec<String> = vertex::Type::ALL
+        .iter()
+        .map(|t| format!("[{}, {}, {}]", t.bytes(), t.max(), t.normalized()))
         .collect();
     out.push_str(&format!(
-        "/** Each vertex attribute in vertex order: its format bit (0 for one every format has), its floats and its shader location. */\nexport const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, floats: number, location: number])[] = [{}];\n",
+        "/** Each vertex attribute type by code: its bytes per value, its largest value (1 for floats), and whether it reads as fractions. */\nexport const VERTEX_TYPES: readonly (readonly [bytes: number, max: number, normalized: boolean])[] = [{}];\n",
+        types.join(", ")
+    ));
+    out.push_str(&format!(
+        "/** Each vertex attribute in vertex order, which is also its shader location: its format bit (0 for one every format has), its values per vertex, the first bit of its type field, its types by the field's value, and whether shaders read whole numbers. */\nexport const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, components: number, shift: number, types: readonly number[], integer: boolean])[] = [{}];\n",
         attributes.join(", ")
     ));
     out
@@ -1380,43 +1641,107 @@ mod tests {
 
     #[test]
     fn vertex_formats_place_each_attribute_after_the_ones_before_it() {
+        use vertex::ATTRIBUTES;
         assert_eq!(vertex::stride(0), 24);
-        assert_eq!(vertex::stride(vertex::ALL), 72);
-        assert_eq!(vertex::offset(vertex::UV0, vertex::UV0), Some(6));
-        assert_eq!(vertex::offset(vertex::UV1, vertex::UV1), Some(6));
-        assert_eq!(
-            vertex::offset(vertex::UV0 | vertex::TANGENT, vertex::TANGENT),
-            Some(8)
-        );
-        assert_eq!(vertex::offset(vertex::ALL, vertex::COLOR), Some(14));
-        assert_eq!(vertex::offset(vertex::UV1, vertex::UV0), None);
-        assert_eq!(vertex::offset(vertex::ALL, 0), None);
-        for format in 0..=vertex::ALL {
-            // Each optional attribute of the format starts where the ones before it end, and the
+        assert_eq!(vertex::stride(vertex::ALL), 92);
+        assert_eq!(vertex::offset(vertex::UV0, 2), Some(24));
+        assert_eq!(vertex::offset(vertex::UV1, 3), Some(24));
+        assert_eq!(vertex::offset(vertex::UV0 | vertex::TANGENT, 4), Some(32));
+        assert_eq!(vertex::offset(vertex::ALL, 5), Some(56));
+        assert_eq!(vertex::offset(vertex::UV1, 2), None);
+        assert_eq!(vertex::offset(0, 0), Some(0));
+        assert_eq!(vertex::offset(0, 1), Some(12));
+        for bits in 0..=vertex::ALL {
+            // Each attribute of a format of floats starts where the ones before it end, and the
             // last ends at the stride.
-            let mut end = 6;
-            for attribute in &vertex::ATTRIBUTES[2..] {
-                if format & attribute.bit != 0 {
-                    assert_eq!(vertex::offset(format, attribute.bit), Some(end));
-                    end += attribute.floats;
+            let mut end = 0;
+            for (k, attribute) in ATTRIBUTES.iter().enumerate() {
+                if bits & attribute.bit == attribute.bit {
+                    assert_eq!(vertex::offset(bits, k), Some(end));
+                    assert_eq!(vertex::type_of(bits, k), Some(attribute.types[0]));
+                    end += attribute.size(attribute.types[0]);
                 } else {
-                    assert_eq!(vertex::offset(format, attribute.bit), None);
+                    assert_eq!(vertex::offset(bits, k), None);
                 }
             }
-            assert_eq!(vertex::floats(format), end, "format {format}");
-            assert_eq!(vertex::stride(format), end * 4);
+            assert_eq!(vertex::stride(bits), end, "format {bits}");
+            assert!(vertex::valid(bits));
         }
-        // Every attribute has its own location, below the instance attributes' first one.
-        for (k, attribute) in vertex::ATTRIBUTES.iter().enumerate() {
+        // Every attribute has its own location, its place in the table, below the instance
+        // attributes' first one, and its own type field above the attribute bits.
+        let mut fields = vertex::ALL;
+        for (k, attribute) in ATTRIBUTES.iter().enumerate() {
+            assert_eq!(attribute.location as usize, k);
             assert!(attribute.location < vertex::INSTANCE_LOCATION);
-            assert!(
-                vertex::ATTRIBUTES[k + 1..]
-                    .iter()
-                    .all(|other| other.location != attribute.location)
-            );
+            assert_eq!(fields & attribute.mask(), 0, "location {k} shares bits");
+            fields |= attribute.mask();
+            assert!(attribute.types.len() <= 1 << attribute.width());
         }
+        assert_eq!(fields, vertex::BITS);
         // WebGPU's default maxVertexAttributes: the instance attributes' four locations fit.
         const { assert!(vertex::INSTANCE_LOCATION + 4 <= 16) };
+    }
+
+    #[test]
+    fn vertex_types_keep_whole_words_and_their_place_in_the_format() {
+        use vertex::{ATTRIBUTES, Type, with};
+        // 16-bit positions take two words, as glTF pads them; 8-bit normals and 16-bit texture
+        // coordinates one each.
+        let quantized = [(0, Type::Uint16), (1, Type::Snorm8), (2, Type::Unorm16)]
+            .iter()
+            .fold(0, |format, &(k, ty)| with(format, k, ty).unwrap());
+        assert_eq!(vertex::stride(quantized), 8 + 4 + 4);
+        assert_eq!(vertex::offset(quantized, 1), Some(8));
+        assert_eq!(vertex::offset(quantized, 2), Some(12));
+        assert_eq!(vertex::type_of(quantized, 0), Some(Type::Uint16));
+        assert_eq!(vertex::type_of(quantized, 1), Some(Type::Snorm8));
+        assert!(vertex::valid(quantized));
+        // A skinned vertex of floats with 8-bit joints and weights.
+        let skinned = with(with(0, 6, Type::Uint8).unwrap(), 7, Type::Unorm8).unwrap();
+        assert_eq!(skinned & vertex::ALL, vertex::JOINTS | vertex::WEIGHTS);
+        assert_eq!(vertex::stride(skinned), 24 + 4 + 4);
+        assert_eq!(vertex::offset(skinned, 7), Some(28));
+        // Each attribute takes only its own types, and every type takes whole words.
+        assert_eq!(with(0, 1, Type::Uint8), None);
+        assert_eq!(with(0, 6, Type::F32), None);
+        assert_eq!(with(0, 5, Type::Snorm8), None);
+        for (k, attribute) in ATTRIBUTES.iter().enumerate() {
+            for &ty in attribute.types {
+                let format = with(0, k, ty).unwrap();
+                assert!(vertex::valid(format));
+                assert_eq!(vertex::type_of(format, k), Some(ty));
+                assert_eq!(attribute.size(ty) % 4, 0);
+                assert!(attribute.size(ty) >= attribute.components * ty.bytes());
+            }
+        }
+        // A field that names no type, unknown bits, and a field of a missing attribute.
+        let bad_normal = 3 << ATTRIBUTES[1].shift;
+        assert!(!vertex::valid(bad_normal));
+        assert_eq!(vertex::type_of(bad_normal, 1), None);
+        assert!(!vertex::valid(1 << 31));
+        assert!(!vertex::valid(1 << ATTRIBUTES[2].shift));
+    }
+
+    #[test]
+    fn vertex_types_decode_as_shaders_read_them() {
+        use vertex::Type;
+        assert_eq!(Type::F32.decode(&1.5f32.to_le_bytes()), 1.5);
+        assert_eq!(Type::Unorm8.decode(&[255]), 1.0);
+        assert_eq!(Type::Uint8.decode(&[255]), 255.0);
+        assert_eq!(Type::Snorm8.decode(&[0x81]), -1.0);
+        // glTF clamps the most negative normalized value at -1.
+        assert_eq!(Type::Snorm8.decode(&[0x80]), -1.0);
+        assert_eq!(Type::Sint8.decode(&[0x80]), -128.0);
+        assert_eq!(Type::Unorm16.decode(&u16::MAX.to_le_bytes()), 1.0);
+        assert_eq!(Type::Uint16.decode(&1000u16.to_le_bytes()), 1000.0);
+        assert_eq!(
+            Type::Snorm16.decode(&(-16384i16).to_le_bytes()),
+            -16384.0 / 32767.0
+        );
+        assert_eq!(Type::Sint16.decode(&(-300i16).to_le_bytes()), -300.0);
+        for (code, ty) in Type::ALL.iter().enumerate() {
+            assert_eq!(*ty as usize, code);
+        }
     }
 
     #[test]

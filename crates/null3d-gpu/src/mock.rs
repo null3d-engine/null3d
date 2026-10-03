@@ -853,7 +853,7 @@ impl MockBackend {
             }
             Op::CreateRenderPipeline => {
                 check(
-                    o.len() == 10 && o[7] & !vertex::ALL == 0,
+                    o.len() == 10 && vertex::valid(o[7]),
                     op,
                     "a render pipeline names a vertex format of known attributes",
                 )?;

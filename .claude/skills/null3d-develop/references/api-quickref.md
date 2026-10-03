@@ -250,6 +250,7 @@ const mesh = geometry.fromArrays({
   normals,                  // 3 per vertex, or computeNormals: true instead
   uvs, uvs1, colors,        // 2, 2, and 3 or 4 per vertex; colors are linear
   tangents,                 // 4 per vertex, or computeTangents: true (needs uvs)
+  joints, weights,          // (0.2) 4 per vertex each, together; skinning itself comes later in 0.2
   indices,                  // Uint16Array, Uint32Array or number[]; omit for one triangle per 3 vertices
 });
 mesh.radius;                // the distance from the mesh's origin to its farthest vertex
@@ -257,7 +258,7 @@ mesh.destroy();             // (0.2)
 mesh.updateVertices('positions', data, start, count);  // (0.2) vertices that change at run time
 ```
 
-A mesh keeps the attributes it gets, and meshes with the same attributes share GPU buffers, so pass only the attributes the materials use. Bad arrays throw E1206, and a generator option that is not a finite number throws E1203. `api/geometry` covers vertex formats and meshes over 65,535 vertices.
+(0.2) Each attribute also takes the 8-bit and 16-bit integer arrays that glTF's `KHR_mesh_quantization` allows. The GPU keeps them as integers, at half or a quarter of the floats' size. Plain integers read as whole numbers; `{ array, normalized: true }` reads them as fractions, as three.js's `BufferAttribute` does. Normals and tangents take `Int8Array` or `Int16Array`, colors and weights `Uint8Array` or `Uint16Array`, and joints `Uint8Array`, `Uint16Array` or whole numbers. Integer positions keep their units, so scale the object to meters, as a glTF node does. A mesh keeps the attributes it gets in their types. Meshes whose attributes have the same types share GPU buffers, so pass only the attributes the materials use. Bad arrays throw E1206, and a generator option that is not a finite number throws E1203. `api/geometry` covers vertex formats and meshes over 65,535 vertices.
 
 ## 9. Materials (`api/materials`)
 

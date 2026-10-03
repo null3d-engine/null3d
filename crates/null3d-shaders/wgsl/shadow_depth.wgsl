@@ -14,6 +14,7 @@ enable draw_index;
 // The position is invariant, as in those templates, so both compute the same depth for the same
 // vertex, and the opaque pass's test for equal depth passes on exactly the nearest surfaces.
 #import null3d::mesh::{InstanceIn, clip_position, find_instance}
+#import null3d::vertex::{mesh_position}
 
 /// The vertex attribute that the template reads.
 struct VertexIn {
@@ -22,7 +23,7 @@ struct VertexIn {
 
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> @invariant @builtin(position) vec4f {
-    var clip = clip_position(find_instance(i), v.position);
+    var clip = clip_position(find_instance(i), mesh_position(v.position));
 #ifndef PREPASS
     clip.z = min(clip.z, clip.w);
 #endif

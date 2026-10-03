@@ -24,7 +24,13 @@ import type { DeviceShaders } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
 import { ImageTable } from '../../shared/images';
 import { floatOfBits } from '../float-bits';
-import { forEachFallbackAttribute, forEachVertexAttribute, vertexStride } from '../vertex-format';
+import {
+	forEachFallbackAttribute,
+	forEachVertexAttribute,
+	isNormalized,
+	type VertexAttribute,
+	vertexStride,
+} from '../vertex-format';
 import { type DepthSetup, setDepthMode } from './depth';
 import {
 	createProgram,
@@ -154,6 +160,38 @@ function glAttribute(
 		default:
 			throw new Error(`the WebGL2 backend reads no vertex format ${format}`);
 	}
+}
+
+/** GL's types of vertex attribute values. */
+const GL_FLOAT = 0x1406;
+const GL_BYTE = 0x1400;
+const GL_UNSIGNED_BYTE = 0x1401;
+const GL_SHORT = 0x1402;
+const GL_UNSIGNED_SHORT = 0x1403;
+
+/** GL's type of each vertex attribute type's values, by code. */
+const GL_VERTEX_TYPES: Readonly<Record<number, number>> = {
+	[G.VERTEX_TYPE_F32]: GL_FLOAT,
+	[G.VERTEX_TYPE_UNORM8]: GL_UNSIGNED_BYTE,
+	[G.VERTEX_TYPE_SNORM8]: GL_BYTE,
+	[G.VERTEX_TYPE_UNORM16]: GL_UNSIGNED_SHORT,
+	[G.VERTEX_TYPE_SNORM16]: GL_SHORT,
+	[G.VERTEX_TYPE_UINT8]: GL_UNSIGNED_BYTE,
+	[G.VERTEX_TYPE_SINT8]: GL_BYTE,
+	[G.VERTEX_TYPE_UINT16]: GL_UNSIGNED_SHORT,
+	[G.VERTEX_TYPE_SINT16]: GL_SHORT,
+};
+
+/**
+ * Points a vertex array's location at a mesh attribute. Attributes that shaders read as whole
+ * numbers take the integer pointer. The others take the float pointer, which reads normalized
+ * integers as fractions and plain integers as whole values, as glTF reads them.
+ */
+function pointAttribute(gl: WebGL2RenderingContext, stride: number, a: VertexAttribute): void {
+	const type = GL_VERTEX_TYPES[a.type] as number;
+	gl.enableVertexAttribArray(a.location);
+	if (a.integer) gl.vertexAttribIPointer(a.location, a.size, type, stride, a.offset);
+	else gl.vertexAttribPointer(a.location, a.size, type, isNormalized(a), stride, a.offset);
 }
 
 /**
@@ -1802,10 +1840,7 @@ export class WebGL2Backend {
 		this.useVertexArray(vao);
 		gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
 		const stride = vertexStride(format);
-		const point = (location: number, floats: number, offset: number) => {
-			gl.enableVertexAttribArray(location);
-			gl.vertexAttribPointer(location, floats, gl.FLOAT, false, stride, offset);
-		};
+		const point = (attribute: VertexAttribute) => pointAttribute(gl, stride, attribute);
 		forEachVertexAttribute(format, point);
 		forEachFallbackAttribute(format, point);
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indices);

@@ -142,13 +142,15 @@ pub mod mesh_arrays {
     pub const NORMALS: u32 = 1;
     pub const UVS: u32 = 2;
     pub const UVS1: u32 = 4;
-    /// Colors of three floats per vertex, or four with `COLORS_ALPHA`.
+    /// Colors of three values per vertex, or four with `COLORS_ALPHA`.
     pub const COLORS: u32 = 8;
     pub const COLORS_ALPHA: u32 = 16;
     pub const TANGENTS: u32 = 32;
     pub const INDICES: u32 = 64;
     pub const COMPUTE_NORMALS: u32 = 128;
     pub const COMPUTE_TANGENTS: u32 = 256;
+    pub const JOINTS: u32 = 512;
+    pub const WEIGHTS: u32 = 1024;
 }
 
 /// The first detail of an E1206 failure: what is wrong with the arrays. The second detail is the
@@ -161,6 +163,8 @@ pub mod arrays_problem {
     pub const MISSING: u32 = 5;
     /// The second detail is the place of the index in the indices.
     pub const INDEX_OUT_OF_RANGE: u32 = 6;
+    /// The array's type of number is not one that its attribute takes.
+    pub const TYPE: u32 = 7;
     /// Plus the array's code; the second detail is the place of the value in the array.
     pub const NOT_FINITE: u32 = 16;
 }
@@ -503,6 +507,8 @@ pub fn typescript() -> String {
                 ("INDICES", mesh_arrays::INDICES),
                 ("COMPUTE_NORMALS", mesh_arrays::COMPUTE_NORMALS),
                 ("COMPUTE_TANGENTS", mesh_arrays::COMPUTE_TANGENTS),
+                ("JOINTS", mesh_arrays::JOINTS),
+                ("WEIGHTS", mesh_arrays::WEIGHTS),
             ],
         ),
         (
@@ -515,6 +521,8 @@ pub fn typescript() -> String {
                 ("COLORS", ArrayName::Colors as u32),
                 ("TANGENTS", ArrayName::Tangents as u32),
                 ("INDICES", ArrayName::Indices as u32),
+                ("JOINTS", ArrayName::Joints as u32),
+                ("WEIGHTS", ArrayName::Weights as u32),
             ],
         ),
         (
@@ -526,6 +534,7 @@ pub fn typescript() -> String {
                 ("TWICE", arrays_problem::TWICE),
                 ("MISSING", arrays_problem::MISSING),
                 ("INDEX_OUT_OF_RANGE", arrays_problem::INDEX_OUT_OF_RANGE),
+                ("TYPE", arrays_problem::TYPE),
                 ("NOT_FINITE", arrays_problem::NOT_FINITE),
             ],
         ),

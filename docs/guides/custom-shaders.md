@@ -52,6 +52,7 @@ const hologram = /* wgsl */ `
 #import null3d::builtins::{fill_builtins, frame}
 #import null3d::mesh::{InstanceIn, clip_position, find_instance, finish}
 #import null3d::mesh::{relative_position, world_normal}
+#import null3d::vertex::{mesh_position}
 
 struct Varyings {
     @builtin(position) clip: vec4f,
@@ -62,9 +63,10 @@ struct Varyings {
 @vertex
 fn vs(@location(0) position: vec3f, @location(1) normal: vec3f, i: InstanceIn) -> Varyings {
     let found = find_instance(i);
+    let p = mesh_position(position);
     var out: Varyings;
-    out.relative = relative_position(found, position);
-    out.clip = clip_position(found, position);
+    out.relative = relative_position(found, p);
+    out.clip = clip_position(found, p);
     out.normal = world_normal(found, normal);
     return out;
 }
@@ -85,7 +87,8 @@ const ghost = materials.shader({ wgsl: hologram, doubleSided: true });
 The plugin takes WGSL as a full shader when its `@vertex` entry point takes an `InstanceIn`. The shader follows these rules:
 
 - It has one `@vertex` and one `@fragment` entry point.
-- The vertex entry point reads the mesh at the engine's locations. The position is at 0, the normal at 1, the first texture coordinates at 2 and the second at 3. The tangent is at 4, and the color at 5. A mesh draws only when it has every attribute that the shader reads.
+- The vertex entry point reads the mesh at the engine's locations. The position is at 0, the normal at 1, the first texture coordinates at 2 and the second at 3. The tangent is at 4, and the color at 5. The joints are at 6, as a `vec4u`, and the weights at 7. A mesh draws only when it has every attribute that the shader reads.
+- Pass the position through `mesh_position`, and texture coordinates through `mesh_uv` and `mesh_second_uv`, from `null3d::vertex`. They give the values that the mesh holds on every GPU path. WebGPU reads plain integer attributes as fractions, and these functions scale them back. Floats and normalized integers pass through unchanged.
 - It finds its instance with `InstanceIn` and `find_instance` from `null3d::mesh`. On each GPU path, the engine gives each instance's transform in its own way, and these hide the difference.
 - `null3d::mesh` also gives `clip_position(found, position)`, `relative_position(found, position)` and `world_normal(found, normal)`. Positions are relative to the camera, as in the engine's own shaders.
 - The fragment entry point writes its linear color through `finish(color, clip.xy)` from `null3d::mesh`, which prepares it for the engine's output.

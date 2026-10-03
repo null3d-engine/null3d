@@ -6,6 +6,7 @@ enable draw_index;
 // premultiplied color. null3d::mesh finds each instance on both GPU paths.
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
 #import null3d::mesh::{material_of, relative_position}
+#import null3d::vertex::{mesh_position}
 
 /// The vertex attributes that the template reads.
 struct VertexIn {
@@ -30,7 +31,7 @@ struct VertexOut {
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
-    out.relative = relative_position(found, v.position);
+    out.relative = relative_position(found, mesh_position(v.position));
     out.clip = clip_of(found, out.relative);
     out.material = found.material;
 #ifdef VERTEX_COLOR

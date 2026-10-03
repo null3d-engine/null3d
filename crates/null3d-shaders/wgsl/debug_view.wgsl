@@ -22,6 +22,7 @@ enable draw_index;
 #import null3d::color::{srgb_to_linear}
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
+#import null3d::vertex::{mesh_position}
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{sun_shadow}
 #endif
@@ -49,7 +50,7 @@ struct VertexOut {
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
-    out.relative = relative_position(found, v.position);
+    out.relative = relative_position(found, mesh_position(v.position));
     out.clip = clip_of(found, out.relative);
     out.normal = world_normal(found, v.normal);
     out.depth = out.clip.zw;

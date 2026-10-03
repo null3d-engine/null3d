@@ -141,6 +141,22 @@ const VERTEX_FORMATS = {
 	modes: ['pipelined', 'single-threaded'],
 } as const;
 
+/** The vertex types sketch, and how its tests draw it. */
+const VERTEX_TYPES = {
+	sketch: 'tests/pages/sketches/vertex-types-sketch.ts',
+	hold: 0,
+	size: [480, 270],
+} as const;
+
+/**
+ * How far the image of meshes with integer attributes may stray from their float twins' image: a
+ * change of at most one step of 255 in each channel. Pixelmatch's color distance of such a change
+ * is at most 0.54, and this threshold allows 0.56. A change of two steps in red or green goes past
+ * it. Anti-aliased edges, where a GPU's rounding of a vertex can cover a sample or not, do not
+ * count.
+ */
+const ONE_STEP = { threshold: 0.004, maxDiffRatio: 0 };
+
 /** The geometry generators sketch, and how its tests draw it. */
 const GENERATORS = {
 	sketch: 'tests/pages/sketches/generators-sketch.ts',
@@ -522,6 +538,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Compatibility mode takes the 8-bit path, which averages the samples of antialiased edges after
 	// the tone mapping, so its edges differ from the HDR path's and it keeps references of its own.
 	{ name: 'vertex-formats-compat', ...VERTEX_FORMATS, tiers: ['compat'], expect: { hdr: false } },
+	// Meshes whose positions, normals, tangents, texture coordinates, colors, joints and weights
+	// are 8-bit and 16-bit integers, normalized and plain, and their float twins, which hold the
+	// values that shaders read from the integers. Each tier must draw the integers as it draws the
+	// twins. WebGL2 reads plain integers as whole numbers itself, WebGPU reads them as fractions
+	// that the shader scales back, and joints take WebGL2's integer attributes.
+	{
+		name: 'vertex-types-float',
+		...VERTEX_TYPES,
+		sketch: `${VERTEX_TYPES.sketch}?float`,
+		switches: [FULL_PRECISION],
+	},
+	{
+		name: 'vertex-types',
+		...VERTEX_TYPES,
+		reference: 'vertex-types-float',
+		switches: [FULL_PRECISION],
+		tolerance: ONE_STEP,
+	},
 	// The nine geometry generators, each lit and with its texture coordinates shown as colors.
 	// WebGL2 must draw the WebGPU image, apart from the antialiased edges that dithering keeps
 	// pixelmatch from passing over.

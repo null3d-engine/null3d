@@ -185,13 +185,15 @@ A full shader is WGSL with one `@vertex` entry point that takes an `InstanceIn`,
 ```wgsl
 #import null3d::builtins::{fill_builtins, frame}
 #import null3d::mesh::{InstanceIn, clip_position, find_instance, finish, world_normal}
+#import null3d::vertex::{mesh_position}
 
 struct Varyings { @builtin(position) clip: vec4f, @location(0) normal: vec3f }
 
 @vertex
 fn vs(@location(0) position: vec3f, @location(1) normal: vec3f, i: InstanceIn) -> Varyings {
   let found = find_instance(i);   // works on both GPU paths, for objects and instances
-  return Varyings(clip_position(found, position), world_normal(found, normal));
+  let p = mesh_position(position); // the mesh's own value on every path, integer meshes too
+  return Varyings(clip_position(found, p), world_normal(found, normal));
 }
 
 @fragment
@@ -202,7 +204,8 @@ fn fs(in: Varyings) -> @location(0) vec4f {
 }
 ```
 
-- Mesh locations: 0 position, 1 normal, 2 uv, 3 uv1, 4 tangent, 5 color. A mesh draws only with every attribute the shader reads.
+- Mesh locations: 0 position, 1 normal, 2 uv, 3 uv1, 4 tangent, 5 color, 6 joints (`vec4u`), 7 weights (0.2). A mesh draws only with every attribute the shader reads.
+- Read the position through `mesh_position`, and texture coordinates through `mesh_uv` and `mesh_second_uv` (`null3d::vertex`, 0.2). WebGPU reads a mesh's plain integer attributes as fractions, and these scale them back.
 - `null3d::mesh` gives `find_instance`, `clip_position`, `relative_position`, `world_normal` and `finish`; positions are relative to the camera.
 - Full shaders get no lighting, shadows or fog, no standard values and no uniforms. Import `null3d::lighting` or `null3d::fog` helpers for your own.
 

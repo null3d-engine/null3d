@@ -72,7 +72,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Large worlds and precision](concepts/large-worlds.md) | Cell-relative positions and per-frame camera-to-cell offsets; reversed depth; largeWorld mode; batch origins; floating-origin geometry. | planned | 0.2 |
 | [Culling](concepts/culling.md) | Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells, whole cells out of view skipped first, and positions relative to the camera. | experimental | 0.1 |
 | [Levels of detail](concepts/lod.md) | LOD groups; generated LODs; per-instance selection. | planned | 0.2 |
-| [Assets and prefabs](concepts/assets.md) | glTF, KTX2, meshopt; prefabs and instantiate; upload budgets; memory. | planned | 0.2 |
+| [Assets and prefabs](concepts/assets.md) | glTF, KTX2, meshopt; prefabs and instantiate; upload budgets; memory. | experimental | 0.2 |
 | [The post-processing chain](concepts/post-processing.md) | HDR target; bloom; ambient occlusion; the single final pass; custom effects. | planned | 0.2 |
 
 ### API reference
