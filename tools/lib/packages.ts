@@ -369,14 +369,27 @@ function shaderModuleFiles(root: string): string[] {
 /**
  * Packs every public package with `bun pm pack`, which runs its `prepack` script and writes the
  * real version in place of each `workspace:` one, into `out`. Then checks each tarball, and fails
- * with every problem. The WebAssembly builds must exist first (`bun run build`).
+ * with every problem. The WebAssembly builds must exist first (`bun run build`). Afterwards it
+ * deletes each `lib/` that a pack built, so no check in the repository can read built files in
+ * place of the source.
  */
 export function packPackages(root: string, out: string): PackedPackage[] {
 	rmSync(out, { recursive: true, force: true });
 	mkdirSync(out, { recursive: true });
+	const folders = publicPackages(root);
+	try {
+		return packEach(root, out, folders);
+	} finally {
+		for (const folder of folders)
+			rmSync(join(root, 'packages', folder, LIB_DIR), { recursive: true, force: true });
+	}
+}
+
+/** Packs each package in `folders` into `out` and checks each tarball. */
+function packEach(root: string, out: string, folders: readonly string[]): PackedPackage[] {
 	const packed: PackedPackage[] = [];
 	const problems: string[] = [];
-	for (const folder of publicPackages(root)) {
+	for (const folder of folders) {
 		const dir = join(root, 'packages', folder);
 		const printed = run('bun', ['pm', 'pack', '--quiet', '--destination', out], dir);
 		const tarball = resolve(out, printed.trim().split('\n').at(-1) ?? '');
