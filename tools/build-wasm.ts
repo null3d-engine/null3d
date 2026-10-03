@@ -54,13 +54,17 @@ import {
 } from './lib/size-check';
 import {
 	type BuiltFile,
+	budgetProblems,
 	type CORE_BUILDS,
 	CORE_FILES,
 	downloadSizes,
 	findEngineParts,
 	findTranscoderFiles,
+	LATER_BUDGET_BYTES,
+	LATER_PARTS,
 	measure,
 	type SizeEntry,
+	START_BUDGET_BYTES,
 	totalSize,
 } from './lib/size-report';
 
@@ -85,11 +89,6 @@ const BASE_TREE = `${BASE_DIR}/tree`;
 const COMMITTED_RECORD = 'tools/size-baseline.json';
 /** Brotli budget for each core WebAssembly file. */
 const WASM_BUDGET_BYTES = 600 * 1024;
-/**
- * Brotli budget for the engine's JavaScript that a page downloads, in whichever thread mode
- * downloads the most. The core's generated glue counts with the WebAssembly files instead.
- */
-const JS_BUDGET_BYTES = 100 * 1024;
 /** Where the size report builds the engine test page, apart from the build the browser tests serve. */
 const JS_BUILD_DIR = 'target/js-size';
 /** The crate that builds the shader compiler, the shader crate as a WebAssembly module. */
@@ -613,14 +612,25 @@ async function main(): Promise<void> {
 		]),
 	);
 
+	const later = new Map(
+		LATER_PARTS.flatMap(({ name }) => {
+			const size = parts.get(name);
+			return size ? [[name, size] as const] : [];
+		}),
+	);
 	console.log('\nsize report (budget for each .wasm file of the core: 600 KB after Brotli)');
 	for (const [file, size] of Object.entries(sizes))
 		printSize(file, size, file.endsWith('.wasm') ? WASM_BUDGET_BYTES : undefined);
 	printSize('js total', totalSize(parts.values()));
 	console.log(
-		"\nthe engine's JavaScript that a page downloads in each thread mode, besides the core's glue (budget: 100 KB after Brotli)",
+		`\nthe engine's JavaScript that a page downloads at its start in each thread mode, besides the core's glue (budget: ${kb(START_BUDGET_BYTES)} after Brotli)`,
 	);
-	for (const { mode, size } of downloads) printSize(mode, size, JS_BUDGET_BYTES);
+	for (const { mode, size } of downloads) printSize(mode, size, START_BUDGET_BYTES);
+	console.log(
+		`\nthe engine's JavaScript that loads after the start, on a feature's first use or after the first frame (budget: ${kb(LATER_BUDGET_BYTES)} after Brotli for each file; no start counts them)`,
+	);
+	for (const [part, size] of later) printSize(`js/${part}`, size, LATER_BUDGET_BYTES);
+	printSize('after the start, total', totalSize(later.values()));
 	console.log(
 		'\nthe KTX2 transcoder, which a page downloads when it loads its first KTX2 file (no budget)',
 	);
@@ -641,11 +651,7 @@ async function main(): Promise<void> {
 				file.endsWith('.wasm') && !transcoder.has(file) && size.brotli > WASM_BUDGET_BYTES,
 		)
 		.map(([file]) => `${file} is over its 600 KB Brotli budget`);
-	for (const { mode, size } of downloads)
-		if (size.brotli > JS_BUDGET_BYTES)
-			problems.push(
-				`the engine JavaScript that a page downloads in ${mode} mode is over its 100 KB Brotli budget`,
-			);
+	problems.push(...budgetProblems(parts));
 	const growth = options.checkSize ? checkGrowth(sizes, options.base) : [];
 	for (const p of [...problems, ...growth]) console.error(`error: ${p}`);
 	if (growth.length > 0) {
