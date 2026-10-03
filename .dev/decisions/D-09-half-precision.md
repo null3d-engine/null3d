@@ -1,6 +1,6 @@
 # D-09: Half precision on phones
 
-Status: proposed. WebGL2 is decided. The iPad rows, and with them WebGPU, are pending. Date: 2026-10-03. Task: M1-H5. Test: T-22.
+Status: decided by the rule on both paths: half precision stays off. The iPad's image check with half precision on is pending. Date: 2026-10-03. Task: M1-H5. Test: T-22.
 
 ## Question
 
@@ -63,21 +63,37 @@ The phone held 60 frames per second at its 60 Hz refresh with both settings, eve
 
 ### The iPad (WebGPU and WebGL2)
 
-Pending. Safari on the iPad was stuck after an earlier crash test, so its runs did not start. The coordinator runs these from a checkout of the branch, after `bun run build` and a restart of the dev server. The page kinds that end in `-half` add `?half=on`, so each run takes turns between the two settings:
+`bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s3,s4 --pages null3d-webgpu,null3d-webgpu-half,null3d-webgl2,null3d-webgl2-half`, Safari 26.6 on the iPad Pro with Limit Frame Rate on (60 Hz), 3 October 2026 (run `20261002-234410-bench`). There were 5 rounds, and in each round the four pages of a scene took turns. A full precision run and its half precision twin started 37 s apart. All 40 runs passed. The iPad's WebGPU adapter offers `shader-f16`, and with `?half=on` the engine reported `halfPrecision: true` on WebGPU in the device checks of the same build (run `20261003-002947-checks`).
 
-```sh
-# iPad, Safari: GPU time per pass on WebGPU, frame time on WebGL2
-bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s3,s4 --pages null3d-webgpu,null3d-webgpu-half,null3d-webgl2,null3d-webgl2-half
-# iPad: the image tests at the device tolerance, with half precision on
-bun tests/real-browsers.ts --lan ipad-safari --switches half=on
-```
+GPU time per frame on WebGPU, the median of each run's frames, from timestamp queries:
+
+| Round | S3, full | S3, half | Change | S4, full | S4, half | Change |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 9.33 | 9.31 | -0.2% | 24.47 | 23.85 | -2.5% |
+| 2 | 15.63 | 15.72 | +0.6% | 24.24 | 23.52 | -3.0% |
+| 3 | 15.59 | 15.75 | +1.0% | not compared | 23.63 | |
+| 4 | 15.61 | 15.74 | +0.8% | 23.22 | 23.48 | +1.1% |
+| 5 | 15.52 | 15.73 | +1.3% | not compared | 23.75 | |
+
+Reading the table:
+
+- In rounds 3 and 5, the preset check lowered the full precision S4 page to Low, at a pixel ratio of 1.5. So it drew fewer pixels than its twin at Medium. Those two pairs do not compare. In the three pairs that do, half precision changed S4's GPU time by -3.0% to +1.1%, by -1.5% on average.
+- S3 took 0.6% to 1.3% longer with half precision in each round after the first.
+- Heat. The tablet was warm from the runs before it. S3 took 9.3 ms in round 1 and 15.6 ms from round 2 on, on the same code. Each pair ran within 37 s, so both of its runs saw about the same heat. The changes therefore compare the runs of each pair. A cooler tablet gives shorter times, and the share that half precision saves could differ there. Nothing in this run points to a saving near 5%.
+- The run came from the H5 branch, before #212 and #222 merged. The first changes how Safari's WebGL2 path waits for the GPU. The second changes how the governor reads Safari's frame rate. Neither changes the shaders' work, and the governor took no step in any run.
+
+On WebGL2 the iPad has no GPU timer. Before #212, Safari's WebGL2 frames were bound by the drawing worker's waits for the GPU. In all 5 rounds, both S4 pages drew at Low. The half precision page's frames took about 5% longer, with a median interval of 33.6 ms against 31.9 ms. S3's half precision page drew at Low from round 2 on, and its twin at Medium, so S3 does not compare.
+
+### The iPad's image tests with half precision on
+
+Pending. The device checks with `--switches half=on` ran on 3 October 2026 (run `20261003-002947-checks`). 23 of the 107 image pages passed. The other 84 never drew: Safari refused the engine's shared memory (E1109). No page failed on its pixels, but 23 pages are too few to judge. Their rerun waits for #223, which frees the job workers' memory when a page leaves. No result can turn half precision on, because the iPad showed no saving.
 
 ## Decision
 
-- WebGL2: half precision stays off. On the S24+ it showed no gain, and one image test failed with it on. The rule needs both a saving and every image test passing on each device of the path, so no iPad result can turn it on.
-- WebGPU: pending the iPad, the only device in the lab with WebGPU and `shader-f16`. Until then half precision stays off there too.
+- WebGL2: half precision stays off. On the S24+ it showed no gain, and one image test failed with it on. On the iPad, S4's frames took about 5% longer with it.
+- WebGPU: half precision stays off. The iPad is the only device in the lab with WebGPU and `shader-f16`. There it saved 1.5% of S4's GPU time on average, against the 5% that the rule needs. It cost S3 about 1%. So it gives no gain on either scene. The Mac's 6% saving in S3 does not count, because the Mac is no phone.
 
-`?half=on` keeps half precision on both paths for measurement.
+`?half=on` keeps half precision on both paths for measurement. A new phone or tablet GPU can be measured with the same two runs.
 
 ## Consequences
 
