@@ -24,6 +24,7 @@ import {
 	Object3D,
 	type OrthographicCamera,
 	type PerspectiveCamera,
+	type Scene,
 } from '../scene/scene';
 import type { DebugGridOptions, DebugLightOptions, DebugView } from './debug';
 import { type DebugHost, SketchDebug } from './sketch-debug';
@@ -105,10 +106,12 @@ function viewCode(view: DebugView): number {
 			return C.DEBUG_VIEW_OVERDRAW;
 		case 'wireframe':
 			return C.DEBUG_VIEW_WIREFRAME;
+		case 'shadows':
+			return C.DEBUG_VIEW_SHADOWS;
 		default:
 			throw new EngineError(
 				'E1213',
-				`debug.view() got ${JSON.stringify(view)}, which is not 'lit', 'normals', 'depth', 'wireframe' or 'overdraw'.`,
+				`debug.view() got ${JSON.stringify(view)}, which is not 'lit', 'normals', 'depth', 'wireframe', 'overdraw' or 'shadows'.`,
 			);
 	}
 }
@@ -146,12 +149,17 @@ export class DebugDraw extends SketchDebug {
 	constructor(
 		private readonly core: CoreMemory,
 		host: DebugHost,
+		private readonly scene: Scene,
 	) {
 		super(host);
 	}
 
 	view(view: DebugView): void {
 		this.core.glue.setDebugView(viewCode(view));
+	}
+
+	shadowCamera(camera?: Camera): void {
+		this.scene.setShadowCamera(camera);
 	}
 
 	line(from: Vec3Like, to: Vec3Like, color?: ColorInput): void {

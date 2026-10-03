@@ -114,7 +114,12 @@ export async function publish(name: string, result: Record<string, unknown>): Pr
 	const report = { page: name, userAgent: navigator.userAgent, url: location.href, ...result };
 	window.__null3dResult = report;
 	const status = document.getElementById('status');
-	if (status) status.textContent = JSON.stringify({ ...report, pixels: undefined }, null, 2);
+	if (status)
+		status.textContent = JSON.stringify(
+			{ ...report, pixels: undefined, images: undefined, frame: undefined },
+			null,
+			2,
+		);
 	// Inside the runner page's frame, the runner posts the result with its run.
 	if (window.parent !== window) return;
 	try {

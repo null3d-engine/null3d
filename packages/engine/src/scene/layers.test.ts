@@ -101,9 +101,9 @@ describe('layers', () => {
 		const { scene, commands, cameras } = fakeCore();
 		const camera = scene.createPerspectiveCamera({ layers: 0b100 });
 		scene.setActiveCamera(camera);
-		expect(cameras.at(-1)).toEqual([camera.handle, 50, 0.1, 2000, 0b100]);
+		expect(cameras.at(-1)).toEqual([camera.handle, 50, 0.1, 2000, 0b100, 0]);
 		camera.setLayers(0b11);
-		expect(cameras.at(-1)).toEqual([camera.handle, 50, 0.1, 2000, 0b11]);
+		expect(cameras.at(-1)).toEqual([camera.handle, 50, 0.1, 2000, 0b11, 0]);
 		// The camera object keeps the same mask, as every object does.
 		expect(layerCommands(commands())).toEqual([
 			[camera.handle, 0b100],
@@ -112,15 +112,15 @@ describe('layers', () => {
 		// A camera that is not active changes no view.
 		const other = scene.createPerspectiveCamera();
 		other.setLayers(0b1000);
-		expect(cameras.at(-1)).toEqual([camera.handle, 50, 0.1, 2000, 0b11]);
+		expect(cameras.at(-1)).toEqual([camera.handle, 50, 0.1, 2000, 0b11, 0]);
 		scene.setActiveCamera(other);
-		expect(cameras.at(-1)).toEqual([other.handle, 50, 0.1, 2000, 0b1000]);
+		expect(cameras.at(-1)).toEqual([other.handle, 50, 0.1, 2000, 0b1000, 0]);
 		// An orthographic camera's view takes its layers with its lens.
 		const map = scene.createOrthographicCamera({ height: 10, layers: 0b10 });
 		scene.setActiveCamera(map);
-		expect(cameras.at(-1)).toEqual([map.handle, 10, 0, 0, 0, 0.1, 2000, 0b10]);
+		expect(cameras.at(-1)).toEqual([map.handle, 10, 0, 0, 0, 0.1, 2000, 0b10, 0]);
 		map.setOrthoHeight(20);
-		expect(cameras.at(-1)).toEqual([map.handle, 20, 0, 0, 0, 0.1, 2000, 0b10]);
+		expect(cameras.at(-1)).toEqual([map.handle, 20, 0, 0, 0, 0.1, 2000, 0b10, 0]);
 	});
 
 	test("a batch's rows take its layers from the create options and from setLayers", () => {

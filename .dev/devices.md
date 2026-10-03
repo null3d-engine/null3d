@@ -116,6 +116,7 @@ The runner watches each browser's results while a run goes on. Two guards keep a
 - The runner builds the pages into `target/bench-pages` before the run. The dev server serves the build under the load routes, as it serves the startup loads, with one address prefix for each run and runner.
 - The phone over USB and the tablet over the local network both reach the main checkout's dev server, so both load the same build.
 - A dev server that started before the load routes served the benchmark pages cannot serve these plans. The runner then stops and asks you to restart that server.
+- After its timed runs, the bench plan runs the visual page of each scene on each GPU path, from the dev server. The first timed run of each null3D page captures its frame. The summary prints the shadow figures beside the timings, and the runner saves the frames in the run's folder. [Benchmarks](benchmarks.md#visual-figures-and-captured-frames) says what they show.
 
 ## Startup times
 

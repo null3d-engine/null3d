@@ -94,6 +94,18 @@ Build two checkouts, such as a git worktree of main beside your branch, with `bu
 
 Add `--shard 2/3` to run only the pages of one shard, as a CI shard does. Each run writes its record to `runs.json` beside its summary. `bun run bench:run --merge <folder>` judges the records under a folder as one comparison, as the report job does. It needs no browser.
 
+## Visual figures and captured frames
+
+A change can make a scene faster and make it look worse, such as a smaller shadow map. So the device runner's bench plan measures how each scene looks, beside its timings. It also keeps frames for people to look at.
+
+- After the timed runs, the bench plan runs the visual page of each scene on each GPU path of its null3D pages. Each item has the name `visual-<scene>-<path>`. [Image tests](image-tests.md#visual-checks) says what the page measures, and why. The page loads from the dev server, because only development builds draw debug views. It runs after every timed page, so it changes no timing.
+- The page draws the desktop's preset, `?preset=high`, as the image tests do. Each scene's limits come from that preset's shadow settings, so every device measures the same settings.
+- The bench summary prints two columns beside the GPU time of each null3D page. The first is the share of pixels whose shadow changed between frames. The second is the shadow edge offset in pixels. A figure over its scene's limit reads `OVER` and the limit, and the visual item fails. A scene without limits, such as S1, whose sun casts no shadows, prints its figures alone.
+- The visual page captures PNG files from hold mode. They are the first and last stability frames, the reference, and 4 consecutive frames of the moving scene, 1/60 s apart. The runner saves them in `target/runs/<run>/<runner>/frames/<scene>-<path>/`, with `figures.json`. Hold mode gives consecutive frames exactly. A live engine cannot: `captureFrame` draws the newest frame again and reads it back, which takes longer than a frame on a phone.
+- The first timed run of each null3D page also captures its live frame with `engine.capture()`, after its measured seconds. The runner saves it as `frames/<scene>-<page>-live.png`. It shows what the device drew at full speed, with the quality governor's settings and the far cascades' update schedule. Hold mode runs neither. A plan that sweeps job worker counts captures nothing.
+- The runner prints the frames folder after the summary. The coordinator looks at the frames after each run.
+- `bun run test:bench` checks the same figures for S2 with three cascades and S4 on SwiftShader in CI (`bench/tests/visual.spec.ts`).
+
 ## Hold frames
 
 - A benchmark page with `?hold` draws one frame at the scene's hold time, 2 seconds, and publishes its pixels. `?hold=<seconds>` holds at another time.
