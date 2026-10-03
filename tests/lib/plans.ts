@@ -489,9 +489,13 @@ function inSmokePlan({ id, check }: PlanItem<Check>): boolean {
 		// The warm-up page as the engine runs it, without the switch that waits for each compile.
 		case 'warm-up':
 			return id === `warm-up-${check.tier}`;
-		// One thread mode of each build: the threaded build's first mode, and the single-threaded build.
+		// Starts on the page in one thread mode of each build: the threaded build's first mode, and the
+		// single-threaded build.
 		case 'restarts':
-			return ENGINE_MODES.find(({ build }) => build === check.mode.build) === check.mode;
+			return (
+				check.start === 'engine' &&
+				ENGINE_MODES.find(({ build }) => build === check.mode.build) === check.mode
+			);
 		default:
 			return SMOKE_KINDS.has(check.kind);
 	}
