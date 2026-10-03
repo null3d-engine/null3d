@@ -4,21 +4,29 @@ This guide covers how a release is made. [AGENTS.md](../AGENTS.md) holds the rul
 
 ## Making a release
 
-To release, run the Release workflow from the Actions tab and pick a release type. The workflow:
+The first release is 1.0, as [Versions](#versions) says. Until then, no step below runs. To release, run the Release workflow from the Actions tab and pick a release type. The workflow:
 
 1. Waits for CI to pass on main's latest commit.
 2. Runs `bun run release --apply` on a `release/<version>` branch. This sets the version in every package manifest, the engine's `VERSION` export, the Rust workspace and `Cargo.lock`. It adds the release's section to `CHANGELOG.md` and regenerates the docs.
 3. Opens a pull request. Review the changelog there, and edit `CHANGELOG.md` on that branch if a line needs it.
 
-Merging that pull request runs the Release Publish workflow. It tags the merge commit with the plain version, such as `0.0.1`, and publishes the GitHub Release with the changelog section. Then it builds the WebAssembly files, packs every package that is not private, and publishes each tarball to npm. It skips a version that npm already has. [The npm packages](#the-npm-packages) says how a package is built and packed.
+Merging that pull request runs the Release Publish workflow. It tags the merge commit with the plain version, such as `1.0.0`, and publishes the GitHub Release with the changelog section. Then it builds the WebAssembly files, packs every package that is not private, and publishes each tarball to npm. It skips a version that npm already has. [The npm packages](#the-npm-packages) says how a package is built and packed.
 
 ## Versions
 
-Versions follow the roadmap in the README. The `auto` release type always releases a patch. Pick `minor` or `major` when a roadmap release is done. The release script refuses an x.y.0 version while a docs page with that `since` or an earlier one is still `planned` (hard rule 19).
+The first release is 1.0, when all the planned work is done. There is no 0.1, 0.2 or 0.3 release (owner, 3 October 2026). Each milestone ends when its exit gate passes, and no publish step follows it. Each release before 1.0 would add steps by hand: the first npm publishes, the trusted publishers and the release secrets. None of them helps finish the engine. The npm packaging (#248) and the Release workflows stay, for 1.0.
 
-1.0 is the first public release. The roadmap is internal, so it stays in the README until then. Before releasing 1.0, remove it: the Roadmap section, its navigation link, the status badge's link and the by-version table under Features. Replace the pre-alpha status line too. The release script refuses 1.0.0 and every later version while the README has the roadmap.
+The README's roadmap lists 0.1, 0.2 and 0.3 before 1.0. Each names a set of features, and the docs pages' `since` values and the skills' version labels use those numbers, but none of them is released. For 1.0, run the Release workflow with `major`, which takes the packages from 0.0.0 to 1.0.0. After 1.0, the `auto` release type always releases a patch, and you pick `minor` or `major` when a set of features is done. The release script refuses an x.y.0 version while a docs page with that `since` or an earlier one is still `planned` (hard rule 19).
+
+1.0 is also the first public release. The roadmap is internal, so it stays in the README until then. Before releasing 1.0, remove it: the Roadmap section, its navigation link, the status badge's link and the by-version table under Features. Replace the pre-alpha status line too. The release script refuses 1.0.0 and every later version while the README has the roadmap.
 
 At 1.0, also announce the agent skills. Add the Claude Code plugin commands to the README's "For AI agents" section, and link `guides/agents` for other agent tools. Until then, `.claude-plugin/marketplace.json` exists and each release attaches the skill zips, but the README does not name them.
+
+### Open point for 1.0: the version labels
+
+Docs pages carry `since: "0.1"`, `"0.2"` or `"0.3"`, and the skills label calls with a version, such as (0.2) or "later in 0.1" (docs rule 6 in AGENTS.md). With no release before 1.0, these labels name versions that never ship. The release script reads them too: it refuses an x.y.0 version while a page with that `since` or an earlier one is `planned`. Every one of these labels is lower than 1.0. So the script refuses 1.0.0 while any such page is planned, which is the rule that the first release needs.
+
+Before 1.0, decide whether every `since` becomes "1.0", or names the milestone that built the feature. Then change the release script's check, the gate's release step, the README's version labels and the skills to match. Until then, the labels stay as they are, because the release script and the M1 exit gate's docs item read them.
 
 ## One-time setup
 
@@ -83,7 +91,7 @@ The first run passed on a MacBook Pro M5 Max in Chrome on 3 October 2026. The ty
 
 ### The first version of a new package
 
-npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin` and `@null3d/controls` by hand. `@null3d/cli` is on npm at 0.0.0 already.
+This is part of making 1.0. npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin` and `@null3d/controls` by hand. `@null3d/cli` is on npm at 0.0.0 already.
 
 1. On a clean checkout of main, run `bun install` and `bun run build`.
 2. Run `bun tools/pack-packages.ts`, which writes the tarballs to `target/packages/`.
@@ -97,13 +105,13 @@ npm cannot publish a package's first version through trusted publishing. So the 
    ```
 
 5. On npmjs.com, open each of the four packages' settings, and add a trusted publisher: GitHub Actions, the owner `null3d-engine`, the repository `null3d` and the workflow `release-publish.yml`.
-6. Run the Release workflow with `minor`. Its publish job publishes 0.1.0 of every package through trusted publishing, with provenance.
+6. Run the Release workflow with `major`. Its publish job publishes 1.0.0 of every package through trusted publishing, with provenance.
 
 Until step 5, the publish job fails at the first package that has no trusted publisher. It skips the versions that npm has, so run it again after the setup.
 
-## 0.1 exit gate
+## M1 exit gate
 
-Release 0.1 follows M1's exit gate (task M1-K5). Every item below must hold on one commit of main, the gate commit. The command `bun run gate` runs the Mac's part of the gate one step after another, so the timing steps never overlap. It writes the record to `target/gate/<run>/gate.md` and `gate.json`, with each step's output beside them. Its `--list` option prints each step, its gate item and its command. The device runner covers the rest: Safari and Firefox on the Mac, the iPad and the Galaxy S24+, as [Device sessions](devices.md) describes.
+M1 ends at its exit gate (task M1-K5), with no release. Every item below must hold on one commit of main, the gate commit. The command `bun run gate` runs the Mac's part of the gate one step after another, so the timing steps never overlap. It writes the record to `target/gate/<run>/gate.md` and `gate.json`, with each step's output beside them. Its `--list` option prints each step, its gate item and its command. The device runner covers the rest: Safari and Firefox on the Mac, the iPad and the Galaxy S24+, as [Device sessions](devices.md) describes.
 
 If item 1 or item 3 fails, feature work stops. Fix the cause, then run the gate again.
 
@@ -117,6 +125,8 @@ If item 1 or item 3 fails, feature work stops. Fix the cause, then run the gate 
 | 4. Budgets | Each WebAssembly build stays within 600 KB after Brotli, and the engine's JavaScript within 100 KB in each thread mode. `bun run bench:allocation` passes on S4 on both GPU paths. `bun run bench:soak` passes on S4 in Chrome on the Mac and in Safari on the iPad. | Steps `budgets`, `allocation-s4-webgpu`, `allocation-s4-webgl2` and `soak-s4`. The soak plan on the iPad |
 | 5. Decisions | Records D-08 to D-13 are written. Tests T-11, T-12, T-21, T-22, T-24, T-25, T-26 and T-29 are closed with their dates and results. T-28, the time to first frame, is measured again with the pipeline warm-up. | Step `startup` on the Mac. `bun run bench:startup -- --android` on the S24+, and the startup plan on the iPad |
 | 6. Docs | Every docs page with `since: "0.1"` is `experimental` or `stable`, or has moved to a later version with a written reason. The docs and skills checks pass, and the release script prints 0.1.0. | Steps `docs`, `docs-style`, `skills` and `release` |
+
+Item 6's release step makes no release. It prints the version that a `minor` release would take, 0.1.0, and it passes only while no docs page with `since: "0.1"` is still `planned`.
 
 The iPad's S4 run is judged at its Low preset, by the owner's decision of 3 October 2026 (#215).
 
