@@ -55,7 +55,9 @@ export interface EnginePart {
  * load on demand on the page, which runs the sketch only in single-threaded mode. The KTX2 loader
  * loads on demand in the thread that runs the sketch, when the sketch loads its first KTX2 file.
  * The glTF loader loads there too with the sketch's first glTF file, and starts the glTF worker,
- * which parses files. The readers of color grading tables load there with the first table.
+ * which parses files. The glTF worker loads the meshopt decoder with the first file that holds
+ * meshopt data. The readers of color grading tables load in the thread that runs the sketch with
+ * the first table.
  * The preset check loads after the first frame, in the thread that runs the sketch, so no download
  * before the first frame counts it. The stats overlay loads on the page when the sketch first asks
  * for it, and the frame figures that it and `debug.frameStats` read load with it, or in the thread
@@ -92,6 +94,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-gltf.js', module: 'scene/gltf.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'gltf-worker.js', module: 'workers/gltf-worker.ts', loadedBy: 'sketch-worker-gltf.js' },
+	{ name: 'gltf-meshopt.js', module: 'scene/gltf-meshopt.ts', loadedBy: 'gltf-worker.js' },
 	{ name: 'sketch-worker-lut.js', module: 'scene/lut-files.ts', loadedBy: 'sketch-worker.js' },
 	{
 		name: 'sketch-worker-preset-check.js',
