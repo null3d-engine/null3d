@@ -216,15 +216,16 @@ page.post('hp', { id, value: 80 });           // only when the value changes
 ```
 
 ```ts
-// page.ts
+// page.ts: labelsLayer is a div over the canvas with position: absolute; inset: 0; pointer-events: none
 const el = document.createElement('div');
+el.id = `hp-${id}`;
 el.className = 'hp';
 labelsLayer.appendChild(el);
-engine.labels.bind(`hp-${id}`, el);
+const unbind = engine.labels.bind(`hp-${id}`, el);   // centers el over the label; unbind() stops it
 engine.onSketchMessage((type, d) => { if (type === 'hp') document.getElementById(`hp-${d.id}`)!.textContent = String(d.value); });
 ```
 
-The engine writes each label's screen position into shared memory every frame, and the page moves the element. Only value changes travel as messages. Hidden and off-screen labels are marked, so the page can hide them. Docs: `guides/ui-overlays`, `api/ui`.
+The sketch places each label with each frame's camera. The page moves the element over it in the frame on screen, so labels never run ahead of the image. Only value changes travel as messages. The engine sets `visibility: hidden` while the object is hidden, off the camera's layers, or outside its near and far planes. The offset turns and scales with the object, like a `CSS2DObject` child in three.js. The engine holds 4,096 labels by default (`createEngine({ maxLabels })`); more fail with E1219. Docs: `guides/ui-overlays`, `api/ui`.
 
 ## 8. Loading screen with progress and warm-up
 

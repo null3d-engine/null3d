@@ -13,8 +13,9 @@
 // S1's boxes see through, so each frame sorts every visible row for the transparent pass.
 // `--animated 64` adds 64 animated characters to S1, which play, cross-fade, blend a masked layer
 // and an additive one, and fire events to the sketch's handlers through the animator. `--grading`
-// gives S1 a color grading table and the vignette, and changes both every frame. It
-// samples the production build of the benchmark pages, as a developer ships the engine, and names
+// gives S1 a color grading table and the vignette, and changes both every frame. `--labels 256`
+// adds 256 moving objects to S1, each with an HTML label that the page binds, so each frame places
+// the labels and the thread that draws copies them for the page. It samples the production build of the benchmark pages, as a developer ships the engine, and names
 // the build's functions through its source maps; `--dev` samples the dev server's pages, with the
 // engine's development checks. From the repository root:
 //   bun run bench:allocation
@@ -26,6 +27,7 @@
 //   bun run bench:allocation --blend --n 30000 --gpu webgl2
 //   bun run bench:allocation --animated 64 --gpu webgl2
 //   bun run bench:allocation --grading --gpu webgl2
+//   bun run bench:allocation --labels 256 --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
@@ -175,7 +177,10 @@ async function main(): Promise<void> {
 		const animated = animatedCount > 0 ? `&animated=${animatedCount}` : '';
 		const grading = args.includes('--grading') ? '&grading' : '';
 		if (grading && scene !== 's1') throw new Error('--grading grades S1 only');
-		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${grading}`;
+		const labelCount = option('--labels', 0);
+		if (labelCount > 0 && scene !== 's1') throw new Error('--labels adds labels to S1 only');
+		const labels = labelCount > 0 ? `&labels=${labelCount}` : '';
+		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${grading}${labels}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
@@ -254,7 +259,7 @@ async function main(): Promise<void> {
 		await input;
 		devtools.close();
 		console.log(
-			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}, ${pagesText(dev)}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}, ${pagesText(dev)}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
 		);
 		console.log(
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',
