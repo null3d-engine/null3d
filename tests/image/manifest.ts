@@ -708,6 +708,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			reference: variant ? `skinning-${variant}` : 'skinning',
 		}),
 	),
+	// The middle character outlined: the outline's mask skins it in its pose, from the skinning
+	// pass's vertices or in the vertex shader, and on WebGL2 always in the vertex shader. Each tier
+	// draws the outline's steps in its own way, so each has its own image.
+	...(['', '-vertex'] as const).map(
+		(way): ImageTest => ({
+			name: `skinning-outline${way}`,
+			sketch: 'tests/pages/sketches/skinning-sketch.ts?outline',
+			hold: SKINNING_HOLD,
+			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+			...(way
+				? {
+						tiers: ['webgpu', 'compat'],
+						switches: ['skinning=vertex'],
+						reference: 'skinning-outline',
+					}
+				: {}),
+		}),
+	),
 	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the
 	// slab's front corner and the far plane cutting the bar at the back. The parity test compares
 	// the image with three.js's OrthographicCamera.

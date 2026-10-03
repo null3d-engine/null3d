@@ -5,12 +5,14 @@
 // glTF files do: positions in whole millimeters, which the inverse bind matrices scale back to
 // meters as glTF asks of skinned meshes, normals and weights in normalized 8-bit integers, and
 // joints in 8 bits. The skinning pass must read each type. ?blend makes the middle character see
-// through, so the transparent pass draws it skinned. ?tone=none turns off the engine's default
-// of ACES, as the parity test asks: the three.js twin draws with no tone mapping, three.js's
-// default. The engine cannot load animated models yet, so the rig comes from the engine's internal
-// loader calls.
+// through, so the transparent pass draws it skinned. ?outline outlines the middle character with
+// three.js's default outline, whose mask must follow the pose. ?tone=none turns off the engine's
+// default of ACES, as the parity test asks: the three.js twin draws with no tone mapping,
+// three.js's default. The engine cannot load animated models yet, so the rig comes from the
+// engine's internal loader calls.
 import { defineSketch } from '@null3d/engine';
 import { animateObject, createAnimationRig, skinObject } from '@null3d/engine/internal';
+import { OUTLINE_SETTINGS } from '../../../bench/scenes/outline';
 import {
 	AMBIENT,
 	BACKGROUND,
@@ -29,6 +31,7 @@ const params = new URL(import.meta.url).searchParams;
 const SHADOWS = params.has('shadows');
 const QUANTIZED = params.has('quantized');
 const BLEND = params.has('blend');
+const OUTLINE = params.has('outline');
 /** Millimeters per meter: the scale of quantized positions. */
 const MM = 1000;
 
@@ -53,6 +56,7 @@ function inverseBind(matrix: readonly number[]): number[] {
 
 export default defineSketch(({ scene, materials, geometry, post }) => {
 	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
+	if (OUTLINE) post.set({ outline: OUTLINE_SETTINGS.plain });
 	scene.setBackground(BACKGROUND);
 	const { fov, position, target, near, far } = SKINNING_CAMERA;
 	scene.setActiveCamera(scene.createPerspectiveCamera({ fov, position, target, near, far }));
@@ -104,6 +108,7 @@ export default defineSketch(({ scene, materials, geometry, post }) => {
 			castShadows: SHADOWS,
 			receiveShadows: SHADOWS,
 		});
+		if (OUTLINE && k === 1) object.setOutlined(true);
 		const animator = animateObject(object, rig);
 		skinObject(object, animator);
 		animator.play(CLIP, { speed: character.speed });
