@@ -2,7 +2,7 @@
 // ask for. After the first frame, it measures play at the start's render scale, then measures
 // again while the sketch fixes a new render scale in each of several frames in a row, and once
 // more after a new canvas size, which makes new targets. It reports the GPU objects that each
-// measurement made, and the scale that each of the scaled frames drew at.
+// measurement made, and the scale that each of the scaled frames drew at. ?bloom draws with bloom.
 import { createEngine } from '@null3d/engine';
 import { SCALES } from './lib/render-scale';
 import { run } from './lib/result';
@@ -13,9 +13,11 @@ const SECONDS = 0.5;
 run('render-scale', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
+	const sketch = new URL('./sketches/render-scale-sketch.ts', import.meta.url);
+	if (new URL(location.href).searchParams.has('bloom')) sketch.search = '?bloom';
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL('./sketches/render-scale-sketch.ts', import.meta.url),
+		sketch,
 		maxPixelRatio: 1,
 	});
 	const failures: string[] = [];

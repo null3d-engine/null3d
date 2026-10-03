@@ -81,6 +81,8 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - The final pass takes the scene color's coverage as at most 1. Additive blending adds alpha with each surface, so over a covered pixel the coverage passes 1. The pass divides the color by the coverage before its encoding and multiplies it back after. Without the cap, additive light came out brighter on targets with alpha: one surface of the overdraw view drew 87 for 63.
 - The final pass filters by hand: four `textureLoad` reads, each tone mapped, then blended. A sampler would blend HDR color first, and a small share of a very bright texel turns its neighbors almost white. A WebGL2 program also cannot read one texture both with `textureLoad` and through a sampler.
 - The 8-bit path resolves straight into the canvas only while the lowest scale is 1. Hold mode keeps that rule, so its images show the passes that play draws. Every path builds the final pass's pipeline with its first frame, so a change of range draws at once.
+- WebGPU draws a corner into a target's first rows. The WebGL2 backend flips the viewport, and GL counts rows from the bottom, so it draws the corner into the last rows. An effect step that reads another target must place the corner on each path. Bloom's step blocks carry the corner's origin, and the final pass's bloom build adds it on WebGL2. Before that, bloom at a scale of 0.5 on WebGL2 read outside the corners, and 89% of the pixels differed from WebGPU's.
+- Bloom's targets are relative sizes too, halved at each step (`Size::Halved`), so a new scale makes no texture there either. Its uniform blocks hold the corners' sizes, so a new scale uploads them again, and that is all it costs.
 - Below a scale of 1, a fragment's position covers only the drawn corner. A scene shader that turns the position into a place on the view, such as a light grid tile, divides it by the render size. The target's size is wrong there. The frame graph knows the render size after its `prepare`.
 
 ## The drawing buffer's size
@@ -237,6 +239,8 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - Joints are the one attribute that shaders read as integers (`vec4u`). WebGPU reads them with `uint8x4` or `uint16x4`, and WebGL2 with `vertexAttribIPointer`. A WebGL2 program that declares an integer input must get an integer pointer, or the draw fails. So only shaders that read joints declare location 6.
 
 ## Pipelines and warm-up
+
+- The thread that draws loads the shader module of its device's fixed bits. When bloom moves the 8-bit path to HDR color, pipelines ask for builds without the tone mapping bit, which that module lacks. `DeviceShaderSet` (`gpu/device-shaders.ts`) then loads the module of those bits once, and adds its builds to the variants that the backends hold. The pipeline waits meanwhile, as a custom material's pipeline waits for its shader, and the frame waits with it ([D-21](decisions/D-21-effect-chain.md)).
 
 - A frame's draw list creates its pipelines before any other command. The renderer starts their builds the first time it prepares the frame, and replays the rest of the list later. The render crate's test world checks this order in every list it records.
 - A list that creates a pipeline after other commands builds it at once. So a hand-written list, as on the replay test pages, draws everything in one replay.

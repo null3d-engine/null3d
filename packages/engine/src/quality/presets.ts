@@ -104,6 +104,15 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 1, max: 8, whole: true, heavierBelow: true },
 	},
+	// The share of three.js's taps that each of bloom's blurs reads: 1 reads them all, and 0.5 or
+	// 0.25 spread the same kernel over half or a quarter as many filtered reads, which costs less
+	// and keeps the glow's size. The shaders read it from a uniform, so it changes during play with
+	// no new pipeline. Every preset keeps three.js's taps until device runs measure bloom's cost.
+	bloomSamples: {
+		presets: [1, 1, 1, 1],
+		changes: 'live',
+		values: [0.25, 0.5, 1],
+	},
 	// The frame-budget governor (governor.ts), which lowers the live settings above when frames take
 	// too long and raises them again when they have time to spare.
 	governor: {
@@ -230,11 +239,18 @@ export interface QualitySettings {
 	 */
 	farCascadeInterval: number;
 	/**
+	 * The share of three.js's `UnrealBloomPass` taps that each of bloom's blurs reads: 1, 0.5 or
+	 * 0.25. A lower share spreads the same blur over fewer reads, which costs less and keeps the
+	 * glow's size, with coarser steps in it. It changes during play.
+	 */
+	bloomSamples: 0.25 | 0.5 | 1;
+	/**
 	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
-	 * toward `minRenderScale`, then how often far shadow cascades draw, then the shadow filter. It
-	 * raises them again, in the reverse order, once frames have time to spare. `quality.governor`
-	 * reports its steps. False keeps the render scale at `maxRenderScale` and the shadow settings as
-	 * set, as benchmarks and captures need. It changes during play.
+	 * toward `minRenderScale`, then how often far shadow cascades draw, then the shadow filter, then
+	 * bloom's samples while bloom is on. It raises them again, in the reverse order, once frames
+	 * have time to spare. `quality.governor` reports its steps. False keeps the render scale at
+	 * `maxRenderScale` and the other settings as set, as benchmarks and captures need. It changes
+	 * during play.
 	 */
 	governor: boolean;
 	/**

@@ -87,6 +87,14 @@ export interface CoreDevice {
 	sceneColor: number;
 	/** The anti-aliasing mode's code in the core. */
 	antialias: number;
+	/**
+	 * The scene color's format and the anti-aliasing mode's code once a sketch turns on an effect
+	 * that needs HDR color, such as bloom. On the HDR path they are `sceneColor` and `antialias`.
+	 * Where the 8-bit path serves only MSAA, they are HDR color with FXAA. Where the device has no
+	 * HDR target, the format stays the canvas's, and such effects stay off.
+	 */
+	effectsSceneColor: number;
+	effectsAntialias: number;
 	/** True when the canvas keeps premultiplied alpha, and stays clear where nothing draws. */
 	transparent: boolean;
 	/**
@@ -218,6 +226,23 @@ export function sceneColorFormat(
 }
 
 /**
+ * The scene color's format and the anti-aliasing mode once an effect that needs HDR color turns
+ * on: the start's on the HDR path, and HDR color with FXAA where only MSAA keeps the device on the
+ * 8-bit path. Where no anti-aliasing mode gives HDR color, the format stays the canvas's.
+ */
+export function effectsOutput(
+	tier: Tier,
+	report: DeviceReport,
+	options: Pick<DeviceOptions, 'hdr' | 'transparent' | 'antialias'>,
+): { sceneColor: number; antialias: AntialiasMode } {
+	const start = sceneColorFormat(tier, report, options);
+	if (start !== FORMAT_CANVAS || options.antialias !== 'msaa')
+		return { sceneColor: start, antialias: options.antialias };
+	const sceneColor = sceneColorFormat(tier, report, { ...options, antialias: 'fxaa' });
+	return { sceneColor, antialias: sceneColor === FORMAT_CANVAS ? 'msaa' : 'fxaa' };
+}
+
+/**
  * The half precision bit of the device's shaders: set where the scene shaders do their color math
  * at half precision. `wanted` comes from the ?half= switch, and without it each GPU path keeps full
  * precision. WebGPU needs the device feature `shader-f16` for it, and WebGL2 runs that math at
@@ -242,6 +267,7 @@ export function halfPrecision(
  */
 export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOptions): CoreDevice {
 	const sceneColor = sceneColorFormat(tier, report, options);
+	const effects = effectsOutput(tier, report, options);
 	const toneMap = sceneColor === FORMAT_CANVAS ? PERMUTATION_TONE_MAP : 0;
 	const half = halfPrecision(tier, report, options.half);
 	const common = {
@@ -249,6 +275,8 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		freshShaders: options.freshShaders,
 		sceneColor,
 		antialias: ANTIALIAS_CODES[options.antialias],
+		effectsSceneColor: effects.sceneColor,
+		effectsAntialias: ANTIALIAS_CODES[effects.antialias],
 		transparent: options.transparent,
 		cellCulling: options.cells,
 		depthPrepass: options.depthPrepass,

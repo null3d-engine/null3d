@@ -209,6 +209,8 @@ async function start(
 				freshShaders: false,
 				sceneColor: FORMAT_RGBA16_FLOAT,
 				antialias: C.ANTIALIAS_MSAA,
+				effectsSceneColor: FORMAT_RGBA16_FLOAT,
+				effectsAntialias: C.ANTIALIAS_MSAA,
 				transparent: false,
 				shaderBits: 0,
 				cellCulling: true,

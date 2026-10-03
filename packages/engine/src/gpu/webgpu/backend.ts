@@ -5,6 +5,7 @@
 import * as G from '../../generated/gpu';
 import type { DeviceShaders } from '../../generated/shaders';
 import { ImageTable } from '../../shared/images';
+import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
 import type { GpuTimer } from './gpu-timer';
 import { Pipelines, type RenderTemplate } from './pipelines';
@@ -112,6 +113,11 @@ export class WebGPUBackend {
 	private readonly canvasFormat: GPUTextureFormat;
 	/** Times the passes of each frame, while the page measures. */
 	timer: GpuTimer | undefined;
+	/**
+	 * The device shaders that load another module when a pipeline needs builds with other fixed
+	 * bits. Without it, every pipeline's build must be in the shaders that the backend got.
+	 */
+	moreShaders: DeviceShaderSet | undefined;
 	/**
 	 * What the replays since the last reset uploaded, the part that went through staging, drew and
 	 * built, the other GPU objects they made, and the draw commands they skipped because their
@@ -434,14 +440,17 @@ export class WebGPUBackend {
 	}
 
 	/**
-	 * True when a render pipeline template can build pipelines now: an engine template, or a custom
-	 * material's whose shader arrived, which it defines at its first use.
+	 * True when a render pipeline template can build a pipeline of `permutation` now: an engine
+	 * template whose build for it is loaded, or a custom material's whose shader arrived, which it
+	 * defines at its first use.
 	 */
-	private templateReady(template: number): boolean {
-		if (this.pipelines.has(template)) return true;
-		const shader = this.images.shaders.get(template);
-		if (shader) this.pipelines.defineCustom(template, shader);
-		return shader !== undefined;
+	private templateReady(template: number, permutation: number): boolean {
+		if (!this.pipelines.has(template)) {
+			const shader = this.images.shaders.get(template);
+			if (!shader) return false;
+			this.pipelines.defineCustom(template, shader);
+		}
+		return this.moreShaders?.ready(this.pipelines.variants(template), permutation, 'wgsl') ?? true;
 	}
 
 	/** Starts to build each parked pipeline whose custom material's shader has arrived. */
@@ -449,7 +458,7 @@ export class WebGPUBackend {
 		const parked = this.parked;
 		for (let k = parked.length - 1; k >= 0; k--) {
 			const operands = parked[k] as Uint32Array;
-			if (!this.templateReady(operands[1] as number)) continue;
+			if (!this.templateReady(operands[1] as number, operands[2] as number)) continue;
 			parked.splice(k, 1);
 			this.builds--;
 			this.counts.pipelines--;
@@ -479,7 +488,7 @@ export class WebGPUBackend {
 			);
 			return;
 		}
-		if (!this.templateReady(words[a + 1] as number)) {
+		if (!this.templateReady(words[a + 1] as number, words[a + 2] as number)) {
 			// Its draws draw nothing until the shader arrives and the pipeline builds.
 			this.renderPipelines[id] = null;
 			this.builds++;

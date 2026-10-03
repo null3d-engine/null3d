@@ -153,7 +153,8 @@ Effects:
 | Need | Use | Docs |
 | --- | --- | --- |
 | Tone mapping and exposure | `post.set({ toneMapping, exposure })` | `api/post` |
-| Bloom, ambient occlusion, color grading, outlines | `post.set({ ... })` (0.2) | `api/post` |
+| Bloom | `post.set({ bloom: { strength, radius, threshold } })` (0.2) | `api/post`, `concepts/post-processing` |
+| Ambient occlusion, color grading, outlines | `post.set({ ... })` (0.2) | `api/post` |
 | A custom full-screen effect | `post.addEffect({ name, wgsl, uniforms })` (0.2) | `api/post` |
 | Render to a texture, or add a pass | `render.addPass({ ... })` (0.2) | `guides/custom-passes` |
 | Fog or sky | `scene.setFog` with the fog's color in `scene.setBackground`; `scene.setBackground({ sky })` (0.2) | `api/scene` |
