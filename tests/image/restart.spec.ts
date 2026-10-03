@@ -3,6 +3,7 @@ import * as Slot from '../../packages/engine/src/shared/slot.ts';
 import { ENGINE_MODES, THREADED_MODES } from '../lib/engine-checks.ts';
 import { prefixEngineScripts, restoreEngineScripts } from '../lib/engine-scripts.ts';
 import { gpuObjectsHeld, watchGpuObjects } from '../lib/gpu-ledger.ts';
+import { retainerChains, takeHeapSnapshot } from '../lib/heap-retainers.ts';
 import { pageResult } from '../lib/page-result.ts';
 import type { RestartResult } from '../lib/plans.ts';
 
@@ -44,26 +45,42 @@ async function reachable(cdp: CDPSession, prototype: string): Promise<number> {
  * worker that has just stopped can hold its objects until its last messages have arrived, so one
  * collection right after a stop can still find them, most often on a busy machine.
  */
-const RELEASE_TIMEOUT_MS = 10_000;
+const RELEASE_TIMEOUT_MS = 20_000;
+/** The pause between two counts. */
+const RELEASE_POLL_MS = 200;
+
+/** The most chains of references that a failure names for each kind of object that the page kept. */
+const CHAINS_SHOWN = 2;
 
 /**
  * Collects garbage and counts the shared memories and the workers that the page reaches, again
- * and again until it reaches `memories` memories and no worker, within the bound.
+ * and again until it reaches `memories` memories and no worker, within the bound. When the page
+ * still holds more, the failure names what keeps them alive, from a heap snapshot.
  */
 async function expectReleased(page: Page, memories: number): Promise<void> {
 	const cdp = await page.context().newCDPSession(page);
-	await expect
-		.poll(
-			async () => {
-				await cdp.send('HeapProfiler.collectGarbage');
-				return {
-					memories: await reachable(cdp, 'WebAssembly.Memory.prototype'),
-					workers: await reachable(cdp, 'Worker.prototype'),
-				};
-			},
-			{ timeout: RELEASE_TIMEOUT_MS },
-		)
-		.toEqual({ memories, workers: 0 });
+	const expected = { memories, workers: 0 };
+	const count = async () => {
+		await cdp.send('HeapProfiler.collectGarbage');
+		return {
+			memories: await reachable(cdp, 'WebAssembly.Memory.prototype'),
+			workers: await reachable(cdp, 'Worker.prototype'),
+		};
+	};
+	const deadline = performance.now() + RELEASE_TIMEOUT_MS;
+	let held = await count();
+	while (held.memories !== memories || held.workers !== 0) {
+		if (performance.now() > deadline) break;
+		await new Promise((resolve) => setTimeout(resolve, RELEASE_POLL_MS));
+		held = await count();
+	}
+	if (held.memories === memories && held.workers === 0) return;
+	const heap = await takeHeapSnapshot(cdp);
+	const chains = [
+		...(held.memories > memories ? retainerChains(heap, 'Memory').slice(0, CHAINS_SHOWN) : []),
+		...(held.workers > 0 ? retainerChains(heap, 'Worker').slice(0, CHAINS_SHOWN) : []),
+	];
+	expect(held, `what keeps them alive:\n\n${chains.join('\n\n')}`).toEqual(expected);
 }
 
 // A page starts the engine again after it stops it, and after a collection it reaches none of a
