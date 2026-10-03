@@ -28,7 +28,7 @@ The question has four parts:
 | Orthographic rays, from a height and from four edges | three.js's direction to 1e-9; the origin `near` further along it | Same tests |
 | `worldToScreen` against three.js's `Vector3.project`, both lenses | Equal to 1e-7 pixels; the ray through the result passes within 1e-9 of the point | Same tests |
 | `worldToScreen` 6,378 km from the origin, a point 1 cm off the axis | Within 1e-6 pixels of the exact place | Same tests |
-| A click during a pan of 0.05 radians a frame, in each of the five thread modes | Pending the first browser run | `tests/image/screen-rays.spec.ts` |
+| 8 clicks during a pan of 0.05 radians a frame, Chrome on the Mac | The three pipelined modes: every click named the frame 2 before the one being computed, so the current camera would have been a whole step off, about 8 pixels at the canvas's center. Low latency and single-threaded: every click named the frame before. The ray's turn matched the frame on screen within 1.2e-7 radians in all five modes | `tests/image/screen-rays.spec.ts`, 2026-10-03 |
 | Core calls that copy an array through wasm-bindgen | One allocation in the core and two new typed arrays in JavaScript per call; none after the change | The generated glue (`passArrayF64ToWasm0` and `__wbindgen_copy_to_typed_array`) |
 
 ## Decision
