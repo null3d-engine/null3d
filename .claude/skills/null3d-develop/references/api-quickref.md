@@ -42,7 +42,7 @@ const engine = await createEngine({
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
   memory: { maximumMiB: 1024 },          // the default; up to 4096 for scenes that need more (E1409 outside 256 to 4096)
-  onProgress: (stage) => {},             // 'core', then 'sketch' after the sketch's setup, then 'first-frame'
+  onProgress: (stage) => {},             // 'core', then 'sketch' after the setup and the preset check, then 'first-frame'
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
@@ -60,7 +60,7 @@ engine.detach();                         // single-page apps: canvas off the pag
 engine.attach(container);                // canvas back on the page; the engine resumes with no new start
 engine.setPaused(true);                  // the first step after resuming counts no time
 engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, halfPrecision, maxInstances, depth }
-engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, crashedStarts, memoryMaximumMiB }
+engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, presetCheck, crashedStarts, memoryMaximumMiB }
 const metrics = await engine.measure(5);          // CPU time per thread and phase, GPU time, frame rates, memory
 const frame = await engine.captureFrame();        // { width, height, pixels }: RGBA8 rows, top row first
 engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed */ });

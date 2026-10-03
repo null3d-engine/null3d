@@ -82,7 +82,8 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | High "culling" or "record" with many blended objects | Every frame culls and sorts each view's blended objects on the job workers, and on WebGPU writes each visible one's data | Use `alphaMode: 'mask'` for cut-out shapes, which draw with the opaque objects; keep `'blend'` for what must show through; put blended particles in one instance batch with one material, which draws in few calls when nothing crosses it (`concepts/materials`) |
 | Hitch when something new appears, or it appears a moment late | A rebuild (`rebuilds` above zero), or a pipeline build (`pipelines` above zero) | Create materials and objects during loading; create a later stage hidden, `await scene.warmUp()`, then show it |
 | Hitch while loading during play | Uploads and decoding | Load before play, or stream smaller files; the per-frame upload budget spreads uploads, and `quality.set({ uploadBytesPerFrame })` lowers it |
-| Frame rate drops after a few minutes on a phone | Heat | Aim for 70% of the budget; test 10-minute runs. The governor lowers the render scale, then the shadow updates; lighten your own work in `quality.onChange` by `quality.governor.steps` |
+| 30 frames per second on a 60 Hz display, with the busiest thread's `cpuMs` a little over one refresh | In pipelined mode, a frame that misses one refresh waits for the next | Cut the CPU work below the refresh interval. Or measure `latency: 'low'`: on a warm Galaxy S24+ it showed 40 frames per second where pipelined mode showed 32. On the iPad keep pipelined mode (`guides/performance`) |
+| Frame rate drops after a few minutes on a phone | Heat | Aim for 70% of the budget; test 10-minute runs. The governor lowers the render scale, then the live shadow settings; lighten your own work in `quality.onChange` by `quality.governor.steps` |
 
 ## 5. Phones and tablets
 
@@ -118,7 +119,7 @@ The number of objects and instance rows one scene can draw depends on the GPU pa
 
 ## 7. Quality presets, the governor and your own systems
 
-The engine starts each device on one of four presets: Low, Medium, High or Ultra (`concepts/quality-presets`). Phones start at Low, tablets at Medium and desktops at High. WebGL2 and WebGPU's compatibility mode run at most Medium. After the first frame, the engine checks the preset against the scene and lowers it where the GPU misses the frame rate.
+The engine starts each device on one of four presets: Low, Medium, High or Ultra (`concepts/quality-presets`). Phones start at Low, tablets at Medium and desktops at High. WebGL2 and WebGPU's compatibility mode run at most Medium. When the page names no preset, the engine checks its choice after the first frame, before `createEngine` resolves. It lowers the preset until one holds the target frame rate.
 
 The preset sets these groups of settings. The `concepts/quality-presets` page has each value:
 
@@ -157,7 +158,7 @@ Read the current render scale in `quality.renderScale`, and the shadow settings 
 
 With `createEngine({ depthPrepass: true })`, each camera view first draws the depth of its opaque objects. The opaque pass then shades each pixel once, for its nearest surface. The prepass costs a second pass over the objects' vertices. It saves GPU time only where objects hide many others and their shading costs much, such as a street of lit buildings.
 
-Every preset leaves it off. In the S2 benchmark, a scene with little overdraw, the prepass made the GPU time per frame 45% longer on WebGPU on a Mac. Only WebGPU draws the prepass. On WebGL2, two shader programs can compute different depths where the near plane cuts a triangle, so `quality.settings.depthPrepass` is false there. Blended objects, alpha-cutoff materials and custom materials stay out of the prepass. Turn it on only after you compare the scene's GPU time with `?prepass=on` and `?prepass=off`.
+Every preset leaves it off. S2 is a benchmark scene with little overdraw. In Chrome on a MacBook Pro, the prepass raised its GPU time per frame from 0.28 ms to 0.41 ms. Only WebGPU draws the prepass. On WebGL2, two shader programs can compute different depths where the near plane cuts a triangle, so `quality.settings.depthPrepass` is false there. Blended objects, alpha-cutoff materials and custom materials stay out of the prepass. Turn it on only after you compare the scene's GPU time with `?prepass=on` and `?prepass=off`.
 
 ### Half precision
 
