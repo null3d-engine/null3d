@@ -114,7 +114,7 @@ function shaderValue(shader: unknown): string {
 export function missingCoreFiles(root: string): string[] | null {
 	const require = createRequire(resolve(root, 'package.json'));
 	try {
-		require.resolve('@null3d/engine');
+		require.resolve('@null3d/engine/package.json');
 	} catch {
 		return null;
 	}

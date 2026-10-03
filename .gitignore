@@ -21,9 +21,12 @@ playwright-report/
 .DS_Store
 *.log
 
-# License copies made when a package is packed
+# What a package's pack step makes: the built JavaScript and declarations, the license copies and
+# the engine's copy of the docs (tools/lib/packages.ts)
+packages/*/lib/
 packages/*/LICENSE-MIT
 packages/*/LICENSE-APACHE
+packages/engine/docs/
 
 # Lock files of test fixtures
 tools/fixtures/*/Cargo.lock
