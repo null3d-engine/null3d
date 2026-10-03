@@ -88,11 +88,11 @@ pub mod value {
     /// The part of a spot light's cone, from 0 to 1, over which its light fades out toward the
     /// edge. The default is 0.
     pub const PENUMBRA: u32 = 4;
-    /// How far a receiver's depth moves toward the light before its shadow test, in texels of its
-    /// cascade or its shadow tile. The default is 0.5.
+    /// How far a receiver's point moves toward the light before its shadow test, in meters, up to
+    /// one texel of its cascade or its shadow tile. The default is 0.01.
     pub const SHADOW_BIAS: u32 = 5;
-    /// How far a receiver's point moves along its normal before its shadow test, in texels of its
-    /// cascade or its shadow tile. The default is 1.
+    /// How far a receiver's point moves along its normal before its shadow test, in meters, up to
+    /// one texel of its cascade or its shadow tile. The default is 0.02.
     pub const SHADOW_NORMAL_BIAS: u32 = 6;
     /// The cascades of a directional light's shadows, from 1 to 4. The default is 3.
     pub const SHADOW_CASCADES: u32 = 7;
@@ -106,8 +106,9 @@ pub mod value {
 }
 
 /// The numbers of a new light, by [`value`].
-const DEFAULT_VALUES: [f32; value::LAST as usize + 1] =
-    [1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.0, 0.0, 3.0, 2048.0, 200.0];
+const DEFAULT_VALUES: [f32; value::LAST as usize + 1] = [
+    1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.01, 0.02, 3.0, 2048.0, 200.0,
+];
 
 /// The cone cosines of a point light's [`VisibleLight`] record. Every direction's cosine is above
 /// both, so a shader that fades spot lights with a smooth step between them lets a point light's

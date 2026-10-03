@@ -44,14 +44,16 @@
 //!
 //! # Receivers
 //!
-//! A receiver finds its cascade by its distance along the camera's view, which the camera's scaled
-//! forward axis gives from a position relative to the camera. A box that skipped frames may not
-//! hold a receiver after the camera turned, and the receiver then takes the next cascade whose box
-//! holds it. It moves its point along its normal by [`ShadowSettings::normal_bias`] and toward the
-//! light by [`ShadowSettings::bias`], both in meters and scaled by its angle to the light. Each is
-//! at least a share of a texel at the receiver's distance from the camera, whatever cascade holds
-//! it, so the offsets stay the same while the camera turns. It then compares its depth with the
-//! shadow map's over a square of [`ShadowSettings::filter`] texels on each side.
+//! Behind a perspective camera, a receiver finds its cascade by its distance from the camera, which
+//! stays the same while the camera turns on the spot, so a point keeps its cascade and its shadow.
+//! Behind an orthographic camera it uses its distance along the camera's view. The camera's scaled
+//! forward axis gives both from a position relative to the camera. A box that skipped frames may
+//! not hold a receiver after the camera turned, and the receiver then takes the next cascade whose
+//! box holds it. It moves its point along its normal by [`ShadowSettings::normal_bias`] and toward
+//! the light by [`ShadowSettings::bias`], both in meters, up to one texel of its cascade, and both
+//! scaled by its angle to the light. Offsets in meters keep their size from one cascade to the next.
+//! It then compares its depth with the shadow map's over a square of [`ShadowSettings::filter`]
+//! texels on each side.
 //! Past the shadow distance nothing is shadowed, and shadows fade out over the last tenth of the
 //! distance.
 
@@ -93,9 +95,11 @@ pub struct ShadowSettings {
     pub cascades: u32,
     /// Texels on each side of each cascade's layer of the shadow map.
     pub map_size: u32,
-    /// How far each receiver's point moves toward the light before the lookup, in meters.
+    /// How far each receiver's point moves toward the light before the lookup, in meters, up to one
+    /// texel of its cascade.
     pub bias: f32,
-    /// How far each receiver's point moves along its normal before the lookup, in meters.
+    /// How far each receiver's point moves along its normal before the lookup, in meters, up to one
+    /// texel of its cascade.
     pub normal_bias: f32,
     /// The distance along the camera's view, in meters, out to which shadows fall. The camera's far
     /// plane ends them sooner.

@@ -6,14 +6,15 @@
 // boxes stand in the last cascade. `near` stands at eye height a few meters from a box, in the
 // first cascade, and `far` looks at the same box from about 100 m away and 45 m up, in the last
 // one. Both look at the side where the shadow falls, so the line where it meets the box shows.
-// `turn` looks at that side from 27 m away, just past where the first cascade ends at the middle of
-// the view. ?yaw=<degrees> turns the camera left on the spot, which brings the box's base into the
-// first cascade from about 17 degrees.
+// `turn` looks at that side from 27 m away, just past where the first cascade ends. ?yaw=<degrees>
+// turns the camera left on the spot. From about 17 degrees, the box's distance along the view falls
+// inside the first cascade, while its distance from the camera stays the same.
 //
 // ?moving adds a blue box that drives to and fro along x at 10 m/s, dynamic, behind the still red
 // ones. ?far=<n> sets the frames between two draws of a far cascade, 1 by default, and turns off
 // the governor, which would lengthen it. ?bias= and ?normalBias= set the light's biases.
 import { defineSketch } from '@null3d/engine';
+import { CONTACT_AIM_HEIGHT, CONTACT_TURN } from '../lib/shadow-turn';
 
 const params = new URL(import.meta.url).searchParams;
 /** The frames between two draws of a far cascade, from the sketch module's ?far switch. */
@@ -38,7 +39,7 @@ const VIEWS = {
 	top: { fov: 10, from: [-1, 100, 9] },
 	near: { fov: 50, from: [-5, 1.7, -6] },
 	far: { fov: 6, from: [-50, 45, -70] },
-	turn: { fov: 40, from: [-12.5, 19.5, -15] },
+	turn: { fov: CONTACT_TURN.fovDegrees, from: CONTACT_TURN.from },
 } as const;
 /** How far the camera turns left on the spot, in degrees, from the sketch module's ?yaw switch. */
 const YAW = (Number(params.get('yaw') ?? 0) * Math.PI) / 180;
@@ -56,7 +57,11 @@ export default defineSketch(({ scene, materials, geometry, quality, time }) => {
 		scene.createPerspectiveCamera({
 			fov: view.fov,
 			position,
-			target: [position[0] + cos * dx + sin * dz, y + 0.3, position[2] - sin * dx + cos * dz],
+			target: [
+				position[0] + cos * dx + sin * dz,
+				y + CONTACT_AIM_HEIGHT,
+				position[2] - sin * dx + cos * dz,
+			],
 			near: 0.5,
 			far: 400,
 		}),

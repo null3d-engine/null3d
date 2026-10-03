@@ -64,25 +64,21 @@ const FADE_SHARE: f32 = 0.1;
 /// The most that a surface at a steep angle to the light scales its depth bias by.
 const MAX_SLOPE: f32 = 2.0;
 
-/// The least bias toward the light and normal bias, in texels of the shadow map at the point,
-/// before the surface's angle scales them. Below these, a surface at a steep angle shadows itself
-/// in stripes where texels are coarse.
-const TEXEL_BIASES: vec2f = vec2f(0.1, 0.3);
-
 /// How far a receiver moves before its shadow lookup, relative to its position. `normal` is its unit
 /// normal, `to_light` the unit direction toward the light, `biases` the light's bias toward the
 /// light and normal bias in meters, and `texel` the size of a shadow map texel at the point. Each
-/// bias is at least its share of a texel (`TEXEL_BIASES`), then scales by the surface's angle to the
-/// light: the normal bias by the angle's sine, and the bias toward the light by its tangent, up to
-/// `MAX_SLOPE`. A surface that faces the light moves little, so a caster's shadow starts where it
-/// stands on such a surface. One at a steep angle moves further, as its depth changes faster across
-/// each texel.
+/// bias keeps its size in meters in every cascade, so it does not jump where one cascade gives way
+/// to the next. One texel caps it, as a finer map needs less. Then it scales by the surface's angle
+/// to the light: the normal bias by the angle's sine, and the bias toward the light by its tangent,
+/// up to `MAX_SLOPE`. A surface that faces the light moves little, so a caster's
+/// shadow starts where it stands on such a surface. One at a steep angle moves further, as its depth
+/// changes faster across each texel.
 fn bias_offset(normal: vec3f, to_light: vec3f, biases: vec2f, texel: f32) -> vec3f {
     let cosine = clamp(dot(normal, to_light), 0.0, 1.0);
     let sine = sqrt(1.0 - cosine * cosine);
     let slope = min(sine, MAX_SLOPE * cosine) / max(cosine, 1e-4);
-    let least = max(biases, TEXEL_BIASES * texel);
-    return to_light * (least.x * slope) + normal * (least.y * sine);
+    let capped = min(biases, vec2f(texel));
+    return to_light * (capped.x * slope) + normal * (capped.y * sine);
 }
 
 /// How much of the main directional light reaches a point: 1 in full light, 0 in full shadow.
@@ -198,8 +194,8 @@ fn cube_face(direction: vec3f) -> u32 {
 /// How much of a point or spot light reaches a point: 1 in full light, 0 in full shadow. `first`
 /// is the light's first tile. `relative` is the point's position relative to the camera, `normal`
 /// its unit normal, `to_light` the unit direction toward the light, and `gap` the distance to it.
-/// The light's biases are in meters, at least their shares of the tile's texel at the point's
-/// distance from the light (`bias_offset`). A point outside its tile's view is lit.
+/// The light's biases are in meters, up to one texel of the tile at the point's distance from the
+/// light (`bias_offset`). A point outside its tile's view is lit.
 fn light_shadow(first: u32, relative: vec3f, normal: vec3f, to_light: vec3f, gap: f32) -> f32 {
     let params = tiles.params[first];
     let moved = relative + bias_offset(normal, to_light, params.yz, params.x * gap);

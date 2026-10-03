@@ -24,7 +24,7 @@ flowchart LR
 
 A directional light casts shadows when you create it with `castShadows: true` or call `setCastShadows(true)`. An object casts shadows with `castShadows: true`, and shadows fall on it with `receiveShadows: true`. All three are false by default, as in three.js.
 
-The engine splits the camera's view by distance into cascades. Each cascade is a box along the light that holds one slice of the view. Near slices are short and far slices long, so each cascade covers about the same share of the screen. Shadows near the camera then stay sharp. When a cascade draws, it culls the casters in its box and draws their depth from the light into its layer of the shadow map. A surface that receives shadows then finds its cascade and compares its depth from the light with the depth in the map.
+The engine splits the camera's view by distance into cascades. Each cascade is a box along the light that holds one slice of the view. Near slices are short and far slices long, so each cascade covers about the same share of the screen. Shadows near the camera then stay sharp. When a cascade draws, it culls the casters in its box and draws their depth from the light into its layer of the shadow map. A surface that receives shadows then finds its cascade by its distance from the camera. It compares its depth from the light with the depth in the map.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -134,14 +134,14 @@ The `shadow` option of `createDirectionalLight` and the light's `setShadow` call
 | `cascades` | 3 | The cascades, from 1 to 4. More cascades keep shadows sharp further from the camera, and each draws the casters once more. |
 | `mapSize` | 2,048 | Texels on each side of each cascade's layer: 256, 512, 1,024, 2,048 or 4,096. |
 | `distance` | 200 | How far from the camera, in meters along its view, shadows fall. The camera's far plane ends them sooner. Shadows fade out over the last tenth of the distance. |
-| `bias` | 0.2 | How far each receiving surface moves toward the light before its test, in texels of its cascade, scaled by its angle to the light. |
-| `normalBias` | 0.3 | How far each receiving surface moves along its normal before its test, in texels of its cascade, scaled by its angle to the light. |
+| `bias` | 0.01 | How far each receiving surface moves toward the light before its test, in meters, up to one texel of its cascade, scaled by its angle to the light. |
+| `normalBias` | 0.02 | How far each receiving surface moves along its normal before its test, in meters, up to one texel of its cascade, scaled by its angle to the light. |
 
 A shorter `distance` gives the cascades smaller boxes, so shadows get sharper. Set it to the distance at which shadows still matter in your scene.
 
 A new cascade count or map size makes the shadow map again, so set them at setup. The other settings cost nothing to change, so a sketch can change them in any frame.
 
-The `shadow` option and `setShadow` of spot and point lights take `bias` and `normalBias` alone, with the same defaults. Both count texels of the light's tile at the receiving surface's distance from the light. The preset sets the tile size.
+The `shadow` option and `setShadow` of spot and point lights take `bias` and `normalBias` alone, with the same defaults. Both are in meters, up to one texel of the light's tile at the receiving surface's distance from the light. The preset sets the tile size.
 
 ## Where the cascades split
 
@@ -167,6 +167,8 @@ The last cascade always ends at `distance`, so its texels depend only on `distan
 Shadow edges stay still while the camera turns and moves. Each cascade's box holds a sphere around its slice of the view, so the box keeps its size as the camera turns. The box also moves only in steps of whole texels of the shadow map, on a grid fixed to the world. So a caster always covers the same texels, and its shadow's edge does not crawl or shimmer.
 
 The sphere wastes some of each layer's texels, so these shadows are a little softer than a box fitted tightly to each frame. Shorten `distance` or raise `mapSize` for sharper shadows.
+
+A surface picks its cascade by its distance from the camera, which a turn on the spot does not change. So a surface keeps its cascade while the camera turns, and its shadow keeps the same texels. A surface near the side of a wide view can then read a coarser cascade, so its shadow is a little softer. Behind an orthographic camera, whose cascades all have texels of one size, a surface uses its distance along the camera's view instead.
 
 ## Update rates
 
@@ -197,16 +199,18 @@ Each read weights the texels by where the point falls between them, so an edge m
 
 ## Bias
 
-A surface that casts and receives shadows can shadow itself in stripes, which is called shadow acne. It comes from the finite size of the map's texels. Both biases work in texels of the surface's cascade, so one setting suits near and far cascades alike.
+A surface that casts and receives shadows can shadow itself in stripes, which is called shadow acne. It comes from the finite size of the map's texels. Both biases move the surface before its test, in meters:
 
-- `bias` moves the surface's depth toward the light. The move is the setting times the tangent of the angle between the surface and the light, up to twice the setting.
+- `bias` moves the surface toward the light. The move is the setting times the tangent of the angle between the surface and the light, up to twice the setting.
 - `normalBias` moves the surface along its normal, by the setting times the sine of that angle.
 
-A surface that faces the light takes little of either. A surface at a steep angle takes more, because its depth changes faster across each texel. The casters draw only the faces that point away from the light, as three.js's shadows draw them. That keeps acne off most surfaces that face the light.
+A surface that faces the light takes little of either. A surface at a steep angle takes more, because its depth changes faster across each texel. The casters draw only the faces that point away from the light, as three.js's shadows draw them. A closed mesh's lit faces then compare with its far side, which keeps acne off most surfaces. A caster that draws both faces, such as a plane with a double-sided material, is the likeliest to show acne.
 
-The biases of spot and point lights work the same way, in texels of their tiles. A texel of a tile grows with the distance from the light, so the biases grow with it.
+A bias in meters keeps its size in every cascade. So where a shadow meets its caster does not change where one cascade gives way to the next. One texel of the surface's cascade caps each bias, as a fine map needs less. With the defaults, the cap acts only where a texel covers less than 2 cm.
 
-Values that are too large make shadows start a little away from their casters. A thin lit line then shows at each object's base. A box's bottom face lies on the ground and draws into the map. A receiver moved too far from the ground counts that face as below it. The filter then reads the ground under the box as lit. The line widens with the texels, so it shows first in far cascades. The defaults keep shadows against the base of a car-sized box from near the camera out to the last cascade. Take the ground just past a box's base in the last cascade, under S4's sun. The old defaults of 0.5 and 1 texel left it at 0.75 of its lit brightness. The new ones leave it at 0.56, and no bias at 0.50. Raise them in small steps if a surface shows acne.
+The biases of spot and point lights work the same way, in meters. One texel of the light's tile at the surface's distance from the light caps them.
+
+Values that are too large make shadows start a little away from their casters. A thin lit line then shows at each object's base. A box's bottom face lies on the ground and draws into the map. A receiver moved too far from the ground counts that face as below it. The filter then reads the ground under the box as lit. The defaults keep shadows against the base of a car-sized box from near the camera out to the last cascade. Take the ground just past a box's base in the last cascade, under S4's sun, seen from above. Biases of 0.2 and 0.3 texels of each cascade left it at 0.62 of its lit brightness. The defaults leave it at 0.57, and no bias at 0.56. Raise the biases in small steps if a surface shows acne. A bias above one texel acts as one texel.
 
 ## Which objects cast and receive
 
@@ -240,7 +244,7 @@ WebGPU and WebGL2 draw the same shadows. Both keep the shadow map and the shadow
 - `object.castShadow` and `object.receiveShadow` become `castShadows` and `receiveShadows`.
 - `light.shadow.camera` has no equivalent. The cascades fit the camera's view by themselves, so delete the shadow camera's bounds.
 - `light.shadow.mapSize` becomes one number, `mapSize`, the texels on each side.
-- `light.shadow.bias` and `light.shadow.normalBias` count texels of each cascade, scaled by each surface's angle to the light, where three.js counts depth units and meters. Start from the defaults.
+- `light.shadow.normalBias` is in meters, as in three.js. `light.shadow.bias` is in meters too, where three.js counts depth units. Both scale with each surface's angle to the light, and one texel caps them. Start from the defaults.
 - `renderer.shadowMap.type` becomes the `shadowFilter` quality setting: `PCFShadowMap` and `PCFSoftShadowMap` map to 3 or 5. `BasicShadowMap` and `VSMShadowMap` have no equivalent.
 - `light.shadow.radius` and `light.shadow.blurSamples` become the `shadowFilter` setting too, for every light.
 - The CSM addon is built in: set `cascades` on the directional light. Its `maxFar` and `shadowMapSize` become `distance` and `mapSize`.
