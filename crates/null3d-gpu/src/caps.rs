@@ -118,6 +118,14 @@ pub const BUDGET: [u32; LIMIT_COUNT] = [
     8,                 // vertex buffers
 ];
 
+/// The largest side of a cube texture's faces that every path allows: the smallest
+/// `MAX_CUBE_MAP_TEXTURE_SIZE` that WebGL2 permits. WebGPU allows its 2D texture size.
+pub const CUBE_TEXTURE_SIZE: u32 = 2048;
+
+/// The largest width, height and depth of a 3D texture that every path allows: the smallest
+/// `MAX_3D_TEXTURE_SIZE` that WebGL2 permits. WebGPU allows 2,048, in compatibility mode too.
+pub const TEXTURE_3D_SIZE: u32 = 256;
+
 /// Every buffer offset the engine binds dynamically aligns to this many bytes, the largest
 /// alignment any tested browser requires.
 pub const OFFSET_ALIGNMENT: u32 = 256;

@@ -61,9 +61,13 @@ export const FORMAT_ETC2_RGB8_UNORM = 15;
 export const FORMAT_ETC2_RGB8_UNORM_SRGB = 16;
 export const FORMAT_ETC2_RGBA8_UNORM = 17;
 export const FORMAT_ETC2_RGBA8_UNORM_SRGB = 18;
+export const FORMAT_RGB9E5_UFLOAT = 19;
 
 export const VIEW_2D = 0;
 export const VIEW_2D_ARRAY = 1;
+export const VIEW_CUBE = 2;
+export const VIEW_3D = 3;
+export const VIEW_CUBE_FACES = 6;
 
 export const ADDRESS_CLAMP_TO_EDGE = 0;
 export const ADDRESS_REPEAT = 1;
@@ -195,8 +199,8 @@ export const SIZE_SHADOW_UNIFORM_BYTES = 336;
 export const SIZE_SHADOW_TILES_UNIFORM_BYTES = 1936;
 
 /** Bytes of one block of texels of each format, by format code: one texel unless compressed. */
-export const FORMAT_BLOCK_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4, 16, 16, 16, 16, 8, 8, 16, 16];
+export const FORMAT_BLOCK_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4, 16, 16, 16, 16, 8, 8, 16, 16, 4];
 /** Texels on each side of a block of each format, by format code. */
-export const FORMAT_BLOCK_SIZE: readonly number[] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4];
+export const FORMAT_BLOCK_SIZE: readonly number[] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1];
 /** Each vertex attribute in vertex order: its format bit (0 for one every format has), its floats and its shader location. */
 export const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, floats: number, location: number])[] = [[0, 3, 0], [0, 3, 1], [1, 2, 2], [2, 2, 3], [4, 4, 4], [8, 4, 5]];
