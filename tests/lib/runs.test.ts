@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
@@ -396,9 +396,10 @@ describe('the checks plan', () => {
 			planItems(parseArgs(['--plan', 'parity', 'Safari']))?.some((item) => isLoadPath(item.path)),
 		).toBe(false);
 		// Every timed run of a benchmark page loads the production build, as a developer ships it.
-		expect(
-			planItems(parseArgs(['--plan', 'bench', 'Safari']))?.every((item) => isLoadPath(item.path)),
-		).toBe(true);
+		// The visual checks need the debug views of a development build.
+		const bench = planItems(parseArgs(['--plan', 'bench', 'Safari'])) ?? [];
+		for (const item of bench) expect(isLoadPath(item.path)).toBe(item.check.kind === 'bench');
+		expect(bench.filter((item) => item.check.kind === 'visual')).toHaveLength(2);
 		expect(planItems(parseArgs(['--plan', 'scale', 'Safari']))).toBeUndefined();
 	});
 
@@ -416,7 +417,7 @@ describe('the checks plan', () => {
 	it("notes each device's quality preset, and fails one that the chooser does not give", () => {
 		const quality = items.find((item) => item.id === 'quality');
 		if (!quality) throw new Error('the plan lacks the quality page');
-		expect(quality.path).toBe('/tests/pages/quality.html');
+		expect(quality.path).toBe('/tests/pages/quality.html?check=fresh');
 		const tablet = { coarsePointer: true, screenMinEdge: 834, deviceMemoryGB: null };
 		const round = (preset: string, fps: number) => ({
 			preset,
@@ -450,7 +451,7 @@ describe('the checks plan', () => {
 		// The heavy scene's page: the check must lower the chosen preset.
 		const heavy = overloadPlan().find((item) => item.id === 'preset-check');
 		if (!heavy) throw new Error('the plan lacks the preset check page');
-		expect(heavy.path).toBe('/tests/pages/quality.html?spheres=32768');
+		expect(heavy.path).toBe('/tests/pages/quality.html?spheres=32768&check=fresh');
 		const lowered = result('medium', [round('medium', 20), round('low', 25)]);
 		expect(judge(heavy.check, lowered, NONE_MISSING, context)).toEqual([]);
 		expect(judge(heavy.check, result('medium'), NONE_MISSING, context)).toEqual([
@@ -831,7 +832,7 @@ describe('the checks plan', () => {
 		).toEqual(['the page is not cross-origin isolated', 'the threaded build did not load']);
 	});
 
-	it('starts and stops the engine again and again in every mode', () => {
+	it('starts and stops the engine again and again in every mode, and in frames', () => {
 		const restarts = items.filter((item) => item.check.kind === 'restarts');
 		expect(restarts.map((item) => item.path)).toEqual([
 			'/tests/pages/shared-memory.html',
@@ -839,6 +840,9 @@ describe('the checks plan', () => {
 			'/tests/pages/shared-memory.html?threads=off',
 			'/tests/pages/shared-memory.html?render=main',
 			'/tests/pages/shared-memory.html?sketch-thread=main',
+			'/tests/pages/shared-memory.html?kinds=frame',
+			'/tests/pages/shared-memory.html?kinds=frame&latency=low',
+			'/tests/pages/shared-memory.html?kinds=frame&render=main',
 		]);
 	});
 
@@ -872,6 +876,18 @@ describe('the checks plan', () => {
 		expect(judge(restart.check, result({ kinds: { engine: failed } }), NONE_MISSING)).toEqual([
 			"start and stop 3 of 10 failed: the engine start took more than 20 s; the page's last steps: 10 ms core; 11 ms null3d-sketch: started",
 		]);
+		const inFrames = items.find((item) => item.id === 'frame-restarts-pipelined');
+		if (!inFrames) throw new Error('the plan lacks the restart pages with frames');
+		expect(
+			judge(
+				inFrames.check,
+				result({ kinds: { frame: { ...engine, roomLater: 0 } } }),
+				NONE_MISSING,
+			),
+		).toEqual([
+			'the browser did not get back the memory of engines in removed frames within 31 s: it had room for 6 shared memories before 10 starts in frames, and for 0 after',
+		]);
+		expect(judge(inFrames.check, result({}), NONE_MISSING)).toEqual(['the page started no engine']);
 	});
 
 	it('quotes the last steps of a page that gave no result', () => {
@@ -1060,7 +1076,7 @@ describe('the parity plan', () => {
 describe('the bench plan', () => {
 	it('runs each page five times by default, and the pages take turns run by run', () => {
 		const items = benchPlan();
-		expect(items).toHaveLength(35);
+		expect(items).toHaveLength(37);
 		expect(items.slice(0, 7).map((item) => item.id)).toEqual([
 			'bench-s1-null3d-webgpu-1',
 			'bench-s1-null3d-webgl2-1',
@@ -1070,13 +1086,22 @@ describe('the bench plan', () => {
 			'bench-s1-threejs-webgl-1',
 			'bench-s1-scene-code-1',
 		]);
-		expect(items.at(-1)?.id).toBe('bench-s1-scene-code-5');
-		// Both latency modes run, so a device's results compare them.
+		expect(items.at(-3)?.id).toBe('bench-s1-scene-code-5');
+		// Both latency modes run, so a device's results compare them. The first run of each null3D
+		// page captures its frame after its measured seconds.
 		expect(items[2]).toEqual({
 			id: 'bench-s1-null3d-webgpu-low-1',
-			path: '/__null3d/load/warm/{run}.{runner}.bench/bench/pages/null3d/s1.html?gpu=webgpu&latency=low',
+			path: '/__null3d/load/warm/{run}.{runner}.bench/bench/pages/null3d/s1.html?gpu=webgpu&latency=low&capture',
 			timeoutSeconds: 95,
 			check: { kind: 'bench', tier: 'webgpu', scene: 's1', page: 'null3d-webgpu-low' },
+		});
+		expect(items.slice(7).filter((item) => item.path.includes('capture'))).toEqual([]);
+		// After the timed runs, each scene's visual check on each GPU path, at the desktop's preset.
+		expect(items.at(-1)).toEqual({
+			id: 'visual-s1-webgl2',
+			path: '/tests/pages/visual.html?gpu=webgl2&scene=%2Fbench%2Fpages%2Fnull3d%2Fs1-sketch.ts%3Fn%3D100000&size=640x360&images&preset=high',
+			timeoutSeconds: 600,
+			check: { kind: 'visual', tier: 'webgl2', scene: 's1' },
 		});
 	});
 
@@ -1093,8 +1118,8 @@ describe('the bench plan', () => {
 
 	it('takes the number of runs and the instance count', () => {
 		const items = benchPlan({ runs: 2, count: 1000 });
-		expect(items).toHaveLength(14);
-		expect(items.every((item) => item.path.endsWith('n=1000'))).toBe(true);
+		expect(items).toHaveLength(16);
+		expect(items.every((item) => decodeURIComponent(item.path).includes('n=1000'))).toBe(true);
 	});
 
 	it("runs null3D's two GPU paths at each job worker count, every count in each run", () => {
@@ -1129,9 +1154,11 @@ describe('the bench plan', () => {
 			'bench-s1-static-null3d-webgl2-low-1',
 			'bench-s2-null3d-webgl2-1',
 			'bench-s2-null3d-webgl2-low-1',
+			'visual-s1-static-webgl2',
+			'visual-s2-webgl2',
 		]);
 		expect(items[1]?.path).toBe(
-			'/__null3d/load/warm/{run}.{runner}.bench/bench/pages/null3d/s1-static.html?gpu=webgl2&latency=low',
+			'/__null3d/load/warm/{run}.{runner}.bench/bench/pages/null3d/s1-static.html?gpu=webgl2&latency=low&capture',
 		);
 		expect(items[1]?.check).toEqual({
 			kind: 'bench',
@@ -1229,6 +1256,54 @@ describe('the bench plan', () => {
 		]);
 		expect(plain[10]).toStartWith('s1: null3d on WebGPU takes');
 		expect(benchSummary(memoryPlan({ runs: 1 }), result)).toBeUndefined();
+	});
+
+	it("judges each visual check by its scene's limits, and saves its frames in the run", () => {
+		const root = mkdtempSync(join(tmpdir(), 'visual-'));
+		const [visual] = benchPlan({ runs: 1, scenes: ['s4'], pages: ['null3d-webgpu'] }).slice(1);
+		if (visual?.check.kind !== 'visual') throw new Error('the plan has no visual check');
+		const png = Buffer.from('a PNG file').toString('base64');
+		const figures = (changedPercent: number, offsetPixels: number): ItemResult => ({
+			ok: true,
+			stability: { changedPercent, meanChangedPercent: 0, shadowedPercent: 23 },
+			edges: { offsetPixels },
+			images: { 'moving-1': png },
+		});
+		const context = { resultOf: () => undefined, imageDir: root };
+		expect(judge(visual.check, figures(0.004, 0.09), NONE_MISSING, context)).toEqual([]);
+		expect(readFileSync(join(root, 'frames', 's4-webgpu', 'moving-1.png'), 'utf8')).toBe(
+			'a PNG file',
+		);
+		expect(judge(visual.check, figures(1.86, 0.14), NONE_MISSING, context)).toEqual([
+			'1.860% of the pixels changed their shadow between frames, over the limit of 0.05%',
+			"shadow edges stray 0.140 px from the reference's, over the limit of 0.12 px",
+		]);
+	});
+
+	it('prints the visual figures beside the timings of the null3D pages, and marks those over', () => {
+		const items = benchPlan({
+			runs: 1,
+			scenes: ['s4'],
+			pages: ['null3d-webgpu', 'threejs-webgpu'],
+		});
+		const result = (id: string): ItemResult =>
+			id.startsWith('visual-')
+				? {
+						ok: true,
+						stability: { changedPercent: 1.86, meanChangedPercent: 1.8, shadowedPercent: 23 },
+						edges: { offsetPixels: 0.095 },
+					}
+				: {
+						ok: true,
+						frames: 300,
+						cpuMs: { median: 2, p95: 2, p99: 2, mean: 2 },
+						intervalMs: { median: 16.7, p95: 17, p99: 18 },
+					};
+		const lines = benchSummary(items, result)?.split('\n') ?? [];
+		expect(lines[0]).toContain('| GPU ms | Shadow pixels changed, % | Shadow edge offset, px |');
+		const cells = (line: string | undefined) => line?.split(' | ').slice(10, 12);
+		expect(cells(lines[2])).toEqual(['1.860 OVER 0.05', '0.095']);
+		expect(cells(lines[3])).toEqual(['n/a', 'n/a']);
 	});
 });
 

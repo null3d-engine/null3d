@@ -64,3 +64,18 @@ three.js sets no memory budget. `renderer.info.memory` counts the geometries and
 - [Phones and tablets](../../docs/guides/phones.md#memory) gives the measured points.
 - T-25 closed on 2026-10-03 with the failure points.
 - The record is in the table in README.md.
+
+## Each preset's memory (M1-G6)
+
+M1-G6 tuned the shadow settings of each preset (D-11), and their shadow maps share the GPU memory that the texture budget plans for. The table gives each preset's planned GPU memory, and the WebAssembly maximum:
+
+| Preset | Serves | Texture budget | Shadow maps | WebAssembly maximum | Under half the lowest point of its devices |
+| --- | --- | --- | --- | --- | --- |
+| Low | Phones, and tablets that the preset check lowers | 256 MiB | 8 MiB: 2 cascades of 1,024 texels | 1024 MiB | Yes: 268 of 1008 MiB on the iPad |
+| Medium | Tablets | 512 MiB | 48 MiB: 3 cascades of 2,048 texels | 1024 MiB | Yes: 568 of 1008 MiB on the iPad |
+| High | Desktops | 1024 MiB | 48 MiB | 1024 MiB | Not measured on desktops |
+| Ultra | Desktops, when a page asks | 2048 MiB | 256 MiB: 4 cascades of 4,096 texels | 1024 MiB | Not measured on desktops |
+
+The shadow atlas of spot and point lights holds `shadowTiles` tiles of `shadowTileSize` texels, 4 bytes each. It adds at most 4 MiB on Low, 8 MiB on Medium, 64 MiB on High and 96 MiB on Ultra. The last column counts it.
+
+The WebAssembly column checks only on the S24+, as the iPad's step has no result yet. The texture budget stays a planned setting: the engine counts each texture's GPU memory, but no preset applies a budget to it yet. M1-G6 keeps every value above, and the cap of 1008 MiB on phones and tablets stays for the task that builds the budget.

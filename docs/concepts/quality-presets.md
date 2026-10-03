@@ -69,6 +69,8 @@ A memory reading under 4 GB lowers the starting preset by one.
 
 Only Chromium browsers report the device's memory, and they report at most 8 GB. So memory can lower a preset, but it never raises one. The engine picks Ultra only when a page asks for it.
 
+A tablet slows down as it heats up, and then Medium and High can take longer than a frame. In the S4 benchmark, an 11-inch iPad Pro held 60 frames per second at Medium while cool. After a few minutes it ran at about 45, with the governor at its lowest render scale and every shadow step taken. A cool tablet passes the preset check at Medium, so the engine still starts tablets there. On a warm tablet, only Low aims for 60 frames per second. Medium and High trade frame rate for sharper shadows and edges. When a steady rate matters more, name Low: `createEngine({ canvas, sketch, preset: 'low' })`.
+
 The GPU path then caps the preset, because WebGL2 and WebGPU's compatibility mode lack features that the heavier presets use. For example, compatibility mode cannot draw multisampled float targets.
 
 <!-- null3d:preset-ceilings:start -->
@@ -120,7 +122,20 @@ Device hints only suggest a preset. A laptop with a weak GPU and a desktop with 
 
 <!-- null3d:preset-check:end -->
 
-The engine checks only a preset that it chose itself, when a lighter preset exists. A preset that the page names, the `?preset=` switch, and hold mode skip the check. So does Low, as on phones. The first frame does not wait for the check, but `createEngine` does. The check takes about three quarters of a second, and as long again for each lighter preset that it measures. So keep the loading screen until `createEngine` has resolved and `engine.firstFrame` has too.
+The engine checks only a preset that it chose itself, when a lighter preset exists. A preset that the page names, the `?preset=` switch, and hold mode skip the check. So does Low, as on phones. The first frame does not wait for the check, but `createEngine` does. The check takes at least three quarters of a second for each preset that it measures. That was about 0.8 seconds on a MacBook Pro, and about 1 second on an 11-inch iPad Pro. So keep the loading screen until `createEngine` has resolved and `engine.firstFrame` has too.
+
+### Repeat visits
+
+The engine stores the check's result in the page's `localStorage`, one for each sketch module. A later start of the sketch in the same browser on the same device takes that result and skips the check. Its setup already runs at the preset that the check chose, so `createEngine` resolves as soon as the setup ends. On an 11-inch iPad Pro, the check took about a second for each preset that it measured. There the benchmark scenes and demos showed their first frame after 1 to 2.4 seconds on a first visit. A repeat visit took 0.25 to 0.52 seconds.
+
+A stored result applies only while the start matches the one that the check measured:
+
+- The engine would check the same preset, on the same GPU path, with the same `?fps=` switch.
+- The browser reports the same GPU, the same device hints and the same screen pixel ratio.
+- The canvas's area is within a quarter of the measured one, either way.
+- The check ran within the last week, and the last start of the sketch did not crash the tab.
+
+Otherwise the engine measures again and stores the new result. It stores no result that it measured against a target below 60 frames per second. A display that saves power with a lower refresh rate gives such a target. The settings fixed at the start keep the values of the preset that the check started from, as they do after the check's own steps. When the browser refuses the storage, each start measures. The `?check=fresh` switch makes the engine measure again too.
 
 The check measures the scene as the setup left it. So build the scene in the setup, and load its textures there: the check waits while textures upload. A scene that the setup leaves empty passes the check on any GPU.
 
@@ -132,6 +147,7 @@ const check = engine.mode.presetCheck;
 if (check && check.from !== engine.mode.preset)
   console.log(`${check.from} missed ${check.targetFps} fps; the engine runs ${engine.mode.preset}`);
 // check.rounds: [{ preset: 'high', presentedFps: 31, completedFps: 29.6 }, ...]
+// check.reused: true when the engine took the result from an earlier start
 ```
 
 ## Switching presets
@@ -152,9 +168,9 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Lowest render scale (`minRenderScale`) | 0.5 | 0.6 | 0.75 | 1 | during play | built |
 | Highest render scale (`maxRenderScale`) | 1 | 1 | 1 | 1 | during play | built |
 | Anti-aliasing (`antialias`) | FXAA | MSAA 4x | MSAA 4x | MSAA 4x | at the start | built |
-| Shadow cascades (`shadowCascades`) | 1 | 2 | 3 | 4 | at the start | planned |
-| Shadow map size in texels (`shadowMapSize`) | 1024 | 2048 | 2048 | 4096 | at the start | planned |
-| Shadow filter (`shadowFilter`) | 3 x 3 texels | 3 x 3 texels | 5 x 5 texels | 5 x 5 texels | during play | built |
+| Shadow cascades (`shadowCascades`) | 2 | 3 | 3 | 4 | at the start | built |
+| Shadow map size in texels (`shadowMapSize`) | 1024 | 2048 | 2048 | 4096 | at the start | built |
+| Shadow filter (`shadowFilter`) | 3 x 3 texels | 5 x 5 texels | 5 x 5 texels | 5 x 5 texels | during play | built |
 | Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame | during play | built |
 | Spot and point light shadow tiles (`shadowTiles`) | 4 | 8 | 16 | 24 | at the start | built |
 | Shadow tile size in texels (`shadowTileSize`) | 512 | 512 | 1024 | 1024 | at the start | built |

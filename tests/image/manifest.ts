@@ -401,7 +401,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: FAR_OUT_TOLERANCE,
 	},
 	// Each debug view of a scene with lit, unlit, see-through and instanced objects, on every tier.
-	...(['normals', 'depth', 'overdraw', 'wireframe'] as const).map(
+	...(['normals', 'depth', 'overdraw', 'wireframe', 'shadows'] as const).map(
 		(view): ImageTest => ({
 			name: `debug-view-${view}`,
 			sketch: `tests/pages/sketches/debug-view-sketch.ts?view=${view}`,

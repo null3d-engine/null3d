@@ -15,6 +15,7 @@ import {
 	gpuApiOfPage,
 	type HoldFrame,
 	holdPagePath,
+	isNull3dPage,
 	JOBS_PAGES,
 	PARITY_SCENES,
 	TIERS as PARITY_TIERS,
@@ -22,6 +23,7 @@ import {
 	pagePath,
 	parityFiles,
 	passesWithBaseline,
+	REFERENCE_PRESET_SWITCH,
 	SCENE_CODE,
 	type StoredBaselines,
 	TIER_PAIRS,
@@ -31,6 +33,7 @@ import {
 	benchReport,
 	type SummaryRow,
 	summaryRow,
+	type VisualFigures,
 } from '../../bench/lib/report.ts';
 import {
 	groupSamples,
@@ -40,6 +43,7 @@ import {
 	startupProblems,
 	startupTable,
 } from '../../bench/lib/startup.ts';
+import { SCENE_COUNTS, visualPagePath } from '../../bench/lib/visual.ts';
 import {
 	SOAK_SAMPLE_SECONDS,
 	SOAK_TABLE_HEAD,
@@ -47,14 +51,7 @@ import {
 	soakProblems,
 	soakRow,
 } from '../../bench/pages/lib/device-soak.ts';
-import {
-	createS4,
-	MEASURE_SECONDS,
-	S1_DEFAULT_COUNT,
-	S2_NODE_COUNT,
-	S3_DEFAULT_COUNT,
-	WARMUP_SECONDS,
-} from '../../bench/scenes/spec.ts';
+import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import {
@@ -126,6 +123,12 @@ import {
 } from './runs.ts';
 import { type StatsResult, statsProblems } from './stats-checks.ts';
 import { progressName, REST_AFTER_TAB_END_SECONDS } from './tab-end.ts';
+import {
+	saveVisualResult,
+	VISUAL_LIMITS,
+	type VisualResult,
+	visualProblems,
+} from './visual-checks.ts';
 import { type WarmUpResult, warmUpProblems } from './warm-up-checks.ts';
 import {
 	WARM_UP_TABLE_HEAD,
@@ -149,7 +152,11 @@ export type Check =
 	| { kind: 'capture'; tier: Tier; mode: EngineMode }
 	/** The KTX2 page: each file becomes the compressed format that the device supports. */
 	| { kind: 'ktx2'; tier: Tier }
-	| { kind: 'restarts'; mode: EngineMode }
+	/**
+	 * The shared memory page: engines that start and stop on the page, or that start in frames
+	 * that the page removes while they run, more of them than the browser has room for at once.
+	 */
+	| { kind: 'restarts'; mode: EngineMode; start: RestartStart }
 	| { kind: 'memory'; maximumMiB: number }
 	| { kind: 'room'; maximumMiB: number }
 	| { kind: 'uploads'; tier: Tier }
@@ -164,6 +171,8 @@ export type Check =
 	| { kind: 'hold'; tier: Tier }
 	| { kind: 'parity'; tier: Tier; scene: BenchScene; pair: PagePair }
 	| { kind: 'bench'; tier: Tier; scene: BenchScene; page: BenchPageKind; jobs?: number }
+	/** The visual page of a benchmark scene: its shadow figures and frames, on one GPU path. */
+	| { kind: 'visual'; tier: Tier; scene: BenchScene }
 	/** The GPU-bound page, with the ?queue= setting it ran with, if any. */
 	| { kind: 'overload'; tier: Tier; queue?: string }
 	/** The quality governor's stress test: one stage on one GPU path. */
@@ -210,6 +219,12 @@ const HOLD_TIMEOUT_SECONDS = 60;
  * the browser to free memory, and the counts of the room, which may wait 31 s for it to come back.
  */
 const RESTARTS_TIMEOUT_SECONDS = 180;
+/**
+ * The thread modes whose engines start in frames that the restart page removes while they run.
+ * With the sketch on the main thread, Safari on a Mac still lost 1 or 2 places for shared memory in
+ * some runs of 100 such frames, so that mode stays out until the cause is known.
+ */
+const FRAME_RESTART_MODES = THREADED_MODES.filter((mode) => mode.sketchThread === 'worker');
 
 /** The result text of an item that the runner page never reached. */
 export const NO_RESULT = 'no result; the runner stopped before this page';
@@ -263,6 +278,8 @@ export interface BenchSwitches {
 	n?: number;
 	/** The job workers a null3D page starts, or undefined for the engine's own count. */
 	jobs?: number;
+	/** True makes a null3D page capture a PNG file of its frame after the measured seconds. */
+	capture?: boolean;
 }
 
 /**
@@ -279,12 +296,15 @@ const BENCH_BUILD: Load = { kind: 'warm', key: runnerKey('bench') };
 export function benchItem(
 	id: string,
 	page: BenchPageKind,
-	{ seconds, n, jobs }: BenchSwitches = {},
+	{ seconds, n, jobs, capture }: BenchSwitches = {},
 	scene: BenchScene = 's1',
 ): PlanItem<Check> {
-	const switches = Object.entries({ seconds, n, jobs }).flatMap(([name, value]) =>
-		value === undefined ? [] : [`${name}=${value}`],
-	);
+	const switches = [
+		...Object.entries({ seconds, n, jobs }).flatMap(([name, value]) =>
+			value === undefined ? [] : [`${name}=${value}`],
+		),
+		...(capture ? ['capture'] : []),
+	];
 	const tier = gpuApiOfPage(page);
 	return {
 		id,
@@ -357,7 +377,8 @@ export function checksPlan(): PlanItem<Check>[] {
 			),
 		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
-		pageItem('quality', 'quality', { kind: 'quality' }),
+		// The device's own check each run, never one that an earlier run stored.
+		pageItem('quality', 'quality', { kind: 'quality' }, { switches: ['check=fresh'] }),
 		...TIERS.map((tier) =>
 			pageItem(
 				`preset-change-${tier}`,
@@ -430,8 +451,16 @@ export function checksPlan(): PlanItem<Check>[] {
 			pageItem(
 				`restarts-${slug(mode.name)}`,
 				'shared-memory',
-				{ kind: 'restarts', mode },
+				{ kind: 'restarts', mode, start: 'engine' },
 				{ switches: [mode.query], timeoutSeconds: RESTARTS_TIMEOUT_SECONDS },
+			),
+		),
+		...FRAME_RESTART_MODES.map((mode) =>
+			pageItem(
+				`frame-restarts-${slug(mode.name)}`,
+				'shared-memory',
+				{ kind: 'restarts', mode, start: 'frame' },
+				{ switches: ['kinds=frame', mode.query], timeoutSeconds: RESTARTS_TIMEOUT_SECONDS },
 			),
 		),
 		pageItem(`${CAPABILITIES}-reload`, 'capabilities', {
@@ -479,9 +508,13 @@ function inSmokePlan({ id, check }: PlanItem<Check>): boolean {
 		// The warm-up page as the engine runs it, without the switch that waits for each compile.
 		case 'warm-up':
 			return id === `warm-up-${check.tier}`;
-		// One thread mode of each build: the threaded build's first mode, and the single-threaded build.
+		// Starts on the page in one thread mode of each build: the threaded build's first mode, and the
+		// single-threaded build.
 		case 'restarts':
-			return ENGINE_MODES.find(({ build }) => build === check.mode.build) === check.mode;
+			return (
+				check.start === 'engine' &&
+				ENGINE_MODES.find(({ build }) => build === check.mode.build) === check.mode
+			);
 		default:
 			return SMOKE_KINDS.has(check.kind);
 	}
@@ -564,12 +597,48 @@ export interface PlanSettings {
 	minutes?: number;
 }
 
+/** The name of a visual check's folder of frames in a run, and of its figures in the summary. */
+const visualName = ({ scene, tier }: { scene: string; tier: Tier }) => `${scene}-${tier}`;
+
+/** A visual page's figures for the bench summary, with the limits of its scene. */
+function visualFigures(scene: string, result: VisualResult): VisualFigures {
+	const limits = VISUAL_LIMITS[scene];
+	return {
+		changedPercent: result.stability.changedPercent,
+		edgeOffsetPixels: result.edges.offsetPixels,
+		...(limits && {
+			changedLimit: limits.changedPercent,
+			edgeOffsetLimit: limits.edgeOffsetPixels,
+		}),
+	};
+}
+
+/** How long a visual page may take on a slow device: twelve starts of a scene in hold mode. */
+const VISUAL_TIMEOUT_SECONDS = 600;
+
+/**
+ * The visual check of a benchmark scene on one GPU path: the visual page at the scene's count or
+ * `count`, with the frames it captures. It draws the desktop's preset, as the image tests do, so
+ * every device measures the shadow settings that the figures' limits come from.
+ */
+function visualItem(scene: BenchScene, tier: Tier, count?: number): PlanItem<Check> {
+	return {
+		id: `visual-${scene}-${tier}`,
+		path: `${visualPagePath(scene, tier, { n: count, images: true })}&${REFERENCE_PRESET_SWITCH}`,
+		timeoutSeconds: VISUAL_TIMEOUT_SECONDS,
+		check: { kind: 'visual', tier, scene },
+	};
+}
+
 /**
  * The benchmark protocol in browsers that Playwright cannot drive: `runs` fresh runs of each page
  * of each scene, each a 5-second warm-up and 30 measured seconds, or `seconds` of each, with
- * `count` instances when given. With job worker counts, each run times the pages once at each count, and the pages are
- * null3D's two GPU paths unless the settings name others. The pages take turns run by run, so a
- * device that slows as it warms up slows every page alike.
+ * `count` instances when given. With job worker counts, each run times the pages once at each
+ * count, and the pages are null3D's two GPU paths unless the settings name others. The pages take
+ * turns run by run, so a device that slows as it warms up slows every page alike. Unless the plan
+ * sweeps job worker counts, the first run of each null3D page captures its frame after its measured
+ * seconds. After the timed runs, the visual check of each scene on each GPU path of the null3D
+ * pages measures its shadows and captures frames from hold mode, which no timed run waits for.
  */
 export function benchPlan({
 	count,
@@ -583,18 +652,28 @@ export function benchPlan({
 	const runsOfPages = jobs
 		? jobs.flatMap((workers) => kinds.map((page) => ({ page, jobs: workers })))
 		: kinds.map((page) => ({ page, jobs: undefined }));
-	return Array.from({ length: runs }, (_, run) =>
+	const timed = Array.from({ length: runs }, (_, run) =>
 		scenes.flatMap((scene) =>
 			runsOfPages.map(({ page, jobs: workers }) =>
 				benchItem(
 					`bench-${scene}-${page}${workers === undefined ? '' : `-jobs${workers}`}-${run + 1}`,
 					page,
-					{ n: count, jobs: workers, seconds },
+					{ n: count, jobs: workers, seconds, capture: !jobs && run === 0 && isNull3dPage(page) },
 					scene,
 				),
 			),
 		),
 	).flat();
+	// A sweep of job worker counts times the pages and nothing else.
+	const tiers = jobs
+		? []
+		: TIERS.filter((tier) =>
+				kinds.some((page) => isNull3dPage(page) && gpuApiOfPage(page) === tier),
+			);
+	return [
+		...timed,
+		...scenes.flatMap((scene) => tiers.map((tier) => visualItem(scene, tier, count))),
+	];
 }
 
 /** The image test manifest's depth precision tests, by name. */
@@ -644,7 +723,10 @@ export function overloadPlan(): PlanItem<Check>[] {
 			'preset-check',
 			'quality',
 			{ kind: 'preset-check' },
-			{ switches: [`spheres=${HEAVY_SPHERES}`], timeoutSeconds: OVERLOAD_TIMEOUT_SECONDS },
+			{
+				switches: [`spheres=${HEAVY_SPHERES}`, 'check=fresh'],
+				timeoutSeconds: OVERLOAD_TIMEOUT_SECONDS,
+			},
 		),
 	];
 }
@@ -840,15 +922,6 @@ const WARM_UP_PLAIN_LOADS = 2;
 const WARM_UP_TIMEOUT_SECONDS = 90;
 
 /** Each benchmark scene's count on its own page. */
-const SCENE_COUNTS: Readonly<Record<BenchScene, number>> = {
-	s1: S1_DEFAULT_COUNT,
-	's1-static': S1_DEFAULT_COUNT,
-	's1-cells': S1_DEFAULT_COUNT,
-	s2: S2_NODE_COUNT,
-	s3: S3_DEFAULT_COUNT,
-	s4: createS4().count,
-};
-
 /** The sketches whose warm-up the plan times: each benchmark scene at its own count, then each demo. */
 function warmUpSketches(): { scene: string; sketch: string }[] {
 	return [
@@ -864,10 +937,11 @@ function warmUpSketches(): { scene: string; sketch: string }[] {
 }
 
 /**
- * The warm-up time test: each benchmark scene and each demo starts on each GPU path, first with
- * fresh shaders, which the browser must compile as on a first visit, then with the shaders as they
- * ship, the last time reusing what the browser compiled. Each load reports how long the pipelines
- * held up the first frame, and how long the first frame took to show.
+ * The warm-up time test: each benchmark scene and each demo starts on each GPU path, first as on a
+ * first visit, with fresh shaders that the browser must compile and a preset check that measures
+ * again. Then it starts with the shaders as they ship and the stored preset check, the last time
+ * reusing what the browser compiled. Each load reports how long the pipelines held up the first
+ * frame, and how long the first frame took to show.
  */
 export function warmUpTimePlan({
 	runs = WARM_UP_FRESH_LOADS,
@@ -881,7 +955,11 @@ export function warmUpTimePlan({
 					'warm-up-time',
 					{ kind: 'warm-up-time', tier, scene, fresh },
 					{
-						switches: [`gpu=${tier}`, fresh ? 'shaders=fresh' : '', sketchSwitch],
+						switches: [
+							`gpu=${tier}`,
+							...(fresh ? ['shaders=fresh', 'check=fresh'] : []),
+							sketchSwitch,
+						],
 						timeoutSeconds: WARM_UP_TIMEOUT_SECONDS,
 					},
 				);
@@ -1195,22 +1273,41 @@ function imageRunProblems(
 	);
 }
 
+/**
+ * How the shared memory page starts each engine: on the page, which stops it, or in a frame, which
+ * the page removes while the engine runs.
+ */
+export type RestartStart = 'engine' | 'frame';
+
 /** What the restart page reports about the engine's starts and stops. */
 export interface RestartResult {
 	/** Shared memories the page could hold at once before the starts, where it counted them. */
 	room?: number;
 	cycles: number;
-	kinds: {
-		engine?: {
-			cycles: number;
-			error?: string;
-			trail?: string[];
-			/** The room when it came back, or when the page stopped waiting for it. */
-			roomLater?: number;
-			roomWaitMs?: number;
-		};
-	};
+	kinds: Partial<
+		Record<
+			RestartStart,
+			{
+				cycles: number;
+				error?: string;
+				trail?: string[];
+				/** The room when it came back, or when the page stopped waiting for it. */
+				roomLater?: number;
+				roomWaitMs?: number;
+			}
+		>
+	>;
 }
+
+/** Each way of starting engines, as the restart problems name it. */
+const RESTART_WORDS: Record<RestartStart, { cycle: string; cycles: string; engines: string }> = {
+	engine: { cycle: 'start and stop', cycles: 'starts and stops', engines: 'stopped engines' },
+	frame: {
+		cycle: 'start in a frame',
+		cycles: 'starts in frames',
+		engines: 'engines in removed frames',
+	},
+};
 
 /** How long the restart page waited for the room to come back, as the problem's text gives it. */
 const waitedText = (ms: number | undefined) =>
@@ -1220,13 +1317,14 @@ const waitedText = (ms: number | undefined) =>
  * What is wrong with the restart page's result: a start or a stop that failed, or room for shared
  * memory that the browser did not get back from the stopped engines.
  */
-export function restartProblems(result: RestartResult): string[] {
-	const engine = result.kinds.engine;
+export function restartProblems(result: RestartResult, start: RestartStart): string[] {
+	const engine = result.kinds[start];
 	if (!engine) return ['the page started no engine'];
+	const words = RESTART_WORDS[start];
 	const problems: string[] = [];
 	if (engine.error)
 		problems.push(
-			`start and stop ${engine.cycles + 1} of ${result.cycles} failed: ${engine.error}${lastSteps(engine.trail)}`,
+			`${words.cycle} ${engine.cycles + 1} of ${result.cycles} failed: ${engine.error}${lastSteps(engine.trail)}`,
 		);
 	if (
 		result.room !== undefined &&
@@ -1234,7 +1332,7 @@ export function restartProblems(result: RestartResult): string[] {
 		engine.roomLater < result.room - ROOM_KEPT
 	)
 		problems.push(
-			`the browser did not get back the memory of stopped engines${waitedText(engine.roomWaitMs)}: it had room for ${result.room} shared memories before ${engine.cycles} starts and stops, and for ${engine.roomLater} after`,
+			`the browser did not get back the memory of ${words.engines}${waitedText(engine.roomWaitMs)}: it had room for ${result.room} shared memories before ${engine.cycles} ${words.cycles}, and for ${engine.roomLater} after`,
 		);
 	return problems;
 }
@@ -1305,7 +1403,7 @@ export function judge(
 		case 'stats':
 			return statsProblems(result as unknown as StatsResult);
 		case 'restarts':
-			return restartProblems(result as unknown as RestartResult);
+			return restartProblems(result as unknown as RestartResult, check.start);
 		case 'memory':
 			return (result.mode as { build?: string } | undefined)?.build === 'threaded'
 				? []
@@ -1343,7 +1441,18 @@ export function judge(
 				PRESET_CHANGE.from,
 				PRESET_CHANGE.to,
 			);
+		case 'visual': {
+			const visual = result as unknown as VisualResult;
+			if (context) saveVisualResult(join(context.imageDir, 'frames', visualName(check)), visual);
+			return visualProblems(check.scene, visual);
+		}
 		case 'bench': {
+			if (context && typeof result.frame === 'string') {
+				const folder = join(context.imageDir, 'frames');
+				mkdirSync(folder, { recursive: true });
+				const name = `${check.scene}-${check.page}-live.png`;
+				writeFileSync(join(folder, name), Buffer.from(result.frame, 'base64'));
+			}
 			const frames = Number(result.frames ?? 0);
 			const cpu = (result.cpuMs as { median?: number } | undefined)?.median ?? 0;
 			const workers = (result.mode as { jobWorkers?: number } | undefined)?.jobWorkers;
@@ -1445,12 +1554,26 @@ export function benchSummary(
 	items: readonly PlanItem<Check>[],
 	resultOf: (id: string) => ItemResult | undefined,
 ): string | undefined {
-	const groups = new Map<string, Omit<SummaryRow, 'summary'> & { results: BenchResult[] }>();
+	type Group = Omit<SummaryRow, 'summary'> & { results: BenchResult[]; visualKey?: string };
+	const groups = new Map<string, Group>();
+	const visual = new Map<string, VisualResult>();
 	for (const item of items) {
-		if (item.check.kind !== 'bench') continue;
-		const { scene, page, jobs } = item.check;
+		const { check } = item;
+		if (check.kind === 'visual') {
+			const result = resultOf(item.id);
+			if (result?.ok && result.stability)
+				visual.set(visualName(check), result as unknown as VisualResult);
+		}
+		if (check.kind !== 'bench') continue;
+		const { scene, page, jobs } = check;
 		const key = `${scene} ${page} ${jobs ?? ''}`;
-		const group = groups.get(key) ?? { scene, kind: page, jobs, results: [] };
+		const group = groups.get(key) ?? {
+			scene,
+			kind: page,
+			jobs,
+			results: [],
+			...(isNull3dPage(page) && { visualKey: visualName(check) }),
+		};
 		const result = resultOf(item.id);
 		if (result?.ok) group.results.push(result as unknown as BenchResult);
 		groups.set(key, group);
@@ -1458,7 +1581,13 @@ export function benchSummary(
 	if (groups.size === 0) return undefined;
 	const rows: SummaryRow[] = [...groups.values()]
 		.filter((group) => group.results.length > 0)
-		.map(({ results, ...row }) => summaryRow(row, results));
+		.map(({ results, visualKey, ...row }) => {
+			const figures = visualKey === undefined ? undefined : visual.get(visualKey);
+			return {
+				...summaryRow(row, results),
+				...(figures && { visual: visualFigures(row.scene, figures) }),
+			};
+		});
 	return benchReport(rows).join('\n');
 }
 

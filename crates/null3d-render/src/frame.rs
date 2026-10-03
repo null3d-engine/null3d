@@ -25,7 +25,7 @@ use null3d_gpu::drawlist::{
 
 use crate::camera::Lens;
 use crate::debug_lines::DebugLines;
-use crate::debug_view::DebugView;
+use crate::debug_view::{self, DebugView};
 use crate::fog::Fog;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::graph::{GraphError, RenderScale, Size};
@@ -495,6 +495,9 @@ pub struct SceneSettings {
     tiles: TileSettings,
     /// The materials' shading, or a debug view in its place.
     debug_view: DebugView,
+    /// The camera object and lens that fit the main directional light's cascades in place of the
+    /// camera's view, for the debug API's shadow camera.
+    shadow_camera: Option<(Handle, Lens)>,
 }
 
 impl SceneSettings {
@@ -527,6 +530,7 @@ impl SceneSettings {
             render_scaling: false,
             tiles: TileSettings::default(),
             debug_view: DebugView::Lit,
+            shadow_camera: None,
         }
     }
 
@@ -739,6 +743,14 @@ impl SceneSettings {
         self.views[ViewId::CAMERA.index()].set_camera(camera, lens.into());
     }
 
+    /// Fits the main directional light's cascades to `camera`, a camera object with its lens, in
+    /// place of the camera's view, or to the camera's view again with `None`. The camera's view
+    /// still draws the frame, so it can watch the cascades from elsewhere. A camera object that
+    /// no longer exists leaves the cascades to the camera's view.
+    pub fn set_shadow_camera(&mut self, camera: Option<(Handle, Lens)>) {
+        self.shadow_camera = camera;
+    }
+
     /// Sets the layers of the objects a view draws. A change needs no rebuild of the draw
     /// tables: culling tests the view's mask every frame.
     pub fn set_layers(&mut self, view: ViewId, mask: u32) {
@@ -851,7 +863,11 @@ impl SceneSettings {
         let shadow = self.lighting.sun_shadow?;
         let (camera, lens) = self.views[ViewId::CAMERA.index()].camera()?;
         let slot = scene.resolve(camera).ok()?;
-        let world = scene.world(parity).matrix(slot as usize);
+        let (fitter, lens) = self
+            .shadow_camera
+            .and_then(|(camera, lens)| Some((scene.resolve(camera).ok()?, lens)))
+            .unwrap_or((slot, lens));
+        let world = scene.world(parity).matrix(fitter as usize);
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
         let quality = self.lighting.shadow_quality;
         let settings = ShadowSettings {
@@ -865,7 +881,11 @@ impl SceneSettings {
         let [x, y, z, _] = self.lighting.sun_direction;
         let position = scene.cell_position(slot, parity);
         let absolute = position.absolute();
-        let mut cascades = fit_cascades(world, absolute, &lens, aspect, [x, y, z], &settings);
+        let fitted = scene.cell_position(fitter, parity).absolute();
+        let mut cascades = fit_cascades(world, fitted, &lens, aspect, [x, y, z], &settings);
+        if fitter != slot {
+            cascades.seen_from(fitted, absolute, shadow.map_size);
+        }
         let drawn = self.shadow_schedule.plan(
             &mut cascades,
             absolute,
@@ -909,11 +929,13 @@ impl SceneSettings {
     }
 
     /// The pipeline that draws an object with `pipeline` where it receives shadows: the same one,
-    /// reading the shadow maps where its shading reflects the lights. Custom materials light their
-    /// surfaces as the standard material does, so they receive shadows too.
+    /// reading the shadow maps where its shading reflects the lights, or shows the shadows in the
+    /// shadows debug view. Custom materials light their surfaces as the standard material does, so
+    /// they receive shadows too.
     pub fn receiving(&self, pipeline: DrawKey) -> DrawKey {
-        let lit = [template::INSTANCED_LIT, template::INSTANCED_STANDARD_MAPS];
-        if lit.contains(&pipeline.template) || pipeline.template >= template::CUSTOM_FIRST {
+        if pipeline.template == template::DEBUG_VIEW {
+            debug_view::receiving(pipeline)
+        } else if debug_view::shades_with_lights(pipeline.template) {
             DrawKey {
                 permutation: pipeline.permutation | permutation::RECEIVE_SHADOWS,
                 ..pipeline

@@ -20,7 +20,7 @@ import {
 	type QualityPreset,
 	type QualitySettingName,
 	type QualitySettings,
-	SKETCH_SETTINGS,
+	startValues,
 } from '../quality/presets';
 
 /** The preset and the settings that the page starts a sketch with. */
@@ -170,9 +170,7 @@ export class SketchQuality implements Quality {
 		this.preset = start.preset;
 		this.settings = { ...start.settings };
 		const kept: Record<string, unknown> = { ...start.options };
-		const first = start.settings as unknown as Record<string, unknown>;
-		for (const name of SKETCH_SETTINGS)
-			if (!LIVE_SETTINGS.includes(name)) kept[name] ??= first[name];
+		for (const [name, value] of Object.entries(startValues(start.settings))) kept[name] ??= value;
 		this.options = kept as Partial<QualitySettings>;
 		this.highest = start.highest;
 		const { settings } = this;

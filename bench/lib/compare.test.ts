@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import {
 	allowedMs,
 	type Build,
@@ -12,7 +14,9 @@ import {
 	judge,
 	judgeRecord,
 	MIN_ROUNDS,
+	measurementChanges,
 	mergeRecords,
+	PAGE_SOURCES,
 	type PlanPage,
 	pageName,
 	qualityLines,
@@ -381,7 +385,7 @@ describe('the expected-change trailer', () => {
 describe('the verdict', () => {
 	test('passes when no page is slower than the rule allows', () => {
 		const runs = page([2, 2, 2], [1.9, 2, 2.05]);
-		expect(judge(compare(runs))).toEqual({ pass: true, failures: [] });
+		expect(judge(compare(runs))).toEqual({ pass: true, failures: [], measurementChanges: [] });
 	});
 
 	test('fails on a slower page that no trailer names, and says which', () => {
@@ -411,8 +415,45 @@ describe('the verdict', () => {
 			failures: [
 				's1 null3d-webgpu: the new build kept 0 runs of 3 and the baseline 3 runs of 3, so 0 rounds have a run of each, and a comparison needs 2',
 			],
+			measurementChanges: [],
 		});
 		expect(judge(compare(failBuild(page([1, 1, 1], [1, 1, 1]), 'baseline'))).pass).toBe(true);
+	});
+
+	test('reports and passes every page when the measurement changed', () => {
+		const changes = ['the benchmark pages changed: bench/pages/lib/options.ts'];
+		const verdict = judge(compare(page([2, 2, 2], [2.5, 2.5, 2.5])), changes);
+		expect(verdict.pass).toBe(true);
+		expect(verdict.failures).toHaveLength(2);
+		expect(verdict.measurementChanges).toEqual(changes);
+	});
+});
+
+describe('a change to the measurement', () => {
+	test('names the changed page sources, and counts those past the first few', () => {
+		expect(measurementChanges([], COMPARISON_SWITCHES)).toEqual([]);
+		expect(measurementChanges(['bench/scenes/spec.ts'], COMPARISON_SWITCHES)).toEqual([
+			'the benchmark pages changed: bench/scenes/spec.ts',
+		]);
+		const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((name) => `bench/pages/${name}.ts`);
+		expect(measurementChanges(files, COMPARISON_SWITCHES)).toEqual([
+			'the benchmark pages changed: bench/pages/a.ts, bench/pages/b.ts, bench/pages/c.ts, bench/pages/d.ts, bench/pages/e.ts and 2 more files',
+		]);
+	});
+
+	test("notices that the baseline's comparison had other switches, or none", () => {
+		expect(measurementChanges([], [], ['preset=high', 'governor=off'])).toEqual([
+			"the comparison's switches changed from none to `preset=high&governor=off`",
+		]);
+		expect(measurementChanges([], ['preset=high'], ['preset=high', 'governor=off'])).toEqual([
+			"the comparison's switches changed from `preset=high` to `preset=high&governor=off`",
+		]);
+	});
+
+	test('reads page sources that the repository holds', () => {
+		const root = join(import.meta.dir, '../..');
+		for (const path of PAGE_SOURCES.filter((source) => !source.startsWith(':')))
+			expect(existsSync(join(root, path))).toBe(true);
 	});
 });
 
@@ -563,6 +604,24 @@ describe('the report', () => {
 		);
 		expect(text).toContain('Refresh rate: 60 Hz on every page. Dropped runs: baseline s2');
 	});
+
+	test('says when the measurement changed, and lists the pages it does not judge', () => {
+		const selection = selectRuns(page([2, 2, 2], [2.5, 2.5, 2.5]));
+		const comparison = compareBuilds(selection);
+		const verdict = judge(comparison, ["the comparison's switches changed from none to `x=1`"]);
+		const text = compareReport(comparison, verdict, {
+			...context,
+			selection,
+			trailers: { changes: [], problems: [] },
+		}).join('\n');
+		expect(text).toContain(
+			"**Measurement changed**: the run reports every page and judges none, because the two builds measure in different ways. Main's next run compares with this commit.\n- the comparison's switches changed from none to `x=1`",
+		);
+		expect(text).toContain(
+			'Not judged: 2 problems.\n- s1 null3d-webgpu, busiest thread: +25.0% slower (medians 2.000 ms and 2.500 ms)',
+		);
+		expect(text).not.toContain('**Failed**');
+	});
 });
 
 describe('shards of a comparison', () => {
@@ -580,6 +639,7 @@ describe('shards of a comparison', () => {
 			pages,
 			commits: { baseline: 'abc1234 "fix: a"', new: 'def5678 "perf: x"' },
 			messages: ['perf: x\n\nBench-Expected: s2/null3d-webgl2: the trees now have one more level'],
+			measurementChanges: [],
 			browser: 'Chrome 152 on macOS',
 			runs: 2,
 			warmupSeconds: 5,
@@ -625,6 +685,7 @@ describe('shards of a comparison', () => {
 				's2 null3d-webgpu, busiest thread: +100.0% slower (medians 1.000 ms and 2.000 ms)',
 				's2 null3d-webgpu, own work: +100.0% slower (medians 1.000 ms and 2.000 ms)',
 			],
+			measurementChanges: [],
 		});
 		expect(report.slice(3)).toEqual(alone.report.slice(3));
 		expect(report.join('\n')).toContain(
@@ -648,5 +709,8 @@ describe('shards of a comparison', () => {
 		expect(() => mergeRecords([record(1, 2), record(2, 2, { runs: 3 })])).toThrow(
 			'the shard records differ in their number of rounds',
 		);
+		expect(() =>
+			mergeRecords([record(1, 2), record(2, 2, { measurementChanges: ['the pages changed'] })]),
+		).toThrow('the shard records differ in their measurement changes');
 	});
 });

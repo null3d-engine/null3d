@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'bun:test';
 import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import {
+	checkedSettings,
 	LIVE_SETTINGS,
 	presetSettings,
 	type QualityPreset,
@@ -29,8 +30,12 @@ function fromMedium(
 	preset: QualityPreset,
 	options: Partial<QualitySettings> = {},
 ): QualitySettings {
-	const { antialias, shadowTiles, shadowTileSize, pointLightShadows } = MEDIUM;
-	const start = { antialias, shadowTiles, shadowTileSize, pointLightShadows };
+	const start = Object.fromEntries(
+		SKETCH_SETTINGS.filter((name) => !LIVE_SETTINGS.includes(name)).map((name) => [
+			name,
+			MEDIUM[name as keyof QualitySettings],
+		]),
+	) as Partial<QualitySettings>;
 	return presetSettings(preset, { ...start, ...options });
 }
 
@@ -231,6 +236,8 @@ describe('SketchQuality.lower', () => {
 			maxAnisotropy: 16,
 			uploadBytesPerFrame: MEDIUM.uploadBytesPerFrame,
 			antialias: MEDIUM.antialias,
+			shadowCascades: MEDIUM.shadowCascades,
+			shadowMapSize: MEDIUM.shadowMapSize,
 			shadowTiles: MEDIUM.shadowTiles,
 			shadowTileSize: MEDIUM.shadowTileSize,
 			pointLightShadows: MEDIUM.pointLightShadows,
@@ -238,7 +245,7 @@ describe('SketchQuality.lower', () => {
 		});
 		// The preset changed, and of the settings only the lowest render scale and the far cascades'
 		// interval did.
-		expect(changes.at(-1)).toEqual(['minRenderScale', 'farCascadeInterval']);
+		expect(changes.at(-1)).toEqual(['minRenderScale', 'shadowFilter', 'farCascadeInterval']);
 	});
 });
 
@@ -252,9 +259,8 @@ describe('SketchQuality.setPreset', () => {
 		expect(quality.settings).toEqual(fromMedium('low'));
 		expect(Object.keys(quality.settings)).toEqual([...SKETCH_SETTINGS]);
 		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
-		// Every preset has the same highest render scale and governor, and Low and Medium the same
-		// shadow filter.
-		const same = ['maxRenderScale', 'governor', 'shadowFilter'];
+		// Every preset has the same highest render scale and governor.
+		const same = ['maxRenderScale', 'governor'];
 		expect(changes.at(-1)).toEqual(LIVE_SETTINGS.filter((name) => !same.includes(name)));
 		expect(settled.count).toBe(1);
 		// The next frame holds for its pipelines, and its handlers hear of a new preset.
@@ -320,12 +326,26 @@ describe('SketchQuality.setPreset', () => {
 		expect(quality.settings.maxAnisotropy).toBe(presetSettings('low').maxAnisotropy);
 	});
 
+	it("ends each of the check's steps on the settings that a start with its stored result takes", async () => {
+		for (const options of [{}, { antialias: 'none' as const, maxPixelRatio: 1 }]) {
+			const quality = new SketchQuality(
+				{ preset: 'ultra', settings: presetSettings('ultra', options), options, highest: 'ultra' },
+				() => {},
+			);
+			for (const to of ['high', 'medium', 'low'] as const) {
+				await quality.lower();
+				expect(quality.settings).toEqual(checkedSettings('ultra', to, options));
+			}
+		}
+	});
+
 	it('gives the page the preset check with the preset it chose, and changes no setting', () => {
 		const { quality, applied, changes } = medium();
 		const check = {
 			from: 'high' as const,
 			targetFps: 60,
 			rounds: [{ preset: 'medium' as const, presentedFps: 60, completedFps: 60 }],
+			reused: false,
 		};
 		quality.report(check);
 		expect(applied).toEqual([{ preset: 'medium', settings: MEDIUM, check }]);

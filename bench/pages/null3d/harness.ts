@@ -4,7 +4,8 @@
 // publishes the frame's pixels. With `?demo`, it runs the scene until the page closes. With
 // `?soak=`, it runs the scene for that many minutes, measures the engine once a minute, and
 // publishes each minute's figures. Otherwise it warms up, measures the engine, and publishes the
-// frame metrics. The engine's own switches, such
+// frame metrics, and with `?capture`, a PNG file of the frame after the measured seconds, in
+// base64, so people can see what the device drew at full speed. The engine's own switches, such
 // as `?gpu=webgpu`, `?latency=low` or `?preset=low`, pick the GPU path, the thread mode and the
 // quality preset. `?governor=off` keeps the quality governor off in a scene that turns it on.
 import { createEngine, type Engine, type SecondRates } from '@null3d/engine';
@@ -67,6 +68,8 @@ export function runNull3dPage(
 		const n = wholeCount(options.count ?? defaultCount);
 		sketchUrl.searchParams.set('n', String(n));
 		if (options.shadows !== null) sketchUrl.searchParams.set('shadows', String(options.shadows));
+		if (options.shadowFilter !== null)
+			sketchUrl.searchParams.set('shadowFilter', String(options.shadowFilter));
 		if (!options.governor) sketchUrl.searchParams.set('governor', 'off');
 
 		// A bare `?hold` holds at the scene's hold time, which the page passes as the engine's option.
@@ -75,6 +78,8 @@ export function runNull3dPage(
 			canvas,
 			sketch: sketchUrl,
 			...(!filled && { maxPixelRatio: CANVAS.pixelRatio }),
+			shadowCascades: options.shadowCascades ?? undefined,
+			shadowMapSize: options.shadowMapSize ?? undefined,
 			hold: options.hold ?? undefined,
 		});
 		const log = pageOptions.trace ? new QualityLog() : undefined;
@@ -120,10 +125,15 @@ export function runNull3dPage(
 					log,
 					performance.now() - measureSeconds * 1000,
 				);
+			// After the measured seconds, so the capture's readback and encoding cost no measured frame.
+			const frame = params.has('capture')
+				? toBase64(new Uint8Array(await (await engine.capture()).arrayBuffer()))
+				: undefined;
 			return {
 				...report,
 				...timed,
 				...(trace && { trace }),
+				...(frame && { frame }),
 				...(glTiming && { glTiming }),
 				userAgent: navigator.userAgent,
 			};

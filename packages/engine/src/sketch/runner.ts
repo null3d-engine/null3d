@@ -24,6 +24,8 @@ import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import {
+	LIGHT_VALUE_SHADOW_CASCADES,
+	LIGHT_VALUE_SHADOW_MAP_SIZE,
 	TEXTURE_OPTION_UPLOAD_ALL,
 	TEXTURE_STAT_IMAGES_SENT,
 	TEXTURE_STAT_WAITING,
@@ -42,7 +44,7 @@ import { type ControlViews, controlViews, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { type ImageSender, imagesArrived, type ShaderSender } from '../shared/images';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
-import { slotChange } from '../shared/wake';
+import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import { FixedClock, FrameClock, holdSteps } from './clock';
 import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-sketch';
 import { InputReader } from './input';
@@ -92,6 +94,8 @@ const SLOT_POLL_MS = 4;
 /**
  * Resolves once a control slot holds `target` or more, or once the engine stops. It waits without
  * blocking the thread, and checks the slot on a timer where the control block is not shared memory.
+ * A start's steps wait this way, so each wait also checks the slot again after a short time, in case
+ * the browser missed the wake.
  */
 async function reached(slots: Int32Array, slot: number, target: number): Promise<void> {
 	const shared =
@@ -100,23 +104,10 @@ async function reached(slots: Int32Array, slot: number, target: number): Promise
 		const value = Atomics.load(slots, slot);
 		if (value >= target || Atomics.load(slots, Slot.Running) === 0) return;
 		if (shared) {
-			const change = slotChange(slots, slot, value);
+			const change = slotChangeOrRecheck(slots, slot, value);
 			if (change) await change;
 		} else await new Promise((resolve) => setTimeout(resolve, SLOT_POLL_MS));
 	}
-}
-
-/**
- * Waits without blocking for the engine to stop, then ends the job workers' loops. The page stops
- * the job workers only after they leave their loops, where each blocks its thread while it has no
- * work.
- */
-async function shutDownJobsOnStop(glue: CoreGlue, slots: Int32Array): Promise<void> {
-	while (Atomics.load(slots, Slot.Running) !== 0) {
-		const change = slotChange(slots, Slot.Running, 1);
-		if (change) await change;
-	}
-	glue.shutdownJobs();
 }
 
 /**
@@ -236,12 +227,18 @@ export class SketchRunner {
 			device.depthPrepass,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
-		const { shadowTiles, shadowTileSize, pointLightShadows } = sketch.quality.settings;
+		const { shadowTiles, shadowTileSize, pointLightShadows, shadowCascades, shadowMapSize } =
+			sketch.quality.settings;
 		glue.setShadowTiles(shadowTiles, shadowTileSize, pointLightShadows);
+		// Directional lights that name no cascades or map size take the preset's.
+		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES, shadowCascades);
+		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE, shadowMapSize);
 		if (sketch.jobWorkers > 0) {
+			// The page ends the job workers' loops through these words when the engine stops.
+			Atomics.store(slots, Slot.JobsWakeAddress, glue.jobsWakeAddress());
+			Atomics.store(slots, Slot.JobsStopAddress, glue.jobsStopAddress());
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.notify(slots, Slot.JobsReady);
-			void shutDownJobsOnStop(glue, slots);
 		}
 		this.core = new CoreMemory(glue, sketch.memory);
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
@@ -302,12 +299,13 @@ export class SketchRunner {
 				renderScaleThousandths: () => this.renderScale(),
 			},
 		};
-		this.debugDraw = DEV ? new DebugDraw(this.core, host) : undefined;
+		const scene = new Scene(this.core, this.recorded, device.webgl2, () => this.warmUp());
+		this.debugDraw = DEV ? new DebugDraw(this.core, host, scene) : undefined;
 		const debug = this.debugDraw ?? new SketchDebug(host);
 		this.context = {
 			time: this.time,
 			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
-			scene: new Scene(this.core, this.recorded, device.webgl2, () => this.warmUp()),
+			scene,
 			materials: new Materials(this.core, sketch.sendShader),
 			geometry: new Geometry(this.core),
 			textures,

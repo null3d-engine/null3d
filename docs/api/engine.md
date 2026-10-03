@@ -32,7 +32,7 @@ try {
 
 ## The start
 
-`createEngine` tests what the browser offers, and picks the build and the GPU path from those tests, never from browser or GPU names. It starts the engine's threads, loads the sketch module and runs the sketch's setup. It resolves once the setup has run, and `engine.firstFrame` resolves once the GPU has finished the first frame. When the engine chose the preset itself, `createEngine` also waits for the [preset check](../concepts/quality-presets.md#the-preset-check). The check draws the first frames, so the first frame is then on the screen before `createEngine` resolves.
+`createEngine` tests what the browser offers, and picks the build and the GPU path from those tests, never from browser or GPU names. It starts the engine's threads, loads the sketch module and runs the sketch's setup. It resolves once the setup has run, and `engine.firstFrame` resolves once the GPU has finished the first frame. When the engine chose the preset itself, `createEngine` also waits for the [preset check](../concepts/quality-presets.md#the-preset-check). The check draws the first frames, so the first frame is then on the screen before `createEngine` resolves. On a repeat visit, the engine takes the check's stored result instead, and `createEngine` resolves after the setup.
 
 `onProgress` reports each stage of the start, in this order:
 
@@ -53,7 +53,7 @@ An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` st
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
 | [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
 | [E1406](../errors/E1406.md) | The engine core's WebAssembly file did not download. |
-| [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 3 seconds of tries. |
+| [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 10 seconds of tries. |
 | [E1402](../errors/E1402.md) | Development builds only: the engine core's file comes from another build than the engine's JavaScript. |
 | [E1410](../errors/E1410.md) | The sketch module did not load: it did not download, or its code threw an error while it loaded. |
 | [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
@@ -137,6 +137,7 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 - `captureFrame()` draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. In hold mode it returns the held frame and draws nothing. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
 - `postToSketch` and `onSketchMessage` send and receive [messages](page.md).
 - `destroy()` stops the engine and its threads, and the engine cannot start again. Wait for its promise before you start another engine on the same page, because the browser frees the engine's memory only then.
+- A page that goes away without `destroy()`, such as a page in a frame that your app removes, still gives back the engine's memory. When the page hides, the engine wakes its job workers and ends their loops. Safari never frees the memory of a worker that it stops while the worker waits for work. Without this, an iPad would run out of room after a few such pages. A page that the browser brings back from its back-forward cache runs on, with the job workers' share of the work on the sketch thread.
 
 Each `on...` call returns a function that removes its handler. `engine.labels` and `engine.requestPointerLock` come in null3D 0.2.
 
@@ -276,7 +277,7 @@ How the engine runs on this device: its build, its latency mode and its threads.
 | `jobWorkers: number` | The job workers that share the engine's parallel work. |
 | `hold: number \| null` | The sketch time in seconds that hold mode holds the sketch at, or null for a live engine. |
 | `preset: QualityPreset` | The quality preset that the engine runs. The preset check can lower it before `createEngine` resolves, and `ctx.quality.setPreset` in the sketch changes it later. |
-| `presetCheck: PresetCheck \| null` | What the preset check measured, or null when no check ran. The engine checks the preset when it chose it from the device: after the first frame, it measures the frame rate of the scene that the setup built, and lowers the preset until one holds the target. |
+| `presetCheck: PresetCheck \| null` | What the preset check measured, or null when no check ran. The engine checks the preset when it chose it from the device: after the first frame, it measures the frame rate of the scene that the setup built, and lowers the preset until one holds the target. A later start of the sketch in the same browser on the same device takes the stored result instead, and starts at its preset. `reused` is then true. |
 | `crashedStarts: number` | The starts of this sketch before this one that crashed the tab, one after another, as the engine's note in `localStorage` records them. After one, the engine starts a preset lower, and after two at `low`. |
 | `memoryMaximumMiB: number \| null` | The shared memory's maximum in MiB, or null for the single-threaded build, whose memory is not shared. |
 
@@ -296,6 +297,8 @@ Options for `createEngine`.
 | `powerPreference?: 'high-performance' \| 'low-power'` | Which GPU to draw with on a device that has two, such as a laptop with a separate graphics chip: `high-performance`, the default, for the faster one, or `low-power` to save battery. The browser treats it as a request. A device with one GPU ignores it. |
 | `latency?: LatencyMode` | The latency mode. The default is `pipelined`. Low latency needs a worker that draws: where no worker can draw, the engine runs in pipelined mode, and `engine.mode` says so. |
 | `antialias?: 'msaa' \| 'fxaa' \| 'none'` | How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa` smooths edges in the final pass, and `none` leaves them sharp. Without it, the quality preset sets the mode: FXAA on Low, MSAA from Medium up. Each mode works on every GPU path, and the mode stays fixed while the engine runs. Another value fails with E1213. |
+| `shadowCascades?: number` | The cascades of a directional light's shadows, a whole number from 1 to 4, for each light whose `shadow` options name none. Without it, the quality preset sets it. Another value fails with E1213. |
+| `shadowMapSize?: number` | Texels on each side of each cascade's shadow map, for each directional light whose `shadow` options name no `mapSize`: 512, 1,024, 2,048 or 4,096. Without it, the quality preset sets it. Another value fails with E1213. |
 | `shadowTiles?: number` | The most tiles of the shadow atlas that spot and point lights cast their shadows into, a whole number from 0 to 24. Without it, the quality preset sets it. 0 turns the shadows of spot and point lights off. Another value fails with E1213. |
 | `shadowTileSize?: number` | Texels on each side of each tile of the shadow atlas: 256, 512, 1,024 or 2,048. Without it, the quality preset sets it. Another value fails with E1213. |
 | `pointLightShadows?: boolean` | True makes point lights cast shadows, false keeps them from it. Without it, the quality preset decides: High and Ultra turn them on. Another value fails with E1213. |
@@ -455,7 +458,7 @@ What the browser's WebGL2 offers, in `CapabilityReport.webgl2`.
 | `maxUniformBlockSize: number \| null` | The largest uniform block in bytes, or null without WebGL2. |
 | `sharedMemoryUploads: { bufferSubData: boolean; texSubImage2D: boolean; } \| null` | Whether WebGL accepts views on shared memory for buffer and texture uploads. Null without shared memory. |
 | `floatRenderTargets: { rgba16f: { complete: boolean; readsBack: boolean; samples: number; }; rgba32f: { complete: boolean; readsBack: boolean; samples: number; }; } \| null` | Whether the device renders into float textures, which high dynamic range color needs. The engine tests a 16-bit and a 32-bit float RGBA texture. `complete` says whether a framebuffer with the texture is complete. `readsBack` says whether a clear to a known color, with a value above 1, reads back as floats. `samples` is the most samples per pixel for antialiasing that the format takes, or 0 where the device does not render into it. WebGL2 renders into both formats with `EXT_color_buffer_float`, and into the 16-bit one with `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit format passes both tests, and with MSAA takes 4 samples. Null without WebGL2. |
-| `renderer: string \| null` | Reported for the record only; the engine never branches on it. |
+| `renderer: string \| null` | Reported for the record. The engine reads no meaning from it, and only compares it with an earlier start's, to tell whether a stored preset check came from the same GPU. |
 | `error?: string` | Why the probe failed, when it did. |
 
 ### `WebGPUReport`
@@ -474,7 +477,7 @@ What the browser's WebGPU offers, in `CapabilityReport.webgpu`.
 | `wgslLanguageFeatures: string[]` | The WGSL language features the browser supports, sorted. |
 | `preferredCanvasFormat: string \| null` | The canvas texture format the browser prefers, or null without WebGPU. |
 | `transientAttachments: boolean` | True when the browser's WebGPU has the transient attachment texture usage (Chrome 146 and later). A render target with it can stay in a tile-based GPU's own memory. The engine gives it to the targets that live within one render pass, such as the multisampled color and depth. |
-| `adapterInfo: { vendor: string; architecture: string; device: string; description: string; } \| null` | Reported for the record only; the engine never branches on it. |
+| `adapterInfo: { vendor: string; architecture: string; device: string; description: string; } \| null` | Reported for the record. The engine reads no meaning from it, and only compares it with an earlier start's, to tell whether a stored preset check came from the same GPU. |
 | `error?: string` | Why the probe failed, when it did. |
 
 ### `WorkerProbe`

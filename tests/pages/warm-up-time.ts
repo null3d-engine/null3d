@@ -2,8 +2,9 @@
 // is on screen, and the part of it that the GPU pipelines take. ?sketch= names the sketch module from
 // the server's root, with the sketch's own query after it. The canvas fills the window at the pixel
 // ratio of the preset that the engine chooses, as an app's does. The engine reads its own switches:
-// ?gpu=, the thread mode's, and ?shaders=fresh, which makes the browser compile every shader again
-// instead of reusing what it compiled before, as on a first visit.
+// ?gpu=, the thread mode's, ?shaders=fresh, which makes the browser compile every shader again
+// instead of reusing what it compiled before, and ?check=fresh, which measures the preset again
+// instead of taking the stored result of an earlier preset check, both as on a first visit.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 

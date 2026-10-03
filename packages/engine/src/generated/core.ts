@@ -120,6 +120,7 @@ export const DEBUG_VIEW_NORMALS = 1;
 export const DEBUG_VIEW_DEPTH = 2;
 export const DEBUG_VIEW_OVERDRAW = 3;
 export const DEBUG_VIEW_WIREFRAME = 4;
+export const DEBUG_VIEW_SHADOWS = 5;
 
 export const FOG_KIND_NONE = 0;
 export const FOG_KIND_LINEAR = 1;
@@ -154,6 +155,9 @@ export const TEXTURE_STAT_IMAGES_SENT = 5;
 export const TEXTURE_STAT_MAX_SIZE = 6;
 export const TEXTURE_STAT_UPLOAD_BUDGET = 7;
 export const TEXTURE_STAT_MAX_ANISOTROPY = 8;
+
+export const CAMERA_TARGET_VIEW = 0;
+export const CAMERA_TARGET_SHADOWS = 1;
 
 export const SHADOW_CASTERS_CASCADE_MASK = 255;
 export const SHADOW_CASTERS_TILES = 256;

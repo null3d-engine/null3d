@@ -17,9 +17,9 @@ import {
 	withinTier,
 } from '../quality/chooser';
 import {
+	checkedSettings,
 	checkSettings,
 	presetOption,
-	presetSettings,
 	presetValue,
 	type QualityPreset,
 } from '../quality/presets';
@@ -53,6 +53,7 @@ import {
 	probeCapabilities,
 	readDeviceHints,
 } from './capabilities';
+import { CheckStore, checkConditions } from './check-store';
 import { watchDisplay } from './display';
 import {
 	type FrameMetrics,
@@ -70,6 +71,7 @@ import { MainThreadWatch } from './main-thread';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
 import { StatsSwitch } from './stats-switch';
+import { stopJobWorkers, waitForJobWorkersToLeave } from './stop-jobs';
 import {
 	type DepthMode,
 	type GpuSwitch,
@@ -124,6 +126,18 @@ export interface EngineOptions {
 	 * mode stays fixed while the engine runs. Another value fails with E1213.
 	 */
 	antialias?: 'msaa' | 'fxaa' | 'none';
+	/**
+	 * The cascades of a directional light's shadows, a whole number from 1 to 4, for each light
+	 * whose `shadow` options name none. Without it, the quality preset sets it. Another value fails
+	 * with E1213.
+	 */
+	shadowCascades?: number;
+	/**
+	 * Texels on each side of each cascade's shadow map, for each directional light whose `shadow`
+	 * options name no `mapSize`: 512, 1,024, 2,048 or 4,096. Without it, the quality preset sets
+	 * it. Another value fails with E1213.
+	 */
+	shadowMapSize?: number;
 	/**
 	 * The most tiles of the shadow atlas that spot and point lights cast their shadows into, a
 	 * whole number from 0 to 24. Without it, the quality preset sets it. 0 turns the shadows of
@@ -290,7 +304,9 @@ export interface EngineMode {
 	/**
 	 * What the preset check measured, or null when no check ran. The engine checks the preset when
 	 * it chose it from the device: after the first frame, it measures the frame rate of the scene
-	 * that the setup built, and lowers the preset until one holds the target.
+	 * that the setup built, and lowers the preset until one holds the target. A later start of the
+	 * sketch in the same browser on the same device takes the stored result instead, and starts at
+	 * its preset. `reused` is then true.
 	 */
 	presetCheck: PresetCheck | null;
 	/**
@@ -754,6 +770,8 @@ async function startEngine(
 	const pageSettings = {
 		maxPixelRatio: options.maxPixelRatio,
 		antialias: options.antialias,
+		shadowCascades: options.shadowCascades,
+		shadowMapSize: options.shadowMapSize,
 		shadowTiles: options.shadowTiles,
 		shadowTileSize: options.shadowTileSize,
 		pointLightShadows: options.pointLightShadows,
@@ -810,6 +828,8 @@ async function startEngine(
 	};
 	const failureHandlers = new Set<(error: EngineError) => void>();
 	const reported = new Set<string>();
+	/** Where a start that checks its preset keeps the check's result for later starts. */
+	let checkStore: CheckStore | undefined;
 	/**
 	 * Ends the start when the caller cancels it, or when a thread fails before the engine has
 	 * started. A thread that fails then, such as the one that draws, leaves the start waiting for
@@ -833,11 +853,14 @@ async function startEngine(
 		sketchMessage: onSketchMessage,
 		failure: onFailure,
 		// The page applies the settings that it owns: the pixel ratio cap sizes the canvas. The
-		// engine's mode reports the preset and the preset check.
+		// engine's mode reports the preset and the preset check, which the page stores for later
+		// starts.
 		quality: (update) => {
 			canvasWatch.setMaxPixelRatio(update.settings.maxPixelRatio);
 			mode.preset = update.preset;
-			if (update.check) mode.presetCheck = update.check;
+			if (!update.check) return;
+			mode.presetCheck = update.check;
+			checkStore?.save(update.check, switches.fps);
 		},
 		stats: (show) => statsSwitch.show(show),
 	};
@@ -926,24 +949,32 @@ async function startEngine(
 			new EngineError('E1301', `no usable GPU path for ?gpu=${requested} in this browser.`),
 		);
 	const { tier, forceCompat } = choice;
-	const preset = choosePreset(presetRequest, tier);
+	const chosen = choosePreset(presetRequest, tier);
+	// The engine checks a preset that it chose itself, when a lighter one exists. A preset that the
+	// page, a switch or hold mode fixes stays as it is. A start after a crash measures again, and
+	// so does one that ?check=fresh asks to. Otherwise the result of an earlier check of the sketch
+	// on this device and browser gives the preset at once, while it applies.
+	const checks =
+		optionPreset === 'auto' &&
+		switches.preset === undefined &&
+		hold === undefined &&
+		chosen !== 'low';
+	if (checks && history.crashed === 0) {
+		const { width, height } = options.canvas.getBoundingClientRect();
+		const conditions = checkConditions(report, tier, chosen, switches.fps);
+		checkStore = new CheckStore(sketchUrl, conditions, width * height);
+	}
+	const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
+	const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
 	// WebGL2 draws without the depth prepass, whatever the page asks: two of its shader programs
 	// can compute different depths for one triangle that the near plane cuts.
 	const tierSettings = tier === 'webgl2' ? { ...pageSettings, depthPrepass: false } : pageSettings;
 	const quality: QualityStart = {
 		preset,
-		settings: presetSettings(preset, tierSettings),
+		settings: checkedSettings(chosen, preset, tierSettings),
 		options: tierSettings,
 		highest: withinTier('ultra', tier),
-		// The engine checks a preset that it chose itself, when a lighter one exists. A preset that
-		// the page, a switch or hold mode fixes stays as it is.
-		check:
-			optionPreset === 'auto' &&
-			switches.preset === undefined &&
-			hold === undefined &&
-			preset !== 'low'
-				? { fps: switches.fps }
-				: undefined,
+		check: checks && !storedCheck ? { fps: switches.fps } : undefined,
 	};
 	const mode: EngineMode = {
 		build,
@@ -953,7 +984,7 @@ async function startEngine(
 		jobWorkers,
 		hold: hold ?? null,
 		preset,
-		presetCheck: null,
+		presetCheck: storedCheck ?? null,
 		crashedStarts: history.crashed,
 		memoryMaximumMiB: threaded ? maximumMiB : null,
 	};
@@ -1074,6 +1105,19 @@ async function startEngine(
 	let localCore: CoreGlue | undefined;
 	let stopping: Promise<void> | undefined;
 	/**
+	 * Ends the job workers' loops at once. A page that leaves without stopping the engine, such as a
+	 * page in a frame that goes away, does it too, because the browser then stops the workers
+	 * wherever they are.
+	 */
+	const stopJobs = () => {
+		if (core.memory) stopJobWorkers(core.memory, slots);
+	};
+	const stopJobsAsPageLeaves = () => {
+		stopJobs();
+		waitForJobWorkersToLeave(slots);
+	};
+	if (threads?.jobs.length) globalThis.addEventListener?.('pagehide', stopJobsAsPageLeaves);
+	/**
 	 * Stops every loop and then the workers, and wakes each thread that waits, so it sees the stop.
 	 * Then it drops the page's engine and lets go of the page's threaded core. A second call returns
 	 * the first call's promise.
@@ -1081,6 +1125,8 @@ async function startEngine(
 	const stop = () => {
 		stopping ??= (async () => {
 			Atomics.store(slots, Slot.Running, 0);
+			stopJobs();
+			globalThis.removeEventListener?.('pagehide', stopJobsAsPageLeaves);
 			statsSwitch.show(false);
 			for (const slot of [
 				Slot.Running,
@@ -1136,7 +1182,16 @@ async function startEngine(
 			// The page starts its core before the workers get theirs. The first core in a new shared
 			// memory fills it with the core's data, and a core that starts while another fills it
 			// waits, which the page's thread must never do.
-			const started = await abortable(startCore(build, core.module, core.memory), start.signal);
+			const coreStart = startCore(build, core.module, core.memory);
+			const started = await abortable(coreStart, start.signal).catch((error: unknown) => {
+				// A start that ends while the page's core starts lets go of that core once it has
+				// started, or the core would keep the engine's memory.
+				void coreStart.then(
+					({ glue }) => glue.releaseInstance?.(),
+					() => undefined,
+				);
+				throw error;
+			});
 			localCore = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
 			wasmMemory = memory;

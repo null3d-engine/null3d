@@ -46,6 +46,10 @@ When frames take too long, the engine draws the scene at a lower render scale: a
 
 Text and fine lines in the scene get softer at a lower scale. The scaling also takes the place of FXAA, which Low uses to smooth edges. Draw your interface in HTML over the canvas, where it stays sharp. To keep the whole canvas on a device, set `quality.set({ minRenderScale: 1 })`. The savings of the pixel ratio cap and the render scale multiply. At a ratio of 1.5 and a scale of 0.5, the phone above fills 0.19 million pixels.
 
+## Shadows
+
+A directional light's shadows draw the shadow casters once for each cascade, into a map whose texels the GPU fills each frame. The preset sets the cascade count and the map size of each light whose options name neither. Low draws fewer cascades than Medium, with smaller maps, and blends fewer texels at each shadow's edge. So leave `cascades` and `mapSize` out of the light's `shadow` options, and phones draw lighter shadows by themselves. [Shadows](../concepts/shadows.md#settings) lists the options, and [Quality presets](../concepts/quality-presets.md#the-settings-of-each-preset) each preset's values.
+
 ## Memory
 
 A phone closes a tab that uses too much memory, with no warning. The engine's tab memory test grew one kind of GPU memory in a tab, in steps of 32 MiB, until the tab died:
@@ -72,7 +76,7 @@ When the tab crashes during a start, the next start of the sketch runs one prese
 
 ## Heat
 
-A phone lowers its clock speeds when it heats up, often after a few minutes of play. Leave room for it: aim for about 70% of the frame budget, and test runs of 10 minutes. When frames still take too long, the frame-budget governor lowers the render scale, then the live shadow settings. The `quality.onChange` handlers run after each shadow step, so the sketch can lighten its own work too ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). In the engine's benchmarks, a warm Galaxy S24+ took about 70% longer per frame than a cool one ([Performance guide](performance.md#phones-and-tablets)). The [Performance guide](performance.md) also shows how to measure the frame.
+A phone lowers its clock speeds when it heats up, often after a few minutes of play. Leave room for it: aim for about 70% of the frame budget, and test runs of 10 minutes. When frames still take too long, the frame-budget governor lowers the render scale, then the live shadow settings. The `quality.onChange` handlers run after each shadow step, so the sketch can lighten its own work too ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). In the engine's benchmarks, a warm Galaxy S24+ took about 70% longer per frame than a cool one ([Performance guide](performance.md#phones-and-tablets)). Tablets heat up too. A warm 11-inch iPad Pro took about 17 ms of GPU time per S4 frame at Medium, against about 12.6 ms a minute earlier. It then ran at about 45 frames per second. On a warm tablet, only Low aims for 60 frames per second ([Quality presets](../concepts/quality-presets.md#how-the-engine-chooses-a-preset)). The [Performance guide](performance.md) also shows how to measure the frame.
 
 ## Touch input
 
