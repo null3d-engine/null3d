@@ -215,8 +215,9 @@ class PointerState implements InputPointer {
 	/** The pointer id of the last event, or -1 before the first. */
 	id = -1;
 	/**
-	 * The frame on screen at the pointer's last event, in the sketch's count, whose camera a pick of
-	 * that event uses. 0 is a frame that the setup drew, before the sketch's first update.
+	 * The frame on screen at the pointer's last event, in the engine's count, whose camera a pick of
+	 * that event uses. The engine's count includes the frames that ran no sketch code, such as the
+	 * setup's, and 0 means that no frame was on screen yet.
 	 */
 	frame = 0;
 }
@@ -227,7 +228,7 @@ class TouchState implements InputTouch {
 	y = 0;
 	dx = 0;
 	dy = 0;
-	/** The frame on screen at the finger's last event. */
+	/** The frame on screen at the finger's last event, in the engine's count. */
 	frame = 0;
 }
 
@@ -265,8 +266,11 @@ export class InputReader implements Input, PointerInput {
 	private mouseButtons = 0;
 	/** The frame the state belongs to, or -1 before the first, so nothing counts as just pressed. */
 	private frame = -1;
-	/** The engine's frames so far that ran no sketch code: the setup's. */
-	private setupFrames = 0;
+	/**
+	 * @internal The engine's frames so far that ran no sketch code, such as the setup's. A frame of
+	 * the pointer less this count gives the sketch's frame, as `time.frame` counts it.
+	 */
+	setupFrames = 0;
 	/** The index of the next record to read. */
 	private next = 0;
 
@@ -299,8 +303,7 @@ export class InputReader implements Input, PointerInput {
 	/**
 	 * Takes the events the page wrote since the previous frame, for frame `frame`, up to a press of
 	 * the pointer that follows its release. Movement and wheel scroll start again from 0.
-	 * `setupFrames` is the count of the engine's frames that ran no sketch code, which the pointer's
-	 * frame numbers leave out, as the sketch's `time.frame` does.
+	 * `setupFrames` is the count of the engine's frames that ran no sketch code.
 	 */
 	beginFrame(frame: number, setupFrames = 0): void {
 		this.frame = frame;
@@ -345,7 +348,7 @@ export class InputReader implements Input, PointerInput {
 					type === EVENT_POINTER_UP ||
 					type === EVENT_POINTER_LEAVE)
 			)
-				log.add(ints, floats, base, setupFrames);
+				log.add(ints, floats, base);
 			if (primary && type === EVENT_POINTER_UP) released = true;
 			this.next = (this.next + 1) | 0;
 		}
@@ -358,8 +361,8 @@ export class InputReader implements Input, PointerInput {
 
 	/**
 	 * The frame that was on screen at the last event of the pointer or a finger at (`x`, `y`) in CSS
-	 * pixels, or -1 when neither is there. A point that the sketch read from the input then names the
-	 * frame that its event's user saw, which is 0 while a frame of the setup was on screen.
+	 * pixels, in the engine's count, or -1 when neither is there. A point that the sketch read from
+	 * the input then names the frame that its event's user saw.
 	 */
 	frameAt(x: number, y: number): number {
 		const { pointer, touches } = this;
@@ -371,12 +374,9 @@ export class InputReader implements Input, PointerInput {
 		return -1;
 	}
 
-	/**
-	 * The sketch frame on screen now, in the count that the pointer's frame numbers use: 0 while a
-	 * frame of the setup is on screen.
-	 */
+	/** The frame on screen now, in the engine's count, as the pointer's frame numbers use it. */
 	presentedFrame(): number {
-		return Math.max(0, Atomics.load(this.control.slots, Slot.FramePresented) - this.setupFrames);
+		return Atomics.load(this.control.slots, Slot.FramePresented);
 	}
 
 	isDown(name: string): boolean {
@@ -517,7 +517,7 @@ export class InputReader implements Input, PointerInput {
 		const y = floats[base + FIELD_Y] as number;
 		const id = ints[base + FIELD_ID] as number;
 		const flags = ints[base + FIELD_FLAGS] as number;
-		const frame = Math.max(0, (ints[base + FIELD_FRAME] as number) - this.setupFrames);
+		const frame = ints[base + FIELD_FRAME] as number;
 		if ((flags & FLAG_TOUCH) !== 0) this.onTouch(type, id, x, y, frame);
 		if ((flags & FLAG_PRIMARY) === 0) return;
 		const { pointer } = this;

@@ -3,9 +3,9 @@
 // event on the object under the pointer, then on its group, enter and leave in pairs, and no click
 // after a drag. Before any object listens, and after the last handler goes, pointer events cast no
 // ray. A tap on the touch screen enters, clicks and leaves. During a fast pan, a click must cast its
-// ray from the frame on screen at the click, and a click while a frame of the setup is on screen
-// must cast from the setup's camera. Each runs in every thread mode, and the moves and clicks on
-// every GPU path.
+// ray from the frame on screen at the click. A click on a frame of the setup must reach what that
+// frame showed, through pointer events and `camera.screenToRay`, though the setup turned its camera
+// away after it. Each runs in every thread mode, and the moves and clicks on every GPU path.
 import { expect, type Page, test } from '@playwright/test';
 import { allocatingPlaces } from '../lib/allocations.ts';
 import { ENGINE_MODES, type EngineMode } from '../lib/engine-checks.ts';
@@ -223,22 +223,21 @@ for (const mode of ENGINE_MODES)
 	});
 
 for (const mode of ENGINE_MODES)
-	test(`a click while a frame of the setup is on screen picks what that frame showed, ${mode.name}`, async ({
+	test(`a click on an earlier frame of the setup picks what that frame showed, ${mode.name}`, async ({
 		page,
 	}) => {
-		// A fixed preset skips the preset check, whose frames after the setup also count as frame 0
-		// and would keep the camera that the setup ends with.
-		await page.goto(`object-events.html?${switchesOf(mode, undefined, 'setup&preset=medium')}`);
-		// The setup waits, with its frame of the box on screen and a camera that looks away active.
+		await page.goto(`object-events.html?${switchesOf(mode, undefined, 'setup')}`);
+		// The setup waits with its frame of the box on screen.
 		await page.waitForFunction(
 			() => (globalThis as { objectEventsSetup?: unknown }).objectEventsSetup,
 		);
 		await page.mouse.click(RIGHT.x, RIGHT.y);
+		// The setup then turns its camera away and draws more frames before the sketch reads the click.
 		await page.evaluate(() =>
 			(globalThis as { objectEventsSetup?: { go: () => void } }).objectEventsSetup?.go(),
 		);
 		const send = await started(page);
-		await expectLines(send, ['click right 0']);
+		await expectLines(send, ['click right', 'ray right']);
 	});
 
 test('pointer events allocate nothing', async ({ page }) => {

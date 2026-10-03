@@ -636,7 +636,7 @@ describe('screenToRay and worldToScreen', () => {
 		expectClose(rayOf(ray), threeRay(theirs, frameWorld(6), x + 1, y), 9);
 		other.screenToRay(x, y, ray);
 		expectClose(rayOf(ray), threeRay(theirs, frameWorld(6), x, y), 9);
-		// The ring keeps four frames: frame 1's place now holds frame 5.
+		// The ring keeps four views: frame 1's place now holds frame 5's.
 		eventFrames.set(`${x},${y}`, 1);
 		camera.screenToRay(x, y, ray);
 		expectClose(rayOf(ray), threeRay(theirs, frameWorld(6), x, y), 9);
@@ -674,32 +674,39 @@ describe('screenToRay and worldToScreen', () => {
 		expect(cameras.frameRay(2, point, ray, undefined)).toBe(-1);
 	});
 
-	test("a ray from an input event during the setup's frames uses the setup's camera", () => {
+	test('each frame of the setup keeps its own camera, and a run of one view shares an entry', () => {
 		const { scene, setWorld, eventFrames } = setup();
 		const camera = scene.createPerspectiveCamera({ fov: 60 });
 		scene.setActiveCamera(camera);
 		const theirs = new ThreePerspectiveCamera(60, CSS[0] / CSS[1], 0.1, 2000);
 		const frameWorld = (frame: number) => world([0, 1, 5], [0, frame * 0.1, 0]);
+		const keep = (frame: number) => scene.keepFrameCamera(frame, CSS[0] * 2, CSS[1] * 2);
 		const ray = newRay();
 		const [x, y] = [100.5, 80.25];
-		// Frame 0 names a frame of the setup, so the ring must not mistake an empty entry for it.
-		eventFrames.set(`${x},${y}`, 0);
-		setWorld(camera, frameWorld(0));
-		camera.screenToRay(x, y, ray);
-		expectClose(rayOf(ray), threeRay(theirs, frameWorld(0), x, y), 9);
-		scene.keepFrameCamera(0, CSS[0] * 2, CSS[1] * 2);
-		// The sketch's first frames turn the camera while the setup's frame is still on screen.
-		for (let frame = 1; frame <= 2; frame++) {
+		const rayAt = (frame: number) => {
+			eventFrames.set(`${x},${y}`, frame);
+			camera.screenToRay(x, y, ray);
+			return rayOf(ray);
+		};
+		// The setup draws frame 1, then turns its camera and draws frame 2.
+		setWorld(camera, frameWorld(1));
+		keep(1);
+		setWorld(camera, frameWorld(2));
+		// The preset check's frames repeat the setup's last view, far more of them than the ring has
+		// entries.
+		for (let frame = 2; frame <= 20; frame++) keep(frame);
+		// The sketch's first frames turn the camera on.
+		for (let frame = 21; frame <= 22; frame++) {
 			setWorld(camera, frameWorld(frame));
-			scene.keepFrameCamera(frame, CSS[0] * 2, CSS[1] * 2);
+			keep(frame);
 		}
-		camera.screenToRay(x, y, ray);
-		expectClose(rayOf(ray), threeRay(theirs, frameWorld(0), x, y), 9);
-		camera.screenToRay(x + 1, y, ray);
-		expectClose(rayOf(ray), threeRay(theirs, frameWorld(2), x + 1, y), 9);
-		// The ray of a pointer event on objects takes the setup's camera in the same way.
-		expect(scene.frameCameras.frameRay(0, new Float64Array([x, y]), ray, camera)).toBe(1);
-		expectClose(rayOf(ray), threeRay(theirs, frameWorld(0), x, y), 9);
+		expectClose(rayAt(1), threeRay(theirs, frameWorld(1), x, y), 9);
+		expect(scene.frameCameras.frameRay(1, new Float64Array([x, y]), ray, camera)).toBe(1);
+		expectClose(rayOf(ray), threeRay(theirs, frameWorld(1), x, y), 9);
+		expectClose(rayAt(12), threeRay(theirs, frameWorld(2), x, y), 9);
+		expectClose(rayAt(21), threeRay(theirs, frameWorld(21), x, y), 9);
+		// Frame 0 means that no frame was on screen yet: the camera as it stands gives the ray.
+		expectClose(rayAt(0), threeRay(theirs, frameWorld(22), x, y), 9);
 	});
 
 	test('development builds check the point and the camera', () => {

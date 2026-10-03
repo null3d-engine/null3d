@@ -1090,8 +1090,9 @@ export abstract class Camera extends Object3D {
 	 * starts at the camera, and an orthographic ray on the near plane. The direction has length 1.
 	 *
 	 * When the point is the position of the pointer or a finger from `input`, the ray uses the
-	 * camera of the frame that was on screen at that event, if it is one of the last four frames.
-	 * So a click during a fast pan picks what the user saw. Any other point uses the camera of the
+	 * camera of the frame that was on screen at that event, if the engine still keeps it. It keeps
+	 * the last four views, and frames in a row with the same view count as one. So a click during
+	 * a fast pan picks what the user saw. Any other point uses the camera of the
 	 * frame that last ran, with its lens as it is now. Objects stay where they are now, so a moving
 	 * object can be up to a frame of its motion away from where the user saw it.
 	 */
@@ -1774,7 +1775,7 @@ export class Scene {
 	}
 
 	/**
-	 * Casts the ray of a pointer event from the camera of sketch frame `frame`, or from the active
+	 * Casts the ray of a pointer event from the camera of engine frame `frame`, or from the active
 	 * camera as it stands when the ring no longer holds the frame, on the camera's layers.
 	 */
 	private pick(frame: number, numbers: Float64Array, ray: Ray): PointerTarget | null {
@@ -1795,9 +1796,9 @@ export class Scene {
 	}
 
 	/**
-	 * @internal Keeps the active camera of sketch frame `frame`, which drew on a canvas of `width`
-	 * by `height` device pixels, so rays from that frame's input use it. The setup's frames are
-	 * frame 0.
+	 * @internal Keeps the active camera of engine frame `frame`, which drew on a canvas of `width`
+	 * by `height` device pixels, so rays from that frame's input use it. The engine's count includes
+	 * the frames that ran no sketch code, such as the setup's.
 	 */
 	keepFrameCamera(frame: number, width: number, height: number): void {
 		this.frameCameras.record(frame, this.activeCamera, width, height);

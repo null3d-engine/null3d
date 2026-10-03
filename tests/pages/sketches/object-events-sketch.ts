@@ -19,6 +19,7 @@ import {
 	EVENT_POINTER_UP,
 	FLAG_PRIMARY,
 } from '../../../packages/engine/src/shared/control';
+import { shownFrame } from '../lib/shown-frame';
 
 /** The page's global object, which holds the loop that the test calls. */
 const scope = globalThis as { __null3dPointerLoop?: (iterations: number) => number };
@@ -96,8 +97,7 @@ export default defineSketch(({ scene, geometry, materials, input, page, time }) 
 			dome.on('click', (event) => {
 				panClicks.push({
 					frame: time.frame,
-					// The frame on screen at the pointer's event, which the public API leaves out.
-					shown: (input.pointer as unknown as { frame: number }).frame,
+					shown: shownFrame(input),
 					turn: turnOf(event.ray.direction),
 					hit: nameOf(event.object),
 				});

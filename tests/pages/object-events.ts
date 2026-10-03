@@ -3,9 +3,9 @@
 // or any other to only ask) and resolves with the sketch's reply: the lines its handlers wrote, the
 // rays that pointer events cast, and the clicks during the pan. The object events test drives the
 // mouse and the touch screen over the canvas in each thread mode and on each GPU path. With
-// `?setup`, the page starts a sketch whose setup waits with a frame of the setup on screen. The page
-// then sets `objectEventsSetup` on the window once the setup waits, and `objectEventsSetup.go()`
-// lets it go on, through a broadcast channel, since the engine's start waits for the setup.
+// `?setup`, the page starts a sketch whose setup waits with one of its frames on screen. The page
+// sets `objectEventsSetup` on the window once the setup waits, and `objectEventsSetup.go()` lets
+// it go on. They talk through a broadcast channel, since the engine's start waits for the setup.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 

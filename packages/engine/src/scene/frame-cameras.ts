@@ -1,12 +1,15 @@
 // The cameras of the frames on screen, for `camera.screenToRay` and `camera.worldToScreen`. In
 // pipelined mode the thread that draws shows an older frame than the one the sketch computes, so a
 // click tested against the current camera would test a view the user never saw. After each frame
-// records, the setup's frames included as frame 0, the sketch thread keeps the camera it drew from
-// in a ring of the last four frames: its world matrix with a 64-bit translation, its lens as the
-// frame's canvas shaped it, the canvas's size in CSS pixels and the layers it draws. A ray from the
-// point of an input event then uses the frame that the event names, and any other point uses the
-// camera as it stands. Pointer events on objects name the frame of each event. Everything lives in
-// typed arrays made once, so neither call nor the per-frame record allocates.
+// records, the sketch thread keeps the camera it drew from in a ring of the last four views: its
+// world matrix with a 64-bit translation, its lens as the frame's canvas shaped it, the canvas's
+// size in CSS pixels and the layers it draws. Frames count in the engine's own numbers, so each
+// frame of the setup and of the preset check keeps its own view, though no sketch code ran in it.
+// Frames that follow each other with the same view share an entry: a camera at rest, as through
+// the preset check's many frames, then keeps older views in the ring. A ray from the point of an
+// input event uses the frame that the event names, and any other point uses the camera as it
+// stands. Pointer events on objects name the frame of each event. Everything lives in typed arrays
+// made once, so neither call nor the per-frame record allocates.
 
 import type { Vec3Like } from '../math/types';
 import { type ControlViews, Slot } from '../shared/control';
@@ -25,8 +28,8 @@ export interface Ray {
 }
 
 /**
- * Finds the frame that was on screen at the input event at a point, or -1 when no event is there.
- * Frame 0 is a frame that the setup drew, before the sketch's first update.
+ * Finds the frame that was on screen at the input event at a point, in the engine's count of
+ * frames, or -1 when no event is there.
  */
 export interface EventFrames {
 	frameAt(x: number, y: number): number;
@@ -64,17 +67,18 @@ export const LENS_CENTER_Y = 4;
 export const LENS_NEAR = 5;
 export const LENS_FLOATS = 6;
 
-/** The frames whose cameras the ring keeps. */
-const RING_FRAMES = 4;
-/** The frame of an entry that holds no camera. Frame 0 is the setup's, so an empty entry is -1. */
+/** The views whose cameras the ring keeps. */
+const RING_VIEWS = 4;
+/** The frames of an entry that holds no frame yet. */
 const NO_FRAME = -1;
 /**
- * Each entry's fields: the frame, the camera's layers, the lens, the canvas's sizes, then the
- * camera's world matrix.
+ * Each entry's fields: the first and the last frame of its view, the camera's layers, the lens,
+ * the canvas's sizes, then the camera's world matrix.
  */
-const FRAME = 0;
-const LAYERS = 1;
-const LENS = 2;
+const FIRST = 0;
+const LAST = 1;
+const LAYERS = 2;
+const LENS = 3;
 /** The canvas's size in device pixels, whose shape the frame's projection takes. */
 const WIDTH = LENS + LENS_FLOATS;
 const HEIGHT = WIDTH + 1;
@@ -88,11 +92,15 @@ const ENTRY = MATRIX + MATRIX_FLOATS;
 
 /** The cameras of the last frames, and the math of rays and projections from them. */
 export class FrameCameras {
-	private readonly ring = new Float64Array(RING_FRAMES * ENTRY);
-	/** The camera of each entry of the ring. */
-	private readonly ringCameras: (FrameLens | undefined)[] = new Array(RING_FRAMES).fill(undefined);
+	private readonly ring = new Float64Array(RING_VIEWS * ENTRY);
+	/** The camera of each entry of the ring, or undefined for frames that drew from none. */
+	private readonly ringCameras: (FrameLens | undefined)[] = new Array(RING_VIEWS).fill(undefined);
+	/** The entry that the last frame went into, or -1 before the first. */
+	private newest = -1;
 	/** The entry of the camera as it stands, which each call fills again. */
 	private readonly current = new Float64Array(ENTRY);
+	/** The view of the frame being kept, before it joins the ring. */
+	private readonly view = new Float64Array(ENTRY);
 	private readonly matrix = new Float64Array(MATRIX_FLOATS);
 	/** The point of a `screenToRay` call, which the ray's math reads from an array. */
 	private readonly point = new Float64Array(2);
@@ -102,22 +110,37 @@ export class FrameCameras {
 		private readonly control: ControlViews,
 		private readonly events: EventFrames,
 	) {
-		for (let index = 0; index < RING_FRAMES; index++) this.ring[index * ENTRY + FRAME] = NO_FRAME;
+		this.ring.fill(NO_FRAME);
 	}
 
 	/**
-	 * Keeps the camera that frame `frame` drew from, on a canvas of `width` by `height` device
-	 * pixels, or forgets the frame when it drew from no camera.
+	 * Keeps the camera that engine frame `frame` drew from, on a canvas of `width` by `height`
+	 * device pixels, or that it drew from none. A frame that follows the newest entry's last frame
+	 * with the same view joins that entry; any other takes the place of the oldest.
 	 */
 	record(frame: number, camera: FrameLens | undefined, width: number, height: number): void {
-		const index = frame % RING_FRAMES;
-		const at = index * ENTRY;
-		const ring = this.ring;
-		ring[at + FRAME] = NO_FRAME;
-		this.ringCameras[index] = camera;
-		if (camera === undefined || this.core.readWorldMatrix(camera.handle, this.matrix) !== 0) return;
-		this.fill(ring, at, camera, width, height);
-		ring[at + FRAME] = frame;
+		const { ring, view } = this;
+		const drawn =
+			camera !== undefined && this.core.readWorldMatrix(camera.handle, this.matrix) === 0
+				? camera
+				: undefined;
+		if (drawn !== undefined) this.fill(view, 0, drawn, width, height);
+		let at = this.newest * ENTRY;
+		if (
+			this.newest >= 0 &&
+			ring[at + LAST] === frame - 1 &&
+			this.ringCameras[this.newest] === drawn &&
+			(drawn === undefined || sameView(ring, at, view))
+		) {
+			ring[at + LAST] = frame;
+			return;
+		}
+		this.newest = (this.newest + 1) % RING_VIEWS;
+		at = this.newest * ENTRY;
+		this.ringCameras[this.newest] = drawn;
+		ring[at + FIRST] = frame;
+		ring[at + LAST] = frame;
+		for (let k = LAYERS; k < ENTRY; k++) ring[at + k] = view[k] as number;
 	}
 
 	/**
@@ -160,10 +183,14 @@ export class FrameCameras {
 	 */
 	private entryOf(frame: number, camera: FrameLens | undefined): number {
 		if (frame < 0) return -1;
-		const index = frame % RING_FRAMES;
-		const at = index * ENTRY;
-		if (this.ring[at + FRAME] !== frame) return -1;
-		return camera === undefined || this.ringCameras[index] === camera ? at : -1;
+		const { ring } = this;
+		for (let index = 0; index < RING_VIEWS; index++) {
+			const at = index * ENTRY;
+			if (frame < (ring[at + FIRST] as number) || frame > (ring[at + LAST] as number)) continue;
+			const drawn = this.ringCameras[index];
+			return drawn !== undefined && (camera === undefined || drawn === camera) ? at : -1;
+		}
+		return -1;
 	}
 
 	/**
@@ -244,6 +271,12 @@ export class FrameCameras {
 		entry[at + CSS_HEIGHT] = slotFloats[Slot.CanvasCssHeight] as number;
 		entry.set(this.matrix, at + MATRIX);
 	}
+}
+
+/** True when the ring's entry at `at` holds the same view as `view`, whatever their frames. */
+function sameView(ring: Float64Array, at: number, view: Float64Array): boolean {
+	for (let k = LAYERS; k < ENTRY; k++) if (ring[at + k] !== view[k]) return false;
+	return true;
 }
 
 /**

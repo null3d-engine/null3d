@@ -308,7 +308,7 @@ describe('pointer events on objects', () => {
 		expect(picks.map(({ frame }) => frame)).toEqual([5, 6]);
 	});
 
-	test("events while a frame of the setup is on screen name the setup's frame, frame 0", () => {
+	test("events name the engine's frame on screen, the setup's frames included", () => {
 		const { views, input, events, picks, pointer, listen, box } = scene();
 		listen(box, 'pointerdown', 'pointerenter');
 		// Three frames of the setup drew, so the sketch's first frame is the engine's fourth.
@@ -316,11 +316,11 @@ describe('pointer events on objects', () => {
 		pointer(EVENT_POINTER_DOWN, 250, 1);
 		input.beginFrame(4, 3);
 		events.dispatch(() => {});
-		// The mouse rests while the setup's last frame is still on screen.
+		// The mouse rests while the setup's last frame is on screen.
 		Atomics.store(views.slots, Slot.FramePresented, 3);
 		input.beginFrame(5, 3);
 		events.dispatch(() => {});
-		expect(picks.map(({ frame }) => frame)).toEqual([0, 0]);
+		expect(picks.map(({ frame }) => frame)).toEqual([2, 3]);
 	});
 
 	test('a run of moves casts one ray, at its last position', () => {

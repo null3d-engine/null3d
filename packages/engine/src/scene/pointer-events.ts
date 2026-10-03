@@ -147,7 +147,7 @@ const POINTERS = 16;
 /** Finds the object under a point of a frame on screen. */
 export interface PointerPicker {
 	/**
-	 * Writes the ray from the camera of sketch frame `frame` through the point at `EVENT_X` and
+	 * Writes the ray from the camera of engine frame `frame` through the point at `EVENT_X` and
 	 * `EVENT_Y` of `numbers` into `ray`, and casts it. Writes the closest hit's numbers into
 	 * `numbers`, and returns its object or batch, or null when it hits nothing.
 	 */
@@ -158,10 +158,7 @@ export interface PointerPicker {
 export interface PointerInput {
 	/** The log that collects each frame's pointer events, set while objects listen. */
 	pointerLog: PointerLog | undefined;
-	/**
-	 * The sketch frame on screen now, whose camera a pointer that rests casts its ray from. A frame
-	 * of the setup is frame 0.
-	 */
+	/** The frame on screen now, in the engine's count, whose camera a resting pointer casts from. */
 	presentedFrame(): number;
 }
 
@@ -183,11 +180,10 @@ export class PointerLog {
 	readonly floats = new Float32Array(INPUT_RING_EVENTS * 2);
 
 	/**
-	 * Copies the ring's pointer event at `base`, with its frame in the sketch's count, which leaves
-	 * out the `setupFrames` that ran no sketch code. A move that follows a move of the same pointer
-	 * takes its place: one ray then serves a run of moves.
+	 * Copies the ring's pointer event at `base`, with its frame in the engine's count. A move that
+	 * follows a move of the same pointer takes its place: one ray then serves a run of moves.
 	 */
-	add(ring: Int32Array, ringFloats: Float32Array, base: number, setupFrames: number): void {
+	add(ring: Int32Array, ringFloats: Float32Array, base: number): void {
 		const { ints } = this;
 		const type = ring[base + FIELD_TYPE] as number;
 		const id = ring[base + FIELD_ID] as number;
@@ -205,7 +201,7 @@ export class PointerLog {
 		const i = at * LOG_INTS;
 		ints[i + LOG_TYPE] = type;
 		ints[i + LOG_ID] = id;
-		ints[i + LOG_FRAME] = Math.max(0, (ring[base + FIELD_FRAME] as number) - setupFrames);
+		ints[i + LOG_FRAME] = ring[base + FIELD_FRAME] as number;
 		ints[i + LOG_BUTTON] = ring[base + FIELD_CODE] as number;
 		ints[i + LOG_BUTTONS] = ring[base + FIELD_BUTTONS] as number;
 		ints[i + LOG_FLAGS] = ring[base + FIELD_FLAGS] as number;
