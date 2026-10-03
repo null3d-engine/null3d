@@ -1152,7 +1152,16 @@ async function startEngine(
 			// The page starts its core before the workers get theirs. The first core in a new shared
 			// memory fills it with the core's data, and a core that starts while another fills it
 			// waits, which the page's thread must never do.
-			const started = await abortable(startCore(build, core.module, core.memory), start.signal);
+			const coreStart = startCore(build, core.module, core.memory);
+			const started = await abortable(coreStart, start.signal).catch((error: unknown) => {
+				// A start that ends while the page's core starts lets go of that core once it has
+				// started, or the core would keep the engine's memory.
+				void coreStart.then(
+					({ glue }) => glue.releaseInstance?.(),
+					() => undefined,
+				);
+				throw error;
+			});
 			localCore = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
 			wasmMemory = memory;
