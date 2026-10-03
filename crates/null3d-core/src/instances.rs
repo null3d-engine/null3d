@@ -16,6 +16,14 @@
 //! frees its arrays, so do it outside the frame loop's steady state, and call
 //! [`BatchTable::note_memory_grew`] when WebAssembly memory grew so TypeScript rebuilds its views.
 //!
+//! # Parts
+//!
+//! A batch can draw one part of a model: a mesh placed by a fixed `part` matrix in the model's
+//! space, which each row's transform then places in the world. The parts of one model share rows:
+//! the first part owns the row arrays, and each other part reads them, follows their dirty marks
+//! and active count, and computes its own world output. One write to the first part's rows thus
+//! moves every part.
+//!
 //! # Cells
 //!
 //! Each row takes the grid cell that holds its position (see [`crate::cells`]), and its world
@@ -36,7 +44,9 @@ use crate::error::{CoreError, Resource};
 use crate::handle::{Handle, SlotAllocator};
 use crate::jobs::JobSystem;
 use crate::layers::DEFAULT_LAYERS;
-use crate::math::{self, IDENTITY_ROTATION, compose4, deinterleave3, max_axis_scale4, transpose4};
+use crate::math::{
+    self, Affine, IDENTITY_ROTATION, compose4, deinterleave3, max_axis_scale4, mul4, transpose4,
+};
 use crate::world::{COLOR_FLOATS, MATRIX_FLOATS, WorldArrays, WorldPtrs};
 
 /// Rows per chunk of the parallel update: a whole number of 64-row bitset words.
@@ -67,6 +77,12 @@ pub struct InstanceBatch {
     active: u32,
     /// The layer mask of every row (see [`crate::layers`]).
     layers: u32,
+    with_colors: bool,
+    /// The batch whose rows this one reads, for a part that owns no rows.
+    source: Option<Handle>,
+    /// The matrix that places the mesh in the space of each row, applied before the row's own.
+    part: Option<Affine>,
+    /// Empty for a part that reads another batch's rows, as are the other row arrays.
     positions: Vec<f32>,
     rotations: Vec<f32>,
     scales: Vec<f32>,
@@ -123,8 +139,35 @@ impl InstanceBatch {
         material: u32,
         local_radius: f32,
     ) -> Result<Self, TryReserveError> {
+        Self::try_new_part(
+            capacity,
+            dynamic,
+            with_colors,
+            mesh,
+            material,
+            local_radius,
+            None,
+            None,
+        )
+    }
+
+    /// As [`InstanceBatch::try_new`], for one part of a model (see the module documentation):
+    /// `part` places the mesh in the space of each row, and with a `source`, the batch reads that
+    /// batch's rows and owns none.
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_new_part(
+        capacity: u32,
+        dynamic: bool,
+        with_colors: bool,
+        mesh: u32,
+        material: u32,
+        local_radius: f32,
+        source: Option<Handle>,
+        part: Option<Affine>,
+    ) -> Result<Self, TryReserveError> {
         let rows = capacity as usize;
-        let mut rotations = filled(rows * 4, 0.0)?;
+        let inputs = if source.is_some() { 0 } else { rows };
+        let mut rotations = filled(inputs * 4, 0.0)?;
         for q in rotations.as_chunks_mut::<4>().0 {
             *q = IDENTITY_ROTATION;
         }
@@ -138,10 +181,13 @@ impl InstanceBatch {
             local_radius,
             active: capacity,
             layers: DEFAULT_LAYERS,
-            positions: filled(rows * 3, 0.0)?,
+            with_colors,
+            source,
+            part,
+            positions: filled(inputs * 3, 0.0)?,
             rotations,
-            scales: filled(rows * 3, 1.0)?,
-            colors: filled(if with_colors { rows * 4 } else { 0 }, 1.0)?,
+            scales: filled(inputs * 3, 1.0)?,
+            colors: filled(if with_colors { inputs * 4 } else { 0 }, 1.0)?,
             world: [
                 WorldArrays::try_new(rows, with_colors)?,
                 WorldArrays::try_new(rows, with_colors)?,
@@ -185,7 +231,17 @@ impl InstanceBatch {
 
     /// True when rows have colours.
     pub fn has_colors(&self) -> bool {
-        !self.colors.is_empty()
+        self.with_colors
+    }
+
+    /// The batch whose rows this part reads, or `None` for a batch that owns its rows.
+    pub fn source(&self) -> Option<Handle> {
+        self.source
+    }
+
+    /// The matrix that places the mesh in the space of each row, if any.
+    pub fn part(&self) -> Option<&Affine> {
+        self.part.as_ref()
     }
 
     /// The mesh id.
@@ -359,14 +415,16 @@ impl InstanceBatch {
     /// # Panics
     /// When `frame` is 0: frames start at 1.
     pub fn update(&mut self, jobs: &JobSystem, frame: u32, cells: &mut CellTable) {
-        if let Some(kernel) = self.prepare(frame, cells) {
+        let rows = RowSource::of(self);
+        if let Some(kernel) = self.prepare(frame, cells, &rows) {
             let words = kernel.words();
             jobs.parallel_for(words, WORDS_PER_CHUNK, &|range, _| {
                 // SAFETY: chunks cover disjoint word ranges, hence disjoint rows.
                 unsafe { kernel.run(range) };
             });
         }
-        self.finish(cells);
+        // SAFETY: the batch owns the rows that `rows` points at, and nothing writes them.
+        unsafe { self.finish(cells, &rows) };
     }
 
     /// Gives back every row's place in `cells`, the scene's cell table, before the batch goes.
@@ -379,9 +437,25 @@ impl InstanceBatch {
         self.mixed = false;
     }
 
-    /// Starts frame `frame` and returns the kernel for the rows that need work, if any.
-    fn prepare(&mut self, frame: u32, cells: &CellTable) -> Option<RowKernel> {
+    /// Starts frame `frame` and returns the kernel for the rows that need work, if any. `rows`
+    /// holds the row arrays: the batch's own, or its source's for a part that reads another
+    /// batch's rows, whose active count and dirty marks it then follows.
+    fn prepare(&mut self, frame: u32, cells: &CellTable, rows: &RowSource) -> Option<RowKernel> {
         assert!(frame != 0, "frames start at 1");
+        if self.source.is_some() {
+            if rows.active != self.active {
+                // A source has this part's capacity, and a part without one has no rows.
+                let _ = self.set_active_count(rows.active);
+            }
+            if rows.dirty_any {
+                // SAFETY: the source's bitset is live and covers this part's capacity.
+                let source = unsafe { std::slice::from_raw_parts(rows.dirty, rows.dirty_words) };
+                for (word, &theirs) in self.dirty.words_mut().iter_mut().zip(source) {
+                    *word |= theirs;
+                }
+                self.dirty_any = true;
+            }
+        }
         let parity = (frame & 1) as usize;
         if frame != self.frame {
             if frame != self.frame.wrapping_add(1) {
@@ -418,14 +492,16 @@ impl InstanceBatch {
             mixed: self.mixed,
             moved: self.moved.words_mut().as_mut_ptr(),
             moved_any: &self.moved_any,
-            positions: self.positions.as_ptr(),
-            rotations: self.rotations.as_ptr(),
-            scales: self.scales.as_ptr(),
-            colors: if self.colors.is_empty() {
-                std::ptr::null()
+            positions: rows.positions,
+            rotations: rows.rotations,
+            scales: rows.scales,
+            colors: if self.with_colors {
+                rows.colors
             } else {
-                self.colors.as_ptr()
+                std::ptr::null()
             },
+            part: self.part.unwrap_or(math::IDENTITY),
+            has_part: self.part.is_some(),
             local_radius: self.local_radius,
             out: self.world[parity].ptrs(),
             previous,
@@ -440,9 +516,15 @@ impl InstanceBatch {
 
     /// Ends the frame's update: moves the rows found in a new cell, clears the dirty rows and
     /// records the changed ranges.
-    fn finish(&mut self, cells: &mut CellTable) {
+    ///
+    /// # Safety
+    /// `rows` points at live row arrays of this batch's capacity, or holds no rows, and nothing
+    /// writes them during the call.
+    unsafe fn finish(&mut self, cells: &mut CellTable, rows: &RowSource) {
         let parity = (self.frame & 1) as usize;
-        self.move_cells(cells, parity);
+        // SAFETY: as the caller guarantees.
+        let positions = unsafe { rows.positions() };
+        self.move_cells(cells, parity, positions);
         self.ranges.clear();
         if self.dynamic {
             if self.active > 0 {
@@ -471,17 +553,13 @@ impl InstanceBatch {
     /// or into the origin cell when the table has no room (see [`cells::enter_cell`]), and records
     /// the range of rows that moved. Then, when rows moved or came back, checks whether the active
     /// rows share a cell.
-    fn move_cells(&mut self, cells: &mut CellTable, parity: usize) {
+    fn move_cells(&mut self, cells: &mut CellTable, parity: usize, positions: &[f32]) {
         self.cell_changes = RowRange::default();
         if std::mem::take(self.moved_any.get_mut()) {
             let (mut first, mut end) = (u32::MAX, 0);
             for row in self.moved.iter_ones() {
                 let r = row as usize;
-                let position = [
-                    self.positions[r * 3],
-                    self.positions[r * 3 + 1],
-                    self.positions[r * 3 + 2],
-                ];
+                let position = [positions[r * 3], positions[r * 3 + 1], positions[r * 3 + 2]];
                 let world = &mut self.world[parity];
                 self.cells[r] = cells::enter_cell(cells, world, r, position, self.cells[r]);
                 (first, end) = (first.min(row), end.max(row + 1));
@@ -513,6 +591,64 @@ fn push_range(ranges: &mut Vec<RowRange>, start: u32, count: u32) {
     }
 }
 
+/// The row arrays that a batch's update reads: its own, or those of the batch it is a part of,
+/// with that batch's active count and dirty marks.
+#[derive(Clone, Copy)]
+struct RowSource {
+    positions: *const f32,
+    rotations: *const f32,
+    scales: *const f32,
+    colors: *const f32,
+    dirty: *const u64,
+    dirty_words: usize,
+    dirty_any: bool,
+    active: u32,
+    /// The rows that the arrays hold.
+    rows: u32,
+}
+
+impl RowSource {
+    /// The rows that `batch` owns: none for a part that reads another batch's rows.
+    fn of(batch: &InstanceBatch) -> Self {
+        Self {
+            positions: batch.positions.as_ptr(),
+            rotations: batch.rotations.as_ptr(),
+            scales: batch.scales.as_ptr(),
+            colors: batch.colors.as_ptr(),
+            dirty: batch.dirty.words().as_ptr(),
+            dirty_words: batch.dirty.words().len(),
+            dirty_any: batch.dirty_any,
+            active: batch.active,
+            rows: (batch.positions.len() / 3) as u32,
+        }
+    }
+
+    /// No rows, for a part whose source batch is gone.
+    fn none() -> Self {
+        let empty = std::ptr::NonNull::<f32>::dangling().as_ptr().cast_const();
+        Self {
+            positions: empty,
+            rotations: empty,
+            scales: empty,
+            colors: empty,
+            dirty: std::ptr::NonNull::<u64>::dangling().as_ptr().cast_const(),
+            dirty_words: 0,
+            dirty_any: false,
+            active: 0,
+            rows: 0,
+        }
+    }
+
+    /// The positions, 3 floats per row.
+    ///
+    /// # Safety
+    /// The arrays are live, and nothing writes them while the slice lives.
+    unsafe fn positions(&self) -> &[f32] {
+        // SAFETY: as the caller guarantees.
+        unsafe { std::slice::from_raw_parts(self.positions, self.rows as usize * 3) }
+    }
+}
+
 /// Raw pointers into one batch, for the chunks of a parallel update. Chunks own disjoint
 /// 64-row words, so they write disjoint rows and disjoint changed-bitset and moved-bitset words.
 /// The cell table does not change while the chunks read it.
@@ -529,6 +665,9 @@ struct RowKernel {
     rotations: *const f32,
     scales: *const f32,
     colors: *const f32,
+    /// The part matrix, applied before each row's transform when `has_part` is set.
+    part: Affine,
+    has_part: bool,
     local_radius: f32,
     out: WorldPtrs,
     previous: WorldPtrs,
@@ -634,7 +773,10 @@ impl RowKernel {
             let scale = deinterleave3(load(s), load(s.add(4)), load(s.add(8)));
             let q = self.rotations.add(row * 4);
             let rotation = transpose4([load(q), load(q.add(4)), load(q.add(8)), load(q.add(12))]);
-            let matrices = compose4(position, rotation, scale);
+            let mut matrices = compose4(position, rotation, scale);
+            if self.has_part {
+                matrices = mul4(&matrices, &self.part);
+            }
             let radii = f32x4::splat(self.local_radius) * max_axis_scale4(&matrices);
             self.out.write4(row, &matrices, radii);
             if !self.colors.is_null() {
@@ -665,7 +807,10 @@ impl RowKernel {
                 .cast::<[f32; 4]>()
                 .read_unaligned();
             let s = self.scales.add(row * 3).cast::<[f32; 3]>().read_unaligned();
-            let matrix = math::compose(p, q, s);
+            let mut matrix = math::compose(p, q, s);
+            if self.has_part {
+                matrix = math::mul(&matrix, &self.part);
+            }
             self.out
                 .write(row, &matrix, math::world_sphere(&matrix, self.local_radius));
             if !self.colors.is_null() {
@@ -865,6 +1010,19 @@ impl BatchTable {
         material: u32,
         local_radius: f32,
     ) -> Result<Handle, CoreError> {
+        self.insert(capacity, with_colors, || {
+            InstanceBatch::try_new(capacity, dynamic, with_colors, mesh, material, local_radius)
+        })
+    }
+
+    /// Makes room for a batch of `capacity` rows in the work list, makes it with `make`, and gives
+    /// it an id.
+    fn insert(
+        &mut self,
+        capacity: u32,
+        with_colors: bool,
+        make: impl FnOnce() -> Result<InstanceBatch, TryReserveError>,
+    ) -> Result<Handle, CoreError> {
         let out_of_memory = |_| CoreError::OutOfMemory {
             bytes: u32::try_from(u64::from(capacity) * InstanceBatch::row_bytes(with_colors))
                 .unwrap_or(u32::MAX),
@@ -874,9 +1032,7 @@ impl BatchTable {
         self.work
             .try_reserve(work_needed.saturating_sub(self.work.len()))
             .map_err(out_of_memory)?;
-        let batch =
-            InstanceBatch::try_new(capacity, dynamic, with_colors, mesh, material, local_radius)
-                .map_err(out_of_memory)?;
+        let batch = make().map_err(out_of_memory)?;
         let id = self.ids.reserve().map_err(|e| match e {
             CoreError::CapacityExceeded { capacity, .. } => CoreError::CapacityExceeded {
                 resource: Resource::Batches,
@@ -887,6 +1043,48 @@ impl BatchTable {
         self.batches[id.slot() as usize] = Some(batch);
         self.work_needed = work_needed;
         Ok(id)
+    }
+
+    /// Creates one part of a model (see the module documentation) and returns its id. `part`
+    /// places the mesh in the space of each row. Without a `source`, the batch owns `capacity`
+    /// rows; with one, it reads that batch's rows, and takes its capacity, its dynamic flag and
+    /// whether rows have colours. Fails as [`BatchTable::create`] does, and with
+    /// [`CoreError::InvalidHandle`] or [`CoreError::StaleHandle`] for a source that is no batch
+    /// that owns rows.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_part(
+        &mut self,
+        source: Option<Handle>,
+        capacity: u32,
+        dynamic: bool,
+        with_colors: bool,
+        mesh: u32,
+        material: u32,
+        local_radius: f32,
+        part: Affine,
+    ) -> Result<Handle, CoreError> {
+        let (capacity, dynamic, with_colors) = match source {
+            Some(id) => {
+                let owner = self.get(id)?;
+                if owner.source.is_some() {
+                    return Err(CoreError::InvalidHandle { raw: id.raw() });
+                }
+                (owner.capacity, owner.dynamic, owner.with_colors)
+            }
+            None => (capacity, dynamic, with_colors),
+        };
+        self.insert(capacity, with_colors, || {
+            InstanceBatch::try_new_part(
+                capacity,
+                dynamic,
+                with_colors,
+                mesh,
+                material,
+                local_radius,
+                source,
+                Some(part),
+            )
+        })
     }
 
     /// Destroys a batch, gives its rows' places back to `cells`, the scene's cell table, and frees
@@ -934,8 +1132,9 @@ impl BatchTable {
     pub fn update(&mut self, jobs: &JobSystem, frame: u32, cells: &mut CellTable) {
         self.work.clear();
         for slot in self.ids.live().iter_ones() {
+            let rows = self.rows_of(slot);
             let batch = self.batches[slot as usize].as_mut().expect("live");
-            let kernel = batch.prepare(frame, cells);
+            let kernel = batch.prepare(frame, cells, &rows);
             if let Some(k) = &kernel {
                 let words = k.words();
                 let mut w = 0;
@@ -960,10 +1159,23 @@ impl BatchTable {
         });
         for slot in self.ids.live().iter_ones() {
             self.kernels[slot as usize] = None;
-            self.batches[slot as usize]
-                .as_mut()
-                .expect("live")
-                .finish(cells);
+            let rows = self.rows_of(slot);
+            let batch = self.batches[slot as usize].as_mut().expect("live");
+            // SAFETY: `rows` points at the arrays of a live batch, which the loop does not write:
+            // `finish` writes only the batch it runs on, and a source's rows belong to another.
+            unsafe { batch.finish(cells, &rows) };
+        }
+    }
+
+    /// The row arrays that the batch in `slot` reads: its own, its source's, or none when its
+    /// source is gone.
+    fn rows_of(&self, slot: u32) -> RowSource {
+        let batch = self.batches[slot as usize].as_ref().expect("live");
+        match batch.source {
+            None => RowSource::of(batch),
+            Some(id) => self
+                .get(id)
+                .map_or_else(|_| RowSource::none(), RowSource::of),
         }
     }
 
@@ -1257,5 +1469,130 @@ mod tests {
         batch.update(&jobs, 5, &mut cells);
         assert_eq!(batch.common_cell(), Some(ORIGIN_CELL));
         assert!(cells.origin_only());
+    }
+
+    /// A part matrix that turns a quarter about Y, scales by 2 and moves by (1, 2, 3).
+    const PART: Affine = [
+        0.0, 0.0, 2.0, 1.0, //
+        0.0, 2.0, 0.0, 2.0, //
+        -2.0, 0.0, 0.0, 3.0,
+    ];
+
+    #[test]
+    fn parts_place_their_mesh_before_each_row_and_share_the_first_parts_rows() {
+        let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
+        let mut table = BatchTable::with_capacity(3);
+        let first = table
+            .create_part(None, 9, true, false, 1, 2, 0.5, math::IDENTITY)
+            .unwrap();
+        let second = table
+            .create_part(Some(first), 0, false, true, 3, 4, 0.25, PART)
+            .unwrap();
+        let other = table.get(second).unwrap();
+        assert_eq!((other.capacity(), other.is_dynamic()), (9, true));
+        assert!(!other.has_colors());
+        assert_eq!(other.source(), Some(first));
+        assert!(other.positions().is_empty());
+        assert_eq!(
+            table.create_part(Some(second), 0, false, false, 1, 2, 1.0, PART),
+            Err(CoreError::InvalidHandle { raw: second.raw() })
+        );
+        let rows = table.get_mut(first).unwrap();
+        for row in 0..9 {
+            rows.positions_mut()[row * 3..row * 3 + 3].copy_from_slice(&[row as f32, 0.0, 1.0]);
+            rows.scales_mut()[row * 3..row * 3 + 3].copy_from_slice(&[1.0, 3.0, 1.0]);
+        }
+        table.update(&jobs, 1, &mut cells);
+        for row in 0..9 {
+            let m = math::compose([row as f32, 0.0, 1.0], IDENTITY_ROTATION, [1.0, 3.0, 1.0]);
+            let placed = math::mul(&m, &PART);
+            let part = table.get(second).unwrap().world(1);
+            assert_eq!(part.matrix(row), &placed, "row {row}");
+            assert_eq!(part.sphere(row), math::world_sphere(&placed, 0.25));
+            assert_eq!(table.get(first).unwrap().world(1).matrix(row), &m);
+        }
+    }
+
+    #[test]
+    fn a_part_follows_the_dirty_rows_and_active_count_of_its_source() {
+        let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
+        let mut table = BatchTable::with_capacity(2);
+        let first = table
+            .create_part(None, 200, false, false, 1, 2, 1.0, math::IDENTITY)
+            .unwrap();
+        let second = table
+            .create_part(Some(first), 0, false, false, 3, 4, 1.0, PART)
+            .unwrap();
+        table.update(&jobs, 1, &mut cells);
+        assert_eq!(
+            table.get(second).unwrap().changed_ranges(),
+            &[RowRange {
+                start: 0,
+                count: 200
+            }]
+        );
+        table.update(&jobs, 2, &mut cells);
+        table.update(&jobs, 3, &mut cells);
+        assert!(table.get(second).unwrap().changed_ranges().is_empty());
+
+        let rows = table.get_mut(first).unwrap();
+        rows.positions_mut()[70 * 3] = 5.0;
+        rows.mark_dirty(70, 1).unwrap();
+        rows.set_active_count(100).unwrap();
+        table.update(&jobs, 4, &mut cells);
+        let part = table.get(second).unwrap();
+        assert_eq!(
+            part.changed_ranges(),
+            &[RowRange {
+                start: 70,
+                count: 1
+            }]
+        );
+        assert_eq!(part.active_count(), 100);
+        assert_eq!(part.world(0).matrix(70)[3], 5.0 + PART[3]);
+
+        table.get_mut(first).unwrap().set_active_count(150).unwrap();
+        table.update(&jobs, 5, &mut cells);
+        assert_eq!(
+            table.get(second).unwrap().changed_ranges(),
+            &[RowRange {
+                start: 100,
+                count: 50
+            }]
+        );
+
+        table.destroy(first, 6, &mut cells).unwrap();
+        table.update(&jobs, 6, &mut cells);
+        assert_eq!(table.get(second).unwrap().active_count(), 0);
+    }
+
+    #[test]
+    fn four_lane_parts_match_one_row_at_a_time_bit_for_bit() {
+        let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
+        let mut table = BatchTable::with_capacity(2);
+        let first = table
+            .create_part(None, 64, false, false, 1, 2, 1.0, math::IDENTITY)
+            .unwrap();
+        let second = table
+            .create_part(Some(first), 0, false, false, 3, 4, 0.7, PART)
+            .unwrap();
+        let rows = table.get_mut(first).unwrap();
+        for row in 0..64 {
+            let t = row as f32 * 0.37;
+            rows.positions_mut()[row * 3..row * 3 + 3].copy_from_slice(&[t, -t, 0.5 * t]);
+            let (s, c) = (t * 0.5).sin_cos();
+            rows.rotations_mut()[row * 4..row * 4 + 4].copy_from_slice(&[0.0, s, 0.0, c]);
+        }
+        table.update(&jobs, 1, &mut cells);
+        // Rows 0 to 63 take the four-lane path; one row marked alone takes the other.
+        table.get_mut(first).unwrap().mark_dirty(13, 1).unwrap();
+        let before = *table.get(second).unwrap().world(1).matrix(13);
+        table.update(&jobs, 2, &mut cells);
+        table.get_mut(first).unwrap().mark_dirty(13, 1).unwrap();
+        table.update(&jobs, 3, &mut cells);
+        assert_eq!(table.get(second).unwrap().world(1).matrix(13), &before);
     }
 }

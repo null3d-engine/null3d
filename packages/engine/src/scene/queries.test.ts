@@ -7,7 +7,7 @@ import type { CoreGlue } from '../shared/core';
 import { CoreMemory } from './memory';
 import type { OverlapHit, RaycastHit } from './queries';
 import { Material, MeshGeometry } from './resources';
-import { Scene } from './scene';
+import { InstanceBatch, Scene } from './scene';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
 
@@ -247,6 +247,19 @@ describe('raycasts', () => {
 		scene.raycast([0, 0, 0], [0, 1, 0], undefined, hit);
 		expect(hit.object).toBeNull();
 		expect(reborn.id).not.toBe(batch.id);
+	});
+
+	test("a row of any core batch of a model's batch names the batch", () => {
+		const { scene, script } = fakeCore();
+		// A model of two meshes makes one batch of two core batches that share their rows.
+		const model = new InstanceBatch(scene, 5, 4, false, [6]);
+		(scene as unknown as { rememberBatch(batch: InstanceBatch): void }).rememberBatch(model);
+		const hit = newHit();
+		for (const part of [5, 6]) {
+			script([{ batch: part, row: 3, distance: 1 }]);
+			scene.raycast([0, 0, 0], [0, 1, 0], undefined, hit);
+			expect([hit.object, hit.instance]).toEqual([model, 3]);
+		}
 	});
 
 	test('raycastAny returns whether the ray hit anything', () => {
