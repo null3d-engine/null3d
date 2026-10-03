@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { SHADOW_CASTERS_TILES } from '../generated/core';
+import { FramePacer } from '../render/pacer';
 import { createMetricsBuffer, FrameRecorder, Role } from '../shared/metrics';
 import {
 	BUDGET_US,
@@ -176,6 +177,23 @@ describe('the render scale steps', () => {
 		expect(untilStep(EASY) - dropped).toBe(raiseGap(RAISE_AFTER_MS));
 	});
 
+	it('judges room on the mean frame time since the room started', () => {
+		// Windows a little over and under the budget, which average within it, have room.
+		const uneven = controlled(500, FULL_SCALE, 700);
+		const scales: number[] = [];
+		for (let k = 0; k < (RAISE_AFTER_MS + 2000) / WINDOW_MS; k++)
+			scales.push(
+				...uneven.run({ frame: (k % 2 ? 1.05 : 0.97) * BUDGET, delay: BUDGET / 2 }, WINDOW_MS),
+			);
+		expect(steps(scales, 700)).toEqual([RAISE_AFTER_MS]);
+		// Frames that run a little long all the time have none.
+		const long = controlled(500, FULL_SCALE, 700);
+		long.run({ frame: 1.04 * BUDGET, delay: BUDGET / 2 }, 4 * RAISE_AFTER_MS);
+		expect(long.controller.scale).toBe(700);
+		// Once the frames speed up, the long frames of at most one wait before count against them.
+		expect(long.untilStep(EASY) - 4 * RAISE_AFTER_MS).toBeLessThanOrEqual(2 * RAISE_AFTER_MS);
+	});
+
 	it('brings the scale into a new range and holds a range of one scale', () => {
 		const controller = new Governor();
 		expect(controller.scale).toBe(FULL_SCALE);
@@ -279,6 +297,11 @@ describe('the shadow steps', () => {
 });
 
 describe('the governor in the frame loop', () => {
+	/** Safari's worker timer: its period, how late it fires every third time, and its calls. */
+	const TIMER_MS = 15.4;
+	const TIMER_LATE_MS = 1.5;
+	const TIMER_CALLS = 2000;
+
 	/**
 	 * A metrics buffer whose render and completion rings the test writes as frames go, and a scene
 	 * whose shadows and loading the test sets.
@@ -297,15 +320,21 @@ describe('the governor in the frame loop', () => {
 		resolution.governor.setRange(500, FULL_SCALE);
 		let now = 0;
 		let frame = 0;
-		/** Steps frames `interval` ms apart for `ms`, the GPU taking `delay` for each. */
-		const run = (interval: number, delay: number, ms: number): number => {
-			for (const end = now + ms; now < end; now += interval) {
+		/**
+		 * Steps frames `interval` ms apart for `ms`, or with the intervals of a list in turn, the GPU
+		 * taking `delay` for each.
+		 */
+		const run = (interval: number | readonly number[], delay: number, ms: number): number => {
+			const intervals = typeof interval === 'number' ? [interval] : interval;
+			for (const end = now + ms; now < end; ) {
+				const gap = intervals[frame % intervals.length] as number;
+				now += gap;
 				frame++;
 				render.begin(frame);
-				render.interval(interval);
+				render.interval(gap);
 				render.commit(1);
 				done.begin(frame);
-				done.interval(interval);
+				done.interval(gap);
 				done.commit(delay);
 				resolution.now[0] = now;
 				resolution.frame();
@@ -329,6 +358,29 @@ describe('the governor in the frame loop', () => {
 		const fast = loop(120);
 		expect(fast.run(BUDGET, BUDGET / 2, GRACE_MS + 4000)).toBe(FULL_SCALE);
 		expect(fast.run(2 * BUDGET, BUDGET, 3000)).toBeLessThan(FULL_SCALE);
+	});
+
+	it("steps up with the frames that Safari's worker timer paces to the display", () => {
+		// Safari runs a worker's frame callbacks from a timer about 64 times a second, and the timer
+		// fires a little late now and then. Held to a 60 Hz display, about every 16th callback draws
+		// nothing, and the next frame comes two callbacks after the last. A quarter second holds one
+		// or two such gaps, so its mean interval varies around the budget, at 60 frames per second in
+		// all. On the Mac, the windows measured 97% to 105% of the budget in Safari.
+		const pacer = new FramePacer(undefined);
+		pacer.holdToDisplay(BUDGET);
+		const times: number[] = [];
+		for (let call = 1; call <= TIMER_CALLS; call++) {
+			const time = call * TIMER_MS + (call % 3 === 0 ? TIMER_LATE_MS : 0);
+			if (pacer.take(time)) times.push(time);
+		}
+		const intervals = times.slice(1).map((time, k) => time - (times[k] as number));
+		const seconds = ((times.at(-1) as number) - (times[0] as number)) / 1000;
+		expect(intervals.length / seconds).toBeCloseTo(60, 1);
+		expect(Math.max(...intervals)).toBeGreaterThan(1.8 * BUDGET);
+		const { run, resolution } = loop();
+		resolution.governor.scale = 900;
+		run(intervals, BUDGET / 4, GRACE_MS + 1000);
+		expect(run(intervals, BUDGET / 4, RAISE_AFTER_MS)).toBe(950);
 	});
 
 	it('takes the rate that ?fps= holds as the target', () => {

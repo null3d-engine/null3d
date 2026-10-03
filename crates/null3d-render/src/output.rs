@@ -1,10 +1,13 @@
 //! The output transform: how the scene's linear color reaches the canvas.
 //!
 //! Where the device can, scene passes draw linear HDR color into a float target, the scene color.
-//! The final pass then applies the exposure and the tone mapping, encodes sRGB and dithers. Where a
-//! float target cannot have MSAA (WebGPU's compatibility mode, and WebGL2 devices that cannot draw
-//! float targets with it), scene shaders do that themselves into an 8-bit target: the 8-bit path.
-//! That target resolves straight into the canvas, so the path adds no pass.
+//! The final pass then applies the exposure and the tone mapping, encodes sRGB and dithers. Scene
+//! shaders do that themselves into an 8-bit target of the canvas's format, the 8-bit path, where
+//! the anti-aliasing mode needs what the float target cannot do: MSAA in WebGPU's compatibility
+//! mode, and on WebGL2 devices whose float targets fail the engine's test for that mode. The page
+//! can force the 8-bit path too. With MSAA, while the render scale cannot drop below 1, the 8-bit
+//! target resolves straight into the canvas and the frame has no final pass. Otherwise the final
+//! pass copies it into the canvas (see [`crate::frame_graph`]).
 //!
 //! The background is part of the scene: exposure and tone mapping change it as they change the
 //! objects, as in three.js's WebGPURenderer. The HDR path clears the scene color to the linear
@@ -16,9 +19,8 @@
 //!
 //! The anti-aliasing mode is fixed when the frame builder starts. MSAA draws the scene with 4
 //! samples per pixel. FXAA and no anti-aliasing draw it with one, and the final pass runs FXAA on
-//! the scene color before the output transform. The 8-bit path resolves MSAA into the canvas as
-//! before; with one sample, its final pass reads the scene color as display color and only copies
-//! it, or runs FXAA on it.
+//! the scene color before the output transform. On the 8-bit path with one sample, the final pass
+//! reads the scene color as display color and only copies it, or runs FXAA on it.
 
 use null3d_gpu::drawlist::{format, permutation, sizes::OUTPUT_UNIFORM_BYTES};
 

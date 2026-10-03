@@ -24,8 +24,10 @@
 //   bun tests/real-browsers.ts --plan soak --lan ipad-safari --minutes 30
 //   bun tests/real-browsers.ts --plan warm-up-time --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari
+//   bun tests/real-browsers.ts --plan smoke --allow-no-webgpu --lan tb-android
 // Options:
-//   --plan <name>       the plan to run: checks (the default), parity, bench, memory, which loads
+//   --plan <name>       the plan to run: checks (the default), smoke, a tenth of the checks for a
+//                       device in a cloud session of limited time, parity, bench, memory, which loads
 //                       the engine page 20 times at each shared memory maximum from 256 to 4096 MiB,
 //                       startup, which times cold and warm loads of the engine page's production
 //                       build in each thread mode, depth, which runs the image test manifest's depth
@@ -80,7 +82,9 @@
 //                       such as tab-memory, may run there: Safari stops reloading a tab that
 //                       crashes again soon after the last crash, and only a person can reopen it
 // Before a run on a phone or tablet, the runner prints a checklist of the device settings that
-// results depend on.
+// results depend on. After a fixed plan, it prints each browser's row for the record of tested
+// devices, from what the runner page found about its browser, device and GPU. A runner whose name
+// names one browser warns when its page ran in another.
 import { execFileSync } from 'node:child_process';
 import {
 	copyFileSync,
@@ -105,6 +109,13 @@ import {
 	type StoredBaselines,
 } from '../bench/lib/parity.ts';
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
+import {
+	browserMismatch,
+	browserText,
+	type DeviceFacts,
+	detectBrowser,
+	testedDeviceRow,
+} from './lib/device-record.ts';
 import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } from './lib/heat.ts';
 import { clearCandidates } from './lib/images.ts';
 import { buildsForLoads, prepareLoads } from './lib/load-server.ts';
@@ -351,11 +362,38 @@ export function braveShieldsOf(
 export const shieldsText = (state: ShieldsState | null) =>
 	`Brave Shields ${state ?? 'not recorded'}`;
 
+/** The browser a runner page ran in: as the page detected it, or from its facts in an older run. */
+const browserOf = (device: DeviceFacts) => device.browser ?? detectBrowser(device);
+
+/**
+ * Prints a row of the record of tested devices for each runner whose page started, ready to paste
+ * into `.dev/tested-devices.md`.
+ */
+function printRecordRows(
+	run: string,
+	runners: readonly LaunchedRunner[],
+	summary: Readonly<Record<string, RunnerSummary>>,
+): void {
+	const rows = runners.flatMap(({ name, launch }) => {
+		const device = readDevice(run, name);
+		const counts = summary[name];
+		return device && counts
+			? [testedDeviceRow({ run, launch: launch.kind, device, ...counts })]
+			: [];
+	});
+	if (rows.length > 0)
+		console.log(
+			`\nRows for the record of tested devices (.dev/tested-devices.md):\n${rows.join('\n')}\n`,
+		);
+}
+
 /** One runner's outcome in the run's summary. */
 export interface RunnerSummary {
 	pass: number;
 	skip: number;
 	fail: number;
+	/** The browser that the runner page found itself in, with its version, when it started. */
+	browser?: string;
 	/** After a turn that ended early: the pages that never ran. */
 	notRun?: number;
 	/** Why the runner's turn ended early, and what to do before the next run. */
@@ -367,13 +405,15 @@ export interface RunnerSummary {
 }
 
 /**
- * A runner's line in the run's summary: its counts, on Brave the state of its Shields, why its turn
- * ended early, and why its timing figures are unreliable, where these apply.
+ * A runner's line in the run's summary: the browser its page ran in, its counts, on Brave the state
+ * of its Shields, why its turn ended early, and why its timing figures are unreliable, where these
+ * apply.
  */
 export function summaryLine(runner: string, summary: RunnerSummary): string {
+	const browser = summary.browser ? ` (${summary.browser})` : '';
 	const notRun = summary.notRun === undefined ? '' : `, ${summary.notRun} not run`;
 	return [
-		`${runner}: ${summary.pass} passed, ${summary.skip} skipped, ${summary.fail} failed${notRun}`,
+		`${runner}${browser}: ${summary.pass} passed, ${summary.skip} skipped, ${summary.fail} failed${notRun}`,
 		...(summary.braveShields === undefined ? [] : [shieldsText(summary.braveShields)]),
 		...(summary.endedEarly ? [`ended early: ${summary.endedEarly.reason}`] : []),
 		...(summary.unreliableTiming ? [`timing figures unreliable: ${summary.unreliableTiming}`] : []),
@@ -1060,6 +1100,10 @@ async function runPlan(
 			console.log(`FAIL  ${name}: the runner page never started`);
 			continue;
 		}
+		const browser = browserOf(device);
+		counts.browser = browserText(browser);
+		const mismatch = browserMismatch(name, browser);
+		if (mismatch) console.log(`WARN  ${mismatch}`);
 		const context = {
 			resultOf: (id: string) => readResult(run, name, id),
 			imageDir: join(RUNS_DIR, run, name),
@@ -1137,6 +1181,7 @@ async function runPlan(
 		if (unreliableTiming) console.log(refreshText(name, launches.get(name), unreliableTiming));
 		if (endedEarly) console.log(endedEarlyText(name, endedEarly));
 	}
+	printRecordRows(run, runners, summary);
 	console.log(`results: ${join(RUNS_DIR, run)}`);
 	if (imageFailures > 0)
 		console.log('Review the new and changed images with their diffs: bun run images:review');

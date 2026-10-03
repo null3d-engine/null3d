@@ -198,6 +198,18 @@ describe('MemoryGuard', () => {
 		expect(summaryLine('ipad-safari', { pass: 6, skip: 0, fail: 3, notRun: 481, endedEarly })).toBe(
 			"ipad-safari: 6 passed, 0 skipped, 3 failed, 481 not run; ended early: the browser keeps refusing the engine's memory (E1109 on 3 of its last 3 pages)",
 		);
+		expect(
+			summaryLine('ipad-safari', {
+				pass: 6,
+				skip: 0,
+				fail: 3,
+				notRun: 481,
+				endedEarly,
+				browser: 'Safari 26',
+			}),
+		).toMatch(
+			/^ipad-safari \(Safari 26\): 6 passed, 0 skipped, 3 failed, 481 not run; ended early: /,
+		);
 	});
 });
 

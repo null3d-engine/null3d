@@ -123,6 +123,10 @@ export interface WebGL2Report {
 	maxSamples: number | null;
 	/** The largest texture width and height in pixels, or null without WebGL2. */
 	maxTextureSize: number | null;
+	/** The largest renderbuffer width and height in pixels, or null without WebGL2. */
+	maxRenderbufferSize: number | null;
+	/** The largest viewport width and height in pixels, or null without WebGL2. */
+	maxViewportDims: [width: number, height: number] | null;
 	/** The largest uniform block in bytes, or null without WebGL2. */
 	maxUniformBlockSize: number | null;
 	/** Whether WebGL accepts views on shared memory for buffer and texture uploads. Null without shared memory. */
@@ -332,6 +336,8 @@ function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {
 		supportedExtensions: [],
 		maxSamples: null,
 		maxTextureSize: null,
+		maxRenderbufferSize: null,
+		maxViewportDims: null,
 		maxUniformBlockSize: null,
 		sharedMemoryUploads: null,
 		floatRenderTargets: null,
@@ -353,6 +359,11 @@ function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {
 			supportedExtensions: gl.getSupportedExtensions() ?? [],
 			maxSamples: gl.getParameter(gl.MAX_SAMPLES) as number,
 			maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE) as number,
+			maxRenderbufferSize: gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number,
+			maxViewportDims: [...(gl.getParameter(gl.MAX_VIEWPORT_DIMS) as Int32Array)] as [
+				number,
+				number,
+			],
 			maxUniformBlockSize: gl.getParameter(gl.MAX_UNIFORM_BLOCK_SIZE) as number,
 			sharedMemoryUploads: probeSharedUploads(gl),
 			floatRenderTargets: {
