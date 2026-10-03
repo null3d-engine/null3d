@@ -1,6 +1,6 @@
 # D-26: How clips are stored, sampled and blended
 
-Status: decided by its rule on 2026-10-03; the phone and tablet timings are pending. Date: 2026-10-03. Task: M2-C1.
+Status: decided by its rule on 2026-10-03; the iPad timings are in, and the phone timings are pending. Date: 2026-10-03. Task: M2-C1.
 
 ## Question
 
@@ -63,7 +63,16 @@ The core shares one time base across a clip's tracks, so a key needs no time of 
 | 100 | 0.090 ms | 0.054 ms | 0.030 ms | 0.018 ms |
 | 500 | 0.38 ms | 0.17 ms | 0.094 ms | 0.062 ms |
 
-These are medians of 500 frames. Treat them as a rough guide only: the Mac was shared. The WebAssembly figures on the S24+ and the iPad come from the [animation plan](../devices.md#the-animation-plan), which is still to run.
+These are medians of 500 frames. Treat them as a rough guide only: the Mac was shared.
+
+The [animation plan](../devices.md#the-animation-plan) times the same step in WebAssembly, on the engine's job workers, for the same characters. One run on the iPad Pro 11-inch in Safari 26.6.2, on 3 October 2026, gave the figures below. It used 6 job workers and timed 240 frames per crowd. The iPad was warm from earlier runs.
+
+| Characters | Step median | Step p90 | Step mean | Job worker time per frame, all workers |
+| --- | --- | --- | --- | --- |
+| 100 | 0.12 ms | 0.14 ms | 0.12 ms | 0.29 ms |
+| 500 | 0.38 ms | 0.44 ms | 0.40 ms | 1.78 ms |
+
+The step is the time on the core's thread from waking the job workers until the update call returns. It includes setting every character's clip times. A crowd of 500 thus takes about 2% of a 60 Hz frame of 16.7 ms. The figures for the S24+ are still to come.
 
 How the data was produced: `bun bench/three-fixtures.ts`, then `cargo test -p null3d-core --test animation -- --nocapture`. The nlerp table came from a script that compares both interpolations with `slerp` on a grid of 901 angles and 201 weights. The speed came from `cargo test -p null3d-core --release --test bench bench_animation_crowd -- --ignored --nocapture --test-threads=1`.
 
@@ -89,5 +98,5 @@ A three.js clip keeps each track's key times and values as 32-bit floats. Each f
 - `crates/null3d-core/src/animation/` holds skeletons, clips, resampling and the frame step. The WebAssembly entry point exposes them to the animation test page. The animator (M2-C2) builds its API on the sample slots, as [D-28](D-28-animator.md) records.
 - The glTF loader (M2-C7) calls `resample` on a job worker when it reads a file, and converts cubic spline input there.
 - The skinning passes (M2-C3, M2-C4) read the 48-byte matrices.
-- The phone and tablet timings come from the animation plan. Add them to this record when they are run.
+- The phone timings come from the animation plan. Add them to this record when it runs on the S24+.
 - The record is in the table in [README.md](README.md).

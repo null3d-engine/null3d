@@ -160,11 +160,13 @@ by_device = true
 variants.webgpu = { targets = ["wgsl"] }
 
 # The mip levels of a layer of a texture array, one render pass per level. It loads by device, as
-# the backends make the mip levels of textures that the scene uploads.
+# the backends make the mip levels of textures that the scene uploads. The copy pipeline copies a
+# layer texel by texel, for the WebGL2 backend.
 [shaders.mipmap]
 file = "mipmap.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs_main", fragment = "fs_main" }
+pipelines.copy = { vertex = "vs_main", fragment = "fs_copy" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 

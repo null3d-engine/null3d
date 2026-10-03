@@ -18,8 +18,14 @@ use std::simd::prelude::*;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use common::{Rng, Workers, character, mul4, perspective, translation, wait_for_every_thread};
+use common::{
+    Rng, Workers, character, mul4, perspective, terrain, translation, wait_for_every_thread,
+};
 use null3d_core::animation::Animations;
+use null3d_core::bvh::mesh::{IndexedTriangles, MeshBvh, Side, Triangles, raycast_brute_force};
+use null3d_core::bvh::scene::SceneBvh;
+use null3d_core::bvh::top::{TopTree, WorldRay};
+use null3d_core::bvh::{Aabb, Ray, ray_box_entry};
 use null3d_core::cells::CellTable;
 use null3d_core::culling::{
     CullOutput, Frustum, cull_parallel, cull_spheres, cull_spheres_reference,
@@ -414,5 +420,289 @@ fn bench_parallel_for_overhead() {
                 micros(best)
             );
         }
+    }
+}
+
+/// Random rays from above a mesh's box toward points inside it.
+fn rays_into(rng: &mut Rng, b: &Aabb, count: usize) -> Vec<Ray> {
+    (0..count)
+        .map(|_| {
+            let target: [f32; 3] = std::array::from_fn(|k| rng.range(b.min[k], b.max[k]));
+            let origin = [
+                target[0] + rng.range(-50.0, 50.0),
+                b.max[1] + 20.0,
+                target[2] + rng.range(-50.0, 50.0),
+            ];
+            Ray::new(origin, std::array::from_fn(|k| target[k] - origin[k]))
+        })
+        .collect()
+}
+
+#[test]
+#[ignore = "benchmark: run with --release --ignored"]
+fn bench_bvh_mesh() {
+    println!("\nmesh BVH: SAH build, refit and closest-hit raycasts on a height field, one thread");
+    let mut rng = Rng::new(21);
+    for quads in [71u32, 224, 707] {
+        let (positions, indices) = terrain(&mut rng, quads);
+        let mesh = IndexedTriangles {
+            positions: &positions,
+            indices: &indices,
+        };
+        let triangles = mesh.count();
+        let runs = if triangles < 20_000 {
+            41
+        } else if triangles < 200_000 {
+            9
+        } else {
+            3
+        };
+        let (build, build_best) = median_and_fastest(runs, || {
+            black_box(MeshBvh::build(&mesh).unwrap());
+        });
+        let mut bvh = MeshBvh::build(&mesh).unwrap();
+        let (refit, _) = median_and_fastest(runs, || bvh.refit(&mesh));
+        let rays = rays_into(&mut rng, &bvh.bounds(), 10_000);
+        let mut hits = 0;
+        let query = fastest(5, || {
+            hits = rays
+                .iter()
+                .filter(|r| bvh.raycast(&mesh, r, Side::Front).is_some())
+                .count();
+        });
+        println!(
+            "  {triangles:>9} triangles: build median {:>9.1} µs (fastest {:>9.1}), refit {:>8.1} µs, \
+             {} nodes, {:.1} bytes per triangle; a ray {:.3} µs ({hits} of 10000 hit)",
+            micros(build),
+            micros(build_best),
+            micros(refit),
+            bvh.nodes().len(),
+            bvh.memory_bytes() as f64 / f64::from(triangles),
+            micros(query) / 10_000.0,
+        );
+        if triangles < 20_000 {
+            let brute = fastest(3, || {
+                for r in &rays[..1000] {
+                    black_box(raycast_brute_force(&mesh, r, Side::Front));
+                }
+            });
+            println!(
+                "  {triangles:>9} triangles: a ray by brute force {:.1} µs",
+                micros(brute) / 1000.0
+            );
+        }
+    }
+}
+
+/// `n` items of about 1 m in one cell, spread over a cube of `spread` meters.
+fn top_items(rng: &mut Rng, n: u32, spread: f32) -> TopTree {
+    let mut tree = TopTree::new();
+    tree.try_reserve(n).unwrap();
+    for i in 0..n {
+        let c = [(); 3].map(|_| rng.range(-spread, spread));
+        tree.push(i, 0, Aabb::of_sphere(c, rng.range(0.5, 1.5)));
+    }
+    tree
+}
+
+#[test]
+#[ignore = "benchmark: run with --release --ignored"]
+fn bench_bvh_top_level() {
+    let table = CellTable::new();
+    let mut rng = Rng::new(22);
+    println!(
+        "\ntop level, static: SAH build on 1 and 8 threads, refit on one; raycasts that test each \
+         item's box"
+    );
+    let serial = JobSystem::new(0);
+    let pool = Workers::start(7);
+    for n in [1_000u32, 20_000, 100_000] {
+        let mut tree = top_items(&mut rng, n, 500.0);
+        let runs = if n < 50_000 { 41 } else { 9 };
+        let (build, _) = median_and_fastest(runs, || tree.build_sah(&table, &serial).unwrap());
+        let (build8, _) = median_and_fastest(runs, || tree.build_sah(&table, pool.jobs()).unwrap());
+        let (refit, _) = median_and_fastest(runs, || tree.refit());
+        let boxes: Vec<Aabb> = tree.boxes().to_vec();
+        let rays: Vec<WorldRay> = rays_into(&mut rng, &tree.roots()[0].bounds, 10_000)
+            .iter()
+            .map(|r| WorldRay::new(r.origin.map(f64::from), r.direction))
+            .collect();
+        let query = fastest(5, || {
+            for r in &rays {
+                black_box(tree.raycast(r, |id, local| ray_box_entry(local, &boxes[id as usize])));
+            }
+        });
+        println!(
+            "  {n:>7} items: build median {:>8.1} µs, on 8 threads {:>8.1} µs, refit {:>7.1} µs, a ray {:.3} µs",
+            micros(build),
+            micros(build8),
+            micros(refit),
+            micros(query) / 10_000.0
+        );
+    }
+    println!("\ntop level, dynamic: Morton rebuild by thread count");
+    for n in [1_000u32, 10_000, 100_000] {
+        let mut tree = top_items(&mut rng, n, 500.0);
+        let mut line = format!("  {n:>7} items:");
+        for workers in [0, 1, 3, 7] {
+            let pool = Workers::start(workers);
+            let (median, _) = median_and_fastest(201, || {
+                tree.build_morton(&table, pool.jobs()).unwrap();
+            });
+            line += &format!(" {} threads {:>7.1} µs,", workers + 1, micros(median));
+        }
+        let boxes: Vec<Aabb> = tree.boxes().to_vec();
+        let rays: Vec<WorldRay> = rays_into(&mut rng, &tree.roots()[0].bounds, 10_000)
+            .iter()
+            .map(|r| WorldRay::new(r.origin.map(f64::from), r.direction))
+            .collect();
+        let query = fastest(5, || {
+            for r in &rays {
+                black_box(tree.raycast(r, |id, local| ray_box_entry(local, &boxes[id as usize])));
+            }
+        });
+        line += &format!(" a ray {:.3} µs", micros(query) / 10_000.0);
+        println!("{line}");
+    }
+}
+
+#[test]
+#[ignore = "benchmark: run with --release --ignored"]
+fn bench_bvh_scene_sync() {
+    println!(
+        "\nscene trees: a sync in a frame where only dynamic objects moved (20,000 static objects)"
+    );
+    for dynamic in [1_000u32, 10_000, 50_000] {
+        let mut line = format!("  {dynamic:>6} dynamic:");
+        for workers in [0, 3, 7] {
+            let pool = Workers::start(workers);
+            let jobs = pool.jobs();
+            let mut rng = Rng::new(23);
+            let mut scene = SceneStorage::with_capacity(20_000 + dynamic);
+            let mut commands = Vec::new();
+            let mut moving = Vec::new();
+            for i in 0..20_000 + dynamic {
+                let h = scene.reserve().unwrap();
+                scene
+                    .set_position(h, [(); 3].map(|_| rng.range(-500.0, 500.0)))
+                    .unwrap();
+                scene.set_local_radius(h, 1.0).unwrap();
+                let f = if i < 20_000 {
+                    flags::VISIBLE
+                } else {
+                    flags::VISIBLE | flags::DYNAMIC
+                };
+                commands.push(Command::create(h, Handle::NONE, 1, f));
+                if i >= 20_000 {
+                    moving.push(scene.resolve(h).unwrap() as usize);
+                }
+            }
+            scene.apply_commands(&commands, 1).unwrap();
+            let mut bvh = SceneBvh::new();
+            let mut times = Vec::new();
+            for frame in 1..=120u32 {
+                scene.begin_frame(frame);
+                for &slot in &moving {
+                    scene.positions_mut()[slot * 3] += 0.1;
+                }
+                scene.update_transforms(jobs);
+                let start = Instant::now();
+                bvh.sync(&scene, frame, jobs).unwrap();
+                if frame > 20 {
+                    times.push(start.elapsed());
+                }
+            }
+            times.sort();
+            line += &format!(
+                " {} threads {:>7.1} µs,",
+                workers + 1,
+                micros(times[times.len() / 2])
+            );
+        }
+        println!("{}", line.trim_end_matches(','));
+    }
+}
+
+/// A city block: 2,000 buildings of 10 to 40 m on a grid, and 18,000 props of 0.3 to 2 m.
+fn city(rng: &mut Rng) -> TopTree {
+    let mut tree = TopTree::new();
+    tree.try_reserve(20_000).unwrap();
+    for i in 0..2_000u32 {
+        let (gx, gz) = (
+            (i % 45) as f32 * 50.0 - 1100.0,
+            (i / 45) as f32 * 50.0 - 1100.0,
+        );
+        let (w, h) = (rng.range(10.0, 40.0), rng.range(10.0, 80.0));
+        let building = Aabb {
+            min: [gx, 0.0, gz],
+            max: [gx + w, h, gz + w],
+        };
+        tree.push(i, 0, building);
+    }
+    for i in 2_000..20_000u32 {
+        let c = [rng.range(-1100.0, 1100.0), 0.5, rng.range(-1100.0, 1100.0)];
+        tree.push(i, 0, Aabb::of_sphere(c, rng.range(0.3, 2.0)));
+    }
+    tree
+}
+
+#[test]
+#[ignore = "benchmark: run with --release --ignored"]
+fn bench_bvh_city() {
+    println!("\ntop level on a city block of 20,000 objects: SAH against Morton, one thread");
+    let table = CellTable::new();
+    let mut rng = Rng::new(24);
+    let serial = JobSystem::new(0);
+    let mut rays = Vec::new();
+    for i in 0..10_000 {
+        let (x, z) = (
+            f64::from(rng.range(-1000.0, 1000.0)),
+            f64::from(rng.range(-1000.0, 1000.0)),
+        );
+        // Half along the streets at eye height, half down from above.
+        let ray = if i % 2 == 0 {
+            WorldRay::new(
+                [x, 1.7, z],
+                [
+                    rng.range(-1.0, 1.0),
+                    rng.range(-0.05, 0.1),
+                    rng.range(-1.0, 1.0),
+                ],
+            )
+        } else {
+            WorldRay::new(
+                [x, 300.0, z],
+                [rng.range(-0.3, 0.3), -1.0, rng.range(-0.3, 0.3)],
+            )
+        };
+        rays.push(ray);
+    }
+    for morton in [false, true] {
+        let mut tree = city(&mut rng);
+        let (build, _) = median_and_fastest(21, || {
+            if morton {
+                tree.build_morton(&table, &serial).unwrap();
+            } else {
+                tree.build_sah(&table, &serial).unwrap();
+            }
+        });
+        let boxes: Vec<Aabb> = tree.boxes().to_vec();
+        let mut tested = 0u64;
+        let query = fastest(5, || {
+            tested = 0;
+            for r in &rays {
+                black_box(tree.raycast(r, |id, local| {
+                    tested += 1;
+                    ray_box_entry(local, &boxes[id as usize])
+                }));
+            }
+        });
+        println!(
+            "  {}: build {:>8.1} µs, a ray {:.3} µs, {:.1} objects tested per ray",
+            if morton { "Morton" } else { "SAH   " },
+            micros(build),
+            micros(query) / 10_000.0,
+            tested as f64 / 10_000.0
+        );
     }
 }

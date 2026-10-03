@@ -9,7 +9,7 @@ export type {
 export { everyShader, loadGlslShaders, loadWgslShaders, SHADERS } from './generated/shaders';
 export { readbackWebGL2, readbackWebGPU } from './gpu/readback';
 export { WebGL2Backend } from './gpu/webgl2/backend';
-export type { GlslTemplate } from './gpu/webgl2/programs';
+export { declaresUniform, type GlslTemplate } from './gpu/webgl2/programs';
 export { WebGPUBackend } from './gpu/webgpu/backend';
 export type { RenderTemplate } from './gpu/webgpu/pipelines';
 export {
