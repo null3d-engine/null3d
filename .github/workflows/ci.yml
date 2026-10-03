@@ -122,8 +122,6 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Build the shader modules and the WebAssembly files that the test pages need
         run: bun tools/build-wasm.ts --pages-only
-      - name: The engine's npm package holds the shader modules
-        run: bun tools/check-package.ts
       # The artifact's paths start at the repository's root, their closest shared folder.
       - uses: actions/upload-artifact@v4
         with:
@@ -163,6 +161,34 @@ jobs:
         run: bun run build:check-size
       - name: The shader compiler gives the native shader build's results
         run: bun run test:shader-compiler
+
+  packages:
+    # The npm packages as a developer installs them: each public package packed as the publish job
+    # packs it, and checked for every file it needs, then installed into a fresh Vite project where
+    # the command-line tool's test command type checks the project and draws its sketch on every
+    # GPU tier, and Vite builds it for production.
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - uses: ./.github/actions/playwright-chromium
+      - name: The packed packages in a fresh project
+        run: bun run test:packages
 
   browser:
     # The browser tests, the image test manifest among them, split into shards that run at once.
@@ -288,7 +314,7 @@ jobs:
     # every other job, also after a failure or a cancel, and fails unless each job passed. Outside
     # the merge queue a job may be skipped by its own condition; in the queue every job must pass.
     if: always()
-    needs: [docs-and-tools, rust, build, wasm-checks, browser, bench, real-browsers]
+    needs: [docs-and-tools, rust, build, wasm-checks, packages, browser, bench, real-browsers]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

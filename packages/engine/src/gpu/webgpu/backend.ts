@@ -32,6 +32,9 @@ TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM] = 'etc2-rgba8unorm';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM_SRGB] = 'etc2-rgba8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_RGB9E5_UFLOAT] = 'rgb9e5ufloat';
 
+/** The bytes that each row of texels in a buffer copy must be a multiple of. */
+const ROW_ALIGNMENT = 256;
+
 const VIEW_DIMENSIONS: (GPUTextureViewDimension | undefined)[] = [];
 VIEW_DIMENSIONS[G.VIEW_2D] = '2d';
 VIEW_DIMENSIONS[G.VIEW_2D_ARRAY] = '2d-array';
@@ -128,6 +131,8 @@ export class WebGPUBackend {
 	private readonly computePass: GPUComputePassDescriptor = {};
 	private readonly copy = new TexelCopySetup();
 	private readonly samplerSetup: GPUSamplerDescriptor = {};
+	/** The buffer that copies from 2D textures into 3D textures pass through, made on first use. */
+	private copyBuffer: GPUBuffer | undefined;
 
 	/**
 	 * `shaders` are the WGSL builds that the device loaded (`loadWgslShaders`). `routes` chooses
@@ -255,6 +260,45 @@ export class WebGPUBackend {
 		this.textures[id] = undefined;
 		this.bindingViews[id] = undefined;
 		this.targetViews[id] = undefined;
+	}
+
+	/**
+	 * Records a copy between textures. Safari 26 drops a copy from a 2D texture into any slice of a
+	 * 3D texture but the first, with no error, while copies through a buffer land. The backend
+	 * cannot tell browsers apart, so every such copy goes through a buffer that the backend keeps.
+	 */
+	private copyTexture(words: Uint32Array, a: number): void {
+		const copy = this.copy;
+		const source = this.need(this.textures, words[a] as number, 'texture');
+		const id = words[a + 5] as number;
+		const destination = this.need(this.textures, id, 'texture');
+		const width = words[a + 10] as number;
+		const height = words[a + 11] as number;
+		const layers = words[a + 12] as number;
+		copy.setSource(source, words, a);
+		copy.setDestination(destination, words, a + 5);
+		copy.setSize(width, height, layers);
+		const encoder = this.commandEncoder();
+		if (destination.dimension !== '3d' || source.dimension === '3d') {
+			encoder.copyTextureToTexture(copy.source, copy.destination, copy.size);
+			return;
+		}
+		const block = G.FORMAT_BLOCK_SIZE[this.formats[id] as number] ?? 1;
+		const rows = Math.ceil(height / block);
+		const rowBytes = Math.ceil(width / block) * this.blockBytes(id);
+		const bytesPerRow = Math.ceil(rowBytes / ROW_ALIGNMENT) * ROW_ALIGNMENT;
+		const bytes = bytesPerRow * rows * layers;
+		if (!this.copyBuffer || this.copyBuffer.size < bytes) {
+			// A buffer that a recorded copy still reads stays alive until its commands run, so the
+			// smaller one is dropped, not destroyed.
+			this.copyBuffer = this.device.createBuffer({
+				size: bytes,
+				usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+			});
+		}
+		copy.setVia(this.copyBuffer, bytesPerRow, rows);
+		encoder.copyTextureToBuffer(copy.source, copy.via, copy.size);
+		encoder.copyBufferToTexture(copy.via, copy.destination, copy.size);
 	}
 
 	/** Bytes of one block of texels of a texture: one texel unless its format is compressed. */
@@ -586,18 +630,9 @@ export class WebGPUBackend {
 				case G.OP_GENERATE_MIPMAPS:
 					this.generateMipmaps(words[a] as number, words[a + 1] as number);
 					break;
-				case G.OP_COPY_TEXTURE_TO_TEXTURE: {
-					const copy = this.copy;
-					copy.setSource(this.need(this.textures, words[a] as number, 'texture'), words, a);
-					copy.setDestination(
-						this.need(this.textures, words[a + 5] as number, 'texture'),
-						words,
-						a + 5,
-					);
-					copy.setSize(words[a + 10] as number, words[a + 11] as number, words[a + 12] as number);
-					this.commandEncoder().copyTextureToTexture(copy.source, copy.destination, copy.size);
+				case G.OP_COPY_TEXTURE_TO_TEXTURE:
+					this.copyTexture(words, a);
 					break;
-				}
 				case G.OP_CREATE_SAMPLER:
 					this.counts.objects++;
 					this.createSampler(words, floats, a);
@@ -883,5 +918,6 @@ export class WebGPUBackend {
 		for (const texture of this.textures) texture?.destroy();
 		if (this.ownsImages) this.images.clear();
 		this.staging.destroy();
+		this.copyBuffer?.destroy();
 	}
 }

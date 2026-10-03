@@ -4,13 +4,7 @@
 // starts in a requestAnimationFrame callback, wakes the workers as the engine does, and runs the
 // step. Switches: ?characters= (500), ?joints=, ?jobs= (logical cores minus 2, at least 1),
 // ?frames= and ?warmup=.
-import {
-	type AnimationGlue,
-	type CoreGlue,
-	loadCore,
-	startCore,
-	stopJobWorkersAt,
-} from '@null3d/engine/internal';
+import { type CoreGlue, loadCore, startCore, stopJobWorkersAt } from '@null3d/engine/internal';
 import * as C from '../../packages/engine/src/generated/core';
 import {
 	ANIMATION,
@@ -46,11 +40,7 @@ function created(glue: CoreGlue, call: string, id: number): number {
 }
 
 /** Writes `words` into fresh staging words of the core. */
-function stage(
-	core: CoreGlue & AnimationGlue,
-	memory: WebAssembly.Memory,
-	words: Float32Array,
-): void {
+function stage(core: CoreGlue, memory: WebAssembly.Memory, words: Float32Array): void {
 	const address = created(core, 'animationStaging', core.animationStaging(words.length));
 	new Float32Array(memory.buffer, address, words.length).set(words);
 }
@@ -126,8 +116,7 @@ run('animation', async () => {
 	const { module, memory } = await loadCore('threaded');
 	if (!memory)
 		throw new Error('the page is not cross-origin isolated, so it has no threaded build');
-	const { glue } = await startCore('threaded', module, memory);
-	const core = glue as CoreGlue & AnimationGlue;
+	const { glue: core } = await startCore('threaded', module, memory);
 	// An engine for WebGL2 with a small scene: the page uses its job system and animation table.
 	check(
 		core,
@@ -195,7 +184,7 @@ run('animation', async () => {
 				slotTimes[i * C.ANIMATION_MAX_BLEND] = t % 1;
 				slotTimes[i * C.ANIMATION_MAX_BLEND + 1] = (t * 1.3) % 0.75;
 			}
-			check(core, 'updateAnimations', core.updateAnimations());
+			check(core, 'updateAnimations', core.updateAnimations(0));
 			if (frame >= warmup) times.push(performance.now() - start);
 		}
 		const jobMs = busy();

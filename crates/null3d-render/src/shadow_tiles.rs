@@ -707,6 +707,8 @@ pub struct TileView {
     pub depth: ViewDepth,
     /// The light's position relative to the camera.
     pub position: [f32; 3],
+    /// The texels on each side of the tile.
+    pub size: u32,
 }
 
 impl TileView {
@@ -750,16 +752,20 @@ impl TileView {
                 perspective: true,
             },
             position,
+            size,
         }
     }
 
-    /// The tile's view values for a camera at `camera`, culling the casters on `layers`.
+    /// The tile's view values for a camera at `camera`, culling the casters on `layers`. Its camera
+    /// is the light, and its target is the tile, whose texels the casters' offset counts.
     pub fn frame(&self, camera: CellPosition, layers: u32) -> ViewFrame {
         let [x, y, z] = self.position;
+        let size = self.size.max(1) as f32;
         ViewFrame::new(
             FrameUniform {
                 view_proj: self.view_proj,
                 camera_position: [x, y, z, 1.0],
+                target_size: [size, size, 1.0 / size, 1.0 / size],
                 ..FrameUniform::default()
             },
             camera,
@@ -819,6 +825,27 @@ mod tests {
         // A texel at 4 m is 4 m times the texel per meter.
         let half_tan = 0.5f32.tan() / (1.0 - 2.0 / 256.0);
         assert!((view.texel_per_meter - 2.0 * half_tan / 256.0).abs() < 1e-7);
+    }
+
+    #[test]
+    fn a_tile_s_pass_sees_the_light_as_its_camera_and_the_tile_as_its_target() {
+        let light = spot([0.0, -1.0, 0.0], 0.5);
+        let at = [2.0, 5.0, -1.0];
+        let view = TileView::of(&light, 0, at, 256);
+        let uniform = view.frame(CellPosition::default(), 1).uniform;
+        assert_eq!(uniform.camera_position, [2.0, 5.0, -1.0, 1.0]);
+        assert_eq!(
+            uniform.target_size,
+            [256.0, 256.0, 1.0 / 256.0, 1.0 / 256.0]
+        );
+        // The shadow depth shader's texel at a point 4 m along the light: two clip units over the
+        // texels across, times the point's w, in meters.
+        let m = &view.view_proj;
+        let p = [at[0], at[1] - 4.0, at[2]];
+        let w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
+        let row = (m[0] * m[0] + m[4] * m[4] + m[8] * m[8]).sqrt();
+        let texel = 2.0 * w * uniform.target_size[2] / row;
+        assert!((texel - 4.0 * view.texel_per_meter).abs() < 1e-6, "{texel}");
     }
 
     #[test]

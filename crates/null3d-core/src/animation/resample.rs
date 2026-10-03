@@ -17,8 +17,12 @@ pub const DEFAULT_RATE: f32 = 30.0;
 /// broken files.
 pub const MAX_FRAMES: u32 = 1 << 20;
 
+/// How far after a frame's time, as a share of the time, a key still counts as at the frame: a
+/// few times the rounding of a 32-bit float.
+const KEY_TIME_TOLERANCE: f64 = 1e-6;
+
 /// The scale of a quantized rotation component: the largest 16-bit value.
-const QUANTIZED_ONE: f64 = 32767.0;
+pub(super) const QUANTIZED_ONE: f64 = 32767.0;
 
 /// What a track animates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -160,11 +164,15 @@ fn evaluate(track: &SourceTrack<'_>, time: f64, cursor: &mut usize, out: &mut [f
             *o = f64::from(*v);
         }
     };
-    if time < f64::from(times[0]) {
+    // Key times are 32-bit floats, so a key on the clip's grid can sit a rounding step after the
+    // frame time computed for it. A key that close counts as reached, or a step track would take
+    // the key before.
+    let reached = time + time.abs() * KEY_TIME_TOLERANCE;
+    if reached < f64::from(times[0]) {
         copy(out, 0);
         return;
     }
-    while *cursor + 1 < times.len() && f64::from(times[*cursor + 1]) <= time {
+    while *cursor + 1 < times.len() && f64::from(times[*cursor + 1]) <= reached {
         *cursor += 1;
     }
     let k = *cursor;
@@ -173,7 +181,7 @@ fn evaluate(track: &SourceTrack<'_>, time: f64, cursor: &mut usize, out: &mut [f
         return;
     }
     let (t0, t1) = (f64::from(times[k]), f64::from(times[k + 1]));
-    let alpha = (time - t0) / (t1 - t0);
+    let alpha = ((time - t0) / (t1 - t0)).clamp(0.0, 1.0);
     let (a, b) = (key(k), key(k + 1));
     if track.channel == Channel::Rotation {
         slerp(a, b, alpha, out);

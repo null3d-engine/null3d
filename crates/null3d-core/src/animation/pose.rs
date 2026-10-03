@@ -107,39 +107,66 @@ fn arc_weight(t: f32x4, d: f32x4) -> f32x4 {
 }
 
 /// Starts the blend weights of a pose: each lane of `weights` (three rows of lanes: translation,
-/// rotation and scale) gets `weight` where the clip has a track, as its `channels` mask says, and
-/// 0 elsewhere.
-pub(crate) fn start_weights(weights: &mut [f32], channels: &[f32], weight: f32) {
+/// rotation and scale) gets `weight` times the joint's `mask` value where the clip has a track, as
+/// its `channels` mask says, and 0 elsewhere. `mask` holds one value per lane.
+pub(crate) fn start_weights(weights: &mut [f32], channels: &[f32], mask: &[f32], weight: f32) {
     let w = f32x4::splat(weight);
-    for at in (0..weights.len()).step_by(4) {
-        store(weights, at, load(channels, at) * w);
+    let lanes = weights.len() / 3;
+    for row in 0..3 {
+        for lane in (0..lanes).step_by(4) {
+            let at = row * lanes + lane;
+            store(weights, at, load(channels, at) * load(mask, lane) * w);
+        }
     }
 }
 
 /// Adds a clip of weight `weight` to the blend weights, and sets `shares` to the fraction of the
 /// way that each lane moves toward the clip: its weight over the lane's weight so far. Lanes the
-/// clip has no track for keep their weight and move by 0.
-pub(crate) fn add_weights(weights: &mut [f32], shares: &mut [f32], channels: &[f32], weight: f32) {
+/// clip has no track for, or that `mask` leaves out, keep their weight and move by 0.
+pub(crate) fn add_weights(
+    weights: &mut [f32],
+    shares: &mut [f32],
+    channels: &[f32],
+    mask: &[f32],
+    weight: f32,
+) {
     let w = f32x4::splat(weight);
     let zero = f32x4::splat(0.0);
+    let lanes = weights.len() / 3;
+    for row in 0..3 {
+        for lane in (0..lanes).step_by(4) {
+            let at = row * lanes + lane;
+            let added = load(channels, at) * load(mask, lane) * w;
+            let total = load(weights, at) + added;
+            store(weights, at, total);
+            store(shares, at, total.simd_gt(zero).select(added / total, zero));
+        }
+    }
+}
+
+/// Sets `shares` to how far each lane of a layer above the first replaces the pose below: the
+/// layer's weight times the lane's weight in the layer, up to 1. A lane that no clip of the layer
+/// moves keeps the pose below.
+pub(crate) fn layer_shares(weights: &[f32], shares: &mut [f32], layer_weight: f32) {
+    let w = f32x4::splat(layer_weight);
+    let one = f32x4::splat(1.0);
     for at in (0..weights.len()).step_by(4) {
-        let added = load(channels, at) * w;
-        let total = load(weights, at) + added;
-        store(weights, at, total);
-        store(shares, at, total.simd_gt(zero).select(added / total, zero));
+        store(shares, at, load(weights, at).simd_min(one) * w);
     }
 }
 
 /// Sets `shares` to the fraction of the way each lane moves toward the rest pose: what its weight
-/// falls short of 1. Lanes no clip has a track for already hold the rest pose and move by 0.
-/// Returns false when no lane moves.
-pub(crate) fn rest_shares(weights: &[f32], shares: &mut [f32]) -> bool {
+/// falls short of 1. Lanes no clip has a track for already hold the rest pose and move by 0,
+/// unless `masked`: a joint mask can leave a lane with a clip's value and no weight. Returns false
+/// when no lane moves.
+pub(crate) fn rest_shares(weights: &[f32], shares: &mut [f32], masked: bool) -> bool {
     let zero = f32x4::splat(0.0);
     let mut moves = zero.simd_ne(zero);
+    let floor = if masked { -1.0 } else { 0.0 };
     for at in (0..weights.len()).step_by(4) {
         let total = load(weights, at);
         let short = (f32x4::splat(1.0) - total).simd_max(zero);
-        let share = total.simd_gt(zero).select(short, zero);
+        let share = total.simd_gt(f32x4::splat(floor)).select(short, zero);
         store(shares, at, share);
         moves |= share.simd_gt(zero);
     }
@@ -169,17 +196,93 @@ pub(crate) fn blend(pose: &mut [f32], other: &[f32], shares: &[f32], lanes: usiz
         let at = |k: usize| r + k * lanes + lane;
         let a: [f32x4; 4] = std::array::from_fn(|k| load(pose, at(k)));
         let b: [f32x4; 4] = std::array::from_fn(|k| load(other, at(k)));
-        let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
-        let toward = arc_weight(load(shares, lanes + lane), dot.abs());
-        // A negated quaternion is the same rotation: take the one in `pose`'s hemisphere.
-        let toward_b = dot.simd_lt(f32x4::splat(0.0)).select(-toward, toward);
-        let from_a = f32x4::splat(1.0) - toward;
-        let (x, y, z, w) = normalized(
-            a[0] * from_a + b[0] * toward_b,
-            a[1] * from_a + b[1] * toward_b,
-            a[2] * from_a + b[2] * toward_b,
-            a[3] * from_a + b[3] * toward_b,
-        );
+        let blended = toward(a, b, load(shares, lanes + lane));
+        for (k, v) in blended.into_iter().enumerate() {
+            store(pose, at(k), v);
+        }
+    }
+}
+
+/// Four rotations moved from `a` toward `b` by `share`, along the shorter arc, normalized:
+/// normalized linear interpolation with [`arc_weight`]'s correction.
+#[inline(always)]
+fn toward(a: [f32x4; 4], b: [f32x4; 4], share: f32x4) -> [f32x4; 4] {
+    let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+    let t = arc_weight(share, dot.abs());
+    // A negated quaternion is the same rotation: take the one in `a`'s hemisphere.
+    let toward_b = dot.simd_lt(f32x4::splat(0.0)).select(-t, t);
+    let from_a = f32x4::splat(1.0) - t;
+    let (x, y, z, w) = normalized(
+        a[0] * from_a + b[0] * toward_b,
+        a[1] * from_a + b[1] * toward_b,
+        a[2] * from_a + b[2] * toward_b,
+        a[3] * from_a + b[3] * toward_b,
+    );
+    [x, y, z, w]
+}
+
+/// Four quaternion products `a * b`, component by component.
+#[inline(always)]
+fn multiply(a: [f32x4; 4], b: [f32x4; 4]) -> [f32x4; 4] {
+    let [ax, ay, az, aw] = a;
+    let [bx, by, bz, bw] = b;
+    [
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+        aw * bw - ax * bx - ay * by - az * bz,
+    ]
+}
+
+/// Sets an additive pose to no change: translations and scales of 0, identity rotations.
+pub(crate) fn clear_additive(add: &mut [f32], lanes: usize) {
+    add.fill(0.0);
+    add[(field::ROTATION + 3) * lanes..(field::ROTATION + 4) * lanes].fill(1.0);
+}
+
+/// Adds a sample of an additive clip to the additive pose `add`, each lane by its share from
+/// `shares` (three rows of lanes), as three.js's `PropertyMixer` adds an additive action:
+/// translations and scales add the sample times the share, and each rotation moves from the
+/// rotation so far toward the rotation so far times the sample, by the share, along the arc.
+#[inline(never)]
+pub(crate) fn add_additive(add: &mut [f32], sample: &[f32], shares: &[f32], lanes: usize) {
+    for f in (0..field::ROTATION).chain(field::SCALE..POSE_FIELDS) {
+        let row = if f < field::ROTATION { 0 } else { 2 };
+        for lane in (0..lanes).step_by(4) {
+            let at = f * lanes + lane;
+            let share = load(shares, row * lanes + lane);
+            store(add, at, load(add, at) + load(sample, at) * share);
+        }
+    }
+    let r = field::ROTATION * lanes;
+    for lane in (0..lanes).step_by(4) {
+        let at = |k: usize| r + k * lanes + lane;
+        let a: [f32x4; 4] = std::array::from_fn(|k| load(add, at(k)));
+        let b: [f32x4; 4] = std::array::from_fn(|k| load(sample, at(k)));
+        let blended = toward(a, multiply(a, b), load(shares, lanes + lane));
+        for (k, v) in blended.into_iter().enumerate() {
+            store(add, at(k), v);
+        }
+    }
+}
+
+/// Applies an additive pose to `pose`: translations and scales add, and each rotation is
+/// multiplied by the additive rotation on its right, as three.js applies additive actions.
+#[inline(never)]
+pub(crate) fn apply_additive(pose: &mut [f32], add: &[f32], lanes: usize) {
+    for f in (0..field::ROTATION).chain(field::SCALE..POSE_FIELDS) {
+        for lane in (0..lanes).step_by(4) {
+            let at = f * lanes + lane;
+            store(pose, at, load(pose, at) + load(add, at));
+        }
+    }
+    let r = field::ROTATION * lanes;
+    for lane in (0..lanes).step_by(4) {
+        let at = |k: usize| r + k * lanes + lane;
+        let a: [f32x4; 4] = std::array::from_fn(|k| load(pose, at(k)));
+        let b: [f32x4; 4] = std::array::from_fn(|k| load(add, at(k)));
+        let [x, y, z, w] = multiply(a, b);
+        let (x, y, z, w) = normalized(x, y, z, w);
         for (k, v) in [x, y, z, w].into_iter().enumerate() {
             store(pose, at(k), v);
         }
@@ -293,19 +396,66 @@ mod tests {
 
     #[test]
     fn weights_count_only_where_a_clip_has_tracks() {
-        // Lane 0 has a track in both clips, lane 1 in the second only, lane 2 in neither.
-        let first = [1.0, 0.0, 0.0, 0.0];
-        let second = [1.0, 1.0, 0.0, 0.0];
-        let mut weights = [0.0; 4];
-        let mut shares = [0.0; 4];
-        start_weights(&mut weights, &first, 0.6);
-        add_weights(&mut weights, &mut shares, &second, 0.2);
-        assert_eq!(weights, [0.8, 0.2, 0.0, 0.0]);
-        assert_eq!(shares, [0.25, 1.0, 0.0, 0.0]);
-        assert!(rest_shares(&weights, &mut shares));
-        assert_eq!(shares, [1.0 - 0.8, 0.8, 0.0, 0.0]);
-        start_weights(&mut weights, &first, 1.5);
-        assert!(!rest_shares(&weights, &mut shares));
+        // In each row, lane 0 has a track in both clips, lane 1 in the second only, lane 2 in
+        // neither. The mask leaves lane 3 out.
+        let first = [1.0, 0.0, 0.0, 1.0].repeat(3);
+        let second = [1.0, 1.0, 0.0, 1.0].repeat(3);
+        let mask = [1.0, 1.0, 1.0, 0.0];
+        let mut weights = [0.0; 12];
+        let mut shares = [0.0; 12];
+        start_weights(&mut weights, &first, &mask, 0.6);
+        add_weights(&mut weights, &mut shares, &second, &mask, 0.2);
+        assert_eq!(weights, [0.8, 0.2, 0.0, 0.0].repeat(3).as_slice());
+        assert_eq!(shares, [0.25, 1.0, 0.0, 0.0].repeat(3).as_slice());
+        assert!(rest_shares(&weights, &mut shares, false));
+        assert_eq!(shares, [1.0 - 0.8, 0.8, 0.0, 0.0].repeat(3).as_slice());
+        layer_shares(&weights, &mut shares, 0.5);
+        assert_eq!(shares, [0.4, 0.1, 0.0, 0.0].repeat(3).as_slice());
+        start_weights(&mut weights, &first, &mask, 1.5);
+        assert!(!rest_shares(&weights, &mut shares, false));
+        layer_shares(&weights, &mut shares, 0.5);
+        assert_eq!(shares, [0.5, 0.0, 0.0, 0.0].repeat(3).as_slice());
+        // With a joint mask, a lane of no weight returns to the rest pose too.
+        start_weights(&mut weights, &first, &mask, 0.6);
+        assert!(rest_shares(&weights, &mut shares, true));
+        assert_eq!(shares, [1.0 - 0.6, 1.0, 1.0, 1.0].repeat(3).as_slice());
+    }
+
+    #[test]
+    fn additive_poses_add_and_turn_on_the_right() {
+        let lanes = 4;
+        let s = 0.5f32.sqrt();
+        let mut add = vec![0.0; POSE_FIELDS * lanes];
+        clear_additive(&mut add, lanes);
+        // A quarter turn about z, moving 1 along x and growing 0.5 in scale.
+        let mut delta = Pose::identity(1).unwrap();
+        delta.set_joint(0, [1.0, 0.0, 0.0], [0.0, 0.0, s, s], [0.5; 3]);
+        add_additive(&mut add, delta.values(), &[0.5; 12], lanes);
+        let read = |pose: &[f32], f: usize| pose[f * lanes];
+        assert_eq!(read(&add, 0), 0.5);
+        assert_eq!(read(&add, 7), 0.25);
+        // Half of a quarter turn.
+        let angle = 2.0 * read(&add, 5).atan2(read(&add, 6));
+        assert!(
+            (angle - std::f32::consts::FRAC_PI_4).abs() < 1e-4,
+            "{angle}"
+        );
+        // A pose turned a quarter about x, then the additive half-quarter about z on its right.
+        let mut pose = Pose::identity(1).unwrap();
+        pose.set_joint(0, [2.0, 0.0, 0.0], [s, 0.0, 0.0, s], [1.0; 3]);
+        let mut values = pose.values().to_vec();
+        apply_additive(&mut values, &add, lanes);
+        assert_eq!(read(&values, 0), 2.5);
+        assert_eq!(read(&values, 7), 1.25);
+        let (hs, hc) = (
+            std::f32::consts::FRAC_PI_8.sin(),
+            std::f32::consts::FRAC_PI_8.cos(),
+        );
+        // (s, 0, 0, s) times (0, 0, hs, hc).
+        let expected = [s * hc, -s * hs, s * hs, s * hc];
+        for (k, e) in expected.iter().enumerate() {
+            assert!((read(&values, 3 + k) - e).abs() < 1e-4, "{k}");
+        }
     }
 
     #[test]

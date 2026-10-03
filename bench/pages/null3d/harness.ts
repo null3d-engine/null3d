@@ -38,11 +38,17 @@ export interface Null3dPageOptions {
 }
 
 /**
+ * The page's switches that reach the sketch module's address as they are: `blend` makes S1's
+ * boxes see through, and `animated` adds that many animated characters to S1.
+ */
+const SKETCH_SWITCHES = ['blend', 'animated'] as const;
+
+/**
  * Runs `sketch`, a sketch module next to the page, as the scene `sceneName` with `defaultCount`
  * objects, or with the count `?n=` asks for. A scene built of whole parts passes `wholeCount`, which
  * turns an asked-for count into the count the scene draws. The sketch module reads `n`, `shadows`
- * and `far` when the page asks for them, and `governor` when the page turns the governor off, from
- * its own address.
+ * and `far` when the page asks for them, `governor` when the page turns the governor off, and the
+ * page's `SKETCH_SWITCHES`, from its own address.
  */
 export function runNull3dPage(
 	sceneName: string,
@@ -72,6 +78,11 @@ export function runNull3dPage(
 		if (options.shadowFilter !== null)
 			sketchUrl.searchParams.set('shadowFilter', String(options.shadowFilter));
 		if (!options.governor) sketchUrl.searchParams.set('governor', 'off');
+		// The allocation check's switches, which only some sketches read.
+		for (const name of SKETCH_SWITCHES) {
+			const value = params.get(name);
+			if (value !== null) sketchUrl.searchParams.set(name, value);
+		}
 
 		// A bare `?hold` holds at the scene's hold time, which the page passes as the engine's option.
 		// A page that fills the window leaves the pixel ratio's cap to the quality preset.

@@ -113,6 +113,10 @@ A mesh has these calls besides the ones above. Like the structural calls, they t
 
 `setMaterial`, `setMesh`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows` rebuild the draw tables, so call them at setup or behind a loading screen. The [performance guide](../guides/performance.md#objects-during-play) lists the cost of each call. [Culling](../concepts/culling.md#bounds-that-you-set) explains how the engine culls with your bounds.
 
+## Animation
+
+An object that a model with animations created has an animator, and `animator()` returns it. The animator plays, fades and layers the model's clips, and calls your handlers for their events. On an object without animation clips, `animator()` throws E1218. Destroying the object stops its clips. The engine cannot load animated models yet. [Animation](animation.md) describes the animator.
+
 ## Names
 
 The `name` option gives an object a name that error messages show, such as `"Crate" (slot 7)`. `describe()` returns that text. `scene.find(name)` returns the first object created with a name. [Scene](scene.md#finding-objects-by-name) describes it.
@@ -124,6 +128,7 @@ The `name` option gives an object a name that error messages show, such as `"Cra
 - [Static and dynamic objects](../concepts/static-dynamic.md): the `dynamic` option.
 - [Render layers](../concepts/render-layers.md): which cameras draw which objects.
 - [Math helpers](math.md): vectors, quaternions and matrices for the setters and getters.
+- [Animation](animation.md): the animator of an animated object.
 
 ## API reference
 
@@ -179,6 +184,7 @@ A node in the scene: position, rotation and scale, a parent, visibility.
 | `setVisible(visible: boolean): void` | Hides or shows the object and everything under it. |
 | `setLayers(mask: number): void` | Puts the object on the layers of a 32-bit mask: bit n puts it on layer n, so `1 << 2` is layer 2 and `0b101` is layers 0 and 2. A camera draws the object only when their masks share a layer. The object's children keep their own layers. A new mask needs no rebuild. |
 | `setDynamic(dynamic: boolean): void` | Makes the object dynamic or static from the next frame. See `NodeOptions.dynamic`. |
+| `animator(): Animator` | The object's animator, which plays the clips of the model that created the object. An object without animation clips has none, and the call throws. |
 | `destroy(): void` | Removes the object at the next frame. Its children become roots. |
 
 ### `ParentOptions`

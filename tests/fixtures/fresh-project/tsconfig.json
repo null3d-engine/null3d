@@ -1,0 +1,16 @@
+{
+	"compilerOptions": {
+		"target": "ES2023",
+		"lib": ["ES2024", "DOM", "DOM.Iterable"],
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"types": ["@null3d/vite-plugin/client"],
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": false,
+		"isolatedModules": true,
+		"verbatimModuleSyntax": true
+	},
+	"include": ["*.ts"],
+	"exclude": ["vite.config.ts"]
+}

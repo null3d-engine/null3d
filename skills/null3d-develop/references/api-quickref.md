@@ -360,21 +360,25 @@ Every load runs outside the sketch's frames, so a frame never waits for a downlo
 ## 12. Animation (0.2) (`api/animation`)
 
 ```ts
-const hero = scene.instantiate(await assets.loadGltf('/hero.glb'));
-const anim = hero.animator();
-anim.play('run', { fade: 0.2, loop: true, speed: 1 });
-anim.crossFade('walk', 0.3);
-anim.play('wave', { layer: 1, additive: true });
-anim.setLayerWeight(1, 0.5);
-anim.setLayerMask(1, 'Spine');          // upper body only
-anim.onEvent('footstep', (e) => page.post('sfx', { name: 'step' }));
-anim.setJointOverride('Head', rotation); // procedural aiming
-anim.stop();
+const hero = scene.instantiate(await assets.loadGltf('/hero.glb')); // loading animated models: later in 0.2
+const anim = hero.animator();           // throws E1218 on an object without clips
+anim.clips;                             // the clip names
+anim.play('run', { fade: 0.2, loop: true, speed: 1 });  // loop: false holds the last frame
+anim.crossFade('walk', 0.3);            // = play('walk', { fade: 0.3 }); the layer's other clips fade out
+anim.play('wave', { layer: 1, fade: 0.2 });              // layers 0 to 3; each replaces the pose below
+anim.setLayerMask(1, 'Spine');          // upper body only: the joint and every joint below it
+anim.setLayerWeight(1, 0.5);            // 0 to 1; free to call every frame
+anim.play('breathe', { layer: 2, additive: true });      // adds its change from its first frame
+anim.setTimeScale(0.5);                 // 0 pauses the object's clips
+const off = anim.onEvent('footstep', (e) => page.post('sfx', e.clip));  // also 'loop' and 'finished'
+anim.stop('walk', { fade: 0.3 });
+anim.stop();                            // every clip; the object holds its rest pose
+anim.setJointOverride('Head', rotation); // later in 0.2: procedural aiming
 
 // after 1.0: scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true });
 ```
 
-Sampling and blending run on job workers; there is no update call.
+Sampling and blending run on job workers; there is no update call. Playing a clip that already plays keeps its time, so calling `play` again costs nothing. Event handlers get one reused object, so copy what you keep. They run at the start of the next frame, before `onUpdate`.
 
 ## 13. Raycasting and queries (0.2) (`api/raycast`)
 

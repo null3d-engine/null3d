@@ -85,6 +85,11 @@ export function coreFailure(core: CoreErrors, call: string, what = 'an object'):
 				'E1109',
 				`${name} failed: the engine could not get ${Math.ceil(a / MB)} MB more memory.`,
 			);
+		case 1218:
+			return error(
+				'E1218',
+				`${name} on ${what} failed: the engine refused the animation data or call (problem ${a}, at ${b}).`,
+			);
 		case 1403:
 			return error('E1403', `${name} ran before the engine core started.`);
 		case 1501:

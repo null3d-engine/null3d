@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use common::{Rng, Workers, character, mul4, perspective, translation};
-use null3d_core::animation::Animations;
+use null3d_core::animation::{Animations, MAX_LAYERS, Play};
 use null3d_core::arena::{ArenaPool, FrameArena};
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
 use null3d_core::clusters::{ClusterScratch, RowCells, RowClusters};
@@ -388,8 +388,10 @@ fn frame(world: &mut World, jobs: &JobSystem, frame: u32, rng: &mut Rng) {
     drop(read);
 }
 
-/// A crowd of 64 animated characters of 40 joints: each blends two clips, with one, two or no
-/// clips at full weight, so every path of the frame step runs.
+/// A crowd of 64 animated characters of 40 joints. A third of them have clip times and weights
+/// that sketch code writes each frame. The others play clips: a base clip, a masked second layer,
+/// and an additive clip on a third, with events in both clips, so every path of the frame step
+/// runs.
 fn crowd(jobs: &JobSystem) -> (Animations, [u32; 2]) {
     let (skeleton, clips) = character(40);
     let mut animations = Animations::new(jobs, 64, 64 * 40).unwrap();
@@ -397,22 +399,70 @@ fn crowd(jobs: &JobSystem) -> (Animations, [u32; 2]) {
     let mut ids = [0; 2];
     for (k, clip) in clips.into_iter().enumerate() {
         ids[k] = animations.add_clip(id, clip).unwrap();
+        let events = [0.0, 0.2, 0.5];
+        animations
+            .set_clip_events(ids[k], &events, &[1, 2, 3])
+            .unwrap();
     }
-    for _ in 0..64 {
-        animations.add_instance(id).unwrap();
+    let upper: Vec<f32> = (0..40)
+        .map(|j| if j % 5 == 1 { 0.0 } else { 1.0 })
+        .collect();
+    let mask = animations.add_mask(id, &upper).unwrap();
+    for i in 0..64 {
+        let instance = animations.add_instance(id).unwrap();
+        if i % 3 == 0 {
+            continue;
+        }
+        let looping = i % 2 == 0;
+        let base = Play {
+            looping,
+            ..Play::default()
+        };
+        animations.play(instance, ids[0], base).unwrap();
+        let layer = Play {
+            layer: 1,
+            fade: 0.3,
+            ..Play::default()
+        };
+        animations.play(instance, ids[1], layer).unwrap();
+        animations.set_layer_mask(instance, 1, Some(mask)).unwrap();
+        let additive = Play {
+            layer: 2,
+            additive: true,
+            speed: -0.5,
+            ..Play::default()
+        };
+        animations.play(instance, ids[0], additive).unwrap();
     }
     (animations, ids)
 }
 
-/// Sketch code moves each character's clip times and weights, then the frame step runs.
+/// Sketch code moves the clip times and weights of a third of the characters, sets layer weights
+/// and time scales, and now and then cross-fades or stops a clip. Then the frame step runs.
 fn animate(animations: &mut Animations, clips: [u32; 2], jobs: &JobSystem, frame: u32) {
     for i in 0..animations.instances() {
         let t = (frame + i) as f32 / 60.0;
-        let weight = [1.0, 0.6, 0.0][(i % 3) as usize];
-        animations.set_sample(i, 0, clips[0], t % 1.0, weight);
-        animations.set_sample(i, 1, clips[1], (t * 1.3) % 0.75, 1.0 - weight * 0.5);
+        if i % 3 == 0 {
+            let weight = [1.0, 0.6, 0.0][(i / 3 % 3) as usize];
+            animations.set_sample(i, 0, clips[0], t % 1.0, weight);
+            animations.set_sample(i, 1, clips[1], (t * 1.3) % 0.75, 1.0 - weight * 0.5);
+            continue;
+        }
+        animations.layer_weights_mut()[i as usize * MAX_LAYERS + 1] = 0.5 + 0.5 * t.sin();
+        animations.time_scales_mut()[i as usize] = 1.0 + 0.25 * (i % 4) as f32;
+        let fade = Play {
+            fade: 0.25,
+            ..Play::default()
+        };
+        match (frame + i) % 40 {
+            0 => animations
+                .play(i, clips[(frame / 40 % 2) as usize], fade)
+                .unwrap(),
+            20 => animations.stop(i, Some(clips[1]), 0.1).unwrap(),
+            _ => {}
+        }
     }
-    animations.update(jobs);
+    animations.update(jobs, 1.0 / 60.0);
 }
 
 /// The allocator calls of a run of frames on `jobs`, counted after warm-up frames that build the

@@ -168,7 +168,16 @@ Measured on 3 October 2026, Chrome 154 on the Mac's GPU and Playwright's Chromiu
 | `rgba32float` with a linear filter | Offered, blended | Offered, blended | Offered, blended |
 
 - On each GPU, the three paths drew the same pixels exactly. SwiftShader's image differed from the Mac GPU's in 1.9% of the pixels, by up to 27 of 255, all in filtered cells. So each GPU kind keeps its own reference, as for every image test.
-- Safari, Firefox, the iPad and the phones have not run the page yet. Add their rows here when they do.
+
+Measured on 3 October 2026 through the device runner, Safari 26.6.2 and Firefox 157 on the Mac. Each run compares with the Mac's Chrome reference, at the device tolerance of 0.5% of the pixels:
+
+| Browser | Core WebGPU | Compatibility mode | WebGL2 | `rgba32float` with a linear filter |
+| --- | --- | --- | --- | --- |
+| Safari 26.6.2 | Pass | Pass | Pass | Offered and blended on all three paths |
+| Firefox 157 | Pass | Pass | Pass | Offered and blended on all three paths |
+
+- Safari first failed both WebGPU paths: it dropped the copy of a 2D layer into the last 3D slice ("Browser faults"). The WebGPU backend now copies through a buffer, and these results come from after that fix.
+- The iPad and the phones have not run the page yet. Add their rows here when they do.
 
 ### Draw-list numbers held for M2
 
@@ -332,6 +341,10 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 
 - Safari 26 drops a whole submit if its commands hold two or more copies from one buffer that was mapped when they were recorded. WebGPU allows that, and Chrome and Firefox accept it. The staging ring therefore records a frame's copies after it unmaps the buffer, just before the frame's next command.
 - The uploads test page reports each frame's WebGPU errors, which show such a failure.
+- Safari 26.6.2 on a Mac drops a copy from a 2D texture into a 3D texture when the copy starts past the first slice. It reports no error, and the slice keeps its old texels. This happened in core WebGPU and in compatibility mode, from one layer or from a layer of an array. A copy into the first slice lands. Copies out of a 3D texture, into a 2D texture or between 3D slices, land too. Chrome 154 and Firefox 157 land every case. A page with only these copies showed it.
+- So the WebGPU backend sends every copy from a 2D texture into a 3D texture through a buffer. It copies the texels into the buffer, then into the slice. Safari lands those copies. The backend keeps one buffer for it and grows it when a copy needs more. Such copies fill color grading tables when content loads, not in the frame loop. Before the fix, the `replay-cube-3d` test failed in Safari on both WebGPU tiers. The copied slice read black, which was 2.5% of the image. Options rejected:
+  - The buffer path for Safari only. The backend cannot tell browsers apart (hard rule 14). A feature test would need a copy and a readback at every start.
+  - A test page that fills the slice another way. Users' copies would then still fail in Safari.
 - SwiftShader takes a line's direction from its projected ends before it clips the line. A line with one end behind the camera draws reversed and fills no pixels, while a line that crosses only the far plane draws. The wireframe debug view lost a floor's edges on CI that way. So the debug view sketch starts its floor in front of the camera, below the view's bottom edge.
 - SwiftShader, the software GPU of the CI machines, loses depth precision past 100 m even in reversed depth from 0 to 1. The depth precision scene fights there at 250 m, 4 km and 10 km, on WebGPU too. The image tests therefore expect no fighting in reversed depth only on a real GPU.
 - Arm's Mali GPUs reject a GLSL array constructor with its size in the type, such as `vec3[9](a, b, ...)`, when its values are not constants. The compiler reports `S0032: no default precision defined for variable 'vec3[9]'`. It does so although the shader sets `precision highp float;`. GLSL ES 3.00 allows the constructor, and Adreno, Apple and SwiftShader accept it. A Google Pixel with a Mali-G715 failed the library test shader this way. The shader builds the nine light colors for `lighting::sh_irradiance` there. The line number in the error counts lines in the shader that Chrome's translator (ANGLE) gives the driver, not in ours.
@@ -348,6 +361,15 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
   - A second count in smaller memories, to tell a split range from a held one. One count of 16 MiB memories took a second. Memories of 7/8 GiB lost as many places as 1 GiB memories when 16 MiB buffers split the ranges.
   - A wait before the first start until Safari frees the counted memories. On the Mac, each count found the whole room even right after another count, so Safari had freed them already.
   - A larger allowance of lost room. A few leaked engines would then pass.
+- On 3 October 2026, a Galaxy S25 (Adreno 830, Android 15) failed four WebGL2 pages of the smoke plan. Chrome 149 and Samsung Internet 30 failed alike. Three image tests drew black where a texture shrinks. They differed in 7.6% of the textures test's pixels and 7.2% of S4's, where every car, lamp and tree was black. The standard maps test differed in 0.53%. The renderer reads `Adreno (TM) 830`, with no ANGLE in the name. So Chrome there seems to run WebGL2 directly on Qualcomm's GL driver.
+- The engine drew each mip level from the level before, with that level as the texture's base and highest level. WebGL allows this. On the S25, each such draw failed with `INVALID_OPERATION`, and levels 1 and up stayed empty. The KTX2 test passed there, because its files carry their levels.
+- The mip levels page (`tests/pages/mip-levels.ts`) made the levels in six ways and read each level back. Two worked on the S25: a draw into a spare texture that then copies into the level, and `generateMipmap`. A draw into the level, a blit, and a copy from a layer of an array into a spare all failed.
+- So the backend draws each level into a spare texture of the same format and copies it into the level. Every GPU takes this way, because it only uses calls that work everywhere. It costs one copy per level, when an image uploads. The spare stays for the next texture of its format, at the largest size drawn so far.
+- `generateMipmap` remakes every layer of an array, so each upload would cost the whole array. A blit from level to level also averages the stored bytes of sRGB texels in Firefox on macOS.
+- The same page copies a texture array into one of twice the layers. The texture store does so when an array grows past 4 textures of one size. On the S25, `copyTexSubImage3D` from a framebuffer that holds layer 1 or 3 of an array copied layer 0. The smoke images could not show it: the textures test shows one picture in every square, and S4's 4 textures never grow their array.
+- So the backend copies a layer of a color texture array as it makes mip levels. The mip shader's copy pipeline reads the layer's texels with `texelFetch` into the spare texture, which then copies into its place. Cube faces and 3D slices still copy straight from a framebuffer, and the S25 has not run such copies. The S25 confirmed the mip level fix: 50 of 51 smoke pages passed, and only this copy failed. The copy fix awaits an S25 run of 4 pages: the mip levels page, and the textures, standard maps and S4 image tests on WebGL2.
+- A copy through a buffer on the GPU worked on the S25: `readPixels` into a pixel pack buffer, then `texSubImage3D` from it. Chrome on the Mac stores sRGB texels brighter that way, as the unpack buffers of data textures found, so the engine does not use it.
+- The S25 also failed the shaders page: its driver removed the spot and point lights' shadow atlas from the shadows debug view. That view reads only the sun's shadow map, so the atlas branch is constant. GLSL lets a driver remove a uniform that the program never reads, and the engine binds nothing to a removed uniform. The page now lists such names in the run's notes, and fails only a name that the GLSL never declares. A unit test checks that every name in a shader's reflection is declared in its GLSL.
 - Work around a browser's fault with an order or a call that is valid everywhere, as the staging ring does. Where browsers differ in speed, time the choices on the device, as the upload routes do. When neither works, detect the fault with a feature test, never from the user agent (hard rule 14).
 
 ## Safari's frame path

@@ -1,7 +1,10 @@
 //! Numbers TypeScript shares with the engine core, written out as a generated TypeScript module so
 //! neither side copies them by hand.
 
-use null3d_core::animation::{Channel, DEFAULT_RATE, Interpolation, MAX_BLEND, REST_FLOATS};
+use null3d_core::animation::{
+    Channel, DEFAULT_RATE, EVENT_CAPACITY, EVENT_WORDS, Interpolation, MAX_BLEND,
+    MAX_LAYERS as MAX_ANIMATION_LAYERS, REST_FLOATS, event_kind,
+};
 use null3d_core::handle::{GENERATION_BITS, SLOT_BITS};
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{color as light_color, kind as light_kind, value as light_value};
@@ -180,11 +183,28 @@ pub mod animation_field {
     pub const SLOT_WEIGHTS: u32 = 2;
     /// The skinning matrices: twelve floats per joint of each instance.
     pub const MATRICES: u32 = 3;
+    /// The rate of each instance's time, which TypeScript writes.
+    pub const TIME_SCALES: u32 = 4;
+    /// The weight of each layer of each instance, `MAX_LAYERS` per instance, which TypeScript
+    /// writes.
+    pub const LAYER_WEIGHTS: u32 = 5;
+    /// The last frame step's event records, `EVENT_WORDS` 32-bit words each.
+    pub const EVENTS: u32 = 6;
+    /// Two words: the last frame step's event records, and the events that did not fit.
+    pub const EVENT_TOTALS: u32 = 7;
 }
 
 /// The words of each track's header in `createClip`'s staging words: joint, channel,
 /// interpolation and key count.
 pub const TRACK_WORDS: u32 = 4;
+
+/// The bits of `animatorPlay`'s `flags`.
+pub mod play_flag {
+    /// The clip repeats.
+    pub const LOOP: u32 = 1;
+    /// The clip adds its change from its first frame to the pose.
+    pub const ADDITIVE: u32 = 2;
+}
 
 /// The first detail of an E1218 failure: what is wrong with the animation data. The second detail
 /// says where, as each problem documents.
@@ -203,6 +223,20 @@ pub mod animation_problem {
     pub const UNKNOWN_SKELETON: u32 = 6;
     /// The second detail is the clip's joint count.
     pub const WRONG_SKELETON: u32 = 7;
+    /// The second detail is the clip event whose time is out of range or not finite.
+    pub const EVENTS: u32 = 8;
+    /// The second detail is the joint whose mask weight lies outside 0 to 1, or the weight count.
+    pub const MASK: u32 = 9;
+    /// The second detail is 0 for the fade and 1 for the speed.
+    pub const PLAY: u32 = 10;
+    /// The second detail is the instance id.
+    pub const UNKNOWN_INSTANCE: u32 = 11;
+    /// The second detail is the clip id.
+    pub const UNKNOWN_CLIP: u32 = 12;
+    /// The second detail is the layer.
+    pub const LAYER: u32 = 13;
+    /// The second detail is the mask id.
+    pub const UNKNOWN_MASK: u32 = 14;
     /// Plus the track problem's number (`TrackProblem`); the second detail is the track.
     pub const TRACK: u32 = 16;
 }
@@ -570,13 +604,26 @@ pub fn typescript() -> String {
                 ("SLOT_TIMES", animation_field::SLOT_TIMES),
                 ("SLOT_WEIGHTS", animation_field::SLOT_WEIGHTS),
                 ("MATRICES", animation_field::MATRICES),
+                ("TIME_SCALES", animation_field::TIME_SCALES),
+                ("LAYER_WEIGHTS", animation_field::LAYER_WEIGHTS),
+                ("EVENTS", animation_field::EVENTS),
+                ("EVENT_TOTALS", animation_field::EVENT_TOTALS),
             ],
         ),
-        // The animation table's layout and the numbers of `createClip`'s track headers.
+        // The animation table's layout, the numbers of `createClip`'s track headers, the bits of
+        // `animatorPlay`'s flags, and the kinds of event in an event record's second word.
         (
             "ANIMATION",
             &[
                 ("MAX_BLEND", MAX_BLEND as u32),
+                ("MAX_LAYERS", MAX_ANIMATION_LAYERS as u32),
+                ("EVENT_CAPACITY", EVENT_CAPACITY as u32),
+                ("EVENT_WORDS", EVENT_WORDS as u32),
+                ("PLAY_LOOP", play_flag::LOOP),
+                ("PLAY_ADDITIVE", play_flag::ADDITIVE),
+                ("EVENT_CLIP", event_kind::EVENT),
+                ("EVENT_LOOP", event_kind::LOOP),
+                ("EVENT_FINISHED", event_kind::FINISHED),
                 ("REST_FLOATS", REST_FLOATS as u32),
                 ("TRACK_WORDS", TRACK_WORDS),
                 ("DEFAULT_RATE", DEFAULT_RATE as u32),
@@ -597,6 +644,13 @@ pub fn typescript() -> String {
                 ("FRAMES", animation_problem::FRAMES),
                 ("UNKNOWN_SKELETON", animation_problem::UNKNOWN_SKELETON),
                 ("WRONG_SKELETON", animation_problem::WRONG_SKELETON),
+                ("EVENTS", animation_problem::EVENTS),
+                ("MASK", animation_problem::MASK),
+                ("PLAY", animation_problem::PLAY),
+                ("UNKNOWN_INSTANCE", animation_problem::UNKNOWN_INSTANCE),
+                ("UNKNOWN_CLIP", animation_problem::UNKNOWN_CLIP),
+                ("LAYER", animation_problem::LAYER),
+                ("UNKNOWN_MASK", animation_problem::UNKNOWN_MASK),
                 ("TRACK", animation_problem::TRACK),
             ],
         ),

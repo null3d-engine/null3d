@@ -1,6 +1,6 @@
 # D-26: How clips are stored, sampled and blended
 
-Status: decided by its rule on 2026-10-03; the phone and tablet timings are pending. Date: 2026-10-03. Task: M2-C1.
+Status: decided by its rule on 2026-10-03; the iPad timings are in, and the phone timings are pending. Date: 2026-10-03. Task: M2-C1.
 
 ## Question
 
@@ -63,7 +63,16 @@ The core shares one time base across a clip's tracks, so a key needs no time of 
 | 100 | 0.090 ms | 0.054 ms | 0.030 ms | 0.018 ms |
 | 500 | 0.38 ms | 0.17 ms | 0.094 ms | 0.062 ms |
 
-These are medians of 500 frames. Treat them as a rough guide only: the Mac was shared. The WebAssembly figures on the S24+ and the iPad come from the [animation plan](../devices.md#the-animation-plan), which is still to run.
+These are medians of 500 frames. Treat them as a rough guide only: the Mac was shared.
+
+The [animation plan](../devices.md#the-animation-plan) times the same step in WebAssembly, on the engine's job workers, for the same characters. One run on the iPad Pro 11-inch in Safari 26.6.2, on 3 October 2026, gave the figures below. It used 6 job workers and timed 240 frames per crowd. The iPad was warm from earlier runs.
+
+| Characters | Step median | Step p90 | Step mean | Job worker time per frame, all workers |
+| --- | --- | --- | --- | --- |
+| 100 | 0.12 ms | 0.14 ms | 0.12 ms | 0.29 ms |
+| 500 | 0.38 ms | 0.44 ms | 0.40 ms | 1.78 ms |
+
+The step is the time on the core's thread from waking the job workers until the update call returns. It includes setting every character's clip times. A crowd of 500 thus takes about 2% of a 60 Hz frame of 16.7 ms. The figures for the S24+ are still to come.
 
 How the data was produced: `bun bench/three-fixtures.ts`, then `cargo test -p null3d-core --test animation -- --nocapture`. The nlerp table came from a script that compares both interpolations with `slerp` on a grid of 901 angles and 201 weights. The speed came from `cargo test -p null3d-core --release --test bench bench_animation_crowd -- --ignored --nocapture --test-threads=1`.
 
@@ -73,8 +82,8 @@ How the data was produced: `bun bench/three-fixtures.ts`, then `cargo test -p nu
 - Rotations. Four signed 16-bit integers per key, the quaternion times 32767. One step is 3.1e-5. Resampling turns each key into the hemisphere of the key before, so interpolation never takes the long way round. Sampling normalizes the result, which also removes the scale. The smallest-three layout of 48 bits would save 2 bytes a key, a quarter of the rotation memory. But each sample would then rebuild the largest component with a square root and move it into place. It would do so for every joint, in the loop where a crowd spends its time. That layout was not measured.
 - Between keys, plain nlerp, as the plan says. At 30 keys per second it stays within 3.2e-5 rad of `slerp` up to 6 rad/s.
 - Blends follow three.js's mixer, joint by joint and channel by channel. Each clip with a track there moves the blend so far by its share of the weight so far. Below a total weight of 1, the rest pose makes up the remainder. Rotations blend with the corrected nlerp, which stays within 7.7e-5 rad of `slerp` up to 2 rad apart.
-- Step tracks take the key at or before the time. Linear tracks interpolate. Cubic spline input waits for the glTF loader, which converts it while it resamples.
-- Each animated object has 4 sample slots: a clip, a time and a weight each. That covers a crossfade between two layers of two clips.
+- Step tracks take the key at or before the time. Linear tracks interpolate. Cubic spline input waits for the glTF loader, which converts it while it resamples. A key within a millionth of a frame's time counts as reached. A clip's key times are 32-bit floats, which can round up past the frame time that resampling computes. Without that, a step track on its own grid took the key before ([D-28](D-28-animator.md) found it).
+- Each animated object had 4 sample slots: a clip, a time and a weight each. [D-28](D-28-animator.md) raised them to 8, with layers, and gave each slot its play state.
 - Output: one row-major 3 × 4 skinning matrix of 48 bytes per joint, with the inverse bind matrix applied. The joints compose in index order, so a skeleton lists its joints parents first.
 - The frame step runs one parallel loop over the animated objects, 4 to a chunk. Each thread samples into scratch memory of its own, sized when a skeleton is added, so the step allocates nothing.
 
@@ -86,8 +95,8 @@ A three.js clip keeps each track's key times and values as 32-bit floats. Each f
 
 ## Consequences
 
-- `crates/null3d-core/src/animation/` holds skeletons, clips, resampling and the frame step. The WebAssembly entry point exposes them to the animation test page. The animator (M2-C2) builds its API on the sample slots.
+- `crates/null3d-core/src/animation/` holds skeletons, clips, resampling and the frame step. The WebAssembly entry point exposes them to the animation test page. The animator (M2-C2) builds its API on the sample slots, as [D-28](D-28-animator.md) records.
 - The glTF loader (M2-C7) calls `resample` on a job worker when it reads a file, and converts cubic spline input there.
 - The skinning passes (M2-C3, M2-C4) read the 48-byte matrices.
-- The phone and tablet timings come from the animation plan. Add them to this record when they are run.
+- The phone timings come from the animation plan. Add them to this record when it runs on the S24+.
 - The record is in the table in [README.md](README.md).
