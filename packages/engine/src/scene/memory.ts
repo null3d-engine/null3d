@@ -19,6 +19,8 @@ export class CoreMemory {
 	private viewsOf: ArrayBufferLike;
 	/** Increments each time the views must be re-made. */
 	generation = 0;
+	/** The core's copy of the world matrix it read last, made again when the memory grows. */
+	private worldMatrixView: Float64Array | undefined;
 
 	constructor(
 		readonly glue: CoreGlue,
@@ -51,6 +53,23 @@ export class CoreMemory {
 
 	u32(address: number, length: number): Uint32Array {
 		return this.view(Uint32Array, address, length);
+	}
+
+	/**
+	 * Copies an object's world matrix of the frame that last ran into `out`: 12 numbers, row by row,
+	 * with the translation from the origin in 64 bits. Returns the core's status, 0 for success. The
+	 * core writes the matrix into its own memory, so a read allocates nothing.
+	 */
+	readWorldMatrix(handle: number, out: Float64Array): number {
+		const status = this.glue.worldMatrix(handle);
+		if (status !== 0) return status;
+		let view = this.worldMatrixView;
+		if (view === undefined || view.buffer !== this.memory.buffer) {
+			view = this.f64(this.glue.worldMatrixAddress(), out.length);
+			this.worldMatrixView = view;
+		}
+		out.set(view);
+		return 0;
 	}
 
 	/**

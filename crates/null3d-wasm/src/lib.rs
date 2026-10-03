@@ -51,6 +51,7 @@ use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
 use null3d_render::shadow_tiles::TileSettings;
 use null3d_render::shadows::ShadowQuality;
+use null3d_render::skinning;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
@@ -142,6 +143,9 @@ struct Engine {
     query_hits: Vec<f64>,
     /// The rays of a batch, `query::RAY_FLOATS` numbers each.
     query_rays: Vec<f64>,
+    /// The world matrix that `worldMatrix` copies last, which TypeScript reads in place, so a read
+    /// passes no array across and allocates nothing.
+    world_matrix: [f64; 12],
     /// The post-processing values that TypeScript writes (`constants::post_value`), with three.js's
     /// defaults until it writes others.
     post_values: Box<[f32; constants::post_value::COUNT as usize]>,
@@ -200,6 +204,7 @@ impl Engine {
             lights: self.lights.visible(),
             shadow_lights: self.lights.shadows(),
             pipelines_built,
+            animations: self.animations.as_ref(),
         };
         (self.renderer.as_mut(), input)
     }
@@ -338,7 +343,8 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// 8-bit path. `antialias` is the anti-aliasing mode's code; an unknown code takes MSAA.
 /// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
 /// every object, with no grid cells skipped first. With `depth_prepass`, each camera view draws its
-/// opaque objects' depth before it shades them, on WebGPU. Every capacity is fixed from here on.
+/// opaque objects' depth before it shades them, on WebGPU. With `vertex_skinning`, WebGPU skins in
+/// the vertex shader of each pass, not in a compute pass. Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
 pub fn init_engine(
@@ -355,6 +361,7 @@ pub fn init_engine(
     transparent: bool,
     cell_culling: bool,
     depth_prepass: bool,
+    vertex_skinning: bool,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
     let cell = unsafe { &mut *ENGINE.0.get() };
@@ -407,11 +414,13 @@ pub fn init_engine(
                 ),
                 cell_culling,
                 depth_prepass,
+                vertex_skinning,
                 ..RendererConfig::default()
             }))
         },
         structure_changed: true,
         rebuilt: false,
+        world_matrix: [0.0; 12],
         staging: Vec::new(),
         lines: LineStore::default(),
         animations: None,
@@ -514,20 +523,26 @@ pub fn reserve_objects(count: u32) -> u32 {
     })
 }
 
-/// Copies an object's world matrix of the current frame (12 numbers, rows of a 3 × 4 matrix), with
-/// its translation from the origin in 64-bit floats.
+/// Copies an object's world matrix of the current frame into the engine's matrix words (see
+/// `worldMatrixAddress`): 12 numbers, rows of a 3 × 4 matrix, with its translation from the origin
+/// in 64-bit floats.
 #[wasm_bindgen(js_name = worldMatrix)]
-pub fn world_matrix(handle: u32, out: &mut [f64]) -> u32 {
+pub fn world_matrix(handle: u32) -> u32 {
     with_engine(
         |e| match e.scene.absolute_world_matrix(Handle::from_raw(handle)) {
             Ok(matrix) => {
-                let n = out.len().min(matrix.len());
-                out[..n].copy_from_slice(&matrix[..n]);
+                e.world_matrix = matrix;
                 0
             }
             Err(error) => core_failure(error),
         },
     )
+}
+
+/// The address of the 12 64-bit floats that `worldMatrix` writes.
+#[wasm_bindgen(js_name = worldMatrixAddress)]
+pub fn world_matrix_address() -> u32 {
+    value_with_engine(|e| Ok(address(&e.world_matrix)))
 }
 
 /// The command ring (see `constants::ring_field`): the record array's address, its capacity in
@@ -2165,6 +2180,8 @@ pub fn update_animations(step_us: u32) -> u32 {
     with_engine(|e| {
         if let Some(animations) = e.animations.as_mut() {
             animations.update(jobs, step_us as f32 * 1e-6);
+            let meshes = e.renderer.settings().meshes();
+            skinning::update_bounds(&mut e.scene, animations, meshes);
         }
         0
     })

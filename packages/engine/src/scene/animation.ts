@@ -515,9 +515,15 @@ export class Animator implements Described {
 		return animator;
 	}
 
-	/** @internal Removes the object's animation from the engine core, when the object is destroyed. */
+	/**
+	 * @internal Removes the object's animation from the engine core, when the object is destroyed.
+	 * The meshes that its joints skin stop being skinned, and keep their last pose's bounds.
+	 */
 	release(): void {
 		if (this.instance === 0) return;
+		for (const mesh of this.skinned)
+			if (mesh.row !== 0) mesh.scene.command(C.COMMAND_SET_SKIN, mesh.handle, 0, 0, 'destroy');
+		this.skinned.length = 0;
 		this.done(this.system.core.glue.removeAnimatedInstance(this.instance), 'destroy');
 		this.system.animators[this.instance - 1] = undefined;
 		this.instance = 0;
@@ -788,13 +794,14 @@ export function clipWords(clip: RigClip): Float32Array {
  * Skins `mesh`'s vertices with the joints of the object that `animator` moves, from the next
  * frame: each vertex follows its four joints by its weights, in the space of that object, and the
  * mesh's own world matrix then places it. The mesh's vertices name the skeleton's joints by their
- * places in the rig. Loaders call it. This version only records the link, and the mesh draws in
- * its rest pose until the skinning passes read it.
+ * places in the rig. A mesh whose geometry has no joints and weights, or names joints that the
+ * skeleton lacks, draws as it is. The mesh culls with bounds that the pose moves. Loaders call it.
  */
 export function skinObject(mesh: Mesh, animator: Animator): void {
 	if (DEV) checks.checkLive('skinObject', mesh);
 	if (animator.instance === 0)
 		refuse(`skinObject() got the animator of ${animator.describe()}, which is destroyed.`);
+	mesh.scene.command(C.COMMAND_SET_SKIN, mesh.handle, animator.instance, 0, 'skinObject');
 	animator.skinned.push(mesh);
 }
 

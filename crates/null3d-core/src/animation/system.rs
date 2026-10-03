@@ -188,8 +188,12 @@ pub struct Animations {
     layer_weights: Box<[f32]>,
     /// The joint mask of each layer of each instance: a mask id plus one, or 0 for every joint.
     layer_masks: Box<[u32]>,
-    /// [`MATRIX_FLOATS`] floats per joint of every instance.
-    matrices: Box<[f32]>,
+    /// Two buffers of [`MATRIX_FLOATS`] floats per joint of every instance. Each frame step writes
+    /// the buffer that the step before did not, so a frame's draw list can upload the matrices of
+    /// its step while the next frame's step runs.
+    matrices: [Box<[f32]>; 2],
+    /// The buffer that the last frame step wrote.
+    written: usize,
     /// The last frame step's events, in order of instance and time.
     events: Box<[[u32; EVENT_WORDS]]>,
     /// The events of the last frame step, then those it could not keep.
@@ -237,7 +241,11 @@ impl Animations {
             time_scales: boxed(n, 1.0)?,
             layer_weights: boxed(n * MAX_LAYERS, 1.0)?,
             layer_masks: boxed(n * MAX_LAYERS, 0)?,
-            matrices: boxed(joints as usize * MATRIX_FLOATS, 0.0)?,
+            matrices: [
+                boxed(joints as usize * MATRIX_FLOATS, 0.0)?,
+                boxed(joints as usize * MATRIX_FLOATS, 0.0)?,
+            ],
+            written: 0,
             events: boxed(EVENT_CAPACITY, [0; EVENT_WORDS])?,
             event_totals: boxed(2, 0)?,
             event_count: AtomicU32::new(0),
@@ -457,7 +465,7 @@ impl Animations {
                 self.instance_skeletons.len(),
             ));
         }
-        let capacity = self.matrices.len() / MATRIX_FLOATS;
+        let capacity = self.joint_capacity() as usize;
         // The first run that a removed instance gave back and that holds the joints, or new
         // joints after those handed out.
         let first = match self.free_joints.iter().position(|&(_, len)| len >= joints) {
@@ -560,9 +568,15 @@ impl Animations {
     }
 
     /// The skinning matrices of every instance, [`MATRIX_FLOATS`] floats per joint, from the last
-    /// frame step. The buffer never moves.
+    /// frame step. The two buffers never move, and the steps take turns between them, so the
+    /// address changes with each step.
     pub fn matrices(&self) -> &[f32] {
-        &self.matrices
+        &self.matrices[self.written]
+    }
+
+    /// The most joints that the matrix buffers hold.
+    pub fn joint_capacity(&self) -> u32 {
+        (self.matrices[0].len() / MATRIX_FLOATS) as u32
     }
 
     /// The first joint of instance `instance` in the matrix buffers and its skeleton's joint
@@ -584,7 +598,7 @@ impl Animations {
         let i = instance as usize;
         let joints = self.skeletons[skeleton as usize].joints() as usize;
         let first = self.first_joints[i] as usize * MATRIX_FLOATS;
-        &self.matrices[first..first + joints * MATRIX_FLOATS]
+        &self.matrices()[first..first + joints * MATRIX_FLOATS]
     }
 
     /// The events of the last frame step, [`EVENT_WORDS`] words each, in order of instance and,
@@ -620,7 +634,8 @@ impl Animations {
 
     /// The frame step: advances every played clip by `dt` seconds of the instance's time,
     /// collects the events it passes, then samples, blends and composes every instance's pose
-    /// and writes its skinning matrices, in parallel on `jobs`. It allocates nothing.
+    /// and writes its skinning matrices into the buffer that the step before did not write, in
+    /// parallel on `jobs`. It allocates nothing.
     ///
     /// # Panics
     /// When `jobs` has more threads than the job system the table was made for.
@@ -632,7 +647,8 @@ impl Animations {
                 jobs.thread_count() as usize <= self.scratch.len(),
                 "the animation table was made for a job system with fewer threads"
             );
-            let out = SharedMut::new(&mut self.matrices);
+            self.written = 1 - self.written;
+            let out = SharedMut::new(&mut self.matrices[self.written]);
             let times = SharedMut::new(&mut self.slots.time);
             let weights = SharedMut::new(&mut self.slots.weight);
             let actions = SharedMut::new(&mut self.actions);

@@ -203,8 +203,10 @@ camera.setFov(deg);               camera.fov;                  // PerspectiveCam
 camera.setOrthoHeight(h);         camera.height; camera.width; // OrthographicCamera; width undefined while it follows the canvas
 camera.setLayers(mask);           // the layers it draws: objects whose masks share a layer with it
 camera.screenToRay(x, y, ray);    // (0.2) x, y in CSS pixels; ray = { origin: number[3], direction: number[3] }
-camera.worldToScreen(p, out);     // (0.2) out = [x, y, depth]; depth < 0 means behind the camera
+camera.worldToScreen(p, out);     // (0.2) out = [x, y, depth] in CSS pixels; depth < 0 means behind the camera
 ```
+
+`screenToRay` at the position of `input.pointer` or a touch uses the camera of the frame on screen at that event. So a click during a fast pan picks what the user saw. Other points, and `worldToScreen`, use the camera of the frame that last ran. Call `worldToScreen` in `onLateUpdate` to line up with the frame being drawn.
 
 An orthographic camera made with `height` follows the canvas's aspect ratio; one made with `left`, `right`, `top` and `bottom` keeps those edges, and `setOrthoHeight` scales them about their center.
 
@@ -376,7 +378,7 @@ anim.stop();                            // every clip; the object holds its rest
 anim.setJointOverride('Head', rotation); // later in 0.2: procedural aiming
 const twin = scene.clone(hero);         // the clone gets an animator of its own
 // Joints are not objects. Meshes under bones (a sword in a hand) follow their joints.
-// Skinned meshes draw in their rest pose until the skinning passes ship (later in 0.2).
+// WebGPU draws skinned poses; WebGL2 draws the rest pose until its skinning ships (later in 0.2).
 
 // after 1.0: scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true });
 ```

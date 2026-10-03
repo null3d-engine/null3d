@@ -301,7 +301,7 @@ describe('input: touches', () => {
 		pointer(EVENT_POINTER_DOWN, 2, 2, 1, 6, FLAG_TOUCH);
 		pointer(EVENT_POINTER_MOVE, 5, 6, 1, 6, FLAG_TOUCH);
 		next();
-		expect(input.touches.map((t) => ({ ...t }))).toEqual([
+		expect(input.touches.map(({ id, x, y, dx, dy }) => ({ id, x, y, dx, dy }))).toEqual([
 			{ id: 5, x: 1, y: 1, dx: 0, dy: 0 },
 			{ id: 6, x: 5, y: 6, dx: 3, dy: 4 },
 		]);

@@ -46,7 +46,9 @@ function fakeCore() {
 	let positionsAt = 0;
 	let colorsAt = 0;
 	let capacity = 0;
-	let end = 8;
+	/** Where the core writes the world matrix it read last, before the line arrays. */
+	const matrixAt = 8;
+	let end = matrixAt + C.CORE_MATRIX_FLOATS * 8;
 	let failure = [0, 0, 0];
 	const frames: Point[][] = [];
 	const reserves: number[] = [];
@@ -87,15 +89,16 @@ function fakeCore() {
 			);
 			return 0;
 		},
-		worldMatrix(handle: number, out: Float64Array): number {
+		worldMatrix(handle: number): number {
 			const matrix = matrices.get(handle);
 			if (!matrix) {
 				failure = [1101, handle, 0];
 				return 1101;
 			}
-			out.set(matrix);
+			new Float64Array(memory.buffer, matrixAt, C.CORE_MATRIX_FLOATS).set(matrix);
 			return 0;
 		},
+		worldMatrixAddress: () => matrixAt,
 		lastErrorCode: () => failure[0] as number,
 		lastErrorDetail: (index: number) => failure[1 + index] as number,
 	};
