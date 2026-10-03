@@ -2,6 +2,8 @@
 // the runner page found itself in, and a row of that record, ready to paste. The runner page and the
 // runner tool both use this file, so it imports nothing from Node or the DOM.
 
+import { GPU_PATH_NAMES, type GpuPath, skippedPathsText } from './gpu-paths.ts';
+
 /** The browsers that the runner page tells apart. */
 export type BrowserName =
 	| 'Safari'
@@ -170,6 +172,8 @@ export interface RowInput {
 	pass: number;
 	skip: number;
 	fail: number;
+	/** The GPU paths that the device lacks, whose pages its runner page skipped. */
+	skippedPaths?: readonly GpuPath[];
 }
 
 /** The record's columns, in order, as the header of its table gives them. */
@@ -238,9 +242,9 @@ function gpuText(gpu: GpuFacts | undefined): string {
 function pathsText(gpu: GpuFacts | undefined): string {
 	if (!gpu) return '';
 	return [
-		gpu.webgpu ? 'WebGPU' : '',
-		gpu.compatibility ? 'compatibility mode' : '',
-		gpu.webgl2 ? 'WebGL2' : '',
+		gpu.webgpu ? GPU_PATH_NAMES.webgpu : '',
+		gpu.compatibility ? GPU_PATH_NAMES.compat : '',
+		gpu.webgl2 ? GPU_PATH_NAMES.webgl2 : '',
 	]
 		.filter(Boolean)
 		.join(', ');
@@ -268,7 +272,15 @@ const cell = (text: string) => text.replaceAll('|', '\\|');
  * recorded and the run's counts. A fact that the browser does not give stays empty. The known
  * issues are for a person to fill in.
  */
-export function testedDeviceRow({ run, launch, device, pass, skip, fail }: RowInput): string {
+export function testedDeviceRow({
+	run,
+	launch,
+	device,
+	pass,
+	skip,
+	fail,
+	skippedPaths = [],
+}: RowInput): string {
 	const cells = [
 		deviceText(device),
 		osText(device),
@@ -277,7 +289,10 @@ export function testedDeviceRow({ run, launch, device, pass, skip, fail }: RowIn
 		pathsText(device.gpu),
 		whereText(launch, device.origin),
 		planText(run),
-		`${pass} passed, ${skip} skipped, ${fail} failed`,
+		[
+			`${pass} passed, ${skip} skipped, ${fail} failed`,
+			...(skippedPaths.length > 0 ? [skippedPathsText(skippedPaths)] : []),
+		].join('; '),
 		'',
 	];
 	return `|${cells.map((text) => (text ? ` ${cell(text)} ` : ' ')).join('|')}|`;
