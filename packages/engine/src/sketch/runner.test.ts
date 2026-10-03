@@ -41,7 +41,12 @@ const RING = 64;
 const RING_BLOCK = 16;
 
 /** The calls whose arguments the fake core keeps. */
-const KEPT_ARGUMENTS = new Set(['recordFrame', 'setRenderScaling', 'setShadowQuality']);
+const KEPT_ARGUMENTS = new Set([
+	'recordFrame',
+	'setRenderScaling',
+	'setShadowQuality',
+	'setLightDefault',
+]);
 
 /** How the log shows a change of one of the core's texture settings. */
 const textureOption = (option: number, value: number) => `setTextureOption ${option} ${value}`;
@@ -386,7 +391,10 @@ describe('SketchRunner', () => {
 	it("draws at the range's highest render scale, and lets the core scale while the scale can drop", async () => {
 		const { runner, calls } = await start(() => ({}));
 		runner.step(0);
-		expect(calls[0]).toEqual(['setRenderScaling', true]);
+		expect(calls.find((call) => call[0] === 'setRenderScaling')).toEqual([
+			'setRenderScaling',
+			true,
+		]);
 		const record = calls.find((call) => call[0] === 'recordFrame');
 		expect(record?.[4]).toBe(1000);
 	});
@@ -394,13 +402,22 @@ describe('SketchRunner', () => {
 	it("gives the core the preset's shadow filter and far cascade interval, and each change", async () => {
 		const { runner, calls } = await start(({ quality }) => ({
 			onUpdate: () => {
-				quality.set({ shadowFilter: 5, farCascadeInterval: 1 });
+				quality.set({ shadowFilter: 3, farCascadeInterval: 1 });
 			},
 		}));
 		const shadowCalls = () => calls.filter((call) => call[0] === 'setShadowQuality');
-		expect(shadowCalls()).toEqual([['setShadowQuality', 3, 3]]);
+		expect(shadowCalls()).toEqual([['setShadowQuality', 5, 3]]);
 		runner.step(0);
-		expect(shadowCalls().at(-1)).toEqual(['setShadowQuality', 5, 1]);
+		expect(shadowCalls().at(-1)).toEqual(['setShadowQuality', 3, 1]);
+	});
+
+	it("gives new directional lights the preset's shadow cascades and map size before the setup", async () => {
+		const { calls } = await start(() => ({}));
+		const medium = presetSettings('medium');
+		expect(calls.filter((call) => call[0] === 'setLightDefault')).toEqual([
+			['setLightDefault', C.LIGHT_VALUE_SHADOW_CASCADES, medium.shadowCascades],
+			['setLightDefault', C.LIGHT_VALUE_SHADOW_MAP_SIZE, medium.shadowMapSize],
+		]);
 	});
 
 	it('draws the frame being drawn at a range that the sketch fixes in its update', async () => {
