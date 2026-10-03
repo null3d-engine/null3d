@@ -4,6 +4,7 @@
 		"lib": ["ES2024"],
 		"module": "ESNext",
 		"moduleResolution": "bundler",
+		"customConditions": ["null3d-source"],
 		"types": ["bun"],
 		"strict": true,
 		"noUncheckedIndexedAccess": true,

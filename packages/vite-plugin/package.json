@@ -1,20 +1,52 @@
 {
 	"name": "@null3d/vite-plugin",
 	"version": "0.0.0",
-	"private": true,
 	"description": "Vite plugin for null3D projects: cross-origin isolation headers, HTTPS for testing on phones and tablets, WGSL compiled for WebGPU and WebGL2, and production builds that compile the sketch module and ship the engine core.",
 	"license": "MIT OR Apache-2.0",
+	"author": "Ramesh Nair (https://hiddentao.com)",
+	"homepage": "https://github.com/null3d-engine/null3d#readme",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/null3d-engine/null3d.git",
 		"directory": "packages/vite-plugin"
 	},
+	"bugs": {
+		"url": "https://github.com/null3d-engine/null3d/issues"
+	},
+	"keywords": [
+		"null3d",
+		"vite-plugin",
+		"wgsl",
+		"webgpu",
+		"webgl2"
+	],
 	"type": "module",
 	"exports": {
-		".": "./src/index.ts",
+		".": {
+			"null3d-source": "./src/index.ts",
+			"types": "./lib/index.d.ts",
+			"default": "./lib/index.js"
+		},
 		"./client": {
-			"types": "./client.d.ts"
+			"null3d-source": "./src/client.d.ts",
+			"types": "./lib/client.d.ts"
 		}
+	},
+	"files": [
+		"lib",
+		"dist/shader-compiler.wasm",
+		"LICENSE-MIT",
+		"LICENSE-APACHE"
+	],
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
+	"engines": {
+		"node": "^20.19.0 || >=22.12.0"
+	},
+	"scripts": {
+		"prepack": "bun ../../tools/build-package.ts vite-plugin"
 	},
 	"peerDependencies": {
 		"vite": ">=8"

@@ -10,9 +10,13 @@ function project(files: readonly string[]): string {
 		'package.json': '{"name":"demo","private":true}',
 		[`${engine}/package.json`]: JSON.stringify({
 			name: '@null3d/engine',
-			exports: { '.': './index.js', './wasm/*': './dist/wasm/*' },
+			exports: {
+				'.': './lib/index.js',
+				'./wasm/*': './dist/wasm/*',
+				'./package.json': './package.json',
+			},
 		}),
-		[`${engine}/index.js`]: '',
+		[`${engine}/lib/index.js`]: '',
 		...Object.fromEntries(files.map((file) => [`${engine}/dist/wasm/${file}`, 'x'])),
 	});
 }

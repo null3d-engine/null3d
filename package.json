@@ -7,6 +7,7 @@
 		"type": "git",
 		"url": "git+https://github.com/null3d-engine/null3d.git"
 	},
+	"type": "module",
 	"packageManager": "bun@1.3.14",
 	"workspaces": [
 		"packages/*",
@@ -32,6 +33,7 @@
 		"test:browser": "bun run --cwd tests test",
 		"test:images": "bun run --cwd tests test images.spec.ts",
 		"images:review": "bun tests/review-images.ts",
+		"test:packages": "bun tests/fresh-project.ts",
 		"test:shader-compiler": "NULL3D_SHADER_COMPILER=1 cargo test -p null3d-shaders --test build && bun tools/shaders.ts && NULL3D_SHADER_COMPILER=1 bun test ./packages/vite-plugin/src/shader-compiler.test.ts ./packages/vite-plugin/src/wgsl.test.ts",
 		"test:real-browsers": "bun tools/shaders.ts && bun tests/real-browsers.ts",
 		"devices": "bun tools/shaders.ts && bun tests/real-browsers.ts --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave",
