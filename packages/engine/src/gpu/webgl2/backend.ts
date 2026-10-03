@@ -1335,7 +1335,7 @@ export class WebGL2Backend {
 		gl.drawArrays(gl.TRIANGLES, 0, 3);
 	}
 
-	/** Copies a rectangle of the spare into a level and layer of `into`. */
+	/** Copies a rectangle of the spare into a level of `into`: a layer, a cube face or a 3D slice. */
 	private copyFromSpare(
 		into: GlTexture,
 		level: number,
@@ -1349,9 +1349,12 @@ export class WebGL2Backend {
 	): void {
 		const gl = this.gl;
 		this.editTexture(MIP_UNIT, into.target, into.texture);
-		if (into.target === gl.TEXTURE_2D_ARRAY)
+		if (this.layered(into.target))
 			gl.copyTexSubImage3D(into.target, level, x, y, layer, spareX, spareY, width, height);
-		else gl.copyTexSubImage2D(into.target, level, x, y, spareX, spareY, width, height);
+		else {
+			const plane = this.planeTarget(into, layer);
+			gl.copyTexSubImage2D(plane, level, x, y, spareX, spareY, width, height);
+		}
 	}
 
 	/** Gives the source back all its levels, and takes the spare out of the framebuffer. */
