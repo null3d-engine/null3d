@@ -16,7 +16,12 @@ import { BENCH_SCENES, type FeatureScene } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { BLOOM_IMAGE } from '../../bench/scenes/bloom.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
-import { MODEL_NAMES, MODELS_IMAGE } from '../../bench/scenes/gltf-models.ts';
+import {
+	MODEL_NAMES,
+	MODEL_SCENES,
+	MODELS_IMAGE,
+	type ModelScene,
+} from '../../bench/scenes/gltf-models.ts';
 import { GRADING_IMAGE } from '../../bench/scenes/grading.ts';
 import { LIGHTS_IMAGE } from '../../bench/scenes/lights.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
@@ -360,16 +365,19 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	})),
 	// glTF sample models that assets.loadGltf loads and scene.instantiate copies, one for each feature
 	// of the loader: materials with their maps, texture transforms, unlit and emissive strength,
-	// lights, instancing, KTX2 textures, alpha modes, vertex colors and the second texture
-	// coordinates. The parity test compares each with three.js's GLTFLoader.
-	...MODEL_NAMES.map(
-		(model): ImageTest => ({
+	// lights, instancing, KTX2 textures, alpha modes, vertex colors, the second texture coordinates
+	// and meshopt compression. The parity test compares each with three.js's GLTFLoader. A model
+	// compressed with meshopt must draw as its uncompressed scene does.
+	...MODEL_NAMES.map((model): ImageTest => {
+		const { uncompressed } = MODEL_SCENES[model] as ModelScene;
+		return {
 			name: `gltf-${model}`,
 			sketch: `tests/pages/sketches/gltf-sketch.ts?model=${model}`,
 			size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
 			hold: 0,
-		}),
-	),
+			...(uncompressed ? { reference: `gltf-${uncompressed}` } : {}),
+		};
+	}),
 	// Copies of a glTF model made in code: scene.instantiate, scene.clone, a model with 16-bit
 	// positions, and an instance batch from scene.createInstances whose rows move every part of the
 	// model. Each tier must place every part the same way.
@@ -1052,7 +1060,10 @@ export function featureImagePath({ test, sketchSwitches }: FeatureScene, tier: T
 		sketchSwitches && 'sketch' in own
 			? { ...own, sketch: `${own.sketch}${own.sketch.includes('?') ? '&' : '?'}${sketchSwitches}` }
 			: own;
-	const run = imageRuns([drawn]).find(
+	// The page's address depends on the test alone, so a test that shares another test's references
+	// runs here without them.
+	const { reference: _shared, ...alone } = drawn;
+	const run = imageRuns([alone]).find(
 		(candidate) => candidate.tier === tier && candidate.mode?.name === 'pipelined',
 	);
 	if (!run) throw new Error(`the manifest has no pipelined run of ${test} on ${tier}`);

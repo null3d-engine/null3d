@@ -209,12 +209,21 @@ const NO_TONE = 'tone=none';
  * lamp's glass uses KHR_materials_transmission, volume and ior, which three.js draws and null3D
  * does not read: 0.87% of the pixels differ, all on the glass and its beads. The instanced cubes
  * have black faces beside white ones at hundreds of edges, which compatibility mode's 8-bit path
- * averages after it encodes the colors: 0.41% differ there, and none on the other tiers.
+ * averages after it encodes the colors: 0.41% differ there, and none on the other tiers. The same
+ * cubes compressed with meshopt take the same limit, for the same edges.
  */
 const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	ktx2: 1,
 	instancing: 0.5,
+	'meshopt-ext': 0.5,
 };
+
+/**
+ * The glTF model scenes that three.js's WebGPURenderer draws wrong, so its WebGLRenderer's frame is
+ * the reference on every tier. In the Khronos meshopt test, it draws the column of cubes with 16-bit
+ * attributes black, and its WebGLRenderer draws them as null3D does.
+ */
+const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set(['meshopt-khr']);
 
 /**
  * Each feature scene that the exit gate's parity covers: standard materials, the light types
@@ -253,6 +262,7 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 			test: `gltf-${model}`,
 			twin: `${TWINS}/gltf.html?model=${model}`,
 			limit: MODEL_LIMITS[model],
+			...(WEBGL_ONLY_MODELS.has(model) && { webglOnly: true }),
 		}),
 	),
 	{

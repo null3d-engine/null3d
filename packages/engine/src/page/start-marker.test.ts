@@ -133,11 +133,20 @@ describe('the crash marker', () => {
 		const firstFrame = new Promise<void>((resolve) => {
 			showFirstFrame = resolve;
 		});
+		// The test waits for the marker's own end, not for a fixed time: a busy machine can run the
+		// end's timer after a test timer that was due later.
+		const ended = new Promise<void>((resolve) => {
+			const end = marker.end.bind(marker);
+			marker.end = () => {
+				end();
+				resolve();
+			};
+		});
 		marker.endAfter(firstFrame, 5);
 		await new Promise((resolve) => setTimeout(resolve, 20));
 		expect(storage.length).toBe(1);
 		showFirstFrame();
-		await new Promise((resolve) => setTimeout(resolve, 20));
+		await ended;
 		expect(storage.length).toBe(0);
 	});
 
