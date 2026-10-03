@@ -13,7 +13,8 @@ import type { EngineError } from '../errors/engine-error';
 import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
-import { labelCapacity, PageLabels } from '../page/labels';
+import { LabelLoop } from '../page/label-loop';
+import { LabelSlots, labelCapacity, PageLabels } from '../page/labels';
 import { controlLabels, controlViews, createControlBuffer, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { type LabelRegion, labelSequence, presentLabels } from '../shared/labels';
@@ -706,7 +707,7 @@ describe('labels', () => {
 		views.slotFloats[Slot.CanvasCssWidth] = CSS[0];
 		views.slotFloats[Slot.CanvasCssHeight] = CSS[1];
 		const region = controlLabels(buffer) as LabelRegion;
-		const page = new PageLabels(views, drawsHere);
+		const page = new LabelLoop(views, drawsHere, new LabelSlots());
 		const sent: [string, number, number][] = [];
 		const ui = new Ui(region, fake.scene, fake.core, fake.scene.frameCameras, (id, slot, gen) => {
 			sent.push([id, slot, gen]);
@@ -914,13 +915,16 @@ describe('labels', () => {
 		const { scene, ui, page } = setup(8, false);
 		ui.trackLabel(scene.createGroup(), 'a');
 		expect(callbacks).toHaveLength(0);
-		const unbind = page.bind('a', element());
+		const a = element();
+		page.bind('a', a);
 		expect(callbacks).toHaveLength(1);
-		page.bind('b', element())();
+		const b = element();
+		page.bind('b', b);
+		page.unbind('b', b);
 		expect(callbacks).toHaveLength(1);
 		(callbacks.shift() as FrameRequestCallback)(0);
 		expect(callbacks).toHaveLength(1);
-		unbind();
+		page.unbind('a', a);
 		(callbacks.shift() as FrameRequestCallback)(0);
 		expect(callbacks).toHaveLength(0);
 	});
@@ -954,6 +958,24 @@ describe('labels', () => {
 		Atomics.add(region.ints, 0, 1);
 		page.update();
 		expect(el.style.transform).not.toBe(first);
+	});
+
+	test('the first bind loads the element loop, and binds made meanwhile wait for it', async () => {
+		const buffer = createControlBuffer(false, 4);
+		const views = controlViews(buffer);
+		const page = new PageLabels(views, true);
+		page.setSlot('a', 2, 5);
+		const a = element();
+		const b = element();
+		page.bind('a', a);
+		page.bind('b', b)();
+		expect(a.style.visibility).toBe('hidden');
+		expect(page.frame).toBe(0);
+		// The loop loads in a later task; once it has, its bind of 'a' has set the element up.
+		for (let k = 0; k < 20 && a.style.position !== 'absolute'; k++)
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		expect(a.style.position).toBe('absolute');
+		expect(b.style.position).toBeUndefined();
 	});
 
 	test('createEngine takes from 1 to 65,536 labels, 4,096 by default', () => {

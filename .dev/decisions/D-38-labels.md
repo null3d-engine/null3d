@@ -26,8 +26,9 @@ The question has five parts:
 | Measure | Result | How |
 | --- | --- | --- |
 | Element centers against `CSS2DRenderer`'s formula, a turned and scaled object with an offset, both lenses | Within 0.0005 CSS pixels | `packages/engine/src/scene/scene.test.ts`, "labels" |
-| A label on a box while the camera rolls 0.1 radians a frame, about 6 CSS pixels of the box's motion, Chrome on the Mac | See the browser test rows below | `tests/image/labels.spec.ts` |
-| The element against the center of the box's red pixels in a held frame | See the browser test rows below | Same test, hold mode |
+| A label on a box while the camera rolls 0.1 radians a frame, about 6 CSS pixels of the box's motion, in all five thread modes | Every one of 89 to 90 frames on screen per mode within 0.001 CSS pixels of the box's place in that frame, in Chrome on the Mac's GPU and on SwiftShader | `tests/image/labels.spec.ts`, 2026-10-04 |
+| The element against the center of the box's red pixels in a held frame | 0.56 and 0.43 pixels off on the Mac's GPU (186 pixels), 0.16 and 0.39 on SwiftShader (176 pixels). A box's drawn pixels lean a little toward the camera's view, so their center is not the exact projection of the box's center | Same test, hold mode |
+| Download, after Brotli | The page's file grows by 0.8 KB (3.5%), and the element loop's file of 1.1 KB loads with the first bind. The sketch worker grows by 1.0 KB (3.5%), and the page's sketch runner by 0.9 KB (3.6%) | `bun run build:check-size`, 2026-10-04 |
 | Bytes of the label tables at the default capacity | 3 tables × 4,096 labels × 16 bytes = 192 KB, in the control buffer | `shared/labels.ts` |
 
 ## Decision
@@ -62,7 +63,7 @@ The sketch gives each id a slot in the tables. It sends the page the id, the slo
 
 ### The page's loop
 
-`PageLabels` in `page/labels.ts` keeps the bound elements and the slot of each id.
+`PageLabels` in `page/labels.ts` keeps the slot of each id, which every page needs, since the sketch's messages can come before any bind. The code that moves the elements, `LabelLoop` in `page/label-loop.ts`, loads on the first bind, in a file of its own. A page without labels never downloads its 1.1 KB, and binds made while it loads wait for it. The sketch's side stays in the sketch's file, because `trackLabel` places the label in the same frame.
 
 - Where a worker draws, the page runs a `requestAnimationFrame` loop only while an element is bound. Each callback reads the presented table and does nothing more when the sequence counter and the canvas's size are as before.
 - Where the page draws, it moves the elements right after each frame it presents, through the `presented` hook of the frame loops. The elements then change in the same update of the page as the canvas. A loop of its own could run before the engine's frame callback in a browser frame, and show the frame before.

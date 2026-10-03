@@ -66,7 +66,7 @@ The engine holds 4,096 labels at once by default. `createEngine`'s `maxLabels` o
 
 ## Elements on the page
 
-`engine.labels.bind(id, element)` binds an element to the label with the same id. The sketch can track the label before or after the bind. The element stays hidden until the label's first frame reaches the screen.
+`engine.labels.bind(id, element)` binds an element to the label with the same id. The sketch can track the label before or after the bind. The element stays hidden until the label's first frame reaches the screen. The code that moves the elements downloads with the first bind, so a page without labels never downloads it.
 
 The engine places the element's center over the label, through its CSS `transform`. It also sets the element's `position` to `absolute` at the top left of its container. So put the elements in a container that covers the canvas exactly, as the example above does. Give the container `pointer-events: none`, so the canvas still gets the pointer.
 
