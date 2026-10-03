@@ -15,6 +15,10 @@
 use std::cell::{Cell, UnsafeCell};
 use std::sync::OnceLock;
 
+use null3d_core::animation::{
+    AnimationError, Animations, Channel, Interpolation, MATRIX_FLOATS, MAX_JOINTS, REST_FLOATS,
+    Skeleton, SourceTrack, TrackProblem, resample,
+};
 use null3d_core::error::CoreError;
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
@@ -49,8 +53,8 @@ use wasm_bindgen::prelude::*;
 pub mod constants;
 
 use constants::{
-    arrays_problem, batch_field, camera_target, debug_line_field, mesh_arrays, ring_field,
-    scene_field, shading, texture_option, texture_stat,
+    TRACK_WORDS, animation_field, animation_problem, arrays_problem, batch_field, camera_target,
+    debug_line_field, mesh_arrays, ring_field, scene_field, shading, texture_option, texture_stat,
 };
 
 /// The engine version, as the loader reports it.
@@ -79,6 +83,10 @@ const UPLOAD_RANGES: u32 = 4096;
 mod codes {
     /// Arrays that make no mesh; the details give the problem (`constants::arrays_problem`).
     pub const BAD_ARRAYS: u32 = 1206;
+    /// Animation data that makes no skeleton or clip; the details give the problem
+    /// (`constants::animation_problem`). No public call raises it yet, so the TypeScript error
+    /// table does not list it.
+    pub const BAD_ANIMATION: u32 = 1218;
     /// A function that needs the engine ran before `initEngine`, or `initEngine` ran twice.
     pub const NOT_READY: u32 = 1403;
     /// A mesh, material or GPU buffer is full, or an id names nothing (details say which).
@@ -115,6 +123,8 @@ struct Engine {
     staging: Vec<u32>,
     /// The debug lines of the next frame, which only development builds of the engine write.
     lines: LineStore,
+    /// Skeletons, clips and animated instances, from the first `initAnimations` on.
+    animations: Option<Animations>,
 }
 
 impl Engine {
@@ -365,6 +375,7 @@ pub fn init_engine(
         rebuilt: false,
         staging: Vec::new(),
         lines: LineStore::default(),
+        animations: None,
     });
     0
 }
@@ -837,23 +848,26 @@ pub fn create_shape_mesh(
     })
 }
 
+/// Makes room for `words` 32-bit staging words, which TypeScript then writes, and returns their
+/// address.
+fn reserve_staging(e: &mut Engine, words: u32) -> Result<u32, u32> {
+    e.staging.clear();
+    e.staging
+        .try_reserve_exact(words.max(1) as usize)
+        .map_err(|_| {
+            core_failure(CoreError::OutOfMemory {
+                bytes: words.saturating_mul(4),
+            })
+        })?;
+    e.staging.resize(words as usize, 0);
+    Ok(address(e.staging.as_slice()))
+}
+
 /// Makes room for `words` 32-bit words of a mesh's arrays, which TypeScript then writes, and
 /// returns their address. `createMeshFromArrays` reads them, and frees them.
 #[wasm_bindgen(js_name = meshArrays)]
 pub fn mesh_arrays(words: u32) -> u32 {
-    value_with_engine(|e| {
-        let out_of_memory = || {
-            core_failure(CoreError::OutOfMemory {
-                bytes: words.saturating_mul(4),
-            })
-        };
-        e.staging.clear();
-        e.staging
-            .try_reserve_exact(words.max(1) as usize)
-            .map_err(|_| out_of_memory())?;
-        e.staging.resize(words as usize, 0);
-        Ok(address(e.staging.as_slice()))
-    })
+    value_with_engine(|e| reserve_staging(e, words))
 }
 
 /// A mesh from the arrays in the staging words, as `layout` (`constants::mesh_arrays` bits)
@@ -1508,6 +1522,200 @@ pub fn set_fog(kind: u32, r: f32, g: f32, b: f32, near: f32, far: f32, density: 
     with_engine(|e| {
         let fog = Fog::from_code(kind, [r, g, b], near, far, density);
         e.renderer.settings_mut().set_fog(fog);
+        0
+    })
+}
+
+// --- Animation ---
+//
+// Skeletons and clips come in through the staging words. The sketch thread writes each animated
+// instance's sample slots (clip, time and weight) into the table's arrays, and `updateAnimations`
+// writes every instance's skinning matrices on the job workers. Ids that these calls return are
+// the table's ids plus one, so that 0 can mean a failure.
+
+/// The failure of animation data, as an E1218 or a core error.
+fn animation_failure(error: AnimationError) -> u32 {
+    let (problem, at) = match error {
+        AnimationError::Core(error) => return core_failure(error),
+        AnimationError::Joints { joints } => (animation_problem::JOINTS, joints),
+        AnimationError::Parent { joint, .. } => (animation_problem::PARENT, joint),
+        AnimationError::Length { array, .. } => (animation_problem::LENGTH, array),
+        AnimationError::NotFinite { at } => (animation_problem::NOT_FINITE, at),
+        AnimationError::Frames { frames } => (animation_problem::FRAMES, frames),
+        AnimationError::UnknownSkeleton { skeleton } => {
+            (animation_problem::UNKNOWN_SKELETON, skeleton)
+        }
+        AnimationError::WrongSkeleton { clip_joints, .. } => {
+            (animation_problem::WRONG_SKELETON, clip_joints)
+        }
+        AnimationError::Track { track, problem } => {
+            (animation_problem::TRACK + problem as u32, track)
+        }
+    };
+    fail(codes::BAD_ANIMATION, [problem, at])
+}
+
+/// Runs `f` on the animation table, or fails with `NOT_READY` before `initAnimations`.
+fn with_animations(f: impl FnOnce(&mut Animations, &mut Vec<u32>) -> Result<u32, u32>) -> u32 {
+    value_with_engine(|e| match e.animations.as_mut() {
+        Some(animations) => f(animations, &mut e.staging),
+        None => Err(fail(codes::NOT_READY, [2, 0])),
+    })
+}
+
+/// Creates the animation table for `instances` animated objects with `joints` joints in all.
+#[wasm_bindgen(js_name = initAnimations)]
+pub fn init_animations(instances: u32, joints: u32) -> u32 {
+    let Some(jobs) = JOBS.get() else {
+        return fail(codes::NOT_READY, [0, 0]);
+    };
+    with_engine(|e| {
+        if e.animations.is_some() {
+            return fail(codes::NOT_READY, [2, 1]);
+        }
+        match Animations::new(jobs, instances, joints) {
+            Ok(animations) => {
+                e.animations = Some(animations);
+                0
+            }
+            Err(error) => animation_failure(error),
+        }
+    })
+}
+
+/// Makes room for `words` staging words of animation data and returns their address.
+#[wasm_bindgen(js_name = animationStaging)]
+pub fn animation_staging(words: u32) -> u32 {
+    value_with_engine(|e| reserve_staging(e, words))
+}
+
+// The staging words hold each joint's parent, then its rest pose (`REST_FLOATS` floats), then its
+// inverse bind matrix (12 floats, row-major 3 × 4).
+/// Creates a skeleton of `joints` joints from the staging words; returns its id plus one.
+#[wasm_bindgen(js_name = createSkeleton)]
+pub fn create_skeleton(joints: u32) -> u32 {
+    with_animations(|animations, staging| {
+        let staged = std::mem::take(staging);
+        // Past the joint limit, the skeleton refuses the count before any length matters.
+        let n = (joints as usize).min(MAX_JOINTS as usize + 1);
+        let rest_end = n + n * REST_FLOATS;
+        let end = (rest_end + n * MATRIX_FLOATS).min(staged.len());
+        let floats = as_floats(&staged);
+        let skeleton = Skeleton::new(
+            &staged[..n.min(end)],
+            &floats[n.min(end)..rest_end.min(end)],
+            &floats[rest_end.min(end)..end],
+        )
+        .map_err(animation_failure)?;
+        let id = animations
+            .add_skeleton(skeleton)
+            .map_err(animation_failure)?;
+        Ok(id + 1)
+    })
+}
+
+/// The tracks that the staging words hold for `createClip`.
+fn staged_tracks(words: &[u32], tracks: usize) -> Result<Vec<SourceTrack<'_>>, AnimationError> {
+    let header = TRACK_WORDS as usize;
+    if tracks.saturating_mul(header) > words.len() {
+        return Err(AnimationError::Track {
+            track: (words.len() / header) as u32,
+            problem: TrackProblem::Keys,
+        });
+    }
+    let floats = as_floats(words);
+    let mut at = tracks * header;
+    let mut out = Vec::with_capacity(tracks);
+    for track in 0..tracks {
+        let problem = |problem| AnimationError::Track {
+            track: track as u32,
+            problem,
+        };
+        let head = &words[track * header..track * header + header];
+        let channel = Channel::from_u32(head[1]).ok_or(problem(TrackProblem::Kind))?;
+        let interpolation = Interpolation::from_u32(head[2]).ok_or(problem(TrackProblem::Kind))?;
+        let keys = head[3] as usize;
+        let end = keys
+            .checked_mul(1 + channel.components())
+            .and_then(|n| n.checked_add(at))
+            .filter(|&end| end <= floats.len());
+        let Some(end) = end else {
+            return Err(problem(TrackProblem::Keys));
+        };
+        out.push(SourceTrack {
+            joint: head[0],
+            channel,
+            interpolation,
+            times: &floats[at..at + keys],
+            values: &floats[at + keys..end],
+        });
+        at = end;
+    }
+    Ok(out)
+}
+
+/// The staging words as 32-bit floats, which have the same size and alignment.
+fn as_floats(words: &[u32]) -> &[f32] {
+    // SAFETY: `u32` and `f32` have the same size and alignment, and every bit pattern is a float.
+    unsafe { std::slice::from_raw_parts(words.as_ptr().cast(), words.len()) }
+}
+
+// The staging words hold `tracks` headers of `TRACK_WORDS` words (joint, channel, interpolation,
+// key count), then each track's key times and values as floats, track after track. The clip is
+// resampled at `rate` keys per second (`resample`).
+/// Creates a clip for `skeleton` from the staging words; returns its id plus one.
+#[wasm_bindgen(js_name = createClip)]
+pub fn create_clip(skeleton: u32, tracks: u32, rate: f32) -> u32 {
+    with_animations(|animations, staging| {
+        let staged = std::mem::take(staging);
+        let id = skeleton.wrapping_sub(1);
+        let clip = {
+            let target = animations
+                .skeleton(id)
+                .ok_or(AnimationError::UnknownSkeleton { skeleton: id })
+                .map_err(animation_failure)?;
+            let sources = staged_tracks(&staged, tracks as usize).map_err(animation_failure)?;
+            resample(target, &sources, rate).map_err(animation_failure)?
+        };
+        let clip = animations.add_clip(id, clip).map_err(animation_failure)?;
+        Ok(clip + 1)
+    })
+}
+
+/// Adds an animated instance of `skeleton`; returns its id plus one.
+#[wasm_bindgen(js_name = createAnimatedInstance)]
+pub fn create_animated_instance(skeleton: u32) -> u32 {
+    with_animations(|animations, _| {
+        let instance = animations
+            .add_instance(skeleton.wrapping_sub(1))
+            .map_err(animation_failure)?;
+        Ok(instance + 1)
+    })
+}
+
+/// The address of an animation table array (`constants::animation_field`).
+#[wasm_bindgen(js_name = animationArrays)]
+pub fn animation_arrays(field: u32) -> u32 {
+    with_animations(|animations, _| {
+        Ok(match field {
+            animation_field::SLOT_CLIPS => address(&animations.slots().clip),
+            animation_field::SLOT_TIMES => address(&animations.slots().time),
+            animation_field::SLOT_WEIGHTS => address(&animations.slots().weight),
+            _ => address(animations.matrices()),
+        })
+    })
+}
+
+/// Writes every animated instance's skinning matrices, on the job workers.
+#[wasm_bindgen(js_name = updateAnimations)]
+pub fn update_animations() -> u32 {
+    let Some(jobs) = JOBS.get() else {
+        return fail(codes::NOT_READY, [0, 0]);
+    };
+    with_engine(|e| {
+        if let Some(animations) = e.animations.as_mut() {
+            animations.update(jobs);
+        }
         0
     })
 }
