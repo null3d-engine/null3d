@@ -93,7 +93,7 @@ A frame's draw list holds a series of passes, and the [render graph](render-grap
 8. While some object blends, the transparent pass draws the blended objects back to front, in the same render pass.
 9. The final pass draws the scene color into the canvas. On the HDR path it applies the exposure and the tone mapping, encodes sRGB and dithers. It also smooths edges in the FXAA mode, and scales the image up to the canvas when the render scale is below 1. On the 8-bit path the scene's shaders tone map their own output. There, with MSAA and a lowest render scale of 1, the scene's render pass averages its samples straight into the canvas. The frame then has no final pass ([GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier)).
 
-On WebGL2 the job workers cull and list the lights of each cluster before the frame records, so the frame has no compute passes there. The graph works out the order only when the passes change, so a frame whose passes stay the same pays nothing for it.
+On WebGL2 the job workers cull and list the lights of each cluster before the frame records. The vertex shaders of the shadow and scene passes skin the skinned meshes. So the frame has no compute passes there. The graph works out the order only when the passes change, so a frame whose passes stay the same pays nothing for it.
 
 ## Precision far from the origin
 
