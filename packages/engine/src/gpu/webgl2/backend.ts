@@ -5,6 +5,12 @@
 // WebGL refuses views on shared memory, uploads first copy their words out of it into a staging
 // buffer.
 //
+// A texture's first write goes straight into it. Later writes into a data texture of 32-bit
+// values, which may land in a texture that the GPU still reads for an earlier frame, go through a
+// pixel unpack buffer, so the GPU copies them in order with its other work. A direct write there
+// makes Safari wait until the GPU has finished every frame that reads the texture. Color textures
+// keep direct writes: through an unpack buffer, Chrome on the Mac stored sRGB texels brighter.
+//
 // GL counts rows from the bottom, and the engine keeps GL's row order in what a render pass draws.
 // The backend flips viewport and scissor rectangles, which the draw list gives from the top, so each
 // covers the same part of the image as on WebGPU. Writes, uploads and copies address texels as
@@ -45,6 +51,13 @@ const DISCARD_COLOR = [COLOR_ATTACHMENT0];
 const DISCARD_DEPTH = [DEPTH_ATTACHMENT];
 /** GL's `BACK`, the faces that a context culls until it is told otherwise. */
 const CULL_BACK = 0x0405;
+/**
+ * Pixel unpack buffers in the ring that texture rewrites go through: one for the frame being
+ * replayed and one for each frame that the GPU may still be reading.
+ */
+const UNPACK_RING = 3;
+/** Each write's place in a pixel unpack buffer is aligned to this, the largest texel's size. */
+const UNPACK_ALIGNMENT = 16;
 
 /** Where drawing into the canvas goes during a capture: an offscreen stand-in of the same size. */
 export interface CanvasTarget {
@@ -92,6 +105,8 @@ interface GlTexture {
 	readonly layer: number;
 	/** True for a view, which shares its texture and never deletes it. */
 	readonly view: boolean;
+	/** True once a write has gone into the texture, so later writes go through an unpack buffer. */
+	written: boolean;
 	/** The framebuffer of passes that draw into this color target, and the depth target in it. */
 	framebuffer: WebGLFramebuffer | null;
 	framebufferDepth: GlTexture | null;
@@ -224,6 +239,7 @@ function glTexture(
 		level,
 		layer,
 		view,
+		written: false,
 		framebuffer: null,
 		framebufferDepth: null,
 		soloFramebuffer: null,
@@ -275,6 +291,12 @@ export class WebGL2Backend {
 	private shaderVertices: WebGLVertexArrayObject | null = null;
 	/** The framebuffer through which copies read their source. */
 	private copyFramebuffer: WebGLFramebuffer | null = null;
+	/** The ring of pixel unpack buffers that texture rewrites go through, and their sizes in bytes. */
+	private readonly unpackBuffers: (WebGLBuffer | null)[] = new Array(UNPACK_RING).fill(null);
+	private readonly unpackSizes = new Array<number>(UNPACK_RING).fill(0);
+	/** The ring slot of the replay under way, and the bytes that its writes have taken in it. */
+	private unpackSlot = 0;
+	private unpackUsed = 0;
 	/** The framebuffer through which a mip level is drawn, and the sampler that reads the level before. */
 	private mipFramebuffer: WebGLFramebuffer | null = null;
 	private mipSampler: WebGLSampler | null = null;
@@ -563,6 +585,8 @@ export class WebGL2Backend {
 		}
 		this.uints = words;
 		this.floats = floats;
+		this.unpackSlot = (this.unpackSlot + 1) % UNPACK_RING;
+		this.unpackUsed = 0;
 		const gl = this.gl;
 		for (let i = start; i < end; ) {
 			const header = words[i] as number;
@@ -581,11 +605,7 @@ export class WebGL2Backend {
 					const source = words[a + 2] as number;
 					const bytes = words[a + 3] as number;
 					gl.bindBuffer(gl.COPY_WRITE_BUFFER, buffer);
-					if (this.copying) {
-						gl.bufferSubData(gl.COPY_WRITE_BUFFER, offset, this.stage(source, bytes), 0, bytes);
-					} else {
-						gl.bufferSubData(gl.COPY_WRITE_BUFFER, offset, this.bytes, source, bytes);
-					}
+					this.writeBytes(gl.COPY_WRITE_BUFFER, offset, source, bytes);
 					this.counts.uploadBytes += bytes;
 					break;
 				}
@@ -997,10 +1017,45 @@ export class WebGL2Backend {
 		}
 	}
 
+	/** Writes `bytes` bytes of engine memory from byte `source` into the buffer bound at `target`. */
+	private writeBytes(target: number, offset: number, source: number, bytes: number): void {
+		if (this.copying) this.gl.bufferSubData(target, offset, this.stage(source, bytes), 0, bytes);
+		else this.gl.bufferSubData(target, offset, this.bytes, source, bytes);
+	}
+
+	/**
+	 * Copies `bytes` bytes of engine memory into this replay's pixel unpack buffer, which it leaves
+	 * bound, and returns where they start. A buffer too small for the replay's writes is made again
+	 * larger: the writes already given keep the data of the buffer they read.
+	 */
+	private unpack(source: number, bytes: number): number {
+		const gl = this.gl;
+		const slot = this.unpackSlot;
+		let buffer = this.unpackBuffers[slot] ?? null;
+		if (!buffer) {
+			buffer = gl.createBuffer();
+			this.unpackBuffers[slot] = buffer;
+		}
+		gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, buffer);
+		let at = Math.ceil(this.unpackUsed / UNPACK_ALIGNMENT) * UNPACK_ALIGNMENT;
+		const size = this.unpackSizes[slot] as number;
+		if (at + bytes > size) {
+			const grown = Math.max(bytes, 2 * size);
+			gl.bufferData(gl.PIXEL_UNPACK_BUFFER, grown, gl.STREAM_DRAW);
+			this.unpackSizes[slot] = grown;
+			at = 0;
+		}
+		this.writeBytes(gl.PIXEL_UNPACK_BUFFER, at, source, bytes);
+		this.unpackUsed = at + bytes;
+		return at;
+	}
+
 	/**
 	 * Writes a box of texels, layer after layer, from tightly packed rows in engine memory. A
 	 * compressed format's rows are rows of blocks: WebGL2 takes the box in texels, cut by the
-	 * level's edge, and the bytes of its whole blocks.
+	 * level's edge, and the bytes of its whole blocks. The texture's first write reads engine
+	 * memory directly. Later writes into a texture of 32-bit values read a pixel unpack buffer, as
+	 * the GPU may still read the texture.
 	 */
 	private writeTexture(words: Uint32Array, a: number): void {
 		const gl = this.gl;
@@ -1012,57 +1067,82 @@ export class WebGL2Backend {
 		const level = words[a + 1] as number;
 		const x = words[a + 2] as number;
 		const y = words[a + 3] as number;
+		const z = words[a + 4] as number;
 		const width = words[a + 5] as number;
 		const height = words[a + 6] as number;
-		if (this.copying) this.stage(source, bytes);
-		const data = this.texels(type);
-		const index = this.texelIndex(type, source);
+		const depth = words[a + 7] as number;
 		this.editTexture(UPLOAD_UNIT, texture.target, texture.texture);
-		if (texture.target === gl.TEXTURE_2D_ARRAY) {
-			if (compressed)
-				gl.compressedTexSubImage3D(
-					gl.TEXTURE_2D_ARRAY,
-					level,
-					x,
-					y,
-					words[a + 4] as number,
-					width,
-					height,
-					words[a + 7] as number,
-					internal,
-					data,
-					index,
-					bytes,
-				);
-			else
+		const unpacked = texture.written && (type === gl.FLOAT || type === gl.UNSIGNED_INT);
+		texture.written = true;
+		const array = texture.target === gl.TEXTURE_2D_ARRAY;
+		if (unpacked) {
+			const at = this.unpack(source, bytes);
+			if (array)
 				gl.texSubImage3D(
 					gl.TEXTURE_2D_ARRAY,
 					level,
 					x,
 					y,
-					words[a + 4] as number,
+					z,
 					width,
 					height,
-					words[a + 7] as number,
+					depth,
+					format,
+					type,
+					at,
+				);
+			else gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, format, type, at);
+			// Image uploads and direct writes read no unpack buffer.
+			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
+		} else {
+			if (this.copying) this.stage(source, bytes);
+			const data = this.texels(type);
+			const index = this.texelIndex(type, source);
+			if (array && compressed)
+				gl.compressedTexSubImage3D(
+					gl.TEXTURE_2D_ARRAY,
+					level,
+					x,
+					y,
+					z,
+					width,
+					height,
+					depth,
+					internal,
+					data,
+					index,
+					bytes,
+				);
+			else if (array)
+				gl.texSubImage3D(
+					gl.TEXTURE_2D_ARRAY,
+					level,
+					x,
+					y,
+					z,
+					width,
+					height,
+					depth,
 					format,
 					type,
 					data,
 					index,
 				);
-		} else if (compressed)
-			gl.compressedTexSubImage2D(
-				gl.TEXTURE_2D,
-				level,
-				x,
-				y,
-				width,
-				height,
-				internal,
-				data,
-				index,
-				bytes,
-			);
-		else gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, format, type, data, index);
+			else if (compressed)
+				gl.compressedTexSubImage2D(
+					gl.TEXTURE_2D,
+					level,
+					x,
+					y,
+					width,
+					height,
+					internal,
+					data,
+					index,
+					bytes,
+				);
+			else gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, format, type, data, index);
+		}
 		this.counts.uploadBytes += bytes;
 	}
 
@@ -1823,6 +1903,7 @@ export class WebGL2Backend {
 		for (const v of this.layoutArrays) if (v) gl.deleteVertexArray(v.vao);
 		if (this.shaderVertices) gl.deleteVertexArray(this.shaderVertices);
 		if (this.copyFramebuffer) gl.deleteFramebuffer(this.copyFramebuffer);
+		for (const buffer of this.unpackBuffers) if (buffer) gl.deleteBuffer(buffer);
 		if (this.mipFramebuffer) gl.deleteFramebuffer(this.mipFramebuffer);
 		if (this.mipSampler) gl.deleteSampler(this.mipSampler);
 	}

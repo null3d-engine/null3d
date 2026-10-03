@@ -968,6 +968,7 @@ async function startEngine(
 		fps: switches.fps,
 		queue: switches.queue,
 		hold: hold !== undefined,
+		glTiming: switches.glTiming,
 	};
 
 	const core = await abortable(coreLoad, signal).catch((e: unknown) => {
