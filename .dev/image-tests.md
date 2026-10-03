@@ -31,6 +31,40 @@ This guide covers the image test manifest, its references, and the review that m
 
 A CI run that finds a missing or changed image saves it too. `bun run images:review --ci <run>` fetches those images for review.
 
+## Visual checks
+
+Image tests compare one frame with its reference. So they catch a change, but not a fault that shows only over time, or a fault in the reference itself. Three shadow faults reached main, and only the eye caught them. Cascades shimmered as the camera turned (fixed by #198). Shadow edges in the middle distance were jagged (fixed by #211). Moving cars' shadows trailed their cars. The visual checks measure the first two faults as figures with limits. The lag of far cascades that skip frames shows only in live frames, so it has a test of its own.
+
+- The visual page, `tests/pages/visual.ts`, draws a scene through the shadow check sketch, `tests/pages/sketches/shadow-check-sketch.ts`. The sketch wraps the scene's own sketch and holds the scene at one sketch time. It draws the scene in the `'shadows'` debug view, where a pixel's gray is the shadow factor: 0 in full shadow, 1 in full light. Every frame comes from hold mode. So a GPU draws the same pixels on every run, and the figures can have tight limits.
+- Stability: a still observer camera stands where the scene's camera stands, and draws the frames. The scene's camera places the cascades, through `debug.shadowCamera`. It draws 6 frames at steps of 1/60 s. In each step the camera moves 4 mm ahead and 2.5 mm to the side, and turns 0.03 degrees. That is less than a texel of a near cascade, as a slow walk moves a camera. Nothing else moves. So a pixel whose shadow changes by more than 8/255 between two frames shows a cascade that crawls. The figure is the largest share of changed pixels between two frames.
+- Edges: the page draws the reference, the same frame with the largest shadow map and the widest filter. The map has 4,096 texels on each side, and the filter blends 5 texels. The figure is how far the frame's half-shadow line strays from the reference's, in pixels. It counts the pixels on opposite sides of the two lines, and divides by the length of the reference's line. A filter blurs an edge evenly to both sides, so blur leaves the line where it is. Steps of coarse texels move the line. The line includes the edges of objects against the black background. So compare a scene's figure only with the same scene's.
+- Stair steps: the still shadow scene, `tests/pages/sketches/shadow-scene-sketch.ts`, has one long straight shadow edge at a slant to the texels. The page finds the edge in each row of a box of the frame, and fits a straight line through it. The figure is the root mean square distance of the edge from the line, in pixels.
+- `tests/image/shadow-checks.spec.ts` runs the shadow scene on both GPU paths in `bun run test:browser`. `bench/tests/visual.spec.ts` runs S2 with three cascades and S4 in `bun run test:bench`. `VISUAL_LIMITS` in `tests/lib/visual-checks.ts` holds each scene's limits. Both tests save their frames and figures in `test-results/visual/`.
+- The device runner's bench plan runs the same page for each scene after its timings ([Benchmarks](benchmarks.md#visual-figures-and-captured-frames)).
+
+### The figures and the faults they catch
+
+On 3 October 2026, Chrome on the Mac's GPU and SwiftShader on the Mac gave these figures:
+
+| Scene | Pixels changed, % | Edge offset, px | Stair steps, px |
+| --- | --- | --- | --- |
+| Shadow scene | 0 (SwiftShader 0.007) | 0.120 (SwiftShader 0.132 to 0.138) | 0.29 (SwiftShader 0.27); the reference 0.11 |
+| S2, three cascades | 0.0009 (SwiftShader 0.0004) | 0.077 to 0.085 | |
+| S4 | 0.003 to 0.004 | 0.090 to 0.098 | |
+
+Two faults, put back on purpose in builds of their own, show what the figures catch:
+
+- Cascades that no longer snap to whole texels, as before #198, changed 0.47% of the shadow scene's pixels, 0.14% of S2's and 1.9% of S4's. The limit is 0.05% for every scene.
+- The split that leaned 80% toward the logarithmic spread, as before #211, raised the long edge's stair steps from 0.29 px to 0.53 px. It raised the edge offset from 0.12 px to 0.17 px in the shadow scene, and from 0.095 px to 0.14 px in S4. S2's rose only from 0.080 px to 0.087 px, because its trees cast few shadows in the middle distance.
+- The limit of the stair steps is 0.4 px. The limits of the edge offset are 0.15 px for the shadow scene, 0.10 px for S2 and 0.12 px for S4.
+
+### Why the checks work this way
+
+- A camera that turns on the spot moves every pixel by a map that its angles give. So `shadow-turn.spec.ts` maps each frame back onto the first. A camera that moves also shifts near things against far things, and no such map exists. A still observer needs no map at all: any change it sees comes from the cascades.
+- The first edge figure was the root mean square difference of the shadow factor at edge pixels. The reference's edges are much sharper than the frame's, so blur set the figure. It was 17.1% with the current split and 18.0% with the split of 80%. The offset of the half-shadow line ignores blur, and rose by 39% with that split.
+- The visual page runs on the dev server, because only development builds draw debug views. So the timed pages keep the production build, and the visual checks cost no measured frame.
+- In three.js, the `CSMHelper` shows the cascades' boxes, and the cascaded shadow maps take their camera as an option. `debug.shadowCamera` gives null3D the same choice of camera.
+
 ## Parity with three.js
 
 - A test of a feature scene can have a three.js twin: a page in `bench/pages/threejs/` that draws the same scene. Both engines build the scene from one data module in `bench/scenes/`, such as `ortho-camera.ts`.

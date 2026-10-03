@@ -2,7 +2,11 @@
 // browser apps on this Mac, browsers on an Android phone connected by USB, and runner pages that
 // wait on tablets and phones on the local network. It starts the dev server, lets one browser per
 // device run at a time, then judges every result and prints a summary. On an Android phone it reads
-// the phone's heat through the run, and adds to each result the heat that the page ran in.
+// the phone's heat through the run, and adds to each result the heat that the page ran in. When a
+// browser keeps refusing memory, the runner ends that browser's turn early, keeps the others going,
+// and prints what to reset and the --only list that goes on with the run. In plans that time pages,
+// the runner page measures the display's refresh rate before each page, and a rate that is low or
+// changes through the run marks the run's timing figures as unreliable.
 // From the repository root:
 //   bun tests/real-browsers.ts Safari Firefox
 //   bun tests/real-browsers.ts --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
@@ -20,8 +24,10 @@
 //   bun tests/real-browsers.ts --plan soak --lan ipad-safari --minutes 30
 //   bun tests/real-browsers.ts --plan warm-up-time --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari
+//   bun tests/real-browsers.ts --plan smoke --allow-no-webgpu --lan tb-android
 // Options:
-//   --plan <name>       the plan to run: checks (the default), parity, bench, memory, which loads
+//   --plan <name>       the plan to run: checks (the default), smoke, a tenth of the checks for a
+//                       device in a cloud session of limited time, parity, bench, memory, which loads
 //                       the engine page 20 times at each shared memory maximum from 256 to 4096 MiB,
 //                       startup, which times cold and warm loads of the engine page's production
 //                       build in each thread mode, depth, which runs the image test manifest's depth
@@ -76,7 +82,9 @@
 //                       such as tab-memory, may run there: Safari stops reloading a tab that
 //                       crashes again soon after the last crash, and only a person can reopen it
 // Before a run on a phone or tablet, the runner prints a checklist of the device settings that
-// results depend on.
+// results depend on. After a fixed plan, it prints each browser's row for the record of tested
+// devices, from what the runner page found about its browser, device and GPU. A runner whose name
+// names one browser warns when its page ran in another.
 import { execFileSync } from 'node:child_process';
 import {
 	copyFileSync,
@@ -101,6 +109,14 @@ import {
 	type StoredBaselines,
 } from '../bench/lib/parity.ts';
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
+import {
+	browserMismatch,
+	browserText,
+	type DeviceFacts,
+	detectBrowser,
+	testedDeviceRow,
+} from './lib/device-record.ts';
+import { GPU_PATH_NAMES, type GpuPath, skippedPath, skippedPathsText } from './lib/gpu-paths.ts';
 import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } from './lib/heat.ts';
 import { clearCandidates } from './lib/images.ts';
 import { buildsForLoads, prepareLoads } from './lib/load-server.ts';
@@ -109,13 +125,14 @@ import {
 	type Check,
 	depthSummary,
 	governorSummary,
+	gpuPathOf,
 	itemsNeeded,
 	judge,
+	MEMORY_LIMIT_CHECKS,
 	type MissingAllowed,
 	memorySummary,
 	NO_RESULT,
 	NONE_MISSING,
-	neededPath,
 	overloadSummary,
 	PLANS,
 	REPORT_ON_TOP_PLANS,
@@ -124,11 +141,15 @@ import {
 	startupSummary,
 	tabMemorySummary,
 	warmUpTimeSummary,
+	withGpuPaths,
 } from './lib/plans.ts';
-import { RUNS_DIR } from './lib/report-collector.ts';
+import { endTurnClaim, RUNS_DIR } from './lib/report-collector.ts';
 import {
 	addToResult,
 	type ItemResult,
+	keepsRefusingMemory,
+	OOM_WINDOW_PAGES,
+	outOfMemory,
 	type Plan,
 	type PlanItem,
 	type PlanPlace,
@@ -343,21 +364,65 @@ export function braveShieldsOf(
 export const shieldsText = (state: ShieldsState | null) =>
 	`Brave Shields ${state ?? 'not recorded'}`;
 
+/** The browser a runner page ran in: as the page detected it, or from its facts in an older run. */
+const browserOf = (device: DeviceFacts) => device.browser ?? detectBrowser(device);
+
+/**
+ * Prints a row of the record of tested devices for each runner whose page started, ready to paste
+ * into `.dev/tested-devices.md`.
+ */
+function printRecordRows(
+	run: string,
+	runners: readonly LaunchedRunner[],
+	summary: Readonly<Record<string, RunnerSummary>>,
+): void {
+	const rows = runners.flatMap(({ name, launch }) => {
+		const device = readDevice(run, name);
+		const counts = summary[name];
+		return device && counts
+			? [testedDeviceRow({ run, launch: launch.kind, device, ...counts })]
+			: [];
+	});
+	if (rows.length > 0)
+		console.log(
+			`\nRows for the record of tested devices (.dev/tested-devices.md):\n${rows.join('\n')}\n`,
+		);
+}
+
 /** One runner's outcome in the run's summary. */
 export interface RunnerSummary {
 	pass: number;
 	skip: number;
 	fail: number;
+	/** The browser that the runner page found itself in, with its version, when it started. */
+	browser?: string;
+	/** After a turn that ended early: the pages that never ran. */
+	notRun?: number;
+	/** Why the runner's turn ended early, and what to do before the next run. */
+	endedEarly?: EndedEarly;
+	/** In a timed plan: what was wrong with the display's refresh rate, which makes its figures unreliable. */
+	unreliableTiming?: string;
+	/** The GPU paths that the device lacks, whose pages its runner page skipped. */
+	skippedPaths?: GpuPath[];
 	/** Brave only: the state of its Shields, or null when the run did not record it. */
 	braveShields?: ShieldsState | null;
 }
 
-/** A runner's line in the run's summary: its counts, and on Brave the state of its Shields. */
+/**
+ * A runner's line in the run's summary: the browser its page ran in, its counts, on Brave the state
+ * of its Shields, the GPU paths whose pages it skipped, why its turn ended early, and why its timing
+ * figures are unreliable, where these apply.
+ */
 export function summaryLine(runner: string, summary: RunnerSummary): string {
-	const counts = `${runner}: ${summary.pass} passed, ${summary.skip} skipped, ${summary.fail} failed`;
-	return summary.braveShields === undefined
-		? counts
-		: `${counts}; ${shieldsText(summary.braveShields)}`;
+	const browser = summary.browser ? ` (${summary.browser})` : '';
+	const notRun = summary.notRun === undefined ? '' : `, ${summary.notRun} not run`;
+	return [
+		`${runner}${browser}: ${summary.pass} passed, ${summary.skip} skipped, ${summary.fail} failed${notRun}`,
+		...(summary.braveShields === undefined ? [] : [shieldsText(summary.braveShields)]),
+		...(summary.skippedPaths?.length ? [skippedPathsText(summary.skippedPaths)] : []),
+		...(summary.endedEarly ? [`ended early: ${summary.endedEarly.reason}`] : []),
+		...(summary.unreliableTiming ? [`timing figures unreliable: ${summary.unreliableTiming}`] : []),
+	].join('; ');
 }
 
 /** How a runner starts: an app on this Mac, a browser on the phone, or a page that waits on the network. */
@@ -387,9 +452,6 @@ function runnersOf(options: Options): LaunchedRunner[] {
 		runners.push({ name, device: name.split('-')[0] as string, launch: { kind: 'lan' } });
 	return runners;
 }
-
-/** The GPU paths' names, as a skipped page's line gives the one the browser lacks. */
-const GPU_PATH_NAMES = { webgpu: 'WebGPU', webgl2: 'WebGL2' } as const;
 
 /** Time a macOS app may take to open the runner page before its turn counts as failed. */
 const OPEN_TIMEOUT_MS = 60_000;
@@ -644,6 +706,224 @@ function deviceReopener(run: string, launches: Launches, baseUrl: string): Reope
 	};
 }
 
+/** Device names as people write them, where a runner's name gives them in lowercase. */
+const APPLE_DEVICES: Readonly<Record<string, string>> = { ipad: 'iPad', iphone: 'iPhone' };
+
+/** A name of words joined by dashes as a person writes it: chrome-beta becomes Chrome Beta. */
+const titled = (name: string) =>
+	name
+		.split('-')
+		.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+		.join(' ');
+
+/** A runner's browser and device, in the words of the person at the device. */
+interface DeviceWords {
+	app: string;
+	place: string;
+	/** The device's settings that change its display's refresh rate, as they would be when wrong. */
+	rateSettings: string;
+}
+
+function deviceWords(runner: string, launch: Launch | undefined): DeviceWords {
+	if (launch?.kind === 'mac')
+		return { app: launch.app, place: 'this Mac', rateSettings: 'Low Power Mode is on' };
+	if (launch?.kind === 'android')
+		return {
+			app: titled(launch.browser),
+			place: 'the phone',
+			rateSettings: 'Motion smoothness is not Standard, or battery saver is on',
+		};
+	const [device = runner, ...browser] = runner.split('-');
+	const apple = APPLE_DEVICES[device];
+	return {
+		app: titled(browser.join('-')) || 'the browser',
+		place: `the ${apple ?? device}`,
+		rateSettings: apple
+			? 'Limit Frame Rate is off, or Low Power Mode or Reduce Motion is on'
+			: 'a display or power setting changed',
+	};
+}
+
+/**
+ * What the person at a device does before the next run, after its browser kept refusing memory: a
+ * new browser process gets its memory back. A runner page on the local network must also be in
+ * front, where the device's browser lets it run.
+ */
+export function memoryResetText(
+	runner: string,
+	launch: Launch | undefined,
+	only: string[],
+): string {
+	const { app, place } = deviceWords(runner, launch);
+	const front = launch?.kind === 'lan' ? ', bring the runner page to the front,' : ',';
+	return `Quit and reopen ${app} on ${place}${front} then run again with --only ${only.join(',')}`;
+}
+
+/** The display refresh rate that the device checklist asks for, in hertz. */
+export const EXPECTED_REFRESH_HZ = 60;
+/** The lowest refresh rate at which a run's timing figures still compare with other runs', in hertz. */
+export const LOWEST_REFRESH_HZ = 55;
+/** How far the refresh rate may change through one run, as a share of its highest reading. */
+export const REFRESH_SPREAD = 0.1;
+
+/**
+ * The fixed plans that time frames or loads. Their figures depend on the display's refresh rate, so
+ * the runner page measures it before each of their pages, as it does in the phone-scale search.
+ */
+export const TIMED_PLANS: ReadonlySet<string> = new Set([
+	'bench',
+	'startup',
+	'governor',
+	'skinning',
+	'overload',
+	'soak',
+]);
+
+/**
+ * What was wrong with the display's refresh rate through a timed run, from the rates in hertz that
+ * the runner page measured, or undefined when it held: too low a rate, or one that changed from page
+ * to page, makes frame rates that do not compare with other runs'.
+ */
+export function refreshProblem(rates: readonly number[]): string | undefined {
+	if (rates.length === 0) return undefined;
+	const low = Math.min(...rates);
+	const high = Math.max(...rates);
+	if (low < LOWEST_REFRESH_HZ)
+		return `the display ran at ${low} Hz (expected ${EXPECTED_REFRESH_HZ})`;
+	if (high - low > REFRESH_SPREAD * high)
+		return `the display's rate changed between ${low} and ${high} Hz through the run`;
+	return undefined;
+}
+
+/** The display refresh rates, in hertz, that a runner page measured in a run: at its start and before each page. */
+function refreshRates(
+	run: string,
+	runner: string,
+	ids: readonly string[],
+	device = readDevice(run, runner),
+): number[] {
+	return [device?.refreshRateHz, ...ids.map((id) => readResult(run, runner, id)?.runnerRefreshHz)]
+		.map(Number)
+		.filter((hz) => Number.isFinite(hz) && hz > 0);
+}
+
+/** The message for a runner whose display's refresh rate made its timing figures unreliable. */
+export function refreshText(runner: string, launch: Launch | undefined, problem: string): string {
+	const { place, rateSettings } = deviceWords(runner, launch);
+	return `${runner}: ${problem}: ${place} is hot, or ${rateSettings}; let it cool and check its settings. Its timing figures in this run are unreliable.`;
+}
+
+/** Why the out-of-memory guard ended a runner's turn, and what to do before the next run. */
+export interface EndedEarly {
+	reason: string;
+	/** The latest pages that failed for lack of memory. */
+	pages: string[];
+	/** What the person at the device does next. */
+	todo: string;
+	/** The pages to run again: those without a result, and those that failed for lack of memory. */
+	only: string[];
+	endedAt: string;
+}
+
+/** The ids that --only takes for these plan items: a later round's items run as the first's. */
+const onlyIds = (ids: readonly string[]) => [
+	...new Set(ids.map((id) => id.replace(/-round-\d+$/, ''))),
+];
+
+/** A runner's result while its run goes on, or undefined while the dev server is still writing it. */
+function storedResult(run: string, runner: string, id: string): ItemResult | undefined {
+	try {
+		return readResult(run, runner, id);
+	} catch {
+		return undefined;
+	}
+}
+
+/** One of a runner's latest pages, as the out-of-memory guard sees it. */
+interface LatestPage {
+	id: string;
+	/** The page's error when it failed for lack of memory. */
+	outOfMemory?: string;
+}
+
+/**
+ * Ends a runner's turn as soon as its browser keeps refusing memory: enough of its latest pages
+ * failed for lack of memory, as Safari does after hours of runs, when every later page would fail
+ * too and only a new browser process helps. It reads each runner's results as they come, in the
+ * plan's order, and skips the pages that push the memory limit on purpose. `stop` ends the
+ * runner page's turn; the guard then records why, in the runner's results, and prints what to do.
+ */
+export class MemoryGuard {
+	/** For each runner, the plan index of its next result to read, and its latest pages. */
+	private readonly seen = new Map<string, { next: number; latest: LatestPage[] }>();
+	/** The runners whose turn the guard ended, and why. */
+	readonly ended = new Map<string, EndedEarly>();
+
+	constructor(
+		private readonly plan: Plan<Check>,
+		private readonly launches: Launches,
+		private readonly stop: (runner: string) => void,
+	) {}
+
+	/** Reads a runner's new results, and ends its turn when its browser keeps refusing memory. */
+	readonly endTurn = (runner: string): boolean => {
+		const { run, items } = this.plan;
+		const seen = this.seen.get(runner) ?? { next: 0, latest: [] };
+		this.seen.set(runner, seen);
+		while (seen.next < items.length) {
+			const item = items[seen.next] as PlanItem<Check>;
+			const result = storedResult(run, runner, item.id);
+			if (!result) break;
+			seen.next++;
+			if (MEMORY_LIMIT_CHECKS.has(item.check.kind)) continue;
+			seen.latest.push({
+				id: item.id,
+				...(outOfMemory(result) && { outOfMemory: String(result.error) }),
+			});
+			if (seen.latest.length > OOM_WINDOW_PAGES) seen.latest.shift();
+			if (keepsRefusingMemory(seen.latest.map((page) => page.outOfMemory !== undefined))) {
+				this.end(runner, seen.latest);
+				return true;
+			}
+		}
+		return false;
+	};
+
+	private end(runner: string, latest: readonly LatestPage[]): void {
+		this.stop(runner);
+		const failed = latest.filter((page) => page.outOfMemory !== undefined);
+		const errors = [
+			...new Set(
+				failed.map((page) =>
+					/\bE1109\b/.test(page.outOfMemory ?? '') ? 'E1109' : 'Out of memory',
+				),
+			),
+		];
+		const only = onlyIds(
+			this.plan.items
+				.filter((item) => {
+					const result = storedResult(this.plan.run, runner, item.id);
+					return !result || outOfMemory(result);
+				})
+				.map((item) => item.id),
+		);
+		const ended: EndedEarly = {
+			reason: `the browser keeps refusing the engine's memory (${errors.join(' and ')} on ${failed.length} of its last ${latest.length} pages)`,
+			pages: failed.map((page) => page.id),
+			todo: memoryResetText(runner, this.launches.get(runner), only),
+			only,
+			endedAt: new Date().toISOString(),
+		};
+		this.ended.set(runner, ended);
+		writeRunnerFile(this.plan.run, runner, 'ended-early', ended);
+		console.log(endedEarlyText(runner, ended));
+	}
+}
+
+/** The message for a runner whose turn the out-of-memory guard ended. */
+export const endedEarlyText = (runner: string, { reason, todo }: EndedEarly) =>
+	`${runner}: ${reason}. ${todo}`;
+
 /** The runner among these that runs on the Android phone, whose heat the run reads. */
 const phoneRunner = (names: readonly string[], launches: Launches) =>
 	names.find((name) => launches.get(name)?.kind === 'android');
@@ -735,12 +1015,27 @@ async function runPlan(
 	local: DevServer,
 ): Promise<number> {
 	const run = runName(options.plan);
-	const plan = writePlan(run, items, REPORT_ON_TOP_PLANS.has(options.plan));
+	const timed = TIMED_PLANS.has(options.plan);
+	const paths = withGpuPaths(items, options.missing);
+	const plan = writePlan(run, paths.items, {
+		...(REPORT_ON_TOP_PLANS.has(options.plan) && { reportOnTop: true }),
+		...(timed && { measureRefresh: true }),
+		...paths.flags,
+	});
 	const recovery = new QuietRecovery(plan, deviceReopener(run, launches, local.url));
+	let turns: string[] = [];
+	// A runner whose turn ends leaves the turn list first, so a reloaded runner page does not start
+	// the run again, and then loses its claim, so its runner page stops at its next result.
+	const guard = new MemoryGuard(plan, launches, (name) => {
+		turns = turns.filter((turn) => turn !== name);
+		setTurns(run, turns);
+		endTurnClaim(run, name);
+	});
 	const heatReadings = new Map<string, HeatSample[]>();
 	try {
 		for (const batch of turnBatches(runners)) {
-			setTurns(run, batch);
+			turns = batch;
+			setTurns(run, turns);
 			const phone = phoneRunner(batch, launches);
 			const log = phone === undefined ? undefined : new HeatLog();
 			log?.start();
@@ -748,6 +1043,7 @@ async function runPlan(
 				await waitForRunners(plan, openRunners(batch, launches, run, local.url), {
 					onFinish: (name) => console.log(`${name}: finished`),
 					onQuiet: recovery.onQuiet,
+					endTurn: guard.endTurn,
 				});
 			} finally {
 				if (phone !== undefined && log) heatReadings.set(phone, await log.stop());
@@ -782,10 +1078,23 @@ async function runPlan(
 		const { name } = runner;
 		const device = readDevice(run, name);
 		const braveShields = braveShieldsOf(name, device, options.shields);
+		const endedEarly = guard.ended.get(name);
+		const unreliableTiming = timed
+			? refreshProblem(
+					refreshRates(
+						run,
+						name,
+						plan.items.map((item) => item.id),
+						device,
+					),
+				)
+			: undefined;
 		const counts: RunnerSummary = {
 			pass: 0,
 			skip: 0,
 			fail: 0,
+			...(endedEarly && { notRun: 0, endedEarly }),
+			...(unreliableTiming && { unreliableTiming }),
 			...(braveShields !== undefined && { braveShields }),
 		};
 		summary[name] = counts;
@@ -795,6 +1104,10 @@ async function runPlan(
 			console.log(`FAIL  ${name}: the runner page never started`);
 			continue;
 		}
+		const browser = browserOf(device);
+		counts.browser = browserText(browser);
+		const mismatch = browserMismatch(name, browser);
+		if (mismatch) console.log(`WARN  ${mismatch}`);
 		const context = {
 			resultOf: (id: string) => readResult(run, name, id),
 			imageDir: join(RUNS_DIR, run, name),
@@ -806,6 +1119,11 @@ async function runPlan(
 		clearCandidates({ runner: name, device: runner.device });
 		for (const item of plan.items) {
 			const result = readResult(run, name, item.id);
+			// The pages after a turn that the guard ended are listed once, in its message.
+			if (!result && counts.notRun !== undefined) {
+				counts.notRun++;
+				continue;
+			}
 			const stall = recovery.noteFor(name, item.id);
 			const notes: string[] = stall ? [stall] : [];
 			const note = (text: string) => notes.push(text);
@@ -824,9 +1142,10 @@ async function runPlan(
 			if (Object.keys(facts).length > 0) addToResult(run, name, item.id, facts);
 			if (verdict === 'skip') {
 				counts.skip++;
-				console.log(
-					`skip  ${name}: ${item.id}, no ${GPU_PATH_NAMES[neededPath(item.check) ?? 'webgpu']}`,
-				);
+				const path = (result && skippedPath(result)) ?? gpuPathOf(item) ?? 'webgpu';
+				const skipped = counts.skippedPaths ?? [];
+				if (!skipped.includes(path)) counts.skippedPaths = [...skipped, path];
+				console.log(`skip  ${name}: ${item.id}, no ${GPU_PATH_NAMES[path]}`);
 				continue;
 			}
 			if (verdict.length === 0) {
@@ -859,10 +1178,18 @@ async function runPlan(
 			governorSummary,
 		].map((summary) => summary(plan.items, resultOf));
 		for (const table of tables) if (table) console.log(`\n${name}\n${table}\n`);
+		// The frames that the bench plan's pages captured, which people look at after each run.
+		const frames = join(RUNS_DIR, run, name, 'frames');
+		if (existsSync(frames)) console.log(`${name}, captured frames to look at: ${frames}`);
 		const heat = wholeHeatText(heatReadings.get(name) ?? []);
 		if (heat) console.log(`${name}, heat through the run: ${heat}`);
 	}
 	for (const [name, counts] of Object.entries(summary)) console.log(summaryLine(name, counts));
+	for (const [name, { unreliableTiming, endedEarly }] of Object.entries(summary)) {
+		if (unreliableTiming) console.log(refreshText(name, launches.get(name), unreliableTiming));
+		if (endedEarly) console.log(endedEarlyText(name, endedEarly));
+	}
+	printRecordRows(run, runners, summary);
 	console.log(`results: ${join(RUNS_DIR, run)}`);
 	if (imageFailures > 0)
 		console.log('Review the new and changed images with their diffs: bun run images:review');
@@ -916,6 +1243,7 @@ async function runScale(
 		const steps: ScaleStep[] = [];
 		const answers: { renderer: string; search: ScaleSearch }[] = [];
 		let braveShields: ShieldsState | null | undefined;
+		let unreliableTiming: string | undefined;
 		log?.start();
 		try {
 			for (const [page, renderer] of SCALE_RENDERERS) {
@@ -923,7 +1251,7 @@ async function runScale(
 				for (let count = nextCount(search); count !== null; count = nextCount(search)) {
 					const run = `${base}-${name}-${steps.length + 1}`;
 					const item = scaleItem(page, count);
-					const plan = writePlan(run, [item]);
+					const plan = writePlan(run, [item], { measureRefresh: true });
 					setTurns(run, [name]);
 					await waitForRunners(plan, openRunners([name], launches, run, local.url), {
 						onQuiet: reportQuiet,
@@ -965,11 +1293,15 @@ async function runScale(
 				if (log) step.heat = addHeat(step.run, name, [step.id], samples).get(step.id);
 				if (braveShields !== undefined) addToResult(step.run, name, step.id, { braveShields });
 			}
+			unreliableTiming = refreshProblem(
+				steps.flatMap((step) => refreshRates(step.run, name, [step.id])),
+			);
 			writeRunnerFile(base, name, 'scale', {
 				answers,
 				steps,
 				heat: samples,
 				...(braveShields !== undefined && { braveShields }),
+				...(unreliableTiming && { unreliableTiming }),
 			});
 		}
 		const best = answers
@@ -980,6 +1312,7 @@ async function runScale(
 		const heat = wholeHeatText(log?.samples ?? []);
 		if (heat) console.log(`${name}, heat through the search: ${heat}`);
 		if (braveShields !== undefined) console.log(`${name}: ${shieldsText(braveShields)}`);
+		if (unreliableTiming) console.log(refreshText(name, launches.get(name), unreliableTiming));
 		if (best) {
 			console.log(
 				`${name}: phone scale ${objects(best.search.held)}, with three.js's ${best.renderer} renderer. Run the benchmark at it with --plan bench --n ${best.search.held}.`,

@@ -10,7 +10,7 @@
 
 import type { ShaderVariants } from '../generated/shaders';
 import { Slot } from './control';
-import { notifySlot, slotChange, type WakeTarget, wakeFrom } from './wake';
+import { notifySlot, slotChangeOrRecheck, type WakeTarget, wakeFrom } from './wake';
 
 /**
  * A custom material's shader, as the thread that draws builds its pipelines: its variants, whose
@@ -146,7 +146,7 @@ export function receiveImages(port: MessagePort, table: ImageTable, slots: Int32
 export async function imagesArrived(slots: Int32Array, sent: number): Promise<void> {
 	let count = Atomics.load(slots, Slot.ImagesArrived);
 	while (count < sent) {
-		const change = slotChange(slots, Slot.ImagesArrived, count);
+		const change = slotChangeOrRecheck(slots, Slot.ImagesArrived, count);
 		if (change) await change;
 		count = Atomics.load(slots, Slot.ImagesArrived);
 	}

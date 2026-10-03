@@ -56,7 +56,7 @@
       "since": "0.1",
       "target": "onUpdate(dt) returned from defineSketch()",
       "notes": "The engine renders every frame by itself; never call a render function. Per-frame logic goes in onUpdate, camera-follow logic in onLateUpdate.",
-      "docs": "porting/threejs-loop-and-threads",
+      "docs": "api/sketch",
       "detect": "\\brequestAnimationFrame\\s*\\(|\\.setAnimationLoop\\s*\\(|\\.render\\s*\\(\\s*\\w+\\s*,\\s*\\w+\\s*\\)"
     },
     {
@@ -120,7 +120,7 @@
       "three": "renderer.setClearColor / scene.background = color or texture",
       "status": "direct",
       "since": "0.1",
-      "target": "scene.setBackground('#rrggbb' | texture | environment)",
+      "target": "scene.setBackground('#rrggbb' | texture); environment backgrounds (0.2)",
       "notes": "A texture fills the view behind every object and stretches to its shape, as a texture background does in three.js. Exposure and tone mapping change the background, as in three.js's WebGPURenderer; WebGLRenderer draws a background color, and an sRGB background texture, without them. For an exact page color, set toneMapping: \"none\", or use createEngine({ transparent: true }) over a CSS background. setClearColor(color, 0) on an alpha canvas becomes transparent: true with no background. Environment backgrounds come in 0.2.",
       "docs": "api/scene",
       "detect": "\\.setClearColor\\s*\\(|\\.background\\s*="
@@ -175,8 +175,8 @@
       "three": "renderer.capabilities / renderer.extensions",
       "status": "changed",
       "since": "0.1",
-      "target": "engine.capabilities on the page, which sends the sketch what it needs with engine.postToSketch",
-      "notes": "Reports GPU tier, limits and features. Never branch on GPU names: some browsers hide them.",
+      "target": "engine.capabilities on the page, and ctx.engine.capabilities in the sketch",
+      "notes": "Reports the GPU tier, limits and features. Never branch on GPU names: some browsers hide them.",
       "docs": "concepts/backends",
       "detect": "\\.capabilities\\b|\\.extensions\\.(get|has)\\s*\\("
     },
@@ -186,8 +186,8 @@
       "three": "logarithmicDepthBuffer / reverseDepthBuffer",
       "status": "direct",
       "since": "0.1",
-      "target": "Nothing to do; createEngine({ largeWorld: true }) for planet-scale scenes",
-      "notes": "The engine draws reversed depth in a 32-bit float buffer on WebGPU, and on WebGL2 where the browser has EXT_clip_control. engine.capabilities.depth says which depth the device draws. The engine also renders relative to the camera through per-cell offsets.",
+      "target": "Nothing to do; createEngine({ largeWorld: true }) for planet-scale scenes (0.2)",
+      "notes": "The engine draws reversed depth in a 32-bit float buffer. On WebGL2 without EXT_clip_control, reversed depth keeps GL's range, which is less precise. engine.capabilities.depth says which depth the device draws. The engine also renders relative to the camera through per-cell offsets.",
       "docs": "concepts/backends",
       "detect": "logarithmicDepthBuffer|reverseDepthBuffer"
     },
@@ -253,7 +253,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "obj.setPosition(x, y, z); obj.translate(x, y, z) for translateX/Y/Z",
-      "notes": "translate moves along the object's own axes, as translateX, translateY and translateZ do together. For many moving objects, write instance-batch or dynamic arrays directly instead of calling setters.",
+      "notes": "translate moves along the object's own axes, as translateX, translateY and translateZ do together. For many moving objects, use an instance batch and write its positions array directly instead of calling setters.",
       "docs": "api/objects",
       "detect": "\\.position\\.(set|copy|add|sub|lerp|addScaledVector|x|y|z)\\b|\\.position\\s*=|\\.translate[XYZ]\\s*\\("
     },
@@ -294,10 +294,10 @@
       "id": "lookat",
       "category": "Scene graph",
       "three": "object.lookAt(target)",
-      "status": "direct",
+      "status": "changed",
       "since": "0.1",
       "target": "obj.lookAt(x, y, z)",
-      "notes": "Cameras and lights look down -Z, as in three.js.",
+      "notes": "Meshes and groups turn their +Z axis to the point. Cameras and lights turn their -Z axis there, as in three.js. The call assumes that the object's parents are not rotated.",
       "docs": "api/objects",
       "detect": "\\.lookAt\\s*\\("
     },
@@ -308,7 +308,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "obj.getWorldPosition(out), obj.getWorldQuaternion(out), obj.getWorldMatrix(out)",
-      "notes": "Each getter copies into an array that you make once, with vec3.create(), quat.create() or mat4.create(). They read the last frame that the engine processed, so a change made in onUpdate shows from the next onUpdate on. getWorldMatrix gives 16 numbers, column by column, like matrixWorld.elements.",
+      "notes": "Each getter copies into an array that you make once, with vec3.create(), quat.create() or mat4.create(). They read the engine's last transform update, so a change made in onUpdate shows in the same frame's onLateUpdate. getWorldMatrix gives 16 numbers, column by column, like matrixWorld.elements.",
       "docs": "api/objects",
       "detect": "\\.getWorld(Position|Quaternion)\\s*\\(|\\.matrixWorld\\b"
     },
@@ -319,7 +319,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "Nothing to do: objects are static by default and update when a setter changes them; create objects that move every frame with dynamic: true",
-      "notes": "Remove manual matrix calls. Only dynamic objects and instance batches may be written through typed arrays.",
+      "notes": "Remove manual matrix calls. Move single objects with their setters. Only instance batches take writes to their typed arrays, and a static batch uploads only the rows you mark with markDirty.",
       "docs": "concepts/static-dynamic",
       "detect": "matrixAutoUpdate|matrixWorldNeedsUpdate|\\.updateMatrix(World)?\\s*\\("
     },
@@ -396,7 +396,7 @@
       "status": "manual",
       "since": "0.1",
       "target": "Your own arrays, or a Map keyed by the object",
-      "notes": "Engine objects are not extensible. A Map from each object to its data keeps the data beside the object, and arrays indexed the way your sketch counts objects stay fastest in per-frame loops.",
+      "notes": "Engine objects have no userData, and their TypeScript types refuse new properties. A Map from each object to its data keeps the data beside the object. Arrays indexed the way your sketch counts objects stay fastest in per-frame loops.",
       "docs": "concepts/handles",
       "detect": "\\.userData\\b"
     },
@@ -406,9 +406,9 @@
       "three": "object.onBeforeRender / onAfterRender",
       "status": "manual",
       "since": "0.1",
-      "target": "onUpdate / onLateUpdate, or a declared pass",
-      "notes": "Sketch code never runs in the render worker, so per-draw callbacks cannot exist.",
-      "docs": "porting/threejs-loop-and-threads",
+      "target": "onUpdate / onLateUpdate, or a declared pass (0.2)",
+      "notes": "The engine draws from lists that the sketch records, so it calls no sketch code per draw. Move per-object work into onUpdate or onLateUpdate. Declared passes come in 0.2.",
+      "docs": "api/sketch",
       "detect": "\\.on(Before|After)Render\\s*="
     },
     {
@@ -428,9 +428,9 @@
       "three": "geometry.dispose() / material.dispose() / texture.dispose()",
       "status": "changed",
       "since": "0.1",
-      "target": "destroy() on the engine object",
-      "notes": "texture.destroy() frees a texture's GPU memory, and materials that map it draw with their colors alone. A prefab (0.2) frees its GPU data when the prefab and its last instance are destroyed.",
-      "docs": "api/assets",
+      "target": "texture.destroy(); mesh.destroy() (0.2)",
+      "notes": "texture.destroy() frees a texture's GPU memory, and materials that map it draw with their colors alone. Meshes get destroy() in 0.2. Materials have no destroy call. A prefab (0.2) frees its GPU data when the prefab and its last instance are destroyed.",
+      "docs": "api/textures",
       "detect": "\\.dispose\\s*\\("
     },
     {
@@ -737,8 +737,8 @@
       "status": "changed",
       "since": "0.1",
       "target": "materials.standard for the base layer",
-      "notes": "Clearcoat, transmission, sheen and specular are planned for after 1.0. Until then, approximate them or write a surface function.",
-      "docs": "porting/threejs-materials",
+      "notes": "Clearcoat, transmission, sheen, iridescence, anisotropy and specular come after 1.0. Until then, approximate them with the standard options or write a surface function.",
+      "docs": "api/materials",
       "detect": "\\bMeshPhysicalMaterial\\b"
     },
     {
@@ -759,7 +759,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "materials.standard with metalness 0 and roughness near 1 (Lambert), or roughness tuned to the Phong shininess",
-      "notes": "Expect small visual differences: the standard material adds a faint highlight and keeps energy as three.js's MeshStandardMaterial does. Check with parity images and accept or tune.",
+      "notes": "Expect small visual differences: the standard material adds a faint highlight and keeps energy as three.js's MeshStandardMaterial does. Compare screenshots of both versions, then accept or tune.",
       "docs": "api/materials",
       "detect": "\\bMesh(Lambert|Phong)Material\\b"
     },
@@ -769,9 +769,9 @@
       "three": "MeshToonMaterial",
       "status": "manual",
       "since": "0.1",
-      "target": "A toon surface function (recipe in the materials reference)",
-      "notes": "",
-      "docs": "porting/threejs-materials",
+      "target": "materials.shader({ wgsl, uniforms }) with a toon surface function",
+      "notes": "Surface functions cannot read the scene's lights in this version. Pass the light direction as a uniform, step the light into bands, and return the result as emissive.",
+      "docs": "shaders/surface-functions",
       "detect": "\\bMeshToonMaterial\\b"
     },
     {
@@ -780,9 +780,9 @@
       "three": "MeshNormalMaterial / MeshDepthMaterial / MeshDistanceMaterial / MeshMatcapMaterial",
       "status": "changed",
       "since": "0.1",
-      "target": "debug.view('normals' | 'depth') for debugging; matcap is a surface-function recipe",
+      "target": "debug.view('normals' | 'depth') for debugging; matcap is a surface-function recipe (0.2)",
       "notes": "debug.view shades the whole scene, in development builds only. Its normals are in world space, where MeshNormalMaterial's are in view space. Its depth is white at the near plane, on a logarithmic scale for a perspective camera.",
-      "docs": "porting/threejs-materials",
+      "docs": "api/debug",
       "detect": "\\bMesh(Normal|Depth|Distance|Matcap)Material\\b"
     },
     {
@@ -791,8 +791,8 @@
       "three": "ShaderMaterial / RawShaderMaterial (GLSL)",
       "status": "manual",
       "since": "0.1",
-      "target": "materials.shader({ wgsl, uniforms, textures }) with a WGSL surface function, or a full WGSL shader",
-      "notes": "Rewrite in WGSL, in one literal tagged /* wgsl */. Prefer a surface function, so lighting, shadows, fog and instancing keep working. Declare the uniforms once, as struct Uniforms.",
+      "target": "materials.shader({ wgsl, uniforms }) with a WGSL surface function, or a full WGSL shader",
+      "notes": "Rewrite in WGSL, in one literal tagged /* wgsl */. Prefer a surface function, so lighting, shadows, fog and instancing keep working. Declare the uniforms once, as struct Uniforms. Textures in custom materials come in 0.2.",
       "docs": "shaders/surface-functions",
       "detect": "\\b(Raw)?ShaderMaterial\\b"
     },
@@ -803,7 +803,7 @@
       "status": "manual",
       "since": "0.1",
       "target": "materials.shader({ wgsl }) with a surface function or a vertex-offset function",
-      "notes": "The engine has no shader chunks to patch. Keep the standard options on the new material: defaultSurface applies them.",
+      "notes": "The engine has no shader chunks to patch. Keep the standard options on the new material: defaultSurface applies them. Texture maps on a custom material come in 0.2.",
       "docs": "shaders/surface-functions",
       "detect": "\\.onBeforeCompile\\s*="
     },
@@ -826,7 +826,7 @@
       "since": "0.1",
       "target": "alphaMode: 'blend' | 'mask' (with alphaCutoff), doubleSided, depthWrite, depthTest, blending: 'normal' | 'additive' | 'multiply', vertexColors, flatShading",
       "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; side: DoubleSide becomes doubleSided: true. BackSide has no equivalent: flip the geometry. depthTest: false writes no depth either, as in three.js's WebGL renderer. blending takes effect with alphaMode: 'blend' only, where three.js blends an opaque material with additive or multiply blending too.",
-      "docs": "porting/threejs-materials",
+      "docs": "api/materials",
       "detect": "\\b(transparent|alphaTest|side|depthWrite|depthTest|blending|vertexColors|flatShading)\\s*[:=]"
     },
     {
@@ -900,10 +900,10 @@
       "category": "Materials",
       "three": "material.displacementMap / displacementScale / displacementBias",
       "status": "manual",
-      "since": "0.1",
+      "since": "0.2",
       "target": "A vertexOffset function that reads the texture with textureSampleLevel",
-      "notes": "Enlarge the object bounds with setBounds so culling does not hide displaced vertices.",
-      "docs": "porting/threejs-materials",
+      "notes": "Enlarge the object bounds with setBounds so culling does not hide displaced vertices. Shadows follow the mesh's own vertices, not the displaced ones.",
+      "docs": "shaders/surface-functions",
       "detect": "\\bdisplacement(Map|Scale|Bias)\\b"
     },
     {
@@ -912,9 +912,9 @@
       "three": "material.alphaMap",
       "status": "manual",
       "since": "0.1",
-      "target": "A surface function that sets s.alpha from the texture, or alpha packed into the base color map offline",
-      "notes": "three.js reads the alpha map from its green channel; keep that channel in the surface function.",
-      "docs": "porting/threejs-materials",
+      "target": "Alpha packed into the base color map's alpha channel offline, or a surface function that sets s.alpha from the texture (0.2)",
+      "notes": "three.js reads the alpha map from its green channel. Copy that channel into the base color map's alpha, and set alphaMode to 'mask' or 'blend'.",
+      "docs": "api/materials",
       "detect": "\\balphaMap\\b"
     },
     {
@@ -923,9 +923,9 @@
       "three": "renderer.clippingPlanes / material.clippingPlanes / localClippingEnabled",
       "status": "manual",
       "since": "0.1",
-      "target": "A surface function with alphaMode \"mask\" that sets alpha to 0 beyond the plane (cookbook recipe)",
-      "notes": "Shadows still use the unclipped mesh unless the shadow pass uses the same material.",
-      "docs": "porting/threejs-materials",
+      "target": "A surface function with alphaMode 'mask' that sets alpha to 0 beyond the plane, using input.worldPosition",
+      "notes": "Pass the plane as a vec4f uniform. Shadows still use the whole mesh, because the shadow pass ignores surface functions.",
+      "docs": "shaders/surface-functions",
       "detect": "clippingPlanes|localClippingEnabled|clipIntersection"
     },
     {
@@ -968,7 +968,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "colorSpace: 'srgb' for color maps, 'linear' for data maps",
-      "notes": "Same rule as three.js: base color and emissive maps are sRGB; normal, roughness, metalness and AO maps are linear. The default is 'srgb' for images and 'linear' for data. glTF sets them automatically.",
+      "notes": "Same rule as three.js: base color and emissive maps are sRGB; normal, roughness, metalness and AO maps are linear. The default is 'srgb' for images and 'linear' for data. glTF models (0.2) set them automatically.",
       "docs": "concepts/color-management",
       "detect": "\\.colorSpace\\s*=|\\b(Linear)?SRGBColorSpace\\b|sRGBEncoding"
     },
@@ -979,7 +979,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "flipY in the loadTexture options",
-      "notes": "glTF textures never flip.",
+      "notes": "The default is true, as in three.js. A KTX2 file takes no flipY: true, so encode it flipped. glTF textures (0.2) never flip.",
       "docs": "api/textures",
       "detect": "\\.flipY\\s*="
     },
@@ -1012,7 +1012,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "textures.fromData({ width, height, depth, format, data })",
-      "notes": "Formats rgba8unorm and rgba16float (a Uint16Array of half floats or a Float32Array). depth above 1 makes a texture array of that many layers. Filters are linear by default, where three.js's DataTexture is nearest: pass filter: 'nearest'.",
+      "notes": "Formats rgba8unorm and rgba16float (a Uint16Array of half floats or a Float32Array). depth above 1 makes a texture array, but materials read only its first layer until custom materials take textures (0.2). Filters are linear by default, where three.js's DataTexture is nearest: pass filter: 'nearest'.",
       "docs": "api/textures",
       "detect": "\\bData(Array|3D)?Texture\\b"
     },
@@ -1089,7 +1089,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "uvSet: 0 or 1 in the texture's options",
-      "notes": "Each map of a material reads the set that its texture names. glTF files carry this per texture, so loaded models need nothing.",
+      "notes": "Each map of a material reads the set that its texture names. glTF models (0.2) carry this per texture, so loaded models need nothing.",
       "docs": "api/textures",
       "detect": "\\.channel\\s*="
     },
@@ -1187,8 +1187,8 @@
       "three": "InstancedMesh + setMatrixAt / setColorAt / instanceMatrix.needsUpdate",
       "status": "changed",
       "since": "0.1",
-      "target": "scene.createInstances(meshOrPrefab, count, { material, dynamic }); write batch.positions / rotations / scales / colors",
-      "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. The colors array is stored, and draws from 0.2.",
+      "target": "scene.createInstances(mesh, count, { material, dynamic, colors }); write batch.positions / rotations / scales / colors",
+      "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. colors: true adds the colors array, which is stored, and draws from 0.2. Prefabs from glTF models come in 0.2.",
       "docs": "concepts/instances",
       "detect": "\\bInstancedMesh\\b|\\.set(Matrix|Color)At\\s*\\(|\\binstance(Matrix|Color)\\b"
     },
@@ -1331,7 +1331,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "debug.axes, debug.grid, debug.box, debug.sphere, debug.arrow, debug.frustum, debug.light, debug.skeleton",
-      "notes": "Call them in onUpdate: each call draws for one frame. Debug drawing exists in development builds only. debug.grid takes GridHelper's size and divisions. debug.skeleton comes with animation in 0.2.",
+      "notes": "Call them in onUpdate: each call draws for one frame. Debug drawing exists in development builds only. debug.grid takes GridHelper's size and divisions. debug.box takes a box's lowest and highest corners. debug.light draws directional lights only. PlaneHelper and PolarGridHelper have no equivalent. debug.skeleton comes with animation in 0.2.",
       "docs": "api/debug",
       "detect": "\\b(Axes|Grid|PolarGrid|Box|Box3|Arrow|Camera|DirectionalLight|PointLight|SpotLight|HemisphereLight|Skeleton|Plane)Helper\\b"
     },
@@ -1363,8 +1363,8 @@
       "three": "MathUtils (degToRad, clamp, lerp, damp, randFloat, seededRandom)",
       "status": "direct",
       "since": "0.1",
-      "target": "math.degToRad, math.clamp, math.lerp, math.damp, math.randFloat and the other MathUtils names; math.seed and math.random",
-      "notes": "Same names and arithmetic. The random helpers draw from math.random, which hold mode seeds. MathUtils.seededRandom(s) becomes math.seed(s) once, then math.random().",
+      "target": "math.degToRad, radToDeg, clamp, lerp, inverseLerp, mapLinear, damp, smoothstep, euclideanModulo, randFloat, randInt and randFloatSpread; math.seed and math.random",
+      "notes": "Same names and arithmetic. The random helpers draw from math.random, which hold mode seeds. MathUtils.seededRandom(s) becomes math.seed(s) once, then math.random(). smootherstep, pingpong, generateUUID and the power of two helpers have no equivalent.",
       "docs": "api/math",
       "detect": "\\bMathUtils\\.\\w+"
     },
@@ -1420,7 +1420,7 @@
       "since": "0.1",
       "target": "createEngine({ antialias: 'fxaa' }); the quality presets take MSAA 4x from Medium, and FXAA on Low",
       "notes": "FXAA runs inside the final pass, where three.js adds FXAAPass after OutputPass. SMAA and SSAA have no equivalent. TAA comes after 1.0.",
-      "docs": "porting/threejs-postprocessing",
+      "docs": "concepts/quality-presets",
       "detect": "\\b(FXAA|SMAA|TAARender|SSAARender)Pass\\b|FXAAShader"
     },
     {
@@ -1530,7 +1530,7 @@
       "since": "0.1",
       "target": "Delete: output is converted to sRGB exactly once",
       "notes": "Keeping such a pass applies gamma twice and washes the image out.",
-      "docs": "porting/threejs-postprocessing",
+      "docs": "concepts/color-management",
       "detect": "GammaCorrectionShader|SRGBShader|LinearToSRGB"
     },
     {
@@ -1607,7 +1607,7 @@
       "since": "0.1",
       "target": "Keep the panel on the page; send changes with engine.postToSketch and receive them with page.onMessage",
       "notes": "",
-      "docs": "guides/ui-overlays",
+      "docs": "api/page",
       "detect": "\\blil-gui\\b|\\bdat\\.gui\\b|new\\s+GUI\\s*\\("
     },
     {
@@ -1639,8 +1639,8 @@
       "status": "manual",
       "since": "0.1",
       "target": "React stays for the page UI; the scene moves into sketch.ts",
-      "notes": "See the React Three Fiber guide for the component mapping.",
-      "docs": "porting/react-three-fiber",
+      "notes": "React keeps the page UI and talks to the sketch through messages. Rewrite each scene component and drei helper by hand.",
+      "docs": "api/page",
       "detect": "from\\s+['\"]@react-three/(fiber|drei)['\"]|\\buseFrame\\s*\\("
     },
     {
@@ -1650,8 +1650,8 @@
       "status": "manual",
       "since": "0.1",
       "target": "WGSL, which the null3D Vite plugin compiles",
-      "notes": "See the shader porting reference.",
-      "docs": "porting/threejs-shaders",
+      "notes": "See the custom shaders guide and the WGSL rules for portable shaders.",
+      "docs": "guides/custom-shaders",
       "detect": "gl_FragColor|gl_Position|#include\\s*<\\w+>|\\bvoid\\s+main\\s*\\("
     },
     {
@@ -1661,8 +1661,8 @@
       "status": "changed",
       "since": "0.1",
       "target": "DOM code stays in page.ts; data travels in messages; sizes come from ctx.engine.viewport",
-      "notes": "The sketch worker has no DOM.",
-      "docs": "porting/threejs-loop-and-threads",
+      "notes": "The sketch worker has no DOM. createEngine({ sketchThread: 'main' }) runs the sketch on the page's thread, where it can reach the DOM.",
+      "docs": "api/sketch",
       "detect": "\\bdocument\\.(getElementById|querySelector|querySelectorAll|body|createElement)\\b|\\bwindow\\.(innerWidth|innerHeight|devicePixelRatio|addEventListener)\\b"
     }
   ]

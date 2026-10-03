@@ -910,9 +910,10 @@ export abstract class Camera extends Object3D {
 
 	/**
 	 * @internal Gives the engine core this camera's lens and layers, which the active camera draws
-	 * with.
+	 * with, or with `target` set to `CAMERA_TARGET_SHADOWS`, the lens that fits the shadow
+	 * cascades.
 	 */
-	abstract sendLens(glue: CoreGlue): void;
+	abstract sendLens(glue: CoreGlue, target?: number): void;
 }
 
 /**
@@ -952,8 +953,15 @@ export class PerspectiveCamera extends Camera {
 	}
 
 	/** @internal */
-	sendLens(glue: CoreGlue): void {
-		glue.setPerspectiveCamera(this.handle, this.verticalFov, this.near, this.far, this.layers);
+	sendLens(glue: CoreGlue, target: number = C.CAMERA_TARGET_VIEW): void {
+		glue.setPerspectiveCamera(
+			this.handle,
+			this.verticalFov,
+			this.near,
+			this.far,
+			this.layers,
+			target,
+		);
 	}
 }
 
@@ -1007,7 +1015,7 @@ export class OrthographicCamera extends Camera {
 	}
 
 	/** @internal */
-	sendLens(glue: CoreGlue): void {
+	sendLens(glue: CoreGlue, target: number = C.CAMERA_TARGET_VIEW): void {
 		const view = this.view;
 		glue.setOrthographicCamera(
 			this.handle,
@@ -1018,6 +1026,7 @@ export class OrthographicCamera extends Camera {
 			this.near,
 			this.far,
 			this.layers,
+			target,
 		);
 	}
 }
@@ -1367,6 +1376,8 @@ export class Scene {
 	private viewsGeneration = -1;
 	private currentViews!: SceneViews;
 	private activeCamera: Camera | undefined;
+	/** The camera that fits the shadow cascades in place of the active camera, for debugging. */
+	private shadowCamera: Camera | undefined;
 	/** @internal Scratch arrays, so rotations and reads allocate nothing. */
 	readonly scratch = new Float32Array(4);
 	/** @internal */
@@ -1545,6 +1556,17 @@ export class Scene {
 	/** @internal */
 	lensChanged(camera: Camera): void {
 		if (camera === this.activeCamera) camera.sendLens(this.core.glue);
+		if (camera === this.shadowCamera) camera.sendLens(this.core.glue, C.CAMERA_TARGET_SHADOWS);
+	}
+
+	/**
+	 * @internal Fits the main directional light's shadow cascades to `camera` in place of the active
+	 * camera, or to the active camera again without one, for `debug.shadowCamera`.
+	 */
+	setShadowCamera(camera: Camera | undefined): void {
+		this.shadowCamera = camera;
+		if (camera) camera.sendLens(this.core.glue, C.CAMERA_TARGET_SHADOWS);
+		else this.core.glue.clearShadowCamera();
 	}
 
 	/**

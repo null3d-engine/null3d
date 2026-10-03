@@ -48,8 +48,8 @@ use wasm_bindgen::prelude::*;
 pub mod constants;
 
 use constants::{
-    arrays_problem, batch_field, debug_line_field, mesh_arrays, ring_field, scene_field, shading,
-    texture_option, texture_stat,
+    arrays_problem, batch_field, camera_target, debug_line_field, mesh_arrays, ring_field,
+    scene_field, shading, texture_option, texture_stat,
 };
 
 /// The engine version, as the loader reports it.
@@ -377,8 +377,8 @@ pub fn destroy_engine() {
     unsafe { *ENGINE.0.get() = None };
 }
 
-/// Serves the job system on a job worker until `shutdownJobs`. It first waits for the sketch
-/// thread to create the job system.
+/// Serves the job system on a job worker until the page sets its stop flag. It first waits for
+/// the sketch thread to create the job system.
 #[wasm_bindgen(js_name = jobWorkerLoop)]
 pub fn job_worker_loop(index: u32) {
     JOBS.wait().worker_loop(index);
@@ -391,12 +391,18 @@ pub fn take_job_busy_ms(index: u32) -> f64 {
     JOBS.get().map_or(0.0, |jobs| jobs.take_busy_ms(index))
 }
 
-/// Stops every job worker's loop.
-#[wasm_bindgen(js_name = shutdownJobs)]
-pub fn shutdown_jobs() {
-    if let Some(jobs) = JOBS.get() {
-        jobs.shutdown();
-    }
+/// The address of the job system's wake word, or 0 before it exists.
+#[wasm_bindgen(js_name = jobsWakeAddress)]
+pub fn jobs_wake_address() -> u32 {
+    JOBS.get()
+        .map_or(0, |jobs| jobs.stop_words().0.as_ptr() as usize as u32)
+}
+
+/// The address of the job system's stop flag, a byte, or 0 before it exists.
+#[wasm_bindgen(js_name = jobsStopAddress)]
+pub fn jobs_stop_address() -> u32 {
+    JOBS.get()
+        .map_or(0, |jobs| jobs.stop_words().1.as_ptr() as usize as u32)
 }
 
 // --- Scene objects ---
@@ -1229,7 +1235,8 @@ pub fn set_texture_option(option: u32, value: u32) -> u32 {
 // --- Camera, lights and background ---
 
 /// Draws from this camera object with a perspective lens (vertical field of view in degrees), the
-/// objects whose layer masks share a bit with `layers`.
+/// objects whose layer masks share a bit with `layers`. With `target` the shadows' camera
+/// (`constants::camera_target`), the camera fits the main directional light's cascades instead.
 #[wasm_bindgen(js_name = setPerspectiveCamera)]
 pub fn set_perspective_camera(
     camera: u32,
@@ -1237,6 +1244,7 @@ pub fn set_perspective_camera(
     near: f32,
     far: f32,
     layers: u32,
+    target: u32,
 ) -> u32 {
     set_camera(
         camera,
@@ -1246,13 +1254,14 @@ pub fn set_perspective_camera(
             far,
         }),
         layers,
+        target,
     )
 }
 
 /// Draws from this camera object with an orthographic lens: a view `height` tall and `width` wide,
 /// with a width of 0 following the canvas's aspect ratio, centered right of and above the camera's
 /// axis by `center_x` and `center_y`. It draws the objects whose layer masks share a bit with
-/// `layers`.
+/// `layers`. With `target` the shadows' camera, it fits the main directional light's cascades.
 #[wasm_bindgen(js_name = setOrthographicCamera)]
 #[allow(clippy::too_many_arguments)]
 pub fn set_orthographic_camera(
@@ -1264,6 +1273,7 @@ pub fn set_orthographic_camera(
     near: f32,
     far: f32,
     layers: u32,
+    target: u32,
 ) -> u32 {
     set_camera(
         camera,
@@ -1275,14 +1285,30 @@ pub fn set_orthographic_camera(
             far,
         }),
         layers,
+        target,
     )
 }
 
-fn set_camera(camera: u32, lens: Lens, layers: u32) -> u32 {
+fn set_camera(camera: u32, lens: Lens, layers: u32, target: u32) -> u32 {
     with_engine(|e| {
         let settings = e.renderer.settings_mut();
-        settings.set_camera(Handle::from_raw(camera), lens);
-        settings.set_layers(ViewId::CAMERA, layers);
+        let camera = Handle::from_raw(camera);
+        if target == camera_target::SHADOWS {
+            settings.set_shadow_camera(Some((camera, lens)));
+        } else {
+            settings.set_camera(camera, lens);
+            settings.set_layers(ViewId::CAMERA, layers);
+        }
+        0
+    })
+}
+
+/// Fits the main directional light's cascades to the camera's view again, after a camera with the
+/// shadows' target fitted them.
+#[wasm_bindgen(js_name = clearShadowCamera)]
+pub fn clear_shadow_camera() -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_shadow_camera(None);
         0
     })
 }

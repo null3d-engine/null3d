@@ -5,8 +5,8 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `parity`, `bench`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `startup`, `tab-memory`, `soak` and `warm-up-time`. `bun run devices` runs the checks on the phone and on the iPad.
-- The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `startup`, `tab-memory`, `soak` and `warm-up-time`. `bun run devices` runs the checks on the phone and on the iPad.
+- The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-grey when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
 - `--switches <q>` gives every page of a plan more switches, such as `half=on` or `half=on&preset=ultra`. The checks plan's image tests then compare those pages with the usual references, at the device tolerance.
@@ -27,12 +27,76 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 - The dev server loads the Vite plugin, and the shader compiler that the plugin runs, once when it starts. It never loads a new copy of them while it runs.
 - After a pull that changes `packages/vite-plugin` or the Vite config, run `bun run build`, then restart the dev server before a run. Restart it before the browser tests too, because they use a dev server that already answers on their port. The build also brings the engine core that the server serves up to date. On 1 October 2026, a stale server rejected new custom material sketches with "the WGSL has no entry point".
 - Do not add or move files in the tree that the dev server watches during a run. A new HTML file anywhere in it reloads every open page, and a page reloaded while it measures reports 0 frames.
+- The `smoke` plan is about a tenth of the checks plan, for a device in a cloud session of limited time. It keeps the capability, isolation, shader, upload, preset, warm-up and stats pages, the restarts of each build, and the main features' image tests. Each image test runs on every GPU tier in its first thread mode, so new tiers and modes join by the same rules.
+- The runner page detects the browser it runs in, from Brave's object on `navigator`, the client hints and the user agent. It records the browser, the GPU and the page's address in `device.json`. The summary names each runner's browser. When a runner's name names one browser and its page runs in another, the runner warns. A name like `tb-android` names no browser, so it suits a device whose browser is chosen in the session.
+- After a fixed plan, the runner prints a row for each browser for [the record of tested devices](tested-devices.md).
 - Close the browser tabs that testing opens as soon as each test ends. Old tabs keep pages running, which costs heat and skews later runs.
+
+## Guards on device runs
+
+The runner watches each browser's results while a run goes on. Two guards keep a tired device from wasting a run, or from giving figures that look true but are not.
+
+### A browser that keeps refusing memory
+
+- After hours of runs, Safari on the iPad can refuse the engine's shared memory on every page. Each page then fails with E1109, or with the browser's own "Out of memory" error.
+- This happened twice. On 2 October 2026, a checks run failed 433 of its 490 pages. A later run failed 82 of its 116 pages. Each time, only quitting and opening Safari again brought the memory back.
+- So the runner ends a browser's turn when 3 of its last 5 pages failed for lack of memory. Three such pages in a row end it too, because they lie among the last 5. The counts are `OOM_STOP_PAGES` and `OOM_WINDOW_PAGES` in `tests/lib/runs.ts`.
+- A single page that fails for lack of memory does not end the turn. One page can leak or ask for too much on its own, and the next page then starts fresh.
+- Replayed on the results of the run that failed 433 of 490 pages, the guard ends that run after 9 pages.
+- Pages that push the memory limit on purpose do not count. These are the memory plan's loads, the shared memory page's counts of its room, and the tab memory plan. A refused memory is what they measure. The list is `MEMORY_LIMIT_CHECKS` in `tests/lib/plans.ts`.
+- The other runners keep going. The runner prints a message that names the runner, its browser and its device, and what to do:
+
+  ```text
+  ipad-safari: the browser keeps refusing the engine's memory (E1109 on 3 of its last 5 pages). Quit and reopen Safari on the iPad, bring the runner page to the front, then run again with --only <the pages left>
+  ```
+
+- The `--only` list holds the pages without a result and the pages that failed for lack of memory. A page of a later round appears under its own id. Give the new run no `--shard`, because the list holds only the pages of the shard that ran.
+- To end the turn, the runner first takes the browser out of the run's turn list. A reloaded runner page then does not start the run again. Next, the runner marks the browser's claim on its results as ended.
+- The dev server then refuses the runner page's next result, and any new claim, with 410. The runner page stops at the end of the page that runs. A runner page that waits on the local network waits for the next run, and a runner page in a Mac app closes its tab.
+- The runner records why the turn ended in `ended-early.json`, in the browser's folder of the run. The record holds the reason, the failed pages, what to do and the `--only` list. The run's `summary.json` holds the same record.
+- The browser's line in the summary says that its turn ended early, and counts the pages that never ran. Those pages print no failure lines of their own.
+- The guard does not stop the whole run. The other browsers' results stay good, because each device has memory of its own.
+- The guard does not pause and try the failed pages again. Safari does not give the memory back until it quits, so a pause only wastes time.
+- The guard looks at the last pages, not at the whole run. A long run can see a few unrelated refusals over hours, and those must not end it.
+
+### A display whose refresh rate changes
+
+- Frame rates mean little without the display's refresh rate. On 3 October 2026, the iPad reported refresh rates from 35 to 65 Hz between runs. A drop from 49 to 35 frames per second looked like a regression in the code. It followed the display's rate instead.
+- So in the plans that time pages, the runner page measures the refresh rate before each page. These plans are `bench`, `startup`, `governor`, `skinning`, `overload` and `soak`, and the scale search. The list is `TIMED_PLANS` in `tests/real-browsers.ts`.
+- The runner page measures with no test page loaded, from the middle interval of 60 animation frames. It adds the rate to the page's result as `runnerRefreshHz`. Each runner page also measures it once at its start, in `device.json`.
+- After the run, the runner marks a browser's timing figures as unreliable when a reading is below 55 Hz. It marks them too when the readings differ by more than a tenth of the highest one. The device checklist asks for 60 Hz.
+- The limits are `EXPECTED_REFRESH_HZ`, `LOWEST_REFRESH_HZ` and `REFRESH_SPREAD` in `tests/real-browsers.ts`. A display that holds 120 Hz all through the run passes, as on a Mac with a 120 Hz screen.
+- The browser's line in the summary then says why its timing figures are unreliable, and `summary.json` keeps the reason. The runner also prints what to check:
+
+  ```text
+  ipad-safari: the display ran at 37 Hz (expected 60): the iPad is hot, or Limit Frame Rate is off, or Low Power Mode or Reduce Motion is on; let it cool and check its settings. Its timing figures in this run are unreliable.
+  ```
+
+- The guard does not use the refresh rate that the engine's own figures report. The engine reads it on the thread that draws, and under a heavy scene that reading falls with the frame rate.
+- For example, on 30 September 2026 the iPad's bench pages reported 57 and 28 Hz in turn, with the scene. The runner page read 59 Hz at the start of the same run.
+- Each reading adds about a second to each page. The plans that only check results do not take it.
+- The guard marks the figures and does not end the run. The run's other results still count, and the person decides whether to run it again.
+
+## GPU paths that a device lacks
+
+- A page that forces a GPU path with `?gpu=` cannot run on a device without that path. `--allow-no-webgpu` and `--allow-no-webgl2` let a device lack WebGPU or WebGL2. The runner then counts those pages as skipped, not failed.
+- The runner page decides from the capabilities page's report, the first page of the `checks` and `smoke` plans. The report holds the facts that the engine picks its path from. Core WebGPU needs an adapter with core features and limits. Compatibility mode needs any adapter, and WebGL2 needs a context.
+- After the report, the runner page skips each page that needs a path that the device lacks and that the run lets it lack. It posts a skip as the page's result and does not open the page.
+- `--allow-no-webgpu` covers both WebGPU paths. On a device that offers compatibility mode only, it skips the core WebGPU pages and runs the compatibility mode pages.
+- A page's path is the one that its `?gpu=` switch forces. A page without the switch takes its check's path. A WebGPU page without the switch, such as the uploads page, takes any adapter, so it needs compatibility mode only. The plan's file gives each page's path as `gpu`, and the skip flags as `skipMissing`.
+- Each browser's line in the run's summary names the paths whose pages it skipped. So does the result in its row for [the record of tested devices](tested-devices.md).
+- On 3 October 2026, TestingBot's Redmi Note 13 in Chrome 138 offered compatibility mode only: its adapter had no core features and limits. The engine refused each page that forced core WebGPU with E1301, as it must, and the run counted 85 such pages as failures.
+- Four pages that force core WebGPU passed on the Redmi: the clear page, two replay pages and the shader library page. They ask for an adapter themselves and do not start the engine. They now count as skips there too, because the engine never draws with core WebGPU on that device.
+- A plan without the capabilities page, and a shard without it, runs every page. Judging then counts a page as skipped when its error says that the browser lacks the page's path, as E1301 does.
+- Judging by the error alone was the only test before. It still opens each page, which costs minutes in a cloud session. E1301 can also come from a fault in the engine's choice of path, which a skip would then hide.
+- The runner page's own GPU facts in `device.json` do not decide. They come from an adapter asked for without a feature level. Chrome 138 on the Redmi gave the clear page such an adapter, while the engine refused core WebGPU there.
+- Without the flags, the runner skips nothing. A browser that should offer every path, such as Chrome on the Mac, must fail its run when it loses one.
 
 ## What the checks plan covers
 
 - The capabilities page loads first and again last. Each extension that the engine asks for by name must get the same answer in both loads. The runner notes whether the browser's list of supported extensions kept its order, because Brave shuffles it (hard rule 13).
 - The shared memory test page starts and stops the engine again and again in each thread mode. Where the browser has room for few shared memories, as on an iPad, the page starts more engines than fit at once. The check fails when a start fails, or when the room for shared memory does not come back within 31 s after the engines stop. Safari frees memory late on a slow machine. So a start that Safari refuses waits and tries again, for 30 s in all per page, as [the implementation notes](implementation-notes.md#threads-and-shared-memory) explain.
+- The `frame-restarts-*` checks run the same page with `?kinds=frame` in the threaded modes with a sketch worker. Each engine starts in a frame, and the page removes the frame while the engine runs. An app does the same when it removes a page that never called `destroy()`. `?kinds=frame-destroyed` stops each engine before the page removes its frame.
 - With `?kinds=`, the shared memory page tests other ways a worker can hold a shared memory. These tests found that Safari never frees the memory of a thread it stops inside a blocking wait, not even after a reload.
 - The engine test page runs again on its production build, in each thread mode on WebGL2. The runner builds the page, and the dev server serves it as it serves the startup loads. A production build bundles the engine into shared files, so some faults show only there. These checks found that Safari runs a worker's file a second time when another file imports it.
 - The shaders page compiles every GLSL program and WGSL module that the engine ships, for all devices. It starts every GLSL compile before it reads a result, so the browser can compile many programs at once. Its time limit grows with the number of GLSL programs, because each new shader variant adds programs. It is 30 s, plus half a second for each program. On 2 October 2026, CI's Safari took about a third of a second per program when it compiled them one at a time. It took about 46 s for 147 programs, and failed the limit of 30 s that the page had then. In Safari on the Mac, cold, the same 147 programs take 1.8 s when they compile at once, against 13 s one at a time.
@@ -53,6 +117,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 - The runner builds the pages into `target/bench-pages` before the run. The dev server serves the build under the load routes, as it serves the startup loads, with one address prefix for each run and runner.
 - The phone over USB and the tablet over the local network both reach the main checkout's dev server, so both load the same build.
 - A dev server that started before the load routes served the benchmark pages cannot serve these plans. The runner then stops and asks you to restart that server.
+- After its timed runs, the bench plan runs the visual page of each scene on each GPU path, from the dev server. The first timed run of each null3D page captures its frame. The summary prints the shadow figures beside the timings, and the runner saves the frames in the run's folder. [Benchmarks](benchmarks.md#visual-figures-and-captured-frames) says what they show.
 
 ## Startup times
 
@@ -185,7 +250,8 @@ The team's tablet is an iPad Pro 11-inch with 8 cores. Safari there reports a Ma
 - For benchmarks, turn on Settings > Accessibility > Motion > Limit Frame Rate, which holds the display at 60 Hz.
 - Safari there holds only a few shared memories at once. It holds 6 with the engine's default maximum of 1 GiB, 18 at 256 MiB and 3 at 4 GiB. A test that stops a worker inside a blocking wait leaks one until Safari quits. After such a test, quit Safari from the app switcher and open the runner page again.
 - After a tab crash, Safari on the iPad can stay stuck until it is quit and opened again. It shows its own error page in place of the runner page, and no later run starts. On 2 and 3 October 2026, this held up the iPad's runs of several pull requests after the tab memory plan. Quit Safari from the app switcher after any run that crashes a tab, before the next run.
-- Safari on the iPad keeps memory from earlier runs until it quits. On 2 October 2026, a checks run failed 433 of its 490 pages. Its first page failed with "Out of memory", and every later page with E1109. Safari had run out of room for shared memory before the run began. After a quit and a fresh start, the same plan passed 490 of 490. A run that fails from its first page this way says nothing about the code.
+- Safari on the iPad keeps memory from earlier runs until it quits. On 2 October 2026, a checks run failed 433 of its 490 pages. Its first page failed with "Out of memory", and every later page with E1109. Safari had run out of room for shared memory before the run began. After a quit and a fresh start, the same plan passed 490 of 490. A run that fails from its first page this way says nothing about the code. The runner now ends such a run after a few pages, as [Guards on device runs](#guards-on-device-runs) explains.
+- Until 3 October 2026, the memory built up within runs too. Each page that left its engine running, such as the stats pages, kept its engine's memory once the runner removed its frame. The engine now ends its job workers' waits when its page goes away, as [the implementation notes](implementation-notes.md#threads-and-shared-memory) explain. The `frame-restarts-*` checks start more engines in frames than the iPad has room for, and remove each frame while its engine runs.
 - Brave with Shields on reports 3 cores, where Safari reports 8, so the engine starts fewer job workers there.
 - The iPad's scale at 60 Hz was measured in Safari 26.6 on 29 September 2026. three.js's WebGPU renderer holds 30 frames per second up to 240,000 objects, and its WebGL renderer up to 140,000.
 
@@ -200,3 +266,22 @@ The team has no iPhone, so the iPad stands in for Apple's phones. It proves some
 - An iPhone without iOS 26 has no WebGPU, so the engine draws with WebGL2 there.
 
 So the iPad shows that the engine works on an iPhone. It does not show that the engine is fast enough there, or that it stays within the iPhone's memory. That needs an iPhone in the device runs, with a runner page of its own, such as `--lan iphone-safari`.
+
+## TestingBot's device cloud
+
+TestingBot lends real phones and tablets for live sessions. A device opens the runner page over TestingBot's tunnel to the Mac.
+
+- Run the tunnel with TestingBot's own SSL handling on (no `--nobump`) and with `--nocache`. Give Java a truststore that holds the JDK's certificates and the root of our dev certificate: `java -Djavax.net.ssl.trustStore=<truststore.jks> -Djavax.net.ssl.trustStorePassword=<password> -jar testingbot-tunnel.jar --nocache`. The credentials are in `~/.testingbot`.
+- The tunnel forwards only some ports, such as 80, 443, 3000, 3001 and 8080. So serve HTTPS on port 3001, from a checkout of its own: `NULL3D_PORT=3000 NULL3D_HTTPS=1 bun run dev`. Its certificate must name `local.testingbot.com`: `CAROOT=target/dev-ca mkcert -cert-file target/dev-cert/cert.pem -key-file target/dev-cert/key.pem local.testingbot.com`.
+- iOS cannot use `localhost`, so each device opens `https://local.testingbot.com:3001/tests/pages/runner.html?listen&runner=<name>`. Pass the same name to `--lan`.
+- Start a new live session after any restart of the tunnel. A model stays reserved for a while after a session ends.
+- A device opens its default browser, and another can be opened later. A name that names no browser, such as `tb-android`, works with any of them, and the summary says which browser ran.
+- Run `--plan smoke` first, because a session has limited time: `bun tests/real-browsers.ts --plan smoke --allow-no-webgpu --lan tb-android`.
+- Pass `--allow-no-webgpu` for any Android device. Some offer WebGPU's compatibility mode only, and the runner then skips their core WebGPU pages, as [GPU paths that a device lacks](#gpu-paths-that-a-device-lacks) explains.
+
+Test the devices in this order:
+
+1. Current devices that should run well, because faults there block the most users. iOS 26 Safari, which has WebGPU: iPhone 16, iPhone Air, iPhone 16 Pro, iPhone 17 Pro and iPhone 17 Pro Max. Then the iPad 9th generation, for low memory. Android with WebGPU: Pixel 8, 9, 10 and 11, Galaxy S25, S26 and S24, and Galaxy Tab S11. Then mid-range phones, where memory and speed are tight: Redmi Note 13 and Galaxy A55.
+2. The WebGL2 fallback, on devices whose browsers have no WebGPU. These are the iPhone 13, 14, 15 and SE 2022 on iOS 17 and 18, and the Galaxy S21 and S23.
+3. Old devices, where the engine cannot run and must say so clearly. On iOS 14 and 15, these are the iPhone 12 or XR and the iPad 8th generation. On Android, they are versions 7 to 9 and the Galaxy A12.
+4. Then the other browsers on the same devices: Samsung Internet, Firefox and Opera.

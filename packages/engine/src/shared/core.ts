@@ -44,7 +44,10 @@ export interface CoreGlue extends CoreErrors {
 	jobWorkerLoop(index: number): void;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
 	takeJobBusyMs(index: number): number;
-	shutdownJobs(): void;
+	/** The address of the job system's wake word, or 0 before it exists. */
+	jobsWakeAddress(): number;
+	/** The address of the job system's stop flag, a byte, or 0 before it exists. */
+	jobsStopAddress(): number;
 	/** Drops the engine, so this instance can create another; the page's own instance needs it. */
 	destroyEngine(): void;
 	/**
@@ -224,7 +227,8 @@ export interface CoreGlue extends CoreErrors {
 	setShadowTiles(tiles: number, size: number, pointShadows: boolean): number;
 	/**
 	 * Draws from a camera object with a perspective lens, a vertical field of view in degrees, and
-	 * the objects on `layers`.
+	 * the objects on `layers`. With `target` set to `CAMERA_TARGET_SHADOWS`, the camera fits the
+	 * main directional light's shadow cascades instead.
 	 */
 	setPerspectiveCamera(
 		camera: number,
@@ -232,11 +236,13 @@ export interface CoreGlue extends CoreErrors {
 		near: number,
 		far: number,
 		layers: number,
+		target: number,
 	): number;
 	/**
 	 * Draws from a camera object with an orthographic lens: a view `height` tall and `width` wide,
 	 * where a width of 0 follows the canvas's aspect ratio, centered right of and above the
-	 * camera's axis by `centerX` and `centerY`, and the objects on `layers`.
+	 * camera's axis by `centerX` and `centerY`, and the objects on `layers`. `target` acts as in
+	 * `setPerspectiveCamera`.
 	 */
 	setOrthographicCamera(
 		camera: number,
@@ -247,7 +253,10 @@ export interface CoreGlue extends CoreErrors {
 		near: number,
 		far: number,
 		layers: number,
+		target: number,
 	): number;
+	/** Fits the main directional light's shadow cascades to the drawing camera's view again. */
+	clearShadowCamera(): number;
 	/**
 	 * Adds a row to the light table for the object `handle`; `kind` is one of the `LIGHT_KIND_*`
 	 * codes. Returns the light's id.
@@ -310,7 +319,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'initEngine',
 	'jobWorkerLoop',
 	'takeJobBusyMs',
-	'shutdownJobs',
+	'jobsWakeAddress',
+	'jobsStopAddress',
 	'destroyEngine',
 	'sceneCapacity',
 	'sceneArrays',
@@ -357,6 +367,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setShadowTiles',
 	'setPerspectiveCamera',
 	'setOrthographicCamera',
+	'clearShadowCamera',
 	'createLight',
 	'destroyLight',
 	'setLightColor',
