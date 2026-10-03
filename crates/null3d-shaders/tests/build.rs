@@ -7,7 +7,8 @@ use common::{
     SEE_RULES, SHADER, assert_feature, build, build_wgsl, column_of, only_problem, project, wgsl,
 };
 use null3d_shaders::{
-    ALLOWED_LANGUAGE_FEATURES, Binding, GlslTexture, GlslUniformBlock, Inputs, typescript,
+    ALLOWED_LANGUAGE_FEATURES, Binding, GlslTexture, GlslUniformBlock, Inputs,
+    literals_safari_refuses, typescript,
 };
 
 /// A vertex and fragment pair with a flat varying, a uniform block per stage, a data texture read
@@ -1172,4 +1173,29 @@ fn the_precision_check_finds_each_break() {
     assert!(found[3].starts_with("line 6: an array type with its size"));
     assert!(found[4].starts_with("line 7: an array type with its size"));
     assert!(found[5].contains("ends at `mediump`"));
+}
+
+#[test]
+fn every_wgsl_shader_has_only_number_literals_that_safari_reads() {
+    let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let output = build(&Inputs::read(root).unwrap()).unwrap();
+    let mut refused = Vec::new();
+    let mut modules = 0;
+    for (shader, variants) in &output.shaders {
+        for (variant, built) in variants {
+            let Some(wgsl) = &built.wgsl else { continue };
+            modules += 1;
+            refused.extend(
+                literals_safari_refuses(&wgsl.source)
+                    .into_iter()
+                    .map(|literal| format!("{shader}.{variant}: {literal}")),
+            );
+        }
+    }
+    assert!(modules > 100, "only {modules} WGSL modules were built");
+    assert!(
+        refused.is_empty(),
+        "number literals that Safari 26 refuses:\n{}",
+        refused.join("\n")
+    );
 }

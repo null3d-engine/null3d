@@ -18,6 +18,7 @@ mod features;
 mod glsl;
 mod half;
 mod library;
+mod literals;
 mod manifest;
 mod material;
 mod names;
@@ -39,6 +40,7 @@ use null3d_gpu::drawlist::permutation;
 use serde::{Deserialize, Serialize};
 
 pub use features::ALLOWED_LANGUAGE_FEATURES;
+pub use literals::literals_safari_refuses;
 pub use manifest::{Pipeline, Target, Variant};
 pub use material::{MaterialOutput, MaterialSource, MaterialTemplate};
 pub use output::{
@@ -347,7 +349,7 @@ impl Compiler {
                 )]
             })?;
             Some(WgslOutput {
-                source: finish_source(&written),
+                source: finish_source(&literals::compact_floats(&written)),
                 pipelines: pipelines.clone(),
             })
         } else {
