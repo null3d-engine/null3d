@@ -14,6 +14,7 @@ describe('parseSwitches', () => {
 			compression: undefined,
 			parallelCompile: true,
 			freshShaders: false,
+			freshCheck: false,
 			wakeByMessage: false,
 			hdr: true,
 			half: undefined,
@@ -111,6 +112,11 @@ describe('parseSwitches', () => {
 	it('makes the shaders fresh with ?shaders=fresh only', () => {
 		expect(parseSwitches('?shaders=fresh').freshShaders).toBe(true);
 		expect(parseSwitches('?shaders=cached').freshShaders).toBe(false);
+	});
+
+	it('measures the preset again with ?check=fresh only', () => {
+		expect(parseSwitches('?check=fresh').freshCheck).toBe(true);
+		expect(parseSwitches('?check=stored').freshCheck).toBe(false);
 	});
 
 	it('makes the threads wake each other with messages with ?wake=message only', () => {

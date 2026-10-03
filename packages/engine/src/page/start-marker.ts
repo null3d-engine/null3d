@@ -65,7 +65,7 @@ export function historyOf(text: string | null, page: number): StartHistory {
 }
 
 /** The page's localStorage, or undefined where the browser refuses it, as in a sandboxed frame. */
-function pageStorage(): Storage | undefined {
+export function pageStorage(): Storage | undefined {
 	try {
 		return globalThis.localStorage ?? undefined;
 	} catch {

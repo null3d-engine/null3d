@@ -367,7 +367,8 @@ export function checksPlan(): PlanItem<Check>[] {
 			),
 		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
-		pageItem('quality', 'quality', { kind: 'quality' }),
+		// The device's own check each run, never one that an earlier run stored.
+		pageItem('quality', 'quality', { kind: 'quality' }, { switches: ['check=fresh'] }),
 		...TIERS.map((tier) =>
 			pageItem(
 				`preset-change-${tier}`,
@@ -700,7 +701,10 @@ export function overloadPlan(): PlanItem<Check>[] {
 			'preset-check',
 			'quality',
 			{ kind: 'preset-check' },
-			{ switches: [`spheres=${HEAVY_SPHERES}`], timeoutSeconds: OVERLOAD_TIMEOUT_SECONDS },
+			{
+				switches: [`spheres=${HEAVY_SPHERES}`, 'check=fresh'],
+				timeoutSeconds: OVERLOAD_TIMEOUT_SECONDS,
+			},
 		),
 	];
 }
@@ -911,10 +915,11 @@ function warmUpSketches(): { scene: string; sketch: string }[] {
 }
 
 /**
- * The warm-up time test: each benchmark scene and each demo starts on each GPU path, first with
- * fresh shaders, which the browser must compile as on a first visit, then with the shaders as they
- * ship, the last time reusing what the browser compiled. Each load reports how long the pipelines
- * held up the first frame, and how long the first frame took to show.
+ * The warm-up time test: each benchmark scene and each demo starts on each GPU path, first as on a
+ * first visit, with fresh shaders that the browser must compile and a preset check that measures
+ * again. Then it starts with the shaders as they ship and the stored preset check, the last time
+ * reusing what the browser compiled. Each load reports how long the pipelines held up the first
+ * frame, and how long the first frame took to show.
  */
 export function warmUpTimePlan({
 	runs = WARM_UP_FRESH_LOADS,
@@ -928,7 +933,11 @@ export function warmUpTimePlan({
 					'warm-up-time',
 					{ kind: 'warm-up-time', tier, scene, fresh },
 					{
-						switches: [`gpu=${tier}`, fresh ? 'shaders=fresh' : '', sketchSwitch],
+						switches: [
+							`gpu=${tier}`,
+							...(fresh ? ['shaders=fresh', 'check=fresh'] : []),
+							sketchSwitch,
+						],
 						timeoutSeconds: WARM_UP_TIMEOUT_SECONDS,
 					},
 				);

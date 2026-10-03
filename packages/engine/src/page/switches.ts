@@ -1,11 +1,11 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?shaders=fresh,
-// ?wake=message, ?hdr=off, ?half= and ?compression=. Six more set what the benchmarks vary: ?fps=
-// for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the shared memory's
-// maximum, ?queue= for the frames that may wait on the GPU, ?cells=off for culling without grid
-// cells and ?prepass=on or off for the depth prepass. ?hold starts hold mode for image tests,
-// ?preset= fixes the quality preset, ?bench publishes the running engine for benchmark tools, and
-// ?gl-timing times each WebGL call for benchmark pages.
+// ?check=fresh, ?wake=message, ?hdr=off, ?half= and ?compression=. Six more set what the
+// benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the
+// shared memory's maximum, ?queue= for the frames that may wait on the GPU, ?cells=off for culling
+// without grid cells and ?prepass=on or off for the depth prepass. ?hold starts hold mode for
+// image tests, ?preset= fixes the quality preset, ?bench publishes the running engine for benchmark
+// tools, and ?gl-timing times each WebGL call for benchmark pages.
 
 import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
@@ -85,6 +85,11 @@ export interface Switches {
 	 * visit.
 	 */
 	freshShaders: boolean;
+	/**
+	 * True when ?check=fresh makes the engine measure its preset again, as on a first visit, instead
+	 * of taking the preset check's stored result from an earlier start.
+	 */
+	freshCheck: boolean;
 	/**
 	 * True when ?wake=message makes the engine's threads wake each other with messages, as they do
 	 * in a browser without `Atomics.waitAsync`.
@@ -190,6 +195,7 @@ export function parseSwitches(search: string): Switches {
 			.flatMap((name) => oneOf(name, COMPRESSION_FAMILIES) ?? []),
 		parallelCompile: params.get('compile') !== 'wait',
 		freshShaders: params.get('shaders') === 'fresh',
+		freshCheck: params.get('check') === 'fresh',
 		wakeByMessage: params.get('wake') === 'message',
 		hdr: params.get('hdr') !== 'off',
 		half: onOff(params.get('half')),

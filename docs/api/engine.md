@@ -32,7 +32,7 @@ try {
 
 ## The start
 
-`createEngine` tests what the browser offers, and picks the build and the GPU path from those tests, never from browser or GPU names. It starts the engine's threads, loads the sketch module and runs the sketch's setup. It resolves once the setup has run, and `engine.firstFrame` resolves once the GPU has finished the first frame. When the engine chose the preset itself, `createEngine` also waits for the [preset check](../concepts/quality-presets.md#the-preset-check). The check draws the first frames, so the first frame is then on the screen before `createEngine` resolves.
+`createEngine` tests what the browser offers, and picks the build and the GPU path from those tests, never from browser or GPU names. It starts the engine's threads, loads the sketch module and runs the sketch's setup. It resolves once the setup has run, and `engine.firstFrame` resolves once the GPU has finished the first frame. When the engine chose the preset itself, `createEngine` also waits for the [preset check](../concepts/quality-presets.md#the-preset-check). The check draws the first frames, so the first frame is then on the screen before `createEngine` resolves. On a repeat visit, the engine takes the check's stored result instead, and `createEngine` resolves after the setup.
 
 `onProgress` reports each stage of the start, in this order:
 
@@ -276,7 +276,7 @@ How the engine runs on this device: its build, its latency mode and its threads.
 | `jobWorkers: number` | The job workers that share the engine's parallel work. |
 | `hold: number \| null` | The sketch time in seconds that hold mode holds the sketch at, or null for a live engine. |
 | `preset: QualityPreset` | The quality preset that the engine runs. The preset check can lower it before `createEngine` resolves, and `ctx.quality.setPreset` in the sketch changes it later. |
-| `presetCheck: PresetCheck \| null` | What the preset check measured, or null when no check ran. The engine checks the preset when it chose it from the device: after the first frame, it measures the frame rate of the scene that the setup built, and lowers the preset until one holds the target. |
+| `presetCheck: PresetCheck \| null` | What the preset check measured, or null when no check ran. The engine checks the preset when it chose it from the device: after the first frame, it measures the frame rate of the scene that the setup built, and lowers the preset until one holds the target. A later start of the sketch in the same browser on the same device takes the stored result instead, and starts at its preset. `reused` is then true. |
 | `crashedStarts: number` | The starts of this sketch before this one that crashed the tab, one after another, as the engine's note in `localStorage` records them. After one, the engine starts a preset lower, and after two at `low`. |
 | `memoryMaximumMiB: number \| null` | The shared memory's maximum in MiB, or null for the single-threaded build, whose memory is not shared. |
 
@@ -455,7 +455,7 @@ What the browser's WebGL2 offers, in `CapabilityReport.webgl2`.
 | `maxUniformBlockSize: number \| null` | The largest uniform block in bytes, or null without WebGL2. |
 | `sharedMemoryUploads: { bufferSubData: boolean; texSubImage2D: boolean; } \| null` | Whether WebGL accepts views on shared memory for buffer and texture uploads. Null without shared memory. |
 | `floatRenderTargets: { rgba16f: { complete: boolean; readsBack: boolean; samples: number; }; rgba32f: { complete: boolean; readsBack: boolean; samples: number; }; } \| null` | Whether the device renders into float textures, which high dynamic range color needs. The engine tests a 16-bit and a 32-bit float RGBA texture. `complete` says whether a framebuffer with the texture is complete. `readsBack` says whether a clear to a known color, with a value above 1, reads back as floats. `samples` is the most samples per pixel for antialiasing that the format takes, or 0 where the device does not render into it. WebGL2 renders into both formats with `EXT_color_buffer_float`, and into the 16-bit one with `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit format passes both tests, and with MSAA takes 4 samples. Null without WebGL2. |
-| `renderer: string \| null` | Reported for the record only; the engine never branches on it. |
+| `renderer: string \| null` | Reported for the record. The engine reads no meaning from it, and only compares it with an earlier start's, to tell whether a stored preset check came from the same GPU. |
 | `error?: string` | Why the probe failed, when it did. |
 
 ### `WebGPUReport`
@@ -474,7 +474,7 @@ What the browser's WebGPU offers, in `CapabilityReport.webgpu`.
 | `wgslLanguageFeatures: string[]` | The WGSL language features the browser supports, sorted. |
 | `preferredCanvasFormat: string \| null` | The canvas texture format the browser prefers, or null without WebGPU. |
 | `transientAttachments: boolean` | True when the browser's WebGPU has the transient attachment texture usage (Chrome 146 and later). A render target with it can stay in a tile-based GPU's own memory. The engine gives it to the targets that live within one render pass, such as the multisampled color and depth. |
-| `adapterInfo: { vendor: string; architecture: string; device: string; description: string; } \| null` | Reported for the record only; the engine never branches on it. |
+| `adapterInfo: { vendor: string; architecture: string; device: string; description: string; } \| null` | Reported for the record. The engine reads no meaning from it, and only compares it with an earlier start's, to tell whether a stored preset check came from the same GPU. |
 | `error?: string` | Why the probe failed, when it did. |
 
 ### `WorkerProbe`
