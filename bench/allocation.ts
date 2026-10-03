@@ -4,7 +4,9 @@
 // null3d S1 page in Chrome, lets the browser optimize the frame code, attaches the heap profiler to
 // both workers through Chrome's debugging protocol, and samples allocations twice, a few seconds
 // each. It prints the bytes per frame of every place that allocated, and judges each place by the
-// sample where it allocated least, so an event that happens once fails no place. From the page's
+// sample where it allocated least, so an event that happens once fails no place. In each sample it
+// sets aside one burst of objects per place: the browser makes one when it installs code that it
+// has just optimized, in whichever callback runs first, even an empty one. From the page's
 // start to the end of the samples, it moves the mouse over the canvas and presses a key and the
 // mouse button, so the samples cover the sketch's reading of input. It draws with WebGPU, or with
 // WebGL2 when `--gpu webgl2` asks for it. `--scene s1-cells` runs S1-cells, whose views skip whole
@@ -29,7 +31,14 @@
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
-import { byPlace, type ProfileNode, type Sample, steadyPlaces, totalSize } from './lib/allocation';
+import {
+	type HeapProfile,
+	type ProfileNode,
+	profilePlaces,
+	type Sample,
+	steadyPlaces,
+	totalSize,
+} from './lib/allocation';
 import { attachWorkers, DevTools, pagesAt, sleep } from './lib/devtools';
 import { pagePath } from './lib/parity';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
@@ -67,8 +76,9 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  *   shadow passes and nine more uploads per frame put its replay 46 to 48 bytes above S1's;
  * - the completion tracker's object for each frame: the queue's promise and its reaction on WebGPU,
  *   which the browser counts in the renderer's `drawFrame` where it inlines the tracker, or the fence
- *   on WebGL2; and the clock readings at each frame's submit and completion, and at each check of
- *   the frames still in flight;
+ *   on WebGL2. After a few minutes the browser compiles the render loop's `draw` with `drawFrame`
+ *   inlined and the tracker's `afterSubmit` not, and counts the object there. Also the clock
+ *   readings at each frame's submit and completion, and at each check of the frames still in flight;
  * - the staging ring's mapping, for uploads that go through it: the mapped range and the views that
  *   copy into it, and the promise of the request to map the buffer again;
  * - the upload route timing, which reads the clock around the uploads of one submit in a few;
@@ -101,6 +111,7 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 		'then (built-in)': 128,
 		'Uint8Array (built-in)': 64,
 		'submit webgpu/backend.ts': 32,
+		'afterSubmit gpu/completion.ts': 160,
 		'push gpu/completion.ts': 24,
 		'finish gpu/completion.ts': 40,
 		'unfinished gpu/completion.ts': 16,
@@ -230,24 +241,24 @@ async function main(): Promise<void> {
 			}
 			const startFrames = await framesSoFar();
 			await sleep(seconds * 1000);
-			const heads = new Map<string, ProfileNode>();
+			const profiles = new Map<string, HeapProfile>();
 			for (const [name, sessionId] of sessions) {
-				const { profile } = await devtools.send<{ profile: { head: ProfileNode } }>(
+				const { profile } = await devtools.send<{ profile: HeapProfile }>(
 					'HeapProfiler.stopSampling',
 					{},
 					sessionId,
 				);
 				if (server.names) nameNodes(profile.head, server.names);
-				heads.set(name, profile.head);
+				profiles.set(name, profile);
 			}
 			const sampleFrames = (await framesSoFar()) - startFrames;
 			frames += sampleFrames;
-			for (const [name, head] of heads) {
+			for (const [name, profile] of profiles) {
 				samples.set(name, [
 					...(samples.get(name) ?? []),
-					{ places: byPlace(head), frames: sampleFrames },
+					{ places: profilePlaces(profile), frames: sampleFrames },
 				]);
-				bytes.set(name, (bytes.get(name) ?? 0) + totalSize(head));
+				bytes.set(name, (bytes.get(name) ?? 0) + totalSize(profile.head));
 			}
 		}
 		driving = false;
