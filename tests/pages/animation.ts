@@ -121,7 +121,7 @@ run('animation', async () => {
 	check(
 		core,
 		'initEngine',
-		core.initEngine(jobWorkers, 64, 1, 64, 0, true, 0, 2048, 0, 0, false, true, false),
+		core.initEngine(jobWorkers, 64, 1, 64, 0, true, 0, 2048, 0, 0, false, true, false, false),
 	);
 	const { workers, stopped } = await startWorkers(module, memory, jobWorkers);
 	progress(`${jobWorkers} job workers ready`);

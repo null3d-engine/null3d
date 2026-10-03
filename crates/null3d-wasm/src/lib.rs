@@ -303,7 +303,8 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// 8-bit path. `antialias` is the anti-aliasing mode's code; an unknown code takes MSAA.
 /// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
 /// every object, with no grid cells skipped first. With `depth_prepass`, each camera view draws its
-/// opaque objects' depth before it shades them, on WebGPU. Every capacity is fixed from here on.
+/// opaque objects' depth before it shades them, on WebGPU. With `vertex_skinning`, WebGPU skins in
+/// the vertex shader of each pass, not in a compute pass. Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
 pub fn init_engine(
@@ -320,6 +321,7 @@ pub fn init_engine(
     transparent: bool,
     cell_culling: bool,
     depth_prepass: bool,
+    vertex_skinning: bool,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
     let cell = unsafe { &mut *ENGINE.0.get() };
@@ -372,6 +374,7 @@ pub fn init_engine(
                 ),
                 cell_culling,
                 depth_prepass,
+                vertex_skinning,
                 ..RendererConfig::default()
             }))
         },

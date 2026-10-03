@@ -11,10 +11,12 @@ import {
 	LAYOUT_FINAL,
 	LAYOUT_FINAL_BLOOM,
 	LAYOUT_FRAME,
+	LAYOUT_JOINTS,
 	LAYOUT_LIGHT_CLUSTERS,
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
+	PERMUTATION_SKIN,
 	SIZE_INSTANCE_STRIDE,
 	STATE_BLEND,
 	STATE_BLEND_ADDITIVE,
@@ -256,8 +258,12 @@ function scaleConstants(
 export class Pipelines {
 	private readonly layouts: (GPUBindGroupLayout | undefined)[] = [];
 	private readonly templates: (RenderTemplate | undefined)[] = [];
-	/** Each template's pipeline layout, made for its first pipeline. */
+	/**
+	 * Each template's pipeline layout, made for its first pipeline, and its layout with the joint
+	 * texture's group after its own, for the builds that skin in the vertex shader.
+	 */
 	private readonly pipelineLayouts: (GPUPipelineLayout | undefined)[] = [];
+	private readonly skinLayouts: (GPUPipelineLayout | undefined)[] = [];
 	private readonly cullLayout: GPUPipelineLayout;
 	private readonly cull: WgslShader | undefined;
 	private readonly lightLayout: GPUPipelineLayout;
@@ -349,6 +355,14 @@ export class Pipelines {
 			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+		]);
+		// The joint texture, which the builds that skin in the vertex shader read.
+		this.defineLayout(LAYOUT_JOINTS, 'joints', [
+			{
+				binding: 0,
+				visibility: GPUShaderStage.VERTEX,
+				texture: { sampleType: 'unfilterable-float' },
+			},
 		]);
 		// The skinning pass's table of formats and parts, a mesh page's vertices, the skinned
 		// vertices that it writes, and the joint matrices, which it reads with textureLoad.
@@ -554,13 +568,16 @@ export class Pipelines {
 			throw new Error(`render template ${template} has no variant for permutation ${permutation}`);
 		const module = this.module(t.label, shader);
 		const entryPoints = shader.pipelines[t.pipeline];
-		let layout = this.pipelineLayouts[template];
+		const skins = (permutation & PERMUTATION_SKIN) !== 0;
+		const layouts = skins ? this.skinLayouts : this.pipelineLayouts;
+		let layout = layouts[template];
 		if (!layout) {
+			const groups = skins ? [...t.layouts, LAYOUT_JOINTS] : t.layouts;
 			layout = this.device.createPipelineLayout({
 				label: t.label,
-				bindGroupLayouts: t.layouts.map((id) => this.layout(id)),
+				bindGroupLayouts: groups.map((id) => this.layout(id)),
 			});
-			this.pipelineLayouts[template] = layout;
+			layouts[template] = layout;
 		}
 		return {
 			label: t.label,

@@ -578,6 +578,32 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tiers: ['webgpu', 'compat'],
 		reference: 'skinning',
 	},
+	// The middle character sees through, so the transparent pass draws it skinned, in front of its
+	// shadow, with each way to skin. Compatibility mode blends on the 8-bit path, which differs in
+	// the see-through pixels, so each tier has its own image.
+	...(['', '-vertex'] as const).map(
+		(way): ImageTest => ({
+			name: `skinning-blend${way}`,
+			sketch: 'tests/pages/sketches/skinning-sketch.ts?shadows&blend',
+			hold: SKINNING_HOLD,
+			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+			tiers: ['webgpu', 'compat'],
+			...(way ? { switches: ['skinning=vertex'], reference: 'skinning-blend' } : {}),
+		}),
+	),
+	// The same scenes skinned in the vertex shader of each pass, which D-20 measures against the
+	// skinning pass: they must draw the same images.
+	...(['', 'shadows'] as const).map(
+		(variant): ImageTest => ({
+			name: variant ? `skinning-${variant}-vertex` : 'skinning-vertex',
+			sketch: `tests/pages/sketches/skinning-sketch.ts${variant ? `?${variant}` : ''}`,
+			hold: SKINNING_HOLD,
+			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+			tiers: ['webgpu', 'compat'],
+			switches: ['skinning=vertex'],
+			reference: variant ? `skinning-${variant}` : 'skinning',
+		}),
+	),
 	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the
 	// slab's front corner and the far plane cutting the bar at the back. The parity test compares
 	// the image with three.js's OrthographicCamera.

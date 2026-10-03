@@ -22,6 +22,9 @@ use crate::view::{ViewFrame, ViewId};
 
 /// The group index of the maps' bind group in the mesh pipelines that sample a map.
 const TEXTURES_GROUP: u32 = 1;
+/// The group index of the joint texture's bind group in the pipelines that skin in the vertex
+/// shader: after the maps' group where the pipeline samples maps, and in its place otherwise.
+const JOINTS_AFTER_MAPS: u32 = 2;
 
 /// Records the creation of a view's frame uniform buffer.
 pub(super) fn create_frame_buffer(list: &mut DrawList, view: ViewId) -> Result<(), RecordError> {
@@ -108,6 +111,7 @@ pub(super) fn record_bundle(
     )?;
     list.push(Op::SetBindGroup, &[0, frame_group, 0])?;
     let (mut pipeline, mut vertices, mut indices, mut group) = (None, None, None, 0);
+    let mut joints_after_maps = false;
     for bucket in &layout.buckets {
         let id = if prepass {
             bucket.prepass
@@ -121,9 +125,17 @@ pub(super) fn record_bundle(
             list.push(Op::SetPipeline, &[id])?;
             pipeline = Some(id);
         }
-        if !prepass && bucket.group != 0 && bucket.group != group {
+        let maps = !prepass && bucket.group != 0;
+        if maps && bucket.group != group {
             list.push(Op::SetBindGroup, &[TEXTURES_GROUP, bucket.group, 0])?;
             group = bucket.group;
+        }
+        if bucket.skins && maps && !joints_after_maps {
+            list.push(Op::SetBindGroup, &[JOINTS_AFTER_MAPS, ids::JOINTS_GROUP, 0])?;
+            joints_after_maps = true;
+        } else if bucket.skins && !maps && group != ids::JOINTS_GROUP {
+            list.push(Op::SetBindGroup, &[TEXTURES_GROUP, ids::JOINTS_GROUP, 0])?;
+            group = ids::JOINTS_GROUP;
         }
         list.push(
             Op::SetVertexBuffer,

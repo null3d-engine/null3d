@@ -5,119 +5,26 @@
 
 mod common;
 
+use common::skinned::{AROUND, RINGS, column};
 use common::{World, count};
-use null3d_core::animation::{Animations, NO_PARENT, REST_FLOATS, Skeleton};
 use null3d_core::handle::Handle;
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::SunShadow;
 use null3d_core::scene::{Command, flags};
-use null3d_core::world::MATRIX_FLOATS;
-use null3d_gpu::drawlist::{Op, buffer_usage, format, layout, template, texture_usage, vertex};
+use null3d_gpu::drawlist::{
+    Op, buffer_usage, format, layout, permutation, template, texture_usage, vertex,
+};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::frame::FrameBuilder;
-use null3d_render::geometry::Geometry;
-use null3d_render::materials::Shading;
+use null3d_render::gpu_driven::RendererConfig;
 use null3d_render::skinning::{JOINTS_PER_ROW, TEXELS_PER_JOINT, skinned_format};
 
-/// Rings of the generated column, and vertices around each ring.
-const RINGS: u32 = 3;
-const AROUND: u32 = 30;
-
-/// A chain of `joints` joints up the y axis, one unit apart, with no turn at rest.
-fn chain(joints: u32) -> Skeleton {
-    let parents: Vec<u32> = (0..joints)
-        .map(|j| if j == 0 { NO_PARENT } else { j - 1 })
-        .collect();
-    let mut rest = Vec::new();
-    let mut binds = Vec::new();
-    for j in 0..joints {
-        let up = if j == 0 { 0.0 } else { 1.0 };
-        rest.extend_from_slice(&[0.0, up, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
-        binds.extend_from_slice(&[
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            -(j as f32),
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-        ]);
-    }
-    assert_eq!(rest.len(), joints as usize * REST_FLOATS);
-    assert_eq!(binds.len(), joints as usize * MATRIX_FLOATS);
-    Skeleton::new(&parents, &rest, &binds).unwrap()
-}
-
-/// A column of rings one unit apart up the y axis, each moved by its own joint, with 16-bit
-/// joints, normalized 8-bit weights and texture coordinates, as quantized glTF files hold them.
-fn column() -> Geometry {
-    let joints = vertex::with(
-        vertex::UV0 | vertex::JOINTS | vertex::WEIGHTS,
-        6,
-        vertex::Type::Uint16,
-    )
-    .unwrap();
-    let format = vertex::with(joints, 7, vertex::Type::Unorm8).unwrap();
-    let mut g = Geometry {
-        format,
-        ..Geometry::default()
-    };
-    for ring in 0..RINGS {
-        for k in 0..AROUND {
-            let angle = k as f32 / AROUND as f32 * std::f32::consts::TAU;
-            let (x, z) = (0.4 * angle.cos(), 0.4 * angle.sin());
-            for v in [x, ring as f32, z, angle.cos(), 0.0, angle.sin(), 0.0, 0.0] {
-                g.vertices.extend_from_slice(&v.to_le_bytes());
-            }
-            g.vertices
-                .extend_from_slice(&[ring as u8, 0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 0]);
-        }
-    }
-    assert_eq!(
-        g.vertices.len(),
-        (RINGS * AROUND * vertex::stride(format)) as usize
-    );
-    for ring in 0..RINGS - 1 {
-        for k in 0..AROUND {
-            let a = ring * AROUND + k;
-            let b = ring * AROUND + (k + 1) % AROUND;
-            g.indices
-                .extend_from_slice(&[a, a + AROUND, b, b, a + AROUND, b + AROUND]);
-        }
-    }
-    g
-}
-
-/// The common world with a skinned column at `position`, animated by an instance of a three-joint
-/// chain, which casts shadows. Returns the world and the column.
+/// The common world with a skinned column at `position`, which casts shadows. Returns the world
+/// and the column.
 fn skinned(position: [f32; 3]) -> (World, Handle) {
     let mut world = World::new();
-    let mut animations = Animations::new(&world.jobs, 8, 64).unwrap();
-    let skeleton = animations.add_skeleton(chain(RINGS)).unwrap();
-    let instance = animations.add_instance(skeleton).unwrap();
-    world.animations = Some(animations);
-    let settings = world.renderer.settings_mut();
-    let mesh = settings.meshes_mut().add(&column()).unwrap() + 1;
-    let material = settings
-        .materials_mut()
-        .create(Shading::Lit, 0, [1.0; 4])
-        .unwrap()
-        + 1;
-    let object = world.scene.reserve().unwrap();
-    world.scene.set_position(object, position).unwrap();
-    let shown = flags::VISIBLE | flags::CAST_SHADOWS;
-    let commands = [
-        Command::create(object, Handle::NONE, mesh, shown),
-        Command::set_material(object, material),
-        Command::set_skin(object, Some(instance)),
-    ];
-    world.scene.apply_commands(&commands, world.frame).unwrap();
-    (world, object)
+    let column = world.add_skinned(position);
+    (world, column)
 }
 
 /// The operands of each command of `op`.
@@ -272,4 +179,42 @@ fn a_skinned_caster_that_only_a_cascade_sees_is_skinned_for_its_shadow() {
         .unwrap();
     let second = world.step(&mut mock, true);
     assert_eq!(skin_dispatches(&second, skin), Vec::<u32>::new());
+}
+
+#[test]
+fn with_vertex_skinning_the_skinned_builds_read_the_joints_and_no_pass_skins() {
+    let config = RendererConfig {
+        vertex_skinning: true,
+        ..RendererConfig::default()
+    };
+    let mut world = World::with_config(config);
+    world.add_skinned([0.0, 0.0, 0.0]);
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+
+    assert!(
+        operands(&first, Op::CreateComputePipeline)
+            .iter()
+            .all(|p| p[1] != template::SKIN)
+    );
+    assert_eq!(count(&first, Op::Dispatch), 1, "the camera's culling alone");
+    // The lit pipeline of the mesh's own format, in its SKIN build.
+    let format = column().format;
+    let skinned = operands(&first, Op::CreateRenderPipeline)
+        .into_iter()
+        .find(|p| p[1] == template::INSTANCED_LIT && p[2] & permutation::SKIN != 0)
+        .expect("a SKIN build of the lit template");
+    assert_eq!(skinned[7], format);
+    // The joint texture's group, which the camera's bundle binds after the frame's.
+    let joints = operands(&first, Op::CreateBindGroup)
+        .into_iter()
+        .find(|g| g[1] == layout::JOINTS)
+        .expect("the joint texture's group");
+    assert!(
+        operands(&first, Op::SetBindGroup)
+            .iter()
+            .any(|g| g[0] == 1 && g[1] == joints[0])
+    );
+    let second = world.step(&mut mock, false);
+    assert_eq!(count(&second, Op::Dispatch), 1);
 }

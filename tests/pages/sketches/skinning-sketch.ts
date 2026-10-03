@@ -4,7 +4,8 @@
 // that casts their shadows, which must follow each pose. ?quantized stores the mesh as quantized
 // glTF files do: positions in whole millimeters, which the inverse bind matrices scale back to
 // meters as glTF asks of skinned meshes, normals and weights in normalized 8-bit integers, and
-// joints in 8 bits. The skinning pass must read each type. ?tone=none turns off the engine's default
+// joints in 8 bits. The skinning pass must read each type. ?blend makes the middle character see
+// through, so the transparent pass draws it skinned. ?tone=none turns off the engine's default
 // of ACES, as the parity test asks: the three.js twin draws with no tone mapping, three.js's
 // default. The engine cannot load animated models yet, so the rig comes from the engine's internal
 // loader calls.
@@ -27,6 +28,7 @@ import {
 const params = new URL(import.meta.url).searchParams;
 const SHADOWS = params.has('shadows');
 const QUANTIZED = params.has('quantized');
+const BLEND = params.has('blend');
 /** Millimeters per meter: the scale of quantized positions. */
 const MM = 1000;
 
@@ -93,10 +95,11 @@ export default defineSketch(({ scene, materials, geometry, post }) => {
 		],
 	});
 	const mesh = geometry.fromArrays(characterArrays());
-	for (const character of CHARACTERS) {
+	for (const [k, character] of CHARACTERS.entries()) {
+		const seeThrough = BLEND && k === 1 ? { alphaMode: 'blend' as const, opacity: 0.6 } : {};
 		const object = scene.createMesh({
 			mesh,
-			material: materials.standard({ color: character.color }),
+			material: materials.standard({ color: character.color, ...seeThrough }),
 			position: [...character.position],
 			castShadows: SHADOWS,
 			receiveShadows: SHADOWS,

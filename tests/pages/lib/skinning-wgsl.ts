@@ -1,8 +1,8 @@
 // The WGSL shaders of the WebGPU skinning page, the twins of `skinning-shaders.ts`. The vertex
 // shaders that skin read each character's joint matrices from a float texture, one row of texels
 // per character, and blend four of them per vertex, as the WebGL2 programs do. The compute shader
-// skins the same way, once per frame, into a buffer of skinned vertices that the plain vertex
-// shaders draw. The page's matrices come in WebGL's clip space, so each vertex shader moves depth
+// skins the same way from the same texture, as the engine's skinning pass does, once per frame,
+// into a buffer of skinned vertices that the plain vertex shaders draw. The page's matrices come in WebGL's clip space, so each vertex shader moves depth
 // from -1 to 1 into WebGPU's 0 to 1. This module uses no browser API.
 import { MAX_CASCADES, SKINNING } from './skinning';
 
@@ -161,7 +161,7 @@ fn main(v: PlainIn) -> Shaded {
 	skinOnce: `
 struct Params { vertexCount: u32, total: u32 }
 @group(0) @binding(0) var<storage, read> rest: array<f32>;
-@group(0) @binding(1) var<storage, read> joints: array<vec4f>;
+@group(0) @binding(1) var joints: texture_2d<f32>;
 @group(0) @binding(2) var<storage, read> characters: array<u32>;
 @group(0) @binding(3) var<storage, read_write> skinned: array<f32>;
 @group(0) @binding(4) var<uniform> params: Params;
@@ -174,18 +174,18 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 	}
 	let slot = at / params.vertexCount;
 	let v = at - slot * params.vertexCount;
-	let first = characters[slot] * ${SKINNING.joints * 3}u;
+	let y = i32(characters[slot]);
 	let r = v * ${REST_WORDS}u;
 	let ids = bitcast<u32>(rest[r + 6u]);
 	var row0 = vec4f(0.0);
 	var row1 = vec4f(0.0);
 	var row2 = vec4f(0.0);
 	for (var i = 0u; i < 4u; i++) {
-		let j = first + ((ids >> (8u * i)) & 0xffu) * 3u;
+		let x = i32((ids >> (8u * i)) & 0xffu) * 3;
 		let w = rest[r + 7u + i];
-		row0 += w * joints[j];
-		row1 += w * joints[j + 1u];
-		row2 += w * joints[j + 2u];
+		row0 += w * textureLoad(joints, vec2i(x, y), 0);
+		row1 += w * textureLoad(joints, vec2i(x + 1, y), 0);
+		row2 += w * textureLoad(joints, vec2i(x + 2, y), 0);
 	}
 	let p = vec4f(rest[r], rest[r + 1u], rest[r + 2u], 1.0);
 	let n = vec3f(rest[r + 3u], rest[r + 4u], rest[r + 5u]);

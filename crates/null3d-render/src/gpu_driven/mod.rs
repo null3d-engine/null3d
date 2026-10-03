@@ -283,8 +283,10 @@ mod ids {
     /// The skinning pass's bind group for each mesh page that holds skinned meshes, by its place
     /// among those pages, after bloom's.
     pub const SKIN_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
+    /// The joint texture's bind group, which pipelines that skin in the vertex shader read.
+    pub const JOINTS_GROUP: u32 = SKIN_GROUPS + super::skin::MAX_PAGES;
     /// The bind groups of materials' maps, after the skinning pass's.
-    pub const TEXTURE_GROUPS: u32 = SKIN_GROUPS + super::skin::MAX_PAGES;
+    pub const TEXTURE_GROUPS: u32 = JOINTS_GROUP + 1;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -317,6 +319,9 @@ pub struct RendererConfig {
     /// True to draw each camera view's opaque objects' depth in a depth prepass, before the opaque
     /// pass shades them.
     pub depth_prepass: bool,
+    /// True to skin skinned meshes in the vertex shader of each pass that draws them, false to
+    /// skin each once per frame in the skinning pass.
+    pub vertex_skinning: bool,
 }
 
 impl Default for RendererConfig {
@@ -330,6 +335,7 @@ impl Default for RendererConfig {
             cell_culling: true,
             light_limits: LightLimits::default(),
             depth_prepass: false,
+            vertex_skinning: false,
         }
     }
 }
@@ -442,7 +448,7 @@ impl GpuDrivenRenderer {
             background: BackgroundPass::default(),
             lights: CameraLights::on_gpu(config.light_limits),
             light_clusters: LightClusters::default(),
-            skinning: Skinning::default(),
+            skinning: Skinning::new(config.vertex_skinning),
             frames: Vec::new(),
             cascade_frames: [None; MAX_CASCADES],
             tiles: ShadowTiles::new(),
@@ -537,6 +543,7 @@ impl GpuDrivenRenderer {
                 self.graph.depth_prepass(),
                 &self.skinning,
             )?;
+            let skinning = &self.skinning;
             self.sorted
                 .rebuild(
                     &self.settings,
@@ -547,6 +554,10 @@ impl GpuDrivenRenderer {
                     |_, _| (0, 0),
                     0,
                     shadows,
+                    |slot, key| {
+                        let skinned = skinning.object(slot as u32).is_some();
+                        skinned.then(|| skinning.skinned_key(key))
+                    },
                 )
                 .map_err(out_of_memory)?;
             // The casters' layout holds buckets only while the light casts shadows.
@@ -617,7 +628,7 @@ impl GpuDrivenRenderer {
             tiles: s.layers,
             size: s.size,
         }));
-        self.graph.set_skinning(self.skinning.active());
+        self.graph.set_skinning(self.skinning.dispatches());
         self.graph.sync_views(self.settings.views());
         self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.set_transparent(!self.sorted.is_empty());
@@ -861,6 +872,7 @@ impl GpuDrivenRenderer {
                 arena,
                 view,
                 &self.sorted,
+                &self.skinning,
                 input.jobs,
                 scene,
                 batches,
@@ -902,7 +914,9 @@ impl GpuDrivenRenderer {
                     opaque::record(list, view, false)
                 }
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
-                Role::Transparent(view) => transparent.record(list, view, sorted, settings, meshes),
+                Role::Transparent(view) => {
+                    transparent.record(list, view, sorted, skinning, settings, meshes)
+                }
                 _ => Ok(()),
             },
         )?;

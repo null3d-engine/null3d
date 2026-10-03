@@ -1,12 +1,12 @@
 // Animated characters for the allocation check: generated characters that play clips through the
 // engine's animator, with a masked layer, an additive layer and event handlers. Each frame, the
 // sketch moves one layer's weight of every character, and now and then a character cross-fades to
-// another clip, as a game's code does. Nothing draws them, as the engine cannot draw skinned
-// meshes yet; the job workers still advance and pose them each frame. The engine cannot load
-// animated models yet, so the characters come from the engine's internal rig call.
+// another clip, as a game's code does. Each character is a skinned mesh, a box at each joint, in a
+// row in front of S1's boxes, which WebGPU skins each frame. The engine cannot load animated models
+// yet, so the characters come from the engine's internal rig and skin calls.
 import type { Animator, SketchContext } from '@null3d/engine';
-import { animateObject, createAnimationRig } from '@null3d/engine/internal';
-import { CROWD_CLIPS, crowdRig } from '../../../tests/pages/lib/crowd-rig';
+import { animateObject, createAnimationRig, skinObject } from '@null3d/engine/internal';
+import { CROWD_CLIPS, crowdMesh, crowdRig } from '../../../tests/pages/lib/crowd-rig';
 
 /** Joints per character, as S5's characters have 30 to 60. */
 const JOINTS = 40;
@@ -22,14 +22,22 @@ export function readAnimated(moduleUrl: string): number {
  * Adds `count` animated characters, and returns the code that moves them in each frame at sketch
  * time `t`.
  */
-export function createAnimatedCrowd({ scene }: SketchContext, count: number): (t: number) => void {
+export function createAnimatedCrowd(
+	{ scene, geometry, materials }: SketchContext,
+	count: number,
+): (t: number) => void {
 	if (count === 0) return () => {};
 	const rig = createAnimationRig(scene, crowdRig(JOINTS));
+	const mesh = geometry.fromArrays(crowdMesh(JOINTS));
+	const material = materials.standard({ color: '#e8554e' });
 	const animators: Animator[] = [];
 	// The handler does nothing, so the sample counts only what the engine allocates to call it.
 	const hear = () => {};
 	for (let k = 0; k < count; k++) {
-		const animator = animateObject(scene.createGroup({ name: `dancer${k}` }), rig);
+		const position: [number, number, number] = [(k % 16) - 7.5, 0, 6 + Math.floor(k / 16)];
+		const dancer = scene.createMesh({ mesh, material, position, name: `dancer${k}` });
+		const animator = animateObject(dancer, rig);
+		skinObject(dancer, animator);
 		animator.play('walk');
 		animator.play('run', { layer: 1 });
 		animator.setLayerMask(1, 'joint1');

@@ -27,13 +27,13 @@ use crate::frame::{
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
 };
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
-use crate::skinning::skinned_format;
 
-/// Bytes of one bucket record in the culling shader: base, material, radius, first draw, draw
-/// count, and the centre of the local sphere that culls the bucket's sources.
-const BUCKET_BYTES: u32 = 32;
-/// Words of one bucket record.
-const BUCKET_WORDS: u32 = BUCKET_BYTES / 4;
+/// Words of one bucket record in the culling shader: base, material, radius, first draw, draw
+/// count, the centre of the local sphere that culls the bucket's sources, and the first joint of
+/// the skin of a bucket whose vertex shader skins.
+const BUCKET_WORDS: u32 = sizes::BUCKET_WORDS;
+/// Bytes of one bucket record.
+const BUCKET_BYTES: u32 = BUCKET_WORDS * 4;
 /// Bytes of one world matrix: three rows of four floats.
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 
@@ -111,6 +111,10 @@ pub(super) struct Bucket {
     /// The local sphere that culls its sources.
     pub(super) center: [f32; 3],
     pub(super) radius: f32,
+    /// True for the bucket of a skinned object whose vertex shader skins it, with the first joint
+    /// of its skin in the joint texture.
+    pub(super) skins: bool,
+    pub(super) first_joint: u32,
 }
 
 /// One indexed indirect draw of each view: a part of a bucket's mesh.
@@ -454,15 +458,19 @@ impl Layout {
 
         let meshes = settings.meshes();
         let drawn = self.drawn;
+        let vertex_skinning = skinning.in_vertex_shader();
+        let skin = |key: DrawKey| skinning.skinned_key(key);
         let key_of = |mesh: u32, material: u32, bounds: u32, object: u32, skinned: bool| {
             let mut pipeline = settings.pipeline_of(mesh, material)?;
             if skinned {
-                // The pass that skins writes plain vertices of the mesh's skinned format.
-                pipeline.vertex_format = skinned_format(pipeline.vertex_format);
+                pipeline = skin(pipeline);
             }
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             if drawn == Drawn::Casters {
-                let caster = settings.caster_of(pipeline);
+                let mut caster = settings.caster_of(pipeline);
+                if skinned {
+                    caster = skin(caster);
+                }
                 return Some((caster, 0, page, mesh, CASTER_MATERIAL, bounds));
             }
             // Blended pairs draw in the transparent pass, which sorts them on the job workers.
@@ -489,7 +497,7 @@ impl Layout {
                 scene.materials()[slot],
                 bounds,
                 object,
-                skinning.parts_of(slot as u32).is_some(),
+                skinning.object(slot as u32).is_some(),
             )
         };
         // Instance batches cast no shadows yet.
@@ -514,12 +522,12 @@ impl Layout {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let parts = meshes.parts(slot);
             let (center, radius) = local_sphere(scene, bounds, slot.radius);
-            let skinned = bounds
-                .checked_sub(OWN_BOUNDS)
-                .and_then(|object| Some((object, skinning.parts_of(object)?)));
-            if let Some((object, _)) = skinned {
+            let object = bounds.checked_sub(OWN_BOUNDS);
+            let skin = object.and_then(|object| skinning.object(object));
+            if let (Some(object), Some(_)) = (object, skin) {
                 self.skinned.push((self.buckets.len() as u32, object));
             }
+            let regions = object.and_then(|object| skinning.parts_of(object));
             let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
             self.buckets.push(Bucket {
                 pipeline,
@@ -532,10 +540,12 @@ impl Layout {
                 draws: parts.len() as u32,
                 center,
                 radius,
+                skins: skin.is_some() && vertex_skinning,
+                first_joint: skin.map_or(0, |skin| skin.joint_base),
             });
             self.draws.extend(parts.iter().enumerate().map(|(k, part)| {
                 // A skinned part draws its region of skinned vertices, from its first vertex.
-                let region = skinned.and_then(|(_, regions)| regions.get(k));
+                let region = regions.and_then(|regions| regions.get(k));
                 Draw {
                     page: part.page,
                     index_count: part.index_count,
@@ -605,6 +615,7 @@ impl Layout {
                 bucket.center[0].to_bits(),
                 bucket.center[1].to_bits(),
                 bucket.center[2].to_bits(),
+                bucket.first_joint,
             ]);
         }
         self.built = true;
@@ -908,8 +919,11 @@ mod tests {
                 (1, [0.0, 1.5, 0.0], 4.0),
             ]
         );
-        // Each record ends with its sphere's centre, where the culling shader reads it.
-        let centre = &layout.bucket_records[2 * 8 + 5..3 * 8];
-        assert_eq!(centre, [0.0f32, 1.5, 0.0].map(f32::to_bits));
+        // Each record holds its sphere's centre, where the culling shader reads it, then the
+        // first joint of a skin, which no bucket here has.
+        let words = BUCKET_WORDS as usize;
+        let record = &layout.bucket_records[2 * words..3 * words];
+        assert_eq!(record[5..8], [0.0f32, 1.5, 0.0].map(f32::to_bits));
+        assert_eq!(record[8], 0);
     }
 }
