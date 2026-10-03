@@ -122,7 +122,20 @@ Device hints only suggest a preset. A laptop with a weak GPU and a desktop with 
 
 <!-- null3d:preset-check:end -->
 
-The engine checks only a preset that it chose itself, when a lighter preset exists. A preset that the page names, the `?preset=` switch, and hold mode skip the check. So does Low, as on phones. The first frame does not wait for the check, but `createEngine` does. The check takes about three quarters of a second, and as long again for each lighter preset that it measures. So keep the loading screen until `createEngine` has resolved and `engine.firstFrame` has too.
+The engine checks only a preset that it chose itself, when a lighter preset exists. A preset that the page names, the `?preset=` switch, and hold mode skip the check. So does Low, as on phones. The first frame does not wait for the check, but `createEngine` does. The check takes at least three quarters of a second for each preset that it measures. That was about 0.8 seconds on a MacBook Pro, and about 1 second on an 11-inch iPad Pro. So keep the loading screen until `createEngine` has resolved and `engine.firstFrame` has too.
+
+### Repeat visits
+
+The engine stores the check's result in the page's `localStorage`, one for each sketch module. A later start of the sketch in the same browser on the same device takes that result and skips the check. Its setup already runs at the preset that the check chose, so `createEngine` resolves as soon as the setup ends. On an 11-inch iPad Pro, the check took about a second for each preset that it measured. There the benchmark scenes and demos showed their first frame after 1 to 2.4 seconds on a first visit. A repeat visit took 0.25 to 0.52 seconds.
+
+A stored result applies only while the start matches the one that the check measured:
+
+- The engine would check the same preset, on the same GPU path, with the same `?fps=` switch.
+- The browser reports the same GPU, the same device hints and the same screen pixel ratio.
+- The canvas's area is within a quarter of the measured one, either way.
+- The check ran within the last week, and the last start of the sketch did not crash the tab.
+
+Otherwise the engine measures again and stores the new result. It stores no result that it measured against a target below 60 frames per second. A display that saves power with a lower refresh rate gives such a target. The settings fixed at the start keep the values of the preset that the check started from, as they do after the check's own steps. When the browser refuses the storage, each start measures. The `?check=fresh` switch makes the engine measure again too.
 
 The check measures the scene as the setup left it. So build the scene in the setup, and load its textures there: the check waits while textures upload. A scene that the setup leaves empty passes the check on any GPU.
 
@@ -134,6 +147,7 @@ const check = engine.mode.presetCheck;
 if (check && check.from !== engine.mode.preset)
   console.log(`${check.from} missed ${check.targetFps} fps; the engine runs ${engine.mode.preset}`);
 // check.rounds: [{ preset: 'high', presentedFps: 31, completedFps: 29.6 }, ...]
+// check.reused: true when the engine took the result from an earlier start
 ```
 
 ## Switching presets

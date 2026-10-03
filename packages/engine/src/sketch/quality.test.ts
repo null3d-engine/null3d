@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'bun:test';
 import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import {
+	checkedSettings,
 	LIVE_SETTINGS,
 	presetSettings,
 	type QualityPreset,
@@ -325,12 +326,26 @@ describe('SketchQuality.setPreset', () => {
 		expect(quality.settings.maxAnisotropy).toBe(presetSettings('low').maxAnisotropy);
 	});
 
+	it("ends each of the check's steps on the settings that a start with its stored result takes", async () => {
+		for (const options of [{}, { antialias: 'none' as const, maxPixelRatio: 1 }]) {
+			const quality = new SketchQuality(
+				{ preset: 'ultra', settings: presetSettings('ultra', options), options, highest: 'ultra' },
+				() => {},
+			);
+			for (const to of ['high', 'medium', 'low'] as const) {
+				await quality.lower();
+				expect(quality.settings).toEqual(checkedSettings('ultra', to, options));
+			}
+		}
+	});
+
 	it('gives the page the preset check with the preset it chose, and changes no setting', () => {
 		const { quality, applied, changes } = medium();
 		const check = {
 			from: 'high' as const,
 			targetFps: 60,
 			rounds: [{ preset: 'medium' as const, presentedFps: 60, completedFps: 60 }],
+			reused: false,
 		};
 		quality.report(check);
 		expect(applied).toEqual([{ preset: 'medium', settings: MEDIUM, check }]);

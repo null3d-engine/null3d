@@ -339,6 +339,29 @@ export function presetSettings(
 	return settings as unknown as QualitySettings;
 }
 
+/** The settings in `settings` that a sketch reads but cannot change during play. */
+export function startValues(settings: QualitySettings): Partial<QualitySettings> {
+	const values: Record<string, unknown> = {};
+	const all = settings as unknown as Record<string, unknown>;
+	for (const name of SKETCH_SETTINGS) if (!LIVE_SETTINGS.includes(name)) values[name] = all[name];
+	return values as Partial<QualitySettings>;
+}
+
+/**
+ * The settings of a start on `from` that the preset check lowered to `to`: `to`'s values for the
+ * settings that change during play, and `from`'s for those fixed at the start, with the values in
+ * `options` where the page's options give them. These are the settings that the check's steps
+ * leave, so a start that reuses an earlier check runs them from its first frame.
+ */
+export function checkedSettings(
+	from: QualityPreset,
+	to: QualityPreset,
+	options: Partial<QualitySettings> = {},
+): QualitySettings {
+	const start = presetSettings(from, options);
+	return to === from ? start : presetSettings(to, { ...options, ...startValues(start) });
+}
+
 /** "a, b or c", for the choices in an error message. */
 function listOf(items: readonly string[]): string {
 	return items.length < 2

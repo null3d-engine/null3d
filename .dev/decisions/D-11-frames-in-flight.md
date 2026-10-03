@@ -146,7 +146,7 @@ Status: proposed, for the owner. When the engine chooses the preset itself, it c
 
 Headless Chrome 154 through Playwright on the MacBook Pro M5 Max, with the Mac's GPU, 30 September 2026. The canvas was 320 x 180 at a pixel ratio of 1, so each preset drew the same pixels. Other helpers built and tested on the same Mac.
 
-A light scene held the target. The engine test page's empty scene measured 60 presented and 60 completed frames per second on WebGPU and WebGL2, in 3 of 3 runs each. The call to `createEngine` then took 991 to 1,045 ms with the check, and 144 to 279 ms with `?preset=` fixing the preset. The first frame was done at 164 to 303 ms in both cases. So the check adds about 0.8 s before `createEngine` resolves, and nothing before the first frame.
+A light scene held the target. The engine test page's empty scene measured 60 presented and 60 completed frames per second on WebGPU and WebGL2, in 3 of 3 runs each. The call to `createEngine` then took 991 to 1,045 ms with the check, and 144 to 279 ms with `?preset=` fixing the preset. The first frame was done at 164 to 303 ms in both cases. So the check adds about 0.8 s before `createEngine` resolves, and nothing before the first frame. On the iPad, [D-13](D-13-shader-variants.md#device-warm-up-times-t-26)'s warm-up time runs found about 1 s for each preset measured. Since [D-17](D-17-stored-preset-check.md), a repeat visit takes the check's stored result and skips this time.
 
 A heavy scene, 32,768 of the GPU-bound page's spheres, missed the target at every preset:
 
