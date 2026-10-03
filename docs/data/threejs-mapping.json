@@ -1231,8 +1231,8 @@
       "three": "AnimationMixer / clipAction / play / crossFadeTo / fadeIn / fadeOut / setEffectiveWeight / timeScale / mixer.update(dt)",
       "status": "changed",
       "since": "0.2",
-      "target": "const anim = obj.animator(); anim.play('run', { fade: 0.2, loop: true, speed }); anim.crossFade('walk', 0.3); anim.setLayerWeight(layer, w)",
-      "notes": "No update call: the engine samples animation on job workers.",
+      "target": "const anim = obj.animator(); anim.play('run', { fade: 0.2, loop: true, speed: 1 }); anim.crossFade('walk', 0.3); anim.setLayerWeight(1, 0.5); anim.setTimeScale(0.5); anim.onEvent('finished', handler)",
+      "notes": "No update call: the engine advances and blends every animator on its job workers. A fade out starts from the clip's current weight, not from full weight. loop: false holds the last frame, as clampWhenFinished does. A clip with a negative speed starts at its end. Filtered clips for upper and lower body become layers with setLayerMask.",
       "docs": "api/animation",
       "detect": "\\bAnimationMixer\\b|\\.clipAction\\s*\\(|\\.crossFade(To|From)\\s*\\(|\\.fade(In|Out)\\s*\\(|setEffectiveWeight|\\bmixer\\.update\\s*\\("
     },
@@ -1264,8 +1264,8 @@
       "three": "AnimationUtils.subclip / makeClipAdditive",
       "status": "changed",
       "since": "0.2",
-      "target": "`bunx @null3d/cli assets` splits clips and makes them additive offline; anim.play(name, { additive: true })",
-      "notes": "",
+      "target": "anim.play(name, { additive: true }) for makeClipAdditive; `bunx @null3d/cli assets` splits clips offline",
+      "notes": "An additive play adds the clip's change from its first frame, as makeClipAdditive does with its default reference frame. The engine makes the additive form once, at the first additive play.",
       "docs": "api/animation",
       "detect": "\\bAnimationUtils\\b"
     },

@@ -9,12 +9,14 @@
 //   arguments that reach its special cases, as counts and digests of their bits.
 // - three_animation.rs (in the core's tests): a small skeleton, clips with linear and step tracks
 //   on grids of 30 and 24 keys per second and at uneven times, and the local pose and skinning
-//   matrices that three.js's AnimationMixer and Skeleton give for single clips and blends.
+//   matrices that three.js's AnimationMixer and Skeleton give for single clips and blends. Scripts
+//   of plays, fades, masked layers and additive clips give the poses after chosen steps.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
 	AnimationClip,
 	AnimationMixer,
+	AnimationUtils,
 	Bone,
 	BoxGeometry,
 	BufferAttribute,
@@ -27,6 +29,8 @@ import {
 	InterpolateDiscrete,
 	InterpolateLinear,
 	type KeyframeTrack,
+	LoopOnce,
+	type Matrix4,
 	PlaneGeometry,
 	Quaternion,
 	QuaternionKeyframeTrack,
@@ -566,6 +570,207 @@ pub static CASES: [Case; ${CASES.length}] = [\n`;
 		);
 		out += `    Case {\n        name: "${c.name}",\n        samples: &[${samples.join(', ')}],\n`;
 		out += `        pose: ${floats(pose, 10, inCase)},\n        skin: ${floats(skin, 12, inCase)},\n    },\n`;
+	}
+	return `${out}];\n${scriptsFixture(clips, inverses)}`;
+}
+
+/** The step of every script: one frame at 60 frames per second, as a 32-bit float. */
+const SCRIPT_STEP = Math.fround(1 / 60);
+
+/** The joints below joint 2 and joint 2 itself: the arm and the head, for masks. */
+const UPPER = [2, 3, 4, 5];
+
+/**
+ * A mixer driven by a script: plays clips as the core's animator does, steps the mixer, and records
+ * the pose at checkpoints and the loop and finished events.
+ */
+interface ScriptRun {
+	mixer: AnimationMixer;
+	clips: AnimationClip[];
+	/** A copy of a clip with only the tracks whose joint passes `keep`. */
+	filtered(clip: number, keep: (joint: number) => boolean): AnimationClip;
+	/** Steps the mixer `steps` times, then records the pose. */
+	check(steps: number): void;
+}
+
+/**
+ * Each script plays clips through three.js's mixer as the named animator calls would, and checks
+ * the pose after some steps. The core's tests repeat each script with the animator's calls.
+ * Checkpoints avoid the times where grid30's step track changes key, every sixth of a second:
+ * there, rounding in the sum of the steps decides which key applies.
+ */
+const SCRIPTS: { name: string; run(s: ScriptRun): void }[] = [
+	{
+		// play('grid30'), then 24 steps later play('grid24', { fade: 0.3 }).
+		name: 'crossfade',
+		run({ mixer, clips, check }) {
+			const from = mixer.clipAction(clips[0] as AnimationClip).play();
+			check(24);
+			const to = mixer.clipAction(clips[2] as AnimationClip).play();
+			from.crossFadeTo(to, Math.fround(0.3), false);
+			check(6);
+			check(6);
+			check(12);
+		},
+	},
+	{
+		// play('grid24', { fade: 0.5 }) from the rest pose.
+		name: 'fade in',
+		run({ mixer, clips, check }) {
+			mixer
+				.clipAction(clips[2] as AnimationClip)
+				.fadeIn(Math.fround(0.5))
+				.play();
+			check(12);
+			check(28);
+		},
+	},
+	{
+		// setTimeScale(0.5), then play('grid30', { fade: 0.4 }).
+		name: 'time scale',
+		run({ mixer, clips, check }) {
+			mixer.timeScale = Math.fround(0.5);
+			mixer
+				.clipAction(clips[0] as AnimationClip)
+				.fadeIn(Math.fround(0.4))
+				.play();
+			check(24);
+			check(30);
+		},
+	},
+	{
+		// play('grid24', { loop: false, speed: 1.5 }): it ends after 0.5 s and holds its last frame.
+		name: 'once',
+		run({ mixer, clips, check }) {
+			const action = mixer.clipAction(clips[2] as AnimationClip);
+			action.setLoop(LoopOnce, 1);
+			action.clampWhenFinished = true;
+			action.timeScale = Math.fround(1.5);
+			action.play();
+			check(20);
+			check(20);
+		},
+	},
+	{
+		// play('grid24') for 150 steps: three loops.
+		name: 'loops',
+		run({ mixer, clips, check }) {
+			mixer.clipAction(clips[2] as AnimationClip).play();
+			check(150);
+		},
+	},
+	{
+		// play('grid30'); play('grid24', { layer: 1 }); setLayerMask(1, 'joint2');
+		// setLayerWeight(1, 0.5). In three.js: the layer's clip keeps the masked joints' tracks, at
+		// the weight that gives the layer half the pose.
+		name: 'masked layer',
+		run({ mixer, clips, filtered, check }) {
+			mixer.clipAction(clips[0] as AnimationClip).play();
+			mixer.clipAction(filtered(2, (j) => UPPER.includes(j))).play();
+			check(21);
+		},
+	},
+	{
+		// As 'masked layer' with the layer's weight at 1: the layer replaces the masked joints'
+		// channels that it moves.
+		name: 'masked layer at full weight',
+		run({ mixer, clips, filtered, check }) {
+			const upperOf = (j: number) => UPPER.includes(j);
+			const grid24 = clips[2] as AnimationClip;
+			const replaced = new Set(
+				grid24.tracks.filter((t) => upperOf(Number(t.name.match(/\d+/)?.[0]))).map((t) => t.name),
+			);
+			const base = clips[0] as AnimationClip;
+			const kept = base.tracks.filter((t) => !replaced.has(t.name));
+			mixer.clipAction(new AnimationClip('base', -1, kept)).play();
+			mixer.clipAction(filtered(2, upperOf)).play();
+			check(21);
+		},
+	},
+	{
+		// play('grid30'); setLayerMask(0, every joint but those below joint 4): they keep the rest
+		// pose.
+		name: 'masked base layer',
+		run({ mixer, filtered, check }) {
+			mixer.clipAction(filtered(0, (j) => j !== 4 && j !== 5)).play();
+			check(21);
+		},
+	},
+	{
+		// play('grid24'); play('grid30', { layer: 1, additive: true }); setLayerWeight(1, 0.5).
+		name: 'additive',
+		run({ mixer, clips, check }) {
+			mixer.clipAction(clips[2] as AnimationClip).play();
+			const additive = AnimationUtils.makeClipAdditive((clips[0] as AnimationClip).clone());
+			mixer.clipAction(additive).setEffectiveWeight(Math.fround(0.5)).play();
+			check(15);
+			check(18);
+		},
+	},
+];
+
+function scriptsFixture(clips: AnimationClip[], inverses: Matrix4[]): string {
+	let out = `
+/// A script's checkpoint: the steps since the one before, then what three.js gives for each
+/// joint.
+pub struct Check {
+    pub steps: u32,
+    /// Translation, rotation and scale of each joint.
+    pub pose: [f64; ${JOINTS.length * 10}],
+    /// The skinning matrix of each joint, row-major 3 × 4.
+    pub skin: [f64; ${JOINTS.length * 12}],
+}
+
+/// A script of animator calls, which the tests make by name, and its checkpoints.
+pub struct Script {
+    pub name: &'static str,
+    /// The seconds of each step.
+    pub step: f32,
+    pub checks: &'static [Check],
+    /// The loop and finished events of the whole script.
+    pub loops: u32,
+    pub finished: u32,
+}
+
+#[rustfmt::skip]
+pub static SCRIPTS: [Script; ${SCRIPTS.length}] = [\n`;
+	const inCheck = ' '.repeat(16);
+	for (const script of SCRIPTS) {
+		const { group, bones } = buildBones();
+		const skeleton = new Skeleton(
+			bones,
+			inverses.map((m) => m.clone()),
+		);
+		const mixer = new AnimationMixer(group);
+		let loops = 0;
+		let finished = 0;
+		mixer.addEventListener('loop', () => loops++);
+		mixer.addEventListener('finished', () => finished++);
+		const checks: string[] = [];
+		script.run({
+			mixer,
+			clips,
+			filtered(clip, keep) {
+				const source = clips[clip] as AnimationClip;
+				const tracks = source.tracks.filter((t) => keep(Number(t.name.match(/\d+/)?.[0])));
+				return new AnimationClip(`${source.name} filtered`, -1, tracks);
+			},
+			check(steps) {
+				for (let k = 0; k < steps; k++) mixer.update(SCRIPT_STEP);
+				group.updateMatrixWorld(true);
+				skeleton.update();
+				const pose = bones.flatMap((b) => [
+					...b.position.toArray(),
+					...b.quaternion.toArray(),
+					...b.scale.toArray(),
+				]);
+				const skin = bones.flatMap((_, j) => rows(skeleton.boneMatrices as Float32Array, j * 16));
+				checks.push(
+					`            Check {\n                steps: ${steps},\n                pose: ${floats(pose, 10, inCheck)},\n                skin: ${floats(skin, 12, inCheck)},\n            },\n`,
+				);
+			},
+		});
+		out += `    Script {\n        name: "${script.name}",\n        step: ${float(SCRIPT_STEP)},\n        checks: &[\n${checks.join('')}        ],\n        loops: ${loops},\n        finished: ${finished},\n    },\n`;
 	}
 	return `${out}];\n`;
 }

@@ -2,7 +2,8 @@
 // step: each frame, every character of the crowd blends two clips at times of its own, and the
 // job workers sample, blend and compose the poses into skinning matrices. Nothing draws. The
 // runner's animation plan reads the result back. This module uses no browser or Node API, so the
-// unit tests and the runner import it too.
+// unit tests and the runner import it too. `crowd-rig.ts` gives the same character to the engine's
+// animator, for the animator test page and the allocation check.
 
 /** The crowd and the measurement's settings. */
 export const ANIMATION = {
@@ -37,7 +38,7 @@ export interface Character {
 }
 
 /** The parent value of a root joint. */
-const NO_PARENT = 0xffffffff;
+export const NO_PARENT = 0xffffffff;
 
 /** A quaternion `(x, y, z, w)` that turns `angle` radians about a unit axis. */
 function axisAngle(axis: readonly number[], angle: number): number[] {
