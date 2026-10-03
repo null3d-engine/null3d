@@ -29,6 +29,7 @@ export type Three = Pick<
 	typeof ThreeModule,
 	| 'AmbientLight'
 	| 'BatchedMesh'
+	| 'Box3'
 	| 'BoxGeometry'
 	| 'BufferAttribute'
 	| 'BufferGeometry'
