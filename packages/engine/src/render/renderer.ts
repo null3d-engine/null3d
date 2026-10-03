@@ -16,6 +16,7 @@ import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
 import type { PowerPreference } from '../page/capabilities';
 import { type CoreDevice, TEXTURE_COMPRESSION } from '../page/limits';
+import type { GlTimingMode } from '../page/switches';
 import type { ImageTable } from '../shared/images';
 import { type FrameRecorder, Phase } from '../shared/metrics';
 import type { Tier } from '../shared/tier';
@@ -94,6 +95,8 @@ export interface RendererOptions {
 	scene?: { memory: WebAssembly.Memory; control: ArrayBufferLike };
 	/** The images that texture uploads read, which the thread keeps across GPU devices. */
 	imageTable?: ImageTable;
+	/** How to time each WebGL call of the scene's renderer, for a benchmark page (?gl-timing). */
+	glTiming?: GlTimingMode;
 }
 
 /** WebGPU's default `maxBufferSize`, which every device offers. */
@@ -296,7 +299,9 @@ export async function createRenderer(
 		if (scene && shaders)
 			return new WebGL2SceneRenderer(
 				canvas,
-				gl,
+				options.glTiming
+					? (await import('../gpu/webgl2/call-timing')).timeGlCalls(gl, metrics, options.glTiming)
+					: gl,
 				scene.memory,
 				scene.control,
 				metrics,
