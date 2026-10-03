@@ -28,7 +28,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 - After a pull that changes `packages/vite-plugin` or the Vite config, run `bun run build`, then restart the dev server before a run. Restart it before the browser tests too, because they use a dev server that already answers on their port. The build also brings the engine core that the server serves up to date. On 1 October 2026, a stale server rejected new custom material sketches with "the WGSL has no entry point".
 - Do not add or move files in the tree that the dev server watches during a run. A new HTML file anywhere in it reloads every open page, and a page reloaded while it measures reports 0 frames.
 - The `smoke` plan is about a tenth of the checks plan, for a device in a cloud session of limited time. It keeps the capability, isolation, shader, upload, preset, warm-up and stats pages, the restarts of each build, and the main features' image tests. Each image test runs on every GPU tier in its first thread mode, so new tiers and modes join by the same rules.
-- The runner page detects the browser it runs in, from Brave's object on `navigator`, the client hints and the user agent. It records the browser, the GPU and the page's address in `device.json`. The summary names each runner's browser. A runner whose name names one browser warns when its page ran in another, so a name like `tb-android` suits a device whose browser is chosen there.
+- The runner page detects the browser it runs in, from Brave's object on `navigator`, the client hints and the user agent. It records the browser, the GPU and the page's address in `device.json`. The summary names each runner's browser. When a runner's name names one browser and its page runs in another, the runner warns. A name like `tb-android` names no browser, so it suits a device whose browser is chosen in the session.
 - After a fixed plan, the runner prints a row for each browser for [the record of tested devices](tested-devices.md).
 - Close the browser tabs that testing opens as soon as each test ends. Old tabs keep pages running, which costs heat and skews later runs.
 
@@ -217,7 +217,7 @@ TestingBot lends real phones and tablets for live sessions. A device opens the r
 
 Test the devices in this order:
 
-1. Current devices that should run well, because faults there block the most users. iOS 26 Safari, which has WebGPU: iPhone 16, iPhone Air, iPhone 16 Pro, iPhone 17 Pro and iPhone 17 Pro Max, then the iPad 9th generation for low memory. Android with WebGPU: Pixel 8, 9, 10 and 11, Galaxy S25, S26 and S24, and Galaxy Tab S11. Then mid-range phones, where memory and speed are tight: Redmi Note 13 and Galaxy A55.
-2. The WebGL2 fallback, on devices whose browsers draw without WebGPU: iPhone 13, 14, 15 and SE 2022 on iOS 17 and 18, and Galaxy S21 and S23.
-3. Old devices, where the engine cannot run and must say so clearly: iPhone 12 or XR and the iPad 8th generation on iOS 14 and 15, Android 7 to 9, and Galaxy A12.
+1. Current devices that should run well, because faults there block the most users. iOS 26 Safari, which has WebGPU: iPhone 16, iPhone Air, iPhone 16 Pro, iPhone 17 Pro and iPhone 17 Pro Max. Then the iPad 9th generation, for low memory. Android with WebGPU: Pixel 8, 9, 10 and 11, Galaxy S25, S26 and S24, and Galaxy Tab S11. Then mid-range phones, where memory and speed are tight: Redmi Note 13 and Galaxy A55.
+2. The WebGL2 fallback, on devices whose browsers have no WebGPU. These are the iPhone 13, 14, 15 and SE 2022 on iOS 17 and 18, and the Galaxy S21 and S23.
+3. Old devices, where the engine cannot run and must say so clearly. On iOS 14 and 15, these are the iPhone 12 or XR and the iPad 8th generation. On Android, they are versions 7 to 9 and the Galaxy A12.
 4. Then the other browsers on the same devices: Samsung Internet, Firefox and Opera.
