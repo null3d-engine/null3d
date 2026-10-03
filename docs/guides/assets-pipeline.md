@@ -8,7 +8,7 @@ summary: "optimize, env, convert; LODs; texture compression; budget reports."
 
 # The asset pipeline (the `assets` command)
 
-> Ships in null3D 0.2. The command is experimental, so it can still change between versions. `assets optimize` is built. Not built yet: `assets env`, `assets convert`, `assets pack-orm` and `assets normal-from-bump`, and blocker meshes and prebuilt BVHs in the files. The engine does not yet read meshopt compression or draw levels of detail, so `--compression meshopt` writes files it cannot load. Coding agents must not use these parts.
+> Ships in null3D 0.2. The command is experimental, so it can still change between versions. `assets optimize` is built. Not built yet: `assets env`, `assets convert`, `assets pack-orm` and `assets normal-from-bump`, and blocker meshes and prebuilt BVHs in the files. The engine does not draw levels of detail yet, so it draws the full mesh of a model made with `--lod`. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR
@@ -53,7 +53,7 @@ scene.instantiate(ship);
 | `--lod` | Adds levels of detail to each mesh of 256 triangles or more | No levels |
 | `--max-texture-size <pixels>` | The largest side of a texture: a power of two up to 2048 | 2048 |
 | `--texture-quality <size\|high>` | `high` encodes color and data maps in UASTC, several times larger than ETC1S, with less loss | `size` |
-| `--compression <none\|meshopt>` | `meshopt` compresses the file's buffers with `EXT_meshopt_compression`. The engine does not read it yet | `none` |
+| `--compression <none\|meshopt>` | `none` leaves the file's buffers uncompressed | `meshopt` |
 | `--jobs <count>` | The worker threads that encode textures | One per CPU core |
 | `--report <file.json>` | Also writes the budget report as a JSON file | No file |
 
@@ -67,10 +67,11 @@ scene.instantiate(ship);
 | Texture coordinates | 16-bit integers when every value lies from 0 to 1, else floats | Values past 1 would need a texture transform per material |
 | Vertex colors, joint weights | 8-bit integers | Weights still add up to one |
 | Indices | 16 bits when a mesh has at most 65,535 vertices | Half the size |
+| Buffers | Compressed with meshopt (`EXT_meshopt_compression`) | Smaller downloads. The engine decodes them on load, with no loss, and fetches the decoder only for such files |
 
 The integers need a transform that turns them back into positions. The command puts it in the mesh's node when nothing else moves with the node. A node with children, a light, a camera or an animation keeps its transform. Its mesh then moves to a new child node of the same name. Each instance of an instancing node takes the transform too, and so do the bind matrices of a skin.
 
-Models with Draco compression load too. The command writes their meshes without Draco.
+Models with Draco or meshopt compression load too. The command writes their meshes with meshopt, or with no compression when you give `--compression none`.
 
 ## Textures
 

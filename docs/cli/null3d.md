@@ -266,7 +266,7 @@ bunx @null3d/cli assets optimize models/ public/models/ --lod --max-texture-size
 | `--lod` | Adds levels of detail to each mesh of 256 triangles or more | No levels |
 | `--max-texture-size <pixels>` | The largest side of a texture: a power of two up to 2048 | 2048 |
 | `--texture-quality <size\|high>` | `high` encodes color and data maps in UASTC instead of ETC1S | `size` |
-| `--compression <none\|meshopt>` | `meshopt` compresses the buffers with `EXT_meshopt_compression`, which the engine does not read yet | `none` |
+| `--compression <none\|meshopt>` | `none` leaves the buffers uncompressed, without `EXT_meshopt_compression` | `meshopt` |
 | `--jobs <count>` | The worker threads that encode textures | One per CPU core |
 | `--report <file.json>` | Also writes the budget report as a JSON file | No file |
 

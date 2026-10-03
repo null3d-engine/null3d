@@ -1,7 +1,7 @@
 // The asset tool's steps for one model, which the assets optimize command and the Vite plugin
 // share: read a glTF file, reorder, simplify and quantize its meshes, encode its textures to KTX2,
-// compress its buffers with meshopt when asked, and write a binary glTF file with its texture files
-// beside it. The same input and options give the same bytes on every machine.
+// compress its buffers with meshopt unless told not to, and write a binary glTF file with its
+// texture files beside it. The same input and options give the same bytes on every machine.
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, extname, resolve } from 'node:path';
@@ -25,8 +25,8 @@ import { encodeTextures, TEXTURE_FOLDER } from './textures.js';
  * @property {boolean} lod Make levels of detail.
  * @property {number} maxTextureSize The largest side of a texture, a power of two up to 2048.
  * @property {TextureQuality} textureQuality
- * @property {boolean} meshopt Compress the model's buffers with meshopt. The engine does not read
- *   meshopt yet, so the default is false.
+ * @property {boolean} meshopt Compress the model's buffers with meshopt, which the engine decodes
+ *   losslessly on load. The default is true.
  * @property {string} textureFolder The address of the texture files' folder from the model.
  */
 
@@ -35,7 +35,7 @@ export const DEFAULT_OPTIONS = /** @type {const} */ ({
 	lod: false,
 	maxTextureSize: MAX_TEXTURE_SIDE,
 	textureQuality: 'size',
-	meshopt: false,
+	meshopt: true,
 	textureFolder: TEXTURE_FOLDER,
 });
 

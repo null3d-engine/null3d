@@ -1,6 +1,6 @@
 // null3d assets optimize: optimizes glTF models for the engine. Each model becomes one binary glTF
-// file with quantized, reordered meshes, compressed with meshopt when asked, and its textures become
-// KTX2 files in a folder beside it. It prints a budget report for each model.
+// file with quantized, reordered meshes, compressed with meshopt by default, and its textures
+// become KTX2 files in a folder beside it. It prints a budget report for each model.
 import { mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { readArguments, UsageError } from '../args.js';
@@ -46,7 +46,7 @@ Options:
   --texture-quality <size|high> ETC1S for color and data maps, or UASTC, several times
                                larger with less loss (size)
   --compression <none|meshopt> Compress the file's buffers with meshopt
-                               (EXT_meshopt_compression), which the engine does not read yet (none)
+                               (EXT_meshopt_compression), or leave them as they are (meshopt)
   --jobs <count>               The worker threads that encode textures (one per CPU core)
   --report <file.json>         Also write the budget report as a JSON file`;
 

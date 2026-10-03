@@ -282,10 +282,10 @@ describe('assets optimize on the test scene', () => {
 	});
 
 	it('stores what meshopt compressed exactly as the uncompressed file holds it', async () => {
-		const plain = await readOutput(await optimized);
-		const compressed = await readOutput(
-			await optimizeModel(at(ASSET_SCENE.source), { ...DEFAULT_OPTIONS, meshopt: true }, encode),
+		const plain = await readOutput(
+			await optimizeModel(at(ASSET_SCENE.source), { ...DEFAULT_OPTIONS, meshopt: false }, encode),
 		);
+		const compressed = await readOutput(await optimized);
 		// meshopt's index codec may start each triangle at another corner, which draws the same.
 		const turned = (array: number[]) => {
 			const out: number[] = [];
@@ -446,7 +446,7 @@ describe('the command', () => {
 		expect(
 			parseOptimizeArgs(['in.glb', 'out', '--lod', '--max-texture-size', '512', '--jobs', '2']),
 		).toMatchObject({
-			options: { lod: true, maxTextureSize: 512, textureQuality: 'size', meshopt: false },
+			options: { lod: true, maxTextureSize: 512, textureQuality: 'size', meshopt: true },
 			jobs: 2,
 		});
 		expect(() => parseOptimizeArgs(['in.glb'])).toThrow(
@@ -459,7 +459,7 @@ describe('the command', () => {
 		expect(() => parseOptimizeArgs(['a', 'b', '--texture-quality', 'best'])).toThrow(
 			'takes size or high',
 		);
-		expect(parseOptimizeArgs(['a', 'b', '--compression', 'meshopt']).options.meshopt).toBe(true);
+		expect(parseOptimizeArgs(['a', 'b', '--compression', 'none']).options.meshopt).toBe(false);
 		expect(() => parseOptimizeArgs(['a', 'b', '--compression', 'draco'])).toThrow(
 			'takes none or meshopt',
 		);

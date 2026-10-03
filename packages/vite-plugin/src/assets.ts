@@ -15,10 +15,7 @@ export interface AssetOptions {
 	maxTextureSize?: number;
 	/** `size` encodes color and data maps in ETC1S, the default; `high` in UASTC. */
 	textureQuality?: 'size' | 'high';
-	/**
-	 * Compress the model's buffers with meshopt. The engine does not read meshopt yet, so the
-	 * default is false.
-	 */
+	/** Compress the model's buffers with meshopt, which the engine decodes on load. Default: true. */
 	meshopt?: boolean;
 }
 
