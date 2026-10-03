@@ -43,6 +43,8 @@ import {
 const MIP_UNIT = 0;
 /** The key of the mip level program among the programs of pipelines. */
 const MIP_PROGRAM = 'mipmap';
+/** The key of the program that copies a layer texel by texel. */
+const COPY_PROGRAM = 'mipmap copy';
 
 // Attachment names, for invalidating what a pass does not store.
 const COLOR_ATTACHMENT0 = 0x8ce0;
@@ -264,6 +266,7 @@ export class WebGL2Backend {
 	private readonly templates: (GlslTemplate | undefined)[];
 	/** The template of the program that draws mip levels. */
 	private readonly mipTemplate: GlslTemplate;
+	private readonly copyTemplate: GlslTemplate;
 	private readonly bindGroups: (BindEntry[] | undefined)[] = [];
 	private readonly vertexArrays: (VertexArray | undefined)[] = [];
 	/** Vertex arrays of the buffers that templates with their own vertex layout draw from, by id. */
@@ -312,6 +315,11 @@ export class WebGL2Backend {
 	/** The framebuffer through which a mip level is drawn, and the sampler that reads the level before. */
 	private mipFramebuffer: WebGLFramebuffer | null = null;
 	private mipSampler: WebGLSampler | null = null;
+	/**
+	 * The texture that each mip level, and each copied layer of an array, draws into before it
+	 * copies into its place, by format.
+	 */
+	private readonly spares = new Map<number, GlTexture>();
 	/** Where drawing into the canvas goes during a capture; the canvas itself otherwise. */
 	canvasTarget: CanvasTarget | undefined;
 	/**
@@ -411,7 +419,8 @@ export class WebGL2Backend {
 		canvasAlpha = false,
 	) {
 		this.templates = engineTemplates(shaders);
-		this.mipTemplate = mipmapTemplate(shaders);
+		this.mipTemplate = mipmapTemplate(shaders, 'main');
+		this.copyTemplate = mipmapTemplate(shaders, 'copy');
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
 		this.multiDraw = gl.getExtension('WEBGL_multi_draw');
@@ -781,12 +790,13 @@ export class WebGL2Backend {
 		}
 	}
 
-	/** The program that draws mip levels, in use. */
-	private mipmapProgram(): Program {
-		let program = this.programs.get(MIP_PROGRAM);
+	/** The program that draws mip levels, or the one that copies a layer, in use. */
+	private spareProgram(key: typeof MIP_PROGRAM | typeof COPY_PROGRAM): Program {
+		let program = this.programs.get(key);
 		if (!program) {
-			program = createProgram(this.gl, this.mipTemplate, 0);
-			this.programs.set(MIP_PROGRAM, program);
+			const template = key === MIP_PROGRAM ? this.mipTemplate : this.copyTemplate;
+			program = createProgram(this.gl, template, 0);
+			this.programs.set(key, program);
 		}
 		this.useProgram(program);
 		return program;
@@ -1257,19 +1267,38 @@ export class WebGL2Backend {
 
 	/**
 	 * Makes mip levels 1 and up of one layer of a texture array, as the WebGPU backend does: a
-	 * triangle over each level samples the level before it with a linear filter. While a level is
-	 * drawn, the level before is the texture's base and highest level, so the draw reads no level
-	 * that it writes. A blit per level would average the stored bytes of sRGB texels in Firefox,
-	 * not their linear values, and `generateMipmap` would remake every layer.
+	 * triangle over each level samples the level before it with a linear filter. Each level draws
+	 * into the spare texture and then copies into its place, so no draw writes the texture it
+	 * reads. Chrome on Adreno 830 refuses a draw into one level of a texture that the draw samples
+	 * at another level, although WebGL allows it. A blit per level fails there too, and in Firefox
+	 * it averages the stored bytes of sRGB texels, not their linear values. `generateMipmap` would
+	 * remake every layer.
 	 */
 	private generateMipmaps(id: number, layer: number): void {
-		const gl = this.gl;
 		const texture = this.textureOf(id);
-		const program = this.mipmapProgram();
-		if (program.firstInstance && program.firstInstanceValue !== layer) {
-			gl.uniform1ui(program.firstInstance, layer);
-			program.firstInstanceValue = layer;
+		const program = this.beginSpareDraws(MIP_PROGRAM, texture, texture.width, texture.height);
+		for (let level = 1; level < texture.mips; level++) {
+			const width = Math.max(1, texture.width >> level);
+			const height = Math.max(1, texture.height >> level);
+			this.drawIntoSpare(program, texture, level - 1, layer, width, height);
+			this.copyFromSpare(texture, level, 0, 0, layer, 0, 0, width, height);
 		}
+		this.endSpareDraws(texture);
+	}
+
+	/**
+	 * Gets ready to draw layers of `source` into the spare texture of its format, at least `width`
+	 * by `height`, with the program that `key` names. The source is bound for sampling.
+	 */
+	private beginSpareDraws(
+		key: typeof MIP_PROGRAM | typeof COPY_PROGRAM,
+		source: GlTexture,
+		width: number,
+		height: number,
+	): Program {
+		const gl = this.gl;
+		const spare = this.spareOf(source.format, width, height);
+		const program = this.spareProgram(key);
 		if (!this.mipFramebuffer) this.mipFramebuffer = gl.createFramebuffer();
 		if (!this.mipSampler) {
 			this.mipSampler = gl.createSampler();
@@ -1277,30 +1306,97 @@ export class WebGL2Backend {
 			gl.samplerParameteri(this.mipSampler, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 			gl.samplerParameteri(this.mipSampler, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 		}
-		gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.mipFramebuffer);
+		// The copies read the spare through the same framebuffer that the draws write.
+		gl.bindFramebuffer(gl.FRAMEBUFFER, this.mipFramebuffer);
+		const attachment = source.format.attachment;
+		gl.framebufferTexture2D(gl.FRAMEBUFFER, attachment, gl.TEXTURE_2D, spare.texture, 0);
 		this.useVertexArray(this.emptyVertexArray());
 		this.setScissorTest(false);
 		this.setDepthTest(false);
 		this.setCullFace(0);
 		this.setColorMask(true);
 		if (this.blend) this.setBlend(0);
-		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, texture.texture);
+		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, source.texture);
 		this.bindUnitSampler(MIP_UNIT, this.mipSampler);
 		this.samplersChanged = true;
-		const attachment = texture.format.attachment;
-		for (let level = 1; level < texture.mips; level++) {
-			gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_BASE_LEVEL, level - 1);
-			gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAX_LEVEL, level - 1);
-			gl.framebufferTextureLayer(gl.DRAW_FRAMEBUFFER, attachment, texture.texture, level, layer);
-			const width = Math.max(1, texture.width >> level);
-			const height = Math.max(1, texture.height >> level);
-			this.setGlViewport(0, 0, width, height);
-			gl.drawArrays(gl.TRIANGLES, 0, 3);
+		return program;
+	}
+
+	/**
+	 * Draws one layer of the bound source into the spare's lower-left `width` by `height` texels.
+	 * The program reads `level` of the source as its first level.
+	 */
+	private drawIntoSpare(
+		program: Program,
+		source: GlTexture,
+		level: number,
+		layer: number,
+		width: number,
+		height: number,
+	): void {
+		const gl = this.gl;
+		if (program.firstInstance && program.firstInstanceValue !== layer) {
+			gl.uniform1ui(program.firstInstance, layer);
+			program.firstInstanceValue = layer;
 		}
+		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, source.texture);
+		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_BASE_LEVEL, level);
+		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAX_LEVEL, level);
+		this.setGlViewport(0, 0, width, height);
+		gl.drawArrays(gl.TRIANGLES, 0, 3);
+	}
+
+	/** Copies a rectangle of the spare into a level of `into`: a layer, a cube face or a 3D slice. */
+	private copyFromSpare(
+		into: GlTexture,
+		level: number,
+		x: number,
+		y: number,
+		layer: number,
+		spareX: number,
+		spareY: number,
+		width: number,
+		height: number,
+	): void {
+		const gl = this.gl;
+		this.editTexture(MIP_UNIT, into.target, into.texture);
+		if (this.layered(into.target))
+			gl.copyTexSubImage3D(into.target, level, x, y, layer, spareX, spareY, width, height);
+		else {
+			const plane = this.planeTarget(into, layer);
+			gl.copyTexSubImage2D(plane, level, x, y, spareX, spareY, width, height);
+		}
+	}
+
+	/** Gives the source back all its levels, and takes the spare out of the framebuffer. */
+	private endSpareDraws(source: GlTexture): void {
+		const gl = this.gl;
+		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, source.texture);
 		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_BASE_LEVEL, 0);
-		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAX_LEVEL, texture.mips - 1);
-		// A framebuffer that is not bound keeps what it holds alive, so the texture leaves it.
-		gl.framebufferTextureLayer(gl.DRAW_FRAMEBUFFER, attachment, null, 0, 0);
+		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAX_LEVEL, source.mips - 1);
+		// A framebuffer that is not bound keeps what it holds alive, so the spare leaves it.
+		const attachment = source.format.attachment;
+		gl.framebufferTexture2D(gl.FRAMEBUFFER, attachment, gl.TEXTURE_2D, null, 0);
+	}
+
+	/**
+	 * The spare texture of a format, at least `width` by `height`. A smaller spare gives way to
+	 * one that fits both sizes. Each spare stays for the next draws of its format.
+	 */
+	private spareOf(format: GlFormat, width: number, height: number): GlTexture {
+		const gl = this.gl;
+		const old = this.spares.get(format.internal);
+		const w = Math.max(1, width, old?.width ?? 0);
+		const h = Math.max(1, height, old?.height ?? 0);
+		if (old && old.width === w && old.height === h) return old;
+		if (old?.texture) gl.deleteTexture(old.texture);
+		const spare = gl.createTexture();
+		if (!spare) throw new Error('WebGL2 could not create a texture');
+		this.editTexture(UPLOAD_UNIT, gl.TEXTURE_2D, spare);
+		gl.texStorage2D(gl.TEXTURE_2D, 1, format.internal, w, h);
+		const made = glTexture(spare, null, gl.TEXTURE_2D, w, h, format, 1, 0, 0, false);
+		this.spares.set(format.internal, made);
+		return made;
 	}
 
 	/** Attaches one mip level and layer of a texture to a framebuffer. */
@@ -1325,8 +1421,10 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * Copies texels layer by layer: each source layer attaches to a framebuffer, which WebGL2 copies
-	 * from into the destination. Rows count as stored, the same as on WebGPU.
+	 * Copies texels layer by layer. Rows count as stored, the same as on WebGPU. A layer of a color
+	 * texture array draws into the spare texture, which then copies into the destination: Chrome
+	 * on Adreno 830 copies layer 0 from a framebuffer that holds another layer of an array. Other
+	 * sources attach to a framebuffer, which WebGL2 copies from.
 	 */
 	private copyTexture(words: Uint32Array, a: number): void {
 		const gl = this.gl;
@@ -1343,10 +1441,21 @@ export class WebGL2Backend {
 		const width = words[a + 10] as number;
 		const height = words[a + 11] as number;
 		const layers = words[a + 12] as number;
+		const attachment = source.format.attachment;
+		if (source.target === gl.TEXTURE_2D_ARRAY && attachment === gl.COLOR_ATTACHMENT0) {
+			const right = sourceX + width;
+			const top = sourceY + height;
+			const program = this.beginSpareDraws(COPY_PROGRAM, source, right, top);
+			for (let k = 0; k < layers; k++) {
+				this.drawIntoSpare(program, source, sourceLevel, sourceLayer + k, right, top);
+				this.copyFromSpare(destination, level, x, y, layer + k, sourceX, sourceY, width, height);
+			}
+			this.endSpareDraws(source);
+			return;
+		}
 		if (!this.copyFramebuffer) this.copyFramebuffer = gl.createFramebuffer();
 		gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.copyFramebuffer);
 		this.editTexture(UPLOAD_UNIT, destination.target, destination.texture);
-		const attachment = source.format.attachment;
 		for (let k = 0; k < layers; k++) {
 			this.attachLevel(gl.READ_FRAMEBUFFER, attachment, source, sourceLevel, sourceLayer + k);
 			if (this.layered(destination.target)) {
@@ -1979,5 +2088,6 @@ export class WebGL2Backend {
 		for (const buffer of this.unpackBuffers) if (buffer) gl.deleteBuffer(buffer);
 		if (this.mipFramebuffer) gl.deleteFramebuffer(this.mipFramebuffer);
 		if (this.mipSampler) gl.deleteSampler(this.mipSampler);
+		for (const spare of this.spares.values()) gl.deleteTexture(spare.texture);
 	}
 }

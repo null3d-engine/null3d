@@ -13,8 +13,11 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { brotliCompress, constants, gzip } from 'node:zlib';
-import { ISOLATION_HEADERS, immutableAssetsMiddleware } from '@null3d/vite-plugin';
 import type { Connect, Plugin } from 'vite';
+import {
+	ISOLATION_HEADERS,
+	immutableAssetsMiddleware,
+} from '../../packages/vite-plugin/src/index.ts';
 import {
 	type DownloadedFile,
 	type Downloads,

@@ -6,9 +6,10 @@
 // Vite and plugin, so a copy from before this file builds too.
 import { readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import null3d from '@null3d/vite-plugin';
 import { defineConfig } from 'vite';
+import null3d from '../packages/vite-plugin/src/index.ts';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
+import { sourceResolve } from '../tools/lib/source-condition.ts';
 
 const root = resolve(process.env.NULL3D_BENCH_ROOT || join(import.meta.dirname, '..'));
 // The pages import the shader modules, which git does not keep. Another copy's build (`bun run
@@ -25,6 +26,8 @@ export default defineConfig({
 	// Relative addresses, so the build works under any address prefix, such as a load route's.
 	base: './',
 	plugins: [null3d()],
+	// The pages take the packages' source, not the files that their pack step builds.
+	resolve: sourceResolve,
 	logLevel: 'warn',
 	build: {
 		emptyOutDir: true,

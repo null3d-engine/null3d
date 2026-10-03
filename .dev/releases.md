@@ -10,7 +10,7 @@ To release, run the Release workflow from the Actions tab and pick a release typ
 2. Runs `bun run release --apply` on a `release/<version>` branch. This sets the version in every package manifest, the engine's `VERSION` export, the Rust workspace and `Cargo.lock`. It adds the release's section to `CHANGELOG.md` and regenerates the docs.
 3. Opens a pull request. Review the changelog there, and edit `CHANGELOG.md` on that branch if a line needs it.
 
-Merging that pull request runs the Release Publish workflow. It tags the merge commit with the plain version, such as `0.0.1`, and publishes the GitHub Release with the changelog section. Then it publishes every package that is not private to npm, and skips a version that npm already has.
+Merging that pull request runs the Release Publish workflow. It tags the merge commit with the plain version, such as `0.0.1`, and publishes the GitHub Release with the changelog section. Then it builds the WebAssembly files, packs every package that is not private, and publishes each tarball to npm. It skips a version that npm already has. [The npm packages](#the-npm-packages) says how a package is built and packed.
 
 ## Versions
 
@@ -23,9 +23,83 @@ At 1.0, also announce the agent skills. Add the Claude Code plugin commands to t
 ## One-time setup
 
 - A GitHub App with write access to contents and pull requests, installed on the repository. Its ID and private key go in the `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` secrets. A pull request opened with the default token starts no workflows, so its CI would never run.
-- npm trusted publishing. Publish each public package's first version by hand with a token. Then, in the package's settings on npmjs.com, name this repository and `release-publish.yml` as its trusted publisher. A public package also needs `"publishConfig": { "access": "public", "provenance": true }`.
-- Git does not keep the shader modules (`packages/engine/src/generated/shaders*.ts`). The engine's `prepack` script builds them, so `npm publish` puts them in the engine's package. The publish job therefore sets up Bun and the pinned Rust toolchain. Before it publishes, `bun tools/check-package.ts` packs the engine as `npm publish` would and fails unless the package holds every shader module. The build job in CI runs the same check on every pull request.
-- The publish job builds no WebAssembly, because the only public package is the command-line tool. Add the engine's WebAssembly build to the job before the engine becomes public.
+- npm trusted publishing for each public package. npm cannot publish a package's first version that way, so the owner publishes it by hand, as [The first version of a new package](#the-first-version-of-a-new-package) shows. A public package also needs `"publishConfig": { "access": "public", "provenance": true }`, and the pack check fails without it.
+- No npm token in the repository. npm skips trusted publishing when `NPM_TOKEN` or `NODE_AUTH_TOKEN` is set, even to an empty string, so the publish job sets neither. It gets an OIDC token through `id-token: write`, and `actions/setup-node` with `registry-url: https://registry.npmjs.org`. Trusted publishing needs npm 11.5.1 or newer and Node 22.14 or newer, so the job uses Node 24 and installs the latest npm.
+- Git keeps neither the WebAssembly files nor the shader modules (`packages/engine/src/generated/shaders*.ts`). The publish job therefore sets up Bun and the pinned Rust toolchain, and runs `bun tools/build-wasm.ts --pages-only` before it packs. That builds the shader modules, both WebAssembly files of the engine and the Vite plugin's shader compiler, with no size report.
+- The repository's own script, `tools/release.ts`, makes each release, and semantic-release is not installed. So the rule that semantic-release needs `@semantic-release/npm` 13.1.0 or newer for trusted publishing does not apply. The publish job sets `HUSKY: "0"`, as the Release workflow does, so no git hook runs in CI.
+
+## The npm packages
+
+Four packages are public. Each one's `prepack` script runs `bun tools/build-package.ts <folder>`, which makes what its tarball holds besides the files that git keeps (`tools/lib/packages.ts`). Every tarball also holds both license files. The WebAssembly files come from `bun run build`, which runs first.
+
+| Package | What its tarball holds | What its pack step makes |
+| --- | --- | --- |
+| `@null3d/engine` | `lib/`, the built JavaScript and declarations. Both WebAssembly builds in `dist/wasm/`, the KTX2 transcoder in `vendor/`, and a copy of `docs/` | The shader modules, then `lib/` and the copy of the docs |
+| `@null3d/vite-plugin` | `lib/`, and the shader compiler in `dist/shader-compiler.wasm` | `lib/` |
+| `@null3d/controls` | `lib/` | The engine's `lib/`, whose declarations it reads, then its own |
+| `@null3d/cli` | `bin/` and `src/`, plain JavaScript with JSDoc types | Nothing |
+
+### Source in the repository, built files on npm
+
+Each package's `exports` give its TypeScript source under the `null3d-source` condition, and its built files under `types` and `default`. Inside the repository, the tsconfig files set the condition in `customConditions`. The Vite configs set it with `sourceResolve` from `tools/lib/source-condition.ts`. `bun run test` passes `--conditions=null3d-source` to Bun's test runner. The test pages, the benchmark pages, the unit tests and the type checks therefore read the source, with no build step and no stale copy. A project that installs a package from npm sets no such condition, so it gets `lib/`.
+
+Vite loads its configs with Node, and Playwright runs in Node, so they cannot take the condition. The Vite configs and the Playwright tests therefore import the Vite plugin's source by its path. The root `package.json` sets `"type": "module"`, so Vite loads the root config, and the plugin source that it bundles, as an ES module. As CommonJS, the plugin's import of `magic-string` failed.
+
+The pack tool deletes each `lib/` after it packs. So no local check can pass on built files that CI does not have.
+
+The engine's `./internal` and `./stats` entry points exist under the source condition only. The repository's tests and benchmark pages use them, and a project that installs the engine cannot import them.
+
+These options were rejected:
+
+- `publishConfig` fields that replace `exports` when a package is packed. pnpm and Yarn read them, but `bun pm pack` and `npm pack` do not. Bun 1.3.14 packed a test package's `exports` unchanged.
+- `exports` that point at `lib/` inside the repository too. Every check and every dev server would need a build first. An edit to the source would not reach the pages until the next build.
+- A staging folder with a generated manifest for each package. The manifest on npm would then differ from the one in git.
+
+### How lib/ is built
+
+TypeScript writes `lib/` file for file, with the declarations. The build does not bundle the engine, because the engine loads its workers and its WebAssembly core by address, as in `new URL('../workers/sketch-worker.ts', import.meta.url)`. A project's bundler follows each address and writes each worker as a file of its own, as it does for the source in the repository. So each file keeps its place beside the others. A project's build then splits the engine as the repository's build does, and the size report's figures hold for a project too.
+
+The source imports its own modules without an extension or with `.ts`. After TypeScript writes `lib/`, the build rewrites each relative import, each import type and each worker address to the `.js` file that TypeScript wrote. TypeScript's parser finds each one, so the same text in a string, such as an error message, stays as it is. The build fails when an import answers no file. Vite accepts imports without an extension, but Node's module rules and some other bundlers do not.
+
+The controls build without the source condition. TypeScript then reads the engine's built declarations, as in a project that installs both, and the engine's source stays out of the controls' `lib/`.
+
+### Pack with Bun, publish with npm
+
+The publish job packs each package with `bun pm pack`, then publishes each tarball with `npm publish`:
+
+- Bun writes the real version in place of each `workspace:` version, such as the engine version that the controls need. npm would publish `workspace:*` as it is, which no package manager can install.
+- npm publishes, because trusted publishing and provenance need npm's own command-line tool.
+- `npm publish` reads `publishConfig` from the manifest inside the tarball, so each package still asks for public access and provenance. A flag on the command line overrides it.
+
+`bun tools/pack-packages.ts` packs every public package into `target/packages/`, or into the folder that `--out` names, and checks each tarball. It fails unless the manifest asks for public access and provenance, and names no `workspace:` version. The tarball must hold every file that `exports` and `bin` name, and the files that the code loads by address. Those are the engine's workers, both WebAssembly builds, the shader modules, the transcoder and the docs, and the plugin's shader compiler.
+
+### The fresh-project test
+
+`bun run test:packages` packs the packages, then makes a new Vite project from `tests/fixtures/fresh-project/` in a temporary folder. The folder is outside the repository, so no package in the repository's `node_modules` can stand in for a file that a tarball lacks. The test installs the tarballs with Bun, then runs the command-line tool's `test` command twice. The first run keeps its images as the references, and the second must match them. The command type checks the project with `skipLibCheck` off, so every declaration file in the packages must compile. It draws the sketch, which uses the orbit controls, on WebGPU, WebGPU's compatibility mode and WebGL2. Last, `vite build` must write both engine cores. The `packages` job in CI runs the test on SwiftShader.
+
+The project's `overrides` take each `@null3d` package from its tarball. Without them, Bun looks on npm for the engine version that the controls name, which npm does not have before the release.
+
+The first run passed on a MacBook Pro M5 Max in Chrome on 3 October 2026. The type check passed, the first run saved 3 references, and the second run matched 3 of 3. In the dev server, Vite kept the engine out of its prebundled copy of the controls, so a page loads one copy of the engine. The engine's tarball is 3.4 MB, mostly the shader modules, and the plugin's is 1.2 MB, mostly the shader compiler.
+
+### The first version of a new package
+
+npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin` and `@null3d/controls` by hand. `@null3d/cli` is on npm at 0.0.0 already.
+
+1. On a clean checkout of main, run `bun install` and `bun run build`.
+2. Run `bun tools/pack-packages.ts`, which writes the tarballs to `target/packages/`.
+3. Log in to npm with `npm login`, as an account that may publish in the `@null3d` scope.
+4. Publish each new tarball. Provenance needs a CI provider, so a flag turns it off for these three publishes:
+
+   ```sh
+   npm publish target/packages/null3d-engine-0.0.0.tgz --access public --provenance=false
+   npm publish target/packages/null3d-vite-plugin-0.0.0.tgz --access public --provenance=false
+   npm publish target/packages/null3d-controls-0.0.0.tgz --access public --provenance=false
+   ```
+
+5. On npmjs.com, open each of the four packages' settings, and add a trusted publisher: GitHub Actions, the owner `null3d-engine`, the repository `null3d` and the workflow `release-publish.yml`.
+6. Run the Release workflow with `minor`. Its publish job publishes 0.1.0 of every package through trusted publishing, with provenance.
+
+Until step 5, the publish job fails at the first package that has no trusted publisher. It skips the versions that npm has, so run it again after the setup.
 
 ## 0.1 exit gate
 
