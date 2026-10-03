@@ -23,6 +23,7 @@
 // protections can alter. For a startup load, the result also tells what the server sent for it.
 
 import { detectBrowser, type GpuFacts, type UserAgentData } from '../lib/device-record';
+import { type GpuPath, type MissingAllowed, pathsToSkip, skippedResult } from '../lib/gpu-paths';
 import { fillRunner, loadOf, takeDownloads } from '../lib/load-routes';
 import { patientFetch } from '../lib/patient-fetch';
 import { progressName, REST_AFTER_TAB_END_SECONDS, tabEndedResult } from '../lib/tab-end';
@@ -33,6 +34,8 @@ interface PlanItem {
 	timeoutSeconds: number;
 	/** The page may end its tab on purpose, and posts its progress as it goes. */
 	endsTab?: boolean;
+	/** The GPU path that the page needs. */
+	gpu?: GpuPath;
 }
 
 type Result = { ok: boolean; error?: string } & Record<string, unknown>;
@@ -84,7 +87,7 @@ function line(text: string): HTMLLIElement {
 	return item;
 }
 
-type Outcome = 'waiting' | 'running' | 'passed' | 'failed' | 'earlier';
+type Outcome = 'waiting' | 'running' | 'passed' | 'failed' | 'skipped' | 'earlier';
 
 /**
  * The run's report: a cell per page of the plan, coloured by its outcome, with running counts. A
@@ -103,6 +106,7 @@ class RunReport {
 	private errors: (string | undefined)[] = [];
 	private passed = 0;
 	private failed = 0;
+	private skipped = 0;
 	private left = 0;
 
 	constructor() {
@@ -123,6 +127,7 @@ class RunReport {
 		this.errors = [];
 		this.passed = 0;
 		this.failed = 0;
+		this.skipped = 0;
 		this.left = Math.max(0, items.length - from);
 		this.cells = this.outcomes.map((outcome) => {
 			const cell = document.createElement('i');
@@ -143,6 +148,13 @@ class RunReport {
 	finish(index: number, result: Result): void {
 		const page = `${this.ids[index]}${result.error ? `: ${result.error}` : ''}`;
 		this.left--;
+		if (result.skipped) {
+			this.skipped++;
+			this.errors[index] = result.error;
+			this.mark(index, 'skipped');
+			this.log.prepend(line(`skipped  ${page}`));
+			return;
+		}
 		if (result.ok) this.passed++;
 		else {
 			this.failed++;
@@ -154,7 +166,8 @@ class RunReport {
 	}
 
 	counts(): string {
-		return `${this.passed} passed, ${this.failed} failed, ${this.left} left`;
+		const skipped = this.skipped > 0 ? `, ${this.skipped} skipped` : '';
+		return `${this.passed} passed, ${this.failed} failed${skipped}, ${this.left} left`;
 	}
 
 	private mark(index: number, outcome: Outcome): void {
@@ -329,6 +342,14 @@ async function stored(run: string): Promise<Set<string>> {
 	return new Set(JSON.parse(answer.text) as string[]);
 }
 
+/** A result or record that this runner stored in a run, or undefined when there is none. */
+async function storedResult(run: string, name: string): Promise<Result | undefined> {
+	const answer = await patientFetch(`/__null3d/runs/${run}/${runner}/${name}`, {
+		cache: 'no-store',
+	});
+	return answer.ok ? (JSON.parse(answer.text) as Result) : undefined;
+}
+
 /**
  * Where a run goes on when the page opens without &from=: at the first item without a result. An
  * item that may end its tab, and that started without a result, ended the tab: its last progress
@@ -339,8 +360,7 @@ async function resumeAt(run: string, items: readonly PlanItem[]): Promise<number
 	const index = items.findIndex((item) => !names.has(item.id));
 	const item = items[index];
 	if (!item?.endsTab || !names.has(progressName(item.id))) return index < 0 ? items.length : index;
-	const progress = await patientFetch(`/__null3d/runs/${run}/${runner}/${progressName(item.id)}`);
-	const facts = progress.ok ? (JSON.parse(progress.text) as Record<string, unknown>) : undefined;
+	const facts = await storedResult(run, progressName(item.id));
 	await post(run, item.id, tabEndedResult(facts, 'runner page'));
 	show(`${item.id} ended the tab; resting before the next page`);
 	await sleep(REST_AFTER_TAB_END_SECONDS * 1000);
@@ -352,13 +372,16 @@ async function resumeAt(run: string, items: readonly PlanItem[]): Promise<number
  * its first item reads the device. Before an item that may end its tab, the page notes that the
  * item started, under the item's progress. In a plan that asks for it, the page measures the
  * display's refresh rate before each item, with no test page loaded, and adds it to the item's
- * result.
+ * result. In a plan that lets the device lack GPU paths, once the capabilities page has reported
+ * the device's paths, the page skips each item that needs a path the device lacks: it posts a skip
+ * as the item's result, and does not open the item's page.
  */
 async function runPlan(run: string, from?: number): Promise<void> {
 	const plan = JSON.parse((await patientFetch(`/__null3d/runs/${run}/plan`)).text) as {
 		items: PlanItem[];
 		reportOnTop?: boolean;
 		measureRefresh?: boolean;
+		skipMissing?: { report: string; allowed: MissingAllowed };
 	};
 	await claim(run);
 	stage.classList.toggle('report-on-top', plan.reportOnTop === true);
@@ -368,16 +391,30 @@ async function runPlan(run: string, from?: number): Promise<void> {
 		show(`run ${run}: reading the device`);
 		await post(run, 'device', await deviceInfo());
 	}
+	const { skipMissing } = plan;
+	const reportAt = plan.items.findIndex((item) => item.id === skipMissing?.report);
+	// A run that goes on after the capabilities page reads the paths from the page's stored result.
+	let skip: readonly GpuPath[] =
+		skipMissing && reportAt >= 0 && reportAt < start
+			? pathsToSkip(await storedResult(run, skipMissing.report), skipMissing.allowed)
+			: [];
 	for (const [index, item] of plan.items.entries()) {
 		if (index < start) continue;
 		report.running(index);
 		show(`${report.counts()}; now ${item.id}`);
+		if (item.gpu && skip.includes(item.gpu)) {
+			const result = skippedResult(item.gpu);
+			await post(run, item.id, result);
+			report.finish(index, result);
+			continue;
+		}
 		if (item.endsTab)
 			await post(run, progressName(item.id), { startedAt: new Date().toISOString() });
 		const runnerRefreshHz = plan.measureRefresh ? await refreshRate() : undefined;
 		const result = await runItem(item, run);
 		await post(run, item.id, runnerRefreshHz ? { ...result, runnerRefreshHz } : result);
 		report.finish(index, result);
+		if (skipMissing && index === reportAt) skip = pathsToSkip(result, skipMissing.allowed);
 		show(report.counts());
 		await sleep(PAUSE_BETWEEN_PAGES_MS);
 	}
