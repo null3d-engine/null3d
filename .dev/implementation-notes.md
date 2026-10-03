@@ -272,7 +272,20 @@ Safari runs WebGL2 in its GPU process, through ANGLE on Metal. A call that retur
 - The shader build therefore fails when a uniform block lays out differently by ANGLE's Metal rules (`metal_layout` in `crates/null3d-shaders/src/glsl.rs`). Fill each `vec3f` with a scalar into a `vec4f`.
 - With the fog's new layout, the render worker's time per frame on the iPad fell from 25.9 to 1.1 ms in S3.
 - Safari writes texels into a texture that the GPU still reads only after the GPU has finished with it. The resident texture of world matrices takes such a write whenever a scene object moves. In S4, one write per frame waited about 16 ms on the iPad.
-- The engine keeps that wait. Two ways to avoid it freed the render worker, but each cost S4 frames on the iPad, where the GPU limits S4. On 3 October 2026, the pages took turns over three runs each. With direct writes, S4 on WebGL2 drew 43.6 fps, and the render worker took 20.1 ms per frame. Writes through a ring of pixel unpack buffers, which the GPU copies in order with its other work, drew 36.6 fps with 1.5 ms. A ring of three copies of the texture, each frame writing the copy that no frame in flight reads, drew 34.5 fps with 1.5 ms. On 2 October, two runs back to back gave 48.7 fps before the fog change, and 35.3 fps with it and the unpack buffers.
-- Both ways kept the engine's limit of two frames in flight, so no extra frames queued. The GPU took longer for each frame once the render worker no longer waited, about 27 to 29 ms against 23 ms. A limit of one frame would not help. The render worker checks the fences only at its frame callbacks, so a frame that takes the GPU 23 ms would take two callbacks.
-- The S24+ phone drew S4 at 59.9 fps on WebGL2 with all three ways.
+- So a later write into a data texture of 32-bit values goes through a pixel unpack buffer. The GPU copies the texels into the texture in order with its other work, and the render worker does not wait. A ring of three such buffers serves one frame each: the frame being replayed, and the two frames that may be in flight.
+- A texture's first write, and every write into a color texture, goes straight into the texture. Through an unpack buffer, Chrome on the Mac stored sRGB texels brighter.
+- On 3 October 2026, a cool iPad Pro 11 compared three ways to write the texture again, in S4 on WebGL2. The pages took turns over three runs each (run `20261003-003951-bench`).
+
+| Way | Render worker, ms per frame | Frames per second | Upload per frame |
+| --- | --- | --- | --- |
+| Direct writes | 25.4 | 34.9 | 0.05 MB |
+| Through the ring of unpack buffers (kept) | 1.50 | 35.9 | 0.05 MB |
+| Into a ring of three copies of the texture | 1.43 | 35.6 | 0.10 MB |
+| WebGPU, as a control | 0.20 | 36.6 | 0.01 MB |
+
+- The GPU limits S4 on the iPad. All three ways and the WebGPU control ran in one session, with the pages taking turns, and drew 34.9 to 36.6 fps. So the unpack buffers cost no frames, and they free the render worker of about 24 ms of waiting per frame.
+- The ring of copies freed the render worker as well, but it costs more. Each frame writes the next copy, which no frame in flight reads. That copy first takes the rows that the other copies took since it was last in use, so the upload doubles. The ring also keeps each texture's texels on the CPU, and three textures on the GPU in place of one. It needs about 150 more lines of code. The unpack buffers add one copy on the GPU for each write, of the same bytes.
+- The S24+ phone in Chrome drew S4 at 59.9 fps with all three ways (run `20261002-222010-bench`). Its busiest thread took 3.8 to 4.0 ms with each way, so Chrome had no wait to remove. Firefox was not timed.
+- Compare frame rates only between pages that took turns in one session. Earlier runs seemed to show that the unpack buffers cost frames. On 2 October, separate runs gave 48.7 fps on main, with direct writes, and 35.3 fps with the fog change and the unpack buffers. The iPad was at a different temperature in each run, and its GPU limits S4.
+- A warm run on 3 October, with the pages taking turns, gave 43.6 fps with direct writes against 36.6 fps with the unpack buffers. The cool run a few hours later gave no such gap. In both runs, the governor took one quality step down with direct writes and none with the unpack buffers. So the direct writes drew lighter frames.
 - The Mac showed neither wait. Its GPU finished each frame before the next frame's writes, so nothing waited.
