@@ -13,7 +13,8 @@ enable draw_index;
 // lights, shadows, fogs or blends the surface belongs in `shade`, so custom materials get all of
 // it. The ALPHA_MASK builds draw nothing where the surface's alpha falls below the material's
 // cutoff, and a material that blends writes premultiplied color. The RECEIVE_SHADOWS builds dim the
-// sun's light where the main directional light's shadows fall.
+// sun's light where the main directional light's shadows fall. The SKIN builds skin each vertex by
+// its joints (null3d::mesh), before the instance's world matrix places it.
 //
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive and light maps, each a layer of a texture array with a sampler of its own. A map reads
@@ -43,6 +44,9 @@ enable draw_index;
 #import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::globals::{Material}
 #import null3d::lights::{clustered_light}
+#ifdef SKIN
+#import null3d::mesh::{skin_of, skinned_direction, skinned_point}
+#endif
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
 #import null3d::mesh::{custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
@@ -147,6 +151,10 @@ struct VertexIn {
 #endif
 #ifdef VERTEX_COLOR
     @location(5) vertex_color: vec4f,
+#endif
+#ifdef SKIN
+    @location(6) joints: vec4u,
+    @location(7) weights: vec4f,
 #endif
 }
 
@@ -357,15 +365,22 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     material = load_material_uniforms(found.material);
 #endif
     var out: VertexOut;
+#ifdef SKIN
+    let skin = skin_of(found, v.joints, v.weights);
+    let position = skinned_point(skin, mesh_position(v.position));
+    let normal = skinned_direction(skin, v.normal);
+#else
     let position = mesh_position(v.position);
+    let normal = v.normal;
+#endif
 #ifdef CUSTOM_VERTEX_OFFSET
-    let offset = vertexOffset(VertexInput(position, v.normal, mesh_uv(v.uv0)));
+    let offset = vertexOffset(VertexInput(position, normal, mesh_uv(v.uv0)));
     out.relative = relative_position(found, position + offset);
 #else
     out.relative = relative_position(found, position);
 #endif
     out.clip = clip_of(found, out.relative);
-    out.normal = world_normal(found, v.normal);
+    out.normal = world_normal(found, normal);
     out.material = found.material;
 #ifdef VERTEX_COLOR
     out.vertex_color = v.vertex_color;
@@ -378,7 +393,12 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #ifdef VERTEX_TANGENT
     // As three.js does: the tangent through the world matrix, and the bitangent at right angles
     // to the normal and the tangent, on the side that the tangent's w gives.
-    let tangent = normalize(world_direction(found, v.tangent.xyz));
+#ifdef SKIN
+    let mesh_tangent = skinned_direction(skin, v.tangent.xyz);
+#else
+    let mesh_tangent = v.tangent.xyz;
+#endif
+    let tangent = normalize(world_direction(found, mesh_tangent));
     out.tangent = tangent;
     out.bitangent = normalize(cross(out.normal, tangent) * v.tangent.w);
 #endif

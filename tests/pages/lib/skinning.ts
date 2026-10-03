@@ -1,13 +1,15 @@
-// The skinning measurement scene, which the skinning page draws on WebGL2 in two ways and the
-// runner's skinning plan reads back. A crowd of generated characters stands on a ground plane under
-// a directional light with 1 to 4 shadow cascades. Each character is a tube of rings, skinned to a
-// chain of joints with four influences per vertex, and the page bends each chain in code every
-// frame. The joint matrices reach the GPU in a float texture.
+// The skinning measurement scene, which the skinning pages draw in two ways each, on WebGL2 and on
+// WebGPU, and the runner's skinning plans read back. A crowd of generated characters stands on a
+// ground plane under a directional light with 1 to 4 shadow cascades. Each character is a tube of
+// rings, skinned to a chain of joints with four influences per vertex, and the page bends each
+// chain in code every frame.
 //
 // The two ways to skin:
-// - In the vertex shader of every pass: each shadow cascade and the main pass skin again.
-// - Once per frame with transform feedback: one pass skins every character that some pass draws
-//   into a buffer, and the shadow and main passes draw that buffer as plain vertices.
+// - In the vertex shader of every pass: each shadow cascade and the main pass skin again. The
+//   vertex shader reads the joint matrices from a float texture.
+// - Once per frame: one pass skins every character that some pass draws into a buffer, and the
+//   shadow and main passes draw that buffer as plain vertices. WebGL2 skins with transform
+//   feedback, and WebGPU with a compute pass.
 //
 // This module holds the mesh, the animation, the camera, the cascades and the culling, and how a
 // result reads. It uses no browser or Node API, so the unit tests and the runner import it too.
@@ -71,9 +73,23 @@ export const SKINNING_CASCADES = [1, 2, 3, 4] as const;
 /** The most cascades a page draws. */
 export const MAX_CASCADES = 4;
 
-/** The two ways to skin, as the page and its results name them. */
-export type SkinningPath = 'vertex-shader' | 'transform-feedback';
-export const SKINNING_PATHS: readonly SkinningPath[] = ['vertex-shader', 'transform-feedback'];
+/** The GPU interface that a skinning page draws with. */
+export type SkinningGpu = 'webgl2' | 'webgpu';
+
+/** The ways to skin, as the pages and their results name them. */
+export type SkinningPath = 'vertex-shader' | 'transform-feedback' | 'compute';
+
+/** The path that skins each character once per frame, on each GPU interface. */
+export const SKIN_ONCE: Readonly<Record<SkinningGpu, SkinningPath>> = {
+	webgl2: 'transform-feedback',
+	webgpu: 'compute',
+};
+
+/** The two paths that a page on `gpu` draws and times: in every pass first, then once. */
+export const skinningPaths = (gpu: SkinningGpu): readonly [SkinningPath, SkinningPath] => [
+	'vertex-shader',
+	SKIN_ONCE[gpu],
+];
 
 /** Floats in one joint's matrix: three rows of four, one texel per row. */
 export const JOINT_FLOATS = 12;
@@ -464,29 +480,55 @@ export interface ImageComparison {
 	largest: number;
 }
 
-/** What the skinning page reports. */
+/** What a skinning page reports. */
 export interface SkinningResult {
+	/** The GPU interface the page drew with. Results from before WebGPU's page had none: WebGL2. */
+	gpu?: SkinningGpu;
 	characters: number;
 	cascades: number;
 	/** The frame in pixels, and each character's vertices and joints. */
 	size: readonly [number, number];
 	vertices: number;
 	joints: number;
-	/** Whether the page drew with WEBGL_multi_draw, and timed with GPU timer queries. */
+	/**
+	 * Whether the page drew with WEBGL_multi_draw, which WebGPU lacks, and timed with GPU timer
+	 * queries on WebGL2 or timestamp queries on WebGPU.
+	 */
 	multiDraw: boolean;
 	gpuTimer: boolean;
 	/** Characters drawn by the main pass, then by each cascade. */
 	drawn: number[];
-	/** Characters that the transform feedback pass skins: those that some pass draws. */
+	/** Characters that the path that skins once skins: those that some pass draws. */
 	skinned: number;
 	image: ImageComparison;
-	paths: Record<SkinningPath, PathTiming>;
+	/** The timings of the page's two paths, as `skinningPaths` names them. */
+	paths: Partial<Record<SkinningPath, PathTiming>>;
 }
 
-/** The share of the vertex shader path's frame time that transform feedback saves; below 0 costs. */
-export function frameSaving(result: Pick<SkinningResult, 'paths'>): number {
-	const each = result.paths['vertex-shader'].frameMs;
-	return (each - result.paths['transform-feedback'].frameMs) / each;
+/** The GPU interface of a result. */
+export const gpuOf = (result: Pick<SkinningResult, 'gpu'>): SkinningGpu => result.gpu ?? 'webgl2';
+
+/** The timing of `path` in a result; a path that the result lacks reads as untimed. */
+export function pathTiming(result: Pick<SkinningResult, 'paths'>, path: SkinningPath): PathTiming {
+	return (
+		result.paths[path] ?? {
+			frameMs: 0,
+			frameMsQuartiles: [0, 0],
+			cpuMs: 0,
+			gpuMs: null,
+			batchFrames: 0,
+			batches: 0,
+			skinnedVertices: 0,
+		}
+	);
+}
+
+/**
+ * The share of the vertex shader path's frame time that skinning once saves; below 0 it costs.
+ */
+export function frameSaving(result: Pick<SkinningResult, 'paths' | 'gpu'>): number {
+	const [each, once] = skinningPaths(gpuOf(result)).map((path) => pathTiming(result, path).frameMs);
+	return ((each as number) - (once as number)) / (each as number);
 }
 
 /** Compares two frames of RGBA bytes with the scene's level threshold. */
@@ -510,10 +552,9 @@ export function skinningProblems(result: SkinningResult): string[] {
 		problems.push(
 			`the two paths drew different images: ${differing} of ${pixels} pixels differ, by up to ${largest} levels`,
 		);
-	for (const path of SKINNING_PATHS) {
-		const timing = result.paths[path];
-		if (!(timing.frameMs > 0)) problems.push(`the ${path} path measured no frame time`);
-	}
+	for (const path of skinningPaths(gpuOf(result)))
+		if (!(pathTiming(result, path).frameMs > 0))
+			problems.push(`the ${path} path measured no frame time`);
 	return problems;
 }
 

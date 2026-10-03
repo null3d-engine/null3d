@@ -73,6 +73,7 @@
 //! | [`op::SET_LAYERS`] | layer mask | unused |
 //! | [`op::SET_FLAGS`] | the [`flags::SETTABLE`] bits to change | their new values |
 //! | [`op::SET_RENDER_ORDER`] | the order's 32-bit float bits | unused |
+//! | [`op::SET_SKIN`] | the animated instance's id plus one, or 0 | unused |
 //!
 //! The handle is reserved with [`SceneStorage::reserve`] before its create command, so TypeScript
 //! can write the object's position, rotation, scale and local bounds straight away. Destroying an
@@ -152,6 +153,12 @@ pub mod op {
     pub const SET_FLAGS: u32 = 9;
     /// Sets the render order. `a`: the order's bits as a 32-bit float.
     pub const SET_RENDER_ORDER: u32 = 10;
+    /// Skins an object's mesh with an animated instance's joints, or with `a` = 0, stops. `a`: the
+    /// animated instance's id plus one. A skinned object has a bounding sphere of its own
+    /// ([`super::flags::CUSTOM_BOUNDS`]), which the animation step writes each frame. Stopping
+    /// gives the object its mesh's bounds again, so write the mesh's local radius and a zero
+    /// local centre first.
+    pub const SET_SKIN: u32 = 11;
     /// The `b` of [`SET_PARENT`] that keeps the object's place in the world.
     pub const KEEP_WORLD: u32 = 1;
 }
@@ -283,6 +290,20 @@ impl Command {
             handle: handle.raw(),
             a: mask,
             b: values,
+        }
+    }
+
+    /// Skins the mesh of `handle` with the joints of animated instance `instance`, or with `None`,
+    /// stops skinning it.
+    pub const fn set_skin(handle: Handle, instance: Option<u32>) -> Command {
+        Command {
+            op: op::SET_SKIN,
+            handle: handle.raw(),
+            a: match instance {
+                Some(instance) => instance + 1,
+                None => 0,
+            },
+            b: 0,
         }
     }
 
@@ -445,6 +466,8 @@ pub struct SceneStorage {
     flags: Vec<u32>,
     meshes: Vec<u32>,
     materials: Vec<u32>,
+    /// The animated instance that skins each object's mesh, plus one, or 0 for none.
+    skins: Vec<u32>,
     layers: Vec<u32>,
     /// The number of created objects whose layer mask is not the default one.
     custom_layers: u32,
@@ -508,6 +531,7 @@ impl SceneStorage {
             flags: vec![0; rows],
             meshes: vec![0; rows],
             materials: vec![0; rows],
+            skins: vec![0; rows],
             layers: vec![DEFAULT_LAYERS; rows],
             custom_layers: 0,
             cells: vec![ORIGIN_CELL; rows],
@@ -672,6 +696,22 @@ impl SceneStorage {
     /// Material ids.
     pub fn materials(&self) -> &[u32] {
         &self.materials
+    }
+
+    /// The animated instance that skins each slot's mesh, plus one, or 0 for a mesh that no
+    /// instance skins.
+    pub fn skins(&self) -> &[u32] {
+        &self.skins
+    }
+
+    /// Writes the bounding sphere of slot `slot`'s own bounds, in the object's space, and marks
+    /// the object so the next transform update moves the sphere into the world. The animation step
+    /// writes skinned objects' spheres this way.
+    pub fn set_local_sphere(&mut self, slot: u32, center: [f32; 3], radius: f32) {
+        let s = slot as usize;
+        self.local_centers[s * 3..s * 3 + 3].copy_from_slice(&center);
+        self.local_radii[s] = radius;
+        self.dirty.set(slot);
     }
 
     /// Layer masks (see [`crate::layers`]).
@@ -971,6 +1011,7 @@ impl SceneStorage {
                 self.flags[s] = 0;
                 self.meshes[s] = 0;
                 self.materials[s] = 0;
+                self.skins[s] = 0;
                 self.change_layers(s, DEFAULT_LAYERS);
                 self.table.release(self.cells[s]);
                 self.cells[s] = ORIGIN_CELL;
@@ -999,7 +1040,9 @@ impl SceneStorage {
             op::SET_MESH => {
                 let slot = self.created_slot(command.handle)?;
                 self.meshes[slot as usize] = command.a;
-                self.flags[slot as usize] &= !flags::CUSTOM_BOUNDS;
+                if self.skins[slot as usize] == 0 {
+                    self.flags[slot as usize] &= !flags::CUSTOM_BOUNDS;
+                }
                 self.dirty.set(slot);
             }
             op::SET_MATERIAL => {
@@ -1048,6 +1091,17 @@ impl SceneStorage {
             op::SET_RENDER_ORDER => {
                 let slot = self.created_slot(command.handle)?;
                 self.render_orders[slot as usize] = f32::from_bits(command.a);
+            }
+            op::SET_SKIN => {
+                let slot = self.created_slot(command.handle)?;
+                let s = slot as usize;
+                self.skins[s] = command.a;
+                if command.a == 0 {
+                    self.flags[s] &= !flags::CUSTOM_BOUNDS;
+                } else {
+                    self.flags[s] |= flags::CUSTOM_BOUNDS;
+                }
+                self.dirty.set(slot);
             }
             other => return Err(CoreError::UnknownCommand { op: other }),
         }
@@ -2477,6 +2531,58 @@ mod tests {
         scene.update_transforms(&jobs);
         assert_eq!(scene.flags()[s] & flags::BOUNDS, 0);
         assert_eq!(scene.current_world().sphere(s), [10.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn a_skinned_object_keeps_its_instance_and_a_sphere_of_its_own_until_it_stops() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (h, c) = object(&mut scene, [10.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        scene.apply_commands(&[c], 1).unwrap();
+        scene.update_transforms(&jobs);
+        assert!(scene.take_structure_changed());
+        let s = scene.resolve(h).unwrap();
+
+        // Skinning changes the structure: the object then draws from a bucket of its own.
+        scene
+            .apply_commands(&[Command::set_skin(h, Some(4))], 2)
+            .unwrap();
+        assert!(scene.take_structure_changed());
+        assert_eq!(scene.skins()[s as usize], 5);
+        assert_ne!(scene.flags()[s as usize] & flags::CUSTOM_BOUNDS, 0);
+        // The animation step's sphere reaches the world at the next transform update, static
+        // object or not.
+        scene.update_transforms(&jobs);
+        scene.set_local_sphere(s, [0.0, 1.0, 0.0], 2.0);
+        scene.update_transforms(&jobs);
+        assert_eq!(
+            scene.current_world().sphere(s as usize),
+            [10.0, 1.0, 0.0, 2.0]
+        );
+        // A new mesh keeps the sphere that the step writes.
+        scene
+            .apply_commands(
+                &[Command {
+                    op: op::SET_MESH,
+                    handle: h.raw(),
+                    a: 3,
+                    b: 0,
+                }],
+                3,
+            )
+            .unwrap();
+        assert_ne!(scene.flags()[s as usize] & flags::CUSTOM_BOUNDS, 0);
+
+        scene
+            .apply_commands(&[Command::set_skin(h, None)], 4)
+            .unwrap();
+        assert!(scene.take_structure_changed());
+        assert_eq!(scene.skins()[s as usize], 0);
+        assert_eq!(scene.flags()[s as usize] & flags::CUSTOM_BOUNDS, 0);
+        scene
+            .apply_commands(&[Command::set_skin(h, Some(0)), Command::destroy(h)], 5)
+            .unwrap();
+        assert_eq!(scene.skins()[s as usize], 0);
     }
 
     #[test]
