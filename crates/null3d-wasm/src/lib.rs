@@ -16,8 +16,8 @@ use std::cell::{Cell, UnsafeCell};
 use std::sync::OnceLock;
 
 use null3d_core::animation::{
-    AnimationError, Animations, Channel, Interpolation, MATRIX_FLOATS, MAX_JOINTS, REST_FLOATS,
-    Skeleton, SourceTrack, TrackProblem, resample,
+    AnimationError, Animations, Channel, Interpolation, MATRIX_FLOATS, MAX_JOINTS, Play,
+    REST_FLOATS, Skeleton, SourceTrack, TrackProblem, resample,
 };
 use null3d_core::error::CoreError;
 use null3d_core::handle::Handle;
@@ -54,7 +54,8 @@ pub mod constants;
 
 use constants::{
     TRACK_WORDS, animation_field, animation_problem, arrays_problem, batch_field, camera_target,
-    debug_line_field, mesh_arrays, ring_field, scene_field, shading, texture_option, texture_stat,
+    debug_line_field, mesh_arrays, play_flag, ring_field, scene_field, shading, texture_option,
+    texture_stat,
 };
 
 /// The engine version, as the loader reports it.
@@ -1552,6 +1553,15 @@ fn animation_failure(error: AnimationError) -> u32 {
         AnimationError::Track { track, problem } => {
             (animation_problem::TRACK + problem as u32, track)
         }
+        AnimationError::Events { event } => (animation_problem::EVENTS, event),
+        AnimationError::Mask { joint } => (animation_problem::MASK, joint),
+        AnimationError::Play { option } => (animation_problem::PLAY, option),
+        AnimationError::UnknownInstance { instance } => {
+            (animation_problem::UNKNOWN_INSTANCE, instance)
+        }
+        AnimationError::UnknownClip { clip } => (animation_problem::UNKNOWN_CLIP, clip),
+        AnimationError::Layer { layer } => (animation_problem::LAYER, layer),
+        AnimationError::UnknownMask { mask } => (animation_problem::UNKNOWN_MASK, mask),
     };
     fail(codes::BAD_ANIMATION, [problem, at])
 }
@@ -1694,6 +1704,17 @@ pub fn create_animated_instance(skeleton: u32) -> u32 {
     })
 }
 
+/// Removes an animated instance; its id and joints go to later instances.
+#[wasm_bindgen(js_name = removeAnimatedInstance)]
+pub fn remove_animated_instance(instance: u32) -> u32 {
+    with_animations(|animations, _| {
+        animations
+            .remove_instance(instance.wrapping_sub(1))
+            .map_err(animation_failure)?;
+        Ok(0)
+    })
+}
+
 /// The address of an animation table array (`constants::animation_field`).
 #[wasm_bindgen(js_name = animationArrays)]
 pub fn animation_arrays(field: u32) -> u32 {
@@ -1702,20 +1723,104 @@ pub fn animation_arrays(field: u32) -> u32 {
             animation_field::SLOT_CLIPS => address(&animations.slots().clip),
             animation_field::SLOT_TIMES => address(&animations.slots().time),
             animation_field::SLOT_WEIGHTS => address(&animations.slots().weight),
+            animation_field::TIME_SCALES => address(animations.time_scales()),
+            animation_field::LAYER_WEIGHTS => address(animations.layer_weights()),
+            animation_field::EVENTS => address(animations.event_buffer()),
+            animation_field::EVENT_TOTALS => address(animations.event_totals()),
             _ => address(animations.matrices()),
         })
     })
 }
 
-/// Writes every animated instance's skinning matrices, on the job workers.
+/// Plays clip `clip` on instance `instance`, on layer `layer`, fading over `fade` seconds at
+/// `speed`, with `flags` (`constants::play_flag`): `Animations::play`.
+#[wasm_bindgen(js_name = animatorPlay)]
+pub fn animator_play(
+    instance: u32,
+    clip: u32,
+    layer: u32,
+    fade: f32,
+    speed: f32,
+    flags: u32,
+) -> u32 {
+    with_animations(|animations, _| {
+        let play = Play {
+            layer,
+            fade,
+            speed,
+            looping: flags & play_flag::LOOP != 0,
+            additive: flags & play_flag::ADDITIVE != 0,
+        };
+        animations
+            .play(instance.wrapping_sub(1), clip.wrapping_sub(1), play)
+            .map_err(animation_failure)?;
+        Ok(0)
+    })
+}
+
+/// Stops clip `clip` on instance `instance`, or every clip when `clip` is 0, fading out over
+/// `fade` seconds.
+#[wasm_bindgen(js_name = animatorStop)]
+pub fn animator_stop(instance: u32, clip: u32, fade: f32) -> u32 {
+    with_animations(|animations, _| {
+        let clip = clip.checked_sub(1);
+        animations
+            .stop(instance.wrapping_sub(1), clip, fade)
+            .map_err(animation_failure)?;
+        Ok(0)
+    })
+}
+
+// The staging words hold one weight from 0 to 1 per joint of the skeleton.
+/// Creates a joint mask for `skeleton` from the staging words; returns its id plus one.
+#[wasm_bindgen(js_name = createJointMask)]
+pub fn create_joint_mask(skeleton: u32) -> u32 {
+    with_animations(|animations, staging| {
+        let staged = std::mem::take(staging);
+        let mask = animations
+            .add_mask(skeleton.wrapping_sub(1), as_floats(&staged))
+            .map_err(animation_failure)?;
+        Ok(mask + 1)
+    })
+}
+
+/// Gives layer `layer` of instance `instance` joint mask `mask`, or every joint when `mask` is 0.
+#[wasm_bindgen(js_name = setLayerMask)]
+pub fn set_layer_mask(instance: u32, layer: u32, mask: u32) -> u32 {
+    with_animations(|animations, _| {
+        animations
+            .set_layer_mask(instance.wrapping_sub(1), layer, mask.checked_sub(1))
+            .map_err(animation_failure)?;
+        Ok(0)
+    })
+}
+
+// The staging words hold `count` event times in seconds as floats, then `count` event ids.
+/// Sets the events of clip `clip` from the staging words.
+#[wasm_bindgen(js_name = setClipEvents)]
+pub fn set_clip_events(clip: u32, count: u32) -> u32 {
+    with_animations(|animations, staging| {
+        let staged = std::mem::take(staging);
+        let n = (count as usize).min(staged.len() / 2);
+        let (times, ids) = staged.split_at(n);
+        animations
+            .set_clip_events(clip.wrapping_sub(1), &as_floats(times)[..n], &ids[..n])
+            .map_err(animation_failure)?;
+        Ok(0)
+    })
+}
+
+/// Advances every played clip by `step_us` microseconds, then writes every animated instance's
+/// skinning matrices, on the job workers. The microseconds cross from TypeScript as a whole
+/// number, so no number object is made for them.
 #[wasm_bindgen(js_name = updateAnimations)]
-pub fn update_animations() -> u32 {
+pub fn update_animations(step_us: u32) -> u32 {
     let Some(jobs) = JOBS.get() else {
         return fail(codes::NOT_READY, [0, 0]);
     };
     with_engine(|e| {
         if let Some(animations) = e.animations.as_mut() {
-            animations.update(jobs);
+            animations.update(jobs, step_us as f32 * 1e-6);
         }
         0
     })

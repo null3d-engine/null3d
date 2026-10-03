@@ -649,6 +649,25 @@ export class SketchRunner {
 	}
 
 	/**
+	 * The animation step, once the scene has animated objects: advances their clips by `stepUs`
+	 * whole microseconds and poses them on the job workers. It counts as transform time, with the
+	 * transform update that follows it. The events it collects reach the sketch's handlers at the
+	 * start of the next frame's update.
+	 */
+	private animate(stepUs: number): void {
+		const animations = this.context.scene.animations;
+		if (animations === undefined) return;
+		try {
+			animations.update(stepUs);
+		} catch (error) {
+			this.report(error);
+		}
+	}
+
+	/** Reports an error from a sketch's handler, as `report` does. */
+	private readonly reportError = (error: unknown): void => this.report(error);
+
+	/**
 	 * Runs one frame at the clock's time and step, and returns its number. Without `play`, the
 	 * frame reads no input and runs none of the sketch's code: only the core's steps.
 	 */
@@ -690,6 +709,8 @@ export class SketchRunner {
 				if (change === RESTART_CHANGE) restart = true;
 				this.notify(this.quality.handlers, this.quality);
 			}
+			// The clips' events of the frame before, so the sketch's update sees them.
+			this.context.scene.animations?.dispatch(this.reportError);
 			// Steps that fall due count even when the sketch has no fixed update, so none pile up.
 			const steps = this.fixed.stepsAt(time.now);
 			if (callbacks.onFixedUpdate) {
@@ -717,6 +738,7 @@ export class SketchRunner {
 		if (glue.beginFrame(frame, timeMs, stepUs) !== 0) this.report(coreFailure(glue, QUEUED_CHANGE));
 		this.core.refresh();
 		this.endPhase(Phase.Commands);
+		this.animate(play ? stepUs : 0);
 		this.updateTransforms(false);
 		if (play && callbacks.onLateUpdate) {
 			try {
