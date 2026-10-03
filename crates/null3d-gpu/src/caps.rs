@@ -98,7 +98,7 @@ pub const LIMIT_COUNT: usize = 18;
 
 /// The portable budget: WebGPU's default limits, lowered where compatibility mode is lower.
 pub const BUDGET: [u32; LIMIT_COUNT] = [
-    4,                 // bind groups (the engine uses 3)
+    4,                 // bind groups (the engine's pipelines use 2 on WebGPU)
     256 * 1024 * 1024, // buffer size
     4,                 // color attachments
     32,                // color bytes per sample

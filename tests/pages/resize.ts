@@ -4,7 +4,10 @@
 // window: the canvas's CSS size, and the size of its drawing buffer as the engine's capture reads
 // it. A test resizes the window and asks again. `setMaxPixelRatio(ratio)` on the window has the
 // sketch change its cap through `ctx.quality`, and resolves once the sketch has heard of the change.
-// `webgl2MaxTextureSize()` gives WebGL2's largest texture width and height.
+// `maxDrawingSize(gpu)` gives the largest drawing buffer of the GPU path that the ?gpu= switch
+// names, from the browser's limits: on WebGPU the texture size of a device requested as the engine
+// requests it, and on WebGL2 the smallest of the texture, renderbuffer and viewport limits. `maxCanvasSize` holds the engine's own figure for its GPU path, and
+// `engineFailure` the message of a failure after the start.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 
@@ -17,7 +20,9 @@ declare global {
 	interface Window {
 		canvasSize?: () => Promise<CanvasSize>;
 		setMaxPixelRatio?: (ratio: number) => Promise<void>;
-		webgl2MaxTextureSize?: () => number;
+		maxDrawingSize?: (gpu: string) => Promise<number>;
+		maxCanvasSize?: number;
+		engineFailure?: string;
 	}
 }
 
@@ -42,16 +47,37 @@ run('resize', async () => {
 			if (name === 'changed') heardChange();
 		},
 	});
+	engine.onFailure((error) => {
+		window.engineFailure ??= error.message;
+	});
 	await engine.firstFrame;
+	window.maxCanvasSize = engine.capabilities.maxCanvasSize;
 	window.canvasSize = async () => {
 		const { width, height } = await engine.captureFrame();
 		const box = canvas.getBoundingClientRect();
 		return { css: { width: box.width, height: box.height }, buffer: { width, height } };
 	};
-	window.webgl2MaxTextureSize = () => {
-		const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
-		if (!gl) throw new Error('the browser has no WebGL2');
-		return gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
+	window.maxDrawingSize = async (gpu) => {
+		if (gpu === 'webgl2') {
+			const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
+			if (!gl) throw new Error('the browser has no WebGL2');
+			const [viewportWidth = 0, viewportHeight = 0] = gl.getParameter(
+				gl.MAX_VIEWPORT_DIMS,
+			) as Int32Array;
+			return Math.min(
+				gl.getParameter(gl.MAX_TEXTURE_SIZE) as number,
+				gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number,
+				viewportWidth,
+				viewportHeight,
+			);
+		}
+		const adapter = await navigator.gpu.requestAdapter({ featureLevel: 'compatibility' });
+		if (!adapter) throw new Error('the browser has no WebGPU adapter');
+		const core = gpu === 'webgpu' ? ['core-features-and-limits' as GPUFeatureName] : [];
+		const device = await adapter.requestDevice({ requiredFeatures: core });
+		const size = device.limits.maxTextureDimension2D;
+		device.destroy();
+		return size;
 	};
 	window.setMaxPixelRatio = (ratio) =>
 		new Promise((resolve) => {

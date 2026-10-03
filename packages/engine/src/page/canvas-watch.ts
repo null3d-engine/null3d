@@ -4,9 +4,9 @@
 // CSS size and the ratio for pointer positions and its viewport. A hidden page that shows again
 // counts as a resume, so the sketch's next step counts no time.
 //
-// The size of the drawing buffer never passes the largest texture that the GPU path draws into. A
-// larger canvas draws at a lower pixel ratio, which the page writes as the ratio, so the sketch
-// still maps pointer positions to the buffer.
+// The size of the drawing buffer never passes the largest that the GPU path draws into. A larger
+// canvas draws at a lower pixel ratio, which the page writes as the ratio, so the sketch still maps
+// pointer positions to the buffer.
 
 import { controlViews, Slot } from '../shared/control';
 
@@ -21,9 +21,6 @@ export interface CanvasWatch {
 }
 
 type DevicePixels = { width: number; height: number };
-
-/** WebGPU's default limit on a texture's width and height, within which the engine stays. */
-export const WEBGPU_MAX_TEXTURE_SIZE = 8192;
 
 /**
  * Fixes the CSS width or height of a canvas where it follows the size of the drawing buffer, as it
@@ -49,7 +46,7 @@ function fixSelfSizedCanvas(canvas: HTMLCanvasElement): void {
 
 /**
  * Watches the canvas's size and the page's visibility, and writes them into the control block.
- * `maxSize` is the largest width and height of a texture that the GPU path draws into.
+ * `maxSize` is the largest width and height of a drawing buffer that the GPU path draws into.
  */
 export function watchCanvas(
 	canvas: HTMLCanvasElement,
