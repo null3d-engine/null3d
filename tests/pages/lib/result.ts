@@ -114,8 +114,8 @@ export async function publish(name: string, result: Record<string, unknown>): Pr
 	const report = { page: name, userAgent: navigator.userAgent, url: location.href, ...result };
 	window.__null3dResult = report;
 	const status = document.getElementById('status');
-	// A demo keeps its scene on screen, so its status stays one line.
-	const demo = new URLSearchParams(location.search).has('demo');
+	// A demo keeps its scene on screen, so its status stays one line, unless the page failed.
+	const demo = new URLSearchParams(location.search).has('demo') && !('error' in result);
 	if (status)
 		status.textContent = demo
 			? `${document.title}: running`
