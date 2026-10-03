@@ -12,7 +12,7 @@ On 3 October 2026:
 | --- | --- | --- |
 | Frames in flight | Decided by the owner, 2026-09-30: at most two frames unfinished on the GPU, on both paths | The iPad's rows of the GPU-bound page. The four Mac browsers and the S24+ support the decision, so these rows can only confirm it or reopen it |
 | The preset check's thresholds | Proposed by M1-G3 | The owner's answer on the grace, the window and the target on 120 Hz displays (below) |
-| The governor's thresholds | Proposed by M1-G5, kept by M1-G6. The stress test passes on the Mac, the S24+ and, after #222, the iPad. In M1-G6's S4 reruns, the render scale held still in every measured second | The owner's answer |
+| The governor's thresholds | Proposed by M1-G5, kept by M1-G6. The stress test passes on the Mac, the S24+ and, after #222, the iPad. In M1-G6's S4 reruns, the render scale held still in every measured second. M1-K5 moved the step-down line to the line at which the benchmark reports count a held second, and gave each setting its own wait after a failed step up (below) | The iPad's S4 rerun at Low, warm; the owner's answer |
 | The preset values | Set by M1-G6 (#215), 2026-10-03. The S24+ passed its S4 gate at Low. Warm, the iPad held about 45 fps at Medium, so the owner decided to judge its gate at Low. It passed at Low: 298 of 299 seconds at 60 fps | Open for later: the chooser starts the S24+ at Low, though it held Medium for 5 minutes. A follow-up measures the render scale on tile-based GPUs |
 | The live shadow-map resize test | Not built | No setting that changes during play resizes a shadow map, so the presets do not need it (below) |
 
@@ -209,17 +209,17 @@ The governor keeps the thresholds of dynamic resolution (M1-G4) for every step. 
 
 | Rule | Value |
 | --- | --- |
-| Over budget | The longer of the mean presented and completed intervals is 110% of the budget or more, or the GPU delay is 200% or more |
+| Over budget | Over the last second, the longer of the mean presented and completed intervals averages over the budget divided by 95%: a rate under 57 at a target of 60. Every window of that second is also over 102%, so a single stall does not count. Or every window of the second has a GPU delay of 200% or more. M1-G5 proposed each window at 110% or more for a second; M1-K5 changed it (below) |
 | Step down | After 1 s over budget |
-| Room to spare | Intervals within 102% of the budget on average since the room started, with each window under the over-budget line and a GPU delay within 125% |
-| Step up | After 5 s with room. A step up that fails within 3 s doubles the next wait, up to 80 s |
+| Room to spare | Intervals within 102% of the budget on average since the room started, with a GPU delay within 125% in each window |
+| Step up | After 5 s with room. Each setting keeps its own wait. A step up is on trial for 30 s: a step down from its setting in that time doubles the wait before the next step up into it, up to 80 s. A step down after the trial sets that setting's wait back to 5 s. M1-G5 proposed one wait for all settings and a trial of 3 s |
 | Settle after a step | 1 s |
 | Grace | 2 s after the first frame, after a pause, and while textures wait to upload |
 | Order | Render scale in steps of 0.05, then the far cascades' interval doubled up to 8, then the shadow filter from 5 to 3, then bloom's samples halved down to a quarter while bloom is on (M2-F1). Up in the reverse order |
 
 Why this order: the render scale lightens the GPU's work on every pixel, whatever the scene holds. A step of the scale also makes no GPU object. Scene passes draw into the top-left corner of targets that keep the canvas's size. So a new scale needs no texture, view, bind group or pipeline. The shadow steps help only a scene whose shadows cost much, so they come after the scale has reached `minRenderScale`. Bloom's steps come last (M2-F1, [D-21](D-21-effect-chain.md)). A lower render scale already shrinks bloom's targets with the scene's. Bloom's samples change only a uniform, so a step makes no GPU object. Fewer samples read the same kernels more coarsely. The glow keeps its size, but faint steps show in it, so these steps come last.
 
-The rules ask for a step up only after about five seconds under 80% of the budget. A presented interval never falls below the refresh period, so a frame interval under 80% of the budget never happens at the display's rate. The GPU delay is no better. A WebGL2 fence's time rounds up to the next frame callback, and Firefox reports WebGPU completions a display frame late. So "room" means frames at the target rate with a GPU delay within 125% of the budget. The failed-step-up rule then keeps the settings below the point where frames fall behind.
+The rules of dynamic resolution (M1-G4) asked for a step up only after about five seconds under 80% of the budget. A presented interval never falls below the refresh period, so a frame interval under 80% of the budget never happens at the display's rate. The GPU delay is no better. A WebGL2 fence's time rounds up to the next frame callback, and Firefox reports WebGPU completions a display frame late. So "room" means frames at the target rate with a GPU delay within 125% of the budget. The failed-step-up rule then keeps the settings below the point where frames fall behind.
 
 ### Data
 
@@ -265,6 +265,62 @@ null3D builds the loop in, so an app gets it with no code of its own. The govern
 - The shadow steps help only a scene whose shadows cost much. The render scale helps only a GPU-bound scene. A CPU-bound scene walks down every step for nothing. The governor could undo a step that did not shorten the frames.
 - A slow sketch on the thread that draws slows the frame callbacks, as in low latency and single-threaded modes. The refresh meter reads them as a slower display. The budget then grows, and the governor misses the overload.
 - The S4 benchmark kept its render scale at 1, to match its three.js twin's pixels. Since M1-G6 it keeps the preset's range of render scales, as exit gate item 3 measures it.
+
+### The warm iPad's gate at Low (M1-K5)
+
+Status: built by M1-K5 on 3 October 2026. The iPad's rerun is pending.
+
+The gate's S4 run at Low failed on the warm iPad at the gate commit `3b79b9da`. Safari 26.6.2 on WebGPU, 5 minutes of warm-up, then 5 measured minutes (run `20261003-145142-bench`):
+
+| Figure | Value |
+| --- | --- |
+| Seconds that held 95% of 60 fps | 49 of 300 (16%) |
+| Frame rate | 55.7 fps on average, both presented and completed. The median interval was 18.0 ms, 108% of the budget |
+| Render scale | 0.85 for 279 seconds, at 54 to 57 fps. 0.8 for 20 seconds, at 57 to 60 fps, all of them held |
+| Steps | One step down to 0.8 at second 59, and one step back up to 0.85 at second 80 |
+| GPU time | 14.09 ms per frame at 0.85 (median, timestamp queries), against 12.65 ms at the full scale in the passing run of the same morning (`20261003-073734-bench`, which started cool) |
+| GPU delay | 17.8 ms from submit to done (median), 107% of the budget |
+
+The cause was a gap between two lines:
+
+- The benchmark report counts a second as held at 95% of the target or more: 57 fps at 60.
+- The governor counted a window as over budget at 110% of the budget or more: 54.5 fps or slower. Room needed 102% or less: 58.8 fps or faster.
+- From 54.5 to 57 fps, the gate counted a miss, and the governor saw neither an overload nor room. It held still. At 0.85 the iPad ran at 55 to 56 fps, inside that gap.
+- The governor did not judge GPU time against the budget. It judges the slower of the presented and completed rates, and the GPU delay. The delay was 107% of the budget, under both the 125% of room and the 200% of a queue.
+- The one step down came from a run of 54 fps windows, which crossed 110% by chance. At 0.8 the frames averaged 58.5 fps, 102.6% of the budget. The 5 seconds of room came only after 20 seconds, when the frames held 59 to 60 for a while. At 0.85 the frames fell to 55 fps again, which was not over the 110% line. So the step up never counted as failed, and no step down followed.
+
+The WebGL2 run of the same evening (`20261003-140903-bench`) passed, with 293 of 300 seconds held. Its render scale moved between 0.6 and 0.65 nine times. Each step up to 0.65 held the target at first, then fell to 55 to 57 fps 15, 15, 10 and 2 seconds later. A step down counted as a failed step up only within 3 s, so only the last one doubled the wait. The governor tried 0.65 again after 13 to 45 seconds each time.
+
+The fix:
+
+- One line for the governor and the reports: `HELD_PERCENT`, 95, in `packages/engine/src/shared/stats.ts`. The report's summary reads it, and so does the governor. The governor steps down when the last second's mean frame rate falls under it. So it cannot rest where the report counts a miss.
+- Each window of that second must also be over the room line, 102%. A quarter second of stalled frames among frames at the full rate takes the second's mean past the line. A lower setting does not help a stall, so it takes no step.
+- A queue on the GPU still needs every window of the second at a delay of 200% or more.
+- A step up is on trial for 30 seconds. A step down from its setting in that time counts as its failure, and doubles the wait before the next step up into that setting.
+- Each setting keeps its own wait and its own trial. In a replay of the WebGL2 run, the governor tried 0.7 from 0.65, fell back, and then 0.65 itself fell behind. With one shared trial, the step back from 0.7 ended the trial of 0.65, and the wait started again from 5 seconds. A shared wait also slows every later step up, also into settings that never failed.
+
+Options rejected:
+
+- A lower line for each window, such as 105%, with every window of the second over it. Safari's worker timer makes windows at the full rate measure 97% to 105% ("Data" above). The line would sit at the edge of that noise. It also judges quarters, not the seconds the report counts. At 56 to 57 fps, one window under the line would start the second again, and the governor could rest at a missed rate.
+- The mean of the last second alone. The governor's own test of a pause caught it: 0.7 s of frames at half the rate stepped the scale down. One stalled window does the same.
+- GPU time against the budget. At 0.85 the GPU took 14.1 ms, under the 16.7 ms budget, while the frames came every 18 ms. The frame rate is what the gate measures. Many WebGL2 devices give no GPU time.
+- A single remembered scale that failed. In the WebGL2 replay, tries of 0.7 and of 0.65 alternate, and one memory loses the other.
+- A longer trial with one shared wait. It fixes the late failures, but not the case of the two alternating scales above.
+
+The unit tests replay both runs. Each second of a replay comes at the rate that the run measured at the governor's scale, in the run's order. The rates of the scales that a run never measured are assumptions. Above them it is 50 fps, as the warm-up stepped down past them, and below them 60 fps. The replays give each frame a GPU delay of one frame, which always leaves room. In the WebGL2 run the median delay was 30.7 ms, over the 125% of room. So the device has room less often, and tries fewer steps up than its replay.
+
+| Replay | Seconds held | Steps |
+| --- | --- | --- |
+| WebGPU, 300 s from 0.85 | 297 of 300 (99%), against 49 in the run | Down to 0.8 after 1 s. One try of 0.85 at second 21, which fell back after 2 s. Then 0.8 to the end: at 57 to 60 fps it never has the room for a step up |
+| WebGL2, 600 s from 0.65 | 583 of 600 (97%), with 8 seconds lost to tries of 0.7, whose rate the run never measured | Each visit of 0.65 replays the run's next visit, then 56 fps. The stays at 0.6 before each try of 0.65 grew: 5, 10, 20, 41, then 81 s. The run's stays were 13, 45, 15 and 33 s |
+
+The device rerun decides the gate, and the coordinator runs it. It is S4 at Low on the iPad, Safari, WebGPU, with 5 minutes of warm-up and 5 measured minutes. It also shows whether 0.8 holds the target once the iPad is warm. A separate task measures the heat and the GPU time at each scale. The GPU time rose from 12.65 to 14.1 ms while the scale fell.
+
+```sh
+bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4 --pages null3d-webgpu --runs 1 --seconds 300 --switches preset=low
+```
+
+React Three Fiber's drei has the same problem in `PerformanceMonitor`. It counts the swings between its bounds, and after `flipflops` swings it calls `onFallback` and stops. null3D's governor keeps trying, but each failed setting waits longer, up to 80 s, so a scene that gets lighter still gets its quality back.
 
 ## The preset values (M1-G6)
 
