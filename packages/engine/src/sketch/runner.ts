@@ -302,12 +302,13 @@ export class SketchRunner {
 				renderScaleThousandths: () => this.renderScale(),
 			},
 		};
-		this.debugDraw = DEV ? new DebugDraw(this.core, host) : undefined;
+		const scene = new Scene(this.core, this.recorded, device.webgl2, () => this.warmUp());
+		this.debugDraw = DEV ? new DebugDraw(this.core, host, scene) : undefined;
 		const debug = this.debugDraw ?? new SketchDebug(host);
 		this.context = {
 			time: this.time,
 			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
-			scene: new Scene(this.core, this.recorded, device.webgl2, () => this.warmUp()),
+			scene,
 			materials: new Materials(this.core, sketch.sendShader),
 			geometry: new Geometry(this.core),
 			textures,
