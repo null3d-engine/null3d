@@ -105,7 +105,7 @@ When the page leaves the quality preset to the engine, the engine checks its cho
 
 The check takes most of the start on a tablet. On an 11-inch iPad Pro, the first frame of each benchmark scene and demo showed about 1 second after `createEngine` was called. It took about 2 seconds when the check lowered the preset once. A phone starts at Low, which has no lighter preset, so the engine skips the check. On a Galaxy S24+, the first frame showed after 0.23 to 0.43 seconds. [Quality presets](../concepts/quality-presets.md#the-preset-check) gives the rules.
 
-The engine stores the check's result in the page's `localStorage`. A repeat visit in the same browser on the same device takes that result. Its setup runs at the checked preset, and the check does not run. Only the first visit, and the first after a week, waits for the check. [Quality presets](../concepts/quality-presets.md#repeat-visits) says when a stored result applies.
+The engine stores the check's result in the page's `localStorage`. A repeat visit in the same browser on the same device takes that result. Its setup runs at the checked preset, and the check does not run. Only the first visit, and the first after a week, waits for the check. On the iPad, the first frame of a repeat visit showed after 0.25 to 0.52 seconds. [Quality presets](../concepts/quality-presets.md#repeat-visits) says when a stored result applies.
 
 So build the whole first view in the setup, with its textures: the check measures what the setup built, and waits while textures upload. A sketch whose setup leaves the scene empty gets a preset that the scene may not hold.
 

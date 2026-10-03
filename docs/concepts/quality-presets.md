@@ -124,7 +124,7 @@ The engine checks only a preset that it chose itself, when a lighter preset exis
 
 ### Repeat visits
 
-The engine stores the check's result in the page's `localStorage`, one for each sketch module. A later start of the sketch in the same browser on the same device takes that result and skips the check. Its setup already runs at the preset that the check chose, so `createEngine` resolves as soon as the setup ends. On an 11-inch iPad Pro, the check took about a second for each preset that it measured, so a repeat visit starts that much sooner.
+The engine stores the check's result in the page's `localStorage`, one for each sketch module. A later start of the sketch in the same browser on the same device takes that result and skips the check. Its setup already runs at the preset that the check chose, so `createEngine` resolves as soon as the setup ends. On an 11-inch iPad Pro, the check took about a second for each preset that it measured. There the benchmark scenes and demos showed their first frame after 1 to 2.4 seconds on a first visit. A repeat visit took 0.25 to 0.52 seconds.
 
 A stored result applies only while the start matches the one that the check measured:
 

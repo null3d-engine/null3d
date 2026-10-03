@@ -34,6 +34,25 @@ The startup benchmark ran on the MacBook Pro M5 Max, WebGPU, on 3 October 2026. 
 
 So a repeat visit on the Mac shows its first view about 0.8 s sooner, in both browsers. The first frame itself does not move: the check runs after it. Safari's cold loads, which start with empty storage, still checked: Ready at 827 to 850 ms.
 
+The same `startup` plan on the 11-inch iPad Pro, Safari 26.6.2, WebGPU, 3 October 2026. The iPad had just run 25 minutes of timing runs, so it was warm.
+
+| Thread mode | Ready, stored result | Ready, `?check=fresh` | Frame done, both |
+| --- | --- | --- | --- |
+| Pipelined | 87 ms | 900 ms | 119 ms |
+| Single-threaded | 63 ms | 845 ms | 83 to 87 ms |
+| The other three thread modes | 85 to 90 ms | 875 to 877 ms | 110 to 124 ms |
+
+The cold loads checked in both runs: Ready at 876 to 902 ms.
+
+The warm-up time plan on the iPad, the same day, starts each benchmark scene and demo at the preset that the engine chooses. Its first two loads take `?shaders=fresh` and `?check=fresh`, as a first visit. Its last two take the stored result, as a repeat visit. The time from `createEngine` until the first frame was on screen, as medians of two loads:
+
+| Path | First visit | Repeat visit |
+| --- | --- | --- |
+| WebGPU | 1.00 to 1.19 s; 1.82 to 2.36 s where the check lowered Medium to Low | 0.25 to 0.32 s |
+| WebGL2 | 1.00 to 1.26 s; 1.91 to 2.21 s where the check lowered Medium to Low | 0.27 to 0.36 s; the math demo 0.52 s |
+
+On a repeat visit the first view comes 0.7 to 2.1 s sooner. What remains is the start itself: the core, the setup, the pipelines and the uploads. The math demo's WebGL2 pipeline wait stayed at 275 to 288 ms on both visits.
+
 ### The designs
 
 (a) Draw at once and check during play. `createEngine` resolves after the setup, and the check runs while the sketch plays. Rejected:
@@ -68,7 +87,7 @@ three.js has no preset check. Apps choose a quality level themselves, or adapt d
 
 ## Decision
 
-(c): store the check's result per sketch, browser and device, for a week. It keeps the check's decision exactly, shows no switch, and needs no GPU names. A repeat visit on the iPad skips about 1 s of start, or about 2 s when the check lowers the preset. The first visit still waits for the check.
+(c): store the check's result per sketch, browser and device, for a week. It keeps the check's decision exactly, shows no switch, and needs no GPU names. A repeat visit on the iPad showed its first view after 0.25 to 0.52 s, against 1.0 to 2.4 s on a first visit. The first visit still waits for the check.
 
 ## Consequences
 
@@ -76,5 +95,5 @@ three.js has no preset check. Apps choose a quality level themselves, or adapt d
 - `PresetCheck` has `reused`. The `?check=fresh` switch measures again.
 - The device runner's quality and preset check pages take `?check=fresh`, so each run measures. So do the first two loads of each scene in the warm-up time plan. Its later loads take the stored result, as a repeat visit does.
 - The quality presets page and the loading screens guide describe repeat visits.
-- The `startup` plan measures the iPad's repeat visits, with and without `?check=fresh`. So does the warm-up time plan, whose last two loads of each scene take the stored result.
+- The `startup` plan measures repeat visits, with and without `?check=fresh`. So does the warm-up time plan, whose last two loads of each scene take the stored result. The iPad runs of 3 October 2026 were 20261003-062311-startup, 20261003-062605-startup with `?check=fresh`, and 20261003-062907-warm-up-time.
 - The record is in the table in README.md.
