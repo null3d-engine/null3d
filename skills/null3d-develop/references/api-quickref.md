@@ -378,7 +378,7 @@ anim.stop();                            // every clip; the object holds its rest
 anim.setJointOverride('Head', rotation); // later in 0.2: procedural aiming
 const twin = scene.clone(hero);         // the clone gets an animator of its own
 // Joints are not objects. Meshes under bones (a sword in a hand) follow their joints.
-// WebGPU draws skinned poses; WebGL2 draws the rest pose until its skinning ships (later in 0.2).
+// WebGPU draws the poses; WebGL2 skinning ships later in 0.2 (until then, rest poses).
 
 // after 1.0: scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true });
 ```

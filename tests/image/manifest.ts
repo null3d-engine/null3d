@@ -390,6 +390,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [400, 225],
 		modes: ['pipelined', 'single-threaded'],
 	},
+	// Animated glTF sample characters at a held time: the KayKit Knight walking, its sword and
+	// shield following its joints, and the Fox running, as both WebGPU tiers skin them. WebGL2 joins
+	// with its skinning (M2-C4).
+	{
+		name: 'gltf-animated',
+		sketch: 'tests/pages/sketches/gltf-animated-sketch.ts',
+		hold: 0.6,
+		size: [400, 225],
+		tiers: ['webgpu', 'compat'],
+	},
 	// A picture behind a lit box and an unlit box, as three.js draws a texture background: it fills
 	// the view, upright, and every object draws over it. The parity test compares it with its
 	// three.js twin.

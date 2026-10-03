@@ -8,7 +8,7 @@ summary: "loadGltf, loadTexture, loadImageBitmap, loadLut, loadJson, loadBinary,
 
 # Assets
 
-> Ships in null3D 0.1, with glTF models and color grading tables from 0.2. The API is experimental, so it can still change between versions. Environments are not built yet: `loadEnvironment`, `builtinEnvironment` and `loadCubemap`. WebGL2 draws skinned meshes in their rest pose; WebGPU draws their poses. Morph targets load but do not draw. glTF files with meshopt or Draco compression do not load yet. Coding agents must not use these parts.
+> Ships in null3D 0.1, with glTF models and color grading tables from 0.2. The API is experimental, so it can still change between versions. Environments are not built yet: `loadEnvironment`, `builtinEnvironment` and `loadCubemap`. WebGPU draws the poses of skinned meshes. WebGL2 draws them in their rest pose, and meshes that joints move at the copy's origin. Morph targets load but do not draw. glTF files with meshopt or Draco compression do not load yet. Coding agents must not use these parts.
 
 The `assets` object of the sketch context downloads files and decodes them. Every call returns a promise, and its download and decode run outside the sketch's frames, so a frame never waits for them. The browser decodes images off the main thread.
 

@@ -8,7 +8,7 @@ summary: "The animator; play, crossFade, layers, joint masks, additive clips, ev
 
 # Animation
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. WebGPU draws skinned meshes, and meshes that joints move, in their poses; WebGL2 draws them in their rest pose. Morph targets load but do not draw, and morph weights (`setMorphWeight`) are not built. Coding agents must not use these parts.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. WebGPU draws skinned meshes, and meshes that joints move, in their poses. WebGL2 draws skinned meshes in their rest pose, and meshes that joints move at the copy's origin. Morph targets load but do not draw, and morph weights (`setMorphWeight`) are not built. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR
