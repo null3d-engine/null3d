@@ -180,6 +180,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		expect: { released: true },
 	},
+	// Cube, 3D and high dynamic range textures through every texture command, replayed on each
+	// path, which must all draw one image. Each path filters 32-bit floats exactly when it offers
+	// to, which the page reports apart from the image.
+	{
+		name: 'replay-cube-3d',
+		page: 'tests/pages/replay-cube-3d.html',
+		size: [320, 200],
+		sameOnEveryTier: true,
+		expect: { released: true, float32AsOffered: true },
+	},
 	// A hand-built draw list: GPU culling, then indirect draws from a render bundle with MSAA.
 	{
 		name: 'replay-instanced',
