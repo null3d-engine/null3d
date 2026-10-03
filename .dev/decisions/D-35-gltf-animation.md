@@ -41,16 +41,19 @@ A script evaluated the parsed keys of Fox and the Knight directly, with `slerp`,
 
 The correction also brought D-26's own fixtures closer to three.js. Poses went from 1.0e-4 to 2.1e-5, and skinning matrices from 3.6e-4 to 1.7e-4.
 
-Below 0.2 radians between keys, plain interpolation stays within 3.2e-5 radians of `slerp`. So sampling corrects a group of four joints only where one of them turns further between keys. Most clips at 30 keys per second never do. The benchmark `bench_animation_crowd` timed the native frame step on main and on this branch, in turns, three rounds each. The iPad's device runs kept the Mac busy meanwhile. Medians for 500 characters of 48 joints:
+Below 0.2 radians between keys, plain interpolation stays within 3.2e-5 radians of `slerp`, about one step of a 16-bit key. So the resampler marks each rotation track that turns further between two frames, and puts the marked tracks first among the groups of four. Sampling tests only those groups, and corrects a group only at the frames where one of its joints turns further. Groups of unmarked tracks take the same steps as before the correction. Most clips at 30 keys per second have no marked track.
 
-| Round | Threads | main | This branch |
-| --- | --- | --- | --- |
-| 1 | 1 | 442 µs | 613 µs |
-| 2 | 1 | 576 µs | 585 µs |
-| 3 | 1 | 472 µs | 465 µs |
-| 3 | 8 | 79 µs | 89 µs |
+The benchmark `bench_animation_crowd` timed the native frame step of main and of this branch on 4 October 2026, in turns, 20 rounds each. Other work kept the Mac busy throughout, with load averages from 60 to 180 on 18 cores. So each figure is the fastest of a round's 500 frames, which filters out most of that work. The table gives the median of the 20 rounds with their range, and the median of the changes from round to round. The benchmark's first clip turns joints at most 0.16 radians between keys. Its second turns them up to 0.32 radians, so all of its tracks are marked.
 
-Runs of the same code differed by up to 30%, as round 1 shows. The two calmer rounds put the branch within 2% of main on one thread.
+| Characters of 48 joints | main | This branch | Change | Rounds the branch was faster |
+| --- | --- | --- | --- | --- |
+| 100, 1 thread | 120.5 µs (108 to 124) | 129.9 µs (126 to 131) | +5.9% | 0 of 20 |
+| 500, 1 thread | 621.7 µs (599 to 631) | 654.1 µs (568 to 790) | +5.5% | 1 of 20 |
+| 500, 8 threads | 97.9 µs (93 to 106) | 102.8 µs (99 to 110) | +4.7% | 2 of 20 |
+
+The same build with the correction turned off ran at main's speed, within 1% on one thread. So the 5% is the correction itself, on the second clip's joints. At 0.32 radians apart, plain interpolation strays up to about 1.3e-4 radians from `slerp`, between D-26's figures for 0.2 and 0.5 radians. The correction keeps it under 3.3e-5.
+
+The first version of this branch tested every group at every frame. A second run slowed the benchmark's second clip to turn at most 0.15 radians between keys, so that no track was marked. There that version took 1% to 2% more than main in 7 of the 8 cases. The marked tracks bring it to main's speed, within 0.5% on one thread.
 
 Fox stays at 5.0e-3. Its run clip changes its key spacing at 0.87 s, so its keys lie on no single grid. The core therefore stores it at 30 keys per second, as D-26 decided. Its fastest joints turn 1.5 radians between keys, and the resampled curve cuts their corners. That is 0.3 degrees. A finer rate for such clips would double their memory; no measured clip needs it yet.
 
@@ -138,7 +141,7 @@ Its `GLTFLoader` makes an `Object3D` for every node and a `Bone` for every skin 
 
 - `packages/engine/src/scene/gltf-animation.ts` reads skins, clips and morph targets in the glTF worker; `gltf-json.ts` and `gltf-math.ts` hold the checks and matrix arithmetic that the parser and the loader share.
 - `animation.ts` has `loadAnimationRig`, `skinObject` and `debug.skeleton`'s data. `skinObject` records the link until the skinning passes (M2-C3, M2-C4) merge, which make it a scene command.
-- The core's resampler takes cubic spline keys and a thousandth of a frame at a clip's end. Sampling corrects rotations between keys, which D-26 records.
+- The core's resampler takes cubic spline keys and a thousandth of a frame at a clip's end. It marks rotation tracks that turn more than 0.2 radians between frames and groups them first. Sampling corrects those groups' rotations between keys, which D-26 records.
 - The WebAssembly entry point has `createClipLater`, `clipReady` and `animatedInstanceJoints`.
 - `tests/pages/gltf-poses.ts` and `tests/image/gltf-poses.spec.ts` compare the sample models with three.js, and the `gltf-skeleton` image test draws `debug.skeleton`.
 - The record is in the table in [README.md](README.md).

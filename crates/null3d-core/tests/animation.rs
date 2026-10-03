@@ -8,7 +8,7 @@ mod common;
 #[path = "fixtures/three_animation.rs"]
 mod three;
 
-use common::{Workers, character};
+use common::{Workers, axis_angle, character};
 use null3d_core::animation::{
     AnimationError, Animations, Channel, Clip, DEFAULT_RATE, EVENT_WORDS, Interpolation,
     MATRIX_FLOATS, MAX_BLEND, MAX_FRAMES, MAX_LAYERS, NO_PARENT, POSE_FIELDS, Play, Skeleton,
@@ -193,6 +193,49 @@ fn single_clips_sample_as_three_js_does() {
         largest = largest.max(difference);
     }
     println!("largest difference in a local pose from three.js: {largest:e}");
+}
+
+#[test]
+fn joints_that_turn_far_between_keys_follow_the_arc_in_any_group() {
+    // Four joints turn a little between keys and the last a radian, so in joint order the fast
+    // track would share no group with the first four. A quarter of the way between keys, plain
+    // interpolation strays from the arc by far more than the tolerance.
+    let skeleton = skeleton();
+    let lanes = skeleton.lanes() as usize;
+    let times = [0.0, 1.0 / 30.0];
+    let turns = [0.05, 0.05, 0.05, 0.05, 1.0];
+    let values: Vec<Vec<f32>> = turns
+        .iter()
+        .map(|&turn| {
+            [0.0, turn]
+                .iter()
+                .flat_map(|&a| axis_angle([0.0, 0.0, 1.0], a))
+                .collect()
+        })
+        .collect();
+    let tracks: Vec<SourceTrack<'_>> = values
+        .iter()
+        .enumerate()
+        .map(|(joint, values)| SourceTrack {
+            joint: joint as u32,
+            channel: Channel::Rotation,
+            interpolation: Interpolation::Linear,
+            times: &times,
+            values,
+        })
+        .collect();
+    let clip = resample(&skeleton, &tracks, DEFAULT_RATE).unwrap();
+    let mut pose = vec![0.0; clip.pose_len()];
+    clip.sample(0.25 / 30.0, &mut pose);
+    for (joint, &turn) in turns.iter().enumerate() {
+        let want = axis_angle([0.0, 0.0, 1.0], turn / 4.0);
+        let got: [f32; 4] = std::array::from_fn(|c| pose[(3 + c) * lanes + joint]);
+        let difference = largest_difference(got.map(f64::from), &want.map(f64::from));
+        assert!(
+            difference <= POSE_TOLERANCE,
+            "joint {joint}: {got:?} is {difference} from slerp's {want:?}"
+        );
+    }
 }
 
 #[test]

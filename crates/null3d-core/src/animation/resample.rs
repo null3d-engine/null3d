@@ -7,7 +7,7 @@
 //! and cubic spline tracks with the Hermite curve of glTF, as three.js's `GLTFLoader` evaluates
 //! them. Before the first key a track holds its first value, and after the last its last value.
 
-use super::clip::{ClipParts, Groups, ROTATION_KEY, VECTOR_KEY};
+use super::clip::{ClipParts, Groups, ROTATION_KEY, SMALL_TURN_DOT, VECTOR_KEY};
 use super::{AnimationError, Clip, Skeleton, TrackProblem, field, filled, out_of_memory};
 
 /// The rate at which clips keep their keys, in keys per second, unless the caller asks for
@@ -291,6 +291,8 @@ struct Resampled {
     /// The value at the first frame, rotations normalized: what a constant track stores.
     first: [f32; 4],
     constant: bool,
+    /// A rotation track that turns further than [`SMALL_TURN_DOT`] allows between two frames.
+    turns_far: bool,
 }
 
 fn resample_track(
@@ -341,6 +343,15 @@ fn resample_track(
     }
     let first_key = &values[..n];
     let constant = values.chunks_exact(n).all(|key| key == first_key);
+    let turns_far = track.channel == Channel::Rotation
+        && (1..frames as usize).any(|frame| {
+            let (a, b) = (
+                &values[(frame - 1) * n..frame * n],
+                &values[frame * n..][..n],
+            );
+            let dot: f64 = a.iter().zip(b).map(|(a, b)| f64::from(a * b)).sum();
+            dot / (QUANTIZED_ONE * QUANTIZED_ONE) < f64::from(SMALL_TURN_DOT)
+        });
     Ok(Resampled {
         joint: track.joint,
         channel: track.channel,
@@ -348,11 +359,13 @@ fn resample_track(
         values,
         first,
         constant,
+        turns_far,
     })
 }
 
-/// Lays out the animated tracks of one channel in groups of four: linear tracks first, then step
-/// tracks, each in joint order. `convert` turns a resampled value into a key.
+/// Lays out the animated tracks of one channel in groups of four: linear tracks that turn far
+/// between frames first, then the other linear tracks, then step tracks, each in joint order.
+/// `convert` turns a resampled value into a key.
 fn groups<T: Copy + Default>(
     tracks: &[Resampled],
     channel: Channel,
@@ -365,8 +378,9 @@ fn groups<T: Copy + Default>(
         .filter(|t| t.channel == channel && !t.constant)
         .collect();
     // A channel has one track per joint, so the keys are unique and an unstable sort is exact.
-    animated.sort_unstable_by_key(|t| (t.step, t.joint));
+    animated.sort_unstable_by_key(|t| (t.step, !t.turns_far, t.joint));
     let linear = animated.iter().filter(|t| !t.step).count();
+    let far = animated.iter().filter(|t| !t.step && t.turns_far).count();
     // Linear and step tracks never share a group.
     let linear_groups = linear.div_ceil(4);
     let count = linear_groups + (animated.len() - linear).div_ceil(4);
@@ -394,6 +408,7 @@ fn groups<T: Copy + Default>(
     }
     Ok(Groups {
         joints: joints.into_boxed_slice(),
+        first_small_turn: far.div_ceil(4),
         first_step: linear_groups,
         keys: keys.into_boxed_slice(),
     })
