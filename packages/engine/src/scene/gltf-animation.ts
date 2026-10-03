@@ -16,9 +16,10 @@
 //
 // Clips keep their keys as the file holds them. The core resamples them on its job workers.
 // Morph targets and the clips' weights tracks are read and kept for the loader, which keeps them
-// on the prefab. The module imports only its sibling modules of the glTF worker.
+// on the prefab. The module also defines the rig data that animation.ts stores in the core. It
+// imports only its sibling modules of the glTF worker, so code that type checks the parser alone
+// needs no browser types.
 
-import type { RigClip, RigJoint, RigTrack } from './animation';
 import { broken, type Entry, entry, index, list, type Reader, text, toFloats } from './gltf-json';
 import { affineOf, decomposeAffine, multiplyAffine } from './gltf-math';
 import type { MeshData, NodeData, PrimitiveData, VertexData } from './gltf-parse';
@@ -48,6 +49,52 @@ export interface MorphTargetsData {
 	positions?: Float32Array[];
 	normals?: Float32Array[];
 	tangents?: Float32Array[];
+}
+
+/** One joint of a rig's skeleton. Joints come parents first. */
+export interface RigJoint {
+	name: string;
+	/** The index of the parent joint, or -1 for a root. */
+	parent: number;
+	translation: readonly [number, number, number];
+	rotation: readonly [number, number, number, number];
+	scale: readonly [number, number, number];
+	/** The inverse of the joint's matrix at bind time, row-major 3 × 4: 12 numbers. */
+	inverseBind: ArrayLike<number>;
+	/** True for a joint of a skin, which `debug.skeleton` draws. */
+	bone?: boolean;
+}
+
+/** One track of a rig's clip: keys of one channel of one joint, at any times. */
+export interface RigTrack {
+	joint: number;
+	channel: 'translation' | 'rotation' | 'scale';
+	/**
+	 * How the value moves between keys: in a straight line (the default), held until the next key
+	 * ('step'), or along glTF's cubic spline ('cubic').
+	 */
+	interpolation?: 'linear' | 'step' | 'cubic';
+	times: ArrayLike<number>;
+	/**
+	 * Three numbers per key, or four for a rotation. A cubic key holds three times as many: an
+	 * in-tangent, the value and an out-tangent.
+	 */
+	values: ArrayLike<number>;
+}
+
+/** A named clip of a rig, with its events. */
+export interface RigClip {
+	name: string;
+	tracks: readonly RigTrack[];
+	events?: readonly { time: number; name: string }[];
+}
+
+/** A skeleton and its clips, as a loaded model gives them. */
+export interface RigData {
+	joints: readonly RigJoint[];
+	clips: readonly RigClip[];
+	/** Keys per second that clips are stored at, unless their own keys lie on a coarser grid. */
+	rate?: number;
 }
 
 /** A clip of the file: its tracks of joints and its tracks of morph target weights. */

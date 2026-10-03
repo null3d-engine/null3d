@@ -1,8 +1,9 @@
 // The glTF worker: parses glTF files off the sketch's frames, for the glTF loader (scene/gltf.ts),
 // which starts it with the first file. Each file arrives as bytes. The worker reads its container
 // and JSON, and asks for the buffers that the file names by address, which the loader downloads.
-// Then it parses the file, decodes the PNG, JPEG and WebP images that the file holds with
-// createImageBitmap, once for each way a material uses them, and hands everything back in one
+// Then it parses the file, decoding its meshopt data with meshoptimizer's decoder, which it imports
+// with the first file that needs it. It decodes the PNG, JPEG and WebP images that the file holds
+// with createImageBitmap, once for each way a material uses them, and hands everything back in one
 // message that moves the arrays and images rather than copying them. A file it refuses comes back
 // as an error with the engine's code, so no load ever waits for an answer that does not come.
 
@@ -10,8 +11,10 @@ import {
 	type GltfContainer,
 	type GltfData,
 	GltfError,
+	type MeshoptDecode,
 	parseGltf,
 	readContainer,
+	usesMeshopt,
 } from '../scene/gltf-parse';
 
 /** A request of the loader: a new file, or the buffers that a file asked for. */
@@ -31,6 +34,23 @@ const KTX2_IDENTIFIER = [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0
 /** Files that wait for their buffers, by request. */
 const waiting = new Map<number, { container: GltfContainer; url: string }>();
 
+/** The meshopt decoder, once a file has needed it. A failed download lets the next file try again. */
+let meshopt: Promise<MeshoptDecode> | undefined;
+
+function loadMeshopt(): Promise<MeshoptDecode> {
+	meshopt ??= import('../scene/gltf-meshopt').then(
+		(module) => module.meshoptDecoder(),
+		(error) => {
+			meshopt = undefined;
+			throw new GltfError(
+				'E1406',
+				`the meshopt decoder did not load: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		},
+	);
+	return meshopt;
+}
+
 self.onmessage = (event: MessageEvent<GltfRequest>) => {
 	const request = event.data;
 	const { id } = request;
@@ -42,75 +62,81 @@ self.onmessage = (event: MessageEvent<GltfRequest>) => {
 				answer({ id, needs: [...container.external] });
 				return;
 			}
-			finish(id, container, new Map(), request.url);
+			void finish(id, container, new Map(), request.url);
 			return;
 		}
 		const file = waiting.get(id);
 		waiting.delete(id);
 		if (!file) return;
 		const buffers = new Map(request.buffers.map(([k, bytes]) => [k, new Uint8Array(bytes)]));
-		finish(id, file.container, buffers, file.url);
+		void finish(id, file.container, buffers, file.url);
 	} catch (error) {
 		fail(id, error);
 	}
 };
 
-/** Parses a file whose buffers are all here, decodes its images, and answers with the result. */
-function finish(
+/**
+ * Parses a file whose buffers are all here, with the meshopt decoder when the file holds meshopt
+ * data, decodes its images, and answers with the result or the reason it failed.
+ */
+async function finish(
 	id: number,
 	container: GltfContainer,
 	buffers: Map<number, Uint8Array>,
 	url: string,
-): void {
-	const data = parseGltf(container, buffers, url);
-	Promise.all(data.textures.map((use) => decode(data, use.image, use.colorSpace))).then(
-		(bitmaps) => {
-			const transfer = new Set<Transferable>();
-			for (const bitmap of bitmaps) if (bitmap) transfer.add(bitmap);
-			for (const mesh of data.meshes)
-				for (const p of mesh.primitives)
-					for (const array of [
-						p.positions,
-						p.normals,
-						p.uvs,
-						p.uvs1,
-						p.colors,
-						p.tangents,
-						p.joints,
-						p.weights,
-					])
-						if (array) transfer.add(array.array.buffer as ArrayBuffer);
-			for (const mesh of data.meshes)
-				for (const p of mesh.primitives) {
-					if (p.indices) transfer.add(p.indices.buffer as ArrayBuffer);
-					const morph = p.morph;
-					for (const deltas of [morph?.positions, morph?.normals, morph?.tangents])
-						for (const array of deltas ?? []) transfer.add(array.buffer as ArrayBuffer);
-				}
-			// Key times and values can be views of the file's own bytes, which then go along once.
-			for (const clip of data.animation?.clips ?? [])
-				for (const track of [...clip.tracks, ...clip.weights]) {
-					transfer.add((track.times as Float32Array).buffer as ArrayBuffer);
-					transfer.add((track.values as Float32Array).buffer as ArrayBuffer);
-				}
-			for (const node of data.nodes)
-				if (node.instancing)
-					for (const array of [
-						node.instancing.positions,
-						node.instancing.rotations,
-						node.instancing.scales,
-					])
-						transfer.add(array.buffer as ArrayBuffer);
-			// Images that the worker decoded go back as bitmaps alone.
-			data.images.forEach((image, k) => {
-				if (image.bytes && !isKtx2(image.bytes) && data.textures.some((u) => u.image === k))
-					image.bytes = undefined;
-				else if (image.bytes) transfer.add(image.bytes.buffer as ArrayBuffer);
-			});
-			answer({ id, data, bitmaps }, [...transfer]);
-		},
-		(error) => fail(id, error),
-	);
+): Promise<void> {
+	try {
+		const meshoptDecode = usesMeshopt(container) ? await loadMeshopt() : undefined;
+		const data = parseGltf(container, buffers, url, meshoptDecode);
+		const bitmaps = await Promise.all(
+			data.textures.map((use) => decode(data, use.image, use.colorSpace)),
+		);
+		const transfer = new Set<Transferable>();
+		for (const bitmap of bitmaps) if (bitmap) transfer.add(bitmap);
+		for (const mesh of data.meshes)
+			for (const p of mesh.primitives)
+				for (const array of [
+					p.positions,
+					p.normals,
+					p.uvs,
+					p.uvs1,
+					p.colors,
+					p.tangents,
+					p.joints,
+					p.weights,
+				])
+					if (array) transfer.add(array.array.buffer as ArrayBuffer);
+		for (const mesh of data.meshes)
+			for (const p of mesh.primitives) {
+				if (p.indices) transfer.add(p.indices.buffer as ArrayBuffer);
+				const morph = p.morph;
+				for (const deltas of [morph?.positions, morph?.normals, morph?.tangents])
+					for (const array of deltas ?? []) transfer.add(array.buffer as ArrayBuffer);
+			}
+		// Key times and values can be views of the file's own bytes, which then go along once.
+		for (const clip of data.animation?.clips ?? [])
+			for (const track of [...clip.tracks, ...clip.weights]) {
+				transfer.add((track.times as Float32Array).buffer as ArrayBuffer);
+				transfer.add((track.values as Float32Array).buffer as ArrayBuffer);
+			}
+		for (const node of data.nodes)
+			if (node.instancing)
+				for (const array of [
+					node.instancing.positions,
+					node.instancing.rotations,
+					node.instancing.scales,
+				])
+					transfer.add(array.buffer as ArrayBuffer);
+		// Images that the worker decoded go back as bitmaps alone.
+		data.images.forEach((image, k) => {
+			if (image.bytes && !isKtx2(image.bytes) && data.textures.some((u) => u.image === k))
+				image.bytes = undefined;
+			else if (image.bytes) transfer.add(image.bytes.buffer as ArrayBuffer);
+		});
+		answer({ id, data, bitmaps }, [...transfer]);
+	} catch (error) {
+		fail(id, error);
+	}
 }
 
 /**

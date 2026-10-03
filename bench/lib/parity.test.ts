@@ -16,7 +16,6 @@ import {
 	featurePagePath,
 	featurePair,
 	featureScene,
-	featureTiers,
 	formatStoredBaselines,
 	gpuApiOf,
 	gpuApiOfPage,
@@ -226,15 +225,9 @@ describe('decodeFeatureResult', () => {
 describe('feature scenes', () => {
 	const imagePath = (tier: string) => `/tests/pages/image.html?gpu=${tier}&sketch=/s.ts%3Fa%3D1`;
 
-	test("draw each image test of the manifest on each of its tiers, with the scene's sketch switches", () => {
+	test("draw each image test of the manifest on every tier, with the scene's sketch switches", () => {
 		for (const scene of FEATURE_SCENES)
-			for (const tier of featureTiers(scene))
-				expect(featureImagePath(scene, tier)).toContain(`gpu=${tier}`);
-		// Skinning draws on WebGPU's tiers alone; every other scene on all three.
-		const partial = FEATURE_SCENES.filter((scene) => featureTiers(scene).length < TIERS.length);
-		expect(partial.map((scene) => [scene.test, featureTiers(scene)])).toEqual([
-			['skinning', ['webgpu', 'compat']],
-		]);
+			for (const tier of TIERS) expect(featureImagePath(scene, tier)).toContain(`gpu=${tier}`);
 		const shadows = featureScene('shadows');
 		const tone = featureScene('tone-aces');
 		if (!shadows || !tone) throw new Error('the feature scenes lost the shadows or ACES');
@@ -265,11 +258,19 @@ describe('feature scenes', () => {
 			expect(names).toContain(feature);
 	});
 
-	test('give the shadows and two glTF models a looser limit, and draw tone mapping without anti-aliasing', () => {
+	test('give the shadows and three glTF models a looser limit, and draw tone mapping without anti-aliasing', () => {
 		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		expect(SHADOW_MAX_DIFFERENT_PERCENT).toBeGreaterThan(MAX_DIFFERENT_PERCENT);
 		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);
-		expect(looser.map((scene) => scene.test)).toEqual(['gltf-instancing', 'gltf-ktx2', 'shadows']);
+		expect(looser.map((scene) => scene.test)).toEqual([
+			'gltf-instancing',
+			'gltf-ktx2',
+			'gltf-meshopt-ext',
+			'shadows',
+		]);
+		// three.js's WebGPURenderer draws the Khronos meshopt test wrong, so WebGLRenderer is its reference.
+		expect(featureScene('gltf-meshopt-khr')?.webglOnly).toBe(true);
+		expect(featureScene('gltf-meshopt-ext')?.webglOnly).toBeUndefined();
 		for (const scene of looser) expect(scene.limit).toBeGreaterThan(MAX_DIFFERENT_PERCENT);
 		const tone = featureScene('tone-agx');
 		expect(tone).toMatchObject({ switches: 'antialias=none', webglOnly: true });

@@ -1,7 +1,8 @@
 name: Fetch the sample content
 description: >-
-  Fetches the sample content that tests load, the glTF models among them, into the cache that
-  every copy of the repository shares, as .dev/sample-content.md says. The Actions cache keeps the
+  Fetches the sample content that tests load, the glTF models and the meshopt unit tests' files
+  among them, into the cache that every copy of the repository shares, as .dev/sample-content.md
+  says. The Actions cache keeps the
   pinned commit's files, so a job downloads them again only when tools/samples/lock.json changes.
   bun run samples:fetch then checks the cached copy's marker, or downloads the commit and checks
   every file's SHA-256 when the cache missed.

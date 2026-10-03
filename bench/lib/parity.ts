@@ -197,8 +197,6 @@ export interface FeatureScene {
 	webglOnly?: boolean;
 	/** The percentage of pixels under which the scene passes, where it is not three.js's limit. */
 	limit?: number;
-	/** The tiers whose image tests draw the scene, where those are not all three. */
-	tiers?: readonly Tier[];
 }
 
 const TWINS = '/bench/pages/threejs';
@@ -211,12 +209,21 @@ const NO_TONE = 'tone=none';
  * lamp's glass uses KHR_materials_transmission, volume and ior, which three.js draws and null3D
  * does not read: 0.87% of the pixels differ, all on the glass and its beads. The instanced cubes
  * have black faces beside white ones at hundreds of edges, which compatibility mode's 8-bit path
- * averages after it encodes the colors: 0.41% differ there, and none on the other tiers.
+ * averages after it encodes the colors: 0.41% differ there, and none on the other tiers. The same
+ * cubes compressed with meshopt take the same limit, for the same edges.
  */
 const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	ktx2: 1,
 	instancing: 0.5,
+	'meshopt-ext': 0.5,
 };
+
+/**
+ * The glTF model scenes that three.js's WebGPURenderer draws wrong, so its WebGLRenderer's frame is
+ * the reference on every tier. In the Khronos meshopt test, it draws the column of cubes with 16-bit
+ * attributes black, and its WebGLRenderer draws them as null3D does.
+ */
+const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set(['meshopt-khr']);
 
 /**
  * Each feature scene that the exit gate's parity covers: standard materials, the light types
@@ -255,6 +262,7 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 			test: `gltf-${model}`,
 			twin: `${TWINS}/gltf.html?model=${model}`,
 			limit: MODEL_LIMITS[model],
+			...(WEBGL_ONLY_MODELS.has(model) && { webglOnly: true }),
 		}),
 	),
 	{
@@ -263,15 +271,14 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		sketchSwitches: NO_TONE,
 		limit: SHADOW_MAX_DIFFERENT_PERCENT,
 	},
-	// Bloom at two settings against three.js's UnrealBloomPass. The composer's targets have no MSAA,
-	// so null3D's page draws without anti-aliasing too.
-	// Skinning against three.js's SkinnedMesh. The WebGL2 path does not skin yet.
+	// Skinning against three.js's SkinnedMesh.
 	{
 		test: 'skinning',
 		twin: `${TWINS}/skinning.html`,
 		sketchSwitches: NO_TONE,
-		tiers: ['webgpu', 'compat'],
 	},
+	// Bloom at two settings against three.js's UnrealBloomPass. The composer's targets have no MSAA,
+	// so null3D's page draws without anti-aliasing too.
 	...(['soft', 'strong'] as const).map(
 		(bloom): FeatureScene => ({
 			test: `bloom-${bloom}`,
@@ -297,11 +304,6 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		webglOnly: true,
 	},
 ];
-
-/** The tiers on which null3D draws a feature scene, whose parity therefore counts there. */
-export function featureTiers(scene: FeatureScene): readonly Tier[] {
-	return scene.tiers ?? TIERS;
-}
 
 /** The feature scene of an image test, or undefined when no twin draws that test's scene. */
 export function featureScene(test: string): FeatureScene | undefined {

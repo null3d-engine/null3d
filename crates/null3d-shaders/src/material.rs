@@ -298,13 +298,14 @@ impl Compiler {
                 defs.extend(declared.iter().map(|hook| hook.def.to_owned()));
                 defs.extend(uniforms.as_ref().map(|_| UNIFORMS_DEF.to_owned()));
                 defs.sort();
-                // Custom materials draw at full precision, so their builds stay half as many. They
-                // draw skinned meshes from the skinning pass's vertices, so they need no SKIN
-                // builds either.
+                // Custom materials draw at full precision, so their builds stay half as many. On
+                // WebGPU they draw skinned meshes from the skinning pass's vertices, so they need no
+                // SKIN builds there. WebGL2 skins in the vertex shader, so its builds keep the bit.
+                let skins = !variant.targets.contains(&Target::Wgsl);
                 let permutations = variant
                     .permutations
                     .iter()
-                    .filter(|bit| *bit != "HALF" && *bit != "SKIN")
+                    .filter(|bit| *bit != "HALF" && (skins || *bit != "SKIN"))
                     .cloned()
                     .collect();
                 let variant = Variant {

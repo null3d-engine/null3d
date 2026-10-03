@@ -2,6 +2,8 @@
 // and Playwright clicks the canvas's center during the pan. A ray through the click must have the
 // turn of the frame that was on screen at the click, in every thread mode. In pipelined modes that
 // frame is older than the one the sketch's current camera holds, so the test can tell the two apart.
+// The first click can come while a frame of the setup is still on screen: that is frame 0, whose
+// camera has not turned yet.
 import { expect, test } from '@playwright/test';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
@@ -24,8 +26,14 @@ interface Clicks {
 /** The canvas's center, in CSS pixels from the page's top-left corner. */
 const CENTER = { x: 160, y: 90 };
 const CLICKS = 8;
-/** The frames whose cameras the engine keeps. */
+/** The frames whose cameras the engine keeps, which bounds how old a pipelined click's frame is. */
 const KEPT_FRAMES = 4;
+/**
+ * How old a click's frame can be in the modes that draw each frame as they record it. A click that
+ * comes after a frame records and before it draws, as when the frame waits for its pipelines, sees
+ * the frame before it, and the frame after it reads the click.
+ */
+const DIRECT_FRAMES = 2;
 /** How far a turn may stray: well under one frame's step, well over rounding. */
 const TURN_TOLERANCE = 1e-4;
 /** The ray beside the click passes half a pixel to the right, about 0.003 radians off the center. */
@@ -54,9 +62,10 @@ for (const mode of ENGINE_MODES)
 			await expect.poll(async () => (await read()).clicks.length).toBe(k);
 		}
 		const { step, clicks } = await read();
+		const oldest = mode.latency === 'pipelined' ? KEPT_FRAMES : DIRECT_FRAMES;
 		for (const click of clicks) {
 			// The click's ray turns with the frame on screen, which the camera ring still holds.
-			expect(click.shown).toBeGreaterThanOrEqual(click.frame - KEPT_FRAMES);
+			expect(click.shown).toBeGreaterThanOrEqual(Math.max(0, click.frame - oldest));
 			expect(click.shown).toBeLessThan(click.frame);
 			expect(turnDifference(click.turn, click.shown * step)).toBeLessThan(TURN_TOLERANCE);
 			// Any other point uses the camera of the frame that last ran.
@@ -64,12 +73,9 @@ for (const mode of ENGINE_MODES)
 				BESIDE_TOLERANCE,
 			);
 		}
-		const behind = clicks.filter((click) => click.shown < click.frame - 1).length;
 		if (mode.latency === 'pipelined') {
 			// The sketch runs a frame ahead of the one on screen, so the current camera would miss.
+			const behind = clicks.filter((click) => click.shown < click.frame - 1).length;
 			expect(behind).toBeGreaterThan(0);
-		} else {
-			// These modes draw each frame as they record it, so the click names the frame before.
-			expect(behind).toBe(0);
 		}
 	});

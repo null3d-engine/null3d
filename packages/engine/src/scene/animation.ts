@@ -11,8 +11,11 @@
 
 import type { Described } from '../errors/checks';
 import * as C from '../generated/core';
+import type { RigClip, RigData, RigJoint, RigTrack } from './gltf-animation';
 import type { CoreMemory } from './memory';
-import type { Mesh, Object3D, Quat, Scene, SceneChecks, Vec3 } from './scene';
+import type { Mesh, Object3D, Scene, SceneChecks } from './scene';
+
+export type { RigClip, RigData, RigJoint, RigTrack };
 
 declare const __NULL3D_DEV__: boolean | undefined;
 
@@ -115,52 +118,6 @@ const INTERPOLATIONS = {
 	step: C.ANIMATION_STEP,
 	cubic: C.ANIMATION_CUBIC_SPLINE,
 } as const;
-
-/** One joint of a rig's skeleton. Joints come parents first. */
-export interface RigJoint {
-	name: string;
-	/** The index of the parent joint, or -1 for a root. */
-	parent: number;
-	translation: Vec3;
-	rotation: Quat;
-	scale: Vec3;
-	/** The inverse of the joint's matrix at bind time, row-major 3 × 4: 12 numbers. */
-	inverseBind: ArrayLike<number>;
-	/** True for a joint of a skin, which `debug.skeleton` draws. */
-	bone?: boolean;
-}
-
-/** One track of a rig's clip: keys of one channel of one joint, at any times. */
-export interface RigTrack {
-	joint: number;
-	channel: keyof typeof CHANNELS;
-	/**
-	 * How the value moves between keys: in a straight line (the default), held until the next key
-	 * ('step'), or along glTF's cubic spline ('cubic').
-	 */
-	interpolation?: 'linear' | 'step' | 'cubic';
-	times: ArrayLike<number>;
-	/**
-	 * Three numbers per key, or four for a rotation. A cubic key holds three times as many: an
-	 * in-tangent, the value and an out-tangent.
-	 */
-	values: ArrayLike<number>;
-}
-
-/** A named clip of a rig, with its events. */
-export interface RigClip {
-	name: string;
-	tracks: readonly RigTrack[];
-	events?: readonly { time: number; name: string }[];
-}
-
-/** A skeleton and its clips, as a loaded model gives them. */
-export interface RigData {
-	joints: readonly RigJoint[];
-	clips: readonly RigClip[];
-	/** Keys per second that clips are stored at, unless their own keys lie on a coarser grid. */
-	rate?: number;
-}
 
 /** A skeleton and its named clips in the engine core, which animated objects share. */
 export class AnimationRig {

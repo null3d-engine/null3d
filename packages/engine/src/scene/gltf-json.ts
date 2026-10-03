@@ -3,8 +3,11 @@
 // check throws E1416 with words that name what it checked. The module imports nothing at run time,
 // so the glTF worker's bundle holds it alone.
 
-/** The engine's codes for a file the parser refuses: broken data, or an extension it does not read. */
-export type GltfErrorCode = 'E1416' | 'E1417';
+/**
+ * The engine's codes for a file the parser refuses: broken data, or an extension it does not read.
+ * The worker adds E1406 for a decoder that did not download.
+ */
+export type GltfErrorCode = 'E1406' | 'E1416' | 'E1417';
 
 /** A file the parser refuses, with the engine's code and the reason in words. */
 export class GltfError extends Error {

@@ -8,7 +8,7 @@ summary: "The animator; play, crossFade, layers, joint masks, additive clips, ev
 
 # Animation
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. WebGPU draws skinned meshes, and meshes that joints move, in their poses. WebGL2 draws skinned meshes in their rest pose, and meshes that joints move at the copy's origin. Morph targets load but do not draw, and morph weights (`setMorphWeight`) are not built. Coding agents must not use these parts.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Morph targets load but do not draw, and morph weights (`setMorphWeight`) are not built. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR
@@ -168,6 +168,8 @@ A skinned mesh's vertices follow the joints of an animated object. Each vertex n
 
 On WebGPU, a compute pass skins each skinned mesh once per frame, before the shadow passes and the scene passes. Those passes then draw the skinned vertices as a plain mesh, so every material skins, custom materials included. A skinned mesh that no view draws in a frame, neither the camera nor a shadow cascade, is not skinned in that frame.
 
+On WebGL2, which has no compute shaders, the vertex shader of each pass that draws a skinned mesh skins it, as three.js does. The shadow passes skin it again. On the phones and tablets that the engine was measured on, this was faster than skinning once per frame with transform feedback. Every material skins there too, custom materials included. Skinned meshes that share a mesh and a material still draw in one instanced draw, so a crowd costs few draw calls. Each frame uploads every animated object's skinning matrices to one float texture, 48 bytes per joint.
+
 A skinned mesh culls with a sphere that its pose moves. The engine keeps a sphere for each joint around the vertices it moves. Each frame it moves those spheres with the pose and takes the sphere around them all. So a limb that swings out never leaves the mesh's bounds. The work is one matrix product per joint, however many vertices the mesh has. Skinned meshes cast and receive shadows that follow their poses.
 
 ## How it compares with three.js
@@ -185,7 +187,7 @@ A skinned mesh culls with a sphere that its pose moves. The engine keeps a spher
 | `gltf.animations` and `new AnimationMixer(gltf.scene)` | `prefab.clips` and `scene.instantiate(prefab).animator()` |
 | `SkeletonUtils.clone(gltf.scene)` | `scene.clone(copy)`, whose copy animates on its own |
 | `new SkeletonHelper(object)` | `debug.skeleton(object)` in `onUpdate` |
-| `SkinnedMesh` skinned in the vertex shader of each pass that draws it | WebGPU skins each skinned mesh once per frame, for every pass that draws it |
+| `SkinnedMesh` skinned in the vertex shader of each pass that draws it | WebGPU skins each skinned mesh once per frame, for every pass that draws it. WebGL2 skins in the vertex shader of each pass, as three.js does |
 
 Where three.js and null3D differ:
 

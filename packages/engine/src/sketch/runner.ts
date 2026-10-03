@@ -793,8 +793,9 @@ export class SketchRunner {
 		if (glue.recordFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		Atomics.store(slots, Slot.RenderScale, scale);
-		// Input names frames in the sketch's count, which leaves out the setup's frames.
-		if (play) this.context.scene.keepFrameCamera(time.frame, width, height);
+		// Input names frames in the sketch's count. Each frame of the setup is frame 0 in that count,
+		// and a click can come while one is on screen, so the setup's frames keep their camera too.
+		this.context.scene.keepFrameCamera(time.frame, width, height);
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		// A frame whose list needs more room than any before moves the list, so each frame gives

@@ -8,6 +8,9 @@
 // the images that the file holds, and the loader those it names by address. It allocates only what
 // it returns, so a file with huge counts fails with E1416 before it allocates anything.
 //
+// Buffer views compressed with meshopt decode on first use, through the decoder that the caller
+// passes in. The worker loads the decoder only for a file that holds meshopt data.
+//
 // The module imports only its sibling modules of the glTF worker, so the worker's bundle holds no
 // engine code.
 
@@ -47,7 +50,59 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_materials_emissive_strength',
 	'KHR_lights_punctual',
 	'EXT_mesh_gpu_instancing',
+	'KHR_meshopt_compression',
+	'EXT_meshopt_compression',
 ];
+
+/**
+ * The two names of meshopt compression. The Khronos extension reads the vendor one's data, and
+ * adds a newer vertex codec and a color filter, which the decoder reads under either name.
+ */
+const MESHOPT_EXTENSIONS = ['KHR_meshopt_compression', 'EXT_meshopt_compression'] as const;
+
+/**
+ * Decodes one buffer view of meshopt data into `target`, which holds `count` elements of `stride`
+ * bytes, as meshoptimizer's `decodeGltfBuffer` does. Throws when the data does not decode.
+ */
+export type MeshoptDecode = (
+	target: Uint8Array,
+	count: number,
+	stride: number,
+	source: Uint8Array,
+	mode: string,
+	filter: string,
+) => void;
+
+/** The strides that each meshopt mode and filter allow, as the extension's rules give them. */
+const MESHOPT_MODES: Readonly<Record<string, (stride: number) => boolean>> = {
+	ATTRIBUTES: (stride) => stride % 4 === 0 && stride >= 4 && stride <= 256,
+	TRIANGLES: (stride) => stride === 2 || stride === 4,
+	INDICES: (stride) => stride === 2 || stride === 4,
+};
+const MESHOPT_FILTERS: Readonly<Record<string, (stride: number) => boolean>> = {
+	NONE: () => true,
+	OCTAHEDRAL: (stride) => stride === 4 || stride === 8,
+	QUATERNION: (stride) => stride === 8,
+	EXPONENTIAL: (stride) => stride % 4 === 0,
+	COLOR: (stride) => stride === 4 || stride === 8,
+};
+
+/** The meshopt extension of a buffer or a buffer view, under either name, or undefined. */
+function meshoptOf(value: unknown): Entry | undefined {
+	const extensions = (value as Entry | null | undefined)?.extensions as Entry | undefined;
+	if (typeof extensions !== 'object' || extensions === null) return undefined;
+	for (const name of MESHOPT_EXTENSIONS) {
+		const extension = extensions[name];
+		if (typeof extension === 'object' && extension !== null) return extension as Entry;
+	}
+	return undefined;
+}
+
+/** True when a file has a buffer view of meshopt data, which only the meshopt decoder reads. */
+export function usesMeshopt(container: GltfContainer): boolean {
+	const views = container.json.bufferViews;
+	return Array.isArray(views) && views.some((view) => meshoptOf(view) !== undefined);
+}
 
 /**
  * The most bytes that one accessor may read: WebGPU's portable limit on a buffer's size. It also
@@ -332,25 +387,30 @@ export function readContainer(file: Uint8Array, url: string): GltfContainer {
 	const external = new Map<number, string>();
 	list(json.buffers, 'buffers').forEach((buffer, k) => {
 		const uri = entry(buffer, `buffer ${k}`).uri;
+		// A fallback buffer holds what meshopt data decodes to, for loaders without the decoder.
+		// The engine decodes, so it never downloads one.
+		const fallback = meshoptOf(buffer)?.fallback === true;
 		if (uri === undefined) {
-			if (k !== 0 || !bin)
+			if (!fallback && (k !== 0 || !bin))
 				broken(`buffer ${k} has no uri, and only a GLB file's first buffer may lack one`);
 			return;
 		}
 		if (typeof uri !== 'string') broken(`buffer ${k} has a uri that is not text`);
-		if (!uri.startsWith('data:')) external.set(k, resolve(uri, url));
+		if (!uri.startsWith('data:') && !fallback) external.set(k, resolve(uri, url));
 	});
 	return { json, bin, external };
 }
 
 /**
  * Parses a file whose container `readContainer` read, with the bytes of each buffer that it names
- * by address. Throws a `GltfError`.
+ * by address. `decode` reads buffer views of meshopt data. Without it, such a view reads its
+ * fallback buffer, when the caller gives that buffer's bytes. Throws a `GltfError`.
  */
 export function parseGltf(
 	container: GltfContainer,
 	externalBuffers: ReadonlyMap<number, Uint8Array>,
 	url: string,
+	decode?: MeshoptDecode,
 ): GltfData {
 	const { json } = container;
 	const notes: string[] = [];
@@ -358,18 +418,23 @@ export function parseGltf(
 		const buffer = entry(value, `buffer ${k}`);
 		const byteLength = count(buffer.byteLength, `buffer ${k}'s byteLength`);
 		const { uri } = buffer;
-		const bytes =
-			uri === undefined
+		const fallback = meshoptOf(buffer)?.fallback === true;
+		const bytes = fallback
+			? externalBuffers.get(k)
+			: uri === undefined
 				? container.bin
 				: typeof uri === 'string' && uri.startsWith('data:')
 					? fromDataUri(uri, `buffer ${k}`)
 					: externalBuffers.get(k);
-		if (!bytes) broken(`buffer ${k} did not arrive`);
+		if (!bytes) {
+			if (fallback) return undefined;
+			broken(`buffer ${k} did not arrive`);
+		}
 		if (bytes.length < byteLength)
 			broken(`buffer ${k} holds ${bytes.length} bytes, and its byteLength says ${byteLength}`);
 		return bytes.subarray(0, byteLength);
 	});
-	const views = list(json.bufferViews, 'bufferViews').map((value, k) => {
+	const views = list(json.bufferViews, 'bufferViews').map((value, k): View => {
 		const view = entry(value, `bufferView ${k}`);
 		const what = `bufferView ${k}`;
 		const buffer = index(view.buffer, buffers.length, `${what}'s buffer`);
@@ -377,13 +442,36 @@ export function parseGltf(
 		const length = count(view.byteLength, `${what}'s byteLength`);
 		const stride =
 			view.byteStride === undefined ? 0 : count(view.byteStride, `${what}'s byteStride`);
-		const bytes = buffers[buffer] as Uint8Array;
+		const bytes = buffers[buffer];
+		const meshopt = meshoptOf(view);
+		if (meshopt && (decode || !bytes))
+			return { stride, meshopt: compressedView(meshopt, length, buffers, what) };
+		if (!bytes) broken(`${what} reads buffer ${buffer}, a fallback buffer that holds no data`);
 		if (offset + length > bytes.length)
 			broken(
 				`${what} reads bytes ${offset} to ${offset + length} of buffer ${buffer}, which holds ${bytes.length}`,
 			);
 		return { bytes: bytes.subarray(offset, offset + length), stride };
 	});
+
+	/** The bytes of buffer view `v`. A view of meshopt data decodes the first time it is read. */
+	const viewOf = (v: number): { bytes: Uint8Array; stride: number } => {
+		const view = views[v] as View;
+		if (view.bytes) return { bytes: view.bytes, stride: view.stride };
+		const { buffer, offset, length, stride, count, mode, filter } = view.meshopt as CompressedView;
+		if (!decode) broken(`bufferView ${v} holds meshopt data, and the parser has no decoder`);
+		const source = (buffers[buffer] as Uint8Array).subarray(offset, offset + length);
+		const target = new Uint8Array(count * stride);
+		try {
+			decode(target, count, stride, source, mode, filter);
+		} catch (error) {
+			broken(
+				`bufferView ${v}'s meshopt data does not decode: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+		view.bytes = target;
+		return { bytes: target, stride: view.stride };
+	};
 	const accessors = list(json.accessors, 'accessors').map((value, k) =>
 		entry(value, `accessor ${k}`),
 	);
@@ -407,7 +495,7 @@ export function parseGltf(
 		let out: Uint8Array<ArrayBuffer> | undefined;
 		if (accessor.bufferView !== undefined) {
 			const v = index(accessor.bufferView, views.length, `${name}'s bufferView`);
-			const { bytes: source, stride } = views[v] as (typeof views)[number];
+			const { bytes: source, stride } = viewOf(v);
 			const offset = count(accessor.byteOffset ?? 0, `${name}'s byteOffset`);
 			const step = stride || element;
 			const end = n === 0 ? 0 : offset + (n - 1) * step + element;
@@ -463,7 +551,7 @@ export function parseGltf(
 			broken(`${name}'s sparse indices have the component type ${String(at.componentType)}`);
 		const slice = (part: Entry, bytes: number, what: string) => {
 			const v = index(part.bufferView, views.length, `${what}'s bufferView`);
-			const source = (views[v] as (typeof views)[number]).bytes;
+			const source = viewOf(v).bytes;
 			const offset = count(part.byteOffset ?? 0, `${what}'s byteOffset`);
 			if (offset + m * bytes > source.length)
 				broken(
@@ -628,7 +716,7 @@ export function parseGltf(
 			return { url: resolve(image.uri, url), mimeType };
 		}
 		const v = index(image.bufferView, views.length, `image ${k}'s bufferView`);
-		return { bytes: (views[v] as (typeof views)[number]).bytes.slice(), mimeType };
+		return { bytes: viewOf(v).bytes.slice(), mimeType };
 	});
 
 	const lightDefs = list(json.extensions?.KHR_lights_punctual?.lights, 'lights');
@@ -661,6 +749,68 @@ export function parseGltf(
 	const data: GltfData = { nodes, meshes, materials, textures: textureUses, images, lights, notes };
 	if (animation) data.animation = animation;
 	return data;
+}
+
+/** A buffer view: its bytes, or the meshopt data that its bytes decode from on first use. */
+interface View {
+	bytes?: Uint8Array;
+	stride: number;
+	meshopt?: CompressedView;
+}
+
+/** A buffer view's meshopt data, checked against the extension's rules. */
+interface CompressedView {
+	buffer: number;
+	offset: number;
+	length: number;
+	stride: number;
+	count: number;
+	mode: string;
+	filter: string;
+}
+
+/**
+ * Checks a buffer view's meshopt extension: its data lies inside a buffer that holds data, its
+ * mode and filter allow its stride, and its decoded bytes fill the view and stay within an
+ * accessor's limit. So a decode never allocates a huge count.
+ */
+function compressedView(
+	meshopt: Entry,
+	viewLength: number,
+	buffers: readonly (Uint8Array | undefined)[],
+	what: string,
+): CompressedView {
+	const name = `${what}'s meshopt data`;
+	const buffer = index(meshopt.buffer, buffers.length, `${name}'s buffer`);
+	const offset = count(meshopt.byteOffset ?? 0, `${name}'s byteOffset`);
+	const length = count(meshopt.byteLength, `${name}'s byteLength`);
+	const stride = count(meshopt.byteStride, `${name}'s byteStride`);
+	const n = count(meshopt.count, `${name}'s count`);
+	const mode = String(meshopt.mode);
+	const filter = String(meshopt.filter ?? 'NONE');
+	const bytes = buffers[buffer];
+	if (!bytes) broken(`${name} reads buffer ${buffer}, a fallback buffer that holds no data`);
+	if (offset + length > bytes.length)
+		broken(
+			`${name} reads bytes ${offset} to ${offset + length} of buffer ${buffer}, which holds ${bytes.length}`,
+		);
+	const modeAllows = MESHOPT_MODES[mode];
+	if (!modeAllows) broken(`${name} has the mode ${mode}`);
+	const filterAllows = MESHOPT_FILTERS[filter];
+	if (!filterAllows) broken(`${name} has the filter ${filter}`);
+	if (filter !== 'NONE' && mode !== 'ATTRIBUTES')
+		broken(`${name} has the filter ${filter}, which only the ATTRIBUTES mode takes`);
+	if (!modeAllows(stride) || !filterAllows(stride))
+		broken(`${name} has the byteStride ${stride}, which its mode and filter do not allow`);
+	if (mode === 'TRIANGLES' && n % 3 !== 0)
+		broken(`${name} has ${n} indices, which make no whole triangles`);
+	if (n * stride > MAX_ACCESSOR_BYTES)
+		broken(
+			`${name} decodes to ${n * stride} bytes, more than the ${MAX_ACCESSOR_BYTES} bytes an accessor may read`,
+		);
+	if (n * stride !== viewLength)
+		broken(`${name} decodes to ${n * stride} bytes, and the view's byteLength says ${viewLength}`);
+	return { buffer, offset, length, stride, count: n, mode, filter };
 }
 
 /**

@@ -27,14 +27,14 @@ On the owner's Mac, the first fetch of 540 files (183 MB) took 8.7 seconds. A fe
 | Four Poly Haven environments at 2048 x 1024, with one OpenEXR copy | Environment light and backgrounds (M2-B2, M2-E2, M2-E3) and the HDR readers (M2-E4) |
 | Colour grading tables in `.cube` and `.3dl` form | Colour grading (M2-F3) |
 
-No Khronos model under an accepted licence uses `EXT_meshopt_compression`, so the asset tool's output gives those test files. Small fixtures, such as one glTF file per extension and malformed files, stay in this repository beside their tests. So do the image test references.
+No Khronos model under an accepted licence uses `EXT_meshopt_compression`. So `tests/lib/meshopt-fixtures.ts` compresses SimpleInstancing (CC0) with gltfpack 1.3, `-cc -ce ext`, into `tests/pages/assets/models/simple-instancing-meshopt.glb`. `bun tests/lib/meshopt-fixtures.ts` writes it again. A unit test checks that the committed file matches what gltfpack builds. [D-34](decisions/D-34-meshopt-decoding.md) records why. Small fixtures, such as one glTF file per extension and malformed files, stay in this repository beside their tests. So do the image test references.
 
 ## Use a sample file
 
 - In code that runs in Bun or Node, `samplePath('sources/khronos/Fox/glTF-Binary/Fox.glb')` from `tools/lib/samples.ts` returns the file's full path in the cache. It throws, with the command to run, when the file is missing.
 - In a page, `sampleUrl(...)` returns `/samples/<path>`. The dev server and `vite preview` serve each pinned file there from the cache, so phones and tablets on the runner reach the files too. They answer 404 for a file that the manifest does not list. They also answer 404, with the command to run, for a pinned file that the cache lacks. The file's SHA-256 is its entity tag, so a browser never keeps a file from an earlier pin.
 - Name each file with a string literal. The sample check reads the names from the code.
-- A CI job that loads sample files runs `bun run samples:fetch` first. Cache `~/.cache/null3d/samples` with `actions/cache`, keyed on the hash of `tools/samples/lock.json`. The `.github/actions/samples` action does both. The browser, bench and real-browsers jobs use it, because the glTF image tests and their parity scenes load Khronos models.
+- A CI job that loads sample files runs `bun run samples:fetch` first. Cache `~/.cache/null3d/samples` with `actions/cache`, keyed on the hash of `tools/samples/lock.json`. The `.github/actions/samples` action does both. The browser, bench and real-browsers jobs use it, because the glTF image tests and their parity scenes load Khronos models. The job of the unit tests uses it too, because the meshopt unit tests read sample files.
 
 ## The sample check
 

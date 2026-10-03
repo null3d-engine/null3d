@@ -157,16 +157,14 @@ function parse(
 	return new Promise((resolve, reject) => {
 		const id = worker.start(
 			(answer) => {
-				if ('error' in answer)
+				if ('error' in answer) {
+					const { code, message } = answer.error;
 					reject(
-						context.error(
-							answer.error.code === 'E1417' ? 'E1417' : 'E1416',
-							answer.error.code === 'E1417'
-								? `${call}() cannot load ${address}: ${answer.error.message}.`
-								: `${call}() could not read ${address}: ${answer.error.message}.`,
-						),
+						code === 'E1406' || code === 'E1417'
+							? context.error(code, `${call}() cannot load ${address}: ${message}.`)
+							: context.error('E1416', `${call}() could not read ${address}: ${message}.`),
 					);
-				else if ('needs' in answer)
+				} else if ('needs' in answer)
 					Promise.all(
 						answer.needs.map(async ([k, url]) => {
 							const blob = await context.download(new URL(url), call);

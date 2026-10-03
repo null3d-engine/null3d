@@ -1,7 +1,8 @@
 // Small glTF files made in code, for the loader's unit tests and its test pages: one per extension
 // that the loader reads, and the files that break the rules. The builder packs typed arrays into
 // one buffer, four bytes apart as glTF asks, and writes a .glb file, or a .gltf file whose buffer
-// is a data: address. It imports nothing, so pages and Bun load it alike.
+// is a data: address. Meshopt data goes into the same buffer, and its views read a fallback buffer
+// with no data, as gltfpack writes them. It imports nothing, so pages and Bun load it alike.
 
 /** A field of the glTF JSON. */
 // biome-ignore lint/suspicious/noExplicitAny: the JSON of a test file takes any shape, broken ones too
@@ -35,9 +36,11 @@ export class GltfBuilder {
 	};
 	private readonly chunks: Uint8Array[] = [];
 	private length = 0;
+	/** The fallback buffer's length, and the meshopt extension that names it, once a view uses it. */
+	private fallback?: { length: number; extension: string };
 
-	/** Adds bytes to the buffer as a buffer view, and returns the view's index. */
-	view(bytes: Uint8Array, stride?: number): number {
+	/** Adds bytes to the buffer, four bytes apart from the next, and returns their offset. */
+	private append(bytes: Uint8Array): number {
 		const at = this.length;
 		this.chunks.push(bytes);
 		this.length += bytes.length;
@@ -46,9 +49,64 @@ export class GltfBuilder {
 			this.chunks.push(new Uint8Array(pad));
 			this.length += pad;
 		}
-		const view: GltfJson = { buffer: 0, byteOffset: at, byteLength: bytes.length };
+		return at;
+	}
+
+	/** Adds bytes to the buffer as a buffer view, and returns the view's index. */
+	view(bytes: Uint8Array, stride?: number): number {
+		const view: GltfJson = { buffer: 0, byteOffset: this.append(bytes), byteLength: bytes.length };
 		if (stride) view.byteStride = stride;
 		return this.json.bufferViews.push(view) - 1;
+	}
+
+	/**
+	 * Adds meshopt data to the buffer as a buffer view of `fields.count` elements of
+	 * `fields.byteStride` bytes, and returns the view's index. The view itself reads the fallback
+	 * buffer, and `stride` is its byteStride.
+	 */
+	meshoptView(
+		data: Uint8Array,
+		fields: { count: number; byteStride: number; mode: string; filter?: string },
+		extension = 'EXT_meshopt_compression',
+		stride?: number,
+	): number {
+		this.fallback ??= { length: 0, extension };
+		const fallback = this.fallback;
+		const byteLength = fields.count * fields.byteStride;
+		const view: GltfJson = {
+			buffer: 1,
+			byteOffset: fallback.length,
+			byteLength,
+			extensions: {
+				[extension]: {
+					buffer: 0,
+					byteOffset: this.append(data),
+					byteLength: data.length,
+					...fields,
+				},
+			},
+		};
+		if (stride) view.byteStride = stride;
+		fallback.length += Math.ceil(byteLength / 4) * 4;
+		return this.json.bufferViews.push(view) - 1;
+	}
+
+	/** Adds an accessor that reads buffer view `view`, and returns its index. */
+	accessorOf(
+		view: number,
+		componentType: number,
+		count: number,
+		components: number,
+		fields: GltfJson = {},
+	): number {
+		const accessor: GltfJson = {
+			bufferView: view,
+			componentType,
+			count,
+			type: TYPE[components],
+			...fields,
+		};
+		return this.json.accessors.push(accessor) - 1;
 	}
 
 	/** Adds an accessor of `components` values per element, and returns its index. */
@@ -101,6 +159,13 @@ export class GltfBuilder {
 		return this;
 	}
 
+	/** The file's buffers: the one that holds the data, then the fallback buffer of meshopt views. */
+	private buffers(first: GltfJson): GltfJson[] {
+		if (!this.fallback) return [first];
+		const { length, extension } = this.fallback;
+		return [first, { byteLength: length, extensions: { [extension]: { fallback: true } } }];
+	}
+
 	/** The buffer's bytes. */
 	bytes(): Uint8Array {
 		const out = new Uint8Array(this.length);
@@ -115,7 +180,7 @@ export class GltfBuilder {
 	/** The file as a .glb file. */
 	glb(): Uint8Array {
 		const bin = this.bytes();
-		this.json.buffers = [{ byteLength: bin.length }];
+		this.json.buffers = this.buffers({ byteLength: bin.length });
 		const text = new TextEncoder().encode(JSON.stringify(this.json));
 		const jsonLength = Math.ceil(text.length / 4) * 4;
 		const total = 12 + 8 + jsonLength + 8 + bin.length;
@@ -139,12 +204,10 @@ export class GltfBuilder {
 		const bin = this.bytes();
 		let binary = '';
 		for (const byte of bin) binary += String.fromCharCode(byte);
-		this.json.buffers = [
-			{
-				byteLength: bin.length,
-				uri: uri ?? `data:application/octet-stream;base64,${btoa(binary)}`,
-			},
-		];
+		this.json.buffers = this.buffers({
+			byteLength: bin.length,
+			uri: uri ?? `data:application/octet-stream;base64,${btoa(binary)}`,
+		});
 		return new TextEncoder().encode(JSON.stringify(this.json));
 	}
 }
