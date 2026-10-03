@@ -227,8 +227,8 @@ The "Since" column gives the first engine version with the feature:
 
 | three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
-| EffectComposer / RenderPass / OutputPass / PostProcessing (three/webgpu) / pmndrs postprocessing | post.set({ ... }) | changed | 0.2 | The chain is built in and merged into few passes. Delete the composer; keep only each pass's settings. | `porting/threejs-postprocessing` |
-| UnrealBloomPass / BloomEffect / bloom() node | post.set({ bloom: { strength, radius, threshold } }) | direct | 0.2 | Similar response to UnrealBloomPass; tune with parity images. | `porting/threejs-postprocessing` |
+| EffectComposer / RenderPass / OutputPass / PostProcessing (three/webgpu) / pmndrs postprocessing | post.set({ ... }) | changed | 0.2 | The chain is built in and merged into few passes. Delete the composer, RenderPass and OutputPass; keep only each pass's settings. | `concepts/post-processing` |
+| UnrealBloomPass / BloomEffect / bloom() node | post.set({ bloom: { strength, radius, threshold } }) | direct | 0.2 | UnrealBloomPass's steps, kernels and weights, so the same strength, radius and threshold give the same glow; drop the resolution argument. For pmndrs BloomEffect and the bloom() node, start from the same numbers and compare images. In WebGPU's compatibility mode with MSAA, bloom moves the engine to HDR color with FXAA. | `concepts/post-processing` |
 | SSAOPass / SAOPass / GTAOPass / N8AO | post.set({ ao: { radius, intensity } }) | changed | 0.2 | GTAO at half resolution, on the High and Ultra presets. | `porting/threejs-postprocessing` |
 | FXAAPass / FXAAShader / SMAAPass / TAARenderPass / SSAARenderPass | createEngine({ antialias: 'fxaa' }); the quality presets take MSAA 4x from Medium, and FXAA on Low | changed | 0.1 | FXAA runs inside the final pass, where three.js adds FXAAPass after OutputPass. SMAA and SSAA have no equivalent. TAA comes after 1.0. | `concepts/quality-presets` |
 | OutlinePass / OutlineEffect | post.set({ outline: { color, thickness } }) and obj.setOutlined(true) | direct | 0.2 |  | `porting/threejs-postprocessing` |

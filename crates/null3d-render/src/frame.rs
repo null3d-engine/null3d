@@ -23,6 +23,7 @@ use null3d_gpu::drawlist::{
     DrawList, DrawListError, Op, buffer_usage, permutation, state_flags, template, vertex,
 };
 
+use crate::bloom::{self, Bloom};
 use crate::camera::Lens;
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
@@ -226,6 +227,11 @@ pub trait FrameBuilder {
     /// frame creates them all again and uploads the whole scene. The thread that draws asks for
     /// this after the browser took the GPU away and it made a new device.
     fn reset_gpu(&mut self);
+    /// Draws the scene into a target of another format, or with another anti-aliasing mode, from
+    /// the next frame on, as an effect that needs HDR color asks on the 8-bit path. The render
+    /// graph makes its targets again, and every pipeline that draws into them changes, so the caller
+    /// rebuilds the draw tables. The canvas keeps its transparency.
+    fn set_canvas_output(&mut self, scene_color: SceneColor, antialias: Antialias);
     /// The list recorded for a frame's parity, as the render worker replays it.
     fn list(&self, frame: u32) -> &DrawList;
 }
@@ -490,6 +496,11 @@ pub struct SceneSettings {
     moving_casters: MovingCasters,
     canvas: CanvasOutput,
     output: Output,
+    /// Bloom's settings while the sketch turns it on.
+    bloom: Option<Bloom>,
+    /// How many times fewer taps than three.js's each of bloom's blurs reads, which the quality
+    /// settings raise.
+    bloom_divisor: u32,
     /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
     /// the bits of a `u32`, as the frame uniform holds them.
     clock: [f32; 4],
@@ -531,6 +542,8 @@ impl SceneSettings {
             moving_casters: MovingCasters::default(),
             canvas,
             output: Output::default(),
+            bloom: None,
+            bloom_divisor: 1,
             clock: [0.0; 4],
             render_scaling: false,
             tiles: TileSettings::default(),
@@ -547,6 +560,21 @@ impl SceneSettings {
 
     /// How frames reach the canvas.
     pub fn canvas(&self) -> CanvasOutput {
+        self.canvas
+    }
+
+    /// Takes a new scene color and anti-aliasing mode, with the canvas's transparency, and returns
+    /// how frames reach the canvas now.
+    pub(crate) fn switch_canvas(
+        &mut self,
+        scene_color: SceneColor,
+        antialias: Antialias,
+    ) -> CanvasOutput {
+        self.canvas = CanvasOutput {
+            scene_color,
+            antialias,
+            ..self.canvas
+        };
         self.canvas
     }
 
@@ -589,6 +617,29 @@ impl SceneSettings {
     /// Sets the exposure and the tone mapping, from the next recorded frame on.
     pub fn set_output(&mut self, output: Output) {
         self.output = output;
+    }
+
+    /// Bloom's settings while it is on, and `None` while it is off or a debug view draws, whose
+    /// colors reach the canvas as its shader writes them.
+    pub fn bloom(&self) -> Option<Bloom> {
+        self.bloom.filter(|_| !self.debug_view.is_debug())
+    }
+
+    /// Turns bloom on with its settings, or off with `None`, from the next recorded frame on.
+    pub fn set_bloom(&mut self, bloom: Option<Bloom>) {
+        self.bloom = bloom;
+    }
+
+    /// How many times fewer taps than three.js's each of bloom's blurs reads.
+    pub fn bloom_divisor(&self) -> u32 {
+        self.bloom_divisor
+    }
+
+    /// Makes each of bloom's blurs read `divisor` times fewer taps than three.js's, rounded up,
+    /// from 1 to [`bloom::MAX_SAMPLE_DIVISOR`], from the next recorded frame on. Fewer taps read
+    /// the same kernel more coarsely, so the glow keeps its size.
+    pub fn set_bloom_divisor(&mut self, divisor: u32) {
+        self.bloom_divisor = divisor.clamp(1, bloom::MAX_SAMPLE_DIVISOR);
     }
 
     /// True when the render scale may drop below the whole canvas.

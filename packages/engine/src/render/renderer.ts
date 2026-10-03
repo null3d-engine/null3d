@@ -5,6 +5,7 @@ import { FORMAT_RG11B10_UFLOAT, PERMUTATION_HALF } from '../generated/gpu';
 import { type DeviceShaders, loadGlslShaders, loadWgslShaders } from '../generated/shaders';
 import { type CanvasHolder, clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
 import { type Completion, FenceCompletion, QueueCompletion } from '../gpu/completion';
+import { DeviceShaderSet } from '../gpu/device-shaders';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import {
 	contextFinished,
@@ -277,6 +278,18 @@ class WebGL2Renderer implements Renderer {
 const freshIf = (device: CoreDevice, shaders: DeviceShaders) =>
 	device.freshShaders ? saltShaders(shaders, freshSalt()) : shaders;
 
+/**
+ * The device's shaders, from the module of its fixed bits, as a set that loads the module of
+ * other fixed bits through `load` when a pipeline needs it.
+ */
+async function deviceShaders(
+	device: CoreDevice,
+	load: (bits: number) => Promise<DeviceShaders>,
+): Promise<DeviceShaderSet> {
+	const loadFresh = (bits: number) => load(bits).then((loaded) => freshIf(device, loaded));
+	return new DeviceShaderSet(await loadFresh(device.shaderBits), device.shaderBits, loadFresh);
+}
+
 /** Creates the renderer for a tier on the canvas this thread owns. */
 export async function createRenderer(
 	canvas: RenderCanvas,
@@ -291,7 +304,7 @@ export async function createRenderer(
 		// scene's shaders download meanwhile.
 		const [, shaders] = await Promise.all([
 			contextRestored(gl),
-			scene && loadGlslShaders(device.shaderBits).then((loaded) => freshIf(device, loaded)),
+			scene && deviceShaders(device, loadGlslShaders),
 		]);
 		if (scene && shaders)
 			return new WebGL2SceneRenderer(
@@ -310,7 +323,7 @@ export async function createRenderer(
 	}
 	const [gpu, shaders] = await Promise.all([
 		requestDevice(options),
-		scene && loadWgslShaders(device.shaderBits).then((loaded) => freshIf(device, loaded)),
+		scene && deviceShaders(device, loadWgslShaders),
 	]);
 	if (scene && shaders)
 		return new WebGPUSceneRenderer(
@@ -343,7 +356,9 @@ async function requestDevice(options: RendererOptions): Promise<{ tier: Tier; de
 	for (const [flag, feature] of TEXTURE_COMPRESSION)
 		if (options.device.capabilities & flag && adapter.features.has(feature))
 			requiredFeatures.push(feature);
-	if (options.device.sceneColor === FORMAT_RG11B10_UFLOAT)
+	// The scene color at the start, or after an effect that needs HDR color switches to it.
+	const { sceneColor, effectsSceneColor } = options.device;
+	if (sceneColor === FORMAT_RG11B10_UFLOAT || effectsSceneColor === FORMAT_RG11B10_UFLOAT)
 		requiredFeatures.push('rg11b10ufloat-renderable');
 	// The device chose half precision only where the adapter offers 16-bit floats.
 	if (options.device.shaderBits & PERMUTATION_HALF) requiredFeatures.push('shader-f16');

@@ -16,6 +16,7 @@ import {
 	DEPTH_WITHOUT_CLIP_CONTROL,
 	type DeviceOptions,
 	type DeviceReport,
+	effectsOutput,
 	maxCanvasSize,
 	maxInstances,
 	portableMaxInstances,
@@ -39,6 +40,8 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	freshShaders: false,
 	sceneColor: FORMAT_RGBA16_FLOAT,
 	antialias: C.ANTIALIAS_MSAA,
+	effectsSceneColor: FORMAT_RGBA16_FLOAT,
+	effectsAntialias: C.ANTIALIAS_MSAA,
 	transparent: false,
 	shaderBits: 0,
 	cellCulling: true,
@@ -393,5 +396,56 @@ describe('background compiles', () => {
 		expect(coreDevice('webgl2', report({}), PLAIN).parallelCompile).toBe(true);
 		const wait: DeviceOptions = { ...PLAIN, parallelCompile: false };
 		expect(coreDevice('webgl2', report({}), wait).parallelCompile).toBe(false);
+	});
+});
+
+describe('effectsOutput', () => {
+	const small = ['rg11b10ufloat-renderable'];
+	const effects = (tier: Tier, device: DeviceReport, options: Partial<DeviceOptions> = {}) =>
+		effectsOutput(tier, device, { ...PLAIN, ...options });
+
+	it('keeps the start on the HDR path', () => {
+		expect(effects('webgpu', report({}, small))).toEqual({
+			sceneColor: FORMAT_RG11B10_UFLOAT,
+			antialias: 'msaa',
+		});
+		expect(effects('webgl2', report({}))).toEqual({
+			sceneColor: FORMAT_RGBA16_FLOAT,
+			antialias: 'msaa',
+		});
+	});
+
+	it('moves the 8-bit path of MSAA to HDR color with FXAA', () => {
+		expect(effects('webgpu-compat', report({}, small))).toEqual({
+			sceneColor: FORMAT_RG11B10_UFLOAT,
+			antialias: 'fxaa',
+		});
+		expect(effects('webgpu-compat', report({}), { transparent: true })).toEqual({
+			sceneColor: FORMAT_RGBA16_FLOAT,
+			antialias: 'fxaa',
+		});
+		const fewSamples = { rgba16f: { ...HDR_TARGETS.rgba16f, samples: 2 } };
+		expect(effects('webgl2', report({ floatRenderTargets: fewSamples }))).toEqual({
+			sceneColor: FORMAT_RGBA16_FLOAT,
+			antialias: 'fxaa',
+		});
+		const device = coreDevice('webgpu-compat', report({}), PLAIN);
+		expect([device.sceneColor, device.effectsSceneColor]).toEqual([
+			FORMAT_CANVAS,
+			FORMAT_RGBA16_FLOAT,
+		]);
+		expect(device.effectsAntialias).toBe(C.ANTIALIAS_FXAA);
+	});
+
+	it('stays on the 8-bit path where the device has no HDR target, or the page turns HDR off', () => {
+		const clipped = { rgba16f: { ...HDR_TARGETS.rgba16f, readsBack: false } };
+		expect(effects('webgl2', report({ floatRenderTargets: clipped }))).toEqual({
+			sceneColor: FORMAT_CANVAS,
+			antialias: 'msaa',
+		});
+		expect(effects('webgpu-compat', report({}), { hdr: false })).toEqual({
+			sceneColor: FORMAT_CANVAS,
+			antialias: 'msaa',
+		});
 	});
 });

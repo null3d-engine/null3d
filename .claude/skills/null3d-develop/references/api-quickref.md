@@ -423,13 +423,13 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping` and `exposure` are built; everything else comes in 0.2. The default tone mapping is ACES, while three.js defaults to none.
+`toneMapping`, `exposure` and `bloom` are built; the other effects come later in 0.2. The default tone mapping is ACES, while three.js defaults to none.
 
 ```ts
 post.set({
   toneMapping: 'aces',      // 'aces' | 'agx' | 'neutral' | 'none'
   exposure: 1,
-  bloom: { strength: 0.8, radius: 0.4, threshold: 0.9 },  // (0.2)
+  bloom: { strength: 0.8, radius: 0.4, threshold: 0.9 },  // (0.2) UnrealBloomPass's meanings; false turns it off
   ao: { radius: 0.5, intensity: 1 },     // (0.2) High and Ultra presets only
   lut, vignette: { amount: 0.3 },        // (0.2)
   outline: { color: '#ffcc00', thickness: 2 },  // (0.2) objects opt in with setOutlined(true)

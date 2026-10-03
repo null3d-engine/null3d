@@ -2,6 +2,8 @@
 //!
 //! - `arrays`: meshes from arrays, with normals and tangents computed as three.js computes them
 //! - `background`: a texture that the camera's view draws behind every object
+//! - `bloom`: light that spreads from the scene's brightest parts, as three.js's UnrealBloomPass
+//!   spreads it: a bright pass and five blurred levels that the final pass adds
 //! - `camera`: perspective and orthographic lenses with reversed depth, and view matrices
 //! - `cells`: grid-cell culling, which both frame builders share: still objects in cell order, a
 //!   box per cell, and the cells each view can see
@@ -33,6 +35,7 @@
 
 pub mod arrays;
 mod background;
+pub mod bloom;
 pub mod camera;
 mod cells;
 pub mod cpu_culled;

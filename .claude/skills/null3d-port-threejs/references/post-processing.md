@@ -1,8 +1,8 @@
 # Porting post-processing
 
-three.js chains full-screen passes, each reading and writing the whole screen. null3D has a built-in chain: an HDR scene buffer, then one final pass that merges exposure, tone mapping, FXAA and dithering. Half-resolution bloom and ambient occlusion, color grading and per-pixel custom effects join the chain in 0.2. You port settings, not passes. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`, `concepts/backends`.
+three.js chains full-screen passes, each reading and writing the whole screen. null3D has a built-in chain: an HDR scene buffer and bloom at half size and below. One final pass then merges bloom, exposure, tone mapping, FXAA and dithering. Ambient occlusion, color grading and per-pixel custom effects join the chain later in 0.2. You port settings, not passes. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`, `concepts/backends`.
 
-Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, exposure })` are built. Every other setting in this file, `post.addEffect` and custom passes come in 0.2. Until then, a port keeps only the tone mapping and the exposure of the three.js chain, and the report lists each effect it dropped.
+Versions: the HDR scene buffer, the final pass, `post.set({ toneMapping, exposure })` and `bloom` (0.2) are built. Every other setting in this file, `post.addEffect` and custom passes come later in 0.2. Until then, a port keeps the tone mapping, the exposure and bloom of the three.js chain, and the report lists each effect it dropped.
 
 ## Contents
 
@@ -28,7 +28,7 @@ Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, expo
 | `RenderPass(scene, camera)` | Nothing | The scene pass is built in |
 | `OutputPass` | Nothing | The engine's final pass tone maps and converts to sRGB for the display once |
 | `GammaCorrectionShader`, `SRGBShader` in a `ShaderPass` | Delete | Keeping it applies gamma twice |
-| `UnrealBloomPass(resolution, strength, radius, threshold)` | `bloom: { strength, radius, threshold }` (0.2) | `resolution` is not needed: bloom runs at half resolution |
+| `UnrealBloomPass(resolution, strength, radius, threshold)` | `bloom: { strength, radius, threshold }` (0.2) | The pass's own steps, kernels and weights, so keep the three numbers. `resolution` is not needed: bloom takes the canvas's size |
 | `SSAOPass` (`kernelRadius`, `minDistance`, `maxDistance`) | `ao: { radius, intensity }` (0.2) | GTAO on High and Ultra presets; start with radius in world units about the original kernel radius |
 | `SAOPass`, `GTAOPass`, N8AO | `ao: { radius, intensity }` (0.2) | Same |
 | `FXAAPass`, `ShaderPass(FXAAShader)` | `createEngine({ antialias: 'fxaa' })` on the page | FXAA runs inside the final pass; the Low preset uses it |
@@ -98,6 +98,7 @@ This example is symmetric, so the UV flip does not matter here.
 - Double gamma: a leftover gamma or sRGB pass washes the image out. Delete them all.
 - Background: null3D tone maps the background color with the scene, as three.js's WebGPURenderer does. WebGLRenderer does not, so with `'aces'` or `'agx'` a dark background comes out darker. Where the exact color matters, use `toneMapping: 'none'` or a transparent canvas over a CSS background.
 - Tone mapping twice: `renderer.toneMapping` and a tone-mapping pass in the same three.js app means the original was tone-mapped twice. Decide with the user which look to keep. null3D tone-maps once.
-- Order: three.js lets you tone-map before bloom. null3D will always bloom in HDR before tone mapping (0.2), which is physically correct but can look stronger. Lower `strength` to match.
-- Resolution: three.js bloom set to full resolution looks sharper than null3D's half-resolution bloom (0.2). Compare at the target resolution, not zoomed in.
+- Order: three.js lets you tone-map before bloom. null3D always blooms in HDR before tone mapping, as `UnrealBloomPass` before `OutputPass` does. An original that tone-mapped first looks weaker; raise `strength` to match.
+- Threshold: null3D's default threshold is 1, so only light brighter than white glows. An original with a threshold near 0 makes the whole scene glow; copy its value.
+- Compatibility mode: in WebGPU's compatibility mode with MSAA, bloom moves the engine to HDR color with FXAA, so edges there look as with FXAA (`concepts/post-processing`).
 - Pixel ratio: many three.js composers render at the full device pixel ratio. Compare at a fixed pixel ratio.

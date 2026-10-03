@@ -4,6 +4,7 @@ import { FramePacer } from '../render/pacer';
 import { createMetricsBuffer, FrameRecorder, Role } from '../shared/metrics';
 import {
 	BUDGET_US,
+	bloomDivisor,
 	DROP_AFTER_MS,
 	FAILED_RAISE_MS,
 	FRAME_US,
@@ -265,16 +266,16 @@ describe('the shadow steps', () => {
 
 	it('keeps its steps within new settings and shadows, and counts each change of what draws', () => {
 		const { controller, ladder } = shadowed(3, 5, 2);
-		const before = controller.shadowChanges;
+		const before = controller.stepChanges;
 		ladder(SLOW);
-		expect(controller.shadowChanges - before).toBe(3);
+		expect(controller.stepChanges - before).toBe(3);
 		// A longer interval leaves one far cascade step and the filter's.
 		controller.setShadows(5, 4);
 		expect([controller.steps, controller.farInterval, controller.filter]).toEqual([2, 8, 3]);
 		// The sun stops casting shadows: the steps go.
 		controller.setCasters(0, false);
 		expect([controller.steps, controller.farInterval, controller.filter]).toEqual([0, 4, 5]);
-		expect(controller.shadowChanges - before).toBe(4);
+		expect(controller.stepChanges - before).toBe(4);
 	});
 
 	it('takes no step while off, and draws the highest scale with the settings as set', () => {
@@ -293,6 +294,39 @@ describe('the shadow steps', () => {
 		expect(controller.scale).toBe(800);
 		controller.setOn(true);
 		expect(ladder(SLOW)[0]).toBe('750 2 5');
+	});
+});
+
+describe('the bloom steps', () => {
+	it("halve bloom's samples after the shadow steps, only while bloom is on", () => {
+		const { controller, untilStep } = controlled(900);
+		controller.setShadows(5, 2);
+		controller.setCasters(1, false);
+		controller.setBloom(true, 1);
+		const seen: string[] = [];
+		for (let k = 0; k < 5; k++) {
+			untilStep(SLOW);
+			seen.push(`${controller.scale} ${controller.filter} ${controller.bloomDivisor}`);
+		}
+		// The scale drops twice, then the filter lightens, then bloom reads half and a quarter.
+		expect(seen).toEqual(['950 5 1', '900 5 1', '900 3 1', '900 3 2', '900 3 4']);
+		expect(controller.steps).toBe(3);
+		expect(controller.maxSteps).toBe(3);
+		// Bloom turned off takes its steps back at once, and changes what draws.
+		const before = controller.stepChanges;
+		controller.setBloom(false, 1);
+		expect([controller.steps, controller.bloomDivisor]).toEqual([1, 1]);
+		expect(controller.stepChanges).toBe(before + 1);
+	});
+
+	it('take no step from a setting that reads a quarter already', () => {
+		const { controller, ladder } = controlled(950);
+		controller.setBloom(true, 4);
+		expect(ladder(SLOW)).toEqual(['950 1 3']);
+		expect(controller.maxSteps).toBe(0);
+		expect(bloomDivisor(1)).toBe(1);
+		expect(bloomDivisor(0.5)).toBe(2);
+		expect(bloomDivisor(0.25)).toBe(4);
 	});
 });
 
