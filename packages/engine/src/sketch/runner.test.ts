@@ -216,6 +216,7 @@ async function start(
 				cellCulling: true,
 				depthPrepass: false,
 				vertexSkinning: false,
+				largeWorld: false,
 			},
 			capabilities: CAPABILITIES,
 			quality,

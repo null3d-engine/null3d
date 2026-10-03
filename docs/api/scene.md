@@ -222,6 +222,7 @@ Options for `scene.createInstances`.
 | `dynamic?: boolean` | Every row updates and uploads every frame; a static batch updates rows marked dirty only. |
 | `colors?: boolean` | Adds a color per row (RGBA, linear). This version stores the colors but does not draw them yet. |
 | `layers?: number` | The layers every row is on, as a 32-bit mask. The default, 1, is layer 0. |
+| `origin?: Vec3` | The point that every row's position is relative to. The default is (0, 0, 0). The engine keeps the origin at full precision, so rows near it keep the precision of 32-bit floats at any distance from the world's origin. Give a batch far from the origin, such as a forest on a planet, an origin among its rows. |
 
 ### `InstantiateOptions`
 

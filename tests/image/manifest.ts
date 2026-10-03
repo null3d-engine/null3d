@@ -510,6 +510,18 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		switches: [FULL_PRECISION],
 		tolerance: FAR_OUT_TOLERANCE,
 	},
+	// The same scene at the Earth's radius, 0.3 m past a whole meter, in large-world mode: root
+	// positions keep 64-bit precision through the setters, and each batch's rows sit around its
+	// origin. 32-bit positions there move in steps of 0.5 m. The scene's own sums stay off any
+	// cell's center, as 100 km out, and keep the same tolerance.
+	{
+		name: 'cells-6378km',
+		sketch: 'tests/pages/sketches/cells-sketch.ts?x=6378137.3&origin',
+		hold: 1,
+		reference: 'cells',
+		switches: [FULL_PRECISION, 'largeWorld'],
+		tolerance: { threshold: 0, maxDiffRatio: 0.0003 },
+	},
 	// Debug drawing: every shape of ctx.debug over a small scene, the axes of a spinning box and the
 	// frustum of a second camera. The single-threaded mode runs the sketch on the page, which draws
 	// the same lines. The S24+'s GPU puts some lines one pixel off, in 1.6% of the pixels, so it
