@@ -29,6 +29,7 @@ three.js apps usually run everything on the main thread: DOM, input, scene updat
 | Video elements | `page.ts` | After 1.0: `engine.registerVideo` and `textures.fromVideo`. Until then, send `ImageBitmap` frames (null3d-develop recipe 14) |
 | `localStorage`, cookies, URL parameters | `page.ts` | Send what the sketch needs at start; IndexedDB also works in the sketch |
 | `fetch` of JSON, binary data, models | `sketch.ts` | Workers have `fetch`; relative URLs resolve against the page |
+| `GLTFLoader` with `KTX2Loader` (0.2) | `sketch.ts` | `assets.loadGltf(url)` parses in a worker and needs no decoder paths; `scene.instantiate(prefab)` for each copy |
 | Physics libraries | `sketch.ts` | WebAssembly physics runs in workers |
 | Analytics, ads, routing | `page.ts` | Unchanged |
 
@@ -131,7 +132,7 @@ function updateEnemies(dt: number) {
 }
 ```
 
-Enemies that need different meshes become one batch per mesh. Per-enemy state (health, target, timers) goes into typed arrays indexed by row. When an enemy dies, swap-remove its row with the last live row and lower the active count (null3d-develop `references/recipes.md`, recipe 5).
+Enemies that need different meshes become one batch per mesh. An enemy loaded from a glTF file with several meshes takes `scene.createInstances(prefab, N, { dynamic: true })` (0.2): one batch whose rows move every mesh of the model. Per-enemy state (health, target, timers) goes into typed arrays indexed by row. When an enemy dies, swap-remove its row with the last live row and lower the active count (null3d-develop `references/recipes.md`, recipe 5).
 
 ## 5. Input and camera controls
 

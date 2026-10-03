@@ -109,8 +109,8 @@ export default defineSketch(async (ctx) => {
 | `scene.createGroup({ name, position, rotation, scale, parent, dynamic, layers })` | Group | Empty node for hierarchy |
 | `scene.createMesh({ mesh, material, position, rotation, scale, parent, dynamic, layers, castShadows, receiveShadows, name })` | Mesh | Static unless `dynamic: true` |
 | `scene.createInstances(mesh, count, { material, dynamic, colors, layers })` | InstanceBatch | Section 5 |
-| `scene.instantiate(prefab, { position, rotation, scale, parent })` (0.2) | Node | Creates a loaded glTF model |
-| `scene.clone(obj)` (0.2) | same type | Deep copy of a built object |
+| `scene.instantiate(prefab, { name, position, rotation, scale, parent, dynamic, layers, castShadows, receiveShadows })` (0.2) | PrefabInstance | A group holding one copy of a loaded glTF model, made with one batch of changes; `instance.find(name)` gives the copy's object of a node |
+| `scene.clone(obj)` (0.2) | same type | Copies the object and every object below it, lights and cameras included, under the same parent |
 | `scene.find(name)` | Object3D or undefined | The first live object with the name; use at setup, not per frame |
 | `scene.createPerspectiveCamera({ fov, near, far, position, target, layers })` | PerspectiveCamera | fov is vertical, in degrees. Cameras are dynamic by default |
 | `scene.createOrthographicCamera({ height, near, far, position, target, layers })` | OrthographicCamera | Or left, right, top, bottom in place of height |
@@ -192,7 +192,7 @@ rocks.destroy();
 
 The arrays are views of engine memory, which can grow when you create meshes or batches. Read them from the batch each time you use them, such as at the start of `onUpdate`, and do not keep them from the setup. A read allocates nothing.
 
-`scene.createInstances(prefab, count, options)` (0.2) makes one batch per mesh of a loaded model inside a group batch; the arrays are shared, so one write moves every part.
+`scene.createInstances(prefab, count, { dynamic, colors, layers })` (0.2) draws a loaded model with one batch per mesh, which share their rows: write the returned batch's arrays, and one row moves every part of that copy. The model's lights are left out, and a model with instancing of its own throws E1417.
 
 ## 6. Cameras (`api/cameras`)
 
@@ -344,9 +344,10 @@ const data = await assets.loadJson('/level.json');             // also loadBinar
 const bitmap = await assets.loadImageBitmap('/ui/logo.png', { colorSpace, flipY, premultipliedAlpha });
 // relative addresses resolve against the page; errors: E1411 download, E1412 decode, E1413 CORS
 const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
-ship.animations;           // (0.2) clip names
-ship.find('Turret');       // (0.2) a node inside the prefab
+ship.find('Turret');       // (0.2) a node: { name, position, rotation, scale, mesh, material }
 ship.bounds;               // (0.2) { center, radius, min, max } of the whole model
+ship.materials;            // (0.2) the file's materials; set() changes every copy
+ship.animations;           // (0.2) clip names
 const env = await assets.loadEnvironment('/env/studio.ktx2');  // (0.2) from `bunx @null3d/cli assets env`
 const studio = assets.builtinEnvironment('studio');            // (0.2) neutral lighting, no download
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2)
@@ -383,17 +384,18 @@ Sampling and blending run on job workers; there is no update call. Playing a cli
 
 ```ts
 const ray = { origin: [0, 0, 0], direction: [0, 0, -1] };
-const hit = { object: null, point: [0, 0, 0], normal: [0, 0, 0], distance: 0, instance: -1 };
-camera.screenToRay(input.pointer.x, input.pointer.y, ray);
-if (scene.raycast(ray.origin, ray.direction, { maxDistance: 100, layers: PICKABLE }, hit)) { /* hit.object */ }
-scene.raycastAny(origin, direction, opts);             // true or false; fastest
-scene.raycastAll(origin, direction, opts, hits);       // every hit, sorted
-scene.raycastBatch(rays, results);                     // many rays across job workers
-scene.overlapSphere(center, radius, opts, out);        // objects inside a volume
-scene.overlapBox(min, max, opts, out);
+const hit: RaycastHit = { object: null, instance: -1, point: vec3.create(), normal: vec3.create(), distance: 0, triangle: -1 };
+const opts = { maxDistance: 100, layers: PICKABLE };   // layers default: layer 0 alone, as three.js
+camera.screenToRay(input.pointer.x, input.pointer.y, ray);   // (0.2) not built yet
+if (scene.raycast(ray.origin, ray.direction, opts, hit)) { /* hit.object, hit.point, hit.normal */ }
+scene.raycastAny(origin, direction, opts);             // true or false; fastest: line of sight
+const n = scene.raycastAll(origin, direction, opts, hits);   // every triangle hit, nearest first
+scene.raycastBatch(rays, opts, { distances });         // 6 numbers per ray; job workers; -1 = miss
+scene.overlapSphere(center, radius, opts, out);        // objects with a triangle in the sphere
+scene.overlapBox(min, max, opts, out);                 // returns the count, as overlapSphere
 ```
 
-Hit objects are the same wrappers you created; `hit.instance` is the row index for batches. Create `ray` and `hit` once and reuse them.
+Hit objects are the same wrappers you created; `hit.instance` is the row of a batch, and `hit.triangle` is three.js's `faceIndex`. Queries test triangles, front faces only unless the material is `doubleSided`, and never hit hidden objects. They see the positions of the last frame's update, or this frame's in `onLateUpdate`. Create `ray`, `hit`, `opts` and the `hits` and `out` arrays once and reuse them: queries then allocate nothing.
 
 ## 14. Input (`api/input`) and controls (`api/controls`)
 

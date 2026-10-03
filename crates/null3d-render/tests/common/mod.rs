@@ -5,6 +5,7 @@
 
 pub mod blended;
 pub mod graph;
+pub mod skinned;
 
 use std::f64::consts::{PI, TAU};
 

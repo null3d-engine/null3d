@@ -8,7 +8,7 @@ summary: "32-bit layer masks that choose which cameras draw which objects and in
 
 # Render layers
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Raycasts and render passes that sketches declare take layer masks too, but they come in null3D 0.2, so coding agents must not use them yet.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Raycasts and overlap queries take layer masks too, from null3D 0.2 (see [Raycasting and spatial queries](../api/raycast.md)). Render passes that sketches declare come in null3D 0.2 and are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR

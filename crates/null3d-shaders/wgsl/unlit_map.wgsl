@@ -15,7 +15,7 @@ enable draw_index;
 #import null3d::mesh::{map_layer, map_ready, material_of, relative_position, straight_texel}
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
 #ifdef SKIN
-#import null3d::mesh::{skin_point, skin_transform}
+#import null3d::mesh::{skin_of, skinned_direction, skinned_point}
 #endif
 
 // The maps' bind group comes after the frame's group, and on WebGL2 after the groups of the draw
@@ -64,11 +64,12 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
 #ifdef SKIN
-    let skin = skin_transform(found, v.joints, v.weights);
-    out.relative = relative_position(found, skin_point(skin, mesh_position(v.position)));
+    let skin = skin_of(found, v.joints, v.weights);
+    let position = skinned_point(skin, mesh_position(v.position));
 #else
-    out.relative = relative_position(found, mesh_position(v.position));
+    let position = mesh_position(v.position);
 #endif
+    out.relative = relative_position(found, position);
     out.clip = clip_of(found, out.relative);
     out.uv = vec4f(mesh_uv(v.uv0), mesh_second_uv(v.uv1));
     out.material = found.material;

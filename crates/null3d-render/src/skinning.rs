@@ -421,4 +421,101 @@ mod tests {
         }
         assert!(center[0] > 4.0);
     }
+
+    /// A column of `rings` rings like [`column`]'s, whose vertices between two rings share their
+    /// weight between the two rings' joints, as a skinned character's do.
+    fn blended_column(rings: u32) -> Geometry {
+        let mut g = Geometry {
+            format: vertex::JOINTS | vertex::WEIGHTS,
+            ..Geometry::default()
+        };
+        for step in 0..(rings - 1) * 4 + 1 {
+            let y = step as f32 / 4.0;
+            let (below, share) = ((y as u8).min(rings as u8 - 2), y.fract());
+            let share = if y as u32 == rings - 1 { 1.0 } else { share };
+            for [x, z] in [[0.5, 0.0], [-0.5, 0.0], [0.0, 0.5], [0.0, -0.5]] {
+                for v in [x, y, z, 0.0, 1.0, 0.0] {
+                    g.vertices.extend_from_slice(&f32::to_le_bytes(v));
+                }
+                g.vertices.extend_from_slice(&[below, below + 1, 0, 0]);
+                for w in [1.0 - share, share, 0.0, 0.0] {
+                    g.vertices.extend_from_slice(&w.to_le_bytes());
+                }
+            }
+        }
+        g.indices = vec![0, 1, 2];
+        g
+    }
+
+    #[test]
+    fn extreme_poses_keep_every_skinned_vertex_inside_the_bounds() {
+        let geometry = blended_column(6);
+        let mut meshes = MeshStorage::new(Packing::SharedBuffers);
+        let mesh = meshes.add(&geometry).unwrap();
+        let slot = *meshes.mesh(mesh).unwrap();
+        // A small generator of numbers from -1 to 1, so every run tries the same poses.
+        let mut state = 0x2545_f491_u32;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state as f32 / u32::MAX as f32 * 2.0 - 1.0
+        };
+        for _ in 0..200 {
+            // Each joint turns up to half a turn about a random axis, scales by 0.5 to 2 and moves
+            // up to 3 m: far from any pose a clip would hold.
+            let mut pose = vec![0.0f32; 6 * MATRIX_FLOATS];
+            for m in pose.chunks_mut(MATRIX_FLOATS) {
+                let axis = [next(), next(), next()];
+                let length = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
+                let [x, y, z] = axis.map(|a| a / length.max(1e-3));
+                let (sin, cos) = (next() * std::f32::consts::PI).sin_cos();
+                let scale = 1.25 + 0.75 * next();
+                let r = [
+                    [
+                        cos + x * x * (1.0 - cos),
+                        x * y * (1.0 - cos) - z * sin,
+                        x * z * (1.0 - cos) + y * sin,
+                    ],
+                    [
+                        y * x * (1.0 - cos) + z * sin,
+                        cos + y * y * (1.0 - cos),
+                        y * z * (1.0 - cos) - x * sin,
+                    ],
+                    [
+                        z * x * (1.0 - cos) - y * sin,
+                        z * y * (1.0 - cos) + x * sin,
+                        cos + z * z * (1.0 - cos),
+                    ],
+                ];
+                for row in 0..3 {
+                    for col in 0..3 {
+                        m[row * 4 + col] = r[row][col] * scale;
+                    }
+                    m[row * 4 + 3] = 3.0 * next();
+                }
+            }
+            let (center, radius) = posed_sphere(&meshes, &slot, &pose).unwrap();
+            for v in 0..geometry.vertex_count() {
+                let p = geometry.position(v);
+                let joints = geometry.values(v, JOINTS_LOCATION);
+                let weights = geometry.values(v, WEIGHTS_LOCATION);
+                let mut skinned = [0.0f32; 3];
+                for k in 0..4 {
+                    let m = &pose[joints[k] as usize * MATRIX_FLOATS..][..MATRIX_FLOATS];
+                    for row in 0..3 {
+                        let r = &m[row * 4..row * 4 + 4];
+                        skinned[row] +=
+                            weights[k] * (r[0] * p[0] + r[1] * p[1] + r[2] * p[2] + r[3]);
+                    }
+                }
+                let d = [0, 1, 2].map(|c| skinned[c] - center[c]);
+                let distance = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                assert!(
+                    distance <= radius * (1.0 + 1e-5),
+                    "{distance} past {radius}"
+                );
+            }
+        }
+    }
 }

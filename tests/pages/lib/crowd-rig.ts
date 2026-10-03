@@ -47,3 +47,67 @@ export function crowdRig(joints: number): RigData {
 		})),
 	};
 }
+
+/** The arrays of a crowd character's skinned mesh, as `geometry.fromArrays` takes them. */
+export interface CrowdMesh {
+	positions: Float32Array;
+	normals: Float32Array;
+	joints: Uint16Array;
+	weights: Float32Array;
+	indices: Uint16Array;
+}
+
+/** Half the edge of the box at each joint of a crowd character's mesh, in meters. */
+const BOX = 0.06;
+
+/**
+ * A skinned mesh for a generated character of `joints` joints: a small box at each joint's place
+ * at rest, which that joint alone moves, so the mesh follows every joint of the pose.
+ */
+export function crowdMesh(joints: number): CrowdMesh {
+	const character = crowdCharacter(joints);
+	const corners = [-BOX, BOX];
+	const faces: [number, number][] = [
+		[0, -1],
+		[0, 1],
+		[1, -1],
+		[1, 1],
+		[2, -1],
+		[2, 1],
+	];
+	const positions: number[] = [];
+	const normals: number[] = [];
+	const jointIds: number[] = [];
+	const weights: number[] = [];
+	const indices: number[] = [];
+	for (let j = 0; j < joints; j++) {
+		// The inverse bind matrix of a joint at rest moves it down to the origin by its height.
+		const y = -(character.inverseBind[j * 12 + 7] ?? 0);
+		for (const [axis, side] of faces) {
+			const first = positions.length / 3;
+			const u = (axis + 1) % 3;
+			const v = (axis + 2) % 3;
+			for (const a of corners)
+				for (const b of corners) {
+					const p = [0, 0, 0];
+					p[axis] = side * BOX;
+					p[u] = a;
+					p[v] = b * side;
+					positions.push(p[0] as number, (p[1] as number) + y, p[2] as number);
+					const n = [0, 0, 0];
+					n[axis] = side;
+					normals.push(...n);
+					jointIds.push(j, 0, 0, 0);
+					weights.push(1, 0, 0, 0);
+				}
+			indices.push(first, first + 1, first + 3, first, first + 3, first + 2);
+		}
+	}
+	return {
+		positions: Float32Array.from(positions),
+		normals: Float32Array.from(normals),
+		joints: Uint16Array.from(jointIds),
+		weights: Float32Array.from(weights),
+		indices: Uint16Array.from(indices),
+	};
+}

@@ -1,144 +1,35 @@
 //! Skinning on both frame builders, checked through the mock backend, which rejects what a real
 //! GPU would, and by decoding the lists they record. On WebGPU: the skinning pass, which skins each
 //! skinned object that some view draws once per frame, the joint texture it reads, and the views'
-//! draws of the skinned vertices. On WebGL2: the skinning variants of the pipelines that draw
+//! draws of the skinned vertices. On WebGL2: the skinning builds of the pipelines that draw
 //! skinned objects, shadows included, the joint texture and the texture of first joints that their
 //! vertex shaders read, and the instanced draws that skinned objects of one mesh share.
 
 mod common;
 
+use common::skinned::{AROUND, RINGS, column};
 use common::{World, count};
-use null3d_core::animation::{Animations, NO_PARENT, REST_FLOATS, Skeleton};
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::handle::Handle;
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::SunShadow;
 use null3d_core::scene::{Command, flags};
-use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::drawlist::{
     Op, buffer_usage, format, layout, permutation, template, texture_usage, vertex,
 };
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
-use null3d_render::geometry::Geometry;
-use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
-use null3d_render::materials::Shading;
+use null3d_render::gpu_driven::RendererConfig;
 use null3d_render::skinning::{JOINTS_PER_ROW, TEXELS_PER_JOINT, skinned_format};
 use null3d_render::view::ViewId;
 
-/// Rings of the generated column, and vertices around each ring.
-const RINGS: u32 = 3;
-const AROUND: u32 = 30;
-
-/// A chain of `joints` joints up the y axis, one unit apart, with no turn at rest.
-fn chain(joints: u32) -> Skeleton {
-    let parents: Vec<u32> = (0..joints)
-        .map(|j| if j == 0 { NO_PARENT } else { j - 1 })
-        .collect();
-    let mut rest = Vec::new();
-    let mut binds = Vec::new();
-    for j in 0..joints {
-        let up = if j == 0 { 0.0 } else { 1.0 };
-        rest.extend_from_slice(&[0.0, up, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
-        binds.extend_from_slice(&[
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            -(j as f32),
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-        ]);
-    }
-    assert_eq!(rest.len(), joints as usize * REST_FLOATS);
-    assert_eq!(binds.len(), joints as usize * MATRIX_FLOATS);
-    Skeleton::new(&parents, &rest, &binds).unwrap()
-}
-
-/// A column of rings one unit apart up the y axis, each moved by its own joint, with 16-bit
-/// joints, normalized 8-bit weights and texture coordinates, as quantized glTF files hold them.
-fn column() -> Geometry {
-    let joints = vertex::with(
-        vertex::UV0 | vertex::JOINTS | vertex::WEIGHTS,
-        6,
-        vertex::Type::Uint16,
-    )
-    .unwrap();
-    let format = vertex::with(joints, 7, vertex::Type::Unorm8).unwrap();
-    let mut g = Geometry {
-        format,
-        ..Geometry::default()
-    };
-    for ring in 0..RINGS {
-        for k in 0..AROUND {
-            let angle = k as f32 / AROUND as f32 * std::f32::consts::TAU;
-            let (x, z) = (0.4 * angle.cos(), 0.4 * angle.sin());
-            for v in [x, ring as f32, z, angle.cos(), 0.0, angle.sin(), 0.0, 0.0] {
-                g.vertices.extend_from_slice(&v.to_le_bytes());
-            }
-            g.vertices
-                .extend_from_slice(&[ring as u8, 0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 0]);
-        }
-    }
-    assert_eq!(
-        g.vertices.len(),
-        (RINGS * AROUND * vertex::stride(format)) as usize
-    );
-    for ring in 0..RINGS - 1 {
-        for k in 0..AROUND {
-            let a = ring * AROUND + k;
-            let b = ring * AROUND + (k + 1) % AROUND;
-            g.indices
-                .extend_from_slice(&[a, a + AROUND, b, b, a + AROUND, b + AROUND]);
-        }
-    }
-    g
-}
-
-/// The common world, drawn by `renderer`, with a skinned column at each of `positions`, all of one
-/// mesh and one material, which cast shadows. Each column has its own instance of a three-joint
-/// chain. Returns the world and the columns.
-fn columns<B: FrameBuilder>(renderer: B, positions: &[[f32; 3]]) -> (World<B>, Vec<Handle>) {
-    let mut world = World::build(renderer);
-    let mut animations = Animations::new(&world.jobs, 8, 64).unwrap();
-    let skeleton = animations.add_skeleton(chain(RINGS)).unwrap();
-    let settings = world.renderer.settings_mut();
-    let mesh = settings.meshes_mut().add(&column()).unwrap() + 1;
-    let material = settings
-        .materials_mut()
-        .create(Shading::Lit, 0, [1.0; 4])
-        .unwrap()
-        + 1;
-    let mut objects = Vec::new();
-    for &position in positions {
-        let instance = animations.add_instance(skeleton).unwrap();
-        let object = world.scene.reserve().unwrap();
-        world.scene.set_position(object, position).unwrap();
-        let shown = flags::VISIBLE | flags::CAST_SHADOWS;
-        let commands = [
-            Command::create(object, Handle::NONE, mesh, shown),
-            Command::set_material(object, material),
-            Command::set_skin(object, Some(instance)),
-        ];
-        world.scene.apply_commands(&commands, world.frame).unwrap();
-        objects.push(object);
-    }
-    world.animations = Some(animations);
-    (world, objects)
-}
-
-/// The common world with a skinned column at `position`, drawn by the WebGPU frame builder.
-/// Returns the world and the column.
+/// The common world with a skinned column at `position`, which casts shadows. Returns the world
+/// and the column.
 fn skinned(position: [f32; 3]) -> (World, Handle) {
-    let renderer = GpuDrivenRenderer::new(RendererConfig::default());
-    let (world, objects) = columns(renderer, &[position]);
-    (world, objects[0])
+    let mut world = World::new();
+    let column = world.add_skinned(position);
+    (world, column)
 }
 
 /// The operands of each command of `op`.
@@ -295,12 +186,68 @@ fn a_skinned_caster_that_only_a_cascade_sees_is_skinned_for_its_shadow() {
     assert_eq!(skin_dispatches(&second, skin), Vec::<u32>::new());
 }
 
+#[test]
+fn with_vertex_skinning_the_skinned_builds_read_the_joints_and_no_pass_skins() {
+    let config = RendererConfig {
+        vertex_skinning: true,
+        ..RendererConfig::default()
+    };
+    let mut world = World::with_config(config);
+    world.add_skinned([0.0, 0.0, 0.0]);
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+
+    assert!(
+        operands(&first, Op::CreateComputePipeline)
+            .iter()
+            .all(|p| p[1] != template::SKIN)
+    );
+    assert_eq!(count(&first, Op::Dispatch), 1, "the camera's culling alone");
+    // The lit pipeline of the mesh's own format, in its SKIN build.
+    let format = column().format;
+    let skinned = operands(&first, Op::CreateRenderPipeline)
+        .into_iter()
+        .find(|p| p[1] == template::INSTANCED_LIT && p[2] & permutation::SKIN != 0)
+        .expect("a SKIN build of the lit template");
+    assert_eq!(skinned[7], format);
+    // The joint texture's group, which the camera's bundle binds after the frame's.
+    let joints = operands(&first, Op::CreateBindGroup)
+        .into_iter()
+        .find(|g| g[1] == layout::JOINTS)
+        .expect("the joint texture's group");
+    assert!(
+        operands(&first, Op::SetBindGroup)
+            .iter()
+            .any(|g| g[0] == 1 && g[1] == joints[0])
+    );
+    let second = world.step(&mut mock, false);
+    assert_eq!(count(&second, Op::Dispatch), 1);
+}
+
 /// The WebGL2 frame builder, with `WEBGL_multi_draw` or without.
-fn webgl2(multi_draw: bool) -> CpuCulledRenderer {
-    CpuCulledRenderer::new(CpuCulledConfig {
+fn webgl2(multi_draw: bool) -> World<CpuCulledRenderer> {
+    World::build(CpuCulledRenderer::new(CpuCulledConfig {
         multi_draw,
         ..CpuCulledConfig::default()
-    })
+    }))
+}
+
+/// Adds a second skinned object of `first`'s mesh and material at `position`, with an animated
+/// instance of its own.
+fn add_twin<B: FrameBuilder>(world: &mut World<B>, first: Handle, position: [f32; 3]) -> Handle {
+    let slot = world.scene.resolve(first).unwrap() as usize;
+    let (mesh, material) = (world.scene.meshes()[slot], world.scene.materials()[slot]);
+    let animations = world.animations.as_mut().unwrap();
+    let instance = animations.add_instance(0).unwrap();
+    let object = world.scene.reserve().unwrap();
+    world.scene.set_position(object, position).unwrap();
+    let commands = [
+        Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+        Command::set_material(object, material),
+        Command::set_skin(object, Some(instance)),
+    ];
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    object
 }
 
 /// Turns on the sun's shadows, straight down, with two cascades.
@@ -341,12 +288,13 @@ fn writes(commands: &[(Op, Vec<u32>)], id: u32) -> Vec<Vec<u32>> {
 #[test]
 fn webgl2_skins_in_the_vertex_shader_of_every_pass_that_draws_a_skinned_object() {
     for multi_draw in [false, true] {
-        let (mut world, _) = columns(webgl2(multi_draw), &[[0.0; 3]]);
+        let mut world = webgl2(multi_draw);
+        world.add_skinned([0.0; 3]);
         cast_sun_shadows(&mut world);
         let mut mock = MockBackend::default();
         let first = world.step(&mut mock, true);
 
-        // The column's lit pass and its shadow pass draw with the skinning variants, which read
+        // The column's lit pass and its shadow pass draw with the skinning builds, which read
         // its own vertices with their joints and weights. The other objects draw without them,
         // and nothing skins in a compute pass.
         let format = column().format;
@@ -400,8 +348,9 @@ fn webgl2_skins_in_the_vertex_shader_of_every_pass_that_draws_a_skinned_object()
 
 #[test]
 fn skinned_objects_of_one_mesh_share_an_instanced_draw_on_webgl2() {
-    let positions = [[-2.0, 0.0, 0.0], [2.0, 0.0, 0.0]];
-    let (mut world, objects) = columns(webgl2(true), &positions);
+    let mut world = webgl2(true);
+    let left = world.add_skinned([-2.0, 0.0, 0.0]);
+    let objects = [left, add_twin(&mut world, left, [2.0, 0.0, 0.0])];
     let mut mock = MockBackend::default();
     let first = world.step(&mut mock, true);
 
@@ -434,19 +383,20 @@ fn skinned_objects_of_one_mesh_share_an_instanced_draw_on_webgl2() {
 #[test]
 fn webgl2_draws_unskinned_objects_without_the_skin_textures() {
     // The common world skins nothing: its instance groups bind the instance textures alone.
-    let mut world = World::build(webgl2(true));
+    let mut world = webgl2(true);
     let mut mock = MockBackend::default();
     let first = world.step(&mut mock, true);
     let groups = instance_groups(&first);
     assert!(!groups.is_empty());
     assert!(groups.iter().all(|g| g[2] == 4));
 
-    // A column that stops being skinned draws its mesh as it is, with the plain variant.
-    let (mut world, objects) = columns(webgl2(true), &[[0.0; 3]]);
+    // A column that stops being skinned draws its mesh as it is, with the plain build.
+    let mut world = webgl2(true);
+    let skinned_column = world.add_skinned([0.0; 3]);
     world.step(&mut mock, true);
     world
         .scene
-        .apply_commands(&[Command::set_skin(objects[0], None)], world.frame)
+        .apply_commands(&[Command::set_skin(skinned_column, None)], world.frame)
         .unwrap();
     let second = world.step(&mut mock, true);
     let format = column().format;

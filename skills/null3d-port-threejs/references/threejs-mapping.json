@@ -418,7 +418,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "scene.instantiate(prefab) for loaded models; scene.clone(obj) for built objects",
-      "notes": "Skinned models clone correctly with instantiate.",
+      "notes": "Each instantiate shares the model's meshes, materials and textures. scene.clone copies an object and every object below it, lights and cameras included, under the same parent. Skins from files are not built yet.",
       "docs": "api/scene",
       "detect": "SkeletonUtils\\.clone\\s*\\(|\\.scene\\.clone\\s*\\("
     },
@@ -1111,7 +1111,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const prefab = await assets.loadGltf(url); scene.instantiate(prefab)",
-      "notes": "Animations are in prefab.animations; named nodes via prefab.find(name).",
+      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures need no transcoder path. Skins, animations, morph targets and meshopt compression are not read yet.",
       "docs": "api/assets",
       "detect": "\\bGLTFLoader\\b"
     },
@@ -1133,7 +1133,7 @@
       "status": "direct",
       "since": "0.2",
       "target": "Built in",
-      "notes": "Delete the setup.",
+      "notes": "Delete the setup. Every query walks the engine's own trees over each mesh's triangles and over the scene's objects.",
       "docs": "guides/assets-pipeline",
       "detect": "\\bMeshoptDecoder\\b|setMeshoptDecoder"
     },
@@ -1276,7 +1276,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "camera.screenToRay(x, y, ray); scene.raycast(ray.origin, ray.direction, { layers }, hit)",
-      "notes": "Returns the closest hit; scene.raycastAll returns every hit. Acceleration structures are built in.",
+      "notes": "scene.raycast writes the closest hit into a hit object that you create once, and scene.raycastAll writes every hit, nearest first, into an array. A hit has object, instance (instanceId), point, normal, distance and triangle (faceIndex). The layer mask defaults to layer 0 alone, as Raycaster's does, and the whole scene is tested. Hidden objects are never hit. camera.screenToRay is not built yet. Acceleration structures are built in.",
       "docs": "api/raycast",
       "detect": "\\bRaycaster\\b|\\.setFromCamera\\s*\\(|\\.intersectObjects?\\s*\\("
     },
@@ -1628,7 +1628,7 @@
       "status": "direct",
       "since": "0.2",
       "target": "Built in",
-      "notes": "Delete the setup.",
+      "notes": "Delete the setup. Every query walks the engine's own trees over each mesh's triangles and over the scene's objects.",
       "docs": "api/raycast",
       "detect": "three-mesh-bvh|computeBoundsTree|acceleratedRaycast"
     },

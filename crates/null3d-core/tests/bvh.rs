@@ -18,6 +18,7 @@ use null3d_core::bvh::top::{TopTree, WorldRay, in_cell};
 use null3d_core::bvh::{Aabb, NODE_BYTES, Ray, child, sphere_touches_box};
 use null3d_core::cells::{CELL_SIZE, CellCoords, CellTable, split};
 use null3d_core::handle::Handle;
+use null3d_core::instances::BatchTable;
 use null3d_core::jobs::JobSystem;
 use null3d_core::math::{Affine, compose};
 use null3d_core::scene::{Command, SceneStorage, flags};
@@ -752,8 +753,10 @@ fn scene_trees_follow_the_scene() {
         indices: &i,
     };
     let mut scene = SceneStorage::with_capacity(4000);
+    let batches = BatchTable::with_capacity(1);
     let mut live: Vec<(Handle, bool)> = Vec::new();
     let mut bvh = SceneBvh::new();
+    let bounds = |_| mesh_bvh.bounds();
     let far = [6_378_000.0f32, 0.0, 0.0];
     let position = |rng: &mut Rng| -> [f32; 3] {
         let base = if rng.below(4) == 0 { far } else { [0.0; 3] };
@@ -803,9 +806,9 @@ fn scene_trees_follow_the_scene() {
             }
         }
         scene.update_transforms(jobs);
-        bvh.sync(&scene, frame, jobs).unwrap();
+        bvh.sync(&scene, &batches, jobs, &bounds).unwrap();
         // A second sync of the same frame changes nothing.
-        bvh.sync(&scene, frame, jobs).unwrap();
+        bvh.sync(&scene, &batches, jobs, &bounds).unwrap();
         let world = scene.world((frame & 1) as usize);
         let table = scene.cell_table();
         let hit = |slot: u32, ray: &Ray| {

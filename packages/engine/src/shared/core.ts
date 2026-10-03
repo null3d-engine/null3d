@@ -40,6 +40,7 @@ export interface CoreGlue extends CoreErrors {
 		transparent: boolean,
 		cellCulling: boolean,
 		depthPrepass: boolean,
+		vertexSkinning: boolean,
 	): number;
 	jobWorkerLoop(index: number): void;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
@@ -59,6 +60,11 @@ export interface CoreGlue extends CoreErrors {
 	sceneCapacity(): number;
 	sceneArrays(field: number): number;
 	reserveObject(): number;
+	/**
+	 * Reserves `count` object slots at once, or none, and returns the address of their handles:
+	 * `count` 32-bit words, valid until the next call that reserves staging words.
+	 */
+	reserveObjects(count: number): number;
 	/** Copies a world matrix: 12 numbers, with the translation from the origin in 64 bits. */
 	worldMatrix(handle: number, out: Float64Array): number;
 	commandRing(field: number): number;
@@ -112,6 +118,20 @@ export interface CoreGlue extends CoreErrors {
 		mesh: number,
 		material: number,
 	): number;
+	/**
+	 * Creates one part of a model as a batch: `part` places the mesh in the space of each row, 12
+	 * numbers of a 3 × 4 matrix by rows. With a `source` batch other than 0, it reads that batch's
+	 * rows and takes its capacity, dynamic flag and colors.
+	 */
+	createBatchPart(
+		source: number,
+		capacity: number,
+		dynamic: boolean,
+		colors: boolean,
+		mesh: number,
+		material: number,
+		part: Float32Array,
+	): number;
 	destroyBatch(batch: number, frame: number): number;
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
@@ -119,6 +139,25 @@ export interface CoreGlue extends CoreErrors {
 	setBatchLayers(batch: number, mask: number): number;
 	markBatchDirty(batch: number, start: number, count: number): number;
 	memoryEpoch(): number;
+	/**
+	 * The address of a query array (`QUERY_INPUT`, `QUERY_HITS` or `QUERY_RAYS`), or with
+	 * `QUERY_HIT_CAPACITY` the hit records the hit array holds. The hit array moves when it grows.
+	 */
+	queryArrays(field: number): number;
+	/** Makes room for a batch of rays and their hit records. */
+	reserveRays(count: number): number;
+	/**
+	 * Casts the ray of the input array: its closest hit, whether it hits anything, or every hit
+	 * (`QUERY_CLOSEST`, `QUERY_ANY` or `QUERY_ALL`). Returns the hit count, or `QUERY_FAILED`.
+	 */
+	raycast(kind: number, layers: number): number;
+	/** Casts the first `count` rays of the ray array on the job workers; returns the hit count. */
+	raycastBatch(count: number, layers: number): number;
+	/**
+	 * Finds the objects with a triangle in the input's sphere or box (`QUERY_SPHERE` or
+	 * `QUERY_BOX`); returns their count, or `QUERY_FAILED`.
+	 */
+	overlap(kind: number, layers: number): number;
 	/**
 	 * A mesh from a geometry generator: `shape` is one of the `SHAPE_*` codes, and the numbers after
 	 * it are the arguments of the three.js class's constructor, in their order. Returns the mesh id.
@@ -263,6 +302,8 @@ export interface CoreGlue extends CoreErrors {
 	 * codes. Returns the light's id.
 	 */
 	createLight(handle: number, kind: number): number;
+	/** Adds a light for object `handle` with the kind, colors and numbers of `light`. */
+	copyLight(light: number, handle: number): number;
 	destroyLight(light: number): number;
 	/** Sets one of a light's linear colors: `which` is one of the `LIGHT_COLOR_*` codes. */
 	setLightColor(light: number, which: number, r: number, g: number, b: number): number;
@@ -383,6 +424,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'sceneCapacity',
 	'sceneArrays',
 	'reserveObject',
+	'reserveObjects',
 	'worldMatrix',
 	'commandRing',
 	'prepareJobs',
@@ -401,12 +443,18 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'debugLineArrays',
 	'drawDebugLines',
 	'createBatch',
+	'createBatchPart',
 	'destroyBatch',
 	'batchArrays',
 	'setBatchActiveCount',
 	'setBatchLayers',
 	'markBatchDirty',
 	'memoryEpoch',
+	'queryArrays',
+	'reserveRays',
+	'raycast',
+	'raycastBatch',
+	'overlap',
 	'createShapeMesh',
 	'meshArrays',
 	'createMeshFromArrays',
@@ -427,6 +475,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOrthographicCamera',
 	'clearShadowCamera',
 	'createLight',
+	'copyLight',
 	'destroyLight',
 	'setLightColor',
 	'setLightValue',

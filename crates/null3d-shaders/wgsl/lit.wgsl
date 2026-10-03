@@ -13,7 +13,8 @@ enable draw_index;
 // lights, shadows, fogs or blends the surface belongs in `shade`, so custom materials get all of
 // it. The ALPHA_MASK builds draw nothing where the surface's alpha falls below the material's
 // cutoff, and a material that blends writes premultiplied color. The RECEIVE_SHADOWS builds dim the
-// sun's light where the main directional light's shadows fall.
+// sun's light where the main directional light's shadows fall. The SKIN builds skin each vertex by
+// its joints (null3d::mesh), before the instance's world matrix places it.
 //
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive and light maps, each a layer of a texture array with a sampler of its own. A map reads
@@ -43,13 +44,13 @@ enable draw_index;
 #import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::globals::{Material}
 #import null3d::lights::{clustered_light}
+#ifdef SKIN
+#import null3d::mesh::{skin_of, skinned_direction, skinned_point}
+#endif
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
 #import null3d::mesh::{custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
-#ifdef SKIN
-#import null3d::mesh::{skin_direction, skin_point, skin_transform}
-#endif
 #ifdef MAPS
 #import null3d::mesh::{map_layer, map_ready, straight_texel, world_direction}
 #endif
@@ -364,12 +365,10 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     material = load_material_uniforms(found.material);
 #endif
     var out: VertexOut;
-    // Skinning moves the vertex first, so a custom vertex offset moves the posed vertex, as on
-    // WebGPU, whose compute pass skins before any vertex shader runs.
 #ifdef SKIN
-    let skin = skin_transform(found, v.joints, v.weights);
-    let position = skin_point(skin, mesh_position(v.position));
-    let normal = skin_direction(skin, v.normal);
+    let skin = skin_of(found, v.joints, v.weights);
+    let position = skinned_point(skin, mesh_position(v.position));
+    let normal = skinned_direction(skin, v.normal);
 #else
     let position = mesh_position(v.position);
     let normal = v.normal;
@@ -395,10 +394,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     // As three.js does: the tangent through the world matrix, and the bitangent at right angles
     // to the normal and the tangent, on the side that the tangent's w gives.
 #ifdef SKIN
-    let tangent = normalize(world_direction(found, skin_direction(skin, v.tangent.xyz)));
+    let mesh_tangent = skinned_direction(skin, v.tangent.xyz);
 #else
-    let tangent = normalize(world_direction(found, v.tangent.xyz));
+    let mesh_tangent = v.tangent.xyz;
 #endif
+    let tangent = normalize(world_direction(found, mesh_tangent));
     out.tangent = tangent;
     out.bitangent = normalize(cross(out.normal, tangent) * v.tangent.w);
 #endif

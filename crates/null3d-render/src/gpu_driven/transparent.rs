@@ -16,6 +16,7 @@ use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, index_format, sizes};
 
 use super::ids;
+use super::skin::Skinning;
 use crate::frame::{MeshBuffers, RecordError, SceneSettings, UploadArena, grown_size, put_u32};
 use crate::sorted::{SortedLayout, SortedSource, SortedView};
 use crate::view::{ViewFrame, ViewId};
@@ -26,9 +27,12 @@ const TEXTURES_GROUP: u32 = 1;
 const PARALLEL_ROWS: usize = 8192;
 /// Rows per chunk of that write.
 const ROWS_PER_CHUNK: u32 = 2048;
+/// The group index of the joint texture's bind group in pipelines that skin in the vertex shader
+/// and sample a map.
+const JOINTS_AFTER_MAPS: u32 = 2;
 /// Words that one draw of a sorted run records at most, beside those of its mesh's parts: its
-/// pipeline, its maps' bind group and its slice of the instances.
-const RUN_WORDS: usize = 2 + 4 + 5;
+/// pipeline, its maps' bind group, the joint texture's bind group and its slice of the instances.
+const RUN_WORDS: usize = 2 + 4 + 4 + 5;
 /// Words that each part of a run's mesh records at most: its page's buffers and its draw.
 const PART_WORDS: usize = 5 + 5 + 6;
 /// Words that each view's pass records besides its draws: its frame group.
@@ -115,7 +119,9 @@ impl Transparent {
         }
     }
 
-    /// Writes a view's sorted instances into its buffer, from a copy in the frame's arena.
+    /// Writes a view's sorted instances into its buffer, from a copy in the frame's arena. A
+    /// skinned object's instance names the first joint of its skin beside its material, for the
+    /// vertex shaders that skin.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn upload(
         &self,
@@ -123,6 +129,7 @@ impl Transparent {
         arena: &mut UploadArena,
         view: ViewId,
         layout: &SortedLayout,
+        skinning: &Skinning,
         jobs: &JobSystem,
         scene: &SceneStorage,
         batches: &BatchTable,
@@ -152,7 +159,12 @@ impl Transparent {
                     }
                 };
                 let offset = offsets[row.cell as usize];
-                let material = layout.buckets[row.bucket as usize].material - 1;
+                let bucket = layout.buckets[row.bucket as usize];
+                let material = bucket.material - 1;
+                let first_joint = bucket
+                    .skinned_slot()
+                    .and_then(|slot| skinning.object(slot))
+                    .map_or(0, |object| object.joint_base);
                 // SAFETY: each row writes only its own 64 bytes.
                 let out = unsafe { rows.slice(k as usize * stride, stride) };
                 for (r, values) in matrix.as_chunks::<4>().0.iter().enumerate() {
@@ -162,6 +174,7 @@ impl Transparent {
                     }
                 }
                 put_u32(out, 12, material);
+                put_u32(out, 13, first_joint);
             }
         };
         let count = items.len() as u32;
@@ -179,12 +192,14 @@ impl Transparent {
 
     /// Records a view's transparent pass inside the render pass that the render graph began: each
     /// run of sorted rows that share a bucket, with one instanced draw per part of the bucket's
-    /// mesh, from its slice of the view's sorted instances.
+    /// mesh, from its slice of the view's sorted instances. A skinned object's bucket draws its
+    /// regions of skinned vertices, or with the vertex shaders that skin, binds the joint texture.
     pub(super) fn record(
         &self,
         list: &mut DrawList,
         view: ViewId,
         layout: &SortedLayout,
+        skinning: &Skinning,
         settings: &SceneSettings,
         meshes: &MeshBuffers,
     ) -> Result<(), RecordError> {
@@ -194,7 +209,9 @@ impl Transparent {
         }
         let stride = sizes::INSTANCE_STRIDE;
         list.push(Op::SetBindGroup, &[0, ids::frame_group(view), 0])?;
-        let (mut pipeline, mut textures, mut page) = (None, 0, None);
+        let (mut pipeline, mut textures) = (None, 0);
+        let (mut vertices, mut indices) = (None, None);
+        let mut joints_after_maps = false;
         let storage = settings.meshes();
         for draw in draws {
             let bucket = layout.buckets[draw.bucket as usize];
@@ -206,6 +223,17 @@ impl Transparent {
                 list.push(Op::SetBindGroup, &[TEXTURES_GROUP, bucket.textures, 0])?;
                 textures = bucket.textures;
             }
+            let skinned = bucket.skinned_slot();
+            if skinned.is_some() && skinning.in_vertex_shader() {
+                if bucket.textures != 0 && !joints_after_maps {
+                    list.push(Op::SetBindGroup, &[JOINTS_AFTER_MAPS, ids::JOINTS_GROUP, 0])?;
+                    joints_after_maps = true;
+                } else if bucket.textures == 0 && textures != ids::JOINTS_GROUP {
+                    list.push(Op::SetBindGroup, &[TEXTURES_GROUP, ids::JOINTS_GROUP, 0])?;
+                    textures = ids::JOINTS_GROUP;
+                }
+            }
+            let regions = skinned.and_then(|slot| skinning.parts_of(slot));
             list.push(
                 Op::SetVertexBuffer,
                 &[
@@ -218,20 +246,34 @@ impl Transparent {
             let mesh = storage
                 .mesh(bucket.mesh - 1)
                 .expect("buckets name known meshes");
-            for part in storage.parts(mesh) {
-                if page != Some(part.page) {
-                    let (vertices, indices) = meshes.ids(part.page);
-                    list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
-                    list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
-                    page = Some(part.page);
+            for (k, part) in storage.parts(mesh).iter().enumerate() {
+                let (page_vertices, page_indices) = meshes.ids(part.page);
+                // A skinned part draws its region of skinned vertices with its page's indices.
+                let region = regions.and_then(|regions| regions.get(k));
+                let source = region.map_or((page_vertices, 0), |r| (ids::SKINNED, r.region));
+                if vertices != Some(source) {
+                    list.push(Op::SetVertexBuffer, &[0, source.0, source.1, 0])?;
+                    vertices = Some(source);
                 }
+                if indices != Some(page_indices) {
+                    list.push(
+                        Op::SetIndexBuffer,
+                        &[page_indices, index_format::UINT16, 0, 0],
+                    )?;
+                    indices = Some(page_indices);
+                }
+                let base_vertex = if region.is_some() {
+                    0
+                } else {
+                    part.base_vertex
+                };
                 list.push(
                     Op::DrawIndexed,
                     &[
                         part.index_count,
                         draw.count,
                         part.first_index,
-                        part.base_vertex,
+                        base_vertex,
                         0,
                     ],
                 )?;

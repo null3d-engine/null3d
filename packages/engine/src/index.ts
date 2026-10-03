@@ -80,6 +80,14 @@ export type {
 export type { ColorInput } from './scene/color';
 export type { Exp2FogOptions, FogOptions, LinearFogOptions } from './scene/fog';
 export type { BloomSettings, Post, PostSettings, ToneMapping } from './scene/post';
+export type { Prefab, PrefabBounds, PrefabNode } from './scene/prefab';
+export type {
+	OverlapHit,
+	QueryOptions,
+	RaycastBatchHits,
+	RaycastHit,
+	RaycastOptions,
+} from './scene/queries';
 export type {
 	AlphaMode,
 	Blending,
@@ -126,6 +134,7 @@ export type {
 	HemisphereLightOptions,
 	InstanceBatch,
 	InstanceOptions,
+	InstantiateOptions,
 	Light,
 	LightOptions,
 	LightShadowOptions,
@@ -140,6 +149,7 @@ export type {
 	PerspectiveCameraOptions,
 	PointLight,
 	PointLightOptions,
+	PrefabInstance,
 	Quat,
 	Scene,
 	SpotLight,

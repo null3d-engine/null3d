@@ -1100,6 +1100,10 @@ pub mod sizes {
     pub const CULL_WORKGROUP_SIZE: u32 = 128;
     /// 32-bit words per indexed indirect draw.
     pub const INDIRECT_WORDS: u32 = 5;
+    /// 32-bit words per bucket record of the culling shader: its slice's base, its material, its
+    /// local sphere's radius, its first draw and draw count, the sphere's centre, and the first
+    /// joint of a skin that the vertex shader skins.
+    pub const BUCKET_WORDS: u32 = 9;
     /// WebGPU's default `maxStorageBufferBindingSize`: the largest storage buffer that every device
     /// lets a shader bind. Many devices offer more.
     pub const PORTABLE_STORAGE_BINDING_BYTES: u32 = 128 * 1024 * 1024;
@@ -1547,6 +1551,7 @@ pub fn typescript_constants() -> String {
                 ("OUTPUT_UNIFORM_BYTES", sizes::OUTPUT_UNIFORM_BYTES),
                 ("CULL_WORKGROUP_SIZE", sizes::CULL_WORKGROUP_SIZE),
                 ("INDIRECT_WORDS", sizes::INDIRECT_WORDS),
+                ("BUCKET_WORDS", sizes::BUCKET_WORDS),
                 ("MATRIX_TEXELS", sizes::MATRIX_TEXELS),
                 ("MATRICES_PER_TEXTURE_ROW", sizes::MATRICES_PER_TEXTURE_ROW),
                 ("INDICES_PER_TEXTURE_ROW", sizes::INDICES_PER_TEXTURE_ROW),

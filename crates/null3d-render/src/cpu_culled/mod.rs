@@ -98,6 +98,7 @@ use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
 use crate::shadows::{self, MAX_CASCADES, ShadowFrame, ShadowUniform};
+use crate::skinning::skinned_in_vertex_shader;
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
@@ -501,9 +502,9 @@ impl CpuCulledRenderer {
                 input.scene,
                 input.batches,
                 place,
-                |slot| skins.skinned(slot),
                 RESIDENT,
                 shadows,
+                |slot, key| skins.skinned(slot).then(|| skinned_in_vertex_shader(key)),
             )
             .map_err(out_of_memory)?;
         let records = Transparent::records_bound(&self.sorted, self.config.multi_draw);

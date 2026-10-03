@@ -23,12 +23,22 @@
 //!
 //! The joint texture uploads the frame's skinning matrices before the passes run (see
 //! [`crate::skinning::JointTexture`]).
+//!
+//! # Skinning in the vertex shader
+//!
+//! With [`super::RendererConfig::vertex_skinning`], the builder skins in the vertex shader of each
+//! pass instead, as WebGL2 does: skinned objects draw their mesh's vertices with the SKIN builds,
+//! which read the joint texture through a bind group of their own. Each skinned object's bucket
+//! names the first joint of its skin, which the culling pass copies into each instance it draws.
+//! There is then no skinning pass and no skinned vertex buffer. Custom materials and the debug
+//! views have no SKIN builds, so they draw skinned meshes at rest in this mode. It is there to
+//! measure against the skinning pass, as decision record D-20 asks.
 
 use null3d_core::animation::Animations;
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_gpu::drawlist::{
-    DrawList, Op, buffer_usage as usage, layout as bind_layout, resource_kind, sizes, template,
-    vertex,
+    DrawList, Op, buffer_usage as usage, layout as bind_layout, permutation, resource_kind, sizes,
+    template, vertex,
 };
 
 use super::ids;
@@ -36,9 +46,18 @@ use crate::frame::{
     CellOffsets, MeshBuffers, RecordError, UploadArena, grown_size, words_as_bytes,
 };
 use crate::meshes::MeshStorage;
+use crate::pipelines::DrawKey;
 use crate::skinning::{JointTexture, skin_of, skinned_format};
 use crate::view::ViewFrame;
 
+/// The templates with SKIN builds, which skin in the vertex shader.
+const SKIN_TEMPLATES: [u32; 5] = [
+    template::INSTANCED_LIT,
+    template::INSTANCED_STANDARD_MAPS,
+    template::INSTANCED_UNLIT,
+    template::INSTANCED_UNLIT_MAP,
+    template::SHADOW_DEPTH,
+];
 /// The most mesh pages whose skinned parts the pass skins; parts in later pages stay unskinned.
 pub(super) const MAX_PAGES: u32 = 32;
 /// Threads per workgroup of the skinning pass.
@@ -60,10 +79,10 @@ const COPIED: [usize; 3] = [2, 3, 5];
 
 /// One skinned object of the layout.
 #[derive(Clone, Copy, Debug)]
-struct SkinnedObject {
+pub(super) struct SkinnedObject {
     slot: u32,
     /// Its animated instance's first joint in the joint texture.
-    joint_base: u32,
+    pub(super) joint_base: u32,
     /// Its parts: `parts` of the pass's parts from `first_part` on.
     first_part: u32,
     parts: u32,
@@ -100,6 +119,8 @@ struct Segment {
 /// The skinning pass's layout and GPU objects.
 #[derive(Debug)]
 pub(super) struct Skinning {
+    /// True to skin in the vertex shader of each pass, false to skin in the skinning pass.
+    vertex_shader: bool,
     objects: Vec<SkinnedObject>,
     parts: Vec<SkinnedPart>,
     segments: Vec<Segment>,
@@ -121,7 +142,15 @@ pub(super) struct Skinning {
 
 impl Default for Skinning {
     fn default() -> Self {
+        Self::new(false)
+    }
+}
+
+impl Skinning {
+    /// Skinning in the skinning pass, or with `vertex_shader`, in the vertex shader of each pass.
+    pub(super) fn new(vertex_shader: bool) -> Self {
         Self {
+            vertex_shader,
             objects: Vec::new(),
             parts: Vec::new(),
             segments: Vec::new(),
@@ -154,14 +183,14 @@ fn field(format: u32, location: usize) -> u32 {
 /// has, which sit together in both a source vertex and a skinned one. Its source offset, skinned
 /// offset and length in words, a byte each, or 0 for none.
 fn copied_run(format: u32, skinned: u32, locations: &[usize]) -> u32 {
-    let present: Vec<usize> = locations
+    let mut present = locations
         .iter()
         .copied()
-        .filter(|&location| vertex::offset(format, location).is_some())
-        .collect();
-    let (Some(&first), Some(&last)) = (present.first(), present.last()) else {
+        .filter(|&location| vertex::offset(format, location).is_some());
+    let Some(first) = present.next() else {
         return 0;
     };
+    let last = present.next_back().unwrap_or(first);
     let start = |f: u32, location: usize| vertex::offset(f, location).unwrap_or(0);
     let end = start(format, last)
         + vertex::ATTRIBUTES[last].size(vertex::type_of(format, last).unwrap_or(vertex::Type::F32));
@@ -200,11 +229,44 @@ impl Skinning {
         !self.objects.is_empty()
     }
 
-    /// The parts of the skinned object at scene slot `slot`, in the order of its mesh's parts, or
-    /// `None` for an object that is not skinned.
-    pub(super) fn parts_of(&self, slot: u32) -> Option<&[SkinnedPart]> {
+    /// True while the skinning pass runs: the scene draws skinned objects, which the vertex
+    /// shaders do not skin.
+    pub(super) fn dispatches(&self) -> bool {
+        self.active() && !self.vertex_shader
+    }
+
+    /// True when the vertex shaders skin.
+    pub(super) fn in_vertex_shader(&self) -> bool {
+        self.vertex_shader
+    }
+
+    /// The key of the pipeline that draws a skinned object whose pair's pipeline has `key`: the
+    /// SKIN build of the pair's where the vertex shader skins, and otherwise the pair's for the
+    /// plain vertices of the mesh's skinned format, which the skinning pass writes.
+    pub(super) fn skinned_key(&self, mut key: DrawKey) -> DrawKey {
+        if self.vertex_shader {
+            // Custom materials, the debug views and the test templates have no SKIN builds, so
+            // they draw the mesh at rest in this mode.
+            if SKIN_TEMPLATES.contains(&key.template) {
+                key.permutation |= permutation::SKIN;
+            }
+        } else {
+            key.vertex_format = skinned_format(key.vertex_format);
+        }
+        key
+    }
+
+    /// The skinned object at scene slot `slot`, or `None` for an object that is not skinned.
+    pub(super) fn object(&self, slot: u32) -> Option<SkinnedObject> {
         let k = self.objects.binary_search_by_key(&slot, |o| o.slot).ok()?;
-        let object = self.objects[k];
+        Some(self.objects[k])
+    }
+
+    /// The parts of the skinned object at scene slot `slot`, with their regions of the skinned
+    /// vertex buffer, in the order of its mesh's parts, or `None` for an object that is not
+    /// skinned or that the vertex shaders skin.
+    pub(super) fn parts_of(&self, slot: u32) -> Option<&[SkinnedPart]> {
+        let object = self.object(slot).filter(|_| !self.vertex_shader)?;
         let first = object.first_part as usize;
         Some(&self.parts[first..first + object.parts as usize])
     }
@@ -235,7 +297,12 @@ impl Skinning {
             };
             let stride = vertex::stride(skinned_format(mesh.format));
             let first_part = self.parts.len() as u32;
-            for part in meshes.parts(mesh) {
+            let parts = if self.vertex_shader {
+                &[]
+            } else {
+                meshes.parts(mesh)
+            };
+            for part in parts {
                 let segment = match self.segments.iter().position(|s| s.page == part.page) {
                     Some(segment) => segment,
                     None => {
@@ -282,7 +349,7 @@ impl Skinning {
     /// Records the creation of the pass's pipeline while the scene draws skinned objects and the
     /// GPU lacks it. Returns true when it recorded it. Pipelines come first in a frame's list.
     pub(super) fn create_pipeline(&mut self, list: &mut DrawList) -> Result<bool, RecordError> {
-        if self.pipeline_made || !self.active() {
+        if self.pipeline_made || !self.dispatches() {
             return Ok(false);
         }
         list.push(Op::CreateComputePipeline, &[ids::SKIN, template::SKIN, 0])?;
@@ -293,7 +360,8 @@ impl Skinning {
     /// Records the GPU objects the layout needs that the GPU lacks: the joint
     /// texture, the skinned vertex buffer and the table, and the bind groups when a buffer they
     /// bind is new, mesh pages' buffers included (`pages_remade`). Returns true when it made the
-    /// skinned vertex buffer again, which the bundles that draw from it must see.
+    /// skinned vertex buffer again, or the bind group of the joint texture that the vertex shaders
+    /// read, which the bundles that draw from them must see.
     pub(super) fn apply(
         &mut self,
         list: &mut DrawList,
@@ -305,8 +373,19 @@ impl Skinning {
         let Some(animations) = animations.filter(|_| self.active()) else {
             return Ok(false);
         };
-        self.groups_stale |= self.joints.create(list, animations)? || pages_remade;
+        let made_joints = self.joints.create(list, animations)?;
+        self.groups_stale |= made_joints || pages_remade;
         let mut remade = false;
+        if made_joints && self.vertex_shader {
+            // The SKIN builds read the joint texture through a bind group of its own.
+            let id = self.joints.id();
+            let entry = [0, resource_kind::TEXTURE, id, 0, 0];
+            let mut words = [0u32; 3 + 5];
+            words[..3].copy_from_slice(&[ids::JOINTS_GROUP, bind_layout::JOINTS, 1]);
+            words[3..].copy_from_slice(&entry);
+            list.push(Op::CreateBindGroup, &words)?;
+            remade = true;
+        }
         if self.skinned_made < self.skinned_bytes {
             self.skinned_made = grown_size(self.skinned_bytes, binding_bytes);
             let flags = usage::STORAGE | usage::VERTEX;

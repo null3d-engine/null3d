@@ -11,7 +11,11 @@
 // inside the first cascade, while its distance from the camera stays the same. `lit` stands at eye
 // height on the sun's side, where the box's lit sides face it, one of them at 19 degrees to the
 // sun's light. ?groundCasts makes the ground cast shadows too, as a slab 20 cm thick, whose top
-// then compares with its own bottom.
+// then compares with its own bottom. ?slabs stands the boxes on a pavement slab 20 cm thick that
+// casts shadows, as S4's sidewalks do, on the ground that casts none.
+//
+// ?sun=<degrees> raises the sun that many degrees above the horizon, from the same side, instead
+// of S4's 54 degrees. ?filter=5 blends shadows over 5 x 5 texels instead of 3 x 3.
 //
 // ?moving adds a blue box that drives to and fro along x at 10 m/s, dynamic, behind the still red
 // ones. ?far=<n> sets the frames between two draws of a far cascade, 1 by default, and turns off
@@ -34,9 +38,26 @@ const MOVING = params.has('moving');
 const MAP_SIZE = Number(params.get('mapSize') ?? 512);
 /** True when the sketch module's ?groundCasts switch makes the ground cast shadows. */
 const GROUND_CASTS = params.has('groundCasts');
+/** True when the sketch module's ?slabs switch stands the boxes on a pavement slab. */
+const SLABS = params.has('slabs');
+/** The texels on each side of the shadow filter's square, from the sketch module's ?filter switch. */
+const FILTER = params.get('filter') === '5' ? 5 : 3;
+/** S4's sun: the direction of its light. */
+const S4_SUN = [-0.6, -1, -0.4] as const;
+
+/** The sun's direction, raised `?sun=` degrees above the horizon from S4's side, or S4's own. */
+function sunDirection(): [number, number, number] {
+	const degrees = params.get('sun');
+	if (degrees === null) return [...S4_SUN];
+	const elevation = (Number(degrees) * Math.PI) / 180;
+	const level = Math.cos(elevation) / Math.hypot(S4_SUN[0], S4_SUN[2]);
+	return [S4_SUN[0] * level, -Math.sin(elevation), S4_SUN[2] * level];
+}
 
 /** A car's size along x, y and z, in meters: S4's commonest vehicle. */
 const CAR = [4.2, 1.5, 1.8] as const;
+/** The pavement slab under the boxes: its center over the ground and its size, in meters. */
+const SLAB = { center: [-3, 3] as const, size: [30, 0.2, 22] as const };
 /** The box that the near and far views look at, where it stands on the ground. */
 const WATCHED = [1, 0, 3] as const;
 /** How far the driving box goes from the middle each way, in meters, and its speed in m/s. */
@@ -54,7 +75,7 @@ const VIEWS = {
 const YAW = (Number(params.get('yaw') ?? 0) * Math.PI) / 180;
 
 export default defineSketch(({ scene, materials, geometry, quality, time }) => {
-	quality.set({ farCascadeInterval: FAR, governor: false, shadowFilter: 3 });
+	quality.set({ farCascadeInterval: FAR, governor: false, shadowFilter: FILTER });
 	scene.setBackground('#202830');
 	const view = VIEWS[(params.get('view') ?? 'top') as keyof typeof VIEWS];
 	const [x, y, z] = WATCHED;
@@ -76,7 +97,7 @@ export default defineSketch(({ scene, materials, geometry, quality, time }) => {
 		}),
 	);
 	scene.createDirectionalLight({
-		direction: [-0.6, -1, -0.4],
+		direction: sunDirection(),
 		color: '#ffffff',
 		intensity: 3,
 		castShadows: true,
@@ -91,6 +112,15 @@ export default defineSketch(({ scene, materials, geometry, quality, time }) => {
 		receiveShadows: true,
 		castShadows: GROUND_CASTS,
 	});
+	const base = SLABS ? SLAB.size[1] : 0;
+	if (SLABS)
+		scene.createMesh({
+			mesh: geometry.box({ width: SLAB.size[0], height: SLAB.size[1], depth: SLAB.size[2] }),
+			material: materials.standard({ color: '#b9b6ae' }),
+			position: [SLAB.center[0], base / 2, SLAB.center[1]],
+			receiveShadows: true,
+			castShadows: true,
+		});
 	const car = geometry.box({ width: CAR[0], height: CAR[1], depth: CAR[2] });
 	const red = materials.standard({ color: '#e8554e' });
 	for (const [bx, bz] of [
@@ -100,7 +130,7 @@ export default defineSketch(({ scene, materials, geometry, quality, time }) => {
 		scene.createMesh({
 			mesh: car,
 			material: red,
-			position: [bx, CAR[1] / 2, bz],
+			position: [bx, base + CAR[1] / 2, bz],
 			castShadows: true,
 			receiveShadows: true,
 		});

@@ -26,7 +26,7 @@ enable draw_index;
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, frame, relative_position, world_normal}
 #import null3d::vertex::{mesh_position}
 #ifdef SKIN
-#import null3d::mesh::{skin_direction, skin_point, skin_transform}
+#import null3d::mesh::{skin_of, skinned_direction, skinned_point}
 #endif
 
 /// How far a back face that faces straight away from the light moves toward it, in texels of the
@@ -51,13 +51,14 @@ struct VertexIn {
 fn vs(v: VertexIn, i: InstanceIn) -> @invariant @builtin(position) vec4f {
     let found = find_instance(i);
 #ifdef SKIN
-    let skin = skin_transform(found, v.joints, v.weights);
-    let relative = relative_position(found, skin_point(skin, mesh_position(v.position)));
-    let normal = skin_direction(skin, v.normal);
+    let skin = skin_of(found, v.joints, v.weights);
+    let position = skinned_point(skin, mesh_position(v.position));
+    let normal = skinned_direction(skin, v.normal);
 #else
-    let relative = relative_position(found, mesh_position(v.position));
+    let position = mesh_position(v.position);
     let normal = v.normal;
 #endif
+    let relative = relative_position(found, position);
     var clip = clip_of(found, relative);
 #ifdef CASTER_OFFSET
     // A texel spans two clip units over the map's texels across. The first row of the matrix turns

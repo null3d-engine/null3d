@@ -4,8 +4,8 @@
 //   which reads four joint matrices from a float texture per vertex.
 // - compute: one compute pass skins each character that some pass draws into a buffer of
 //   positions and normals. The cascades and the main pass draw that buffer as plain vertices.
-// Both paths cull the characters per pass on the CPU and upload the joint matrices each frame: to
-// the texture that the vertex shaders read, or to the storage buffer that the compute pass reads.
+// Both paths cull the characters per pass on the CPU and upload the joint matrices each frame to
+// the float texture that the vertex shaders, or the compute pass, read, as the engine does.
 // The page first draws one pose both ways and compares the two images. Then each path draws frames
 // back to back in timed batches, each frame in a submit of its own, and each batch ends when the
 // GPU has finished its last frame. The paths take turns, so heat affects both alike. Where the
@@ -99,7 +99,6 @@ class SkinningRenderer {
 	private readonly depthView: GPUTextureView;
 	private readonly shadowLayers: GPUTextureView[];
 	private readonly jointTexture: GPUTexture;
-	private readonly jointBuffer: GPUBuffer;
 	private readonly restVertices: GPUBuffer;
 	private readonly restIndices: GPUBuffer;
 	private readonly slotIndices: GPUBuffer;
@@ -187,7 +186,6 @@ class SkinningRenderer {
 		this.groundIndices = buffer(GPUBufferUsage.INDEX, new Uint16Array([0, 1, 2, 0, 2, 3]));
 		this.instances = buffer(GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE, this.lists.byteLength);
 		this.skinParams = buffer(GPUBufferUsage.UNIFORM, 16);
-		this.jointBuffer = buffer(GPUBufferUsage.STORAGE, this.jointData.byteLength);
 		this.jointTexture = device.createTexture({
 			size: [SKINNING.joints * 3, characters],
 			format: 'rgba32float',
@@ -242,7 +240,7 @@ class SkinningRenderer {
 		});
 		const skinLayout = layout([
 			storage(0),
-			storage(1),
+			{ binding: 1, visibility: COMPUTE, texture: { sampleType: 'unfilterable-float' } },
 			storage(2),
 			storage(3, 'storage'),
 			{ binding: 4, visibility: COMPUTE, buffer: {} },
@@ -331,12 +329,12 @@ class SkinningRenderer {
 		this.skinGroup = device.createBindGroup({
 			layout: skinLayout,
 			entries: [
-				this.restVertices,
-				this.jointBuffer,
-				this.instances,
-				this.skinned,
-				this.skinParams,
-			].map((b, binding) => ({ binding, resource: { buffer: b } })),
+				{ binding: 0, resource: { buffer: this.restVertices } },
+				{ binding: 1, resource: jointView },
+				{ binding: 2, resource: { buffer: this.instances } },
+				{ binding: 3, resource: { buffer: this.skinned } },
+				{ binding: 4, resource: { buffer: this.skinParams } },
+			],
 		});
 	}
 
@@ -436,14 +434,12 @@ class SkinningRenderer {
 	frame(path: SkinningPath): void {
 		const { device, pipelines, drawnCounts: drawn } = this;
 		const skinOnce = path === 'compute';
-		if (skinOnce) device.queue.writeBuffer(this.jointBuffer, 0, this.jointData);
-		else
-			device.queue.writeTexture(
-				{ texture: this.jointTexture },
-				this.jointData,
-				{ bytesPerRow: SKINNING.joints * 3 * 16 },
-				[SKINNING.joints * 3, characters],
-			);
+		device.queue.writeTexture(
+			{ texture: this.jointTexture },
+			this.jointData,
+			{ bytesPerRow: SKINNING.joints * 3 * 16 },
+			[SKINNING.joints * 3, characters],
+		);
 		const skinned = this.cull(skinOnce);
 		const encoder = device.createCommandEncoder();
 

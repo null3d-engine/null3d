@@ -24,7 +24,7 @@ enable draw_index;
 #import null3d::mesh::{relative_position, world_normal}
 #import null3d::vertex::{mesh_position}
 #ifdef SKIN
-#import null3d::mesh::{skin_direction, skin_point, skin_transform}
+#import null3d::mesh::{skin_of, skinned_direction, skinned_point}
 #endif
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{sun_shadow}
@@ -58,9 +58,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
 #ifdef SKIN
-    let skin = skin_transform(found, v.joints, v.weights);
-    out.relative = relative_position(found, skin_point(skin, mesh_position(v.position)));
-    out.normal = world_normal(found, skin_direction(skin, v.normal));
+    let skin = skin_of(found, v.joints, v.weights);
+    out.relative = relative_position(found, skinned_point(skin, mesh_position(v.position)));
+    out.normal = world_normal(found, skinned_direction(skin, v.normal));
 #else
     out.relative = relative_position(found, mesh_position(v.position));
     out.normal = world_normal(found, v.normal);

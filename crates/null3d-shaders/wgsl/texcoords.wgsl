@@ -6,7 +6,7 @@ enable draw_index;
 #import null3d::mesh::{InstanceIn, clip_position, find_instance, finish}
 #import null3d::vertex::{mesh_position, mesh_uv}
 #ifdef SKIN
-#import null3d::mesh::{skin_point, skin_transform}
+#import null3d::mesh::{skin_of, skinned_point}
 #endif
 
 /// The vertex attributes that the template reads.
@@ -30,8 +30,8 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
 #ifdef SKIN
-    let skin = skin_transform(found, v.joints, v.weights);
-    out.clip = clip_position(found, skin_point(skin, mesh_position(v.position)));
+    let skin = skin_of(found, v.joints, v.weights);
+    out.clip = clip_position(found, skinned_point(skin, mesh_position(v.position)));
 #else
     out.clip = clip_position(found, mesh_position(v.position));
 #endif
