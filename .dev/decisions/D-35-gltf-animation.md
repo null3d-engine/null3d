@@ -1,6 +1,6 @@
 # D-35: Skins, clips and morph targets from glTF files
 
-Status: decided, 2026-10-04; the timing of the frame step with the corrected sampling pending. Date: 2026-10-04. Task: M2-C7.
+Status: decided, 2026-10-04. Date: 2026-10-04. Task: M2-C7.
 
 ## Question
 
@@ -41,6 +41,17 @@ A script evaluated the parsed keys of Fox and the Knight directly, with `slerp`,
 
 The correction also brought D-26's own fixtures closer to three.js. Poses went from 1.0e-4 to 2.1e-5, and skinning matrices from 3.6e-4 to 1.7e-4.
 
+Below 0.2 radians between keys, plain interpolation stays within 3.2e-5 radians of `slerp`. So sampling corrects a group of four joints only where one of them turns further between keys. Most clips at 30 keys per second never do. The benchmark `bench_animation_crowd` timed the native frame step on main and on this branch, in turns, three rounds each. The iPad's device runs kept the Mac busy meanwhile. Medians for 500 characters of 48 joints:
+
+| Round | Threads | main | This branch |
+| --- | --- | --- | --- |
+| 1 | 1 | 442 µs | 613 µs |
+| 2 | 1 | 576 µs | 585 µs |
+| 3 | 1 | 472 µs | 465 µs |
+| 3 | 8 | 79 µs | 89 µs |
+
+Runs of the same code differed by up to 30%, as round 1 shows. The two calmer rounds put the branch within 2% of main on one thread.
+
 Fox stays at 5.0e-3. Its run clip changes its key spacing at 0.87 s, so its keys lie on no single grid. The core therefore stores it at 30 keys per second, as D-26 decided. Its fastest joints turn 1.5 radians between keys, and the resampled curve cuts their corners. That is 0.3 degrees. A finer rate for such clips would double their memory; no measured clip needs it yet.
 
 ### The Knight as joints and objects
@@ -60,9 +71,10 @@ With every node an object, as three.js makes it, a copy would hold 58 objects.
 
 | File | Before | After Brotli |
 | --- | --- | --- |
-| `js/sketch-worker-gltf.js`, the loader with the animator and `debug.skeleton`'s data | 3.0 KB | 6.0 KB |
-| `js/gltf-worker.js`, the parser with skins, clips and morph targets | 5.8 KB | 8.7 KB |
-| The engine's first download | unchanged | unchanged |
+| `js/sketch-worker-gltf.js` and `js/page-gltf.js`, the loader with the animator and `debug.skeleton`'s data | 3.1 KB | 6.1 KB |
+| `js/gltf-worker.js`, the parser with skins, clips and morph targets | 6.0 KB | 8.9 KB |
+| `threaded/null3d.js` and `single/null3d.js`, the core's JavaScript glue, with three more calls | 8.3 KB | 8.4 KB |
+| The engine's first download, `js/page.js` and `js/sketch-worker.js` | unchanged | unchanged |
 
 How the data was produced: `bun bench/three-fixtures.ts`, then `NULL3D_PORT=9373 bunx playwright test gltf-poses.spec.ts` in `tests`, on 4 October 2026. The direct evaluation and the counts came from scripts over `parseGltf`, and the sizes from `bun run build`.
 
@@ -129,5 +141,4 @@ Its `GLTFLoader` makes an `Object3D` for every node and a `Bone` for every skin 
 - The core's resampler takes cubic spline keys and a thousandth of a frame at a clip's end. Sampling corrects rotations between keys, which D-26 records.
 - The WebAssembly entry point has `createClipLater`, `clipReady` and `animatedInstanceJoints`.
 - `tests/pages/gltf-poses.ts` and `tests/image/gltf-poses.spec.ts` compare the sample models with three.js, and the `gltf-skeleton` image test draws `debug.skeleton`.
-- The timing of the frame step with the corrected sampling, from `bench_animation_crowd` against main, goes here.
 - The record is in the table in [README.md](README.md).
