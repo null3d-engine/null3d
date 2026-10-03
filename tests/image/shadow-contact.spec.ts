@@ -1,9 +1,11 @@
 // The contact checks of car-sized boxes under S4's sun, on both GPU paths: how much light shows
 // between each box's foot and the start of its shadow, near the camera, in the last cascade and
 // past the end of the first, and how much shadow the boxes cast on their own lit tops. With a
-// ground that casts shadows too, its top must stay lit. The visual page draws each frame in hold
-// mode, so each run draws the same pixels. tests/pages/lib/shadow-check.ts says what the figures
-// measure, and `CONTACT_LIMITS` why each limit sits where it does.
+// ground that casts shadows too, its top must stay lit. With the boxes on a pavement slab that
+// casts shadows, under S4's sun and two lower suns, the slab's lit top must show little acne. The
+// visual page draws each frame in hold mode, so each run draws the same pixels.
+// tests/pages/lib/shadow-check.ts says what the figures measure, and `CONTACT_LIMITS` why each
+// limit sits where it does.
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
@@ -40,6 +42,7 @@ for (const name of Object.keys(CONTACT_LIMITS) as ContactCase[])
 				description: JSON.stringify({
 					...result.contact,
 					shadowed: result.stability.shadowedPercent,
+					acne: result.acne,
 				}),
 			});
 			expect(contactProblems(name, result)).toEqual([]);

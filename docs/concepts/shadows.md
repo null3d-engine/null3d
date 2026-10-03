@@ -195,7 +195,7 @@ A cascade that waits keeps the box it drew with. When the camera turns quickly, 
 
 ## Filtering
 
-The filter softens each shadow's edge over a square of shadow map texels. The `shadowFilter` quality setting gives the texels on each side: 3 on Low and Medium, and 5 on High and Ultra. Each read compares the depth with four texels and blends them. So a 3 x 3 square takes 4 reads, and a 5 x 5 square takes 9. A larger square gives softer edges and costs more on every pixel that receives shadows. `quality.set({ shadowFilter: 3 })` changes it during play. The tiles of spot and point lights use the same filter, over texels of the tile.
+The filter softens each shadow's edge over a square of shadow map texels. The `shadowFilter` quality setting gives the texels on each side: 3 on Low, and 5 on Medium, High and Ultra. Each read compares the depth with four texels and blends them. So a 3 x 3 square takes 4 reads, and a 5 x 5 square takes 9. A larger square gives softer edges and costs more on every pixel that receives shadows. `quality.set({ shadowFilter: 3 })` changes it during play. The tiles of spot and point lights use the same filter, over texels of the tile.
 
 Each read weights the texels by where the point falls between them, so an edge moves smoothly as the point moves. But each texel holds only "lit" or "shadowed". Where one texel covers several pixels, an edge at a shallow angle to the texel grid still shows soft steps, one texel apart. The 5 x 5 filter makes the steps fainter, and no filter of a few texels removes them. More texels per meter remove them. For the directional light, use a shorter `distance`, a larger `mapSize` or another cascade. For spot and point lights, use a larger `shadowTileSize`.
 
@@ -223,6 +223,14 @@ So the engine moves each caster's faces that point away from the light toward th
 The engine's contact check measures the light between a box's base and the start of its shadow, in pixels of full light. For car-sized boxes under S4's sun, in Chrome on a Mac with WebGPU, the move took it from 0.16 to 0.02 pixels near the camera. In the last cascade, it took it from 0.20 to 0.08 pixels. In S4's own frame, it halved the figure.
 
 The 5 cm cap protects floors that cast shadows. Such a floor compares its lit top with its own bottom. Where a texel is larger than the floor is thick, as in a far cascade, its top could shadow itself. With the cap, a floor 20 cm thick stays clear. Give a ground that needs to cast no shadows `receiveShadows` alone, as S4's streets have.
+
+### Flat casters
+
+A low flat caster, such as a pavement slab, holds its bottom face in the map under its lit top. The top and the bottom are parallel. So across the filter's square, the bottom rises toward the light as fast as the top does. Suppose every read compared with the depth at the surface's own point. The reads on the side toward the light would then find parts of the bottom nearer the light than that point. The top would shadow itself in stripes and rings.
+
+So each read of the directional light's filter compares with the receiving surface's own plane at that read. It does so where the plane is nearer the light than the surface's point. A caster below the plane, such as the slab's own bottom, then leaves the top lit. A caster on the plane or above it, such as a box that stands on the slab, still shadows it. So the shadow still meets the box's base. In S4's frame, in Chrome on a Mac, the mean shadow on lit flat surfaces fell from 0.7% to under 0.04%.
+
+Each read compares one depth with four texels at once. So faint stripes can remain where the slab is thinner than its top rises across one texel. That happens with large texels and a low sun, as in the last cascade on the Low preset. A larger `mapSize`, a shorter `distance` or another cascade removes them. The tiles of spot and point lights compare each read with the depth at the surface's own point.
 
 ## Which objects cast and receive
 

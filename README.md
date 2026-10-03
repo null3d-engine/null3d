@@ -53,7 +53,7 @@ It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same ske
 
 ## Quickstart
 
-The first release, 0.1, puts the packages on npm. Until then, [run the demos from a clone](#run-the-demos-from-a-clone) of this repository.
+The first release, 1.0, puts the packages on npm. Until then, [run the demos from a clone](#run-the-demos-from-a-clone) of this repository.
 
 Install the engine from npm and import it, as you would `three`:
 
@@ -308,11 +308,11 @@ if (input.wasPressed('Mouse0')) {
 
 ## Roadmap
 
-Each release lists its changes in `CHANGELOG.md`. Until 1.0, the API can change between releases.
+The first release is 1.0, when all the work below is done. 0.1, 0.2 and 0.3 are steps toward it, and none of them goes to npm. The docs and the skills use these numbers to say when a feature arrives. From 1.0, each release lists its changes in `CHANGELOG.md`.
 
-| Release | What it adds |
+| Version | What it adds |
 | --- | --- |
-| 0.1, built and not yet on npm | Cameras, materials, KTX2 textures, clustered lights, shadows, fog, tone mapping, quality presets, dynamic resolution, camera controls, the first TypeScript API, the Vite plugin, and the first `null3d` commands for tests, screenshots and benchmarks |
+| 0.1, built | Cameras, materials, KTX2 textures, clustered lights, shadows, fog, tone mapping, quality presets, dynamic resolution, camera controls, the first TypeScript API, the Vite plugin, and the first `null3d` commands for tests, screenshots and benchmarks |
 | 0.2 | glTF loading, the asset optimizer, animation, raycasting, environment lighting, post-processing, sprites, lines and large worlds |
 | 0.3 | The docs site, the rest of the `null3d` command, templates, agent tooling and the porting tools |
 | 1.0 | A stable API, testing on many devices, size budgets and public benchmarks |

@@ -87,6 +87,7 @@ export type {
 	ToneMapping,
 	VignetteSettings,
 } from './scene/post';
+export type { Prefab, PrefabBounds, PrefabNode } from './scene/prefab';
 export type {
 	AlphaMode,
 	Blending,
@@ -133,6 +134,7 @@ export type {
 	HemisphereLightOptions,
 	InstanceBatch,
 	InstanceOptions,
+	InstantiateOptions,
 	Light,
 	LightOptions,
 	LightShadowOptions,
@@ -147,6 +149,7 @@ export type {
 	PerspectiveCameraOptions,
 	PointLight,
 	PointLightOptions,
+	PrefabInstance,
 	Quat,
 	Scene,
 	SpotLight,

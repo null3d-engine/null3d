@@ -3,12 +3,12 @@ id: api/assets
 title: Assets
 status: experimental
 since: "0.1"
-summary: "loadTexture, loadImageBitmap, loadLut, loadJson, loadBinary, preload, onProgress; glTF models and environments."
+summary: "loadGltf, loadTexture, loadImageBitmap, loadLut, loadJson, loadBinary, preload, onProgress; environments."
 ---
 
 # Assets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Models and environments are not built yet: `assets.loadGltf`, `loadEnvironment`, `builtinEnvironment`, `loadCubemap` and prefabs. Coding agents must not use them.
+> Ships in null3D 0.1, with glTF models and color grading tables from 0.2. The API is experimental, so it can still change between versions. Environments are not built yet: `loadEnvironment`, `builtinEnvironment` and `loadCubemap`. glTF files do not yet bring their skins, animations, morph targets or meshopt and Draco compression. Coding agents must not use them.
 
 The `assets` object of the sketch context downloads files and decodes them. Every call returns a promise, and its download and decode run outside the sketch's frames, so a frame never waits for them. The browser decodes images off the main thread.
 
@@ -29,6 +29,7 @@ export default defineSketch(async ({ assets, page }) => {
 
 | Call | Gives |
 | --- | --- |
+| `loadGltf(url)` | A `Prefab`: a glTF model, whose objects `scene.instantiate` copies |
 | `loadTexture(url, options)` | A texture from a PNG, JPEG or WebP file, an AVIF file where the browser decodes AVIF, or a KTX2 file of ETC1S or UASTC data, in the compressed format that the device supports. [Textures](textures.md) lists its options. |
 | `loadImageBitmap(url, options)` | A decoded `ImageBitmap`, flipped for textures by default, as `loadTexture` decodes it |
 | `loadLut(url)` | A color grading table from a `.cube` or a `.3dl` file, for `post.set({ lut })`. [Color grading tables](#color-grading-tables) says what it reads |
@@ -36,6 +37,46 @@ export default defineSketch(async ({ assets, page }) => {
 | `loadBinary(url)` | The file's bytes, as an `ArrayBuffer` |
 | `preload(urls)` | Nothing: it downloads the files ahead of their loads |
 | `onProgress(handler)` | A function that removes the handler |
+
+## glTF models
+
+`loadGltf` loads a glTF 2.0 model. It reads a `.glb` file, or a `.gltf` file with the buffers and images it names. It returns a `Prefab`, a template of the file's objects. The prefab makes each mesh, material and texture of the file once, and every copy of the model shares them. Then [`scene.instantiate`](scene.md#models-and-copies) creates a copy of its objects, or `scene.createInstances` draws many copies with instance batches.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets }) => {
+  const lamp = await assets.loadGltf('/models/lamp.glb');
+  scene.instantiate(lamp, { position: [0, 0, -2], castShadows: true });
+  const { center, radius } = lamp.bounds; // frame the model with its bounds
+  scene.setActiveCamera(scene.createPerspectiveCamera({ position: [center[0], center[1], center[2] + radius * 3], target: center }));
+  return {};
+});
+```
+
+A worker parses the file outside the sketch's frames, and decodes the images that the file holds there. The first `loadGltf` call downloads the loader and its worker, about 9 KB after Brotli, so a page without glTF files downloads neither. The files that a `.gltf` file names download through `assets`, so `preload` and `onProgress` cover them too. The engine copies the vertex data into its own memory, and keeps no other copy of it.
+
+The prefab turns each part of the file into the engine's own:
+
+| In the file | In the engine |
+| --- | --- |
+| A node | A `Group`, or a `Mesh` for a node with a mesh of one material. A node with lights or a mesh of several materials becomes a group with one object for each |
+| A mesh | One mesh for each material, with its vertex arrays in the types that the file holds them in, `KHR_mesh_quantization` types included. Points and lines are left out; development builds warn about them |
+| A material | `materials.standard`, or `materials.unlit` with `KHR_materials_unlit`. `KHR_materials_emissive_strength` sets `emissiveIntensity` |
+| A texture | A texture with the file's sampler and texture coordinates. `KHR_texture_basisu` textures load through the KTX2 transcoder |
+| `KHR_texture_transform` | The material's `uvTransform`: the base color map's transform, or the first map's |
+| `KHR_lights_punctual` | Directional, point and spot lights, in the units of glTF and three.js |
+| `EXT_mesh_gpu_instancing` | An instance batch for each copy, in `instance.batches` |
+
+Materials follow three.js's `GLTFLoader`. A mesh with vertex colors turns them on, and a mesh without normals shades flat. A mesh without tangents turns the normal map's green channel over. Blended materials write no depth. The engine finds the lights near each surface by their ranges. So a point or spot light without a range ends where its light falls below 0.001 lux.
+
+| Member | Gives |
+| --- | --- |
+| `prefab.find(name)` | The first node with the name: its `position`, `rotation`, `scale`, `mesh` and `material` |
+| `prefab.bounds` | `min`, `max`, `center` and `radius` of the whole model, around the origin of its copies |
+| `prefab.materials` | The file's materials, in the file's order. `set` changes them in every copy |
+| `prefab.textures` | The textures that the materials sample |
+| `prefab.url` | The address the model came from |
 
 ## Color grading tables
 
@@ -78,7 +119,9 @@ Each call rejects with an engine error that says how to fix the problem:
 | --- | --- |
 | [E1411](../errors/E1411.md) | The file did not download: the server answered with an error, such as 404, or the network failed |
 | [E1412](../errors/E1412.md) | The file downloaded, but the browser could not decode the image, the file was not a KTX2 file that the engine loads, the file was not valid JSON, or it held no color grading table that the engine reads |
-| [E1406](../errors/E1406.md) | The KTX2 transcoder's files did not download when the first KTX2 file loads, or the table readers when the first table loads |
+| [E1416](../errors/E1416.md) | `loadGltf` got a file that is not a glTF 2.0 model it can read: broken JSON, an offset or a count past the data, a missing buffer or image, or a loop of nodes |
+| [E1417](../errors/E1417.md) | `loadGltf` got a file that requires an extension the engine does not read, such as Draco compression |
+| [E1406](../errors/E1406.md) | The files of the KTX2 transcoder, the glTF loader or the table readers did not download, when the first such file loads |
 | [E1413](../errors/E1413.md) | A file from another origin, whose server did not allow the page to read it |
 | [E1208](../errors/E1208.md) | A texture option that the engine does not know, or one that a KTX2 file cannot take |
 
@@ -101,6 +144,7 @@ Loads files, and textures from image files. Every call runs outside the sketch's
 | Member | Description |
 | --- | --- |
 | `loadTexture(url: string \| URL, options: LoadTextureOptions = {}): Promise<Texture>` | Downloads an image file or a KTX2 file, decodes it off the sketch's frames, and makes a texture from it. The browser decodes PNG, JPEG and WebP files, and AVIF files where it supports them. A KTX2 file of ETC1S or UASTC data becomes the compressed format that the device supports, with the file's mip levels, and the first KTX2 file loads the transcoder. Throws E1411 when the file does not download, E1413 when a server of another origin does not allow the page to read it, E1412 when the file does not decode, E1406 when the transcoder does not load, and E1208 for options the engine does not know. |
+| `loadGltf(url: string \| URL): Promise<Prefab>` | Downloads a glTF 2.0 model, a `.glb` file or a `.gltf` file with the files it names, and makes a prefab of it: its meshes, materials, textures, lights and nodes, made once, which `scene.instantiate` copies. A worker parses the file off the sketch's frames, and the first call downloads the loader and its worker. The loads count for `onProgress`, the files the model names too, and they take files that `preload` downloaded. Throws E1411 when a file does not download, E1413 when a server of another origin does not allow the page to read it, E1416 for a file that is not a glTF model the engine reads, E1417 for a file that requires an extension the engine does not read, E1412 when an image does not decode, and E1406 when the loader does not download. |
 | `loadImageBitmap(url: string \| URL, options: LoadImageOptions = {}): Promise<ImageBitmap>` | Downloads an image file and decodes it into an `ImageBitmap`, off the sketch's frames. By default it decodes as `loadTexture` does, so `textures.fromImageBitmap` makes the same texture. Throws E1411, E1412 or E1413 as `loadTexture` does. |
 | `loadLut(url: string \| URL): Promise<Lut>` | Downloads a color grading table in a `.cube` or a `.3dl` file and makes a `Lut` from it, for `post.set({ lut })`. It reads the forms that three.js's `LUTCubeLoader` and `LUT3dlLoader` read, with tables of 2 to 256 texels a side. A `.cube` file's domain and title come along; a `.3dl` file's values are whole numbers of the depth that its largest value or its `Mesh` line gives. The first table loads the readers. Throws E1411 or E1413 as `loadTexture` does, E1412 when the file holds no table that the engine reads, and E1406 when the readers do not load. |
 | `loadJson<T = unknown>(url: string \| URL): Promise<T>` | Downloads a JSON file and parses it. Throws E1411 or E1413 as `loadTexture` does, and E1412 when the file is not valid JSON. |
@@ -153,6 +197,48 @@ type LutDomain = readonly [number, number, number];
 ```
 
 The colors that a table's first and last texels stand for along each axis: red, green and blue.
+
+### `Prefab`
+
+Class `Prefab`.
+
+A model that `assets.loadGltf` loaded: a template whose meshes, materials and textures exist once, on the GPU. Every copy shares them. `scene.instantiate` creates a copy of its objects. `scene.createInstances` draws many copies with instance batches. A prefab does not change.
+
+| Member | Description |
+| --- | --- |
+| `readonly url: string` | The address the model was loaded from. |
+| `readonly bounds: PrefabBounds` | The bounds of the whole model, around the origin of its copies. |
+| `readonly materials: readonly Material[]` | The model's materials, in the file's order. |
+| `readonly textures: readonly Texture[]` | The model's textures, in the order the file names their images. |
+| `find(name: string): PrefabNode \| undefined` | The first node with `name`, in the file's order, or undefined when no node has it. The nodes of a copy have the same names, and its `find` gives them. |
+
+### `PrefabBounds`
+
+Interface `PrefabBounds`.
+
+The bounds of a whole model, in the space of its copies' root: a box, and the sphere around the box's center that holds it.
+
+| Member | Description |
+| --- | --- |
+| `readonly min: readonly [number, number, number]` | The box's lowest corner. |
+| `readonly max: readonly [number, number, number]` | The box's highest corner. |
+| `readonly center: readonly [number, number, number]` | The box's center. |
+| `readonly radius: number` | The radius of the sphere around the center that holds the box. |
+
+### `PrefabNode`
+
+Interface `PrefabNode`.
+
+A node of a prefab: its name, its place relative to its parent, and the mesh and material it draws, if any. `prefab.find` gives it. A mesh with several materials comes as one node per material under its node.
+
+| Member | Description |
+| --- | --- |
+| `readonly name: string` | The node's name in the file. |
+| `readonly position: readonly [number, number, number]` | The position relative to the node's parent. |
+| `readonly rotation: readonly [number, number, number, number]` | The rotation relative to the node's parent, as a quaternion (x, y, z, w). |
+| `readonly scale: readonly [number, number, number]` | The scale relative to the node's parent. |
+| `readonly mesh: MeshGeometry \| undefined` | The node's mesh, which `scene.createMesh` and `scene.createInstances` take too. |
+| `readonly material: Material \| undefined` | The node's material. |
 
 ### `ProgressHandler`
 

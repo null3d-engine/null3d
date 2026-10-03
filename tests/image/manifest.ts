@@ -16,6 +16,7 @@ import { BENCH_SCENES, type FeatureScene } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { BLOOM_IMAGE } from '../../bench/scenes/bloom.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
+import { MODEL_NAMES, MODELS_IMAGE } from '../../bench/scenes/gltf-models.ts';
 import { GRADING_IMAGE } from '../../bench/scenes/grading.ts';
 import { LIGHTS_IMAGE } from '../../bench/scenes/lights.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
@@ -356,6 +357,27 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		switches: [`compression=${family}`],
 		reference: 'ktx2',
 	})),
+	// glTF sample models that assets.loadGltf loads and scene.instantiate copies, one for each feature
+	// of the loader: materials with their maps, texture transforms, unlit and emissive strength,
+	// lights, instancing, KTX2 textures, alpha modes, vertex colors and the second texture
+	// coordinates. The parity test compares each with three.js's GLTFLoader.
+	...MODEL_NAMES.map(
+		(model): ImageTest => ({
+			name: `gltf-${model}`,
+			sketch: `tests/pages/sketches/gltf-sketch.ts?model=${model}`,
+			size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+			hold: 0,
+		}),
+	),
+	// Copies of a glTF model made in code: scene.instantiate, scene.clone, a model with 16-bit
+	// positions, and an instance batch from scene.createInstances whose rows move every part of the
+	// model. Each tier must place every part the same way.
+	{
+		name: 'gltf-copies',
+		sketch: 'tests/pages/sketches/gltf-copies-sketch.ts',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+	},
 	// A picture behind a lit box and an unlit box, as three.js draws a texture background: it fills
 	// the view, upright, and every object draws over it. The parity test compares it with its
 	// three.js twin.

@@ -9,6 +9,9 @@ import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import { Lut } from './lut';
+import type { CoreMemory } from './memory';
+import type { Prefab } from './prefab';
+import type { Geometry, Materials } from './resources';
 import type { Texture, TextureColorSpace, TextureOptions, Textures } from './textures';
 
 /**
@@ -51,6 +54,13 @@ export interface LoadImageOptions {
 	premultipliedAlpha?: boolean;
 }
 
+/** @internal What `loadGltf` makes a model's meshes and materials with. */
+export interface ModelMakers {
+	core: CoreMemory;
+	geometry: Geometry;
+	materials: Materials;
+}
+
 /**
  * Called each time a download finishes or fails. It gets the files downloaded so far, the files
  * asked for so far, and the address of the file that finished.
@@ -81,6 +91,7 @@ export class Assets {
 		private readonly textures: Textures,
 		/** The page's address, which relative addresses resolve against. */
 		base: string,
+		private readonly makers?: ModelMakers,
 	) {
 		this.base = base;
 	}
@@ -101,6 +112,38 @@ export class Assets {
 		if (await isKtx2(blob)) return loadKtx2(this.textures, blob, address, options, call);
 		const image = await decode(blob, address, options, call);
 		return this.textures.fromImage(image, options, options.premultipliedAlpha ? 1 : 0, call);
+	}
+
+	/**
+	 * Downloads a glTF 2.0 model, a `.glb` file or a `.gltf` file with the files it names, and
+	 * makes a prefab of it: its meshes, materials, textures, lights and nodes, made once, which
+	 * `scene.instantiate` copies. A worker parses the file off the sketch's frames, and the first
+	 * call downloads the loader and its worker. The loads count for `onProgress`, the files the model
+	 * names too, and they take files that `preload` downloaded. Throws E1411 when a file does not
+	 * download, E1413 when a server of another origin does not allow the page to read it, E1416 for
+	 * a file that is not a glTF model the engine reads, E1417 for a file that requires an extension
+	 * the engine does not read, E1412 when an image does not decode, and E1406 when the loader does
+	 * not download.
+	 */
+	async loadGltf(url: string | URL): Promise<Prefab> {
+		const call = 'assets.loadGltf';
+		const address = this.resolve(url);
+		const makers = this.makers;
+		if (!makers) throw new Error(`${call}() needs the engine's meshes and materials`);
+		const [file, gltf] = await Promise.all([this.file(address, call), loadModule(address, call)]);
+		return gltf.loadGltf(
+			{
+				...makers,
+				textures: this.textures,
+				download: (at, during) => this.file(at, during),
+				decode: (blob, at, colorSpace, during) =>
+					decode(blob, at, { colorSpace, flipY: false }, during),
+				error: (code, message) => new EngineError(code, message),
+			},
+			file,
+			address,
+			call,
+		);
 	}
 
 	/**
@@ -341,6 +384,18 @@ async function loadKtx2(
 		call,
 		(code, message) => new EngineError(code, message),
 	);
+}
+
+/** Imports the glTF loader, which a page downloads with its first glTF file, or throws E1406. */
+async function loadModule(address: URL, call: string): Promise<typeof import('./gltf')> {
+	try {
+		return await import('./gltf');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the glTF loader did not download for ${call}() of ${address}: ${reason(error)}.`,
+		);
+	}
 }
 
 /** Decodes an image file as `options` ask, or throws E1412. */
