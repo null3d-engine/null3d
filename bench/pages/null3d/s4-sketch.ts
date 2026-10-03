@@ -33,13 +33,19 @@ import { followPath, readGovernor, setUpView, watchQuality } from './sketch-comm
 export default defineSketch((context) => {
 	const { scene, materials, geometry, textures, time } = context;
 	// Feature: shadows. The sun, the still objects that stand up and the vehicles cast shadows, and
-	// every object receives them. The engine stores these settings, and draws the shadows once it
-	// has shadow maps on the GPU path. The quality preset sets their cascades and map size.
-	const moveCamera = followPath(setUpView(context, S4_VIEW_LIGHTS, S4_FOG.color), s4Camera);
-	// S4 measures how the quality governor holds the frame rate on phones, so it runs, and lightens
-	// the shadows when frames take too long. The render scale stays at 1, as for the other scenes. A
-	// comparison of two builds turns it off, so that a step in one run cannot change what it draws.
+	// every object receives them. The quality preset sets their cascades and map size.
+	// S4 measures how a preset holds its frame rate on phones with dynamic resolution, so it keeps
+	// the preset's render scale range, and the quality governor lowers the render scale and then
+	// the shadows when frames take too long. A comparison of two builds turns the governor off, so
+	// that a step in one run cannot change what it draws.
+	const moveCamera = followPath(
+		setUpView(context, S4_VIEW_LIGHTS, S4_FOG.color, { dynamicResolution: true }),
+		s4Camera,
+	);
 	context.quality.set({ governor: readGovernor(import.meta.url) });
+	// The page's ?shadowFilter= switch tries another filter than the preset's.
+	const filter = new URL(import.meta.url).searchParams.get('shadowFilter');
+	if (filter) context.quality.set({ shadowFilter: Number(filter) as 3 | 5 });
 	const reportQuality = watchQuality(context);
 
 	scene.setFog({ type: 'linear', color: S4_FOG.color, near: S4_FOG.near, far: S4_FOG.far });

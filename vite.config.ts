@@ -3,6 +3,7 @@ import { defineConfig, type Plugin, searchForWorkspaceRoot, type UserConfig } fr
 import { loadServer } from './tests/lib/load-server.ts';
 import { reportCollector } from './tests/lib/report-collector.ts';
 import { HTTP_PORT, HTTPS_PORT } from './tests/lib/server.ts';
+import { samplesServer } from './tools/lib/samples.ts';
 import { ensureShaderModules } from './tools/lib/shader-modules.ts';
 
 // One dev server for every browser page in the repository: the test pages under tests/pages, the
@@ -10,7 +11,7 @@ import { ensureShaderModules } from './tools/lib/shader-modules.ts';
 // Plain HTTP stays on localhost, which phones reach through adb. NULL3D_HTTPS=1 serves HTTPS on the
 // local network instead, on its own port, for tablets and phones that reach the Mac by its .local
 // name. The dev server and `vite preview` also serve the startup build of the engine test page, one
-// address prefix per load.
+// address prefix per load, and the pinned sample content under /samples/ from the shared cache.
 
 const https = process.env.NULL3D_HTTPS === '1';
 
@@ -59,6 +60,7 @@ const config: UserConfig = {
 		null3d({ https, certDir: 'target/dev-cert' }),
 		reportCollector(),
 		loadServer(),
+		samplesServer(import.meta.dirname),
 		indexRedirect,
 	],
 	server: {

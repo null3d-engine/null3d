@@ -127,6 +127,18 @@ export interface EngineOptions {
 	 */
 	antialias?: 'msaa' | 'fxaa' | 'none';
 	/**
+	 * The cascades of a directional light's shadows, a whole number from 1 to 4, for each light
+	 * whose `shadow` options name none. Without it, the quality preset sets it. Another value fails
+	 * with E1213.
+	 */
+	shadowCascades?: number;
+	/**
+	 * Texels on each side of each cascade's shadow map, for each directional light whose `shadow`
+	 * options name no `mapSize`: 512, 1,024, 2,048 or 4,096. Without it, the quality preset sets
+	 * it. Another value fails with E1213.
+	 */
+	shadowMapSize?: number;
+	/**
 	 * The most tiles of the shadow atlas that spot and point lights cast their shadows into, a
 	 * whole number from 0 to 24. Without it, the quality preset sets it. 0 turns the shadows of
 	 * spot and point lights off. Another value fails with E1213.
@@ -758,6 +770,8 @@ async function startEngine(
 	const pageSettings = {
 		maxPixelRatio: options.maxPixelRatio,
 		antialias: options.antialias,
+		shadowCascades: options.shadowCascades,
+		shadowMapSize: options.shadowMapSize,
 		shadowTiles: options.shadowTiles,
 		shadowTileSize: options.shadowTileSize,
 		pointLightShadows: options.pointLightShadows,

@@ -240,12 +240,13 @@ export interface DirectionalLightOptions extends LightOptions {
 export interface DirectionalShadowOptions {
 	/**
 	 * The cascades, a whole number from 1 to 4. More cascades keep shadows sharp further from the
-	 * camera, and each draws the shadow casters once more. The default is 3.
+	 * camera, and each draws the shadow casters once more. The default is the quality preset's
+	 * `shadowCascades`.
 	 */
 	cascades?: number;
 	/**
 	 * Texels on each side of each cascade's shadow map: 256, 512, 1,024, 2,048 or 4,096. The default
-	 * is 2,048.
+	 * is the quality preset's `shadowMapSize`.
 	 */
 	mapSize?: number;
 	/**
