@@ -19,13 +19,34 @@
 // read with a linear filter and weighted as three.js's UnrealBloomPass weights its mips. Bloom is
 // smooth, so a pixel reads it once at its own place, also where it blends four texels of the
 // corner. Bloom adds coverage as its brightest channel, so it glows over a transparent canvas.
+//
+// Last, the pass grades each pixel's display color, as three.js's LUTPass and VignetteShader do
+// after its OutputPass: a color grading table, then the vignette, each while its flag is set. The
+// table is a 3D texture that maps a display color to its graded color, read with a linear filter.
+// Grading works on the color that a pixel's coverage divides out, and multiplies it back after.
 #import null3d::tonemap
 
 /// The settings flag that says the scene color holds display color.
 const DISPLAY_COLOR: u32 = 1u;
+/// The settings flag that turns the vignette on.
+const VIGNETTE: u32 = 2u;
+/// The settings flag that turns the color grading table on.
+const LUT: u32 = 4u;
 
-@group(0) @binding(0) var<uniform> settings: null3d::tonemap::Output;
+/// The pass's settings: the output settings, then the vignette's offset and darkness, then the
+/// scale and the offset that place a display color in the table, with the table's intensity in
+/// the scale's last value.
+struct Settings {
+    output: null3d::tonemap::Output,
+    vignette: vec4f,
+    lut_scale: vec4f,
+    lut_offset: vec4f,
+}
+
+@group(0) @binding(0) var<uniform> settings: Settings;
 @group(0) @binding(1) var scene_color: texture_2d<f32>;
+@group(0) @binding(9) var lut: texture_3d<f32>;
+@group(0) @binding(10) var lut_sampler: sampler;
 
 #ifdef BLOOM
 /// Each level's weight, with the strength in it: levels 0 to 3, then level 4 in `last.x`.
@@ -108,7 +129,7 @@ const LUMINANCE = vec3f(0.2126, 0.7152, 0.0722);
 
 /// True when the scene color holds display color, which FXAA blends as it is.
 fn display_color() -> bool {
-    return (settings.flags & DISPLAY_COLOR) != 0u;
+    return (settings.output.flags & DISPLAY_COLOR) != 0u;
 }
 
 /// HDR color squeezed below 1: exposed luminance l becomes l / (1 + l). Display color stays as it
@@ -117,7 +138,7 @@ fn squeeze(texel: vec4f) -> vec4f {
     if display_color() {
         return texel;
     }
-    return vec4f(texel.rgb / (1.0 + settings.exposure * dot(texel.rgb, LUMINANCE)), texel.a);
+    return vec4f(texel.rgb / (1.0 + settings.output.exposure * dot(texel.rgb, LUMINANCE)), texel.a);
 }
 
 /// Undoes `squeeze`.
@@ -125,7 +146,7 @@ fn unsqueeze(c: vec4f) -> vec4f {
     if display_color() {
         return c;
     }
-    let squeezed = min(settings.exposure * dot(c.rgb, LUMINANCE), 0.999);
+    let squeezed = min(settings.output.exposure * dot(c.rgb, LUMINANCE), 0.999);
     return vec4f(c.rgb / (1.0 - squeezed), c.a);
 }
 
@@ -148,7 +169,7 @@ fn tap(point: vec2f, last: vec2i) -> vec4f {
 /// the exposure and a square root, near the sRGB curve.
 fn luma(c: vec4f) -> f32 {
     let y = dot(c.rgb, LUMINANCE);
-    return select(sqrt(settings.exposure * y), y, display_color());
+    return select(sqrt(settings.output.exposure * y), y, display_color());
 }
 
 /// The scene color of the pixel at `position`, smoothed along the edge that crosses it.
@@ -188,7 +209,7 @@ fn pixel_color(position: vec2f) -> vec4f {
 /// Scene color `texel` as canvas pixel `pixel` shows it: tone mapped, encoded and dithered for
 /// that pixel, and multiplied by its coverage. Display color stays as it is.
 fn display(texel: vec4f, pixel: vec2f) -> vec4f {
-    if (settings.flags & DISPLAY_COLOR) != 0u {
+    if (settings.output.flags & DISPLAY_COLOR) != 0u {
         return texel;
     }
     // Additive blending adds coverage too, past 1 over a covered pixel, which covers it whole.
@@ -196,9 +217,32 @@ fn display(texel: vec4f, pixel: vec2f) -> vec4f {
     if coverage <= 0.0 {
         return vec4f(0.0);
     }
-    let mapped = null3d::tonemap::tone_map(texel.rgb / coverage, settings);
+    let mapped = null3d::tonemap::tone_map(texel.rgb / coverage, settings.output);
     let encoded = saturate(null3d::tonemap::encode(mapped, pixel));
     return vec4f(encoded * coverage, coverage);
+}
+
+/// Canvas color `color`, multiplied by its coverage, as canvas pixel `position` of a canvas of
+/// `size` pixels shows it after the color grading table and the vignette. With neither, it stays
+/// as it is.
+fn grade(color: vec4f, position: vec2f, size: vec2f) -> vec4f {
+    let flags = settings.output.flags;
+    if (flags & (LUT | VIGNETTE)) == 0u || color.a <= 0.0 {
+        return color;
+    }
+    var c = color.rgb / color.a;
+    if (flags & LUT) != 0u {
+        let at = c * settings.lut_scale.xyz + settings.lut_offset.xyz;
+        let graded = textureSampleLevel(lut, lut_sampler, at, 0.0).rgb;
+        c = mix(c, graded, settings.lut_scale.w);
+    }
+    if (flags & VIGNETTE) != 0u {
+        // three.js's VignetteShader: the place from the canvas's center, scaled by the offset,
+        // blends the color toward the gray of 1 - darkness by its squared distance.
+        let uv = (position / size - 0.5) * settings.vignette.x;
+        c = mix(c, vec3f(1.0 - settings.vignette.y), dot(uv, uv));
+    }
+    return vec4f(c * color.a, color.a);
 }
 
 /// The texel of a place in the drawn corner, counted from the corner's top-left.
@@ -213,7 +257,7 @@ fn corner_texel(place: vec2f, size: vec2f) -> vec2i {
 @fragment
 fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let size = vec2f(textureDimensions(scene_color));
-    let packed = settings.render_size;
+    let packed = settings.output.render_size;
     let render = vec2f(f32(packed & 0xffffu), f32(packed >> 16u));
     let whole = all(render == size);
     // The pixel's place on the drawn corner, from 0 to 1 in the rows' own order, which every
@@ -244,5 +288,5 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
         let texel_color = textureLoad(scene_color, texel, 0) + light;
         color += weights.x * weights.y * display(texel_color, position.xy);
     }
-    return color;
+    return grade(color, position.xy, size);
 }

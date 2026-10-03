@@ -32,6 +32,14 @@
 //!
 //! Texels of another size move a texture to an array of that size, and so to another bind group.
 //!
+//! # 3D textures
+//!
+//! A 3D texture, such as a color grading table (see [`crate::grading`]), has a texture of its own
+//! whose layers are its depth slices, and filtering blends between the slices. Its texels come
+//! from data alone, a band of rows of a slice at a time, as the layers of an array do. It has no
+//! mip levels and no bind group of the store's: the pass that reads it binds it by its GPU id,
+//! which [`TextureStore::ready_volume`] gives once its texels are on the GPU.
+//!
 //! Formats come by code, and every byte count goes through [`format::level_bytes`], so formats
 //! stored in blocks of texels can join the array keys and the uploads.
 //!
@@ -43,6 +51,7 @@
 
 use null3d_core::error::CoreError;
 use null3d_core::handle::{Handle, SlotAllocator};
+use null3d_gpu::caps::TEXTURE_3D_SIZE;
 use null3d_gpu::drawlist::{
     DrawList, Op, address, compare, filter, format, layout, resource_kind, texture_usage,
     upload_flags, view,
@@ -56,6 +65,8 @@ pub const MAX_LAYERS: u32 = 256;
 pub const FIRST_LAYERS: u32 = 4;
 /// The most textures that live at once.
 pub const MAX_TEXTURES: u32 = 4095;
+/// The group of a texture that has no bind group of the store's: a 3D texture.
+const NO_GROUP: u32 = u32::MAX;
 /// The bytes that one frame uploads, until the quality preset sets another budget.
 pub const DEFAULT_UPLOAD_BUDGET: u32 = 4 * 1024 * 1024;
 /// The largest anisotropy that samplers use, until the quality preset caps it lower.
@@ -228,6 +239,8 @@ struct ArrayKey {
     mips: u32,
     /// The layers of each texture: an array of textures of more than one has one texture.
     depth: u32,
+    /// True for a 3D texture, whose layers are its depth slices. It has a texture of its own.
+    volume: bool,
 }
 
 /// Where a band of texels starts: a row of blocks of one layer of one mip level.
@@ -249,10 +262,10 @@ impl ArrayKey {
         format::layer_bytes(self.format, self.width, self.height, self.mips)
     }
 
-    /// True when textures share the array. A texture of several layers or of a compressed format
-    /// has an array of its own.
+    /// True when textures share the array. A texture of several layers, of a compressed format or
+    /// of three dimensions has an array of its own.
     fn shared(&self) -> bool {
-        self.depth == 1 && !format::is_compressed(self.format)
+        self.depth == 1 && !format::is_compressed(self.format) && !self.volume
     }
 
     /// The rows of blocks of the first `levels` mip levels, through every layer.
@@ -502,6 +515,40 @@ impl TextureStore {
 
     /// Creates a texture with no texels yet, in a free layer of an array of its key.
     pub fn create(&mut self, desc: TextureDesc) -> Result<Handle, TextureError> {
+        self.create_in(desc, false)
+    }
+
+    /// Creates a 3D texture of `width` x `height` x `depth` texels in `format::RGBA8_UNORM` or
+    /// `format::RGBA16_FLOAT`, with no texels yet, read with a linear filter and clamped at its
+    /// edges. Each side takes at most [`TEXTURE_3D_SIZE`] texels, the least that WebGL2 allows.
+    pub fn create_volume(
+        &mut self,
+        width: u32,
+        height: u32,
+        depth: u32,
+        format: u32,
+    ) -> Result<Handle, TextureError> {
+        let limit = TEXTURE_3D_SIZE;
+        if width > limit || height > limit || depth > limit {
+            return Err(TextureError::TooLarge { limit });
+        }
+        if !matches!(format, format::RGBA8_UNORM | format::RGBA16_FLOAT) {
+            return Err(TextureError::Unsupported);
+        }
+        let desc = TextureDesc {
+            width,
+            height,
+            depth,
+            format,
+            mipmaps: false,
+            levels: 1,
+            sampling: Sampling::default(),
+        };
+        self.create_in(desc, true)
+    }
+
+    /// Creates a texture of `desc`, in three dimensions when `volume`.
+    fn create_in(&mut self, desc: TextureDesc, volume: bool) -> Result<Handle, TextureError> {
         self.check_size(desc.format, desc.width, desc.height)?;
         let sampling = desc.sampling;
         let known = |code: u32, last: u32| code <= last;
@@ -546,6 +593,7 @@ impl TextureStore {
             format: desc.format,
             mips: slot.mips(desc.width, desc.height),
             depth: desc.depth,
+            volume,
         };
         self.settle(&mut slot, key);
         let index = handle.slot() as usize;
@@ -557,13 +605,17 @@ impl TextureStore {
     }
 
     /// Gives a texture a layer of an array of `key`, and the bind group of that array and its
-    /// sampler.
+    /// sampler, or none for a 3D texture.
     fn settle(&mut self, slot: &mut TextureSlot, key: ArrayKey) {
         let (array, layer) = self.place(key);
         self.arrays[array as usize].mark(layer, true);
         slot.array = array;
         slot.layer = layer;
-        slot.group = self.group_for(array, slot.sampler);
+        slot.group = if key.volume {
+            NO_GROUP
+        } else {
+            self.group_for(array, slot.sampler)
+        };
     }
 
     /// The array and the layer for a new texture of `key`: the lowest free layer of the first
@@ -634,7 +686,9 @@ impl TextureStore {
         let empty = *self.slot(self.placeholder)?;
         let mut slots = [(empty.array, empty.sampler); MAP_SET_SLOTS];
         for (slot, &map) in slots.iter_mut().zip(maps) {
-            if let Ok(texture) = self.slot(map) {
+            if let Ok(texture) = self.slot(map)
+                && texture.group != NO_GROUP
+            {
                 *slot = (texture.array, texture.sampler);
             }
         }
@@ -654,7 +708,7 @@ impl TextureStore {
     ) -> Result<(u32, bool), TextureError> {
         let slot = *self.slot(texture)?;
         let key = self.arrays[slot.array as usize].key;
-        if key.depth > 1 || !format::makes_mipmaps(key.format) || slot.levels > 1 {
+        if key.depth > 1 || key.volume || !format::makes_mipmaps(key.format) || slot.levels > 1 {
             return Err(TextureError::Unsupported);
         }
         let moved = self.resize(texture, width, height)?;
@@ -805,10 +859,24 @@ impl TextureStore {
         }
     }
 
-    /// The GPU id of the bind group that samples a live texture: its array with its sampler.
+    /// The GPU id of the bind group that samples a live texture: its array with its sampler. A 3D
+    /// texture has none.
     pub fn group_id(&self, texture: Handle) -> Option<u32> {
         let slot = self.slot(texture).ok()?;
-        Some(self.ids.first_group + slot.group)
+        (slot.group != NO_GROUP).then(|| self.ids.first_group + slot.group)
+    }
+
+    /// The GPU id of a 3D texture and its size in texels along each axis, once its texels are on
+    /// the GPU.
+    pub fn ready_volume(&self, texture: Handle) -> Option<(u32, [u32; 3])> {
+        let slot = self.slot(texture).ok()?;
+        let key = self.arrays[slot.array as usize].key;
+        (key.volume && matches!(slot.state, State::Uploaded { .. })).then(|| {
+            (
+                self.array_id(slot.array),
+                [key.width, key.height, key.depth],
+            )
+        })
     }
 
     /// The GPU bytes of a texture: its layers, with every mip level.
@@ -938,8 +1006,8 @@ impl TextureStore {
                 old_id
             };
             // Images upload into and mip levels draw into a texture that textures share, and a
-            // larger one copies its layers. A compressed texture takes writes only.
-            let usage = if format::is_compressed(key.format) {
+            // larger one copies its layers. A compressed texture and a 3D texture take writes only.
+            let usage = if format::is_compressed(key.format) || key.volume {
                 texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST
             } else {
                 texture_usage::TEXTURE_BINDING
@@ -958,7 +1026,7 @@ impl TextureStore {
                     usage,
                     1,
                     key.mips,
-                    view::D2_ARRAY,
+                    if key.volume { view::D3 } else { view::D2_ARRAY },
                 ],
             )?;
             if old_capacity > 0 {

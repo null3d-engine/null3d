@@ -187,7 +187,7 @@ fn check_eight_bit_scaling<B: FrameBuilder>(mut world: World<B>) {
         .into_iter()
         .find(|o| o[1] == layout::FINAL)
         .unwrap();
-    assert_eq!(group[2], 2);
+    assert_eq!(group[2], 4);
     assert_eq!((group[9], group[10]), (resource_kind::TEXTURE, resolved));
     assert_eq!(operands(&commands, Op::Draw), [vec![3, 1, 0, 0]]);
 }

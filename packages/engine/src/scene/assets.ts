@@ -1,5 +1,6 @@
 // The sketch's loading calls, `ctx.assets`: files downloaded with fetch and decoded by the browser,
-// or by the KTX2 transcoder (ktx2.ts), outside the sketch's frames, and a count of the downloads
+// by the KTX2 transcoder (ktx2.ts) or by the color grading table readers (lut-files.ts), outside
+// the sketch's frames, and a count of the downloads
 // for loading screens. Relative addresses resolve against the page's address, in every thread
 // mode. Files that `preload` downloaded wait in memory until a load takes them, and loads of one
 // address at the same time share one download; the HTTP cache keeps everything else.
@@ -7,6 +8,7 @@
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
+import { Lut } from './lut';
 import type { CoreMemory } from './memory';
 import type { Prefab } from './prefab';
 import type { Geometry, Materials } from './resources';
@@ -154,6 +156,42 @@ export class Assets {
 		const call = 'assets.loadImageBitmap';
 		const address = this.resolve(url);
 		return decode(await this.file(address, call), address, options, call);
+	}
+
+	/**
+	 * Downloads a color grading table in a `.cube` or a `.3dl` file and makes a `Lut` from it, for
+	 * `post.set({ lut })`. It reads the forms that three.js's `LUTCubeLoader` and `LUT3dlLoader`
+	 * read, with tables of 2 to 256 texels a side. A `.cube` file's domain and title come along;
+	 * a `.3dl` file's values are whole numbers of the depth that its largest value or its `Mesh`
+	 * line gives. The first table loads the readers. Throws E1411 or E1413 as `loadTexture` does,
+	 * E1412 when the file holds no table that the engine reads, and E1406 when the readers do not
+	 * load.
+	 */
+	async loadLut(url: string | URL): Promise<Lut> {
+		const call = 'assets.loadLut';
+		const address = this.resolve(url);
+		const text = await (await this.file(address, call)).text();
+		let files: typeof import('./lut-files');
+		try {
+			files = await import('./lut-files');
+		} catch (error) {
+			throw new EngineError(
+				'E1406',
+				`the color grading table reader did not download for ${call}() of ${address}: ${reason(error)}.`,
+			);
+		}
+		let table: import('./lut-files').LutTable;
+		try {
+			table = files.parseLut(text);
+		} catch (error) {
+			throw new EngineError(
+				'E1412',
+				`${call}() could not read ${address} as a color grading table: ${reason(error)}.`,
+			);
+		}
+		const { size, title, domainMin, domainMax, texels } = table;
+		const texture = this.textures.fromVolume(size, texels, call);
+		return new Lut(texture, size, title, domainMin, domainMax);
 	}
 
 	/**

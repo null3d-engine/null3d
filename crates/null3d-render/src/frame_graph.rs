@@ -52,6 +52,11 @@
 //! of their targets. The 8-bit path has no bloom: its scene color holds display color, which no
 //! longer knows how bright a pixel was.
 //!
+//! The final pass also grades the canvas color with a color grading table and the vignette (see
+//! [`crate::grading`]). Both work on display color, so they draw on the 8-bit path too: while the
+//! sketch sets either, the final pass runs there in place of the resolve pass, as it does while
+//! the render scale can drop.
+//!
 //! # Render scale
 //!
 //! Passes of a relative size draw into the top-left corner of their targets at the render scale,
@@ -81,6 +86,7 @@ use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, LEVELS, STEPS};
 use crate::final_pass::{BloomInputs, FinalIds, FinalPass};
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
+use crate::grading::Grading;
 use crate::graph::{
     CANVAS, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph, RenderScale, Size,
     Step, StepKind, StoreOp, Surface, Target,
@@ -297,6 +303,9 @@ pub(crate) struct FrameGraph {
     /// True when the render scale may drop below the whole canvas, so the final pass runs to scale
     /// the image up even where the scene could resolve into the canvas.
     scales: bool,
+    /// True while the sketch sets a color grading table or the vignette, so the final pass runs to
+    /// grade the image even where the scene could resolve into the canvas.
+    grades: bool,
     /// The render scale of the frame being recorded.
     scale: RenderScale,
     /// The resolve pass, the final pass and, on the HDR path, the final pass with bloom, once
@@ -375,6 +384,7 @@ impl FrameGraph {
             scene_color,
             resolves: !scene_color.is_hdr() && antialias == Antialias::Msaa,
             scales: false,
+            grades: false,
             scale: RenderScale::FULL,
             outputs: None,
             bloom_pass: scene_color
@@ -504,7 +514,7 @@ impl FrameGraph {
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
     /// pass does.
     fn final_runs(&self) -> bool {
-        !self.resolves || self.scales
+        !self.resolves || self.scales || self.grades
     }
 
     /// Says whether the render scale may drop below the whole canvas. Where the scene could
@@ -513,6 +523,16 @@ impl FrameGraph {
     pub(crate) fn set_scaling(&mut self, scales: bool) {
         self.scales = scales;
         self.enable_outputs();
+    }
+
+    /// Says whether the sketch sets a color grading table or the vignette. Where the scene could
+    /// resolve into the canvas, a change switches the final pass on or off in place of the
+    /// resolve pass, and the graph compiles again.
+    pub(crate) fn set_grading(&mut self, grades: bool) {
+        if grades != self.grades {
+            self.grades = grades;
+            self.enable_outputs();
+        }
     }
 
     /// Switches on the pass that takes the scene color to the canvas, and off the others, and
@@ -810,13 +830,15 @@ impl FrameGraph {
 
     /// Records what the graph's own passes need before the frame's passes, from copies in the
     /// frame's arena: when the final pass runs, its objects, its settings when they changed, and
-    /// its binding of the scene color when the frame made the plan's textures. Call it after
-    /// [`FrameGraph::prepare`].
+    /// its binding of the scene color when the frame made the plan's textures. The final pass
+    /// grades with `grading`. Call it after [`FrameGraph::prepare`], and after the frame's texture
+    /// uploads, so a color grading table whose last texels this frame uploads grades it.
     pub(crate) fn upload(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
         output: Output,
+        grading: Grading,
     ) -> Result<(), RecordError> {
         if !self.final_runs() {
             return Ok(());
@@ -859,6 +881,7 @@ impl FrameGraph {
             render_size,
             scene_color,
             bloom,
+            grading,
             self.textures_made,
         )
     }
@@ -1170,6 +1193,8 @@ mod tests {
         final_pass: FinalIds {
             settings: 9,
             group: 9,
+            blank_lut: 900,
+            lut_sampler: 9,
         },
         bloom: BloomIds {
             buffer: 10,
@@ -1651,14 +1676,18 @@ mod tests {
         let mut arena = UploadArena::default();
         let output = Output::default();
         arena.reset(frames.upload_bound());
-        frames.upload(&mut list, &mut arena, output).unwrap();
+        frames
+            .upload(&mut list, &mut arena, output, Grading::default())
+            .unwrap();
         list.clear();
         frames.set_scaling(true);
         frames
             .prepare(&mut list, (320, 180), RenderScale::from_thousandths(500))
             .unwrap();
         arena.reset(frames.upload_bound());
-        frames.upload(&mut list, &mut arena, output).unwrap();
+        frames
+            .upload(&mut list, &mut arena, output, Grading::default())
+            .unwrap();
         let ops: Vec<Op> = null3d_gpu::drawlist::decode(list.words())
             .map(|command| command.unwrap().op)
             .collect();

@@ -1,31 +1,70 @@
 import { describe, expect, it } from 'bun:test';
 import * as C from '../generated/core';
+import { Lut } from './lut';
 import type { CoreMemory } from './memory';
 import { Post, type PostSettings } from './post';
+import type { Texture } from './textures';
 
-/** A post object whose core records each setOutput and setBloom call. */
+/**
+ * A post object whose core records each setOutput, setBloom, setLut and setVignette call, with
+ * its arguments and the values that it reads from the block of post-processing values. The block
+ * starts with the core's defaults.
+ */
 function post(hdrEffects = true): {
 	post: Post;
 	calls: [number, number][];
 	blooms: [boolean, number, number, number][];
+	luts: number[][];
+	vignettes: [boolean, number, number][];
+	reads: () => number;
 } {
 	const calls: [number, number][] = [];
 	const blooms: [boolean, number, number, number][] = [];
+	const luts: number[][] = [];
+	const vignettes: [boolean, number, number][] = [];
+	const block = Float32Array.of(1, 1, 0.5, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1);
+	expect(block.length).toBe(C.POST_VALUE_COUNT);
+	let views = 0;
+	const at = (place: number) => block[place] as number;
 	const core = {
+		generation: 0,
+		f32: () => {
+			views++;
+			return block;
+		},
 		glue: {
-			setOutput(toneMapping: number, exposure: number) {
-				calls.push([toneMapping, exposure]);
+			postValues: () => 0,
+			setOutput(toneMapping: number) {
+				calls.push([toneMapping, at(C.POST_VALUE_EXPOSURE)]);
 				return 0;
 			},
-			setBloom(on: boolean, strength: number, radius: number, threshold: number) {
-				blooms.push([on, strength, radius, threshold]);
+			setBloom(on: boolean) {
+				blooms.push([
+					on,
+					at(C.POST_VALUE_BLOOM_STRENGTH),
+					at(C.POST_VALUE_BLOOM_RADIUS),
+					at(C.POST_VALUE_BLOOM_THRESHOLD),
+				]);
+				return 0;
+			},
+			setLut(texture: number) {
+				const domain = [0, 1, 2].map((k) => at(C.POST_VALUE_LUT_DOMAIN_MIN + k));
+				const top = [0, 1, 2].map((k) => at(C.POST_VALUE_LUT_DOMAIN_MAX + k));
+				luts.push([texture, at(C.POST_VALUE_LUT_INTENSITY), ...domain, ...top]);
+				return 0;
+			},
+			setVignette(on: boolean) {
+				vignettes.push([on, at(C.POST_VALUE_VIGNETTE_OFFSET), at(C.POST_VALUE_VIGNETTE_DARKNESS)]);
 				return 0;
 			},
 		},
 		check: (result: number) => result,
 	} as unknown as CoreMemory;
-	return { post: new Post(core, hdrEffects), calls, blooms };
+	return { post: new Post(core, hdrEffects), calls, blooms, luts, vignettes, reads: () => views };
 }
+
+/** A table of 33 texels a side over a domain from -0.5 to 2, whose texture has handle 7. */
+const table = new Lut({ handle: 7 } as Texture, 33, 'Warm', [-0.5, -0.5, -0.5], [2, 2, 2]);
 
 describe('post.set', () => {
 	it('sends the tone mapping by code and the exposure, and keeps a setting it is not given', () => {
@@ -54,16 +93,16 @@ describe('post.set', () => {
 		output.set({ exposure: 1.5 });
 		expect(blooms).toEqual([]);
 		output.set({ bloom: {} });
-		output.set({ bloom: { strength: 1.5, radius: 0.4 } });
+		output.set({ bloom: { strength: 1.5, radius: 0.375 } });
 		output.set({ bloom: false });
 		expect(output.bloomOn).toBe(false);
-		output.set({ bloom: { threshold: 0.85 } });
+		output.set({ bloom: { threshold: 0.875 } });
 		expect(output.bloomOn).toBe(true);
 		expect(blooms).toEqual([
 			[true, 1, 0.5, 1],
-			[true, 1.5, 0.4, 1],
-			[false, 1.5, 0.4, 1],
-			[true, 1.5, 0.4, 0.85],
+			[true, 1.5, 0.375, 1],
+			[false, 1.5, 0.375, 1],
+			[true, 1.5, 0.375, 0.875],
 		]);
 	});
 
@@ -83,6 +122,40 @@ describe('post.set', () => {
 		expect(blooms).toHaveLength(2);
 	});
 
+	it('sends the table with its intensity and domain, keeps the intensity, and turns it off with false', () => {
+		const { post: output, luts } = post();
+		output.set({ exposure: 1.5 });
+		expect(luts).toEqual([]);
+		output.set({ lut: table });
+		output.set({ lutIntensity: 0.25 });
+		output.set({ lut: false });
+		output.set({ lut: table });
+		const sent = [7, 1, -0.5, -0.5, -0.5, 2, 2, 2];
+		const quarter = [7, 0.25, -0.5, -0.5, -0.5, 2, 2, 2];
+		expect(luts).toEqual([sent, quarter, [0, ...quarter.slice(1)], quarter]);
+	});
+
+	it('turns the vignette on with three.js defaults and the values given, and keeps them while off', () => {
+		const { post: output, vignettes } = post();
+		output.set({ vignette: {} });
+		output.set({ vignette: { darkness: 1.5 } });
+		output.set({ vignette: false });
+		output.set({ vignette: { offset: 0.75 } });
+		expect(vignettes).toEqual([
+			[true, 1, 1],
+			[true, 1, 1.5],
+			[false, 1, 1.5],
+			[true, 0.75, 1.5],
+		]);
+	});
+
+	it('makes its view of the values once, and again only after the memory grew', () => {
+		const { post: output, reads } = post();
+		output.set({ exposure: 1.25 });
+		output.set({ lutIntensity: 0.5, vignette: { offset: 1.5 } });
+		expect(reads()).toBe(1);
+	});
+
 	it('refuses an unknown setting or tone mapping, and a value out of range, with E1213', () => {
 		const { post: output, calls, blooms } = post();
 		for (const bad of [
@@ -95,6 +168,13 @@ describe('post.set', () => {
 			{ bloom: { strength: -1 } },
 			{ bloom: { radius: 1.5 } },
 			{ bloom: { threshold: -0.1 } },
+			{ lut: true },
+			{ lut: { size: 33 } },
+			{ lutIntensity: 1.5 },
+			{ vignette: 1 },
+			{ vignette: { amount: 0.3 } },
+			{ vignette: { offset: -1 } },
+			{ vignette: { darkness: -0.5 } },
 		])
 			expect(() => output.set(bad as PostSettings)).toThrow('E1213');
 		expect(calls).toEqual([]);
@@ -106,5 +186,7 @@ describe('post.set', () => {
 		for (const exposure of [Number.NaN, Number.POSITIVE_INFINITY])
 			expect(() => output.set({ exposure })).toThrow('E1203');
 		expect(() => output.set({ bloom: { strength: Number.NaN } })).toThrow('E1203');
+		expect(() => output.set({ lutIntensity: Number.NaN })).toThrow('E1203');
+		expect(() => output.set({ vignette: { offset: Number.POSITIVE_INFINITY } })).toThrow('E1203');
 	});
 });
