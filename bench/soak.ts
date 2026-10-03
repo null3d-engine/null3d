@@ -1,16 +1,17 @@
-// The soak test: runs S1 in Chrome for ten minutes and samples, every 30 seconds, the JavaScript
-// heap of the page and of each engine worker and the size of the engine's WebAssembly memory,
-// through Chrome's debugging protocol. A leak in the engine's frame code shows as steady growth.
-// Before each heap sample, the page and the workers that return to their event loop collect their
-// garbage, so a sample counts only what a thread keeps. While the engine runs, the job workers block
-// inside the job system's loop, so their heaps are read as they are. The test fails when the sketch
-// worker's or the render worker's heap grows after the warm-up by more than a small allowance, when
-// the WebAssembly memory grows after it, when the page reports an error, or when the engine no
-// longer draws at the end. It runs the production build of the benchmark pages, as a developer ships
-// the engine; `--dev` runs the dev server's pages, with the engine's development checks. From the
-// repository root:
+// The soak test: runs S1, or S4 with `--scene s4`, in Chrome for ten minutes and samples, every 30
+// seconds, the JavaScript heap of the page and of each engine worker and the size of the engine's
+// WebAssembly memory, through Chrome's debugging protocol. A leak in the engine's frame code shows
+// as steady growth. Before each heap sample, the page and the workers that return to their event
+// loop collect their garbage, so a sample counts only what a thread keeps. While the engine runs,
+// the job workers block inside the job system's loop, so their heaps are read as they are. The test
+// fails when the sketch worker's or the render worker's heap grows after the warm-up by more than a
+// small allowance, when the WebAssembly memory grows after it, when the page reports an error, or
+// when the engine no longer draws at the end. It runs the production build of the benchmark pages,
+// as a developer ships the engine; `--dev` runs the dev server's pages, with the engine's
+// development checks. From the repository root:
 //   bun run bench:soak
 //   bun run bench:soak --gpu webgl2 --minutes 20 --n 30000
+//   bun run bench:soak --scene s4
 import { parseArgs } from 'node:util';
 import { chromium, type Page } from '@playwright/test';
 import { pageResult } from '../tests/lib/page-result.ts';
@@ -47,7 +48,11 @@ const ANSWER_TIMEOUT_MS = 10_000;
 /** How long the page may take to start the engine and build the scene. */
 const START_TIMEOUT_MS = 120_000;
 
+/** The scenes that the soak runs. S4 has a fixed count of objects and ignores `--n`. */
+const SOAK_SCENES = ['s1', 's4'] as const;
+
 interface Options {
+	scene: (typeof SOAK_SCENES)[number];
 	gpu: 'webgpu' | 'webgl2';
 	minutes: number;
 	n: number;
@@ -58,6 +63,7 @@ function readOptions(args: string[]): Options {
 	const { values } = parseArgs({
 		args,
 		options: {
+			scene: { type: 'string', default: 's1' },
 			gpu: { type: 'string', default: 'webgpu' },
 			minutes: { type: 'string', default: '10' },
 			n: { type: 'string', default: '100000' },
@@ -65,6 +71,8 @@ function readOptions(args: string[]): Options {
 		},
 	});
 	const { gpu } = values;
+	const scene = SOAK_SCENES.find((name) => name === values.scene);
+	if (!scene) throw new Error(`--scene takes ${SOAK_SCENES.join(' or ')}, not ${values.scene}`);
 	if (gpu !== 'webgpu' && gpu !== 'webgl2')
 		throw new Error(`--gpu takes webgpu or webgl2, not ${gpu}`);
 	const minutes = Number(values.minutes);
@@ -72,7 +80,7 @@ function readOptions(args: string[]): Options {
 	const n = Number(values.n);
 	if (!Number.isSafeInteger(n) || n < 1)
 		throw new Error(`--n takes a whole number above 0, not ${values.n}`);
-	return { gpu, minutes, n, dev: values.dev };
+	return { scene, gpu, minutes, n, dev: values.dev };
 }
 
 /** What the page publishes once the engine runs the scene in demo mode. */
@@ -191,7 +199,7 @@ async function main(): Promise<void> {
 		page.on('console', (message) => {
 			if (message.type() === 'error') pageErrors.push(message.text());
 		});
-		const url = `${server.url}${pagePath('s1', `null3d-${options.gpu}`, `demo&n=${options.n}`)}`;
+		const url = `${server.url}${pagePath(options.scene, `null3d-${options.gpu}`, `demo&n=${options.n}`)}`;
 		await page.goto(url);
 		const started = await pageResult<DemoResult>(page, START_TIMEOUT_MS);
 		if (!started.ok) throw new Error(`the page did not start the engine: ${started.error}`);
@@ -202,7 +210,7 @@ async function main(): Promise<void> {
 			const { jobWorkers, latency } = started.mode;
 			const attached = await attachEveryWorker(devtools, target.targetId, 2 + jobWorkers);
 			console.log(
-				`Soak: S1 with ${options.n.toLocaleString('en-US')} instances on ${started.tier}, ${latency}, with ${jobWorkers} job workers, ${pagesText(options.dev)}, for ${options.minutes} min, sampled every ${SAMPLE_SECONDS} s`,
+				`Soak: ${options.scene === 's1' ? `S1 with ${options.n.toLocaleString('en-US')} instances` : 'S4'} on ${started.tier}, ${latency}, with ${jobWorkers} job workers, ${pagesText(options.dev)}, for ${options.minutes} min, sampled every ${SAMPLE_SECONDS} s`,
 			);
 			const samples = await sampleRun(devtools, attached, options.minutes);
 			const end = await measureEnd(page);

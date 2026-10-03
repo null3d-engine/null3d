@@ -418,7 +418,7 @@ describe('the checks plan', () => {
 	it("notes each device's quality preset, and fails one that the chooser does not give", () => {
 		const quality = items.find((item) => item.id === 'quality');
 		if (!quality) throw new Error('the plan lacks the quality page');
-		expect(quality.path).toBe('/tests/pages/quality.html');
+		expect(quality.path).toBe('/tests/pages/quality.html?check=fresh');
 		const tablet = { coarsePointer: true, screenMinEdge: 834, deviceMemoryGB: null };
 		const round = (preset: string, fps: number) => ({
 			preset,
@@ -452,7 +452,7 @@ describe('the checks plan', () => {
 		// The heavy scene's page: the check must lower the chosen preset.
 		const heavy = overloadPlan().find((item) => item.id === 'preset-check');
 		if (!heavy) throw new Error('the plan lacks the preset check page');
-		expect(heavy.path).toBe('/tests/pages/quality.html?spheres=32768');
+		expect(heavy.path).toBe('/tests/pages/quality.html?spheres=32768&check=fresh');
 		const lowered = result('medium', [round('medium', 20), round('low', 25)]);
 		expect(judge(heavy.check, lowered, NONE_MISSING, context)).toEqual([]);
 		expect(judge(heavy.check, result('medium'), NONE_MISSING, context)).toEqual([

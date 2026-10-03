@@ -122,4 +122,4 @@ The receivers scale their biases by their angle to the light. After the iPad's s
 - The benchmark pages take `?far=<n>`, which S4 applies as its `farCascadeInterval`.
 - `concepts/shadows` describes the changes, and the API notes give the biases in meters and their defaults.
 - A user's bias above one texel acts as one texel. The cap binds the defaults only where a texel is under 2 cm. A 2,048 map's first cascade has 2.8 cm texels with the default distance, so the defaults act in full there.
-- The iPad's S4 run on WebGPU at Medium, before and after, is still to come.
+- The owner checked S4 on the iPad (WebGPU, Medium) on 3 October 2026 and approved the change. The cars' shadows stay on the cars, and the shadows at the edges of the screen are soft and hold still. Thin lit lines where objects meet their shadows are rarer and thinner than before, but some remain. They also shift as the camera turns. That fault has its own fix and its own section.

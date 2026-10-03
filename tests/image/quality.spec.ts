@@ -3,12 +3,14 @@
 // chooses from the device. The preset check then lowers a preset that the GPU cannot draw the
 // scene at. Each preset's texture settings reach the core. Starts that crash the tab make the next
 // start lighter. The crash note stays out of storage that the browser refuses, and leaves after the
-// first seconds of play. A sketch changes its settings, its own upload budget stays until the
-// setting changes, and a setting that the engine does not take is refused. A sketch changes the
-// preset, and no frame draws without the pipelines of the new preset.
+// first seconds of play. A later start takes the stored result of the preset check. A sketch
+// changes its settings, its own upload budget stays until the setting changes, and a setting that
+// the engine does not take is refused. A sketch changes the preset, and no frame draws without the
+// pipelines of the new preset.
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
 import type { PresetCheck } from '../../packages/engine/src/quality/check.ts';
 import {
+	checkedSettings,
 	presetSettings,
 	type QualityPreset,
 	type QualitySettings,
@@ -208,6 +210,22 @@ test('storage that the browser refuses counts as a normal start', async ({ page 
 	const result = await openQuality(page, 'gpu=webgpu');
 	expect([chosen(result), result.mode.crashedStarts]).toEqual(['high', 0]);
 	expect(result.notesAtFirstFrame).toBeNull();
+});
+
+test('a later start takes the stored preset check, and ?check=fresh measures again', async ({
+	page,
+}) => {
+	const measured = await openQuality(page, 'gpu=webgpu');
+	const check = measured.mode.presetCheck;
+	expect(check?.reused).toBe(false);
+	const later = await openQuality(page, 'gpu=webgpu');
+	expect(later.mode.presetCheck).toEqual({ ...check, reused: true } as PresetCheck);
+	// The setup already runs the preset that the check chose, with the settings its steps leave.
+	const { preset } = measured.mode;
+	expect([later.mode.preset, later.sketch.preset]).toEqual([preset, preset]);
+	expect(settingsOf(later.sketch)).toEqual(checkedSettings('high', preset));
+	const fresh = await openQuality(page, 'gpu=webgpu&check=fresh');
+	expect(fresh.mode.presetCheck?.reused).toBe(false);
 });
 
 // The sketch's thread hands the change to the page, which sizes the canvas: through a message

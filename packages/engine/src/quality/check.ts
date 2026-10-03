@@ -58,6 +58,11 @@ export interface PresetCheck {
 	 * runs.
 	 */
 	rounds: PresetCheckRound[];
+	/**
+	 * True when the engine took this result from an earlier start of the sketch in this browser on
+	 * this device, and did not measure again. The engine stores each check's result for a week.
+	 */
+	reused: boolean;
 }
 
 /**
