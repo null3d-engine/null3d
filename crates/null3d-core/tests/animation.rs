@@ -10,8 +10,9 @@ mod three;
 
 use common::{Workers, character};
 use null3d_core::animation::{
-    AnimationError, Animations, Channel, Clip, DEFAULT_RATE, Interpolation, MATRIX_FLOATS,
-    MAX_BLEND, MAX_FRAMES, NO_PARENT, POSE_FIELDS, Skeleton, SourceTrack, TrackProblem, resample,
+    AnimationError, Animations, Channel, Clip, DEFAULT_RATE, EVENT_WORDS, Interpolation,
+    MATRIX_FLOATS, MAX_BLEND, MAX_FRAMES, MAX_LAYERS, NO_PARENT, POSE_FIELDS, Play, Skeleton,
+    SourceTrack, TrackProblem, event_kind, flag, resample,
 };
 use null3d_core::error::{CoreError, Resource};
 use null3d_core::jobs::JobSystem;
@@ -101,7 +102,7 @@ fn skin_matrices(jobs: &JobSystem) -> (Animations, Vec<u32>) {
             instance
         })
         .collect();
-    animations.update(jobs);
+    animations.update(jobs, 0.0);
     (animations, instances)
 }
 
@@ -238,7 +239,7 @@ fn slots_that_name_no_usable_clip_are_skipped() {
     animations.set_sample(skipped, 3, clip, 0.5, -1.0);
     let infinite = animations.add_instance(id).unwrap();
     animations.set_sample(infinite, 0, clip, 0.5, f32::INFINITY);
-    animations.update(&jobs);
+    animations.update(&jobs, 0.0);
     let rest = animations.instance_matrices(rest).to_vec();
     assert_eq!(animations.instance_matrices(skipped), rest);
     assert_eq!(animations.instance_matrices(infinite), rest);
@@ -257,7 +258,7 @@ fn a_clip_weight_below_one_blends_with_the_rest_pose() {
     let none = animations.add_instance(id).unwrap();
     animations.set_sample(full, 0, clip, 0.4, 1.0);
     animations.set_sample(none, 0, clip, 0.4, 1e-30);
-    animations.update(&jobs);
+    animations.update(&jobs, 0.0);
     let difference = |a: u32, b: u32| {
         let b = animations
             .instance_matrices(b)
@@ -292,7 +293,7 @@ fn many_instances_on_many_threads_match_one_thread() {
             animations.set_sample(instance, 0, ids[0], t, 0.25 + (i % 4) as f32 * 0.25);
             animations.set_sample(instance, 1, ids[1], t * 0.7, 1.0 - (i % 3) as f32 * 0.3);
         }
-        animations.update(jobs);
+        animations.update(jobs, 0.0);
         animations.matrices().to_vec()
     };
     let serial = build(&JobSystem::new(0));
@@ -411,4 +412,471 @@ fn resampling_refuses_bad_tracks() {
         resample(&skeleton, &[long], DEFAULT_RATE),
         Err(AnimationError::Frames { frames }) if frames >= MAX_FRAMES
     ));
+}
+
+// --- The animator: plays, fades, layers, masks, additive clips and events ---
+
+/// The fixture's clips by their index in `three::CLIPS`.
+const GRID30: u32 = 0;
+const GRID24: u32 = 2;
+
+/// The fixture's skeleton and clips in a table with one instance, and the instance.
+fn fixture_table(jobs: &JobSystem) -> (Animations, u32) {
+    let skeleton = skeleton();
+    let joints = skeleton.joints();
+    let clips = clips(&skeleton);
+    let mut animations = Animations::new(jobs, 1, joints).unwrap();
+    let id = animations.add_skeleton(skeleton).unwrap();
+    for clip in clips {
+        animations.add_clip(id, clip).unwrap();
+    }
+    let instance = animations.add_instance(id).unwrap();
+    (animations, instance)
+}
+
+/// A mask of the fixture's skeleton: 1 for the joints that `keep` names, 0 for the others.
+fn mask(animations: &mut Animations, keep: impl Fn(usize) -> bool) -> u32 {
+    let weights: Vec<f32> = (0..three::PARENTS.len())
+        .map(|j| if keep(j) { 1.0 } else { 0.0 })
+        .collect();
+    animations.add_mask(0, &weights).unwrap()
+}
+
+/// The joints at and below the fixture's joint 2: the arm and the head.
+fn upper(joint: usize) -> bool {
+    (2..=5).contains(&joint)
+}
+
+/// A play of the defaults with a fade of `fade` seconds.
+fn faded(fade: f32) -> Play {
+    Play {
+        fade,
+        ..Play::default()
+    }
+}
+
+/// Makes the animator calls of fixture script `name` that come before its checkpoint `check`,
+/// as the comments in `bench/three-fixtures.ts` give them.
+fn script_calls(name: &str, check: usize, animations: &mut Animations, instance: u32) {
+    let layers = instance as usize * MAX_LAYERS;
+    let mut play = |clip, play| animations.play(instance, clip, play).unwrap();
+    match (name, check) {
+        ("crossfade", 0) | ("masked base layer", 0) | ("masked layer", 0) => {
+            play(GRID30, Play::default())
+        }
+        ("masked layer at full weight", 0) => play(GRID30, Play::default()),
+        ("crossfade", 1) => play(GRID24, faded(0.3)),
+        ("fade in", 0) => play(GRID24, faded(0.5)),
+        ("time scale", 0) => play(GRID30, faded(0.4)),
+        ("once", 0) => play(
+            GRID24,
+            Play {
+                looping: false,
+                speed: 1.5,
+                ..Play::default()
+            },
+        ),
+        ("loops", 0) => play(GRID24, Play::default()),
+        ("additive", 0) => {
+            play(GRID24, Play::default());
+            let additive = Play {
+                layer: 1,
+                additive: true,
+                ..Play::default()
+            };
+            play(GRID30, additive);
+        }
+        (_, 0) => panic!("no calls for script {name}"),
+        _ => {}
+    }
+    if check != 0 {
+        return;
+    }
+    match name {
+        "time scale" => animations.time_scales_mut()[instance as usize] = 0.5,
+        "masked base layer" => {
+            let mask = mask(animations, |j| j != 4 && j != 5);
+            animations.set_layer_mask(instance, 0, Some(mask)).unwrap();
+        }
+        "masked layer" | "masked layer at full weight" => {
+            let layer = Play {
+                layer: 1,
+                ..Play::default()
+            };
+            animations.play(instance, GRID24, layer).unwrap();
+            let mask = mask(animations, upper);
+            animations.set_layer_mask(instance, 1, Some(mask)).unwrap();
+            let weight = if name == "masked layer" { 0.5 } else { 1.0 };
+            animations.layer_weights_mut()[layers + 1] = weight;
+        }
+        "additive" => animations.layer_weights_mut()[layers + 1] = 0.5,
+        _ => {}
+    }
+}
+
+/// The loop and finished events of the last frame step.
+fn ends(animations: &Animations) -> (u32, u32) {
+    let kind = |r: &[u32; EVENT_WORDS]| (r[1] >> 8) & 0xff;
+    let events = animations.events();
+    let count = |k| events.iter().filter(|r| kind(r) == k).count() as u32;
+    (count(event_kind::LOOP), count(event_kind::FINISHED))
+}
+
+#[test]
+fn animator_scripts_match_three_js() {
+    for workers in [0, 2] {
+        let pool = Workers::start(workers);
+        let jobs = pool.jobs();
+        let mut largest = 0.0f64;
+        for script in &three::SCRIPTS {
+            let (mut animations, instance) = fixture_table(jobs);
+            let (mut loops, mut finished) = (0, 0);
+            for (k, check) in script.checks.iter().enumerate() {
+                script_calls(script.name, k, &mut animations, instance);
+                for _ in 0..check.steps {
+                    animations.update(jobs, script.step);
+                    let (l, f) = ends(&animations);
+                    loops += l;
+                    finished += f;
+                }
+                let got = animations
+                    .instance_matrices(instance)
+                    .iter()
+                    .map(|&v| f64::from(v));
+                let got: Vec<f64> = got.collect();
+                let difference = largest_difference(got.iter().copied(), &check.skin);
+                let joint = (0..three::PARENTS.len())
+                    .map(|j| {
+                        let at = j * MATRIX_FLOATS..(j + 1) * MATRIX_FLOATS;
+                        largest_difference(got[at.clone()].iter().copied(), &check.skin[at])
+                    })
+                    .enumerate()
+                    .max_by(|a, b| a.1.total_cmp(&b.1))
+                    .map_or(0, |(j, _)| j);
+                assert!(
+                    difference <= SKIN_TOLERANCE,
+                    "{}, checkpoint {k}: joint {joint}'s skinning matrix is {difference} from \
+                     three.js's",
+                    script.name
+                );
+                largest = largest.max(difference);
+            }
+            assert_eq!(
+                (loops, finished),
+                (script.loops, script.finished),
+                "{}: loops and finished clips",
+                script.name
+            );
+        }
+        println!(
+            "{workers} job workers: largest difference from three.js in a script: {largest:e}"
+        );
+    }
+}
+
+/// Plays the fixture's clip of 0.75 s with events at `times` and `play`'s options, for `steps`
+/// steps of `step` seconds, and returns each event's id and kind in order.
+fn events_of(play: Play, times: &[f32], steps: u32, step: f32) -> Vec<(u32, u32)> {
+    let jobs = JobSystem::new(0);
+    let (mut animations, instance) = fixture_table(&jobs);
+    let ids: Vec<u32> = (1..=times.len() as u32).collect();
+    animations.set_clip_events(GRID24, times, &ids).unwrap();
+    animations.play(instance, GRID24, play).unwrap();
+    let mut out = Vec::new();
+    for _ in 0..steps {
+        animations.update(&jobs, step);
+        for r in animations.events() {
+            assert_eq!((r[0], r[1] & 0xff, r[2]), (instance, play.layer, GRID24));
+            out.push((r[3], (r[1] >> 8) & 0xff));
+        }
+    }
+    out
+}
+
+#[test]
+fn an_event_fires_once_per_loop() {
+    const EVENT: u32 = event_kind::EVENT;
+    const LOOP: u32 = event_kind::LOOP;
+    // The clip lasts 0.75 s: 150 steps of 1/60 s pass its start four times, 0.5 s three times
+    // and its end three times, where it loops.
+    let got = events_of(Play::default(), &[0.0, 0.5, 0.75], 150, 1.0 / 60.0);
+    let mut expected = vec![(1, EVENT), (2, EVENT)];
+    for _ in 0..2 {
+        expected.extend([(3, EVENT), (1, EVENT), (0, LOOP), (2, EVENT)]);
+    }
+    expected.extend([(3, EVENT), (1, EVENT), (0, LOOP)]);
+    assert_eq!(got, expected);
+    // A step longer than the clip passes each event once, and loops once.
+    let got = events_of(Play::default(), &[0.0, 0.5], 2, 1.0);
+    assert_eq!(got, [(1, EVENT), (2, EVENT), (0, LOOP)].repeat(2));
+    // Backward from the end: the end, 0.5 s, then the start and the end together as it loops.
+    let backward = Play {
+        speed: -1.0,
+        ..Play::default()
+    };
+    let got = events_of(backward, &[0.0, 0.5, 0.75], 80, 1.0 / 60.0);
+    assert_eq!(
+        got,
+        [
+            (3, EVENT),
+            (2, EVENT),
+            (1, EVENT),
+            (3, EVENT),
+            (0, LOOP),
+            (2, EVENT)
+        ]
+    );
+    // Once, on layer 2, which each record gives: each event and the end, then nothing while the
+    // clip holds its last frame.
+    let once = Play {
+        looping: false,
+        layer: 2,
+        ..Play::default()
+    };
+    let got = events_of(once, &[0.0, 0.75], 120, 1.0 / 60.0);
+    assert_eq!(got, [(1, EVENT), (2, EVENT), (0, event_kind::FINISHED)]);
+}
+
+#[test]
+fn fades_free_their_slots_and_plays_reuse_them() {
+    let jobs = JobSystem::new(0);
+    let (mut animations, instance) = fixture_table(&jobs);
+    animations.play(instance, GRID30, Play::default()).unwrap();
+    animations.play(instance, GRID24, faded(0.2)).unwrap();
+    let factor = |a: &Animations, slot| a.action(instance, slot).factor();
+    assert_eq!((factor(&animations, 0), factor(&animations, 1)), (1.0, 0.0));
+    for _ in 0..6 {
+        animations.update(&jobs, 1.0 / 60.0);
+    }
+    assert!((factor(&animations, 0) - 0.5).abs() < 1e-5);
+    // Back to the first clip halfway through: it fades in from its weight, keeping its time.
+    let time = animations.slots().time[0];
+    animations.play(instance, GRID30, faded(0.2)).unwrap();
+    assert!((factor(&animations, 0) - 0.5).abs() < 1e-5);
+    assert_eq!(animations.slots().time[0], time);
+    for _ in 0..13 {
+        animations.update(&jobs, 1.0 / 60.0);
+    }
+    // The second clip faded out from half its weight and left its slot.
+    assert_eq!(factor(&animations, 0), 1.0);
+    assert_eq!(animations.slots().weight[1], 0.0);
+    assert_eq!(animations.action(instance, 1).flags, 0);
+    // Stopping at once frees the slot; the instance holds the rest pose.
+    animations.stop(instance, Some(GRID30), 0.0).unwrap();
+    animations.update(&jobs, 1.0 / 60.0);
+    let identity = null3d_core::math::IDENTITY
+        .map(f64::from)
+        .repeat(three::PARENTS.len());
+    let rest = animations
+        .instance_matrices(instance)
+        .iter()
+        .map(|&v| f64::from(v));
+    assert!(largest_difference(rest, &identity) < 1e-5);
+    // When every slot holds a clip, a play takes the slot that counts least.
+    for layer in 0..MAX_LAYERS as u32 {
+        for clip in [GRID30, GRID24] {
+            let play = Play {
+                layer,
+                ..faded(0.2)
+            };
+            animations.play(instance, clip, play).unwrap();
+        }
+    }
+    let late = Play {
+        additive: true,
+        ..faded(0.2)
+    };
+    animations.play(instance, GRID30, late).unwrap();
+    let flags: Vec<u32> = (0..MAX_BLEND)
+        .map(|s| animations.action(instance, s).flags)
+        .collect();
+    assert!(flags.iter().all(|f| f & flag::PLAYING != 0), "{flags:?}");
+    assert_eq!(flags.iter().filter(|f| *f & flag::ADDITIVE != 0).count(), 1);
+    animations.update(&jobs, 1.0 / 60.0);
+    assert!(animations.matrices().iter().all(|v| v.is_finite()));
+}
+
+#[test]
+fn removed_instances_give_back_their_id_and_joints() {
+    let jobs = JobSystem::new(0);
+    let (small, small_clips) = character(4);
+    let (large, _) = character(8);
+    let mut animations = Animations::new(&jobs, 2, 12).unwrap();
+    let small_id = animations.add_skeleton(small).unwrap();
+    let large_id = animations.add_skeleton(large).unwrap();
+    let clip = animations
+        .add_clip(small_id, small_clips[0].clone())
+        .unwrap();
+    let first = animations.add_instance(small_id).unwrap();
+    let second = animations.add_instance(large_id).unwrap();
+    animations.play(first, clip, Play::default()).unwrap();
+    animations.remove_instance(first).unwrap();
+    let unknown = AnimationError::UnknownInstance { instance: first };
+    assert_eq!(
+        animations.play(first, clip, Play::default()).unwrap_err(),
+        unknown
+    );
+    assert_eq!(animations.remove_instance(first).unwrap_err(), unknown);
+    // The table is full of joints, yet the removed instance's four fit a new one.
+    let again = animations.add_instance(small_id).unwrap();
+    assert_eq!((again, animations.joints()), (first, 12));
+    // A new instance starts with empty slots.
+    assert!(
+        animations.slots().weight[..MAX_BLEND]
+            .iter()
+            .all(|w| *w == 0.0)
+    );
+    animations.remove_instance(second).unwrap();
+    animations.update(&jobs, 0.1);
+    assert!(
+        animations
+            .instance_matrices(again)
+            .iter()
+            .all(|v| v.is_finite())
+    );
+}
+
+#[test]
+fn animator_calls_refuse_bad_input() {
+    let jobs = JobSystem::new(0);
+    let (mut animations, instance) = fixture_table(&jobs);
+    let (other, other_clips) = character(4);
+    let other_id = animations.add_skeleton(other).unwrap();
+    let foreign = animations
+        .add_clip(other_id, other_clips[0].clone())
+        .unwrap();
+    for clip in [foreign, 99] {
+        assert_eq!(
+            animations
+                .play(instance, clip, Play::default())
+                .unwrap_err(),
+            AnimationError::UnknownClip { clip }
+        );
+    }
+    let bad = [
+        (
+            Play {
+                layer: 4,
+                ..Play::default()
+            },
+            AnimationError::Layer { layer: 4 },
+        ),
+        (faded(-1.0), AnimationError::Play { option: 0 }),
+        (faded(f32::NAN), AnimationError::Play { option: 0 }),
+        (
+            Play {
+                speed: f32::INFINITY,
+                ..Play::default()
+            },
+            AnimationError::Play { option: 1 },
+        ),
+    ];
+    for (options, error) in bad {
+        let got = animations.play(instance, GRID30, options).unwrap_err();
+        assert_eq!(got, error);
+    }
+    assert_eq!(
+        animations.play(5, GRID30, Play::default()).unwrap_err(),
+        AnimationError::UnknownInstance { instance: 5 }
+    );
+    assert_eq!(
+        animations.stop(instance, None, -0.5).unwrap_err(),
+        AnimationError::Play { option: 0 }
+    );
+    let joints = three::PARENTS.len();
+    assert_eq!(
+        animations.add_mask(0, &vec![1.0; joints - 1]).unwrap_err(),
+        AnimationError::Mask {
+            joint: joints as u32 - 1
+        }
+    );
+    let mut weights = vec![1.0; joints];
+    weights[3] = 1.5;
+    assert_eq!(
+        animations.add_mask(0, &weights).unwrap_err(),
+        AnimationError::Mask { joint: 3 }
+    );
+    let foreign_mask = animations.add_mask(other_id, &[1.0; 4]).unwrap();
+    assert_eq!(
+        animations
+            .set_layer_mask(instance, 1, Some(foreign_mask))
+            .unwrap_err(),
+        AnimationError::UnknownMask { mask: foreign_mask }
+    );
+    assert_eq!(
+        animations.set_layer_mask(instance, 4, None).unwrap_err(),
+        AnimationError::Layer { layer: 4 }
+    );
+    let duration = animations.clip(GRID24).unwrap().duration();
+    for times in [[0.1, duration + 0.1], [0.1, f32::NAN], [0.1, -0.1]] {
+        assert_eq!(
+            animations
+                .set_clip_events(GRID24, &times, &[1, 2])
+                .unwrap_err(),
+            AnimationError::Events { event: 1 }
+        );
+    }
+    assert_eq!(
+        animations
+            .set_clip_events(GRID24, &[0.1], &[1, 2])
+            .unwrap_err(),
+        AnimationError::Events { event: 1 }
+    );
+}
+
+#[test]
+fn events_come_in_order_of_instance_on_any_number_of_threads() {
+    let (skeleton, clips) = character(12);
+    let run = |jobs: &JobSystem| {
+        let mut animations = Animations::new(jobs, 300, 300 * 12).unwrap();
+        let id = animations.add_skeleton(skeleton.clone()).unwrap();
+        let clip = animations.add_clip(id, clips[1].clone()).unwrap();
+        animations
+            .set_clip_events(clip, &[0.1, 0.2, 0.3, 0.4], &[1, 2, 3, 4])
+            .unwrap();
+        for i in 0..300u32 {
+            let instance = animations.add_instance(id).unwrap();
+            let play = Play {
+                speed: 1.0 + (i % 7) as f32 * 0.5,
+                ..Play::default()
+            };
+            animations.play(instance, clip, play).unwrap();
+        }
+        let mut events = Vec::new();
+        for _ in 0..20 {
+            animations.update(jobs, 1.0 / 30.0);
+            events.extend_from_slice(animations.events());
+            assert_eq!(animations.events_dropped(), 0);
+        }
+        (events, animations.matrices().to_vec())
+    };
+    let serial = run(&JobSystem::new(0));
+    let pool = Workers::start(4);
+    assert_eq!(run(pool.jobs()), serial);
+    assert!(serial.0.len() > 300);
+}
+
+#[test]
+fn additive_clips_hold_no_change_at_their_first_frame() {
+    let skeleton = skeleton();
+    let clips = clips(&skeleton);
+    let source = &clips[GRID30 as usize];
+    let additive = source.additive().unwrap();
+    assert_eq!(additive.frames(), source.frames());
+    let lanes = skeleton.lanes() as usize;
+    let mut pose = vec![0.0; POSE_FIELDS * lanes];
+    additive.sample(0.0, &mut pose);
+    let channels = additive.channels();
+    for j in 0..three::PARENTS.len() {
+        let at = |f: usize| pose[f * lanes + j];
+        if channels[j] > 0.0 {
+            assert!((0..3).all(|f| at(f).abs() < 1e-6), "joint {j}: translation");
+        }
+        if channels[lanes + j] > 0.0 {
+            assert!((at(6).abs() - 1.0).abs() < 1e-4, "joint {j}: rotation");
+        }
+        if channels[2 * lanes + j] > 0.0 {
+            assert!((7..10).all(|f| at(f).abs() < 1e-6), "joint {j}: scale");
+        }
+    }
 }

@@ -20,7 +20,8 @@
 use std::simd::prelude::*;
 
 use super::pose::normalized;
-use super::{POSE_FIELDS, Pose, field};
+use super::resample::QUANTIZED_ONE;
+use super::{AnimationError, POSE_FIELDS, Pose, field, filled};
 
 /// Values per rotation group per frame: four components of four lanes.
 pub(crate) const ROTATION_KEY: usize = 16;
@@ -200,6 +201,86 @@ impl Clip {
         sample_vectors(&self.scales, frame, fraction, field::SCALE, pose, lanes);
     }
 
+    /// The clip as differences from its first frame, for additive blending: each rotation key is
+    /// the first frame's rotation, inverted, times the key, and each translation or scale key is
+    /// the key minus the first frame's value. three.js's `AnimationUtils.makeClipAdditive` builds
+    /// the same keys with its default reference frame. A joint that no track moves holds no
+    /// change. Load code runs this once per clip; it allocates.
+    pub fn additive(&self) -> Result<Clip, AnimationError> {
+        let lanes = self.base.lanes() as usize;
+        let mut reference = filled(self.pose_len(), 0.0f32)?;
+        self.sample(0.0, &mut reference);
+        let rotation_of = |joint: usize| -> [f64; 4] {
+            std::array::from_fn(|c| f64::from(reference[(field::ROTATION + c) * lanes + joint]))
+        };
+        let mut base = self.base.clone();
+        {
+            let values = base.values_mut();
+            for joint in 0..lanes {
+                let at = |f: usize| f * lanes + joint;
+                for f in (field::TRANSLATION..field::ROTATION).chain(field::SCALE..POSE_FIELDS) {
+                    values[at(f)] -= reference[at(f)];
+                }
+                let q: [f64; 4] =
+                    std::array::from_fn(|c| f64::from(values[at(field::ROTATION + c)]));
+                let delta = relative(rotation_of(joint), q);
+                for (c, v) in delta.iter().enumerate() {
+                    values[at(field::ROTATION + c)] = *v as f32;
+                }
+            }
+        }
+        let mut rotations = self.rotations.clone();
+        let groups = rotations.joints.len();
+        for (k, key) in rotations
+            .keys
+            .as_chunks_mut::<ROTATION_KEY>()
+            .0
+            .iter_mut()
+            .enumerate()
+        {
+            let joints = rotations.joints[k % groups];
+            for (lane, &joint) in joints.iter().enumerate() {
+                let q: [f64; 4] =
+                    std::array::from_fn(|c| f64::from(key[4 * c + lane]) / QUANTIZED_ONE);
+                // The keys of a track stay in one hemisphere after the product, which keeps the
+                // angle between any two quaternions.
+                let delta = relative(rotation_of(joint as usize), q);
+                for (c, v) in delta.iter().enumerate() {
+                    key[4 * c + lane] = (v * QUANTIZED_ONE)
+                        .round()
+                        .clamp(-QUANTIZED_ONE, QUANTIZED_ONE)
+                        as i16;
+                }
+            }
+        }
+        let subtract = |groups: &Groups<f32>, first_field: usize| {
+            let mut out = groups.clone();
+            let count = out.joints.len();
+            for (k, key) in out
+                .keys
+                .as_chunks_mut::<VECTOR_KEY>()
+                .0
+                .iter_mut()
+                .enumerate()
+            {
+                for (lane, &joint) in out.joints[k % count].iter().enumerate() {
+                    for c in 0..3 {
+                        key[4 * c + lane] -= reference[(first_field + c) * lanes + joint as usize];
+                    }
+                }
+            }
+            out
+        };
+        Ok(Clip {
+            base,
+            channels: self.channels.clone(),
+            rotations,
+            translations: subtract(&self.translations, field::TRANSLATION),
+            scales: subtract(&self.scales, field::SCALE),
+            ..*self
+        })
+    }
+
     /// The length of a pose by field of the clip's skeleton.
     pub fn pose_len(&self) -> usize {
         POSE_FIELDS * self.base.lanes() as usize
@@ -300,5 +381,24 @@ fn sample_vectors(
             joints,
             [lerp(0), lerp(1), lerp(2)],
         );
+    }
+}
+
+/// The rotation that turns `reference` into `q`, normalized: the conjugate of `reference` times
+/// `q`. A quaternion of length 0 becomes the identity.
+fn relative(reference: [f64; 4], q: [f64; 4]) -> [f64; 4] {
+    let [ax, ay, az, aw] = [-reference[0], -reference[1], -reference[2], reference[3]];
+    let [bx, by, bz, bw] = q;
+    let out = [
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+        aw * bw - ax * bx - ay * by - az * bz,
+    ];
+    let length = out.iter().map(|v| v * v).sum::<f64>().sqrt();
+    if length > 0.0 {
+        out.map(|v| v / length)
+    } else {
+        [0.0, 0.0, 0.0, 1.0]
     }
 }

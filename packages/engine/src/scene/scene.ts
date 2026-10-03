@@ -25,6 +25,7 @@ import type { EulerOrder, Mat4Like, QuatLike, Vec3Like } from '../math/types';
 import { transformQuat } from '../math/vec3';
 import { rowLimitWarning } from '../page/limits';
 import type { CoreGlue } from '../shared/core';
+import type { Animator, SceneAnimations } from './animation';
 import { type ColorInput, linearColor } from './color';
 import { type FogOptions, setSceneFog } from './fog';
 import {
@@ -463,9 +464,11 @@ export class Object3D implements Described {
 	 * reaches the object that takes its slot, in any build, and costs nothing more.
 	 */
 	row: number;
+	/** @internal The object's animator, when a model with animations created the object. */
+	animation: Animator | undefined;
 
 	constructor(
-		/** @internal */ protected readonly scene: Scene,
+		/** @internal */ readonly scene: Scene,
 		/** @internal */ readonly handle: number,
 		/** The name from the create options, or an empty string. */
 		readonly name: string,
@@ -721,12 +724,27 @@ export class Object3D implements Described {
 		this.scene.command(C.COMMAND_SET_DYNAMIC, this.handle, dynamic ? 1 : 0, 0, 'setDynamic');
 	}
 
+	/**
+	 * The object's animator, which plays the clips of the model that created the object. An object
+	 * without animation clips has none, and the call throws.
+	 */
+	animator(): Animator {
+		if (DEV) checkLive('animator', this);
+		if (this.animation === undefined)
+			throw new EngineError(
+				'E1218',
+				`animator() was called on ${this.describe()}, which has no animation clips.`,
+			);
+		return this.animation;
+	}
+
 	/** Removes the object at the next frame. Its children become roots. */
 	destroy(): void {
 		if (DEV) {
 			checkLive('destroy', this);
 			this.scene.unmarkedWrites?.watch(this, false);
 		}
+		this.animation?.release();
 		// The core checks the handle's generation, so a second destroy frees no other object.
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
@@ -1408,6 +1426,8 @@ export class Scene {
 	 * Declared without a value, so release builds hold no trace of it.
 	 */
 	declare readonly unmarkedWrites: UnmarkedWrites | undefined;
+	/** @internal The scene's animated objects, from the first model with animations on. */
+	animations: SceneAnimations | undefined;
 
 	constructor(
 		/** @internal */ readonly core: CoreMemory,

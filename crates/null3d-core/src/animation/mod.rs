@@ -27,17 +27,22 @@
 //! the weighted average. When the weights add up to less than 1, the rest pose makes up the
 //! remainder, as three.js's `AnimationMixer` does.
 
+mod actions;
 mod clip;
 mod pose;
 mod resample;
 mod skeleton;
 mod system;
 
+pub use actions::{Action, event_kind, flag};
 pub use clip::Clip;
 pub use pose::Pose;
 pub use resample::{Channel, DEFAULT_RATE, Interpolation, MAX_FRAMES, SourceTrack, resample};
 pub use skeleton::{MAX_JOINTS, NO_PARENT, REST_FLOATS, Skeleton};
-pub use system::{Animations, INSTANCE_CHUNK, MAX_BLEND, SampleSlots};
+pub use system::{
+    Animations, EVENT_CAPACITY, EVENT_WORDS, INSTANCE_CHUNK, MAX_BLEND, MAX_LAYERS, Play,
+    SampleSlots,
+};
 
 /// Floats per skinning matrix: a row-major 3 × 4 matrix of 48 bytes, as world matrices are.
 pub use crate::world::MATRIX_FLOATS;
@@ -94,6 +99,44 @@ pub enum AnimationError {
         clip_joints: u32,
         /// The skeleton's joint count.
         skeleton_joints: u32,
+    },
+    /// No live animated instance has this id.
+    UnknownInstance {
+        /// The id.
+        instance: u32,
+    },
+    /// No clip has this id, or it belongs to another skeleton.
+    UnknownClip {
+        /// The id.
+        clip: u32,
+    },
+    /// A layer at or past [`MAX_LAYERS`].
+    Layer {
+        /// The layer.
+        layer: u32,
+    },
+    /// A play's option is out of range: 0 for a fade that is negative or not finite, 1 for a
+    /// speed that is not finite.
+    Play {
+        /// Which option.
+        option: u32,
+    },
+    /// A clip event's time is not finite or lies outside the clip, or the times and ids differ
+    /// in number.
+    Events {
+        /// The event.
+        event: u32,
+    },
+    /// A joint mask's weight lies outside 0 to 1, or the mask has a weight count other than the
+    /// skeleton's joint count.
+    Mask {
+        /// The joint, or the weight count.
+        joint: u32,
+    },
+    /// No joint mask of the instance's skeleton has this id.
+    UnknownMask {
+        /// The id.
+        mask: u32,
     },
     /// The engine's memory or a fixed capacity ran out.
     Core(CoreError),
