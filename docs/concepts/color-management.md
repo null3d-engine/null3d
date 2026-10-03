@@ -66,7 +66,9 @@ The final pass reads each pixel of the scene color. In the FXAA anti-aliasing mo
 
 Some devices cannot draw a float target in the anti-aliasing mode. These are WebGPU in compatibility mode with MSAA, and WebGL2 devices whose float targets fail the engine's test. There, each shader applies the exposure and the tone mapping itself, and writes into an 8-bit target. With MSAA that target resolves straight into the canvas, so the frame has no final pass. With FXAA or no anti-aliasing, the final pass reads the target and keeps its colors.
 
-`engine.capabilities.hdr` says which path the engine took. Both paths show the same colors, and differ only at the edges of objects. With MSAA, the 8-bit path averages the samples of an edge after tone mapping, and the HDR path before it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) lists the path of each tier and anti-aliasing mode.
+Effects that need HDR color, such as bloom, move compatibility mode to HDR color with FXAA when a sketch turns them on. On a WebGL2 device with no float target they stay off. [The post-processing chain](post-processing.md#effects-on-devices-without-hdr-color) explains both.
+
+`engine.capabilities.hdr` says which path the engine started on. Both paths show the same colors, and differ only at the edges of objects. With MSAA, the 8-bit path averages the samples of an edge after tone mapping, and the HDR path before it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) lists the path of each tier and anti-aliasing mode.
 
 ## Exposure and tone mapping
 

@@ -604,6 +604,12 @@ pub mod layout {
     /// Group 0 of the light clustering compute pipelines: their parameters' uniform block, the
     /// light list, and the light grid that they write.
     pub const LIGHT_CLUSTERS: u32 = 8;
+    /// Group 0 of a step of bloom's chain: the step's uniform block, the texture it reads and a
+    /// linear sampler.
+    pub const BLOOM: u32 = 9;
+    /// Group 0 of the final pass that adds bloom: [`FINAL`]'s two bindings, then bloom's uniform
+    /// block, the texture of each of bloom's levels and their linear sampler.
+    pub const FINAL_BLOOM: u32 = 10;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -654,9 +660,11 @@ pub mod permutation {
     /// faces keep their depth, as the faces of a double-sided caster must: they hold its own lit
     /// side.
     pub const CASTER_OFFSET: u32 = 16384;
+    /// The final pass adds bloom's levels to the scene color before the output transform.
+    pub const BLOOM: u32 = 32768;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 15] = [
+    pub const NAMES: [(&str, u32); 16] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -672,6 +680,7 @@ pub mod permutation {
         ("PREPASS", PREPASS),
         ("HALF", HALF),
         ("CASTER_OFFSET", CASTER_OFFSET),
+        ("BLOOM", BLOOM),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -938,6 +947,12 @@ pub mod template {
     /// permutation's debug view bits pick, in place of each mesh's material. Only development
     /// builds of the engine have it.
     pub const DEBUG_VIEW: u32 = 12;
+    /// One step of bloom's chain: one triangle over the step's target that reads the step before
+    /// it. Its uniform block makes it the bright pass or one direction of a level's blur.
+    pub const BLOOM: u32 = 13;
+    /// The final pass with bloom: [`FINAL`]'s pass, which adds bloom's levels to the scene color
+    /// before the output transform.
+    pub const FINAL_BLOOM: u32 = 14;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;
     /// Light clustering, first step: counts the lights of each cluster of the light grid.
@@ -1191,6 +1206,8 @@ pub fn typescript_constants() -> String {
                 ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
                 ("DEPTH", layout::DEPTH),
                 ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),
+                ("BLOOM", layout::BLOOM),
+                ("FINAL_BLOOM", layout::FINAL_BLOOM),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1234,6 +1251,8 @@ pub fn typescript_constants() -> String {
                 ("SHADOW_DEPTH", template::SHADOW_DEPTH),
                 ("BACKGROUND", template::BACKGROUND),
                 ("DEBUG_VIEW", template::DEBUG_VIEW),
+                ("BLOOM", template::BLOOM),
+                ("FINAL_BLOOM", template::FINAL_BLOOM),
                 ("CULL", template::CULL),
                 ("LIGHT_COUNT", template::LIGHT_COUNT),
                 ("LIGHT_PLACE", template::LIGHT_PLACE),

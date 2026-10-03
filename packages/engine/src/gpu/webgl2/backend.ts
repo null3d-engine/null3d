@@ -23,6 +23,7 @@ import * as G from '../../generated/gpu';
 import type { DeviceShaders } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
 import { ImageTable } from '../../shared/images';
+import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
 import { forEachFallbackAttribute, forEachVertexAttribute, vertexStride } from '../vertex-format';
 import { type DepthSetup, setDepthMode } from './depth';
@@ -290,6 +291,11 @@ export class WebGL2Backend {
 	 * draws draw nothing.
 	 */
 	private readonly parked = new Map<number, Uint32Array>();
+	/**
+	 * The device shaders that load another module when a pipeline needs builds with other fixed
+	 * bits. Without it, every pipeline's build must be in the shaders that the backend got.
+	 */
+	moreShaders: DeviceShaderSet | undefined;
 	/** True while the current pipeline's program is compiling: draws draw nothing until it is set again. */
 	private skipDraws = false;
 	private readonly anisotropic: EXT_texture_filter_anisotropic | null;
@@ -504,20 +510,25 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * True when a render pipeline template can create programs now: an engine template, or a custom
-	 * material's whose shader arrived, which it defines at its first use.
+	 * True when a render pipeline template can create a program of `permutation` now: an engine
+	 * template whose build for it is loaded, or a custom material's whose shader arrived, which it
+	 * defines at its first use.
 	 */
-	private templateReady(template: number): boolean {
-		if (this.templates[template]) return true;
-		const shader = this.images.shaders.get(template);
-		if (shader) this.templates[template] = { shader: shader.variants, pipeline: 'main' };
-		return shader !== undefined;
+	private templateReady(template: number, permutation: number): boolean {
+		let defined = this.templates[template];
+		if (!defined) {
+			const shader = this.images.shaders.get(template);
+			if (!shader) return false;
+			defined = { shader: shader.variants, pipeline: 'main' };
+			this.templates[template] = defined;
+		}
+		return this.moreShaders?.ready(defined.shader, permutation, 'glsl') ?? true;
 	}
 
 	/** Creates each parked pipeline whose custom material's shader has arrived. */
 	private unpark(): void {
 		for (const [id, operands] of this.parked) {
-			if (!this.templateReady(operands[1] as number)) continue;
+			if (!this.templateReady(operands[1] as number, operands[2] as number)) continue;
 			this.parked.delete(id);
 			this.counts.pipelines--;
 			this.createPipeline(operands, 0, true);
@@ -546,7 +557,7 @@ export class WebGL2Backend {
 	private createPipeline(words: Uint32Array, a: number, background: boolean): void {
 		const template = words[a + 1] as number;
 		const flags = words[a + 6] as number;
-		if (!this.templateReady(template)) {
+		if (!this.templateReady(template, words[a + 2] as number)) {
 			// The command's header, before its operands, gives its length in words.
 			this.parked.set(words[a] as number, words.slice(a, a - 1 + ((words[a - 1] as number) >>> 8)));
 			this.counts.pipelines++;

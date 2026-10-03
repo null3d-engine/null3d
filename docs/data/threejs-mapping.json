@@ -1386,8 +1386,8 @@
       "status": "changed",
       "since": "0.2",
       "target": "post.set({ ... })",
-      "notes": "The chain is built in and merged into few passes. Delete the composer; keep only each pass's settings.",
-      "docs": "porting/threejs-postprocessing",
+      "notes": "The chain is built in and merged into few passes. Delete the composer, RenderPass and OutputPass; keep only each pass's settings.",
+      "docs": "concepts/post-processing",
       "detect": "\\bEffectComposer\\b|\\bRenderPass\\b|\\bOutputPass\\b|from\\s+['\"]postprocessing['\"]|\\bnew\\s+(THREE\\.)?PostProcessing\\s*\\("
     },
     {
@@ -1397,8 +1397,8 @@
       "status": "direct",
       "since": "0.2",
       "target": "post.set({ bloom: { strength, radius, threshold } })",
-      "notes": "Similar response to UnrealBloomPass; tune with parity images.",
-      "docs": "porting/threejs-postprocessing",
+      "notes": "UnrealBloomPass's steps, kernels and weights, so the same strength, radius and threshold give the same glow; drop the resolution argument. For pmndrs BloomEffect and the bloom() node, start from the same numbers and compare images. In WebGPU's compatibility mode with MSAA, bloom moves the engine to HDR color with FXAA.",
+      "docs": "concepts/post-processing",
       "detect": "\\bUnrealBloomPass\\b|\\bBloomEffect\\b|\\bbloom\\s*\\("
     },
     {

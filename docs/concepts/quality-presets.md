@@ -175,6 +175,7 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Spot and point light shadow tiles (`shadowTiles`) | 4 | 8 | 16 | 24 | at the start | built |
 | Shadow tile size in texels (`shadowTileSize`) | 512 | 512 | 1024 | 1024 | at the start | built |
 | Point light shadows (`pointLightShadows`) | no | no | yes | yes | at the start | built |
+| Bloom samples (`bloomSamples`) | 100% of three.js's | 100% of three.js's | 100% of three.js's | 100% of three.js's | during play | built |
 | Frame-budget governor (`governor`) | on | on | on | on | during play | built |
 | Depth prepass (`depthPrepass`) | no | no | no | no | at the start | built |
 | Anisotropic filtering cap (`maxAnisotropy`) | 2x | 4x | 8x | 16x | during play | built |

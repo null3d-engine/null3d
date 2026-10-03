@@ -73,7 +73,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Culling](concepts/culling.md) | Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells, whole cells out of view skipped first, and positions relative to the camera. | experimental | 0.1 |
 | [Levels of detail](concepts/lod.md) | LOD groups; generated LODs; per-instance selection. | planned | 0.2 |
 | [Assets and prefabs](concepts/assets.md) | glTF, KTX2, meshopt; prefabs and instantiate; upload budgets; memory. | planned | 0.2 |
-| [The post-processing chain](concepts/post-processing.md) | HDR target; bloom; ambient occlusion; the single final pass; custom effects. | planned | 0.2 |
+| [The post-processing chain](concepts/post-processing.md) | HDR scene color, bloom at half size and below, and one final pass for exposure, tone mapping, FXAA and dithering. | experimental | 0.2 |
 
 ### API reference
 
@@ -93,7 +93,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Raycasting and spatial queries](api/raycast.md) | raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects. | planned | 0.2 |
 | [Input](api/input.md) | Pointer, keyboard, touch and gamepad; action maps. | experimental | 0.1 |
 | [Camera controls (@null3d/controls)](api/controls.md) | Orbit and map controls (0.1); fly and first-person controls (0.2). | experimental | 0.1 |
-| [Post-processing API](api/post.md) | post.set for tone mapping and exposure; the effects and post.addEffect of 0.2. | experimental | 0.1 |
+| [Post-processing API](api/post.md) | post.set for tone mapping, exposure and bloom; the other effects and post.addEffect of 0.2. | experimental | 0.1 |
 | [Render graph API](api/render.md) | render.addPass declarations; enabling and disabling passes; dumpGraph. | planned | 0.2 |
 | [Quality API](api/quality.md) | quality.preset, quality.set, quality.setPreset, the preset check, frame budgets, quality events. | experimental | 0.1 |
 | [Debug drawing and stats](api/debug.md) | debug.line, box, sphere, arrow, axes, grid, frustum and light; debug.stats and frameStats; engine.measure and its figures; debug.view and debug.shadowCamera. | experimental | 0.1 |

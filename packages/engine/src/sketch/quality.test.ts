@@ -232,6 +232,7 @@ describe('SketchQuality.lower', () => {
 			maxRenderScale: low.maxRenderScale,
 			shadowFilter: low.shadowFilter,
 			farCascadeInterval: low.farCascadeInterval,
+			bloomSamples: low.bloomSamples,
 			governor: true,
 			maxAnisotropy: 16,
 			uploadBytesPerFrame: MEDIUM.uploadBytesPerFrame,
@@ -259,8 +260,8 @@ describe('SketchQuality.setPreset', () => {
 		expect(quality.settings).toEqual(fromMedium('low'));
 		expect(Object.keys(quality.settings)).toEqual([...SKETCH_SETTINGS]);
 		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
-		// Every preset has the same highest render scale and governor.
-		const same = ['maxRenderScale', 'governor'];
+		// Every preset has the same highest render scale, bloom samples and governor.
+		const same = ['maxRenderScale', 'bloomSamples', 'governor'];
 		expect(changes.at(-1)).toEqual(LIVE_SETTINGS.filter((name) => !same.includes(name)));
 		expect(settled.count).toBe(1);
 		// The next frame holds for its pipelines, and its handlers hear of a new preset.

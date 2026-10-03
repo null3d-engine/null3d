@@ -241,7 +241,8 @@ export interface EngineCapabilities {
 	 * canvas. False on the 8-bit path, where each shader tone maps its own output: in WebGPU's
 	 * compatibility mode with MSAA, and on WebGL2 devices whose float targets fail the engine's
 	 * test. Both paths show the same colors. Edges differ a little with MSAA, because the 8-bit path
-	 * averages the samples after the tone mapping.
+	 * averages the samples after the tone mapping. It reports the path that the engine started on:
+	 * in compatibility mode, bloom moves the engine to HDR color with FXAA when a sketch turns it on.
 	 */
 	hdr: boolean;
 	/**

@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `animation`, `startup`, `tab-memory`, `soak` and `warm-up-time`. `bun run devices` runs the checks on the phone and on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `bloom`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `animation`, `startup`, `tab-memory`, `soak` and `warm-up-time`. `bun run devices` runs the checks on the phone and on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-grey when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -62,7 +62,7 @@ The runner watches each browser's results while a run goes on. Two guards keep a
 ### A display whose refresh rate changes
 
 - Frame rates mean little without the display's refresh rate. On 3 October 2026, the iPad reported refresh rates from 35 to 65 Hz between runs. A drop from 49 to 35 frames per second looked like a regression in the code. It followed the display's rate instead.
-- So in the plans that time pages, the runner page measures the refresh rate before each page. These plans are `bench`, `startup`, `governor`, `skinning`, `overload` and `soak`, and the scale search. The list is `TIMED_PLANS` in `tests/real-browsers.ts`.
+- So in the plans that time pages, the runner page measures the refresh rate before each page. These plans are `bench`, `startup`, `governor`, `skinning`, `bloom`, `overload` and `soak`, and the scale search. The list is `TIMED_PLANS` in `tests/real-browsers.ts`.
 - The runner page measures with no test page loaded, from the middle interval of 60 animation frames. It adds the rate to the page's result as `runnerRefreshHz`. Each runner page also measures it once at its start, in `device.json`.
 - After the run, the runner marks a browser's timing figures as unreliable when a reading is below 55 Hz. It marks them too when the readings differ by more than a tenth of the highest one. The device checklist asks for 60 Hz.
 - The limits are `EXPECTED_REFRESH_HZ`, `LOWEST_REFRESH_HZ` and `REFRESH_SPREAD` in `tests/real-browsers.ts`. A display that holds 120 Hz all through the run passes, as on a Mac with a 120 Hz screen.
@@ -174,6 +174,13 @@ To collect the numbers, rest each device first and close its other tabs:
 - The plan runs each crowd of 50, 100, 200 and 500 characters with 1, 2, 3 and 4 cascades: 16 pages. The run's summary gives each page's characters per pass, each path's figures, and the share of the frame time that transform feedback saves.
 - Run it on the phone and the iPad from a checkout of the branch that holds the page: `bun tests/real-browsers.ts --plan skinning --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool.
 - The page takes `?characters=`, `?cascades=`, `?rounds=` and `?warmup=` (milliseconds), to time one load by hand.
+
+## The bloom plan
+
+- The `bloom` plan measures what bloom costs, for [D-21](decisions/D-21-effect-chain.md). Its page (`tests/pages/bloom-cost.html`) draws bloom's scene over the whole window, at a fixed render scale with the governor off.
+- After 2 seconds of play, the page measures 2 seconds with bloom off and 2 with it on, three times each. Heat then slows both sides alike. The page reports the medians of each side's frame interval and CPU time. Where the browser has a GPU timer, it reports the GPU time per frame too.
+- The plan runs the page on each GPU path at render scales of 1 and 0.5: 4 pages. The difference between the sides is bloom's cost at that scale.
+- Run it on the iPad and the phone: `bun tests/real-browsers.ts --plan bloom --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool. On a device that draws faster than its display, the GPU time tells the cost. The frame interval only shows whether the frames kept the display's rate.
 
 ## The animation plan
 
