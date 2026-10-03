@@ -1,7 +1,9 @@
 // Compiles shaders in this browser. Each GLSL program must compile and link in WebGL2, and every
-// uniform block and texture that its reflection names must exist in the linked program. Each WGSL
-// module must compile in WebGPU when the browser has it. Failures carry the browser's info logs.
-import type { GlslProgram } from '@null3d/engine/internal';
+// uniform block and texture that its reflection names must be declared in its source. A driver may
+// remove a declared one that the program never reads, as GLSL allows: the engine then binds nothing
+// to it, and the page lists it as removed. Each WGSL module must compile in WebGPU when the browser
+// has it. Failures carry the browser's info logs.
+import { declaresUniform, type GlslProgram } from '@null3d/engine/internal';
 import { progress } from './result';
 
 /** A shader that the browser rejected, with the stage and the browser's log. */
@@ -9,6 +11,13 @@ export interface ShaderFailure {
 	shader: string;
 	stage: string;
 	log: string;
+}
+
+/** A uniform block or texture that the driver removed from a linked program. */
+export interface RemovedUniform {
+	shader: string;
+	stage: string;
+	name: string;
 }
 
 /** A program whose compile and link the driver may still run. */
@@ -63,11 +72,15 @@ async function finished(
 	}
 }
 
-/** Records a finished program's failures: its compiles, its link, and each name its reflection lists. */
+/**
+ * Records a finished program's failures: its compiles, its link, and each name its reflection lists
+ * that its source does not declare. Declared names that the linked program lacks go to `removed`.
+ */
 function checkProgram(
 	gl: WebGL2RenderingContext,
 	{ name, program, vertex, fragment, linked }: PendingProgram,
 	failures: ShaderFailure[],
+	removed: RemovedUniform[],
 ): void {
 	let compiled = true;
 	for (const [stage, shader] of [
@@ -87,16 +100,17 @@ function checkProgram(
 		['vertex', program.vertex],
 		['fragment', program.fragment],
 	] as const) {
-		for (const block of reflection.uniformBlocks) {
-			if (gl.getUniformBlockIndex(linked, block.name) === gl.INVALID_INDEX) {
-				failures.push({ shader: name, stage, log: `no uniform block ${block.name}` });
-			}
-		}
-		for (const texture of reflection.textures) {
-			if (gl.getUniformLocation(linked, texture.name) === null) {
-				failures.push({ shader: name, stage, log: `no texture uniform ${texture.name}` });
-			}
-		}
+		const missing = (kind: string, uniform: string) => {
+			if (declaresUniform(reflection.source, uniform))
+				removed.push({ shader: name, stage, name: uniform });
+			else failures.push({ shader: name, stage, log: `the source declares no ${kind} ${uniform}` });
+		};
+		for (const block of reflection.uniformBlocks)
+			if (gl.getUniformBlockIndex(linked, block.name) === gl.INVALID_INDEX)
+				missing('uniform block', block.name);
+		for (const texture of reflection.textures)
+			if (gl.getUniformLocation(linked, texture.name) === null)
+				missing('texture uniform', texture.name);
 	}
 }
 
@@ -118,6 +132,7 @@ export async function checkGlslPrograms(
 	const parallel = gl.getExtension('KHR_parallel_shader_compile');
 	const skipped: string[] = [];
 	const pending: PendingProgram[] = [];
+	const removed: RemovedUniform[] = [];
 	for (const [name, program] of programs) {
 		if (!multiDraw && program.vertex.source.includes('GL_ANGLE_multi_draw')) {
 			skipped.push(`${name}: no WEBGL_multi_draw`);
@@ -128,7 +143,7 @@ export async function checkGlslPrograms(
 	progress(`GLSL: ${pending.length} programs started`);
 	if (parallel) await finished(gl, parallel, pending);
 	for (const p of pending) {
-		checkProgram(gl, p, failures);
+		checkProgram(gl, p, failures, removed);
 		gl.deleteProgram(p.linked);
 		gl.deleteShader(p.vertex);
 		gl.deleteShader(p.fragment);
@@ -137,7 +152,14 @@ export async function checkGlslPrograms(
 	// Read only by the test harness, to refuse a software GPU in real-GPU runs.
 	const info = gl.getExtension('WEBGL_debug_renderer_info');
 	const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
-	return { programs: pending.length, multiDraw, parallel: parallel !== null, skipped, renderer };
+	return {
+		programs: pending.length,
+		multiDraw,
+		parallel: parallel !== null,
+		skipped,
+		removed,
+		renderer,
+	};
 }
 
 /** True for a WGSL module that does math in 16-bit floats, which needs `shader-f16`. */

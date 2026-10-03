@@ -103,6 +103,7 @@ import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts';
 import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
+import { type MipLevelsResult, mipLevelsNote, mipLevelsProblems } from './mip-levels-checks.ts';
 import {
 	HEAVY_SPHERES,
 	heavyCheckProblems,
@@ -160,6 +161,8 @@ export type Check =
 	| { kind: 'memory'; maximumMiB: number }
 	| { kind: 'room'; maximumMiB: number }
 	| { kind: 'uploads'; tier: Tier }
+	/** The mip levels page: each way of making mip levels on WebGL2, read back level by level. */
+	| { kind: 'mip-levels' }
 	| { kind: 'quality' }
 	/** The quality page with a scene too heavy for the GPU: the preset check lowers the preset. */
 	| { kind: 'preset-check' }
@@ -377,6 +380,7 @@ export function checksPlan(): PlanItem<Check>[] {
 			),
 		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
+		pageItem('mip-levels', 'mip-levels', { kind: 'mip-levels' }),
 		// The device's own check each run, never one that an earlier run stored.
 		pageItem('quality', 'quality', { kind: 'quality' }, { switches: ['check=fresh'] }),
 		...TIERS.map((tier) =>
@@ -496,6 +500,7 @@ const SMOKE_KINDS: ReadonlySet<Check['kind']> = new Set([
 	'shaders',
 	'shader-library',
 	'uploads',
+	'mip-levels',
 	'preset-change',
 	'stats',
 ]);
@@ -1106,7 +1111,7 @@ export { type MissingAllowed, NONE_MISSING };
 export function neededPath(check: Check): Tier | undefined {
 	if (check.kind === 'image') return gpuApiOf(check.run.tier);
 	if ('tier' in check) return check.tier;
-	return check.kind === 'shaders' ? 'webgl2' : undefined;
+	return check.kind === 'shaders' || check.kind === 'mip-levels' ? 'webgl2' : undefined;
 }
 
 /**
@@ -1373,6 +1378,11 @@ export function judge(
 		case 'shaders': {
 			const failures = (result.failures ?? []) as { shader: string; stage: string; log: string }[];
 			const problems = failures.map((f) => `${f.shader} ${f.stage}: ${f.log.split('\n')[0]}`);
+			const removed = (result.removed ?? []) as { name: string }[];
+			if (removed.length > 0)
+				context?.note?.(
+					`the GPU's driver removed ${removed.length} shader inputs that their programs never read: ${[...new Set(removed.map(({ name }) => name))].join(', ')}`,
+				);
 			if (!(Number(result.glslPrograms) > 0)) problems.push('no GLSL program was compiled');
 			if (!result.webgpu && !missing.webgpu) problems.push('no WebGPU to compile the WGSL');
 			return problems;
@@ -1410,6 +1420,11 @@ export function judge(
 				: ['the engine started without shared memory, so the load tested no maximum'];
 		case 'room':
 			return typeof result.room === 'number' ? [] : ['the page did not count its room'];
+		case 'mip-levels': {
+			const mips = result as unknown as MipLevelsResult;
+			context?.note?.(mipLevelsNote(mips));
+			return mipLevelsProblems(mips);
+		}
 		case 'uploads': {
 			const sizes = (result.sizes ?? []) as number[];
 			const frames = (result.frames ?? []) as { wrong: number[]; errors?: string[] }[];

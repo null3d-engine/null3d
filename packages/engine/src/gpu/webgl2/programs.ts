@@ -195,9 +195,21 @@ export function createProgram(
 }
 
 /**
+ * Whether a GLSL stage declares a uniform or a uniform block of this name. A driver may remove a
+ * declared uniform that the program never reads, as GLSL allows, so a linked program can lack a
+ * name that its source declares.
+ */
+export function declaresUniform(source: string, name: string): boolean {
+	return new RegExp(`^\\s*(?:layout\\([^)]*\\)\\s*)?uniform\\b[^;{]*\\b${name}\\b`, 'm').test(
+		source,
+	);
+}
+
+/**
  * Checks the program's link result, binds its uniform blocks and textures to the slots of their
  * WGSL groups and bindings, and sets its vertex shader's depth mapping for the backend's depth mode,
- * once, at its first use. The program is in use afterwards.
+ * once, at its first use. A block or texture that the driver removed, because the program never
+ * reads it, needs no binding and is skipped. The program is in use afterwards.
  */
 export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: DepthSetup): void {
 	if (!gl.getProgramParameter(p.program, gl.LINK_STATUS)) {
