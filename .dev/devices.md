@@ -28,7 +28,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 - After a pull that changes `packages/vite-plugin` or the Vite config, run `bun run build`, then restart the dev server before a run. Restart it before the browser tests too, because they use a dev server that already answers on their port. The build also brings the engine core that the server serves up to date. On 1 October 2026, a stale server rejected new custom material sketches with "the WGSL has no entry point".
 - Do not add or move files in the tree that the dev server watches during a run. A new HTML file anywhere in it reloads every open page, and a page reloaded while it measures reports 0 frames.
 - The `smoke` plan is about a tenth of the checks plan, for a device in a cloud session of limited time. It keeps the capability, isolation, shader, upload, preset, warm-up and stats pages, the restarts of each build, and the main features' image tests. Each image test runs on every GPU tier in its first thread mode, so new tiers and modes join by the same rules.
-- The runner page detects the browser it runs in, from Brave's object on `navigator`, the client hints and the user agent. It records the browser, the GPU and the page's address in `device.json`. The summary names each runner's browser. When a runner's name names one browser and its page runs in another, the runner warns. A name like `tb-android` names no browser, so it suits a device whose browser is chosen in the session.
+- The runner page detects the browser it runs in, from Brave's object on `navigator`, the client hints and the user agent. It records the browser, the GPU and the page's address in `device.json`. The summary names each runner's browser. When a runner's name names one browser and its page runs in another, the runner warns. A name that names no browser, such as `bspixel10`, suits a device whose browser is chosen in the session.
 - After a fixed plan, the runner prints a row for each browser for [the record of tested devices](tested-devices.md).
 - Close the browser tabs that testing opens as soon as each test ends. Old tabs keep pages running, which costs heat and skews later runs.
 
@@ -267,21 +267,132 @@ The team has no iPhone, so the iPad stands in for Apple's phones. It proves some
 
 So the iPad shows that the engine works on an iPhone. It does not show that the engine is fast enough there, or that it stays within the iPhone's memory. That needs an iPhone in the device runs, with a runner page of its own, such as `--lan iphone-safari`.
 
-## TestingBot's device cloud
+## BrowserStack Live
 
-TestingBot lends real phones and tablets for live sessions. A device opens the runner page over TestingBot's tunnel to the Mac.
+[BrowserStack Live](https://www.browserstack.com/live) lends real phones, tablets and desktop browsers for live sessions. Each device opens the runner page over BrowserStack's tunnel to the Mac. The person picks the browser for each session.
 
-- Run the tunnel with TestingBot's own SSL handling on (no `--nobump`) and with `--nocache`. Give Java a truststore that holds the JDK's certificates and the root of our dev certificate: `java -Djavax.net.ssl.trustStore=<truststore.jks> -Djavax.net.ssl.trustStorePassword=<password> -jar testingbot-tunnel.jar --nocache`. The credentials are in `~/.testingbot`.
-- The tunnel forwards only some ports, such as 80, 443, 3000, 3001 and 8080. So serve HTTPS on port 3001, from a checkout of its own: `NULL3D_PORT=3000 NULL3D_HTTPS=1 bun run dev`. Its certificate must name `local.testingbot.com`: `CAROOT=target/dev-ca mkcert -cert-file target/dev-cert/cert.pem -key-file target/dev-cert/key.pem local.testingbot.com`.
-- iOS cannot use `localhost`, so each device opens `https://local.testingbot.com:3001/tests/pages/runner.html?listen&runner=<name>`. Pass the same name to `--lan`.
-- Start a new live session after any restart of the tunnel. A model stays reserved for a while after a session ends.
-- A device opens its default browser, and another can be opened later. A name that names no browser, such as `tb-android`, works with any of them, and the summary says which browser ran.
-- Run `--plan smoke` first, because a session has limited time: `bun tests/real-browsers.ts --plan smoke --allow-no-webgpu --lan tb-android`.
-- Pass `--allow-no-webgpu` for any Android device. Some offer WebGPU's compatibility mode only, and the runner then skips their core WebGPU pages, as [GPU paths that a device lacks](#gpu-paths-that-a-device-lacks) explains.
+- TestingBot was tried first, on 3 October 2026. Its device screens often did not load and its sessions dropped during runs, so the team moved to BrowserStack. TestingBot's rows stay in [the record of tested devices](tested-devices.md).
+- BrowserStack is not a lasting subscription. There are no nightly runs, no runs on each merge and no BrowserStack Automate. Each tier below is a manual sitting.
+- The tiers name device models, systems and GPUs. If BrowserStack lapses, another cloud, a borrowed device or a new team device of the same kind stands in.
+- The owner's S24+, iPad and Mac stay the timing devices. Cloud devices check that the engine works. Their timings are only a rough guide, because nobody controls their heat or display settings.
 
-Test the devices in this order:
+### Set up a session
 
-1. Current devices that should run well, because faults there block the most users. iOS 26 Safari, which has WebGPU: iPhone 16, iPhone Air, iPhone 16 Pro, iPhone 17 Pro and iPhone 17 Pro Max. Then the iPad 9th generation, for low memory. Android with WebGPU: Pixel 8, 9, 10 and 11, Galaxy S25, S26 and S24, and Galaxy Tab S11. Then mid-range phones, where memory and speed are tight: Redmi Note 13 and Galaxy A55.
-2. The WebGL2 fallback, on devices whose browsers have no WebGPU. These are the iPhone 13, 14, 15 and SE 2022 on iOS 17 and 18, and the Galaxy S21 and S23.
-3. Old devices, where the engine cannot run and must say so clearly. On iOS 14 and 15, these are the iPhone 12 or XR and the iPad 8th generation. On Android, they are versions 7 to 9 and the Galaxy A12.
-4. Then the other browsers on the same devices: Samsung Internet, Firefox and Opera.
+1. Download BrowserStackLocal for macOS from BrowserStack. Check its signature with `codesign -dv --verbose=2 BrowserStackLocal`. It must print `Authority=Developer ID Application: Browserstack Inc (YQ5FZQ855D)`.
+2. Keep the access key in `~/.browserstack`, with `chmod 600`. Never paste the key into a chat, a log or a commit. Start the tunnel with `./BrowserStackLocal --key "$(cat ~/.browserstack)"`.
+3. Serve HTTPS from a checkout of main: `NULL3D_PORT=3000 NULL3D_HTTPS=1 bun run dev`. HTTPS then answers on port 3001.
+4. The certificate must name `bs-local.com`: `CAROOT=target/dev-ca mkcert -cert-file target/dev-cert/cert.pem -key-file target/dev-cert/key.pem bs-local.com localhost`.
+5. In BrowserStack Live, pick the device and the browser. Turn on Self-Signed Certificate in the session's toolbar, so the device accepts the certificate. It does not work together with network throttling, so leave throttling off.
+6. On the device, open `https://bs-local.com:3001/tests/pages/runner.html?listen&runner=<name>`. Type `bs-local.com` on every device. BrowserStack changes `localhost` to `bs-local.com` by itself in most browsers, but not in Chrome on iOS.
+7. Start the run on the Mac with the same port and name: `NULL3D_PORT=3000 bun tests/real-browsers.ts --plan smoke --lan bsgalaxys25-samsung`.
+8. End the session when the run ends, so the device does not keep pages running.
+
+- Name each runner `bs<device>-<browser>`, such as `bsiphone17-safari`, `bsgalaxys25-samsung` or `bswin11-edge`. Write the device as one word. A device word that is also a browser word, as in `bs-moto-edge-50-chrome`, makes the runner expect Edge.
+- The browser words are `safari`, `chrome`, `samsung`, `edge`, `firefox` and `opera`. The runner warns when the page runs in another browser than its name says.
+- Pass `--allow-no-webgpu` only where the tier's table expects no core WebGPU. On a device that should have it, a lost path must fail the run, as [GPU paths that a device lacks](#gpu-paths-that-a-device-lacks) explains.
+- A session that drops leaves its results in place. Open a new session with the same runner name. The runner page starts at the first page without a result.
+- After each run, paste the runner's row into [the record of tested devices](tested-devices.md). Add BrowserStack's device name to the device cell. Fill the GPU cell from the tables below where the browser hides the GPU.
+- The runner marks a GPU name such as SwiftShader or Microsoft Basic Render Driver as a software renderer. That machine has no GPU, so its run tests the clear failure, not the GPU paths.
+
+### What BrowserStack offers
+
+These facts come from BrowserStack's [list of browsers and platforms](https://www.browserstack.com/list-of-browsers-and-platforms/live) and its [answer on mobile browsers](https://www.browserstack.com/support/faq/mobile/devices-amp-browsers/can-i-test-different-browsers-on-mobile-devices), read on 3 October 2026.
+
+- Android devices offer Chrome, Edge and Firefox. Samsung devices also offer Samsung Internet. Opera is not offered on phones, so Opera runs on the desktops only.
+- iPhones and iPads offer Safari and Chrome. Every browser on iOS draws with WebKit, so Chrome there is only a check of the runner page.
+- The phones run Android 10 to 17 and iOS 13 to 27. The newest are the Pixel 11 on Android 17, and the iPhone 18 Pro on iOS 27.
+- The iPads include M-series models on iPadOS 26 and 27. The newest are the iPad Pro 13 2025 and the iPad Pro 11 2025, both with the M5.
+- The desktops run Windows XP to 11 and macOS from Snow Leopard to Golden Gate. Windows and macOS offer Chrome, Edge, Firefox and Opera, in versions back to the 2010s. Safari comes with each macOS: 27 on Golden Gate, 26.4 on Tahoe and 18.4 on Sequoia.
+- BrowserStack does not publish the desktops' GPUs. In 2022, its Windows machines gave browsers no WebGL. Since Chrome 137, Chrome and Edge give no WebGL at all on a machine without a GPU, so the engine must stop with E1301 there. The first Windows run in tier A shows which case holds.
+
+### What each GPU path needs
+
+The tables say which GPU paths each device should offer. These rules come from [GPU tiers and backends](../docs/concepts/backends.md#the-three-tiers) and the browsers' notes.
+
+- Core WebGPU: Chrome, Edge and Samsung Internet on Android 12 and later with Qualcomm Adreno or ARM Mali GPUs. Chrome also allows the Pixel 10's PowerVR GPU, with [known driver faults](https://github.com/playcanvas/engine/issues/8874). Safari 26 and later on iOS, iPadOS and macOS. Chrome and Edge on Windows and macOS with a GPU. Firefox on Windows, and on Apple silicon Macs.
+- Compatibility mode only: Chrome on older GPUs whose adapter lacks core WebGPU's features, such as the Adreno 610.
+- WebGL2 only: Android 10 and 11, Samsung's Xclipse GPUs, older PowerVR GPUs and Firefox on Android. Also iOS 17 and 18, and Safari 16.4 to 18 on macOS.
+- A clear failure: Safari before 16.4, Chrome before 91 and Firefox before 89 lack WebAssembly SIMD, so the engine stops with E1303. A browser without any GPU path stops with E1301.
+
+### Time per device
+
+- On 3 October 2026, the smoke plan's 50 pages took 5 minutes on BrowserStack's iPad Pro 13 2025 in Safari. All 50 passed.
+- Plan 10 to 15 minutes for the smoke plan on a phone with WebGPU. Slower phones and heat stretch the time.
+- Where only WebGL2 runs, the runner skips about 30 of the 50 pages. Plan 6 to 8 minutes.
+- A desktop takes about 8 to 10 minutes. A clear-failure check takes about 5 minutes.
+- Add about 3 minutes per session to start it, turn on the certificate setting and open the runner page. Another browser on the same device needs a new session too.
+
+### Tier A: each milestone's gate and each release
+
+Tier A covers the devices with the most users, and the newest GPUs, systems and browsers. It takes about 2 hours 40 minutes.
+
+| Device | System | Browser | GPU | Expected paths | Why | Minutes |
+| --- | --- | --- | --- | --- | --- | --- |
+| iPhone 17 | iOS 26 | Safari | Apple A19 | WebGPU, compatibility mode, WebGL2 | The most common new iPhone | 15 |
+| iPhone 18 Pro | iOS 27 | Safari | Apple | WebGPU, compatibility mode, WebGL2 | The newest iPhone and the newest Safari | 15 |
+| iPad Pro 13 2025 | iPadOS 26 | Safari | Apple M5 | WebGPU, compatibility mode, WebGL2 | The newest iPad | 8 |
+| iPhone 16 | iOS 18 | Safari | Apple A18 | WebGL2 | The WebGL2 path on iPhones before iOS 26 | 10 |
+| Galaxy S25 | Android 15 | Chrome | Adreno 830 | WebGPU, compatibility mode, WebGL2 | Qualcomm's current GPU line | 15 |
+| Galaxy S25 | Android 15 | Samsung Internet | Adreno 830 | WebGPU, compatibility mode, WebGL2 | The default browser on Galaxy phones | 12 |
+| Pixel 10 | Android 16 | Chrome | PowerVR DXT-48-1536 | WebGPU, compatibility mode, WebGL2 | PowerVR's new driver line, with known WebGPU faults | 15 |
+| Pixel 9 | Android 17 | Chrome | Mali-G715 | WebGPU, compatibility mode, WebGL2 | ARM's Mali line on the newest Android | 15 |
+| Redmi Note 12 4G | Android 13 | Chrome | Adreno 610 | Compatibility mode, WebGL2 | A mid-range phone with compatibility mode only | 12 |
+| Windows 11 | Windows 11 | Chrome, newest | Not published | WebGPU and WebGL2 with a GPU; E1301 without one | The most common desktop | 12 |
+
+- The Redmi Note 12 4G has the same chip and GPU as the Redmi Note 13 that TestingBot lent. Pass `--allow-no-webgpu` there and on the iPhone 16.
+- If the Windows row shows a software renderer or no WebGL2, the cloud cannot test Intel, AMD or NVIDIA GPUs. Record that, and keep the run as the check of E1301 in Chrome.
+
+### Tier B: each milestone
+
+Tier B covers low memory, the other browser engines, more GPU lines and desktop Safari without WebGPU. It takes about 3 hours. Split it in two sittings if needed: the Apple devices and desktops, then the Android devices.
+
+| Device | System | Browser | GPU | Expected paths | Why | Minutes |
+| --- | --- | --- | --- | --- | --- | --- |
+| iPad 10th | iPadOS 27 | Safari | Apple A14, 4 GB | WebGPU, compatibility mode, WebGL2 | WebGPU with little memory | 15 |
+| iPhone 13 | iOS 17 | Safari | Apple A15, 4 GB | WebGL2 | iOS 17, with little memory | 10 |
+| iPhone 17 | iOS 26 | Chrome | Apple A19 | WebGPU, compatibility mode, WebGL2 | One iOS browser other than Safari, as a check of WebKit | 12 |
+| Galaxy S24 | Android 16 | Chrome | Xclipse 940 or Adreno 750, by region | WebGL2 on Xclipse | Samsung's AMD-based GPU on the newest Android | 10 |
+| Galaxy S25 | Android 15 | Edge | Adreno 830 | WebGPU, compatibility mode, WebGL2 | Edge on Android | 12 |
+| Galaxy S25 | Android 15 | Firefox | Adreno 830 | WebGL2 | Firefox's own engine, Gecko, which has no WebGPU on Android | 10 |
+| Galaxy A16 5G | Android 15 | Chrome | Mali-G68 MP2 or Mali-G57 MC2, 4 to 8 GB | WebGPU or compatibility mode | A low-end Mali with little memory | 15 |
+| Galaxy Tab S11 | Android 16 | Chrome | Immortalis-G925 | WebGPU, compatibility mode, WebGL2 | An Android tablet with ARM's largest GPU | 15 |
+| Pixel 11 | Android 17 | Chrome | PowerVR CXTP-48-1536 | Not known yet | The newest Pixel GPU, which Chrome's WebGPU list did not name in June 2026 | 15 |
+| Windows 11 | Windows 11 | Edge, newest | Not published | As Chrome in tier A | The default Windows browser | 12 |
+| Windows 11 | Windows 11 | Firefox, newest | Not published | WebGPU and WebGL2 with a GPU | Firefox's own WebGPU code on Windows | 12 |
+| macOS Sequoia | macOS 15 | Safari 18.4 | Not published | WebGL2 | Desktop Safari without WebGPU | 8 |
+
+- The Galaxy S24 ships with Exynos and Xclipse in most regions, and with Snapdragon and Adreno in the US, China and Japan. If its GPU cell names Adreno, run the Galaxy S26 or the Galaxy S22 instead, which split the same way.
+- Pass `--allow-no-webgpu` on the iPhone 13, the Galaxy S24, Firefox, the Galaxy A16 5G, the Pixel 11 and Safari 18.4.
+- On the newest iPads, the owner also wants a short bench run at the Medium and High presets. It shows whether newer iPads hold the presets that the team's iPad cannot hold when warm. Run it after the smoke plan passes, and read its timings as a rough guide.
+
+### Tier C: once
+
+Tier C covers the oldest systems: the WebGL2 path on old drivers, and the clear failure where the engine cannot run. Run it once, and again when the engine's startup checks change. It takes about 1 hour 40 minutes.
+
+| Device | System | Browser | GPU | Expected result | Why | Minutes |
+| --- | --- | --- | --- | --- | --- | --- |
+| iPhone SE 2022 | iOS 15 | Safari | Apple A15 | E1303 | Safari 15 has no WebAssembly SIMD | 5 |
+| iPhone 12 | iOS 14 | Safari | Apple A14 | E1303, or the page cannot run | An old WebKit | 5 |
+| iPad 8th | iPadOS 16 | Safari | Apple A12, 3 GB | WebGL2 from 16.4, E1303 before it | The oldest iPad in the list, with little memory | 8 |
+| Galaxy S20 | Android 10 | Chrome | Mali-G77 or Adreno 650 | WebGL2 | The oldest Android with a current Chrome | 8 |
+| Vivo Y21 | Android 11 | Chrome | PowerVR GE8320, 4 GB | WebGL2 | An old PowerVR driver | 8 |
+| Nexus 5 | Android 5.0 | Chrome | Adreno 330 | A clear failure | The oldest Android in the list | 5 |
+| Windows 11 | Windows 11 | Chrome 90 | Not published | E1303 | Chrome before WebAssembly SIMD | 3 |
+| Windows 11 | Windows 11 | Firefox 88 | Not published | E1303 | Firefox before WebAssembly SIMD | 3 |
+| Windows 11 | Windows 11 | Firefox 140 | Not published | WebGL2, with threads that wake by messages | Firefox before WebGPU and `Atomics.waitAsync` | 10 |
+| macOS Monterey | macOS 12 | Safari 15.6 | Not published | E1303 | Desktop Safari before WebAssembly SIMD | 3 |
+| macOS Ventura | macOS 13 | Safari 16.5 | Not published | WebGL2 | The oldest desktop Safari that runs the engine | 8 |
+
+- Where the engine should draw, run the smoke plan with `--allow-no-webgpu`.
+- Where it should fail, run only the pages that start the engine, with no skip flags: `--plan smoke --only capabilities,restarts-pipelined,restarts-single-threaded`. Each page must fail at once with the error in the table, not wait until its time limit.
+- An old browser may not run the runner page itself. Then open `https://bs-local.com:3001/tests/pages/engine.html` directly. The page prints its result, with the error, on screen. If the screen stays blank, read the console in BrowserStack's developer tools. Record what you saw by hand.
+
+### Other devices
+
+Swap these in when a device of a tier is busy, or to widen the cover from one milestone to the next.
+
+- Apple: iPad Pro 11 2025 (M5), iPad Air 11 2026, iPhone Air and iPhone 17e. Also the iPhone 15 on iOS 27, and Safari 27 on macOS Golden Gate.
+- Adreno: Galaxy S26 Ultra (Adreno 840), Galaxy Z Fold 7 (Adreno 830), Realme P3 (Adreno 810) and OnePlus 13R (Adreno 750). For little memory, the Galaxy Tab A9 Plus (Adreno 619). For compatibility mode, the Oppo A96 (Adreno 610).
+- Mali: Redmi Note 14 Pro 5G and Motorola Edge 60 Fusion (Mali-G615), Pixel 7 (Mali-G710) and Galaxy A35 (Mali-G68).
+- Xclipse: Galaxy S26 (Xclipse 960 outside the US, China and Japan) and Galaxy S22 (Xclipse 920 in Europe).
+- Desktops: Chrome on Windows 10, Opera on Windows 11, and Chrome and Firefox on macOS Tahoe.

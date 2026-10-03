@@ -52,6 +52,8 @@ const BRANDS: readonly (readonly [string, BrowserName])[] = [
 	['Brave', 'Brave'],
 	['Microsoft Edge', 'Edge'],
 	['Opera', 'Opera'],
+	['OperaMobile', 'Opera'],
+	['Opera GX', 'Opera'],
 	['Samsung Internet', 'Samsung Internet'],
 	['Google Chrome', 'Chrome'],
 	['Chromium', 'Chromium'],
@@ -74,10 +76,27 @@ const UA_TOKENS: readonly (readonly [RegExp, BrowserName])[] = [
 ];
 
 /**
+ * Chromium-based browsers whose user agent token names them even where their client hints name
+ * only Chromium, as some versions of Samsung Internet and Opera do.
+ */
+const CHROMIUM_FORKS: ReadonlySet<BrowserName> = new Set(['Edge', 'Opera', 'Samsung Internet']);
+
+/** The browser that the user agent's most specific token names, if any. */
+function userAgentBrowser(
+	userAgent: string,
+): (DetectedBrowser & { name: BrowserName }) | undefined {
+	for (const [pattern, name] of UA_TOKENS) {
+		const match = pattern.exec(userAgent);
+		if (match) return { name, version: match[1] ?? null };
+	}
+	return undefined;
+}
+
+/**
  * The browser a page runs in, from Brave's object on `navigator`, the user agent client hints and
  * the user agent. Client hints give a full version where the user agent freezes it, as Chrome's
- * does. A browser that adds only its name to WebKit's user agent, as Brave on iOS does, gets no
- * version, because the version there is Safari's.
+ * does. Brave gets no version without client hints: on iOS it adds only its name to WebKit's user
+ * agent, so the version there is Safari's.
  */
 export function detectBrowser({
 	userAgent = '',
@@ -87,17 +106,14 @@ export function detectBrowser({
 	const hints = userAgentData?.fullVersionList ?? userAgentData?.brands ?? [];
 	for (const [brand, name] of BRANDS) {
 		const hint = hints.find((h) => h.brand === brand);
-		if (hint && (name !== 'Chromium' || brave !== true)) return { name, version: hint.version };
-	}
-	for (const [pattern, name] of UA_TOKENS) {
-		const match = pattern.exec(userAgent);
-		if (match) {
-			if (brave === true && name !== 'Brave') break;
-			return { name, version: match[1] ?? null };
-		}
+		if (!hint) continue;
+		if (name !== 'Chromium') return { name, version: hint.version };
+		if (brave === true) break;
+		const fork = userAgentBrowser(userAgent);
+		return fork && CHROMIUM_FORKS.has(fork.name) ? fork : { name, version: hint.version };
 	}
 	if (brave === true) return { name: 'Brave', version: null };
-	return { name: 'unknown', version: null };
+	return userAgentBrowser(userAgent) ?? { name: 'unknown', version: null };
 }
 
 /** A browser's name and version as one text, such as "Chrome 154.0.8037.57". */
@@ -118,7 +134,7 @@ const RUNNER_WORDS: Readonly<Record<string, readonly BrowserName[]>> = {
 
 /**
  * The browser that a runner's name says it runs, or undefined for a name that names none, such as
- * `tb-android`, which suits a device whose browser the person chooses there.
+ * `bspixel10`, which suits a device whose browser the person chooses there.
  */
 export function browserNamedBy(runner: string): readonly BrowserName[] | undefined {
 	for (const word of runner.toLowerCase().split(/[^a-z0-9]+/)) {
@@ -205,6 +221,7 @@ function deviceText({
 		// Safari on an iPad gives a Mac's user agent; only the touch screen tells them apart.
 		else if (/\bMacintosh\b/.test(userAgent)) kind = (maxTouchPoints ?? 0) > 1 ? 'iPad' : 'Mac';
 		else if (/\bAndroid\b/.test(userAgent)) kind = 'Android device';
+		else if (/\bWindows\b/.test(userAgent)) kind = 'Windows PC';
 	}
 	const details = [
 		screen && devicePixelRatio ? `${screen.width} x ${screen.height} at ${devicePixelRatio}x` : '',
@@ -214,16 +231,32 @@ function deviceText({
 }
 
 /**
+ * The Windows release that a client hint's platform version names. Its first number is not the
+ * release: 1 to 10 are versions of Windows 10, 13 and up are Windows 11, and 0 is an older release.
+ */
+function windowsText(platformVersion: string): string {
+	const major = Number.parseInt(platformVersion, 10);
+	if (Number.isNaN(major)) return 'Windows';
+	if (major >= 13) return 'Windows 11';
+	return major > 0 ? 'Windows 10' : 'Windows before 10';
+}
+
+/**
  * The OS and its version, from the client hints alone. User agents freeze the OS version: Safari 26
- * gives iOS 18.7 on iOS 26, and Chrome gives Android 10 on every Android. So without client hints
- * the cell stays empty, for a person to fill in.
+ * gives iOS 18.7 on iOS 26, Chrome gives Android 10 on every Android, and every browser gives
+ * Windows 10 on Windows 11. So without client hints the cell stays empty, for a person to fill in.
  */
 function osText({ userAgentData }: DeviceFacts): string {
 	const platform = userAgentData?.platform;
 	if (!platform) return '';
-	const version = (userAgentData.platformVersion ?? '').replace(/(\.0)+$/, '');
+	const platformVersion = userAgentData.platformVersion ?? '';
+	if (platform === 'Windows') return windowsText(platformVersion);
+	const version = platformVersion.replace(/(\.0)+$/, '');
 	return version ? `${platform} ${version}` : platform;
 }
+
+/** GPU names that mark drawing on the CPU, as on a machine or a virtual machine without a GPU. */
+const SOFTWARE_RENDERER = /swiftshader|llvmpipe|softpipe|basic render driver/i;
 
 /** The GPU as the browser names it: the WebGL2 renderer, and WebGPU's adapter details. */
 function gpuText(gpu: GpuFacts | undefined): string {
@@ -233,9 +266,10 @@ function gpuText(gpu: GpuFacts | undefined): string {
 				.filter((part, i, all) => part && all.indexOf(part) === i)
 				.join(' ')
 		: '';
-	return [gpu.webgl2?.renderer ?? '', adapter ? `WebGPU adapter: ${adapter}` : '']
+	const text = [gpu.webgl2?.renderer ?? '', adapter ? `WebGPU adapter: ${adapter}` : '']
 		.filter(Boolean)
 		.join('; ');
+	return SOFTWARE_RENDERER.test(text) ? `${text} (a software renderer: no GPU)` : text;
 }
 
 /** The GPU paths that the browser offers. */
@@ -252,6 +286,7 @@ function pathsText(gpu: GpuFacts | undefined): string {
 
 /** Where the browser ran: the owner's Mac or phone, or a cloud that the page's address names. */
 function whereText(launch: LaunchKind, origin: string | undefined): string {
+	if (origin?.includes('bs-local.com')) return 'BrowserStack Live';
 	if (origin?.includes('testingbot')) return "TestingBot's device cloud";
 	if (launch === 'mac') return "the owner's Mac";
 	if (launch === 'android') return "the owner's phone";

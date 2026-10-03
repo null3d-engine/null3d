@@ -24,7 +24,7 @@
 //   bun tests/real-browsers.ts --plan soak --lan ipad-safari --minutes 30
 //   bun tests/real-browsers.ts --plan warm-up-time --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari
-//   bun tests/real-browsers.ts --plan smoke --allow-no-webgpu --lan tb-android
+//   bun tests/real-browsers.ts --plan smoke --allow-no-webgpu --lan bsgalaxys25-samsung
 // Options:
 //   --plan <name>       the plan to run: checks (the default), smoke, a tenth of the checks for a
 //                       device in a cloud session of limited time, parity, bench, memory, which loads
