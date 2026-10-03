@@ -114,7 +114,7 @@ export default defineSketch(({ debug, input }) => {
 
 ### Watch the shadow cascades from elsewhere
 
-`debug.shadowCamera(camera)` places the main directional light's [shadow cascades](../concepts/shadows.md) from another camera, while the active camera draws the frame. Keep the active camera still, and move and turn the other one as a player would. With the `'shadows'` view, any shadow edge that crawls or shimmers shows at once, because nothing else in the frame moves. `debug.shadowCamera()` with no camera places the cascades from the active camera again.
+`debug.shadowCamera(camera)` places the main directional light's [shadow cascades](../concepts/shadows.md) from another camera. The active camera still draws the frame. Keep the active camera still, and move and turn the other one as a player would. In the `'shadows'` view, a shadow edge that crawls or shimmers then shows at once. Nothing else in the frame moves. `debug.shadowCamera()` with no camera places the cascades from the active camera again.
 
 ```ts
 export default defineSketch(({ scene, debug, time }) => {
