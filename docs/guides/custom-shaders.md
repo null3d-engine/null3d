@@ -8,7 +8,7 @@ summary: "WGSL in sketch code; shader errors; surface functions; full shaders; u
 
 # Custom shaders
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Custom materials with surface functions, vertex offsets, uniforms and full shaders are built. Textures in custom materials are not built yet, so coding agents must not use them. Hot reload that keeps the page running comes in null3D 0.2.
+> Ships in null3D 0.1, with typed uniforms in 0.2. The API is experimental, so it can still change between versions. Custom materials with surface functions, vertex offsets, uniforms and full shaders are built. Textures in custom materials are not built yet, so coding agents must not use them. Hot reload that keeps the page running comes in null3D 0.2.
 
 ```mermaid
 flowchart LR
@@ -52,6 +52,7 @@ const hologram = /* wgsl */ `
 #import null3d::builtins::{fill_builtins, frame}
 #import null3d::mesh::{InstanceIn, clip_position, find_instance, finish}
 #import null3d::mesh::{relative_position, world_normal}
+#import null3d::vertex::{mesh_position}
 
 struct Varyings {
     @builtin(position) clip: vec4f,
@@ -62,9 +63,10 @@ struct Varyings {
 @vertex
 fn vs(@location(0) position: vec3f, @location(1) normal: vec3f, i: InstanceIn) -> Varyings {
     let found = find_instance(i);
+    let p = mesh_position(position);
     var out: Varyings;
-    out.relative = relative_position(found, position);
-    out.clip = clip_position(found, position);
+    out.relative = relative_position(found, p);
+    out.clip = clip_position(found, p);
     out.normal = world_normal(found, normal);
     return out;
 }
@@ -85,7 +87,8 @@ const ghost = materials.shader({ wgsl: hologram, doubleSided: true });
 The plugin takes WGSL as a full shader when its `@vertex` entry point takes an `InstanceIn`. The shader follows these rules:
 
 - It has one `@vertex` and one `@fragment` entry point.
-- The vertex entry point reads the mesh at the engine's locations. The position is at 0, the normal at 1, the first texture coordinates at 2 and the second at 3. The tangent is at 4, and the color at 5. A mesh draws only when it has every attribute that the shader reads.
+- The vertex entry point reads the mesh at the engine's locations. The position is at 0, the normal at 1, the first texture coordinates at 2 and the second at 3. The tangent is at 4, and the color at 5. The joints are at 6, as a `vec4u`, and the weights at 7. A mesh draws only when it has every attribute that the shader reads.
+- Pass the position through `mesh_position`, and texture coordinates through `mesh_uv` and `mesh_second_uv`, from `null3d::vertex`. They give the values that the mesh holds on every GPU path. WebGPU reads plain integer attributes as fractions, and these functions scale them back. Floats and normalized integers pass through unchanged.
 - It finds its instance with `InstanceIn` and `find_instance` from `null3d::mesh`. On each GPU path, the engine gives each instance's transform in its own way, and these hide the difference.
 - `null3d::mesh` also gives `clip_position(found, position)`, `relative_position(found, position)` and `world_normal(found, normal)`. Positions are relative to the camera, as in the engine's own shaders.
 - The fragment entry point writes its linear color through `finish(color, clip.xy)` from `null3d::mesh`, which prepares it for the engine's output.
@@ -123,7 +126,7 @@ fn fs_main() -> @location(0) vec4f {
 `;
 ```
 
-The plugin puts the compiled shader where the literal was. Your code therefore receives a compiled shader, although TypeScript still sees a string. The tag follows these rules:
+The plugin puts the compiled shader where the literal was. Your code therefore receives a compiled shader, although TypeScript still sees a string. TypeScript reads the uniforms from that string, as [Typed uniforms](#typed-uniforms) explains. The tag follows these rules:
 
 - The comment comes directly before the literal. Spaces and line breaks may come between them.
 - The literal cannot hold `${...}`. The plugin compiles the WGSL before any of your code runs, so write each value in the WGSL itself.
@@ -177,6 +180,57 @@ The plugin's client types tell TypeScript what a `.wgsl` import gives. Add them 
     "types": ["@null3d/vite-plugin/client"]
   }
 }
+```
+
+### Typed uniforms
+
+TypeScript knows the uniforms of a custom material's WGSL. The `uniforms` option of `materials.shader` and the material's `set()` take only the names that `struct Uniforms` declares. Each name takes a value of the kind that its type takes. A wrong name or a value of the wrong kind fails the type check, before the page runs:
+
+```ts
+// sketch.ts
+const rings = /* wgsl */ `
+struct Uniforms { tint: vec3f, width: f32, offset: vec2f }
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let ring = step(1.0 - material.width, fract(input.uv.y * 6.0 + material.offset.y));
+    s.baseColor = mix(s.baseColor, material.tint, ring);
+    return s;
+}
+`;
+
+// In the setup:
+const banded = materials.shader({ wgsl: rings, uniforms: { tint: '#ff6a00', width: 0.5 } });
+banded.set({ width: 0.3, roughness: 0.4 });
+banded.set({ widht: 0.3 }); // Type error: widht is not a uniform. Did you mean width?
+banded.set({ offset: [0, 1, 2] }); // Type error: a vec2f takes two numbers.
+```
+
+| Uniform type | Value in TypeScript |
+| --- | --- |
+| `f32` | A number |
+| `i32`, `u32` | A whole number |
+| `vec2f` | Two numbers, `[x, y]` |
+| `vec3f` | Three numbers, or a color as `color` takes it |
+| `vec4f` | Four numbers |
+
+TypeScript finds the uniforms in each form of WGSL in its own way:
+
+- For a template literal tagged `/* wgsl */`, TypeScript reads `struct Uniforms` from the literal's text. Keep the literal in a `const`, or write it in the call. A variable of type `string` hides the text, and then any name passes the type check.
+- For a `.wgsl` file, the plugin writes a declaration beside the file each time it compiles it, such as `glow.wgsl.d.ts` beside `glow.wgsl`. Commit the declarations with your WGSL, so that a type check without Vite sees them. Until the plugin writes a file's declaration, its import takes any name. The `wgslDeclarations: false` option of the plugin turns the declarations off, for a project without TypeScript.
+
+The engine also checks each name and value when the call runs, so JavaScript gets the same checks. It throws [E1216](../errors/E1216.md) for a name that is not a uniform, and for a value of the wrong kind.
+
+A list of values for several materials needs a type. In a plain array, TypeScript makes `[0, 1]` a list of any length. `UniformValues<typeof rings>` types the `uniforms` option, and `ShaderValues<typeof rings>` types what `set()` takes:
+
+```ts
+import type { ShaderValues, UniformValues } from '@null3d/engine';
+
+const looks: UniformValues<typeof rings>[] = [
+  { tint: '#ff6a00', offset: [0, 0.5] },
+  { tint: '#4080ff', width: 0.8 },
+];
+const changes: ShaderValues<typeof rings>[] = [{ width: 0.2, roughness: 0.3 }];
 ```
 
 ## Related pages

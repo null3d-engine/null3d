@@ -13,6 +13,7 @@ enable draw_index;
 // null3d::mesh finds each instance on both GPU paths.
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
 #import null3d::mesh::{map_layer, map_ready, material_of, relative_position, straight_texel}
+#import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
 
 // The maps' bind group comes after the frame's group, and on WebGL2 after the groups of the draw
 // records and the data textures.
@@ -55,9 +56,9 @@ struct VertexOut {
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
-    out.relative = relative_position(found, v.position);
+    out.relative = relative_position(found, mesh_position(v.position));
     out.clip = clip_of(found, out.relative);
-    out.uv = vec4f(v.uv0, v.uv1);
+    out.uv = vec4f(mesh_uv(v.uv0), mesh_second_uv(v.uv1));
     out.material = found.material;
 #ifdef VERTEX_COLOR
     out.vertex_color = v.vertex_color;

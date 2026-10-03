@@ -659,8 +659,8 @@
       "three": "BufferGeometry + setAttribute / setIndex / BufferAttribute",
       "status": "changed",
       "since": "0.1",
-      "target": "geometry.fromArrays({ positions, normals, uvs, uvs1, colors, tangents, indices })",
-      "notes": "Returns a mesh that createMesh and createInstances accept. The attributes position, normal, uv, uv1, color and tangent each become one array, and setIndex becomes indices, 16-bit or 32-bit. The engine copies the arrays.",
+      "target": "geometry.fromArrays({ positions, normals, uvs, uvs1, colors, tangents, joints, weights, indices })",
+      "notes": "Returns a mesh that createMesh and createInstances accept. The attributes position, normal, uv, uv1, color and tangent each become one array, and setIndex becomes indices, 16-bit or 32-bit. The engine copies the arrays. From 0.2, skinIndex and skinWeight become joints and weights, 8-bit and 16-bit integer arrays stay integers on the GPU, and { array, normalized: true } keeps a BufferAttribute's normalized flag.",
       "docs": "api/geometry",
       "detect": "\\bBufferGeometry\\b|\\.setAttribute\\s*\\(|\\.setIndex\\s*\\(|\\b(Float32|Uint16|Uint32)?BufferAttribute\\b"
     },
@@ -792,7 +792,7 @@
       "status": "manual",
       "since": "0.1",
       "target": "materials.shader({ wgsl, uniforms }) with a WGSL surface function, or a full WGSL shader",
-      "notes": "Rewrite in WGSL, in one literal tagged /* wgsl */. Prefer a surface function, so lighting, shadows, fog and instancing keep working. Declare the uniforms once, as struct Uniforms. Textures in custom materials come in 0.2.",
+      "notes": "Rewrite in WGSL, in one literal tagged /* wgsl */. Prefer a surface function, so lighting, shadows, fog and instancing keep working. Declare the uniforms once, as struct Uniforms. Updates such as material.uniforms.uSpeed.value = 2 become material.set({ speed: 2 }), and from 0.2 the type check rejects a name that struct Uniforms lacks. Textures in custom materials come in 0.2.",
       "docs": "shaders/surface-functions",
       "detect": "\\b(Raw)?ShaderMaterial\\b"
     },

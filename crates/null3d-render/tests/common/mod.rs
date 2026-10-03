@@ -419,8 +419,8 @@ pub fn grid(columns: u32, rows: u32) -> Geometry {
         }
     }
     let arrays = MeshArrays {
-        positions: &positions,
-        uvs: Some(&uvs),
+        positions: (&positions[..]).into(),
+        uvs: Some((&uvs[..]).into()),
         indices: Some(&indices),
         compute_normals: true,
         ..MeshArrays::default()
@@ -444,13 +444,13 @@ pub fn map_desc(size: u32) -> TextureDesc {
 /// A generator's mesh in the base vertex format: its positions and normals, without its texture
 /// coordinates.
 pub fn base_format(g: Geometry) -> Geometry {
-    let floats = g.vertex_floats();
+    let base = null3d_gpu::drawlist::vertex::stride(0) as usize;
     Geometry {
         format: 0,
         vertices: g
             .vertices
-            .chunks(floats)
-            .flat_map(|v| &v[..6])
+            .chunks(g.stride())
+            .flat_map(|v| &v[..base])
             .copied()
             .collect(),
         indices: g.indices,

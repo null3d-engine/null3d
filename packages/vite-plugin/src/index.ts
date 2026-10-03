@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { relative, resolve, sep } from 'node:path';
 import MagicString from 'magic-string';
 import type { Connect, Plugin } from 'vite';
+import { writeWgslDeclaration } from './declarations.ts';
 import { compileTaggedWgsl, compileWgslFile, WGSL_TAG } from './wgsl.ts';
 
 export type * from './shader-types.ts';
@@ -24,6 +25,12 @@ export interface Null3dPluginOptions {
 	https?: boolean;
 	/** Directory that holds `cert.pem` and `key.pem`; the default is `target/dev-cert` under the project root. */
 	certDir?: string;
+	/**
+	 * Write a TypeScript declaration beside each `.wgsl` file that a module imports, such as
+	 * `glow.wgsl.d.ts` beside `glow.wgsl`, with the types of the file's uniforms. The default is
+	 * true. Set it to false in a project without TypeScript.
+	 */
+	wgslDeclarations?: boolean;
 }
 
 /** Sets the isolation headers on every response, including `.wasm` files and worker scripts. */
@@ -174,6 +181,15 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			handler(id) {
 				const compiled = compileWgslFile(projectPath(root, id), id, readFileSync(id, 'utf8'));
 				if ('error' in compiled) return this.error(compiled.error);
+				if (options.wgslDeclarations !== false && !PACKAGE_MODULE.test(id)) {
+					try {
+						writeWgslDeclaration(id, compiled.shader);
+					} catch (e) {
+						this.warn(
+							`null3D could not write the types of ${projectPath(root, id)} beside it (${(e as Error).message}). TypeScript then takes any uniform name for the file.`,
+						);
+					}
+				}
 				return {
 					code: `export default ${shaderValue(compiled.shader)};\n`,
 					map: { mappings: '' },

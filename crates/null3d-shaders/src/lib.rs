@@ -354,8 +354,23 @@ impl Compiler {
             None
         };
         let glsl = if variant.has(Target::Glsl) {
+            // GLSL has no pipeline constants, so each takes its default. WebGL2 reads plain
+            // integer vertex attributes as whole numbers itself, which needs no other value.
+            let (module, info) = naga::back::pipeline_constants::process_overrides(
+                &module,
+                &info,
+                None,
+                &naga::back::PipelineConstants::default(),
+            )
+            .map_err(|e| {
+                vec![Problem::in_file(
+                    path,
+                    format!("naga cannot give the pipeline constants their defaults: {e}"),
+                )]
+            })?;
+            let (module, info) = (module.as_ref(), info.as_ref());
             let programs = pipelines.iter().map(|(name, pipeline)| {
-                glsl::write_program(&module, &info, name, pipeline, &mediump)
+                glsl::write_program(module, info, name, pipeline, &mediump)
                     .map(|program| (name.clone(), program))
                     .map_err(|message| vec![Problem::in_file(path, message)])
             });

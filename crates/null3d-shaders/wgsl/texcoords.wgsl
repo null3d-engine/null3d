@@ -4,6 +4,7 @@ enable draw_index;
 // v, for the engine's own tests of vertex formats. null3d::mesh finds each instance on both GPU
 // paths.
 #import null3d::mesh::{InstanceIn, clip_position, find_instance, finish}
+#import null3d::vertex::{mesh_position, mesh_uv}
 
 /// The vertex attributes that the template reads.
 struct VertexIn {
@@ -21,8 +22,8 @@ struct VertexOut {
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
-    out.clip = clip_position(found, v.position);
-    out.uv0 = v.uv0;
+    out.clip = clip_position(found, mesh_position(v.position));
+    out.uv0 = mesh_uv(v.uv0);
     return out;
 }
 

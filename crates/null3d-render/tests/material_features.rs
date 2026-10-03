@@ -24,9 +24,9 @@ fn triangle(colored: bool) -> Geometry {
     let positions = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
     let colors = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
     let arrays = MeshArrays {
-        positions: &positions,
-        colors: colored.then_some(&colors[..]),
-        color_floats: 3,
+        positions: (&positions).into(),
+        colors: colored.then_some((&colors).into()),
+        color_components: 3,
         compute_normals: true,
         ..MeshArrays::default()
     };
@@ -139,8 +139,8 @@ fn mapped_triangle() -> Geometry {
     let positions = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
     let uvs = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
     let arrays = MeshArrays {
-        positions: &positions,
-        uvs: Some(&uvs),
+        positions: (&positions).into(),
+        uvs: Some((&uvs).into()),
         compute_normals: true,
         ..MeshArrays::default()
     };

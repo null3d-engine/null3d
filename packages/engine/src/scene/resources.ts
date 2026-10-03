@@ -54,6 +54,7 @@ import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import { arraysProblem, meshFromArrays } from './mesh-arrays';
 import type { Texture } from './textures';
+import type { UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
 
 /**
  * A mesh the engine can draw: its id in the engine core, and its bounding radius.
@@ -332,37 +333,98 @@ const RING: Required<RingOptions> = {
 };
 
 /**
+ * The integer typed arrays that vertex attributes take: 8-bit and 16-bit, signed and unsigned.
+ *
+ * @category api/geometry
+ */
+export type IntegerArray = Int8Array | Uint8Array | Int16Array | Uint16Array;
+
+/**
+ * One attribute's numbers with a note on how its integers read, like three.js's `BufferAttribute`,
+ * whose `array` and `normalized` fields it shares. Normalized integers read as fractions: from 0
+ * to 1 when unsigned, and from -1 to 1 when signed. Plain integers read as whole numbers.
+ *
+ * @category api/geometry
+ */
+export interface VertexArray {
+	/** The numbers, as `MeshArrays` takes them. */
+	array: Float32Array | IntegerArray | readonly number[];
+	/**
+	 * True when the integers are normalized. The default is false, as in three.js and glTF. It
+	 * applies to positions and texture coordinates. The other attributes read integers one way
+	 * only, so they refuse a value that says otherwise.
+	 */
+	normalized?: boolean;
+}
+
+/**
+ * The numbers of one vertex attribute: a typed array, a plain array of numbers, or a
+ * `VertexArray` that also says whether its integers are normalized. Plain arrays hold 32-bit
+ * floats, except joints, which hold 16-bit integers.
+ *
+ * @category api/geometry
+ */
+export type VertexValues = Float32Array | IntegerArray | readonly number[] | VertexArray;
+
+/**
  * The arrays of a mesh for `geometry.fromArrays`. Each array holds its values for vertex 0, then
- * vertex 1, and so on, as three.js's `BufferGeometry` keeps its attributes. Typed arrays and plain
- * arrays of numbers both work, and the engine copies them.
+ * vertex 1, and so on, as three.js's `BufferGeometry` keeps its attributes. The engine copies
+ * them.
+ *
+ * An attribute can come as 32-bit floats, or as the 8-bit and 16-bit integers that glTF's
+ * `KHR_mesh_quantization` allows for it. The mesh keeps that type on the GPU. Smaller types take
+ * less memory and upload faster. Integer positions keep their own scale, so give the object
+ * the scale that turns them into meters, as a glTF node does. Meshes share GPU buffers with the
+ * meshes whose attributes have the same types.
  *
  * @category api/geometry
  */
 export interface MeshArrays {
-	/** Three numbers per vertex: x, y and z. Like three.js's `position` attribute. */
-	positions: Float32Array | readonly number[];
+	/**
+	 * Three numbers per vertex: x, y and z. Like three.js's `position` attribute. Takes floats,
+	 * or 8-bit or 16-bit integers, normalized or plain.
+	 */
+	positions: VertexValues;
 	/**
 	 * Three numbers per vertex: a direction of length 1 away from the surface. Like three.js's
-	 * `normal` attribute. Pass normals, or set `computeNormals` instead.
+	 * `normal` attribute. Pass normals, or set `computeNormals` instead. Takes floats, or an
+	 * `Int8Array` or `Int16Array`, whose integers read as fractions from -1 to 1.
 	 */
-	normals?: Float32Array | readonly number[];
-	/** Texture coordinates: two numbers per vertex, u and v. Like three.js's `uv` attribute. */
-	uvs?: Float32Array | readonly number[];
+	normals?: VertexValues;
+	/**
+	 * Texture coordinates: two numbers per vertex, u and v. Like three.js's `uv` attribute. Takes
+	 * floats, or 8-bit or 16-bit integers, normalized or plain.
+	 */
+	uvs?: VertexValues;
 	/**
 	 * A second set of texture coordinates, two numbers per vertex, such as those of a light map.
-	 * Like three.js's `uv1` attribute.
+	 * Like three.js's `uv1` attribute. Takes the same types as `uvs`.
 	 */
-	uvs1?: Float32Array | readonly number[];
+	uvs1?: VertexValues;
 	/**
 	 * Linear colors, three numbers per vertex from 0 to 1, or four with alpha. Like three.js's
-	 * `color` attribute.
+	 * `color` attribute. Takes floats, or a `Uint8Array` or `Uint16Array`, whose integers read as
+	 * fractions from 0 to 1.
 	 */
-	colors?: Float32Array | readonly number[];
+	colors?: VertexValues;
 	/**
 	 * Four numbers per vertex: the direction in which u grows along the surface, then 1 or -1 for
-	 * the direction in which v grows. Like three.js's `tangent` attribute.
+	 * the direction in which v grows. Like three.js's `tangent` attribute. Takes the same types as
+	 * `normals`.
 	 */
-	tangents?: Float32Array | readonly number[];
+	tangents?: VertexValues;
+	/**
+	 * The joints that move each vertex of a skinned mesh: four joint indices per vertex, in a
+	 * `Uint8Array`, a `Uint16Array` or a plain array. Like three.js's `skinIndex` attribute. Give
+	 * `weights` with them.
+	 */
+	joints?: VertexValues;
+	/**
+	 * How much each of a vertex's four joints moves it: four numbers per vertex, which add up to
+	 * 1. Like three.js's `skinWeight` attribute. Takes floats, or a `Uint8Array` or `Uint16Array`,
+	 * whose integers read as fractions from 0 to 1.
+	 */
+	weights?: VertexValues;
 	/**
 	 * Three vertex indices per triangle, counter-clockwise when you look at its front. 16-bit and
 	 * 32-bit indices both work. Without indices, each three vertices in a row make a triangle.
@@ -466,9 +528,10 @@ export class Geometry {
 	/**
 	 * A mesh from arrays of vertex attributes and triangle indices, like three.js's
 	 * `BufferGeometry` with `setAttribute` and `setIndex`. The mesh keeps the attributes it gets,
-	 * and meshes with the same attributes share GPU buffers. A mesh can have any number of
-	 * vertices. Throws E1206 when an array's length does not fit the vertex count or an index names
-	 * no vertex, and for a value that is not a finite number.
+	 * each in the type of number it came in, and meshes whose attributes have the same types share
+	 * GPU buffers. A mesh can have any number of vertices. Throws E1206 when an array's length does
+	 * not fit the vertex count, when its attribute does not take its type of number, when an index
+	 * names no vertex, and for a value that is not a finite number.
 	 */
 	fromArrays(arrays: MeshArrays): MeshGeometry {
 		const call = 'geometry.fromArrays';
@@ -698,33 +761,27 @@ export interface CompiledWgsl {
 }
 
 /**
- * The value of a custom material's uniform. An `f32`, `i32` or `u32` uniform takes a number, and a
- * `vec2f`, `vec3f` or `vec4f` uniform takes an array of 2, 3 or 4 numbers. A `vec3f` uniform also
- * takes an sRGB color as `color` takes it, which the engine converts to linear.
- *
- * @category api/materials
- */
-export type UniformValue = number | string | readonly number[];
-
-/**
  * The values of a custom material, which `set` changes at any time: the standard values but the
  * texture coordinate transform of maps, and the uniforms that its WGSL's `struct Uniforms`
- * declares, by name.
+ * declares, by name. `Wgsl` is the type of the material's WGSL, which gives the uniforms' names
+ * and types, as `WgslUniforms` says.
  *
  * @category api/materials
  */
-export interface ShaderValues extends Omit<StandardValues, 'uvTransform'> {
-	[uniform: string]: UniformValue | undefined;
-}
+export type ShaderValues<Wgsl = string | CompiledWgsl> = [Wgsl] extends [unknown]
+	? Omit<StandardValues, 'uvTransform'> & UniformValues<Wgsl>
+	: never;
 
 /**
  * Options of `materials.shader`: the material's WGSL, the first values of its uniforms, and every
  * option of `materials.standard` but its texture maps, which `defaultSurface` applies. Custom
  * materials take no texture maps in this version, so the values of maps have no effect on them.
+ * `Wgsl` is the type of the material's WGSL, which gives the uniforms' names and types.
  *
  * @category api/materials
  */
-export interface ShaderOptions extends StandardBaseOptions {
+export interface ShaderOptions<Wgsl extends string | CompiledWgsl = string | CompiledWgsl>
+	extends StandardBaseOptions {
 	/**
 	 * The material's WGSL, compiled by the null3D Vite plugin. It declares
 	 * `fn surface(input: SurfaceInput) -> Surface`, which the engine calls for each pixel, and
@@ -734,15 +791,23 @@ export interface ShaderOptions extends StandardBaseOptions {
 	 * point that takes an `InstanceIn`, and a `@fragment` one, instead. Materials made from the
 	 * same WGSL share their shader.
 	 */
-	wgsl: string | CompiledWgsl;
-	/** The first value of each uniform, by name. A uniform without one starts at 0. */
-	uniforms?: Readonly<Record<string, UniformValue | undefined>>;
+	wgsl: Wgsl;
+	/**
+	 * The first value of each uniform, by name. A uniform without one starts at 0. When TypeScript
+	 * can see the WGSL's uniforms, a name that the WGSL does not declare fails the type check, and
+	 * WGSL without uniforms takes none.
+	 */
+	uniforms?: NoInfer<
+		[keyof UniformValues<Wgsl>] extends [never]
+			? { readonly [name: string]: never }
+			: UniformValues<Wgsl>
+	>;
 }
 
 /** A uniform of a custom material: its type, and the float of the row of custom values it starts at. */
 interface CompiledUniform {
 	readonly name: string;
-	readonly type: 'f32' | 'i32' | 'u32' | 'vec2f' | 'vec3f' | 'vec4f';
+	readonly type: UniformType;
 	readonly offset: number;
 }
 
@@ -1162,9 +1227,12 @@ export class Materials {
 	 * reads. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole
 	 * shader whose `@vertex` entry point takes no `InstanceIn`. Throws E1216 for a uniform that the
 	 * WGSL does not declare, for a value of the wrong kind, and for a uniform named as a standard
-	 * value, such as `color`.
+	 * value, such as `color`. When TypeScript can see the WGSL's `struct Uniforms`, a wrong name or
+	 * a value of the wrong kind also fails the type check.
 	 */
-	shader(options: ShaderOptions): Material<ShaderValues> {
+	shader<const Wgsl extends string | CompiledWgsl>(
+		options: ShaderOptions<Wgsl>,
+	): Material<ShaderValues<Wgsl>> {
 		const call = 'materials.shader';
 		const compiled = this.compiledMaterial(options.wgsl, call);
 		const uniforms = new Map(compiled.uniforms.map((u) => [u.name, u]));
