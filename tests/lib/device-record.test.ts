@@ -32,13 +32,17 @@ const UA = {
 		'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:156.0) Gecko/20100101 Firefox/156.0',
 	samsungInternet:
 		'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/28.0 Chrome/130.0.0.0 Mobile Safari/537.36',
-	androidOpera:
-		'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36 OPR/90.1.4782.86',
 	androidEdge:
 		'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36 EdgA/140.0.3485.54',
 	androidFirefox: 'Mozilla/5.0 (Android 14; Mobile; rv:143.0) Gecko/143.0 Firefox/143.0',
 	iPhoneChrome:
 		'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/140.0.7339.122 Mobile/15E148 Safari/604.1',
+	windowsChrome:
+		'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36',
+	windowsEdge:
+		'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.3510.41',
+	windowsFirefox:
+		'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:157.0) Gecko/20100101 Firefox/157.0',
 };
 
 describe('the browser that the runner page detects', () => {
@@ -75,6 +79,31 @@ describe('the browser that the runner page detects', () => {
 		});
 	});
 
+	it('tells Edge from Chrome on Windows', () => {
+		const edge = hints({
+			'Microsoft Edge': '154.0.3510.41',
+			Chromium: '154.0.7871.12',
+			'Not.A/Brand': '99.0.0.0',
+		});
+		expect(detectBrowser({ userAgent: UA.windowsEdge, userAgentData: edge })).toEqual({
+			name: 'Edge',
+			version: '154.0.3510.41',
+		});
+		const chrome = hints({ Chromium: '154.0.7871.12', 'Google Chrome': '154.0.7871.12' });
+		expect(detectBrowser({ userAgent: UA.windowsChrome, userAgentData: chrome })).toEqual({
+			name: 'Chrome',
+			version: '154.0.7871.12',
+		});
+	});
+
+	it("trusts a fork's user agent token where its client hints name only Chromium", () => {
+		const chromiumOnly = hints({ Chromium: '130.0.6723.86', 'Not?A_Brand': '99.0.0.0' });
+		const name = (userAgent: string) => detectBrowser({ userAgent, userAgentData: chromiumOnly });
+		expect(name(UA.samsungInternet)).toEqual({ name: 'Samsung Internet', version: '28.0' });
+		expect(name(UA.androidEdge)).toEqual({ name: 'Edge', version: '140.0.3485.54' });
+		expect(name(UA.androidChrome)).toEqual({ name: 'Chromium', version: '130.0.6723.86' });
+	});
+
 	it("names Brave on iOS without a version, because the version there is Safari's", () => {
 		expect(detectBrowser({ userAgent: UA.iPadBrave, brave: true })).toEqual({
 			name: 'Brave',
@@ -91,10 +120,11 @@ describe('the browser that the runner page detects', () => {
 		expect(name(UA.macFirefox)).toEqual({ name: 'Firefox', version: '156.0' });
 		expect(name(UA.androidFirefox)).toEqual({ name: 'Firefox', version: '143.0' });
 		expect(name(UA.samsungInternet)).toEqual({ name: 'Samsung Internet', version: '28.0' });
-		expect(name(UA.androidOpera)).toEqual({ name: 'Opera', version: '90.1.4782.86' });
 		expect(name(UA.androidEdge)).toEqual({ name: 'Edge', version: '140.0.3485.54' });
 		expect(name(UA.iPhoneChrome)).toEqual({ name: 'Chrome', version: '140.0.7339.122' });
 		expect(name(UA.androidChrome)).toEqual({ name: 'Chrome', version: '154.0.0.0' });
+		expect(name(UA.windowsFirefox)).toEqual({ name: 'Firefox', version: '157.0' });
+		expect(name(UA.windowsEdge)).toEqual({ name: 'Edge', version: '154.0.3510.41' });
 		expect(name('a browser nobody knows')).toEqual({ name: 'unknown', version: null });
 	});
 });
@@ -208,6 +238,78 @@ describe('the row for the record of tested devices', () => {
 			'Firefox 156.0',
 			"the owner's Mac",
 		]);
+	});
+
+	it('names a Windows PC, its Windows release, its GPU and BrowserStack', () => {
+		const windows = (platformVersion: string): DeviceFacts => ({
+			userAgent: UA.windowsEdge,
+			userAgentData: hints(
+				{ 'Microsoft Edge': '154.0.3510.41', Chromium: '154.0.7871.12' },
+				{ model: '', platform: 'Windows', platformVersion },
+			),
+			gpu: {
+				webgpu: { vendor: 'nvidia', architecture: 'ampere', device: '', description: '' },
+				compatibility: true,
+				webgl2: {
+					renderer:
+						'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)',
+				},
+			},
+			hardwareConcurrency: 16,
+			screen: { width: 1920, height: 1080 },
+			devicePixelRatio: 1,
+			origin: 'https://bs-local.com:3001',
+		});
+		const row = (device: DeviceFacts) =>
+			cells(
+				testedDeviceRow({
+					run: '20261004-090000-smoke',
+					launch: 'lan',
+					device,
+					pass: 50,
+					skip: 0,
+					fail: 0,
+				}),
+			);
+		expect(row(windows('19.0.0')).slice(0, 7)).toEqual([
+			'Windows PC, 1920 x 1080 at 1x, 16 cores',
+			'Windows 11',
+			'Edge 154.0.3510.41',
+			'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11); WebGPU adapter: nvidia ampere',
+			'WebGPU, compatibility mode, WebGL2',
+			'BrowserStack Live',
+			'smoke 2026-10-04',
+		]);
+		expect(row(windows('10.0.0'))[1]).toBe('Windows 10');
+		expect(row(windows('0.3.0'))[1]).toBe('Windows before 10');
+		// Firefox gives no client hints, so the release stays for a person to fill in.
+		const firefox = row({ ...windows(''), userAgent: UA.windowsFirefox, userAgentData: undefined });
+		expect(firefox.slice(0, 3)).toEqual([
+			'Windows PC, 1920 x 1080 at 1x, 16 cores',
+			'',
+			'Firefox 157.0',
+		]);
+	});
+
+	it('marks a software renderer, which draws on the CPU because the machine has no GPU', () => {
+		const row = testedDeviceRow({
+			run: '20261004-090000-smoke',
+			launch: 'lan',
+			device: {
+				userAgent: UA.windowsChrome,
+				gpu: {
+					webgpu: null,
+					compatibility: false,
+					webgl2: { renderer: 'ANGLE (Microsoft, Microsoft Basic Render Driver, D3D11)' },
+				},
+			},
+			pass: 0,
+			skip: 0,
+			fail: 50,
+		});
+		expect(cells(row)[3]).toBe(
+			'ANGLE (Microsoft, Microsoft Basic Render Driver, D3D11) (a software renderer: no GPU)',
+		);
 	});
 
 	it('escapes a pipe in a value, so it cannot end its cell', () => {
