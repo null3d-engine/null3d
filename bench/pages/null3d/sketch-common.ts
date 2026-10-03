@@ -35,6 +35,14 @@ export function readFarInterval(moduleUrl: string): number | undefined {
 }
 
 /**
+ * False when the sketch module's address turns the quality governor off, where the page harness
+ * puts `governor=off` for a page with `?governor=off`.
+ */
+export function readGovernor(moduleUrl: string): boolean {
+	return new URL(moduleUrl).searchParams.get('governor') !== 'off';
+}
+
+/**
  * Sets the background, the sun and the ambient light, and makes the active camera. The three.js
  * twins draw with no tone mapping, three.js's default, so the null3D pages turn off the engine's
  * default of ACES. The twins also draw every pixel of the canvas, so the null3D pages keep the

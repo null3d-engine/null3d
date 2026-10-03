@@ -28,7 +28,13 @@ import {
 	s4VehicleScale,
 	s4VehiclesAt,
 } from '../../scenes/spec';
-import { followPath, readFarInterval, setUpView, watchQuality } from './sketch-common';
+import {
+	followPath,
+	readFarInterval,
+	readGovernor,
+	setUpView,
+	watchQuality,
+} from './sketch-common';
 
 export default defineSketch((context) => {
 	const { scene, materials, geometry, textures, time } = context;
@@ -37,8 +43,9 @@ export default defineSketch((context) => {
 	// has shadow maps on the GPU path. The quality preset sets their cascades and map size.
 	const moveCamera = followPath(setUpView(context, S4_VIEW_LIGHTS, S4_FOG.color), s4Camera);
 	// S4 measures how the quality governor holds the frame rate on phones, so it runs, and lightens
-	// the shadows when frames take too long. The render scale stays at 1, as for the other scenes.
-	context.quality.set({ governor: true });
+	// the shadows when frames take too long. The render scale stays at 1, as for the other scenes. A
+	// comparison of two builds turns it off, so that a step in one run cannot change what it draws.
+	context.quality.set({ governor: readGovernor(import.meta.url) });
 	// ?far= fixes how often the far shadow cascades draw, to measure what drawing them less often
 	// saves.
 	const far = readFarInterval(import.meta.url);

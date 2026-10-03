@@ -31,6 +31,11 @@ export interface RunOptions {
 	 * draw shadows, or null for the quality preset's.
 	 */
 	far: number | null;
+	/**
+	 * False with `?governor=off`, which keeps the quality governor off in a null3D scene that turns
+	 * it on, such as S4, so that a comparison of two builds measures the same work in every run.
+	 */
+	governor: boolean;
 }
 
 /** The value of a switch that must be one of a few words. */
@@ -74,7 +79,7 @@ export function pageReport(params: URLSearchParams): 'hold' | 'demo' | 'soak' | 
 	return params.has('soak') ? 'soak' : 'bench';
 }
 
-/** Reads `?hold`, `?demo`, `?n=`, `?seconds=`, `?soak=`, `?shadows=` and `?far=`. */
+/** Reads `?hold`, `?demo`, `?n=`, `?seconds=`, `?soak=`, `?shadows=`, `?far=` and `?governor=`. */
 export function readRunOptions(params: URLSearchParams): RunOptions {
 	return {
 		hold:
@@ -117,5 +122,6 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 			(v) => Number.isInteger(v) && v >= 1 && v <= 8,
 			'a whole number of frames from 1 to 8',
 		),
+		governor: !params.has('governor') || readChoice(params, 'governor', ['off']) !== 'off',
 	};
 }

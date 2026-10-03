@@ -228,7 +228,7 @@ Frames per second: 60.0 presented, 60.0 finished by the GPU, on a display of 60.
 
 - The busiest thread in each frame limits the frame rate. The runs' lowest and highest values show how much the figure varies.
 - Each thread's line gives its own CPU time per frame. The sketch's update is your `onUpdate`, and the rest of that thread's time is the engine's own work.
-- GPU time needs the browser to time the GPU. `bench` starts Chrome with WebGPU's developer features on, so the times are not rounded. Where the browser does not time the GPU, such as Chrome on WebGL2 on a Mac, the line says n/a.
+- The engine times the GPU only on WebGPU, where the browser offers GPU timestamps. The `bench` command starts Chrome with WebGPU's developer features on, so the times are not rounded. The line says n/a on WebGL2 every time, and on WebGPU where the browser does not time the GPU.
 - A headless browser draws 60 frames per second on every computer. Compare CPU time and GPU time between computers.
 
 When a run fails, `bench` says why after the figures of its path, and exits with 1.

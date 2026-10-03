@@ -6,6 +6,7 @@ import { messageOf } from '../errors/message';
 import type { PowerPreference } from '../page/capabilities';
 import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
+import type { GlTimingMode } from '../page/switches';
 import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { type Build, loadGlue, type StartedCore, startCore } from '../shared/core';
@@ -62,6 +63,8 @@ export interface RendererSetup {
 	queue?: number;
 	/** Hold mode: the thread runs no frame loop, and draws the held frame once, when a capture asks. */
 	hold?: boolean;
+	/** How ?gl-timing asks the WebGL2 path to time each WebGL call for a benchmark page. */
+	glTiming?: GlTimingMode;
 }
 
 export type SketchWorkerInit = CoreHandoff & {

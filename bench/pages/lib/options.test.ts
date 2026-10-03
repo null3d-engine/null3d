@@ -5,7 +5,7 @@ import { readChoice, readRunOptions } from './options';
 describe('readRunOptions', () => {
 	const read = (query: string) => readRunOptions(new URLSearchParams(query));
 
-	test('reads hold, demo, the count, the seconds, the soak, the shadow cascades and the far cascade interval', () => {
+	test('reads hold, demo, the count, the seconds, the soak, the shadow cascades, the far cascade interval and the governor', () => {
 		expect(read('')).toEqual({
 			hold: null,
 			demo: false,
@@ -14,6 +14,7 @@ describe('readRunOptions', () => {
 			soak: null,
 			shadows: null,
 			far: null,
+			governor: true,
 		});
 		expect(read('?hold&n=1000&seconds=2.5&shadows=3&far=1')).toEqual({
 			hold: HOLD_TIME,
@@ -23,11 +24,17 @@ describe('readRunOptions', () => {
 			soak: null,
 			shadows: 3,
 			far: 1,
+			governor: true,
 		});
 		expect(read('?soak=30').soak).toBe(30);
 		expect(read('?hold=3.25').hold).toBe(3.25);
 		expect(read('?hold=0').hold).toBe(0);
 		expect(read('?demo').demo).toBe(true);
+		expect(read('?governor=off').governor).toBe(false);
+	});
+
+	test('takes only off for the governor', () => {
+		expect(() => read('governor=on')).toThrow('"on" is not a valid governor. Use ?governor=off.');
 	});
 
 	test('refuses counts and times that make no sense, with a fix in the message', () => {
