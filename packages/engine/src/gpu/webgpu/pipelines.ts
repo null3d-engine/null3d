@@ -376,7 +376,8 @@ export class Pipelines {
 				texture: { sampleType: 'unfilterable-float' },
 			},
 		]);
-		// The final pass reads the scene color with textureLoad, which takes any float format.
+		// The final pass reads the scene color with textureLoad, which takes any float format, and
+		// its color grading table, a 3D texture, with a linear filter.
 		const finalEntries: GPUBindGroupLayoutEntry[] = [
 			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
 			{
@@ -384,6 +385,8 @@ export class Pipelines {
 				visibility: fragment,
 				texture: { sampleType: 'unfilterable-float', viewDimension: '2d' },
 			},
+			{ binding: 9, visibility: fragment, texture: { viewDimension: '3d' } },
+			{ binding: 10, visibility: fragment, sampler: {} },
 		];
 		this.defineLayout(LAYOUT_FINAL, 'final', finalEntries);
 		// Bloom's levels, which the final pass's bloom build reads with a linear filter, after its

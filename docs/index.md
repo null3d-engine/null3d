@@ -73,7 +73,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Culling](concepts/culling.md) | Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells, whole cells out of view skipped first, and positions relative to the camera. | experimental | 0.1 |
 | [Levels of detail](concepts/lod.md) | LOD groups; generated LODs; per-instance selection. | planned | 0.2 |
 | [Assets and prefabs](concepts/assets.md) | glTF, KTX2, meshopt; prefabs and instantiate; upload budgets; memory. | experimental | 0.2 |
-| [The post-processing chain](concepts/post-processing.md) | HDR scene color, bloom at half size and below, and one final pass for exposure, tone mapping, FXAA and dithering. | experimental | 0.2 |
+| [The post-processing chain](concepts/post-processing.md) | HDR scene color, bloom at half size and below, and one final pass for exposure, tone mapping, FXAA, dithering, color grading and the vignette. | experimental | 0.2 |
 
 ### API reference
 
@@ -88,12 +88,12 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Geometry](api/geometry.md) | Generators with three.js parameters; meshes from arrays; vertex formats; large meshes. | experimental | 0.1 |
 | [Materials](api/materials.md) | standard, unlit, shader, shadowCatcher; every option. | experimental | 0.1 |
 | [Textures](api/textures.md) | loadTexture options; KTX2 files; fromData; fromImageBitmap; fromPass; cube maps. | experimental | 0.1 |
-| [Assets](api/assets.md) | loadGltf, loadTexture, loadImageBitmap, loadJson, loadBinary, preload, onProgress; environments. | experimental | 0.1 |
+| [Assets](api/assets.md) | loadGltf, loadTexture, loadImageBitmap, loadLut, loadJson, loadBinary, preload, onProgress; environments. | experimental | 0.1 |
 | [Animation](api/animation.md) | The animator; play, crossFade, layers, joint masks, additive clips, events; morph weights. | experimental | 0.2 |
 | [Raycasting and spatial queries](api/raycast.md) | raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects. | experimental | 0.2 |
 | [Input](api/input.md) | Pointer, keyboard, touch and gamepad; action maps. | experimental | 0.1 |
 | [Camera controls (@null3d/controls)](api/controls.md) | Orbit and map controls (0.1); fly and first-person controls (0.2). | experimental | 0.1 |
-| [Post-processing API](api/post.md) | post.set for tone mapping, exposure and bloom; the other effects and post.addEffect of 0.2. | experimental | 0.1 |
+| [Post-processing API](api/post.md) | post.set for tone mapping, exposure, bloom, color grading tables and the vignette; the other effects and post.addEffect of 0.2. | experimental | 0.1 |
 | [Render graph API](api/render.md) | render.addPass declarations; enabling and disabling passes; dumpGraph. | planned | 0.2 |
 | [Quality API](api/quality.md) | quality.preset, quality.set, quality.setPreset, the preset check, frame budgets, quality events. | experimental | 0.1 |
 | [Debug drawing and stats](api/debug.md) | debug.line, box, sphere, arrow, axes, grid, frustum and light; debug.stats and frameStats; engine.measure and its figures; debug.view and debug.shadowCamera. | experimental | 0.1 |
@@ -190,13 +190,13 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1403: Engine core not ready](errors/E1403.md) | An engine call ran before the engine core started in this worker, or the core started twice. | generated | 0.1 |
 | [E1404: Engine thread failed](errors/E1404.md) | An engine thread, or the drawing on the page, hit an error it could not handle. After the start the engine may have stopped. During the start, createEngine() stops the engine and rejects with this error. | generated | 0.1 |
 | [E1405: Engine thread did not start](errors/E1405.md) | An engine worker failed while the engine started. The worker's script, the engine core or the renderer did not start there, or the sketch's setup function threw an error without an engine code. | generated | 0.1 |
-| [E1406: Engine file not downloaded](errors/E1406.md) | A file of the engine core, the KTX2 transcoder or the glTF loader did not download whole. The first KTX2 file loads the transcoder, and the first glTF file loads the glTF loader. The server answered with an error, or the connection broke off. | generated | 0.1 |
+| [E1406: Engine file not downloaded](errors/E1406.md) | A file of the engine core did not download whole, or a file that a loading call loads the first time. The first KTX2 file loads the KTX2 transcoder, the first glTF file the glTF loader, and the first color grading table its readers. The server answered with an error, or the connection broke off. | generated | 0.1 |
 | [E1407: Invalid hold time](errors/E1407.md) | The ?hold= switch or the hold option of createEngine gave a hold time that is not a number of seconds from 0 to 600. | generated | 0.1 |
 | [E1408: Hold failed](errors/E1408.md) | The sketch or the engine failed in hold mode, before the engine read the held frame back. A live engine logs an error in the sketch and carries on. Hold mode stops at the first one, so a test fails at once. | generated | 0.1 |
 | [E1409: Invalid memory maximum](errors/E1409.md) | The memory option of createEngine asked for a maximum that is not a whole number of MiB from 256 to 4096. | generated | 0.1 |
 | [E1410: Sketch module not loaded](errors/E1410.md) | The sketch module that createEngine got did not load. It did not download, or its code threw an error while the module loaded. | generated | 0.1 |
 | [E1411: Asset not downloaded](errors/E1411.md) | A loading call could not download its file. The server answered with an error, such as 404 for a missing file, or the network failed. | generated | 0.1 |
-| [E1412: Asset not decoded](errors/E1412.md) | A loading call downloaded its file but could not read it. The browser could not decode the image, as with a format it does not support. Or the file was a KTX2 file that the engine does not load, or not valid JSON. | generated | 0.1 |
+| [E1412: Asset not decoded](errors/E1412.md) | A loading call downloaded its file but could not read it. The browser could not decode the image, as with a format it does not support. Or the file was a KTX2 file that the engine does not load, or not valid JSON. Or it was a color grading table that the engine does not read, such as a 1D table or one with a texel missing. The message says what in the table the engine could not read, with its line where it has one. | generated | 0.1 |
 | [E1413: Asset from another origin blocked](errors/E1413.md) | A loading call could not read a file from another origin. The browser reads such a file only when its server allows the page's origin with an Access-Control-Allow-Origin header. The browser gives no reason, so the server may also have been unreachable. | generated | 0.1 |
 | [E1414: Frame not captured](errors/E1414.md) | engine.capture() could not give an image of a frame. The engine had stopped, or the thread that draws could not read the frame back from the GPU or encode it. | generated | 0.1 |
 | [E1415: Page thread already runs a sketch](errors/E1415.md) | createEngine() was asked to run a sketch on the page's thread while another engine still runs its sketch there. The page's copy of the engine core serves one engine at a time. This happens with sketchThread: 'main', and in the single-threaded build, which runs every sketch on the page's thread. | generated | 0.1 |

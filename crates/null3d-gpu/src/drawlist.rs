@@ -588,7 +588,8 @@ pub mod layout {
     pub const DRAWS: u32 = 2;
     /// Group 2 of render pipelines that read instances from data textures: the textures.
     pub const INSTANCES: u32 = 3;
-    /// Group 0 of the final pass: the output settings, and the scene color it reads.
+    /// Group 0 of the final pass: its settings and the scene color it reads, then at bindings 9
+    /// and 10 the color grading table, a 3D texture, and its linear sampler.
     pub const FINAL: u32 = 4;
     /// The maps of render pipelines that sample them: a 2D array texture, then its sampler. It is
     /// group 1 on WebGPU, and group 3 on WebGL2, after the groups of the data textures.
@@ -607,8 +608,9 @@ pub mod layout {
     /// Group 0 of a step of bloom's chain: the step's uniform block, the texture it reads and a
     /// linear sampler.
     pub const BLOOM: u32 = 9;
-    /// Group 0 of the final pass that adds bloom: [`FINAL`]'s two bindings, then bloom's uniform
-    /// block, the texture of each of bloom's levels and their linear sampler.
+    /// Group 0 of the final pass that adds bloom: [`FINAL`]'s first two bindings, then bloom's
+    /// uniform block, the texture of each of bloom's levels and their linear sampler, then
+    /// [`FINAL`]'s color grading table and its sampler at bindings 9 and 10.
     pub const FINAL_BLOOM: u32 = 10;
     /// Group 2 of render pipelines that skin in the vertex shader: the texture of every animated
     /// instance's skinning matrices, which vertex shaders read.

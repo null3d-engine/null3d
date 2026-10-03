@@ -1,8 +1,8 @@
 # Porting post-processing
 
-three.js chains full-screen passes, each reading and writing the whole screen. null3D has a built-in chain: an HDR scene buffer and bloom at half size and below. One final pass then merges bloom, exposure, tone mapping, FXAA and dithering. Ambient occlusion, color grading and per-pixel custom effects join the chain later in 0.2. You port settings, not passes. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`, `concepts/backends`.
+three.js chains full-screen passes, each reading and writing the whole screen. null3D has a built-in chain: an HDR scene buffer and bloom at half size and below. One final pass then merges bloom, exposure, tone mapping, FXAA, dithering, color grading and the vignette. Ambient occlusion and per-pixel custom effects join the chain later in 0.2. You port settings, not passes. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`, `concepts/backends`.
 
-Versions: the HDR scene buffer, the final pass, `post.set({ toneMapping, exposure })` and `bloom` (0.2) are built. Every other setting in this file, `post.addEffect` and custom passes come later in 0.2. Until then, a port keeps the tone mapping, the exposure and bloom of the three.js chain, and the report lists each effect it dropped.
+Versions: the HDR scene buffer, the final pass, `post.set({ toneMapping, exposure })`, `bloom`, `lut` and `vignette` (0.2) are built. Every other setting in this file, `post.addEffect` and custom passes come later in 0.2. Until then, a port keeps the tone mapping, the exposure, bloom, color grading and the vignette of the three.js chain. The report lists each effect it dropped.
 
 ## Contents
 
@@ -35,7 +35,8 @@ Versions: the HDR scene buffer, the final pass, `post.set({ toneMapping, exposur
 | `SMAAPass`, `SSAARenderPass` | MSAA, which the presets from Medium use, or `createEngine({ antialias: 'fxaa' })` | No SMAA or SSAA |
 | `TAARenderPass` | Not in 1.0 | MSAA meanwhile |
 | `OutlinePass` (`edgeStrength`, `edgeThickness`, `visibleEdgeColor`, `hiddenEdgeColor`, `pulsePeriod`, `selectedObjects`) | `outline: { color, thickness }` and `obj.setOutlined(true)` (0.2) | Hidden-edge color and pulsing: custom effect or after 1.0 |
-| `LUTPass` with `LUTCubeLoader` or `LUT3dlLoader` | `lut: await assets.loadLut(url)` (0.2) | |
+| `LUTPass` with `LUTCubeLoader` or `LUT3dlLoader` | `lut: await assets.loadLut(url)`, `lutIntensity` (0.2) | `intensity` becomes `lutIntensity`. The table grades after the tone mapping, as after `OutputPass`. `LUTImageLoader` strips: export a `.cube` file |
+| `ShaderPass(VignetteShader)` (`offset`, `darkness`) | `vignette: { offset, darkness }` (0.2) | Same meanings, so keep the two numbers |
 | `BokehPass` (depth of field) | Not in 1.0 | Custom `hdr` effect with `sampleDepth` (0.2), or skip |
 | `SSRPass`, `ReflectorForSSRPass` | Not in 1.0 | Environment reflections (0.2) |
 | `FilmPass`, `GlitchPass`, `HalftonePass`, `DotScreenPass`, `RenderPixelatedPass`, `AfterimagePass` | `post.addEffect` (0.2) | Cookbook recipes cover film grain, pixelation and afterimage |
@@ -50,9 +51,9 @@ Versions: the HDR scene buffer, the final pass, `post.set({ toneMapping, exposur
 | `BloomEffect` (`intensity`, `luminanceThreshold`, `luminanceSmoothing`, `mipmapBlur`) | `bloom: { strength: intensity, threshold: luminanceThreshold }` (0.2); smoothing and mip blur are built in |
 | `ToneMappingEffect` (`mode`) | `toneMapping` |
 | `SMAAEffect`, `FXAAEffect` | MSAA, which the presets from Medium use, or `createEngine({ antialias: 'fxaa' })` |
-| `VignetteEffect` (`offset`, `darkness`) | `vignette: { amount }` (0.2); tune until it matches |
+| `VignetteEffect` (`offset`, `darkness`) | `vignette: { offset, darkness }` (0.2): the `ESKIL` technique's meanings; tune the numbers for the default technique |
 | `SSAOEffect`, N8AO | `ao` (0.2) |
-| `LUT3DEffect` | `lut` (0.2) |
+| `LUT3DEffect` | `lut: await assets.loadLut(url)` (0.2) |
 | `ChromaticAberrationEffect`, `NoiseEffect`, `ScanlineEffect`, `PixelationEffect` | `post.addEffect` (0.2; per-pixel, so they merge into the final pass) |
 | `DepthOfFieldEffect`, `GodRaysEffect`, `SSREffect` | Not in 1.0; custom `hdr` effects (0.2) where essential |
 | `OutlineEffect`, `SelectiveBloomEffect` | `outline` (0.2); selective bloom through emissive strength and the bloom threshold (0.2) |

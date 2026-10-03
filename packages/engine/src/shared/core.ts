@@ -243,6 +243,11 @@ export interface CoreGlue extends CoreErrors {
 		anisotropy: number,
 	): number;
 	/**
+	 * A 3D texture with no texels yet, in a `FORMAT_*` code of linear 8-bit color or half floats,
+	 * read with a linear filter and clamped at its edges. Returns its handle.
+	 */
+	createVolumeTexture(width: number, height: number, depth: number, format: number): number;
+	/**
 	 * Gives a texture an image, uploaded with the `TEXTURE_PREMULTIPLIED_ALPHA` flag or 0, and
 	 * returns the image's id for the thread that draws. An image of another size resizes it.
 	 */
@@ -315,12 +320,24 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setLightDefault(which: number, value: number): number;
 	setBackground(r: number, g: number, b: number): number;
-	/** The tone mapping, by code, and the exposure, from the next frame on. */
-	setOutput(toneMapping: number, exposure: number): number;
-	/** Turns bloom on with its strength, radius and threshold, or off, from the next frame on. */
-	setBloom(on: boolean, strength: number, radius: number, threshold: number): number;
+	/**
+	 * The address of the block of post-processing values (`POST_VALUE_*`), 32-bit floats that
+	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`.
+	 */
+	postValues(): number;
+	/** The tone mapping, by code, and the exposure from the post-processing values, from the next frame on. */
+	setOutput(toneMapping: number): number;
+	/** Turns bloom on with the post-processing values' strength, radius and threshold, or off. */
+	setBloom(on: boolean): number;
 	/** How many times fewer taps than three.js's bloom's blurs read, from the next frame on. */
 	setBloomSamples(divisor: number): number;
+	/**
+	 * Grades the canvas color with the color grading table in a 3D texture, or with none for 0,
+	 * from the next frame on, with the post-processing values' intensity and domain.
+	 */
+	setLut(texture: number): number;
+	/** Turns the vignette on with the post-processing values' offset and darkness, or off. */
+	setVignette(on: boolean): number;
 	/**
 	 * Draws the scene into a target of another format, by code, with another anti-aliasing mode, by
 	 * code, from the next frame on.
@@ -464,6 +481,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMaterialValues',
 	'setMaterialMap',
 	'createTexture',
+	'createVolumeTexture',
 	'setTextureImage',
 	'setTextureData',
 	'destroyTexture',
@@ -481,9 +499,12 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setLightValue',
 	'setLightDefault',
 	'setBackground',
+	'postValues',
 	'setOutput',
 	'setBloom',
 	'setBloomSamples',
+	'setLut',
+	'setVignette',
 	'setCanvasOutput',
 	'setRenderScaling',
 	'setShadowQuality',
