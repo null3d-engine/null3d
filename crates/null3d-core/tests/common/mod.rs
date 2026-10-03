@@ -1,6 +1,7 @@
 //! Helpers shared by the integration tests: native threads that act as job workers, waits for
-//! other threads that no machine load can fail, a small deterministic random number generator, and
-//! reference math. The allocation counter is `null3d_core::testing::CountingAllocator`.
+//! other threads that no machine load can fail, a small deterministic random number generator,
+//! reference math, and a generated animated character. The allocation counter is
+//! `null3d_core::testing::CountingAllocator`.
 #![allow(dead_code)]
 
 use std::sync::Arc;
@@ -8,8 +9,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use null3d_core::animation::{
+    Channel, Clip, DEFAULT_RATE, Interpolation, NO_PARENT, Skeleton, SourceTrack, resample,
+};
 use null3d_core::culling::Frustum;
 use null3d_core::jobs::{JobConfig, JobSystem, WorkerId};
+use null3d_core::math::invert64;
 
 /// A job system with native threads running its worker loops. Dropping it shuts the system down
 /// and joins the threads.
@@ -366,4 +371,111 @@ pub fn sphere(rings: u16, segments: u16) -> (Vec<f32>, Vec<u16>) {
         }
     }
     (positions, indices)
+}
+
+/// A quaternion `(x, y, z, w)` that turns `angle` radians about a unit axis.
+pub fn axis_angle(axis: [f32; 3], angle: f32) -> [f32; 4] {
+    let (s, c) = (angle / 2.0).sin_cos();
+    [axis[0] * s, axis[1] * s, axis[2] * s, c]
+}
+
+/// A generated character for animation tests and benchmarks, like the skinning page's crowd: a
+/// root with five chains of joints, and two clips that bend every joint. The first clip has keys
+/// every thirtieth of a second for a second, the second every 24th for 0.75 s. Each clip has a
+/// constant rotation track, and the first a step track.
+pub fn character(joints: u32) -> (Skeleton, Vec<Clip>) {
+    const LIMBS: u32 = 5;
+    let parents: Vec<u32> = (0..joints)
+        .map(|j| match j {
+            0 => NO_PARENT,
+            1..=LIMBS => 0,
+            _ => j - LIMBS,
+        })
+        .collect();
+    let axis = |j: u32| match j % 3 {
+        0 => [1.0, 0.0, 0.0],
+        1 => [0.0, 0.0, 1.0],
+        _ => [0.6, 0.0, 0.8],
+    };
+    let mut rest = Vec::new();
+    let mut model: Vec<Mat64> = Vec::new();
+    for j in 0..joints {
+        let t = if j == 0 {
+            [0.0, 1.0, 0.0]
+        } else {
+            [0.0, 0.15, 0.0]
+        };
+        let r = axis_angle(axis(j), 0.1 * (j % 7) as f32);
+        rest.extend(t);
+        rest.extend(r);
+        rest.extend([1.0; 3]);
+        let local = compose64(t, r, [1.0; 3]);
+        let parent = parents[j as usize];
+        model.push(if parent == NO_PARENT {
+            local
+        } else {
+            mul64(&model[parent as usize], &local)
+        });
+    }
+    let binds: Vec<f32> = model
+        .iter()
+        .flat_map(|m| invert64(m).expect("a rest pose that keeps its volume"))
+        .map(|v| v as f32)
+        .collect();
+    let skeleton = Skeleton::new(&parents, &rest, &binds).unwrap();
+
+    let clips = [(30.0f32, 30u32, 1.3f32), (24.0, 18, 2.1)]
+        .iter()
+        .enumerate()
+        .map(|(c, &(rate, intervals, speed))| {
+            let times: Vec<f32> = (0..=intervals).map(|k| k as f32 / rate).collect();
+            let mut tracks: Vec<(u32, Channel, Interpolation, Vec<f32>)> = Vec::new();
+            let root = times
+                .iter()
+                .flat_map(|&t| {
+                    [
+                        0.2 * (speed * t).sin(),
+                        1.0 + 0.05 * (2.0 * speed * t).cos(),
+                        t,
+                    ]
+                })
+                .collect();
+            tracks.push((0, Channel::Translation, Interpolation::Linear, root));
+            for j in 0..joints {
+                let phase = j as f32 * 0.37 + c as f32;
+                let constant = j == 1 + c as u32;
+                let values = times
+                    .iter()
+                    .flat_map(|&t| {
+                        let swing = if constant {
+                            0.0
+                        } else {
+                            0.6 * (speed * 6.0 * t + phase).sin()
+                        };
+                        axis_angle(axis(j), 0.1 * (j % 7) as f32 + swing)
+                    })
+                    .collect();
+                tracks.push((j, Channel::Rotation, Interpolation::Linear, values));
+            }
+            if c == 0 && joints > 3 {
+                let values = times
+                    .iter()
+                    .flat_map(|&t| [1.0, 1.0 + 0.2 * (t * 4.0).floor(), 1.0])
+                    .collect();
+                tracks.push((3, Channel::Scale, Interpolation::Step, values));
+            }
+            let sources: Vec<SourceTrack<'_>> = tracks
+                .iter()
+                .map(|(joint, channel, interpolation, values)| SourceTrack {
+                    joint: *joint,
+                    channel: *channel,
+                    interpolation: *interpolation,
+                    times: &times,
+                    values,
+                })
+                .collect();
+            resample(&skeleton, &sources, DEFAULT_RATE).unwrap()
+        })
+        .collect();
+    (skeleton, clips)
 }

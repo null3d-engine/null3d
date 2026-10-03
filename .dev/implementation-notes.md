@@ -14,7 +14,9 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - Keep closures out of functions that run every frame, even in a branch that rarely runs. Until the browser optimizes such a function, it allocates the variables a closure captures on every call.
 - Shrink a reused list with `pop`, never by setting its length to 0. In Chrome, a length of 0 frees the list's storage, and the next `push` allocates it again. The sketch's list of touches works this way.
 - Keep numbers that change every frame in typed arrays, not in an object's properties. Playwright's headless Chromium 153, which CI tests with, makes a new object for each fraction stored in a property, while Chrome 154 does not. Six such stores in the camera controls' update made 144 bytes of garbage a frame there. The controls keep those numbers in one `Float64Array`.
-- Pass fractions to a per-frame helper in a typed array, not as arguments. A call that the browser does not inline puts each fraction it passes in an object of its own.
+- Pass fractions to a per-frame helper in a typed array, not as arguments. A call that the browser does not inline puts each fraction it passes in an object of its own. Whether the browser inlines a helper changes from scene to scene. The WebGPU replay passed each render pass's clear color to `RenderPassSetup.setColor` as four numbers. S1 inlined the call, and S4 did not, so each of S4's four passes boxed the fog color's three fractions. With the color read from the draw list's floats, S4's replay fell from about 420 to about 250 bytes per frame.
+- Call a browser method with the same kinds of argument every time. Say one call site passes a number in one frame and `undefined` in the next. The browser's optimized code for the call then throws itself away at the first `undefined`. It compiles the same code again a second or so later, and the cycle repeats while the page runs. S4's replay bound some vertex buffers whole (size `undefined`) and others in part, so the browser threw its replay code away every 1.5 seconds. Each new compile left about 10 KB of objects in whichever callback ran first, the wake-up timer or the GPU completion callback. So the replay calls `setVertexBuffer` and `setIndexBuffer` without the size in one branch and with it in another.
+- A function that runs once per frame can stay on the browser's middle tier for minutes. That tier inlines only small calls. In S4, the benchmark's camera step never reached the top tier in 45 seconds. So its call to the camera's `lookAt` was never inlined, and its three fractions were boxed every frame. The step now computes the rotation with `quat.lookAt`, which reads arrays, and passes it to `setRotation`, which is as small as `setPosition`. Run Chrome with `--js-flags=--log-code --log-deopt --logfile=<file>` to see which tier each function reaches and which code the browser throws away.
 - The pipelined sketch loop awaits its `Atomics.waitAsync` promise once per frame. The browser makes the wait's result and its promise, and the await adds its reaction, about 93 to 111 bytes per frame in S1. A loop that resumed from the promise's `then`, with no await, allocated more: 120 to 135 bytes. So the loop keeps its await, and `bench/allocation.ts` budgets it.
 - The allocation checks of the math helpers and the camera controls sample a loop in a test page (`tests/lib/allocations.ts`). Give such a loop fractions, as real input has: whole numbers never allocate, so they hide these faults.
 
@@ -121,6 +123,71 @@ Warm loads and loads at full speed stayed within the spread between runs. The fi
 - A shader that samples a target that a pass drew flips its v coordinate in its WebGL2 variant. The texture test shader (`test_textures.wgsl`) shows the pattern, and so does the shadow map lookup (`null3d::shadows`).
 - GLSL ES 3.00 has no binding numbers. So the WebGL2 backend gives each WGSL binding a slot: a texture unit, a uniform block binding point and a sampler's place. Each bind group starts at a slot of its own, with ten slots for the per-frame group (`slotOf` in `gpu/webgl2/programs.ts`). A unit test checks every GLSL shader's bindings against the slots.
 - Writes and uploads land when the GPU queue gets them. On WebGPU that is before the commands recorded since the last submit. A draw list therefore writes a resource before any command in the same submit that uses it. The mock backend rejects a write after such a use.
+
+## Cube, 3D and high dynamic range textures
+
+M2-E1 added these texture kinds to the GPU layer for environment maps, skies and color grading tables. The engine's scene code does not use them yet.
+
+- `CreateTexture` names the kind as its binding view: 2D, a 2D array, a cube or a 3D texture. Compatibility mode and WebGL2 both fix the kind when the texture is made, so the draw list gives it then.
+- A cube texture has 6 square layers, its faces, in WebGPU's order: +X, -X, +Y, -Y, +Z, -Z. WebGL2's face targets come in the same order, so the WebGL2 backend adds the layer to `TEXTURE_CUBE_MAP_POSITIVE_X`.
+- A 3D texture keeps its depth in the layers word. The depth halves at each mip level, as the width and height do (`view::level_layers` in `drawlist.rs`). Writes and copies name a depth slice where they name a layer of the other kinds.
+- On WebGL2, writes, image uploads, copies and render targets reach a cube face through calls in two dimensions, one call per face. Arrays and 3D textures take calls in three dimensions.
+- Both paths store written texels with row 0 at t = 0 of each face. Both pick a face and its texel by the same rules. So a written cube reads the same way on both paths.
+- WebGL2 stores what a render pass draws bottom row first. A pass that draws a whole cube face therefore turns its geometry upside down in its WebGL2 variant: the vertex shader negates clip y. The face then holds WebGPU's rows, and every shader reads a cube the same way on both paths. `vs_face` in `test_cubes.wgsl` shows it.
+- The other choice was a flip in every shader that reads a cube. The flip depends on the face that a direction picks. It also depends on whether a pass drew the cube or writes filled it. So the flip stays on the side that draws. It holds only for a pass over the whole face, because the backend also flips viewports. A viewport over part of a face lands mirrored on WebGL2.
+- Nothing draws into a 3D texture. WebGPU draws into a 3D slice only through a `depthSlice` attachment, which the GPU layer does not have. Color grading tables come from files, so writes fill them.
+- WebGPU copies images into 2D textures only, which include cube faces. A 3D texture takes texel writes.
+- WebGL2 promises at least 2,048 texels for a cube face and 256 for each side of a 3D texture. Devices may offer more, but the mock backend refuses larger ones (`CUBE_TEXTURE_SIZE` and `TEXTURE_3D_SIZE` in `caps.rs`). Color grading tables of 32 or 64 texels a side fit.
+- The GPU makes mip levels for 2D arrays of 8-bit color only. Cubes and 3D textures get every level from writes, copies or draws. A prefiltered environment brings one level per roughness step. A cube of six plain images would need its levels made. That waits for the WebGL2 mip path fix of the Adreno 830 fault (`fix/adreno-webgl2`), so that one mip path serves every kind.
+- The mock backend refuses a pass that reads any part of a texture that it draws into, another face or level included. WebGPU allows reads of other levels, but Adreno 830's WebGL2 refuses them (see "Browser faults").
+
+### Formats by GPU path
+
+The test page `tests/pages/replay-cube-3d.ts` checks each format on each path. It fills cubes, 3D textures and 2D arrays in each format, then reads them with nearest and linear filters at fractional mip levels. Its image test, `replay-cube-3d`, requires every path to draw one image.
+
+| Format | Bytes per texel | WebGPU, core and compatibility mode | WebGL2 |
+| --- | --- | --- | --- |
+| `rgba16float` | 8 | Filters, draws, copies. Compatibility mode has no multisampling of it | `RGBA16F` filters. Drawing into it, and copying from it, need `EXT_color_buffer_float` or `EXT_color_buffer_half_float`, which the backend asks for |
+| `rgb9e5ufloat` | 4 | Filters and copies. No device draws into it | `RGB9_E5` filters. WebGL2 cannot draw into it or copy it, because copies read through a framebuffer |
+| `rg11b10ufloat` | 4 | Filters and copies. Draws with `rg11b10ufloat-renderable` | `R11F_G11F_B10F` filters. Draws with `EXT_color_buffer_float` |
+| `rgba32float` | 16 | Filters only with the optional feature `float32-filterable` | Filters only with `OES_texture_float_linear`, asked for by name |
+
+- `rgb9e5ufloat` holds high dynamic range color in half the memory of `rgba16float`. Its three channels share one exponent, so a channel far below the brightest keeps fewer bits. It has no alpha.
+- No path draws into `rgb9e5ufloat`. So a cube that the GPU prefilters at run time needs `rgba16float`, and only files that a tool wrote can use `rgb9e5ufloat`. D-19 chooses between them for environments.
+- Hard rule 12 keeps 32-bit floats unfiltered. The page still reads one 32-bit float texture with a linear filter, where the device offers the filter, and reports whether the texels blended. GPUs differ there, so the page paints that cell black before it publishes its image.
+- The capability reports of the team's devices show `float32-filterable` in Chrome, Safari and Firefox on the Mac, and not on the iPad. A WebGL2 context without `OES_texture_float_linear` reads black from a 32-bit float texture through a linear filter. On the Mac, a run that did not ask for the extension read black. A run that asked read blended texels.
+
+Measured on 3 October 2026, Chrome 154 on the Mac's GPU and Playwright's Chromium 153 on SwiftShader:
+
+| Check | Core WebGPU | Compatibility mode | WebGL2 |
+| --- | --- | --- | --- |
+| Cubes of `rgba16float`, `rgb9e5ufloat` and `rg11b10ufloat`: writes of all six faces, nearest and linear filters, levels 0 to 2 and between them | Pass | Pass | Pass |
+| 3D textures of `rgba8unorm`, `rgba16float` and `rgb9e5ufloat`: writes of all slices, a slice of level 1, linear filtering between slices | Pass | Pass | Pass |
+| An image uploaded into a face, a face copied into another face, a 2D layer copied into a face and into a 3D slice | Pass | Pass | Pass |
+| Draws into a whole face of levels 0 and 1 of an `rgba16float` cube | Pass | Pass | Pass |
+| `rgba32float` with a linear filter | Offered, blended | Offered, blended | Offered, blended |
+
+- On each GPU, the three paths drew the same pixels exactly. SwiftShader's image differed from the Mac GPU's in 1.9% of the pixels, by up to 27 of 255, all in filtered cells. So each GPU kind keeps its own reference, as for every image test.
+
+Measured on 3 October 2026 through the device runner, Safari 26.6.2 and Firefox 157 on the Mac. Each run compares with the Mac's Chrome reference, at the device tolerance of 0.5% of the pixels:
+
+| Browser | Core WebGPU | Compatibility mode | WebGL2 | `rgba32float` with a linear filter |
+| --- | --- | --- | --- | --- |
+| Safari 26.6.2 | Pass | Pass | Pass | Offered and blended on all three paths |
+| Firefox 157 | Pass | Pass | Pass | Offered and blended on all three paths |
+
+- Safari first failed both WebGPU paths: it dropped the copy of a 2D layer into the last 3D slice ("Browser faults"). The WebGPU backend now copies through a buffer, and these results come from after that fix.
+- The iPad and the phones have not run the page yet. Add their rows here when they do.
+
+### Draw-list numbers held for M2
+
+M2-E1 reserved the opcode numbers that other M2 tasks need, so lanes that work at once do not collide. The task that adds a command moves its number from `reserved` into `Op` in `drawlist.rs`.
+
+- 43, `DISPATCH_INDIRECT`: workgroup counts from a buffer. Skinning on WebGPU (M2-C3) skins only the meshes that culling found visible. Two-phase occlusion culling (M2-I1) dispatches its second phase from the first phase's count.
+- 50, `COPY_TEXTURE_TO_BUFFER`: held since M1-A3, for GPU picking (M2-D6).
+- 52, `DESTROY_PIPELINE`: `material.destroy()` (M2-J3) and shader hot reload (M2-J2) release pipelines. Today a pipeline lives until its id is used again.
+- 53, `READ_BUFFER`: GPU picking (M2-D6) reads the ids under the pointer back into engine memory a frame later.
+- The new format code is 19, `RGB9E5_UFLOAT`, and the new view codes are 2, `CUBE`, and 3, `D3`.
 
 ## Texture uploads
 
@@ -271,6 +338,10 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 
 - Safari 26 drops a whole submit if its commands hold two or more copies from one buffer that was mapped when they were recorded. WebGPU allows that, and Chrome and Firefox accept it. The staging ring therefore records a frame's copies after it unmaps the buffer, just before the frame's next command.
 - The uploads test page reports each frame's WebGPU errors, which show such a failure.
+- Safari 26.6.2 on a Mac drops a copy from a 2D texture into a 3D texture when the copy starts past the first slice. It reports no error, and the slice keeps its old texels. This happened in core WebGPU and in compatibility mode, from one layer or from a layer of an array. A copy into the first slice lands. Copies out of a 3D texture, into a 2D texture or between 3D slices, land too. Chrome 154 and Firefox 157 land every case. A page with only these copies showed it.
+- So the WebGPU backend sends every copy from a 2D texture into a 3D texture through a buffer. It copies the texels into the buffer, then into the slice. Safari lands those copies. The backend keeps one buffer for it and grows it when a copy needs more. Such copies fill color grading tables when content loads, not in the frame loop. Before the fix, the `replay-cube-3d` test failed in Safari on both WebGPU tiers. The copied slice read black, which was 2.5% of the image. Options rejected:
+  - The buffer path for Safari only. The backend cannot tell browsers apart (hard rule 14). A feature test would need a copy and a readback at every start.
+  - A test page that fills the slice another way. Users' copies would then still fail in Safari.
 - SwiftShader takes a line's direction from its projected ends before it clips the line. A line with one end behind the camera draws reversed and fills no pixels, while a line that crosses only the far plane draws. The wireframe debug view lost a floor's edges on CI that way. So the debug view sketch starts its floor in front of the camera, below the view's bottom edge.
 - SwiftShader, the software GPU of the CI machines, loses depth precision past 100 m even in reversed depth from 0 to 1. The depth precision scene fights there at 250 m, 4 km and 10 km, on WebGPU too. The image tests therefore expect no fighting in reversed depth only on a real GPU.
 - Arm's Mali GPUs reject a GLSL array constructor with its size in the type, such as `vec3[9](a, b, ...)`, when its values are not constants. The compiler reports `S0032: no default precision defined for variable 'vec3[9]'`. It does so although the shader sets `precision highp float;`. GLSL ES 3.00 allows the constructor, and Adreno, Apple and SwiftShader accept it. A Google Pixel with a Mali-G715 failed the library test shader this way. The shader builds the nine light colors for `lighting::sh_irradiance` there. The line number in the error counts lines in the shader that Chrome's translator (ANGLE) gives the driver, not in ours.

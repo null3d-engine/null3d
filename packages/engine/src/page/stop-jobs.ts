@@ -15,8 +15,18 @@ import { Slot } from '../shared/control';
  * job system, and nothing after the first call.
  */
 export function stopJobWorkers(memory: WebAssembly.Memory, slots: Int32Array): void {
-	const wake = Atomics.load(slots, Slot.JobsWakeAddress);
-	const stop = Atomics.load(slots, Slot.JobsStopAddress);
+	stopJobWorkersAt(
+		memory,
+		Atomics.load(slots, Slot.JobsWakeAddress),
+		Atomics.load(slots, Slot.JobsStopAddress),
+	);
+}
+
+/**
+ * Like `stopJobWorkers`, with the addresses of the job system's wake word and stop flag, which the
+ * core's `jobsWakeAddress` and `jobsStopAddress` give.
+ */
+export function stopJobWorkersAt(memory: WebAssembly.Memory, wake: number, stop: number): void {
 	if (wake === 0 || stop === 0) return;
 	const buffer = memory.buffer;
 	const flags = new Uint8Array(buffer);

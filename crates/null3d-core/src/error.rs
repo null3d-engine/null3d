@@ -17,6 +17,10 @@ pub enum Resource {
     BackgroundTasks = 4,
     /// Bytes in a frame arena.
     FrameArena = 5,
+    /// Animated instances in the animation table.
+    AnimatedInstances = 6,
+    /// Joints of animated instances, whose skinning matrices the animation table holds.
+    AnimatedJoints = 7,
 }
 
 /// An error from the core. [`CoreError::code`] gives the number the TypeScript error table uses,

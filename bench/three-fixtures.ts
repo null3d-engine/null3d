@@ -7,9 +7,15 @@
 //   enclose no area, a triangle that repeats a vertex, and a vertex that no triangle uses.
 // - three_geometry.rs: the arrays that each geometry class builds, with its defaults and with
 //   arguments that reach its special cases, as counts and digests of their bits.
+// - three_animation.rs (in the core's tests): a small skeleton, clips with linear and step tracks
+//   on grids of 30 and 24 keys per second and at uneven times, and the local pose and skinning
+//   matrices that three.js's AnimationMixer and Skeleton give for single clips and blends.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
+	AnimationClip,
+	AnimationMixer,
+	Bone,
 	BoxGeometry,
 	BufferAttribute,
 	BufferGeometry,
@@ -17,14 +23,24 @@ import {
 	CircleGeometry,
 	ConeGeometry,
 	CylinderGeometry,
+	Group,
+	InterpolateDiscrete,
+	InterpolateLinear,
+	type KeyframeTrack,
 	PlaneGeometry,
+	Quaternion,
+	QuaternionKeyframeTrack,
 	REVISION,
 	RingGeometry,
+	Skeleton,
 	SphereGeometry,
 	TorusGeometry,
+	Vector3,
+	VectorKeyframeTrack,
 } from 'three';
 
 const FIXTURES = join(import.meta.dirname, '../crates/null3d-render/tests/fixtures');
+const CORE_FIXTURES = join(import.meta.dirname, '../crates/null3d-core/tests/fixtures');
 
 interface Mesh {
 	name: string;
@@ -242,12 +258,326 @@ pub struct Case {
 	return `${out}];\n`;
 }
 
+/** One joint of the animation fixture's skeleton: parent, translation, rotation and scale. */
+interface Joint {
+	parent: number;
+	translation: [number, number, number];
+	/** An axis and an angle in radians. */
+	rotation: [number, number, number, number];
+	scale: [number, number, number];
+}
+
+/**
+ * A small character: a spine with a head, an arm and a leg. One rest rotation is near a half turn,
+ * and the hand has a scale that differs per axis.
+ */
+const JOINTS: Joint[] = [
+	{ parent: -1, translation: [0, 1, 0], rotation: [0, 1, 0, 0], scale: [1, 1, 1] },
+	{ parent: 0, translation: [0, 0.5, 0], rotation: [1, 0, 0, 0.1], scale: [1, 1, 1] },
+	{ parent: 1, translation: [0, 0.5, 0], rotation: [0, 0, 1, -0.2], scale: [1, 1, 1] },
+	{ parent: 2, translation: [0, 0.4, 0.05], rotation: [0, 1, 0, 0.3], scale: [0.9, 0.9, 0.9] },
+	{ parent: 2, translation: [0.3, 0.3, 0], rotation: [0, 0, 1, 1.2], scale: [1, 1, 1] },
+	{ parent: 4, translation: [0, 0.6, 0], rotation: [0, 1, 0, 0], scale: [1, 1.2, 1] },
+	{ parent: 0, translation: [0.15, -0.1, 0], rotation: [1, 0, 0, 3], scale: [1, 1, 1] },
+	{ parent: 6, translation: [0, 0.8, 0], rotation: [1, 0, 0, -0.5], scale: [1, 1, 1] },
+];
+
+/** A unit quaternion `(x, y, z, w)` that turns `angle` radians about an axis. */
+function axisAngle(x: number, y: number, z: number, angle: number): number[] {
+	const q = new Quaternion().setFromAxisAngle(new Vector3(x, y, z).normalize(), angle);
+	return [q.x, q.y, q.z, q.w].map(Math.fround);
+}
+
+interface Track {
+	joint: number;
+	channel: 'translation' | 'rotation' | 'scale';
+	step: boolean;
+	times: number[];
+	values: number[];
+}
+
+/** Keys of `channel` on `joint` at each of `times`, from a function of time. */
+function track(
+	joint: number,
+	channel: Track['channel'],
+	times: number[],
+	value: (t: number) => number[],
+	step = false,
+): Track {
+	return {
+		joint,
+		channel,
+		step,
+		times: times.map(Math.fround),
+		values: times.flatMap((t) => value(Math.fround(t)).map(Math.fround)),
+	};
+}
+
+/** `count + 1` key times from 0 at `rate` keys per second. */
+const grid = (rate: number, count: number) => Array.from({ length: count + 1 }, (_, k) => k / rate);
+
+const TAU = Math.PI * 2;
+
+/**
+ * The clips. "grid30" has keys every thirtieth of a second, a constant rotation, a constant
+ * translation away from the rest pose, a joint no track moves, and a step track. "uneven" has keys
+ * at uneven times, a step track, and a rotation whose next key is stored negated. "grid24" has
+ * keys every 24th of a second.
+ */
+const CLIPS: { name: string; tracks: Track[] }[] = [
+	{
+		name: 'grid30',
+		tracks: [
+			track(0, 'translation', grid(30, 30), (t) => [
+				0.2 * Math.sin(TAU * t),
+				1 + 0.1 * Math.cos(TAU * t),
+				0.5 * t,
+			]),
+			track(1, 'rotation', grid(30, 30), (t) => axisAngle(1, 0, 0, 0.1 + 0.4 * Math.sin(TAU * t))),
+			track(2, 'rotation', grid(30, 30), (t) => axisAngle(0.3, 1, 0.2, 1.5 * t)),
+			track(3, 'rotation', grid(30, 30), () => axisAngle(0, 1, 0, 0.7)),
+			track(4, 'rotation', grid(30, 30), (t) => axisAngle(0, 0, 1, 1.2 + 2.5 * Math.sin(TAU * t))),
+			track(5, 'scale', grid(30, 30), (t) => [1 + 0.3 * t, 1.2, 1 - 0.2 * t]),
+			track(5, 'translation', grid(30, 30), () => [0, 0.7, 0]),
+			track(
+				7,
+				'rotation',
+				grid(30, 30),
+				(t) => axisAngle(1, 0, 0, -0.5 - Math.floor(t * 6) * 0.1),
+				true,
+			),
+		],
+	},
+	{
+		name: 'uneven',
+		tracks: [
+			track(0, 'translation', [0, 0.13, 0.41, 0.9, 1.37], (t) => [t, 1 - 0.2 * t * t, -0.3 * t]),
+			track(1, 'rotation', [0, 0.13, 0.41, 0.9, 1.37], (t) =>
+				axisAngle(0.2, 0.1, 1, 0.8 * Math.sin(3 * t)),
+			),
+			track(4, 'rotation', [0, 0.5, 1], (t) => axisAngle(0, 0, 1, 1.2 + t), true),
+			{
+				...track(6, 'rotation', [0, 0.6, 1.2], (t) => axisAngle(1, 0, 0, 3 + 0.5 * t)),
+				// The second key negated: the same rotation, on the other side of the sphere.
+				values: [
+					...axisAngle(1, 0, 0, 3),
+					...axisAngle(1, 0, 0, 3.3).map((v) => -v),
+					...axisAngle(1, 0, 0, 3.6),
+				],
+			},
+		],
+	},
+	{
+		name: 'grid24',
+		tracks: [
+			track(0, 'translation', grid(24, 18), (t) => [0.1 * t, 1 + 0.05 * Math.sin(TAU * t), 0]),
+			track(2, 'rotation', grid(24, 18), (t) => axisAngle(0, 1, 0, -0.2 + 2 * t * t)),
+		],
+	},
+];
+
+/** The uneven clip's frame times once resampled at 30 keys per second: 42 intervals over 1.37 s. */
+const unevenFrame = (k: number) => (k * 1.37) / 42;
+
+/**
+ * Each case blends its clips at their times and weights. The uneven clip is sampled on the
+ * resampled frames, where resampling loses nothing.
+ */
+const CASES: { name: string; samples: [clip: number, time: number, weight: number][] }[] = [
+	{ name: 'rest', samples: [] },
+	{ name: 'grid30 at 0', samples: [[0, 0, 1]] },
+	{ name: 'grid30 at 0.37', samples: [[0, 0.37, 1]] },
+	{ name: 'grid30 at 0.5', samples: [[0, 0.5, 1]] },
+	{ name: 'grid30 at 0.71', samples: [[0, 0.71, 1]] },
+	{ name: 'grid30 at its end', samples: [[0, 1, 1]] },
+	{ name: 'grid30 past its end', samples: [[0, 1.4, 1]] },
+	{ name: 'uneven at frame 0', samples: [[1, unevenFrame(0), 1]] },
+	{ name: 'uneven at frame 5', samples: [[1, unevenFrame(5), 1]] },
+	{ name: 'uneven at frame 19', samples: [[1, unevenFrame(19), 1]] },
+	{ name: 'uneven at frame 33', samples: [[1, unevenFrame(33), 1]] },
+	{ name: 'uneven at its end', samples: [[1, 1.37, 1]] },
+	{ name: 'grid24 at 0.3', samples: [[2, 0.3, 1]] },
+	{ name: 'grid24 at 0.61', samples: [[2, 0.61, 1]] },
+	{
+		name: 'grid30 and grid24, weights 0.6 and 0.4',
+		samples: [
+			[0, 0.37, 0.6],
+			[2, 0.2, 0.4],
+		],
+	},
+	{ name: 'grid30 at weight 0.5, with the rest pose', samples: [[0, 0.8, 0.5]] },
+	{
+		name: 'grid30 and grid24, weights 0.7 each',
+		samples: [
+			[0, 0.1, 0.7],
+			[2, 0.5, 0.7],
+		],
+	},
+	{
+		name: 'three clips, weights 0.5, 0.3 and 0.2',
+		samples: [
+			[0, 0.62, 0.5],
+			[1, unevenFrame(12), 0.3],
+			[2, 0.45, 0.2],
+		],
+	},
+];
+
+/** A number as a Rust float literal. */
+function float(value: number): string {
+	const text = String(value);
+	return /[.e]/.test(text) ? text : `${text}.0`;
+}
+
+/** Numbers as a Rust array literal of floats. */
+function floats(values: number[], perRow: number, indent = '    '): string {
+	const lines: string[] = [];
+	for (let k = 0; k < values.length; k += perRow)
+		lines.push(
+			`${indent}${values
+				.slice(k, k + perRow)
+				.map(float)
+				.join(', ')},`,
+		);
+	return `[\n${lines.join('\n')}\n${indent.slice(4)}]`;
+}
+
+/** The skeleton's bones under a group at the origin, at rest, with their world matrices. */
+function buildBones(): { group: Group; bones: Bone[] } {
+	const group = new Group();
+	const bones: Bone[] = [];
+	for (const [j, joint] of JOINTS.entries()) {
+		const bone = new Bone();
+		bone.name = `joint${j}`;
+		bone.position.fromArray(joint.translation.map(Math.fround));
+		bone.quaternion.fromArray(axisAngle(...joint.rotation));
+		bone.scale.fromArray(joint.scale.map(Math.fround));
+		(joint.parent < 0 ? group : bones[joint.parent])?.add(bone);
+		bones.push(bone);
+	}
+	group.updateMatrixWorld(true);
+	return { group, bones };
+}
+
+function threeClip(clip: (typeof CLIPS)[number]): AnimationClip {
+	const tracks: KeyframeTrack[] = clip.tracks.map((t) => {
+		const name = `joint${t.joint}.${t.channel === 'translation' ? 'position' : t.channel === 'rotation' ? 'quaternion' : 'scale'}`;
+		const interpolation = t.step ? InterpolateDiscrete : InterpolateLinear;
+		return t.channel === 'rotation'
+			? new QuaternionKeyframeTrack(name, t.times, t.values, interpolation)
+			: new VectorKeyframeTrack(name, t.times, t.values, interpolation);
+	});
+	return new AnimationClip(clip.name, -1, tracks);
+}
+
+/** A row-major 3 × 4 matrix from a column-major 4 × 4 matrix's elements at `at`. */
+function rows(elements: ArrayLike<number>, at = 0): number[] {
+	const e = (row: number, column: number) => elements[at + column * 4 + row] as number;
+	return [0, 1, 2].flatMap((r) => [e(r, 0), e(r, 1), e(r, 2), e(r, 3)]);
+}
+
+function animationFixture(): string {
+	const clips = CLIPS.map(threeClip);
+	let out = `// Generated by \`bun bench/three-fixtures.ts\` with three.js r${REVISION}: a skeleton, clips, and the\n// local pose and skinning matrices that three.js's AnimationMixer and Skeleton give for single clips\n// and blends. Do not edit; run the script again.\n// The 32-bit inputs are written with the digits of their 64-bit value, which parses to the same\n// float.\n#![allow(dead_code, clippy::excessive_precision)]\n\n`;
+	const { bones: restBones } = buildBones();
+	const inverses = new Skeleton(restBones).boneInverses;
+	const binds = inverses.flatMap((m) => rows(m.elements));
+	out += `pub const PARENTS: [u32; ${JOINTS.length}] = [${JOINTS.map((j) => (j.parent < 0 ? 'u32::MAX' : j.parent)).join(', ')}];\n`;
+	// The data stays in rows of a few numbers, which rustfmt would put one per line.
+	out += `/// Translation, rotation and scale of each joint at rest.\n#[rustfmt::skip]\npub const REST: [f32; ${JOINTS.length * 10}] = ${floats(
+		restBones.flatMap((b) => [
+			...b.position.toArray(),
+			...b.quaternion.toArray(),
+			...b.scale.toArray(),
+		]),
+		10,
+	)};\n`;
+	out += `/// The inverse bind matrix of each joint, row-major 3 × 4.\n#[rustfmt::skip]\npub const INVERSE_BIND: [f32; ${JOINTS.length * 12}] = ${floats(binds.map(Math.fround), 12)};\n\n`;
+	out += `/// A track as a file holds it. Channel 0 is translation, 1 rotation, 2 scale.
+pub struct Track {
+    pub joint: u32,
+    pub channel: u32,
+    pub step: bool,
+    pub times: &'static [f32],
+    pub values: &'static [f32],
+}
+
+pub struct Clip {
+    pub name: &'static str,
+    pub duration: f32,
+    pub tracks: &'static [Track],
+}
+
+#[rustfmt::skip]
+pub const CLIPS: [Clip; ${CLIPS.length}] = [\n`;
+	const nested = ' '.repeat(20);
+	CLIPS.forEach((clip, c) => {
+		out += `    Clip {\n        name: "${clip.name}",\n        duration: ${float(clips[c]?.duration ?? 0)},\n        tracks: &[\n`;
+		for (const t of clip.tracks) {
+			const channel = ['translation', 'rotation', 'scale'].indexOf(t.channel);
+			out += `            Track {\n                joint: ${t.joint},\n                channel: ${channel},\n                step: ${t.step},\n`;
+			const perKey = t.channel === 'rotation' ? 4 : 3;
+			out += `                times: &${floats(t.times, 8, nested)},\n`;
+			out += `                values: &${floats(t.values, 2 * perKey, nested)},\n            },\n`;
+		}
+		out += '        ],\n    },\n';
+	});
+	out += `];
+
+/// One case: clips blended at times and weights, and what three.js gives for each joint.
+pub struct Case {
+    pub name: &'static str,
+    /// The clip, its time in seconds and its weight.
+    pub samples: &'static [(usize, f32, f32)],
+    /// Translation, rotation and scale of each joint.
+    pub pose: [f64; ${JOINTS.length * 10}],
+    /// The skinning matrix of each joint, row-major 3 × 4.
+    pub skin: [f64; ${JOINTS.length * 12}],
+}
+
+#[rustfmt::skip]
+pub static CASES: [Case; ${CASES.length}] = [\n`;
+	const inCase = ' '.repeat(12);
+	for (const c of CASES) {
+		const { group, bones } = buildBones();
+		const skeleton = new Skeleton(
+			bones,
+			inverses.map((m) => m.clone()),
+		);
+		const mixer = new AnimationMixer(group);
+		for (const [clip, time, weight] of c.samples) {
+			const action = mixer.clipAction(clips[clip] as AnimationClip);
+			action.play();
+			action.setEffectiveWeight(Math.fround(weight));
+			action.time = Math.fround(time);
+		}
+		mixer.update(0);
+		group.updateMatrixWorld(true);
+		skeleton.update();
+		const pose = bones.flatMap((b) => [
+			...b.position.toArray(),
+			...b.quaternion.toArray(),
+			...b.scale.toArray(),
+		]);
+		const skin = bones.flatMap((_, j) => rows(skeleton.boneMatrices as Float32Array, j * 16));
+		const samples = c.samples.map(
+			([clip, time, weight]) =>
+				`(${clip}, ${float(Math.fround(time))}, ${float(Math.fround(weight))})`,
+		);
+		out += `    Case {\n        name: "${c.name}",\n        samples: &[${samples.join(', ')}],\n`;
+		out += `        pose: ${floats(pose, 10, inCase)},\n        skin: ${floats(skin, 12, inCase)},\n    },\n`;
+	}
+	return `${out}];\n`;
+}
+
 mkdirSync(FIXTURES, { recursive: true });
-for (const [file, text] of [
-	['three_mesh_arrays.rs', meshArraysFixture()],
-	['three_geometry.rs', geometryFixture()],
+mkdirSync(CORE_FIXTURES, { recursive: true });
+for (const [folder, file, text] of [
+	[FIXTURES, 'three_mesh_arrays.rs', meshArraysFixture()],
+	[FIXTURES, 'three_geometry.rs', geometryFixture()],
+	[CORE_FIXTURES, 'three_animation.rs', animationFixture()],
 ] as const) {
-	const path = join(FIXTURES, file);
+	const path = join(folder, file);
 	writeFileSync(path, text);
 	// The modules sit in the Rust tests, which rustfmt checks.
 	const formatted = Bun.spawnSync(['rustfmt', '--edition', '2024', path]);

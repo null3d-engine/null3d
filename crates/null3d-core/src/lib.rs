@@ -12,6 +12,7 @@
 //! | [`cells`] | Grid cells that keep world matrices small, and the camera-to-cell offsets |
 //! | [`error`] | [`CoreError`] and the numeric codes of the TypeScript error table |
 //! | [`math`] | 3 × 4 affine matrices: compose, multiply, bounding spheres |
+//! | [`animation`] | Skeletons, clips at a fixed key rate, and skinning matrices sampled in parallel |
 //! | [`world`] | Per-frame world output: matrices and bounding spheres, double-buffered |
 //! | [`scene`] | Scene objects by slot, 16-byte commands, the hierarchy and the transform update |
 //! | [`instances`] | Instance batches: per-row arrays, dirty ranges, the batch table, memory epoch |
@@ -37,6 +38,7 @@
 #![warn(missing_docs)]
 
 pub mod alloc;
+pub mod animation;
 pub mod arena;
 pub mod bitset;
 pub mod bvh;

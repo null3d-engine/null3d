@@ -93,7 +93,10 @@ interface GlFormat {
 interface GlTexture {
 	readonly texture: WebGLTexture | null;
 	readonly renderbuffer: WebGLRenderbuffer | null;
-	/** `TEXTURE_2D` or `TEXTURE_2D_ARRAY` for a texture or a view, and 0 for a renderbuffer. */
+	/**
+	 * `TEXTURE_2D`, `TEXTURE_2D_ARRAY`, `TEXTURE_CUBE_MAP` or `TEXTURE_3D` for a texture or a view,
+	 * and 0 for a renderbuffer.
+	 */
 	readonly target: number;
 	readonly width: number;
 	readonly height: number;
@@ -208,6 +211,7 @@ function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat 
 	add(G.FORMAT_RGBA8_UNORM_SRGB, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, color);
 	add(G.FORMAT_RGBA16_FLOAT, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, color);
 	add(G.FORMAT_RG11B10_UFLOAT, gl.R11F_G11F_B10F, gl.RGB, gl.UNSIGNED_INT_10F_11F_11F_REV, color);
+	add(G.FORMAT_RGB9E5_UFLOAT, gl.RGB9_E5, gl.RGB, gl.UNSIGNED_INT_5_9_9_9_REV, color);
 	add(G.FORMAT_RGBA32_FLOAT, gl.RGBA32F, gl.RGBA, gl.FLOAT, color);
 	add(G.FORMAT_R32_UINT, gl.R32UI, gl.RED_INTEGER, gl.UNSIGNED_INT, color);
 	const depth = gl.DEPTH_ATTACHMENT;
@@ -266,6 +270,8 @@ export class WebGL2Backend {
 	private readonly formats: (GlFormat | undefined)[];
 	/** GL's address modes and min filters, by the draw list's codes. */
 	private readonly addressModes: number[] = [];
+	/** GL's texture target for each binding view dimension. */
+	private readonly targets: number[] = [];
 	private readonly minFilters: number[][] = [];
 	private readonly multiDraw: WEBGL_multi_draw | null;
 	/**
@@ -414,6 +420,10 @@ export class WebGL2Backend {
 			: 1;
 		this.maxSamples = gl.getParameter(gl.MAX_SAMPLES) as number;
 		this.formats = glFormats(gl, canvasAlpha);
+		this.targets[G.VIEW_2D] = gl.TEXTURE_2D;
+		this.targets[G.VIEW_2D_ARRAY] = gl.TEXTURE_2D_ARRAY;
+		this.targets[G.VIEW_CUBE] = gl.TEXTURE_CUBE_MAP;
+		this.targets[G.VIEW_3D] = gl.TEXTURE_3D;
 		this.addressModes[G.ADDRESS_CLAMP_TO_EDGE] = gl.CLAMP_TO_EDGE;
 		this.addressModes[G.ADDRESS_REPEAT] = gl.REPEAT;
 		this.addressModes[G.ADDRESS_MIRROR_REPEAT] = gl.MIRRORED_REPEAT;
@@ -826,22 +836,51 @@ export class WebGL2Backend {
 		return this.stagingBytes;
 	}
 
+	/** True for the GL types whose texels uploads read as whole 32-bit words: packed and integer. */
+	private wordTexels(type: number): boolean {
+		const gl = this.gl;
+		return (
+			type === gl.UNSIGNED_INT ||
+			type === gl.UNSIGNED_INT_5_9_9_9_REV ||
+			type === gl.UNSIGNED_INT_10F_11F_11F_REV
+		);
+	}
+
 	/** The view of values of GL type `type` that texel uploads read: engine memory, or its staged copy. */
 	private texels(type: number): ArrayBufferView {
 		const gl = this.gl;
 		const staged = this.copying;
 		if (type === gl.FLOAT) return staged ? this.stagingFloats : this.floats;
-		if (type === gl.UNSIGNED_INT) return staged ? this.stagingUints : this.uints;
+		if (this.wordTexels(type)) return staged ? this.stagingUints : this.uints;
 		if (type === gl.HALF_FLOAT) return staged ? this.stagingHalves : this.halves;
 		return staged ? this.stagingBytes : this.bytes;
 	}
 
-	/** The index in the view of `texels(type)` of the value at byte `source` of engine memory. */
-	private texelIndex(type: number, source: number): number {
-		if (this.copying) return 0;
+	/**
+	 * The index in the view of `texels(type)` of the value `offset` bytes after byte `source` of
+	 * engine memory. A staged upload starts at the staging buffer's first byte.
+	 */
+	private texelIndex(type: number, source: number, offset: number): number {
+		const byte = (this.copying ? 0 : source) + offset;
 		const gl = this.gl;
-		if (type === gl.FLOAT || type === gl.UNSIGNED_INT) return source >>> 2;
-		return type === gl.HALF_FLOAT ? source >>> 1 : source;
+		if (type === gl.FLOAT || this.wordTexels(type)) return byte >>> 2;
+		return type === gl.HALF_FLOAT ? byte >>> 1 : byte;
+	}
+
+	/** True for the GL targets whose layers or depth slices a call reaches with a third coordinate. */
+	private layered(target: number): boolean {
+		return target === this.gl.TEXTURE_2D_ARRAY || target === this.gl.TEXTURE_3D;
+	}
+
+	/**
+	 * The GL target of one layer of a texture that calls in two dimensions reach: a cube's face, or
+	 * the texture itself when it is 2D.
+	 */
+	private planeTarget(texture: GlTexture, layer: number): number {
+		const gl = this.gl;
+		return texture.target === gl.TEXTURE_CUBE_MAP
+			? gl.TEXTURE_CUBE_MAP_POSITIVE_X + layer
+			: texture.target;
 	}
 
 	private useVertexArray(vao: WebGLVertexArrayObject | null): void {
@@ -944,10 +983,10 @@ export class WebGL2Backend {
 		const texture = gl.createTexture();
 		if (!texture) throw new Error('WebGL2 could not create a texture');
 		// WebGL2 fixes a texture's kind at its first binding, as compatibility mode fixes its view.
-		const target = words[a + 8] === G.VIEW_2D_ARRAY ? gl.TEXTURE_2D_ARRAY : gl.TEXTURE_2D;
+		const target = this.targets[words[a + 8] as number];
+		if (target === undefined) throw new Error(`unknown texture view dimension ${words[a + 8]}`);
 		this.editTexture(UPLOAD_UNIT, target, texture);
-		if (target === gl.TEXTURE_2D_ARRAY)
-			gl.texStorage3D(target, mips, format.internal, width, height, layers);
+		if (this.layered(target)) gl.texStorage3D(target, mips, format.internal, width, height, layers);
 		else gl.texStorage2D(target, mips, format.internal, width, height);
 		// Shaders sample through sampler objects, which set their own filters. The texture's own
 		// filters serve texelFetch, which needs a complete texture: 32-bit float and integer
@@ -1051,7 +1090,8 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * Writes a box of texels, layer after layer, from tightly packed rows in engine memory. A
+	 * Writes a box of texels, layer after layer, from tightly packed rows in engine memory. The
+	 * layers of a cube are its faces, and those of a 3D texture its depth slices. A
 	 * compressed format's rows are rows of blocks: WebGL2 takes the box in texels, cut by the
 	 * level's edge, and the bytes of its whole blocks. The texture's first write reads engine
 	 * memory directly. Later writes into a texture of 32-bit values read a pixel unpack buffer, as
@@ -1071,36 +1111,37 @@ export class WebGL2Backend {
 		const width = words[a + 5] as number;
 		const height = words[a + 6] as number;
 		const depth = words[a + 7] as number;
-		this.editTexture(UPLOAD_UNIT, texture.target, texture.texture);
+		const target = texture.target;
+		this.editTexture(UPLOAD_UNIT, target, texture.texture);
 		const unpacked = texture.written && (type === gl.FLOAT || type === gl.UNSIGNED_INT);
 		texture.written = true;
-		const array = texture.target === gl.TEXTURE_2D_ARRAY;
+		const layered = this.layered(target);
+		// A cube's faces take one call each, as calls in two dimensions reach one face.
+		const planeBytes = bytes / depth;
 		if (unpacked) {
 			const at = this.unpack(source, bytes);
-			if (array)
-				gl.texSubImage3D(
-					gl.TEXTURE_2D_ARRAY,
-					level,
-					x,
-					y,
-					z,
-					width,
-					height,
-					depth,
-					format,
-					type,
-					at,
-				);
-			else gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, format, type, at);
+			if (layered) gl.texSubImage3D(target, level, x, y, z, width, height, depth, format, type, at);
+			else
+				for (let k = 0; k < depth; k++)
+					gl.texSubImage2D(
+						this.planeTarget(texture, z + k),
+						level,
+						x,
+						y,
+						width,
+						height,
+						format,
+						type,
+						at + k * planeBytes,
+					);
 			// Image uploads and direct writes read no unpack buffer.
 			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
 		} else {
 			if (this.copying) this.stage(source, bytes);
 			const data = this.texels(type);
-			const index = this.texelIndex(type, source);
-			if (array && compressed)
+			if (layered && compressed)
 				gl.compressedTexSubImage3D(
-					gl.TEXTURE_2D_ARRAY,
+					target,
 					level,
 					x,
 					y,
@@ -1110,12 +1151,12 @@ export class WebGL2Backend {
 					depth,
 					internal,
 					data,
-					index,
+					this.texelIndex(type, source, 0),
 					bytes,
 				);
-			else if (array)
+			else if (layered)
 				gl.texSubImage3D(
-					gl.TEXTURE_2D_ARRAY,
+					target,
 					level,
 					x,
 					y,
@@ -1126,22 +1167,27 @@ export class WebGL2Backend {
 					format,
 					type,
 					data,
-					index,
+					this.texelIndex(type, source, 0),
 				);
-			else if (compressed)
-				gl.compressedTexSubImage2D(
-					gl.TEXTURE_2D,
-					level,
-					x,
-					y,
-					width,
-					height,
-					internal,
-					data,
-					index,
-					bytes,
-				);
-			else gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, format, type, data, index);
+			else
+				for (let k = 0; k < depth; k++) {
+					const plane = this.planeTarget(texture, z + k);
+					const index = this.texelIndex(type, source, k * planeBytes);
+					if (compressed)
+						gl.compressedTexSubImage2D(
+							plane,
+							level,
+							x,
+							y,
+							width,
+							height,
+							internal,
+							data,
+							index,
+							planeBytes,
+						);
+					else gl.texSubImage2D(plane, level, x, y, width, height, format, type, data, index);
+				}
 		}
 		this.counts.uploadBytes += bytes;
 	}
@@ -1164,9 +1210,9 @@ export class WebGL2Backend {
 		this.editTexture(UPLOAD_UNIT, texture.target, texture.texture);
 		if (skipPixels) gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, skipPixels);
 		if (skipRows) gl.pixelStorei(gl.UNPACK_SKIP_ROWS, skipRows);
-		if (texture.target === gl.TEXTURE_2D_ARRAY) {
+		if (this.layered(texture.target)) {
 			gl.texSubImage3D(
-				gl.TEXTURE_2D_ARRAY,
+				texture.target,
 				words[a + 1] as number,
 				words[a + 2] as number,
 				words[a + 3] as number,
@@ -1180,7 +1226,7 @@ export class WebGL2Backend {
 			);
 		} else {
 			gl.texSubImage2D(
-				gl.TEXTURE_2D,
+				this.planeTarget(texture, words[a + 4] as number),
 				words[a + 1] as number,
 				words[a + 2] as number,
 				words[a + 3] as number,
@@ -1255,9 +1301,16 @@ export class WebGL2Backend {
 		layer: number,
 	): void {
 		const gl = this.gl;
-		if (texture.target === gl.TEXTURE_2D_ARRAY)
+		if (this.layered(texture.target))
 			gl.framebufferTextureLayer(framebuffer, attachment, texture.texture, level, layer);
-		else gl.framebufferTexture2D(framebuffer, attachment, gl.TEXTURE_2D, texture.texture, level);
+		else
+			gl.framebufferTexture2D(
+				framebuffer,
+				attachment,
+				this.planeTarget(texture, layer),
+				texture.texture,
+				level,
+			);
 	}
 
 	/**
@@ -1285,9 +1338,9 @@ export class WebGL2Backend {
 		const attachment = source.format.attachment;
 		for (let k = 0; k < layers; k++) {
 			this.attachLevel(gl.READ_FRAMEBUFFER, attachment, source, sourceLevel, sourceLayer + k);
-			if (destination.target === gl.TEXTURE_2D_ARRAY) {
+			if (this.layered(destination.target)) {
 				gl.copyTexSubImage3D(
-					gl.TEXTURE_2D_ARRAY,
+					destination.target,
 					level,
 					x,
 					y,
@@ -1298,7 +1351,16 @@ export class WebGL2Backend {
 					height,
 				);
 			} else {
-				gl.copyTexSubImage2D(gl.TEXTURE_2D, level, x, y, sourceX, sourceY, width, height);
+				gl.copyTexSubImage2D(
+					this.planeTarget(destination, layer + k),
+					level,
+					x,
+					y,
+					sourceX,
+					sourceY,
+					width,
+					height,
+				);
 			}
 		}
 		// A framebuffer that is not bound keeps what it holds alive, so the source leaves it.
