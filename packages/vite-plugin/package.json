@@ -1,7 +1,7 @@
 {
 	"name": "@null3d/vite-plugin",
 	"version": "0.0.0",
-	"description": "Vite plugin for null3D projects: cross-origin isolation headers, HTTPS for testing on phones and tablets, WGSL compiled for WebGPU and WebGL2, and production builds that compile the sketch module and ship the engine core.",
+	"description": "Vite plugin for null3D projects: cross-origin isolation headers, HTTPS for testing on phones and tablets, WGSL compiled for WebGPU and WebGL2, glTF models optimized on import, and production builds that compile the sketch module and ship the engine core.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",
 	"homepage": "https://github.com/null3d-engine/null3d#readme",
@@ -49,9 +49,16 @@
 		"prepack": "bun ../../tools/build-package.ts vite-plugin"
 	},
 	"peerDependencies": {
+		"@null3d/cli": "workspace:*",
 		"vite": ">=8"
 	},
+	"peerDependenciesMeta": {
+		"@null3d/cli": {
+			"optional": true
+		}
+	},
 	"devDependencies": {
+		"@null3d/cli": "workspace:*",
 		"vite": "8.3.1"
 	},
 	"dependencies": {

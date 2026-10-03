@@ -27,7 +27,7 @@ describe('main', () => {
 	it('fails on a command it does not have, and names its commands', async () => {
 		expect(await main(['create'])).toBe(1);
 		expect(error.mock.lastCall?.[0]).toBe(
-			'null3d has no "create" command. Its commands: bench, shot, test. Run bunx @null3d/cli --help for more.',
+			'null3d has no "create" command. Its commands: assets, bench, shot, test. Run bunx @null3d/cli --help for more.',
 		);
 		expect(await main(['toString'])).toBe(1);
 	});

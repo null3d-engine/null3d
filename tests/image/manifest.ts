@@ -97,6 +97,14 @@ function toneMappingTests(): ImageTest[] {
 	]);
 }
 
+/**
+ * How far the asset tool's output may stray from its source's image. On the Mac's GPU and on
+ * SwiftShader, 1.07% to 1.08% of the pixels differ on each tier, all at the edges of the floor's
+ * stripes, where the color map is resized and encoded in ETC1S, and in the ball's highlight. Moved
+ * or missing geometry changes far more.
+ */
+const OPTIMIZED_TOLERANCE = { threshold: 0.1, maxDiffRatio: 0.02 };
+
 /** The sketch of the bloom tests: glowing shapes on a dark ground (bench/scenes/bloom.ts). */
 const BLOOM_SKETCH = 'tests/pages/sketches/bloom-sketch.ts';
 
@@ -332,6 +340,25 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: 0,
 		}),
 	),
+	// The asset tool's test scene, then the tool's output, which must draw the source's image: its
+	// positions and coordinates in 16-bit integers, normals in bytes, a mesh moved to a child node,
+	// instances that carry the dequantizing transform, and KTX2 textures. Compressed textures and
+	// 8-bit normals change some pixels a little, so the output takes a tolerance of its own.
+	{
+		name: 'asset-scene',
+		sketch: 'tests/pages/sketches/asset-scene-sketch.ts',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+	},
+	{
+		name: 'asset-scene-optimized',
+		sketch: 'tests/pages/sketches/asset-scene-sketch.ts?file=optimized',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+		reference: 'asset-scene',
+		tolerance: OPTIMIZED_TOLERANCE,
+		deviceTolerance: OPTIMIZED_TOLERANCE,
+	},
 	// Copies of a glTF model made in code: scene.instantiate, scene.clone, a model with 16-bit
 	// positions, and an instance batch from scene.createInstances whose rows move every part of the
 	// model. Each tier must place every part the same way.

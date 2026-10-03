@@ -223,6 +223,16 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - A panic stops a call with a trap. The panic hook writes a response first. The wrapper then drops the instance, because a trap can leave its memory in any state.
 - The build drops the function names and skips wasm-opt. On this module, wasm-opt took longer than the whole build and saved 0.4% after Brotli, with no speed gain.
 - The shader composer rewrites each file before naga reads it, and imported names get longer. Its own error reports count columns in that copy, so the build maps each place back to the original file.
+
+## The asset tool
+
+`bunx @null3d/cli assets optimize` is JavaScript in `packages/cli/src/assets/`, on the official WebAssembly encoders. [D-18](decisions/D-18-asset-tool.md) says why, with its timings on S6's content.
+
+- The same input gives the same bytes on every machine. Each texture encodes on one thread inside the single-threaded Basis encoder, and the image code only adds, multiplies, divides and rounds. A step that writes output must never use `Math.pow`, `Math.sin` or another function whose last digit may differ between JavaScript engines. The sRGB table in `images.js` is written out for that reason.
+- `optimize.test.ts` compares the tool's output on the test scene with the files in `tests/pages/assets/models/optimized/`. CI's Linux machines then check the Mac's bytes. After a change that the outputs must take, write them again with `NULL3D_WRITE_ASSET_SCENE=1 bun test packages/cli/src/assets/optimize.test.ts`, and check the image test `asset-scene-optimized`.
+- The formats that the engine also reads come from its Rust core, through the `null3d-assets-wasm` crate. It is built like the shader compiler. It imports nothing, and a request and its response pass through its memory. The build drops names and skips wasm-opt. `bun run build` writes it to `packages/cli/dist/assets.wasm`, and `formats.js` loads it.
+- glTF-Transform drops extensions that it does not know. `lod-extension.js` teaches it `MSFT_lod`, and a new extension that the tool writes needs the same.
+- The Vite plugin imports `@null3d/cli/assets` with a specifier in a variable, so neither TypeScript nor Vite resolves it until a project imports a model with `?optimized`.
 - `bun run test:shader-compiler` runs the shader crate's build tests with `NULL3D_SHADER_COMPILER` set. Each build then runs again through the module in Bun, and both results must match. Plain `cargo test` skips that step, so a module built from older code cannot fail it. The same command runs the Vite plugin's WGSL tests, which build small projects with Vite.
 - The Vite plugin compiles WGSL from projects (`packages/vite-plugin/src/wgsl.ts`). It reads a module's comments with Vite's parser, so the `/* wgsl */` tag counts only as a real comment before a real template literal. It runs before TypeScript becomes JavaScript, so the literal's place in the code is its place in the file.
 - Each project shader builds for WebGPU and, with the shader def `WEBGL2`, for WebGL2. It has one render pipeline for each `@fragment` entry point, with its one `@vertex` entry point. The plugin finds the entry points in the WGSL text, because the compiler takes the pipelines with the source.

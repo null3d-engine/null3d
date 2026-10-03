@@ -105,7 +105,8 @@ jobs:
         run: rustup toolchain install
       - run: bun install --frozen-lockfile
       # Git keeps neither the WebAssembly files nor the shader modules. This builds the shader
-      # modules, the engine's two WebAssembly files and the Vite plugin's shader compiler.
+      # modules, the engine's two WebAssembly files, the Vite plugin's shader compiler and the
+      # command-line tool's asset formats.
       - name: Build the WebAssembly files and the shader modules
         run: bun tools/build-wasm.ts --pages-only
       # Bun packs each package: its prepack script builds the JavaScript and declarations, and Bun
