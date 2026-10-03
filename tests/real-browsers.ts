@@ -19,6 +19,7 @@
 //   bun tests/real-browsers.ts --plan depth --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
 //   bun tests/real-browsers.ts --plan overload --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
 //   bun tests/real-browsers.ts --plan skinning --android chrome --lan ipad-safari
+//   bun tests/real-browsers.ts --plan animation --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan tab-memory --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan tab-memory --lan ipad-safari --attended
 //   bun tests/real-browsers.ts --plan soak --lan ipad-safari --minutes 30
@@ -36,7 +37,8 @@
 //                       scene until the GPU falls behind and compares the presented and completed
 //                       rates on each GPU path, skinning, which times two ways to skin a crowd on
 //                       WebGL2 with 1 to 4 shadow cascades: in every pass, or once per frame with
-//                       transform feedback, governor, which runs the quality governor's stress
+//                       transform feedback, animation, which times the core's animation step on
+//                       the job workers for crowds of 100 and 500 characters, governor, which runs the quality governor's stress
 //                       test on each GPU path: every live step down and back up under a load,
 //                       then a scene too heavy for the GPU whose frame rate the governor must bring
 //                       back, tab-memory, which grows GPU textures, GPU buffers and a WebAssembly
@@ -121,6 +123,7 @@ import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } f
 import { clearCandidates } from './lib/images.ts';
 import { buildsForLoads, prepareLoads } from './lib/load-server.ts';
 import {
+	animationSummary,
 	benchSummary,
 	type Check,
 	depthSummary,
@@ -1172,6 +1175,7 @@ async function runPlan(
 			depthSummary,
 			overloadSummary,
 			skinningSummary,
+			animationSummary,
 			tabMemorySummary,
 			soakSummary,
 			warmUpTimeSummary,
