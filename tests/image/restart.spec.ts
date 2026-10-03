@@ -9,24 +9,40 @@ import type { RestartResult } from '../lib/plans.ts';
 /** How many times each test starts and stops the engine on one page. */
 const CYCLES = 3;
 
-/** How many objects the page can still reach whose prototype chain holds `prototype`. */
+/** The DevTools handles of each count, which the count releases once it has its number. */
+const COUNT_GROUP = 'restart-count';
+
+/**
+ * How many objects the page can still reach whose prototype chain holds `prototype`. The list that
+ * DevTools returns holds each object it found until the count releases it. Without that release, a
+ * count made just before the engine let go kept the engine's memory and workers alive for good, and
+ * every later count found them.
+ */
 async function reachable(cdp: CDPSession, prototype: string): Promise<number> {
-	const { result } = await cdp.send('Runtime.evaluate', { expression: prototype });
-	const { objects } = await cdp.send('Runtime.queryObjects', {
-		prototypeObjectId: result.objectId as string,
-	});
-	const count = await cdp.send('Runtime.callFunctionOn', {
-		objectId: objects.objectId as string,
-		functionDeclaration: 'function () { return this.length; }',
-		returnByValue: true,
-	});
-	return count.result.value as number;
+	try {
+		const { result } = await cdp.send('Runtime.evaluate', {
+			expression: prototype,
+			objectGroup: COUNT_GROUP,
+		});
+		const { objects } = await cdp.send('Runtime.queryObjects', {
+			prototypeObjectId: result.objectId as string,
+			objectGroup: COUNT_GROUP,
+		});
+		const count = await cdp.send('Runtime.callFunctionOn', {
+			objectId: objects.objectId as string,
+			functionDeclaration: 'function () { return this.length; }',
+			returnByValue: true,
+		});
+		return count.result.value as number;
+	} finally {
+		await cdp.send('Runtime.releaseObjectGroup', { objectGroup: COUNT_GROUP });
+	}
 }
 
 /**
  * How long a test collects garbage and counts again until the page has let go of an engine. A
  * worker that has just stopped can hold its objects until its last messages have arrived, so one
- * collection right after a stop can still find them.
+ * collection right after a stop can still find them, most often on a busy machine.
  */
 const RELEASE_TIMEOUT_MS = 10_000;
 
