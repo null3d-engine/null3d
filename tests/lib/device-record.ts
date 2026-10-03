@@ -12,7 +12,6 @@ export type BrowserName =
 	| 'Brave'
 	| 'Samsung Internet'
 	| 'Firefox'
-	| 'Opera'
 	| 'Edge';
 
 /** The browser a page runs in, with its version where the browser gives it. */
@@ -51,9 +50,6 @@ export interface BrowserFacts {
 const BRANDS: readonly (readonly [string, BrowserName])[] = [
 	['Brave', 'Brave'],
 	['Microsoft Edge', 'Edge'],
-	['Opera', 'Opera'],
-	['OperaMobile', 'Opera'],
-	['Opera GX', 'Opera'],
 	['Samsung Internet', 'Samsung Internet'],
 	['Google Chrome', 'Chrome'],
 	['Chromium', 'Chromium'],
@@ -65,7 +61,6 @@ const BRANDS: readonly (readonly [string, BrowserName])[] = [
  */
 const UA_TOKENS: readonly (readonly [RegExp, BrowserName])[] = [
 	[/\bEdg(?:e|A|iOS)?\/([\d.]+)/, 'Edge'],
-	[/\b(?:OPR|OPX|OPT|OPiOS)\/([\d.]+)/, 'Opera'],
 	[/\bSamsungBrowser\/([\d.]+)/, 'Samsung Internet'],
 	[/\bFxiOS\/([\d.]+)/, 'Firefox'],
 	[/\bFirefox\/([\d.]+)/, 'Firefox'],
@@ -77,9 +72,9 @@ const UA_TOKENS: readonly (readonly [RegExp, BrowserName])[] = [
 
 /**
  * Chromium-based browsers whose user agent token names them even where their client hints name
- * only Chromium, as some versions of Samsung Internet and Opera do.
+ * only Chromium, as some versions of Samsung Internet do.
  */
-const CHROMIUM_FORKS: ReadonlySet<BrowserName> = new Set(['Edge', 'Opera', 'Samsung Internet']);
+const CHROMIUM_FORKS: ReadonlySet<BrowserName> = new Set(['Edge', 'Samsung Internet']);
 
 /** The browser that the user agent's most specific token names, if any. */
 function userAgentBrowser(
@@ -128,7 +123,6 @@ const RUNNER_WORDS: Readonly<Record<string, readonly BrowserName[]>> = {
 	brave: ['Brave'],
 	samsung: ['Samsung Internet'],
 	firefox: ['Firefox'],
-	opera: ['Opera'],
 	edge: ['Edge'],
 };
 

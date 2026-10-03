@@ -288,7 +288,7 @@ So the iPad shows that the engine works on an iPhone. It does not show that the 
 8. End the session when the run ends, so the device does not keep pages running.
 
 - Name each runner `bs<device>-<browser>`, such as `bsiphone17-safari`, `bsgalaxys25-samsung` or `bswin11-edge`. Write the device as one word. A device word that is also a browser word, as in `bs-moto-edge-50-chrome`, makes the runner expect Edge.
-- The browser words are `safari`, `chrome`, `samsung`, `edge`, `firefox` and `opera`. The runner warns when the page runs in another browser than its name says.
+- The browser words are `safari`, `chrome`, `samsung`, `edge` and `firefox`. The runner warns when the page runs in another browser than its name says.
 - Pass `--allow-no-webgpu` only where the tier's table expects no core WebGPU. On a device that should have it, a lost path must fail the run, as [GPU paths that a device lacks](#gpu-paths-that-a-device-lacks) explains.
 - A session that drops leaves its results in place. Open a new session with the same runner name. The runner page starts at the first page without a result.
 - After each run, paste the runner's row into [the record of tested devices](tested-devices.md). Add BrowserStack's device name to the device cell. Fill the GPU cell from the tables below where the browser hides the GPU.
@@ -298,11 +298,11 @@ So the iPad shows that the engine works on an iPhone. It does not show that the 
 
 These facts come from BrowserStack's [list of browsers and platforms](https://www.browserstack.com/list-of-browsers-and-platforms/live) and its [answer on mobile browsers](https://www.browserstack.com/support/faq/mobile/devices-amp-browsers/can-i-test-different-browsers-on-mobile-devices), read on 3 October 2026.
 
-- Android devices offer Chrome, Edge and Firefox. Samsung devices also offer Samsung Internet. Opera is not offered on phones, so Opera runs on the desktops only.
+- Android devices offer Chrome, Edge and Firefox. Samsung devices also offer Samsung Internet. Opera is not tested: the owner left it out on 3 October 2026, and the runner records it as Chrome.
 - iPhones and iPads offer Safari and Chrome. Every browser on iOS draws with WebKit, so Chrome there is only a check of the runner page.
 - The phones run Android 10 to 17 and iOS 13 to 27. The newest are the Pixel 11 on Android 17, and the iPhone 18 Pro on iOS 27.
 - The iPads include M-series models on iPadOS 26 and 27. The newest are the iPad Pro 13 2025 and the iPad Pro 11 2025, both with the M5.
-- The desktops run Windows XP to 11 and macOS from Snow Leopard to Golden Gate. Windows and macOS offer Chrome, Edge, Firefox and Opera, in versions back to the 2010s. Safari comes with each macOS: 27 on Golden Gate, 26.4 on Tahoe and 18.4 on Sequoia.
+- The desktops run Windows XP to 11 and macOS from Snow Leopard to Golden Gate. Windows and macOS offer Chrome, Edge and Firefox, in versions back to the 2010s. Safari comes with each macOS: 27 on Golden Gate, 26.4 on Tahoe and 18.4 on Sequoia.
 - BrowserStack does not publish the desktops' GPUs. In 2022, its Windows machines gave browsers no WebGL. Since Chrome 137, Chrome and Edge give no WebGL at all on a machine without a GPU, so the engine must stop with E1301 there. The first Windows run in tier A shows which case holds.
 
 ### What each GPU path needs
@@ -395,4 +395,4 @@ Swap these in when a device of a tier is busy, or to widen the cover from one mi
 - Adreno: Galaxy S26 Ultra (Adreno 840), Galaxy Z Fold 7 (Adreno 830), Realme P3 (Adreno 810) and OnePlus 13R (Adreno 750). For little memory, the Galaxy Tab A9 Plus (Adreno 619). For compatibility mode, the Oppo A96 (Adreno 610).
 - Mali: Redmi Note 14 Pro 5G and Motorola Edge 60 Fusion (Mali-G615), Pixel 7 (Mali-G710) and Galaxy A35 (Mali-G68).
 - Xclipse: Galaxy S26 (Xclipse 960 outside the US, China and Japan) and Galaxy S22 (Xclipse 920 in Europe).
-- Desktops: Chrome on Windows 10, Opera on Windows 11, and Chrome and Firefox on macOS Tahoe.
+- Desktops: Chrome on Windows 10, and Chrome and Firefox on macOS Tahoe.

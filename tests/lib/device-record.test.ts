@@ -32,8 +32,6 @@ const UA = {
 		'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:156.0) Gecko/20100101 Firefox/156.0',
 	samsungInternet:
 		'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/28.0 Chrome/130.0.0.0 Mobile Safari/537.36',
-	androidOpera:
-		'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36 OPR/90.1.4782.86',
 	androidEdge:
 		'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36 EdgA/140.0.3485.54',
 	androidFirefox: 'Mozilla/5.0 (Android 14; Mobile; rv:143.0) Gecko/143.0 Firefox/143.0',
@@ -81,7 +79,7 @@ describe('the browser that the runner page detects', () => {
 		});
 	});
 
-	it('tells Edge from Chrome on Windows, and Opera on Android by its own brand', () => {
+	it('tells Edge from Chrome on Windows', () => {
 		const edge = hints({
 			'Microsoft Edge': '154.0.3510.41',
 			Chromium: '154.0.7871.12',
@@ -95,11 +93,6 @@ describe('the browser that the runner page detects', () => {
 		expect(detectBrowser({ userAgent: UA.windowsChrome, userAgentData: chrome })).toEqual({
 			name: 'Chrome',
 			version: '154.0.7871.12',
-		});
-		const opera = hints({ OperaMobile: '90.1.4782.86', Chromium: '138.0.7204.63' });
-		expect(detectBrowser({ userAgent: UA.androidOpera, userAgentData: opera })).toEqual({
-			name: 'Opera',
-			version: '90.1.4782.86',
 		});
 	});
 
@@ -127,7 +120,6 @@ describe('the browser that the runner page detects', () => {
 		expect(name(UA.macFirefox)).toEqual({ name: 'Firefox', version: '156.0' });
 		expect(name(UA.androidFirefox)).toEqual({ name: 'Firefox', version: '143.0' });
 		expect(name(UA.samsungInternet)).toEqual({ name: 'Samsung Internet', version: '28.0' });
-		expect(name(UA.androidOpera)).toEqual({ name: 'Opera', version: '90.1.4782.86' });
 		expect(name(UA.androidEdge)).toEqual({ name: 'Edge', version: '140.0.3485.54' });
 		expect(name(UA.iPhoneChrome)).toEqual({ name: 'Chrome', version: '140.0.7339.122' });
 		expect(name(UA.androidChrome)).toEqual({ name: 'Chrome', version: '154.0.0.0' });
