@@ -1,6 +1,6 @@
 # null3D API quick reference
 
-This is the API of null3D, with the parts planned up to version 1.0. A version in parentheses, such as (0.2), is the first engine version with that part; no number means 0.1. "Later in 0.1" marks a part of 0.1 that is not built yet. Before using a part, check its docs page's status (`stable`, `experimental` or `planned`) and the note under its title, as SKILL.md section 1 explains. Each heading names the doc ID with the full reference.
+This is the API of null3D, with the parts planned up to version 1.0. A version in parentheses, such as (0.2), is the first engine version with that part; no number means 0.1. Before using a part, check its docs page's status (`stable`, `experimental` or `planned`) and the note under its title, as SKILL.md section 1 explains. Each heading names the doc ID with the full reference.
 
 ## Contents
 
@@ -18,7 +18,7 @@ This is the API of null3D, with the parts planned up to version 1.0. A version i
 12. Animation (0.2)
 13. Raycasting and queries (0.2)
 14. Input and controls
-15. Post-processing (later in 0.1; effects 0.2)
+15. Post-processing (effects 0.2)
 16. Render graph (0.2)
 17. Quality
 18. Messages and UI
@@ -37,11 +37,12 @@ const engine = await createEngine({
   maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
   antialias: 'msaa',     // 'msaa' | 'fxaa' | 'none' in place of the preset's mode (FXAA on Low, MSAA above)
   depthPrepass: false,   // true draws opaque depth first, so each pixel shades once (WebGPU only); presets leave it off
+  shadowTiles: 8, shadowTileSize: 512, pointLightShadows: false,  // spot and point light shadows; the preset sets each
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
   memory: { maximumMiB: 1024 },          // the default; up to 4096 for scenes that need more (E1409 outside 256 to 4096)
-  onProgress: (stage) => {},             // 'core', then 'sketch' after the sketch's setup, then 'first-frame'
+  onProgress: (stage) => {},             // 'core', then 'sketch' after the setup and the preset check, then 'first-frame'
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
@@ -58,8 +59,8 @@ off();                                   // every on... call returns a function 
 engine.detach();                         // single-page apps: canvas off the page, engine paused, scene kept
 engine.attach(container);                // canvas back on the page; the engine resumes with no new start
 engine.setPaused(true);                  // the first step after resuming counts no time
-engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, maxInstances, depth }
-engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, crashedStarts, memoryMaximumMiB }
+engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, halfPrecision, maxInstances, depth }
+engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, presetCheck, crashedStarts, memoryMaximumMiB }
 const metrics = await engine.measure(5);          // CPU time per thread and phase, GPU time, frame rates, memory
 const frame = await engine.captureFrame();        // { width, height, pixels }: RGBA8 rows, top row first
 engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed */ });
@@ -82,9 +83,9 @@ import { defineSketch } from '@null3d/engine';
 export default defineSketch(async (ctx) => {
   const {
     scene, assets, materials, geometry, textures,
-    input, time, quality, page, debug, engine, preferences,
+    input, time, quality, post, page, debug, engine, preferences,
   } = ctx;
-  // later in 0.1: ctx.post; (0.2): ctx.render and ctx.ui
+  // (0.2): ctx.render and ctx.ui
   // setup: create objects, load assets, await scene.warmUp()
   // preferences.reducedMotion: true when the user's system asks for less motion
   // preferences.onChange(() => { ... }) runs at the first frame after it changes; it returns a remover
@@ -163,7 +164,7 @@ mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center 
 - Use a setter for static objects; direct array writes are for dynamic objects and batches.
 - A parent change with `keepWorld: true` works out the new local transform when the frame applies it, so set the object's transform first.
 - These calls rebuild the draw tables, so make them at setup: `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows`.
-- Blended objects draw after the opaque ones, farthest first by the center of their bounds. `setRenderOrder` comes before depth, and an instance batch's rows sort one by one.
+- Blended objects draw after the opaque ones. They draw farthest first, by the center of their bounds. `setRenderOrder` sorts before depth does. An instance batch's rows sort one by one.
 
 ## 5. Instance batches (`concepts/instances`)
 
@@ -171,7 +172,7 @@ mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center 
 const rocks = scene.createInstances(geometry.sphere({ radius: 0.2 }), 10_000, {
   material: materials.standard({ color: '#888888' }),
   dynamic: true,              // uploads every row every frame; false = upload marked rows only
-  colors: true,               // adds batch.colors (RGBA, linear, 4 floats per row); drawn later in 0.1
+  colors: true,               // adds batch.colors (RGBA, linear, 4 floats per row); stored now, drawn in 0.2
   layers: 1 << 2,             // every row is on layer 2; the default, 1, is layer 0
   attributes: { tint: 4 },    // (0.2) custom per-instance floats, readable in surface functions
   origin: [0, 0, 0],          // (0.2) rows are relative to this point; set it in large worlds
@@ -235,7 +236,7 @@ light.setVisible(false); light.destroy();    // lights are objects: section 4
 - three.js aims a directional light from its position to a target. Pass the target minus the position as `direction`, or call `lookAt`.
 - A light lights a camera's view when their layer masks share a bit. Without lights, standard materials draw black.
 - Units follow three.js r155 and later: point and spot intensity in candela. The same colors and intensities give the same light as in three.js.
-- Point and spot lights light the surfaces their ranges reach, through clustered lighting, so keep each range as short as the look allows. Surfaces show the first visible directional light, every ambient light, and the point and spot lights. Later in 0.1, hemisphere lights light surfaces.
+- Point and spot lights light the surfaces their ranges reach, through clustered lighting, so keep each range as short as the look allows. Surfaces show the first visible directional light, every ambient light, and the point and spot lights. Hemisphere lights light surfaces in 0.2.
 - Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`. Its cascades fit the camera's view and keep still edges as it turns. The nearest cascade draws every frame, and far ones every few frames (`farCascadeInterval`). `shadowFilter` softens edges over 3 or 5 texels. Both follow the preset. Defaults: 3 cascades, 2,048 texels, 200 m, bias 0.5 and normal bias 1, both in texels of each cascade. Unlit materials show no shadows. Both GPU paths draw them. Instance batches do not cast or receive them yet (`concepts/shadows`).
 - Spot and point light shadows: each spot light with `castShadows` takes a tile of the shared shadow atlas, and each point light six. Point lights cast only where the preset's `pointLightShadows` is on (High and Ultra), or with that `createEngine` option. The preset's `shadowTiles` caps the tiles, and the lights that look largest on screen get them first. `shadowTileSize` sets each tile's texels. All three are `createEngine` options. A tile draws again only when its light or a caster within the light's range moves, so still scenes cost nothing per frame. The biases count texels of the tile, and `shadowFilter` softens its edges too (`concepts/shadows`).
 
@@ -252,7 +253,7 @@ const mesh = geometry.fromArrays({
   indices,                  // Uint16Array, Uint32Array or number[]; omit for one triangle per 3 vertices
 });
 mesh.radius;                // the distance from the mesh's origin to its farthest vertex
-mesh.destroy();             // later in 0.1
+mesh.destroy();             // (0.2)
 mesh.updateVertices('positions', data, start, count);  // (0.2) vertices that change at run time
 ```
 
@@ -286,7 +287,7 @@ const brick = materials.standard({   // maps are fixed at creation; the mesh nee
 });
 const decal = materials.unlit({ map: color, alphaMode: 'mask', alphaCutoff: 0.5 });  // map alpha cuts the shape
 
-const stripes = materials.shader({ ...standardOptions, wgsl, uniforms });  // any standard option but the maps; wgsl: a tagged /* wgsl */ literal or .wgsl import with fn surface, fn vertexOffset or both
+const stripes = materials.shader({ ...standardOptions, wgsl, uniforms });  // any standard option but the maps; wgsl: a tagged /* wgsl */ literal or .wgsl import with fn surface, fn vertexOffset or both, or a full shader
 stripes.set({ speed: 2, roughness: 0.3 });  // uniforms of struct Uniforms and standard values alike
 ```
 
@@ -295,7 +296,7 @@ stripes.set({ speed: 2, roughness: 0.3 });  // uniforms of struct Uniforms and s
 - `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option but the texture maps feeds `defaultSurface()`. `references/shaders.md` has the contract.
 - A map reads the texture coordinates that its texture's `uvSet` names, and a mesh without a second set gives its first. A mesh without texture coordinates draws the material without its maps. A normal map takes its frame from the mesh's tangents (`computeTangents: true`) where the mesh has them, and otherwise from the pixels around it, as three.js does.
 - `alphaMode: 'mask'` with `alphaCutoff` draws nothing where the alpha falls below the cutoff, as three.js's `alphaTest`. `alphaMode: 'blend'` is three.js's `transparent: true`, and `blending` picks `'normal'`, `'additive'` or `'multiply'`. Blended objects cost culling and sorting in every frame, so use `'mask'` for cut-out shapes. `depthWrite`, `depthTest` and `depthBias: { constant, slopeScale }` set the depth state.
-- Later in 0.1: in `materials.shader` texture maps, textures and full shaders.
+- Full shaders work in `materials.shader`: a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one (`guides/custom-shaders`). Texture maps and textures in `materials.shader` come in 0.2.
 - `envIntensity` (0.2) comes with environment lighting, and `materials.shadowCatcher` in 0.2.
 - `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `blending`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
 
@@ -423,14 +424,14 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 post.set({
   toneMapping: 'aces',      // 'aces' | 'agx' | 'neutral' | 'none'
   exposure: 1,
-  bloom: { strength: 0.8, radius: 0.4, threshold: 0.9 },
-  ao: { radius: 0.5, intensity: 1 },     // High and Ultra presets only
-  lut, vignette: { amount: 0.3 },
-  outline: { color: '#ffcc00', thickness: 2 },  // objects opt in with setOutlined(true)
+  bloom: { strength: 0.8, radius: 0.4, threshold: 0.9 },  // (0.2)
+  ao: { radius: 0.5, intensity: 1 },     // (0.2) High and Ultra presets only
+  lut, vignette: { amount: 0.3 },        // (0.2)
+  outline: { color: '#ffcc00', thickness: 2 },  // (0.2) objects opt in with setOutlined(true)
 });
-post.addEffect({ name: 'pixelate', wgsl, uniforms: { size: 4 }, textures: {}, stage: 'final' });  // textures: named textures the effect samples
-post.setEffectUniform('pixelate', 'size', 8);
-post.removeEffect('pixelate');
+post.addEffect({ name: 'pixelate', wgsl, uniforms: { size: 4 }, textures: {}, stage: 'final' });  // (0.2) textures: named textures the effect samples
+post.setEffectUniform('pixelate', 'size', 8);  // (0.2)
+post.removeEffect('pixelate');                 // (0.2)
 ```
 
 ## 16. Render graph (0.2) (`api/render`)

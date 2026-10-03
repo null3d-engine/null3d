@@ -30,6 +30,7 @@ const CAPABILITIES: EngineCapabilities = {
 	hdr: true,
 	halfPrecision: false,
 	maxInstances: 2_097_152,
+	maxCanvasSize: 4096,
 	depth: 'reversed',
 };
 

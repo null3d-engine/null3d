@@ -8,7 +8,8 @@ React Three Fiber (R3F) describes a three.js scene as React components that run 
 2. A React wrapper for null3D
 3. State between React and the sketch
 4. R3F and drei mapping
-5. Step by step
+5. Adaptive quality: `PerformanceMonitor` and `AdaptiveDpr`
+6. Step by step
 
 ## 1. The target shape
 
@@ -150,14 +151,42 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | drei `<Stars>` | `scene.createPoints` (0.2) |
 | drei `<Float>` | A sine offset in `onUpdate` |
 | drei `<Center>`, `<Bounds>` | `prefab.bounds` (0.2) and a camera fit computed at setup |
-| drei `<PerformanceMonitor>`, `<AdaptiveDpr>` | `quality.onChange`; dynamic resolution comes later in 0.1 |
+| drei `<PerformanceMonitor>`, `<AdaptiveDpr>`, `<AdaptiveEvents>`; `<Canvas performance>` | Remove them: the engine's frame-budget governor does this work (section 5) |
 | drei `<Stats>` | `debug.stats(true)` in the sketch; `engine.measure()` on the page for GPU time |
 | Mesh events: `onClick`, `onPointerOver`, `onPointerOut` | `obj.on('click' | 'pointerenter' | 'pointerleave', fn)` (0.2), then `page.post` if React needs to know |
 | `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping now, bloom and other effects in 0.2 (`references/post-processing.md`) |
 | `@react-three/rapier` | Rapier inside the sketch worker (null3d-develop recipe 11) |
 | Components that change props every frame through React state | `onUpdate` logic; React sends intent, not frames |
 
-## 5. Step by step
+## 5. Adaptive quality: `PerformanceMonitor` and `AdaptiveDpr`
+
+drei's components measure the frame rate on the main thread, and the app reacts by changing the pixel ratio. null3D has this built in. Its frame-budget governor runs in the engine, on every page, with no component (`concepts/quality-presets`). Remove the drei components, and do not rebuild them with your own frame timer, because it would fight the governor.
+
+| drei | What it does | null3D |
+| --- | --- | --- |
+| `<PerformanceMonitor onDecline onIncline>` that sets `dpr` | Measures frames per second, and calls back when the rate leaves its bounds | The governor lowers the render scale when frames run over budget for about a second, and raises it after about 5 seconds with time to spare. It aims for the display's rate, up to 60 frames per second |
+| `onChange={({ factor }) => setDpr(...)}` | Maps a factor from 0 to 1 onto a pixel ratio range | `quality.set({ minRenderScale, maxRenderScale })` in the sketch sets the range that the render scale moves in. `quality.renderScale` reads the current scale |
+| `<Canvas dpr={[1, 2]}>` | Caps the pixel ratio | `createEngine({ maxPixelRatio: 2 })`, or the preset's cap. The render scale works below this cap, so the canvas never changes size |
+| `onDecline` handlers that cut particles or effects | App-specific lightening | `quality.onChange`, which runs after each step past the render scale; `quality.governor.steps` counts those steps. Keep counts per preset in one table keyed by `quality.preset` |
+| `onFallback` after `flipflops` | Gives up after the rate swings too often | Not needed: a step up that fails doubles the governor's wait before the next one, so quality settles instead of swinging. A player's choice of a lighter preset goes through `quality.setPreset` |
+| `<AdaptiveDpr pixelated />` with `performance.regress()` | Drops the pixel ratio while the camera moves, then restores it | No equivalent. The governor follows frame times, not camera movement. Remove `regress()` calls from controls |
+| `<AdaptiveEvents />` | Turns off pointer raycasts while regressed | Not needed: null3D casts no pointer rays on the main thread |
+
+The governor judges each window by the slower of two rates: frames presented, and frames that the GPU finished. A main-thread frame counter sees only the first, so it misses a GPU that falls behind while the page still presents frames. After the render scale reaches `minRenderScale`, it draws far shadow cascades less often, then uses cheaper shadow edges.
+
+```ts
+// sketch.ts: the R3F app used <PerformanceMonitor onChange={({ factor }) => setDpr(0.5 + 1.5 * factor)} />.
+// The cap (2) moves to createEngine({ maxPixelRatio: 2 }) on the page. The low end becomes a render scale.
+quality.set({ minRenderScale: 0.5, maxRenderScale: 1 });
+const SPARKS = { low: 500, medium: 1000, high: 2000, ultra: 4000 };
+const sparkCount = () => (quality.governor.steps > 0 ? SPARKS[quality.preset] / 2 : SPARKS[quality.preset]);
+sparks.setActiveCount(sparkCount());
+quality.onChange(() => sparks.setActiveCount(sparkCount()));  // after each step past the render scale
+```
+
+To measure the scene's own cost while you port it, turn the governor off with `quality.set({ governor: false })`. Turn it back on before you ship.
+
+## 6. Step by step
 
 1. Draw the scene tree: list every component inside `<Canvas>` with its props, and mark which props come from React state.
 2. Write `sketch.ts` that creates the same objects at setup. Props that React changes become `page.onMessage` handlers.

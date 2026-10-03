@@ -46,7 +46,7 @@ import type {
 	WorkerReply,
 } from '../workers/protocol';
 import { abortable } from './abortable';
-import { WEBGPU_MAX_TEXTURE_SIZE, watchCanvas } from './canvas-watch';
+import { watchCanvas } from './canvas-watch';
 import {
 	type CapabilityReport,
 	type PowerPreference,
@@ -64,7 +64,7 @@ import {
 } from './frame-stats';
 import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
-import { coreDevice, maxInstances } from './limits';
+import { coreDevice, maxCanvasSize, maxInstances } from './limits';
 import { loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
 import { watchPreferences } from './preferences';
@@ -244,6 +244,13 @@ export interface EngineCapabilities {
 	 * memory can run out first: see E1109.
 	 */
 	maxInstances: number;
+	/**
+	 * The widest and tallest drawing buffer, in device pixels, that the GPU path draws into: 8,192
+	 * on WebGPU, 4,096 in its compatibility mode, and on WebGL2 the smallest of the device's texture,
+	 * renderbuffer and viewport limits. A canvas larger than that at the screen's pixel ratio draws
+	 * at a lower ratio, which `engine.viewport.pixelRatio` in the sketch reports.
+	 */
+	maxCanvasSize: number;
 	/**
 	 * How the GPU path stores depth. WebGPU, and WebGL2 in browsers with `EXT_clip_control`, draw
 	 * `reversed` depth, which stays precise far from the camera.
@@ -984,6 +991,7 @@ async function startEngine(
 		hdr: device.sceneColor !== FORMAT_CANVAS,
 		halfPrecision: (device.shaderBits & PERMUTATION_HALF) !== 0,
 		maxInstances: maxInstances(device),
+		maxCanvasSize: maxCanvasSize(tier, report),
 		depth: device.depth,
 	};
 	// Where the browser lacks Atomics.waitAsync, the threads wake each other with messages.
@@ -1003,7 +1011,7 @@ async function startEngine(
 		options.canvas,
 		control,
 		quality.settings.maxPixelRatio,
-		device.webgl2 ? device.maxTextureSize : WEBGPU_MAX_TEXTURE_SIZE,
+		capabilities.maxCanvasSize,
 	);
 	canvasWatch.listen(true);
 	// Hold mode keeps input out, so a held frame never depends on it.
