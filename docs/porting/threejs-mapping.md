@@ -161,9 +161,9 @@ The "Since" column gives the first engine version with the feature:
 
 | three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
-| GLTFLoader().load / loadAsync | const prefab = await assets.loadGltf(url); scene.instantiate(prefab) | changed | 0.2 | A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures need no transcoder path. Skins, animations, morph targets and meshopt compression are not read yet. | `api/assets` |
+| GLTFLoader().load / loadAsync | const prefab = await assets.loadGltf(url); scene.instantiate(prefab) | changed | 0.2 | A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures and meshopt compression need no decoder setup. Skins, animations and morph targets are not read yet. | `api/assets` |
 | DRACOLoader + setDecoderPath | Draco files load, but convert them to meshopt with `bunx @null3d/cli assets optimize` | changed | 0.2 | meshopt decodes faster and needs no separate decoder download. | `guides/assets-pipeline` |
-| MeshoptDecoder / setMeshoptDecoder | Built in | direct | 0.2 | Delete the setup. | `guides/assets-pipeline` |
+| MeshoptDecoder / setMeshoptDecoder | Built in: assets.loadGltf(url) decodes meshopt data | direct | 0.2 | Delete the setup. The loader reads KHR_meshopt_compression and EXT_meshopt_compression, and downloads the decoder with the first compressed file. | `concepts/assets` |
 | FBXLoader / OBJLoader / MTLLoader / ColladaLoader / STLLoader / PLYLoader / 3DMLoader / USDZLoader | Convert to glTF before release (`bunx @null3d/cli assets convert`, or Blender) | changed | 0.2 | The engine loads glTF only. | `guides/assets-pipeline` |
 | LoadingManager / onProgress callbacks | assets.onProgress((loaded, total) => ...) and assets.preload([...urls]) | changed | 0.1 |  | `guides/loading-screens` |
 | FileLoader / ImageLoader / ImageBitmapLoader | assets.loadBinary(url), assets.loadJson(url), assets.loadImageBitmap(url) | changed | 0.1 |  | `api/assets` |

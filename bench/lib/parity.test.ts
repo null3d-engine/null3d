@@ -258,11 +258,19 @@ describe('feature scenes', () => {
 			expect(names).toContain(feature);
 	});
 
-	test('give the shadows and two glTF models a looser limit, and draw tone mapping without anti-aliasing', () => {
+	test('give the shadows and three glTF models a looser limit, and draw tone mapping without anti-aliasing', () => {
 		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		expect(SHADOW_MAX_DIFFERENT_PERCENT).toBeGreaterThan(MAX_DIFFERENT_PERCENT);
 		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);
-		expect(looser.map((scene) => scene.test)).toEqual(['gltf-instancing', 'gltf-ktx2', 'shadows']);
+		expect(looser.map((scene) => scene.test)).toEqual([
+			'gltf-instancing',
+			'gltf-ktx2',
+			'gltf-meshopt-ext',
+			'shadows',
+		]);
+		// three.js's WebGPURenderer draws the Khronos meshopt test wrong, so WebGLRenderer is its reference.
+		expect(featureScene('gltf-meshopt-khr')?.webglOnly).toBe(true);
+		expect(featureScene('gltf-meshopt-ext')?.webglOnly).toBeUndefined();
 		for (const scene of looser) expect(scene.limit).toBeGreaterThan(MAX_DIFFERENT_PERCENT);
 		const tone = featureScene('tone-agx');
 		expect(tone).toMatchObject({ switches: 'antialias=none', webglOnly: true });
