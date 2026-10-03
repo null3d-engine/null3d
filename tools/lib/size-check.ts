@@ -5,8 +5,15 @@
 // commits and prints.
 import type { SizeEntry } from './size-report';
 
-/** Growth after Brotli over the base build that fails the check unless a trailer explains it. */
+/** Growth after Brotli over the base build, as a share, that needs a trailer to explain it. */
 export const MAX_GROWTH = 0.02;
+
+/**
+ * Growth after Brotli in bytes that a file may add without a trailer, whatever its share. A small
+ * file passes the share limit with any change to its code, so the share alone would ask for a
+ * reason for growth that costs no page a measurable time.
+ */
+export const MIN_GROWTH_BYTES = 256;
 
 /** A file's size after Brotli in the base build and in this build. A build that lacks the file has none. */
 export interface SizeChange {
@@ -31,9 +38,19 @@ export function growthOf({ base, head }: SizeChange): number {
 	return (head - base) / base;
 }
 
-/** The files that grew more than the limit, new files among them. */
+/**
+ * True when a file's growth needs a trailer: it grew by more than the share limit and by more than
+ * the byte floor. A new file always needs one.
+ */
+export function needsReason(change: SizeChange): boolean {
+	if (change.head === undefined) return false;
+	if (change.base === undefined) return true;
+	return growthOf(change) > MAX_GROWTH && change.head - change.base > MIN_GROWTH_BYTES;
+}
+
+/** The files whose growth needs a trailer, new files among them. */
 export function grownFiles(changes: readonly SizeChange[]): SizeChange[] {
-	return changes.filter((change) => growthOf(change) > MAX_GROWTH);
+	return changes.filter(needsReason);
 }
 
 /** The commit that the size check compares with, before git resolves it. */
@@ -80,7 +97,7 @@ export function growthText(change: SizeChange): string {
 
 /** The verdict on a file: blank within the limit, else the commit whose trailer explains its growth. */
 function verdict(change: SizeChange, explainedBy: ReadonlyMap<string, string>): string {
-	if (growthOf(change) <= MAX_GROWTH) return '';
+	if (!needsReason(change)) return '';
 	const commit = explainedBy.get(change.file);
 	return commit ? `explained in ${commit.slice(0, 8)}` : 'not explained';
 }
@@ -117,9 +134,9 @@ export function growthSummary(
 	return [
 		'### Download sizes against the base',
 		'',
-		`The base is ${base}. Sizes are bytes after Brotli. A file that grows more than ${MAX_GROWTH * 100}% needs a \`Size-Growth:\` trailer that names it and gives the reason.`,
+		`The base is ${base}. Sizes are bytes after Brotli. A file that grows more than ${MAX_GROWTH * 100}% and more than ${MIN_GROWTH_BYTES} bytes, or a new file, needs a \`Size-Growth:\` trailer that names it and gives the reason.`,
 		'',
-		`| File | Base | This build | Growth | Over ${MAX_GROWTH * 100}% |`,
+		'| File | Base | This build | Growth | Needs a reason |',
 		'| --- | ---: | ---: | ---: | --- |',
 		...changes.map(
 			(change) =>
@@ -129,7 +146,7 @@ export function growthSummary(
 	].join('\n');
 }
 
-/** A problem for each file that grew past the limit with no trailer to explain it. */
+/** A problem for each file whose growth needs a trailer and has none. */
 export function growthProblems(
 	changes: readonly SizeChange[],
 	explainedBy: ReadonlyMap<string, string>,

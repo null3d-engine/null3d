@@ -25,7 +25,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | --- | --- |
 | `bun install` | Install the tools and set up the git hooks |
 | `bun run build` | Build both WebAssembly files, the threaded one and the single-threaded one, and the shader compiler for the Vite plugin. Print their sizes and the sizes of the engine's JavaScript in a production build |
-| `bun run build:check-size` | Build, then compare each file's size after Brotli compression with main's build. Fail when a file grew more than 2% and no `Size-Growth:` trailer explains it. `--base <ref>` compares with another commit |
+| `bun run build:check-size` | Build, then compare each file's size after Brotli compression with main's build. Fail when a file grew more than 2% and more than 256 bytes, or is new, and no `Size-Growth:` trailer explains it. `--base <ref>` compares with another commit |
 | `bun run test` | Unit tests for the engine, the benchmark scenes and the repository tools |
 | `bun run test:browser` | The browser tests in Chrome, through Playwright: the image test manifest on every GPU tier, and the engine's behavior. The engine, errors and sketch shaders tests run again on a production build served by `vite preview`. CI splits the tests into shards with `--shard=1/2` |
 | `bun run test:images` | The image test manifest alone. Add Playwright's options, such as `-g scene` for the tests whose names hold scene |
@@ -59,7 +59,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run typecheck` | TypeScript check |
 | `bun run release` | Print the next version and its changelog. `--apply` writes them, as the Release workflow does, and `--notes <version>` prints one release's notes |
 
-A file that grows more than 2% after Brotli against main's build needs a reason: a `Size-Growth:` trailer, as "Commit gates" says. A file over its budget fails every build. Each budget is after Brotli. Each WebAssembly file may take 600 KB. The engine's JavaScript that a page downloads at its start may take 140 KB. Each file of engine code that loads on a feature's first use, or after the first frame, may take 16 KB. A feature that a page does not use loads its code on first use, so it adds nothing to the start. Only the owner raises a budget, in writing. The owner approved these figures for M2 on 2026-10-04, as [D-14](.dev/decisions/D-14-js-budget.md) records. [Benchmarks](.dev/benchmarks.md#download-size) says how the check builds main.
+A file that grows more than 2% and more than 256 bytes after Brotli against main's build needs a reason. That reason is a `Size-Growth:` trailer, as "Commit gates" says. A new file needs one too. A file over its budget fails every build. Each budget is after Brotli. Each WebAssembly file may take 600 KB. The engine's JavaScript that a page downloads at its start may take 140 KB. Each file of engine code that loads on a feature's first use, or after the first frame, may take 16 KB. A feature that a page does not use loads its code on first use, so it adds nothing to the start. Only the owner raises a budget, in writing. The owner approved these figures for M2 on 2026-10-04, as [D-14](.dev/decisions/D-14-js-budget.md) records. [Benchmarks](.dev/benchmarks.md#download-size) says how the check builds main.
 
 ## Design principles
 
@@ -156,7 +156,7 @@ On each commit message:
 - A commit that changes `crates/*/src/`, `packages/*/src/`, `packages/*/bin/` or `skills/` needs a `Docs-Checked:` trailer. This file, the README and the guides in `.dev/` describe the repository's tools, so a commit that changes the tools needs one too. They are `tools/`, `bench/` apart from its tests, the test runner (`tests/real-browsers.ts` and `tests/lib/`) and `package.json`. The trailer names the docs pages you updated or re-read, or says why none apply. The pass also confirms that those pages speak only to developers who use the engine.
 - A commit that changes a package's source, the WGSL shader library, `skills/` or `docs/data/threejs-mapping.json` needs a `Skills-Checked:` trailer. It names the skill files you updated or re-read.
 - A commit that makes a benchmark median slower on purpose needs a `Bench-Expected:` trailer. It names the benchmarks and gives the reason, as [Benchmarks](.dev/benchmarks.md#mark-an-expected-slowdown) shows. The benchmark job in CI reads it.
-- A file that grows more than 2% after Brotli against main's build needs a `Size-Growth:` trailer on a commit of the pull request. The trailer names each file as the size report prints it and gives the reason, such as `Size-Growth: js/page.js +3.1%, the key table of the input ring`.
+- A new file, or a file that grows more than 2% and more than 256 bytes after Brotli against main's build, needs a `Size-Growth:` trailer. Put it on a commit of the pull request. The trailer names each file as the size report prints it and gives the reason, such as `Size-Growth: js/page.js +3.1%, the key table of the input ring`.
 - Every internal link in the published Markdown resolves, and new external links in changed files answer.
 - Changed published Markdown and the commit's subject pass the docs style check. Errors block the commit; warnings only print.
 

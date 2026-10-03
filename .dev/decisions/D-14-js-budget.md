@@ -1,6 +1,6 @@
 # D-14: The engine's JavaScript budget
 
-Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). Date: 2026-09-30.
+Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). A byte floor for the growth rule proposed on 2026-10-04, in [The growth rule's byte floor](#the-growth-rules-byte-floor). Date: 2026-09-30.
 
 ## Question
 
@@ -306,3 +306,26 @@ The owner approved the budgets of points 1 and 2 in writing on 2026-10-04. Point
 
 - `tools/lib/size-report.ts` holds the budgets (`START_BUDGET_BYTES` and `LATER_BUDGET_BYTES`) and the parts that load later (`LATER_PARTS`). `budgetProblems` judges both budgets. The size report prints the parts that load later in a section of their own.
 - AGENTS.md, the README and [Benchmarks](../benchmarks.md#download-size) give the new figures. A further raise of either budget needs the owner's approval in writing, recorded here.
+
+## The growth rule's byte floor
+
+Status: proposed on 2026-10-04, for the owner. Task: M2-R5.
+
+### Question
+
+On 3 October the merge queue removed several pull requests for a few bytes of growth in a small file. One file of 404 bytes grew by 8 bytes. Growth of that size costs no page a time that anyone can measure. Should the growth rule ask for a reason only past a number of bytes too?
+
+### Data
+
+How often the growth rule asked for a reason on main. The check compared consecutive commits on main with kept records, from 29 September to 3 October 2026. A file grew more than 2% 71 times. With a floor of 256 bytes, 63 of the 71 still need a reason. The other 8 were small. The core's glue, `null3d.js`, grew 6 times by 154 to 240 bytes when the core gained functions. The job worker's file grew by 23 bytes, and a GLSL shader file by 213 bytes. Every other growth was 267 bytes or more. With a floor of 512 bytes, 49 of the 71 still need a reason, and with 1 KB, 16 of them. A file under 12,800 bytes passes 2% with less than 256 bytes. Of the start's files, `job-worker.js` and `probe-worker.js` are under 1 KB, and so are most of the files that load later. The pull requests that the queue removed on 3 October fell in this group.
+
+### Proposal
+
+A file needs a `Size-Growth:` trailer when it grows more than 2% and more than 256 bytes after Brotli against its base. A new file always needs one. The floor keeps the rule for every growth on main of more than a few lines. The two budgets bound what small growth adds up to, and the check still prints each file's growth.
+
+The floor needs the owner's approval in writing.
+
+### Consequences
+
+- `tools/lib/size-check.ts` holds the floor (`MIN_GROWTH_BYTES`), and the trailer hook prints the rule from the same constants.
+- AGENTS.md and [Benchmarks](../benchmarks.md#download-size) give the rule. When the owner decides, update this section's status and the record's row in [README.md](README.md).
