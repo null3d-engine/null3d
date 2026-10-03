@@ -655,16 +655,15 @@ export class WebGPUBackend {
 						this.targetView(words[a + 1] as number),
 						(flags & G.PASS_CLEAR_COLOR) !== 0,
 						(flags & G.PASS_STORE_COLOR) !== 0,
-						floats[a + 3] as number,
-						floats[a + 4] as number,
-						floats[a + 5] as number,
-						floats[a + 6] as number,
+						floats,
+						a + 3,
 					);
 					setup.setDepth(
 						this.targetView(words[a + 2] as number),
 						(flags & G.PASS_CLEAR_DEPTH) !== 0,
 						(flags & G.PASS_STORE_DEPTH) !== 0,
-						floats[a + 7] as number,
+						floats,
+						a + 7,
 					);
 					setup.setTimestampWrites(this.timer?.passWrites(true));
 					pass = this.commandEncoder().beginRenderPass(setup.descriptor);
@@ -798,24 +797,25 @@ export class WebGPUBackend {
 			case G.OP_SET_BIND_GROUP:
 				this.setBindGroup(pass, words, a);
 				return true;
+			// A size of 0 binds the rest of the buffer. The browser compiles each call for the kinds of
+			// argument it has seen, and throws the compiled code away when a number turns undefined,
+			// so the size goes to a call of its own.
 			case G.OP_SET_VERTEX_BUFFER: {
+				const slot = words[a] as number;
+				const buffer = this.need(this.buffers, words[a + 1] as number, 'buffer');
+				const offset = words[a + 2] as number;
 				const size = words[a + 3] as number;
-				pass.setVertexBuffer(
-					words[a] as number,
-					this.need(this.buffers, words[a + 1] as number, 'buffer'),
-					words[a + 2] as number,
-					size === 0 ? undefined : size,
-				);
+				if (size === 0) pass.setVertexBuffer(slot, buffer, offset);
+				else pass.setVertexBuffer(slot, buffer, offset, size);
 				return true;
 			}
 			case G.OP_SET_INDEX_BUFFER: {
+				const buffer = this.need(this.buffers, words[a] as number, 'buffer');
+				const format = words[a + 1] === G.INDEX_FORMAT_UINT32 ? 'uint32' : 'uint16';
+				const offset = words[a + 2] as number;
 				const size = words[a + 3] as number;
-				pass.setIndexBuffer(
-					this.need(this.buffers, words[a] as number, 'buffer'),
-					words[a + 1] === G.INDEX_FORMAT_UINT32 ? 'uint32' : 'uint16',
-					words[a + 2] as number,
-					size === 0 ? undefined : size,
-				);
+				if (size === 0) pass.setIndexBuffer(buffer, format, offset);
+				else pass.setIndexBuffer(buffer, format, offset, size);
 				return true;
 			}
 			case G.OP_DRAW:

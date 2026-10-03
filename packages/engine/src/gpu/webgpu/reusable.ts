@@ -24,17 +24,17 @@ export class RenderPassSetup {
 
 	/**
 	 * Sets the color target, or removes it when `view` is undefined. The pass starts by clearing
-	 * the target to the given color when `clear` is set, and keeps what it draws when `store` is set.
+	 * the target to the color at `color[at, at + 4)` when `clear` is set, and keeps what it draws
+	 * when `store` is set. The color and the depth value come from a typed array: a fraction passed
+	 * to a call that the browser does not inline is boxed in a new object.
 	 */
 	setColor(
 		view: GPUTextureView | undefined,
 		resolveTarget: GPUTextureView | undefined,
 		clear: boolean,
 		store: boolean,
-		r: number,
-		g: number,
-		b: number,
-		a: number,
+		color: Float32Array,
+		at: number,
 	): void {
 		if (!view) {
 			this.descriptor.colorAttachments = this.noColorTargets;
@@ -45,15 +45,22 @@ export class RenderPassSetup {
 		target.resolveTarget = resolveTarget;
 		target.loadOp = clear ? 'clear' : 'load';
 		target.storeOp = store ? 'store' : 'discard';
-		this.clearColor.r = r;
-		this.clearColor.g = g;
-		this.clearColor.b = b;
-		this.clearColor.a = a;
+		const clearColor = this.clearColor;
+		clearColor.r = color[at] as number;
+		clearColor.g = color[at + 1] as number;
+		clearColor.b = color[at + 2] as number;
+		clearColor.a = color[at + 3] as number;
 		this.descriptor.colorAttachments = this.colorTargets;
 	}
 
-	/** Sets the depth target, or removes it when `view` is undefined. */
-	setDepth(view: GPUTextureView | undefined, clear: boolean, store: boolean, value: number): void {
+	/** Sets the depth target, or removes it when `view` is undefined. It clears to `value[at]`. */
+	setDepth(
+		view: GPUTextureView | undefined,
+		clear: boolean,
+		store: boolean,
+		value: Float32Array,
+		at: number,
+	): void {
 		if (!view) {
 			this.descriptor.depthStencilAttachment = undefined;
 			return;
@@ -62,7 +69,7 @@ export class RenderPassSetup {
 		target.view = view;
 		target.depthLoadOp = clear ? 'clear' : 'load';
 		target.depthStoreOp = store ? 'store' : 'discard';
-		target.depthClearValue = value;
+		target.depthClearValue = value[at] as number;
 		this.descriptor.depthStencilAttachment = target;
 	}
 

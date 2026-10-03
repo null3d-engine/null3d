@@ -58,7 +58,8 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  * - the sketch worker's frame wait in the frame loop, which the runner holds: the result and promise
  *   of `Atomics.waitAsync`, the await on that promise, and settling it between tasks;
  * - the render worker's WebGPU objects: the command encoder, the passes, the command buffer, and
- *   the canvas texture and its view;
+ *   the canvas texture and its view. Each render pass adds its encoder, about 17 bytes. S4's two
+ *   shadow passes and nine more uploads per frame put its replay 46 to 48 bytes above S1's;
  * - the completion tracker's object for each frame: the queue's promise and its reaction on WebGPU,
  *   which the browser counts in the renderer's `drawFrame` where it inlines the tracker, or the fence
  *   on WebGL2; and the clock readings at each frame's submit and completion, and at each check of
@@ -67,8 +68,9 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  *   copy into it, and the promise of the request to map the buffer again;
  * - the upload route timing, which reads the clock around the uploads of one submit in a few;
  * - the time the browser passes to each animation frame callback, between tasks;
- * - with --dev, the benchmark sketch's camera path, whose numbers go to the engine's development
- *   checks;
+ * - the benchmark sketch's camera path. With --dev, its numbers go to the engine's development
+ *   checks. In S4, the browser runs it on its middle tier for the whole sample, which boxes about
+ *   two of the numbers that it passes to the camera's setters;
  * - an instance batch's array views, rebuilt once each time the engine's memory grows, which it
  *   does a few times while its buffers reach their final sizes.
  */
