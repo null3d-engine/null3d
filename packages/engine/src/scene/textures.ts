@@ -394,6 +394,27 @@ export class Textures {
 	}
 
 	/**
+	 * @internal A 3D texture of `size` texels along each side, read with a linear filter and
+	 * clamped at its edges, filled with `texels`: four bytes per texel of linear 8-bit color, red
+	 * fastest, then green, then blue. Color grading tables are such textures.
+	 */
+	fromVolume(size: number, texels: Uint8Array, call: string): Texture {
+		const { core } = this;
+		const handle = core.checkGrowth(
+			core.glue.createVolumeTexture(size, size, size, TEXTURE_FORMAT_LINEAR),
+			call,
+		);
+		const texture = new Texture(handle, size, size, size, 'rgba8unorm', 'linear', 0, this);
+		try {
+			this.setData(texture, texels, call);
+		} catch (error) {
+			texture.destroy();
+			throw error;
+		}
+		return texture;
+	}
+
+	/**
 	 * Checks the options and makes a texture with no texels yet. `source` says where its texels
 	 * come from: images and data have their own defaults, and a file brings `levels` mip levels,
 	 * which the GPU never makes.

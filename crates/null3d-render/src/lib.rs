@@ -12,12 +12,14 @@
 //! - `debug_lines`: the lines that a sketch draws for one frame, and the pass that draws them
 //! - `debug_view`: the debug views, which draw every mesh with one debug shading in place of its
 //!   material's
-//! - `final_pass`: the pass that tone maps the HDR scene color into the canvas
+//! - `final_pass`: the pass that tone maps the HDR scene color into the canvas, and grades it
 //! - `fog`: the scene's fog, with three.js's formulas, and its part of each frame's uniform block
 //! - `frame`: what every frame builder shares: its input, the scene settings, the per-parity lists
 //! - `frame_data`: the per-frame uniform block the shaders read
 //! - `frame_graph`: the engine's passes on the render graph, and the recording of its plan
 //! - `geometry`: generators with three.js's parameters and vertex order
+//! - `grading`: color grading through a 3D lookup table, and the vignette, as three.js's LUTPass
+//!   and VignetteShader draw them in the final pass
 //! - `gpu_driven`: the WebGPU frame builder, with GPU culling and a prerecorded bundle per view
 //! - `graph`: the render graph, which orders declared passes and plans their render passes and
 //!   textures
@@ -51,6 +53,7 @@ pub mod frame_data;
 pub mod frame_graph;
 pub mod geometry;
 pub mod gpu_driven;
+pub mod grading;
 pub mod graph;
 pub mod light_grid;
 pub mod materials;

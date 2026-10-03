@@ -3,14 +3,14 @@ id: api/post
 title: Post-processing API
 status: experimental
 since: "0.1"
-summary: "post.set for tone mapping, exposure and bloom; the other effects and post.addEffect of 0.2."
+summary: "post.set for tone mapping, exposure, bloom, color grading tables and the vignette; the other effects and post.addEffect of 0.2."
 ---
 
 # Post-processing API
 
-> Ships in null3D 0.1, with bloom in 0.2. The API is experimental, so it can still change between versions. Ambient occlusion, color grading, the vignette, outlines and `post.addEffect` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1, with bloom, color grading and the vignette in 0.2. The API is experimental, so it can still change between versions. Ambient occlusion, outlines and `post.addEffect` are not built yet, so coding agents must not use them.
 
-`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas: the tone mapping, the exposure and bloom. [Color management](../concepts/color-management.md) explains how the first two fit into the frame, and [the post-processing chain](../concepts/post-processing.md) how bloom does.
+`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, bloom, a color grading table and the vignette. [Color management](../concepts/color-management.md) explains how the first two fit into the frame, and [the post-processing chain](../concepts/post-processing.md) how bloom does.
 
 ## Tone mapping and exposure
 
@@ -74,18 +74,63 @@ export default defineSketch(({ post }) => {
 - In WebGPU's compatibility mode with MSAA, turning bloom on moves the engine to HDR color with FXAA. On a WebGL2 device with no float target, bloom stays off. [The post-processing chain](../concepts/post-processing.md#effects-on-devices-without-hdr-color) explains both.
 - `post.set` allocates nothing, so a sketch can change bloom's settings every frame.
 
+## Color grading
+
+A color grading table maps each color of the picture to a graded color, as three.js's `LUTPass` does. Load one from a `.cube` or a `.3dl` file with [`assets.loadLut`](assets.md), then give it to `post.set`:
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ assets, post }) => {
+  const lut = await assets.loadLut('/grades/warm.cube');
+  post.set({ lut, lutIntensity: 0.8 });
+  return {};
+});
+```
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `lut` | A table from `assets.loadLut`, or `false` to turn grading off. | Off |
+| `lutIntensity` | The share of the table's color in each pixel, from 0 to 1, as `LUTPass`'s `intensity`. | 1 |
+
+- The table grades each pixel after the tone mapping and the sRGB encoding, as `LUTPass` does after three.js's `OutputPass`. Tables made for sRGB display color, as most are, look as their authors made them.
+- The final pass reads the table with a linear filter between its texel centers, as `LUTPass` does. It maps the colors of a `.cube` file's domain onto the table, which `LUTPass` leaves out.
+- The table grades the picture from the first frame after its texels reach the GPU, usually the next one.
+- `lutIntensity` keeps its value while the table is off, and `post.set` allocates nothing, so a sketch can fade a grade in every frame.
+
+## Vignette
+
+The vignette darkens the picture toward its edges, with the meanings of three.js's `VignetteShader`:
+
+```ts
+post.set({ vignette: { offset: 1, darkness: 1.2 } });
+```
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `vignette` | Its settings to turn it on, or `false` to turn it off. | Off |
+| `vignette.offset` | How far toward the center the darkening reaches: a number from 0 up. At 1, the corners blend halfway toward the gray of `1 - darkness`. | 1 |
+| `vignette.darkness` | How dark the edges turn: a number from 0 up. At 1 they blend toward black. | 1 |
+
+- Each pixel blends toward the gray of `1 - darkness` by its squared distance from the canvas's center, scaled by `offset`. The vignette applies after the color grading table.
+- A setting that a call leaves out keeps its value, also while the vignette is off. `post.set({ vignette: {} })` turns it on with the values it had.
+
+Grading and the vignette work on display color, so they draw on every GPU path, with HDR color or without it. They cost the final pass a few operations per pixel, and the table one texture read. On a device that resolves its multisampled picture straight into the canvas, they make the final pass run, which reads the picture once more.
+
 ## Errors
 
 | Code | Cause |
 | --- | --- |
-| [E1213](../errors/E1213.md) | A setting that this version does not have, a tone mapping that the engine does not know, a bloom value other than settings or `false`, or a value out of its range: an exposure, strength or threshold below 0, or a radius outside 0 to 1. |
+| [E1213](../errors/E1213.md) | A setting that this version does not have, a tone mapping that the engine does not know, a bloom or vignette value other than settings or `false`, a `lut` that is not a table from `assets.loadLut`, or a value out of its range: an exposure, strength, threshold, offset or darkness below 0, or a radius or `lutIntensity` outside 0 to 1. |
 | [E1203](../errors/E1203.md) | A value that is not a finite number, such as NaN. |
+| [E1101](../errors/E1101.md) | A table whose `destroy()` was called. |
 
 ## Related pages
 
 - [Color management](../concepts/color-management.md): HDR color, the final pass, the 8-bit path and the background.
 - [The post-processing chain](../concepts/post-processing.md): how bloom works, what it costs, and the effects still to come.
-- [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure` and `UnrealBloomPass`.
+- [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `LUTPass` and `VignetteShader`.
+- [Assets](assets.md): `assets.loadLut`, which loads color grading tables.
 
 ## API reference
 
@@ -111,7 +156,7 @@ The post-processing settings, as `ctx.post`. The engine applies them to every pi
 
 | Member | Description |
 | --- | --- |
-| `set(settings: PostSettings): void` | Changes the settings that `settings` gives, from the next frame on. It allocates nothing, so a sketch can change the exposure or bloom every frame. It throws E1213 for a setting or a tone mapping it does not know, or a value out of its range, and E1203 for a value that is not a number. |
+| `set(settings: PostSettings): void` | Changes the settings that `settings` gives, from the next frame on. It allocates nothing, so a sketch can change the exposure, bloom, the table's intensity or the vignette every frame. It throws E1213 for a setting or a tone mapping it does not know, or a value out of its range, E1203 for a value that is not a number, and E1101 for a table that was destroyed. |
 
 ### `PostSettings`
 
@@ -124,6 +169,9 @@ Settings for `post.set`. A setting that the call leaves out keeps its value.
 | `toneMapping?: ToneMapping` | How the engine maps high dynamic range color to the screen. The default is `'aces'`. three.js uses no tone mapping by default, so a port of a three.js scene without it sets `'none'`. |
 | `exposure?: number` | Scales the scene's color before the tone mapping, as three.js's `toneMappingExposure` does: 2 is one stop brighter, and 0.5 one stop darker. It is 0 or more, and 1 by default. |
 | `bloom?: BloomSettings \| false` | Light that spreads from the brightest parts of the scene, as three.js's `UnrealBloomPass` spreads it. Settings turn bloom on, `{}` with the values it had, and `false` turns it off. It is off by default. |
+| `lut?: Lut \| false` | A color grading table from `assets.loadLut`, which maps each pixel's color after the tone mapping, as three.js's `LUTPass` does. `false` turns it off. It is off by default. |
+| `lutIntensity?: number` | The share of the table's color in each pixel, from 0 for none to 1 for all of it, as `LUTPass`'s `intensity`. It is 1 by default. |
+| `vignette?: VignetteSettings \| false` | Darkens the picture toward its edges, as three.js's `VignetteShader` does. Settings turn the vignette on, `{}` with the values it had, and `false` turns it off. It is off by default. |
 
 ### `ToneMapping`
 
@@ -132,5 +180,16 @@ type ToneMapping = 'aces' | 'agx' | 'neutral' | 'none';
 ```
 
 How the engine maps the scene's high dynamic range color to the screen, with three.js's formulas. The curves are three.js's `ACESFilmicToneMapping` (`'aces'`), `AgXToneMapping` (`'agx'`) and `NeutralToneMapping` (`'neutral'`). The value `'none'` clips the exposed color at 1, as `LinearToneMapping` does.
+
+### `VignetteSettings`
+
+Interface `VignetteSettings`.
+
+The vignette's settings, with the meanings of three.js's `VignetteShader`: each pixel blends toward the gray of `1 - darkness` by its squared distance from the canvas's center, scaled by `offset`. A setting that a call leaves out keeps its value.
+
+| Member | Description |
+| --- | --- |
+| `offset?: number` | How far toward the center the darkening reaches: 0 or more, and 1 by default. At 1, the corners blend halfway toward the gray, and higher values darken more of the picture. |
+| `darkness?: number` | How dark the edges turn: 0 or more, and 1 by default, which blends them toward black. Above 1 the blend goes past black, so the edges darken faster. |
 
 <!-- null3d:api:end -->

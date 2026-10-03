@@ -131,7 +131,7 @@ mod ids {
     pub const LINES: u32 = VIEW_BUFFERS + 2 * MAX_VIEW_IDS as u32;
     /// The cascades' uniform block, which receivers read beside the shadow map.
     pub const SHADOWS: u32 = LINES + 1;
-    /// The final pass's output settings.
+    /// The final pass's settings.
     pub const FINAL_SETTINGS: u32 = SHADOWS + 1;
     /// The uniform block of the shadow atlas's tiles, which receivers read beside the atlas.
     pub const SHADOW_TILES: u32 = FINAL_SETTINGS + 1;
@@ -161,8 +161,10 @@ mod ids {
     pub const LIGHT_GRID: u32 = DFG + 1;
     /// The ring of textures of the records of the lights that the light grid lists.
     pub const LIGHTS: u32 = LIGHT_GRID + RING;
+    /// The final pass's blank color grading table, which it binds while the sketch sets none.
+    pub const BLANK_LUT: u32 = LIGHTS + RING;
     /// Every animated instance's skinning matrices (see [`crate::skinning`]).
-    pub const JOINTS: u32 = LIGHTS + RING;
+    pub const JOINTS: u32 = BLANK_LUT + 1;
     /// The first joint of the instance that skins each source row.
     pub const FIRST_JOINTS: u32 = JOINTS + 1;
     /// The render graph's textures, from this id on.
@@ -173,8 +175,10 @@ mod ids {
     pub const SHADOW_SAMPLER: u32 = 1;
     /// The linear sampler of bloom's steps and of the final pass's bloom build.
     pub const BLOOM_SAMPLER: u32 = 2;
+    /// The linear sampler of the final pass's color grading table.
+    pub const LUT_SAMPLER: u32 = 3;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 3;
+    pub const SAMPLERS: u32 = 4;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -338,6 +342,8 @@ impl CpuCulledRenderer {
                         final_pass: FinalIds {
                             settings: ids::FINAL_SETTINGS,
                             group: ids::FINAL_GROUP,
+                            blank_lut: ids::BLANK_LUT,
+                            lut_sampler: ids::LUT_SAMPLER,
                         },
                         bloom: BloomIds {
                             buffer: ids::BLOOM,
@@ -828,6 +834,7 @@ impl CpuCulledRenderer {
         );
         self.graph
             .set_bloom(self.settings.bloom(), self.settings.bloom_divisor());
+        self.graph.set_grading(self.settings.grades());
         self.graph.request_pipelines(&mut self.pipelines);
         self.background.request_pipeline(
             &self.settings,
@@ -881,8 +888,6 @@ impl CpuCulledRenderer {
         }
         let rebuilt = self.layout.built_in == input.frame;
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
-        self.graph
-            .upload(list, arena, self.settings.drawn_output())?;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::DFG)?;
         }
@@ -892,6 +897,12 @@ impl CpuCulledRenderer {
         let table = MaterialStorage::Texture(ids::MATERIALS);
         self.settings
             .record_materials(list, arena, table, input.frame)?;
+        self.graph.upload(
+            list,
+            arena,
+            self.settings.drawn_output(),
+            self.settings.grading(),
+        )?;
         self.background.prepare(&self.settings);
         let new_views = first_new < views || first_new_cascade < cascades || first_new_tile < tiles;
         let new_texture = if rebuilt || new_views {

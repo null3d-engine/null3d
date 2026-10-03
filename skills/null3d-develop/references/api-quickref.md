@@ -351,7 +351,7 @@ ship.animations;           // (0.2) clip names
 const env = await assets.loadEnvironment('/env/studio.ktx2');  // (0.2) from `bunx @null3d/cli assets env`
 const studio = assets.builtinEnvironment('studio');            // (0.2) neutral lighting, no download
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2)
-const lut = await assets.loadLut('/grade.cube');                // (0.2)
+const lut = await assets.loadLut('/grade.cube');                // (0.2) .cube or .3dl; lut.size, lut.title, lut.destroy()
 ship.destroy();   // (0.2) frees GPU data once no instance uses it
 ```
 
@@ -425,7 +425,7 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping`, `exposure` and `bloom` are built; the other effects come later in 0.2. The default tone mapping is ACES, while three.js defaults to none.
+`toneMapping`, `exposure`, `bloom`, `lut` and `vignette` are built; the other effects come later in 0.2. The default tone mapping is ACES, while three.js defaults to none.
 
 ```ts
 post.set({
@@ -433,7 +433,8 @@ post.set({
   exposure: 1,
   bloom: { strength: 0.8, radius: 0.4, threshold: 0.9 },  // (0.2) UnrealBloomPass's meanings; false turns it off
   ao: { radius: 0.5, intensity: 1 },     // (0.2) High and Ultra presets only
-  lut, vignette: { amount: 0.3 },        // (0.2)
+  lut, lutIntensity: 0.8,                // (0.2) a table from assets.loadLut, or false; LUTPass's meanings
+  vignette: { offset: 1, darkness: 1 },  // (0.2) VignetteShader's meanings; false turns it off
   outline: { color: '#ffcc00', thickness: 2 },  // (0.2) objects opt in with setOutlined(true)
 });
 post.addEffect({ name: 'pixelate', wgsl, uniforms: { size: 4 }, textures: {}, stage: 'final' });  // (0.2) textures: named textures the effect samples

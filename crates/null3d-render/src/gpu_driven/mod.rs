@@ -242,8 +242,10 @@ mod ids {
     pub const DFG: u32 = 1;
     /// The custom values of materials: one row of texels per material.
     pub const CUSTOM_VALUES: u32 = DFG + 1;
+    /// The final pass's blank color grading table, which it binds while the sketch sets none.
+    pub const BLANK_LUT: u32 = CUSTOM_VALUES + 1;
     /// Every animated instance's skinning matrices (see [`crate::skinning`]).
-    pub const JOINTS: u32 = CUSTOM_VALUES + 1;
+    pub const JOINTS: u32 = BLANK_LUT + 1;
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = JOINTS + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
@@ -252,8 +254,10 @@ mod ids {
     pub const SHADOW_SAMPLER: u32 = 1;
     /// The linear sampler of bloom's steps and of the final pass's bloom build.
     pub const BLOOM_SAMPLER: u32 = 2;
+    /// The linear sampler of the final pass's color grading table.
+    pub const LUT_SAMPLER: u32 = 3;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 3;
+    pub const SAMPLERS: u32 = 4;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -425,6 +429,8 @@ impl GpuDrivenRenderer {
                         final_pass: FinalIds {
                             settings: ids::FINAL_SETTINGS,
                             group: ids::FINAL_GROUP,
+                            blank_lut: ids::BLANK_LUT,
+                            lut_sampler: ids::LUT_SAMPLER,
                         },
                         bloom: BloomIds {
                             buffer: ids::BLOOM,
@@ -611,6 +617,7 @@ impl GpuDrivenRenderer {
         );
         self.graph
             .set_bloom(self.settings.bloom(), self.settings.bloom_divisor());
+        self.graph.set_grading(self.settings.grades());
         self.graph.request_pipelines(&mut self.pipelines);
         self.background.request_pipeline(
             &self.settings,
@@ -695,8 +702,6 @@ impl GpuDrivenRenderer {
         }
 
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
-        self.graph
-            .upload(list, arena, self.settings.drawn_output())?;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::DFG)?;
         }
@@ -718,6 +723,12 @@ impl GpuDrivenRenderer {
         let groups_remade = self
             .settings
             .record_materials(list, arena, table, input.frame)?;
+        self.graph.upload(
+            list,
+            arena,
+            self.settings.drawn_output(),
+            self.settings.grading(),
+        )?;
         self.background.prepare(&self.settings);
         let binding_bytes = self.config.storage_binding_bytes;
         let (shared_recreated, casters_recreated) = if upload_everything {
