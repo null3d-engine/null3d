@@ -195,7 +195,7 @@ const WORLD = 1 << 2;   // walls and terrain: they block the ray
 for (const wall of walls) wall.setLayers(1 | WORLD);
 const unitSet = new Set(units);
 const ray = { origin: [0, 0, 0], direction: [0, 0, -1] };
-const hit = { object: null as any, point: [0, 0, 0], normal: [0, 0, 0], distance: 0, instance: -1 };
+const hit: RaycastHit = { object: null, instance: -1, point: vec3.create(), normal: vec3.create(), distance: 0, triangle: -1 };
 // in onUpdate:
 if (input.wasPressed('Mouse0')) {
   camera.screenToRay(input.pointer.x, input.pointer.y, ray);

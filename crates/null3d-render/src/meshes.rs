@@ -14,6 +14,7 @@
 //! indices it had then. The storage makes the edge lists the first time the view asks for them,
 //! and from then on gives each new part its own.
 
+use null3d_core::bvh::mesh::Triangles;
 use null3d_gpu::drawlist::vertex;
 
 use crate::geometry::Geometry;
@@ -71,6 +72,15 @@ impl Page {
         (self.vertices.len() / vertex::stride(self.format) as usize) as u32
     }
 
+    /// The position of vertex `v`, which every format stores first, as shaders read it.
+    #[inline(always)]
+    pub fn position(&self, v: u32) -> [f32; 3] {
+        let at = v as usize * vertex::stride(self.format) as usize;
+        let ty = vertex::type_of(self.format, vertex::POSITION).unwrap_or(vertex::Type::F32);
+        let size = ty.bytes() as usize;
+        [0, 1, 2].map(|c| ty.decode(&self.vertices[at + c * size..]))
+    }
+
     /// Bytes of the page's vertex buffer and index buffer, whose writes are whole 4-byte words.
     /// Every vertex format takes whole words, so the vertices always do.
     pub fn buffer_bytes(&self) -> (u64, u64) {
@@ -106,6 +116,39 @@ pub struct MeshStorage {
     drawing_edges: bool,
 }
 
+/// A mesh's triangles in their order, as its parts' pages hold them: what queries test.
+#[derive(Clone, Copy, Debug)]
+pub struct MeshTriangles<'a> {
+    pages: &'a [Page],
+    parts: &'a [MeshPart],
+    count: u32,
+}
+
+impl Triangles for MeshTriangles<'_> {
+    #[inline(always)]
+    fn count(&self) -> u32 {
+        self.count
+    }
+
+    #[inline(always)]
+    fn triangle(&self, i: u32) -> [[f32; 3]; 3] {
+        // Most meshes have one part; a mesh too large for one has a few.
+        let mut local = i;
+        for part in self.parts {
+            let triangles = part.index_count / 3;
+            if local < triangles {
+                let page = &self.pages[part.page as usize];
+                let at = (part.first_index + local * 3) as usize;
+                return std::array::from_fn(|c| {
+                    page.position(u32::from(page.indices[at + c]) + part.base_vertex)
+                });
+            }
+            local -= triangles;
+        }
+        [[f32::NAN; 3]; 3]
+    }
+}
+
 /// A vertex that the part being built does not use yet.
 const UNUSED: u32 = u32::MAX;
 
@@ -134,6 +177,23 @@ impl MeshStorage {
 
     pub fn mesh(&self, id: u32) -> Option<&MeshSlot> {
         self.meshes.get(id as usize)
+    }
+
+    /// The number of meshes.
+    pub fn count(&self) -> u32 {
+        self.meshes.len() as u32
+    }
+
+    /// The triangles of mesh `id`, for queries, or `None` for an id that names no mesh.
+    pub fn triangles(&self, id: u32) -> Option<MeshTriangles<'_>> {
+        let mesh = self.meshes.get(id as usize)?;
+        let first = mesh.first_part as usize;
+        let parts = &self.parts[first..first + mesh.part_count as usize];
+        Some(MeshTriangles {
+            pages: &self.pages,
+            parts,
+            count: parts.iter().map(|part| part.index_count / 3).sum(),
+        })
     }
 
     /// The parts of a mesh, in triangle order: their triangles, or their edge lists while draws
@@ -593,6 +653,63 @@ mod tests {
         }
         let mut tiny = MeshStorage::with_page_limit(Packing::Pages, 64);
         assert_eq!(tiny.add(&mesh), Err(MeshError::PageTooSmall));
+    }
+
+    #[test]
+    fn queries_read_each_triangle_of_a_split_mesh_in_its_order() {
+        // Pages of 4 KiB split the grid into parts; a box before it shares the first page. Drawing
+        // edges adds edge lists to the pages, which the triangles never read.
+        let first = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+        let mesh = grid(20, 20, 0);
+        for packing in [Packing::SharedBuffers, Packing::Pages] {
+            let mut storage = MeshStorage::with_page_limit(packing, 4096);
+            storage.draw_edges(true);
+            storage.add(&first).unwrap();
+            let id = storage.add(&mesh).unwrap();
+            assert!(storage.parts(storage.mesh(id).unwrap()).len() > 1);
+            let triangles = storage.triangles(id).unwrap();
+            assert_eq!(triangles.count() as usize, mesh.indices.len() / 3);
+            for t in 0..triangles.count() {
+                let want: [[f32; 3]; 3] = std::array::from_fn(|c| {
+                    mesh.position(mesh.indices[t as usize * 3 + c] as usize)
+                });
+                assert_eq!(triangles.triangle(t), want, "{packing:?}, triangle {t}");
+            }
+            assert!(triangles.triangle(triangles.count())[0][0].is_nan());
+            assert_eq!(storage.count(), 2);
+            assert!(storage.triangles(2).is_none());
+        }
+    }
+
+    #[test]
+    fn queries_read_packed_positions_as_shaders_do() {
+        // One triangle with normalized 16-bit positions: 32767 reads as 1, and -32768 as -1.
+        let format = vertex::with(0, vertex::POSITION, vertex::Type::Snorm16).unwrap();
+        let stride = vertex::stride(format) as usize;
+        let mut vertices = vec![0u8; 3 * stride];
+        for (v, p) in [[0i16, 0, 0], [32767, 0, 0], [0, -32768, 0]]
+            .iter()
+            .enumerate()
+        {
+            for (c, value) in p.iter().enumerate() {
+                vertices[v * stride + c * 2..v * stride + c * 2 + 2]
+                    .copy_from_slice(&value.to_le_bytes());
+            }
+        }
+        let mesh = Geometry {
+            format,
+            vertices,
+            indices: vec![0, 1, 2],
+        };
+        let mut storage = MeshStorage::new(Packing::Pages);
+        let id = storage.add(&mesh).unwrap();
+        let triangle = storage.triangles(id).unwrap().triangle(0);
+        assert_eq!(
+            triangle,
+            [mesh.position(0), mesh.position(1), mesh.position(2)]
+        );
+        assert_eq!(triangle[1][0], 1.0);
+        assert_eq!(triangle[2][1], -1.0);
     }
 
     #[test]
