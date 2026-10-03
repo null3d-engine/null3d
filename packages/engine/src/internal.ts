@@ -20,7 +20,9 @@ export {
 export { probeCapabilities } from './page/capabilities';
 export { loadCore } from './page/loader';
 export { stopJobWorkersAt } from './page/stop-jobs';
+export type { RigClip, RigData, RigJoint, RigTrack } from './scene/animation';
+export { AnimationRig, animateObject, createAnimationRig } from './scene/animation';
 export { texCoordsMaterial } from './scene/resources';
 export type { TextureUploads } from './scene/textures';
-export type { AnimationGlue, CoreGlue } from './shared/core';
+export type { CoreGlue } from './shared/core';
 export { coreUrls, startCore } from './shared/core';

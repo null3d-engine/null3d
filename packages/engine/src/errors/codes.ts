@@ -172,6 +172,13 @@ const DOCS = {
 		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		since: '0.1',
 	},
+	E1218: {
+		title: 'Invalid animation call',
+		cause:
+			"An animator call named a clip, layer or joint that the object's animation does not have. Or it got an option out of range, such as a negative fade. animator() was called on an object that has no animation clips. Or the engine refused animation data, such as a skeleton that lists a joint before its parent.",
+		example: `E1218: play() got "rnu", which names no clip of "Hero" (slot 3). Its clips are idle, run and walk.`,
+		since: '0.2',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',

@@ -308,13 +308,8 @@ export interface CoreGlue extends CoreErrors {
 	 * `DEBUG_VIEW_LIT`, from the next frame on.
 	 */
 	setDebugView(view: number): number;
-}
-
-/**
- * The core's animation table, which no engine code calls yet: the repository's animation test page
- * drives it. Ids that the create calls return are the table's ids plus one, and 0 on failure.
- */
-export interface AnimationGlue {
+	// The animation table. Ids that its create calls return, and that its other calls take, are the
+	// table's ids plus one; a create call returns 0 on failure.
 	/** Creates the animation table for `instances` animated objects with `joints` joints in all. */
 	initAnimations(instances: number, joints: number): number;
 	/** Makes room for `words` staging words of animation data and returns their address. */
@@ -332,10 +327,35 @@ export interface AnimationGlue {
 	createClip(skeleton: number, tracks: number, rate: number): number;
 	/** Adds an animated instance of a skeleton. */
 	createAnimatedInstance(skeleton: number): number;
+	/** Removes an animated instance; later instances take its id and joints. */
+	removeAnimatedInstance(instance: number): number;
 	/** The address of an animation table array (`ANIMATION_FIELD_*`). */
 	animationArrays(field: number): number;
-	/** Writes every animated instance's skinning matrices, on the job workers. */
-	updateAnimations(): number;
+	/**
+	 * Plays a clip on an instance's layer, fading over `fade` seconds at `speed`, with
+	 * `ANIMATION_PLAY_*` flags.
+	 */
+	animatorPlay(
+		instance: number,
+		clip: number,
+		layer: number,
+		fade: number,
+		speed: number,
+		flags: number,
+	): number;
+	/** Stops a clip on an instance, or every clip when `clip` is 0, fading over `fade` seconds. */
+	animatorStop(instance: number, clip: number, fade: number): number;
+	/** Creates a joint mask of a skeleton from the staging words: one weight from 0 to 1 per joint. */
+	createJointMask(skeleton: number): number;
+	/** Gives an instance's layer a joint mask, or every joint when `mask` is 0. */
+	setLayerMask(instance: number, layer: number, mask: number): number;
+	/** Sets a clip's events from the staging words: `count` times as floats, then `count` ids. */
+	setClipEvents(clip: number, count: number): number;
+	/**
+	 * Advances every played clip by `stepUs` whole microseconds, then writes every animated
+	 * instance's skinning matrices, on the job workers.
+	 */
+	updateAnimations(stepUs: number): number;
 }
 
 const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
@@ -409,6 +429,19 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBackgroundTexture',
 	'setFog',
 	'setDebugView',
+	'initAnimations',
+	'animationStaging',
+	'createSkeleton',
+	'createClip',
+	'createAnimatedInstance',
+	'removeAnimatedInstance',
+	'animationArrays',
+	'animatorPlay',
+	'animatorStop',
+	'createJointMask',
+	'setLayerMask',
+	'setClipEvents',
+	'updateAnimations',
 ];
 
 /** Stack size for each engine thread. */

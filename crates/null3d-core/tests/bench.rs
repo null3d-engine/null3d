@@ -325,7 +325,7 @@ fn bench_animation_crowd() {
                     animations.set_sample(i, 0, ids[0], t % 1.0, 0.6);
                     animations.set_sample(i, 1, ids[1], (t * 1.3) % 0.75, 0.4);
                 }
-                animations.update(jobs);
+                animations.update(jobs, 0.0);
                 frame += 1;
             });
             println!(

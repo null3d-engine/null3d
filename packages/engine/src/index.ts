@@ -65,6 +65,13 @@ export type { PresetCheck, PresetCheckRound } from './quality/check';
 export type { DeviceHints } from './quality/chooser';
 export type { QualityPreset, QualitySettings } from './quality/presets';
 export type {
+	AnimationEvent,
+	AnimationEventHandler,
+	Animator,
+	PlayOptions,
+	StopOptions,
+} from './scene/animation';
+export type {
 	Assets,
 	LoadImageOptions,
 	LoadTextureOptions,
