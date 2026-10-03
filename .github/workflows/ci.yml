@@ -188,6 +188,7 @@ jobs:
         with:
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      - uses: ./.github/actions/samples
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         run: bun run test:browser --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       # The images that differ from their references, or have none yet, with their diffs:
@@ -221,6 +222,7 @@ jobs:
         with:
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      - uses: ./.github/actions/samples
       - name: The benchmark pages on SwiftShader
         run: bun run test:bench --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       - uses: actions/upload-artifact@v4
@@ -264,6 +266,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
+      - uses: ./.github/actions/samples
       # An app with the downloaded-file flag asks before its first launch, and nobody can answer.
       - name: Let Firefox open without the first-launch prompt
         if: matrix.browser == 'Firefox'

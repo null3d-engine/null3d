@@ -302,14 +302,16 @@ export class SketchRunner {
 		const scene = new Scene(this.core, this.recorded, device.webgl2, () => this.warmUp());
 		this.debugDraw = DEV ? new DebugDraw(this.core, host, scene) : undefined;
 		const debug = this.debugDraw ?? new SketchDebug(host);
+		const materials = new Materials(this.core, sketch.sendShader);
+		const geometry = new Geometry(this.core);
 		this.context = {
 			time: this.time,
 			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
 			scene,
-			materials: new Materials(this.core, sketch.sendShader),
-			geometry: new Geometry(this.core),
+			materials,
+			geometry,
 			textures,
-			assets: new Assets(textures, sketch.pageUrl),
+			assets: new Assets(textures, sketch.pageUrl, { core: this.core, geometry, materials }),
 			input: this.input,
 			post: new Post(this.core),
 			quality: this.quality,

@@ -418,7 +418,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "scene.instantiate(prefab) for loaded models; scene.clone(obj) for built objects",
-      "notes": "Skinned models clone correctly with instantiate.",
+      "notes": "Each instantiate shares the model's meshes, materials and textures. scene.clone copies an object and every object below it, lights and cameras included, under the same parent. Skins from files are not built yet.",
       "docs": "api/scene",
       "detect": "SkeletonUtils\\.clone\\s*\\(|\\.scene\\.clone\\s*\\("
     },
@@ -1111,7 +1111,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const prefab = await assets.loadGltf(url); scene.instantiate(prefab)",
-      "notes": "Animations are in prefab.animations; named nodes via prefab.find(name).",
+      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures need no transcoder path. Skins, animations, morph targets and meshopt compression are not read yet.",
       "docs": "api/assets",
       "detect": "\\bGLTFLoader\\b"
     },

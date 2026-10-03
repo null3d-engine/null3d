@@ -450,6 +450,18 @@ pub fn reserve_object() -> u32 {
     value_with_engine(|e| e.scene.reserve().map(Handle::raw).map_err(core_failure))
 }
 
+/// Reserves `count` object slots at once, or none when too few are free, and returns the address
+/// of their handles in the staging words. TypeScript writes the objects' transforms, then their
+/// create commands, as after `reserveObject`.
+#[wasm_bindgen(js_name = reserveObjects)]
+pub fn reserve_objects(count: u32) -> u32 {
+    value_with_engine(|e| {
+        let at = reserve_staging(e, count)?;
+        e.scene.reserve_many(&mut e.staging).map_err(core_failure)?;
+        Ok(at)
+    })
+}
+
 /// Copies an object's world matrix of the current frame (12 numbers, rows of a 3 × 4 matrix), with
 /// its translation from the origin in 64-bit floats.
 #[wasm_bindgen(js_name = worldMatrix)]
@@ -688,40 +700,82 @@ pub fn draw_debug_lines(points: u32) -> u32 {
 #[wasm_bindgen(js_name = createBatch)]
 pub fn create_batch(capacity: u32, dynamic: bool, colors: bool, mesh: u32, material: u32) -> u32 {
     value_with_engine(|e| {
-        let Some(slot) = mesh
-            .checked_sub(1)
-            .and_then(|id| e.renderer.settings().meshes().mesh(id))
-        else {
-            return Err(render_failure(render_detail::UNKNOWN_MESH, mesh));
-        };
-        let radius = slot.radius;
-        // Refused here, at the call that makes the scene too large to draw, before the core
-        // allocates the batch's rows.
-        let sources = e
-            .batches
-            .iter()
-            .fold(e.scene.capacity() + 1, |sum, (_, batch)| {
-                sum.saturating_add(batch.capacity())
-            })
-            .saturating_add(capacity);
-        let limit = e.renderer.max_sources();
-        if sources > limit {
-            return Err(record_failure(RecordError::TooManySources { limit }));
-        }
-        // The renderer's own room for the new rows comes first, so no later frame runs out of
-        // memory while it records.
-        e.renderer.reserve_sources(sources).map_err(|_| {
-            core_failure(CoreError::OutOfMemory {
-                bytes: capacity.saturating_mul(BYTES_PER_SOURCE),
-            })
-        })?;
-        let id = e
-            .batches
-            .create(capacity, dynamic, colors, mesh, material, radius)
-            .map_err(core_failure)?;
-        e.structure_changed = true;
-        Ok(id.raw())
+        add_batch(e, capacity, mesh, |batches, radius| {
+            batches.create(capacity, dynamic, colors, mesh, material, radius)
+        })
     })
+}
+
+/// Creates one part of a model as an instance batch, and returns its id: a mesh and a material,
+/// placed in the space of each row by `part`, 12 numbers of a 3 × 4 matrix by rows. With a
+/// `source` batch other than 0, the part reads that batch's rows, and takes its capacity, its
+/// dynamic flag and its colors; without one, it owns `capacity` rows.
+#[wasm_bindgen(js_name = createBatchPart)]
+#[allow(clippy::too_many_arguments)]
+pub fn create_batch_part(
+    source: u32,
+    capacity: u32,
+    dynamic: bool,
+    colors: bool,
+    mesh: u32,
+    material: u32,
+    part: &[f32],
+) -> u32 {
+    value_with_engine(|e| {
+        let source = (source != 0).then(|| Handle::from_raw(source));
+        let capacity = match source {
+            Some(id) => e.batches.get(id).map_err(core_failure)?.capacity(),
+            None => capacity,
+        };
+        let mut matrix = null3d_core::math::IDENTITY;
+        let n = part.len().min(matrix.len());
+        matrix[..n].copy_from_slice(&part[..n]);
+        add_batch(e, capacity, mesh, |batches, radius| {
+            batches.create_part(
+                source, capacity, dynamic, colors, mesh, material, radius, matrix,
+            )
+        })
+    })
+}
+
+/// Adds a batch of `capacity` rows of `mesh`, made by `make` with the mesh's radius, once the
+/// renderer has room for its rows, and returns its id.
+fn add_batch(
+    e: &mut Engine,
+    capacity: u32,
+    mesh: u32,
+    make: impl FnOnce(&mut BatchTable, f32) -> Result<Handle, CoreError>,
+) -> Result<u32, u32> {
+    let Some(slot) = mesh
+        .checked_sub(1)
+        .and_then(|id| e.renderer.settings().meshes().mesh(id))
+    else {
+        return Err(render_failure(render_detail::UNKNOWN_MESH, mesh));
+    };
+    let radius = slot.radius;
+    // Refused here, at the call that makes the scene too large to draw, before the core
+    // allocates the batch's rows.
+    let sources = e
+        .batches
+        .iter()
+        .fold(e.scene.capacity() + 1, |sum, (_, batch)| {
+            sum.saturating_add(batch.capacity())
+        })
+        .saturating_add(capacity);
+    let limit = e.renderer.max_sources();
+    if sources > limit {
+        return Err(record_failure(RecordError::TooManySources { limit }));
+    }
+    // The renderer's own room for the new rows comes first, so no later frame runs out of
+    // memory while it records.
+    e.renderer.reserve_sources(sources).map_err(|_| {
+        core_failure(CoreError::OutOfMemory {
+            bytes: capacity.saturating_mul(BYTES_PER_SOURCE),
+        })
+    })?;
+    let id = make(&mut e.batches, radius).map_err(core_failure)?;
+    e.structure_changed = true;
+    Ok(id.raw())
 }
 
 #[wasm_bindgen(js_name = destroyBatch)]
@@ -1377,6 +1431,17 @@ pub fn create_light(handle: u32, kind: u32) -> u32 {
     value_with_engine(|e| {
         e.lights
             .create(Handle::from_raw(handle), kind)
+            .map_err(core_failure)
+    })
+}
+
+/// Adds a light for the object `handle` with the kind, colors and numbers of light `light`, and
+/// returns its id.
+#[wasm_bindgen(js_name = copyLight)]
+pub fn copy_light(light: u32, handle: u32) -> u32 {
+    value_with_engine(|e| {
+        e.lights
+            .duplicate(light, Handle::from_raw(handle))
             .map_err(core_failure)
     })
 }
