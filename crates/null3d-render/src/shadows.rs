@@ -183,12 +183,31 @@ pub struct Cascades {
     /// The vector whose dot product with a position relative to the camera gives the position's
     /// distance along the camera's view.
     pub forward: [f32; 3],
+    /// What that distance adds: the distance along the view of the camera that fitted the
+    /// cascades, to the camera that draws. It is 0 unless another camera fitted them (see
+    /// [`Cascades::seen_from`]).
+    pub origin: f32,
 }
 
 impl Cascades {
     /// The cascades in use, nearest first.
     pub fn used(&self) -> &[Cascade] {
         &self.cascades[..self.count]
+    }
+
+    /// Moves cascades that a camera at `fitted` from the world's origin fitted to the camera that
+    /// draws, at `position`, with `map_size` texels on each side of each layer. Each cascade keeps
+    /// its box, fixed in the world, and its matrix takes positions relative to the camera that
+    /// draws. Receivers still find their cascade by their distance along the fitting camera's
+    /// view, so the cascades fall where they fall in that camera's own frames. The debug API's
+    /// shadow camera draws them this way, so a still camera can watch how they move.
+    pub fn seen_from(&mut self, fitted: [f64; 3], position: [f64; 3], map_size: u32) {
+        let map_size = map_size.max(1) as f32;
+        for cascade in &mut self.cascades[..self.count] {
+            *cascade = cascade_in(&cascade.bounds, position, cascade.end, map_size);
+        }
+        let offset = std::array::from_fn(|k| position[k] - fitted[k]);
+        self.origin = dot_far(offset, self.forward) as f32;
     }
 }
 
@@ -622,7 +641,8 @@ pub struct ShadowUniform {
     /// How far each cascade's receivers move their depth toward the light, in depth units.
     pub depth_biases: [f32; MAX_CASCADES],
     /// The texels on each side of each layer and the size of one texel in texture coordinates,
-    /// then the texels on each side of the filter's square, and 0.
+    /// then the texels on each side of the filter's square, and what each distance along the
+    /// view adds ([`Cascades::origin`]).
     pub kernel: [f32; 4],
 }
 
@@ -639,7 +659,12 @@ impl ShadowUniform {
                 cascades.forward[2],
                 cascades.count as f32,
             ],
-            kernel: [map_size, 1.0 / map_size, settings.filter as f32, 0.0],
+            kernel: [
+                map_size,
+                1.0 / map_size,
+                settings.filter as f32,
+                cascades.origin,
+            ],
             ..Self::default()
         };
         let last = cascades.used().last().map_or(0.0, |c| c.end);
@@ -754,6 +779,35 @@ mod tests {
     }
 
     const DOWN_AND_ACROSS: [f32; 3] = [-0.408_248_3, -0.816_496_6, -0.408_248_3];
+
+    #[test]
+    fn cascades_seen_from_another_camera_keep_their_boxes_and_their_distances() {
+        let fitted = [3.0, 0.0, -2.0];
+        let drawing = [-10.0, 20.0, 15.0];
+        let mut cascades = fit_cascades(&camera(), fitted, &LENS, 1.5, DOWN_AND_ACROSS, &SETTINGS);
+        let own = cascades;
+        cascades.seen_from(fitted, drawing, SETTINGS.map_size);
+        // A point of the fitting camera's view, relative to each camera.
+        let point = view_point(&camera(), 1.5, 12.0, 0.3, -0.2);
+        let from_drawing: [f32; 3] =
+            std::array::from_fn(|k| point[k] + (fitted[k] - drawing[k]) as f32);
+        for (seen, own) in cascades.used().iter().zip(own.used()) {
+            assert_eq!(seen.bounds, own.bounds);
+            let [a, b] = [
+                project(&own.view_proj, point),
+                project(&seen.view_proj, from_drawing),
+            ];
+            for k in 0..3 {
+                assert!((a[k] - b[k]).abs() < 1e-4, "{a:?} {b:?}");
+            }
+        }
+        // The distance along the fitting camera's view comes out the same from either camera.
+        let along = |p: [f32; 3], origin: f32| dot(p, cascades.forward) + origin;
+        assert!((along(point, own.origin) - along(from_drawing, cascades.origin)).abs() < 1e-4);
+        assert_eq!(own.origin, 0.0);
+        let uniform = ShadowUniform::new(&cascades, &SETTINGS);
+        assert_eq!(uniform.kernel[3], cascades.origin);
+    }
 
     #[test]
     fn splits_grow_with_distance_and_the_last_ends_at_the_shadow_distance() {

@@ -136,6 +136,28 @@ export interface SummaryRow {
 	summary: RunSummary;
 	/** Pages that record a trace: every run's seconds, summed up. */
 	trace?: TraceSummary;
+	/** The visual check of the row's scene on the row's GPU path, for a null3D page. */
+	visual?: VisualFigures;
+}
+
+/**
+ * A scene's shadow figures on one GPU path, from its visual check, with the limits of the scene
+ * where it has them (tests/lib/visual-checks.ts).
+ */
+export interface VisualFigures {
+	/** The largest share of pixels, in percent, whose shadow changed between two frames. */
+	changedPercent: number;
+	changedLimit?: number;
+	/** How far shadow edges stray from the reference's, in pixels. */
+	edgeOffsetPixels: number;
+	edgeOffsetLimit?: number;
+}
+
+/** A visual figure for the summary, marked when it is over its limit. */
+function visualText(value: number | undefined, limit: number | undefined): string {
+	if (value === undefined) return 'n/a';
+	const text = value.toFixed(3);
+	return limit !== undefined && value > limit ? `${text} OVER ${limit}` : text;
 }
 
 /**
@@ -209,10 +231,12 @@ const busiestText = (summary: RunSummary) => {
 /** The run's summaries as a Markdown table. */
 export function summaryTable(rows: readonly SummaryRow[]): string {
 	const lines = [
-		'| Scene | Page | Runs | CPU ms per frame, median (lowest to highest run) | p95 | Busiest thread, ms | Own work, busiest thread | Scene update | All threads | GPU ms | Presented / finished fps | Frame interval p95 / p99 ms | GPU delay ms | Refresh Hz | Upload per frame | Visible entries | Upload per visible entry | Draw calls |',
-		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+		'| Scene | Page | Runs | CPU ms per frame, median (lowest to highest run) | p95 | Busiest thread, ms | Own work, busiest thread | Scene update | All threads | GPU ms | Shadow pixels changed, % | Shadow edge offset, px | Presented / finished fps | Frame interval p95 / p99 ms | GPU delay ms | Refresh Hz | Upload per frame | Visible entries | Upload per visible entry | Draw calls |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 	];
-	for (const { scene, kind, summary: s } of rows) {
+	for (const { scene, kind, summary: s, visual: v } of rows) {
+		const changed = visualText(v?.changedPercent, v?.changedLimit);
+		const edges = visualText(v?.edgeOffsetPixels, v?.edgeOffsetLimit);
 		const upload = s.uploadBytes === undefined ? 'n/a' : `${(s.uploadBytes / 1e6).toFixed(2)} MB`;
 		const visible =
 			s.visibleEntries == null ? 'n/a' : Math.round(s.visibleEntries).toLocaleString('en-US');
@@ -225,7 +249,7 @@ export function summaryTable(rows: readonly SummaryRow[]): string {
 			s.presentedFps === undefined ? 'n/a' : `${fps(s.presentedFps)} / ${fps(s.completedFps)}`;
 		const pacing = `${ms(s.intervalP95Ms)} / ${ms(s.intervalP99Ms)}`;
 		lines.push(
-			`| ${scene} | ${kind} | ${s.runs} | ${cpuSpread(s)} | ${ms(s.cpuP95Ms)} | ${busiestText(s)} | ${ms(own)} | ${ms(s.updateMs)} | ${ms(s.allThreadsMs)} | ${ms(s.gpuMs)} | ${rates} | ${pacing} | ${ms(s.gpuLatencyMs)} | ${s.refreshHz ?? 'n/a'} | ${upload} | ${visible} | ${uploadPerEntry} | ${s.drawCalls ?? 'n/a'} |`,
+			`| ${scene} | ${kind} | ${s.runs} | ${cpuSpread(s)} | ${ms(s.cpuP95Ms)} | ${busiestText(s)} | ${ms(own)} | ${ms(s.updateMs)} | ${ms(s.allThreadsMs)} | ${ms(s.gpuMs)} | ${changed} | ${edges} | ${rates} | ${pacing} | ${ms(s.gpuLatencyMs)} | ${s.refreshHz ?? 'n/a'} | ${upload} | ${visible} | ${uploadPerEntry} | ${s.drawCalls ?? 'n/a'} |`,
 		);
 	}
 	return lines.join('\n');

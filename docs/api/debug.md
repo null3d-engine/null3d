@@ -3,14 +3,14 @@ id: api/debug
 title: Debug drawing and stats
 status: experimental
 since: "0.1"
-summary: "debug.line, box, sphere, arrow, axes, grid, frustum and light; debug.stats and frameStats; engine.measure and its figures; debug.view."
+summary: "debug.line, box, sphere, arrow, axes, grid, frustum and light; debug.stats and frameStats; engine.measure and its figures; debug.view and debug.shadowCamera."
 ---
 
 # Debug drawing and stats
 
 > Ships in null3D 0.1. The API is experimental, so it can still change between versions. Skeleton drawing, `debug.skeleton`, comes with animation in null3D 0.2.
 
-Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows, axes, grids, camera frustums and lights. Debug views draw the whole scene with one debug shading, such as its normals or its wireframe. The overlay of `debug.stats` shows the engine's frame figures over the canvas, and `debug.frameStats` gives them to the sketch. On the page, `engine.measure` measures the running engine.
+Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows, axes, grids, camera frustums and lights. Debug views draw the whole scene with one debug shading, such as its normals, its wireframe or its shadows. The overlay of `debug.stats` shows the engine's frame figures over the canvas, and `debug.frameStats` gives them to the sketch. On the page, `engine.measure` measures the running engine.
 
 ## Debug drawing
 
@@ -84,7 +84,7 @@ flowchart LR
 
 ```ts
 export default defineSketch(({ debug, input }) => {
-  const views = ['lit', 'normals', 'depth', 'overdraw', 'wireframe'] as const;
+  const views = ['lit', 'normals', 'depth', 'overdraw', 'wireframe', 'shadows'] as const;
   let shown = 0;
   return {
     onUpdate() {
@@ -104,12 +104,34 @@ export default defineSketch(({ debug, input }) => {
 | `'depth'` | The distance from the camera as a gray: white at the near plane, black at the far plane. A perspective camera's distance takes a logarithmic scale, so near and far objects both show. An orthographic camera's scale is linear |
 | `'overdraw'` | Light that each surface adds to the pixels it covers, with no depth test. Bright pixels are covered many times, so they cost the most shading. The [8-bit path](../concepts/color-management.md#the-8-bit-path) adds the light after the sRGB encoding, so layers brighten faster there |
 | `'wireframe'` | The edges of each triangle as lines one pixel wide, in the material's color |
+| `'shadows'` | How much of the main directional light's shadow falls on each surface, as a gray: black in full shadow, white in full light. The gray is the factor that lit shading multiplies the sun's light by. A surface that faces away from the sun is black, as no sunlight reaches it. A surface that receives no shadows, or whose material takes no light, is white |
 
 - A debug view clears to black and hides the background texture. It uses no tone mapping and no exposure, so its colors reach the canvas as the table gives them.
 - The views ignore what a material changes: maps, vertex colors, alpha, blending, depth options and custom shaders, vertex offsets included. A mesh keeps its place and the faces it culls.
 - The first frame of a view builds its GPU pipelines, so objects can be missing from a few frames after a change.
 - The wireframe view keeps an edge list for each mesh once it has shown, which takes twice the GPU memory of the mesh's triangle indices.
 - Debug views work in development builds only. In a release build, `debug.view` does nothing, and the build holds neither their code nor their shader. A name that the engine does not know fails with [E1213](../errors/E1213.md).
+
+### Watch the shadow cascades from elsewhere
+
+`debug.shadowCamera(camera)` places the main directional light's [shadow cascades](../concepts/shadows.md) from another camera, while the active camera draws the frame. Keep the active camera still, and move and turn the other one as a player would. With the `'shadows'` view, any shadow edge that crawls or shimmers shows at once, because nothing else in the frame moves. `debug.shadowCamera()` with no camera places the cascades from the active camera again.
+
+```ts
+export default defineSketch(({ scene, debug, time }) => {
+  const player = scene.createPerspectiveCamera({ position: [0, 2, 8], target: [0, 0, 0] });
+  const watcher = scene.createPerspectiveCamera({ position: [0, 2, 8], target: [0, 0, 0] });
+  scene.setActiveCamera(watcher);
+  debug.shadowCamera(player);
+  debug.view('shadows');
+  return {
+    onUpdate() {
+      player.setPosition(Math.sin(time.now * 0.2) * 0.05, 2, 8);  // a slow sway
+    },
+  };
+});
+```
+
+The cascades keep their boxes and their split distances from the other camera's view, so they fall where they fall in that camera's own frames. In a release build the call does nothing. three.js's cascaded shadow maps (`CSM`) take their camera as an option in the same way, so they can follow another camera than the one that renders.
 
 ## Stats overlay and frame figures
 
@@ -207,7 +229,8 @@ Debug drawing and frame figures. The drawing calls draw lines that show where th
 | --- | --- |
 | `stats(show?: boolean): void` | Shows an overlay of frame figures over the top-left corner of the canvas, or hides it with `false`: the GPU path, the quality preset, the render scale, the frame rates, and CPU time per frame of each thread and phase. The page draws the overlay and updates it twice a second. Its code downloads at the first call. |
 | `frameStats(): FrameStats` | The figures that the stats overlay shows, for the sketch: means per frame over about the last half second. Call it each time you need figures, and read them from the object it returns. It allocates nothing, so a sketch can call it every frame. Its code downloads at the first call, so the figures are 0 until about half a second after that call. |
-| `view(view: DebugView): void` | Draws the whole scene with one debug shading in place of every material, from the next frame on, until the next call. `'lit'` draws the materials again. `'normals'` shows each surface's world-space normal as a color, and `'depth'` its distance from the camera as a gray, white at the near plane and black at the far plane. `'overdraw'` adds light for each surface that covers a pixel, so bright pixels cost the most shading. `'wireframe'` draws each triangle's edges in its material's color. Debug views clear to black and use no tone mapping. Only development builds draw them: in a release build the call does nothing. A view's first frame builds its pipelines, so objects can be missing for a few frames after a change. |
+| `view(view: DebugView): void` | Draws the whole scene with one debug shading in place of every material, from the next frame on, until the next call. `'lit'` draws the materials again. `'normals'` shows each surface's world-space normal as a color, and `'depth'` its distance from the camera as a gray, white at the near plane and black at the far plane. `'overdraw'` adds light for each surface that covers a pixel, so bright pixels cost the most shading. `'wireframe'` draws each triangle's edges in its material's color. `'shadows'` shows how much of the main directional light's shadow falls on each surface, as a gray: black in full shadow, white in full light. Surfaces that face away from the sun are black, and surfaces that receive no shadows are white. Debug views clear to black and use no tone mapping. Only development builds draw them: in a release build the call does nothing. A view's first frame builds its pipelines, so objects can be missing for a few frames after a change. |
+| `shadowCamera(camera?: Camera): void` | Places the main directional light's shadow cascades from `camera` instead of from the active camera, from the next frame on, until the next call. The active camera still draws the frame, so it can watch from a fixed place how the cascades move as `camera` moves and turns: shadow edges that shimmer or crawl show at once. Call it with no camera to place the cascades from the active camera again. Only development builds use it: in a release build the call does nothing. |
 | `line(from: Vec3Like, to: Vec3Like, color?: ColorInput): void` | Draws a line from one point to another. The default color is yellow. |
 | `box(min: Vec3Like, max: Vec3Like, color?: ColorInput): void` | Draws the edges of a box that lines up with the world's axes, from its lowest corner `min` to its highest corner `max`. The default color is yellow. |
 | `sphere(center: Vec3Like, radius: number, color?: ColorInput): void` | Draws a sphere as three circles around its center, one in each plane of the world's axes. The default color is yellow. |
@@ -244,7 +267,7 @@ Options for `debug.light`.
 ### `DebugView`
 
 ```ts
-type DebugView = 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw';
+type DebugView = 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw' | 'shadows';
 ```
 
 A debug view of `debug.view`: the materials' own shading with `'lit'`, or one debug shading in place of every material.

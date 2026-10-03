@@ -33,9 +33,10 @@ struct ShadowCascades {
     normal_offsets: vec4f,
     /// How far each cascade's receivers move their depth toward the light.
     depth_biases: vec4f,
-    /// The texels on each side of each layer, the size of one texel in texture coordinates, and
-    /// the texels on each side of the filter's square: 3 or 5, or less for the comparison
-    /// sampler's own blend of four texels.
+    /// The texels on each side of each layer, the size of one texel in texture coordinates, the
+    /// texels on each side of the filter's square: 3 or 5, or less for the comparison sampler's
+    /// own blend of four texels, and what each distance along the view adds: 0 unless another
+    /// camera than the one that draws fitted the cascades, as the debug API's shadow camera does.
     kernel: vec4f,
 }
 
@@ -63,7 +64,7 @@ const FADE_SHARE: f32 = 0.1;
 /// `relative` is the point's position relative to the camera, and `normal` its unit normal, which
 /// moves the point off its own surface before the lookup.
 fn sun_shadow(relative: vec3f, normal: vec3f) -> f32 {
-    let along = dot(relative, cascades.forward.xyz);
+    let along = dot(relative, cascades.forward.xyz) + cascades.kernel.w;
     let count = u32(cascades.forward.w);
     var cascade = 0u;
     while cascade < count && along >= cascades.ends[cascade] {

@@ -859,6 +859,9 @@ async function runPlan(
 			governorSummary,
 		].map((summary) => summary(plan.items, resultOf));
 		for (const table of tables) if (table) console.log(`\n${name}\n${table}\n`);
+		// The frames that the bench plan's pages captured, which people look at after each run.
+		const frames = join(RUNS_DIR, run, name, 'frames');
+		if (existsSync(frames)) console.log(`${name}, captured frames to look at: ${frames}`);
 		const heat = wholeHeatText(heatReadings.get(name) ?? []);
 		if (heat) console.log(`${name}, heat through the run: ${heat}`);
 	}
