@@ -23,7 +23,13 @@
 // protections can alter. For a startup load, the result also tells what the server sent for it.
 
 import { detectBrowser, type GpuFacts, type UserAgentData } from '../lib/device-record';
-import { type GpuPath, type MissingAllowed, pathsToSkip, skippedResult } from '../lib/gpu-paths';
+import {
+	type GpuPath,
+	type MissingAllowed,
+	pathsToSkip,
+	skippedPath,
+	skippedResult,
+} from '../lib/gpu-paths';
 import { fillRunner, loadOf, takeDownloads } from '../lib/load-routes';
 import { patientFetch } from '../lib/patient-fetch';
 import { progressName, REST_AFTER_TAB_END_SECONDS, tabEndedResult } from '../lib/tab-end';
@@ -148,7 +154,7 @@ class RunReport {
 	finish(index: number, result: Result): void {
 		const page = `${this.ids[index]}${result.error ? `: ${result.error}` : ''}`;
 		this.left--;
-		if (result.skipped) {
+		if (skippedPath(result)) {
 			this.skipped++;
 			this.errors[index] = result.error;
 			this.mark(index, 'skipped');

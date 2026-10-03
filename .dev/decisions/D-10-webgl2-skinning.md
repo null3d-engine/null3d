@@ -66,6 +66,10 @@ How the data was produced: `bun tests/real-browsers.ts --plan skinning --android
 
 Skin in the vertex shader of every pass on WebGL2. Transform feedback fails the rule: it never saved frame time on the S24+, where it cost 14% to 178% more. On the iPad it saved 10.3% and 14.0% at 100 characters with 3 and 4 cascades, and cost up to 27.2% elsewhere. The rule asks for a saving on both devices, so those two iPad pages do not meet it. The Mac's GPU agrees: transform feedback cost 15% and 23% there.
 
+## How three.js handles it
+
+three.js's WebGL renderer also skins in the vertex shader. It reads the bone matrices from a float texture, and its shadow depth materials skin each mesh again in every shadow pass. null3D skins the same way. The data above shows that skinning once per frame with transform feedback would not pay on the lab's phone and tablet.
+
 ## Consequences
 
 - The WebGL2 renderer skins in the vertex shader, reading the joint matrices from a float texture. Each shadow pass skins again. The renderer needs no transform feedback code and no buffers of skinned vertices.

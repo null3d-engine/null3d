@@ -4,7 +4,7 @@ This record lists every device and browser that null3D has run on, with the plan
 
 ## The record
 
-The dates are the dates in the run names, which are in UTC. An empty cell means that nobody recorded the fact. "TestingBot's device list" marks a fact that the browser does not report, read from the cloud's own list of devices.
+The dates are the dates in the run names, which are in UTC. An empty cell means that nobody recorded the fact. "TestingBot's device list" or "BrowserStack's device list" marks a fact that the browser does not report, read from the cloud's own list of devices.
 
 | Device | OS | Browser | GPU | GPU paths | Where | Plans | Result | Known issues |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |

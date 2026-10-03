@@ -69,7 +69,7 @@ A memory reading under 4 GB lowers the starting preset by one.
 
 Only Chromium browsers report the device's memory, and they report at most 8 GB. So memory can lower a preset, but it never raises one. The engine picks Ultra only when a page asks for it.
 
-A tablet slows down as it heats up, and then Medium and High can take longer than a frame. In the S4 benchmark, an 11-inch iPad Pro held 60 frames per second at Medium while cool. After a few minutes it ran at about 45, with the governor at its lowest render scale and every shadow step taken. A cool tablet passes the preset check at Medium, so the engine still starts tablets there. On a warm tablet, only Low aims for 60 frames per second. Medium and High trade frame rate for sharper shadows and edges. When a steady rate matters more, name Low: `createEngine({ canvas, sketch, preset: 'low' })`.
+A tablet slows down as it heats up, and then Medium and High can take longer than a frame. In the S4 benchmark, an 11-inch iPad Pro held 60 frames per second at Medium while cool. After a few minutes it ran at about 45, with the governor at its lowest render scale and every shadow step taken. A cool tablet passes the preset check at Medium, so the engine still starts tablets there. At Low, the same iPad held 60 frames per second in 298 of 299 seconds after 5 minutes of warm-up. Medium and High trade frame rate for sharper shadows and edges. When a steady rate matters more, name Low: `createEngine({ canvas, sketch, preset: 'low' })`.
 
 The GPU path then caps the preset, because WebGL2 and WebGPU's compatibility mode lack features that the heavier presets use. For example, compatibility mode cannot draw multisampled float targets.
 
