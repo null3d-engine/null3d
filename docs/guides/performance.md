@@ -75,9 +75,18 @@ The warm phone showed 30 frames per second, half the display's rate. In pipeline
 
 On the iPad the GPU sets the rate: it took about 28 ms per frame, longer than the CPU's 15.5 ms. [The presented rate, the completed rate and GPU time](#the-presented-rate-the-completed-rate-and-gpu-time) shows how to find the busier side.
 
+S1 tests the engine's limits with far more moving objects than an app needs. The S4 benchmark is closer to an app: a town of 5,000 still objects and 200 moving vehicles. It has textured standard materials, a sun that casts shadows, 16 point lights and fog. It runs at the preset that the engine picks for the device:
+
+| Device, browser and GPU path | CPU time per frame, busiest thread | Seconds at 60 frames per second |
+| --- | --- | --- |
+| Galaxy S24+, Chrome, WebGL2, 10 minutes | 4.3 ms | Every second |
+| iPad Pro, Safari, WebGPU | 0.18 ms | Every second |
+
+The engine kept the full render scale and every setting on both devices. On the iPad, low-latency mode held its target rate in only about half of its seconds, so keep the default pipelined mode there.
+
 ### Quality presets
 
-The engine picks a [quality preset](../concepts/quality-presets.md) for each device when it starts: Low on phones, Medium on tablets and High on computers. The GPU path can cap it lower. The preset sets the pixel ratio cap, the texture filtering cap and the texture upload budget.
+The engine picks a [quality preset](../concepts/quality-presets.md) for each device when it starts. It picks Low on phones, Medium on tablets and High on computers. The GPU path can cap it lower. When the page names no preset, the engine checks its choice after the first frame. It measures the frame rate of the scene that the setup built, and lowers the preset until one holds the target. The preset sets the pixel ratio cap and the anti-aliasing mode. It also sets the shadow settings, the texture filtering cap and the texture upload budget.
 
 The pixel ratio cap often decides GPU time on a phone, because the GPU shades each device pixel. Low caps the ratio at 1.5, which fills a quarter of the pixels of a phone screen at ratio 3.
 
@@ -111,7 +120,7 @@ The engine keeps each scene's draw tables and every object's matrix on the GPU, 
 | `setActiveCount` | The 4-byte draw entry of each row that starts or stops drawing |
 | `setLayers` | No rebuild: each view tests the new mask from the next frame |
 | `setRenderOrder` | Nothing |
-| `material.set` | The material's row of 128 bytes. Changes to several materials in one frame upload every row from the first to the last |
+| `material.set` | The material's row of 128 bytes, and a custom material's row of uniforms. Changes to several materials in one frame upload every row from the first to the last |
 | Creating or destroying an instance batch, or an object of any kind, lights included | A rebuild, and engine memory can grow in the next frame |
 | `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled` | A rebuild |
 | `setCastShadows` and `setReceiveShadows`, on meshes and on lights | A rebuild |
@@ -133,10 +142,10 @@ Performance advice written for other engines often assumes things that do not ho
 
 | Question | null3D's answer |
 | --- | --- |
-| What makes the GPU build a pipeline? | The material's kind, standard or unlit, and the [options that it fixes](../api/materials.md#options-fixed-at-creation) when you create it, apart from `flatShading` and `fog`. The mesh's vertex format, and the pass's color format, depth format and sample count. Other material values never do: materials are rows in one shared table. So a thousand standard materials in different colors share one pipeline for each vertex format. Tone mapping and exposure are values the shaders read, so changing them builds nothing. |
+| What makes the GPU build a pipeline? | The material's kind, standard, unlit or custom, and the [options that it fixes](../api/materials.md#options-fixed-at-creation) when you create it, apart from `flatShading` and `fog`. Each custom material's WGSL is a shader of its own. The mesh's vertex format, and the pass's color format, depth format and sample count. Other material values never do: materials are rows in one shared table. So a thousand standard materials in different colors share one pipeline for each vertex format. Tone mapping and exposure are values the shaders read, so changing them builds nothing. Shadow passes and the depth prepass build depth-only pipelines of their own. |
 | When are pipelines built? | In the background, from the first frame that draws a shading model with a vertex format, and again after the browser replaces the GPU. The first frame waits for its pipelines, and so does the first frame after `quality.setPreset`. After that, an object whose pipeline is still building draws nothing until it is built. `scene.warmUp()` resolves once every pipeline is built. `measure` counts builds in `pipelines`, and the draws that a building pipeline kept from drawing in `skippedDraws`. |
 | What does the engine batch by itself? | Every object and instance row with the same shading model, mesh and material goes into one bucket, which one indirect draw call draws. A mesh over 65,535 vertices takes one draw per part. Separate objects from `createMesh` batch the same way as the rows of an instance batch. |
-| Which passes walk the scene? | On WebGPU, two: a culling pass on the GPU, which tests each object and row against the view, and the main pass, which replays a draw bundle. The engine records the bundle again only when the scene's structure changes. On WebGL2 the job workers cull on the CPU, and the main pass draws the objects in view. On both paths, culling first skips the still objects of grid cells out of view: [Large worlds](#large-worlds). Where the scene draws HDR color, a final pass then reads each pixel once to tone map it, whatever the scene holds. |
+| Which passes walk the scene? | On WebGPU, a culling pass on the GPU tests each object and row against the view. The opaque pass then replays a draw bundle. The engine records the bundle again only when the scene's structure changes. On WebGL2 the job workers cull on the CPU, and the opaque pass draws the objects in view. On both paths, culling first skips the still objects of grid cells out of view: [Large worlds](#large-worlds). Shadows add a pass for each cascade and shadow tile that draws in the frame, and its culling. The depth prepass, when on, walks the opaque objects once more. Blended objects draw in the transparent pass. Where the scene draws HDR color, a final pass then reads each pixel once to tone map it, whatever the scene holds. [Architecture](../concepts/architecture.md#the-passes-of-a-frame) lists every pass. |
 | Does the engine know when the GPU finished a frame? | Yes, for every frame. It listens to the WebGPU queue, or checks a WebGL2 fence, and blocks no thread. `measure` reports `completedFps` and `gpuLatencyMs`. Sketch code never waits for the GPU. |
 | How many frames can wait on the GPU? | Two. While two frames are unfinished, the thread that draws takes no new frame, and the sketch worker waits for it. Without that limit, browsers let from 4 to more than 80 frames queue when the GPU falls behind, and each adds a frame of input lag. |
 | What must stay the same for the engine to reuse its work? | The scene's structure. A static object costs nothing until a setter changes it. The calls that rebuild the draw tables are listed in [Objects during play](#objects-during-play). |
@@ -181,9 +190,27 @@ The engine lights each pixel with the point and spot lights of its cluster only,
 - A pixel's cost grows with the lights whose ranges reach its cluster. Give each light the shortest range that keeps its look, because a longer range reaches more clusters.
 - A light near the camera covers much of the screen, and its range reaches many clusters. Many large lights near the camera cost the most.
 - Each frame the engine lists the lights of each cluster. On WebGPU a compute pass does it on the GPU, and the CPU only uploads the light list. On WebGL2 the job workers do it on the CPU. There, a few hundred small lights take a fraction of a millisecond, on the sketch thread alone when the work is small.
-- A frame uploads the lists when the lights or the camera moved. It uploads 14 KB for the clusters, 4 bytes for each light in each cluster, and 64 bytes for each light. A still scene seen from a still camera uploads nothing.
+- A frame uploads its lights when the lights or the camera moved: 64 bytes for each light. On WebGL2 it also uploads the lists: 14 KB for the clusters, and 4 bytes for each light in each cluster. A still scene seen from a still camera uploads nothing.
 
 The camera lists up to 1,024 point and spot lights in a frame, the ones nearest to it, and up to 128 in each cluster.
+
+The S3 benchmark lights 20,000 still boxes with 256 moving point lights. In Chrome on a MacBook Pro, the engine's own work took 0.07 ms per frame on WebGPU, where the GPU lists the lights. The compute pass that lists them took about 0.2 ms of GPU time. three.js's WebGL renderer cannot draw this scene on that Mac. Its shader for 256 point lights needs more uniforms than the GPU gives a fragment shader.
+
+## Shadows
+
+Each shadow cascade that draws in a frame costs a pass over its casters, and its culling. The GPU culls on WebGPU, and the job workers on WebGL2. A tile of a spot or point light costs the same, but only in frames in which it draws again. Receivers read the shadow map several times per pixel. [What shadows cost](../concepts/shadows.md#what-shadows-cost) gives the figures.
+
+- Mark only the objects whose shadows matter as casters, with `castShadows`.
+- Use fewer cascades, a shorter shadow distance, or a higher `farCascadeInterval`, so the far cascades draw less often.
+- Give shadows only to the spot and point lights that need them, and keep their ranges short. A point light draws six tiles when a caster in its range moves.
+
+The governor lowers the far cascades' rate and the shadow filter when frames run long, after the render scale ([The frame-budget governor](../concepts/quality-presets.md#the-frame-budget-governor)).
+
+## The depth prepass
+
+With the `depthPrepass` option of `createEngine`, WebGPU draws the depth of the opaque objects first. The opaque pass then shades each pixel once, for its nearest surface. It saves GPU time where objects hide many others and their shading costs much. It always costs a second pass over the vertices, so every preset leaves it off.
+
+In the S2 benchmark in Chrome on a MacBook Pro, the prepass raised the GPU time per frame from 0.28 ms to 0.41 ms. S2's trees hide few others, and their shading is cheap. Measure your own scene with `?prepass=on` and `?prepass=off`, and compare `gpuMs`. `debug.view('overdraw')` shows where many surfaces cover one pixel, in development builds ([Debug drawing and stats](../api/debug.md)). WebGL2 draws without the prepass ([Quality presets](../concepts/quality-presets.md#the-depth-prepass)).
 
 ## Measure
 
@@ -196,7 +223,7 @@ For a quick look while the scene runs, call `debug.stats(true)` in the sketch. I
 | `cpuMs` | CPU time per frame of the busiest thread, the thread that limits the frame rate |
 | `cpuMsAllThreads` | CPU time per frame summed over every thread, job workers included |
 | `threads` | Each thread's time per frame by name, such as `sketch-worker`, `render-worker` and `job-0`, with its steps |
-| `gpuMs` | GPU time per frame, where the device has timestamp queries |
+| `gpuMs` | GPU time per frame, on WebGPU where the device has timestamp queries. WebGL2 does not measure it |
 | `gpuPassMs` | The parts of `gpuMs`: the copies before the first pass, each pass, and the time between passes |
 | `intervalMs` | Time between frames on the screen |
 | `presentedFps` and `completedFps` | Frames per second that the renderer presented, and that the GPU finished |
@@ -208,11 +235,13 @@ For a quick look while the scene runs, call `debug.stats(true)` in the sketch. I
 | `uploadBytes` and `drawCalls` | Bytes uploaded and draw calls made per frame |
 | `visibleEntries` | On WebGL2, the entries per frame in the list of visible objects. It is null on WebGPU, where the GPU culls |
 | `rebuilds` | Frames whose structure change rebuilt the draw tables |
+| `gpuObjects` | GPU buffers, textures, views, samplers and bind groups that the engine made. Steady play makes none, and neither does a new render scale |
 | `pipelines` | GPU pipelines built, which can stall the frame they happen in |
 | `skippedDraws` | Draws skipped because their pipeline was still building, so their objects were missing from those frames |
 | `memory` | The engine's WebAssembly memory and the JavaScript heap |
 | `load` | The start's times in milliseconds: the GPU probe, the core's download and compile, `createEngine`, and the first frame's submit and finish. It also gives the pipelines that the first frame built, and how long they took |
 | `downloadBytes` | The size of the engine core's WebAssembly file as the page downloaded it |
+| `gpuLosses` | Times the browser took the GPU away and the engine carried on with a new device |
 | `lostRecords` | Frames that the figures miss, because the page read their records too late. It is 0 in a clean run |
 
 The sketch worker's steps are `update`, `commands`, `transforms`, `batches`, `cull` and `record`, and the render worker's is `replay`. A thread's time less its `update` step is the engine's own work on that thread.
@@ -229,7 +258,7 @@ Three figures show whether the GPU keeps up:
 - `completedFps` counts the frames that the GPU finished. The engine tracks every frame.
 - `gpuMs` is the GPU's working time within a frame, where the device has timestamp queries. It is not the time from submit to screen. The engine measures it on one frame in eight. Timing every frame would cost the drawing thread about as much as drawing a small scene.
 
-The lower of the two rates is the rate that users see. The engine lets at most two frames wait unfinished on the GPU. So when the GPU falls behind, the presented rate falls to the completed rate, and `gpuLatencyMs` stays near two completed frame intervals. A rate below `refreshHz` with `gpuLatencyMs` near two frame intervals means that the GPU limits the frame rate. On a phone without GPU timers, `completedFps` and `gpuLatencyMs` are the GPU's only signal.
+The lower of the two rates is the rate that users see. The engine lets at most two frames wait unfinished on the GPU. So when the GPU falls behind, the presented rate falls to the completed rate, and `gpuLatencyMs` stays near two completed frame intervals. A rate below `refreshHz` with `gpuLatencyMs` near two frame intervals means that the GPU limits the frame rate. On WebGL2, and on a device without GPU timers, `completedFps` and `gpuLatencyMs` are the GPU's only signal.
 
 Firefox reports finished WebGPU frames to the engine about a frame late. There the limit holds back frames that the GPU has already finished, which costs frame rate when the GPU is busy. In a GPU-bound test on a Mac, Firefox's WebGPU path drew 15% fewer frames at a load that used 60% of the GPU. Under heavier load it drew far fewer. Firefox's WebGL2 path lost none.
 
