@@ -1,6 +1,7 @@
 // Makes a local HTTPS certificate for the dev server, signed by a certificate authority that lives
 // in this repository's build folder. The computer's own trust store is left alone. To test on an
-// iPad or iPhone, install the printed rootCA.pem on the device and trust it.
+// iPad or iPhone, install the printed rootCA.pem on the device and trust it. The certificate also
+// names bs-local.com, the name by which BrowserStack's devices reach this computer.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -31,10 +32,13 @@ execFileSync(
 		'127.0.0.1',
 		'::1',
 		host,
+		'bs-local.com',
 	],
 	{ stdio: 'inherit', env: { ...process.env, CAROOT: caDir } },
 );
-console.log(`\nThe certificate covers localhost and ${host}.`);
+console.log(
+	`\nThe certificate covers localhost, ${host}, and bs-local.com for BrowserStack Local.`,
+);
 console.log(
 	`To test on an iPad or iPhone, AirDrop ${join(caDir, 'rootCA.pem')} to the device, install it,`,
 );

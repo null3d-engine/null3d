@@ -133,7 +133,7 @@ pub struct TileUniform {
     /// Each tile's matrix from positions relative to the camera into its clip space.
     pub view_proj: [Mat4; MAX_TILES],
     /// Each tile's texel size per meter of distance from its light, its light's bias and normal
-    /// bias in texels, and the tiles of its light: 1 for a spot light, 6 for a point light.
+    /// bias in meters, and the tiles of its light: 1 for a spot light, 6 for a point light.
     pub params: [[f32; 4]; MAX_TILES],
     /// The texels on each side of a tile, the size of one texel in texture coordinates, and the
     /// texels on each side of the shadow filter's square.

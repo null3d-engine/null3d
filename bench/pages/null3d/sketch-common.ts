@@ -2,7 +2,7 @@
 // view (background, sun, ambient light and camera) from the shared scene module, a camera that
 // follows a path, and the quality reports that a page's trace records. A sketch poses its scene at
 // the sketch time, which hold mode steps to the held time.
-import type { Camera, Quality, SketchContext } from '@null3d/engine';
+import { type Camera, type Quality, quat, type SketchContext } from '@null3d/engine';
 import {
 	BACKGROUND,
 	CAMERA,
@@ -34,6 +34,15 @@ export interface ViewOptions {
 	 * does, so the scene holds its frame rate with dynamic resolution.
 	 */
 	dynamicResolution?: boolean;
+}
+
+/**
+ * Reads the frames between two draws of a far shadow cascade from the sketch module's address,
+ * where the page harness puts them when the page asks, or undefined for the quality preset's.
+ */
+export function readFarInterval(moduleUrl: string): number | undefined {
+	const far = new URL(moduleUrl).searchParams.get('far');
+	return far === null ? undefined : Number(far);
 }
 
 /**
@@ -78,17 +87,30 @@ export function setUpView(
 	return camera;
 }
 
-/** Moves a camera along a path of the shared scene module. It allocates nothing per call. */
+/**
+ * Moves a camera along a path of the shared scene module. It allocates nothing per call. The browser
+ * boxes each fraction passed to a call that it does not inline, and it may never inline `lookAt`
+ * into a function that runs once per frame. So the rotation comes from the quaternion helper, which
+ * reads arrays, and goes to `setRotation`, which is as small as `setPosition`. A camera looks down
+ * its -Z axis, so the helper gets the target as its eye.
+ */
 export function followPath(
 	camera: Camera,
 	path: (t: number, outPosition: OutArray, outTarget: OutArray) => void,
 ): (t: number) => void {
 	const position = new Float64Array(3);
 	const target = new Float64Array(3);
+	const rotation = quat.create();
 	return (t) => {
 		path(t, position, target);
+		quat.lookAt(rotation, target, position);
 		camera.setPosition(position[0] as number, position[1] as number, position[2] as number);
-		camera.lookAt(target[0] as number, target[1] as number, target[2] as number);
+		camera.setRotation(
+			rotation[0] as number,
+			rotation[1] as number,
+			rotation[2] as number,
+			rotation[3] as number,
+		);
 	};
 }
 

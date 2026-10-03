@@ -41,8 +41,8 @@ export interface Null3dPageOptions {
  * Runs `sketch`, a sketch module next to the page, as the scene `sceneName` with `defaultCount`
  * objects, or with the count `?n=` asks for. A scene built of whole parts passes `wholeCount`, which
  * turns an asked-for count into the count the scene draws. The sketch module reads `n`, `shadows`
- * when the page asks for shadows, and `governor` when the page turns the governor off, from its own
- * address.
+ * and `far` when the page asks for them, and `governor` when the page turns the governor off, from
+ * its own address.
  */
 export function runNull3dPage(
 	sceneName: string,
@@ -68,6 +68,7 @@ export function runNull3dPage(
 		const n = wholeCount(options.count ?? defaultCount);
 		sketchUrl.searchParams.set('n', String(n));
 		if (options.shadows !== null) sketchUrl.searchParams.set('shadows', String(options.shadows));
+		if (options.far !== null) sketchUrl.searchParams.set('far', String(options.far));
 		if (options.shadowFilter !== null)
 			sketchUrl.searchParams.set('shadowFilter', String(options.shadowFilter));
 		if (!options.governor) sketchUrl.searchParams.set('governor', 'off');
@@ -112,6 +113,9 @@ export function runNull3dPage(
 				return { ...report, width, height, pixels: toBase64(pixels) };
 			}
 			const measureSeconds = options.seconds ?? MEASURE_SECONDS;
+			// The warm-up counts from the first frame. A start that takes the stored result of an
+			// earlier preset check resolves before its first frame, and a first visit only after it.
+			await firstFrameOrFailure(engine);
 			const timed = await timedRun({
 				engine,
 				warmupSeconds: options.seconds ?? WARMUP_SECONDS,
@@ -140,6 +144,17 @@ export function runNull3dPage(
 		} finally {
 			await engine.destroy();
 		}
+	});
+}
+
+/** Resolves once the GPU has finished the engine's first frame; rejects when a thread fails first. */
+function firstFrameOrFailure(engine: Engine): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
+		const stopWatching = engine.onFailure(reject);
+		engine.firstFrame.then(() => {
+			stopWatching();
+			resolve();
+		});
 	});
 }
 

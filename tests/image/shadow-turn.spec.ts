@@ -1,13 +1,12 @@
 // Shadow edges stay still while the camera turns. The shadow turn sketch draws a camera that turns
-// on the spot in small steps, each frame with shadows and without. A turn on the spot moves every
-// point of the image by a map that the camera's angles give, whatever its distance, so the test
-// maps each frame's pixels onto the first frame's. Where the first frame shows plain lit ground or
-// plain shadow, with no edge nearby, a later frame must show the same. A cascade fitted afresh to
-// each turn of the view would move its texels, and its shadow edges by several pixels. On both GPU
-// paths, which draw shadows with the same code.
+// on the spot in small steps, each frame with shadows and without. The test maps each frame's pixels
+// onto the first frame's. Where the first frame shows plain lit ground or plain shadow, with no edge
+// nearby, a later frame must show the same. A cascade fitted afresh to each turn of the view would
+// move its texels, and its shadow edges by several pixels. On both GPU paths, which draw shadows
+// with the same code.
 import { expect, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
-import { TURN } from '../pages/lib/shadow-turn.ts';
+import { inFirstFrame, TURN } from '../pages/lib/shadow-turn.ts';
 
 interface ImageResult {
 	error?: string;
@@ -70,30 +69,8 @@ function flatAround(shadows: Uint8Array, unshadowed: Float32Array, x: number, y:
 	return high - low <= FLAT;
 }
 
-/**
- * The pixel of the first frame that shows what pixel (x, y) of a frame turned by `yaw` degrees
- * shows, or undefined where the first frame does not see it.
- */
-function inFirstFrame(x: number, y: number, yaw: number): [number, number] | undefined {
-	const tanY = Math.tan((TURN.fovDegrees * Math.PI) / 360);
-	const tanX = (tanY * WIDTH) / HEIGHT;
-	// The ray through the pixel in the turned camera's view.
-	const u = (((x + 0.5) / WIDTH) * 2 - 1) * tanX;
-	const v = (1 - ((y + 0.5) / HEIGHT) * 2) * tanY;
-	// Into the first camera's view: tilt up, turn by the yaw, tilt down again.
-	const pitch = (TURN.pitchDegrees * Math.PI) / 180;
-	const [sp, cp] = [Math.sin(pitch), Math.cos(pitch)];
-	const [sy, cy] = [Math.sin((yaw * Math.PI) / 180), Math.cos((yaw * Math.PI) / 180)];
-	const [ay, az] = [cp * v - sp * -1, sp * v + cp * -1];
-	const [bx, bz] = [cy * u + sy * az, -sy * u + cy * az];
-	const [cY, cZ] = [cp * ay + sp * bz, -sp * ay + cp * bz];
-	if (cZ >= 0) return undefined;
-	const x0 = ((bx / -cZ / tanX + 1) / 2) * WIDTH - 0.5;
-	const y0 = ((1 - cY / -cZ / tanY) / 2) * HEIGHT - 0.5;
-	const [px, py] = [Math.round(x0), Math.round(y0)];
-	const inside = (p: number, size: number) => p >= MARGIN && p < size - MARGIN;
-	return inside(px, WIDTH) && inside(py, HEIGHT) ? [px, py] : undefined;
-}
+/** The frames' size and lens, for the map between them. */
+const FRAME = { width: WIDTH, height: HEIGHT, ...TURN };
 
 for (const gpu of ['webgpu', 'webgl2'] as const)
 	test(`shadow edges stay still while the camera turns on ${gpu}`, async ({ page }) => {
@@ -113,7 +90,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			let different = 0;
 			for (let y = 0; y < HEIGHT; y++)
 				for (let x = 0; x < WIDTH; x++) {
-					const seen = inFirstFrame(x, y, frame.yaw);
+					const seen = inFirstFrame(FRAME, x, y, frame.yaw, MARGIN);
 					if (!seen) continue;
 					const [x0, y0] = seen;
 					if (!flatAround(first.shadows, first.unshadowed, x0, y0)) continue;

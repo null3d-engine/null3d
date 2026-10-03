@@ -437,6 +437,19 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// Car-sized boxes standing on a street, in the last cascade from above, and from a low angle in
+	// the first cascade and in the last. Each box's shadow must meet its base with no lit line
+	// between them.
+	...['', 'near', 'far'].map(
+		(view): ImageTest => ({
+			name: view === '' ? 'shadows-contact' : `shadows-contact-${view}`,
+			sketch: `tests/pages/sketches/shadow-contact-sketch.ts${view === '' ? '' : `?view=${view}`}`,
+			hold: 0,
+			size: [480, 270],
+			sameOnEveryTier: true,
+			tolerance: { maxDiffRatio: 0.005 },
+		}),
+	),
 	// The same scene with custom materials on the ground and the red boxes, whose surface function
 	// keeps the standard look: they cast and receive shadows as the standard material does, so the
 	// references are copies of the shadows test's, with its tolerance for WebGL2's edges.

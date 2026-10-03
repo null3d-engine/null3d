@@ -35,22 +35,31 @@
 //! The nearest cascade draws in every frame. The far cascades draw once every few frames, in turn,
 //! and keep their layers of the map in between ([`CascadeSchedule`]). A cascade that skips a
 //! frame keeps the box it last drew with, fixed in the world, and its matrix follows the camera
-//! from that box. Receivers therefore read each layer with the matrix it was drawn with. Far
-//! shadows then lag their casters by a few frames, where the lag is hardest to see.
+//! from that box. Receivers therefore read each layer with the matrix it was drawn with.
+//!
+//! A kept layer holds its casters where they stood when it drew, so a caster that moves in every
+//! frame would leave its shadow behind. A far cascade therefore draws in every frame while a
+//! moving caster ([`MovingCasters`]) touches its box, or touched the box when its layer drew. Only
+//! far cascades whose boxes hold still casters alone keep their layers.
 //!
 //! # Receivers
 //!
-//! A receiver finds its cascade by its distance along the camera's view, which the camera's scaled
-//! forward axis gives from a position relative to the camera. A box that skipped frames may not
-//! hold a receiver after the camera turned, and the receiver then takes the next cascade whose box
-//! holds it. It moves its point along its normal by [`ShadowSettings::normal_bias`] texels of that
-//! cascade, and its depth toward the light by [`ShadowSettings::bias`] texels, then compares its
-//! depth with the shadow map's over a square of [`ShadowSettings::filter`] texels on each side.
+//! Behind a perspective camera, a receiver finds its cascade by its distance from the camera, which
+//! stays the same while the camera turns on the spot, so a point keeps its cascade and its shadow.
+//! Behind an orthographic camera it uses its distance along the camera's view. The camera's scaled
+//! forward axis gives both from a position relative to the camera. A box that skipped frames may
+//! not hold a receiver after the camera turned, and the receiver then takes the next cascade whose
+//! box holds it. It moves its point along its normal by [`ShadowSettings::normal_bias`] and toward
+//! the light by [`ShadowSettings::bias`], both in meters, up to one texel of its cascade, and both
+//! scaled by its angle to the light. Offsets in meters keep their size from one cascade to the next.
+//! It then compares its depth with the shadow map's over a square of [`ShadowSettings::filter`]
+//! texels on each side.
 //! Past the shadow distance nothing is shadowed, and shadows fade out over the last tenth of the
 //! distance.
 
-use null3d_core::cells::CellPosition;
+use null3d_core::cells::{CELL_SIZE, CellPosition};
 use null3d_core::culling::Frustum;
+use null3d_core::scene::{NO_PARENT, SceneStorage, flags};
 use null3d_gpu::drawlist::sizes::SHADOW_UNIFORM_BYTES;
 use null3d_gpu::drawlist::{DrawList, Op, address, buffer_usage, compare, filter, format};
 
@@ -86,11 +95,11 @@ pub struct ShadowSettings {
     pub cascades: u32,
     /// Texels on each side of each cascade's layer of the shadow map.
     pub map_size: u32,
-    /// How far each receiver's depth moves toward the light before the comparison, in texels of
-    /// its cascade.
+    /// How far each receiver's point moves toward the light before the lookup, in meters, up to one
+    /// texel of its cascade.
     pub bias: f32,
-    /// How far each receiver's point moves along its normal before the lookup, in texels of its
-    /// cascade.
+    /// How far each receiver's point moves along its normal before the lookup, in meters, up to one
+    /// texel of its cascade.
     pub normal_bias: f32,
     /// The distance along the camera's view, in meters, out to which shadows fall. The camera's far
     /// plane ends them sooner.
@@ -142,6 +151,17 @@ pub struct CascadeBox {
     pub margin: f32,
 }
 
+impl CascadeBox {
+    /// True when a sphere at `center` from the world's origin, of radius `radius`, draws into the
+    /// box: it reaches into the box across the light, and is not wholly beyond its far face.
+    /// Spheres past the face toward the light count, as they draw flattened onto that face.
+    pub fn touches(&self, center: [f64; 3], radius: f32) -> bool {
+        let reach = f64::from(self.radius) + f64::from(radius);
+        let along = |k: usize| dot_far(center, self.axes[k]) - self.center[k];
+        along(0).abs() <= reach && along(1).abs() <= reach && along(2) >= -reach
+    }
+}
+
 /// One cascade in one frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cascade {
@@ -183,10 +203,14 @@ pub struct Cascades {
     /// The vector whose dot product with a position relative to the camera gives the position's
     /// distance along the camera's view.
     pub forward: [f32; 3],
-    /// What that distance adds: the distance along the view of the camera that fitted the
-    /// cascades, to the camera that draws. It is 0 unless another camera fitted them (see
-    /// [`Cascades::seen_from`]).
-    pub origin: f32,
+    /// True when receivers pick their cascade by their distance from the camera, as behind a
+    /// perspective camera, and false when by their distance along its view.
+    pub by_distance: bool,
+    /// The camera that draws, relative to the camera that fitted the cascades. A position relative
+    /// to the camera that draws plus this vector is the position relative to the fitting camera,
+    /// whose distances pick each receiver's cascade. It is 0 unless another camera fitted them
+    /// (see [`Cascades::seen_from`]).
+    pub origin: [f32; 3],
 }
 
 impl Cascades {
@@ -198,16 +222,15 @@ impl Cascades {
     /// Moves cascades that a camera at `fitted` from the world's origin fitted to the camera that
     /// draws, at `position`, with `map_size` texels on each side of each layer. Each cascade keeps
     /// its box, fixed in the world, and its matrix takes positions relative to the camera that
-    /// draws. Receivers still find their cascade by their distance along the fitting camera's
-    /// view, so the cascades fall where they fall in that camera's own frames. The debug API's
-    /// shadow camera draws them this way, so a still camera can watch how they move.
+    /// draws. Receivers still find their cascade by their distance from the fitting camera, or
+    /// along its view, so the cascades fall where they fall in that camera's own frames. The debug
+    /// API's shadow camera draws them this way, so a still camera can watch how they move.
     pub fn seen_from(&mut self, fitted: [f64; 3], position: [f64; 3], map_size: u32) {
         let map_size = map_size.max(1) as f32;
         for cascade in &mut self.cascades[..self.count] {
             *cascade = cascade_in(&cascade.bounds, position, cascade.end, map_size);
         }
-        let offset = std::array::from_fn(|k| position[k] - fitted[k]);
-        self.origin = dot_far(offset, self.forward) as f32;
+        self.origin = std::array::from_fn(|k| (position[k] - fitted[k]) as f32);
     }
 }
 
@@ -364,6 +387,7 @@ pub fn fit_cascades(
     let mut out = Cascades {
         count,
         forward,
+        by_distance: matches!(lens, Lens::Perspective(_)),
         ..Cascades::default()
     };
     let mut start = near;
@@ -448,11 +472,15 @@ const _: () = assert!(MAX_INTERVAL == 8 && CYCLE.is_multiple_of(3 * 5 * 7 * 8));
 /// The nearest cascade draws in every frame. Each far cascade draws once every few frames, and
 /// neighboring far cascades take their turns in different frames, so the frames share the cost. A
 /// cascade draws at once when its layer holds nothing yet: when the shadows start, when the
-/// cascade count or the map size changes, and when the GPU objects are made again.
+/// cascade count or the map size changes, and when the GPU objects are made again. A far cascade
+/// also draws in every frame where a moving caster touches the box its layer holds, or touched it
+/// when the layer drew, so moving shadows follow their casters.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct CascadeSchedule {
     /// The box that each cascade's layer holds, or `None` before it draws.
     drawn: [Option<CascadeBox>; MAX_CASCADES],
+    /// True for each layer that drew with a moving caster in its box.
+    moving: [bool; MAX_CASCADES],
     /// The cascade count and the map size that the layers hold.
     shape: (usize, u32),
     /// The frame's place in the schedule's cycle.
@@ -468,15 +496,17 @@ impl CascadeSchedule {
 
     /// Picks the cascades of `cascades` that draw in this frame, for a camera at `position` from
     /// the world's origin, with `map_size` texels on each side of each layer and far cascades that
-    /// draw every `interval` frames. Returns them as a mask with one bit per cascade, the nearest
-    /// in bit 0. Each cascade that does not draw takes the box that its layer holds, relative to
-    /// the camera, so receivers read the layer as it was drawn.
+    /// draw every `interval` frames. `moving` tells whether a moving caster touches a box. Returns
+    /// the cascades that draw as a mask with one bit per cascade, the nearest in bit 0. Each
+    /// cascade that does not draw takes the box that its layer holds, relative to the camera, so
+    /// receivers read the layer as it was drawn.
     pub fn plan(
         &mut self,
         cascades: &mut Cascades,
         position: [f64; 3],
         map_size: u32,
         interval: u32,
+        moving: impl Fn(&CascadeBox) -> bool,
     ) -> u32 {
         let shape = (cascades.count, map_size);
         if shape != self.shape {
@@ -492,11 +522,15 @@ impl CascadeSchedule {
         let mut drawn = 0;
         for (k, cascade) in cascades.cascades[..cascades.count].iter_mut().enumerate() {
             match self.drawn[k] {
-                Some(bounds) if !Self::due(frame, k, interval) => {
+                Some(bounds)
+                    if !Self::due(frame, k, interval) && !self.moving[k] && !moving(&bounds) =>
+                {
                     *cascade = cascade_in(&bounds, position, cascade.end, map_size);
                 }
                 _ => {
                     self.drawn[k] = Some(cascade.bounds);
+                    // A layer that draws in every frame anyway needs no test.
+                    self.moving[k] = k > 0 && interval > 1 && moving(&cascade.bounds);
                     drawn |= 1 << k;
                 }
             }
@@ -507,6 +541,78 @@ impl CascadeSchedule {
     /// Forgets what the layers hold, so every cascade draws in the next frame.
     pub fn reset(&mut self) {
         *self = Self::default();
+    }
+}
+
+/// The scene objects that cast shadows and move in every frame: each dynamic object, and each
+/// object under a dynamic one, that has a mesh and casts shadows. The list follows the scene's
+/// structure, so it changes only in frames where the structure changed.
+#[derive(Debug, Default)]
+pub struct MovingCasters {
+    slots: Vec<u32>,
+    /// True once the list matches the scene's structure.
+    built: bool,
+}
+
+impl MovingCasters {
+    /// Lists the scene's moving casters again when its structure changed, or when the list was
+    /// never built. Allocates only when the list grows past its largest size so far.
+    pub fn update(&mut self, scene: &SceneStorage, structure_changed: bool) {
+        if self.built && !structure_changed {
+            return;
+        }
+        self.built = true;
+        self.slots.clear();
+        let (parents, slot_flags, meshes) = (scene.parents(), scene.flags(), scene.meshes());
+        let moves = |slot: usize| {
+            let mut at = slot;
+            loop {
+                if slot_flags[at] & flags::DYNAMIC != 0 {
+                    return true;
+                }
+                match parents[at] {
+                    NO_PARENT => return false,
+                    parent => at = parent as usize,
+                }
+            }
+        };
+        let high = scene.slots().high_water() as usize;
+        for slot in 0..high {
+            if meshes[slot] != 0 && slot_flags[slot] & flags::CAST_SHADOWS != 0 && moves(slot) {
+                self.slots.push(slot as u32);
+            }
+        }
+    }
+
+    /// Forgets the list, so the next update builds it again.
+    pub fn forget(&mut self) {
+        self.built = false;
+    }
+
+    /// True when a visible moving caster on the layers `layers` touches `bounds`, in the world
+    /// output of frame parity `parity`. Casters beyond the box's face toward the light count, as
+    /// they draw into it flattened onto that face.
+    pub fn touch(
+        &self,
+        scene: &SceneStorage,
+        parity: usize,
+        layers: u32,
+        bounds: &CascadeBox,
+    ) -> bool {
+        let spheres = scene.world(parity).spheres();
+        let (slot_flags, slot_layers, cells) = (scene.flags(), scene.layers(), scene.cells());
+        let table = scene.cell_table();
+        let size = f64::from(CELL_SIZE);
+        self.slots.iter().any(|&slot| {
+            let s = slot as usize;
+            if slot_flags[s] & flags::VISIBLE == 0 || slot_layers[s] & layers == 0 {
+                return false;
+            }
+            let cell = table.coords(cells[s]);
+            let local = [spheres.xs[s], spheres.ys[s], spheres.zs[s]];
+            let center = std::array::from_fn(|k| f64::from(cell[k]) * size + f64::from(local[k]));
+            bounds.touches(center, spheres.radii[s])
+        })
     }
 }
 
@@ -636,14 +742,18 @@ pub struct ShadowUniform {
     pub ends: [f32; MAX_CASCADES],
     /// The camera's scaled forward axis, then the cascade count.
     pub forward: [f32; 4],
-    /// How far each cascade's receivers move along their normals, in meters.
-    pub normal_offsets: [f32; MAX_CASCADES],
-    /// How far each cascade's receivers move their depth toward the light, in depth units.
-    pub depth_biases: [f32; MAX_CASCADES],
+    /// The size in meters of one texel of each cascade's layer.
+    pub texels: [f32; MAX_CASCADES],
+    /// The light's bias toward the light and its normal bias, in meters, then 1 when receivers pick
+    /// their cascade by their distance from the camera, or 0 by their distance along its view, and
+    /// 0.
+    pub biases: [f32; 4],
     /// The texels on each side of each layer and the size of one texel in texture coordinates,
-    /// then the texels on each side of the filter's square, and what each distance along the
-    /// view adds ([`Cascades::origin`]).
+    /// then the texels on each side of the filter's square, and 0.
     pub kernel: [f32; 4],
+    /// The camera that draws, relative to the camera that fitted the cascades
+    /// ([`Cascades::origin`]), then 0.
+    pub origin: [f32; 4],
 }
 
 const _: () = assert!(std::mem::size_of::<ShadowUniform>() == SHADOW_UNIFORM_BYTES as usize);
@@ -659,11 +769,18 @@ impl ShadowUniform {
                 cascades.forward[2],
                 cascades.count as f32,
             ],
-            kernel: [
-                map_size,
-                1.0 / map_size,
-                settings.filter as f32,
-                cascades.origin,
+            biases: [
+                settings.bias,
+                settings.normal_bias,
+                f32::from(u8::from(cascades.by_distance)),
+                0.0,
+            ],
+            kernel: [map_size, 1.0 / map_size, settings.filter as f32, 0.0],
+            origin: [
+                cascades.origin[0],
+                cascades.origin[1],
+                cascades.origin[2],
+                0.0,
             ],
             ..Self::default()
         };
@@ -672,8 +789,7 @@ impl ShadowUniform {
         for (k, cascade) in cascades.used().iter().enumerate() {
             uniform.view_proj[k] = cascade.view_proj;
             uniform.ends[k] = cascade.end;
-            uniform.normal_offsets[k] = settings.normal_bias * cascade.texel;
-            uniform.depth_biases[k] = settings.bias * cascade.texel * cascade.depth_per_meter;
+            uniform.texels[k] = cascade.texel;
         }
         uniform
     }
@@ -801,12 +917,18 @@ mod tests {
                 assert!((a[k] - b[k]).abs() < 1e-4, "{a:?} {b:?}");
             }
         }
-        // The distance along the fitting camera's view comes out the same from either camera.
-        let along = |p: [f32; 3], origin: f32| dot(p, cascades.forward) + origin;
-        assert!((along(point, own.origin) - along(from_drawing, cascades.origin)).abs() < 1e-4);
-        assert_eq!(own.origin, 0.0);
+        // The position relative to the fitting camera, so its distance from that camera and along
+        // its view, comes out the same from either camera.
+        let seen = |p: [f32; 3], origin: [f32; 3]| -> [f32; 3] {
+            std::array::from_fn(|k| p[k] + origin[k])
+        };
+        let [a, b] = [seen(point, own.origin), seen(from_drawing, cascades.origin)];
+        for k in 0..3 {
+            assert!((a[k] - b[k]).abs() < 1e-4, "{a:?} {b:?}");
+        }
+        assert_eq!(own.origin, [0.0; 3]);
         let uniform = ShadowUniform::new(&cascades, &SETTINGS);
-        assert_eq!(uniform.kernel[3], cascades.origin);
+        assert_eq!(uniform.origin[..3], cascades.origin);
     }
 
     #[test]
@@ -951,7 +1073,7 @@ mod tests {
     }
 
     #[test]
-    fn the_uniform_scales_the_biases_by_each_cascade_s_texels() {
+    fn the_uniform_holds_the_biases_in_meters_and_each_cascade_s_texel() {
         let cascades = fit(&camera(), &LENS, 1.5, DOWN_AND_ACROSS, &SETTINGS);
         let settings = ShadowSettings {
             bias: 2.0,
@@ -961,12 +1083,11 @@ mod tests {
         let uniform = ShadowUniform::new(&cascades, &settings);
         assert_eq!(uniform.forward[3], 3.0);
         assert_eq!(uniform.as_bytes().len(), SHADOW_UNIFORM_BYTES as usize);
+        assert_eq!(uniform.biases, [2.0, 0.5, 1.0, 0.0]);
         for (k, cascade) in cascades.used().iter().enumerate() {
             assert_eq!(uniform.view_proj[k], cascade.view_proj);
             assert_eq!(uniform.ends[k], cascade.end);
-            assert_eq!(uniform.normal_offsets[k], 0.5 * cascade.texel);
-            let depth = 2.0 * cascade.texel * cascade.depth_per_meter;
-            assert!((uniform.depth_biases[k] - depth).abs() <= depth * 1e-6);
+            assert_eq!(uniform.texels[k], cascade.texel);
         }
         // Far cascades have larger texels.
         let texels: Vec<f32> = cascades.used().iter().map(|c| c.texel).collect();
@@ -1131,13 +1252,13 @@ mod tests {
         // The first frame draws every cascade, as no layer holds anything yet.
         let mut first = fit_at(FAR_OUT, 0.0);
         let fresh = first;
-        assert_eq!(schedule.plan(&mut first, FAR_OUT, 2048, 4), 0b1111);
+        assert_eq!(schedule.plan(&mut first, FAR_OUT, 2048, 4, still), 0b1111);
         assert_eq!(first, fresh);
         // The camera moves and turns: only the near cascade and the next in turn draw.
         let moved = [FAR_OUT[0] + 3.7, FAR_OUT[1], FAR_OUT[2] - 2.9];
         let mut second = fit_at(moved, 25.0);
         let fresh = second;
-        assert_eq!(schedule.plan(&mut second, moved, 2048, 4), 0b0101);
+        assert_eq!(schedule.plan(&mut second, moved, 2048, 4, still), 0b0101);
         assert_eq!(second.cascades[0], fresh.cascades[0]);
         assert_eq!(second.cascades[2], fresh.cascades[2]);
         // The others keep the boxes of the first frame, with their own slices' ends, and map each
@@ -1160,13 +1281,69 @@ mod tests {
         }
         // A new map size draws every cascade again, and so does a reset.
         assert_eq!(
-            schedule.plan(&mut fit_at(moved, 25.0), moved, 1024, 4),
+            schedule.plan(&mut fit_at(moved, 25.0), moved, 1024, 4, still),
             0b1111
         );
         schedule.reset();
         assert_eq!(
-            schedule.plan(&mut fit_at(moved, 25.0), moved, 1024, 4),
+            schedule.plan(&mut fit_at(moved, 25.0), moved, 1024, 4, still),
             0b1111
         );
+    }
+
+    /// No moving caster touches any box.
+    fn still(_: &CascadeBox) -> bool {
+        false
+    }
+
+    #[test]
+    fn a_far_cascade_draws_in_every_frame_while_a_moving_caster_touches_it() {
+        let settings = ShadowSettings {
+            cascades: 4,
+            ..SETTINGS
+        };
+        let fit = || {
+            fit_cascades(
+                &turned(0.0),
+                FAR_OUT,
+                &LENS,
+                1.5,
+                DOWN_AND_ACROSS,
+                &settings,
+            )
+        };
+        // A moving caster in the second cascade's box alone.
+        let second = fit().cascades[1].bounds;
+        let touching = std::cell::Cell::new(true);
+        let moving = |bounds: &CascadeBox| touching.get() && *bounds == second;
+        let mut schedule = CascadeSchedule::default();
+        let mut plan = || schedule.plan(&mut fit(), FAR_OUT, 2048, 4, moving);
+        assert_eq!(plan(), 0b1111);
+        // The second cascade draws out of turn, beside the third, whose turn it is.
+        assert_eq!(plan(), 0b0111);
+        // The caster leaves, but the layer still holds its shadow: it draws once more.
+        touching.set(false);
+        assert_eq!(plan(), 0b1011);
+        // With still casters alone, the far cascades keep their layers again.
+        assert_eq!(plan(), 0b0001);
+        assert_eq!(plan(), 0b0011);
+    }
+
+    #[test]
+    fn a_sphere_touches_a_box_that_it_draws_into() {
+        let bounds = CascadeBox {
+            axes: [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]],
+            center: [2048.0, 0.0, 10.0],
+            radius: 20.0,
+            margin: 5.0,
+        };
+        let box_test = |at: [f64; 3], r: f32| bounds.touches(at, r);
+        // Inside, above the box toward the light, and just touching a side all count.
+        assert!(box_test([2048.0, 10.0, 0.0], 1.0));
+        assert!(box_test([2048.0, 500.0, 0.0], 1.0));
+        assert!(box_test([2048.0 + 20.5, 10.0, 0.0], 1.0));
+        // Past a side, or beyond the far face, nothing draws into the box.
+        assert!(!box_test([2048.0 + 21.5, 10.0, 0.0], 1.0));
+        assert!(!box_test([2048.0, -11.5, 0.0], 1.0));
     }
 }
