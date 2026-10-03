@@ -1,7 +1,8 @@
 // glTF files in a live engine, in every thread mode on both GPU paths: a model loads into a prefab
 // that instantiate, clone and createInstances copy, and files that break the rules fail with their
 // codes and never hang. The glTF loader and its worker download once, with the first glTF file,
-// and a page without glTF files downloads neither.
+// and a page without glTF files downloads neither. The meshopt decoder downloads once, with the
+// first file that holds meshopt data, and a page without such files does not download it.
 import { expect, type Page, test } from '@playwright/test';
 import { ENGINE_MODES, modeProblems } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
@@ -10,6 +11,7 @@ import { pageResult } from '../lib/page-result.ts';
 const GLTF_FILES: Record<string, RegExp> = {
 	loader: /\/scene\/gltf\.ts$|\/gltf-[\w-]{8}\.js$/,
 	worker: /\/gltf-worker(\.ts|-[\w-]{8}\.js)$/,
+	meshopt: /\/scene\/gltf-meshopt\.ts$|\/gltf-meshopt-[\w-]{8}\.js$/,
 };
 
 /** Records the address of every request that the page and its workers make. */
@@ -76,8 +78,44 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				absent: 'E1411',
 				empty: 'none',
 			});
-			// One thread loads every file, so the loader and its worker download once.
-			expect(gltfDownloads(requests)).toEqual({ loader: 1, worker: 1 });
+			// One thread loads every file, so the loader and its worker download once. No file holds
+			// meshopt data, so the decoder does not download.
+			expect(gltfDownloads(requests)).toEqual({ loader: 1, worker: 1, meshopt: 0 });
+		});
+
+/** What the meshopt sketch reports. */
+interface MeshoptResult {
+	error?: string;
+	mode: Parameters<typeof modeProblems>[0];
+	recorded: {
+		bounds: Record<'ext' | 'khr' | 'fallback', number[]>;
+		materials: number;
+		broken: string;
+	};
+}
+
+for (const gpu of ['webgpu', 'webgl2'] as const)
+	for (const mode of ENGINE_MODES)
+		test(`glTF files with meshopt compression load under both names, on ${gpu}, ${mode.name}`, async ({
+			page,
+		}) => {
+			const requests = recordRequests(page);
+			await page.goto(`gltf-files.html?gpu=${gpu}&${mode.query}&meshopt`);
+			const result = await pageResult<MeshoptResult>(page, 60_000);
+			expect(result.error).toBeUndefined();
+			expect(modeProblems(result.mode, mode)).toEqual([]);
+			const { bounds, materials, broken } = result.recorded;
+			for (const box of Object.values(bounds)) {
+				expect(box).toHaveLength(6);
+				for (let axis = 0; axis < 3; axis++)
+					expect(box[axis + 3] as number).toBeGreaterThan(box[axis] as number);
+			}
+			// The file with a fallback buffer decodes its meshopt data too, to the same model.
+			expect(bounds.fallback).toEqual(bounds.khr);
+			expect(materials).toBeGreaterThan(0);
+			expect(broken).toBe('E1416');
+			expect(gltfDownloads(requests)).toEqual({ loader: 1, worker: 1, meshopt: 1 });
+			expect(requests.filter((url) => url.endsWith('Fallback.bin'))).toEqual([]);
 		});
 
 // The engine test page, whose start the startup benchmark times, loads no glTF file.
@@ -89,5 +127,5 @@ for (const mode of ENGINE_MODES)
 		await page.goto(`engine.html?gpu=webgl2&seconds=1&${mode.query}`);
 		const result = await pageResult<{ error?: string }>(page, 30_000);
 		expect(result.error).toBeUndefined();
-		expect(gltfDownloads(requests)).toEqual({ loader: 0, worker: 0 });
+		expect(gltfDownloads(requests)).toEqual({ loader: 0, worker: 0, meshopt: 0 });
 	});

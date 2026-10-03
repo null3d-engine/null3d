@@ -37,8 +37,8 @@
 use null3d_core::animation::Animations;
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_gpu::drawlist::{
-    DrawList, Op, buffer_usage as usage, layout as bind_layout, permutation, resource_kind, sizes,
-    template, vertex,
+    DrawList, Op, buffer_usage as usage, layout as bind_layout, resource_kind, sizes, template,
+    vertex,
 };
 
 use super::ids;
@@ -47,7 +47,7 @@ use crate::frame::{
 };
 use crate::meshes::MeshStorage;
 use crate::pipelines::DrawKey;
-use crate::skinning::{JointTexture, skin_of, skinned_format};
+use crate::skinning::{JointTexture, skin_of, skinned_format, skinned_in_vertex_shader};
 use crate::view::ViewFrame;
 
 /// The templates with SKIN builds, which skin in the vertex shader.
@@ -284,17 +284,20 @@ impl Skinning {
     /// The key of the pipeline that draws a skinned object whose pair's pipeline has `key`: the
     /// SKIN build of the pair's where the vertex shader skins, and otherwise the pair's for the
     /// plain vertices of the mesh's skinned format, which the skinning pass writes.
-    pub(super) fn skinned_key(&self, mut key: DrawKey) -> DrawKey {
-        if self.vertex_shader {
-            // Custom materials, the debug views and the test templates have no SKIN builds, so
-            // they draw the mesh at rest in this mode.
-            if SKIN_TEMPLATES.contains(&key.template) {
-                key.permutation |= permutation::SKIN;
-            }
-        } else {
-            key.vertex_format = skinned_format(key.vertex_format);
+    pub(super) fn skinned_key(&self, key: DrawKey) -> DrawKey {
+        if !self.vertex_shader {
+            return DrawKey {
+                vertex_format: skinned_format(key.vertex_format),
+                ..key
+            };
         }
-        key
+        // Custom materials, the debug views and the test templates have no SKIN builds on WebGPU,
+        // so they draw the mesh at rest in this mode.
+        if SKIN_TEMPLATES.contains(&key.template) {
+            skinned_in_vertex_shader(key)
+        } else {
+            key
+        }
     }
 
     /// The skinned object at scene slot `slot`, or `None` for an object that is not skinned.

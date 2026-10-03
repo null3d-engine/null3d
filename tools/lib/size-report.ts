@@ -45,6 +45,8 @@ export interface EnginePart {
 	module: string;
 	/** For a file that a thread loads on demand, the part that loads it. */
 	loadedBy?: string;
+	/** True for a part that every page may load after its first frame, with no feature to ask for it. */
+	afterFirstFrame?: boolean;
 }
 
 /**
@@ -53,7 +55,9 @@ export interface EnginePart {
  * load on demand on the page, which runs the sketch only in single-threaded mode. The KTX2 loader
  * loads on demand in the thread that runs the sketch, when the sketch loads its first KTX2 file.
  * The glTF loader loads there too with the sketch's first glTF file, and starts the glTF worker,
- * which parses files. The readers of color grading tables load there with the first table.
+ * which parses files. The glTF worker loads the meshopt decoder with the first file that holds
+ * meshopt data. The readers of color grading tables load in the thread that runs the sketch with
+ * the first table.
  * The preset check loads after the first frame, in the thread that runs the sketch, so no download
  * before the first frame counts it. The stats overlay loads on the page when the sketch first asks
  * for it, and the frame figures that it and `debug.frameStats` read load with it, or in the thread
@@ -76,6 +80,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		name: 'page-preset-check.js',
 		module: 'sketch/preset-check.ts',
 		loadedBy: 'page-sketch-runner.js',
+		afterFirstFrame: true,
 	},
 	{ name: 'page-stats-overlay.js', module: 'debug/overlay.ts', loadedBy: 'page.js' },
 	{ name: 'page-frame-stats.js', module: 'debug/stats.ts', loadedBy: 'page-stats-overlay.js' },
@@ -89,11 +94,13 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-gltf.js', module: 'scene/gltf.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'gltf-worker.js', module: 'workers/gltf-worker.ts', loadedBy: 'sketch-worker-gltf.js' },
+	{ name: 'gltf-meshopt.js', module: 'scene/gltf-meshopt.ts', loadedBy: 'gltf-worker.js' },
 	{ name: 'sketch-worker-lut.js', module: 'scene/lut-files.ts', loadedBy: 'sketch-worker.js' },
 	{
 		name: 'sketch-worker-preset-check.js',
 		module: 'sketch/preset-check.ts',
 		loadedBy: 'sketch-worker.js',
+		afterFirstFrame: true,
 	},
 	{ name: 'sketch-worker-frame-stats.js', module: 'debug/stats.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'render-worker.js', module: 'workers/render-worker.ts' },
@@ -222,6 +229,14 @@ export const DOWNLOADS: readonly Download[] = [
 	},
 ];
 
+/**
+ * The parts that no thread mode downloads at its start. Each loads on a feature's first use, or
+ * after the first frame, so no start budget counts it, and each has a budget of its own.
+ */
+export const LATER_PARTS: readonly EnginePart[] = ENGINE_PARTS.filter(
+	({ name }) => !DOWNLOADS.some(({ parts }) => parts.includes(name)),
+);
+
 /** True for a source file of a page that uses the engine, such as a test page. */
 const isPageSource = (source: string) => /^(tests|bench|examples|templates)\//.test(source);
 
@@ -328,4 +343,41 @@ export function downloadSizes(
 			size: totalSize([...parts.flatMap((part) => sizes.get(part) ?? []), ...largest]),
 		};
 	});
+}
+
+/**
+ * Brotli budget for the engine's JavaScript that a page downloads at its start, in whichever thread
+ * mode downloads the most. The core's generated glue counts with the WebAssembly files instead.
+ */
+export const START_BUDGET_BYTES = 140 * 1024;
+
+/** Brotli budget for each part that loads after the start. */
+export const LATER_BUDGET_BYTES = 16 * 1024;
+
+/**
+ * A problem for each thread mode whose start passes the start budget, and for each part that loads
+ * after the start and passes its own budget.
+ */
+export function budgetProblems(
+	sizes: ReadonlyMap<string, SizeEntry>,
+	downloads: readonly Download[] = DOWNLOADS,
+	later: readonly EnginePart[] = LATER_PARTS,
+): string[] {
+	const kb = (bytes: number) => `${bytes / 1024} KB`;
+	return [
+		...downloadSizes(sizes, downloads)
+			.filter(({ size }) => size.brotli > START_BUDGET_BYTES)
+			.map(
+				({ mode, size }) =>
+					`the engine JavaScript that a page downloads at its start in ${mode} mode is ${size.brotli.toLocaleString('en-US')} bytes after Brotli, over its ${kb(START_BUDGET_BYTES)} budget`,
+			),
+		...later.flatMap(({ name }) => {
+			const brotli = sizes.get(name)?.brotli ?? 0;
+			return brotli > LATER_BUDGET_BYTES
+				? [
+						`js/${name}, which loads after the start, is ${brotli.toLocaleString('en-US')} bytes after Brotli, over its ${kb(LATER_BUDGET_BYTES)} budget`,
+					]
+				: [];
+		}),
+	];
 }

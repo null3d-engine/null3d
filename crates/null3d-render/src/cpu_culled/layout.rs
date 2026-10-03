@@ -25,12 +25,14 @@ use null3d_gpu::drawlist::{DrawList, sizes};
 
 use super::data::{TextureRows, write_rows};
 use super::ids;
+use super::skin::Skins;
 use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, bucket_of, collect_bucket_keys,
     put_u32,
 };
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
+use crate::skinning::skinned_in_vertex_shader;
 
 /// The data texture of a bucket's instances, as its draw record names it.
 pub(super) const RESIDENT: u32 = 0;
@@ -189,13 +191,15 @@ impl Layout {
     /// the layout's tables, which grow only with the scene. A scene of more than `limit` sources
     /// fails. With `multi_draw`, one block of draw records serves each multi-draw call; else each
     /// draw has an aligned record of its own. With `shadows`, the scene's receivers draw with
-    /// pipelines that read the shadow maps, and the casters' layout holds the casters. The caller
-    /// marks the layout built once the room it needs is made.
+    /// pipelines that read the shadow maps, and the casters' layout holds the casters. The objects
+    /// that `skins` skins draw with pipelines that skin in the vertex shader. The caller marks the
+    /// layout built once the room it needs is made.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn rebuild(
         &mut self,
         settings: &SceneSettings,
         pipelines: &mut PipelineCache,
+        skins: &Skins,
         targets: PassTargets,
         input: &FrameInput<'_>,
         limit: u32,
@@ -237,16 +241,23 @@ impl Layout {
 
         let meshes = settings.meshes();
         let drawn = self.drawn;
-        let key_of = |mesh: u32, material: u32, group: u32, object: u32| -> Option<BucketKey> {
+        let skin = |key: DrawKey, skinned: bool| {
+            if skinned {
+                skinned_in_vertex_shader(key)
+            } else {
+                key
+            }
+        };
+        let key_of = |mesh: u32, material: u32, group: u32, object: u32, skinned: bool| {
             let pipeline = settings.pipeline_of(mesh, material)?;
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             match drawn {
                 Drawn::Casters => {
-                    let caster = settings.caster_of(pipeline);
+                    let caster = skin(settings.caster_of(pipeline), skinned);
                     return Some((caster, 0, page, mesh, CASTER_MATERIAL, group));
                 }
                 Drawn::Outlined => {
-                    let (every, _) = mask_keys(pipeline);
+                    let (every, _) = mask_keys(skin(pipeline, skinned));
                     return Some((every, 0, page, mesh, CASTER_MATERIAL, group));
                 }
                 Drawn::Scene => {}
@@ -261,7 +272,14 @@ impl Layout {
                 pipeline
             };
             let textures = settings.texture_group(material, pipeline);
-            Some((pipeline, textures, page, mesh, material, group))
+            Some((
+                skin(pipeline, skinned),
+                textures,
+                page,
+                mesh,
+                material,
+                group,
+            ))
         };
         let group_of = |batch: &InstanceBatch| {
             if batch.is_dynamic() {
@@ -285,11 +303,13 @@ impl Layout {
                 scene.materials()[slot],
                 RESIDENT,
                 object,
+                skins.skinned(slot),
             )
         };
-        // Instance batches cast no shadows yet, and take no outlines.
+        // Instance batches cast no shadows yet, take no outlines, and no animated instance skins
+        // them.
         let batch_key = |batch: &InstanceBatch| match drawn {
-            Drawn::Scene => key_of(batch.mesh(), batch.material(), group_of(batch), 0),
+            Drawn::Scene => key_of(batch.mesh(), batch.material(), group_of(batch), 0, false),
             Drawn::Casters | Drawn::Outlined => None,
         };
         collect_bucket_keys(

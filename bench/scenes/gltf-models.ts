@@ -34,13 +34,21 @@ export interface ModelScene {
 	ownLights?: boolean;
 	/** The camera's direction from the bounds' center, which the distance scales. The default is +Z. */
 	view?: readonly [number, number, number];
+	/**
+	 * The scene of the same model without compression, whose reference images this scene's image
+	 * test must match.
+	 */
+	uncompressed?: string;
 }
 
 /**
  * The model scenes by name. Each names a feature of the loader: metal-rough materials with their
  * texture maps, texture transforms in a .gltf file whose buffers and images are files of their
  * own, unlit materials, emissive strength, lights, a node with instancing of its own, KTX2 textures
- * in a .gltf file, alpha modes, vertex colors and the second texture coordinates.
+ * in a .gltf file, alpha modes, vertex colors, the second texture coordinates, and meshopt
+ * compression under each of its two names. The vendor name's file is the instancing model as
+ * gltfpack compresses it (tests/lib/meshopt-fixtures.ts), which the repository keeps. The Khronos
+ * name's file covers every mode and filter.
  */
 export const MODEL_SCENES = {
 	'metal-rough': {
@@ -73,6 +81,15 @@ export const MODEL_SCENES = {
 	},
 	'texture-coordinates': {
 		url: sampleUrl('sources/khronos/TextureCoordinateTest/glTF-Binary/TextureCoordinateTest.glb'),
+	},
+	'meshopt-ext': {
+		// An address from this module, so the benchmark pages' build ships the file too.
+		url: new URL('../../tests/pages/assets/models/simple-instancing-meshopt.glb', import.meta.url)
+			.href,
+		uncompressed: 'instancing',
+	},
+	'meshopt-khr': {
+		url: sampleUrl('sources/khronos/MeshoptCubeTest/glTF-Meshopt/MeshoptCubeTest.gltf'),
 	},
 } as const satisfies Record<string, ModelScene>;
 
