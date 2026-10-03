@@ -60,6 +60,14 @@ import {
 	setViewHeight,
 } from './lens';
 import type { CoreMemory } from './memory';
+import {
+	type ObjectEventHandler,
+	type ObjectEventType,
+	PointerEvents,
+	type PointerInput,
+	type PointerListeners,
+	type PointerTarget,
+} from './pointer-events';
 import type { InstancingTemplate, PartTemplate, Prefab, TemplateNode } from './prefab';
 import {
 	type OverlapHit,
@@ -514,6 +522,8 @@ export class Object3D implements Described {
 	layerMask: number = C.LAYERS_DEFAULT;
 	/** @internal The object's animator, when a model with animations created the object. */
 	animation: Animator | undefined;
+	/** @internal The object's pointer event handlers, from its first `on`. */
+	pointerListeners: PointerListeners | undefined = undefined;
 
 	constructor(
 		/** @internal */ readonly scene: Scene,
@@ -817,11 +827,34 @@ export class Object3D implements Described {
 			this.scene.unmarkedWrites?.watch(this, false);
 		}
 		this.animation?.release();
+		this.scene.forgetListeners(this);
 		// The core checks the handle's generation, so a second destroy frees no other object.
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
 		this.row = 0;
 		this.scene.forget(this);
+	}
+
+	/**
+	 * Calls `handler` for each pointer event of `type` on the object: 'click', 'pointerdown',
+	 * 'pointerup', 'pointermove', 'pointerenter' or 'pointerleave'. An event on a child goes on to
+	 * its parents, so a handler on a model's group hears clicks on all its parts. The engine casts
+	 * a ray from the frame that was on screen at each event, against objects where they are now.
+	 * Handlers run on the sketch's thread at the start of the next frame, before `onUpdate`.
+	 */
+	on(type: ObjectEventType, handler: ObjectEventHandler): void {
+		if (DEV) checkLive('on', this);
+		this.scene.pointerEvents.add(this, type, handler);
+	}
+
+	/** Removes a handler that `on` added for events of `type`. */
+	off(type: ObjectEventType, handler: ObjectEventHandler): void {
+		this.scene.pointerEvents.remove(this, type, handler);
+	}
+
+	/** @internal The parent that the object's pointer events go on to. */
+	pointerParent(): PointerTarget | null {
+		return this.liveParent;
 	}
 
 	/** @internal Sets or clears one of the object's flags from the next frame. */
@@ -1523,6 +1556,8 @@ export class InstanceBatch {
 	};
 	/** @internal */
 	destroyedFrame = -1;
+	/** @internal The batch's pointer event handlers, from its first `on`. */
+	pointerListeners: PointerListeners | undefined = undefined;
 
 	constructor(
 		private readonly scene: Scene,
@@ -1597,6 +1632,25 @@ export class InstanceBatch {
 		for (const part of this.parts) core.glue.setBatchLayers(part, mask >>> 0);
 	}
 
+	/**
+	 * Calls `handler` for each pointer event of `type` on a row of the batch, as `Object3D.on` does.
+	 * The event's `instance` names the row.
+	 */
+	on(type: ObjectEventType, handler: ObjectEventHandler): void {
+		if (DEV) checkLive('on', { destroyedFrame: this.destroyedFrame, describe: () => 'a batch' });
+		this.scene.pointerEvents.add(this, type, handler);
+	}
+
+	/** Removes a handler that `on` added for events of `type`. */
+	off(type: ObjectEventType, handler: ObjectEventHandler): void {
+		this.scene.pointerEvents.remove(this, type, handler);
+	}
+
+	/** @internal A batch has no parent for its pointer events to go on to. */
+	pointerParent(): PointerTarget | null {
+		return null;
+	}
+
 	/** Marks rows of a static batch to update and upload. */
 	markDirty(start = 0, count = this.count - start): void {
 		const { core } = this.scene;
@@ -1612,6 +1666,7 @@ export class InstanceBatch {
 		core.checkGrowth(core.glue.destroyBatch(this.id, this.scene.frame), 'destroy', undefined, true);
 		for (const part of this.parts) core.glue.destroyBatch(part, this.scene.frame);
 		if (DEV) this.scene.countBatchRows(-this.count * (1 + this.parts.length));
+		this.scene.forgetListeners(this);
 		this.destroyedFrame = this.scene.frame;
 		// The next read of the arrays asks the core for them again, and the core refuses a
 		// destroyed batch.
@@ -1670,6 +1725,8 @@ export class Scene {
 	private readonly batchSlots: (InstanceBatch | undefined)[] = [];
 	/** Raycasts and overlap queries, made on the first query. */
 	private sceneQueries: SceneQueries | undefined;
+	/** Pointer events on objects, made on the first `on`. */
+	private objectEvents: PointerEvents | undefined;
 	/** Rows of the live instance batches, which development builds count. */
 	private batchRows = 0;
 	/** Every live object, which `clone` searches for the objects below the one it copies. */
@@ -1693,6 +1750,8 @@ export class Scene {
 		private readonly warmUpScene: () => Promise<void> = () => Promise.resolve(),
 		/** The cameras of the last frames, which the sketch runner gives; tests get a stand-in. */
 		private cameras?: FrameCameras,
+		/** The input reader, whose pointer events reach objects' handlers. */
+		private readonly pointerInput?: PointerInput,
 	) {
 		if (DEV) this.unmarkedWrites = new UnmarkedWrites(this);
 	}
@@ -1703,6 +1762,36 @@ export class Scene {
 			frameAt: () => 0,
 		});
 		return this.cameras;
+	}
+
+	/** @internal Pointer events on objects, made on the first call. */
+	get pointerEvents(): PointerEvents {
+		this.objectEvents ??= new PointerEvents(
+			{ pick: (frame, numbers, ray) => this.pick(frame, numbers, ray) },
+			this.pointerInput,
+		);
+		return this.objectEvents;
+	}
+
+	/**
+	 * Casts the ray of a pointer event from the camera of sketch frame `frame`, or from the active
+	 * camera as it stands when the ring no longer holds the frame, on the camera's layers.
+	 */
+	private pick(frame: number, numbers: Float64Array, ray: Ray): PointerTarget | null {
+		const camera = this.activeCamera;
+		const live = camera !== undefined && camera.destroyedFrame < 0 ? camera : undefined;
+		const layers = this.frameCameras.frameRay(frame, numbers, ray, live);
+		return layers < 0 ? null : this.queries.pick(ray, layers, numbers);
+	}
+
+	/** @internal Calls the handlers of the pointer events that the input of this frame brought. */
+	dispatchPointerEvents(report: (error: unknown) => void): void {
+		this.objectEvents?.dispatch(report);
+	}
+
+	/** @internal Removes the pointer event handlers of an object or a batch that is destroyed. */
+	forgetListeners(target: PointerTarget): void {
+		if (target.pointerListeners !== undefined) this.objectEvents?.forget(target);
 	}
 
 	/**

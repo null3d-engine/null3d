@@ -153,7 +153,7 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | drei `<Center>`, `<Bounds>` | `prefab.bounds` (0.2) and a camera fit computed at setup |
 | drei `<PerformanceMonitor>`, `<AdaptiveDpr>`, `<AdaptiveEvents>`; `<Canvas performance>` | Remove them: the engine's frame-budget governor does this work (section 5) |
 | drei `<Stats>` | `debug.stats(true)` in the sketch; `engine.measure()` on the page for GPU time |
-| Mesh events: `onClick`, `onPointerOver`, `onPointerOut` | `obj.on('click' | 'pointerenter' | 'pointerleave', fn)` (0.2), then `page.post` if React needs to know |
+| Mesh events: `onClick`, `onPointerDown`, `onPointerUp`, `onPointerMove`, `onPointerOver` or `onPointerEnter`, `onPointerOut` or `onPointerLeave` | `obj.on('click' | 'pointerdown' | 'pointerup' | 'pointermove' | 'pointerenter' | 'pointerleave', fn)` (0.2), then `page.post` if React needs to know. Only the closest object and its parents get an event, where r3f also passes it to the objects behind |
 | `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping, and bloom, `lut` and `vignette` (0.2), the other effects later in 0.2 (`references/post-processing.md`) |
 | `@react-three/rapier` | Rapier inside the sketch worker (null3d-develop recipe 11) |
 | Components that change props every frame through React state | `onUpdate` logic; React sends intent, not frames |

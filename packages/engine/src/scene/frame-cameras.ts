@@ -2,10 +2,11 @@
 // pipelined mode the thread that draws shows an older frame than the one the sketch computes, so a
 // click tested against the current camera would test a view the user never saw. After each frame
 // records, the sketch thread keeps the camera it drew from in a ring of the last four frames: its
-// world matrix with a 64-bit translation, its lens as the frame's canvas shaped it, and the canvas's
-// size in CSS pixels. A ray from the point of an input event then uses the frame that the event
-// names, and any other point uses the camera as it stands. Everything lives in typed arrays made
-// once, so neither call nor the per-frame record allocates.
+// world matrix with a 64-bit translation, its lens as the frame's canvas shaped it, the canvas's size
+// in CSS pixels and the layers it draws. A ray from the point of an input event then uses the frame
+// that the event names, and any other point uses the camera as it stands. Pointer events on objects
+// name the frame of each event. Everything lives in typed arrays made once, so neither call nor the
+// per-frame record allocates.
 
 import type { Vec3Like } from '../math/types';
 import { type ControlViews, Slot } from '../shared/control';
@@ -33,6 +34,8 @@ export interface FrameLens {
 	readonly handle: number;
 	/** The camera's name for error messages. */
 	readonly label: string;
+	/** The layers of the objects the camera draws. */
+	readonly layers: number;
 	/**
 	 * The lens, `LENS_FLOATS` numbers at the `LENS_*` offsets, which the camera writes each time the
 	 * lens changes. So keeping a frame's camera copies numbers and computes none: a function that
@@ -60,9 +63,13 @@ export const LENS_FLOATS = 6;
 
 /** The frames whose cameras the ring keeps. */
 const RING_FRAMES = 4;
-/** Each entry's fields: the frame, the lens, the canvas's sizes, then the camera's world matrix. */
+/**
+ * Each entry's fields: the frame, the camera's layers, the lens, the canvas's sizes, then the
+ * camera's world matrix.
+ */
 const FRAME = 0;
-const LENS = 1;
+const LAYERS = 1;
+const LENS = 2;
 /** The canvas's size in device pixels, whose shape the frame's projection takes. */
 const WIDTH = LENS + LENS_FLOATS;
 const HEIGHT = WIDTH + 1;
@@ -111,13 +118,40 @@ export class FrameCameras {
 	 * core's error, naming `call`.
 	 */
 	screenToRay(camera: FrameLens, x: number, y: number, out: Ray, call: string): void {
-		const frame = this.events.frameAt(x, y);
-		const ring = this.ring;
+		const at = this.entryOf(this.events.frameAt(x, y), camera);
+		if (at >= 0) writeRay(this.ring, at, x, y, out);
+		else writeRay(this.stand(camera, call), 0, x, y, out);
+	}
+
+	/**
+	 * Writes the ray through the point (`point[0]`, `point[1]`) in CSS pixels from the camera that
+	 * frame `frame` drew from into `out`, and returns that camera's layers. A frame that the ring no
+	 * longer holds takes `fallback` as it stands. Returns -1 and writes nothing when neither gives a
+	 * camera. The point comes in an array, so the call takes no fraction as an argument.
+	 */
+	frameRay(frame: number, point: Float64Array, out: Ray, fallback: FrameLens | undefined): number {
+		let entry: Float64Array = this.ring;
+		let at = this.entryOf(frame, undefined);
+		if (at < 0) {
+			if (fallback === undefined || this.core.readWorldMatrix(fallback.handle, this.matrix) !== 0)
+				return -1;
+			entry = this.standing(fallback);
+			at = 0;
+		}
+		writeRay(entry, at, point[0] as number, point[1] as number, out);
+		return (entry[at + LAYERS] as number) >>> 0;
+	}
+
+	/**
+	 * Where the ring's entry of frame `frame` starts, when the ring holds the frame and it drew from
+	 * `camera`, or from any camera when `camera` is undefined; otherwise -1.
+	 */
+	private entryOf(frame: number, camera: FrameLens | undefined): number {
+		if (frame <= 0) return -1;
 		const index = frame % RING_FRAMES;
 		const at = index * ENTRY;
-		if (frame > 0 && ring[at + FRAME] === frame && this.ringCameras[index] === camera)
-			writeRay(ring, at, x, y, out);
-		else writeRay(this.stand(camera, call), 0, x, y, out);
+		if (this.ring[at + FRAME] !== frame) return -1;
+		return camera === undefined || this.ringCameras[index] === camera ? at : -1;
 	}
 
 	/**
@@ -166,6 +200,11 @@ export class FrameCameras {
 	private stand(camera: FrameLens, call: string): Float64Array {
 		const { core } = this;
 		core.check(core.readWorldMatrix(camera.handle, this.matrix), call, camera.label, true);
+		return this.standing(camera);
+	}
+
+	/** Fills the entry of `camera` with the matrix read last, on the canvas as it is now. */
+	private standing(camera: FrameLens): Float64Array {
 		const { slots } = this.control;
 		const width = Math.max(1, Atomics.load(slots, Slot.CanvasWidth));
 		const height = Math.max(1, Atomics.load(slots, Slot.CanvasHeight));
@@ -185,6 +224,7 @@ export class FrameCameras {
 		height: number,
 	): void {
 		const { slotFloats } = this.control;
+		entry[at + LAYERS] = camera.layers;
 		entry.set(camera.lens, at + LENS);
 		entry[at + WIDTH] = width;
 		entry[at + HEIGHT] = height;

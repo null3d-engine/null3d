@@ -173,28 +173,38 @@ No objects are created or destroyed during play. `setActiveCount` draws only the
 ## 6. Click to select, with an outline (0.2)
 
 ```ts
-const PICKABLE = 1 << 1;
-for (const u of units) u.setLayers(1 | PICKABLE);   // layer 0 stays on so cameras still draw it
 post.set({ outline: { color: '#ffcc00', thickness: 2 } });
 
-let selected: typeof units[number] | null = null;
-for (const u of units) {
-  u.on('click', () => {
+let selected: (typeof units)[number] | null = null;
+let clicked = false;
+for (const unit of units) {
+  unit.on('click', () => {
+    clicked = true;
     selected?.setOutlined(false);
-    selected = u;
-    u.setOutlined(true);
-    page.post('selected', { name: u.name });
+    selected = unit;
+    unit.setOutlined(true);
+    page.post('selected', { name: unit.name });
   });
 }
+// in onUpdate: a click on nothing clears the selection. Handlers run before onUpdate.
+if (input.wasReleased('Mouse0') && !clicked && selected) {
+  selected.setOutlined(false);
+  selected = null;
+}
+clicked = false;
 ```
 
-A ray from the pointer, also in 0.2, lets walls block the pick:
+A click goes to the closest object under the pointer that the camera draws. So a wall in front of a unit takes the click, and the unit behind it stays unselected. A drag that turns the camera is no click. On a model, put the handler on the group that `scene.instantiate` returns: clicks on its parts go on up to it. Each click casts its ray from the frame that was on screen, and a frame with no handlers casts none.
+
+A ray of your own skips objects that should not block, such as effects:
 
 ```ts
+const PICKABLE = 1 << 1;
 const WORLD = 1 << 2;   // walls and terrain: they block the ray
+for (const u of units) u.setLayers(1 | PICKABLE);   // layer 0 stays on so cameras still draw it
 for (const wall of walls) wall.setLayers(1 | WORLD);
 const unitSet = new Set(units);
-const ray = { origin: [0, 0, 0], direction: [0, 0, -1] };
+const ray = { origin: vec3.create(), direction: vec3.create() };
 const hit: RaycastHit = { object: null, instance: -1, point: vec3.create(), normal: vec3.create(), distance: 0, triangle: -1 };
 // in onUpdate:
 if (input.wasPressed('Mouse0')) {
@@ -205,7 +215,7 @@ if (input.wasPressed('Mouse0')) {
 }
 ```
 
-The ray tests units and the walls and terrain on `WORLD`, and returns the nearest hit. A wall in front of a unit is that nearest hit, so a unit behind a wall is not selected. Effects stay off both layers, so they never block the ray. Create `ray`, `hit` and `unitSet` once. Docs: `api/raycast`, `concepts/render-layers`, `api/post`.
+The ray tests units and the walls and terrain on `WORLD`, and returns the nearest hit. Effects stay off both layers, so they never block the ray. Create `ray`, `hit` and `unitSet` once. Docs: `api/input` (pointer events on objects), `api/raycast`, `concepts/render-layers`, `api/post`.
 
 ## 7. HTML labels above objects (0.2)
 

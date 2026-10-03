@@ -4,11 +4,13 @@
 // between two frames counts as both pressed and released in the next frame. The one exception is a
 // press of the pointer after its release: it starts a new drag, and the events from it on wait for
 // the next frame, so the pointer's drag in a frame never joins two drags. Reading allocates
-// nothing: the state lives in typed arrays and in objects made once. Hold mode never reads the ring,
-// so a held frame never depends on input.
+// nothing: the state lives in typed arrays and in objects made once. While objects listen for
+// pointer events, the reader also copies each pointer event into their log. Hold mode never reads
+// the ring, so a held frame never depends on input.
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
+import type { PointerInput, PointerLog } from '../scene/pointer-events';
 import {
 	type ControlViews,
 	EVENT_GAMEPAD_AXIS,
@@ -16,6 +18,7 @@ import {
 	EVENT_KEY_DOWN,
 	EVENT_KEY_UP,
 	EVENT_POINTER_DOWN,
+	EVENT_POINTER_LEAVE,
 	EVENT_POINTER_MOVE,
 	EVENT_POINTER_UP,
 	EVENT_WHEEL,
@@ -226,8 +229,10 @@ class TouchState implements InputTouch {
 }
 
 /** Reads the input ring once per frame, and answers the sketch's input calls. */
-export class InputReader implements Input {
+export class InputReader implements Input, PointerInput {
 	readonly pointer = new PointerState();
+	/** The log that copies each frame's pointer events, which pointer events on objects set. */
+	pointerLog: PointerLog | undefined = undefined;
 	readonly touches: TouchState[];
 	readonly actions: InputActions = { define: (actions) => this.define(actions) };
 	/** Control numbers by name, and each action's number plus the count of controls. */
@@ -317,7 +322,9 @@ export class InputReader implements Input {
 			this.releaseAll();
 			this.next = written;
 		}
-		const ints = this.control.inputInts;
+		const { inputInts: ints, inputFloats: floats } = this.control;
+		const log = this.pointerLog;
+		if (log !== undefined) log.count = 0;
 		let released = false;
 		while (this.next !== written) {
 			const base = (this.next & RING_MASK) * INPUT_EVENT_INTS;
@@ -328,6 +335,14 @@ export class InputReader implements Input {
 			// one press, and two quick clicks count as two presses.
 			if (released && primary && type === EVENT_POINTER_DOWN) break;
 			this.apply(base);
+			if (
+				log !== undefined &&
+				(type === EVENT_POINTER_MOVE ||
+					type === EVENT_POINTER_DOWN ||
+					type === EVENT_POINTER_UP ||
+					type === EVENT_POINTER_LEAVE)
+			)
+				log.add(ints, floats, base, setupFrames);
 			if (primary && type === EVENT_POINTER_UP) released = true;
 			this.next = (this.next + 1) | 0;
 		}
@@ -351,6 +366,11 @@ export class InputReader implements Input {
 			if (touch.x === x && touch.y === y) return touch.frame;
 		}
 		return 0;
+	}
+
+	/** The sketch frame on screen now, in the count that the pointer's frame numbers use. */
+	presentedFrame(): number {
+		return Math.max(0, Atomics.load(this.control.slots, Slot.FramePresented) - this.setupFrames);
 	}
 
 	isDown(name: string): boolean {

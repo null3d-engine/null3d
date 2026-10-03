@@ -651,6 +651,29 @@ describe('screenToRay and worldToScreen', () => {
 		expectClose(rayOf(ray), threeRay(theirs, frameWorld(7), x, y), 9);
 	});
 
+	test("a pointer event's ray takes its frame's camera and layers, whichever camera is active", () => {
+		const { scene, setWorld } = setup();
+		const first = scene.createPerspectiveCamera({ fov: 60 });
+		const second = scene.createPerspectiveCamera({ fov: 60 });
+		first.setLayers(0b101);
+		const theirs = new ThreePerspectiveCamera(60, CSS[0] / CSS[1], 0.1, 2000);
+		const frameWorld = (frame: number) => world([0, 1, 5], [0, frame * 0.1, 0]);
+		scene.setActiveCamera(first);
+		setWorld(first, frameWorld(1));
+		scene.keepFrameCamera(1, CSS[0] * 2, CSS[1] * 2);
+		scene.setActiveCamera(second);
+		setWorld(second, frameWorld(2));
+		const ray = newRay();
+		const point = new Float64Array([100.5, 80.25]);
+		const cameras = scene.frameCameras;
+		expect(cameras.frameRay(1, point, ray, second)).toBe(0b101);
+		expectClose(rayOf(ray), threeRay(theirs, frameWorld(1), 100.5, 80.25), 9);
+		// A frame that the ring does not hold takes the active camera as it stands.
+		expect(cameras.frameRay(2, point, ray, second)).toBe(1);
+		expectClose(rayOf(ray), threeRay(theirs, frameWorld(2), 100.5, 80.25), 9);
+		expect(cameras.frameRay(2, point, ray, undefined)).toBe(-1);
+	});
+
 	test('development builds check the point and the camera', () => {
 		const { scene, setWorld } = setup();
 		const camera = scene.createPerspectiveCamera();

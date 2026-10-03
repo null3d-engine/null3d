@@ -82,6 +82,11 @@ export type { Exp2FogOptions, FogOptions, LinearFogOptions } from './scene/fog';
 export type { Ray } from './scene/frame-cameras';
 export type { Lut, LutDomain } from './scene/lut';
 export type {
+	ObjectEventHandler,
+	ObjectEventType,
+	ObjectPointerEvent,
+} from './scene/pointer-events';
+export type {
 	BloomSettings,
 	Post,
 	PostSettings,

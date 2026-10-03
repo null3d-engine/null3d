@@ -147,7 +147,7 @@ obj.name;                                                           // string, r
 obj.setMorphWeight(nameOrIndex, w);  // (0.2)
 obj.setOutlined(true);               // (0.2) with post.set({ outline })
 obj.setOccluder(false);              // (0.2) WebGL2 path: stop this object hiding others; true makes it a blocker
-obj.on('click', fn); obj.off('click', fn);  // (0.2) 'pointerenter', 'pointerleave', 'pointerdown', 'pointerup'
+obj.on('click', fn); obj.off('click', fn);  // (0.2) also 'pointerdown', 'pointerup', 'pointermove', 'pointerenter', 'pointerleave'; on parents too
 obj.animator();                      // (0.2) section 12
 ```
 

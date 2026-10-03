@@ -318,6 +318,7 @@ export class SketchRunner {
 			device.webgl2,
 			() => this.warmUp(),
 			new FrameCameras(this.core, sketch.control, this.input),
+			this.input,
 		);
 		this.post = new Post(this.core, device.effectsSceneColor !== FORMAT_CANVAS);
 		this.debugDraw = DEV ? new DebugDraw(this.core, host, scene) : undefined;
@@ -703,11 +704,14 @@ export class SketchRunner {
 		// Handlers that hear of a restart may create objects with new pipelines, so their frame
 		// waits for them.
 		let restart = false;
-		// The sketch's part of the frame: the input the page wrote, preference changes, the fixed
-		// steps and the update. It stays in this function: a call that passed the step on would
+		// The sketch's part of the frame: the input the page wrote and its pointer events on
+		// objects, preference changes, the fixed steps and the update. It stays in this function: a call that passed the step on would
 		// allocate a number for it in every frame.
 		if (play) {
-			if (this.holdSeconds === undefined) this.input.beginFrame(frame, frame - time.frame);
+			if (this.holdSeconds === undefined) {
+				this.input.beginFrame(frame, frame - time.frame);
+				this.context.scene.dispatchPointerEvents(this.reportError);
+			}
 			const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 			if (reducedMotion !== this.reducedMotion) {
 				this.reducedMotion = reducedMotion;

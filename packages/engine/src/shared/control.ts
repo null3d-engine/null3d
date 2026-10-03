@@ -29,9 +29,14 @@ export const EVENT_KEY_UP = 5;
 export const EVENT_WHEEL = 6;
 export const EVENT_GAMEPAD_BUTTON = 7;
 export const EVENT_GAMEPAD_AXIS = 8;
+/**
+ * The pointer left the canvas, or an element over the canvas covers it, while no drag holds it. Its
+ * fields are those of a pointer event.
+ */
+export const EVENT_POINTER_LEAVE = 9;
 
 /** An input event's type: one of the `EVENT_` numbers. */
-export type InputEventType = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+export type InputEventType = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
 /*
  * Int32 offsets of the fields of an input record. What a field holds depends on the event:
