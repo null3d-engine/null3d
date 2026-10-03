@@ -32,9 +32,15 @@ try {
 
 ## The start
 
-`createEngine` tests what the browser offers, and picks the build and the GPU path from those tests, never from browser or GPU names. It starts the engine's threads, loads the sketch module and runs the sketch's setup. It resolves once the setup has run, and `engine.firstFrame` resolves once the GPU has finished the first frame.
+`createEngine` tests what the browser offers, and picks the build and the GPU path from those tests, never from browser or GPU names. It starts the engine's threads, loads the sketch module and runs the sketch's setup. It resolves once the setup has run, and `engine.firstFrame` resolves once the GPU has finished the first frame. When the engine chose the preset itself, `createEngine` also waits for the [preset check](../concepts/quality-presets.md#the-preset-check). The check draws the first frames, so the first frame is then on the screen before `createEngine` resolves.
 
-`onProgress` reports each stage of the start: `core` once the engine core is compiled and the GPU paths are tested, `sketch` after the sketch's setup, and `first-frame`. An `AbortSignal` in `signal` cancels a start in progress: `createEngine` then stops the engine's threads and rejects with the signal's reason.
+`onProgress` reports each stage of the start, in this order:
+
+- `core`, once the engine core is compiled and the GPU paths are tested;
+- `sketch`, after the sketch's setup, and after the preset check when one runs;
+- `first-frame`, once the GPU has finished the first frame.
+
+An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` stops the engine's threads and rejects with the signal's reason.
 
 `createEngine` rejects with an `EngineError` when the engine cannot start:
 
@@ -42,18 +48,18 @@ try {
 | --- | --- |
 | [E1407](../errors/E1407.md) | The `hold` option or the `?hold=` switch gives a time that is not a number of seconds from 0 to 600. |
 | [E1415](../errors/E1415.md) | The sketch would run on the page's main thread, where another engine still runs its sketch. |
-| [E1213](../errors/E1213.md) | The `preset` option names no preset, `maxPixelRatio` is not a number from 0.5 up, or `antialias` is not `'msaa'`, `'fxaa'` or `'none'`. |
+| [E1213](../errors/E1213.md) | An option of the quality settings is out of its range: `preset`, `maxPixelRatio`, `antialias`, the shadow options or `depthPrepass`. The options table gives each range. |
 | [E1409](../errors/E1409.md) | The `memory` option asks for a maximum that is not a whole number of MiB from 256 to 4096. |
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
 | [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
-| [E1406](../errors/E1406.md) | A file of the engine core did not download. |
-| [E1402](../errors/E1402.md) | Development builds only: the engine core's file comes from another build than the engine's JavaScript. |
+| [E1406](../errors/E1406.md) | The engine core's WebAssembly file did not download. |
 | [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 3 seconds of tries. |
+| [E1402](../errors/E1402.md) | Development builds only: the engine core's file comes from another build than the engine's JavaScript. |
 | [E1410](../errors/E1410.md) | The sketch module did not load: it did not download, or its code threw an error while it loaded. |
 | [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
 | [E1214](../errors/E1214.md) | An option of `defineSketch` is out of its range. |
 | [E1405](../errors/E1405.md) | An engine thread did not start. |
-| [E1404](../errors/E1404.md) | An engine thread, or the drawing on the page, failed during the start. For example, the GPU had no memory for the first frame's textures. |
+| [E1404](../errors/E1404.md) | An engine thread, or the drawing on the page, failed during the start. For example, the GPU had no memory for the first frame's textures. A worker that fails before it is ready reports E1405 instead. |
 | [E1302](../errors/E1302.md) | The browser took the GPU away during the start, and no new device started. |
 | [E1408](../errors/E1408.md) | In hold mode, the sketch or the engine failed before the engine read the held frame back. |
 
@@ -70,19 +76,21 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `preset` | `'auto'` | The quality preset, which the engine chooses for the device unless the page names one: [Quality presets](../concepts/quality-presets.md) |
+| `preset` | `'auto'` | The quality preset, which the engine chooses for the device unless the page names one: [Quality presets](../concepts/quality-presets.md). The `?preset=` switch wins over it. |
 | `maxPixelRatio` | The preset's cap | Caps the screen's pixel ratio that the engine draws at, in place of the preset's cap |
 | `antialias` | The preset's mode | `'msaa'`, `'fxaa'` or `'none'`, in place of the preset's anti-aliasing mode: [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) |
-| `gpu` | `'auto'` | Forces a GPU path, for tests only. The `?gpu=` switch in the page's address wins over it. |
+| `shadowTiles`, `shadowTileSize`, `pointLightShadows` | The preset's values | The shadows of spot and point lights, in place of the preset's settings: [Shadows](../concepts/shadows.md#settings). Each is fixed while the engine runs. |
+| `depthPrepass` | `false` on every preset | `true` draws the depth of the opaque objects before they are shaded, on WebGPU: [The depth prepass](../concepts/quality-presets.md#the-depth-prepass). The `?prepass=` switch wins over it. |
+| `gpu` | `'auto'` | Forces a GPU path, for tests only. The `?gpu=` switch in the page's address wins over it, and also takes `compat` for WebGPU's compatibility mode. |
 | `powerPreference` | `'high-performance'` | Picks the GPU on a device that has two. `'low-power'` saves battery. |
-| `latency` | `'pipelined'` | The latency mode, `'pipelined'` or `'low'`: [Architecture](../concepts/architecture.md#latency-modes). The `?latency=` switch wins over it, and the single-threaded build ignores it. |
+| `latency` | `'pipelined'` | The latency mode, `'pipelined'` or `'low'`: [Architecture](../concepts/architecture.md#latency-modes). The `?latency=` switch wins over it, and the single-threaded build ignores it. Where no worker can draw, the engine runs pipelined. |
 | `transparent` | false | Makes a see-through canvas: [A transparent canvas](#a-transparent-canvas) |
 | `sketchThread` | `'worker'` | The thread that runs the sketch. `'main'` runs it on the page's main thread, where it can reach the DOM: [Where the sketch runs](../concepts/architecture.md#where-the-sketch-runs). The `?sketch-thread=` switch wins over it, and the single-threaded build always runs the sketch on the main thread. |
 | `memory` | `{ maximumMiB: 1024 }` | The most memory that the engine's threads share: [Memory](#memory) |
 | `onProgress` | None | Reports each stage of the start |
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
 | `signal` | None | Cancels the start |
-| `hold` | None | Holds the sketch at a time for image tests: [Testing your sketch](../guides/testing.md) |
+| `hold` | None | Holds the sketch at a time for image tests: [Testing your sketch](../guides/testing.md). The `?hold=` switch wins over it. |
 
 ## A transparent canvas
 
@@ -114,19 +122,19 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 
 ## What the engine reports
 
-- `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives whether the scene draws HDR color (`hdr`), the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). [GPU tiers and backends](../concepts/backends.md) explains each.
-- `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the number of job workers and the held time in hold mode. It gives the quality preset, the starts that crashed the tab before this one, and the memory maximum too.
+- `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives whether the scene draws HDR color (`hdr`), the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). The `halfPrecision` field says whether the scene shaders do their color math at half precision, which only the `?half=on` switch turns on. [GPU tiers and backends](../concepts/backends.md) explains each.
+- `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the number of job workers and the held time in hold mode. It gives the quality preset, what the preset check measured, the starts that crashed the tab before this one, and the memory maximum too.
 - `engine.report` holds every result of the start's tests, as plain JSON.
 
 ## The running engine
 
 - `setPaused(true)` stops the sketch's frames, and `setPaused(false)` resumes them. The first step after a pause is 0 seconds.
 - `detach()` takes the canvas off the page and pauses the engine, and `attach(container)` puts it back. Use them when a single-page app leaves the view with the canvas and comes back. The engine keeps its threads, its GPU resources and the scene.
-- `onFailure(handler)` receives a failure after the start: a GPU that the engine could not get back ([E1302](../errors/E1302.md)), or an engine thread that failed ([E1404](../errors/E1404.md)). Without a handler, the engine logs the failure to the console.
+- `onFailure(handler)` receives a failure after the start. It can be a GPU that the engine could not get back ([E1302](../errors/E1302.md)), or an engine thread that failed ([E1404](../errors/E1404.md)). It can also be a job worker that did not start ([E1405](../errors/E1405.md)). Without a handler, the engine logs the failure to the console.
 - `simulateGpuLoss()` acts out a loss of the GPU, so you can test how the page handles one. The engine starts a new GPU device and draws the whole scene again.
 - `measure(seconds)` measures the running engine: CPU time per frame by thread, GPU time, frame intervals, uploads, draw calls, memory and load time. [Performance guide](../guides/performance.md) explains the numbers.
 - `capture()` resolves with a PNG image of the next frame that the engine draws: [Screenshots](#screenshots).
-- `captureFrame()` draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
+- `captureFrame()` draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. In hold mode it returns the held frame and draws nothing. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
 - `postToSketch` and `onSketchMessage` send and receive [messages](page.md).
 - `destroy()` stops the engine and its threads, and the engine cannot start again. Wait for its promise before you start another engine on the same page, because the browser frees the engine's memory only then.
 
@@ -151,7 +159,7 @@ The thread that draws reads the frame back from the GPU and encodes the image. W
 
 - While the engine is paused, and in hold mode, the image shows the frame on the canvas.
 - A page in a hidden tab draws no frames, so its image comes when the tab shows again.
-- After `destroy()`, `capture()` fails with [E1414](../errors/E1414.md).
+- After `destroy()`, `capture()` fails with [E1414](../errors/E1414.md). So does a capture whose frame the engine could not read back or encode.
 
 ## Related pages
 

@@ -1,6 +1,6 @@
 # Pull requests and parallel work
 
-This guide covers how to merge main into a branch, and what to do when the merge queue removes a pull request. It also covers several copies of the repository on one machine. [AGENTS.md](../AGENTS.md) holds the commit gates and the rules of the merge queue.
+This guide covers how to merge main into a branch, and what to do when the merge queue removes a pull request. It also covers why CI's jobs are split as they are, and several copies of the repository on one machine. [AGENTS.md](../AGENTS.md) holds the commit gates and the rules of the merge queue.
 
 ## Merge main into a branch
 
@@ -36,7 +36,17 @@ This guide covers how to merge main into a branch, and what to do when the merge
 - `gh run list --event merge_group` lists the queue's runs. Each run's branch is `gh-readonly-queue/main/pr-<number>-<commit>`, so look for your pull request's number. The pull request's timeline also links the failed run, and `gh run view <run> --log-failed` prints its failed steps.
 - Each run builds the shader modules from the sources that it tests, so pull requests that change shaders can share a queue run.
 - When a pull request fails because of one that merged just before it, merge main, run the generators, and push.
+- The size check in the queue compares with main, not with the commit that the group builds on. So when two pull requests share a group, the growth of the first counts against the second. On 2 October 2026, the queue measured +3.0% and +2.9% on the core's glue files for #198. Against main with #201, which was ahead of it, the growth was +1.3% and +1.6%. Say the queue fails your pull request on a file that it grows by less than 2%. Then look for a pull request ahead of it that grows the same file. Push an empty commit with a `Size-Growth:` trailer that names both, and the pull request joins the queue again.
 - The Safari and Firefox jobs run only in the queue. They compare the image tests with the Mac's `chrome-real-gpu` references. A test without one of these references, or without its SwiftShader reference, fails `bun run check` in the pull request's own run ([Image tests](image-tests.md#references)).
+
+## CI's jobs
+
+- One `build` job builds the WebAssembly files and the shader modules, and every browser, benchmark and macOS job downloads them. Before, each browser shard built them again, which took 1.5 minutes.
+- The browser tests run in 7 shards and the benchmark page tests in 2, so each takes about 5 minutes or less. Before the split, in the 25 runs up to 1 October 2026, the two browser shards took 10 and 12 minutes. A whole merge queue run took 16.5 minutes. After it, a pull request's run took 6.9 minutes.
+- The merge queue requires `ci-passed`, not each job, because a job that splits into more shards changes its name. Without that job, a new shard would strand every open pull request.
+- Playwright's Chromium and its Ubuntu packages stay in the Actions cache. Ubuntu's package mirror stalls for 30 to 110 seconds on some files, and the install once took 11.5 minutes of a 4-minute shard.
+- The Rust caches are keyed by the workspace's `Cargo.toml`, because the cache's own key leaves out the build profiles. After a profile change, each run restored the old cache and compiled the dependencies again, for about 3 minutes.
+- Development builds optimize the dependencies (`[profile.dev.package."*"]`), so the shader tools' tests and `bun run shaders` parse and validate WGSL about 4 times faster.
 
 ## Several copies on one machine
 

@@ -40,14 +40,17 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 
 | Pass | Kind | Reads | Writes |
 | --- | --- | --- | --- |
-| Culling | Compute, one pass per view, on WebGPU only | The world matrix and bounds of every object and instance | The view's visible instances and draw counts |
+| Light clustering | Compute, on WebGPU only | The camera's point and spot lights | The list of lights of each cluster |
+| Culling | Compute, one pass per view (the camera's, and each shadow cascade's and tile's), on WebGPU only | The world matrix and bounds of every object and instance | The view's visible instances and draw counts |
+| Shadow | Scene, one pass per shadow cascade and per tile of the shadow atlas, in the frames in which it draws | The visible casters of its view | Its layer of the shadow map or of the shadow atlas |
 | Depth prepass | Scene, one pass per view, on WebGPU with the `depthPrepass` setting | The view's visible instances | The scene depth |
-| Opaque | Scene, one pass per view | The view's visible instances, on WebGPU | The scene color and depth |
+| Opaque | Scene, one pass per view | The view's visible instances (on WebGPU), the lights of each cluster, and the shadow map and atlas | The scene color and depth |
+| Debug lines | Scene, in development builds, in frames with debug drawing | The frame's lines | The scene color and depth |
 | Transparent | Scene, one pass per view, on while some object blends | The view's blended objects, sorted back to front on the job workers | The scene color and depth |
-| Resolve | Resolve, on the 8-bit path with MSAA | The scene color | The canvas |
-| Final pass | Fullscreen, on the HDR path, and with FXAA or no anti-aliasing | The scene color | The canvas |
+| Resolve | Resolve, on the 8-bit path with MSAA, while the render scale cannot drop below 1 | The scene color | The canvas |
+| Final pass | Fullscreen, on the HDR path, with FXAA or no anti-aliasing, and while the render scale can drop below 1 | The scene color | The canvas |
 
-On WebGL2 the job workers cull the objects before the frame draws, so the graph has no culling pass there. Passes for shadows and light clustering join the graph as those features ship.
+On WebGL2 the job workers cull the objects and list the lights of each cluster before the frame draws. So the graph has no compute passes there. A shadow pass draws its casters' depth from the light. The opaque pass reads that depth, so every shadow pass runs before it. [Shadows](shadows.md) says when each cascade and each tile draws.
 
 With the depth prepass on, each view draws the depth of its opaque objects first, in the render pass that then shades them. Only WebGPU draws it. The opaque pass then shades only the nearest surface at each pixel. [Quality presets](quality-presets.md#the-depth-prepass) says when the prepass saves time.
 

@@ -201,6 +201,8 @@ The governor keeps the thresholds of dynamic resolution (M1-G4) for every step. 
 | Grace | 2 s after the first frame, after a pause, and while textures wait to upload |
 | Order | Render scale in steps of 0.05, then the far cascades' interval doubled up to 8, then the shadow filter from 5 to 3. Up in the reverse order |
 
+Why this order: the render scale lightens the GPU's work on every pixel, whatever the scene holds. A step of the scale also makes no GPU object. Scene passes draw into the top-left corner of targets that keep the canvas's size. So a new scale needs no texture, view, bind group or pipeline. The shadow steps help only a scene whose shadows cost much, so they come after the scale has reached `minRenderScale`.
+
 The rules ask for a step up only after about five seconds under 80% of the budget. A presented interval never falls below the refresh period, so a frame interval under 80% of the budget never happens at the display's rate. The GPU delay is no better. A WebGL2 fence's time rounds up to the next frame callback, and Firefox reports WebGPU completions a display frame late. So "room" means frames at the target rate with a GPU delay within 125% of the budget. The failed-step-up rule then keeps the settings below the point where frames fall behind.
 
 ### Data
@@ -212,6 +214,14 @@ The stress test (`tests/pages/governor.html`) on the Mac in Chrome, both GPU pat
 - The Mac's software GPU draws the scene at about 40 fps on WebGL2 without a load, and passes the walk with `?fps=30`. CI's takes 300 to 400 ms for some frames, so CI skips both stages.
 
 The S24+ and the iPad rows are still to come, from `bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari`.
+
+### How three.js handles it
+
+three.js draws at the pixel ratio that the app sets with `renderer.setPixelRatio`, and never changes it by itself. A change of pixel ratio resizes the canvas's drawing buffer, and the app resizes its own render targets to match. three.js lowers no shadow setting by itself either.
+
+Dynamic resolution is left to the app. In React Three Fiber, drei's `PerformanceMonitor` watches the frame rate and calls the app back when it falls or rises. The app then sets the pixel ratio. drei's `AdaptiveDpr` lowers the pixel ratio while React Three Fiber's performance state is low. That state falls when something calls its `regress()`, for example camera controls that move.
+
+null3D builds the loop in, so an app gets it with no code of its own. The governor lowers the render scale first, then the shadow settings, and raises them again only after seconds with room to spare. A failed step up doubles its next wait, so the settings do not swing. Each step changes no GPU object, and the governor allocates nothing. A sketch reads the steps in `quality.governor`, and the live setting `governor` turns the loop off.
 
 ### Open for the owner
 
