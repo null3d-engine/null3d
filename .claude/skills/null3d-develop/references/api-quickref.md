@@ -237,7 +237,7 @@ light.setVisible(false); light.destroy();    // lights are objects: section 4
 - A light lights a camera's view when their layer masks share a bit. Without lights, standard materials draw black.
 - Units follow three.js r155 and later: point and spot intensity in candela. The same colors and intensities give the same light as in three.js.
 - Point and spot lights light the surfaces their ranges reach, through clustered lighting, so keep each range as short as the look allows. Surfaces show the first visible directional light, every ambient light, and the point and spot lights. Hemisphere lights light surfaces in 0.2.
-- Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`. Its cascades fit the camera's view and keep still edges as it turns. The nearest cascade draws every frame, and far ones every few frames (`farCascadeInterval`). `shadowFilter` softens edges over 3 or 5 texels. Both follow the preset. Defaults: 3 cascades, 2,048 texels, 200 m, bias 0.5 and normal bias 1, both in texels of each cascade. Unlit materials show no shadows. Both GPU paths draw them. Instance batches do not cast or receive them yet (`concepts/shadows`).
+- Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`. Its cascades fit the camera's view and keep still edges as it turns. The nearest cascade draws every frame, and far ones every few frames (`farCascadeInterval`). `shadowFilter` softens edges over 3 or 5 texels. Both follow the preset. Defaults: the preset's `shadowCascades` and `shadowMapSize`, 200 m, bias 0.5 and normal bias 1, both in texels of each cascade. Unlit materials show no shadows. Both GPU paths draw them. Instance batches do not cast or receive them yet (`concepts/shadows`).
 - Spot and point light shadows: each spot light with `castShadows` takes a tile of the shared shadow atlas, and each point light six. Point lights cast only where the preset's `pointLightShadows` is on (High and Ultra), or with that `createEngine` option. The preset's `shadowTiles` caps the tiles, and the lights that look largest on screen get them first. `shadowTileSize` sets each tile's texels. All three are `createEngine` options. A tile draws again only when its light or a caster within the light's range moves, so still scenes cost nothing per frame. The biases count texels of the tile, and `shadowFilter` softens its edges too (`concepts/shadows`).
 
 ## 8. Geometry (`api/geometry`)
@@ -467,7 +467,7 @@ quality.set({ shadowFilter: 5, farCascadeInterval: 1 });  // shadow edge softnes
 quality.governor.steps;                 // the governor's steps past the render scale; onChange runs after each
 quality.governor.farCascadeInterval;    // the shadow settings drawn now, which the governor may lower
 quality.set({ governor: false });       // no governor: maxRenderScale, and the shadow settings as set
-quality.set({ shadowCascades: 2 });     // planned: the preset table gives each setting's status
+quality.settings.shadowCascades;        // cascades of lights that name none; fixed at the start, with shadowMapSize
 await quality.setPreset('low');         // the live settings take Low's values; start-time ones stay; resolves once its frame is on screen
 const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
 quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });

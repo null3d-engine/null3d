@@ -13,6 +13,9 @@ describe('readRunOptions', () => {
 			seconds: null,
 			soak: null,
 			shadows: null,
+			shadowCascades: null,
+			shadowMapSize: null,
+			shadowFilter: null,
 			governor: true,
 		});
 		expect(read('?hold&n=1000&seconds=2.5&shadows=3')).toEqual({
@@ -22,7 +25,15 @@ describe('readRunOptions', () => {
 			seconds: 2.5,
 			soak: null,
 			shadows: 3,
+			shadowCascades: null,
+			shadowMapSize: null,
+			shadowFilter: null,
 			governor: true,
+		});
+		expect(read('?shadowCascades=2&shadowMapSize=1024&shadowFilter=5')).toMatchObject({
+			shadowCascades: 2,
+			shadowMapSize: 1024,
+			shadowFilter: 5,
 		});
 		expect(read('?soak=30').soak).toBe(30);
 		expect(read('?hold=3.25').hold).toBe(3.25);
@@ -51,6 +62,8 @@ describe('readRunOptions', () => {
 			'shadows=0',
 			'shadows=5',
 			'shadows=2.5',
+			'shadowMapSize=big',
+			'shadowCascades=0',
 		]) {
 			expect(() => read(query)).toThrow(/is not valid: use/);
 		}

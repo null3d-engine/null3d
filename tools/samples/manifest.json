@@ -1,0 +1,5088 @@
+{
+	"version": 1,
+	"licenses": {
+		"CC0-1.0": {
+			"name": "CC0 1.0 Universal",
+			"url": "https://creativecommons.org/publicdomain/zero/1.0/",
+			"file": "LICENSES/CC0-1.0.txt"
+		},
+		"CC-BY-4.0": {
+			"name": "Creative Commons Attribution 4.0 International",
+			"url": "https://creativecommons.org/licenses/by/4.0/",
+			"file": "LICENSES/CC-BY-4.0.txt"
+		}
+	},
+	"assets": [
+		{
+			"id": "khronos/Fox",
+			"title": "Fox",
+			"purpose": "Textured skinned character with three clips (survey, walk and run), for clip blending",
+			"authors": [
+				{
+					"name": "PixelMannen",
+					"role": "model",
+					"license": "CC0-1.0"
+				},
+				{
+					"name": "tomkranis",
+					"role": "rigging & Animation",
+					"license": "CC-BY-4.0"
+				},
+				{
+					"name": "@AsoboStudio and @scurest",
+					"role": "conversion to glTF",
+					"license": "CC-BY-4.0"
+				}
+			],
+			"license": [
+				"CC0-1.0",
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/Fox",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/Fox",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "Fox",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/Fox/LICENSE.md",
+					"bytes": 1061,
+					"sha256": "9ddaa2edd6a8f72117eec9709d38cd7d284f61f77752d342c32c828e61f78eae"
+				},
+				{
+					"path": "sources/khronos/Fox/glTF-Binary/Fox.glb",
+					"bytes": 162852,
+					"sha256": "d97044e701822bac5a62696459b27d7b375aada5de8574ed4362edbba94771f7"
+				},
+				{
+					"path": "sources/khronos/Fox/metadata.json",
+					"bytes": 1430,
+					"sha256": "1d888d832b5eb2a32a461ae6d5e2bc00f925e3a571c1447842466d2061800604"
+				}
+			]
+		},
+		{
+			"id": "khronos/RiggedSimple",
+			"title": "Rigged Simple",
+			"purpose": "Two-joint skin, with a Draco-compressed copy for the Draco reader",
+			"authors": [
+				{
+					"name": "Cesium"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/RiggedSimple",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary and glTF-Draco variants, the licence file and the metadata file.",
+			"dir": "sources/khronos/RiggedSimple",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "RiggedSimple",
+				"variants": [
+					"glTF-Binary",
+					"glTF-Draco"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/RiggedSimple/LICENSE.md",
+					"bytes": 781,
+					"sha256": "4343fbd97e5ecfc4c872a85cb1d755a3006f8848e15135fd6c4534839909bdbb"
+				},
+				{
+					"path": "sources/khronos/RiggedSimple/glTF-Binary/RiggedSimple.glb",
+					"bytes": 15104,
+					"sha256": "3a79dabb67bb0cd598a18d08b954d9d357c27c30672f82ef5d3f4e7fe6ca3401"
+				},
+				{
+					"path": "sources/khronos/RiggedSimple/glTF-Draco/RiggedSimple.gltf",
+					"bytes": 7550,
+					"sha256": "ef345d43419377a4a1c255b1a779723e3d2d3b4321ee33b1f9833840306d5449"
+				},
+				{
+					"path": "sources/khronos/RiggedSimple/glTF-Draco/RiggedSimple0.bin",
+					"bytes": 4520,
+					"sha256": "c0196c3e1d642ea4d78898c0b4e9b1644828a2083145264fb5f9b18b0fb29229"
+				},
+				{
+					"path": "sources/khronos/RiggedSimple/metadata.json",
+					"bytes": 652,
+					"sha256": "ba12c1f9a24124bdfbd171528db2eece6edbb7c75a7192dadfb043212067c664"
+				}
+			]
+		},
+		{
+			"id": "khronos/RiggedFigure",
+			"title": "Rigged Figure",
+			"purpose": "Skinned figure with a walk clip",
+			"authors": [
+				{
+					"name": "Cesium"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/RiggedFigure",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/RiggedFigure",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "RiggedFigure",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/RiggedFigure/LICENSE.md",
+					"bytes": 781,
+					"sha256": "afceec2b160486a648e06fe1b5ce0305fecff2980885618cd7591fc3d504ffe3"
+				},
+				{
+					"path": "sources/khronos/RiggedFigure/glTF-Binary/RiggedFigure.glb",
+					"bytes": 50116,
+					"sha256": "d6be85417d3e256861ee733eea6916093a7af7c79c16366181fd8abcaeb38cf5"
+				},
+				{
+					"path": "sources/khronos/RiggedFigure/metadata.json",
+					"bytes": 618,
+					"sha256": "9ee417e4a2fd3710e3584abf96dfc7e6e6b770a7dc256c9b3cb994bda6584f1a"
+				}
+			]
+		},
+		{
+			"id": "khronos/SimpleSkin",
+			"title": "Simple Skin",
+			"purpose": "The smallest skin, with its data in data URIs",
+			"authors": [
+				{
+					"name": "Marco Hutter (https://github.com/javagl/)"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/SimpleSkin",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Embedded variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/SimpleSkin",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "SimpleSkin",
+				"variants": [
+					"glTF-Embedded"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/SimpleSkin/LICENSE.md",
+					"bytes": 773,
+					"sha256": "92caa6f47943c19aaaf413af6e2c201d8dbeebf91e643166edf63b262f988c38"
+				},
+				{
+					"path": "sources/khronos/SimpleSkin/glTF-Embedded/SimpleSkin.gltf",
+					"bytes": 3566,
+					"sha256": "7d0c3f48d0510d101269cb4fdd3ee035eaada0e04809a0899e0b4cfe8c38e68f"
+				},
+				{
+					"path": "sources/khronos/SimpleSkin/metadata.json",
+					"bytes": 683,
+					"sha256": "4b55cd46f47884119db596f29fc8026ac01af65009503495abf380d0f9bc8600"
+				}
+			]
+		},
+		{
+			"id": "khronos/RecursiveSkeletons",
+			"title": "Recursive Skeletons",
+			"purpose": "Reused meshes and nested skeletons",
+			"authors": [
+				{
+					"name": "Cesium"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/RecursiveSkeletons",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/RecursiveSkeletons",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "RecursiveSkeletons",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/RecursiveSkeletons/LICENSE.md",
+					"bytes": 787,
+					"sha256": "86c7c3d6f200b19367d74055b6c62057028213777107d56ebd81cb18b237c02a"
+				},
+				{
+					"path": "sources/khronos/RecursiveSkeletons/glTF-Binary/RecursiveSkeletons.glb",
+					"bytes": 561620,
+					"sha256": "15fb11ee4d3b31735efe7dc776a31e8fa67568ea148a3315442970303675b641"
+				},
+				{
+					"path": "sources/khronos/RecursiveSkeletons/metadata.json",
+					"bytes": 698,
+					"sha256": "b6a471a5bdf530766edd298f7c61a1eae9c23b93713665fa3e5de4ec51073f1c"
+				}
+			]
+		},
+		{
+			"id": "khronos/InterpolationTest",
+			"title": "Interpolation Test",
+			"purpose": "Step, linear and cubic spline keys",
+			"authors": [
+				{
+					"name": "Khronos"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/InterpolationTest",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/InterpolationTest",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "InterpolationTest",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/InterpolationTest/LICENSE.md",
+					"bytes": 780,
+					"sha256": "460dc48df028a478d94aee1b8451132135cebdea15065bbd6d81dae1808b0dcb"
+				},
+				{
+					"path": "sources/khronos/InterpolationTest/glTF-Binary/InterpolationTest.glb",
+					"bytes": 7952,
+					"sha256": "a86eb331b4a083715e75fe19a1f747eac5692d5b9ff120f1eaa457c23ba72bca"
+				},
+				{
+					"path": "sources/khronos/InterpolationTest/metadata.json",
+					"bytes": 659,
+					"sha256": "f4615f0cfa501c3d5eb6e40ceed90bf2112b4b478be241fb82e7264f38956e91"
+				}
+			]
+		},
+		{
+			"id": "khronos/BoxAnimated",
+			"title": "Box Animated",
+			"purpose": "Node translation and rotation clips",
+			"authors": [
+				{
+					"name": "Cesium"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/BoxAnimated",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/BoxAnimated",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "BoxAnimated",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/BoxAnimated/LICENSE.md",
+					"bytes": 780,
+					"sha256": "61f933788315aa5fea2023ff1c8e4350012f8bf57e9161f23291cbddb7b4d355"
+				},
+				{
+					"path": "sources/khronos/BoxAnimated/glTF-Binary/BoxAnimated.glb",
+					"bytes": 11944,
+					"sha256": "ad0d18d9a21df0d7c2bd3890e60ce69d60d39a55d9b82bacea7e77ac9e583839"
+				},
+				{
+					"path": "sources/khronos/BoxAnimated/metadata.json",
+					"bytes": 670,
+					"sha256": "5479d9a1ac19374e64f31f7cb8d65f61e5785f65185100e4cd72c9e3f95d938c"
+				}
+			]
+		},
+		{
+			"id": "khronos/AnimatedMorphCube",
+			"title": "Animated Morph Cube",
+			"purpose": "Two morph targets and a weights clip, with a KHR_mesh_quantization copy",
+			"authors": [
+				{
+					"name": "Microsoft"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/AnimatedMorphCube",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary and glTF-Quantized variants, the licence file and the metadata file.",
+			"dir": "sources/khronos/AnimatedMorphCube",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "AnimatedMorphCube",
+				"variants": [
+					"glTF-Binary",
+					"glTF-Quantized"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/AnimatedMorphCube/LICENSE.md",
+					"bytes": 781,
+					"sha256": "158a0614b84cd26077483730bd105ee62d5a8db2a7e4267db911c77a2ee0717c"
+				},
+				{
+					"path": "sources/khronos/AnimatedMorphCube/glTF-Binary/AnimatedMorphCube.glb",
+					"bytes": 6752,
+					"sha256": "214ee56160a50dbf22543a1d66dbf860986e87f0efac3d89feac1359d0e6aeab"
+				},
+				{
+					"path": "sources/khronos/AnimatedMorphCube/glTF-Quantized/AnimatedMorphCube.bin",
+					"bytes": 1700,
+					"sha256": "bde22d01f34dd8f5d83cfbb20a1a6d117ec48596157df5d484a58eba13cdff51"
+				},
+				{
+					"path": "sources/khronos/AnimatedMorphCube/glTF-Quantized/AnimatedMorphCube.gltf",
+					"bytes": 4072,
+					"sha256": "ff514453beb4b2130fe4c0857a71f8af568a86258f814b4c7b9ac9a55722a850"
+				},
+				{
+					"path": "sources/khronos/AnimatedMorphCube/metadata.json",
+					"bytes": 717,
+					"sha256": "53ec35a6148f1fa25936f092a050d821590f597cc3f67050e1b3a9812be4e572"
+				}
+			]
+		},
+		{
+			"id": "khronos/MorphStressTest",
+			"title": "Morph Stress Test",
+			"purpose": "Eight morph targets on one mesh",
+			"authors": [
+				{
+					"name": "Ed Mackey"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/MorphStressTest",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/MorphStressTest",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "MorphStressTest",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/MorphStressTest/LICENSE.md",
+					"bytes": 785,
+					"sha256": "7f77d7751fb91d2e07899147ac1a4aaa380768dd1ec3d3716765591c59209750"
+				},
+				{
+					"path": "sources/khronos/MorphStressTest/glTF-Binary/MorphStressTest.glb",
+					"bytes": 575900,
+					"sha256": "005f1d9dd938c553a506d6bf3d21830fc3f2ec3a199d9332e9a625baf7342bef"
+				},
+				{
+					"path": "sources/khronos/MorphStressTest/metadata.json",
+					"bytes": 657,
+					"sha256": "e2adc276eb6b32aef255c72ca610bd754f870794591f0444a0349e455da51d09"
+				}
+			]
+		},
+		{
+			"id": "khronos/MorphPrimitivesTest",
+			"title": "Morph-Primitives Test",
+			"purpose": "One morph target across several primitives",
+			"authors": [
+				{
+					"name": "ft-lab",
+					"role": "everything",
+					"license": "CC-BY-4.0"
+				},
+				{
+					"name": "Frank Galligan",
+					"role": "dRACO compression",
+					"license": "CC-BY-4.0"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/MorphPrimitivesTest",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/MorphPrimitivesTest",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "MorphPrimitivesTest",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/MorphPrimitivesTest/LICENSE.md",
+					"bytes": 937,
+					"sha256": "1833fb1fc75ec566bab1a3c447fcbb33b3237953003f933692b99aea945633bc"
+				},
+				{
+					"path": "sources/khronos/MorphPrimitivesTest/glTF-Binary/MorphPrimitivesTest.glb",
+					"bytes": 53656,
+					"sha256": "2a5ed6470aca41edc813ef5b7eecf2af53264d8e0ab9e6f32156d54245ca18cf"
+				},
+				{
+					"path": "sources/khronos/MorphPrimitivesTest/metadata.json",
+					"bytes": 1056,
+					"sha256": "e15831978da4df13b792f746773b0a3c464cabf26026134bc06b4940b7e9051a"
+				}
+			]
+		},
+		{
+			"id": "khronos/SimpleMorph",
+			"title": "Simple Morph",
+			"purpose": "The smallest morph target, with its data in data URIs",
+			"authors": [
+				{
+					"name": "Marco Hutter (https://github.com/javagl/)"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/SimpleMorph",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Embedded variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/SimpleMorph",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "SimpleMorph",
+				"variants": [
+					"glTF-Embedded"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/SimpleMorph/LICENSE.md",
+					"bytes": 774,
+					"sha256": "47bab60daed29bd8e23aa7390b1c1823afa871898c5adafaf94afe0e37d7c6a8"
+				},
+				{
+					"path": "sources/khronos/SimpleMorph/glTF-Embedded/SimpleMorph.gltf",
+					"bytes": 3000,
+					"sha256": "0ff029b843d95d3f162a67c84e2d04c7fc76218e53a0cc8c85ca2323d5f82758"
+				},
+				{
+					"path": "sources/khronos/SimpleMorph/metadata.json",
+					"bytes": 668,
+					"sha256": "757760d8027827793900dad36325a3870e220c06d38481a02cc5443794be92b5"
+				}
+			]
+		},
+		{
+			"id": "khronos/TextureTransformTest",
+			"title": "Texture Transform Test",
+			"purpose": "KHR_texture_transform, as a .gltf file with separate images",
+			"authors": [
+				{
+					"name": "Microsoft"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/TextureTransformTest",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/TextureTransformTest",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "TextureTransformTest",
+				"variants": [
+					"glTF"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/TextureTransformTest/LICENSE.md",
+					"bytes": 784,
+					"sha256": "93e698e0f4c7bca4f51e71a3b989acc488be5e069ed724074ae58947ced3ff83"
+				},
+				{
+					"path": "sources/khronos/TextureTransformTest/glTF/Arrow.png",
+					"bytes": 867,
+					"sha256": "5df5b251fed0ac306cf859a30b59a4953d152483a4bed2b84e5bba1c667a1e64"
+				},
+				{
+					"path": "sources/khronos/TextureTransformTest/glTF/Correct.png",
+					"bytes": 2457,
+					"sha256": "3a14b12635ebbcee3ea427fbdb4d20da73e4740ec7a51683d700a2d6b4b7861a"
+				},
+				{
+					"path": "sources/khronos/TextureTransformTest/glTF/Error.png",
+					"bytes": 2273,
+					"sha256": "8d1032ef535a5c379bf78f9f565d3180ee3fc2d1cfef6892dee6e567728b619c"
+				},
+				{
+					"path": "sources/khronos/TextureTransformTest/glTF/NotSupported.png",
+					"bytes": 3291,
+					"sha256": "1fbdeca7e5c105d677a39578e4bab82b89c8aa9f406ee681ede05635ea0f8c74"
+				},
+				{
+					"path": "sources/khronos/TextureTransformTest/glTF/TextureTransformTest.bin",
+					"bytes": 136,
+					"sha256": "d0cdd23f2fa0996a0db99d4932fb9912a51a34e27c8bf832d072dc856ee9a7af"
+				},
+				{
+					"path": "sources/khronos/TextureTransformTest/glTF/TextureTransformTest.gltf",
+					"bytes": 9179,
+					"sha256": "c22c8c6c96c0ea4bcbb9b47ea245a093c5ef59acc5fd425effa4c00da4cdf164"
+				},
+				{
+					"path": "sources/khronos/TextureTransformTest/glTF/UV.png",
+					"bytes": 12345,
+					"sha256": "ac37ff52fe06a4c8c35ad4e1e7e8da039dfa8afc9b629d40a44ca8b8cfe9d03d"
+				},
+				{
+					"path": "sources/khronos/TextureTransformTest/metadata.json",
+					"bytes": 694,
+					"sha256": "4f72fabbb7ac82a01375edfa3fce0a70e68e05ab905752af18d4566dc0f12f51"
+				}
+			]
+		},
+		{
+			"id": "khronos/TextureTransformMultiTest",
+			"title": "Texture Transform Multi Test",
+			"purpose": "KHR_texture_transform on several texture slots",
+			"authors": [
+				{
+					"name": "Ed Mackey"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/TextureTransformMultiTest",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/TextureTransformMultiTest",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "TextureTransformMultiTest",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/TextureTransformMultiTest/LICENSE.md",
+					"bytes": 796,
+					"sha256": "81450598807e7862bf1f261783addaea69f0ab1090470b9982fe2167db2f1320"
+				},
+				{
+					"path": "sources/khronos/TextureTransformMultiTest/glTF-Binary/TextureTransformMultiTest.glb",
+					"bytes": 388264,
+					"sha256": "569aedb53822d5721e7e06af5983348683d4b2ffb1d469338ad4f02bf6a74911"
+				},
+				{
+					"path": "sources/khronos/TextureTransformMultiTest/metadata.json",
+					"bytes": 732,
+					"sha256": "d36631307904abeb75451401ea0723e5aa2dde5ebb47ab59559e1ff9d739024f"
+				}
+			]
+		},
+		{
+			"id": "khronos/UnlitTest",
+			"title": "Unlit Test",
+			"purpose": "KHR_materials_unlit",
+			"authors": [
+				{
+					"name": "Ed Mackey"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/UnlitTest",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/UnlitTest",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "UnlitTest",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/UnlitTest/LICENSE.md",
+					"bytes": 778,
+					"sha256": "3093b96a6ac307a5e95d6e4f1097d977d1c514067fcae5b96d1b44c459d7187f"
+				},
+				{
+					"path": "sources/khronos/UnlitTest/glTF-Binary/UnlitTest.glb",
+					"bytes": 3992,
+					"sha256": "e07b68c6fd9fbf73d372c610a681b89d6b013bdd1a506e46a411df82210a2481"
+				},
+				{
+					"path": "sources/khronos/UnlitTest/metadata.json",
+					"bytes": 686,
+					"sha256": "16071d7dadf9b63d69a6e8fb34af86828cbb5f0ed807de6e0645f26808eee693"
+				}
+			]
+		},
+		{
+			"id": "khronos/EmissiveStrengthTest",
+			"title": "Emissive Strength Test",
+			"purpose": "KHR_materials_emissive_strength",
+			"authors": [
+				{
+					"name": "Ed Mackey"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/EmissiveStrengthTest",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/EmissiveStrengthTest",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "EmissiveStrengthTest",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/EmissiveStrengthTest/LICENSE.md",
+					"bytes": 790,
+					"sha256": "9c35d0375eb3052e456ecbd63f3725f2cfd194602ba2387e28213e74a83dedf6"
+				},
+				{
+					"path": "sources/khronos/EmissiveStrengthTest/glTF-Binary/EmissiveStrengthTest.glb",
+					"bytes": 10668,
+					"sha256": "074898ec4c3636230faffe0cacac7403c3f6135db61f943da28ffaa88ca2a39f"
+				},
+				{
+					"path": "sources/khronos/EmissiveStrengthTest/metadata.json",
+					"bytes": 699,
+					"sha256": "eca4bb70f70c57785d9e61108b8923ad9f4121cdc731fd348e22764891e19eda"
+				}
+			]
+		},
+		{
+			"id": "khronos/LightsPunctualLamp",
+			"title": "Lamp with Punctual Lights",
+			"purpose": "KHR_lights_punctual: spot and point lights in a lamp",
+			"authors": [
+				{
+					"name": "DGG"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/LightsPunctualLamp",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/LightsPunctualLamp",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "LightsPunctualLamp",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/LightsPunctualLamp/LICENSE.md",
+					"bytes": 793,
+					"sha256": "5c86cf5fda539fceeec9eaaa1e0527defc00704d8c1a12d6122fcc39dbaedac3"
+				},
+				{
+					"path": "sources/khronos/LightsPunctualLamp/glTF-Binary/LightsPunctualLamp.glb",
+					"bytes": 4341320,
+					"sha256": "b9a95cd0e17dea5284117e54807b49b746960038457a31a0011b9344acc11104"
+				},
+				{
+					"path": "sources/khronos/LightsPunctualLamp/metadata.json",
+					"bytes": 644,
+					"sha256": "6e489fce8fd96eca57669d760550becc84973de9a1f9c765d301537502c8e0aa"
+				}
+			]
+		},
+		{
+			"id": "khronos/PointLightIntensityTest",
+			"title": "Point Light Intensity Test",
+			"purpose": "KHR_lights_punctual: point light intensity against lamp colour",
+			"authors": [
+				{
+					"name": "Ed Mackey"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/PointLightIntensityTest",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/PointLightIntensityTest",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "PointLightIntensityTest",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/PointLightIntensityTest/LICENSE.md",
+					"bytes": 788,
+					"sha256": "2f6d2d291f814a7be89820a52e75719f8f0e80a4eb27f3934ec0fcdc3e4f6653"
+				},
+				{
+					"path": "sources/khronos/PointLightIntensityTest/glTF-Binary/PointLightIntensityTest.glb",
+					"bytes": 30148,
+					"sha256": "025ea8e44840a88ded75fe0665f693a14558d345c2955b054aec4edbaa23a341"
+				},
+				{
+					"path": "sources/khronos/PointLightIntensityTest/metadata.json",
+					"bytes": 687,
+					"sha256": "727acf73e12e52d2814e673c8f82acd900c81e198c2e25e8a56c5c8fac4795ea"
+				}
+			]
+		},
+		{
+			"id": "khronos/DirectionalLight",
+			"title": "Directional Light",
+			"purpose": "KHR_lights_punctual: a directional light",
+			"authors": [
+				{
+					"name": "Rickard Sahlin"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/DirectionalLight",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/DirectionalLight",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "DirectionalLight",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/DirectionalLight/LICENSE.md",
+					"bytes": 779,
+					"sha256": "4be1e0f745df417ac2fa2aaf91bb614dee22ed5a0b7e886382ad000926c2c07d"
+				},
+				{
+					"path": "sources/khronos/DirectionalLight/glTF-Binary/DirectionalLight.glb",
+					"bytes": 453520,
+					"sha256": "82e50feb151203f431a3b43985e9f4b2a54131b61a7a8677954922630d90f3de"
+				},
+				{
+					"path": "sources/khronos/DirectionalLight/metadata.json",
+					"bytes": 630,
+					"sha256": "39bce2187719dea1409a39e422b35b5f206300eea72150b80fbec08a0b810ea5"
+				}
+			]
+		},
+		{
+			"id": "khronos/SimpleInstancing",
+			"title": "Simple Instancing",
+			"purpose": "EXT_mesh_gpu_instancing",
+			"authors": [
+				{
+					"name": "Marco Hutter (https://github.com/javagl/)"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/SimpleInstancing",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/SimpleInstancing",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "SimpleInstancing",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/SimpleInstancing/LICENSE.md",
+					"bytes": 779,
+					"sha256": "bcf3b5efc3cffc3471dc2aafbd6ce3c2d91375976ef8c785d9b36e910615bb02"
+				},
+				{
+					"path": "sources/khronos/SimpleInstancing/glTF-Binary/SimpleInstancing.glb",
+					"bytes": 7356,
+					"sha256": "1c9425627481346a8c226118f7000db7cd7f80198e9f54331f8b664d16726f3f"
+				},
+				{
+					"path": "sources/khronos/SimpleInstancing/metadata.json",
+					"bytes": 701,
+					"sha256": "393640141df6726895e59ac2029f0f6165d8dfe840619f7a9ee11041e8dc5dc8"
+				}
+			]
+		},
+		{
+			"id": "khronos/MeshoptCubeTest",
+			"title": "Meshopt Cube Test",
+			"purpose": "KHR_meshopt_compression, with its uncompressed twin",
+			"authors": [
+				{
+					"name": "Arseny Kapoulkine"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/MeshoptCubeTest",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Meshopt and glTF variants, the licence file and the metadata file.",
+			"dir": "sources/khronos/MeshoptCubeTest",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "MeshoptCubeTest",
+				"variants": [
+					"glTF-Meshopt",
+					"glTF"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/MeshoptCubeTest/LICENSE.md",
+					"bytes": 779,
+					"sha256": "e1bc648cc7d7c387332d82e73431b7e0c79ac40fbae051d2bedeefcaee769c0d"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF-Meshopt/MeshoptCubeTest.bin",
+					"bytes": 10528,
+					"sha256": "6578c1d82c5cc2b228e9513e37f348ca89cdb24b5985aa0567efef8d3c014360"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF-Meshopt/MeshoptCubeTest.gltf",
+					"bytes": 68034,
+					"sha256": "b5947609f3d8aba58de3d43101df3b635ffaaab5849431f8518af6a98a040433"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF-Meshopt/col0.png",
+					"bytes": 1511,
+					"sha256": "250410286de74c532ee877b51b039228742a2e4d7fd611dce29230e841ab75f7"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF-Meshopt/col1.png",
+					"bytes": 1563,
+					"sha256": "10a6db3432385dceaacb15a66f94ce79c6c2460d9b1ef1f25c3399bd2d0ee521"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF-Meshopt/col2.png",
+					"bytes": 1458,
+					"sha256": "28f15b21a88b213315e13cdcb7914007934e69f3ed8b8dc9495f469d865d57e7"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF-Meshopt/col3.png",
+					"bytes": 1586,
+					"sha256": "d518c528b85d9c2c5915c5822b152ac8c162da1bc11a9581e5486d53ebaeb11a"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF-Meshopt/col4.png",
+					"bytes": 1062,
+					"sha256": "8f5659a0451392c567217b432a6c83f65a6c22eb3a225e853daa45ec847abdb3"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF-Meshopt/row0.png",
+					"bytes": 1568,
+					"sha256": "a26715d56e91e83b19e336174494bd3e39cfc3a5f1b6f1166951a9ec38bf6baa"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF-Meshopt/row1.png",
+					"bytes": 3268,
+					"sha256": "8b005615419b1efb98d3cce2fd9529fc53bd34337a317aece8cd4a7558053ec4"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF-Meshopt/row2.png",
+					"bytes": 3324,
+					"sha256": "b4e1d53d2a5492adc2d148b19b421733fb23edf1a0aded6fea1ec11c710f11b0"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF-Meshopt/row3.png",
+					"bytes": 3026,
+					"sha256": "ae96accde34a0a35ffe63a2fa4f777eaeacf6d3157e6ef69ba5da285949d7f77"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF-Meshopt/row4.png",
+					"bytes": 2884,
+					"sha256": "689cf0ae16c22125a4a1ad44e0431aed1a92a101def096161d133ec56906bca3"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF/MeshoptCubeTest.bin",
+					"bytes": 10528,
+					"sha256": "6578c1d82c5cc2b228e9513e37f348ca89cdb24b5985aa0567efef8d3c014360"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF/MeshoptCubeTest.gltf",
+					"bytes": 68047,
+					"sha256": "8721150e3409425acf83aa21986e55880360ab084c17e96409c25fac53477f72"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF/MeshoptCubeTestFallback.bin",
+					"bytes": 9984,
+					"sha256": "8d3d779653780e85a75eda988110ab235ea85cd3d174361ffb318c6b657dee07"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF/col0.png",
+					"bytes": 1511,
+					"sha256": "250410286de74c532ee877b51b039228742a2e4d7fd611dce29230e841ab75f7"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF/col1.png",
+					"bytes": 1563,
+					"sha256": "10a6db3432385dceaacb15a66f94ce79c6c2460d9b1ef1f25c3399bd2d0ee521"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF/col2.png",
+					"bytes": 1458,
+					"sha256": "28f15b21a88b213315e13cdcb7914007934e69f3ed8b8dc9495f469d865d57e7"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF/col3.png",
+					"bytes": 1586,
+					"sha256": "d518c528b85d9c2c5915c5822b152ac8c162da1bc11a9581e5486d53ebaeb11a"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF/col4.png",
+					"bytes": 1062,
+					"sha256": "8f5659a0451392c567217b432a6c83f65a6c22eb3a225e853daa45ec847abdb3"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF/row0.png",
+					"bytes": 1568,
+					"sha256": "a26715d56e91e83b19e336174494bd3e39cfc3a5f1b6f1166951a9ec38bf6baa"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF/row1.png",
+					"bytes": 3268,
+					"sha256": "8b005615419b1efb98d3cce2fd9529fc53bd34337a317aece8cd4a7558053ec4"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF/row2.png",
+					"bytes": 3324,
+					"sha256": "b4e1d53d2a5492adc2d148b19b421733fb23edf1a0aded6fea1ec11c710f11b0"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF/row3.png",
+					"bytes": 3026,
+					"sha256": "ae96accde34a0a35ffe63a2fa4f777eaeacf6d3157e6ef69ba5da285949d7f77"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/glTF/row4.png",
+					"bytes": 2884,
+					"sha256": "689cf0ae16c22125a4a1ad44e0431aed1a92a101def096161d133ec56906bca3"
+				},
+				{
+					"path": "sources/khronos/MeshoptCubeTest/metadata.json",
+					"bytes": 672,
+					"sha256": "8c0754180256099118dd9cfe9e49bc4673ef5d6f9a813a992824c4ba5de43f48"
+				}
+			]
+		},
+		{
+			"id": "khronos/StainedGlassLamp",
+			"title": "Stained Glass Lamp",
+			"purpose": "KHR_texture_basisu: KTX2 textures from another encoder",
+			"authors": [
+				{
+					"name": "Eric Chadwick"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/StainedGlassLamp",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-KTX-BasisU variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/StainedGlassLamp",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "StainedGlassLamp",
+				"variants": [
+					"glTF-KTX-BasisU"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/StainedGlassLamp/LICENSE.md",
+					"bytes": 786,
+					"sha256": "c9163eb0dfd1a33fd154b44f910e3f57fb0a39ba0228479f7b95dc31975bce60"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp.bin",
+					"bytes": 1847592,
+					"sha256": "7873a6f30835589b3b6fc3b0d749b8fe80f1ea29f4f170fba6d8ac11083d9397"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp.gltf",
+					"bytes": 31509,
+					"sha256": "4157e692bb4b7fb9bc5ac59d972d2f77700955b141464642b43b13a4ac726fb8"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_base_basecolor.ktx2",
+					"bytes": 303936,
+					"sha256": "0b8d3376f0f1dc58b804756256a3b38ae6279b6aeb22ba24475ee9eaeb867daa"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_base_emissive.ktx2",
+					"bytes": 174821,
+					"sha256": "a354583d8f7e6605a57797d3d70a1b6032b416380f5782654f8fcaad4ec59658"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_base_normal.ktx2",
+					"bytes": 282290,
+					"sha256": "ed9e50d14137ee380095ec108050ad828025abd68521bae9ff8598752c0ec8b2"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_base_occlusion-rough-metal.ktx2",
+					"bytes": 919576,
+					"sha256": "b5d9e7021a9f2c7a0403000e8a8c7e4e806a97647f409c76441b7395f638382f"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_bulbs_occlusion.ktx2",
+					"bytes": 26976,
+					"sha256": "54c646ddc5bcdbe5bcdeed17c22e47bfde61fba43739c395e656a9defd3807ee"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_glass_basecolor-alpha.ktx2",
+					"bytes": 1779325,
+					"sha256": "c29e86278b417f34d9221f509cb21b30348364905f875db7914fed102f64cdc8"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_glass_emissive.ktx2",
+					"bytes": 541399,
+					"sha256": "dcf80976e11ac51b2bac8f34a697e9f6392c2b4065e9c053d2dbc024b4a97976"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_glass_normal.ktx2",
+					"bytes": 1563379,
+					"sha256": "1444cc1ae65d2b3a8b84c7d82dc0d179de7deef8608a7a4e32dc837546392f1d"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_glass_occlusion-rough-metal.ktx2",
+					"bytes": 503612,
+					"sha256": "7d7f1aa17aff14d025320eb6062964bc59764e42f2218e42ec0d4feacd223ced"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_glass_transmission-clearcoat.ktx2",
+					"bytes": 439778,
+					"sha256": "ea3fff36824c0d4715a87d84fc7e4caaee74381e5b19b69e031bfb94f831a9da"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_grill_basecolor-alpha.ktx2",
+					"bytes": 217120,
+					"sha256": "1ad2e5f610b99ea673ea332818d4a43413808253966266436cbfba810c62dd42"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_grill_emissive.ktx2",
+					"bytes": 29183,
+					"sha256": "bb90c9fa9ae0666666e18e91155e3c812b25509d54f7f05c28bd3572de1eef86"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_grill_normal.ktx2",
+					"bytes": 780467,
+					"sha256": "9123bdcb18e8bc04be404dc6cb72b90b33f715306b58035084d22e1b066c4c26"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_grill_occlusion-rough-metal.ktx2",
+					"bytes": 590811,
+					"sha256": "99c46448580ad86a5cf503437bb530f90391abdb3a736d18dd789f24efc0d8ab"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_hardware_basecolor.ktx2",
+					"bytes": 17224,
+					"sha256": "f96c1526e96abd9c19bba3667cc08aeec529f73e0fccfb9d5cb37be41c791c2f"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_hardware_emissive.ktx2",
+					"bytes": 59008,
+					"sha256": "a3e32214faaddc3de6c747e466c279e72b308c8c2618918d28a9e443b78414c5"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_hardware_normal.ktx2",
+					"bytes": 112123,
+					"sha256": "b89f5e1e15949442af898f0af5670ac993d903ee8a99aee3cb3bd4792525fa7e"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_hardware_occlusion-rough-metal.ktx2",
+					"bytes": 210306,
+					"sha256": "c296f1794f96c79dbfa05211dd0a77d962d02e05277c0adee0fadc0d6948d045"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp_steel_occlusion.ktx2",
+					"bytes": 44947,
+					"sha256": "a391ac6160d7d07a7922e16541a5d6eb4aab39282e3e7c96a01a66a1d203af26"
+				},
+				{
+					"path": "sources/khronos/StainedGlassLamp/metadata.json",
+					"bytes": 708,
+					"sha256": "d02486c4e0823b481fa39c2490ecf03a4123d26f2469b62ded544b4e71fe0d3a"
+				}
+			]
+		},
+		{
+			"id": "khronos/MetalRoughSpheres",
+			"title": "Metal-Rough Spheres",
+			"purpose": "Metalness and roughness steps, texture mapped",
+			"authors": [
+				{
+					"name": "Ed Mackey"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/MetalRoughSpheres",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/MetalRoughSpheres",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "MetalRoughSpheres",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/MetalRoughSpheres/LICENSE.md",
+					"bytes": 787,
+					"sha256": "3fb5f670bda1b4a02382c61a92cfd3f85ff744dffa3cd203ec0fc734ab8623fc"
+				},
+				{
+					"path": "sources/khronos/MetalRoughSpheres/glTF-Binary/MetalRoughSpheres.glb",
+					"bytes": 11221356,
+					"sha256": "450c05557b0823a10835e32c05caf77a7b175eba94516555c1c9bb084f563f01"
+				},
+				{
+					"path": "sources/khronos/MetalRoughSpheres/metadata.json",
+					"bytes": 691,
+					"sha256": "4b92b82e4c4f386b13a35f0dea8e01e99474ec022d37e88617d81f825c760df2"
+				}
+			]
+		},
+		{
+			"id": "khronos/AlphaBlendModeTest",
+			"title": "Alpha Blend Mode Test",
+			"purpose": "Opaque, mask and blend alpha modes",
+			"authors": [
+				{
+					"name": "Ed Mackey"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/AlphaBlendModeTest",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/AlphaBlendModeTest",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "AlphaBlendModeTest",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/AlphaBlendModeTest/LICENSE.md",
+					"bytes": 789,
+					"sha256": "9f7fca74f2c1da063520099e41854e237cd0874a7a0bcfb5b93f1d0e6d9ce268"
+				},
+				{
+					"path": "sources/khronos/AlphaBlendModeTest/glTF-Binary/AlphaBlendModeTest.glb",
+					"bytes": 2978812,
+					"sha256": "37c3577d143071b42dd46e9d942b157837eb25c6340112171d7faecaa987b14e"
+				},
+				{
+					"path": "sources/khronos/AlphaBlendModeTest/metadata.json",
+					"bytes": 667,
+					"sha256": "f4e4724b0d62c9e0663dc6f341026ac74fcc9471714bbb217a409c0b6448a1d2"
+				}
+			]
+		},
+		{
+			"id": "khronos/TextureCoordinateTest",
+			"title": "Texture Coordinate Test",
+			"purpose": "Texture coordinate orientation",
+			"authors": [
+				{
+					"name": "Ed Mackey"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/TextureCoordinateTest",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/TextureCoordinateTest",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "TextureCoordinateTest",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/TextureCoordinateTest/LICENSE.md",
+					"bytes": 785,
+					"sha256": "bf3b3f5a2c65a06c73cd5f89be8f99df78aeb9248d0f5759c99baeba72bc235f"
+				},
+				{
+					"path": "sources/khronos/TextureCoordinateTest/glTF-Binary/TextureCoordinateTest.glb",
+					"bytes": 14232,
+					"sha256": "fe75a63a0423c9a682bf46c3045b6328ae9c55abefc9a50adf3ec1d6dc6ea3b9"
+				},
+				{
+					"path": "sources/khronos/TextureCoordinateTest/metadata.json",
+					"bytes": 695,
+					"sha256": "c1ba8b8b4d8ba56de8a78e55d0b5eeb6dcf2732842c63a4297af15f57311b512"
+				}
+			]
+		},
+		{
+			"id": "khronos/TextureSettingsTest",
+			"title": "Texture Settings Test",
+			"purpose": "Samplers, wrap modes and double-sided materials",
+			"authors": [
+				{
+					"name": "Ed Mackey"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/TextureSettingsTest",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/TextureSettingsTest",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "TextureSettingsTest",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/TextureSettingsTest/LICENSE.md",
+					"bytes": 789,
+					"sha256": "40c4c4b0e904799d1ae45975ceb0c94c28956b5e444b72b3838ac7a75168dea7"
+				},
+				{
+					"path": "sources/khronos/TextureSettingsTest/glTF-Binary/TextureSettingsTest.glb",
+					"bytes": 42840,
+					"sha256": "44013a0602cbbdcaf703905ed47cc6b6fb49f067d7de0e1a0a568a5bbfa9d769"
+				},
+				{
+					"path": "sources/khronos/TextureSettingsTest/metadata.json",
+					"bytes": 691,
+					"sha256": "c47818c66a50e8b61389210bcc2c9c8bb27efcd050321194b5cb30a237d8b12f"
+				}
+			]
+		},
+		{
+			"id": "khronos/NegativeScaleTest",
+			"title": "Negative Scale Test",
+			"purpose": "Nodes with negative scale",
+			"authors": [
+				{
+					"name": "Ed Mackey"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/NegativeScaleTest",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/NegativeScaleTest",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "NegativeScaleTest",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/NegativeScaleTest/LICENSE.md",
+					"bytes": 787,
+					"sha256": "cd4ddad73c19a5d845bde25c9b054b15cd9d5304d9b50c5f78fe8eed2d290628"
+				},
+				{
+					"path": "sources/khronos/NegativeScaleTest/glTF-Binary/NegativeScaleTest.glb",
+					"bytes": 62568,
+					"sha256": "ea8c41fd0630f03adcf7a5c06bf86d7b850fa510b6f07cc51eb1fccc205a50f2"
+				},
+				{
+					"path": "sources/khronos/NegativeScaleTest/metadata.json",
+					"bytes": 701,
+					"sha256": "e4429546c7338513b616f51d410c59bce1bf68978a25b20aa4277ce9584f79b8"
+				}
+			]
+		},
+		{
+			"id": "khronos/VertexColorTest",
+			"title": "Vertex Color Test",
+			"purpose": "Vertex colours",
+			"authors": [
+				{
+					"name": "Ed Mackey"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/VertexColorTest",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/VertexColorTest",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "VertexColorTest",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/VertexColorTest/LICENSE.md",
+					"bytes": 785,
+					"sha256": "859f7439a84690448718853f70ac97be3e1ce80db969d9bebdfb5dcbd0147c05"
+				},
+				{
+					"path": "sources/khronos/VertexColorTest/glTF-Binary/VertexColorTest.glb",
+					"bytes": 26220,
+					"sha256": "58006bdcff8084339da0f6e24400160890638c16dbcb83c362ccaf150e8c6e10"
+				},
+				{
+					"path": "sources/khronos/VertexColorTest/metadata.json",
+					"bytes": 666,
+					"sha256": "a5a03cccac979c020b9bb66be3fee809b88aff5a1dd77cc781ea59d94d56389f"
+				}
+			]
+		},
+		{
+			"id": "khronos/BoomBox",
+			"title": "Boom Box",
+			"purpose": "Textured reference object with an emissive map",
+			"authors": [
+				{
+					"name": "Microsoft"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/BoomBox",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/BoomBox",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "BoomBox",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/BoomBox/LICENSE.md",
+					"bytes": 770,
+					"sha256": "0fbb151acb88aadda72f05c54c05429bfae2c8af0b0f1ddc0c636be3a55da4c0"
+				},
+				{
+					"path": "sources/khronos/BoomBox/glTF-Binary/BoomBox.glb",
+					"bytes": 10614184,
+					"sha256": "f8b918445ebdd006768232205a62f5182d2208ca57f84c6ccc084943c0bc8f15"
+				},
+				{
+					"path": "sources/khronos/BoomBox/metadata.json",
+					"bytes": 655,
+					"sha256": "6fdf2571e662907ba51b35ca303d616baca22ae5f8e689bfd2110ef06329236a"
+				}
+			]
+		},
+		{
+			"id": "characters/kaykit-knight",
+			"title": "KayKit Adventurers 1.0: Knight",
+			"purpose": "Crowd character: 41 joints and 76 clips",
+			"authors": [
+				{
+					"name": "Kay Lousberg"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0/tree/672074b73ba276876a19e8816ecdc5241817ab47",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the Knight in glTF binary form, which holds its texture, and the pack licence.",
+			"dir": "sources/characters/kaykit-knight",
+			"origin": {
+				"kind": "github",
+				"repo": "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
+				"commit": "672074b73ba276876a19e8816ecdc5241817ab47",
+				"files": {
+					"addons/kaykit_character_pack_adventures/Characters/gltf/Knight.glb": "Knight.glb",
+					"LICENSE.txt": "LICENSE.txt"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/characters/kaykit-knight/Knight.glb",
+					"bytes": 3659532,
+					"sha256": "60428e3abc09ba83e595d256e3af8c5c976b46cdae599f0802fc82b4a3445168"
+				},
+				{
+					"path": "sources/characters/kaykit-knight/LICENSE.txt",
+					"bytes": 891,
+					"sha256": "ae322141814056dda0deea7540d74c41d87aee1da319977cd1bd84ee5a923629"
+				}
+			]
+		},
+		{
+			"id": "city/kenney-commercial",
+			"title": "City Kit (Commercial) 2.1",
+			"purpose": "Shops and towers for the city",
+			"authors": [
+				{
+					"name": "Kenney"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://kenney.nl/assets/city-kit-commercial",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the GLB models, their colour map and the licence, and building-a in FBX and OBJ form for format conversion; left out the other files and the previews.",
+			"dir": "sources/city/kenney-commercial",
+			"origin": {
+				"kind": "zip",
+				"url": "https://kenney.nl/media/pages/assets/city-kit-commercial/a742d900eb-1753115042/kenney_city-kit-commercial_2.1.zip",
+				"files": {
+					"Models/GLB format/": "glb",
+					"License.txt": "License.txt",
+					"Models/FBX format/building-a.fbx": "fbx/building-a.fbx",
+					"Models/FBX format/Textures/colormap.png": "fbx/Textures/colormap.png",
+					"Models/OBJ format/building-a.obj": "obj/building-a.obj",
+					"Models/OBJ format/building-a.mtl": "obj/building-a.mtl",
+					"Models/OBJ format/Textures/colormap.png": "obj/Textures/colormap.png"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/city/kenney-commercial/License.txt",
+					"bytes": 708,
+					"sha256": "c38cee408d022e57e44e49f1cd655c2fe0dc881a07b881276b795215cdc0de69"
+				},
+				{
+					"path": "sources/city/kenney-commercial/fbx/Textures/colormap.png",
+					"bytes": 11002,
+					"sha256": "191bec3889aaaca5018380038fecc129ebb5c2182879a099b7b538b3fa050b5d"
+				},
+				{
+					"path": "sources/city/kenney-commercial/fbx/building-a.fbx",
+					"bytes": 56672,
+					"sha256": "3d383bdeb0ea180b703b92cd07ecdb01d6222703a378580437528868437c612d"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/Textures/colormap.png",
+					"bytes": 11002,
+					"sha256": "191bec3889aaaca5018380038fecc129ebb5c2182879a099b7b538b3fa050b5d"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-a.glb",
+					"bytes": 108936,
+					"sha256": "5cf220f90ee3f21e7abe38055ca409a48aa8ef1d5ffab6e2deb99e5a5e1ed5e0"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-b.glb",
+					"bytes": 106408,
+					"sha256": "3b5d3ac0799c024781d92bb15971d42f4f8e380554dc5cf6a40c2f07d948947a"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-c.glb",
+					"bytes": 102788,
+					"sha256": "f6887608a95a165503561730252c30506938803731c6546efca12bd47b1666bd"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-d.glb",
+					"bytes": 95160,
+					"sha256": "40605608e9aca0c98e294acff4af0f74afa417a51d589be490ca98f33ce4c2f5"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-e.glb",
+					"bytes": 128208,
+					"sha256": "edbe5b49858a3c83e72d3cf496129c06082ef3a3d6005769f8883138e275b456"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-f.glb",
+					"bytes": 148952,
+					"sha256": "633a25f7fb3ccf98e304a885a36ed900aecee5bde7ecd554729dec753cceea78"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-g.glb",
+					"bytes": 166356,
+					"sha256": "9a28fa2fdfac07492ee95589882213cfd6eb32d6752cb3b2f5404604c676d27a"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-h.glb",
+					"bytes": 127384,
+					"sha256": "6881613ce218bb33a0f56137d4d33b00d307c47e518fbb21ccba1083efbea896"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-i.glb",
+					"bytes": 209728,
+					"sha256": "3e572277d3eead30e24668a653ec6a11a488228a219d4902f08638cbca7c3dfe"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-j.glb",
+					"bytes": 440652,
+					"sha256": "eedc2690cda345b62351f03a218a817a6ad59f399c12e064ca5ff37333d059f5"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-k.glb",
+					"bytes": 246976,
+					"sha256": "afd36f573b9d6a6a890675aa0fbe762b29efb6258f322990752d79d9f0da42c6"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-l.glb",
+					"bytes": 290516,
+					"sha256": "0c3d1b346c142198b7f504d12b40cb1630bb14c3ff38a013922b700d09f9dcff"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-m.glb",
+					"bytes": 301004,
+					"sha256": "1cdc717ac86a0479043ff0d0146142f5dfc2622c0e3aaac484fad5807f94d580"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-n.glb",
+					"bytes": 341232,
+					"sha256": "35dc225d48516ead483a49e90dd164f1bc62b1ad75d3095488bd404cad1848b0"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-skyscraper-a.glb",
+					"bytes": 111336,
+					"sha256": "d8339bbb75944ff91d1ec9a70ec6dead71bd98b94a42d3dd0fc1f3b107ddbe85"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-skyscraper-b.glb",
+					"bytes": 138480,
+					"sha256": "3a383e8a0a8819023d30b2aee1c6f40fa6bc28990227a306a86e531f36c6b8d5"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-skyscraper-c.glb",
+					"bytes": 149524,
+					"sha256": "e73c357554f7561fedb8c1cbecf9d7163ba09ada264d661c59a0f0a180e0185f"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-skyscraper-d.glb",
+					"bytes": 167148,
+					"sha256": "5c524ec13be53fff85ace8b328bc2587cba4e93962230e4a0ba98998e53d30b5"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/building-skyscraper-e.glb",
+					"bytes": 101880,
+					"sha256": "21b58a2f2b18d6a7cf8915e8b947bdb6a6a0706da6cffb5a01677c29f03b5935"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/detail-awning-wide.glb",
+					"bytes": 5544,
+					"sha256": "d37ba34be414cef84db966e548e2c558088aec3fdf68763565b9caf95c11ac5f"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/detail-awning.glb",
+					"bytes": 5528,
+					"sha256": "386978daf81dc11ac601638f19a41918a391ff882a8c518ae5a3215a1bed4d8a"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/detail-overhang-wide.glb",
+					"bytes": 6716,
+					"sha256": "e94c5d603936a225c8d37650044cebdae99c112c49273dc19a3ee3fb2dca2bf0"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/detail-overhang.glb",
+					"bytes": 6704,
+					"sha256": "291b00c1f698296b50cf25c393777eee9547a4aa0f912efe73cb9789d104ba2b"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/detail-parasol-a.glb",
+					"bytes": 10320,
+					"sha256": "70e636bea8dc67c3bfd19b163333e824356118458c8c401017322ec43c10a7f7"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/detail-parasol-b.glb",
+					"bytes": 12120,
+					"sha256": "2d58c1d16df16f618afd9f7fd9f13e82791c50cd7cd77edaa493fbdd09e708d2"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/low-detail-building-a.glb",
+					"bytes": 14340,
+					"sha256": "c3986108805f0aa7e27e566f5052cb5e8d478417e267779e55ade583ea809a0a"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/low-detail-building-b.glb",
+					"bytes": 16336,
+					"sha256": "ef2ab63731c38a469df7f993c26b0e8137746f90ac20ed9485d61f48aa50fbdb"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/low-detail-building-c.glb",
+					"bytes": 12284,
+					"sha256": "91ea91b2399cbb94e9b2209e12823dc5b720affc7163f74e0cb8ee07faf62d85"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/low-detail-building-d.glb",
+					"bytes": 8716,
+					"sha256": "cca2c05bba22e1e33c5aeb3c4746843b61235cc75cb2c0269e9e0755b276f121"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/low-detail-building-e.glb",
+					"bytes": 8240,
+					"sha256": "48c9554b54c6a6089ebf7d8acd0186fe5936dfc1711cabebdd97ad918b340fba"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/low-detail-building-f.glb",
+					"bytes": 6932,
+					"sha256": "adc5b93981bb86aca9c7459e35920647039aa217d51705e445d4e699d2c54967"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/low-detail-building-g.glb",
+					"bytes": 16320,
+					"sha256": "f9bc2fe27ffc93689a317959542ad6d1c24aeeaa1efcfed59f7ba67423f65702"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/low-detail-building-h.glb",
+					"bytes": 26812,
+					"sha256": "6de95299129118224b739845202a6d6a688e3ca6f9f61c4b0fd04dba99a61e23"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/low-detail-building-i.glb",
+					"bytes": 11768,
+					"sha256": "e277aad27d3e98f5880ac65acee0ec1f68cc20e7fb28eed0a688afe48f6564ae"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/low-detail-building-j.glb",
+					"bytes": 16404,
+					"sha256": "a1291d4e277c45ee53fa5dc610490c54c302ab1cdc677b6b6b2ce31670f0423c"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/low-detail-building-k.glb",
+					"bytes": 7556,
+					"sha256": "36215b34b01de7a48a78b9cc344a577ed436e13596b59d2bcb01bab9f50aab5c"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/low-detail-building-l.glb",
+					"bytes": 12128,
+					"sha256": "6cc75bfa0e821db2997dca8a14d9f63c675de5987781c2ff0977b8a644d25fd5"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/low-detail-building-m.glb",
+					"bytes": 15112,
+					"sha256": "597d8c18ac63de895de66fc4fe0695bd9958d76ccb9b340ad0dfd1589666a22e"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/low-detail-building-n.glb",
+					"bytes": 5904,
+					"sha256": "8ab4dc2ed40e3f0c2d82eb9010b6e50a946dc07a3125e28568f0dfd12eae00bd"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/low-detail-building-wide-a.glb",
+					"bytes": 12736,
+					"sha256": "4687e3200e1aba16d333a169ca5f7e5489c05ffcaeb06b7159a82c77ea42b42b"
+				},
+				{
+					"path": "sources/city/kenney-commercial/glb/low-detail-building-wide-b.glb",
+					"bytes": 18736,
+					"sha256": "c082149c94ce9f6ae06969a7dbf4b3e92009cda8be90f1bcd5b89b9adcb1ce23"
+				},
+				{
+					"path": "sources/city/kenney-commercial/obj/Textures/colormap.png",
+					"bytes": 11002,
+					"sha256": "191bec3889aaaca5018380038fecc129ebb5c2182879a099b7b538b3fa050b5d"
+				},
+				{
+					"path": "sources/city/kenney-commercial/obj/building-a.mtl",
+					"bytes": 98,
+					"sha256": "45a6736aa344a0c7e286b9c43c6a48f25b6a2f78d8c5949e430c3b4a93b4e060"
+				},
+				{
+					"path": "sources/city/kenney-commercial/obj/building-a.obj",
+					"bytes": 101104,
+					"sha256": "ec5b3bbf725be6ea792b0cc7b543d11ac8659811264500037d2cdc398632f2ce"
+				}
+			]
+		},
+		{
+			"id": "city/kenney-suburban",
+			"title": "City Kit (Suburban) 2.0",
+			"purpose": "Houses, fences, paths and trees for the city",
+			"authors": [
+				{
+					"name": "Kenney"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://kenney.nl/assets/city-kit-suburban",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the GLB models, their colour map and the licence; left out the other formats and the previews.",
+			"dir": "sources/city/kenney-suburban",
+			"origin": {
+				"kind": "zip",
+				"url": "https://kenney.nl/media/pages/assets/city-kit-suburban/2c871b7af2-1745479373/kenney_city-kit-suburban_20.zip",
+				"files": {
+					"Models/GLB format/": "glb",
+					"License.txt": "License.txt"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/city/kenney-suburban/License.txt",
+					"bytes": 706,
+					"sha256": "d778fa769a89a7d9f167bc337fdf8fc2144e47d9abb0c35eb6ad897c0ee24d0a"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/Textures/colormap.png",
+					"bytes": 11784,
+					"sha256": "9b5de86078c25ef02351a80d35ff3c978693a1044565b73eedd9ae9b5b80665d"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-a.glb",
+					"bytes": 98604,
+					"sha256": "49f32e20b9dcd24b1c8f6d6488807b8c8cb684cbb595bfb0bb36ad903e470faa"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-b.glb",
+					"bytes": 146720,
+					"sha256": "a964a10c51bb334be677657fd8fa483531974dd15b4243575990192818e2300e"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-c.glb",
+					"bytes": 99592,
+					"sha256": "86a69f30f1a09461283e158514945ae5cc9d56357b0ddc83a9a3f0eecd113591"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-d.glb",
+					"bytes": 147368,
+					"sha256": "a41cd28265b2b224e700373c3a8356562619699998b7fa4d70ed41de629a6731"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-e.glb",
+					"bytes": 145512,
+					"sha256": "9ec43994c8c332b1ae5b058d8b9646255831fd91047c1a35b1fc1ecae4c082fc"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-f.glb",
+					"bytes": 138536,
+					"sha256": "6f778f50d7f03c86f9a018e428cf8ffdd9e918df09954c0651d1c9559584a22b"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-g.glb",
+					"bytes": 93596,
+					"sha256": "f497a7bc3a8e6b6273ba99f090042d1cfb3141da57d3c51998c57a479a0ece11"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-h.glb",
+					"bytes": 65364,
+					"sha256": "b8b8eb7a50f85fa20b4862723e133157f553d69a0daad39b850ddbd2099ebb84"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-i.glb",
+					"bytes": 69772,
+					"sha256": "798bb0f1eb644b64a19584e6765da23750f04a86c3703704ce56bc63e5512b39"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-j.glb",
+					"bytes": 99512,
+					"sha256": "fbdce9cb6bb6cf60a861bab36a896403aff604afbf2cb2b86676ae6f49fa2de3"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-k.glb",
+					"bytes": 89152,
+					"sha256": "c1b819a526bbcf9663bc40c98e22337cded7fff7c50c14679132d5d98d75f583"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-l.glb",
+					"bytes": 109232,
+					"sha256": "5f03bf2e65a3a795afc18f7e56a5da891908d59d937e660be8478b66905d2cee"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-m.glb",
+					"bytes": 96996,
+					"sha256": "36d31f4e45498f6229805b6a7a1577ef00230daeea4c6a4469481e9d5a0fdb7c"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-n.glb",
+					"bytes": 139464,
+					"sha256": "f2a29ececcca4a27bbef187caba0e7bb0e35de7a0de9742a8b8440ce6874c48c"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-o.glb",
+					"bytes": 114424,
+					"sha256": "aa256fa55613bb4c5fbdf379123454e4f98cde4d07a68bc826bb143d287ae0c1"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-p.glb",
+					"bytes": 109260,
+					"sha256": "561b2eff15bd2bfe2799a8a049cafc70a1c7bfb6e35f3b2a4d95c8f4f376458c"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-q.glb",
+					"bytes": 98632,
+					"sha256": "9b56037cab0de804e308766cc5e69b95b3576ffb444084c9016a0748cbcaca04"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-r.glb",
+					"bytes": 88544,
+					"sha256": "9b76ee3b9061b680ca14fd8cc838d1d5ca91b959e02833254f15d9236b8b20b7"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-s.glb",
+					"bytes": 103172,
+					"sha256": "56dfd278f10bea2546cb0946f48659dde5876bc9ce100ea1fbe37c0cc94bf9e6"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-t.glb",
+					"bytes": 167512,
+					"sha256": "3b729b473fc995a632ebc4d96cc8f18ef9d43bdc1a6c26010a02ec0b298c34e7"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/building-type-u.glb",
+					"bytes": 117912,
+					"sha256": "fb259246fc73bdce626eed8b7167d5e97bd63651890551661ec4507311eba279"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/driveway-long.glb",
+					"bytes": 2952,
+					"sha256": "d6fc46e8a5363c87b616eaa65c5dbcffa9026b8af47f979dc6c38cfa91f53459"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/driveway-short.glb",
+					"bytes": 2956,
+					"sha256": "7c7e81602cd6b1024fc98f3f32803db2e21222a3e30cfc838fb7f2282f593823"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/fence-1x2.glb",
+					"bytes": 16492,
+					"sha256": "54dd8d87f4ee0fd4d945b694a10a74eb7b20b1bd7468e09fd21fc32fb2b78397"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/fence-1x3.glb",
+					"bytes": 21032,
+					"sha256": "b4f1b79a844381c29199df417dc4fe17c2eaa1b8aa719aaaa24a7f61687a3ca9"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/fence-1x4.glb",
+					"bytes": 25544,
+					"sha256": "f63d17e1bb8f83416cffefdc0a90615ddd5b2cb69d8ea721cebdd663f9b2c4fc"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/fence-2x2.glb",
+					"bytes": 23872,
+					"sha256": "91862d7ee50b70763b45498fc61401cd3a7f150d337b0815d50b9ce2e2dc3612"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/fence-2x3.glb",
+					"bytes": 28412,
+					"sha256": "1a8270c40f650c9a2e58785945aad457fd58d42cc979b862b347e05a5f0a2f6f"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/fence-3x2.glb",
+					"bytes": 31280,
+					"sha256": "a14090e53a25bc55bede6197edd39983519d995aa831ff2f640d4d636d090a2b"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/fence-3x3.glb",
+					"bytes": 35820,
+					"sha256": "8b4f5c808ea8fdea656bb79171cf489bf469a295cdb737c449ed8d387b5242e4"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/fence-low.glb",
+					"bytes": 18552,
+					"sha256": "fe0272d73820bb4c8db3bed408a28cbd5c042da1373142bd13122a1ac9d1a168"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/fence.glb",
+					"bytes": 9672,
+					"sha256": "073bd2000ac51879516d49f835d5156dac4d5038085380b1232858fc3f562d02"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/path-long.glb",
+					"bytes": 2940,
+					"sha256": "af6869e19f9922e84df23a48795618f03565587dc2c397bd84cf1f066cfa39d5"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/path-short.glb",
+					"bytes": 2944,
+					"sha256": "0f657ebadf8c56adcd54335b8da2e54120f539918ea50509812731790ef99c2b"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/path-stones-long.glb",
+					"bytes": 6664,
+					"sha256": "cbd73ca5746f2290f44a2e1fc6f0759076c2c5fcdb3cb3f1e3acd74d5751d114"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/path-stones-messy.glb",
+					"bytes": 5476,
+					"sha256": "5493589dfac443ecbc0ad5563d9bb98edcefdaa972a0dc65fa65575609fbcd92"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/path-stones-short.glb",
+					"bytes": 4284,
+					"sha256": "63148e02c35d4ad249ee1dcbb0c5ee921cd719f501b25eb8b66bc0e1b20ce28c"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/planter.glb",
+					"bytes": 20368,
+					"sha256": "a876e87d908f0397dcaf94b7705835447825c4c5b39195319535415386542c17"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/tree-large.glb",
+					"bytes": 5812,
+					"sha256": "16d1f95c149bc727a953a473cf20bf21de9bf1a88747c4f9d2eeb4ac7d43e291"
+				},
+				{
+					"path": "sources/city/kenney-suburban/glb/tree-small.glb",
+					"bytes": 5812,
+					"sha256": "5f63359e5f392609d7617cc98070855ca1ffd4f4b4bc3978a5ff56ece88a58d6"
+				}
+			]
+		},
+		{
+			"id": "city/kenney-roads",
+			"title": "City Kit (Roads) 2.1",
+			"purpose": "Road tiles, street lights, signs and traffic lights for the city",
+			"authors": [
+				{
+					"name": "Kenney"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://kenney.nl/assets/city-kit-roads",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the GLB models, their colour map and the licence; left out the other formats and the previews.",
+			"dir": "sources/city/kenney-roads",
+			"origin": {
+				"kind": "zip",
+				"url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1787042796/kenney_city-kit-roads.zip",
+				"files": {
+					"Models/GLB format/": "glb",
+					"License.txt": "License.txt"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/city/kenney-roads/License.txt",
+					"bytes": 703,
+					"sha256": "87b9404aef5dff6162ae1e53a27bc6427fe1cdd2e2dd5ec05fdd25f17da10498"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/Textures/colormap.png",
+					"bytes": 11428,
+					"sha256": "a48e2962661ae44368ffddf3054f80ed8491d082b757dcc3011184cd9a98b185"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/bridge-pillar-wide.glb",
+					"bytes": 5488,
+					"sha256": "8e605ee4b59bdb5066a08d32458c0676a2763da483925e9761a28e6a77120b82"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/bridge-pillar.glb",
+					"bytes": 5468,
+					"sha256": "71c8d9dbaa502e63bf803c6873165873df4601f7285e1fe040d0f03acab3f0ec"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/construction-barrier.glb",
+					"bytes": 7052,
+					"sha256": "906f73a6d62d8de58a4c5a19e76ff95b460c42b37e5fa37478b8612f06793f26"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/construction-cone.glb",
+					"bytes": 7056,
+					"sha256": "50ceae45cd1d71f738a8f7c40f8b6b46f360063c2754bf717aae54013d6f2ee4"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/construction-fence.glb",
+					"bytes": 14856,
+					"sha256": "8414c211efbc68358eb747cf6d0ad6b9ba4fbc5094603ddabaadf18e8573abbe"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/construction-light.glb",
+					"bytes": 15320,
+					"sha256": "80dd781d6ad1bcb6e07670cc1ce03027031381768aca62b9c7b6e7df99c33650"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/dumpster.glb",
+					"bytes": 24456,
+					"sha256": "c60ebecc23487c38b5e0750856a3b50744d2ea12b3c83ad03d537e5a4670777a"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/electricity-pole-single.glb",
+					"bytes": 19480,
+					"sha256": "28d9b7a7ee300999b4ea59c1a5fd9ad197c599ad5be5ab299d63483049af337d"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/electricity-pole-wide.glb",
+					"bytes": 56732,
+					"sha256": "85ec58e9e0e29465eed4f96f380b0f540404f097e90f7b6997ef0a3d212e900c"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/electricity-pole.glb",
+					"bytes": 43652,
+					"sha256": "08c9b924e297eaa46bbd79ac09795c045848a4e38a72b2ce4f973517f840c2d3"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/electricity-side-single.glb",
+					"bytes": 19464,
+					"sha256": "60d5641f288bf7fa30c6ecb181df8664034c307af27f15c65f54d066a7c8e738"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/electricity-side-wide.glb",
+					"bytes": 56732,
+					"sha256": "e167d413f65c11701df36af9aca834977ae35e1aa20c8e14dea3dce6149eb098"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/electricity-side.glb",
+					"bytes": 43652,
+					"sha256": "ce0c278d4da86e7fde075c64b540d4c9a4572ea7a6563fc60b3a0aed2597ef1a"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/electricity-wires-wide.glb",
+					"bytes": 22240,
+					"sha256": "858de38d8583cbf78f6cc7dfb65ece4c0c94628bc3a2e281fd8485a16af395bd"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/electricity-wires.glb",
+					"bytes": 8952,
+					"sha256": "514027014328d1465c9cb60755efc184a2b53a9c1ecd77fd34c5265856bd699f"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/light-curved-cross.glb",
+					"bytes": 24912,
+					"sha256": "df14b20f3b748fba97f9d4c419e7c03dae97cbe71851d74063d358ed1bb77490"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/light-curved-double.glb",
+					"bytes": 14208,
+					"sha256": "038808ab235b889686ae348994e1605f9ec239fecc47b04ba89131b5fb70969c"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/light-curved.glb",
+					"bytes": 9492,
+					"sha256": "154dcce9d58ec2cd165e26c91a89c97bdd2838cf06d255099b3570df84f82ec6"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/light-square-cross.glb",
+					"bytes": 13512,
+					"sha256": "0492d4389579336c0385e3e786bff351be43434b8a2805fb09aa380e28e2d108"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/light-square-double.glb",
+					"bytes": 9216,
+					"sha256": "b6d0441f7ef65ddc7baefe83de93d00f7df8343f89c5ee6b7b19e732386e29ad"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/light-square.glb",
+					"bytes": 6996,
+					"sha256": "6230d136c8883d7f9bc1b86f0309077e452e26e5e1e587ef1b77abef3c5f047c"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-bend-barrier.glb",
+					"bytes": 11912,
+					"sha256": "dc0dc4f8e82e25eee81c9dd31b5376d31a699e6541d7bb767d7722e3b93e0d86"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-bend-sidewalk.glb",
+					"bytes": 17024,
+					"sha256": "4e8f7a4cc6c130d55bd754693d5aaba94e037d8639389656964ad57abefd882d"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-bend-square-barrier.glb",
+					"bytes": 5880,
+					"sha256": "279a8aef4a6fc0603dbe970c1b251461fb3d66afc34280704e04976cd51651cc"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-bend-square.glb",
+					"bytes": 6268,
+					"sha256": "5864b49931091625ad5249f34b9f1ac4614170b8a3569494a003d4ec0d47907d"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-bend.glb",
+					"bytes": 20164,
+					"sha256": "9752f63448c8e7a3d30ca2e0e1bb6784c5adb72b56a2b05667be8d546c1674bc"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-bridge.glb",
+					"bytes": 24796,
+					"sha256": "5e2bdaabddf39b309a3b5d109d7c6423cd68829a8e63960fcc2d23d62c8425b0"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-crossing.glb",
+					"bytes": 8700,
+					"sha256": "eb8575335f77da513add4a5277a7b60cad4886c07966f024b15cf55e5966cde3"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-crossroad-barrier.glb",
+					"bytes": 11256,
+					"sha256": "7e159556f91d216aa519be29021d950612ed863bd1f5c61cccec726062d068e3"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-crossroad-line.glb",
+					"bytes": 9692,
+					"sha256": "87bde0f75b741d4d66e5992e003bb70ceb42847f32092e38c54893babbc4f7e9"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-crossroad-path.glb",
+					"bytes": 18708,
+					"sha256": "5876a578474fabaac8608819936c499bec3d5c68b8096e27498b2163efe1ca78"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-crossroad.glb",
+					"bytes": 10084,
+					"sha256": "2dc52a28cf89ec88025a047c0f6fff4c643f16b0f50f0e9a1140f16230c28b12"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-curve-barrier.glb",
+					"bytes": 17920,
+					"sha256": "32c812901deaa09dc3a7ae02ffc54d9cba6725c22e5fd0ada4069741dabe67aa"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-curve-intersection-barrier.glb",
+					"bytes": 15480,
+					"sha256": "d0620b573330af2325c5c2d27db0a092f16bd49c7a7601bdeac62cc2de183390"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-curve-intersection.glb",
+					"bytes": 22788,
+					"sha256": "76aa1cd40ab3fb649920c8c06d8a37d25d2dda990425603be370e360d587759c"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-curve-pavement.glb",
+					"bytes": 17044,
+					"sha256": "f028db0675286bfa0f48fe174bef9ff8d8c65886c327a85abe05fed9453e9853"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-curve.glb",
+					"bytes": 23912,
+					"sha256": "d076717bfe3493dfd5a4b4207a7825e4aff1876273f0d58f5e16e8e8670906f7"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-driveway-double-barrier.glb",
+					"bytes": 8460,
+					"sha256": "057ef29517e70a02dabda572779ae664f55beb3bfad92523e8f78e6cd9d2b287"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-driveway-double.glb",
+					"bytes": 7664,
+					"sha256": "784549802fc55d63a6a13d3ee2acc18ef1c6893d49787f4949c40a7873f887c0"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-driveway-single-barrier.glb",
+					"bytes": 6272,
+					"sha256": "a5bffceacfc54833b15bd4839e49b83c68c1e729f6df4a72391b036eb6977c66"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-driveway-single.glb",
+					"bytes": 6568,
+					"sha256": "59f22734d5c22b55ae007914939227e7742fdddf4c371ace106e8161bdfb5ad2"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-end-barrier.glb",
+					"bytes": 4028,
+					"sha256": "c7a73cfae01de7441c8dcc89a9dd77d64c34af467fc3f03a3cd644a85f1ca8bc"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-end-round-barrier.glb",
+					"bytes": 16328,
+					"sha256": "4dac7ad32a27354cf5201b6f4cca54547874d461a487e5173ba8b19e3b913569"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-end-round.glb",
+					"bytes": 17532,
+					"sha256": "0ad2c0cd4fde52724a5fe277f0eba71df530a5b6c7570d0efe1686c7b456bc76"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-end.glb",
+					"bytes": 4940,
+					"sha256": "bdf62518cfcc2c1a1425a4c8bc845e8e344f9c8b34dfb364b6b7d442e6171f11"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-intersection-barrier.glb",
+					"bytes": 7676,
+					"sha256": "924922890e2d01eb1c953b6def47b87392717cd7243e44ae4b4117f5eae0c670"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-intersection-line.glb",
+					"bytes": 7492,
+					"sha256": "a9a202594178362e89ae62b1d9cbfbc7c892f9fcb8564d014cdd96a81823a8d9"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-intersection-path.glb",
+					"bytes": 13736,
+					"sha256": "b5e5fcb458249c3059d12fb30880014781dcb5e3c6f958660d255986cebd865f"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-intersection.glb",
+					"bytes": 7900,
+					"sha256": "fdf4f213abe41ddfe2a7e798a0ef1c3de5b7a68143e21c44f1893985ec6aae58"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-roundabout-barrier.glb",
+					"bytes": 61636,
+					"sha256": "fc65f8b3f445146bed071c372e06fe3329c94f327f418c801f66c739955e2531"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-roundabout.glb",
+					"bytes": 105876,
+					"sha256": "6bde41e46040fa35c90f86a524fe5ff344ede07f50f077e1732762b82f8e2d66"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-side-barrier.glb",
+					"bytes": 4200,
+					"sha256": "35101d5cb8774c51b7203fabefc04c49335a5e54ef30e5ae5b858cbf0a3a2f9d"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-side-entry-barrier.glb",
+					"bytes": 20276,
+					"sha256": "a2186fdb216e0a59c2238efd2cb9c5d8cce30f8b8f23243132230966710aac54"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-side-entry.glb",
+					"bytes": 24288,
+					"sha256": "94828a34b4987f1dcbc7972df1612a7ee72f7d9fab207ffd234e021a7093027f"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-side-exit-barrier.glb",
+					"bytes": 20272,
+					"sha256": "4e79f3a1b06250b6423ea8a68692930b032052fdf4d021056eda998e5dbfaf92"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-side-exit.glb",
+					"bytes": 24280,
+					"sha256": "356df3d64123669461b7b176ab90173e1c8a84ab35af00034a62f2658e56c38f"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-side.glb",
+					"bytes": 5272,
+					"sha256": "f5482c921a40719f89b1e7c0f6cc9d662b1f3a6149060e9b6bb543390fbdff66"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-sign-empty-hanging.glb",
+					"bytes": 12072,
+					"sha256": "41021007cd856fada1f372a1f8ed93c229461cfac85ad888e16549e559455b23"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-sign-empty.glb",
+					"bytes": 5968,
+					"sha256": "7681ee84c5363e2c95a37593fc3bdd0afb81b23fa46ae6be1c0939a112a4306a"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-sign-object-stop.glb",
+					"bytes": 6600,
+					"sha256": "9691bb7ff4a7b911f9713d71cf473e0b8f30ac3964052650fd2395cd19dc36e4"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-sign-object-street.glb",
+					"bytes": 6648,
+					"sha256": "c44690d1d12f1a45dd1a24254fecf95c62c1ba088ef6104d677bf716f2a1cad3"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-sign-object-warning.glb",
+					"bytes": 7384,
+					"sha256": "5c9608d70854ba7ad3bca061b643d5731f2040c650653d4daca564f5a2b487c2"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-sign-stop.glb",
+					"bytes": 10720,
+					"sha256": "0991181f37171daf8d2501e436a688e46ea2bcebb5e27aa451640fcbaab107ef"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-sign-street.glb",
+					"bytes": 15948,
+					"sha256": "570ab030366f549575f0b111fca3965aa8d103043bd3a002f40fad2a3f8175c1"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-sign-warning.glb",
+					"bytes": 11496,
+					"sha256": "db8049a51eb60c77e40253e8b5a9d41359a49d2a9083223dce361cfb0605c3a9"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-slant-barrier.glb",
+					"bytes": 4052,
+					"sha256": "c620119f0a3b23c8e883d4f8089a2449432846a4908b7611ef9a22091d72bd2c"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-slant-curve-barrier.glb",
+					"bytes": 38824,
+					"sha256": "ebc41618b5f63bb339f9877520000e63d4c33c4fd350bc81ff6bb21dcc778eac"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-slant-curve.glb",
+					"bytes": 47880,
+					"sha256": "9cf7fed9d5770bdc6043825d99b9e814bf3315de56dd3e77ea38e1f2e54f3d4c"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-slant-flat-curve.glb",
+					"bytes": 55868,
+					"sha256": "a8a9a3c7a3ec243129bcf297ea1f9dbe97893ef839f4e9f3741bb25b069ef7ee"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-slant-flat-high.glb",
+					"bytes": 5300,
+					"sha256": "b203a50b1b4b021806b5639030c021ddd8113ae9f0600c0609467a26e48518ca"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-slant-flat.glb",
+					"bytes": 5284,
+					"sha256": "c9aca2db3277d4556c08b9950bf08f6c274023e8f6401fd649e271412f0d125f"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-slant-high-barrier.glb",
+					"bytes": 4068,
+					"sha256": "47df00c9a9ee8637d001958b002d0929e31fe3b65df3641c1ad5f85a01f5194b"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-slant-high.glb",
+					"bytes": 5256,
+					"sha256": "ecd06a3227745a7967a886ca80c6b467ca29430c17119334b6e1a26c4193b692"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-slant.glb",
+					"bytes": 5240,
+					"sha256": "c14bb57253db5cae32c4a10b572b9ddd7e3aa6fedad9f5e49ce92e1ca24f0a41"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-split-barrier.glb",
+					"bytes": 41340,
+					"sha256": "574e9ea5ae31b80ba02442d9c5f801877a75f0596e129a090e2ec540d8421a7b"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-split.glb",
+					"bytes": 60128,
+					"sha256": "4ef637bb724062d2165f3a288254117ae8e2d88f301a84578a2f21ab57de5542"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-square-barrier.glb",
+					"bytes": 4048,
+					"sha256": "fae603409f1375b51993a470e9f273c240c37da9983de87e20b7c61ef9bc86a2"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-square.glb",
+					"bytes": 4436,
+					"sha256": "97ee7a325fd53087388c317fdee2620a61fc8a9f5e467bbe1a0a80f0b52a98c0"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-straight-barrier-end.glb",
+					"bytes": 3640,
+					"sha256": "d8df21f1a931fc618d28440b5cbcbfaaa13c422dd5a240666bdc83cb8988f889"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-straight-barrier-half.glb",
+					"bytes": 4092,
+					"sha256": "6f850dedf540f9aadc618cf70c24af317a69a35e10cefd2da16df2c85311b994"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-straight-barrier.glb",
+					"bytes": 4196,
+					"sha256": "eeaf5469bb34b94e3edaf71c5d7c9da152c0a398f86c9ec6c234a82a42833e4e"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-straight-half.glb",
+					"bytes": 5264,
+					"sha256": "8dc2e2f4f6d38094f9c35004f78f20a596554454246d348db2832e6c443188bc"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/road-straight.glb",
+					"bytes": 5248,
+					"sha256": "f8f744fb6fc96dedd5ad1f763b550166f2624a3757bf36b4b39969d2e7cacac5"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/sign-highway-detailed.glb",
+					"bytes": 23532,
+					"sha256": "122d293bc9ee3378ab2492242ac615fee1c791066ec747599829a801f6a5b99d"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/sign-highway-wide.glb",
+					"bytes": 13968,
+					"sha256": "9b133033576388d10fdced59d2ef92bc30409fda3dfb40d6334f35276729d1fd"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/sign-highway.glb",
+					"bytes": 17288,
+					"sha256": "95858108df403b7051f97598a78b93ddc398ac6cac85ad8abc0bf9198a9fe282"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/tile-high.glb",
+					"bytes": 2788,
+					"sha256": "b3628407e66c95605c0290d177128e0a0dccead3e9b079399a7eb56aa8b86525"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/tile-low.glb",
+					"bytes": 2800,
+					"sha256": "23f54fced68c7647f6d851c8080791b56e2a7e7f541eac2e95c647006a5901c4"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/tile-slant.glb",
+					"bytes": 2820,
+					"sha256": "7900e14823d5cf1b0ffd2eb14bd8c6629bd35d972f181fcfb39f707f0dfe1caa"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/tile-slantHigh.glb",
+					"bytes": 2832,
+					"sha256": "f4d24adb093b598fd4f874c653b39ec9dc426e07754109c6e64394fb0674b2c7"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/traffic-light-hanging.glb",
+					"bytes": 22132,
+					"sha256": "a433ad0e253da289f40a859fd4f3fe35dd6b575804c5f8262fec7fad331b9522"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/traffic-light-object-hanging.glb",
+					"bytes": 10876,
+					"sha256": "67aa6068344ae6c17683aa80fcfc59224253b9136759e27e220dbe1ba43ca641"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/traffic-light-object-horizontal.glb",
+					"bytes": 11664,
+					"sha256": "882fbe0b1934445282ee4499b354f63b3d837615ffe1898ec679ecbb95cbb3a1"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/traffic-light-object-vertical.glb",
+					"bytes": 12408,
+					"sha256": "0e620c08dd25cd4eee700ff983f35ce2e7ebd20f1027e13b01c020fd961d0730"
+				},
+				{
+					"path": "sources/city/kenney-roads/glb/traffic-light.glb",
+					"bytes": 20344,
+					"sha256": "6c9ee253b7370e1043168493b2e662b349484a0cdd02100cff04d9d8d1bd9abb"
+				}
+			]
+		},
+		{
+			"id": "city/kenney-industrial",
+			"title": "City Kit (Industrial) 2.0",
+			"purpose": "Factories, tanks and containers for the city",
+			"authors": [
+				{
+					"name": "Kenney"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://kenney.nl/assets/city-kit-industrial",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the GLB models, their colour map and the licence; left out the other formats and the previews.",
+			"dir": "sources/city/kenney-industrial",
+			"origin": {
+				"kind": "zip",
+				"url": "https://kenney.nl/media/pages/assets/city-kit-industrial/0ec35b139d-1788171848/kenney_city-kit-industrial_2.0.zip",
+				"files": {
+					"Models/GLB format/": "glb",
+					"License.txt": "License.txt"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/city/kenney-industrial/License.txt",
+					"bytes": 708,
+					"sha256": "60a8c5c31191256ec9779dc18745dea6d69c46f4b29703459ce064c1765a59ea"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/Textures/colormap.png",
+					"bytes": 11986,
+					"sha256": "950f4f891ebd05a2affac810e6eeb0fea1511bc39039b65a3cbf2e17d17bc6a2"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-a.glb",
+					"bytes": 177316,
+					"sha256": "0e6ef8eb1e1bdbb9d06b5496b5daf3066e00eaf74b3fcd61b74072116a1c86cf"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-b.glb",
+					"bytes": 212040,
+					"sha256": "2ae65bd9166449f0bef438fbefb75d57451cb15c16659d7f22a7d895296a46af"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-c.glb",
+					"bytes": 175844,
+					"sha256": "94eb05acef8d8e4c1d817eb12e1c2a1287ffed625879170663a8c4f48786b465"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-d.glb",
+					"bytes": 100768,
+					"sha256": "72b9e9e29986df0778ffa7c56e2f92fcfadfaa0f89bf167603877db4f38a789e"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-e.glb",
+					"bytes": 129400,
+					"sha256": "d61fed5e9502af9c698367ab69d5bc50b673375929e51c22af247dfb1db6cd16"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-f.glb",
+					"bytes": 134916,
+					"sha256": "05a91ab02f424ca4f4819c1749e014bc4404cdf2a75242190c066bb24b59cde7"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-g.glb",
+					"bytes": 106940,
+					"sha256": "d09d0d53e85989870f39087435f3c8fc788fe68e87589439fa6bf227c2e4a611"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-h.glb",
+					"bytes": 63644,
+					"sha256": "5a6a6c6824467972ba00b5a3c3cbb19da6e96673bc4e42daf1f09cfd4d2ed0e1"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-i.glb",
+					"bytes": 73848,
+					"sha256": "12d9be598becf2b6d3758d23aba6c573ca2701fca5e77870d2ee5645647765ca"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-j.glb",
+					"bytes": 80792,
+					"sha256": "58f135e706662a201bc0c660c2c680ec6bf2997233dd61fe03c28d4965b45bc9"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-k.glb",
+					"bytes": 65472,
+					"sha256": "ae0692f7a9fa20bb4ae6cc4deb56d5e1919b1ba2188a1f282295ab2be5e9645d"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-l.glb",
+					"bytes": 162424,
+					"sha256": "86f03eb0b0c5882c59de79b505ffba4377a9b4591588215aa880ab6362087066"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-m.glb",
+					"bytes": 138920,
+					"sha256": "526881cb1851120a60195f76bd4d8c1963653cdda66e4d1d53f085b3395fb8a9"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-n.glb",
+					"bytes": 109256,
+					"sha256": "56b895860fb841ecee3e4d13d0745c6cd838da231af79cd90fb8dc0e32a97a96"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-o.glb",
+					"bytes": 76552,
+					"sha256": "eec5728a268e122da91fa2cc4ed571a0b12e2cdd5c200828ab0d4f31ab1c8765"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-p.glb",
+					"bytes": 103760,
+					"sha256": "d3e701ba7bf548519731d9c68d5a47d09654bccef6f93be759eaafb55cdb2f78"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-q.glb",
+					"bytes": 181248,
+					"sha256": "19e65a2547db017af11dedc00a772e0421e580eb31815d8788ab11db232f89d2"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-r.glb",
+					"bytes": 173056,
+					"sha256": "3bf50032b629c97e249a9219851fd385347608bcb896c5bed06870e3957de5fe"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-s.glb",
+					"bytes": 81192,
+					"sha256": "065fbcbeb5e79ab21d8cd71b69b925a41d842e6f61296078619e6682d4487a82"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/building-t.glb",
+					"bytes": 139896,
+					"sha256": "865f92dc0ca0ce147c2b784bfda0773698e80896c372146e2b53811f1758607f"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/chimney-basic.glb",
+					"bytes": 9036,
+					"sha256": "e677e15aa89365aaeca4809ed3b48ab113a169191f6cc77fa7bb0d3195597674"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/chimney-large.glb",
+					"bytes": 20932,
+					"sha256": "fd88d6c971ffb27f5ee5b0df9f7c23ac82f9b6d32e85d3e2066f90a62f92f59f"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/chimney-medium.glb",
+					"bytes": 15020,
+					"sha256": "ef1605601d85b5fff97d6596b6552d936a1d6be06ec0609242f6bcfb640d91f6"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/chimney-small.glb",
+					"bytes": 10536,
+					"sha256": "22b09845e3df85102278eb440a1cbf9751790d5133a847469e112c55f8b44ff2"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/detail-tank-large.glb",
+					"bytes": 47452,
+					"sha256": "2fbf65dfbae114235dec65cc8730a870cf7d29dd76f9473218e96ee83e9f5f43"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/detail-tank.glb",
+					"bytes": 31436,
+					"sha256": "9e955732e4ef9ccff4a4d6967d29d8a7d2f9ed16c903923f2568216d9f0b50d2"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/shipping-container-a.glb",
+					"bytes": 36624,
+					"sha256": "7b2d5ca874c8e659ee6cfd1614f0470b70410b2ddc7620ac83b8954dedeb861d"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/shipping-container-b.glb",
+					"bytes": 37052,
+					"sha256": "290b3808149f8a9456ee96ff682fcf6a99f76adeac8e3b7b38234be434ea455c"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/shipping-container-c.glb",
+					"bytes": 36620,
+					"sha256": "6a272420c37ccf4b354565d75c5d1fd889cd568297c215c681fcf11ef8c8ae13"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/solar-panel-flat.glb",
+					"bytes": 13964,
+					"sha256": "0b10fa196480181d22734e4971f068e2909fb5835fab1857d26748e39b3b6bb1"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/solar-panel-landscape-group.glb",
+					"bytes": 81860,
+					"sha256": "451623ce9feedbcc99bf0d9e4b372c34e1704acbb847ef8574994867b30b085c"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/solar-panel-landscape.glb",
+					"bytes": 21776,
+					"sha256": "719ae34e0d312e8b2e94d813da2c4147e7b0fcbc4c4a5304fc32e88b4d97402c"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/solar-panel-portrait-group.glb",
+					"bytes": 81856,
+					"sha256": "06121f9b5cc36e6dea0dc5c6a22a3e0882d2a5cce1d434b9137dff61445dd21f"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/solar-panel-portrait.glb",
+					"bytes": 21772,
+					"sha256": "e48f998ef08510001b4a233c09a9c6e77ad8d5cb5dc32d543aa7f69bc2125e04"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/water-tower.glb",
+					"bytes": 93836,
+					"sha256": "11ac7ae19f32ce889bfe7a9c8e78c8ce8c77b7a76b52fd4ffa439a022ea2ef40"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/windmill-low.glb",
+					"bytes": 46296,
+					"sha256": "2e3da40d2f41454bf5af3b07cdad841abd5e06ca77560dc460633bc1f195a528"
+				},
+				{
+					"path": "sources/city/kenney-industrial/glb/windmill.glb",
+					"bytes": 46292,
+					"sha256": "554360a370ab56e3f5affa943971d8bd845245ed97003f1fe58a49ae999f820e"
+				}
+			]
+		},
+		{
+			"id": "city/layout",
+			"title": "City block layout",
+			"purpose": "The generated city: buildings, props, materials, lights, the camera path and labels",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/null3d-engine/sample-assets/blob/main/scripts/city.ts",
+			"fetched": "2026-10-03",
+			"changes": "Generated by scripts/city.ts from a fixed seed.",
+			"dir": "sources/city/layout",
+			"origin": {
+				"kind": "generated",
+				"script": "scripts/city.ts"
+			},
+			"files": [
+				{
+					"path": "sources/city/layout/layout.json",
+					"bytes": 974161,
+					"sha256": "87991921e6b5c3364cc79583bf08c08066ae8237000b8e44de4c7cf5b91e66f6"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Bricks105",
+			"title": "Bricks 105",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Bricks105",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Bricks105",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Bricks105",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Bricks105/Bricks105_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 322553,
+					"sha256": "981b41ca74a7f05ff6626713c665612a52c87191f0bf8c747fbe8f97a02d67b4"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks105/Bricks105_1K-JPG_Color.jpg",
+					"bytes": 667060,
+					"sha256": "643bbc3f2eb6de3e5a8ad762553369662aa30e448126057874dbd4342cddbe3e"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks105/Bricks105_1K-JPG_NormalGL.jpg",
+					"bytes": 768706,
+					"sha256": "c3a9687ea0501fb566b661e2684e29f5bf59daebaab0271d161d1a5b8d170e9f"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks105/Bricks105_1K-JPG_Roughness.jpg",
+					"bytes": 347315,
+					"sha256": "96fd742c822c40b95c67c51608727121f7dfb0772843118fe7ebff7fb9bcd19e"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Bricks104",
+			"title": "Bricks 104",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Bricks104",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Bricks104",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Bricks104",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Bricks104/Bricks104_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 251662,
+					"sha256": "d20ec7c09ec09f9cc2ac14e4dde6287eec34e1b0dae9802919ab839323ca2919"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks104/Bricks104_1K-JPG_Color.jpg",
+					"bytes": 634753,
+					"sha256": "92c19e59f60a2881bc11a0f11cf1b73c37dfa26f88f44110fe069bdac27cda89"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks104/Bricks104_1K-JPG_NormalGL.jpg",
+					"bytes": 695083,
+					"sha256": "15cc0d8b27f1e8e7017a3f556309f436d5f8e5df926f32f3f23811e208b30f7d"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks104/Bricks104_1K-JPG_Roughness.jpg",
+					"bytes": 302952,
+					"sha256": "6b20fce373c56d8e64bdf1ad1bfa88795127d44fddf8407590fa86785904274f"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Bricks097",
+			"title": "Bricks 097",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Bricks097",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Bricks097",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Bricks097",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Bricks097/Bricks097_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 355118,
+					"sha256": "80e610cfe7149e3759b3c49c93566cbcd07da89fb5de332a4d64b0a1d29acd28"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks097/Bricks097_1K-JPG_Color.jpg",
+					"bytes": 831880,
+					"sha256": "218f7343091f1c0d9044fd642247d23dd322087271df1b45c8f51fdff91042dd"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks097/Bricks097_1K-JPG_NormalGL.jpg",
+					"bytes": 907097,
+					"sha256": "3c13ff7b8018983e0d1529fa330b2d4494f92da299b72db19dbc76282f3f23e7"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks097/Bricks097_1K-JPG_Roughness.jpg",
+					"bytes": 386766,
+					"sha256": "a629784339b79cff67079a34f313ec5de18b8b6eb478455ac9b8df09c615b37d"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Bricks102",
+			"title": "Bricks 102",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Bricks102",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Bricks102",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Bricks102",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Bricks102/Bricks102_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 285799,
+					"sha256": "00fa911b27b89c1dd747fef935a534316d61d64b174a37abc72d49dd6b242303"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks102/Bricks102_1K-JPG_Color.jpg",
+					"bytes": 746718,
+					"sha256": "0fa8c2c8678929e6d34740ccc6332e39b670147d5649c573914fcf856d05be44"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks102/Bricks102_1K-JPG_NormalGL.jpg",
+					"bytes": 837181,
+					"sha256": "9c982ec67acba16a54cbd8bbe9556864a37ea1b940bdd1bc4d587e44675bed95"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks102/Bricks102_1K-JPG_Roughness.jpg",
+					"bytes": 373242,
+					"sha256": "cc15eafd09322cd28dd7de4bd79f129cbcadfa1c67b152070e879632a96f7f3d"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Bricks085",
+			"title": "Bricks 085",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Bricks085",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Bricks085",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Bricks085",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Bricks085/Bricks085_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 327508,
+					"sha256": "d72baeb50edc363eaefc7972334a0a5a8fb01dc1032544f260297c299e58a676"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks085/Bricks085_1K-JPG_Color.jpg",
+					"bytes": 779839,
+					"sha256": "d0c822cdb5c001e66d087eeced710c652391f69ecada3c19dc9e236c15095a46"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks085/Bricks085_1K-JPG_NormalGL.jpg",
+					"bytes": 862377,
+					"sha256": "96a09057e96518eea5212b090fab7f983278f5bb429fae8fed4dc066d291995e"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks085/Bricks085_1K-JPG_Roughness.jpg",
+					"bytes": 271991,
+					"sha256": "987c5c169d5880db2820fb649aa6e9d88697cf544fb138c730cb1617845840b6"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Bricks094",
+			"title": "Bricks 094",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Bricks094",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Bricks094",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Bricks094",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Bricks094/Bricks094_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 377852,
+					"sha256": "bbb0160473c67bd4a1972d0f46bd6b4dba70c86d98462e669918050057bd5f55"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks094/Bricks094_1K-JPG_Color.jpg",
+					"bytes": 739308,
+					"sha256": "b5f7845f993bd991617497f8870f419afb861788f5b4a1e1413379ab28dff90e"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks094/Bricks094_1K-JPG_NormalGL.jpg",
+					"bytes": 927789,
+					"sha256": "d6f5f9d999ad53d5be1ee500f573e17f723cb228f2d923298787364ea712615f"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks094/Bricks094_1K-JPG_Roughness.jpg",
+					"bytes": 377008,
+					"sha256": "2bb8a8857a6667b54e0afaea961f1f7fc081c876bced161296408e0795e0f746"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Bricks093",
+			"title": "Bricks 093",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Bricks093",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Bricks093",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Bricks093",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Bricks093/Bricks093_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 319296,
+					"sha256": "8dca5c1f62a1fb8b4b33c6237bb8fdd410403394f57c7bf46e781cd8a1fb9e1a"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks093/Bricks093_1K-JPG_Color.jpg",
+					"bytes": 456713,
+					"sha256": "9bf89ce6c7a7892e3589fad192ca4f88138b3b3ee1419129667c3a5dcc9add66"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks093/Bricks093_1K-JPG_NormalGL.jpg",
+					"bytes": 676463,
+					"sha256": "a20a6de87058aa996765bffd1a0ccdee9ac2dc85055cebf37128ff84a7856d5d"
+				},
+				{
+					"path": "sources/materials/ambientcg/Bricks093/Bricks093_1K-JPG_Roughness.jpg",
+					"bytes": 358917,
+					"sha256": "1b03c0ec9992da9920eecacfe6945ad94fc5f28ba38042bdc959a2daea372190"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Facade001",
+			"title": "Facade 001",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Facade001",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Facade001",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Facade001",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Facade001/Facade001_1K-JPG_Color.jpg",
+					"bytes": 511178,
+					"sha256": "4e0aca5797c390bba9efd80a589b9569a3efb5cd22cfbb2780fc6ef811181736"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade001/Facade001_1K-JPG_Metalness.jpg",
+					"bytes": 106593,
+					"sha256": "ca2fc33029ca9f0000969bde3e2160bd1506256e5ad29e907b99dba75f9b7796"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade001/Facade001_1K-JPG_NormalGL.jpg",
+					"bytes": 266605,
+					"sha256": "1ac56b097fef1a042610914f3a319bdc28f93bd523b01239bccb746faf172000"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade001/Facade001_1K-JPG_Roughness.jpg",
+					"bytes": 271991,
+					"sha256": "1bc7ae78aec982f296b470a697d340494e6a9575832a42915a3043c0cc2de9dd"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Facade002",
+			"title": "Facade 002",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Facade002",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Facade002",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Facade002",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Facade002/Facade002_1K-JPG_Color.jpg",
+					"bytes": 541707,
+					"sha256": "cdb18fd94946792dbb8051c4e5ae147c8789d83133bf83558a33ed8f496e5f01"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade002/Facade002_1K-JPG_Emission.jpg",
+					"bytes": 121749,
+					"sha256": "c15aa2f13395f71b7625e99849158147e11c2e1c56a398f38f0dc60c152e9a2f"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade002/Facade002_1K-JPG_Metalness.jpg",
+					"bytes": 106593,
+					"sha256": "ca2fc33029ca9f0000969bde3e2160bd1506256e5ad29e907b99dba75f9b7796"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade002/Facade002_1K-JPG_NormalGL.jpg",
+					"bytes": 266605,
+					"sha256": "1ac56b097fef1a042610914f3a319bdc28f93bd523b01239bccb746faf172000"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade002/Facade002_1K-JPG_Roughness.jpg",
+					"bytes": 271991,
+					"sha256": "1bc7ae78aec982f296b470a697d340494e6a9575832a42915a3043c0cc2de9dd"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Facade003",
+			"title": "Facade 003",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Facade003",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Facade003",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Facade003",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Facade003/Facade003_1K-JPG_Color.jpg",
+					"bytes": 606132,
+					"sha256": "89e8735f9b877008d2143f19b5381fcd3ad0e54576c6a2c55298afbd75338f2e"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade003/Facade003_1K-JPG_Emission.jpg",
+					"bytes": 338942,
+					"sha256": "50e15ab63b4a5d841787ecdfbd232087c75210a2876d652c30d8eef6ea637119"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade003/Facade003_1K-JPG_Metalness.jpg",
+					"bytes": 106593,
+					"sha256": "ca2fc33029ca9f0000969bde3e2160bd1506256e5ad29e907b99dba75f9b7796"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade003/Facade003_1K-JPG_NormalGL.jpg",
+					"bytes": 266605,
+					"sha256": "1ac56b097fef1a042610914f3a319bdc28f93bd523b01239bccb746faf172000"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade003/Facade003_1K-JPG_Roughness.jpg",
+					"bytes": 271991,
+					"sha256": "1bc7ae78aec982f296b470a697d340494e6a9575832a42915a3043c0cc2de9dd"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Facade005",
+			"title": "Facade 005",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Facade005",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Facade005",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Facade005",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Facade005/Facade005_1K-JPG_Color.jpg",
+					"bytes": 736066,
+					"sha256": "61c1baa1312034b3644377c0ae442020109e918b57de6421bea0f2edff312dc0"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade005/Facade005_1K-JPG_Metalness.jpg",
+					"bytes": 236645,
+					"sha256": "90441b3ff58eec91374001ddf3bce61451c2921dfa8c9d4c6034b2ec27aed807"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade005/Facade005_1K-JPG_NormalGL.jpg",
+					"bytes": 574121,
+					"sha256": "3b37a4df21d17bc3ee1c1dc951f756f8f64d964c279999f07663ef9d70716b30"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade005/Facade005_1K-JPG_Roughness.jpg",
+					"bytes": 375047,
+					"sha256": "93f0533d65ba80b4ca4c3e6a99c5c56cff549e9638b38658858190fd126dfed4"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Facade006",
+			"title": "Facade 006",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Facade006",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Facade006",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Facade006",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Facade006/Facade006_1K-JPG_Color.jpg",
+					"bytes": 495666,
+					"sha256": "a170d5d73cd4977fefa276bb85d2a14147db0abe6022dd13afddb09f1abc3c00"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade006/Facade006_1K-JPG_Metalness.jpg",
+					"bytes": 85702,
+					"sha256": "353b2d1cf8fc147ee983aa2d56c3f009e2c9f475beee49a16862e88e18dd5342"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade006/Facade006_1K-JPG_NormalGL.jpg",
+					"bytes": 257849,
+					"sha256": "0bce7a368d6a6e590af3550762a9e088202744f3efe47fee1b15b4ef98fad0e3"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade006/Facade006_1K-JPG_Roughness.jpg",
+					"bytes": 305102,
+					"sha256": "d442198a13462a152b8c24efa70302df8297a91936d58ea6c8d50eb31c23e0ec"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Facade009",
+			"title": "Facade 009",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Facade009",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Facade009",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Facade009",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Facade009/Facade009_1K-JPG_Color.jpg",
+					"bytes": 533600,
+					"sha256": "f2d6b9de83462ba543339ac1929d027a05bad385c1344fdbc006a6ed0566df02"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade009/Facade009_1K-JPG_Emission.jpg",
+					"bytes": 473068,
+					"sha256": "971016b8f742e40b5b1db416a799bd12cb00a051a848281d1be5697041f4d138"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade009/Facade009_1K-JPG_Metalness.jpg",
+					"bytes": 238132,
+					"sha256": "7262cdb7ba68c38ba264ea0fe5773df9ecf0e6ff6a4801f781d76e56c18f7685"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade009/Facade009_1K-JPG_NormalGL.jpg",
+					"bytes": 859313,
+					"sha256": "e2f256d2fe83eed68a7b8102223de73a4d3dfb5974e88b6738b3d1f0820fa7d8"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade009/Facade009_1K-JPG_Roughness.jpg",
+					"bytes": 563203,
+					"sha256": "a060789964d191ff96fdc60ed6bce9a52bf3c4ed16489674ca14b49e404b2b3b"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Facade017",
+			"title": "Facade 017",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Facade017",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Facade017",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Facade017",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Facade017/Facade017_1K-JPG_Color.jpg",
+					"bytes": 979436,
+					"sha256": "112bcfd164d7f24eb49902732cdd58b2c163d59bec60a30d37cc710dae5ba6ea"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade017/Facade017_1K-JPG_Emission.jpg",
+					"bytes": 613628,
+					"sha256": "1c209d3a171406f68c453fb2a4c0de14086484edb7c6d1c164c89999cbb60fe0"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade017/Facade017_1K-JPG_NormalGL.jpg",
+					"bytes": 1412380,
+					"sha256": "aee2d417f1cd1929be99c9464283b413f168b8968c89a9cd6bccc0d45fabcacd"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade017/Facade017_1K-JPG_Roughness.jpg",
+					"bytes": 482699,
+					"sha256": "5fb902e5272f58717699d9b0b0daf8908b5ffd80bc0e5c9e8200cc63ba994d19"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Facade018A",
+			"title": "Facade 018 A",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Facade018A",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Facade018A",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Facade018A",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Facade018A/Facade018A_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 529153,
+					"sha256": "07bd8e177b94817f3f0c7bd3d687147394a36b3cc9a11a6e54eaa062ee4119da"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade018A/Facade018A_1K-JPG_Color.jpg",
+					"bytes": 1034972,
+					"sha256": "d90217ca8d856321776cde57e717dab502338715b885267986dc830a9fd1a8b6"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade018A/Facade018A_1K-JPG_Emission.jpg",
+					"bytes": 4257,
+					"sha256": "16a19987d07d34266621a892d0803bed251268049609837694d056f0ee5efb73"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade018A/Facade018A_1K-JPG_Metalness.jpg",
+					"bytes": 74740,
+					"sha256": "1626d6a896e152843e22cba1a9759bf185701d9baafe5164489137eac5c02b6f"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade018A/Facade018A_1K-JPG_NormalGL.jpg",
+					"bytes": 1550001,
+					"sha256": "c21c80bc0cb6acae35a1e4cedbcdc962237075bf684d0b37a398d5638f0bd907"
+				},
+				{
+					"path": "sources/materials/ambientcg/Facade018A/Facade018A_1K-JPG_Roughness.jpg",
+					"bytes": 551788,
+					"sha256": "3748ddbe959121d8eecac4c3299cb7a8548cb86ea4fc0f1f397626d3414ecb0f"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Concrete034",
+			"title": "Concrete 034",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Concrete034",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Concrete034",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Concrete034",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Concrete034/Concrete034_1K-JPG_Color.jpg",
+					"bytes": 269501,
+					"sha256": "8ceb9186d990b31fce785e06fdc6974c160f1d27c43f6160266f164deba713aa"
+				},
+				{
+					"path": "sources/materials/ambientcg/Concrete034/Concrete034_1K-JPG_NormalGL.jpg",
+					"bytes": 821681,
+					"sha256": "e509eb9dfa978e780fbebfd2acacc2ce158b5b7ced722ddc0759039dd51e18ca"
+				},
+				{
+					"path": "sources/materials/ambientcg/Concrete034/Concrete034_1K-JPG_Roughness.jpg",
+					"bytes": 217708,
+					"sha256": "a4a9e39857a19afd23a778e5abf44fcdf6bd7f93918f1cf6878b41933e553511"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Concrete048",
+			"title": "Concrete 048",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Concrete048",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Concrete048",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Concrete048",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Concrete048/Concrete048_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 659489,
+					"sha256": "4d1f849c3a7881e6b634616918f6a4c0c2defe67529d05c5809084e36a9fbbe7"
+				},
+				{
+					"path": "sources/materials/ambientcg/Concrete048/Concrete048_1K-JPG_Color.jpg",
+					"bytes": 1126366,
+					"sha256": "1bf2156b86866732660e6d3ccd1942598ac2b9e73a9bb97a23763574ac4d7722"
+				},
+				{
+					"path": "sources/materials/ambientcg/Concrete048/Concrete048_1K-JPG_Metalness.jpg",
+					"bytes": 5229,
+					"sha256": "c7269ed127d209f7211e00edfcc7fcefeb1dd1f905ff4848529c45a11a06a522"
+				},
+				{
+					"path": "sources/materials/ambientcg/Concrete048/Concrete048_1K-JPG_NormalGL.jpg",
+					"bytes": 1548946,
+					"sha256": "16d110670d8a1ca4dd85d498bb46afaa6953456878dae7ab6717053600dddcfc"
+				},
+				{
+					"path": "sources/materials/ambientcg/Concrete048/Concrete048_1K-JPG_Roughness.jpg",
+					"bytes": 702183,
+					"sha256": "cf9b741e1ffc25b89a7d7a8971656463009c25b30c3fd300b3296c60daef729f"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Concrete046",
+			"title": "Concrete 046",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Concrete046",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Concrete046",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Concrete046",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Concrete046/Concrete046_1K-JPG_Color.jpg",
+					"bytes": 1092354,
+					"sha256": "2f155b85c2656305815e94a0efcc0b0087c141e52e98395cc03eb906252150af"
+				},
+				{
+					"path": "sources/materials/ambientcg/Concrete046/Concrete046_1K-JPG_NormalGL.jpg",
+					"bytes": 1080228,
+					"sha256": "b7fb7d45f85bad9e1c61f544e90077735f8f787cd13d3c1161aece11082fe9ff"
+				},
+				{
+					"path": "sources/materials/ambientcg/Concrete046/Concrete046_1K-JPG_Roughness.jpg",
+					"bytes": 671268,
+					"sha256": "ee79cf1139197522ac6ed6dad2d9c0429626cd8f2e107aaaf9daa1f4f30e7d7d"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Concrete036",
+			"title": "Concrete 036",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Concrete036",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Concrete036",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Concrete036",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Concrete036/Concrete036_1K-JPG_Color.jpg",
+					"bytes": 1158249,
+					"sha256": "8b618898cadda99188f3d667e4a09c2108f07bbc800cc1c0a4f300653b221adb"
+				},
+				{
+					"path": "sources/materials/ambientcg/Concrete036/Concrete036_1K-JPG_NormalGL.jpg",
+					"bytes": 1330580,
+					"sha256": "c5c8bd16dd7db40b45f4d71e4fec6a9f77f6dfb2424dc00319f5fddb40c898f0"
+				},
+				{
+					"path": "sources/materials/ambientcg/Concrete036/Concrete036_1K-JPG_Roughness.jpg",
+					"bytes": 588010,
+					"sha256": "32c2de96e9a0804fe093587fa157a700f5d59c5f457a911f93cf49030e146699"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Concrete045",
+			"title": "Concrete 045",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Concrete045",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Concrete045",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Concrete045",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Concrete045/Concrete045_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 355280,
+					"sha256": "d7b15f5d0f72a9d989a150a980f39c183ca4956c0bb3bbd6d2b1a54d6c248a4b"
+				},
+				{
+					"path": "sources/materials/ambientcg/Concrete045/Concrete045_1K-JPG_Color.jpg",
+					"bytes": 878168,
+					"sha256": "408cd7f05194421e1884e40a087f7dd6e3ffa374f3176bbc5e443ac820796b88"
+				},
+				{
+					"path": "sources/materials/ambientcg/Concrete045/Concrete045_1K-JPG_NormalGL.jpg",
+					"bytes": 1213810,
+					"sha256": "1afdbc8c6a8f483aaf891e8506987a378a07fe3daa809405fc01cc658317d456"
+				},
+				{
+					"path": "sources/materials/ambientcg/Concrete045/Concrete045_1K-JPG_Roughness.jpg",
+					"bytes": 351188,
+					"sha256": "9caf109c0bc7210427d8ec8e85a1115934b9a5cf02133534709364498c640a15"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/PaintedPlaster006",
+			"title": "Painted Plaster 006",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/PaintedPlaster006",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/PaintedPlaster006",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "PaintedPlaster006",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/PaintedPlaster006/PaintedPlaster006_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 606382,
+					"sha256": "8d40af57d10391becfcc2c6a9a61d583581c5fd9a1ca1498b7785826023c1ee9"
+				},
+				{
+					"path": "sources/materials/ambientcg/PaintedPlaster006/PaintedPlaster006_1K-JPG_Color.jpg",
+					"bytes": 1370874,
+					"sha256": "d56be988df2bba0c975532b4ac1fe81867a4818f6850768c62f40414658623f4"
+				},
+				{
+					"path": "sources/materials/ambientcg/PaintedPlaster006/PaintedPlaster006_1K-JPG_NormalGL.jpg",
+					"bytes": 2174826,
+					"sha256": "32edee48a780bffb168f71bd03daed1ddedb72211fa00315286a8c009c1392e7"
+				},
+				{
+					"path": "sources/materials/ambientcg/PaintedPlaster006/PaintedPlaster006_1K-JPG_Roughness.jpg",
+					"bytes": 533133,
+					"sha256": "d90a616a566cd7dbfe4178fbfd385f9108af7778d9090f02e6e1d34353c4f62d"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/PaintedPlaster017",
+			"title": "Painted Plaster 017",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/PaintedPlaster017",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/PaintedPlaster017",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "PaintedPlaster017",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/PaintedPlaster017/PaintedPlaster017_1K-JPG_Color.jpg",
+					"bytes": 378542,
+					"sha256": "ed8a69a6437de9d41d2cf380f7e6a216232fc4754f256c3405985c857547ffef"
+				},
+				{
+					"path": "sources/materials/ambientcg/PaintedPlaster017/PaintedPlaster017_1K-JPG_NormalGL.jpg",
+					"bytes": 1115299,
+					"sha256": "1bef1887c10e1ce104be1a557e4dbd7634ef6d5ece6e3b4237dab2d0962f57fa"
+				},
+				{
+					"path": "sources/materials/ambientcg/PaintedPlaster017/PaintedPlaster017_1K-JPG_Roughness.jpg",
+					"bytes": 193304,
+					"sha256": "a83ecc2ba5b9d80bb9a27381f3389ccdb20c77ef6358b92f3d11455403d651d8"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Plaster001",
+			"title": "Plaster 001",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Plaster001",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Plaster001",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Plaster001",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Plaster001/Plaster001_1K-JPG_Color.jpg",
+					"bytes": 828790,
+					"sha256": "d3fe43282859ab7293ad41f2fa3c29f02df077e5bc326cf90a65cc588a4ac5a4"
+				},
+				{
+					"path": "sources/materials/ambientcg/Plaster001/Plaster001_1K-JPG_NormalGL.jpg",
+					"bytes": 2091491,
+					"sha256": "ea293c335a0b9243f0a825573b81304b8f99e60b2c067e493d0792adf96dfc72"
+				},
+				{
+					"path": "sources/materials/ambientcg/Plaster001/Plaster001_1K-JPG_Roughness.jpg",
+					"bytes": 367391,
+					"sha256": "6028dbe3cb2ea250eacf3fb87d2c4e5ae8c2a7ff10ecad7883c27d721f2f8e88"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Plaster007",
+			"title": "Plaster 007",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Plaster007",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Plaster007",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Plaster007",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Plaster007/Plaster007_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 660056,
+					"sha256": "25e7a8f1bf929fd356a38bc5c8540b5bde17c4dd9db4c9b0d2d66e98d60ca55c"
+				},
+				{
+					"path": "sources/materials/ambientcg/Plaster007/Plaster007_1K-JPG_Color.jpg",
+					"bytes": 1164937,
+					"sha256": "bef928e219791fc7b5df99b9896b526375f999bb6358b9a008f1e4b2abce844f"
+				},
+				{
+					"path": "sources/materials/ambientcg/Plaster007/Plaster007_1K-JPG_NormalGL.jpg",
+					"bytes": 1810633,
+					"sha256": "dad06a54a13b75de7876cc24dd48eb85d34b98565f2819feb8be4cc9438ecf78"
+				},
+				{
+					"path": "sources/materials/ambientcg/Plaster007/Plaster007_1K-JPG_Roughness.jpg",
+					"bytes": 738576,
+					"sha256": "7bc92fc916b9b0876595acf5f7db582f50508b62a70cac3d659d1833178be218"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/PavingStones150",
+			"title": "Paving Stones 150",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/PavingStones150",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/PavingStones150",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "PavingStones150",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/PavingStones150/PavingStones150_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 390645,
+					"sha256": "c9154b6f177906272857c8994decf7d26d51e4d338692f14a87dba55d2bc5705"
+				},
+				{
+					"path": "sources/materials/ambientcg/PavingStones150/PavingStones150_1K-JPG_Color.jpg",
+					"bytes": 737414,
+					"sha256": "dc766b466d2ab08b8c7bcbf4c59bd3e2c76dca2076aebe63473d5aab52645e72"
+				},
+				{
+					"path": "sources/materials/ambientcg/PavingStones150/PavingStones150_1K-JPG_NormalGL.jpg",
+					"bytes": 995888,
+					"sha256": "eaf2784c0cfe4c548fdd58bcf75b79d2e5ad9a8529a9b26cdcde121b89e1e106"
+				},
+				{
+					"path": "sources/materials/ambientcg/PavingStones150/PavingStones150_1K-JPG_Roughness.jpg",
+					"bytes": 352657,
+					"sha256": "5fdfd003185f766c579a8f62cb2bd1c522800bfe426f73e81d41677f1407d586"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/PavingStones138",
+			"title": "Paving Stones 138",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/PavingStones138",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/PavingStones138",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "PavingStones138",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/PavingStones138/PavingStones138_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 315882,
+					"sha256": "2203dcebdb1844308bc894bf617db7ffc6aaf2369dc804596c4d5de2f07ac368"
+				},
+				{
+					"path": "sources/materials/ambientcg/PavingStones138/PavingStones138_1K-JPG_Color.jpg",
+					"bytes": 836330,
+					"sha256": "2e8d43ba6320f22502a59ea35fcddb1eacd480b95c8926ae3f26bca199e5a26b"
+				},
+				{
+					"path": "sources/materials/ambientcg/PavingStones138/PavingStones138_1K-JPG_NormalGL.jpg",
+					"bytes": 830646,
+					"sha256": "f1ea8a0b0a86b361cb531140ac737c9438fe36da79142ce03419410c354f3ed3"
+				},
+				{
+					"path": "sources/materials/ambientcg/PavingStones138/PavingStones138_1K-JPG_Roughness.jpg",
+					"bytes": 278891,
+					"sha256": "18234c8e43ce3c644d813cd3ad8d649f009a32d6e5da6df3a716f13d386f9a9c"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/PavingStones136",
+			"title": "Paving Stones 136",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/PavingStones136",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/PavingStones136",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "PavingStones136",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/PavingStones136/PavingStones136_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 520371,
+					"sha256": "249e4bb7fdfc71290d6a9311b2214777f762984a7d14d4e9cf416c2b6d6d7eee"
+				},
+				{
+					"path": "sources/materials/ambientcg/PavingStones136/PavingStones136_1K-JPG_Color.jpg",
+					"bytes": 1192545,
+					"sha256": "5291854f8a7fcf554f2e278e36426eee9de65dd71d93c7f837b2c3f80ca42cfa"
+				},
+				{
+					"path": "sources/materials/ambientcg/PavingStones136/PavingStones136_1K-JPG_NormalGL.jpg",
+					"bytes": 1210149,
+					"sha256": "a302144995a7d7b638864a8f28ed1c8bf68d8c7b6c6e3daac6ad5b0bbf4bc9c0"
+				},
+				{
+					"path": "sources/materials/ambientcg/PavingStones136/PavingStones136_1K-JPG_Roughness.jpg",
+					"bytes": 664278,
+					"sha256": "37370086ad37d163f089646da366692e10515e7c94128fe7bac83daa64015267"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Asphalt031",
+			"title": "Asphalt 031",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Asphalt031",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Asphalt031",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Asphalt031",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Asphalt031/Asphalt031_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 760025,
+					"sha256": "bf8ac1621f095bc99e6456edc7f846ba4ee82f81292d2c74bdd19e3af29cd40b"
+				},
+				{
+					"path": "sources/materials/ambientcg/Asphalt031/Asphalt031_1K-JPG_Color.jpg",
+					"bytes": 855584,
+					"sha256": "d8301ee35f486ba073bdd5fda3ea9ed7e40f768aa1def75c420bcc5c055e3534"
+				},
+				{
+					"path": "sources/materials/ambientcg/Asphalt031/Asphalt031_1K-JPG_NormalGL.jpg",
+					"bytes": 2010745,
+					"sha256": "8afb3f4090793dc9055b861220f5ada95fce232c02e3b3095e2bb10e8fc69775"
+				},
+				{
+					"path": "sources/materials/ambientcg/Asphalt031/Asphalt031_1K-JPG_Roughness.jpg",
+					"bytes": 838751,
+					"sha256": "b6211415277cad253d6d41330ac1b4b8b3edf631ac56561f7193670935e3d200"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Road007",
+			"title": "Road 007",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Road007",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Road007",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Road007",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Road007/Road007_1K-JPG_Color.jpg",
+					"bytes": 801457,
+					"sha256": "588367fb75e77e41ea6f5ec194bbf9f0584d187bc4461c595c6e34e47ed70801"
+				},
+				{
+					"path": "sources/materials/ambientcg/Road007/Road007_1K-JPG_NormalGL.jpg",
+					"bytes": 1617890,
+					"sha256": "0a328df5ffe0713958061a8839174ff2b742c734723cd148f66790af7547d50d"
+				},
+				{
+					"path": "sources/materials/ambientcg/Road007/Road007_1K-JPG_Roughness.jpg",
+					"bytes": 641138,
+					"sha256": "c2e8b78b756b72f49b574fe33444d7df1357642898b205bfdbe8ea665d33e43c"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/RoofingTiles013A",
+			"title": "Roofing Tiles 013 A",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/RoofingTiles013A",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/RoofingTiles013A",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "RoofingTiles013A",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/RoofingTiles013A/RoofingTiles013A_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 310035,
+					"sha256": "6d57e59e22d0aa1d05123ec5cba1f5ce3973698151021fef3f35a5df961eb9cc"
+				},
+				{
+					"path": "sources/materials/ambientcg/RoofingTiles013A/RoofingTiles013A_1K-JPG_Color.jpg",
+					"bytes": 403258,
+					"sha256": "13779a23d342e1f80001d380889744eb6795460e8b8b993f7b9bb89da78089d4"
+				},
+				{
+					"path": "sources/materials/ambientcg/RoofingTiles013A/RoofingTiles013A_1K-JPG_NormalGL.jpg",
+					"bytes": 718594,
+					"sha256": "08d9718bd62c5de5c4cc886a68cf3dbad5996136f52f16249b07a896e0c29005"
+				},
+				{
+					"path": "sources/materials/ambientcg/RoofingTiles013A/RoofingTiles013A_1K-JPG_Roughness.jpg",
+					"bytes": 564671,
+					"sha256": "4cb93f5e8d84b97f3247aad4051c3805ea51f88a05a6c703abe32ab0bcec65c6"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/RoofingTiles014A",
+			"title": "Roofing Tiles 014 A",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/RoofingTiles014A",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/RoofingTiles014A",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "RoofingTiles014A",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/RoofingTiles014A/RoofingTiles014A_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 328231,
+					"sha256": "03d68264378012f73db282060f3be7d24ec80c22df14663bf93a44716be54c39"
+				},
+				{
+					"path": "sources/materials/ambientcg/RoofingTiles014A/RoofingTiles014A_1K-JPG_Color.jpg",
+					"bytes": 713878,
+					"sha256": "860a5c194a4e516afc24e836b21eb9eaf52c69a4d50b6a2a5418e363b88b40c5"
+				},
+				{
+					"path": "sources/materials/ambientcg/RoofingTiles014A/RoofingTiles014A_1K-JPG_NormalGL.jpg",
+					"bytes": 837895,
+					"sha256": "39abc3b99b41e3446fd79fd81dffb86de1dff11aa7f5ea4138a0f390fa0003dc"
+				},
+				{
+					"path": "sources/materials/ambientcg/RoofingTiles014A/RoofingTiles014A_1K-JPG_Roughness.jpg",
+					"bytes": 566303,
+					"sha256": "8ab5118d1a1c06fbbff1ca27b24906aece0ad056c5c6d724e46ed3e4a17729ca"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/RoofingTiles012A",
+			"title": "Roofing Tiles 012 A",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/RoofingTiles012A",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/RoofingTiles012A",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "RoofingTiles012A",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/RoofingTiles012A/RoofingTiles012A_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 343691,
+					"sha256": "de747422ab907724fb8d77883e00a3cf0b522e583565cca9024f92a34c4da900"
+				},
+				{
+					"path": "sources/materials/ambientcg/RoofingTiles012A/RoofingTiles012A_1K-JPG_Color.jpg",
+					"bytes": 509699,
+					"sha256": "a1b613af4009bcb05b0b20ee30914d1f912495f53d78c2fdb652582ba10de582"
+				},
+				{
+					"path": "sources/materials/ambientcg/RoofingTiles012A/RoofingTiles012A_1K-JPG_NormalGL.jpg",
+					"bytes": 827625,
+					"sha256": "c9e96a1e33fb5204cf461591d895504fe51ce27f09bec89504e43c781c5385de"
+				},
+				{
+					"path": "sources/materials/ambientcg/RoofingTiles012A/RoofingTiles012A_1K-JPG_Roughness.jpg",
+					"bytes": 569980,
+					"sha256": "3f0461ab42515d522eb74a1180ea5a74966aaa29d4df88b31ed17cd1b4f77465"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Tiles107",
+			"title": "Tiles 107",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Tiles107",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Tiles107",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Tiles107",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Tiles107/Tiles107_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 79930,
+					"sha256": "3fd5b3313cdf81cda2845fc19b50d99f63f92d67240a4535ae9dfe686fb1e76d"
+				},
+				{
+					"path": "sources/materials/ambientcg/Tiles107/Tiles107_1K-JPG_Color.jpg",
+					"bytes": 271201,
+					"sha256": "09bc9cf6e08dc4a58df668df0f2cb30fea54eee48ece77263419222497a05d66"
+				},
+				{
+					"path": "sources/materials/ambientcg/Tiles107/Tiles107_1K-JPG_NormalGL.jpg",
+					"bytes": 560108,
+					"sha256": "9056b78a5e9d6021d54783a4674caadc0647abf43d6ef056d61afea0c31a0915"
+				},
+				{
+					"path": "sources/materials/ambientcg/Tiles107/Tiles107_1K-JPG_Roughness.jpg",
+					"bytes": 208620,
+					"sha256": "24b5813de52fc167c6dcefcaf45ee1097c3323f10c3196a547df0ac9cd6b7fbd"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Tiles074",
+			"title": "Tiles 074",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Tiles074",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Tiles074",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Tiles074",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Tiles074/Tiles074_1K-JPG_Color.jpg",
+					"bytes": 1152913,
+					"sha256": "cd7011b8c21e0ef4b8ee979ea2ff1a89c5b07b19f570a6dfc5ad26b3bca24857"
+				},
+				{
+					"path": "sources/materials/ambientcg/Tiles074/Tiles074_1K-JPG_NormalGL.jpg",
+					"bytes": 227039,
+					"sha256": "4d0de18fa8802fefc8d7335c5af264d6b932bf34f2be96d38e99f9573b018399"
+				},
+				{
+					"path": "sources/materials/ambientcg/Tiles074/Tiles074_1K-JPG_Roughness.jpg",
+					"bytes": 463120,
+					"sha256": "8995bd151ebd2a5cc767eb2ca848b9c446b9d47510a0685e5fe7e2226e52e22a"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/CorrugatedSteel009",
+			"title": "Corrugated Steel 009",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/CorrugatedSteel009",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/CorrugatedSteel009",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "CorrugatedSteel009",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/CorrugatedSteel009/CorrugatedSteel009_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 149584,
+					"sha256": "5bbe0875736d2313bceafae6c807150697f32b9c8ebae3c541489b2365c6351a"
+				},
+				{
+					"path": "sources/materials/ambientcg/CorrugatedSteel009/CorrugatedSteel009_1K-JPG_Color.jpg",
+					"bytes": 511931,
+					"sha256": "d873459d9752377688fd14e0e4f4b813fc787e66880ce7d06ada07831be048f0"
+				},
+				{
+					"path": "sources/materials/ambientcg/CorrugatedSteel009/CorrugatedSteel009_1K-JPG_Metalness.jpg",
+					"bytes": 180665,
+					"sha256": "f6e180c91aac80365c74fa58e47caef4622690307bf439cfc8243fc618b885ad"
+				},
+				{
+					"path": "sources/materials/ambientcg/CorrugatedSteel009/CorrugatedSteel009_1K-JPG_NormalGL.jpg",
+					"bytes": 486696,
+					"sha256": "0682a09b02db4bd964e0297126355e7d95ebfeb31aa9c8e9835297cdc46d396a"
+				},
+				{
+					"path": "sources/materials/ambientcg/CorrugatedSteel009/CorrugatedSteel009_1K-JPG_Roughness.jpg",
+					"bytes": 293320,
+					"sha256": "9af07f183450a11dc59bf2cb71e91e84f8a60e866724a54e6b86f8f2fdcebbae"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/CorrugatedSteel005",
+			"title": "Corrugated Steel 005",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/CorrugatedSteel005",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/CorrugatedSteel005",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "CorrugatedSteel005",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/CorrugatedSteel005/CorrugatedSteel005_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 234486,
+					"sha256": "aa5b24adb781d1871f53f6e77949d33e844c1feb2deaed2b397575a820013ba7"
+				},
+				{
+					"path": "sources/materials/ambientcg/CorrugatedSteel005/CorrugatedSteel005_1K-JPG_Color.jpg",
+					"bytes": 1039858,
+					"sha256": "82d50f2081aa71ad6bbfe5733e94eeac228e9e9ddc8df1a9e3c801fa30342ca2"
+				},
+				{
+					"path": "sources/materials/ambientcg/CorrugatedSteel005/CorrugatedSteel005_1K-JPG_Metalness.jpg",
+					"bytes": 436913,
+					"sha256": "195c7428e1a5f47e976173ed186ed36a9611e834581a8fb70bc926b3b1416f7b"
+				},
+				{
+					"path": "sources/materials/ambientcg/CorrugatedSteel005/CorrugatedSteel005_1K-JPG_NormalGL.jpg",
+					"bytes": 999551,
+					"sha256": "5eadc958fa5b752c81fdccd4a406906ab9d93052aa65c64e235651d7648920b4"
+				},
+				{
+					"path": "sources/materials/ambientcg/CorrugatedSteel005/CorrugatedSteel005_1K-JPG_Roughness.jpg",
+					"bytes": 638135,
+					"sha256": "35de527844a28ed21ece7888bed83ceb0592743e15897e68995af9b465bb12a9"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/MetalPlates004",
+			"title": "Metal Plates 004",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/MetalPlates004",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/MetalPlates004",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "MetalPlates004",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/MetalPlates004/MetalPlates004_1K-JPG_Color.jpg",
+					"bytes": 315232,
+					"sha256": "e46db24115b397108a168063c1f4e7c12cfa081c7d53d1b53317ab0a405413bb"
+				},
+				{
+					"path": "sources/materials/ambientcg/MetalPlates004/MetalPlates004_1K-JPG_Metalness.jpg",
+					"bytes": 21013,
+					"sha256": "04c2dfdbec8d22cf8cf799f03f84107c858f5a841a0cd68f34b770ea6ec12642"
+				},
+				{
+					"path": "sources/materials/ambientcg/MetalPlates004/MetalPlates004_1K-JPG_NormalGL.jpg",
+					"bytes": 524620,
+					"sha256": "b65d318176a363c9eb7b1f02beaf9d09a42ea0154e3a912a1822628c43654866"
+				},
+				{
+					"path": "sources/materials/ambientcg/MetalPlates004/MetalPlates004_1K-JPG_Roughness.jpg",
+					"bytes": 344966,
+					"sha256": "ed8f0a7602b53e441e89410141a295af2d60d29d37ede2f80897b67c9ae79b12"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/MetalPlates008",
+			"title": "Metal Plates 008",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/MetalPlates008",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/MetalPlates008",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "MetalPlates008",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/MetalPlates008/MetalPlates008_1K-JPG_Color.jpg",
+					"bytes": 727204,
+					"sha256": "85e0344c31401900fb25175bce71ed599a116fea0e7b6f01fbe8ce2c99815f1b"
+				},
+				{
+					"path": "sources/materials/ambientcg/MetalPlates008/MetalPlates008_1K-JPG_Metalness.jpg",
+					"bytes": 4353,
+					"sha256": "649044994d22e223f2f54b07d5feefdddd638ef3981cccd2ddf1a6a3d97ac132"
+				},
+				{
+					"path": "sources/materials/ambientcg/MetalPlates008/MetalPlates008_1K-JPG_NormalGL.jpg",
+					"bytes": 586952,
+					"sha256": "ac436aa4d73845a25be295ad91917fa58269d7e381f2ff937912e9202f718454"
+				},
+				{
+					"path": "sources/materials/ambientcg/MetalPlates008/MetalPlates008_1K-JPG_Roughness.jpg",
+					"bytes": 298331,
+					"sha256": "aa4d8e11ceb67c04dbfc0f6e9ea7280ab4b9f188a29605bf1d28a1a56fe4d114"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/WoodSiding009",
+			"title": "Wood Siding 009",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/WoodSiding009",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/WoodSiding009",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "WoodSiding009",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/WoodSiding009/WoodSiding009_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 131903,
+					"sha256": "1e8a181bad707198385d57f1cc18b1446fb4fa7c7fae6e468fe50c3c5fedbc21"
+				},
+				{
+					"path": "sources/materials/ambientcg/WoodSiding009/WoodSiding009_1K-JPG_Color.jpg",
+					"bytes": 744688,
+					"sha256": "b5388a2a62561bbaff10a13ec874c92e18db94f024b15f8101e7f38a4d174b41"
+				},
+				{
+					"path": "sources/materials/ambientcg/WoodSiding009/WoodSiding009_1K-JPG_Metalness.jpg",
+					"bytes": 5900,
+					"sha256": "320651a25943942b0a0694b9f0e5e634194aa66d9a632951da1a07849763e3de"
+				},
+				{
+					"path": "sources/materials/ambientcg/WoodSiding009/WoodSiding009_1K-JPG_NormalGL.jpg",
+					"bytes": 795284,
+					"sha256": "8c575efe3322da3d3d513799c02a1f22925c8f163cfebb0d569fecaf0f293ea0"
+				},
+				{
+					"path": "sources/materials/ambientcg/WoodSiding009/WoodSiding009_1K-JPG_Roughness.jpg",
+					"bytes": 245546,
+					"sha256": "f51f67f32789d564a50ddb8eb8cefc27c21f77c0a5bb78199bb32e55edf715f2"
+				}
+			]
+		},
+		{
+			"id": "materials/ambientcg/Planks039",
+			"title": "Planks 039",
+			"purpose": "City material",
+			"authors": [
+				{
+					"name": "ambientCG"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://ambientcg.com/a/Planks039",
+			"fetched": "2026-10-03",
+			"changes": "None. Kept the 1K JPG colour, OpenGL normal, roughness, ambient occlusion, metalness and emission maps that the set has; left out the DirectX normal, displacement and opacity maps and the previews.",
+			"dir": "sources/materials/ambientcg/Planks039",
+			"origin": {
+				"kind": "ambientcg",
+				"id": "Planks039",
+				"resolution": "1K-JPG",
+				"maps": [
+					"Color",
+					"NormalGL",
+					"Roughness",
+					"AmbientOcclusion",
+					"Metalness",
+					"Emission"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/materials/ambientcg/Planks039/Planks039_1K-JPG_AmbientOcclusion.jpg",
+					"bytes": 323215,
+					"sha256": "527a66f445df85d115e9dae077a9d5a7ab61eb43bf990a1b17448091fe00cc8e"
+				},
+				{
+					"path": "sources/materials/ambientcg/Planks039/Planks039_1K-JPG_Color.jpg",
+					"bytes": 716040,
+					"sha256": "55084c3e014cceb616aed5ec748c0f252be2f82caa0f373c3f2c0ce249217911"
+				},
+				{
+					"path": "sources/materials/ambientcg/Planks039/Planks039_1K-JPG_NormalGL.jpg",
+					"bytes": 575442,
+					"sha256": "882cd81686beaa8f9292ff3f67c54aade7a2362a9504708da7fbe86125ad0eb7"
+				},
+				{
+					"path": "sources/materials/ambientcg/Planks039/Planks039_1K-JPG_Roughness.jpg",
+					"bytes": 301872,
+					"sha256": "379feb35f5193e0c73525de5965242c875ca13f1b1a92d590fd1c59581d42355"
+				}
+			]
+		},
+		{
+			"id": "hdri/polyhaven/kloofendal_48d_partly_cloudy_puresky",
+			"title": "Kloofendal 48d Partly Cloudy (Pure Sky)",
+			"purpose": "Clear sky with clouds, for outdoor light and a sky background",
+			"authors": [
+				{
+					"name": "Greg Zaal",
+					"role": "original"
+				},
+				{
+					"name": "Jarod Guest",
+					"role": "sky edits"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky",
+			"fetched": "2026-10-03",
+			"changes": "None.",
+			"dir": "sources/hdri/polyhaven/kloofendal_48d_partly_cloudy_puresky",
+			"origin": {
+				"kind": "polyhaven",
+				"id": "kloofendal_48d_partly_cloudy_puresky",
+				"files": [
+					{
+						"resolution": "2k",
+						"format": "hdr"
+					}
+				]
+			},
+			"files": [
+				{
+					"path": "sources/hdri/polyhaven/kloofendal_48d_partly_cloudy_puresky/kloofendal_48d_partly_cloudy_puresky_2k.hdr",
+					"bytes": 5451493,
+					"sha256": "5244534e9cf5b606f2ff513aa00ddb161b0a4826ffd88a0d3bd03ac29247d198"
+				}
+			]
+		},
+		{
+			"id": "hdri/polyhaven/venice_sunset",
+			"title": "Venice Sunset",
+			"purpose": "Low sun at sunset",
+			"authors": [
+				{
+					"name": "Greg Zaal"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://polyhaven.com/a/venice_sunset",
+			"fetched": "2026-10-03",
+			"changes": "None.",
+			"dir": "sources/hdri/polyhaven/venice_sunset",
+			"origin": {
+				"kind": "polyhaven",
+				"id": "venice_sunset",
+				"files": [
+					{
+						"resolution": "2k",
+						"format": "hdr"
+					}
+				]
+			},
+			"files": [
+				{
+					"path": "sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr",
+					"bytes": 5723224,
+					"sha256": "cbfac020ee17ab36016ccc7fbe9020b828587b9864af6ecda0a93089914889a6"
+				}
+			]
+		},
+		{
+			"id": "hdri/polyhaven/potsdamer_platz",
+			"title": "Potsdamer Platz",
+			"purpose": "City square, for the city scene",
+			"authors": [
+				{
+					"name": "Greg Zaal"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://polyhaven.com/a/potsdamer_platz",
+			"fetched": "2026-10-03",
+			"changes": "None.",
+			"dir": "sources/hdri/polyhaven/potsdamer_platz",
+			"origin": {
+				"kind": "polyhaven",
+				"id": "potsdamer_platz",
+				"files": [
+					{
+						"resolution": "2k",
+						"format": "hdr"
+					}
+				]
+			},
+			"files": [
+				{
+					"path": "sources/hdri/polyhaven/potsdamer_platz/potsdamer_platz_2k.hdr",
+					"bytes": 6042302,
+					"sha256": "bd71819f767a03f1342aa4c1abb56dbed7bd53c6b9ce414184366267dc9d8320"
+				}
+			]
+		},
+		{
+			"id": "hdri/polyhaven/studio_small_09",
+			"title": "Studio Small 09",
+			"purpose": "Studio light for product models, with an OpenEXR copy for the EXR reader",
+			"authors": [
+				{
+					"name": "Sergej Majboroda"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://polyhaven.com/a/studio_small_09",
+			"fetched": "2026-10-03",
+			"changes": "None.",
+			"dir": "sources/hdri/polyhaven/studio_small_09",
+			"origin": {
+				"kind": "polyhaven",
+				"id": "studio_small_09",
+				"files": [
+					{
+						"resolution": "2k",
+						"format": "hdr"
+					},
+					{
+						"resolution": "1k",
+						"format": "exr"
+					}
+				]
+			},
+			"files": [
+				{
+					"path": "sources/hdri/polyhaven/studio_small_09/studio_small_09_1k.exr",
+					"bytes": 1319434,
+					"sha256": "44dcbed056512ecd8afd2a3d7ba73d2dd4c24694d0c72005fafcb2469bbc8fd4"
+				},
+				{
+					"path": "sources/hdri/polyhaven/studio_small_09/studio_small_09_2k.hdr",
+					"bytes": 6312947,
+					"sha256": "36724313c0fc66dab126ff90f081b85a0b1ef47be65eda1417bd20b033f0573f"
+				}
+			]
+		},
+		{
+			"id": "luts",
+			"title": "Colour grading tables",
+			"purpose": "Colour grading tables in .cube and .3dl form: identity, warm and cool",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/null3d-engine/sample-assets/blob/main/scripts/luts.ts",
+			"fetched": "2026-10-03",
+			"changes": "Generated by scripts/luts.ts.",
+			"dir": "sources/luts",
+			"origin": {
+				"kind": "generated",
+				"script": "scripts/luts.ts"
+			},
+			"files": [
+				{
+					"path": "sources/luts/cool.3dl",
+					"bytes": 69144,
+					"sha256": "abf1e35c7efa6a0c2b6bacd4e4b30e93fa26bacf6c8a3da645a2999324079e6d"
+				},
+				{
+					"path": "sources/luts/cool.cube",
+					"bytes": 862550,
+					"sha256": "cf05ce24b99c6c28a2cd8cb74f8c9914cb130f55d88d7b042ef4a59a98b59d4e"
+				},
+				{
+					"path": "sources/luts/identity.3dl",
+					"bytes": 68559,
+					"sha256": "2d3c7027a42c2bb84d87b5f6d4c0b07812226f7a89c2cf9f98f9994cb7440852"
+				},
+				{
+					"path": "sources/luts/identity.cube",
+					"bytes": 862554,
+					"sha256": "0dc0324e4ceb2bfda3d17087d736d7e060bae318c082537852f6295624a2c074"
+				},
+				{
+					"path": "sources/luts/warm.3dl",
+					"bytes": 68848,
+					"sha256": "8203d9150670875c1b24c9a041145e1e5afffe29f3a9762474b0a9429db278b5"
+				},
+				{
+					"path": "sources/luts/warm.cube",
+					"bytes": 862550,
+					"sha256": "e96bf8138858afa559ca0e3e78a792aa629e7da6c032ccc50d10876f78cbbf3d"
+				}
+			]
+		}
+	]
+}
