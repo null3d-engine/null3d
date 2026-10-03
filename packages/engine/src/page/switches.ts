@@ -3,7 +3,8 @@
 // ?check=fresh, ?wake=message, ?hdr=off, ?half= and ?compression=. Six more set what the
 // benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the
 // shared memory's maximum, ?queue= for the frames that may wait on the GPU, ?cells=off for culling
-// without grid cells and ?prepass=on or off for the depth prepass. ?hold starts hold mode for
+// without grid cells, ?prepass=on or off for the depth prepass, and ?skinning=vertex for skinning
+// in the vertex shader of each pass on WebGPU. ?hold starts hold mode for
 // image tests, ?preset= fixes the quality preset, ?bench publishes the running engine for benchmark
 // tools, and ?gl-timing times each WebGL call for benchmark pages.
 
@@ -117,6 +118,12 @@ export interface Switches {
 	 */
 	prepass: boolean | undefined;
 	/**
+	 * True when ?skinning=vertex makes WebGPU skin skinned meshes in the vertex shader of each pass
+	 * that draws them, as WebGL2 does, instead of once per frame in a compute pass, to measure the
+	 * two against each other.
+	 */
+	vertexSkinning: boolean;
+	/**
 	 * The frame rate from ?fps= that the thread that draws holds, up to the display's rate, or
 	 * undefined to draw at the display's rate.
 	 */
@@ -201,6 +208,7 @@ export function parseSwitches(search: string): Switches {
 		half: onOff(params.get('half')),
 		cells: params.get('cells') !== 'off',
 		prepass: onOff(params.get('prepass')),
+		vertexSkinning: params.get('skinning') === 'vertex',
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),

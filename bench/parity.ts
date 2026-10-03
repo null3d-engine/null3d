@@ -47,6 +47,7 @@ import {
 	featurePagePath,
 	featurePair,
 	featureScene,
+	featureTiers,
 	formatStoredBaselines,
 	type HoldFrame,
 	holdPagePath,
@@ -61,6 +62,8 @@ import {
 	passesWithBaseline,
 	STORED_BASELINES_FILE,
 	type StoredBaselines,
+	TIERS,
+	type Tier,
 } from './lib/parity';
 
 const OUTPUT_DIR = join(REPO_ROOT, 'test-results/parity');
@@ -79,6 +82,8 @@ interface SceneSource {
 	pair(comparison: Comparison): PagePair;
 	limit: number;
 	baseline: boolean;
+	/** The tiers on which null3D draws the scene. */
+	tiers: readonly Tier[];
 }
 
 /** How the command draws a benchmark scene or a feature scene. */
@@ -91,6 +96,7 @@ function sourceOf(name: string, switches: string): SceneSource {
 			pair: (comparison) => comparison,
 			limit: MAX_DIFFERENT_PERCENT,
 			baseline: true,
+			tiers: TIERS,
 		};
 	const scene = featureScene(name);
 	if (!scene) throw new Error(`no page draws the scene ${name}`);
@@ -102,6 +108,7 @@ function sourceOf(name: string, switches: string): SceneSource {
 			comparison.tier === undefined ? comparison : featurePair(scene, comparison.tier),
 		limit: scene.limit ?? MAX_DIFFERENT_PERCENT,
 		baseline: scene.webglOnly !== true,
+		tiers: featureTiers(scene),
 	};
 }
 
@@ -221,6 +228,10 @@ async function main(): Promise<void> {
 				};
 				if (options.saveBaselines && isBenchScene(scene)) await baselineShare();
 				for (const comparison of options.comparisons) {
+					if (comparison.tier !== undefined && !source.tiers.includes(comparison.tier)) {
+						console.log(`skip  ${scene} ${comparison.label}: null3D does not draw it there`);
+						continue;
+					}
 					const pair = source.pair(comparison);
 					const engines = pair.candidate.startsWith('null3d');
 					const { pass, line } = runComparison(

@@ -298,11 +298,13 @@ impl Compiler {
                 defs.extend(declared.iter().map(|hook| hook.def.to_owned()));
                 defs.extend(uniforms.as_ref().map(|_| UNIFORMS_DEF.to_owned()));
                 defs.sort();
-                // Custom materials draw at full precision, so their builds stay half as many.
+                // Custom materials draw at full precision, so their builds stay half as many. They
+                // draw skinned meshes from the skinning pass's vertices, so they need no SKIN
+                // builds either.
                 let permutations = variant
                     .permutations
                     .iter()
-                    .filter(|bit| *bit != "HALF")
+                    .filter(|bit| *bit != "HALF" && *bit != "SKIN")
                     .cloned()
                     .collect();
                 let variant = Variant {

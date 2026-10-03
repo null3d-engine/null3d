@@ -111,6 +111,11 @@ export interface CoreDevice {
 	 * WebGPU path draws the prepass.
 	 */
 	depthPrepass: boolean;
+	/**
+	 * True when WebGPU skins skinned meshes in the vertex shader of each pass, false when it skins
+	 * each once per frame in a compute pass.
+	 */
+	vertexSkinning: boolean;
 }
 
 /**
@@ -158,6 +163,7 @@ export type DeviceOptions = Pick<
 	| 'freshShaders'
 	| 'compression'
 	| 'cells'
+	| 'vertexSkinning'
 > & {
 	/** The anti-aliasing mode. */
 	antialias: AntialiasMode;
@@ -280,6 +286,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		transparent: options.transparent,
 		cellCulling: options.cells,
 		depthPrepass: options.depthPrepass,
+		vertexSkinning: options.vertexSkinning,
 	};
 	if (tier !== 'webgl2') {
 		return {

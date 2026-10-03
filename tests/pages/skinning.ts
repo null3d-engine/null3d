@@ -1,5 +1,5 @@
-// The skinning measurement page. It draws the skinning scene of `lib/skinning.ts` on WebGL2 in two
-// ways, and times both in turns:
+// The skinning measurement page on WebGL2. It draws the skinning scene of `lib/skinning.ts` in two
+// ways, and times both in turns (`skinning-webgpu.ts` is its twin on WebGPU):
 // - vertex-shader: every shadow cascade and the main pass skin each character in the vertex shader,
 //   which reads four joint matrices from a float texture per vertex.
 // - transform-feedback: one pass with the rasterizer off skins each character that some pass draws
@@ -13,6 +13,7 @@
 // this page measures which design to build.
 import { progress, run } from './lib/result';
 import {
+	type SkinningPath as AnyPath,
 	type Cascade,
 	cameraView,
 	characterMesh,
@@ -26,7 +27,6 @@ import {
 	poseCharacters,
 	quartiles,
 	SKINNING,
-	type SkinningPath,
 	type SkinningResult,
 } from './lib/skinning';
 import {
@@ -41,6 +41,9 @@ const cascadeCount = Math.min(MAX_CASCADES, Math.max(1, Number(params.get('casca
 const rounds = Number(params.get('rounds') ?? SKINNING.rounds);
 const warmUpMs = Number(params.get('warmup') ?? SKINNING.warmUpMs);
 const [width, height] = SKINNING.size;
+
+/** The page's two paths. */
+type SkinningPath = Extract<AnyPath, 'vertex-shader' | 'transform-feedback'>;
 
 /** The characters' color and the ground's. */
 const CHARACTER_ALBEDO = [0.8, 0.45, 0.3] as const;
@@ -592,6 +595,7 @@ run('skinning', async (): Promise<SkinningResult & Record<string, unknown>> => {
 		};
 	};
 	return {
+		gpu: 'webgl2',
 		characters,
 		cascades: cascadeCount,
 		size: SKINNING.size,

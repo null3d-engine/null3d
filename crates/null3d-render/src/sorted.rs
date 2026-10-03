@@ -49,6 +49,9 @@ type SortedKey = (DrawKey, u32, u32, u32, u32, u32);
 
 /// A sentinel for a scene slot or batch that the transparent pass does not draw.
 const NOT_SORTED: u32 = u32::MAX;
+/// The bit of a sorted bucket's group that marks a skinned object's bucket of its own, whose slot
+/// the bits below hold.
+const SKINNED_GROUP: u32 = 1 << 31;
 
 /// One sorted bucket.
 #[derive(Clone, Copy, Debug)]
@@ -61,8 +64,17 @@ pub(crate) struct SortedBucket {
     pub(crate) mesh: u32,
     /// The engine material id.
     pub(crate) material: u32,
-    /// The data texture its rows come from, where the builder has several.
+    /// The data texture its rows come from, where the builder has several, or a skinned object's
+    /// slot with [`SKINNED_GROUP`].
     pub(crate) group: u32,
+}
+
+impl SortedBucket {
+    /// The scene slot of the skinned object whose bucket this is, or `None` for a bucket that
+    /// draws no skinned object.
+    pub(crate) fn skinned_slot(&self) -> Option<u32> {
+        (self.group & SKINNED_GROUP != 0).then_some(self.group & !SKINNED_GROUP)
+    }
 }
 
 /// A batch whose material blends: its handle, its bucket, and the place of its first row in the
@@ -198,7 +210,8 @@ impl SortedLayout {
     /// key a bucket, with its pipeline id from `pipelines` for a pass that draws into `targets`.
     /// `place` gives a batch's first row in the builder's data and its data texture. While
     /// `shadows` is true, scene objects that receive shadows draw with pipelines that read the
-    /// shadow map. The layout then reserves every list that a frame's sort takes.
+    /// shadow map. `skin` gives the pipeline of a skinned object's pair, or `None` for an object
+    /// that is not skinned. The layout then reserves every list that a frame's sort takes.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn rebuild(
         &mut self,
@@ -210,6 +223,7 @@ impl SortedLayout {
         place: impl Fn(usize, &InstanceBatch) -> (u32, u32),
         resident: u32,
         shadows: bool,
+        skin: impl Fn(usize, DrawKey) -> Option<DrawKey>,
     ) -> Result<(), TryReserveError> {
         let meshes = settings.meshes();
         let key_of = |mesh: u32, material: u32, group: u32, object: u32| -> Option<SortedKey> {
@@ -226,9 +240,21 @@ impl SortedLayout {
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             Some((pipeline, textures, page, mesh, material, group))
         };
+        // A skinned object draws from a bucket of its own, with the pipeline that `skin` gives.
         let scene_key = |slot: usize| {
             let (mesh, material) = (scene.meshes()[slot], scene.materials()[slot]);
-            key_of(mesh, material, resident, scene.flags()[slot])
+            let key = key_of(mesh, material, resident, scene.flags()[slot])?;
+            Some(match skin(slot, key.0) {
+                Some(skinned) => (
+                    skinned,
+                    key.1,
+                    key.2,
+                    key.3,
+                    key.4,
+                    SKINNED_GROUP | slot as u32,
+                ),
+                None => key,
+            })
         };
         // Instance batches receive no shadows yet.
         let batch_key = |index: usize, batch: &InstanceBatch| {
