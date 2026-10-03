@@ -101,7 +101,7 @@ Match the original's settings: the same tone mapping and a pixel ratio of 1. `po
 | Scene content | Suggested tolerance | Why |
 | --- | --- | --- |
 | Geometry, unlit and standard materials, lights, fog, tone mapping, no shadows or post effects | Under 0.1% of pixels differ by more than the 0.1 threshold | null3D's own parity scenes stay under it on every GPU tier |
-| The same with directional shadows | Under 0.5% of pixels | Shadow edges differ: three.js's `PCFShadowMap` takes five rotated taps of one map, and null3D one hardware-filtered tap of a cascade |
+| The same with directional shadows | Under 0.5% of pixels | Shadow edges differ: three.js's `PCFShadowMap` takes five rotated taps of one map. null3D blends a square of 3 or 5 texels on each side of a cascade, as the `shadowFilter` quality setting gives |
 | Lambert, Phong or Toon materials ported by approximation | Review the diff image with the user | Differences are expected by design |
 | Bloom, ambient occlusion, other effects | Review with the user | Effects are implemented differently |
 | Text, HTML labels | Compare in the browser, not in images | Labels are HTML on the page |
@@ -113,7 +113,7 @@ null3D checks its own parity with three.js r186 on scenes of each feature, on co
 - Shadows: edge pixels differ, as the table says. On SwiftShader the shadow scene differed in 0.18% to 0.22% of its pixels.
 - Tone mapping with anti-aliasing: null3D averages an edge's samples before it tone maps them, and `WebGLRenderer` after. Where a very bright surface meets a dark one, the edge pixels differ. Compare such views with anti-aliasing off on both sides, or review those edges.
 - The background color: null3D tone maps and exposes it with the scene. `WebGLRenderer` clears to `scene.background` as it is, with no tone mapping or exposure. With an exposure other than 1, or a curve that changes the background's color, the two backgrounds differ.
-- Hemisphere lights: null3D 0.1 stores them but does not draw them yet. A view lit by a `HemisphereLight` is darker in the port.
+- Hemisphere lights: null3D stores them, and lights surfaces with them from 0.2. A view lit by a `HemisphereLight` is darker in the port until then.
 
 ## 5. Compare performance
 

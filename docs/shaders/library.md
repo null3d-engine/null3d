@@ -10,7 +10,7 @@ summary: "The WGSL modules that ship with the engine: math, noise, color, lighti
 
 # Shader library and imports
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. A custom material's surface function can call these modules. Full shaders are not built yet, so the engine cannot draw with a whole shader of your own.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. A custom material's surface function, vertex offset or full shader can call these modules.
 
 The shader library is a set of WGSL modules that ship with the engine. A shader imports a module with an `#import` line, and the build adds the functions that the shader calls. The build then translates the shader for WebGL2, so each function works on both GPU paths. The engine's own shaders use the same modules.
 

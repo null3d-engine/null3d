@@ -4,7 +4,7 @@ description: Port three.js projects, scenes, examples, components and shaders to
 compatibility: The scanner script needs Node.js 18 or newer. Porting needs a null3D project as the target; the null3d-develop skill covers null3D itself.
 metadata:
   skill-version: 0.1.0
-  engine-versions: 0.1 to 1.0
+  engine-versions: "0.1"
 ---
 
 # Porting three.js to null3D
@@ -129,9 +129,7 @@ For `post-1.0` and `unsupported` rows:
 3. Never drop a feature silently. List every omission and workaround in the report.
 4. Do not layer a three.js canvas over the null3D canvas to keep one effect. Two GPU contexts double memory and break the frame pacing; use it only as a stopgap the user explicitly accepts.
 
-## 6. A small example (later in 0.1)
-
-The null3D half needs hemisphere lights that light surfaces, which come later in 0.1.
+## 6. A small example
 
 Before, in three.js:
 
@@ -147,7 +145,10 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100);
 camera.position.set(0, 1.5, 4);
 const controls = new OrbitControls(camera, renderer.domElement);
-scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x404040, 2));
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const sun = new THREE.DirectionalLight(0xffffff, 3);
+sun.position.set(1, 2, 1);
+scene.add(sun);
 const cube = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ color: 0x4a8cff }));
 scene.add(cube);
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
@@ -173,7 +174,8 @@ export default defineSketch(async (ctx) => {
   const camera = scene.createPerspectiveCamera({ fov: 60, near: 0.1, far: 100, position: [0, 1.5, 4] });
   scene.setActiveCamera(camera);
   const controls = createOrbitControls(ctx, camera);
-  scene.createHemisphereLight({ skyColor: 0xdfe8ff, groundColor: 0x404040, intensity: 2 });
+  scene.createAmbientLight({ intensity: 0.4 });
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 }); // from the light's position to its target
   const cube = scene.createMesh({
     mesh: geometry.box(),
     material: materials.standard({ color: 0x4a8cff }),
@@ -188,7 +190,7 @@ export default defineSketch(async (ctx) => {
 });
 ```
 
-The resize handler, the pixel-ratio call, `scene.add` and the render call disappear. The canvas lives in `index.html`, and the engine sizes it from CSS.
+The resize handler, the pixel-ratio call, `scene.add` and the render call disappear. A directional light takes the direction its light travels, where three.js takes a position and a target. The canvas lives in `index.html`, and the engine sizes it from CSS.
 
 ## 7. References in this skill
 
