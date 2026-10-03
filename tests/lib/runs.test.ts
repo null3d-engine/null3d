@@ -48,6 +48,7 @@ import {
 	batchTimeoutMs,
 	currentItem,
 	type ItemResult,
+	inLanes,
 	type Plan,
 	type PlanItem,
 	pickItems,
@@ -76,6 +77,36 @@ describe('turnBatches', () => {
 			['mac-safari', 'sm-s926b-chrome', 'ipad-safari'],
 			['mac-brave-browser', 'sm-s926b-chrome-beta'],
 		]);
+	});
+});
+
+describe('inLanes', () => {
+	it('runs at most the lanes at once, and starts the next item as soon as a lane frees', async () => {
+		let running = 0;
+		let most = 0;
+		const order: string[] = [];
+		const times: Record<string, number> = { a: 60, b: 10, c: 10, d: 10 };
+		await inLanes(['a', 'b', 'c', 'd'], 2, async (item) => {
+			running++;
+			most = Math.max(most, running);
+			order.push(item);
+			await Bun.sleep(times[item] ?? 0);
+			running--;
+		});
+		expect(most).toBe(2);
+		// While a runs long, the other lane takes b, c and d one after another.
+		expect(order).toEqual(['a', 'b', 'c', 'd']);
+	});
+
+	it('waits for every lane, then throws the first error', async () => {
+		const done: string[] = [];
+		const work = inLanes(['bad', 'slow'], 2, async (item) => {
+			if (item === 'bad') throw new Error('bad item');
+			await Bun.sleep(30);
+			done.push(item);
+		});
+		await expect(work).rejects.toThrow('bad item');
+		expect(done).toEqual(['slow']);
 	});
 });
 
@@ -131,6 +162,19 @@ describe('waitForRunners', () => {
 			});
 			expect(quietOn).toEqual(['b']);
 			expect(finished).toEqual(['mac-safari']);
+		}));
+
+	it('gives up on a runner page that never starts within the start time, where one is given', () =>
+		withRun(['a'], async (plan) => {
+			const noStart: string[] = [];
+			writeRunnerFile(plan.run, 'started', 'device', {});
+			writeRunnerFile(plan.run, 'started', 'done', {});
+			const finished = await waitForRunners(plan, ['bspixel10-chrome', 'started'], {
+				startMs: 100,
+				onNoStart: (runner) => noStart.push(runner),
+			});
+			expect(finished).toEqual(['started']);
+			expect(noStart).toEqual(['bspixel10-chrome']);
 		}));
 
 	it('allows the current page its timeout, and time to open it', () => {
@@ -1520,6 +1564,7 @@ describe('parseArgs', () => {
 			mac: ['Safari'],
 			android: ['chrome', 'brave'],
 			lan: ['ipad-safari'],
+			cloud: [],
 		});
 		expect(parseArgs(['--allow-no-webgl2', 'Firefox']).missing).toEqual({
 			webgpu: false,

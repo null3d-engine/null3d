@@ -170,8 +170,11 @@ export interface DeviceFacts extends BrowserFacts {
 	origin?: string;
 }
 
-/** How the runner reached a browser: an app on this Mac, the phone over USB, or the network. */
-export type LaunchKind = 'mac' | 'android' | 'lan';
+/**
+ * How the runner reached a browser: an app on this Mac, the phone over USB, the network, or a
+ * session that it opened on a device cloud.
+ */
+export type LaunchKind = 'mac' | 'android' | 'lan' | 'cloud';
 
 /** One runner's outcome in a run, with what the record's row needs besides the device. */
 export interface RowInput {
@@ -280,6 +283,7 @@ function pathsText(gpu: GpuFacts | undefined): string {
 
 /** Where the browser ran: the owner's Mac or phone, or a cloud that the page's address names. */
 function whereText(launch: LaunchKind, origin: string | undefined): string {
+	if (launch === 'cloud') return 'BrowserStack Automate';
 	if (origin?.includes('bs-local.com')) return 'BrowserStack Live';
 	if (origin?.includes('testingbot')) return "TestingBot's device cloud";
 	if (launch === 'mac') return "the owner's Mac";
