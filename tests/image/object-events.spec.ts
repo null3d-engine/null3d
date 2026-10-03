@@ -3,8 +3,9 @@
 // event on the object under the pointer, then on its group, enter and leave in pairs, and no click
 // after a drag. Before any object listens, and after the last handler goes, pointer events cast no
 // ray. A tap on the touch screen enters, clicks and leaves. During a fast pan, a click must cast its
-// ray from the frame on screen at the click. Each runs in every thread mode, and the moves and
-// clicks on every GPU path.
+// ray from the frame on screen at the click, and a click while a frame of the setup is on screen
+// must cast from the setup's camera. Each runs in every thread mode, and the moves and clicks on
+// every GPU path.
 import { expect, type Page, test } from '@playwright/test';
 import { allocatingPlaces } from '../lib/allocations.ts';
 import { ENGINE_MODES, type EngineMode } from '../lib/engine-checks.ts';
@@ -37,12 +38,17 @@ const KEPT_FRAMES = 4;
 /** How far a turn may stray: well under one frame's step, well over rounding. */
 const TURN_TOLERANCE = 1e-4;
 
-const switchesOf = (mode: EngineMode, tier?: string) =>
-	[tier ? `gpu=${tier}` : '', mode.query].filter(Boolean).join('&');
+const switchesOf = (mode: EngineMode, tier?: string, extra = '') =>
+	[tier ? `gpu=${tier}` : '', mode.query, extra].filter(Boolean).join('&');
 
 /** Opens the page and returns a function that sends the sketch a message and gives its reply. */
 async function open(page: Page, switches: string) {
 	await page.goto(`object-events.html?${switches}`);
+	return started(page);
+}
+
+/** Waits for the page's result, and returns the function that `open` returns. */
+async function started(page: Page) {
 	const result = await pageResult<{ ok: boolean; error?: string }>(page, 30_000);
 	expect(result.error).toBeUndefined();
 	return (message = 'ask') =>
@@ -214,6 +220,25 @@ for (const mode of ENGINE_MODES)
 		// that comes while a frame draws still names the frame before, so they get no such check.
 		if (mode.latency === 'pipelined')
 			expect(panClicks.filter((click) => click.shown < click.frame - 1).length).toBeGreaterThan(0);
+	});
+
+for (const mode of ENGINE_MODES)
+	test(`a click while a frame of the setup is on screen picks what that frame showed, ${mode.name}`, async ({
+		page,
+	}) => {
+		// A fixed preset skips the preset check, whose frames after the setup also count as frame 0
+		// and would keep the camera that the setup ends with.
+		await page.goto(`object-events.html?${switchesOf(mode, undefined, 'setup&preset=medium')}`);
+		// The setup waits, with its frame of the box on screen and a camera that looks away active.
+		await page.waitForFunction(
+			() => (globalThis as { objectEventsSetup?: unknown }).objectEventsSetup,
+		);
+		await page.mouse.click(RIGHT.x, RIGHT.y);
+		await page.evaluate(() =>
+			(globalThis as { objectEventsSetup?: { go: () => void } }).objectEventsSetup?.go(),
+		);
+		const send = await started(page);
+		await expectLines(send, ['click right 0']);
 	});
 
 test('pointer events allocate nothing', async ({ page }) => {

@@ -17,10 +17,11 @@
 // ?sun=<degrees> raises the sun that many degrees above the horizon, from the same side, instead
 // of S4's 54 degrees. ?filter=5 blends shadows over 5 x 5 texels instead of 3 x 3.
 //
-// ?moving adds a blue box that drives to and fro along x at 10 m/s, dynamic, behind the still red
-// ones. ?far=<n> sets the frames between two draws of a far cascade, 1 by default, and turns off
-// the governor, which would lengthen it. ?bias= and ?normalBias= set the light's biases, and
-// ?mapSize= the shadow map's texels on each side, 512 by default.
+// ?moving adds a blue box that drives to and fro along x, dynamic, behind the still red ones. It
+// moves a fixed step in each frame, 10 m/s at 60 frames a second, so a slow GPU reads the box
+// where a fast one does. ?far=<n> sets the frames between two draws of a far cascade, 1 by
+// default, and turns off the governor, which would lengthen it. ?bias= and ?normalBias= set the
+// light's biases, and ?mapSize= the shadow map's texels on each side, 512 by default.
 import { defineSketch } from '@null3d/engine';
 import { CONTACT_AIM_HEIGHT, CONTACT_TURN } from '../lib/shadow-turn';
 
@@ -60,8 +61,8 @@ const CAR = [4.2, 1.5, 1.8] as const;
 const SLAB = { center: [-3, 3] as const, size: [30, 0.2, 22] as const };
 /** The box that the near and far views look at, where it stands on the ground. */
 const WATCHED = [1, 0, 3] as const;
-/** How far the driving box goes from the middle each way, in meters, and its speed in m/s. */
-const DRIVE = { reach: 8, speed: 10 } as const;
+/** How far the driving box goes from the middle each way, and its step in each frame, in meters. */
+const DRIVE = { reach: 8, step: 10 / 60 } as const;
 
 /** Each view's lens and where it stands, relative to the watched box. */
 const VIEWS = {
@@ -147,8 +148,8 @@ export default defineSketch(({ scene, materials, geometry, quality, time }) => {
 	return {
 		onUpdate() {
 			// A triangle wave: the box drives at one speed, and turns at each end.
-			const period = (4 * DRIVE.reach) / DRIVE.speed;
-			const phase = (time.now % period) / period;
+			const period = (4 * DRIVE.reach) / DRIVE.step;
+			const phase = (time.frame % period) / period;
 			const at = DRIVE.reach * (phase < 0.5 ? 4 * phase - 1 : 3 - 4 * phase);
 			driving.setPosition(at, CAR[1] / 2, -3);
 		},

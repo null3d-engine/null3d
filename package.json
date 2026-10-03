@@ -59,6 +59,7 @@
 		"@null3d/vite-plugin": "workspace:*",
 		"@types/bun": "^1.3.0",
 		"binaryen": "132.0.0",
+		"gltfpack": "1.3.0",
 		"husky": "^9.1.7",
 		"typescript": "~6.0.3",
 		"vite": "8.3.1"

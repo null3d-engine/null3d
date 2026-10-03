@@ -1759,7 +1759,7 @@ export class Scene {
 	/** @internal The cameras of the last frames, for `screenToRay` and `worldToScreen`. */
 	get frameCameras(): FrameCameras {
 		this.cameras ??= new FrameCameras(this.core, controlViews(createControlBuffer(false)), {
-			frameAt: () => 0,
+			frameAt: () => -1,
 		});
 		return this.cameras;
 	}
@@ -1796,7 +1796,8 @@ export class Scene {
 
 	/**
 	 * @internal Keeps the active camera of sketch frame `frame`, which drew on a canvas of `width`
-	 * by `height` device pixels, so rays from that frame's input use it.
+	 * by `height` device pixels, so rays from that frame's input use it. The setup's frames are
+	 * frame 0.
 	 */
 	keepFrameCamera(frame: number, width: number, height: number): void {
 		this.frameCameras.record(frame, this.activeCamera, width, height);

@@ -214,7 +214,10 @@ class PointerState implements InputPointer {
 	isTouch = false;
 	/** The pointer id of the last event, or -1 before the first. */
 	id = -1;
-	/** The frame on screen at the pointer's last event, whose camera a pick of that event uses. */
+	/**
+	 * The frame on screen at the pointer's last event, in the sketch's count, whose camera a pick of
+	 * that event uses. 0 is a frame that the setup drew, before the sketch's first update.
+	 */
 	frame = 0;
 }
 
@@ -355,8 +358,8 @@ export class InputReader implements Input, PointerInput {
 
 	/**
 	 * The frame that was on screen at the last event of the pointer or a finger at (`x`, `y`) in CSS
-	 * pixels, or 0 when neither is there. A point that the sketch read from the input then names the
-	 * frame that its event's user saw.
+	 * pixels, or -1 when neither is there. A point that the sketch read from the input then names the
+	 * frame that its event's user saw, which is 0 while a frame of the setup was on screen.
 	 */
 	frameAt(x: number, y: number): number {
 		const { pointer, touches } = this;
@@ -365,10 +368,13 @@ export class InputReader implements Input, PointerInput {
 			const touch = touches[k] as TouchState;
 			if (touch.x === x && touch.y === y) return touch.frame;
 		}
-		return 0;
+		return -1;
 	}
 
-	/** The sketch frame on screen now, in the count that the pointer's frame numbers use. */
+	/**
+	 * The sketch frame on screen now, in the count that the pointer's frame numbers use: 0 while a
+	 * frame of the setup is on screen.
+	 */
 	presentedFrame(): number {
 		return Math.max(0, Atomics.load(this.control.slots, Slot.FramePresented) - this.setupFrames);
 	}

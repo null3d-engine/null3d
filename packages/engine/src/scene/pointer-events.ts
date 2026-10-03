@@ -158,7 +158,10 @@ export interface PointerPicker {
 export interface PointerInput {
 	/** The log that collects each frame's pointer events, set while objects listen. */
 	pointerLog: PointerLog | undefined;
-	/** The sketch frame on screen now, whose camera a pointer that rests casts its ray from. */
+	/**
+	 * The sketch frame on screen now, whose camera a pointer that rests casts its ray from. A frame
+	 * of the setup is frame 0.
+	 */
 	presentedFrame(): number;
 }
 
