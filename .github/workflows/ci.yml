@@ -66,6 +66,8 @@ jobs:
 
       - run: bun run check
       - run: bun run typecheck
+      # The meshopt unit tests read the Khronos test file and build test files from the samples.
+      - uses: ./.github/actions/samples
       - run: bun run test
 
       - name: Commit messages and trailers
