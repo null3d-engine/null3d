@@ -132,7 +132,7 @@ three.js's `Raycaster` tests each object's bounding sphere and box, then each tr
 ## Consequences
 
 - `crates/null3d-core/src/bvh/` holds the trees, the queries, the capsules and the stored format. `SceneBvh` keeps the scene's two top-level trees. `SceneStorage` gained `structure_epoch()` and `created()`. The trees follow structural changes through them, and leave the renderer's flag alone.
-- M2-D2 builds the public queries on `SceneBvh`, `TopTree` and `MeshBvh`, and adds instance batch rows to the top level. It writes the "how queries find objects" part of the `api/raycast` docs page from this record. That page stays `planned` until a public query exists.
+- M2-D2 builds the public queries on `SceneBvh`, `TopTree` and `MeshBvh`, and adds instance batch rows to the top level. It writes the "how queries find objects" part of the `api/raycast` docs page from this record. [D-30](D-30-scene-queries.md) records those queries. It also gives each item the box of its mesh, moved by its world matrix, in place of the box around its bounding sphere.
 - M2-A2 keeps the CPU copy of a mesh's positions and indices when queries need them, and builds its tree on a job worker at load.
 - M2-B4 stores trees for large static meshes with `MeshBvh::to_bytes()`. When the reader refuses a stored tree, the loader builds one instead.
 - The skinning tasks give the capsules from the joint matrices.

@@ -478,6 +478,9 @@ pub struct SceneStorage {
     child_offsets: Vec<u32>,
     child_list: Vec<u32>,
     frame: u32,
+    /// Counts the transform updates that wrote world output, so readers can tell whether the
+    /// world arrays changed since they last read them.
+    world_version: u32,
 }
 
 impl SceneStorage {
@@ -529,6 +532,7 @@ impl SceneStorage {
             child_offsets: vec![0; rows],
             child_list: vec![0; rows],
             frame: 0,
+            world_version: 0,
         }
     }
 
@@ -580,6 +584,13 @@ impl SceneStorage {
     /// The current frame: the one the last [`SceneStorage::begin_frame`] started.
     pub fn frame(&self) -> u32 {
         self.frame
+    }
+
+    /// A number that changes with each transform update that writes world output: every
+    /// [`SceneStorage::update_transforms`], and each [`SceneStorage::update_late_transforms`] that
+    /// moved an object. A reader that saw the same number and frame reads the same world output.
+    pub fn world_version(&self) -> u32 {
+        self.world_version
     }
 
     /// The world buffer the current frame writes: `frame & 1`.
@@ -1241,6 +1252,7 @@ impl SceneStorage {
         let used_words = self.slots.high_water().div_ceil(64) as usize;
         self.dirty.words_mut()[..used_words].fill(0);
         self.build_changed_bits(jobs);
+        self.world_version = self.world_version.wrapping_add(1);
     }
 
     /// Recomputes the objects moved since the frame's [`SceneStorage::update_transforms`], and
@@ -1278,6 +1290,7 @@ impl SceneStorage {
         if !moved {
             return;
         }
+        self.world_version = self.world_version.wrapping_add(1);
         let parity = self.parity();
         {
             // No moved object down to the shallowest moved branch has a moved ancestor, so each
