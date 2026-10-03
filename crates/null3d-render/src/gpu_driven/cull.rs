@@ -259,6 +259,11 @@ impl Culling {
         Ok(())
     }
 
+    /// The offsets from the camera of the view uploaded last to each cell in use.
+    pub(super) fn offsets(&self) -> &CellOffsets {
+        &self.offsets
+    }
+
     /// The runs of the cell order that a view's culling pass covers in the last recorded frame,
     /// each its first position and its end, or `None` when it covers every source in place.
     pub(super) fn ranges(&self, view: ViewId) -> Option<impl Iterator<Item = (u32, u32)> + '_> {
