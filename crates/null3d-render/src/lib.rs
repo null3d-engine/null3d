@@ -56,6 +56,7 @@ pub mod meshes;
 pub mod output;
 pub mod parallel_record;
 pub mod pipelines;
+pub mod queries;
 pub mod shadow_tiles;
 pub mod shadows;
 pub mod sorted;

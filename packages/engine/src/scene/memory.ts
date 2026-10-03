@@ -82,6 +82,15 @@ export class CoreMemory {
 	}
 
 	/**
+	 * Throws the core's error for a call that failed, after taking the memory's new buffer, if
+	 * the call grew it.
+	 */
+	fail(call: string, what?: string): never {
+		this.refresh();
+		throw coreFailure(this.glue, call, what);
+	}
+
+	/**
 	 * Checks the result of a core call that can grow the engine's memory, as `check` does. It first
 	 * takes the memory's new buffer, if the call grew it, so every view is made again before its
 	 * next read or write, whether the call failed or not.

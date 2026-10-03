@@ -1144,7 +1144,7 @@
       "status": "direct",
       "since": "0.2",
       "target": "Built in",
-      "notes": "Delete the setup.",
+      "notes": "Delete the setup. Every query walks the engine's own trees over each mesh's triangles and over the scene's objects.",
       "docs": "guides/assets-pipeline",
       "detect": "\\bMeshoptDecoder\\b|setMeshoptDecoder"
     },
@@ -1287,7 +1287,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "camera.screenToRay(x, y, ray); scene.raycast(ray.origin, ray.direction, { layers }, hit)",
-      "notes": "Returns the closest hit; scene.raycastAll returns every hit. Acceleration structures are built in.",
+      "notes": "scene.raycast writes the closest hit into a hit object that you create once, and scene.raycastAll writes every hit, nearest first, into an array. A hit has object, instance (instanceId), point, normal, distance and triangle (faceIndex). The layer mask defaults to layer 0 alone, as Raycaster's does, and the whole scene is tested. Hidden objects are never hit. camera.screenToRay is not built yet. Acceleration structures are built in.",
       "docs": "api/raycast",
       "detect": "\\bRaycaster\\b|\\.setFromCamera\\s*\\(|\\.intersectObjects?\\s*\\("
     },
@@ -1639,7 +1639,7 @@
       "status": "direct",
       "since": "0.2",
       "target": "Built in",
-      "notes": "Delete the setup.",
+      "notes": "Delete the setup. Every query walks the engine's own trees over each mesh's triangles and over the scene's objects.",
       "docs": "api/raycast",
       "detect": "three-mesh-bvh|computeBoundsTree|acceleratedRaycast"
     },

@@ -61,6 +61,14 @@ import {
 } from './lens';
 import type { CoreMemory } from './memory';
 import type { InstancingTemplate, PartTemplate, Prefab, TemplateNode } from './prefab';
+import {
+	type OverlapHit,
+	type QueryOptions,
+	type RaycastBatchHits,
+	type RaycastHit,
+	type RaycastOptions,
+	SceneQueries,
+} from './queries';
 import type { Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
 import { Texture } from './textures';
@@ -1656,6 +1664,12 @@ export class Scene {
 	 * share, in the order of their creation.
 	 */
 	private readonly names = new Map<string, Object3D | Set<Object3D>>();
+	/** The object that each slot holds, or last held, which queries name by slot. */
+	private readonly objectSlots: (Object3D | undefined)[] = [];
+	/** The batch that each batch slot holds, or last held, which queries name by id. */
+	private readonly batchSlots: (InstanceBatch | undefined)[] = [];
+	/** Raycasts and overlap queries, made on the first query. */
+	private sceneQueries: SceneQueries | undefined;
 	/** Rows of the live instance batches, which development builds count. */
 	private batchRows = 0;
 	/** Every live object, which `clone` searches for the objects below the one it copies. */
@@ -1812,15 +1826,25 @@ export class Scene {
 		return this.floatWord[0] as number;
 	}
 
-	/** Adds a new object to the live objects, and to the index of names after those with its name. */
+	/**
+	 * Adds a new object to the live objects, to the index of slots that queries read, and to the
+	 * index of names after those with its name.
+	 */
 	private remember(object: Object3D): void {
 		this.live.add(object);
+		this.objectSlots[object.slot] = object;
 		const { name } = object;
 		if (!name) return;
 		const known = this.names.get(name);
 		if (known === undefined) this.names.set(name, object);
 		else if (known instanceof Set) known.add(object);
 		else this.names.set(name, new Set([known, object]));
+	}
+
+	/** Adds a new batch to the index that queries read, by the slot of each of its core batches. */
+	private rememberBatch(batch: InstanceBatch): void {
+		this.batchSlots[batch.id & SLOT_MASK] = batch;
+		for (const part of batch.parts) this.batchSlots[part & SLOT_MASK] = batch;
 	}
 
 	/** @internal Takes a destroyed object out of the index of names. */
@@ -2200,6 +2224,7 @@ export class Scene {
 		}
 		if (DEV) this.countBatchRows(count * ids.length);
 		const batch = new InstanceBatch(this, ids[0] as number, count, colors, ids.slice(1));
+		this.rememberBatch(batch);
 		if (options.layers !== undefined) batch.setLayers(options.layers);
 		return batch;
 	}
@@ -2250,6 +2275,7 @@ export class Scene {
 		);
 		if (DEV) this.countBatchRows(count);
 		const batch = new InstanceBatch(this, id, count, options.colors ?? false);
+		this.rememberBatch(batch);
 		batch.setActiveCount(count);
 		if (layers !== undefined) batch.setLayers(layers);
 		return batch;
@@ -2403,6 +2429,102 @@ export class Scene {
 	 */
 	setFog(fog: FogOptions | null): void {
 		setSceneFog(this.core.glue, fog);
+	}
+
+	/** The raycasts and overlap queries, made on the first call. */
+	private get queries(): SceneQueries {
+		if (this.sceneQueries === undefined)
+			this.sceneQueries = new SceneQueries(this.core, {
+				objectAt: (slot) => this.objectSlots[slot],
+				batchAt: (id) => {
+					const batch = this.batchSlots[id & SLOT_MASK];
+					return batch && (batch.id === id || batch.parts.includes(id)) ? batch : undefined;
+				},
+			});
+		return this.sceneQueries;
+	}
+
+	/**
+	 * Casts a ray from `origin` along `direction`, and writes its closest hit into `hit`. Returns
+	 * true on a hit. On a miss it sets `hit.object` to null and leaves the other fields as they
+	 * were. The direction needs no unit length. The ray tests the triangles of objects and
+	 * instance rows on the layers of `options.layers`, as their materials draw them: front faces,
+	 * or both faces for a double-sided material. Queries see the scene as the last frame's update
+	 * left it, so a move, a new object or a destroy in this frame counts from the next frame, or
+	 * from `onLateUpdate`. Create `hit` and `options` once and pass them each time.
+	 */
+	raycast(
+		origin: Vec3Like,
+		direction: Vec3Like,
+		options: RaycastOptions | undefined,
+		hit: RaycastHit,
+	): boolean {
+		return this.queries.raycast(origin, direction, options, hit);
+	}
+
+	/**
+	 * True when a ray from `origin` along `direction` hits anything on the layers of
+	 * `options.layers`. It stops at the first hit it finds, so it is faster than `raycast`: use it
+	 * for line-of-sight checks.
+	 */
+	raycastAny(origin: Vec3Like, direction: Vec3Like, options?: RaycastOptions): boolean {
+		return this.queries.raycastAny(origin, direction, options);
+	}
+
+	/**
+	 * Casts a ray as `raycast` does, writes every hit into `hits` nearest first, one hit for each
+	 * triangle that the ray crosses, and returns how many. It fills the first entries of `hits`,
+	 * adds hit objects when the array is too short, and leaves the entries after the hits as they
+	 * were.
+	 */
+	raycastAll(
+		origin: Vec3Like,
+		direction: Vec3Like,
+		options: RaycastOptions | undefined,
+		hits: RaycastHit[],
+	): number {
+		return this.queries.raycastAll(origin, direction, options, hits);
+	}
+
+	/**
+	 * Casts many rays at once on the job workers, and writes each one's closest hit into `out`.
+	 * `rays` holds six numbers per ray: its origin, then its direction. Returns how many rays hit
+	 * something. A miss writes -1 as its distance.
+	 */
+	raycastBatch(
+		rays: ArrayLike<number>,
+		options: RaycastOptions | undefined,
+		out: RaycastBatchHits,
+	): number {
+		return this.queries.raycastBatch(rays, options, out);
+	}
+
+	/**
+	 * Finds the objects and instance rows on the layers of `options.layers` that have a triangle
+	 * within `radius` meters of `center`, writes them into `out`, and returns how many. It fills
+	 * `out` as `raycastAll` fills its hits, in no set order.
+	 */
+	overlapSphere(
+		center: Vec3Like,
+		radius: number,
+		options: QueryOptions | undefined,
+		out: OverlapHit[],
+	): number {
+		return this.queries.overlapSphere(center, radius, options, out);
+	}
+
+	/**
+	 * Finds the objects and instance rows on the layers of `options.layers` that have a triangle
+	 * inside the box from `min` to `max` or crossing it, as `overlapSphere` does. The box's sides
+	 * lie along the world's axes.
+	 */
+	overlapBox(
+		min: Vec3Like,
+		max: Vec3Like,
+		options: QueryOptions | undefined,
+		out: OverlapHit[],
+	): number {
+		return this.queries.overlapBox(min, max, options, out);
 	}
 
 	/**
