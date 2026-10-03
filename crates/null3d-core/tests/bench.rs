@@ -19,10 +19,11 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use common::{
-    Rng, Workers, character, mul4, perspective, terrain, translation, wait_for_every_thread,
+    Rng, Workers, character, mul4, perspective, sphere, terrain, translation, wait_for_every_thread,
 };
 use null3d_core::animation::Animations;
 use null3d_core::bvh::mesh::{IndexedTriangles, MeshBvh, Side, Triangles, raycast_brute_force};
+use null3d_core::bvh::query::{QueryMeshes, QueryScene, SceneQueries};
 use null3d_core::bvh::scene::SceneBvh;
 use null3d_core::bvh::top::{TopTree, WorldRay};
 use null3d_core::bvh::{Aabb, Ray, ray_box_entry};
@@ -710,4 +711,198 @@ fn bench_bvh_city() {
             tested as f64 / 10_000.0
         );
     }
+}
+
+/// A box of 12 triangles and a sphere of 960, the meshes of the query benchmark's scene.
+struct BenchMeshes {
+    meshes: Vec<(Vec<f32>, Vec<u32>)>,
+}
+
+impl QueryMeshes for BenchMeshes {
+    type Mesh<'a> = IndexedTriangles<'a, u32>;
+
+    fn count(&self) -> u32 {
+        self.meshes.len() as u32
+    }
+
+    fn mesh(&self, id: u32) -> Option<IndexedTriangles<'_, u32>> {
+        let (positions, indices) = self.meshes.get(id.checked_sub(1)? as usize)?;
+        Some(IndexedTriangles { positions, indices })
+    }
+
+    fn side(&self, _: u32) -> Side {
+        Side::Front
+    }
+}
+
+#[test]
+#[ignore = "benchmark: run with --release --ignored"]
+fn bench_scene_queries() {
+    println!(
+        "\nscene queries: 20,000 static objects, 2,000 dynamic ones and 10,000 static rows in 1 km"
+    );
+    let box_positions = vec![
+        -1.0, -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 1.0, -1.0, //
+        -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0,
+    ];
+    let box_indices = vec![
+        0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 2, 3, 7, 2, 7, 6, 1, 2, 6, 1, 6, 5,
+        0, 4, 7, 0, 7, 3,
+    ];
+    let (sphere_positions, sphere_indices) = sphere(16, 30);
+    let meshes = BenchMeshes {
+        meshes: vec![
+            (box_positions, box_indices),
+            (
+                sphere_positions,
+                sphere_indices.into_iter().map(u32::from).collect(),
+            ),
+        ],
+    };
+    let mut rng = Rng::new(25);
+    let mut scene = SceneStorage::with_capacity(22_000);
+    let mut batches = BatchTable::with_capacity(1);
+    let mut commands = Vec::new();
+    let mut moving = Vec::new();
+    let place = |rng: &mut Rng| {
+        [
+            rng.range(-500.0, 500.0),
+            rng.range(0.0, 20.0),
+            rng.range(-500.0, 500.0),
+        ]
+    };
+    for i in 0..22_000u32 {
+        let h = scene.reserve().unwrap();
+        scene.set_position(h, place(&mut rng)).unwrap();
+        scene.set_rotation(h, rng.quaternion()).unwrap();
+        let s = rng.range(0.5, 4.0);
+        scene.set_scale(h, [s, s, s]).unwrap();
+        scene.set_local_radius(h, 1.8).unwrap();
+        let f = if i < 20_000 {
+            flags::VISIBLE
+        } else {
+            flags::VISIBLE | flags::DYNAMIC
+        };
+        commands.push(Command::create(h, Handle::NONE, 1 + i % 2, f));
+        if i >= 20_000 {
+            moving.push(scene.resolve(h).unwrap() as usize);
+        }
+    }
+    scene.apply_commands(&commands, 1).unwrap();
+    let rows = batches.create(10_000, false, false, 1, 1, 1.8).unwrap();
+    let batch = batches.get_mut(rows).unwrap();
+    for r in 0..10_000 {
+        let p = place(&mut rng);
+        batch.positions_mut()[r * 3..r * 3 + 3].copy_from_slice(&p);
+    }
+    let serial = JobSystem::new(0);
+    scene.update_transforms(&serial);
+    batches.update(&serial, 1, scene.cell_table_mut());
+    let mut queries = SceneQueries::new();
+    queries.reserve(100_000).unwrap();
+    let start = Instant::now();
+    let view = QueryScene {
+        scene: &scene,
+        batches: &batches,
+        meshes: &meshes,
+    };
+    queries.sync(&view, &serial).unwrap();
+    println!(
+        "  first sync, mesh trees and both scene trees, one thread: {:.2} ms",
+        micros(start.elapsed()) / 1000.0
+    );
+    // Rays from 30 m up toward points on the ground, as picks from a camera above.
+    let rays: Vec<WorldRay> = (0..10_000)
+        .map(|_| {
+            let o = [rng.range(-500.0, 500.0), 30.0, rng.range(-500.0, 500.0)];
+            let t = [rng.range(-500.0, 500.0), 0.0, rng.range(-500.0, 500.0)];
+            let d: [f32; 3] = std::array::from_fn(|k| t[k] - o[k]);
+            let len = d.iter().map(|v| v * v).sum::<f32>().sqrt();
+            WorldRay::new(o.map(f64::from), d.map(|v| v / len))
+        })
+        .collect();
+    let per = |d: Duration, n: usize| micros(d) / n as f64;
+    let closest = fastest(20, || {
+        for r in &rays {
+            black_box(queries.raycast(&view, r, u32::MAX));
+        }
+    });
+    let any = fastest(20, || {
+        for r in &rays {
+            black_box(queries.raycast_any(&view, r, u32::MAX));
+        }
+    });
+    let hits = rays
+        .iter()
+        .filter(|r| queries.raycast(&view, r, u32::MAX).is_some())
+        .count();
+    println!(
+        "  one thread: raycast {:.2} µs, raycastAny {:.2} µs a ray ({hits} of 10,000 rays hit)",
+        per(closest, rays.len()),
+        per(any, rays.len())
+    );
+    let all = fastest(20, || {
+        for r in &rays[..1000] {
+            black_box(queries.raycast_all(&view, r, u32::MAX).len());
+        }
+    });
+    let mut found = 0;
+    let sphere_query = fastest(20, || {
+        found = 0;
+        for r in &rays[..1000] {
+            let c = [r.origin[0], 5.0, r.origin[2]];
+            found += queries.overlap_sphere(&view, c, 10.0, u32::MAX).len();
+        }
+    });
+    let box_query = fastest(20, || {
+        for r in &rays[..1000] {
+            let lo = [r.origin[0] - 10.0, 0.0, r.origin[2] - 10.0];
+            let hi = [r.origin[0] + 10.0, 20.0, r.origin[2] + 10.0];
+            black_box(queries.overlap_box(&view, lo, hi, u32::MAX).len());
+        }
+    });
+    println!(
+        "  one thread: raycastAll {:.2} µs, overlapSphere of 10 m {:.2} µs ({:.1} found), overlapBox of 20 m {:.2} µs",
+        per(all, 1000),
+        per(sphere_query, 1000),
+        found as f64 / 1000.0,
+        per(box_query, 1000)
+    );
+    let mut line = String::from("  a batch of 10,000 rays:");
+    for workers in [0, 3, 7] {
+        let pool = Workers::start(workers);
+        let jobs = pool.jobs();
+        let batch = fastest(20, || {
+            let out = queries.raycast_batch(&view, jobs, 10_000, &|i| rays[i as usize], u32::MAX);
+            black_box(out.unwrap().len());
+        });
+        line += &format!(" {} threads {:.2} ms,", workers + 1, micros(batch) / 1000.0);
+    }
+    println!("{}", line.trim_end_matches(','));
+    // Frames where only the dynamic objects moved.
+    let mut times = Vec::new();
+    let pool = Workers::start(3);
+    for frame in 2..=60u32 {
+        scene.begin_frame(frame);
+        for &slot in &moving {
+            scene.positions_mut()[slot * 3] += 0.1;
+        }
+        scene.update_transforms(pool.jobs());
+        batches.update(pool.jobs(), frame, scene.cell_table_mut());
+        let start = Instant::now();
+        let view = QueryScene {
+            scene: &scene,
+            batches: &batches,
+            meshes: &meshes,
+        };
+        queries.sync(&view, pool.jobs()).unwrap();
+        if frame > 10 {
+            times.push(start.elapsed());
+        }
+    }
+    times.sort();
+    println!(
+        "  a sync where 2,000 dynamic objects moved, 4 threads: {:.1} µs",
+        micros(times[times.len() / 2])
+    );
 }
