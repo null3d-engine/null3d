@@ -10,7 +10,7 @@ import { controlViews, Slot } from '../shared/control';
 import { FrameRecorder, Role } from '../shared/metrics';
 import { notifySlot, type WakeTarget } from '../shared/wake';
 import { FramePacer } from './pacer';
-import { RefreshMeter } from './refresh';
+import { RefreshMeter, snapMeanInterval } from './refresh';
 import type { FrameInput, Renderer } from './renderer';
 
 export interface RenderLoop {
@@ -106,6 +106,13 @@ export class Presenter {
 	private readonly inWorker = typeof document === 'undefined';
 	/** The display's refresh period in microseconds that the pacer holds to, or 0 for none. */
 	private displayInterval = 0;
+	/**
+	 * True once a measurement of a worker's callbacks matched no display's rate: a timer runs them,
+	 * and their rate never tells the display's again, as it slows when the thread waits for the GPU.
+	 */
+	private timerDriven = false;
+	/** The page's display period in microseconds that the metrics hold as the refresh rate, or -1. */
+	private recordedInterval = -1;
 	readonly record: FrameRecorder;
 
 	/**
@@ -129,18 +136,24 @@ export class Presenter {
 	 * Counts a frame callback, from whose times the display's refresh rate follows. Every callback
 	 * counts, including those that draw nothing. When a worker's callbacks come at a rate that no
 	 * display runs at, a timer runs them, and the frames hold to the display's rate that the page
-	 * measured.
+	 * measured. From then on, the metrics hold the page's rate as the refresh rate too: the timer's
+	 * callbacks slow down while the worker waits for the GPU, and the quality governor's budget
+	 * would grow with them.
 	 */
 	tick(timestamp: number): void {
 		const hz = this.refresh.tick(timestamp);
+		const onDisplayRate = this.refresh.onDisplayRate;
 		if (hz !== undefined) {
-			this.record.setRefreshHz(hz);
+			this.timerDriven ||= this.inWorker && !onDisplayRate;
+			if (!this.timerDriven) this.record.setRefreshHz(hz);
 			this.wakeDelay = wakeDelayMs(hz);
 		}
-		const interval =
-			this.inWorker && !this.refresh.onDisplayRate
-				? Atomics.load(this.slots, Slot.DisplayInterval)
-				: 0;
+		const display = this.inWorker ? Atomics.load(this.slots, Slot.DisplayInterval) : 0;
+		if (this.timerDriven && display > 0 && display !== this.recordedInterval) {
+			this.recordedInterval = display;
+			this.record.setRefreshHz(snapMeanInterval(display, 1));
+		}
+		const interval = onDisplayRate ? 0 : display;
 		if (interval === this.displayInterval) return;
 		this.displayInterval = interval;
 		this.pacer.holdToDisplay(interval / MICROSECONDS_PER_MS);
