@@ -225,7 +225,7 @@ function writeView(e: Float64Array, at: number, view: Float64Array): void {
 	view[VIEW_POSITION + 1] = e[m + 7] as number;
 	view[VIEW_POSITION + 2] = e[m + 11] as number;
 	const lens = at + LENS;
-	view[VIEW_SCALE_X] = scaleX(e, at);
+	writeScaleX(e, at, view, VIEW_SCALE_X);
 	view[VIEW_SCALE_Y] = e[lens + LENS_HALF_HEIGHT] as number;
 	view[VIEW_ORTHO] = e[lens + LENS_ORTHO] as number;
 	view[VIEW_CENTER_X] = e[lens + LENS_CENTER_X] as number;
@@ -260,16 +260,23 @@ export function projectPoint(view: Float64Array, point: Vec3Like, out: Vec3Like)
 }
 
 /**
- * Half the view's width in the entry at `at`: one unit in front of a perspective camera, or across
- * an orthographic view. A view whose width follows the canvas takes the shape of the canvas in
- * device pixels, as the core builds the frame's projection from it.
+ * Writes half the view's width in the entry at `at` into `out[index]`: one unit in front of a
+ * perspective camera, or across an orthographic view. A view whose width follows the canvas takes
+ * the shape of the canvas in device pixels, as the core builds the frame's projection from it. The
+ * result goes into an array, not a return value, because the browser makes a new object for each
+ * fraction that a function it does not inline returns.
  */
-function scaleX(e: Float64Array, at: number): number {
+function writeScaleX(e: Float64Array, at: number, out: Float64Array, index: number): void {
 	const halfWidth = e[at + LENS + LENS_HALF_WIDTH] as number;
-	if (halfWidth > 0) return halfWidth;
-	const aspect = (e[at + WIDTH] as number) / (e[at + HEIGHT] as number);
-	return (e[at + LENS + LENS_HALF_HEIGHT] as number) * aspect;
+	out[index] =
+		halfWidth > 0
+			? halfWidth
+			: (e[at + LENS + LENS_HALF_HEIGHT] as number) *
+				((e[at + WIDTH] as number) / (e[at + HEIGHT] as number));
 }
+
+/** The half width that `writeRay` reads, filled again on each call. */
+const rayScale = new Float64Array(1);
 
 /**
  * Writes the ray through the point (`x`, `y`) in CSS pixels for the camera of the entry at `at`. A
@@ -283,7 +290,8 @@ function writeRay(e: Float64Array, at: number, x: number, y: number, out: Ray): 
 	const ndcX = width > 0 ? (x / width) * 2 - 1 : 0;
 	const ndcY = height > 0 ? 1 - (y / height) * 2 : 0;
 	const lens = at + LENS;
-	const sx = ndcX * scaleX(e, at);
+	writeScaleX(e, at, rayScale, 0);
+	const sx = ndcX * (rayScale[0] as number);
 	const sy = ndcY * (e[lens + LENS_HALF_HEIGHT] as number);
 	const ortho = e[lens + LENS_ORTHO] !== 0;
 	// The point and the direction in the camera's own space, which looks down -Z.

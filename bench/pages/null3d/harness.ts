@@ -40,7 +40,7 @@ export interface Null3dPageOptions {
 /**
  * The page's switches that reach the sketch module's address as they are: `blend` makes S1's
  * boxes see through, `animated` adds that many animated characters to S1, `grading` gives S1 a
- * color grading table and the vignette, and `labels` adds that many moving labels to S1, whose
+ * color grading table and the vignette, and `labels` adds that many labeled objects to S1, whose
  * elements the page binds.
  */
 const SKETCH_SWITCHES = ['blend', 'animated', 'grading', 'labels'] as const;
