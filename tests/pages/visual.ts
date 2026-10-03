@@ -5,14 +5,16 @@
 // the canvas in pixels. The engine reads its own switches, such as ?gpu= and ?preset=.
 //
 // The page draws the scene through the shadow check sketch (lib/shadow-check.ts): the frames of the
-// stability check, then the reference for the edge check. ?edge=x0,y0,x1,y1 names a box of the
-// frame that one long shadow edge crosses from top to bottom, whose stair steps the page measures
-// in the frame and in the reference. With ?images, it also captures PNG files of the first and last
-// shadows frames, the reference, and consecutive frames of the moving scene as it draws them, 4
-// unless ?moving= gives another count, and publishes them in base64.
+// stability check, the reference for the edge check, then the normals view for the contact check.
+// ?edge=x0,y0,x1,y1 names a box of the frame that one long shadow edge crosses from top to bottom,
+// whose stair steps the page measures in the frame and in the reference. With ?images, it also
+// captures PNG files of the first and last shadows frames, the reference, the normals view, and
+// consecutive frames of the moving scene as it draws them, 4 unless ?moving= gives another count,
+// and publishes them in base64.
 import { createEngine } from '@null3d/engine';
 import { run, toBase64 } from './lib/result';
 import {
+	contactFigures,
 	edgeOffset,
 	MOVING_FRAMES,
 	type PixelBox,
@@ -95,6 +97,7 @@ run('visual', async () => {
 	}
 	const first = stability[0] as Float32Array;
 	const reference = shadowFactors(await draw(checked('reference'), at, 'shadows-reference'));
+	const normals = await draw(checked('normals'), at, 'normals');
 	if (withImages)
 		for (let k = 0; k < moving; k++) await draw(scene, at + k / 60, `moving-${k + 1}`);
 	return {
@@ -110,6 +113,7 @@ run('visual', async () => {
 				referenceSteps: stairSteps(reference, width, edge),
 			}),
 		},
+		contact: contactFigures(first, normals, width),
 		...(withImages && { images }),
 	};
 });

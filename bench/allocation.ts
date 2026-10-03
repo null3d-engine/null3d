@@ -10,7 +10,9 @@
 // WebGL2 when `--gpu webgl2` asks for it. `--scene s1-cells` runs S1-cells, whose views skip whole
 // grid cells, `--scene s3` runs S3, whose 256 point lights move every frame, and `--scene s4` runs
 // S4, the phone scene, with its shadows, street lights and quality governor. `--blend` makes
-// S1's boxes see through, so each frame sorts every visible row for the transparent pass. It
+// S1's boxes see through, so each frame sorts every visible row for the transparent pass.
+// `--animated 64` adds 64 animated characters to S1, which play, cross-fade, blend a masked layer
+// and an additive one, and fire events to the sketch's handlers through the animator. It
 // samples the production build of the benchmark pages, as a developer ships the engine, and names
 // the build's functions through its source maps; `--dev` samples the dev server's pages, with the
 // engine's development checks. From the repository root:
@@ -21,6 +23,7 @@
 //   bun run bench:allocation --scene s3
 //   bun run bench:allocation --scene s4 --gpu webgl2
 //   bun run bench:allocation --blend --n 30000 --gpu webgl2
+//   bun run bench:allocation --animated 64 --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
@@ -164,7 +167,12 @@ async function main(): Promise<void> {
 		const pageSeconds = warmup + seconds * SAMPLES + 60;
 		const kind = gpu === 'webgl2' ? 'null3d-webgl2' : 'null3d-webgpu';
 		const blend = args.includes('--blend') ? '&blend' : '';
-		const url = `${server.url}${pagePath(scene, kind, `seconds=${pageSeconds}&n=${n}${blend}`)}`;
+		const animatedCount = option('--animated', 0);
+		if (animatedCount > 0 && scene !== 's1')
+			throw new Error('--animated adds animated characters to S1 only');
+		const animated = animatedCount > 0 ? `&animated=${animatedCount}` : '';
+		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}`;
+		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
 		await page.evaluate(() => {
@@ -242,7 +250,7 @@ async function main(): Promise<void> {
 		await input;
 		devtools.close();
 		console.log(
-			`${scene.toUpperCase()} on ${gpu} with ${n} instances, ${pagesText(dev)}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}, ${pagesText(dev)}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
 		);
 		console.log(
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',

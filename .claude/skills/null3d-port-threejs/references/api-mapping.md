@@ -193,10 +193,10 @@ The "Since" column gives the first engine version with the feature:
 
 | three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
-| AnimationMixer / clipAction / play / crossFadeTo / fadeIn / fadeOut / setEffectiveWeight / timeScale / mixer.update(dt) | const anim = obj.animator(); anim.play('run', { fade: 0.2, loop: true, speed }); anim.crossFade('walk', 0.3); anim.setLayerWeight(layer, w) | changed | 0.2 | No update call: the engine samples animation on job workers. | `api/animation` |
+| AnimationMixer / clipAction / play / crossFadeTo / fadeIn / fadeOut / setEffectiveWeight / timeScale / mixer.update(dt) | const anim = obj.animator(); anim.play('run', { fade: 0.2, loop: true, speed: 1 }); anim.crossFade('walk', 0.3); anim.setLayerWeight(1, 0.5); anim.setTimeScale(0.5); anim.onEvent('finished', handler) | changed | 0.2 | No update call: the engine advances and blends every animator on its job workers. A fade out starts from the clip's current weight, not from full weight. loop: false holds the last frame, as clampWhenFinished does. A clip with a negative speed starts at its end. Filtered clips for upper and lower body become layers with setLayerMask. | `api/animation` |
 | AnimationClip / KeyframeTrack built in code | Animate values in onUpdate; transform clips authored in glTF play through the animator (0.2) | post-1.0 | - | Property animation (scene.animateProperty and glTF KHR_animation_pointer) comes after 1.0. | `api/animation` |
 | SkinnedMesh / Skeleton / Bone built by hand | Skins load from glTF; anim.setJointOverride(jointName, rotation) for procedural aiming | changed | 0.2 | Building skeletons in code is not supported; author them in a modeling tool. | `api/animation` |
-| AnimationUtils.subclip / makeClipAdditive | `bunx @null3d/cli assets` splits clips and makes them additive offline; anim.play(name, { additive: true }) | changed | 0.2 |  | `api/animation` |
+| AnimationUtils.subclip / makeClipAdditive | anim.play(name, { additive: true }) for makeClipAdditive; `bunx @null3d/cli assets` splits clips offline | changed | 0.2 | An additive play adds the clip's change from its first frame, as makeClipAdditive does with its default reference frame. The engine makes the additive form once, at the first additive play. | `api/animation` |
 
 ## Interaction and controls
 

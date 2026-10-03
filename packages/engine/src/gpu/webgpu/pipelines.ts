@@ -301,7 +301,7 @@ export class Pipelines {
 				[0, 1, 2, 3],
 				[LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS],
 			],
-			[TEMPLATE_SHADOW_DEPTH, 'shadow depth', shaders.shadow_depth, [0], [LAYOUT_DEPTH]],
+			[TEMPLATE_SHADOW_DEPTH, 'shadow depth', shaders.shadow_depth, [0, 1], [LAYOUT_DEPTH]],
 		] as const) {
 			this.defineTemplate(id, {
 				label: `mesh ${label}`,

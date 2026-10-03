@@ -1,10 +1,11 @@
-import null3d from '@null3d/vite-plugin';
 import { defineConfig, type Plugin, searchForWorkspaceRoot, type UserConfig } from 'vite';
+import null3d from './packages/vite-plugin/src/index.ts';
 import { loadServer } from './tests/lib/load-server.ts';
 import { reportCollector } from './tests/lib/report-collector.ts';
 import { HTTP_PORT, HTTPS_PORT } from './tests/lib/server.ts';
 import { samplesServer } from './tools/lib/samples.ts';
 import { ensureShaderModules } from './tools/lib/shader-modules.ts';
+import { sourceResolve } from './tools/lib/source-condition.ts';
 
 // One dev server for every browser page in the repository: the test pages under tests/pages, the
 // benchmark pages under bench/pages and the demos under examples, with the isolation headers.
@@ -63,6 +64,8 @@ const config: UserConfig = {
 		samplesServer(import.meta.dirname),
 		indexRedirect,
 	],
+	// The pages take the packages' source, not the files that their pack step builds.
+	resolve: sourceResolve,
 	server: {
 		port: https ? HTTPS_PORT : HTTP_PORT,
 		strictPort: true,

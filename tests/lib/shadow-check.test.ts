@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
 	changedShare,
+	contactFigures,
 	edgeOffset,
 	shadowFactors,
 	stabilityFigures,
@@ -71,5 +72,42 @@ describe('the shadow check figures', () => {
 		expect(stepped.maxPixels).toBeGreaterThan(stepped.rmsPixels);
 		// Rows where nothing crosses one half find no edge.
 		expect(stairSteps(new Float32Array(WIDTH * HEIGHT), WIDTH, box).rows).toBe(0);
+	});
+
+	/**
+	 * One column of a box seen from the side: a lit top above a dark side, then the ground, whose
+	 * shadow factors from the foot down are `ground`. The normals view shows the top and the ground
+	 * facing up and the side facing level.
+	 */
+	function column(top: number[], ground: number[]): { factors: Float32Array; normals: Uint8Array } {
+		const side = [0, 0, 0, 0];
+		const values = [...top, ...side, ...ground];
+		const normals = new Uint8Array(values.length * 4);
+		values.forEach((_, row) => {
+			const level = row < top.length || row >= top.length + side.length;
+			normals.set([128, level ? 255 : 128, 128, 255], row * 4);
+		});
+		return { factors: Float32Array.from(values), normals };
+	}
+
+	it('measure the light between a foot and its shadow, and the shadow on a top past its edge', () => {
+		const touching = column([1, 1, 1], [0, 0, 0, 1]);
+		expect(contactFigures(touching.factors, touching.normals, 1)).toEqual({
+			feet: 1,
+			meanGapPixels: 0,
+			gapPercent: 0,
+			tops: 1,
+			meanRimPixels: 0,
+		});
+		// A lit line of 0.6 and 0.3 at the foot, and a top shadowed by a quarter at its edge.
+		const gap = column([1, 1, 0.75], [0.6, 0.3, 0, 0]);
+		const figures = contactFigures(gap.factors, gap.normals, 1);
+		expect(figures.feet).toBe(1);
+		expect(figures.meanGapPixels).toBeCloseTo(0.9);
+		expect(figures.gapPercent).toBe(100);
+		expect(figures.meanRimPixels).toBeCloseTo(0.25);
+		// Ground with no shadow within the reach is not a foot: its caster's shadow falls elsewhere.
+		const lit = column([1], new Array(12).fill(1));
+		expect(contactFigures(lit.factors, lit.normals, 1).feet).toBe(0);
 	});
 });

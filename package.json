@@ -7,6 +7,7 @@
 		"type": "git",
 		"url": "git+https://github.com/null3d-engine/null3d.git"
 	},
+	"type": "module",
 	"packageManager": "bun@1.3.14",
 	"workspaces": [
 		"packages/*",
@@ -27,11 +28,12 @@
 		"check": "biome check . && bun tests/check-references.ts",
 		"check:fix": "biome check --write .",
 		"typecheck": "bun tools/shaders.ts && tsc -p tsconfig.json && tsc -p packages/engine && tsc -p packages/engine/tsconfig.test.json && tsc -p packages/controls && tsc -p packages/controls/tsconfig.test.json && tsc -p packages/cli && tsc -p tests/pages && tsc -p tests/fixtures/project && tsc -p examples && tsc -p bench && tsc -p bench/tsconfig.node.json",
-		"test": "bun tools/shaders.ts && bun test tools packages bench/scenes bench/pages bench/lib tests/lib",
+		"test": "bun tools/shaders.ts && bun test --conditions=null3d-source tools packages bench/scenes bench/pages bench/lib tests/lib",
 		"prepare": "husky",
 		"test:browser": "bun run --cwd tests test",
 		"test:images": "bun run --cwd tests test images.spec.ts",
 		"images:review": "bun tests/review-images.ts",
+		"test:packages": "bun tests/fresh-project.ts",
 		"test:shader-compiler": "NULL3D_SHADER_COMPILER=1 cargo test -p null3d-shaders --test build && bun tools/shaders.ts && NULL3D_SHADER_COMPILER=1 bun test ./packages/vite-plugin/src/shader-compiler.test.ts ./packages/vite-plugin/src/wgsl.test.ts",
 		"test:real-browsers": "bun tools/shaders.ts && bun tests/real-browsers.ts",
 		"devices": "bun tools/shaders.ts && bun tests/real-browsers.ts --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave",

@@ -89,7 +89,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Materials](api/materials.md) | standard, unlit, shader, shadowCatcher; every option. | experimental | 0.1 |
 | [Textures](api/textures.md) | loadTexture options; KTX2 files; fromData; fromImageBitmap; fromPass; cube maps. | experimental | 0.1 |
 | [Assets](api/assets.md) | loadTexture, loadImageBitmap, loadJson, loadBinary, preload, onProgress; glTF models and environments. | experimental | 0.1 |
-| [Animation](api/animation.md) | The animator; play, crossFade, layers, events; morph weights. | planned | 0.2 |
+| [Animation](api/animation.md) | The animator; play, crossFade, layers, joint masks, additive clips, events; morph weights. | experimental | 0.2 |
 | [Raycasting and spatial queries](api/raycast.md) | raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects. | experimental | 0.2 |
 | [Input](api/input.md) | Pointer, keyboard, touch and gamepad; action maps. | experimental | 0.1 |
 | [Camera controls (@null3d/controls)](api/controls.md) | Orbit and map controls (0.1); fly and first-person controls (0.2). | experimental | 0.1 |
@@ -181,6 +181,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1215: Invalid custom material WGSL](errors/E1215.md) | materials.shader() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function or a vertex offset. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh. | generated | 0.1 |
 | [E1216: Invalid uniform](errors/E1216.md) | A custom material's uniforms did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too. | generated | 0.1 |
 | [E1217: Invalid material option](errors/E1217.md) | A material factory received an option value that it does not take, such as an unknown alpha mode or blending. | generated | 0.1 |
+| [E1218: Invalid animation call](errors/E1218.md) | An animator call named a clip, layer or joint that the object's animation does not have. Or it got an option out of range, such as a negative fade. animator() was called on an object that has no animation clips. Or the engine refused animation data, such as a skeleton that lists a joint before its parent. | generated | 0.2 |
 | [E1301: No usable GPU path](errors/E1301.md) | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. | generated | 0.1 |
 | [E1302: GPU lost](errors/E1302.md) | The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash, and the engine could not carry on. No new GPU device started, or the GPU was lost more than twice within a minute. The engine stopped drawing. | generated | 0.1 |
 | [E1303: WebAssembly SIMD missing](errors/E1303.md) | The browser runs WebAssembly without SIMD, which the engine's core needs. | generated | 0.1 |
