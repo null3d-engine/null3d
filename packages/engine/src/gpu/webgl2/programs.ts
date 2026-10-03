@@ -146,11 +146,11 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 }
 
 /**
- * The program that draws a mip level of a texture array's layer from the level before it, from the
- * shaders the device loaded.
+ * A program of the mip shader, from the shaders the device loaded: `main` draws a mip level of a
+ * texture array's layer from the level before it, and `copy` copies a level of a layer.
  */
-export function mipmapTemplate(shaders: DeviceShaders): GlslTemplate {
-	return { shader: shaders.mipmap, pipeline: 'main' };
+export function mipmapTemplate(shaders: DeviceShaders, pipeline: 'main' | 'copy'): GlslTemplate {
+	return { shader: shaders.mipmap, pipeline };
 }
 
 function compile(gl: WebGL2RenderingContext, type: number, stage: GlslStage): WebGLShader {
