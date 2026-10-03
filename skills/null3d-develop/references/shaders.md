@@ -2,7 +2,7 @@
 
 All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so one source serves both backends. The null3D Vite plugin compiles the WGSL in your code: `.wgsl` files that you import, and template literals tagged `/* wgsl */`. The WebGL2 build sets the shader def `WEBGL2`. Engine docs: `guides/custom-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`.
 
-Custom materials with surface functions, uniforms, vertex offsets, the built-in values and full shaders are built. Sections 1 to 5 and 8 to 10 apply now, apart from the parts that say later in 0.1. Do not ship code that uses those until their docs pages say they are built.
+Custom materials with surface functions, uniforms, vertex offsets, the built-in values and full shaders are built. Sections 1 to 5 and 8 to 10 apply now, apart from the parts marked (0.2). Do not ship code that uses those until their docs pages say they are built.
 
 ## Contents
 
@@ -90,9 +90,9 @@ stripes.set({ roughness: 0.4 });
 
 Materials from the same WGSL share one shader and its pipelines. Make one WGSL per look, and many materials from it.
 
-Planned additions, not built yet: `uv1`, `fragCoord` and `instance` in `SurfaceInput`, and alpha modes that use `s.alpha`.
+`s.alpha` works with the material's `alphaMode`: `'mask'` draws nothing below `alphaCutoff`, and `'blend'` blends the surface over what lies behind it, in the transparent pass. `uv1`, `fragCoord` and `instance` in `SurfaceInput` come in 0.2.
 
-Names: your WGSL shares a file with the engine's standard material. Do not declare `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs` or `fs`. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
+Names: your WGSL shares a file with the engine's standard material. Do not declare a name that the standard material declares or imports. The build stops at your line with a redefinition error. The names are `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs`, `fs` and `FLAT_SHADING`. They also include the library items it imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`. Other library names, such as `brdf_ggx` or `PI`, stay free. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
 
 ## 3. Built-in values
 
@@ -105,13 +105,13 @@ Globals that the vertex offset and the surface function both read (`shaders/buil
 | `object` | `position` (the object's or instance's origin in the world) | Gives each object a look of its own from one material |
 | `material` | Your uniforms, as `struct Uniforms` declares them | See section 4 |
 
-Later in 0.1: `camera.view`, `projection`, `near` and `far`, and `object.worldMatrix`, `normalMatrix` and `id`.
+In 0.2: `camera.view`, `projection`, `near` and `far`, and `object.worldMatrix`, `normalMatrix` and `id`.
 
 The engine renders relative to the camera. `input.relativePosition` is therefore exact near the camera, even in very large worlds. Use it for distances, fades and view-dependent effects. The world position of the input, `camera.position` and `object.position` are absolute. Far from the origin they hold fewer digits (1 mm steps at 10 km), so keep world-space patterns coarse there.
 
 ## 4. Uniforms, textures and per-instance data
 
-Uniforms are built; textures and per-instance data come later in 0.1. The WGSL declares the uniforms once, as `struct Uniforms`, and reads them from `material`. The `uniforms` option gives their first values by field name, and a uniform without one starts at 0:
+Uniforms are built. Textures and per-instance data come in 0.2, and custom materials take no texture maps until then. The WGSL declares the uniforms once, as `struct Uniforms`, and reads them from `material`. The `uniforms` option gives their first values by field name, and a uniform without one starts at 0:
 
 ```ts
 materials.shader({
@@ -158,7 +158,7 @@ const dissolve = materials.shader({
 - Field types: `f32`, `i32`, `u32` (numbers; whole numbers for the integers), `vec2f`, `vec3f`, `vec4f` (arrays). A `vec3f` also takes a color string or hex number, converted from sRGB to linear. Arrays are used as given.
 - The fields fit in 32 numbers; each `vec3f` and `vec4f` starts a group of four. The build rejects other types and fields past the limit.
 - No field may be named as a standard value (`color`, `opacity`, `metalness`, `roughness`, `emissive`, `emissiveIntensity`). A wrong name or value in `uniforms` or `set()` throws E1216.
-- Textures come with a `textures` option; their WGSL form is not settled yet.
+- Textures in custom materials come in 0.2, with a `textures` option.
 - Per-instance data: `createInstances(mesh, count, { material, attributes: { tint: 4 } })` (0.2).
 
 ## 5. Vertex offsets and full shaders
