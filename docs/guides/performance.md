@@ -86,7 +86,7 @@ The engine kept the full render scale and every setting on both devices. On the 
 
 ### Quality presets
 
-The engine picks a [quality preset](../concepts/quality-presets.md) for each device when it starts. It picks Low on phones, Medium on tablets and High on computers. The GPU path can cap it lower. When the page names no preset, the engine checks its choice after the first frame. It measures the frame rate of the scene that the setup built, and lowers the preset until one holds the target. The preset sets the pixel ratio cap and the anti-aliasing mode. It also sets the shadow settings, the texture filtering cap and the texture upload budget.
+The engine picks a [quality preset](../concepts/quality-presets.md) for each device when it starts. It picks Low on phones, Medium on tablets and High on computers. The GPU path can cap it lower. A warm tablet can run Medium below 60 frames per second, so name Low on tablets where a steady rate matters most ([Quality presets](../concepts/quality-presets.md#how-the-engine-chooses-a-preset)). When the page names no preset, the engine checks its choice after the first frame. It measures the frame rate of the scene that the setup built, and lowers the preset until one holds the target. The preset sets the pixel ratio cap and the anti-aliasing mode. It also sets the shadow settings, the texture filtering cap and the texture upload budget.
 
 The pixel ratio cap often decides GPU time on a phone, because the GPU shades each device pixel. Low caps the ratio at 1.5, which fills a quarter of the pixels of a phone screen at ratio 3.
 

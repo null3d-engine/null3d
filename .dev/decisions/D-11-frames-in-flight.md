@@ -1,6 +1,6 @@
 # D-11: Preset values, the governor's thresholds, and frames in flight
 
-Status: frames in flight decided by the owner on 2026-09-30. The preset check's thresholds proposed by M1-G3, the governor's thresholds by M1-G5. The preset values set by M1-G6 from the S24+ and iPad runs. Once warm, the iPad misses its gate at Medium, which is open for the owner. Date: 2026-09-30. Tasks: M1-G1 (frames in flight), then M1-G3, M1-G5 and M1-G6.
+Status: frames in flight decided by the owner on 2026-09-30. The preset check's thresholds proposed by M1-G3, the governor's thresholds by M1-G5. The preset values set by M1-G6 from the S24+ and iPad runs. Once warm, the iPad misses its gate at Medium. So the owner decided on 2026-10-03 to judge the iPad at Low. Date: 2026-09-30. Tasks: M1-G1 (frames in flight), then M1-G3, M1-G5 and M1-G6.
 
 This record settles three questions. M1-G1 answers the third, frames in flight, with the GPU-bound page. The preset values and the governor's thresholds follow from the S4 traces of M1-G5 and M1-G6, and from the live shadow-map resize test of M1-G3. Those tasks add their sections here. M1-G3 adds the preset check's thresholds at the end.
 
@@ -252,11 +252,11 @@ null3D builds the loop in, so an app gets it with no code of its own. The govern
 
 ## The preset values (M1-G6)
 
-Status: set by M1-G6 on 2026-10-03, from the Mac's runs and the reruns on the S24+ and the iPad. The values below stay as proposed. The S24+ holds its gate at Low. The iPad misses its gate at Medium once it is warm, for reasons that no shadow value changes ("The reruns" below). That is open for the owner. The iPad's first runs do not count. The governor keeps the thresholds of M1-G5: in every measured second of the reruns, the render scale held still, with no step up or down.
+Status: set by M1-G6 on 2026-10-03, from the Mac's runs and the reruns on the S24+ and the iPad. The values below stay as proposed. The S24+ holds its gate at Low. The iPad misses its gate at Medium once it is warm, for reasons that no shadow value changes ("The reruns" below). The owner decided on 3 October 2026 to judge the iPad's gate at Low ("Decision on the iPad's gate" below). The iPad's first runs do not count. The governor keeps the thresholds of M1-G5: in every measured second of the reruns, the render scale held still, with no step up or down.
 
 ### Rule
 
-Each device's chosen preset holds its target on S4 for a 10-minute run, with dynamic resolution at the preset's default range of render scales. Its completed rate stays at the target in at least 95% of the seconds after warm-up. The chooser picks Low on the S24+ (WebGL2), Medium on the iPad (WebGPU) and High on the Mac. Within that rule, a preset draws the sharpest shadows that its devices hold.
+Each device's chosen preset holds its target on S4 for a 10-minute run, with dynamic resolution at the preset's default range of render scales. Its completed rate stays at the target in at least 95% of the seconds after warm-up. The chooser picks Low on the S24+ (WebGL2), Medium on the iPad (WebGPU) and High on the Mac. The iPad's gate runs at Low, by the owner's decision below, although the chooser starts it at Medium. Within that rule, a preset draws the sharpest shadows that its devices hold.
 
 ### Values
 
@@ -390,20 +390,41 @@ So the values stay. Low keeps 2 cascades of 1,024 texels although the S24+ held 
 
 The preset check's thresholds stay too. The check measures half a second at the start, and the iPad's miss comes from heat minutes later. No threshold at the start can see it.
 
-### Open for the owner
+### Decision on the iPad's gate
 
-- The iPad's gate at Medium. Three ways forward, which can combine:
-  - Measure how much the render scale saves on the iPad. `?governor=off` keeps the scale at 1. So these runs compare the full scale with the governor's floor, A, B, A, from a cool start. If the scale saves little, scene passes could draw into targets of the scaled size on tile-based GPUs. That would give up M1-G4's rule that a new scale makes no GPU object.
-  - Let the chooser pick Low on the iPad. Low draws at a pixel ratio of at most 1.5 with FXAA, down to a render scale of 0.5. Its gate on the iPad has not run.
-  - Judge the iPad's gate at a lower target, such as the 45 fps it held warm.
-- The S24+ held Medium in every second of its 30-second runs. A gate run at Medium would show whether the phone could keep it for 5 minutes. The chooser picks Low there today.
+Decided by the owner on 3 October 2026:
+
+- The preset chooser stays as it is. A cool iPad passes the preset check at Medium, so the engine still starts it there. A preset that the page names always stays, so a developer can build for Medium or High on the iPad.
+- On the iPad, the 0.1 promise of 60 fps on a warm device holds at Low only. The exit gate's S4 run on the iPad (item 3) is judged at Low.
+- Medium and High on a warm iPad may run below 60 fps: about 45 at Medium in the reruns. The docs say so plainly: the quality presets page, the phones and tablets guide, the performance guide and the develop skill's performance reference.
+
+The reasons:
+
+- Heat, not the shadow values, slows the warm iPad. Its GPU time rose by a third or more within a minute at every candidate, and in S3, which draws no shadows. The cascade passes take under 1 ms of the 17 ms.
+- The governor already takes every step it has, so no other value of Medium closes the gap.
+- Developers keep the choice of fidelity. A slower rate with sharper shadows and edges can suit a product viewer, while a game can name Low.
+- A chooser that picked Low on every tablet would draw cool tablets lighter than they can hold. The engine has no signal that tells a tablet that will heat from one that will not.
+
+### Results still to come
+
+| Run | Result |
+| --- | --- |
+| The iPad's gate at Low: S4, Safari, WebGPU, 5 minutes of warm-up, then 5 measured minutes | Pending |
+| The S24+'s gate at Medium: S4, Chrome and Brave, WebGL2 | Pending |
 
 ```sh
-# iPad, Safari, WebGPU: the full render scale against the governor's floor, from a cool start
+bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4 --pages null3d-webgpu --runs 1 --seconds 300 --switches preset=low
+bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome,brave --scenes s4 --pages null3d-webgl2 --runs 1 --seconds 300 --switches preset=medium
+```
+
+The S24+ run shows whether the phone could keep Medium for 5 minutes. The chooser picks Low there today.
+
+### Follow-ups
+
+- Measure how much the render scale saves on tile-based GPUs such as the iPad's. The reruns hint that it saves little ("What the reruns show"). `?governor=off` keeps the scale at 1. So these runs compare the full scale with the governor's floor, A, B, A, from a cool start. If the scale saves little, scene passes could draw into targets of the scaled size on those GPUs. That would give up M1-G4's rule that a new scale makes no GPU object.
+
+```sh
 bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4 --pages null3d-webgpu --runs 2 --seconds 30 --switches "preset=medium&governor=off"
 bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4 --pages null3d-webgpu --runs 2 --seconds 30 --switches preset=medium
 bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4 --pages null3d-webgpu --runs 2 --seconds 30 --switches "preset=medium&governor=off"
-# The iPad's gate at Low, and the S24+'s gate at Medium, each after a rest
-bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4 --pages null3d-webgpu --runs 1 --seconds 300 --switches preset=low
-bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome,brave --scenes s4 --pages null3d-webgl2 --runs 1 --seconds 300 --switches preset=medium
 ```
