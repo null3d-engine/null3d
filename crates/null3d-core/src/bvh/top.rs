@@ -223,18 +223,20 @@ impl TopTree {
         self.boxes[i as usize] = bounds;
     }
 
-    /// Sets every item's cell and box to what `f` returns for its index and id, on the job
-    /// workers.
+    /// Sets the cell and box of each item of `items`, a range of item indices, to what `f`
+    /// returns for its index and id, on the job workers.
     pub fn update_parallel(
         &mut self,
         jobs: &JobSystem,
+        items: Range<u32>,
         f: &(dyn Fn(u32, u32) -> (u32, Aabb) + Sync),
     ) {
         let ids = &self.ids;
         let cells = SharedMut::new(&mut self.cells);
         let boxes = SharedMut::new(&mut self.boxes);
-        jobs.parallel_for(ids.len() as u32, UPDATE_CHUNK, &|range, _| {
-            for i in range {
+        let first = items.start;
+        jobs.parallel_for(items.len() as u32, UPDATE_CHUNK, &|range, _| {
+            for i in range.start + first..range.end + first {
                 let (cell, b) = f(i, ids[i as usize]);
                 // SAFETY: each chunk writes only the items of its own range.
                 unsafe {

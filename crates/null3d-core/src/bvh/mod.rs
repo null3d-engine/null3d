@@ -46,6 +46,7 @@ pub mod capsule;
 pub mod format;
 pub mod mesh;
 pub mod morton;
+pub mod query;
 pub mod scene;
 pub mod top;
 
@@ -221,7 +222,38 @@ impl Aabb {
             max: self.max.map(up),
         }
     }
+
+    /// The box around this box after the affine transform `m`, a 3 × 4 matrix by rows, widened
+    /// by [`TRANSFORM_MARGIN`] of its size and position and by [`BOX_PAD`]. A ray's hit on a
+    /// mesh, found in the mesh's own space, then lies in the box of the mesh's transformed box
+    /// even after rounding. An empty box stays empty.
+    pub fn transformed(&self, m: &crate::math::Affine) -> Aabb {
+        if self.is_empty() {
+            return Aabb::EMPTY;
+        }
+        let c = self.centroid().map(f64::from);
+        let h: [f64; 3] = std::array::from_fn(|k| f64::from(self.max[k] - self.min[k]) * 0.5);
+        let mut out = Aabb::EMPTY;
+        for r in 0..3 {
+            let row = |k: usize| f64::from(m[r * 4 + k]);
+            let centre = row(0) * c[0] + row(1) * c[1] + row(2) * c[2] + row(3);
+            let extent = row(0).abs() * h[0] + row(1).abs() * h[1] + row(2).abs() * h[2];
+            let reach = extent + (centre.abs() + extent) * TRANSFORM_MARGIN + BOX_PAD;
+            out.min[r] = (centre - reach) as f32;
+            out.max[r] = (centre + reach) as f32;
+        }
+        out
+    }
 }
+
+/// The share of a transformed box's size and position that [`Aabb::transformed`] adds on each
+/// side: far more than 32-bit rounding moves a point, and far less than changes which rays
+/// meet the box.
+pub const TRANSFORM_MARGIN: f64 = 1.0 / (1 << 20) as f64;
+
+/// The distance in meters that [`Aabb::transformed`] adds on each side: four float steps at
+/// half a grid cell from the cell's centre, where a 32-bit position is least precise.
+pub const BOX_PAD: f64 = 4.0 * (crate::cells::HALF_CELL as f64) * f32::EPSILON as f64;
 
 /// A ray: the points `origin + t × direction` for `t` from `t_min` to `t_max`. The direction need
 /// not have unit length; distances are in multiples of it.

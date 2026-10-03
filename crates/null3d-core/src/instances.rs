@@ -91,6 +91,8 @@ pub struct InstanceBatch {
     moved: Bitset,
     moved_any: AtomicBool,
     cell_changes: RowRange,
+    /// Counts the updates that wrote rows of the world output.
+    version: u32,
 }
 
 impl InstanceBatch {
@@ -158,6 +160,7 @@ impl InstanceBatch {
             moved: Bitset::try_new(capacity)?,
             moved_any: AtomicBool::new(false),
             cell_changes: RowRange::default(),
+            version: 0,
         })
     }
 
@@ -318,6 +321,12 @@ impl InstanceBatch {
         self.frame
     }
 
+    /// A number that changes with each update that writes rows of the world output, so readers can
+    /// tell whether the rows moved since they last read them.
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
     /// The active row count the frame with parity `parity` used, for the render worker.
     pub fn frame_active_count(&self, parity: usize) -> u32 {
         self.frame_active[parity & 1]
@@ -452,6 +461,9 @@ impl InstanceBatch {
             self.dirty_any = false;
         }
         self.changed_any[parity] = !self.ranges.is_empty() && !self.dynamic;
+        if !self.ranges.is_empty() {
+            self.version = self.version.wrapping_add(1);
+        }
         self.frame_active[parity] = self.active;
     }
 

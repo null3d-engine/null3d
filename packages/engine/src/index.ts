@@ -74,6 +74,13 @@ export type { ColorInput } from './scene/color';
 export type { Exp2FogOptions, FogOptions, LinearFogOptions } from './scene/fog';
 export type { Post, PostSettings, ToneMapping } from './scene/post';
 export type {
+	OverlapHit,
+	QueryOptions,
+	RaycastBatchHits,
+	RaycastHit,
+	RaycastOptions,
+} from './scene/queries';
+export type {
 	AlphaMode,
 	Blending,
 	BoxOptions,

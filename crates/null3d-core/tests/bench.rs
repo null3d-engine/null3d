@@ -599,6 +599,11 @@ fn bench_bvh_scene_sync() {
             }
             scene.apply_commands(&commands, 1).unwrap();
             let mut bvh = SceneBvh::new();
+            let batches = BatchTable::with_capacity(1);
+            let unit = Aabb {
+                min: [-1.0; 3],
+                max: [1.0; 3],
+            };
             let mut times = Vec::new();
             for frame in 1..=120u32 {
                 scene.begin_frame(frame);
@@ -607,7 +612,7 @@ fn bench_bvh_scene_sync() {
                 }
                 scene.update_transforms(jobs);
                 let start = Instant::now();
-                bvh.sync(&scene, frame, jobs).unwrap();
+                bvh.sync(&scene, &batches, jobs, &|_| unit).unwrap();
                 if frame > 20 {
                     times.push(start.elapsed());
                 }
