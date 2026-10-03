@@ -489,6 +489,17 @@
       "detect": "\\bOrthographicCamera\\b"
     },
     {
+      "id": "screen-projection",
+      "category": "Cameras",
+      "three": "Vector3.project(camera) / Vector3.unproject(camera)",
+      "status": "changed",
+      "since": "0.2",
+      "target": "camera.worldToScreen(point, out) for [x, y, depth]; camera.screenToRay(x, y, ray) for a ray through a point",
+      "notes": "Both take and give CSS pixels from the canvas's top-left corner, not device coordinates from -1 to 1. The depth is the distance in front of the camera, below 0 behind it. A ray through the pointer's position uses the camera of the frame on screen at the pointer's event. three.js starts an orthographic ray on the camera's plane, and screenToRay starts it on the near plane.",
+      "docs": "api/cameras",
+      "detect": "\\.(un)?project\\s*\\(\\s*\\w*[Cc]amera\\b"
+    },
+    {
       "id": "cube-camera",
       "category": "Cameras",
       "three": "CubeCamera (dynamic reflections)",

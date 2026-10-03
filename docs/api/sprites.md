@@ -162,7 +162,7 @@ Every sprite counts toward the device's limit of objects and instance rows, as a
 | `material.transparent` (true for sprites) | `alphaMode: 'blend'`, the default |
 | `material.alphaTest` | `alphaMode: 'mask'` with `alphaCutoff` |
 
-three.js makes one object and one draw per sprite. null3D draws a whole batch in one draw, so thousands of sprites cost little more than one. Without size attenuation, a three.js sprite's size is a fraction of the view's height that depends on the camera's field of view. A null3D sprite's size is in CSS pixels. A three.js scale of `s` shows `s × h / (2 × tan(fov / 2))` pixels on a canvas `h` CSS pixels high. three.js's `Raycaster` can hit sprites; null3D's raycasts do not find them yet.
+three.js makes one object and one draw per sprite. null3D draws a whole batch in one draw. Without size attenuation, a three.js sprite's size is a fraction of the view's height that depends on the camera's field of view. A null3D sprite's size is in CSS pixels. A three.js scale of `s` shows `s × h / (2 × tan(fov / 2))` pixels on a canvas `h` CSS pixels high. three.js's `Raycaster` can hit sprites; null3D's raycasts do not find them yet.
 
 <!-- null3d:api:start -->
 

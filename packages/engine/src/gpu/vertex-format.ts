@@ -5,14 +5,17 @@
 // coordinates offers its first set in their place, so shaders that read the second set draw it.
 
 import {
+	PERMUTATION_SKIN,
 	PERMUTATION_VERTEX_COLOR,
 	PERMUTATION_VERTEX_TANGENT,
 	VERTEX_ATTRIBUTES,
 	VERTEX_COLOR,
+	VERTEX_JOINTS,
 	VERTEX_TANGENT,
 	VERTEX_TYPES,
 	VERTEX_UV0,
 	VERTEX_UV1,
+	VERTEX_WEIGHTS,
 } from '../generated/gpu';
 
 /** The bytes per value, the largest value and whether it reads as fractions, of a vertex type. */
@@ -79,6 +82,8 @@ export function variantLocations(template: readonly number[], permutation: numbe
 	const locations = [...template];
 	if (permutation & PERMUTATION_VERTEX_TANGENT) locations.push(locationOfAttribute(VERTEX_TANGENT));
 	if (permutation & PERMUTATION_VERTEX_COLOR) locations.push(locationOfAttribute(VERTEX_COLOR));
+	if (permutation & PERMUTATION_SKIN)
+		locations.push(locationOfAttribute(VERTEX_JOINTS), locationOfAttribute(VERTEX_WEIGHTS));
 	return locations;
 }
 

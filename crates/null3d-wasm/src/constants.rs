@@ -347,6 +347,7 @@ pub fn typescript() -> String {
                 ("SET_LAYERS", op::SET_LAYERS),
                 ("SET_FLAGS", op::SET_FLAGS),
                 ("SET_RENDER_ORDER", op::SET_RENDER_ORDER),
+                ("SET_SKIN", op::SET_SKIN),
                 ("KEEP_WORLD", op::KEEP_WORLD),
                 ("WORDS", COMMAND_WORDS),
             ],

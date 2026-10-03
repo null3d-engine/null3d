@@ -184,7 +184,7 @@ describe('the skinning plan', () => {
 	const items = skinningPlan();
 
 	it('runs the skinning page at each crowd size and cascade count, on WebGL2', () => {
-		expect(PLANS.skinning).toBe(skinningPlan);
+		expect(PLANS.skinning?.()).toEqual(items);
 		expect(items).toHaveLength(16);
 		expect(items[0]).toMatchObject({
 			id: 'skinning-50-1',
@@ -192,6 +192,30 @@ describe('the skinning plan', () => {
 			check: { kind: 'skinning', tier: 'webgl2', characters: 50, cascades: 1 },
 		});
 		expect(items.at(-1)?.id).toBe('skinning-500-4');
+	});
+
+	it('runs the WebGPU page in its own plan, which a browser without WebGPU skips', () => {
+		const webgpu = PLANS['skinning-webgpu']?.() ?? [];
+		expect(webgpu).toEqual(skinningPlan('webgpu'));
+		expect(webgpu).toHaveLength(16);
+		expect(webgpu[5]).toMatchObject({
+			id: 'skinning-webgpu-100-2',
+			path: '/tests/pages/skinning-webgpu.html?characters=100&cascades=2',
+			check: { kind: 'skinning', tier: 'webgpu', characters: 100, cascades: 2 },
+		});
+		const check = webgpu[0]!.check;
+		const missing = { ok: false, error: 'no WebGPU adapter' };
+		expect(judge(check, missing, { webgpu: true, webgl2: false })).toBe('skip');
+		const computed = result({
+			gpu: 'webgpu',
+			multiDraw: false,
+			paths: { 'vertex-shader': timing(10), compute: timing(9) },
+		});
+		expect(frameSaving(computed)).toBeCloseTo(0.1, 6);
+		expect(judge(check, computed, NONE_MISSING)).toEqual([]);
+		// A WebGPU result whose compute path is missing measured nothing there.
+		const half = result({ gpu: 'webgpu', paths: { 'vertex-shader': timing(10) } });
+		expect(skinningProblems(half)).toEqual(['the compute path measured no frame time']);
 	});
 
 	it('fails a page whose two paths drew different images, or that timed nothing', () => {
@@ -215,6 +239,7 @@ describe('the skinning plan', () => {
 		const table = skinningSummary(items.slice(0, 2), (id) =>
 			id === 'skinning-50-1' ? result() : undefined,
 		);
+		expect(table?.split('\n')[0]?.startsWith('WebGL2. Each path')).toBe(true);
 		expect(table?.split('\n').slice(2)).toEqual([
 			'| Characters | Cascades | Drawn | Vertex shader | Transform feedback | Saved | Pixels that differ | Multi-draw |',
 			'| --- | --- | --- | --- | --- | --- | --- | --- |',
@@ -222,5 +247,25 @@ describe('the skinning plan', () => {
 			'| 50 | 2 | no result; the runner stopped before this page | | | | | |',
 		]);
 		expect(skinningSummary(PLANS.checks!(), () => undefined)).toBeUndefined();
+	});
+
+	it("tables the WebGPU page's results apart, with the compute pass's column", () => {
+		const webgpu = skinningPlan('webgpu').slice(0, 1);
+		const computed = result({
+			gpu: 'webgpu',
+			multiDraw: false,
+			paths: { 'vertex-shader': timing(10), compute: timing(9) },
+		});
+		const table = skinningSummary([...items.slice(0, 1), ...webgpu], (id) =>
+			id === 'skinning-webgpu-50-1' ? computed : undefined,
+		);
+		const lines = table?.split('\n') ?? [];
+		expect(lines[0]?.startsWith('WebGL2.')).toBe(true);
+		const second = lines.findIndex((line) => line.startsWith('WebGPU.'));
+		expect(lines.slice(second + 2)).toEqual([
+			'| Characters | Cascades | Drawn | Vertex shader | Compute pass | Saved | Pixels that differ |',
+			'| --- | --- | --- | --- | --- | --- | --- |',
+			'| 50 | 1 | 90 / 10 / 30 / 60 (95) | 10.00 / 1.25 / - | 9.00 / 1.25 / - | 10.0% | 3 of 921600 |',
+		]);
 	});
 });
