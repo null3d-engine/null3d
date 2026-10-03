@@ -71,6 +71,8 @@ export type Three = Pick<
 	| 'SkinnedMesh'
 	| 'SphereGeometry'
 	| 'SpotLight'
+	| 'Sprite'
+	| 'SpriteMaterial'
 	| 'SRGBColorSpace'
 	| 'TextureLoader'
 	| 'TorusGeometry'

@@ -37,7 +37,8 @@ struct Frame {
     camera_world: vec4f,
     /// The size of the render target in pixels, and one over each.
     target_size: vec4f,
-    /// The distances of the camera's near and far planes, and two spares.
+    /// The distances of the camera's near and far planes, then the change in normalized device
+    /// coordinates across one CSS pixel of the canvas, along x and along y.
     camera_range: vec4f,
 }
 
