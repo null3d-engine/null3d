@@ -35,7 +35,7 @@ export default defineSketch(({ scene, materials, geometry, quality }) => {
 		angle: 0.5,
 		penumbra: 0.3,
 		castShadows: true,
-		shadow: { bias: 1, normalBias: 1.5 },
+		shadow: { bias: 0.01, normalBias: 0.01 },
 	});
 	scene.createAmbientLight({ intensity: 0.08 });
 

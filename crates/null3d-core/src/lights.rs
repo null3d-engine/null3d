@@ -107,7 +107,7 @@ pub mod value {
 
 /// The numbers of a new light, by [`value`].
 const DEFAULT_VALUES: [f32; value::LAST as usize + 1] =
-    [1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.2, 0.3, 3.0, 2048.0, 200.0];
+    [1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.0, 0.0, 3.0, 2048.0, 200.0];
 
 /// The cone cosines of a point light's [`VisibleLight`] record. Every direction's cosine is above
 /// both, so a shader that fades spot lights with a smooth step between them lets a point light's
@@ -164,9 +164,9 @@ pub struct LightShadow {
     pub angle: f32,
     /// The distance in meters where the light ends.
     pub range: f32,
-    /// Its bias, in texels of its tile.
+    /// Its bias toward the light, in meters.
     pub bias: f32,
-    /// Its normal bias, in texels of its tile.
+    /// Its normal bias, in meters.
     pub normal_bias: f32,
     /// The light's layer mask: its tiles draw the casters whose masks share a bit with it.
     pub layers: u32,
@@ -216,9 +216,9 @@ pub struct SunShadow {
     pub cascades: u32,
     /// Texels on each side of each cascade's shadow map, at least 1.
     pub map_size: u32,
-    /// Its bias, in texels of each cascade.
+    /// Its bias toward the light, in meters.
     pub bias: f32,
-    /// Its normal bias, in texels of each cascade.
+    /// Its normal bias, in meters.
     pub normal_bias: f32,
     /// The distance along the camera's view out to which its shadows fall.
     pub distance: f32,

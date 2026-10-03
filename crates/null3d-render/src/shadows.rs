@@ -47,9 +47,11 @@
 //! A receiver finds its cascade by its distance along the camera's view, which the camera's scaled
 //! forward axis gives from a position relative to the camera. A box that skipped frames may not
 //! hold a receiver after the camera turned, and the receiver then takes the next cascade whose box
-//! holds it. It moves its point along its normal by [`ShadowSettings::normal_bias`] texels of that
-//! cascade, and its depth toward the light by [`ShadowSettings::bias`] texels, then compares its
-//! depth with the shadow map's over a square of [`ShadowSettings::filter`] texels on each side.
+//! holds it. It moves its point along its normal by [`ShadowSettings::normal_bias`] and toward the
+//! light by [`ShadowSettings::bias`], both in meters and scaled by its angle to the light. Each is
+//! at least a share of a texel at the receiver's distance from the camera, whatever cascade holds
+//! it, so the offsets stay the same while the camera turns. It then compares its depth with the
+//! shadow map's over a square of [`ShadowSettings::filter`] texels on each side.
 //! Past the shadow distance nothing is shadowed, and shadows fade out over the last tenth of the
 //! distance.
 
@@ -91,11 +93,9 @@ pub struct ShadowSettings {
     pub cascades: u32,
     /// Texels on each side of each cascade's layer of the shadow map.
     pub map_size: u32,
-    /// How far each receiver's depth moves toward the light before the comparison, in texels of
-    /// its cascade.
+    /// How far each receiver's point moves toward the light before the lookup, in meters.
     pub bias: f32,
-    /// How far each receiver's point moves along its normal before the lookup, in texels of its
-    /// cascade.
+    /// How far each receiver's point moves along its normal before the lookup, in meters.
     pub normal_bias: f32,
     /// The distance along the camera's view, in meters, out to which shadows fall. The camera's far
     /// plane ends them sooner.
@@ -199,6 +199,9 @@ pub struct Cascades {
     /// The vector whose dot product with a position relative to the camera gives the position's
     /// distance along the camera's view.
     pub forward: [f32; 3],
+    /// True when receivers pick their cascade by their distance from the camera, as behind a
+    /// perspective camera, and false when by their distance along its view.
+    pub by_distance: bool,
 }
 
 impl Cascades {
@@ -361,6 +364,7 @@ pub fn fit_cascades(
     let mut out = Cascades {
         count,
         forward,
+        by_distance: matches!(lens, Lens::Perspective(_)),
         ..Cascades::default()
     };
     let mut start = near;
@@ -715,10 +719,12 @@ pub struct ShadowUniform {
     pub ends: [f32; MAX_CASCADES],
     /// The camera's scaled forward axis, then the cascade count.
     pub forward: [f32; 4],
-    /// How far each cascade's receivers move along their normals, in meters.
-    pub normal_offsets: [f32; MAX_CASCADES],
-    /// How far each cascade's receivers move their depth toward the light, in depth units.
-    pub depth_biases: [f32; MAX_CASCADES],
+    /// The size in meters of one texel of each cascade's layer.
+    pub texels: [f32; MAX_CASCADES],
+    /// The light's bias toward the light and its normal bias, in meters, then 1 when receivers pick
+    /// their cascade by their distance from the camera, or 0 by their distance along its view, and
+    /// 0.
+    pub biases: [f32; 4],
     /// The texels on each side of each layer and the size of one texel in texture coordinates,
     /// then the texels on each side of the filter's square, and 0.
     pub kernel: [f32; 4],
@@ -737,6 +743,12 @@ impl ShadowUniform {
                 cascades.forward[2],
                 cascades.count as f32,
             ],
+            biases: [
+                settings.bias,
+                settings.normal_bias,
+                f32::from(u8::from(cascades.by_distance)),
+                0.0,
+            ],
             kernel: [map_size, 1.0 / map_size, settings.filter as f32, 0.0],
             ..Self::default()
         };
@@ -745,8 +757,7 @@ impl ShadowUniform {
         for (k, cascade) in cascades.used().iter().enumerate() {
             uniform.view_proj[k] = cascade.view_proj;
             uniform.ends[k] = cascade.end;
-            uniform.normal_offsets[k] = settings.normal_bias * cascade.texel;
-            uniform.depth_biases[k] = settings.bias * cascade.texel * cascade.depth_per_meter;
+            uniform.texels[k] = cascade.texel;
         }
         uniform
     }
@@ -995,7 +1006,7 @@ mod tests {
     }
 
     #[test]
-    fn the_uniform_scales_the_biases_by_each_cascade_s_texels() {
+    fn the_uniform_holds_the_biases_in_meters_and_each_cascade_s_texel() {
         let cascades = fit(&camera(), &LENS, 1.5, DOWN_AND_ACROSS, &SETTINGS);
         let settings = ShadowSettings {
             bias: 2.0,
@@ -1005,12 +1016,11 @@ mod tests {
         let uniform = ShadowUniform::new(&cascades, &settings);
         assert_eq!(uniform.forward[3], 3.0);
         assert_eq!(uniform.as_bytes().len(), SHADOW_UNIFORM_BYTES as usize);
+        assert_eq!(uniform.biases, [2.0, 0.5, 1.0, 0.0]);
         for (k, cascade) in cascades.used().iter().enumerate() {
             assert_eq!(uniform.view_proj[k], cascade.view_proj);
             assert_eq!(uniform.ends[k], cascade.end);
-            assert_eq!(uniform.normal_offsets[k], 0.5 * cascade.texel);
-            let depth = 2.0 * cascade.texel * cascade.depth_per_meter;
-            assert!((uniform.depth_biases[k] - depth).abs() <= depth * 1e-6);
+            assert_eq!(uniform.texels[k], cascade.texel);
         }
         // Far cascades have larger texels.
         let texels: Vec<f32> = cascades.used().iter().map(|c| c.texel).collect();

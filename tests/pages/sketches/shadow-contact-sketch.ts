@@ -6,6 +6,9 @@
 // boxes stand in the last cascade. `near` stands at eye height a few meters from a box, in the
 // first cascade, and `far` looks at the same box from about 100 m away and 45 m up, in the last
 // one. Both look at the side where the shadow falls, so the line where it meets the box shows.
+// `turn` looks at that side from 27 m away, just past where the first cascade ends at the middle of
+// the view. ?yaw=<degrees> turns the camera left on the spot, which brings the box's base into the
+// first cascade from about 17 degrees.
 //
 // ?moving adds a blue box that drives to and fro along x at 10 m/s, dynamic, behind the still red
 // ones. ?far=<n> sets the frames between two draws of a far cascade, 1 by default, and turns off
@@ -35,18 +38,25 @@ const VIEWS = {
 	top: { fov: 10, from: [-1, 100, 9] },
 	near: { fov: 50, from: [-5, 1.7, -6] },
 	far: { fov: 6, from: [-50, 45, -70] },
+	turn: { fov: 40, from: [-12.5, 19.5, -15] },
 } as const;
+/** How far the camera turns left on the spot, in degrees, from the sketch module's ?yaw switch. */
+const YAW = (Number(params.get('yaw') ?? 0) * Math.PI) / 180;
 
 export default defineSketch(({ scene, materials, geometry, quality, time }) => {
 	quality.set({ farCascadeInterval: FAR, governor: false, shadowFilter: 3 });
 	scene.setBackground('#202830');
 	const view = VIEWS[(params.get('view') ?? 'top') as keyof typeof VIEWS];
 	const [x, y, z] = WATCHED;
+	// The target turns around the camera's vertical axis.
+	const [dx, dz] = [-view.from[0], -view.from[2]];
+	const [cos, sin] = [Math.cos(YAW), Math.sin(YAW)];
+	const position = [x + view.from[0], y + view.from[1], z + view.from[2]] as const;
 	scene.setActiveCamera(
 		scene.createPerspectiveCamera({
 			fov: view.fov,
-			position: [x + view.from[0], y + view.from[1], z + view.from[2]],
-			target: [x, y + 0.3, z],
+			position,
+			target: [position[0] + cos * dx + sin * dz, y + 0.3, position[2] - sin * dx + cos * dz],
 			near: 0.5,
 			far: 400,
 		}),
