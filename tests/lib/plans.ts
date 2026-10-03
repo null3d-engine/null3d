@@ -433,6 +433,61 @@ export function checksPlan(): PlanItem<Check>[] {
 	];
 }
 
+/**
+ * The image tests of the smoke plan: one for each main feature of the engine's drawing. Each one
+ * runs on every GPU tier, in its first thread mode.
+ */
+export const SMOKE_IMAGE_TESTS: ReadonlySet<string> = new Set([
+	's1',
+	's4',
+	'textures',
+	'ktx2',
+	'standard-maps',
+	'transparency',
+	'lights-16',
+	'shadows',
+	'spot-shadows',
+	'point-shadows',
+	'tone-aces',
+	'custom-surface',
+]);
+
+/** The page kinds of the checks plan that the smoke plan keeps on every GPU path. */
+const SMOKE_KINDS: ReadonlySet<Check['kind']> = new Set([
+	'capabilities',
+	'isolation',
+	'shaders',
+	'shader-library',
+	'uploads',
+	'preset-change',
+	'stats',
+]);
+
+/** Whether the smoke plan keeps an item of the checks plan. */
+function inSmokePlan({ id, check }: PlanItem<Check>): boolean {
+	switch (check.kind) {
+		case 'image':
+			return SMOKE_IMAGE_TESTS.has(check.run.test) && check.run.sameAs === undefined;
+		// The warm-up page as the engine runs it, without the switch that waits for each compile.
+		case 'warm-up':
+			return id === `warm-up-${check.tier}`;
+		// One thread mode of each build: the threaded build's first mode, and the single-threaded build.
+		case 'restarts':
+			return ENGINE_MODES.find(({ build }) => build === check.mode.build) === check.mode;
+		default:
+			return SMOKE_KINDS.has(check.kind);
+	}
+}
+
+/**
+ * A short version of the checks plan, about a tenth of its pages, for a device in a cloud session
+ * of limited time. It keeps the pages that find a device's faults soonest: the capability report,
+ * isolation, every shader's compile, the shader library, uploads, presets, warm-up and stats on
+ * each GPU path, the main features' image tests, and the restarts of each build. New GPU tiers and
+ * thread modes join by the same rules.
+ */
+export const smokePlan = (): PlanItem<Check>[] => checksPlan().filter(inSmokePlan);
+
 /** The name of the parity plan's item for one scene's hold page of one kind. */
 const parityItemId = (scene: BenchScene, kind: string) => `parity-${scene}-${kind}`;
 
@@ -885,14 +940,26 @@ export function startupPlan({ runs = STARTUP_RUNS }: PlanSettings = {}): PlanIte
  */
 export const REPORT_ON_TOP_PLANS: ReadonlySet<string> = new Set([
 	'checks',
+	'smoke',
 	'parity',
 	'memory',
 	'depth',
 	'tab-memory',
 ]);
 
+/**
+ * The checks of pages that push the browser to its memory limit on purpose. A refused memory is what
+ * they measure, so the device runner's out-of-memory guard does not count their pages.
+ */
+export const MEMORY_LIMIT_CHECKS: ReadonlySet<Check['kind']> = new Set([
+	'memory',
+	'room',
+	'tab-memory',
+]);
+
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
 	checks: checksPlan,
+	smoke: smokePlan,
 	parity: parityPlan,
 	bench: benchPlan,
 	memory: memoryPlan,

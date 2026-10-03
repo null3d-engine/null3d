@@ -77,10 +77,22 @@ async function receive(
  */
 const claimPath = (run: string, device: string) => join(RUNS_DIR, run, device, '.runner-page');
 
-/** Whether `page` may store a run's device's results: no runner page claimed it, or `page` did last. */
-function holdsClaim(run: string, device: string, page: string): boolean {
+/** The claim that the runner tool leaves when it ends a device's turn. No page's name can match it. */
+const TURN_ENDED = ':turn-ended';
+
+/** The runner page that claimed a run's device last, or the mark of a turn that the tool ended. */
+function claimOf(run: string, device: string): string | undefined {
 	const claim = claimPath(run, device);
-	return !existsSync(claim) || readFileSync(claim, 'utf8') === page;
+	return existsSync(claim) ? readFileSync(claim, 'utf8') : undefined;
+}
+
+/**
+ * Ends a device's turn in a run: the dev server then refuses its runner page's results and any new
+ * claim with 410, and the runner page stops.
+ */
+export function endTurnClaim(run: string, device: string): void {
+	mkdirSync(join(RUNS_DIR, run, device), { recursive: true });
+	writeFileSync(claimPath(run, device), TURN_ENDED);
 }
 
 /**
@@ -97,7 +109,8 @@ function holdsClaim(run: string, device: string, page: string): boolean {
  *   own file, and `GET` on the same path reads it back. A result from a runner page other than the
  *   one that claimed the device last is refused with 409 and stores nothing: a runner page that the
  *   runner tool replaced can still be running, hidden behind the new one, and its late results
- *   would overwrite the new page's.
+ *   would overwrite the new page's. Once the runner tool ends a device's turn, the server refuses
+ *   that device's results and claims with 410.
  */
 export function collectorRoutes(middlewares: Connect.Server): void {
 	middlewares.use('/__null3d/report', (req, res) => {
@@ -133,6 +146,7 @@ export function collectorRoutes(middlewares: Connect.Server): void {
 			return send(res, 200, JSON.stringify(names));
 		}
 		if (parts.length === 2 && device && page !== null && req.method === 'POST') {
+			if (claimOf(run, device) === TURN_ENDED) return send(res, 410);
 			mkdirSync(join(RUNS_DIR, run, device), { recursive: true });
 			writeFileSync(claimPath(run, device), page);
 			return send(res, 204);
@@ -142,7 +156,9 @@ export function collectorRoutes(middlewares: Connect.Server): void {
 			const file = join(RUNS_DIR, run, device, `${name}.json`);
 			return existsSync(file) ? send(res, 200, readFileSync(file, 'utf8')) : send(res, 404);
 		}
-		if (page !== null && !holdsClaim(run, device, page)) return send(res, 409);
+		const claim = page === null ? undefined : claimOf(run, device);
+		if (claim === TURN_ENDED) return send(res, 410);
+		if (claim !== undefined && claim !== page) return send(res, 409);
 		void receive(req, res, (json) => {
 			mkdirSync(join(RUNS_DIR, run, device), { recursive: true });
 			writeFileSync(join(RUNS_DIR, run, device, `${name}.json`), json);

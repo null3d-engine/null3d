@@ -8,7 +8,7 @@ summary: "Linear working space; sRGB hex colors and linear arrays; texture color
 
 # Color management
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Maps on materials are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
