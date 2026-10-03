@@ -194,9 +194,17 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 		object ? twins.get(object) : undefined;
 	const normalMatrix = new Matrix3();
 	/** three.js's hit's triangle normal in world space, facing the ray, as null3D gives it. */
+	const rowMatrix = new Matrix4();
 	const worldNormal = (hit: Intersection) => {
 		const n = (hit.face?.normal ?? new Vector3()).clone();
-		normalMatrix.getNormalMatrix(hit.object.matrixWorld);
+		// A row's triangle moves by its instance matrix, then by the batch's world matrix.
+		rowMatrix.copy(hit.object.matrixWorld);
+		if (hit.object instanceof InstancedMesh && hit.instanceId !== undefined) {
+			const row = new Matrix4();
+			hit.object.getMatrixAt(hit.instanceId, row);
+			rowMatrix.multiply(row);
+		}
+		normalMatrix.getNormalMatrix(rowMatrix);
 		n.applyMatrix3(normalMatrix).normalize();
 		if (n.dot(raycaster.ray.direction) > 0) n.negate();
 		return n;

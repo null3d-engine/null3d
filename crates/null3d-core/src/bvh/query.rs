@@ -502,10 +502,11 @@ impl SceneQueries {
                 });
             }
         });
-        raw.sort_unstable_by(|a, b| {
+        super::heap_sort_by(&mut raw, |a, b| {
             a.t.total_cmp(&b.t)
                 .then(a.id.cmp(&b.id))
                 .then(a.triangle.cmp(&b.triangle))
+                .is_lt()
         });
         let mut hits = std::mem::take(&mut self.hits);
         hits.clear();
@@ -630,7 +631,8 @@ mod tests {
         assert!(sphere_touches_triangle([0.25, 0.25, 0.5], 0.5, &TRI));
         assert!(!sphere_touches_triangle([0.25, 0.25, 0.5], 0.49, &TRI));
         // Beside the long edge, and past a corner.
-        let off = 0.5 + 0.5f64.sqrt();
+        // Half a meter out from the middle of the long edge, along its outward normal.
+        let off = 0.5 + 0.5 / 2f64.sqrt();
         assert!(sphere_touches_triangle([off, off, 0.0], 0.51, &TRI));
         assert!(!sphere_touches_triangle([off, off, 0.0], 0.49, &TRI));
         assert!(sphere_touches_triangle([-1.0, 0.0, 0.0], 1.0, &TRI));

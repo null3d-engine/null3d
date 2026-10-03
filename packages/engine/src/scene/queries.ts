@@ -5,7 +5,6 @@
 // nothing in steady state.
 
 import { checkLayers, DEV, type Described } from '../errors/checks';
-import { coreFailure } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import type { Vec3Like } from '../math/types';
@@ -189,10 +188,7 @@ export class SceneQueries {
 
 	/** Checks a query's result, and makes the views again when it wrote more hits than they hold. */
 	private finish(result: number, call: string): number {
-		if (result === C.QUERY_FAILED) {
-			this.core.refresh();
-			throw coreFailure(this.core.glue, call);
-		}
+		if (result === C.QUERY_FAILED) this.core.fail(call);
 		this.views();
 		if (result > this.hitCapacity) {
 			this.generation = -1;

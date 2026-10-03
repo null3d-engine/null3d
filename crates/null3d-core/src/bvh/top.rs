@@ -521,7 +521,9 @@ impl TopTree {
                 n += 1;
             }
         }
-        out[..n].sort_unstable_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        super::heap_sort_by(&mut out[..n], |a, b| {
+            a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)).is_lt()
+        });
         n
     }
 }

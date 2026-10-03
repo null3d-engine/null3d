@@ -505,6 +505,34 @@ pub fn sphere_touches_box(center: [f32; 3], radius: f32, b: &Aabb) -> bool {
     d2 <= radius * radius
 }
 
+/// Sorts `v` by `less`, a strict order, in place, with no allocation. Heap sort keeps the code
+/// small in WebAssembly, where each of the standard library's sorts adds kilobytes per element
+/// type. Equal elements may change places, so callers sort by keys that differ.
+pub(crate) fn heap_sort_by<T: Copy>(v: &mut [T], less: impl Fn(&T, &T) -> bool) {
+    let sift = |v: &mut [T], mut root: usize, end: usize| loop {
+        let mut child = 2 * root + 1;
+        if child >= end {
+            return;
+        }
+        if child + 1 < end && less(&v[child], &v[child + 1]) {
+            child += 1;
+        }
+        if !less(&v[root], &v[child]) {
+            return;
+        }
+        v.swap(root, child);
+        root = child;
+    };
+    let n = v.len();
+    for root in (0..n / 2).rev() {
+        sift(v, root, n);
+    }
+    for end in (1..n).rev() {
+        v.swap(0, end);
+        sift(v, 0, end);
+    }
+}
+
 /// A fixed stack for traversals, which never allocates. Trees stay within [`MAX_DEPTH`], so it
 /// cannot overflow.
 pub(crate) struct Stack<T: Copy + Default> {
@@ -688,6 +716,23 @@ pub fn ray_box_entry(ray: &Ray, b: &Aabb) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn heap_sort_orders_like_the_standard_sort() {
+        let mut state = 7u32;
+        for n in [0usize, 1, 2, 3, 10, 257] {
+            let mut v: Vec<(u32, u32)> = (0..n as u32)
+                .map(|i| {
+                    state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    (state >> 24, i)
+                })
+                .collect();
+            let mut want = v.clone();
+            want.sort();
+            heap_sort_by(&mut v, |a, b| a < b);
+            assert_eq!(v, want);
+        }
+    }
 
     #[test]
     fn leaf_words_round_trip() {
