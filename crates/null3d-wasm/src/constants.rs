@@ -91,6 +91,29 @@ pub mod map_slot {
 }
 
 /// The numbers that `textureStat` reads from the texture store.
+/// The places of the post-processing values in the block that `postValues` gives: 32-bit floats
+/// that TypeScript writes before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`. The
+/// values come through engine memory, not as arguments, because the browser stores each fraction
+/// that it passes to a call it does not inline in an object of its own.
+pub mod post_value {
+    /// The exposure.
+    pub const EXPOSURE: u32 = 0;
+    /// Bloom's strength, radius and threshold.
+    pub const BLOOM_STRENGTH: u32 = 1;
+    pub const BLOOM_RADIUS: u32 = 2;
+    pub const BLOOM_THRESHOLD: u32 = 3;
+    /// The color grading table's intensity.
+    pub const LUT_INTENSITY: u32 = 4;
+    /// The colors of the table's first texels, red first, then of its last texels.
+    pub const LUT_DOMAIN_MIN: u32 = 5;
+    pub const LUT_DOMAIN_MAX: u32 = 8;
+    /// The vignette's offset and darkness.
+    pub const VIGNETTE_OFFSET: u32 = 11;
+    pub const VIGNETTE_DARKNESS: u32 = 12;
+    /// The values in the block.
+    pub const COUNT: u32 = 13;
+}
+
 pub mod texture_stat {
     /// The GPU bytes that every texture array holds, free layers included.
     pub const MEMORY_BYTES: u32 = 0;
@@ -567,6 +590,21 @@ pub fn typescript() -> String {
                 ("LIGHT_MAP_INTENSITY", param::LIGHT_MAP_INTENSITY as u32),
                 ("UV_U", param::UV_U as u32),
                 ("UV_V", param::UV_V as u32),
+            ],
+        ),
+        (
+            "POST_VALUE",
+            &[
+                ("EXPOSURE", post_value::EXPOSURE),
+                ("BLOOM_STRENGTH", post_value::BLOOM_STRENGTH),
+                ("BLOOM_RADIUS", post_value::BLOOM_RADIUS),
+                ("BLOOM_THRESHOLD", post_value::BLOOM_THRESHOLD),
+                ("LUT_INTENSITY", post_value::LUT_INTENSITY),
+                ("LUT_DOMAIN_MIN", post_value::LUT_DOMAIN_MIN),
+                ("LUT_DOMAIN_MAX", post_value::LUT_DOMAIN_MAX),
+                ("VIGNETTE_OFFSET", post_value::VIGNETTE_OFFSET),
+                ("VIGNETTE_DARKNESS", post_value::VIGNETTE_DARKNESS),
+                ("COUNT", post_value::COUNT),
             ],
         ),
         (

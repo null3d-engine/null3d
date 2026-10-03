@@ -117,7 +117,8 @@ impl Output {
 pub struct OutputUniform {
     pub exposure: f32,
     pub tone_mapping: u32,
-    /// Flags that only the final pass reads: [`OutputUniform::DISPLAY_COLOR`].
+    /// Flags that only the final pass reads: [`OutputUniform::DISPLAY_COLOR`],
+    /// [`OutputUniform::VIGNETTE`] and [`OutputUniform::LUT`].
     pub flags: u32,
     /// The part of the scene color that the scene drew, from its top-left corner: the width in
     /// pixels in the low 16 bits, and the height in the high 16 bits.
@@ -130,6 +131,10 @@ impl OutputUniform {
     /// The flag that says the scene color holds display color, which the scene shaders tone
     /// mapped and encoded already, so the final pass leaves the color as it is.
     pub const DISPLAY_COLOR: u32 = 1;
+    /// The flag that turns the final pass's vignette on.
+    pub const VIGNETTE: u32 = 2;
+    /// The flag that turns the final pass's color grading table on.
+    pub const LUT: u32 = 4;
 
     /// Sets the size the scene drew at, in pixels. Each side keeps its low 16 bits, which hold any
     /// texture size a GPU makes.

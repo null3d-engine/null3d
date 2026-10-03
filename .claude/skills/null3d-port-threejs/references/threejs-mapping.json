@@ -1473,10 +1473,21 @@
       "three": "LUTPass / LUTCubeLoader / LUT3dlLoader",
       "status": "direct",
       "since": "0.2",
-      "target": "post.set({ lut: await assets.loadLut('grade.cube') })",
-      "notes": "",
+      "target": "post.set({ lut: await assets.loadLut('grade.cube'), lutIntensity })",
+      "notes": "LUTPass's intensity becomes lutIntensity. The table grades display color after the tone mapping, as LUTPass after OutputPass does. LUTImageLoader's PNG strips are not read: export the grade as a .cube file.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bLUTPass\\b|\\bLUT(Cube|3dl|Image)Loader\\b"
+    },
+    {
+      "id": "vignette",
+      "category": "Post-processing",
+      "three": "VignetteShader / VignetteEffect",
+      "status": "direct",
+      "since": "0.2",
+      "target": "post.set({ vignette: { offset, darkness } })",
+      "notes": "VignetteShader's offset and darkness keep their meanings. The postprocessing library's VignetteEffect matches with its ESKIL technique; its default technique darkens with another curve, so tune the two numbers.",
+      "docs": "porting/threejs-postprocessing",
+      "detect": "\\bVignette(Shader|Effect)\\b"
     },
     {
       "id": "ssr",

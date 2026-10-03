@@ -39,9 +39,10 @@ export interface Null3dPageOptions {
 
 /**
  * The page's switches that reach the sketch module's address as they are: `blend` makes S1's
- * boxes see through, and `animated` adds that many animated characters to S1.
+ * boxes see through, `animated` adds that many animated characters to S1, and `grading` gives S1 a
+ * color grading table and the vignette.
  */
-const SKETCH_SWITCHES = ['blend', 'animated'] as const;
+const SKETCH_SWITCHES = ['blend', 'animated', 'grading'] as const;
 
 /**
  * Runs `sketch`, a sketch module next to the page, as the scene `sceneName` with `defaultCount`

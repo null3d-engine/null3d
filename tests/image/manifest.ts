@@ -17,6 +17,7 @@ import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { BLOOM_IMAGE } from '../../bench/scenes/bloom.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
 import { MODEL_NAMES, MODELS_IMAGE } from '../../bench/scenes/gltf-models.ts';
+import { GRADING_IMAGE } from '../../bench/scenes/grading.ts';
 import { LIGHTS_IMAGE } from '../../bench/scenes/lights.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
@@ -133,6 +134,42 @@ function bloomTests(): ImageTest[] {
 			tolerance: EIGHT_BIT_TOLERANCE,
 			deviceTolerance: EIGHT_BIT_TOLERANCE,
 		},
+	];
+}
+
+/** The sketch of the color grading tests: hues and grays on a light ground (bench/scenes/grading.ts). */
+const GRADING_SKETCH = 'tests/pages/sketches/grading-sketch.ts';
+
+/**
+ * Color grading on every tier: a table from a .cube file, a table from a .3dl file, the vignette,
+ * and a table at part of its intensity with the vignette. Compatibility mode keeps the 8-bit path
+ * with MSAA, where grading runs the final pass in place of the resolve pass. The page's switch that
+ * turns HDR off puts the other tiers on that path too, which must draw the HDR path's image. At
+ * half the render scale, the final pass grades the scaled image. The parity test compares the
+ * .cube and the mixed images with three.js's LUTPass and VignetteShader.
+ */
+function gradingTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${GRADING_SKETCH}${query}`,
+		hold: 0,
+		size: [GRADING_IMAGE.width, GRADING_IMAGE.height],
+	});
+	return [
+		test('lut-cube', '?lut=warm'),
+		test('lut-3dl', '?lut=cool'),
+		test('vignette', '?vignette'),
+		test('lut-vignette', '?lut=warm&mix&vignette'),
+		{
+			...test('lut-vignette-8-bit', '?lut=warm&mix&vignette'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'lut-vignette',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+		test('lut-vignette-scale-50', '?lut=warm&mix&vignette&scale=0.5'),
 	];
 }
 
@@ -426,6 +463,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...toneMappingTests(),
 	...antialiasTests(),
 	...bloomTests(),
+	...gradingTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
 	// alpha: the output spec checks the alpha of the captured pixels.
 	{
