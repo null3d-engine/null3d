@@ -206,9 +206,9 @@ The engine can draw the scene at a render scale below the canvas's size. Its fin
 During play, the engine moves the scale between the `minRenderScale` and `maxRenderScale` settings:
 
 - It watches how often frames reach the screen and how often the GPU finishes one. It also watches how long the GPU takes to finish each frame.
-- Frames are over budget when they come at least 10% slower than the target rate. They are also over budget when the GPU finishes each one two frames late or later. The target is the display's refresh rate, at most 60 frames per second, or the lower rate that the `?fps=` switch holds.
+- Frames are over budget when they come at least 10% slower than the target rate. They are also over budget when the GPU finishes each one two frames late or later. The target is the display's refresh rate, at most 60 frames per second, or the lower rate that the `?fps=` switch holds. Safari calls a drawing worker from a timer, which slows when the GPU falls behind. There the engine takes the display's rate from the page's frame callbacks.
 - After about a second over budget, the scale drops by 0.05. The engine then waits a second, so it judges frames at the new scale.
-- After 5 seconds at the target rate, with the GPU done with each frame within about one frame, the scale rises by 0.05. A rise that takes the frames over budget again doubles the wait before the next rise, up to 80 seconds. So the scale settles below the point where frames fall behind.
+- After 5 seconds at the target rate on average, with the GPU done with each frame within about one frame, the scale rises by 0.05. The average covers the whole 5 seconds. In Safari, some frames wait an extra callback even at the full rate. A rise that takes the frames over budget again doubles the wait before the next rise, up to 80 seconds. So the scale settles below the point where frames fall behind.
 - It takes no step in the first 2 seconds of play, or while textures wait to upload. It starts to judge the frames again after a pause.
 
 The scene's render targets keep the canvas's size at every scale, and the scene draws into their top-left corner. So a new scale makes no GPU object and allocates no memory. `engine.measure()` counts the GPU objects that the engine made, in `gpuObjects`.

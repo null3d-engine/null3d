@@ -10,10 +10,10 @@
 //
 // The governor judges the frames in windows of a quarter second. It takes a step down after about a
 // second over the frame budget, and a step up only after several seconds in which the frames kept
-// their rate and the GPU finished each within about one frame. After each step it waits for the
-// frames of the new setting before it judges again. A step up that takes the frames over the budget
-// doubles the wait before the next step up, so the settings settle below the point where the frames
-// fall behind instead of swinging across it. A shadow step happens only where the scene has a light
+// their rate on average and the GPU finished each within about one frame. After each step it waits
+// for the frames of the new setting before it judges again. A step up that takes the frames over the
+// budget doubles the wait before the next step up, so the settings settle below the point where the
+// frames fall behind instead of swinging across it. A shadow step happens only where the scene has a light
 // that casts shadows, and only where the step changes what the frame draws: the far cascades need a
 // directional light with two cascades or more, and the filter any light that casts shadows.
 //
@@ -80,7 +80,14 @@ export const MAX_TARGET_HZ = 60;
 export const OVER_PERCENT = 110;
 /** A GPU delay of this percentage of the budget or more means that frames queue on the GPU. */
 export const QUEUED_PERCENT = 200;
-/** Frames within this percentage of the budget, with a GPU delay within `ROOM_DELAY_PERCENT`, have room. */
+/**
+ * Frames have room when their mean time since the room started is within this percentage of the
+ * budget, and each window's GPU delay is within `ROOM_DELAY_PERCENT`. The mean covers the whole
+ * stretch, not each window: where callbacks come from a timer that does not divide the display's
+ * period, as in Safari's workers, every 15th frame or so waits two callbacks, and a quarter second
+ * holds one or two such gaps. Window by window, the frames at the full rate then measured 97% to
+ * 105% of the budget.
+ */
 export const ROOM_PERCENT = 102;
 /**
  * A GPU delay within this percentage of the budget means that the GPU finishes each frame within
@@ -105,7 +112,11 @@ const ROOM_SINCE = 1;
 const JUDGE_FROM = 2;
 const RAISE_AFTER = 3;
 const RAISED_AT = 4;
-const STATE_SIZE = 5;
+/** The windows since the room started. */
+const ROOM_WINDOWS = 5;
+/** Their frame times less the budget, summed, in µs. */
+const ROOM_EXCESS_US = 6;
+const STATE_SIZE = 7;
 
 /**
  * The governor's rules, over windows of frame figures. The frame loop, or a test, fills `window`
@@ -209,16 +220,38 @@ export class Governor {
 		const frame = window[FRAME_US] as number;
 		const delay = window[GPU_DELAY_US] as number;
 		const over = frame * 100 >= budget * OVER_PERCENT || delay * 100 >= budget * QUEUED_PERCENT;
-		const room =
-			!over && frame * 100 <= budget * ROOM_PERCENT && delay * 100 <= budget * ROOM_DELAY_PERCENT;
+		const calm = !over && delay * 100 <= budget * ROOM_DELAY_PERCENT;
 		if (!over) state[OVER_SINCE] = -1;
 		else if ((state[OVER_SINCE] as number) < 0) state[OVER_SINCE] = now - WINDOW_MS;
-		if (!room) state[ROOM_SINCE] = -1;
-		else if ((state[ROOM_SINCE] as number) < 0) state[ROOM_SINCE] = now - WINDOW_MS;
+		if (!calm) state[ROOM_SINCE] = -1;
+		else if ((state[ROOM_SINCE] as number) < 0) this.startRoom(now);
 		const overSince = state[OVER_SINCE] as number;
-		const roomSince = state[ROOM_SINCE] as number;
-		if (over && now - overSince >= DROP_AFTER_MS) this.lower(now);
-		else if (room && now - roomSince >= (state[RAISE_AFTER] as number)) this.raise(now);
+		if (over && now - overSince >= DROP_AFTER_MS) {
+			this.lower(now);
+			return;
+		}
+		if (!calm) return;
+		const windows = (state[ROOM_WINDOWS] as number) + 1;
+		const excess = (state[ROOM_EXCESS_US] as number) + frame - budget;
+		state[ROOM_WINDOWS] = windows;
+		state[ROOM_EXCESS_US] = excess;
+		if (now - (state[ROOM_SINCE] as number) < (state[RAISE_AFTER] as number)) return;
+		if (excess * 100 <= windows * budget * (ROOM_PERCENT - 100)) this.raise(now);
+		else {
+			// The frames ran a little long over the wait: it starts again, so that frames which
+			// have room later are judged on their own.
+			this.startRoom(now);
+			state[ROOM_WINDOWS] = 1;
+			state[ROOM_EXCESS_US] = frame - budget;
+		}
+	}
+
+	/** Starts the room's stretch at the window that ends at `now`, with no window summed yet. */
+	private startRoom(now: number): void {
+		const { state } = this;
+		state[ROOM_SINCE] = now - WINDOW_MS;
+		state[ROOM_WINDOWS] = 0;
+		state[ROOM_EXCESS_US] = 0;
 	}
 
 	/**
