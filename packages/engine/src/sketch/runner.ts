@@ -42,7 +42,7 @@ import { type ControlViews, controlViews, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { type ImageSender, imagesArrived, type ShaderSender } from '../shared/images';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
-import { slotChange } from '../shared/wake';
+import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import { FixedClock, FrameClock, holdSteps } from './clock';
 import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-sketch';
 import { InputReader } from './input';
@@ -92,6 +92,8 @@ const SLOT_POLL_MS = 4;
 /**
  * Resolves once a control slot holds `target` or more, or once the engine stops. It waits without
  * blocking the thread, and checks the slot on a timer where the control block is not shared memory.
+ * A start's steps wait this way, so each wait also checks the slot again after a short time, in case
+ * the browser missed the wake.
  */
 async function reached(slots: Int32Array, slot: number, target: number): Promise<void> {
 	const shared =
@@ -100,7 +102,7 @@ async function reached(slots: Int32Array, slot: number, target: number): Promise
 		const value = Atomics.load(slots, slot);
 		if (value >= target || Atomics.load(slots, Slot.Running) === 0) return;
 		if (shared) {
-			const change = slotChange(slots, slot, value);
+			const change = slotChangeOrRecheck(slots, slot, value);
 			if (change) await change;
 		} else await new Promise((resolve) => setTimeout(resolve, SLOT_POLL_MS));
 	}
