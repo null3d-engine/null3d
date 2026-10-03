@@ -279,28 +279,24 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setLightDefault(which: number, value: number): number;
 	setBackground(r: number, g: number, b: number): number;
-	/** The tone mapping, by code, and the exposure, from the next frame on. */
-	setOutput(toneMapping: number, exposure: number): number;
-	/** Turns bloom on with its strength, radius and threshold, or off, from the next frame on. */
-	setBloom(on: boolean, strength: number, radius: number, threshold: number): number;
+	/**
+	 * The address of the block of post-processing values (`POST_VALUE_*`), 32-bit floats that
+	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`.
+	 */
+	postValues(): number;
+	/** The tone mapping, by code, and the exposure from the post-processing values, from the next frame on. */
+	setOutput(toneMapping: number): number;
+	/** Turns bloom on with the post-processing values' strength, radius and threshold, or off. */
+	setBloom(on: boolean): number;
 	/** How many times fewer taps than three.js's bloom's blurs read, from the next frame on. */
 	setBloomSamples(divisor: number): number;
 	/**
 	 * Grades the canvas color with the color grading table in a 3D texture, or with none for 0,
-	 * from the next frame on: its intensity, then the color of its first texel and of its last.
+	 * from the next frame on, with the post-processing values' intensity and domain.
 	 */
-	setLut(
-		texture: number,
-		intensity: number,
-		minR: number,
-		minG: number,
-		minB: number,
-		maxR: number,
-		maxG: number,
-		maxB: number,
-	): number;
-	/** Turns the vignette on with three.js's offset and darkness, or off, from the next frame on. */
-	setVignette(on: boolean, offset: number, darkness: number): number;
+	setLut(texture: number): number;
+	/** Turns the vignette on with the post-processing values' offset and darkness, or off. */
+	setVignette(on: boolean): number;
 	/**
 	 * Draws the scene into a target of another format, by code, with another anti-aliasing mode, by
 	 * code, from the next frame on.
@@ -454,6 +450,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setLightValue',
 	'setLightDefault',
 	'setBackground',
+	'postValues',
 	'setOutput',
 	'setBloom',
 	'setBloomSamples',

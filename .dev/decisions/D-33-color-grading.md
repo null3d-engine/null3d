@@ -65,5 +65,6 @@ The sample content's tables (`sources/luts/`): warm, cool and identity, each as 
 ## Consequences
 
 - Code: `crates/null3d-render/src/grading.rs`, the final pass's settings and bindings (`final_pass.rs`, `final.wgsl`), 3D textures in the texture store (`textures.rs`), the core calls `createVolumeTexture`, `setLut` and `setVignette`, `scene/lut.ts` and `scene/lut-files.ts`, and `post.ts`.
+- Per frame: `post.set` writes its numbers, the exposure and bloom's among them, into a block of the core's memory (`postValues`), and the core calls take none. A fraction passed as an argument made a heap object per call, which the allocation check (`bun run bench:allocation --grading`) caught: 22 bytes per frame before, none after, on both GPU paths.
 - Tests: the render crate's `grading.rs`, the readers' unit tests, the image tests `lut-cube`, `lut-3dl`, `vignette`, `lut-vignette`, `lut-vignette-8-bit` and `lut-vignette-scale-50`, and the parity scenes `lut-cube` and `lut-vignette`.
 - Docs: `api/post`, `api/assets`, `concepts/post-processing`, the mapping's `lut` and `vignette` entries, and both skills.

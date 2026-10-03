@@ -128,6 +128,28 @@ struct Engine {
     lines: LineStore,
     /// Skeletons, clips and animated instances, from the first `initAnimations` on.
     animations: Option<Animations>,
+    /// The post-processing values that TypeScript writes (`constants::post_value`), with three.js's
+    /// defaults until it writes others.
+    post_values: Box<[f32; constants::post_value::COUNT as usize]>,
+}
+
+/// The post-processing values before TypeScript writes any: an exposure of 1, `UnrealBloomPass`'s
+/// strength, radius and threshold, a table at its full intensity over colors from 0 to 1, and
+/// `VignetteShader`'s offset and darkness.
+const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = [
+    1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+];
+
+impl Engine {
+    /// The post-processing value at `place` (`constants::post_value`).
+    fn post_value(&self, place: u32) -> f32 {
+        self.post_values[place as usize]
+    }
+
+    /// Three post-processing values from `place` on.
+    fn post_values3(&self, place: u32) -> [f32; 3] {
+        std::array::from_fn(|k| self.post_value(place + k as u32))
+    }
 }
 
 impl Engine {
@@ -379,8 +401,16 @@ pub fn init_engine(
         staging: Vec::new(),
         lines: LineStore::default(),
         animations: None,
+        post_values: Box::new(POST_DEFAULTS),
     });
     0
+}
+
+/// The address of the post-processing values (`constants::post_value`), which TypeScript writes
+/// before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`.
+#[wasm_bindgen(js_name = postValues)]
+pub fn post_values() -> u32 {
+    value_with_engine(|e| Ok(address(&e.post_values[..])))
 }
 
 // The page calls this when it stops an engine that runs on the page's own thread, as the
@@ -1486,11 +1516,12 @@ pub fn set_shadow_quality(filter: u32, far_interval: u32) -> u32 {
     })
 }
 
-/// The tone mapping, by code, and the exposure, from the next frame on. The TypeScript API checks
-/// both, so an unknown code keeps the tone mapping as it was.
+/// The tone mapping, by code, and the exposure from the post-processing values, from the next
+/// frame on. The TypeScript API checks both, so an unknown code keeps the tone mapping as it was.
 #[wasm_bindgen(js_name = setOutput)]
-pub fn set_output(tone_mapping: u32, exposure: f32) -> u32 {
+pub fn set_output(tone_mapping: u32) -> u32 {
     with_engine(|e| {
+        let exposure = e.post_value(constants::post_value::EXPOSURE);
         let settings = e.renderer.settings_mut();
         let tone_mapping =
             ToneMapping::from_code(tone_mapping).unwrap_or_else(|| settings.output().tone_mapping);
@@ -1502,11 +1533,12 @@ pub fn set_output(tone_mapping: u32, exposure: f32) -> u32 {
     })
 }
 
-/// Turns bloom on with its strength, radius and threshold, or off, from the next frame on. The
-/// TypeScript API checks the values.
+/// Turns bloom on with its strength, radius and threshold from the post-processing values, or off,
+/// from the next frame on. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setBloom)]
-pub fn set_bloom(on: bool, strength: f32, radius: f32, threshold: f32) -> u32 {
+pub fn set_bloom(on: bool) -> u32 {
     with_engine(|e| {
+        let [strength, radius, threshold] = e.post_values3(constants::post_value::BLOOM_STRENGTH);
         let bloom = on.then_some(Bloom {
             strength,
             radius,
@@ -1518,22 +1550,16 @@ pub fn set_bloom(on: bool, strength: f32, radius: f32, threshold: f32) -> u32 {
 }
 
 /// Grades the canvas color with the color grading table in 3D texture `texture`, or with none
-/// when `texture` is 0, from the next frame on. `intensity` is the share of the graded color, and
-/// the domain is the color that the table's first and last texels along each axis stand for. The
-/// TypeScript API checks the values. Fails for a texture that is not live.
+/// when `texture` is 0, from the next frame on. The post-processing values give its intensity, the
+/// share of the graded color, and its domain, the colors that the table's first and last texels
+/// along each axis stand for. The TypeScript API checks the values. Fails for a texture that is
+/// not live.
 #[wasm_bindgen(js_name = setLut)]
-#[allow(clippy::too_many_arguments)]
-pub fn set_lut(
-    texture: u32,
-    intensity: f32,
-    min_r: f32,
-    min_g: f32,
-    min_b: f32,
-    max_r: f32,
-    max_g: f32,
-    max_b: f32,
-) -> u32 {
+pub fn set_lut(texture: u32) -> u32 {
     with_engine(|e| {
+        let intensity = e.post_value(constants::post_value::LUT_INTENSITY);
+        let domain_min = e.post_values3(constants::post_value::LUT_DOMAIN_MIN);
+        let domain_max = e.post_values3(constants::post_value::LUT_DOMAIN_MAX);
         let settings = e.renderer.settings_mut();
         let texture = match texture_or_none(settings, texture) {
             Ok(texture) => texture,
@@ -1542,20 +1568,23 @@ pub fn set_lut(
         let lut = (!texture.is_none()).then_some(Lut {
             texture,
             intensity,
-            domain_min: [min_r, min_g, min_b],
-            domain_max: [max_r, max_g, max_b],
+            domain_min,
+            domain_max,
         });
         settings.set_lut(lut);
         0
     })
 }
 
-/// Turns the vignette on with three.js's offset and darkness, or off, from the next frame on. The
-/// TypeScript API checks the values.
+/// Turns the vignette on with three.js's offset and darkness from the post-processing values, or
+/// off, from the next frame on. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setVignette)]
-pub fn set_vignette(on: bool, offset: f32, darkness: f32) -> u32 {
+pub fn set_vignette(on: bool) -> u32 {
     with_engine(|e| {
-        let vignette = on.then_some(Vignette { offset, darkness });
+        let vignette = on.then_some(Vignette {
+            offset: e.post_value(constants::post_value::VIGNETTE_OFFSET),
+            darkness: e.post_value(constants::post_value::VIGNETTE_DARKNESS),
+        });
         e.renderer.settings_mut().set_vignette(vignette);
         0
     })

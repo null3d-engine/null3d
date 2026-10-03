@@ -120,17 +120,18 @@ export interface PostSettings {
  */
 export class Post {
 	private toneMapping = C.TONE_MAPPING_ACES;
-	private exposure = 1;
 	private bloom = false;
-	private strength = 1;
-	private radius = 0.5;
-	private threshold = 1;
 	private warnedNoBloom = false;
 	private lut: Lut | false = false;
-	private lutIntensity = 1;
 	private vignette = false;
-	private offset = 1;
-	private darkness = 1;
+	/**
+	 * The core's block of post-processing values, which holds the numbers of every setting. The
+	 * calls read it, so no fraction travels as an argument: the browser stores each fraction that
+	 * it passes to a call it does not inline in an object of its own.
+	 */
+	private values: Float32Array | undefined;
+	/** The memory's generation that `values` was made in. */
+	private generation = -1;
 
 	/**
 	 * `hdrEffects` is false on a device that has no HDR target, where effects that need HDR color
@@ -150,35 +151,40 @@ export class Post {
 	set(settings: PostSettings): void {
 		if (DEV) checkSettings(settings);
 		const { toneMapping, exposure, bloom, lut, lutIntensity, vignette } = settings;
+		const { core } = this;
+		const { glue } = core;
+		const values = this.block();
 		if (toneMapping !== undefined && Object.hasOwn(CODES, toneMapping))
 			this.toneMapping = CODES[toneMapping];
-		if (exposure !== undefined) this.exposure = exposure;
-		const glue = this.core.glue;
-		this.core.check(glue.setOutput(this.toneMapping, this.exposure), 'post.set', undefined, true);
+		if (exposure !== undefined) values[C.POST_VALUE_EXPOSURE] = exposure;
+		core.check(glue.setOutput(this.toneMapping), 'post.set', undefined, true);
 		if (lut !== undefined || lutIntensity !== undefined) {
 			if (lut !== undefined) this.lut = lut;
-			if (lutIntensity !== undefined) this.lutIntensity = lutIntensity;
-			this.sendLut();
+			if (lutIntensity !== undefined) values[C.POST_VALUE_LUT_INTENSITY] = lutIntensity;
+			const table = this.lut;
+			if (table) {
+				for (let axis = 0; axis < 3; axis++) {
+					values[C.POST_VALUE_LUT_DOMAIN_MIN + axis] = table.domainMin[axis] as number;
+					values[C.POST_VALUE_LUT_DOMAIN_MAX + axis] = table.domainMax[axis] as number;
+				}
+			}
+			core.check(glue.setLut(table ? table.texture.handle : 0), 'post.set', undefined, true);
 		}
 		if (vignette !== undefined) {
 			this.vignette = vignette !== false;
 			if (vignette !== false) {
-				if (vignette.offset !== undefined) this.offset = vignette.offset;
-				if (vignette.darkness !== undefined) this.darkness = vignette.darkness;
+				if (vignette.offset !== undefined) values[C.POST_VALUE_VIGNETTE_OFFSET] = vignette.offset;
+				if (vignette.darkness !== undefined)
+					values[C.POST_VALUE_VIGNETTE_DARKNESS] = vignette.darkness;
 			}
-			this.core.check(
-				glue.setVignette(this.vignette, this.offset, this.darkness),
-				'post.set',
-				undefined,
-				true,
-			);
+			core.check(glue.setVignette(this.vignette), 'post.set', undefined, true);
 		}
 		if (bloom === undefined) return;
 		this.bloom = bloom !== false;
 		if (bloom !== false) {
-			if (bloom.strength !== undefined) this.strength = bloom.strength;
-			if (bloom.radius !== undefined) this.radius = bloom.radius;
-			if (bloom.threshold !== undefined) this.threshold = bloom.threshold;
+			if (bloom.strength !== undefined) values[C.POST_VALUE_BLOOM_STRENGTH] = bloom.strength;
+			if (bloom.radius !== undefined) values[C.POST_VALUE_BLOOM_RADIUS] = bloom.radius;
+			if (bloom.threshold !== undefined) values[C.POST_VALUE_BLOOM_THRESHOLD] = bloom.threshold;
 		}
 		if (DEV && this.bloom && !this.hdrEffects && !this.warnedNoBloom) {
 			this.warnedNoBloom = true;
@@ -186,35 +192,17 @@ export class Post {
 				'null3D: bloom stays off on this device: it needs HDR color, and the device has no HDR target. See the post-processing concepts page.',
 			);
 		}
-		this.core.check(
-			glue.setBloom(this.bloom, this.strength, this.radius, this.threshold),
-			'post.set',
-			undefined,
-			true,
-		);
+		core.check(glue.setBloom(this.bloom), 'post.set', undefined, true);
 	}
 
-	/** Gives the core the table, its intensity and its domain, or no table. */
-	private sendLut(): void {
-		const { lut } = this;
-		const min = lut ? lut.domainMin : NO_DOMAIN;
-		const max = lut ? lut.domainMax : NO_DOMAIN;
-		const handle = lut ? lut.texture.handle : 0;
-		this.core.check(
-			this.core.glue.setLut(
-				handle,
-				this.lutIntensity,
-				min[0],
-				min[1],
-				min[2],
-				max[0],
-				max[1],
-				max[2],
-			),
-			'post.set',
-			undefined,
-			true,
-		);
+	/** The core's block of post-processing values, through a view made again after the memory grew. */
+	private block(): Float32Array {
+		const { core } = this;
+		if (!this.values || this.generation !== core.generation) {
+			this.values = core.f32(core.glue.postValues(), C.POST_VALUE_COUNT);
+			this.generation = core.generation;
+		}
+		return this.values;
 	}
 
 	/** @internal True while the sketch has bloom on. */
@@ -222,9 +210,6 @@ export class Post {
 		return this.bloom;
 	}
 }
-
-/** The domain that the core gets with no table, which it does not read. */
-const NO_DOMAIN = [0, 0, 0] as const;
 
 /** Throws E1203 for a value that is not a finite number, and E1213 for one out of its range. */
 function checkNumber(name: string, value: number | undefined, max = Number.POSITIVE_INFINITY) {
