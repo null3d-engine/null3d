@@ -20,7 +20,7 @@ flowchart LR
         core["Engine core<br/>(Rust, WebAssembly)"]
     end
     subgraph jobs["Job workers"]
-        work["Transforms, instance batches,<br/>culling on WebGL2"]
+        work["Transforms, instance batches,<br/>sorting, culling on WebGL2"]
     end
     subgraph render["Render worker"]
         gpu["GPU layer<br/>WebGPU or WebGL2"]
@@ -39,7 +39,7 @@ In null3D, a 3D scene is called a sketch: a module that builds the scene and upd
 | Main thread | The page and a thin engine shim. The shim tests the browser and picks the engine build, the GPU path and the quality preset. It hands the canvas to the thread that draws, and writes input and resize events into shared memory. | 1 |
 | Sketch worker | Your sketch code and the engine core. Reading or writing scene data is a plain memory access here. | 1 |
 | Render worker | The GPU device and the canvas. It uploads changed data and replays draw lists into WebGPU or WebGL2 calls. It runs no sketch code. | 1 |
-| Job workers | Parallel loops over scene data in Rust: transforms and bounds, instance batches, WebGL2 culling, and the normals and tangents it computes for new meshes. | Logical cores minus 2, at least 1 |
+| Job workers | Parallel loops over scene data in Rust: transforms and bounds, instance batches, and the sort of see-through objects. On WebGL2 they also cull and list the lights of each cluster. They compute the normals and tangents of new meshes too. | Logical cores minus 2, at least 1 |
 
 ## Why the work is split this way
 
@@ -58,14 +58,15 @@ In the default mode the two workers overlap. The render worker draws frame N whi
 The sketch worker, computing frame N+1:
 
 1. Wakes when the render worker signals a new frame, and reads the new input from shared memory.
-2. Runs your `onFixedUpdate` once for each fixed step that fell due, then your `onUpdate`. Your code writes transforms straight into the shared arrays and queues structural changes, such as creating, destroying and reparenting objects.
-3. Applies the structural changes in one batch.
-4. Runs parallel jobs: transforms by hierarchy depth, with their bounds.
-5. Runs your `onLateUpdate`, then updates the objects that it moved and the objects below them.
-6. Runs more parallel jobs: the instance batches.
-7. Gathers the lights that shade the frame, and tests each grid cell against each view, such as the camera's. On the WebGL2 path, parallel jobs then cull the objects of the cells in view.
-8. Records the frame's draw lists: the new GPU objects and the uploads first, then each pass in the order that the [render graph](render-graph.md) sets.
-9. Publishes the finished frame: it stores the frame's number in one shared slot, which the render worker reads in its next frame callback.
+2. Judges the frames so far for [dynamic resolution and the frame-budget governor](quality-presets.md#dynamic-resolution). They can change this frame's render scale or the live shadow settings.
+3. Runs your `onFixedUpdate` once for each fixed step that fell due, then your `onUpdate`. Your code writes transforms straight into the shared arrays and queues structural changes, such as creating, destroying and reparenting objects.
+4. Applies the structural changes in one batch.
+5. Runs parallel jobs: transforms by hierarchy depth, with their bounds.
+6. Runs your `onLateUpdate`, then updates the objects that it moved and the objects below them.
+7. Runs more parallel jobs: the instance batches.
+8. Gathers the point and spot lights nearest the camera, and tests each grid cell against each view. A view is the camera's, a shadow cascade's or a shadow tile's. Parallel jobs then cull the see-through objects and sort them back to front. On the WebGL2 path, they also cull the objects of the cells in view, and list the lights of each cluster.
+9. Records the frame's draw lists: the new GPU objects and the uploads first, then each pass in the order that the [render graph](render-graph.md) sets.
+10. Publishes the finished frame: it stores the frame's number in one shared slot, which the render worker reads in its next frame callback.
 
 The render worker, drawing frame N inside its own `requestAnimationFrame` callback:
 
@@ -80,13 +81,18 @@ The engine times each step of the sketch worker's frame, the replay on the drawi
 
 ## The passes of a frame
 
-A frame's draw list holds a series of passes, and the [render graph](render-graph.md) puts them in order. A pass is one job for the GPU, such as drawing the scene from the camera. In this version the engine declares every pass itself:
+A frame's draw list holds a series of passes, and the [render graph](render-graph.md) puts them in order. A pass is one job for the GPU, such as drawing the scene from the camera. In this version the engine declares every pass itself. A frame runs them in this order:
 
-- On WebGPU, a culling pass comes first. This compute pass tests the objects and instance rows against the camera's view, on the GPU. In a scene over several grid cells, it skips the still objects of the cells out of view ([Culling](culling.md)).
-- The opaque pass draws the objects in view into multisampled color and depth. Its render pass resolves the color straight into the canvas.
-- In development builds, a frame with [debug drawing](../api/debug.md) draws the lines after the opaque pass, in the same render pass.
+1. Light clustering, on WebGPU: a compute pass lists the point and spot lights of each cluster of the camera's view ([Lighting and environment](lighting.md#clustered-forward-shading)).
+2. Culling, on WebGPU: a compute pass for each view tests the objects and instance rows against the view, on the GPU. In a scene over several grid cells, it skips the still objects of the cells out of view ([Culling](culling.md)).
+3. Shadows: while a directional light casts shadows, each cascade that draws in the frame draws its casters' depth into its layer of the shadow map. Each tile of the shadow atlas of spot and point lights draws too, but only in a frame in which it must draw again ([Shadows](shadows.md)).
+4. The depth prepass, on WebGPU and only when `depthPrepass` turns it on: the depth of the opaque objects, before they are shaded ([Quality presets](quality-presets.md#the-depth-prepass)).
+5. The opaque pass draws the objects in view into the scene color and depth, with 4 samples per pixel in the MSAA mode.
+6. In development builds, a frame with [debug drawing](../api/debug.md) draws the lines after the opaque pass, in the same render pass.
+7. While some object blends, the transparent pass draws the blended objects back to front, in the same render pass.
+8. The final pass draws the scene color into the canvas. On the HDR path it applies the exposure and the tone mapping, encodes sRGB and dithers. It also smooths edges in the FXAA mode, and scales the image up to the canvas when the render scale is below 1. On the 8-bit path the scene's shaders tone map their own output. There, with MSAA and a lowest render scale of 1, the scene's render pass averages its samples straight into the canvas. The frame then has no final pass ([GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier)).
 
-On WebGL2 the job workers cull before the frame records, so the frame has no culling pass there. The graph works out the order only when the passes change, so a frame whose passes stay the same pays nothing for it.
+On WebGL2 the job workers cull and list the lights of each cluster before the frame records, so the frame has no compute passes there. The graph works out the order only when the passes change, so a frame whose passes stay the same pays nothing for it.
 
 ## Precision far from the origin
 
