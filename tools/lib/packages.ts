@@ -235,8 +235,7 @@ function compile(root: string, dir: string): void {
 		],
 		root,
 	);
-	const copied = walkFiles(dir, 'src', (path) => /\.(?:js|d\.ts)$/.test(path));
-	for (const path of copied) {
+	for (const path of walkFiles(dir, 'src', (path) => BUILT_FILE.test(path))) {
 		const to = join(lib, path.slice('src/'.length));
 		mkdirSync(dirname(to), { recursive: true });
 		copyFileSync(join(dir, path), to);
