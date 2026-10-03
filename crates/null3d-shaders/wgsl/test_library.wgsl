@@ -213,7 +213,12 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         case 92u: { return scalar(null3d::sdf::rounded(f[0].x, f[0].y)); }
         case 93u: { return scalar(null3d::sdf::onion(f[0].x, f[0].y)); }
         case 94u: {
-            let scene_fog = null3d::fog::Fog(f[0].xyz, u[1].x, f[2].xyz, f[2].w, f[3].x, f[3].y);
+            let scene_fog = null3d::fog::Fog(
+                vec4f(f[0].xyz, f[2].w),
+                vec4f(f[2].xyz, f[3].x),
+                f[3].y,
+                u[1].x,
+            );
             return scalar(null3d::fog::fog_factor(scene_fog, f[4].xyz));
         }
         default: { return whole(vec4u(0xffffffffu)); }

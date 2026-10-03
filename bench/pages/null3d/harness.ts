@@ -9,10 +9,16 @@
 // quality preset. `?governor=off` keeps the quality governor off in a scene that turns it on.
 import { createEngine, type Engine, type SecondRates } from '@null3d/engine';
 import { timedRun } from '../../../packages/cli/src/protocol.js';
+import {
+	GL_TIMING_CHANNEL,
+	GL_TIMING_REQUEST,
+	type GlTimingReport,
+} from '../../../packages/engine/src/gpu/webgl2/call-timing';
 import { run, toBase64 } from '../../../tests/pages/lib/result';
 import { CANVAS, MEASURE_SECONDS, PARITY_CANVAS, WARMUP_SECONDS } from '../../scenes/spec';
 import { soakEngine } from '../lib/device-soak';
 import { fillWindow, fitToWindow, showPageName } from '../lib/fit';
+import type { GlTiming } from '../lib/gl-timing';
 import { pageReport, readRunOptions } from '../lib/options';
 import { twinSettings } from '../lib/preset';
 import { engineTrace, QualityLog } from '../lib/trace';
@@ -106,6 +112,7 @@ export function runNull3dPage(
 				warmupSeconds: options.seconds ?? WARMUP_SECONDS,
 				measureSeconds,
 			});
+			const glTiming = params.has('gl-timing') ? await requestGlTiming() : undefined;
 			const trace =
 				log &&
 				engineTrace(
@@ -113,9 +120,36 @@ export function runNull3dPage(
 					log,
 					performance.now() - measureSeconds * 1000,
 				);
-			return { ...report, ...timed, ...(trace && { trace }), userAgent: navigator.userAgent };
+			return {
+				...report,
+				...timed,
+				...(trace && { trace }),
+				...(glTiming && { glTiming }),
+				userAgent: navigator.userAgent,
+			};
 		} finally {
 			await engine.destroy();
 		}
 	});
+}
+
+/** How long the page waits for the thread that draws to send its WebGL call times. */
+const GL_TIMING_WAIT_MS = 2000;
+
+/**
+ * The WebGL call times of the measured frames, from the thread that draws, or undefined when no
+ * answer comes in time: a WebGPU page times no calls.
+ */
+function requestGlTiming(): Promise<GlTiming | undefined> {
+	const channel = new BroadcastChannel(GL_TIMING_CHANNEL);
+	return new Promise<GlTiming | undefined>((resolve) => {
+		const timeout = setTimeout(() => resolve(undefined), GL_TIMING_WAIT_MS);
+		channel.onmessage = (event: MessageEvent<GlTimingReport>) => {
+			if (event.data?.type !== 'gl-timing') return;
+			clearTimeout(timeout);
+			const { frames, calls, slowestFrame } = event.data;
+			resolve({ frames, calls, slowestFrame });
+		};
+		channel.postMessage(GL_TIMING_REQUEST);
+	}).finally(() => channel.close());
 }

@@ -276,3 +276,30 @@ Safari 26 does work for each WebGPU frame that no GPU timestamp covers. It shows
 - So the page measures the display's refresh period from its own frame callbacks, which follow the display in every browser. It writes the period to the control block. A worker whose callbacks come at a rate that matches no display's holds its frames to that period. Chrome's worker callbacks follow the display, so Chrome draws as before, even when a busy page thread measures a slower rate.
 - With the hold, Safari on the Mac's built-in screen presented 60.0 frames per second in 4 of 4 runs. Safari runs the page's frame callbacks at 60 Hz on that 120 Hz screen, and at 72 Hz on a 144 Hz screen. On the 144 Hz screen, the worker's 64.6 frames per second stay below the page's rate, so the hold skips no callback there.
 - Safari writes no timestamps, or stale ones, for a pass without work. The GPU timer's start mark therefore dispatches one invocation that does nothing.
+
+## Safari's WebGL2 path
+
+Safari runs WebGL2 in its GPU process, through ANGLE on Metal. A call that returns a value waits until that process has run every call before it. `fenceSync` is such a call. The completion tracker places a fence at the end of each frame, so the render worker waits there until Safari has run the frame's calls. Any wait inside Safari then shows in the render worker's time per frame. [WebGL call times](benchmarks.md#webgl-call-times) finds the call that waits.
+
+- ANGLE lays out a uniform block by Metal's rules, where a `vec3` takes 16 bytes. WGSL lets a scalar follow a `vec3f` at byte 12. Where the two layouts differ, ANGLE converts the block on the CPU before a draw that reads changed data.
+- ANGLE writes a buffer that the GPU still reads with a GPU copy. The conversion then reads the buffer on the CPU, so it waits for the GPU to finish every frame queued before. Until 2 October 2026, the frame's fog held a `vec3f` before a scalar. On the iPad, S3 then spent 22 ms of each WebGL2 frame in `fenceSync`.
+- The shader build therefore fails when a uniform block lays out differently by ANGLE's Metal rules (`metal_layout` in `crates/null3d-shaders/src/glsl.rs`). Fill each `vec3f` with a scalar into a `vec4f`.
+- With the fog's new layout, the render worker's time per frame on the iPad fell from 25.9 to 1.1 ms in S3.
+- Safari writes texels into a texture that the GPU still reads only after the GPU has finished with it. The resident texture of world matrices takes such a write whenever a scene object moves. In S4, one write per frame waited about 16 ms on the iPad.
+- So a later write into a data texture of 32-bit values goes through a pixel unpack buffer. The GPU copies the texels into the texture in order with its other work, and the render worker does not wait. A ring of three such buffers serves one frame each: the frame being replayed, and the two frames that may be in flight.
+- A texture's first write, and every write into a color texture, goes straight into the texture. Through an unpack buffer, Chrome on the Mac stored sRGB texels brighter.
+- On 3 October 2026, a cool iPad Pro 11 compared three ways to write the texture again, in S4 on WebGL2. The pages took turns over three runs each (run `20261003-003951-bench`).
+
+| Way | Render worker, ms per frame | Frames per second | Upload per frame |
+| --- | --- | --- | --- |
+| Direct writes | 25.4 | 34.9 | 0.05 MB |
+| Through the ring of unpack buffers (kept) | 1.50 | 35.9 | 0.05 MB |
+| Into a ring of three copies of the texture | 1.43 | 35.6 | 0.10 MB |
+| WebGPU, as a control | 0.20 | 36.6 | 0.01 MB |
+
+- The GPU limits S4 on the iPad. All three ways and the WebGPU control ran in one session, with the pages taking turns, and drew 34.9 to 36.6 fps. So the unpack buffers cost no frames, and they free the render worker of about 24 ms of waiting per frame.
+- The ring of copies freed the render worker as well, but it costs more. Each frame writes the next copy, which no frame in flight reads. That copy first takes the rows that the other copies took since it was last in use, so the upload doubles. The ring also keeps each texture's texels on the CPU, and three textures on the GPU in place of one. It needs about 150 more lines of code. The unpack buffers add one copy on the GPU for each write, of the same bytes.
+- The S24+ phone in Chrome drew S4 at 59.9 fps with all three ways (run `20261002-222010-bench`). Its busiest thread took 3.8 to 4.0 ms with each way, so Chrome had no wait to remove. Firefox was not timed.
+- Compare frame rates only between pages that took turns in one session. Earlier runs seemed to show that the unpack buffers cost frames. On 2 October, separate runs gave 48.7 fps on main, with direct writes, and 35.3 fps with the fog change and the unpack buffers. The iPad was at a different temperature in each run, and its GPU limits S4.
+- A warm run on 3 October, with the pages taking turns, gave 43.6 fps with direct writes against 36.6 fps with the unpack buffers. The cool run a few hours later gave no such gap. In both runs, the governor took one quality step down with direct writes and none with the unpack buffers. So the direct writes drew lighter frames.
+- The Mac showed neither wait. Its GPU finished each frame before the next frame's writes, so nothing waited.
