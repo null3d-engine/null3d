@@ -16,7 +16,7 @@ flowchart LR
     preload --> setup["The sketch builds its scene<br/>from the files in memory"]
     setup --> warm["await scene.warmUp():<br/>the GPU builds its pipelines"]
     warm --> uploads["Textures upload over<br/>the first frames"]
-    uploads --> check["The preset check:<br/>a lighter preset if the GPU is slow"]
+    uploads --> check["The preset check:<br/>a lighter preset if the GPU is slow,<br/>skipped on a repeat visit"]
     check --> first["createEngine and engine.firstFrame<br/>resolve: remove the loading screen"]
 ```
 
@@ -104,6 +104,8 @@ A setup function that awaits `scene.warmUp()` after it creates the scene, as the
 When the page leaves the quality preset to the engine, the engine checks its choice after the setup. For about three quarters of a second, it draws the scene that the setup built and measures the frame rate. The sketch's `onUpdate` does not run yet. Where the GPU cannot hold the display's rate, up to 60 frames per second, the engine lowers the preset and measures again. The loading screen hides these frames.
 
 The check takes most of the start on a tablet. On an 11-inch iPad Pro, the first frame of each benchmark scene and demo showed about 1 second after `createEngine` was called. It took about 2 seconds when the check lowered the preset once. A phone starts at Low, which has no lighter preset, so the engine skips the check. On a Galaxy S24+, the first frame showed after 0.23 to 0.43 seconds. [Quality presets](../concepts/quality-presets.md#the-preset-check) gives the rules.
+
+The engine stores the check's result in the page's `localStorage`. A repeat visit in the same browser on the same device takes that result. Its setup runs at the checked preset, and the check does not run. Only the first visit, and the first after a week, waits for the check. On the iPad, the first frame of a repeat visit showed after 0.25 to 0.52 seconds. [Quality presets](../concepts/quality-presets.md#repeat-visits) says when a stored result applies.
 
 So build the whole first view in the setup, with its textures: the check measures what the setup built, and waits while textures upload. A sketch whose setup leaves the scene empty gets a preset that the scene may not hold.
 
