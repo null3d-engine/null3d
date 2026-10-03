@@ -13,6 +13,8 @@ After the first fix, the owner checked S4 on the iPad again. The cars' shadows f
 
 After the biases moved to meters, the owner checked S4 on the iPad a third time. The lines were rarer and thinner, but some remained.
 
+After the contact fix, S4's shadows view still showed rings and stripes of self-shadow (acne) on low flat casters, such as the pavement slabs. The reference frame, with a 4,096-texel map, showed none.
+
 How should moving casters' shadows follow them in every frame, and how should the biases change so that shadows meet their casters without bringing back stripes of self-shadow (acne)? What else keeps a lit line at a base?
 
 ## Rule
@@ -145,6 +147,48 @@ A double-sided caster keeps its depth. Both its faces draw, so the map holds its
 
 The offset brings no new acne on the surfaces that the light grazes. The `shadow-contact` scene's `lit` view looks at the boxes' lit sides, one at 19 degrees to the light. Its share in shadow stayed at 34.74%, with the offset uncapped too. S4's share in shadow rose from 23.31% to 23.35%. S4's frame shows older acne in the shadows view: rings and stripes on low casters that lie flat, such as pavements. The reference frame, with a 4,096-texel map, shows none. The frames before and after this change both show them. They come from the same comparison of a flat caster's top with its own bottom, across coarse texels. On the contact scene's floor, option 3 removed such acne, at the cost given above.
 
+### Acne on flat casters
+
+S4's pavement slabs are 20 cm thick, and they cast shadows. Casters draw only their faces that point away from the light, so the map holds each slab's bottom under its lit top. The top and the bottom are parallel. S4's sun stands 54 degrees above the horizon. Under it, the bottom lies about 25 cm behind the top along the light, less the casters' offset of up to 5 cm. Across the filter's square, the bottom rises toward the light as fast as the top does. Per texel, it rises by the texel's size times the tangent of the light's angle to the top: 0.72 under S4's sun.
+
+The filter compared all its reads with one depth: the receiver's, at its own point. The 5 x 5 filter reads texels up to 3 texels away. In S4's last cascade, with 23 cm texels, the bottom there rises 50 cm, so it stands in front of the top's point. Those reads came out shadowed, in stripes along the texel rows, and in rings where the stripes beat against the pixel grid. With the reference's finer texels, the bottom stays behind the top across the square.
+
+The acne check measures it ([Image tests](../image-tests.md#visual-checks)). It finds the pixels of level surfaces that the reference shows in full light, at least 3 pixels from any shadow of the reference. The figure is the mean shadow on those pixels, in percent: each adds one less its shadow factor. The contact scene's `slabs` switch stands the boxes on a slab 20 cm thick that casts shadows, and `sun` lowers the sun. These views use the 5 x 5 filter and the scene's 512-texel map, whose last cascade has texels of about S4's.
+
+The candidate causes:
+
+- Depth precision in the far cascades. The map holds 32-bit floats. The stripes follow the filter's reads and the texel size, and they vanish when the reads follow the receiver's plane, with the same depths. So precision does not cause them.
+- A normal offset that does not grow with the cascade's texels. Or a slope-scaled bias too small for level surfaces at a low sun. Either lifts the receiver by the same amount for every read. Raising them far enough to clear the far reads brings back the lit lines at bases. The biases in meters and the casters' offset removed those. Without the change below, biases of 0.05 and 0.1 m cut the acne of the slab view under S4's sun from 15.77% to 8.40%. But the gap at the boxes' feet rose from 0.020 to 0.318 px near the camera, and from 0.077 to 0.265 px in the last cascade. Biases of 0.1 and 0.3 m cut it to 1.65%, with gaps of 0.564 and 0.639 px (WebGPU).
+- The 5 x 5 filter's far reads, compared with one receiver depth. This is the cause: comparing each read with the receiver's plane removes most of the acne.
+
+The options were:
+
+1. Each read compares with the receiver's plane at the read. It does so wherever the plane there lies nearer the light than the receiver's own depth. Each read of the comparison sampler blends four texels against one depth. So the plane's depth comes from the lowest of the four texels' centers, less 1 cm. The cascade's projection is orthographic, so the plane stays a plane in the map. Two directions along the surface give its change of depth per texel. A caster below the plane, such as the slab's own bottom, leaves the receiver lit. A caster on the plane or in front of it still shadows it, since every texel of the four lies at least as near the light as the lowest. So a box's bottom and its walls on the plane shadow the ground at their base as before. No read compares with a depth below the receiver's own, so no surface gets more shadow than before.
+2. Option 1, with the plane raised by the casters' offset, which every face that lies on the receiver took. It removed more of the acne, but walls that stand on the ground take a smaller offset than bottoms do, or none. Their reads near the base then came out lit.
+3. A receiver plane depth bias at the read's own point, without the receiver's depth as a floor. This is option 3 of the contact options. It made the lit lines worse where the casters' offset fell short.
+4. Compare each texel with the plane at its own center. The comparison sampler gives one result for four texels. So this needs four raw depths for each read now: one gather on WebGPU, or four fetches on WebGL2. It also needs a second sampler binding. It would remove the rest of the acne at four times the reads on WebGL2.
+
+The table gives the acne figure on WebGPU and WebGL2 (Chrome on the Mac, 3 October 2026):
+
+| View | Before | Option 1 | Option 2 |
+| --- | --- | --- | --- |
+| S4's hold frame, Medium and High | 0.720 and 0.694 | 0.035 and 0.014 | 0.033 |
+| S4's hold frame, Low | 1.590 and 1.589 | 0.920 and 0.915 | 0.921 |
+| Slabs from far away, S4's sun | 15.77 and 15.60 | 3.85 and 3.70 | 0.24 |
+| Slabs from far away, sun 35 degrees up | 20.52 and 20.36 | 6.54 and 6.38 | 6.54 |
+| Slabs from far away, sun 20 degrees up | 21.18 and 21.02 | 7.40 and 7.24 | 7.40 |
+| The far view with a floor that casts, 3 x 3 filter | 9.71 and 9.55 | 9.71 and 9.55 | 0.07 |
+
+Option 2 ran on WebGPU alone. Its contact gaps rose from 0.020 to 0.041 px near the camera, and from 0.045 to 0.083 px just past the first cascade.
+
+With option 1, the contact scene's gaps kept their figures. They read 0.020 and 0.016 px near the camera, and 0.077 and 0.080 px in the last cascade. Just past the first cascade they read 0.045 and 0.039 px. The shadow on the boxes' tops past their edges fell, from 0.236 to 0.203 px in the last cascade on WebGPU. S4's gap moved from 0.026 to 0.027 px on WebGPU and from 0.024 to 0.025 px on WebGL2. The gaps rise only where a slab casts. With a slab that casts no shadow, the slab views gave the same gaps with and without the change. They read 0.056, 0.221 and 0.349 px under the three suns (WebGPU). So the rises come from acne that no longer darkens the ground beside a foot, which the check counted as shadow. S4's share in shadow fell from 23.16% to 23.08%. Its edge offset moved from 0.091 to 0.085 px on WebGPU, and from 0.075 to 0.083 px on WebGL2.
+
+SwiftShader gave 0.698 and 0.699 before and 0.012 and 0.011 after in S4's frame. In the slab views it gave 15.66, 20.95 and 20.79 before, and 3.83, 6.97 and 6.99 after (WebGPU). The contact scene's gaps kept their figures there too. S4's gap moved from 0.043 to 0.046 px on WebGPU and from 0.046 to 0.047 px on WebGL2, under its limit of 0.06 px.
+
+The limits sit between the figures before and after: 0.2% for S4, and 6%, 10% and 11% for the slab views under the three suns.
+
+What remains comes from each read's four texels. Across them, the slab's bottom rises by up to the texel's size times the tangent, along each axis of the map. That rise can exceed the slab's depth behind its top. Then the texels that the read blends with small weights still compare in front. So the stripes stay faint. The 3 x 3 filter's reads lie within a texel or two of the point, so it keeps most of its acne: the floor that casts kept 9.71%. They remain on S4 at Low, whose last cascade has texels twice as large, and in the slab views at a low sun. A larger map, a shorter distance or another cascade removes them, and so would option 4.
+
 ## Decision
 
 Option (b): a far cascade draws in every frame while a moving caster touches its box, or touched the box its layer holds. It is the only option that adds no memory, no pass and no shader read, and it costs a cascade's draw only where a moving caster needs it. Option (c) would save at most about half of that draw on the Mac, for 32 to 192 MiB of memory and a new depth path on WebGL2. Option (a) would double the filter's reads on most of S4's pixels.
@@ -152,6 +196,8 @@ Option (b): a far cascade draws in every frame while a moving caster touches its
 The receivers scale their biases by their angle to the light. After the iPad's second check, options 1 and 4 of the bias options apply together. The biases are in meters, capped at one texel of the point's cascade or tile. A receiver behind a perspective camera picks its cascade by its distance from the camera. The defaults become 0.01 m for `bias` and 0.02 m for `normalBias`. Spot and point lights take the same biases in meters, capped at one texel of their tile at the point's distance from the light.
 
 After the iPad's third check, option 1 of the contact options applies. The shadow pass moves each caster's faces that point away from the light toward it. A face moves by one texel of the map at the face, times the square of the cosine of its angle away from the light. It moves at most 5 cm. Double-sided casters keep their depth.
+
+After the acne on S4's pavements, option 1 of the flat caster options applies. Each read of the directional light's filter compares with the receiver's plane at the lowest of its four texels, less 1 cm. It does so where that lies nearer the light than the receiver's own depth. Spot and point lights keep one depth for all reads: their tiles' projections are not orthographic, and the `spot-shadows` and `point-shadows` scenes show no such acne.
 
 ## Consequences
 
@@ -166,3 +212,5 @@ After the iPad's third check, option 1 of the contact options applies. The shado
 - The `CASTER_OFFSET` builds of `crates/null3d-shaders/wgsl/shadow_depth.wgsl` move the faces, with `CASTER_OFFSET_TEXELS` and `CASTER_OFFSET_MAX`. `caster_of` in `crates/null3d-render/src/frame.rs` picks them for casters that draw only their back faces. Each shadow pass's frame uniform holds the light as its camera and the map's texels as its target size (`ShadowFrame::view_frame` and `TileView::frame`). The pass reads each vertex's normal, which every vertex format has.
 - The contact check (`contactFigures` in `tests/pages/lib/shadow-check.ts`) runs in the visual page. `tests/image/shadow-contact.spec.ts` holds the contact scene's figures under `CONTACT_LIMITS`, and S4's gap has a limit in `VISUAL_LIMITS`. The benchmark summary and the device runner's bench plan print S4's gap beside the other visual figures.
 - An iPad check of S4 at Medium on WebGPU, after this change, is still to come.
+- `receiver_plane` and `read_depth` in `crates/null3d-shaders/wgsl/lib/shadows.wgsl` give each read its depth, with `PLANE_MARGIN` and `MAX_PLANE_SLOPE`. The plane comes from the normal that the shading passes to `sun_shadow`. A normal map's normal tilts it, which can light a read that a bumpy surface's own plane would shadow.
+- The acne check (`acneFigures` in `tests/pages/lib/shadow-check.ts`) runs in the visual page. `CONTACT_LIMITS` holds the slab views' acne figures, and `VISUAL_LIMITS` S4's. The benchmark summary and the device runner's bench plan print S4's figure as "Flat-surface acne".

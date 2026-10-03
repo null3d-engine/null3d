@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
+	ACNE,
+	acneFigures,
 	changedShare,
 	contactFigures,
 	edgeOffset,
@@ -109,5 +111,30 @@ describe('the shadow check figures', () => {
 		// Ground with no shadow within the reach is not a foot: its caster's shadow falls elsewhere.
 		const lit = column([1], new Array(12).fill(1));
 		expect(contactFigures(lit.factors, lit.normals, 1).feet).toBe(0);
+	});
+
+	it('measure the shadow on open lit ground, away from the reference shadows', () => {
+		// Level ground everywhere, with a shadow in the reference's left half, which the frame
+		// draws a pixel wider. The frame also has stripes of acne on the right half's even rows.
+		const normals = new Uint8Array(WIDTH * HEIGHT * 4);
+		for (let i = 0; i < WIDTH * HEIGHT; i++) normals.set([128, 255, 128, 255], i * 4);
+		const reference = frame(() => 20, 1);
+		const wider = frame(() => 21, 1);
+		const striped = Float32Array.from(wider, (value, i) =>
+			Math.floor(i / WIDTH) % 2 === 0 && i % WIDTH >= 20 ? value * 0.6 : value,
+		);
+		// Open lit ground: the columns at least the margin past the reference's last dark one.
+		const open = (WIDTH - 20 - ACNE.margin) * HEIGHT;
+		expect(acneFigures(wider, reference, normals, WIDTH)).toEqual({
+			pixels: open,
+			meanShadowPercent: 0,
+			shadowedPercent: 0,
+		});
+		const figures = acneFigures(striped, reference, normals, WIDTH);
+		expect(figures.pixels).toBe(open);
+		expect(figures.meanShadowPercent).toBeCloseTo(20);
+		expect(figures.shadowedPercent).toBe(0);
+		// Sides and other surfaces that are not level are not ground.
+		expect(acneFigures(striped, reference, new Uint8Array(normals.length), WIDTH).pixels).toBe(0);
 	});
 });

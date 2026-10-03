@@ -13,7 +13,13 @@ import {
 } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
-import { copy as copyMatrix, decompose } from '../math/mat4';
+import {
+	compose as composeMatrix,
+	copy as copyMatrix,
+	decompose,
+	identity as identityMatrix,
+	multiply as multiplyMatrices,
+} from '../math/mat4';
 import {
 	fromEuler as quaternionFromEuler,
 	rotateX,
@@ -42,6 +48,15 @@ import {
 	setViewHeight,
 } from './lens';
 import type { CoreMemory } from './memory';
+import type { InstancingTemplate, PartTemplate, Prefab, TemplateNode } from './prefab';
+import {
+	type OverlapHit,
+	type QueryOptions,
+	type RaycastBatchHits,
+	type RaycastHit,
+	type RaycastOptions,
+	SceneQueries,
+} from './queries';
 import type { Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
 import { Texture } from './textures';
@@ -198,6 +213,18 @@ export interface InstanceOptions {
 	colors?: boolean;
 	/** The layers every row is on, as a 32-bit mask. The default, 1, is layer 0. */
 	layers?: number;
+}
+
+/**
+ * Options for `scene.instantiate`: where the copy's group goes, and settings for all its meshes.
+ *
+ * @category api/scene
+ */
+export interface InstantiateOptions extends NodeOptions {
+	/** True makes every mesh of the copy cast the shadows of a directional light. The default is false. */
+	castShadows?: boolean;
+	/** True makes shadows fall on every mesh of the copy. The default is false. */
+	receiveShadows?: boolean;
 }
 
 /**
@@ -464,6 +491,15 @@ export class Object3D implements Described {
 	 * reaches the object that takes its slot, in any build, and costs nothing more.
 	 */
 	row: number;
+	/**
+	 * @internal The object's parent, as its create options or its last `setParent` gave it. A
+	 * destroyed parent leaves the object a root, as in the engine core.
+	 */
+	parentObject: Object3D | null = null;
+	/** @internal The object's flags (`FLAG_*`), as its create options and its setters gave them. */
+	flags: number = C.FLAG_VISIBLE;
+	/** @internal The object's layer mask, as its create options and `setLayers` gave it. */
+	layerMask: number = C.LAYERS_DEFAULT;
 	/** @internal The object's animator, when a model with animations created the object. */
 	animation: Animator | undefined;
 
@@ -694,12 +730,34 @@ export class Object3D implements Described {
 		}
 		const keep = options?.keepWorld ? C.COMMAND_KEEP_WORLD : 0;
 		this.scene.command(C.COMMAND_SET_PARENT, this.handle, parent?.handle ?? 0, keep, 'setParent');
+		this.parentObject = parent;
+	}
+
+	/** @internal The live parent, or null for a root. */
+	get liveParent(): Object3D | null {
+		const parent = this.parentObject;
+		return parent && parent.destroyedFrame < 0 ? parent : null;
+	}
+
+	/**
+	 * @internal A new wrapper of the same kind for the object with `handle`, with the settings that
+	 * live on the wrapper, for `scene.clone`.
+	 */
+	twin(handle: number): Object3D {
+		const kind = this.constructor as ObjectClass<Object3D>;
+		return new kind(this.scene, handle, this.name);
+	}
+
+	/** @internal Sets or clears flags on the wrapper's copy of the object's flags. */
+	keepFlag(flag: number, on: boolean): void {
+		this.flags = on ? this.flags | flag : this.flags & ~flag;
 	}
 
 	/** Hides or shows the object and everything under it. */
 	setVisible(visible: boolean): void {
 		if (DEV) checkLive('setVisible', this);
 		this.scene.command(C.COMMAND_SET_VISIBLE, this.handle, visible ? 1 : 0, 0, 'setVisible');
+		this.keepFlag(C.FLAG_VISIBLE, visible);
 	}
 
 	/**
@@ -713,6 +771,7 @@ export class Object3D implements Described {
 			checkLayers('setLayers', mask, this);
 		}
 		this.scene.command(C.COMMAND_SET_LAYERS, this.handle, mask >>> 0, 0, 'setLayers');
+		this.layerMask = mask >>> 0;
 	}
 
 	/** Makes the object dynamic or static from the next frame. See `NodeOptions.dynamic`. */
@@ -722,6 +781,7 @@ export class Object3D implements Described {
 			this.scene.unmarkedWrites?.watch(this, !dynamic);
 		}
 		this.scene.command(C.COMMAND_SET_DYNAMIC, this.handle, dynamic ? 1 : 0, 0, 'setDynamic');
+		this.keepFlag(C.FLAG_DYNAMIC, dynamic);
 	}
 
 	/**
@@ -756,6 +816,7 @@ export class Object3D implements Described {
 	protected setFlag(call: string, flag: number, on: boolean): void {
 		if (DEV) checkLive(call, this);
 		this.scene.command(C.COMMAND_SET_FLAGS, this.handle, flag, on ? flag : 0, call);
+		this.keepFlag(flag, on);
 	}
 }
 
@@ -767,11 +828,53 @@ export class Object3D implements Described {
 export class Group extends Object3D {}
 
 /**
+ * The group that holds a copy of a model, which `scene.instantiate` returns. Its children are the
+ * copies of the file's root nodes.
+ *
+ * @category api/scene
+ */
+export class PrefabInstance extends Group {
+	/** @internal The copy's objects: this group, then one for each node, in the file's order. */
+	objects: readonly Object3D[] = [];
+	/**
+	 * The instance batches of the nodes with instancing of their own, as the file gives them. Their
+	 * rows are placed in the world when the copy is created, and they do not move with the group.
+	 */
+	batches: readonly InstanceBatch[] = [];
+
+	/**
+	 * The copy's first object with `name`, in the file's order, which is not destroyed, or
+	 * undefined. It searches the copy's objects, so call it at setup.
+	 */
+	find(name: string): Object3D | undefined {
+		for (const object of this.objects)
+			if (object !== this && object.name === name && object.destroyedFrame < 0) return object;
+		return undefined;
+	}
+}
+
+/**
  * A drawn object: a mesh and a material.
  *
  * @category api/objects
  */
 export class Mesh extends Object3D {
+	/** @internal The shape, as the create options or `setMesh` gave it. */
+	mesh: MeshGeometry | undefined;
+	/** @internal The material, as the create options or `setMaterial` gave it. */
+	material: Material | undefined;
+	/** @internal The render order, as `setRenderOrder` gave it. */
+	renderOrder = 0;
+
+	/** @internal */
+	override twin(handle: number): Object3D {
+		const twin = super.twin(handle) as Mesh;
+		twin.mesh = this.mesh;
+		twin.material = this.material;
+		twin.renderOrder = this.renderOrder;
+		return twin;
+	}
+
 	/** Changes the material from the next frame. */
 	setMaterial(material: Material): void {
 		if (DEV) {
@@ -779,6 +882,7 @@ export class Mesh extends Object3D {
 			checkSameEngine('setMaterial', 'material', material.core, this.scene);
 		}
 		this.scene.command(C.COMMAND_SET_MATERIAL, this.handle, material.id, 0, 'setMaterial');
+		this.material = material;
 	}
 
 	/**
@@ -793,6 +897,8 @@ export class Mesh extends Object3D {
 		this.scene.writeBounds(this.row, 0, 0, 0, mesh.radius);
 		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		this.scene.command(C.COMMAND_SET_MESH, this.handle, mesh.id, 0, 'setMesh');
+		this.mesh = mesh;
+		this.keepFlag(C.FLAG_CUSTOM_BOUNDS, false);
 	}
 
 	/**
@@ -823,6 +929,7 @@ export class Mesh extends Object3D {
 		}
 		const bits = this.scene.floatBits(order);
 		this.scene.command(C.COMMAND_SET_RENDER_ORDER, this.handle, bits, 0, 'setRenderOrder');
+		this.renderOrder = order;
 	}
 
 	/**
@@ -862,7 +969,7 @@ export class Mesh extends Object3D {
 /** Throws E1103 when a mesh or a material comes from another engine. Call it inside `if (DEV)`. */
 function checkSameEngine(
 	call: string,
-	kind: 'mesh' | 'material',
+	kind: 'mesh' | 'material' | 'model',
 	core: CoreMemory,
 	scene: Scene,
 ): void {
@@ -975,6 +1082,20 @@ export class PerspectiveCamera extends Camera {
 	}
 
 	/** @internal */
+	override twin(handle: number): Object3D {
+		const twin = new PerspectiveCamera(
+			this.scene,
+			handle,
+			this.name,
+			this.verticalFov,
+			this.near,
+			this.far,
+		);
+		twin.layers = this.layers;
+		return twin;
+	}
+
+	/** @internal */
 	sendLens(glue: CoreGlue, target: number = C.CAMERA_TARGET_VIEW): void {
 		glue.setPerspectiveCamera(
 			this.handle,
@@ -1037,6 +1158,20 @@ export class OrthographicCamera extends Camera {
 	}
 
 	/** @internal */
+	override twin(handle: number): Object3D {
+		const twin = new OrthographicCamera(
+			this.scene,
+			handle,
+			this.name,
+			{ ...this.view },
+			this.near,
+			this.far,
+		);
+		twin.layers = this.layers;
+		return twin;
+	}
+
+	/** @internal */
 	sendLens(glue: CoreGlue, target: number = C.CAMERA_TARGET_VIEW): void {
 		const view = this.view;
 		glue.setOrthographicCamera(
@@ -1072,6 +1207,15 @@ export class Light extends Object3D {
 
 	protected override get looksDownMinusZ(): boolean {
 		return true;
+	}
+
+	/** @internal */
+	override twin(handle: number): Object3D {
+		const twin = super.twin(handle) as Light;
+		const { core } = this.scene;
+		twin.id = core.checkGrowth(core.glue.copyLight(this.id, handle), 'clone', this.label);
+		twin.linear.set(this.linear);
+		return twin;
 	}
 
 	/** Sets the color. Converting a color allocates, so per-frame code sets the intensity instead. */
@@ -1304,6 +1448,8 @@ export class InstanceBatch {
 		/** The number of rows: the batch's capacity. */
 		readonly count: number,
 		private readonly hasColors: boolean,
+		/** @internal The batches of a model's other meshes, which read this batch's rows. */
+		readonly parts: readonly number[] = [],
 	) {}
 
 	/**
@@ -1366,6 +1512,7 @@ export class InstanceBatch {
 		if (DEV) checkLayers('setLayers', mask);
 		const { core } = this.scene;
 		core.check(core.glue.setBatchLayers(this.id, mask >>> 0), 'setLayers', undefined, true);
+		for (const part of this.parts) core.glue.setBatchLayers(part, mask >>> 0);
 	}
 
 	/** Marks rows of a static batch to update and upload. */
@@ -1381,12 +1528,29 @@ export class InstanceBatch {
 	destroy(): void {
 		const { core } = this.scene;
 		core.checkGrowth(core.glue.destroyBatch(this.id, this.scene.frame), 'destroy', undefined, true);
-		if (DEV) this.scene.countBatchRows(-this.count);
+		for (const part of this.parts) core.glue.destroyBatch(part, this.scene.frame);
+		if (DEV) this.scene.countBatchRows(-this.count * (1 + this.parts.length));
 		this.destroyedFrame = this.scene.frame;
 		// The next read of the arrays asks the core for them again, and the core refuses a
 		// destroyed batch.
 		this.generation = -1;
 	}
+}
+
+/** The class of each kind of light that a model's node can create, by the core's light kind. */
+const LIGHT_CLASSES: Readonly<Record<number, ObjectClass<Light>>> = {
+	[C.LIGHT_KIND_DIRECTIONAL]: DirectionalLight,
+	[C.LIGHT_KIND_POINT]: PointLight,
+	[C.LIGHT_KIND_SPOT]: SpotLight,
+};
+
+/** The transform of a model's copy: the position, rotation and scale of `options`. */
+function rootTransform(options: NodeOptions): Float32Array {
+	const transform = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
+	if (options.position) transform.set(options.position, 0);
+	if (options.rotation) transform.set(options.rotation, 3);
+	if (options.scale) transform.set(options.scale, 7);
+	return transform;
 }
 
 /**
@@ -1418,8 +1582,18 @@ export class Scene {
 	 * share, in the order of their creation.
 	 */
 	private readonly names = new Map<string, Object3D | Set<Object3D>>();
+	/** The object that each slot holds, or last held, which queries name by slot. */
+	private readonly objectSlots: (Object3D | undefined)[] = [];
+	/** The batch that each batch slot holds, or last held, which queries name by id. */
+	private readonly batchSlots: (InstanceBatch | undefined)[] = [];
+	/** Raycasts and overlap queries, made on the first query. */
+	private sceneQueries: SceneQueries | undefined;
 	/** Rows of the live instance batches, which development builds count. */
 	private batchRows = 0;
+	/** Every live object, which `clone` searches for the objects below the one it copies. */
+	private readonly live = new Set<Object3D>();
+	/** @internal The batches of command records published so far, which tests count. */
+	commandBatches = 0;
 	private warnedPastPortable = false;
 	/**
 	 * @internal Development builds: finds static objects whose transform changed without a setter.
@@ -1461,20 +1635,41 @@ export class Scene {
 
 	/** @internal Appends a command record for the next frame. */
 	command(op: number, handle: number, a: number, b: number, call: string): void {
+		const write = this.reserveCommands(1, call);
+		this.writeCommand(write, op, handle, a, b);
+		this.publishCommands(write + 1);
+	}
+
+	/**
+	 * The ring's write index, after a check that `count` more records fit. Throws E1102 when they
+	 * do not, before anything is written.
+	 */
+	private reserveCommands(count: number, call: string): number {
 		const v = this.views;
 		const write = Atomics.load(v.writeIndex, 0);
 		const read = Atomics.load(v.readIndex, 0);
-		if ((write - read) >>> 0 >= v.ringCapacity)
+		if (((write - read) >>> 0) + count > v.ringCapacity)
 			throw new EngineError(
 				'E1102',
-				`${call}() failed: the command ring already holds ${v.ringCapacity} changes for the next frame.`,
+				`${call}() failed: the command ring holds ${v.ringCapacity} changes for the next frame, and it has no room for ${count} more.`,
 			);
-		const at = (write & (v.ringCapacity - 1)) * C.COMMAND_WORDS;
-		v.records[at] = op;
-		v.records[at + 1] = handle;
-		v.records[at + 2] = a;
-		v.records[at + 3] = b;
-		Atomics.store(v.writeIndex, 0, (write + 1) >>> 0);
+		return write;
+	}
+
+	/** Writes a record at write index `at`, which the next publish makes visible. */
+	private writeCommand(at: number, op: number, handle: number, a: number, b: number): void {
+		const v = this.views;
+		const i = (at & (v.ringCapacity - 1)) * C.COMMAND_WORDS;
+		v.records[i] = op;
+		v.records[i + 1] = handle;
+		v.records[i + 2] = a;
+		v.records[i + 3] = b;
+	}
+
+	/** Makes the records up to write index `end` visible to the core, as one batch. */
+	private publishCommands(end: number): void {
+		Atomics.store(this.views.writeIndex, 0, end >>> 0);
+		this.commandBatches++;
 	}
 
 	/** @internal The world matrix of the frame that last ran: 12 numbers, row by row. */
@@ -1531,8 +1726,13 @@ export class Scene {
 		return this.floatWord[0] as number;
 	}
 
-	/** Adds a new object to the index of names, after the live objects with the same name. */
+	/**
+	 * Adds a new object to the live objects, to the index of slots that queries read, and to the
+	 * index of names after those with its name.
+	 */
 	private remember(object: Object3D): void {
+		this.live.add(object);
+		this.objectSlots[object.slot] = object;
 		const { name } = object;
 		if (!name) return;
 		const known = this.names.get(name);
@@ -1541,8 +1741,15 @@ export class Scene {
 		else this.names.set(name, new Set([known, object]));
 	}
 
+	/** Adds a new batch to the index that queries read, by the slot of each of its core batches. */
+	private rememberBatch(batch: InstanceBatch): void {
+		this.batchSlots[batch.id & SLOT_MASK] = batch;
+		for (const part of batch.parts) this.batchSlots[part & SLOT_MASK] = batch;
+	}
+
 	/** @internal Takes a destroyed object out of the index of names. */
 	forget(object: Object3D): void {
+		this.live.delete(object);
 		const { name } = object;
 		const known = this.names.get(name);
 		if (known === object) this.names.delete(name);
@@ -1624,6 +1831,9 @@ export class Scene {
 		if (layers !== undefined && layers >>> 0 !== C.LAYERS_DEFAULT)
 			this.command(C.COMMAND_SET_LAYERS, handle, layers >>> 0, 0, call);
 		const object = new kind(this, handle, options.name ?? '', ...extra);
+		object.parentObject = options.parent ?? null;
+		object.flags = all;
+		object.layerMask = (layers ?? C.LAYERS_DEFAULT) >>> 0;
 		this.remember(object);
 		if (DEV) this.unmarkedWrites?.watch(object, !options.dynamic);
 		return object;
@@ -1646,26 +1856,326 @@ export class Scene {
 			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0);
 		const object = this.create(Mesh, options, mesh.id, mesh.radius, flags, 'createMesh');
 		this.command(C.COMMAND_SET_MATERIAL, object.handle, material.id, 0, 'createMesh');
+		object.mesh = mesh;
+		object.material = material;
 		return object;
 	}
 
-	/** Many copies of one mesh and material, with typed arrays of rows. */
-	createInstances(mesh: MeshGeometry, count: number, options: InstanceOptions): InstanceBatch {
+	/**
+	 * Creates the objects of a model that `assets.loadGltf` loaded, under one new group that
+	 * `options` places, and returns that group. All the objects are created with one batch of
+	 * commands, and every copy shares the model's meshes, materials and textures. The group's
+	 * `find` gives the copy's object of a node, by the node's name. Throws E1102 when the scene has
+	 * no room for the objects, before it creates any.
+	 */
+	instantiate(prefab: Prefab, options: InstantiateOptions = {}): PrefabInstance {
+		const call = 'instantiate';
+		const { template } = prefab;
+		if (DEV) {
+			checkSameEngine(call, 'model', prefab.core, this);
+			if (options.parent) checkLive(call, options.parent, true);
+			if (options.layers !== undefined) checkLayers(call, options.layers);
+		}
+		const extra =
+			(options.castShadows ? C.FLAG_CAST_SHADOWS : 0) |
+			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0);
+		const root: TemplateNode = {
+			...(template[0] as TemplateNode),
+			name: options.name ?? template[0]?.name ?? '',
+			transform: rootTransform(options),
+			flags: C.FLAG_VISIBLE | (options.dynamic ? C.FLAG_DYNAMIC : 0),
+			layers: (options.layers ?? C.LAYERS_DEFAULT) >>> 0,
+			root: true,
+		};
+		const objects = this.createNodes(template, call, options.parent ?? null, root, extra);
+		const instance = objects[0] as PrefabInstance;
+		instance.objects = objects;
+		instance.batches = prefab.instancing.map((spec) => this.placeInstancing(instance, spec, call));
+		return instance;
+	}
+
+	/**
+	 * Copies an object and every object below it, as three.js's `clone` does, with their meshes,
+	 * materials, lights, cameras and settings, and returns the copy of the object. The copy has the
+	 * same parent, so it starts in the same place. The copies are created with one batch of
+	 * commands. Instance batches are not objects, so they are not copied. Throws E1102 when the
+	 * scene has no room for the copies, before it creates any.
+	 */
+	clone<T extends Object3D>(object: T): T {
+		const call = 'clone';
+		if (DEV) checkLive(call, object);
+		const objects = this.createNodes(this.subtree(object), call, object.liveParent);
+		const copy = objects[0] as T;
+		if (copy instanceof PrefabInstance) copy.objects = objects;
+		return copy;
+	}
+
+	/**
+	 * The objects at and below `object` as template nodes, parents first, each with its object as
+	 * the source of its copy. It goes through every live object once.
+	 */
+	private subtree(object: Object3D): TemplateNode[] {
+		const children = new Map<Object3D, Object3D[]>();
+		for (const each of this.live) {
+			const parent = each.liveParent;
+			if (!parent) continue;
+			const list = children.get(parent);
+			if (list) list.push(each);
+			else children.set(parent, [each]);
+		}
+		const order: Object3D[] = [object];
+		const parents: number[] = [-1];
+		for (let k = 0; k < order.length; k++)
+			for (const child of children.get(order[k] as Object3D) ?? []) {
+				order.push(child);
+				parents.push(k);
+			}
+		const v = this.views;
+		return order.map((each, k): TemplateNode => {
+			const row = each.row;
+			const transform = new Float32Array(10);
+			transform.set(v.positions.subarray(row * 3, row * 3 + 3), 0);
+			transform.set(v.rotations.subarray(row * 4, row * 4 + 4), 3);
+			transform.set(v.scales.subarray(row * 3, row * 3 + 3), 7);
+			const mesh = each instanceof Mesh ? each : undefined;
+			const bounds = new Float32Array(4);
+			bounds.set(v.centers.subarray(row * 3, row * 3 + 3));
+			bounds[3] = v.radii[row] as number;
+			return {
+				name: each.name,
+				parent: parents[k] as number,
+				transform,
+				mesh: mesh?.mesh,
+				material: mesh?.material,
+				flags: each.flags,
+				layers: each.layerMask,
+				renderOrder: mesh?.renderOrder ?? 0,
+				bounds,
+				source: each,
+			};
+		});
+	}
+
+	/**
+	 * Creates an object for each template node, with one core call that reserves their slots and
+	 * one batch of command records, and returns them in the nodes' order. A node whose parent is -1
+	 * goes under `parent`. `root`, when given, takes the place of the first node, and `extra` adds
+	 * flags to every node with a mesh. Throws E1102 before it creates anything when the scene or
+	 * the command ring has no room.
+	 */
+	private createNodes(
+		nodes: readonly TemplateNode[],
+		call: string,
+		parent: Object3D | null,
+		root?: TemplateNode,
+		extra = 0,
+	): Object3D[] {
+		const count = nodes.length;
+		const node = (k: number) => (k === 0 && root ? root : (nodes[k] as TemplateNode));
+		let records = 0;
+		for (let k = 0; k < count; k++) {
+			const { mesh, layers, renderOrder } = node(k);
+			records += 1 + (mesh ? 1 : 0) + (layers !== C.LAYERS_DEFAULT ? 1 : 0);
+			if (renderOrder !== 0) records++;
+		}
+		let write = this.reserveCommands(records, call);
+		const { core } = this;
+		const at = core.check(core.glue.reserveObjects(count), call);
+		const handles = core.u32(at, count).slice();
+		const v = this.views;
+		const objects: Object3D[] = [];
+		for (let k = 0; k < count; k++) {
+			const n = node(k);
+			const handle = handles[k] as number;
+			const slot = handle & SLOT_MASK;
+			const t = n.transform;
+			for (let i = 0; i < 3; i++) {
+				v.positions[slot * 3 + i] = t[i] as number;
+				v.scales[slot * 3 + i] = t[7 + i] as number;
+			}
+			for (let i = 0; i < 4; i++) v.rotations[slot * 4 + i] = t[3 + i] as number;
+			const flags = n.mesh ? n.flags | extra : n.flags;
+			const bounds = n.bounds;
+			if (bounds && flags & C.FLAG_CUSTOM_BOUNDS) {
+				for (let i = 0; i < 3; i++) v.centers[slot * 3 + i] = bounds[i] as number;
+				v.radii[slot] = bounds[3] as number;
+			} else v.radii[slot] = n.mesh?.radius ?? 0;
+			const up = n.parent < 0 ? (parent?.handle ?? 0) : (handles[n.parent] as number);
+			const mesh = n.mesh?.id ?? C.CORE_NO_MESH;
+			this.writeCommand(write++, C.COMMAND_CREATE | (flags << 8), handle, up, mesh);
+			if (n.mesh && n.material)
+				this.writeCommand(write++, C.COMMAND_SET_MATERIAL, handle, n.material.id, 0);
+			if (n.layers !== C.LAYERS_DEFAULT)
+				this.writeCommand(write++, C.COMMAND_SET_LAYERS, handle, n.layers, 0);
+			if (n.renderOrder !== 0) {
+				const bits = this.floatBits(n.renderOrder);
+				this.writeCommand(write++, C.COMMAND_SET_RENDER_ORDER, handle, bits, 0);
+			}
+			const object = this.makeObject(n, handle, call);
+			object.parentObject = n.parent < 0 ? parent : (objects[n.parent] as Object3D);
+			object.flags = flags;
+			object.layerMask = n.layers;
+			objects.push(object);
+		}
+		this.publishCommands(write);
+		for (const object of objects) {
+			this.remember(object);
+			if (DEV) this.unmarkedWrites?.watch(object, (object.flags & C.FLAG_DYNAMIC) === 0);
+		}
+		return objects;
+	}
+
+	/** The wrapper of a new object for a template node, with the light row that a light needs. */
+	private makeObject(node: TemplateNode, handle: number, call: string): Object3D {
+		const { name, light } = node;
+		if (node.root) return new PrefabInstance(this, handle, name);
+		if (node.source) return node.source.twin(handle);
+		if (light) {
+			const kind = LIGHT_CLASSES[light.kind] as ObjectClass<Light>;
+			const object = new kind(this, handle, name);
+			const { core } = this;
+			object.id = core.checkGrowth(core.glue.createLight(handle, light.kind), call, name);
+			const [r, g, b] = light.color;
+			object.linear.set(light.color);
+			core.glue.setLightColor(object.id, C.LIGHT_COLOR_MAIN, r, g, b);
+			for (const [which, value] of light.values) core.glue.setLightValue(object.id, which, value);
+			return object;
+		}
+		if (!node.mesh) return new Group(this, handle, name);
+		const mesh = new Mesh(this, handle, name);
+		mesh.mesh = node.mesh;
+		mesh.material = node.material;
+		mesh.renderOrder = node.renderOrder;
+		return mesh;
+	}
+
+	/**
+	 * The instance batch of a node of a model with instancing of its own. Each row takes its
+	 * transform from the file, after the node's place in the world when the copy is created.
+	 */
+	private placeInstancing(
+		instance: PrefabInstance,
+		spec: InstancingTemplate,
+		call: string,
+	): InstanceBatch {
+		const v = this.views;
+		const world = identityMatrix(new Float64Array(16));
+		const local = new Float64Array(16);
+		const trs = (p: Float32Array, q: Float32Array, s: Float32Array, row: number) =>
+			composeMatrix(
+				local,
+				p.subarray(row * 3, row * 3 + 3),
+				q.subarray(row * 4, row * 4 + 4),
+				s.subarray(row * 3, row * 3 + 3),
+			);
+		let object: Object3D | null = instance.objects[spec.node] as Object3D;
+		while (object) {
+			multiplyMatrices(world, trs(v.positions, v.rotations, v.scales, object.row), world);
+			object = object.liveParent;
+		}
+		const batch = this.createParts(spec.parts, spec.count, {}, call);
+		const { positions, rotations, scales } = batch;
+		const position = [0, 0, 0];
+		const rotation = [0, 0, 0, 1];
+		const scale = [1, 1, 1];
+		for (let r = 0; r < spec.count; r++) {
+			trs(spec.positions, spec.rotations, spec.scales, r);
+			decompose(position, rotation, scale, multiplyMatrices(local, world, local));
+			positions.set(position, r * 3);
+			rotations.set(rotation, r * 4);
+			scales.set(scale, r * 3);
+		}
+		batch.markDirty();
+		return batch;
+	}
+
+	/**
+	 * One instance batch for each part of a model, which share one set of rows: the first part owns
+	 * them, and the others read them.
+	 */
+	private createParts(
+		parts: readonly PartTemplate[],
+		count: number,
+		options: Omit<InstanceOptions, 'material'>,
+		call: string,
+	): InstanceBatch {
+		const { core } = this;
+		const colors = options.colors ?? false;
+		const ids: number[] = [];
+		try {
+			for (const part of parts)
+				ids.push(
+					core.checkGrowth(
+						core.glue.createBatchPart(
+							ids[0] ?? 0,
+							count,
+							options.dynamic ?? false,
+							colors,
+							part.mesh.id,
+							part.material.id,
+							part.matrix,
+						),
+						call,
+					),
+				);
+		} catch (error) {
+			for (const id of ids.reverse()) core.glue.destroyBatch(id, this.frame);
+			throw error;
+		}
+		if (DEV) this.countBatchRows(count * ids.length);
+		const batch = new InstanceBatch(this, ids[0] as number, count, colors, ids.slice(1));
+		this.rememberBatch(batch);
+		if (options.layers !== undefined) batch.setLayers(options.layers);
+		return batch;
+	}
+
+	/**
+	 * Many copies of one mesh and material, with typed arrays of rows. Or many copies of a model
+	 * that `assets.loadGltf` loaded, without a material: one batch for each mesh of the model, which
+	 * share one set of rows, so one row places a whole copy. The model's lights are left out.
+	 * Throws E1417 for a model with no meshes, or with instancing of its own.
+	 */
+	createInstances(mesh: MeshGeometry, count: number, options: InstanceOptions): InstanceBatch;
+	createInstances(
+		prefab: Prefab,
+		count: number,
+		options?: Omit<InstanceOptions, 'material'>,
+	): InstanceBatch;
+	createInstances(
+		source: MeshGeometry | Prefab,
+		count: number,
+		options: Partial<InstanceOptions> = {},
+	): InstanceBatch {
+		const call = 'createInstances';
 		const { core } = this;
 		const { layers } = options;
-		if (DEV && layers !== undefined) checkLayers('createInstances', layers);
+		if (DEV && layers !== undefined) checkLayers(call, layers);
+		if ('template' in source) {
+			const problem =
+				source.instancing.length > 0
+					? 'has instancing of its own. Use scene.instantiate for it'
+					: source.parts.length === 0
+						? 'has no meshes'
+						: undefined;
+			if (problem)
+				throw new EngineError('E1417', `${call}() got ${source.describe()}, which ${problem}.`);
+			return this.createParts(source.parts, count, options, call);
+		}
+		const mesh = source;
+		const material = options.material as Material;
 		const id = core.checkGrowth(
 			core.glue.createBatch(
 				count,
 				options.dynamic ?? false,
 				options.colors ?? false,
 				mesh.id,
-				options.material.id,
+				material.id,
 			),
-			'createInstances',
+			call,
 		);
 		if (DEV) this.countBatchRows(count);
 		const batch = new InstanceBatch(this, id, count, options.colors ?? false);
+		this.rememberBatch(batch);
 		batch.setActiveCount(count);
 		if (layers !== undefined) batch.setLayers(layers);
 		return batch;
@@ -1819,6 +2329,102 @@ export class Scene {
 	 */
 	setFog(fog: FogOptions | null): void {
 		setSceneFog(this.core.glue, fog);
+	}
+
+	/** The raycasts and overlap queries, made on the first call. */
+	private get queries(): SceneQueries {
+		if (this.sceneQueries === undefined)
+			this.sceneQueries = new SceneQueries(this.core, {
+				objectAt: (slot) => this.objectSlots[slot],
+				batchAt: (id) => {
+					const batch = this.batchSlots[id & SLOT_MASK];
+					return batch && (batch.id === id || batch.parts.includes(id)) ? batch : undefined;
+				},
+			});
+		return this.sceneQueries;
+	}
+
+	/**
+	 * Casts a ray from `origin` along `direction`, and writes its closest hit into `hit`. Returns
+	 * true on a hit. On a miss it sets `hit.object` to null and leaves the other fields as they
+	 * were. The direction needs no unit length. The ray tests the triangles of objects and
+	 * instance rows on the layers of `options.layers`, as their materials draw them: front faces,
+	 * or both faces for a double-sided material. Queries see the scene as the last frame's update
+	 * left it, so a move, a new object or a destroy in this frame counts from the next frame, or
+	 * from `onLateUpdate`. Create `hit` and `options` once and pass them each time.
+	 */
+	raycast(
+		origin: Vec3Like,
+		direction: Vec3Like,
+		options: RaycastOptions | undefined,
+		hit: RaycastHit,
+	): boolean {
+		return this.queries.raycast(origin, direction, options, hit);
+	}
+
+	/**
+	 * True when a ray from `origin` along `direction` hits anything on the layers of
+	 * `options.layers`. It stops at the first hit it finds, so it is faster than `raycast`: use it
+	 * for line-of-sight checks.
+	 */
+	raycastAny(origin: Vec3Like, direction: Vec3Like, options?: RaycastOptions): boolean {
+		return this.queries.raycastAny(origin, direction, options);
+	}
+
+	/**
+	 * Casts a ray as `raycast` does, writes every hit into `hits` nearest first, one hit for each
+	 * triangle that the ray crosses, and returns how many. It fills the first entries of `hits`,
+	 * adds hit objects when the array is too short, and leaves the entries after the hits as they
+	 * were.
+	 */
+	raycastAll(
+		origin: Vec3Like,
+		direction: Vec3Like,
+		options: RaycastOptions | undefined,
+		hits: RaycastHit[],
+	): number {
+		return this.queries.raycastAll(origin, direction, options, hits);
+	}
+
+	/**
+	 * Casts many rays at once on the job workers, and writes each one's closest hit into `out`.
+	 * `rays` holds six numbers per ray: its origin, then its direction. Returns how many rays hit
+	 * something. A miss writes -1 as its distance.
+	 */
+	raycastBatch(
+		rays: ArrayLike<number>,
+		options: RaycastOptions | undefined,
+		out: RaycastBatchHits,
+	): number {
+		return this.queries.raycastBatch(rays, options, out);
+	}
+
+	/**
+	 * Finds the objects and instance rows on the layers of `options.layers` that have a triangle
+	 * within `radius` meters of `center`, writes them into `out`, and returns how many. It fills
+	 * `out` as `raycastAll` fills its hits, in no set order.
+	 */
+	overlapSphere(
+		center: Vec3Like,
+		radius: number,
+		options: QueryOptions | undefined,
+		out: OverlapHit[],
+	): number {
+		return this.queries.overlapSphere(center, radius, options, out);
+	}
+
+	/**
+	 * Finds the objects and instance rows on the layers of `options.layers` that have a triangle
+	 * inside the box from `min` to `max` or crossing it, as `overlapSphere` does. The box's sides
+	 * lie along the world's axes.
+	 */
+	overlapBox(
+		min: Vec3Like,
+		max: Vec3Like,
+		options: QueryOptions | undefined,
+		out: OverlapHit[],
+	): number {
+		return this.queries.overlapBox(min, max, options, out);
 	}
 
 	/**

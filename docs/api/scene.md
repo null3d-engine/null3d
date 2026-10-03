@@ -3,7 +3,7 @@ id: api/scene
 title: Scene
 status: experimental
 since: "0.1"
-summary: "Creating objects; find; background, environment, fog, sky; warmUp."
+summary: "Creating objects; models and copies; find; background, environment, fog, sky; warmUp."
 ---
 
 # Scene
@@ -45,6 +45,9 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `createGroup(options)` | A `Group`: an empty object that holds other objects |
 | `createMesh({ mesh, material, ...options })` | A `Mesh`: an object that draws a mesh with a material |
 | `createInstances(mesh, count, { material })` | An `InstanceBatch`: `count` copies of one mesh with one material |
+| `instantiate(prefab, options)` | A `PrefabInstance`: a group that holds a copy of a model that `assets.loadGltf` loaded |
+| `createInstances(prefab, count, options)` | An `InstanceBatch` whose rows each draw a whole copy of a model |
+| `clone(object)` | A copy of an object and of every object below it |
 | `createPerspectiveCamera(options)` | A `PerspectiveCamera` that the scene can draw from |
 | `createOrthographicCamera(options)` | An `OrthographicCamera`, whose view is a box, that the scene can draw from |
 | `createDirectionalLight(options)` | A `DirectionalLight`: light from one direction, like sunlight |
@@ -54,6 +57,30 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `createAmbientLight(options)` | An `AmbientLight`: the same light on every surface |
 
 Groups, meshes, cameras and lights take the same object options: `name`, `position`, `rotation`, `scale`, `parent`, `dynamic` and `layers`. [Objects and transforms](objects.md) describes them. `createMesh` also takes `castShadows` and `receiveShadows`, which [Shadows](../concepts/shadows.md) explains. Meshes come from `geometry` and materials from `materials` in the sketch context. One mesh and one material can serve any number of objects.
+
+## Models and copies
+
+`scene.instantiate(prefab, options)` creates the objects of a model that [`assets.loadGltf`](assets.md#gltf-models) loaded. It returns a `PrefabInstance`: a group that holds the copy of the file's nodes. The `options` place that group as they place any object. Every copy shares the model's meshes, materials and textures, so a second copy costs only its objects. `castShadows` and `receiveShadows` apply to every mesh of the copy. The engine reserves the places of all the copy's objects with one call, and queues their changes as one batch. So no frame shows part of a copy.
+
+```ts
+const ship = await assets.loadGltf('/models/ship.glb');
+const fleet = [0, 1, 2].map((k) => scene.instantiate(ship, { position: [k * 6, 0, 0], castShadows: true }));
+const turret = fleet[0].find('Turret'); // this copy's object of the node named Turret
+turret?.rotateY(0.5);
+```
+
+`instance.find(name)` gives the copy's object of a node, by the node's name in the file. `scene.find` searches every object. When several copies share a name, it gives the first copy's object.
+
+`scene.clone(object)` copies an object and every object below it, with their meshes, materials, lights, cameras and settings, as three.js's `clone` does. The copy goes under the same parent, so it starts in the same place. It uses the same path as `instantiate`: one call and one batch of changes for the whole tree. Instance batches are not objects, so `clone` leaves them out.
+
+`scene.createInstances(prefab, count, options)` draws many copies of a model with instance batches, one for each mesh of the model. The batches share one set of rows, so each row places a whole copy. Write the returned batch's `positions`, `rotations` and `scales` as for a batch of one mesh. Each mesh keeps its place in the model. The model's lights are left out. A model with no meshes, or with instancing of its own, throws E1417. Give `createInstances` one of its meshes and a material instead, from `prefab.find(name)`.
+
+```ts
+const tree = await assets.loadGltf('/models/tree.glb');
+const forest = scene.createInstances(tree, 500); // trunk and leaves move together
+for (let i = 0; i < 500; i++) forest.positions.set([Math.random() * 100, 0, Math.random() * 100], i * 3);
+forest.markDirty();
+```
 
 ## Finding objects by name
 
@@ -129,7 +156,7 @@ An instance batch is one object that draws many copies of one mesh with one mate
 ## Limits
 
 - One engine holds up to 16,383 objects at once: groups, meshes, cameras and lights together. One more throws E1102. A destroyed object frees its place when the frame applies the change.
-- The rows of an instance batch take none of those places. One engine holds up to 256 batches.
+- The rows of an instance batch take none of those places. One engine holds up to 256 batches, and `createInstances(prefab, ...)` takes one for each mesh of the model.
 - The queue holds up to 65,536 changes between two frames. One more throws E1102.
 
 ## Related pages
@@ -139,6 +166,7 @@ An instance batch is one object that draws many copies of one mesh with one mate
 - [Static and dynamic objects](../concepts/static-dynamic.md): what the `dynamic` option changes.
 - [Materials](materials.md) and [Geometry](geometry.md): what a mesh draws.
 - [Loading screens and warm-up](../guides/loading-screens.md): waiting for the scene's pipelines.
+- [Assets and prefabs](../concepts/assets.md): models from glTF files, and what a prefab shares.
 
 ## API reference
 
@@ -195,6 +223,17 @@ Options for `scene.createInstances`.
 | `colors?: boolean` | Adds a color per row (RGBA, linear). This version stores the colors but does not draw them yet. |
 | `layers?: number` | The layers every row is on, as a 32-bit mask. The default, 1, is layer 0. |
 
+### `InstantiateOptions`
+
+Interface `InstantiateOptions`, which extends `NodeOptions`.
+
+Options for `scene.instantiate`: where the copy's group goes, and settings for all its meshes.
+
+| Member | Description |
+| --- | --- |
+| `castShadows?: boolean` | True makes every mesh of the copy cast the shadows of a directional light. The default is false. |
+| `receiveShadows?: boolean` | True makes shadows fall on every mesh of the copy. The default is false. |
+
 ### `LinearFogOptions`
 
 Interface `LinearFogOptions`.
@@ -237,6 +276,17 @@ Options every node takes when it is created.
 | `dynamic?: boolean` | True recomputes the node every frame without checks. A static node, the default for all but cameras, updates only when it changes. |
 | `layers?: number` | The layers the node is on, as a 32-bit mask: bit n puts it on layer n. A camera draws the objects that share a layer with it. The default, 1, is layer 0. |
 
+### `PrefabInstance`
+
+Class `PrefabInstance`, which extends `Group`.
+
+The group that holds a copy of a model, which `scene.instantiate` returns. Its children are the copies of the file's root nodes.
+
+| Member | Description |
+| --- | --- |
+| `batches: readonly InstanceBatch[]` | The instance batches of the nodes with instancing of their own, as the file gives them. Their rows are placed in the world when the copy is created, and they do not move with the group. |
+| `find(name: string): Object3D \| undefined` | The copy's first object with `name`, in the file's order, which is not destroyed, or undefined. It searches the copy's objects, so call it at setup. |
+
 ### `Scene`
 
 Class `Scene`.
@@ -248,7 +298,10 @@ The scene: every object, the active camera, the lights and the background.
 | `find(name: string): Object3D \| undefined` | The first object created with `name` that is not destroyed, or undefined when no object has the name. It looks the name up in an index, so its cost does not grow with the scene. Call it at setup and keep the object it returns. |
 | `createGroup(options: NodeOptions = {}): Group` | An empty node, for hierarchy. |
 | `createMesh(options: MeshOptions): Mesh` | A drawn object. It is static unless `dynamic: true`. |
-| `createInstances(mesh: MeshGeometry, count: number, options: InstanceOptions): InstanceBatch` | Many copies of one mesh and material, with typed arrays of rows. |
+| `instantiate(prefab: Prefab, options: InstantiateOptions = {}): PrefabInstance` | Creates the objects of a model that `assets.loadGltf` loaded, under one new group that `options` places, and returns that group. All the objects are created with one batch of commands, and every copy shares the model's meshes, materials and textures. The group's `find` gives the copy's object of a node, by the node's name. Throws E1102 when the scene has no room for the objects, before it creates any. |
+| `clone<T extends Object3D>(object: T): T` | Copies an object and every object below it, as three.js's `clone` does, with their meshes, materials, lights, cameras and settings, and returns the copy of the object. The copy has the same parent, so it starts in the same place. The copies are created with one batch of commands. Instance batches are not objects, so they are not copied. Throws E1102 when the scene has no room for the copies, before it creates any. |
+| `createInstances(mesh: MeshGeometry, count: number, options: InstanceOptions): InstanceBatch` | Many copies of one mesh and material, with typed arrays of rows. Or many copies of a model that `assets.loadGltf` loaded, without a material: one batch for each mesh of the model, which share one set of rows, so one row places a whole copy. The model's lights are left out. Throws E1417 for a model with no meshes, or with instancing of its own. |
+| `createInstances(prefab: Prefab, count: number, options?: Omit<InstanceOptions, 'material'>): InstanceBatch` | Many copies of one mesh and material, with typed arrays of rows. Or many copies of a model that `assets.loadGltf` loaded, without a material: one batch for each mesh of the model, which share one set of rows, so one row places a whole copy. The model's lights are left out. Throws E1417 for a model with no meshes, or with instancing of its own. |
 | `createPerspectiveCamera(options: PerspectiveCameraOptions = {}): PerspectiveCamera` | A perspective camera; `fov` is vertical, in degrees. Cameras are dynamic by default. |
 | `createOrthographicCamera(options: OrthographicCameraOptions = {}): OrthographicCamera` | An orthographic camera, whose view is a box: things keep their size at every distance. Give `height`, and the width follows the canvas, or give `left`, `right`, `top` and `bottom`. Cameras are dynamic by default. |
 | `setActiveCamera(camera: Camera): void` | Draws the scene from this camera. |
@@ -259,6 +312,12 @@ The scene: every object, the active camera, the lights and the background.
 | `createAmbientLight(options: LightOptions = {}): AmbientLight` | Light on every surface, from no direction. |
 | `setBackground(background: ColorInput \| Texture): void` | What the camera shows behind every object: a color, or a texture. A texture fills the view and stretches to its shape, as a texture in three.js's `scene.background` does. The color set before it shows until the texture's texels are on the GPU, and again if the texture is destroyed. A color takes the place of a texture. Exposure and tone mapping change the background with the rest of the scene. Without a background, the canvas shows black, or the page behind it on a transparent canvas. |
 | `setFog(fog: FogOptions \| null): void` | Fog over every object, with three.js's formulas: linear fog as its `Fog`, or exponential squared fog as its `FogExp2`. Null removes the fog. The background takes no fog, and a material created with `fog: false` keeps its color. Converting the color allocates. |
+| `raycast(origin: Vec3Like, direction: Vec3Like, options: RaycastOptions \| undefined, hit: RaycastHit): boolean` | Casts a ray from `origin` along `direction`, and writes its closest hit into `hit`. Returns true on a hit. On a miss it sets `hit.object` to null and leaves the other fields as they were. The direction needs no unit length. The ray tests the triangles of objects and instance rows on the layers of `options.layers`, as their materials draw them: front faces, or both faces for a double-sided material. Queries see the scene as the last frame's update left it, so a move, a new object or a destroy in this frame counts from the next frame, or from `onLateUpdate`. Create `hit` and `options` once and pass them each time. |
+| `raycastAny(origin: Vec3Like, direction: Vec3Like, options?: RaycastOptions): boolean` | True when a ray from `origin` along `direction` hits anything on the layers of `options.layers`. It stops at the first hit it finds, so it is faster than `raycast`: use it for line-of-sight checks. |
+| `raycastAll(origin: Vec3Like, direction: Vec3Like, options: RaycastOptions \| undefined, hits: RaycastHit[]): number` | Casts a ray as `raycast` does, writes every hit into `hits` nearest first, one hit for each triangle that the ray crosses, and returns how many. It fills the first entries of `hits`, adds hit objects when the array is too short, and leaves the entries after the hits as they were. |
+| `raycastBatch(rays: ArrayLike<number>, options: RaycastOptions \| undefined, out: RaycastBatchHits): number` | Casts many rays at once on the job workers, and writes each one's closest hit into `out`. `rays` holds six numbers per ray: its origin, then its direction. Returns how many rays hit something. A miss writes -1 as its distance. |
+| `overlapSphere(center: Vec3Like, radius: number, options: QueryOptions \| undefined, out: OverlapHit[]): number` | Finds the objects and instance rows on the layers of `options.layers` that have a triangle within `radius` meters of `center`, writes them into `out`, and returns how many. It fills `out` as `raycastAll` fills its hits, in no set order. |
+| `overlapBox(min: Vec3Like, max: Vec3Like, options: QueryOptions \| undefined, out: OverlapHit[]): number` | Finds the objects and instance rows on the layers of `options.layers` that have a triangle inside the box from `min` to `max` or crossing it, as `overlapSphere` does. The box's sides lie along the world's axes. |
 | `warmUp(): Promise<void>` | Builds every GPU pipeline that the scene needs as it stands, and resolves once they are all built. Hidden objects count too. After the first frame, an object whose pipeline is still building draws nothing, so create a loading stage's objects hidden, warm up, then show them. The first frame waits for its pipelines anyway. In the setup, a warm-up draws that frame once they are built, before the setup goes on. |
 
 <!-- null3d:api:end -->

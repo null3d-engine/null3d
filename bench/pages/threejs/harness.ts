@@ -32,6 +32,7 @@ export type Three = Pick<
 	| 'AnimationMixer'
 	| 'BatchedMesh'
 	| 'Bone'
+	| 'Box3'
 	| 'BoxGeometry'
 	| 'BufferAttribute'
 	| 'BufferGeometry'

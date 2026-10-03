@@ -67,6 +67,26 @@ const FADE_SHARE: f32 = 0.1;
 
 /// The most that a surface at a steep angle to the light scales its depth bias by.
 const MAX_SLOPE: f32 = 2.0;
+/// The steepest that a receiver's plane rises toward the light, as the tangent of its angle to the
+/// light, when the filter's reads compare with the plane. A steeper surface takes this slope.
+const MAX_PLANE_SLOPE: f32 = 10.0;
+/// How far below a receiver's plane, in meters, a caster must lie for a read of the filter to
+/// ignore it. It only needs to cover the rounding of depths.
+const PLANE_MARGIN: f32 = 0.01;
+
+/// The plane of a receiver in the texels of a shadow map: where the receiver's own point lies, in
+/// texels from the map's corner, its depth there less `PLANE_MARGIN`, and how much its depth
+/// changes per texel along each axis.
+struct ReceiverPlane {
+    at: vec2f,
+    depth: f32,
+    slope: vec2f,
+}
+
+/// A plane that never raises a read's depth, for lookups without one.
+fn no_plane() -> ReceiverPlane {
+    return ReceiverPlane(vec2f(0.0), -1.0e30, vec2f(0.0));
+}
 
 /// How far a receiver moves before its shadow lookup, relative to its position. `normal` is its unit
 /// normal, `to_light` the unit direction toward the light, `biases` the light's bias toward the
@@ -83,6 +103,62 @@ fn bias_offset(normal: vec3f, to_light: vec3f, biases: vec2f, texel: f32) -> vec
     let slope = min(sine, MAX_SLOPE * cosine) / max(cosine, 1e-4);
     let capped = min(biases, vec2f(texel));
     return to_light * (capped.x * slope) + normal * (capped.y * sine);
+}
+
+/// The plane of a receiver at `relative`, with unit normal `normal` and unit direction `to_light`
+/// toward the light, in the texels of a cascade whose matrix is `view_proj` and whose layers have
+/// `size` texels on each side. The cascade's projection is orthographic, so the plane stays a plane
+/// in the map. Two directions along the surface give how its texel and its depth change, and the
+/// depth's change per texel follows from them.
+fn receiver_plane(
+    view_proj: mat4x4f,
+    relative: vec3f,
+    normal: vec3f,
+    to_light: vec3f,
+    size: f32,
+) -> ReceiverPlane {
+    let cosine = dot(normal, to_light);
+    if cosine <= 0.0 {
+        return no_plane();
+    }
+    let clip = view_proj * vec4f(relative, 1.0);
+    let helper = select(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), abs(normal.x) > 0.9);
+    let along = normalize(cross(normal, helper));
+    let a = view_proj * vec4f(along, 0.0);
+    let b = view_proj * vec4f(cross(normal, along), 0.0);
+    var flip = vec2f(0.5, -0.5);
+#ifdef WEBGL2
+    // WebGL2 keeps the rows of a drawn texture bottom first.
+    flip.y = 0.5;
+#endif
+    let ta = a.xy * flip * size;
+    let tb = b.xy * flip * size;
+    let at = (clip.xy * flip + 0.5) * size;
+    let det = ta.x * tb.y - ta.y * tb.x;
+    if abs(det) < 1e-12 {
+        return no_plane();
+    }
+    // A surface nearly edge-on to the light rises steeply across each texel. It takes the steepest
+    // slope that the filter follows, as a smaller rise only leaves more of the old comparison.
+    let sine = sqrt(max(1.0 - cosine * cosine, 0.0));
+    let steepness = min(1.0, MAX_PLANE_SLOPE * cosine / max(sine, 1e-4));
+    let slope = vec2f(a.z * tb.y - b.z * ta.y, b.z * ta.x - a.z * tb.x) / det * steepness;
+    let margin = PLANE_MARGIN * (view_proj * vec4f(to_light, 0.0)).z;
+    return ReceiverPlane(at, clip.z - margin, slope);
+}
+
+/// The depth that a sample of the comparison sampler at `position`, in texels from the map's
+/// corner, compares with: the receiver's `depth`, raised to the receiver's plane where the plane
+/// rises toward the light. A sample blends the four texels around it, so it takes the plane's
+/// depth at the lowest of their centers. A caster such as a pavement slab holds its own bottom
+/// face under its lit top. Across the filter's square, that face rises toward the light as the top
+/// does, and it would shadow the top in stripes if the far reads compared with the receiver's
+/// depth at its own point. A caster in front of the plane, such as a box standing on it, still
+/// shadows it, so the shadow still meets the box's base.
+fn read_depth(plane: ReceiverPlane, position: vec2f, depth: f32) -> f32 {
+    let f = fract(position - 0.5);
+    let lowest = min(-f * plane.slope, (1.0 - f) * plane.slope);
+    return max(depth, plane.depth + dot(position - plane.at, plane.slope) + lowest.x + lowest.y);
 }
 
 /// How much of the main directional light reaches a point: 1 in full light, 0 in full shadow.
@@ -109,8 +185,9 @@ fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
     // The filter reads up to three texels beyond the point, which must stay inside the layer.
     let inside = 0.5 - 3.0 * cascades.kernel.y;
     for (; cascade < count; cascade += 1u) {
+        let m = cascades.view_proj[cascade];
         let offset = bias_offset(normal, to_light, cascades.biases.xy, cascades.texels[cascade]);
-        let clip = cascades.view_proj[cascade] * vec4f(relative + offset, 1.0);
+        let clip = m * vec4f(relative + offset, 1.0);
         if any(abs(clip.xy) > vec2f(2.0 * inside)) {
             // A box that kept its place while the camera turned can miss the point; the next
             // cascade's box is larger.
@@ -121,7 +198,8 @@ fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
         // WebGL2 keeps the rows of a drawn texture bottom first.
         uv.y = 1.0 - uv.y;
 #endif
-        let lit = filtered(false, cascades.kernel, uv, cascade, clip.z);
+        let plane = receiver_plane(m, relative, normal, to_light, cascades.kernel.x);
+        let lit = filtered(false, cascades.kernel, uv, cascade, clip.z, plane);
         return mix(lit, 1.0, smoothstep(end * (1.0 - FADE_SHARE), end, along));
     }
     return 1.0;
@@ -141,13 +219,21 @@ fn compare(atlas: bool, uv: vec2f, layer: u32, depth: f32) -> f32 {
 /// texels on each side of a layer, the size of one texel and the filter's square. Each sample of
 /// the comparison sampler blends four texels, so a square of 3 texels takes 4 samples and a square
 /// of 5 takes 9. The samples sit between texels where their bilinear weights give each texel of
-/// the square its share (Ignacio Castaño's filter for The Witness).
-fn filtered(atlas: bool, kernel: vec4f, uv: vec2f, layer: u32, depth: f32) -> f32 {
+/// the square its share (Ignacio Castaño's filter for The Witness). Each sample compares with the
+/// depth that `read_depth` gives from the receiver's `plane`.
+fn filtered(
+    atlas: bool,
+    kernel: vec4f,
+    uv: vec2f,
+    layer: u32,
+    depth: f32,
+    plane: ReceiverPlane,
+) -> f32 {
     let size = kernel.x;
     let texel = kernel.y;
     let taps = kernel.z;
     if taps < 3.0 {
-        return compare(atlas, uv, layer, depth);
+        return compare(atlas, uv, layer, read_depth(plane, uv * size, depth));
     }
     // The texel corner nearest to the point, and the point's place from the texel center before
     // that corner, from 0 to 1 on each axis.
@@ -177,7 +263,8 @@ fn filtered(atlas: bool, kernel: vec4f, uv: vec2f, layer: u32, depth: f32) -> f3
     for (var row = 0u; row < samples; row += 1u) {
         for (var column = 0u; column < samples; column += 1u) {
             let at = origin + vec2f(offsets[column].x, offsets[row].y) * texel;
-            sum += weights[column].x * weights[row].y * compare(atlas, at, layer, depth);
+            let reference = read_depth(plane, at * size, depth);
+            sum += weights[column].x * weights[row].y * compare(atlas, at, layer, reference);
         }
     }
     return sum / total;
@@ -221,5 +308,5 @@ fn light_shadow(first: u32, relative: vec3f, normal: vec3f, to_light: vec3f, gap
     // WebGL2 keeps the rows of a drawn texture bottom first.
     uv.y = 1.0 - uv.y;
 #endif
-    return filtered(true, tiles.kernel, uv, tile, ndc.z);
+    return filtered(true, tiles.kernel, uv, tile, ndc.z, no_plane());
 }

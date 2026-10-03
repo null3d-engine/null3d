@@ -13,6 +13,7 @@ import { percent } from '../../packages/cli/src/compare.js';
 import { TIERS, type Tier } from '../../packages/cli/src/page.js';
 import { encodePng, type RgbaImage } from '../../packages/cli/src/png.js';
 import { STOPS, TONE_MAPPINGS, toneMappingTest } from '../../tests/pages/lib/bright-scene.ts';
+import { MODEL_NAMES } from '../scenes/gltf-models.ts';
 
 export { encodePng, percent, type RgbaImage, TIERS, type Tier };
 
@@ -205,9 +206,23 @@ const TWINS = '/bench/pages/threejs';
 const NO_TONE = 'tone=none';
 
 /**
+ * The limits of the glTF model scenes whose images three.js's rule would fail for reasons outside
+ * the loader, with the largest share measured on the Mac (`.dev/image-tests.md` records them). The
+ * lamp's glass uses KHR_materials_transmission, volume and ior, which three.js draws and null3D
+ * does not read: 0.87% of the pixels differ, all on the glass and its beads. The instanced cubes
+ * have black faces beside white ones at hundreds of edges, which compatibility mode's 8-bit path
+ * averages after it encodes the colors: 0.41% differ there, and none on the other tiers.
+ */
+const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
+	ktx2: 1,
+	instancing: 0.5,
+};
+
+/**
  * Each feature scene that the exit gate's parity covers: standard materials, the light types
  * (point and spot lights, and the directional and ambient lights of the material scenes), fog, tone
- * mapping, the orthographic camera, and shadows at their own limit. The engine stores hemisphere
+ * mapping, the orthographic camera, glTF sample models through the loader, and shadows at their
+ * own limit. The engine stores hemisphere
  * lights but does not draw them yet; the lights twin draws `?scene=hemisphere` already, so the pull
  * request that draws them adds that scene's image test here. The tone mappings compare without
  * anti-aliasing: null3D resolves the samples of an edge before it tone maps them, and three.js's
@@ -235,6 +250,13 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		),
 	),
 	{ test: 'ortho-camera', twin: `${TWINS}/ortho-camera.html` },
+	...MODEL_NAMES.map(
+		(model): FeatureScene => ({
+			test: `gltf-${model}`,
+			twin: `${TWINS}/gltf.html?model=${model}`,
+			limit: MODEL_LIMITS[model],
+		}),
+	),
 	{
 		test: 'shadows',
 		twin: `${TWINS}/shadows.html`,

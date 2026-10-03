@@ -5,7 +5,8 @@
 // the canvas in pixels. The engine reads its own switches, such as ?gpu= and ?preset=.
 //
 // The page draws the scene through the shadow check sketch (lib/shadow-check.ts): the frames of the
-// stability check, the reference for the edge check, then the normals view for the contact check.
+// stability check, the reference for the edge and acne checks, then the normals view for the
+// contact and acne checks.
 // ?edge=x0,y0,x1,y1 names a box of the frame that one long shadow edge crosses from top to bottom,
 // whose stair steps the page measures in the frame and in the reference. With ?images, it also
 // captures PNG files of the first and last shadows frames, the reference, the normals view, and
@@ -14,6 +15,7 @@
 import { createEngine } from '@null3d/engine';
 import { run, toBase64 } from './lib/result';
 import {
+	acneFigures,
 	contactFigures,
 	edgeOffset,
 	MOVING_FRAMES,
@@ -114,6 +116,7 @@ run('visual', async () => {
 			}),
 		},
 		contact: contactFigures(first, normals, width),
+		acne: acneFigures(first, reference, normals, width),
 		...(withImages && { images }),
 	};
 });

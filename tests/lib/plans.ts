@@ -622,10 +622,12 @@ function visualFigures(scene: string, result: VisualResult): VisualFigures {
 		changedPercent: result.stability.changedPercent,
 		edgeOffsetPixels: result.edges.offsetPixels,
 		...(result.contact && { contactGapPixels: result.contact.meanGapPixels }),
+		...(result.acne && { acnePercent: result.acne.meanShadowPercent }),
 		...(limits && {
 			changedLimit: limits.changedPercent,
 			edgeOffsetLimit: limits.edgeOffsetPixels,
 			contactGapLimit: limits.contactGapPixels,
+			acneLimit: limits.acnePercent,
 		}),
 	};
 }

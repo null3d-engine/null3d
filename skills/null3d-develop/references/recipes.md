@@ -67,9 +67,9 @@ Controls read forwarded input inside the sketch worker, so the sketch adds no DO
 ## 3. Load a glTF model and play its animations (0.2)
 
 ```ts
-const heroPrefab = await assets.loadGltf('/models/hero.glb');
-const hero = scene.instantiate(heroPrefab, { position: [0, 0, 0] });
-hero.setDynamic(true);                      // it will move every frame
+const heroPrefab = await assets.loadGltf('/models/hero.glb');  // parsed in a worker
+const hero = scene.instantiate(heroPrefab, { position: [0, 0, 0], dynamic: true, castShadows: true });
+const sword = hero.find('Sword');           // this copy's node named Sword
 const anim = hero.animator();
 anim.play('idle', { loop: true });
 
@@ -86,7 +86,7 @@ return {
 };
 ```
 
-Optimize models first with `bunx @null3d/cli assets optimize models/hero.glb` (meshopt, KTX2). Cross-fade on state changes only; calling `play` every frame restarts blending work. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
+Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/hero.glb` (meshopt, KTX2). Cross-fade on state changes only; calling `play` every frame restarts blending work. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
 
 ## 4. Thousands of moving objects
 
@@ -195,7 +195,7 @@ const WORLD = 1 << 2;   // walls and terrain: they block the ray
 for (const wall of walls) wall.setLayers(1 | WORLD);
 const unitSet = new Set(units);
 const ray = { origin: [0, 0, 0], direction: [0, 0, -1] };
-const hit = { object: null as any, point: [0, 0, 0], normal: [0, 0, 0], distance: 0, instance: -1 };
+const hit: RaycastHit = { object: null, instance: -1, point: vec3.create(), normal: vec3.create(), distance: 0, triangle: -1 };
 // in onUpdate:
 if (input.wasPressed('Mouse0')) {
   camera.screenToRay(input.pointer.x, input.pointer.y, ray);
