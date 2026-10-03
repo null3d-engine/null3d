@@ -64,8 +64,13 @@ export interface CoreGlue extends CoreErrors {
 	 * `count` 32-bit words, valid until the next call that reserves staging words.
 	 */
 	reserveObjects(count: number): number;
-	/** Copies a world matrix: 12 numbers, with the translation from the origin in 64 bits. */
-	worldMatrix(handle: number, out: Float64Array): number;
+	/**
+	 * Copies a world matrix into the 12 numbers at `worldMatrixAddress`, with the translation from
+	 * the origin in 64 bits.
+	 */
+	worldMatrix(handle: number): number;
+	/** The address of the 64-bit floats that `worldMatrix` writes. */
+	worldMatrixAddress(): number;
 	commandRing(field: number): number;
 	/**
 	 * Wakes the job workers at the start of a frame when the previous frame gave them work, so they
@@ -442,6 +447,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'reserveObject',
 	'reserveObjects',
 	'worldMatrix',
+	'worldMatrixAddress',
 	'commandRing',
 	'prepareJobs',
 	'beginFrame',

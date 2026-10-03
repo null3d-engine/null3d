@@ -1,10 +1,21 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { Matrix4, Quaternion, Object3D as ThreeObject, Vector3 } from 'three';
+import {
+	Matrix4,
+	Quaternion,
+	Raycaster,
+	Object3D as ThreeObject,
+	OrthographicCamera as ThreeOrthographicCamera,
+	PerspectiveCamera as ThreePerspectiveCamera,
+	Vector2,
+	Vector3,
+} from 'three';
 import type { EngineError } from '../errors/engine-error';
 import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
+import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
+import { FrameCameras } from './frame-cameras';
 import { CoreMemory } from './memory';
 import { Material, MeshGeometry } from './resources';
 import { type Object3D, Scene } from './scene';
@@ -27,6 +38,7 @@ const AT = {
 	records: 1024,
 	write: 1536,
 	read: 1540,
+	matrix: 1544,
 };
 const SLOT_MASK = (1 << C.HANDLE_SLOT_BITS) - 1;
 /** The frame that the fake scene says it runs. */
@@ -62,16 +74,19 @@ function fakeCore() {
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: (field: number) => fields[field],
 		commandRing: (field: number) => ring[field],
+		worldMatrixAddress: () => AT.matrix,
 		reserveObject: () => next++,
-		worldMatrix: (handle: number, out: Float64Array) => {
+		worldMatrix: (handle: number) => {
 			const matrix = matrices.get(handle);
 			if (matrix) {
-				out.set(matrix);
+				new Float64Array(memory.buffer, AT.matrix, C.CORE_MATRIX_FLOATS).set(matrix);
 				return 0;
 			}
 			failure = { code: 1101, details: [handle & SLOT_MASK, FRAME] };
 			return failure.code;
 		},
+		setPerspectiveCamera: () => 0,
+		setOrthographicCamera: () => 0,
 		setBackground: (r: number, g: number, b: number) => backgrounds.push([r, g, b]) && 0,
 		setBackgroundTexture: (texture: number) => {
 			if (texture !== DESTROYED_TEXTURE) return backgrounds.push(texture) && 0;
@@ -82,7 +97,12 @@ function fakeCore() {
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
 	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
-	const scene = new Scene(core, { frame: FRAME }, false);
+	const control = controlViews(createControlBuffer(false));
+	/** The frame that the input event at each point names, by "x,y". */
+	const eventFrames = new Map<string, number>();
+	const frameAt = (x: number, y: number) => eventFrames.get(`${x},${y}`) ?? 0;
+	const cameras = new FrameCameras(core, control, { frameAt });
+	const scene = new Scene(core, { frame: FRAME }, false, undefined, cameras);
 	const box = new MeshGeometry(1, 0.87, core);
 	const ball = new MeshGeometry(2, 1.5, core);
 	const paint = new Material(1, core, 'materials.standard.set');
@@ -91,6 +111,14 @@ function fakeCore() {
 	return {
 		core,
 		scene,
+		eventFrames,
+		/** Sizes the canvas: device pixels, then CSS pixels. */
+		setCanvas(width: number, height: number, cssWidth: number, cssHeight: number) {
+			control.slots[Slot.CanvasWidth] = width;
+			control.slots[Slot.CanvasHeight] = height;
+			control.slotFloats[Slot.CanvasCssWidth] = cssWidth;
+			control.slotFloats[Slot.CanvasCssHeight] = cssHeight;
+		},
 		/** The background calls: a color's linear components, or a texture's handle (0 for none). */
 		backgrounds,
 		box,
@@ -433,6 +461,205 @@ describe('development checks', () => {
 		// The core no longer knows the object, as after the frame that destroyed it.
 		expect(thrown(() => gone.getWorldMatrix([])).message).toStartWith(
 			`E1101: getWorldMatrix() was called on "Gone" (slot ${gone.slot}), which was destroyed in frame ${FRAME}.`,
+		);
+	});
+});
+
+describe('screenToRay and worldToScreen', () => {
+	/** A canvas of 640 x 360 CSS pixels at a pixel ratio of 2. */
+	const CSS = [640, 360] as const;
+	const setup = () => {
+		const core = fakeCore();
+		core.setCanvas(CSS[0] * 2, CSS[1] * 2, CSS[0], CSS[1]);
+		return core;
+	};
+	const world = (position: [number, number, number], euler: [number, number, number], scale = 1) =>
+		new Matrix4().compose(
+			new Vector3(...position),
+			new Quaternion().setFromEuler(new ThreeObject().rotation.set(...euler)),
+			new Vector3(scale, scale, scale),
+		);
+	/** three.js's ray through the point, from a camera whose matrices `world` places. */
+	const threeRay = (
+		camera: ThreePerspectiveCamera | ThreeOrthographicCamera,
+		matrix: Matrix4,
+		x: number,
+		y: number,
+	) => {
+		camera.matrixWorld.copy(matrix);
+		camera.matrixWorldInverse.copy(matrix).invert();
+		camera.updateProjectionMatrix();
+		const caster = new Raycaster();
+		caster.setFromCamera(new Vector2((x / CSS[0]) * 2 - 1, 1 - (y / CSS[1]) * 2), camera);
+		return [...caster.ray.origin.toArray(), ...caster.ray.direction.toArray()];
+	};
+	const rayOf = (ray: { origin: number[]; direction: number[] }) => [
+		...ray.origin,
+		...ray.direction,
+	];
+	const newRay = () => ({ origin: [0, 0, 0], direction: [0, 0, 0] });
+	const POINTS = [
+		[320, 180],
+		[0, 0],
+		[640, 360],
+		[17.5, 301.25],
+	] as const;
+
+	test('a perspective ray matches three.js, scaled cameras included', () => {
+		const { scene, setWorld } = setup();
+		const camera = scene.createPerspectiveCamera({ fov: 60, near: 0.5, far: 300 });
+		const theirs = new ThreePerspectiveCamera(60, CSS[0] / CSS[1], 0.5, 300);
+		const ray = newRay();
+		for (const scale of [1, 2.5]) {
+			const matrix = world([3, -2, 7], [0.3, -1.2, 0.1], scale);
+			setWorld(camera, matrix);
+			for (const [x, y] of POINTS) {
+				camera.screenToRay(x, y, ray);
+				expectClose(rayOf(ray), threeRay(theirs, matrix, x, y), 9);
+			}
+		}
+	});
+
+	test("an orthographic ray has three.js's direction, and starts on the near plane", () => {
+		const { scene, setWorld } = setup();
+		const matrix = world([-4, 9, 2], [-0.7, 0.4, 0.2]);
+		const ray = newRay();
+		// A view made from edges keeps them; a view made from a height follows the canvas.
+		const edges = scene.createOrthographicCamera({
+			left: -3,
+			right: 5,
+			top: 2,
+			bottom: -4,
+			near: -2,
+		});
+		setWorld(edges, matrix);
+		const theirEdges = new ThreeOrthographicCamera(-3, 5, 2, -4, -2, 2000);
+		const tall = scene.createOrthographicCamera({ height: 10, near: 1, far: 50 });
+		setWorld(tall, matrix);
+		const half = (10 * CSS[0]) / CSS[1] / 2;
+		const theirTall = new ThreeOrthographicCamera(-half, half, 5, -5, 1, 50);
+		// three.js starts the ray on the camera's plane, which misses what a near plane behind the
+		// camera shows: the engine starts it `near` further along.
+		const onNear = (ray: number[], near: number) => [
+			...[0, 1, 2].map((k) => (ray[k] as number) + near * (ray[3 + k] as number)),
+			...ray.slice(3),
+		];
+		for (const [x, y] of POINTS) {
+			edges.screenToRay(x, y, ray);
+			expectClose(rayOf(ray), onNear(threeRay(theirEdges, matrix, x, y), -2), 9);
+			tall.screenToRay(x, y, ray);
+			expectClose(rayOf(ray), onNear(threeRay(theirTall, matrix, x, y), 1), 9);
+		}
+	});
+
+	test('the lens takes the shape of the canvas in device pixels, as the frame draws it', () => {
+		const { scene, setWorld, setCanvas } = setup();
+		// 401 x 200 device pixels show on 200 x 100 CSS pixels: a shape a little wider than 2.
+		setCanvas(401, 200, CSS[0], CSS[1]);
+		const camera = scene.createPerspectiveCamera({ fov: 45 });
+		const matrix = world([1, 2, 3], [0.2, 0.5, 0]);
+		setWorld(camera, matrix);
+		const ray = newRay();
+		camera.screenToRay(600, 40, ray);
+		const theirs = new ThreePerspectiveCamera(45, 401 / 200, 0.1, 2000);
+		expectClose(rayOf(ray), threeRay(theirs, matrix, 600, 40), 9);
+	});
+
+	test('worldToScreen matches three.js project, and inverts screenToRay', () => {
+		const { scene, setWorld } = setup();
+		const matrix = world([2, 1, 10], [-0.2, 0.3, 0.05]);
+		const perspective = scene.createPerspectiveCamera({ fov: 50 });
+		const orthographic = scene.createOrthographicCamera({ height: 8 });
+		setWorld(perspective, matrix);
+		setWorld(orthographic, matrix);
+		const half = (8 * CSS[0]) / CSS[1] / 2;
+		const pairs = [
+			[perspective, new ThreePerspectiveCamera(50, CSS[0] / CSS[1], 0.1, 2000)],
+			[orthographic, new ThreeOrthographicCamera(-half, half, 4, -4, 0.1, 2000)],
+		] as const;
+		const out = [0, 0, 0];
+		const ray = newRay();
+		for (const [mine, theirs] of pairs) {
+			theirs.matrixWorld.copy(matrix);
+			theirs.matrixWorldInverse.copy(matrix).invert();
+			theirs.updateProjectionMatrix();
+			for (const point of [
+				[1, 2, 3],
+				[-2.5, 0.5, -4],
+			]) {
+				mine.worldToScreen(point, out);
+				const ndc = new Vector3(...point).project(theirs);
+				const depth = -new Vector3(...point).applyMatrix4(theirs.matrixWorldInverse).z;
+				expectClose(out, [((ndc.x + 1) / 2) * CSS[0], ((1 - ndc.y) / 2) * CSS[1], depth], 7);
+				// The ray through the point's place on the canvas passes through the point.
+				mine.screenToRay(out[0] as number, out[1] as number, ray);
+				const along = new Vector3(...point).sub(new Vector3(...ray.origin));
+				const across = along.clone().cross(new Vector3(...ray.direction));
+				expect(across.length()).toBeLessThan(1e-9);
+			}
+		}
+	});
+
+	test('worldToScreen keeps its precision far from the origin', () => {
+		const { scene, setWorld } = setup();
+		const camera = scene.createPerspectiveCamera({ fov: 90 });
+		// 6,378 km out, where a 32-bit float steps by half a meter.
+		setWorld(camera, new Matrix4().makeTranslation(6_378_000.25, 0, 0));
+		const out = [0, 0, 0];
+		camera.worldToScreen([6_378_000.25 + 0.01, 0, -10], out);
+		// At 90 degrees, 10 m away the view is 20 m tall and 20 * 16 / 9 m wide.
+		expectClose(out, [320 + (0.01 / ((20 * 16) / 9)) * 640, 180, 10], 6);
+	});
+
+	test('a ray from an input event uses the camera of the frame that the event names', () => {
+		const { scene, setWorld, eventFrames } = setup();
+		const camera = scene.createPerspectiveCamera({ fov: 60 });
+		const other = scene.createPerspectiveCamera({ fov: 60 });
+		scene.setActiveCamera(camera);
+		const theirs = new ThreePerspectiveCamera(60, CSS[0] / CSS[1], 0.1, 2000);
+		// A fast pan: each frame turns the camera a tenth of a radian further.
+		const frameWorld = (frame: number) => world([0, 1, 5], [0, frame * 0.1, 0]);
+		for (let frame = 1; frame <= 5; frame++) {
+			setWorld(camera, frameWorld(frame));
+			scene.keepFrameCamera(frame, CSS[0] * 2, CSS[1] * 2);
+		}
+		setWorld(camera, frameWorld(6));
+		setWorld(other, frameWorld(6));
+		const ray = newRay();
+		const [x, y] = [100.5, 80.25];
+		// An event that came while frame 3 was on screen.
+		eventFrames.set(`${x},${y}`, 3);
+		camera.screenToRay(x, y, ray);
+		expectClose(rayOf(ray), threeRay(theirs, frameWorld(3), x, y), 9);
+		// Another point, or another camera, uses the camera as it stands.
+		camera.screenToRay(x + 1, y, ray);
+		expectClose(rayOf(ray), threeRay(theirs, frameWorld(6), x + 1, y), 9);
+		other.screenToRay(x, y, ray);
+		expectClose(rayOf(ray), threeRay(theirs, frameWorld(6), x, y), 9);
+		// The ring keeps four frames: frame 1's place now holds frame 5.
+		eventFrames.set(`${x},${y}`, 1);
+		camera.screenToRay(x, y, ray);
+		expectClose(rayOf(ray), threeRay(theirs, frameWorld(6), x, y), 9);
+		// A frame drawn from another camera does not lend its camera to this one.
+		scene.setActiveCamera(other);
+		setWorld(other, frameWorld(7));
+		scene.keepFrameCamera(7, CSS[0] * 2, CSS[1] * 2);
+		eventFrames.set(`${x},${y}`, 7);
+		camera.screenToRay(x, y, ray);
+		expectClose(rayOf(ray), threeRay(theirs, frameWorld(6), x, y), 9);
+		other.screenToRay(x, y, ray);
+		expectClose(rayOf(ray), threeRay(theirs, frameWorld(7), x, y), 9);
+	});
+
+	test('development builds check the point and the camera', () => {
+		const { scene, setWorld } = setup();
+		const camera = scene.createPerspectiveCamera();
+		setWorld(camera, new Matrix4());
+		expect(thrown(() => camera.screenToRay(Number.NaN, 0, newRay())).message).toContain(
+			'screenToRay() got NaN for x',
+		);
+		expect(thrown(() => camera.worldToScreen([0, Infinity, 0], [0, 0, 0])).message).toContain(
+			'worldToScreen() got Infinity for y',
 		);
 	});
 });
