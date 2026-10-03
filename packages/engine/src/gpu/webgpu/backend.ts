@@ -30,10 +30,13 @@ TEXTURE_FORMATS[G.FORMAT_ETC2_RGB8_UNORM] = 'etc2-rgb8unorm';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGB8_UNORM_SRGB] = 'etc2-rgb8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM] = 'etc2-rgba8unorm';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM_SRGB] = 'etc2-rgba8unorm-srgb';
+TEXTURE_FORMATS[G.FORMAT_RGB9E5_UFLOAT] = 'rgb9e5ufloat';
 
 const VIEW_DIMENSIONS: (GPUTextureViewDimension | undefined)[] = [];
 VIEW_DIMENSIONS[G.VIEW_2D] = '2d';
 VIEW_DIMENSIONS[G.VIEW_2D_ARRAY] = '2d-array';
+VIEW_DIMENSIONS[G.VIEW_CUBE] = 'cube';
+VIEW_DIMENSIONS[G.VIEW_3D] = '3d';
 
 const ADDRESS_MODES: (GPUAddressMode | undefined)[] = [];
 ADDRESS_MODES[G.ADDRESS_CLAMP_TO_EDGE] = 'clamp-to-edge';
@@ -197,7 +200,8 @@ export class WebGPUBackend {
 
 	/**
 	 * Creates a texture with a view for bind groups, in the view dimension that compatibility mode
-	 * fixes at creation, and a view to draw into when it has one layer and one mip level.
+	 * fixes at creation, and a view to draw into when it has one layer and one mip level. A 3D
+	 * texture's layers are its depth; every other kind is 2D, a cube's faces among its layers.
 	 */
 	private createTexture(words: Uint32Array, a: number): void {
 		const id = words[a] as number;
@@ -208,6 +212,7 @@ export class WebGPUBackend {
 		const dimension = lookUp(VIEW_DIMENSIONS, words[a + 8] as number, 'view dimension');
 		const bound = (usage & G.TEXTURE_USAGE_TEXTURE_BINDING) !== 0;
 		const texture = this.device.createTexture({
+			dimension: dimension === '3d' ? '3d' : '2d',
 			size: [words[a + 1] as number, words[a + 2] as number, layers],
 			format: this.format(words[a + 4] as number) as GPUTextureFormat,
 			usage,
@@ -655,16 +660,15 @@ export class WebGPUBackend {
 						this.targetView(words[a + 1] as number),
 						(flags & G.PASS_CLEAR_COLOR) !== 0,
 						(flags & G.PASS_STORE_COLOR) !== 0,
-						floats[a + 3] as number,
-						floats[a + 4] as number,
-						floats[a + 5] as number,
-						floats[a + 6] as number,
+						floats,
+						a + 3,
 					);
 					setup.setDepth(
 						this.targetView(words[a + 2] as number),
 						(flags & G.PASS_CLEAR_DEPTH) !== 0,
 						(flags & G.PASS_STORE_DEPTH) !== 0,
-						floats[a + 7] as number,
+						floats,
+						a + 7,
 					);
 					setup.setTimestampWrites(this.timer?.passWrites(true));
 					pass = this.commandEncoder().beginRenderPass(setup.descriptor);
@@ -798,24 +802,25 @@ export class WebGPUBackend {
 			case G.OP_SET_BIND_GROUP:
 				this.setBindGroup(pass, words, a);
 				return true;
+			// A size of 0 binds the rest of the buffer. The browser compiles each call for the kinds of
+			// argument it has seen, and throws the compiled code away when a number turns undefined,
+			// so the size goes to a call of its own.
 			case G.OP_SET_VERTEX_BUFFER: {
+				const slot = words[a] as number;
+				const buffer = this.need(this.buffers, words[a + 1] as number, 'buffer');
+				const offset = words[a + 2] as number;
 				const size = words[a + 3] as number;
-				pass.setVertexBuffer(
-					words[a] as number,
-					this.need(this.buffers, words[a + 1] as number, 'buffer'),
-					words[a + 2] as number,
-					size === 0 ? undefined : size,
-				);
+				if (size === 0) pass.setVertexBuffer(slot, buffer, offset);
+				else pass.setVertexBuffer(slot, buffer, offset, size);
 				return true;
 			}
 			case G.OP_SET_INDEX_BUFFER: {
+				const buffer = this.need(this.buffers, words[a] as number, 'buffer');
+				const format = words[a + 1] === G.INDEX_FORMAT_UINT32 ? 'uint32' : 'uint16';
+				const offset = words[a + 2] as number;
 				const size = words[a + 3] as number;
-				pass.setIndexBuffer(
-					this.need(this.buffers, words[a] as number, 'buffer'),
-					words[a + 1] === G.INDEX_FORMAT_UINT32 ? 'uint32' : 'uint16',
-					words[a + 2] as number,
-					size === 0 ? undefined : size,
-				);
+				if (size === 0) pass.setIndexBuffer(buffer, format, offset);
+				else pass.setIndexBuffer(buffer, format, offset, size);
 				return true;
 			}
 			case G.OP_DRAW:

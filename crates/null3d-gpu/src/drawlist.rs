@@ -7,8 +7,9 @@
 //! as their bits.
 //!
 //! Commands that write or copy texels name a texture location in five words: the texture id, the
-//! mip level, then x, y and the array layer of the first texel. Their rows count from the first row
-//! that an upload writes, on both GPU paths.
+//! mip level, then x, y and the array layer of the first texel. The layer of a cube texture is a
+//! face, and the layer of a 3D texture is a depth slice. Their rows count from the first row that
+//! an upload writes, on both GPU paths.
 //!
 //! Writes and uploads take effect when the GPU queue receives them. On WebGPU that is before the
 //! commands recorded since the previous `Submit`, so a list writes a buffer or a texture before the
@@ -40,7 +41,9 @@ pub enum Op {
     DestroyBuffer = 3,
     /// [texture id, width, height, layers, format, usage flags, sample count, mip levels, binding
     /// view]: `binding view` is the view dimension (`view::*`) that bind groups see the texture
-    /// as. Compatibility mode allows one per texture, and WebGL2 fixes it at creation too.
+    /// as. Compatibility mode allows one per texture, and WebGL2 fixes it at creation too. A cube
+    /// texture has 6 layers, its faces. A 3D texture's layers are its depth, which halves at each
+    /// mip level as its width and height do.
     CreateTexture = 4,
     /// [texture id]: destroys a texture, or releases a view.
     DestroyTexture = 5,
@@ -238,10 +241,24 @@ impl Op {
 /// Opcode numbers kept for commands that the renderer will need, so that work on several of them
 /// at once does not collide. The change that adds such a command moves its number into [`Op`].
 pub mod reserved {
+    /// Runs a compute pipeline with workgroup counts that the GPU reads from a buffer: skinning
+    /// only the meshes that culling found visible, and the second phase of occlusion culling.
+    pub const DISPATCH_INDIRECT: u8 = 43;
     /// Copies texels into a buffer, to read a frame or computed values back.
     pub const COPY_TEXTURE_TO_BUFFER: u8 = 50;
+    /// Releases a render or compute pipeline: a destroyed custom material's, or one that a
+    /// reloaded shader replaced.
+    pub const DESTROY_PIPELINE: u8 = 52;
+    /// Reads part of a buffer back into engine memory once the GPU has run the commands before it,
+    /// a frame or more later: the object ids that GPU picking draws under the pointer.
+    pub const READ_BUFFER: u8 = 53;
 
-    pub const ALL: [u8; 1] = [COPY_TEXTURE_TO_BUFFER];
+    pub const ALL: [u8; 4] = [
+        DISPATCH_INDIRECT,
+        COPY_TEXTURE_TO_BUFFER,
+        DESTROY_PIPELINE,
+        READ_BUFFER,
+    ];
 }
 
 /// A target slot left empty in `BeginRenderPass`.
@@ -308,9 +325,14 @@ pub mod format {
     /// ETC2 with alpha, in blocks of 4 x 4 texels, 16 bytes each (`Capabilities::TEXTURE_ETC2`).
     pub const ETC2_RGBA8_UNORM: u32 = 17;
     pub const ETC2_RGBA8_UNORM_SRGB: u32 = 18;
+    /// Three small unsigned floats with nine bits each and one shared exponent, in 32 bits, with no
+    /// alpha: high dynamic range color in half the bytes of `RGBA16_FLOAT`, which every path
+    /// filters. No path draws into it, and WebGL2 cannot copy it, because it reads copies through
+    /// a framebuffer.
+    pub const RGB9E5_UFLOAT: u32 = 19;
 
     /// Every format.
-    pub const ALL: [u32; 19] = [
+    pub const ALL: [u32; 20] = [
         NONE,
         CANVAS,
         RGBA8_UNORM,
@@ -330,6 +352,7 @@ pub mod format {
         ETC2_RGB8_UNORM_SRGB,
         ETC2_RGBA8_UNORM,
         ETC2_RGBA8_UNORM_SRGB,
+        RGB9E5_UFLOAT,
     ];
 
     /// One past the highest format code, the length of the tables that the replay loop indexes by
@@ -393,7 +416,7 @@ pub mod format {
     pub const fn block_bytes(format: u32) -> u32 {
         match format {
             CANVAS | RGBA8_UNORM | BGRA8_UNORM | DEPTH32_FLOAT | R32_UINT | RGBA8_UNORM_SRGB
-            | RG11B10_UFLOAT => 4,
+            | RG11B10_UFLOAT | RGB9E5_UFLOAT => 4,
             RGBA16_FLOAT | ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB => 8,
             RGBA32_FLOAT
             | ASTC_4X4_UNORM
@@ -463,10 +486,32 @@ pub mod format {
 
 /// View dimensions that bind groups see a texture as, fixed when the texture is created.
 pub mod view {
+    use super::format;
+
     /// One 2D image: the texture has one layer.
     pub const D2: u32 = 0;
     /// An array of 2D layers, which shaders index. It may have one layer.
     pub const D2_ARRAY: u32 = 1;
+    /// Six square layers, the faces of a cube, in the order +X, -X, +Y, -Y, +Z, -Z. Shaders sample
+    /// it by direction, and filtering blends across the edges between faces. Compatibility mode
+    /// has no arrays of cubes.
+    pub const CUBE: u32 = 2;
+    /// A 3D texture, whose layers are its depth slices. Shaders sample it with three coordinates,
+    /// and filtering blends between slices, as a color grading lookup table needs.
+    pub const D3: u32 = 3;
+
+    /// The faces of a cube texture.
+    pub const CUBE_FACES: u32 = 6;
+
+    /// The layers of one mip level of a texture with `layers` layers: a 3D texture's depth halves at
+    /// each level, and the other kinds keep every layer.
+    pub const fn level_layers(view: u32, layers: u32, level: u32) -> u32 {
+        if view == D3 {
+            format::level_size(layers, level)
+        } else {
+            layers
+        }
+    }
 }
 
 /// Address modes of samplers: what a coordinate outside 0 to 1 reads.
@@ -1284,9 +1329,19 @@ pub fn typescript_constants() -> String {
                 ("ETC2_RGB8_UNORM_SRGB", format::ETC2_RGB8_UNORM_SRGB),
                 ("ETC2_RGBA8_UNORM", format::ETC2_RGBA8_UNORM),
                 ("ETC2_RGBA8_UNORM_SRGB", format::ETC2_RGBA8_UNORM_SRGB),
+                ("RGB9E5_UFLOAT", format::RGB9E5_UFLOAT),
             ],
         ),
-        ("VIEW", &[("2D", view::D2), ("2D_ARRAY", view::D2_ARRAY)]),
+        (
+            "VIEW",
+            &[
+                ("2D", view::D2),
+                ("2D_ARRAY", view::D2_ARRAY),
+                ("CUBE", view::CUBE),
+                ("3D", view::D3),
+                ("CUBE_FACES", view::CUBE_FACES),
+            ],
+        ),
         (
             "ADDRESS",
             &[

@@ -2,7 +2,9 @@
 //! command that a real GPU would reject, or that would draw differently on the two GPU paths. It
 //! holds the device to the portable budget, plus the capabilities a test gives it.
 
-use crate::caps::{BUDGET, Capabilities, Limit, OFFSET_ALIGNMENT};
+use crate::caps::{
+    BUDGET, CUBE_TEXTURE_SIZE, Capabilities, Limit, OFFSET_ALIGNMENT, TEXTURE_3D_SIZE,
+};
 use crate::drawlist::{
     Command, NO_TARGET, Op, address, compare, decode, filter, format, permutation, resource_kind,
     state_flags, texture_usage, upload_flags, vertex, view,
@@ -52,6 +54,7 @@ pub enum MockError {
 struct Texture {
     width: u32,
     height: u32,
+    /// Its array layers, its faces, or its depth for a 3D texture.
     layers: u32,
     mips: u32,
     format: u32,
@@ -314,7 +317,8 @@ impl MockBackend {
             && layers > 0
             && at.x + width <= level_size(texture.width, at.level)
             && at.y + height <= level_size(texture.height, at.level)
-            && at.layer + layers <= texture.layers;
+            && at.layer + layers
+                <= view::level_layers(texture.binding_view, texture.layers, at.level);
         if !fits {
             return Err(MockError::OutOfRange { op, id: at.texture });
         }
@@ -402,7 +406,11 @@ impl MockBackend {
             binding_view: o[8],
         };
         let binding_view = texture.binding_view;
-        let largest = texture.width.max(texture.height).max(1);
+        let volume = binding_view == view::D3;
+        let mut largest = texture.width.max(texture.height).max(1);
+        if volume {
+            largest = largest.max(texture.layers);
+        }
         let most_mips = u32::BITS - largest.leading_zeros();
         let size_limit = BUDGET[Limit::TextureDimension2D as usize];
         let layer_limit = BUDGET[Limit::TextureArrayLayers as usize];
@@ -444,10 +452,51 @@ impl MockBackend {
             op,
             "WebGL2 has no BGRA texture: use CANVAS or RGBA8_UNORM",
         )?;
+        match binding_view {
+            view::D2 => check(
+                texture.layers == 1,
+                op,
+                "a texture that bind groups see as 2d has one layer",
+            )?,
+            view::D2_ARRAY => {}
+            view::CUBE => check(
+                texture.layers == view::CUBE_FACES
+                    && texture.width == texture.height
+                    && texture.width <= CUBE_TEXTURE_SIZE,
+                op,
+                "a cube texture has 6 square faces of at most 2,048 texels a side, WebGL2's least",
+            )?,
+            view::D3 => {
+                check(
+                    texture.width <= TEXTURE_3D_SIZE
+                        && texture.height <= TEXTURE_3D_SIZE
+                        && texture.layers <= TEXTURE_3D_SIZE,
+                    op,
+                    "a 3D texture is at most 256 texels on each side, WebGL2's least",
+                )?;
+                check(
+                    !format::is_compressed(texture.format) && !format::is_depth(texture.format),
+                    op,
+                    "a 3D texture has an uncompressed color format",
+                )?;
+                check(
+                    texture.usage
+                        & (texture_usage::RENDER_ATTACHMENT | texture_usage::STORAGE_BINDING)
+                        == 0
+                        && texture.samples == 1,
+                    op,
+                    "a 3D texture gets its texels from writes and copies, never from drawing",
+                )?;
+            }
+            _ => return Err(invalid(op, "unknown binding view")),
+        }
         check(
-            binding_view == view::D2_ARRAY || (binding_view == view::D2 && texture.layers == 1),
+            texture.format != format::RGB9E5_UFLOAT
+                || texture.usage
+                    & (texture_usage::RENDER_ATTACHMENT | texture_usage::STORAGE_BINDING)
+                    == 0,
             op,
-            "the binding view is 2d for one layer or 2d-array",
+            "no path draws into rgb9e5ufloat",
         )?;
         let rg11b10 = self.caps.contains(Capabilities::RG11B10_RENDERABLE);
         check(
@@ -575,6 +624,11 @@ impl MockBackend {
             "images upload into RGBA8, sRGB RGBA8 and float RGBA textures",
         )?;
         check(
+            texture.binding_view != view::D3,
+            op,
+            "WebGPU copies images into 2D textures only, so a 3D texture takes writes",
+        )?;
+        check(
             flags & !(upload_flags::PREMULTIPLIED_ALPHA | upload_flags::RELEASE) == 0,
             op,
             "unknown upload flags",
@@ -618,6 +672,11 @@ impl MockBackend {
             !format::is_compressed(from.format),
             op,
             "compressed textures do not copy, because compatibility mode cannot copy them",
+        )?;
+        check(
+            from.format != format::RGB9E5_UFLOAT,
+            op,
+            "rgb9e5ufloat does not copy, because WebGL2 copies through a framebuffer that cannot hold it",
         )?;
         let overlaps = source.texture == destination.texture
             && source.level == destination.level
@@ -2308,6 +2367,175 @@ mod tests {
         assert_eq!(
             MockBackend::with_capabilities(caps).replay(list.words()),
             Ok(())
+        );
+    }
+
+    #[test]
+    fn cube_and_3d_textures_take_writes_copies_and_draws_as_every_path_allows() {
+        use texture_usage::{COPY_DST, COPY_SRC, RENDER_ATTACHMENT, TEXTURE_BINDING};
+        const CUBE: u32 = 50;
+        const VOLUME: u32 = 51;
+        const PACKED: u32 = 52;
+        const FACE: u32 = 53;
+        let cube = |l: &mut DrawList, id: u32, size: u32, texels: u32, usage: u32| {
+            texture(l, id, [size, size, 6, 3], texels, usage, view::CUBE)
+        };
+        let made = |l: &mut DrawList| {
+            cube(
+                l,
+                CUBE,
+                8,
+                format::RGBA16_FLOAT,
+                TEXTURE_BINDING | COPY_DST | COPY_SRC | RENDER_ATTACHMENT,
+            );
+            texture(
+                l,
+                VOLUME,
+                [8, 8, 4, 2],
+                format::RGBA8_UNORM,
+                TEXTURE_BINDING | COPY_DST,
+                view::D3,
+            );
+            cube(
+                l,
+                PACKED,
+                4,
+                format::RGB9E5_UFLOAT,
+                TEXTURE_BINDING | COPY_DST,
+            );
+        };
+        // Writes of every face of a level at once and of one depth slice of a 3D level, an image
+        // into one face, a copy between faces, and a view of one face's level to draw into.
+        let frame = |l: &mut DrawList| {
+            made(l);
+            l.push(
+                Op::WriteTexture,
+                &[CUBE, 0, 0, 0, 0, 8, 8, 6, 0, 8 * 8 * 6 * 8],
+            )
+            .unwrap();
+            l.push(
+                Op::WriteTexture,
+                &[PACKED, 1, 0, 0, 0, 2, 2, 6, 0, 2 * 2 * 6 * 4],
+            )
+            .unwrap();
+            l.push(
+                Op::WriteTexture,
+                &[VOLUME, 1, 0, 0, 1, 4, 4, 1, 0, 4 * 4 * 4],
+            )
+            .unwrap();
+            l.push(Op::UploadImage, &[CUBE, 0, 0, 0, 3, 8, 8, IMAGE, 0, 0, 0])
+                .unwrap();
+            l.push(Op::Submit, &[]).unwrap();
+            l.push(
+                Op::CopyTextureToTexture,
+                &[CUBE, 0, 0, 0, 0, CUBE, 0, 0, 0, 5, 8, 8, 1],
+            )
+            .unwrap();
+            l.push(Op::CreateTextureView, &[FACE, CUBE, 1, 2]).unwrap();
+        };
+        assert_eq!(run_textures(&frame), Ok(()));
+        let rejects = |build: &dyn Fn(&mut DrawList)| {
+            matches!(run_textures(build), Err(MockError::Invalid { .. }))
+        };
+        assert!(
+            rejects(&|l| texture(
+                l,
+                CUBE,
+                [8, 8, 5, 1],
+                format::RGBA8_UNORM,
+                TEXTURE_BINDING,
+                view::CUBE
+            )),
+            "a cube has 6 faces"
+        );
+        assert!(
+            rejects(&|l| texture(
+                l,
+                CUBE,
+                [8, 4, 6, 1],
+                format::RGBA8_UNORM,
+                TEXTURE_BINDING,
+                view::CUBE
+            )),
+            "a cube's faces are square"
+        );
+        assert!(
+            rejects(&|l| cube(l, CUBE, 4096, format::RGBA8_UNORM, TEXTURE_BINDING)),
+            "WebGL2 may allow no cube faces larger than 2,048 texels"
+        );
+        assert!(
+            rejects(&|l| texture(
+                l,
+                VOLUME,
+                [8, 8, 512, 1],
+                format::RGBA8_UNORM,
+                TEXTURE_BINDING,
+                view::D3
+            )),
+            "WebGL2 may allow no 3D texture deeper than 256 texels"
+        );
+        assert!(
+            rejects(&|l| texture(
+                l,
+                VOLUME,
+                [8, 8, 8, 1],
+                format::RGBA8_UNORM,
+                TEXTURE_BINDING | RENDER_ATTACHMENT,
+                view::D3
+            )),
+            "nothing draws into a 3D texture"
+        );
+        assert!(
+            rejects(&|l| texture(
+                l,
+                PACKED,
+                [8, 8, 1, 1],
+                format::RGB9E5_UFLOAT,
+                TEXTURE_BINDING | RENDER_ATTACHMENT,
+                view::D2
+            )),
+            "no path draws into rgb9e5ufloat"
+        );
+        assert!(
+            rejects(&|l| {
+                made(l);
+                l.push(
+                    Op::CopyTextureToTexture,
+                    &[PACKED, 0, 0, 0, 0, PACKED, 0, 0, 0, 1, 4, 4, 1],
+                )
+                .unwrap();
+            }),
+            "WebGL2 cannot copy rgb9e5ufloat"
+        );
+        assert!(
+            rejects(&|l| {
+                made(l);
+                l.push(Op::UploadImage, &[VOLUME, 0, 0, 0, 0, 8, 8, IMAGE, 0, 0, 0])
+                    .unwrap();
+            }),
+            "images upload into 2D textures only"
+        );
+        // A 3D texture's depth halves at each level, as its width and height do.
+        let deep_write = |l: &mut DrawList| {
+            made(l);
+            l.push(
+                Op::WriteTexture,
+                &[VOLUME, 1, 0, 0, 0, 4, 4, 4, 0, 4 * 4 * 4 * 4],
+            )
+            .unwrap();
+        };
+        assert!(matches!(
+            run_textures(&deep_write),
+            Err(MockError::OutOfRange { .. })
+        ));
+        assert_eq!(view::level_layers(view::D3, 4, 1), 2);
+        assert_eq!(view::level_layers(view::CUBE, 6, 2), 6);
+        assert!(
+            rejects(&|l| {
+                made(l);
+                l.push(Op::GenerateMipmaps, &[CUBE, 0]).unwrap();
+            }),
+            "mip levels are made for 2d-array textures only"
         );
     }
 }

@@ -113,6 +113,8 @@ class WebGPURenderer implements Renderer {
 	private readonly format: GPUTextureFormat;
 	private readonly timer: GpuTimer | undefined;
 	private readonly pass = new RenderPassSetup();
+	/** The clear color as the pass setup reads it, opaque. */
+	private readonly clearColor = Float32Array.of(0, 0, 0, 1);
 	readonly completions: QueueCompletion | undefined;
 	private simulated = false;
 	readonly lost: Promise<string>;
@@ -142,16 +144,11 @@ class WebGPURenderer implements Renderer {
 		const encoder = this.device.createCommandEncoder();
 		this.timer?.markStart(encoder);
 		const pass = this.pass;
-		pass.setColor(
-			view,
-			undefined,
-			true,
-			true,
-			linearToSrgb(background[0]),
-			linearToSrgb(background[1]),
-			linearToSrgb(background[2]),
-			1,
-		);
+		const color = this.clearColor;
+		color[0] = linearToSrgb(background[0]);
+		color[1] = linearToSrgb(background[1]);
+		color[2] = linearToSrgb(background[2]);
+		pass.setColor(view, undefined, true, true, color, 0);
 		pass.setTimestampWrites(this.timer?.passWrites(true));
 		encoder.beginRenderPass(pass.descriptor).end();
 		this.timer?.resolve(encoder);
