@@ -6,7 +6,8 @@ import { Post, type PostSettings } from './post';
 import type { Texture } from './textures';
 
 /**
- * A post object whose core records each setOutput, setBloom, setLut and setVignette call, with
+ * A post object whose core records each setOutput, setBloom, setLut, setVignette and setOutline
+ * call, with
  * its arguments and the values that it reads from the block of post-processing values. The block
  * starts with the core's defaults.
  */
@@ -16,13 +17,18 @@ function post(hdrEffects = true): {
 	blooms: [boolean, number, number, number][];
 	luts: number[][];
 	vignettes: [boolean, number, number][];
+	outlines: number[][];
 	reads: () => number;
 } {
 	const calls: [number, number][] = [];
 	const blooms: [boolean, number, number, number][] = [];
 	const luts: number[][] = [];
 	const vignettes: [boolean, number, number][] = [];
-	const block = Float32Array.of(1, 1, 0.5, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1);
+	const outlines: number[][] = [];
+	const block = Float32Array.of(
+		...[1, 1, 0.5, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
+		...[1, 1, 1, 0.1, 0.04, 0.02, 3, 1, 0],
+	);
 	expect(block.length).toBe(C.POST_VALUE_COUNT);
 	let views = 0;
 	const at = (place: number) => block[place] as number;
@@ -57,10 +63,24 @@ function post(hdrEffects = true): {
 				vignettes.push([on, at(C.POST_VALUE_VIGNETTE_OFFSET), at(C.POST_VALUE_VIGNETTE_DARKNESS)]);
 				return 0;
 			},
+			setOutline(on: boolean) {
+				const first = C.POST_VALUE_OUTLINE_COLOR;
+				const values = [...block.subarray(first, C.POST_VALUE_OUTLINE_GLOW + 1)];
+				outlines.push([on ? 1 : 0, ...values.map((v) => Math.round(v * 1e4) / 1e4)]);
+				return 0;
+			},
 		},
 		check: (result: number) => result,
 	} as unknown as CoreMemory;
-	return { post: new Post(core, hdrEffects), calls, blooms, luts, vignettes, reads: () => views };
+	return {
+		post: new Post(core, hdrEffects),
+		calls,
+		blooms,
+		luts,
+		vignettes,
+		outlines,
+		reads: () => views,
+	};
 }
 
 /** A table of 33 texels a side over a domain from -0.5 to 2, whose texture has handle 7. */
@@ -79,6 +99,31 @@ describe('post.set', () => {
 			[C.TONE_MAPPING_NONE, 0.5],
 			[C.TONE_MAPPING_NONE, 0.5],
 		]);
+	});
+
+	it('turns outlines on with three.js defaults, takes colors in linear, and keeps the values while off', () => {
+		const { post: output, outlines } = post();
+		output.set({ outline: {} });
+		output.set({ outline: { color: '#ff0000', hiddenColor: false, strength: 5, thickness: 2 } });
+		output.set({ outline: false });
+		output.set({ outline: { glow: 1.5, hiddenColor: [0.2, 0.3, 0.4] } });
+		expect(outlines).toEqual([
+			[1, 1, 1, 1, 0.1, 0.04, 0.02, 3, 1, 0],
+			[1, 1, 0, 0, 0, 0, 0, 5, 2, 0],
+			[0, 1, 0, 0, 0, 0, 0, 5, 2, 0],
+			[1, 1, 0, 0, 0.2, 0.3, 0.4, 5, 2, 1.5],
+		]);
+	});
+
+	it('refuses outline settings it does not know and values out of range', () => {
+		const { post: output } = post();
+		const bad = (settings: unknown) => () => output.set(settings as PostSettings);
+		expect(bad({ outline: { width: 2 } })).toThrow('E1213');
+		expect(bad({ outline: { strength: -1 } })).toThrow('E1213');
+		expect(bad({ outline: { glow: Number.NaN } })).toThrow('E1203');
+		expect(bad({ outline: { color: 'red' } })).toThrow('E1204');
+		expect(bad({ outline: { hiddenColor: [2, 0, 0] } })).toThrow('E1204');
+		expect(bad({ outline: 3 })).toThrow('E1213');
 	});
 
 	it('starts from ACES at an exposure of 1', () => {

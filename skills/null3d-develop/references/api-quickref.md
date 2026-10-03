@@ -145,7 +145,7 @@ obj.setLayers(mask);                                                // bit n put
 obj.destroy();                                                      // at the next frame; its children become roots
 obj.name;                                                           // string, read-only after creation
 obj.setMorphWeight(nameOrIndex, w);  // (0.2)
-obj.setOutlined(true);               // (0.2) with post.set({ outline })
+mesh.setOutlined(true);              // (0.2) with post.set({ outline }); a copy from scene.instantiate has it too
 obj.setOccluder(false);              // (0.2) WebGL2 path: stop this object hiding others; true makes it a blocker
 obj.on('click', fn); obj.off('click', fn);  // (0.2) 'pointerenter', 'pointerleave', 'pointerdown', 'pointerup'
 obj.animator();                      // (0.2) section 12
@@ -425,7 +425,7 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping`, `exposure`, `bloom`, `lut` and `vignette` are built; the other effects come later in 0.2. The default tone mapping is ACES, while three.js defaults to none.
+`toneMapping`, `exposure`, `bloom`, `outline`, `lut` and `vignette` are built; the other effects come later in 0.2. The default tone mapping is ACES, while three.js defaults to none.
 
 ```ts
 post.set({
@@ -435,7 +435,7 @@ post.set({
   ao: { radius: 0.5, intensity: 1 },     // (0.2) High and Ultra presets only
   lut, lutIntensity: 0.8,                // (0.2) a table from assets.loadLut, or false; LUTPass's meanings
   vignette: { offset: 1, darkness: 1 },  // (0.2) VignetteShader's meanings; false turns it off
-  outline: { color: '#ffcc00', thickness: 2 },  // (0.2) objects opt in with setOutlined(true)
+  outline: { color: '#ffcc00', thickness: 2 },  // (0.2) OutlinePass's meanings, with hiddenColor, strength, glow; meshes opt in with setOutlined(true)
 });
 post.addEffect({ name: 'pixelate', wgsl, uniforms: { size: 4 }, textures: {}, stage: 'final' });  // (0.2) textures: named textures the effect samples
 post.setEffectUniform('pixelate', 'size', 8);  // (0.2)

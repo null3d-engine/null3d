@@ -1429,8 +1429,8 @@
       "three": "OutlinePass / OutlineEffect",
       "status": "direct",
       "since": "0.2",
-      "target": "post.set({ outline: { color, thickness } }) and obj.setOutlined(true)",
-      "notes": "",
+      "target": "post.set({ outline: { color, hiddenColor, strength, thickness, glow } }) and mesh.setOutlined(true)",
+      "notes": "selectedObjects becomes setOutlined(true) on each mesh, or on a model's copy from scene.instantiate. visibleEdgeColor, hiddenEdgeColor, edgeStrength, edgeThickness and edgeGlow become color, hiddenColor, strength, thickness and glow. One outline style covers every outlined object. pulsePeriod and the pattern texture are not built: change glow every frame for a pulse.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bOutline(Pass|Effect)\\b"
     },

@@ -110,8 +110,15 @@ pub mod post_value {
     /// The vignette's offset and darkness.
     pub const VIGNETTE_OFFSET: u32 = 11;
     pub const VIGNETTE_DARKNESS: u32 = 12;
+    /// The outline's linear edge color, red first, then its linear hidden edge color.
+    pub const OUTLINE_COLOR: u32 = 13;
+    pub const OUTLINE_HIDDEN_COLOR: u32 = 16;
+    /// The outline's strength, thickness and glow.
+    pub const OUTLINE_STRENGTH: u32 = 19;
+    pub const OUTLINE_THICKNESS: u32 = 20;
+    pub const OUTLINE_GLOW: u32 = 21;
     /// The values in the block.
-    pub const COUNT: u32 = 13;
+    pub const COUNT: u32 = 22;
 }
 
 pub mod texture_stat {
@@ -354,6 +361,7 @@ pub fn typescript() -> String {
                 ("RECEIVE_SHADOWS", flags::RECEIVE_SHADOWS),
                 ("UNCULLED", flags::UNCULLED),
                 ("CUSTOM_BOUNDS", flags::CUSTOM_BOUNDS),
+                ("OUTLINED", flags::OUTLINED),
             ],
         ),
         ("LAYERS", &[("DEFAULT", DEFAULT_LAYERS)]),
@@ -604,6 +612,11 @@ pub fn typescript() -> String {
                 ("LUT_DOMAIN_MAX", post_value::LUT_DOMAIN_MAX),
                 ("VIGNETTE_OFFSET", post_value::VIGNETTE_OFFSET),
                 ("VIGNETTE_DARKNESS", post_value::VIGNETTE_DARKNESS),
+                ("OUTLINE_COLOR", post_value::OUTLINE_COLOR),
+                ("OUTLINE_HIDDEN_COLOR", post_value::OUTLINE_HIDDEN_COLOR),
+                ("OUTLINE_STRENGTH", post_value::OUTLINE_STRENGTH),
+                ("OUTLINE_THICKNESS", post_value::OUTLINE_THICKNESS),
+                ("OUTLINE_GLOW", post_value::OUTLINE_GLOW),
                 ("COUNT", post_value::COUNT),
             ],
         ),

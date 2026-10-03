@@ -18,6 +18,8 @@ import {
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
+	TEMPLATE_OUTLINE_EDGE,
+	TEMPLATE_OUTLINE_MASK,
 	TEMPLATE_SHADOW_DEPTH,
 } from '../../generated/gpu';
 import {
@@ -137,6 +139,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_FINAL_BLOOM] = { shader: shaders.final, pipeline: 'main' };
 	templates[TEMPLATE_BLOOM] = { shader: shaders.bloom, pipeline: 'main' };
 	templates[TEMPLATE_SHADOW_DEPTH] = { shader: shaders.shadow_depth, pipeline: 'main' };
+	templates[TEMPLATE_OUTLINE_MASK] = { shader: shaders.outline_mask, pipeline: 'main' };
+	templates[TEMPLATE_OUTLINE_EDGE] = { shader: shaders.outline_edge, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND] = { shader: shaders.background, pipeline: 'main' };
 	if (DEV) {
 		templates[TEMPLATE_DEBUG_LINES] = {

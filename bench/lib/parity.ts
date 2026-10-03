@@ -287,6 +287,16 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		switches: 'antialias=none',
 		webglOnly: true,
 	},
+	// Outlines with three.js's defaults and with glow, against three.js's OutlinePass. The
+	// composer's targets have no MSAA, so null3D's page draws without anti-aliasing too.
+	...(['plain', 'glow'] as const).map(
+		(outline): FeatureScene => ({
+			test: `outline-${outline}`,
+			twin: `${TWINS}/outline.html?outline=${outline}`,
+			switches: 'antialias=none',
+			webglOnly: true,
+		}),
+	),
 ];
 
 /** The feature scene of an image test, or undefined when no twin draws that test's scene. */

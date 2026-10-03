@@ -26,6 +26,9 @@
 //! - `light_grid`: the clusters of a view, and the point and spot lights that reach each one
 //! - `materials`: the material table
 //! - `meshes`: mesh storage for both GPU paths
+//! - `outline`: outlines around the objects that the sketch outlines, as three.js's OutlinePass
+//!   draws them: a mask of the outlined objects, its edges blurred at half and quarter size, and
+//!   the final pass's overlay
 //! - `output`: the output transform: the scene color's target, exposure and tone mapping
 //! - `parallel_record`: draw lists recorded in chunks on the job workers, joined in chunk order
 //! - `pipelines`: the render pipeline cache, by the key of everything that sets a pipeline apart
@@ -56,6 +59,7 @@ pub mod graph;
 pub mod light_grid;
 pub mod materials;
 pub mod meshes;
+pub mod outline;
 pub mod output;
 pub mod parallel_record;
 pub mod pipelines;

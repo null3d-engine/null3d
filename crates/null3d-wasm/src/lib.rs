@@ -47,6 +47,7 @@ use null3d_render::gpu_driven::{
 use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::RenderScale;
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
+use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
 use null3d_render::shadow_tiles::TileSettings;
@@ -148,7 +149,8 @@ struct Engine {
 /// strength, radius and threshold, a table at its full intensity over colors from 0 to 1, and
 /// `VignetteShader`'s offset and darkness.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = [
-    1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.1, 0.04,
+    0.02, 3.0, 1.0, 0.0,
 ];
 
 impl Engine {
@@ -422,7 +424,7 @@ pub fn init_engine(
 }
 
 /// The address of the post-processing values (`constants::post_value`), which TypeScript writes
-/// before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`.
+/// before it calls `setOutput`, `setBloom`, `setLut`, `setVignette` or `setOutline`.
 #[wasm_bindgen(js_name = postValues)]
 pub fn post_values() -> u32 {
     value_with_engine(|e| Ok(address(&e.post_values[..])))
@@ -1666,6 +1668,24 @@ pub fn set_vignette(on: bool) -> u32 {
             darkness: e.post_value(constants::post_value::VIGNETTE_DARKNESS),
         });
         e.renderer.settings_mut().set_vignette(vignette);
+        0
+    })
+}
+
+/// Turns outlines on with three.js's edge colors, strength, thickness and glow from the
+/// post-processing values, or off, from the next frame on. They draw around the objects whose
+/// outlined flag is set. The TypeScript API checks the values.
+#[wasm_bindgen(js_name = setOutline)]
+pub fn set_outline(on: bool) -> u32 {
+    with_engine(|e| {
+        let outline = on.then(|| Outline {
+            color: e.post_values3(constants::post_value::OUTLINE_COLOR),
+            hidden_color: e.post_values3(constants::post_value::OUTLINE_HIDDEN_COLOR),
+            strength: e.post_value(constants::post_value::OUTLINE_STRENGTH),
+            thickness: e.post_value(constants::post_value::OUTLINE_THICKNESS),
+            glow: e.post_value(constants::post_value::OUTLINE_GLOW),
+        });
+        e.renderer.settings_mut().set_outline(outline);
         0
     })
 }

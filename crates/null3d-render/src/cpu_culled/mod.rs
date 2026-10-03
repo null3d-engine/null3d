@@ -55,6 +55,14 @@
 //! casters' layout into an index list of its own, but only in the frames in which the tile must
 //! draw again. Every camera view's frame groups bind the atlas and the tiles' uniform block.
 //!
+//! # Outlines
+//!
+//! While the sketch turns outlines on, a third layout holds the scene objects that it outlines,
+//! grouped by mesh (see [`crate::outline`]). The job workers cull it for the outline view with the
+//! camera's frustum and layers, into an index list of its own, and the mask pass draws each of its
+//! buckets twice into the outline mask. Outlining an object, or turning outlines on or off,
+//! rebuilds the layouts, as casting shadows does.
+//!
 //! # Memory
 //!
 //! Frames record without the general-purpose allocator. Each frame parity keeps its own culling
@@ -93,6 +101,7 @@ use crate::graph::RenderGraph;
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
+use crate::outline::OutlineIds;
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
@@ -112,6 +121,7 @@ use transparent::Transparent;
 mod ids {
     use super::data::RING;
     use crate::bloom::STEPS;
+    use crate::outline;
     use crate::view::{MAX_VIEW_IDS, ViewId};
 
     /// Each view's buffers: its ring of frame uniforms, then its draw records, from
@@ -134,8 +144,10 @@ mod ids {
     pub const SHADOW_TILES: u32 = FINAL_SETTINGS + 1;
     /// The uniform buffer of bloom's steps and of the final pass's bloom build.
     pub const BLOOM: u32 = SHADOW_TILES + 1;
+    /// The uniform buffer of the outline's steps.
+    pub const OUTLINE: u32 = BLOOM + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = BLOOM + 1;
+    pub const PAGES: u32 = OUTLINE + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -160,8 +172,10 @@ mod ids {
     pub const LIGHTS: u32 = LIGHT_GRID + RING;
     /// The final pass's blank color grading table, which it binds while the sketch sets none.
     pub const BLANK_LUT: u32 = LIGHTS + RING;
+    /// The final pass's blank outline texture, which it binds while no outline draws.
+    pub const BLANK_OUTLINE: u32 = BLANK_LUT + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = BLANK_LUT + 1;
+    pub const TARGETS: u32 = BLANK_OUTLINE + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow map.
@@ -170,8 +184,10 @@ mod ids {
     pub const BLOOM_SAMPLER: u32 = 2;
     /// The linear sampler of the final pass's color grading table.
     pub const LUT_SAMPLER: u32 = 3;
+    /// The linear sampler of the outline's steps.
+    pub const OUTLINE_SAMPLER: u32 = 4;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 4;
+    pub const SAMPLERS: u32 = 5;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -194,8 +210,10 @@ mod ids {
     }
     /// The bind group of each step of bloom, after the final pass's group.
     pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1;
-    /// The bind groups of materials' maps, after bloom's.
-    pub const TEXTURE_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
+    /// The bind group of each step of the outline, after bloom's.
+    pub const OUTLINE_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
+    /// The bind groups of materials' maps, after the outline's.
+    pub const TEXTURE_GROUPS: u32 = OUTLINE_GROUPS + outline::STEPS as u32;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -257,8 +275,12 @@ pub struct CpuCulledRenderer {
     layout: Layout,
     /// The shadow casters' layout, which the shadow cascades draw.
     casters: Layout,
+    /// The outlined objects' layout, which the outline view draws.
+    outlined: Layout,
     /// True when the layouts were built for a frame with shadows.
     layouts_shadowed: bool,
+    /// True when the layouts were built while outlines are on.
+    layouts_outlined: bool,
     clusters: Clusters,
     /// Grid-cell culling: the still scene objects in cell order, and each cell's box.
     cells: CellCulling,
@@ -274,6 +296,9 @@ pub struct CpuCulledRenderer {
     tiles: ShadowTiles,
     tile_culling: Culling,
     tile_draws: Opaque,
+    /// The outline view's culling output and draws.
+    outline_culling: Culling,
+    outline_draws: Opaque,
     /// True when the cascades' uniform block holds cascades, which receivers then read.
     cascades_held: bool,
     lines: LinesPass,
@@ -335,11 +360,17 @@ impl CpuCulledRenderer {
                             group: ids::FINAL_GROUP,
                             blank_lut: ids::BLANK_LUT,
                             lut_sampler: ids::LUT_SAMPLER,
+                            blank_outline: ids::BLANK_OUTLINE,
                         },
                         bloom: BloomIds {
                             buffer: ids::BLOOM,
                             sampler: ids::BLOOM_SAMPLER,
                             first_group: ids::BLOOM_GROUPS,
+                        },
+                        outline: OutlineIds {
+                            buffer: ids::OUTLINE,
+                            sampler: ids::OUTLINE_SAMPLER,
+                            first_group: ids::OUTLINE_GROUPS,
                         },
                     },
                 );
@@ -348,7 +379,9 @@ impl CpuCulledRenderer {
             },
             layout: Layout::new(Drawn::Scene),
             casters: Layout::new(Drawn::Casters),
+            outlined: Layout::new(Drawn::Outlined),
             layouts_shadowed: false,
+            layouts_outlined: false,
             clusters: Clusters::default(),
             cells: CellCulling::new(config.cell_culling, true),
             culling: Culling::new(ViewId::CAMERA),
@@ -359,6 +392,8 @@ impl CpuCulledRenderer {
             tiles: ShadowTiles::new(),
             tile_culling: Culling::new(ViewId::tile(0)),
             tile_draws: Opaque::new(ViewId::tile(0), config.multi_draw),
+            outline_culling: Culling::new(ViewId::OUTLINE),
+            outline_draws: Opaque::new(ViewId::OUTLINE, config.multi_draw),
             cascades_held: false,
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
@@ -417,14 +452,20 @@ impl CpuCulledRenderer {
         self.clusters.current_order(slot)
     }
 
-    /// The culling of the views of `view`'s kind: the cameras', the shadow cascades' or the shadow
-    /// tiles'.
+    /// The culling of the views of `view`'s kind: the cameras', the shadow cascades', the shadow
+    /// tiles' or the outline view's.
     fn culling_of(&self, view: ViewId) -> &Culling {
         match (view.cascade_index(), view.tile_index()) {
             (Some(_), _) => &self.cascade_culling,
             (_, Some(_)) => &self.tile_culling,
+            _ if view == ViewId::OUTLINE => &self.outline_culling,
             _ => &self.culling,
         }
+    }
+
+    /// The outline views that the frame culls: one while outlines are on.
+    fn outline_views(&self) -> usize {
+        usize::from(self.layouts_outlined)
     }
 
     /// What a pass that draws into `targets` draws with, in the shader variant that reads the
@@ -454,7 +495,13 @@ impl CpuCulledRenderer {
     /// Assigns every source to a data texture and a bucket, then makes room for the new layout:
     /// the clusters, the culling runs and every view's output, and the upload arenas. With
     /// `shadows`, the casters' layout holds the casters, and the receivers read the shadow map.
-    fn rebuild_layout(&mut self, input: &FrameInput<'_>, shadows: bool) -> Result<(), RecordError> {
+    /// With `outlines`, the outlined layout holds the outlined objects.
+    fn rebuild_layout(
+        &mut self,
+        input: &FrameInput<'_>,
+        shadows: bool,
+        outlines: bool,
+    ) -> Result<(), RecordError> {
         self.settings.update_map_groups();
         let limit = FrameBuilder::max_sources(self);
         let multi_draw = self.config.multi_draw;
@@ -474,6 +521,16 @@ impl CpuCulledRenderer {
             self.casters.clear();
         }
         self.layouts_shadowed = shadows;
+        if outlines {
+            let targets = self.with_draw_index(self.graph.outline_targets());
+            let (settings, pipelines) = (&self.settings, &mut self.pipelines);
+            self.outlined.rebuild(
+                settings, pipelines, targets, input, limit, multi_draw, shadows,
+            )?;
+        } else {
+            self.outlined.clear();
+        }
+        self.layouts_outlined = outlines;
         let room = self.layout.room;
         let out_of_memory = |_: TryReserveError| RecordError::OutOfMemory {
             bytes: room.rows.saturating_mul(8),
@@ -502,11 +559,17 @@ impl CpuCulledRenderer {
             .map_err(out_of_memory)?;
         // The cell order holds every object that a view or a cascade culls: blended casters have
         // no bucket in the scene's layout, as the transparent pass draws them, but cast all the
-        // same. Each culling skips the rows that have no bucket in its own layout.
+        // same, and blended objects can be outlined. Each culling skips the rows that have no bucket
+        // in its own layout.
         let (scene_buckets, casters) = (&self.layout.scene_buckets, &self.casters.scene_buckets);
+        let outlined = &self.outlined.scene_buckets;
+        let in_layout = |buckets: &[u32], slot: usize| {
+            buckets.get(slot).is_some_and(|&bucket| bucket != NO_BUCKET)
+        };
         let culled = |slot: usize| {
             scene_buckets[slot] != NO_BUCKET
-                || casters.get(slot).is_some_and(|&bucket| bucket != NO_BUCKET)
+                || in_layout(casters, slot)
+                || in_layout(outlined, slot)
         };
         self.cells
             .classify(input.scene, &culled)
@@ -527,6 +590,9 @@ impl CpuCulledRenderer {
         self.tile_culling
             .reserve(self.casters.room, tiles)
             .map_err(out_of_memory)?;
+        self.outline_culling
+            .reserve(self.outlined.room, self.outline_views())
+            .map_err(out_of_memory)?;
         // Room for every static batch's cluster order, so a batch coming to rest later uploads
         // its clusters without growing the arena.
         let bound = self.upload_bound_without_clusters() + self.layout.cluster_rows as usize * 4;
@@ -545,10 +611,12 @@ impl CpuCulledRenderer {
         let new_views = self.culling.views() < views;
         let cascades = self.cascades();
         let tiles = self.tile_count();
+        let outlines = self.outline_views();
         for (culling, layout, count) in [
             (&mut self.culling, &self.layout, views),
             (&mut self.cascade_culling, &self.casters, cascades),
             (&mut self.tile_culling, &self.casters, tiles),
+            (&mut self.outline_culling, &self.outlined, outlines),
         ] {
             if culling.views() < count {
                 let room = layout.room;
@@ -596,6 +664,7 @@ impl CpuCulledRenderer {
         let views = self.settings.views().len();
         let tiles = (self.settings.tile_settings().tiles as usize).min(MAX_TILES);
         let cascades = (MAX_CASCADES + tiles) * per_view(&self.casters);
+        let outline = per_view(&self.outlined);
         let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
         meshes
             + materials
@@ -603,6 +672,7 @@ impl CpuCulledRenderer {
             + views * per_view(&self.layout)
             + Transparent::upload_bound(&self.sorted, views, self.config.multi_draw)
             + cascades
+            + outline
             + shadows
             + self.graph.upload_bound()
     }
@@ -641,7 +711,7 @@ impl CpuCulledRenderer {
     fn size_resources(
         &mut self,
         list: &mut DrawList,
-        first_new: [usize; 3],
+        first_new: [usize; 4],
         rebuilt: bool,
     ) -> Result<bool, RecordError> {
         let limit = self.config.max_texture_size;
@@ -653,7 +723,13 @@ impl CpuCulledRenderer {
         let views = self.settings.views().len();
         let cascades = self.cascades();
         let tiles = self.tile_count();
-        let [first_new, first_new_cascade, first_new_tile] = first_new;
+        let outlines = self.outline_views();
+        let [
+            first_new,
+            first_new_cascade,
+            first_new_tile,
+            first_new_outline,
+        ] = first_new;
         for (culling, draws, layout, count, first_new) in [
             (
                 &mut self.culling,
@@ -675,6 +751,13 @@ impl CpuCulledRenderer {
                 &self.casters,
                 tiles,
                 first_new_tile,
+            ),
+            (
+                &mut self.outline_culling,
+                &mut self.outline_draws,
+                &self.outlined,
+                outlines,
+                first_new_outline,
             ),
         ] {
             let first = if rebuilt { 0 } else { first_new };
@@ -812,6 +895,8 @@ impl CpuCulledRenderer {
         self.graph
             .set_bloom(self.settings.bloom(), self.settings.bloom_divisor());
         self.graph.set_grading(self.settings.grades());
+        self.graph
+            .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
         self.graph.request_pipelines(&mut self.pipelines);
         self.background.request_pipeline(
             &self.settings,
@@ -863,6 +948,12 @@ impl CpuCulledRenderer {
         for tile in first_new_tile..tiles {
             Opaque::bind_frame(list, ViewId::tile(tile), None)?;
         }
+        let outlines = self.outline_views();
+        let first_new_outline = self.outline_draws.views();
+        self.outline_draws.add_views(list, outlines)?;
+        if first_new_outline < outlines {
+            Opaque::bind_frame(list, ViewId::OUTLINE, None)?;
+        }
         let rebuilt = self.layout.built_in == input.frame;
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         if std::mem::take(&mut self.dfg_pending) {
@@ -881,9 +972,17 @@ impl CpuCulledRenderer {
             self.settings.grading(),
         )?;
         self.background.prepare(&self.settings);
-        let new_views = first_new < views || first_new_cascade < cascades || first_new_tile < tiles;
+        let new_views = first_new < views
+            || first_new_cascade < cascades
+            || first_new_tile < tiles
+            || first_new_outline < outlines;
         let new_texture = if rebuilt || new_views {
-            let first_new = [first_new, first_new_cascade, first_new_tile];
+            let first_new = [
+                first_new,
+                first_new_cascade,
+                first_new_tile,
+                first_new_outline,
+            ];
             self.size_resources(list, first_new, rebuilt)?
         } else {
             false
@@ -930,6 +1029,19 @@ impl CpuCulledRenderer {
                 frame,
                 streamed,
             )?;
+            upload_views(
+                list,
+                arena,
+                (
+                    &mut self.outline_culling,
+                    &mut self.outline_draws,
+                    &self.outlined,
+                ),
+                None,
+                outlines,
+                frame,
+                streamed,
+            )?;
             if let Some(shadow) = &self.shadow {
                 shadows::upload(list, arena, ids::SHADOWS, shadow)?;
                 upload_views(
@@ -958,7 +1070,9 @@ impl CpuCulledRenderer {
         let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
         let (cascade_culling, cascade_draws) = (&self.cascade_culling, &self.cascade_draws);
         let (tile_culling, tile_draws) = (&self.tile_culling, &self.tile_draws);
+        let (outline_culling, outline_draws) = (&self.outline_culling, &self.outline_draws);
         let (layout, casters, meshes) = (&self.layout, &self.casters, &self.meshes);
+        let outlined = &self.outlined;
         let (transparent, background) = (&self.transparent, &self.background);
         let light_slot = self.light_textures.slot();
         // A cascade or a tile that does not draw keeps its depth: its render pass is left out.
@@ -989,6 +1103,11 @@ impl CpuCulledRenderer {
                 Role::Shadow(view) if tile_culling.frame(view).is_some() => {
                     let starts = tile_culling.culled(frame, view).bucket_starts();
                     tile_draws.record(list, arena, view, starts, casters, meshes, 0)
+                }
+                Role::OutlineMask if outline_culling.frame(ViewId::OUTLINE).is_some() => {
+                    let view = ViewId::OUTLINE;
+                    let starts = outline_culling.culled(frame, view).bucket_starts();
+                    outline_draws.record(list, arena, view, starts, outlined, meshes, 0)
                 }
                 Role::Transparent(view) if culling.frame(view).is_some() => {
                     let at = opaque.sorted_records_at(view, layout);
@@ -1069,7 +1188,8 @@ impl FrameBuilder for CpuCulledRenderer {
     fn reserve_sources(&mut self, sources: u32) -> Result<(), TryReserveError> {
         self.culling.reserve_sources(sources)?;
         self.cascade_culling.reserve_sources(sources)?;
-        self.tile_culling.reserve_sources(sources)
+        self.tile_culling.reserve_sources(sources)?;
+        self.outline_culling.reserve_sources(sources)
     }
 
     fn cull(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
@@ -1087,8 +1207,13 @@ impl FrameBuilder for CpuCulledRenderer {
             .plan(input, tile_settings, filter, camera.as_ref());
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows.
         let shadows = self.shadow.is_some() || self.tiles.shape().is_some();
-        if input.structure_changed || !self.layout.built || shadows != self.layouts_shadowed {
-            self.rebuild_layout(input, shadows)?;
+        let outlines = self.settings.outline().is_some();
+        if input.structure_changed
+            || !self.layout.built
+            || shadows != self.layouts_shadowed
+            || outlines != self.layouts_outlined
+        {
+            self.rebuild_layout(input, shadows, outlines)?;
         }
         self.add_culled_views()?;
         self.cells.update(input);
@@ -1140,7 +1265,20 @@ impl FrameBuilder for CpuCulledRenderer {
                 &|view| tiles.frame(view.tile_index()?).copied(),
                 None,
             )
-            .map_err(|_| out_of_memory(&self.casters))
+            .map_err(|_| out_of_memory(&self.casters))?;
+        // The outline view sees what the camera's view sees, while some object is outlined.
+        let camera = self.culling.frame(ViewId::CAMERA).copied();
+        let outlines = !self.outlined.buckets.is_empty();
+        self.outline_culling
+            .cull(
+                input,
+                &self.outlined,
+                &mut self.clusters,
+                cells,
+                &|_| camera.filter(|_| outlines),
+                None,
+            )
+            .map_err(|_| out_of_memory(&self.outlined))
     }
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
@@ -1172,6 +1310,8 @@ impl FrameBuilder for CpuCulledRenderer {
         self.cascade_draws.forget_gpu();
         self.tile_culling.forget_gpu();
         self.tile_draws.forget_gpu();
+        self.outline_culling.forget_gpu();
+        self.outline_draws.forget_gpu();
         self.tiles.forget_gpu();
         self.cascades_held = false;
         self.lines.forget_gpu();

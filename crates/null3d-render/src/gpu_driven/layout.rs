@@ -5,8 +5,10 @@
 //! A layout holds one kind of bucket. The scene's layout holds every object and instance row with a
 //! mesh and a material, as the views of cameras draw them, and it owns the matrices, the layer
 //! table and the cell order. The casters' layout holds the objects that cast shadows, grouped by
-//! mesh alone, as the shadow cascades draw their depth. It has a bucket table and bucket records of
-//! its own, and its culling reads the scene layout's matrices, layer table and cell order.
+//! mesh alone, as the shadow cascades draw their depth. The outlined layout holds the objects that
+//! the sketch outlines, grouped by mesh alone, as the outline view draws them into the outline
+//! mask. Each of the two has a bucket table and bucket records of its own, and its culling reads
+//! the scene layout's matrices, layer table and cell order.
 
 use std::collections::TryReserveError;
 use std::ops::Range;
@@ -25,6 +27,7 @@ use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
 };
+use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
 
 /// Bytes of one bucket record in the culling shader: base, material, radius, first draw, draw
@@ -48,10 +51,13 @@ pub(super) enum Drawn {
     Scene,
     /// The objects that cast shadows, as the shadow cascades draw their depth.
     Casters,
+    /// The objects that the sketch outlines, as the outline view draws them into the outline mask.
+    Outlined,
 }
 
-/// The material of every caster bucket: a caster's depth does not depend on its material, so
-/// casters of one mesh share a bucket.
+/// The material of every caster bucket and every outlined bucket: neither a caster's depth nor an
+/// object's place in the outline mask depends on its material, so the objects of one mesh share a
+/// bucket.
 const CASTER_MATERIAL: u32 = 1;
 
 /// The bounds of sources culled with their mesh's sphere, centred on their origin.
@@ -94,7 +100,8 @@ pub(super) struct Bucket {
     /// The id of its render pipeline.
     pub(super) pipeline: u32,
     /// The id of the render pipeline that draws its depth in the depth prepass, or 0 for a bucket
-    /// that the prepass leaves out.
+    /// that the prepass leaves out. In the outlined layout, the pipeline that marks the parts that
+    /// nothing hides, after `pipeline` marked every part.
     pub(super) prepass: u32,
     /// The bind group of its material's map, or 0 for a pipeline that reads none.
     pub(super) group: u32,
@@ -249,6 +256,7 @@ impl Layout {
         match self.drawn {
             Drawn::Scene => (ids::INSTANCE_BUCKETS, ids::BUCKETS),
             Drawn::Casters => (ids::CASTER_BUCKETS, ids::CASTER_RECORDS),
+            Drawn::Outlined => (ids::OUTLINE_BUCKETS, ids::OUTLINE_RECORDS),
         }
     }
 
@@ -401,7 +409,8 @@ impl Layout {
     /// Assigns every source to a bucket and lays the buckets out, from the frame's world state,
     /// with each bucket's pipeline id from `pipelines`, for a pass that draws into `targets`. With
     /// `shadows`, the scene's receivers draw with pipelines that read the shadow maps. With
-    /// `prepass`, the buckets that the depth prepass draws get its pipelines too. It reuses
+    /// `prepass`, the buckets that the depth prepass draws get its pipelines too. The outlined
+    /// layout's buckets get both pipelines of the outline mask. It reuses
     /// the layout's tables and scratch space, which grow only with the scene. A scene of more than
     /// `limit` sources fails.
     #[allow(clippy::too_many_arguments)]
@@ -441,9 +450,16 @@ impl Layout {
         let key_of = |mesh: u32, material: u32, bounds: u32, object: u32| -> Option<BucketKey> {
             let pipeline = settings.pipeline_of(mesh, material)?;
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
-            if drawn == Drawn::Casters {
-                let caster = settings.caster_of(pipeline);
-                return Some((caster, 0, page, mesh, CASTER_MATERIAL, bounds));
+            match drawn {
+                Drawn::Casters => {
+                    let caster = settings.caster_of(pipeline);
+                    return Some((caster, 0, page, mesh, CASTER_MATERIAL, bounds));
+                }
+                Drawn::Outlined => {
+                    let (every, _) = mask_keys(pipeline);
+                    return Some((every, 0, page, mesh, CASTER_MATERIAL, bounds));
+                }
+                Drawn::Scene => {}
             }
             // Blended pairs draw in the transparent pass, which sorts them on the job workers.
             if pipeline.blends() {
@@ -460,7 +476,12 @@ impl Layout {
         let world = scene.world(parity);
         let scene_key = |slot: usize| {
             let object = scene.flags()[slot];
-            if drawn == Drawn::Casters && (!shadows || object & flags::CAST_SHADOWS == 0) {
+            let left_out = match drawn {
+                Drawn::Scene => false,
+                Drawn::Casters => !shadows || object & flags::CAST_SHADOWS == 0,
+                Drawn::Outlined => object & flags::OUTLINED == 0,
+            };
+            if left_out {
                 return None;
             }
             let bounds = bounds_of(scene, slot);
@@ -471,10 +492,10 @@ impl Layout {
                 object,
             )
         };
-        // Instance batches cast no shadows yet.
+        // Instance batches cast no shadows yet, and take no outlines.
         let batch_key = |batch: &InstanceBatch| match drawn {
             Drawn::Scene => key_of(batch.mesh(), batch.material(), MESH_BOUNDS, 0),
-            Drawn::Casters => None,
+            Drawn::Casters | Drawn::Outlined => None,
         };
 
         collect_bucket_keys(
@@ -492,7 +513,15 @@ impl Layout {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let parts = meshes.parts(slot);
             let (center, radius) = local_sphere(scene, bounds, slot.radius);
-            let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
+            let (pipeline, prepass) = if drawn == Drawn::Outlined {
+                let (every, visible) = mask_keys(pipeline);
+                (
+                    pipelines.id(every.in_pass(targets)),
+                    pipelines.id(visible.in_pass(targets)),
+                )
+            } else {
+                pipelines.opaque(pipeline, targets, prepass)
+            };
             self.buckets.push(Bucket {
                 pipeline,
                 prepass,

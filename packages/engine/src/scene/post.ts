@@ -1,10 +1,14 @@
 // The post-processing settings that a sketch sets through `ctx.post`: the exposure and the tone
-// mapping, which the engine applies to the scene's color on its way to the canvas, bloom, and the
-// color grading table and the vignette, which the final pass applies after the tone mapping.
+// mapping, which the engine applies to the scene's color on its way to the canvas, bloom, outlines,
+// and the color grading table and the vignette, which the final pass applies after the tone
+// mapping.
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
+import { fromHex } from '../math/color';
+import { hexValue, invalidColor } from '../math/hex';
+import { type ColorInput, isComponent } from './color';
 import { Lut } from './lut';
 import type { CoreMemory } from './memory';
 
@@ -27,9 +31,18 @@ const CODES: Readonly<Record<ToneMapping, number>> = {
 };
 
 /** The settings that `post.set` takes, and the text of an error that lists them. */
-const SETTINGS = ['toneMapping', 'exposure', 'bloom', 'lut', 'lutIntensity', 'vignette'] as const;
+const SETTINGS = [
+	'toneMapping',
+	'exposure',
+	'bloom',
+	'lut',
+	'lutIntensity',
+	'vignette',
+	'outline',
+] as const;
 const BLOOM_SETTINGS = ['strength', 'radius', 'threshold'] as const;
 const VIGNETTE_SETTINGS = ['offset', 'darkness'] as const;
+const OUTLINE_SETTINGS = ['color', 'hiddenColor', 'strength', 'thickness', 'glow'] as const;
 const TONE_MAPPINGS = "'aces', 'agx', 'neutral' or 'none'";
 
 /**
@@ -74,6 +87,37 @@ export interface VignetteSettings {
 }
 
 /**
+ * The outline's settings, with the meanings of three.js's `OutlinePass`. Objects take the outline
+ * with `setOutlined(true)`. A setting that a call leaves out keeps its value.
+ *
+ * @category api/post
+ */
+export interface OutlineSettings {
+	/**
+	 * The color of the edges around the parts that nothing hides, as `visibleEdgeColor`. It is
+	 * white by default.
+	 */
+	color?: ColorInput;
+	/**
+	 * The color of the edges around the parts that other objects hide, as `hiddenEdgeColor`, or
+	 * `false` for no edges there. It is three.js's dark brown, `[0.1, 0.04, 0.02]`, by default.
+	 */
+	hiddenColor?: ColorInput | false;
+	/** How bright the edges are, as `edgeStrength`: 0 or more, and 3 by default. */
+	strength?: number;
+	/**
+	 * How far the edges spread, as `edgeThickness`: the radius of their blur in pixels at half the
+	 * render size. It is 0 or more, and 1 by default.
+	 */
+	thickness?: number;
+	/**
+	 * How much of a wide, soft glow joins the edges, as `edgeGlow`: 0 or more, and 0 by default.
+	 * Change it every frame for a pulse.
+	 */
+	glow?: number;
+}
+
+/**
  * Settings for `post.set`. A setting that the call leaves out keeps its value.
  *
  * @category api/post
@@ -110,6 +154,34 @@ export interface PostSettings {
 	 * vignette on, `{}` with the values it had, and `false` turns it off. It is off by default.
 	 */
 	vignette?: VignetteSettings | false;
+	/**
+	 * Edges around the objects that `setOutlined(true)` marks, as three.js's `OutlinePass` draws
+	 * them. Settings turn outlines on, `{}` with the values they had, and `false` turns them off.
+	 * They are off by default.
+	 */
+	outline?: OutlineSettings | false;
+}
+
+/** Scratch for a hex color's linear components, so reading one allocates nothing. */
+const linear = [0, 0, 0];
+
+/**
+ * Writes a color input's linear components into the post-processing values from `place` on. It
+ * throws E1204 for a color it cannot read.
+ */
+function writeColor(values: Float32Array, place: number, color: ColorInput, call: string): void {
+	if (typeof color === 'string' || typeof color === 'number') {
+		if (hexValue(color) < 0) throw invalidColor(color, call);
+		fromHex(linear, color);
+		values[place] = linear[0] as number;
+		values[place + 1] = linear[1] as number;
+		values[place + 2] = linear[2] as number;
+		return;
+	}
+	if (color?.length !== 3 || !color.every(isComponent)) throw invalidColor(color, call);
+	values[place] = color[0];
+	values[place + 1] = color[1];
+	values[place + 2] = color[2];
 }
 
 /**
@@ -124,6 +196,7 @@ export class Post {
 	private warnedNoBloom = false;
 	private lut: Lut | false = false;
 	private vignette = false;
+	private outline = false;
 	/**
 	 * The core's block of post-processing values, which holds the numbers of every setting. The
 	 * calls read it, so no fraction travels as an argument: the browser stores each fraction that
@@ -144,13 +217,14 @@ export class Post {
 
 	/**
 	 * Changes the settings that `settings` gives, from the next frame on. It allocates nothing, so
-	 * a sketch can change the exposure, bloom, the table's intensity or the vignette every frame.
-	 * It throws E1213 for a setting or a tone mapping it does not know, or a value out of its range,
-	 * E1203 for a value that is not a number, and E1101 for a table that was destroyed.
+	 * a sketch can change the exposure, bloom, the outline, the table's intensity or the vignette
+	 * every frame. It throws E1213 for a setting or a tone mapping it does not know, or a value out
+	 * of its range, E1203 for a value that is not a number, E1204 for a color it cannot read, and
+	 * E1101 for a table that was destroyed.
 	 */
 	set(settings: PostSettings): void {
 		if (DEV) checkSettings(settings);
-		const { toneMapping, exposure, bloom, lut, lutIntensity, vignette } = settings;
+		const { toneMapping, exposure, bloom, lut, lutIntensity, vignette, outline } = settings;
 		const { core } = this;
 		const { glue } = core;
 		const values = this.block();
@@ -178,6 +252,21 @@ export class Post {
 					values[C.POST_VALUE_VIGNETTE_DARKNESS] = vignette.darkness;
 			}
 			core.check(glue.setVignette(this.vignette), 'post.set', undefined, true);
+		}
+		if (outline !== undefined) {
+			this.outline = outline !== false;
+			if (outline !== false) {
+				const { color, hiddenColor, strength, thickness, glow } = outline;
+				if (color !== undefined) writeColor(values, C.POST_VALUE_OUTLINE_COLOR, color, 'post.set');
+				if (hiddenColor === false)
+					values.fill(0, C.POST_VALUE_OUTLINE_HIDDEN_COLOR, C.POST_VALUE_OUTLINE_HIDDEN_COLOR + 3);
+				else if (hiddenColor !== undefined)
+					writeColor(values, C.POST_VALUE_OUTLINE_HIDDEN_COLOR, hiddenColor, 'post.set');
+				if (strength !== undefined) values[C.POST_VALUE_OUTLINE_STRENGTH] = strength;
+				if (thickness !== undefined) values[C.POST_VALUE_OUTLINE_THICKNESS] = thickness;
+				if (glow !== undefined) values[C.POST_VALUE_OUTLINE_GLOW] = glow;
+			}
+			core.check(glue.setOutline(this.outline), 'post.set', undefined, true);
 		}
 		if (bloom === undefined) return;
 		this.bloom = bloom !== false;
@@ -228,9 +317,9 @@ function checkSettings(settings: PostSettings): void {
 		if (!(SETTINGS as readonly string[]).includes(key))
 			throw new EngineError(
 				'E1213',
-				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, bloom, lut, lutIntensity and vignette.`,
+				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, bloom, lut, lutIntensity, vignette and outline.`,
 			);
-	const { toneMapping, exposure, bloom, lut, lutIntensity, vignette } = settings;
+	const { toneMapping, exposure, bloom, lut, lutIntensity, vignette, outline } = settings;
 	if (lut !== undefined && lut !== false && !(lut instanceof Lut))
 		throw new EngineError(
 			'E1213',
@@ -241,6 +330,17 @@ function checkSettings(settings: PostSettings): void {
 	if (vignette) {
 		checkNumber('vignette.offset', vignette.offset);
 		checkNumber('vignette.darkness', vignette.darkness);
+	}
+	checkGroup(
+		'outline',
+		outline,
+		OUTLINE_SETTINGS,
+		'color, hiddenColor, strength, thickness and glow',
+	);
+	if (outline) {
+		checkNumber('outline.strength', outline.strength);
+		checkNumber('outline.thickness', outline.thickness);
+		checkNumber('outline.glow', outline.glow);
 	}
 	if (toneMapping !== undefined && !Object.hasOwn(CODES, toneMapping))
 		throw new EngineError(

@@ -82,6 +82,7 @@ export type { Exp2FogOptions, FogOptions, LinearFogOptions } from './scene/fog';
 export type { Lut, LutDomain } from './scene/lut';
 export type {
 	BloomSettings,
+	OutlineSettings,
 	Post,
 	PostSettings,
 	ToneMapping,
