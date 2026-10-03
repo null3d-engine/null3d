@@ -89,6 +89,8 @@ export class FrameCameras {
 	/** The entry of the camera as it stands, which each call fills again. */
 	private readonly current = new Float64Array(ENTRY);
 	private readonly matrix = new Float64Array(MATRIX_FLOATS);
+	/** The point of a `screenToRay` call, which the ray's math reads from an array. */
+	private readonly point = new Float64Array(2);
 
 	constructor(
 		private readonly core: CoreMemory,
@@ -119,8 +121,11 @@ export class FrameCameras {
 	 */
 	screenToRay(camera: FrameLens, x: number, y: number, out: Ray, call: string): void {
 		const at = this.entryOf(this.events.frameAt(x, y), camera);
-		if (at >= 0) writeRay(this.ring, at, x, y, out);
-		else writeRay(this.stand(camera, call), 0, x, y, out);
+		const { point } = this;
+		point[0] = x;
+		point[1] = y;
+		if (at >= 0) writeRay(this.ring, at, point, out);
+		else writeRay(this.stand(camera, call), 0, point, out);
 	}
 
 	/**
@@ -138,7 +143,7 @@ export class FrameCameras {
 			entry = this.standing(fallback);
 			at = 0;
 		}
-		writeRay(entry, at, point[0] as number, point[1] as number, out);
+		writeRay(entry, at, point, out);
 		return (entry[at + LAYERS] as number) >>> 0;
 	}
 
@@ -247,12 +252,16 @@ function scaleX(e: Float64Array, at: number): number {
 }
 
 /**
- * Writes the ray through the point (`x`, `y`) in CSS pixels for the camera of the entry at `at`. A
- * perspective ray starts at the camera, and an orthographic ray on the near plane, as three.js's
- * `Raycaster.setFromCamera` places them. The matrix carries the ray from the camera's space into
+ * Writes the ray through the point (`point[0]`, `point[1]`) in CSS pixels for the camera of the
+ * entry at `at`. The point comes in an array: a call that the browser does not inline makes a
+ * number object for each fraction that it passes as an argument. A perspective ray starts at the
+ * camera, and an orthographic ray on the near plane, as three.js's `Raycaster.setFromCamera`
+ * places them. The matrix carries the ray from the camera's space into
  * the world, so a scaled camera's ray still passes through what the frame drew at the point.
  */
-function writeRay(e: Float64Array, at: number, x: number, y: number, out: Ray): void {
+function writeRay(e: Float64Array, at: number, point: Float64Array, out: Ray): void {
+	const x = point[0] as number;
+	const y = point[1] as number;
 	const width = e[at + CSS_WIDTH] as number;
 	const height = e[at + CSS_HEIGHT] as number;
 	const ndcX = width > 0 ? (x / width) * 2 - 1 : 0;

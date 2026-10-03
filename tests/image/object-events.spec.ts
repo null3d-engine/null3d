@@ -15,6 +15,8 @@ interface Reply {
 	rays: number;
 	step: number;
 	panClicks: { frame: number; shown: number; turn: number; hit: string }[];
+	/** The frames since the pan started. */
+	panFrames: number;
 }
 
 /** Places on the 320 x 180 canvas, in CSS pixels, from the sketch's camera and boxes. */
@@ -188,6 +190,8 @@ for (const mode of ENGINE_MODES)
 	}) => {
 		const send = await open(page, switchesOf(mode));
 		await send('pan');
+		// Until the frames on screen show the dome, a click picks what they show: the boxes.
+		await expect.poll(async () => (await send()).panFrames).toBeGreaterThan(KEPT_FRAMES * 2);
 		for (let k = 1; k <= CLICKS; k++) {
 			await page.mouse.click(MIDDLE.x, MIDDLE.y);
 			await expect.poll(async () => (await send()).panClicks.length).toBe(k);
@@ -199,11 +203,11 @@ for (const mode of ENGINE_MODES)
 			expect(click.shown).toBeLessThan(click.frame);
 			expect(turnDifference(click.turn, click.shown * step)).toBeLessThan(TURN_TOLERANCE);
 		}
-		const behind = panClicks.filter((click) => click.shown < click.frame - 1).length;
 		// The sketch runs a frame ahead of the one on screen in pipelined modes, so the current
-		// camera would have missed; the other modes draw each frame as they record it.
-		if (mode.latency === 'pipelined') expect(behind).toBeGreaterThan(0);
-		else expect(behind).toBe(0);
+		// camera would have missed. The other modes draw each frame as they record it, but a release
+		// that comes while a frame draws still names the frame before, so they get no such check.
+		if (mode.latency === 'pipelined')
+			expect(panClicks.filter((click) => click.shown < click.frame - 1).length).toBeGreaterThan(0);
 	});
 
 test('pointer events allocate nothing', async ({ page }) => {

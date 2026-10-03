@@ -485,8 +485,7 @@ export class PointerEvents {
 	private cast(pointer: PointerState, frame: number, report: (error: unknown) => void): void {
 		const { event, chain } = this;
 		const { numbers } = event;
-		numbers[EVENT_X] = pointer.at[0] as number;
-		numbers[EVENT_Y] = pointer.at[1] as number;
+		numbers.set(pointer.at, EVENT_X);
 		let target: PointerTarget | null = null;
 		this.rays++;
 		try {
@@ -494,7 +493,8 @@ export class PointerEvents {
 		} catch (error) {
 			report(error);
 		}
-		const instance = target === null ? -1 : (numbers[EVENT_ROW] as number);
+		// A whole number: a value from the array stored in a field would make a number object.
+		const instance = target === null ? -1 : (numbers[EVENT_ROW] as number) | 0;
 		chain.fill(target, instance);
 		event.object = target;
 		event.instance = instance;

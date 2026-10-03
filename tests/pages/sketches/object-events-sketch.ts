@@ -78,7 +78,8 @@ export default defineSketch(({ scene, geometry, materials, input, page, time }) 
 			handlers.push([object, type, handler]);
 		}
 	};
-	let panning = false;
+	/** The frame in which the pan started, or -1 before it. */
+	let panStart = -1;
 	page.onMessage((name) => {
 		if (name === 'listen') {
 			listen(pair, 'click', 'pointerenter', 'pointerleave');
@@ -90,7 +91,7 @@ export default defineSketch(({ scene, geometry, materials, input, page, time }) 
 		} else if (name === 'loop') {
 			startLoop();
 		} else if (name === 'pan') {
-			panning = true;
+			panStart = time.frame;
 			camera.setPosition(0, DOME_HEIGHT, 0);
 			dome.on('click', (event) => {
 				panClicks.push({
@@ -103,7 +104,8 @@ export default defineSketch(({ scene, geometry, materials, input, page, time }) 
 			});
 		}
 		const rays = (scene as unknown as { pointerEvents: { rays: number } }).pointerEvents.rays;
-		page.post('reply', { lines, rays, step: STEP, panClicks });
+		const panFrames = panStart < 0 ? 0 : time.frame - panStart;
+		page.post('reply', { lines, rays, step: STEP, panClicks, panFrames });
 	});
 	/** Handlers that only count, and the loop that feeds the pointer events' log by hand. */
 	function startLoop() {
@@ -157,7 +159,7 @@ export default defineSketch(({ scene, geometry, materials, input, page, time }) 
 
 	return {
 		onUpdate() {
-			if (panning) camera.setRotationEuler(0, time.frame * STEP, 0);
+			if (panStart >= 0) camera.setRotationEuler(0, time.frame * STEP, 0);
 		},
 	};
 });
