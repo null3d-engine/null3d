@@ -252,7 +252,7 @@ null3D builds the loop in, so an app gets it with no code of its own. The govern
 
 ## The preset values (M1-G6)
 
-Status: proposed by M1-G6 on 2026-10-03, from the Mac's runs. The S24+ and iPad runs at each candidate preset are still to come, and they decide the values. The governor keeps the thresholds of M1-G5 until those traces show flicker or late steps.
+Status: proposed by M1-G6 on 2026-10-03, from the Mac's runs. The iPad's first runs at each candidate do not count (below). The S24+ runs and the iPad's reruns decide the values. The governor keeps the thresholds of M1-G5 until those traces show flicker or late steps.
 
 ### Rule
 
@@ -299,4 +299,49 @@ S4 and S3 run at each candidate, from a checkout of this branch. `?shadowCascade
 - S24+, Chrome and Brave, WebGL2: Low as proposed, and Low with the 3 cascades of 2,048 texels from before this change. Then Medium, to see the room above Low.
 - iPad, Safari, WebGPU: Medium as proposed; Medium with the 3 x 3 filter; and High.
 
-Then the 10-minute gate run of the chosen preset on each device. Their rows go here.
+Then the 10-minute gate run of the chosen preset on each device.
+
+#### The iPad's first runs, which do not count
+
+Safari 26.6 on the iPad ran each iPad candidate on 3 October 2026. The checkout of this branch did not yet hold the governor's Safari fix (#222). Each candidate drew S4 and S3 twice for 30 seconds. The gate drew S4 at Medium for 5 minutes, after 5 minutes of warm-up. The runs are `20261003-013953-bench`, `-014432-`, `-014914-` and `-015340-`. The GPU times come from timestamp queries.
+
+| Candidate | S4 GPU ms, each run in order | S3 GPU ms | S4 fps | The engine's refresh reading | Lowest render scale | Quality steps |
+| --- | --- | --- | --- | --- | --- | --- |
+| Medium | 18.3, then 28.0 | 16.2 | 35.3 | 34.5 Hz | 1 | 0 |
+| Medium, 3 x 3 filter | 23.9, then 24.1 | 16.1 | 33.6 | 32 Hz | 1 | 0 |
+| High | 26.2, then 27.9 | 16.1 | 29.5 | 28.5 Hz | 1 | 0 |
+| Medium, the gate | 27.9 | not run | 28.5 | 27 Hz | 1 | 0 |
+
+Two faults make these runs useless for the rule:
+
+- The display ran at 60 Hz, but the engine read 27 to 34.5 Hz. Before #222, it took Safari's slowed frame callbacks for a slow display (see the governor's iPad data above). The governor's budget grew with the frames, so it never lowered the render scale and took no step. The trace's target came from the same reading. The gate's 299 of 299 seconds "at the target" were seconds at 27 fps.
+- Heat. The tablet was warm from earlier runs, and the candidates ran back to back. Medium's two S4 runs, two minutes apart, took 18.3 and 28.0 ms. The half precision run earlier that morning shows the same ([D-09](D-09-half-precision.md)). On the same code, S3 took 9.3 ms in its first run and 15.6 ms five minutes later. So the run order can explain High's higher times, and the 3 x 3 filter's runs fall between Medium's two.
+
+What the runs do show:
+
+- Warm, at the full render scale, the iPad takes 24 to 28 ms of GPU time per S4 frame at Medium and High. That allows 36 to 42 fps at most. So Medium can hold 60 fps on the iPad only through dynamic resolution. The gate tests whether the governor finds a render scale that holds. Medium's lowest scale, 0.6, draws 36% of the pixels. The shadow maps keep their size at any scale.
+- No run measured a cost of the 5 x 5 filter larger than the swing from heat.
+
+So the proposed values stay. Nothing valid argues for a change. The gate at Medium may still miss its target after the governor reaches the render scale of 0.6 and takes its shadow steps. Then Medium's shadows get lighter: first fewer far cascade updates, then 2 cascades.
+
+#### The reruns
+
+The reruns use the runner's refresh check (#221). The runner page measures the display's rate before each page, and the summary flags a run below 55 Hz. With #222, the engine holds the display's rate in Safari too, so the trace's target is 60 fps. A run whose summary flags the refresh rate does not count.
+
+Each device starts cool: it rests with its screen off for 20 minutes before the first run, and again before its gate. The candidates take turns A, B, A, so the two A runs show how far heat moved the times. Run these from a checkout of this branch, after `bun run build` and a restart of the dev server:
+
+```sh
+# iPad, Safari, WebGPU: Medium, High, then Medium again
+bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4,s3 --pages null3d-webgpu --runs 2 --seconds 30 --switches preset=medium
+bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4,s3 --pages null3d-webgpu --runs 2 --seconds 30 --switches preset=high
+bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4,s3 --pages null3d-webgpu --runs 2 --seconds 30 --switches preset=medium
+# S24+, Chrome and Brave, WebGL2: Low, Low with the earlier 3 cascades of 2,048 texels, then Medium
+bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome,brave --scenes s4,s3 --pages null3d-webgl2 --runs 2 --seconds 30 --switches preset=low
+bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome,brave --scenes s4,s3 --pages null3d-webgl2 --runs 2 --seconds 30 --switches "preset=low&shadowCascades=3&shadowMapSize=2048"
+bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome,brave --scenes s4,s3 --pages null3d-webgl2 --runs 2 --seconds 30 --switches preset=medium
+# The gates, each after a rest: 5 minutes of warm-up, then 5 measured minutes
+bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4 --pages null3d-webgpu --runs 1 --seconds 300 --switches preset=medium
+bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome,brave --scenes s4 --pages null3d-webgl2 --runs 1 --seconds 300 --switches preset=low
+```
+
+A gate passes when S4's completed rate holds the target in at least 95% of the measured seconds. Its trace also gives the lowest render scale and the quality steps, which show whether the governor flickers or steps late. Their rows go here.
