@@ -33,6 +33,29 @@ The browser test in `tests/image/raycast.spec.ts` builds the same scene in null3
 
 The test in `crates/null3d-core/tests/bvh_no_alloc.rs` counts allocator calls on the test thread and four job workers over 57 frames. Each frame moves 5,000 dynamic objects and 3,000 dynamic rows, and syncs the trees. Then it runs 100 rays of each raycast, 200 overlap queries and a batch of 500 rays. The count is 0, and 0 again with no job workers. The first version counted one allocation in frame 36. A ray crossed more objects than any ray before it, so the list of every hit grew once. Lists grow and never shrink, so a sketch reaches its steady state after its largest query. The call `SceneQueries::reserve` gives a test, or the engine, room up front.
 
+### Costs
+
+`bench_scene_queries` in `crates/null3d-core/tests/bench.rs` builds 20,000 static objects, 2,000 dynamic ones and a static batch of 10,000 rows in a square of 1 km. Half the objects are boxes of 12 triangles, and half are spheres of 960. Its 10,000 rays run from 30 m up toward random points on the ground, and 9,896 of them hit something. Two runs on the MacBook Pro, on 3 October 2026, at load averages of 55 to 79 while other helpers built:
+
+| Measure | First run | Second run |
+| --- | --- | --- |
+| First sync: both mesh trees and both scene trees, one thread | 8.1 ms | 19.1 ms |
+| `raycast`, one thread, per ray | 0.96 µs | 2.6 µs |
+| `raycastAny`, one thread, per ray | 0.54 µs | 1.5 µs |
+| `raycastAll`, one thread, per ray | 6.4 µs | 15.8 µs |
+| `overlapSphere` of 10 m, 10.2 objects found | 36 µs | 78 µs |
+| `overlapBox` of 20 m | 10 µs | 22 µs |
+| A batch of 10,000 rays: 1, 4 and 8 threads | 10.4, 2.7 and 1.4 ms | 23.3, 3.9 and 2.8 ms |
+| A sync where 2,000 dynamic objects moved, 4 threads | 60 µs | 120 µs |
+
+A batch on 8 threads runs 7.3 times as fast as on one in the first run. A sketch can cast about 1,000 rays per millisecond on one thread, so pointer picks and line-of-sight checks cost little next to a frame.
+
+How the data was produced: `cargo test -p null3d-core --release --test bench -- --ignored --nocapture --test-threads=1 bench_scene_queries`, twice.
+
+### The page's side
+
+`tests/image/raycast.spec.ts` also runs a loop of every query on the page's own thread, with every call finding something. Chrome's heap profiler finds no allocation in the query calls, the scene, the engine memory's views or the core's glue over 20,000 sampled iterations.
+
 ## Decision
 
 ### Results go into the caller's objects

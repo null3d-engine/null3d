@@ -2,8 +2,9 @@
 // three.js and casts the same seeded rays through both: every raycast must give three.js's
 // Raycaster's hits, on both GPU paths, whose meshes the engine stores differently, and in every
 // thread mode. A batch of 10,000 rays must give each ray's own raycast, and its work must reach
-// the job workers where the mode has them.
+// the job workers where the mode has them. And a loop of every query allocates nothing.
 import { expect, type Page, test } from '@playwright/test';
+import { allocatingPlaces } from '../lib/allocations.ts';
 import { ENGINE_MODES, type EngineMode } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
 import type { RaycastResults } from '../pages/lib/raycast.ts';
@@ -60,3 +61,37 @@ for (const mode of ENGINE_MODES.slice(1))
 		const result = await open(page, switchesOf(mode, 'webgl2'));
 		expectParity(result, mode.name);
 	});
+
+test('every query allocates nothing, with hits in each call', async ({ page }) => {
+	await page.goto('query-loop.html?threads=off');
+	const result = await pageResult<{ ok: boolean; error?: string; loop: string }>(page, 60_000);
+	expect(result.error).toBeUndefined();
+	expect(result.loop).toBe('function');
+	// Every call of a whole sweep of the loop finds something, so the hits' paths run too.
+	const misses = await page.evaluate(() =>
+		(globalThis as { __null3dQueryLoop?: (iterations: number) => number }).__null3dQueryLoop?.(
+			1_400,
+		),
+	);
+	expect(misses).toBe(0);
+	const runLoop = (iterations: number, runs: number) =>
+		page.evaluate(
+			({ iterations, runs }) => {
+				const loop = (globalThis as { __null3dQueryLoop?: (iterations: number) => number })
+					.__null3dQueryLoop;
+				for (let run = 0; run < runs; run++) loop?.(iterations);
+			},
+			{ iterations, runs },
+		);
+	const plan = {
+		warmUpRuns: 40,
+		warmUpIterations: 500,
+		sampledIterations: 20_000,
+		// The query calls, the scene that passes them on, the engine memory's views, the math
+		// helpers that the loop calls, and the core's generated glue. The engine's own frames run
+		// on this thread between the loop's runs, and the frame checks that development builds add
+		// are not the queries' work.
+		counted: /\/packages\/engine\/(src\/(scene\/(queries|scene|memory)\.ts|math\/)|dist\/wasm\/)/,
+	};
+	expect(await allocatingPlaces(page, plan, runLoop)).toEqual([]);
+});
