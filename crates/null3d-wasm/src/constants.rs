@@ -91,6 +91,29 @@ pub mod map_slot {
 }
 
 /// The numbers that `textureStat` reads from the texture store.
+/// The places of the post-processing values in the block that `postValues` gives: 32-bit floats
+/// that TypeScript writes before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`. The
+/// values come through engine memory, not as arguments, because the browser stores each fraction
+/// that it passes to a call it does not inline in an object of its own.
+pub mod post_value {
+    /// The exposure.
+    pub const EXPOSURE: u32 = 0;
+    /// Bloom's strength, radius and threshold.
+    pub const BLOOM_STRENGTH: u32 = 1;
+    pub const BLOOM_RADIUS: u32 = 2;
+    pub const BLOOM_THRESHOLD: u32 = 3;
+    /// The color grading table's intensity.
+    pub const LUT_INTENSITY: u32 = 4;
+    /// The colors of the table's first texels, red first, then of its last texels.
+    pub const LUT_DOMAIN_MIN: u32 = 5;
+    pub const LUT_DOMAIN_MAX: u32 = 8;
+    /// The vignette's offset and darkness.
+    pub const VIGNETTE_OFFSET: u32 = 11;
+    pub const VIGNETTE_DARKNESS: u32 = 12;
+    /// The values in the block.
+    pub const COUNT: u32 = 13;
+}
+
 pub mod texture_stat {
     /// The GPU bytes that every texture array holds, free layers included.
     pub const MEMORY_BYTES: u32 = 0;
@@ -241,6 +264,58 @@ pub mod animation_problem {
     pub const TRACK: u32 = 16;
 }
 
+/// Raycasts and overlap queries: the arrays `queryArrays` names, the query kinds, and the layout
+/// of the numbers they read and write. Every array holds 64-bit floats.
+pub mod query {
+    /// The query's input: a ray's origin and direction, then its far limit; a sphere's centre,
+    /// then its radius at the far limit's place; or a box's lowest and highest corners.
+    pub const INPUT: u32 = 0;
+    /// The hit records that queries write, `HIT_FLOATS` numbers each.
+    pub const HITS: u32 = 1;
+    /// How many hit records the hit array holds now; it moves when it grows.
+    pub const HIT_CAPACITY: u32 = 2;
+    /// The rays of a batch, `RAY_FLOATS` numbers each: origin, then direction.
+    pub const RAYS: u32 = 3;
+
+    /// Numbers in the input array.
+    pub const INPUT_FLOATS: u32 = 8;
+    /// Where the input holds the far limit or the radius.
+    pub const INPUT_LIMIT: u32 = 6;
+    /// Numbers per ray of a batch.
+    pub const RAY_FLOATS: u32 = 6;
+
+    /// Numbers per hit record.
+    pub const HIT_FLOATS: u32 = 11;
+    /// The object's slot, or 0 for a batch row.
+    pub const HIT_SLOT: u32 = 0;
+    /// The batch's id, or 0 for an object.
+    pub const HIT_BATCH: u32 = 1;
+    /// The batch row, or -1 for an object.
+    pub const HIT_ROW: u32 = 2;
+    /// The triangle's index in its mesh, or -1 for an overlap.
+    pub const HIT_TRIANGLE: u32 = 3;
+    /// The distance along the ray, or -1 for a ray that hit nothing.
+    pub const HIT_DISTANCE: u32 = 4;
+    /// The hit's point in the world, three numbers.
+    pub const HIT_POINT: u32 = 5;
+    /// The triangle's unit normal in the world, facing the ray's origin, three numbers.
+    pub const HIT_NORMAL: u32 = 8;
+
+    /// The closest hit.
+    pub const CLOSEST: u32 = 0;
+    /// Whether anything is hit.
+    pub const ANY: u32 = 1;
+    /// Every hit, nearest first.
+    pub const ALL: u32 = 2;
+    /// Items with a triangle within a sphere.
+    pub const SPHERE: u32 = 3;
+    /// Items with a triangle within a box.
+    pub const BOX: u32 = 4;
+
+    /// What a query returns when it fails.
+    pub const FAILED: u32 = u32::MAX;
+}
+
 /// What a per-frame count returns where the core does not count, such as visible entries where the
 /// GPU culls.
 pub const NOT_COUNTED: u32 = u32::MAX;
@@ -329,6 +404,32 @@ pub fn typescript() -> String {
                 ("ROTATIONS", batch_field::ROTATIONS),
                 ("SCALES", batch_field::SCALES),
                 ("COLORS", batch_field::COLORS),
+            ],
+        ),
+        (
+            "QUERY",
+            &[
+                ("INPUT", query::INPUT),
+                ("HITS", query::HITS),
+                ("HIT_CAPACITY", query::HIT_CAPACITY),
+                ("RAYS", query::RAYS),
+                ("INPUT_FLOATS", query::INPUT_FLOATS),
+                ("INPUT_LIMIT", query::INPUT_LIMIT),
+                ("RAY_FLOATS", query::RAY_FLOATS),
+                ("HIT_FLOATS", query::HIT_FLOATS),
+                ("HIT_SLOT", query::HIT_SLOT),
+                ("HIT_BATCH", query::HIT_BATCH),
+                ("HIT_ROW", query::HIT_ROW),
+                ("HIT_TRIANGLE", query::HIT_TRIANGLE),
+                ("HIT_DISTANCE", query::HIT_DISTANCE),
+                ("HIT_POINT", query::HIT_POINT),
+                ("HIT_NORMAL", query::HIT_NORMAL),
+                ("CLOSEST", query::CLOSEST),
+                ("ANY", query::ANY),
+                ("ALL", query::ALL),
+                ("SPHERE", query::SPHERE),
+                ("BOX", query::BOX),
+                ("FAILED", query::FAILED),
             ],
         ),
         (
@@ -489,6 +590,21 @@ pub fn typescript() -> String {
                 ("LIGHT_MAP_INTENSITY", param::LIGHT_MAP_INTENSITY as u32),
                 ("UV_U", param::UV_U as u32),
                 ("UV_V", param::UV_V as u32),
+            ],
+        ),
+        (
+            "POST_VALUE",
+            &[
+                ("EXPOSURE", post_value::EXPOSURE),
+                ("BLOOM_STRENGTH", post_value::BLOOM_STRENGTH),
+                ("BLOOM_RADIUS", post_value::BLOOM_RADIUS),
+                ("BLOOM_THRESHOLD", post_value::BLOOM_THRESHOLD),
+                ("LUT_INTENSITY", post_value::LUT_INTENSITY),
+                ("LUT_DOMAIN_MIN", post_value::LUT_DOMAIN_MIN),
+                ("LUT_DOMAIN_MAX", post_value::LUT_DOMAIN_MAX),
+                ("VIGNETTE_OFFSET", post_value::VIGNETTE_OFFSET),
+                ("VIGNETTE_DARKNESS", post_value::VIGNETTE_DARKNESS),
+                ("COUNT", post_value::COUNT),
             ],
         ),
         (

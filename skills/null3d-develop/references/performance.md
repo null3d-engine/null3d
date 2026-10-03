@@ -146,13 +146,13 @@ The table marks its other rows as planned, such as the light caps and the textur
 
 The frame-budget governor keeps the frame rate when the scene is too heavy for the device. It aims for the display's refresh rate, up to 60 frames per second. It judges the frames four times a second, by the slower of the presented and the completed rates. So it also sees a GPU that falls behind while the renderer keeps presenting.
 
-When frames run over budget for about a second, the governor takes one step down, in this order:
+The governor steps down when a second of frames averages under 95% of the target rate, such as 57 at 60. It takes one step at a time, in this order:
 
 1. The render scale falls in steps of 0.05, down to `minRenderScale`. The scene draws at fewer pixels, and the engine scales the image up to the canvas.
 2. The far shadow cascades draw half as often, up to every 8th frame.
 3. The shadow filter drops to 3 x 3 texels, for cheaper shadow edges.
 
-It raises the settings in the reverse order, each after about 5 seconds with time to spare, so quality does not flicker. A step up that fails doubles the wait before the next one. The governor takes no step in the first 2 seconds, or while textures wait to upload. It takes a shadow step only where a light casts shadows. It never changes the preset or the settings fixed at the start.
+It raises the settings in the reverse order, each after about 5 seconds with time to spare, so quality does not flicker. A step up that falls behind within 30 seconds doubles the wait before the governor tries that setting again, up to 80 seconds. At 57 to 59 frames per second, the settings stay where they are. The governor takes no step in the first 2 seconds, or while textures wait to upload. It takes a shadow step only where a light casts shadows. It never changes the preset or the settings fixed at the start.
 
 Read the current render scale in `quality.renderScale`, and the shadow settings that frames draw with in `quality.governor`. After each shadow step, `quality.onChange` runs, and `quality.governor.steps` counts the steps past the render scale. Lighten your own systems there. To measure the scene's own cost, turn the governor off: `quality.set({ governor: false })`. The scene then draws at `maxRenderScale`, with the shadow settings as set.
 

@@ -154,7 +154,7 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | drei `<PerformanceMonitor>`, `<AdaptiveDpr>`, `<AdaptiveEvents>`; `<Canvas performance>` | Remove them: the engine's frame-budget governor does this work (section 5) |
 | drei `<Stats>` | `debug.stats(true)` in the sketch; `engine.measure()` on the page for GPU time |
 | Mesh events: `onClick`, `onPointerOver`, `onPointerOut` | `obj.on('click' | 'pointerenter' | 'pointerleave', fn)` (0.2), then `page.post` if React needs to know |
-| `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping and bloom (0.2), the other effects later in 0.2 (`references/post-processing.md`) |
+| `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping, and bloom, `lut` and `vignette` (0.2), the other effects later in 0.2 (`references/post-processing.md`) |
 | `@react-three/rapier` | Rapier inside the sketch worker (null3d-develop recipe 11) |
 | Components that change props every frame through React state | `onUpdate` logic; React sends intent, not frames |
 
@@ -168,7 +168,7 @@ drei's components measure the frame rate on the main thread, and the app reacts 
 | `onChange={({ factor }) => setDpr(...)}` | Maps a factor from 0 to 1 onto a pixel ratio range | `quality.set({ minRenderScale, maxRenderScale })` in the sketch sets the range that the render scale moves in. `quality.renderScale` reads the current scale |
 | `<Canvas dpr={[1, 2]}>` | Caps the pixel ratio | `createEngine({ maxPixelRatio: 2 })`, or the preset's cap. The render scale works below this cap, so the canvas never changes size |
 | `onDecline` handlers that cut particles or effects | App-specific lightening | `quality.onChange`, which runs after each step past the render scale; `quality.governor.steps` counts those steps. Keep counts per preset in one table keyed by `quality.preset` |
-| `onFallback` after `flipflops` | Gives up after the rate swings too often | Not needed: a step up that fails doubles the governor's wait before the next one, so quality settles instead of swinging. A player's choice of a lighter preset goes through `quality.setPreset` |
+| `onFallback` after `flipflops` | Gives up after the rate swings too often | Not needed: a step up that fails doubles the governor's wait before it tries that setting again, so quality settles instead of swinging. A player's choice of a lighter preset goes through `quality.setPreset` |
 | `<AdaptiveDpr pixelated />` with `performance.regress()` | Drops the pixel ratio while the camera moves, then restores it | No equivalent. The governor follows frame times, not camera movement. Remove `regress()` calls from controls |
 | `<AdaptiveEvents />` | Turns off pointer raycasts while regressed | Not needed: null3D casts no pointer rays on the main thread |
 

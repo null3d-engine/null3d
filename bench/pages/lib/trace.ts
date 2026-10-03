@@ -1,7 +1,11 @@
 // The trace of each measured second of a benchmark run: the presented and completed frame rates,
 // the render scale and the quality steps. The phone scene records it, so a long run on a device
 // shows when the frame rate fell and how the engine's quality settings answered. The file imports
-// nothing from the engine, so the tools that sum up traces run it without browser types.
+// only the engine's statistics module, which uses no browser API, so the tools that sum up traces
+// run it without browser types. That module holds the line at which a second holds its target, which
+// the engine's governor steps down at, so the report and the governor judge the same line.
+
+import { HELD_PERCENT, TARGET_CAP_HZ } from '../../../packages/engine/src/shared/stats';
 
 /** One second's frame rates from the engine's measurement, as `FrameMetrics.perSecond` holds them. */
 interface SecondRates {
@@ -74,11 +78,6 @@ export function fixedTrace(perSecond: readonly number[]): TraceSecond[] {
 	}));
 }
 
-/** The highest frame rate that the trace's summary holds a run to, in hertz. */
-export const TARGET_CAP_HZ = 60;
-/** A second holds the target when its frame rate is at least this share of it. */
-export const HELD_SHARE = 0.95;
-
 /** A trace in a few figures. */
 export interface TraceSummary {
 	seconds: number;
@@ -108,7 +107,7 @@ export function summarizeTrace(
 		heldSeconds:
 			targetFps === null
 				? null
-				: trace.filter((second) => rate(second) >= HELD_SHARE * targetFps).length,
+				: trace.filter((second) => rate(second) * 100 >= HELD_PERCENT * targetFps).length,
 		lowestFps: trace.length === 0 ? 0 : Math.min(...trace.map(rate)),
 		lowestRenderScale: trace.length === 0 ? 1 : Math.min(...trace.map((s) => s.renderScale)),
 		steps: trace.reduce((sum, second) => sum + second.steps, 0),
