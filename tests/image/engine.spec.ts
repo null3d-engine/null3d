@@ -105,7 +105,11 @@ const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * lists these files apart from the start, and the transcoder's files with them.
  */
 const FIRST_USE_FILES: readonly RegExp[] = [
-	...LATER_PARTS.filter(({ afterFirstFrame }) => !afterFirstFrame).map(({ module }) => {
+	...[
+		...new Set(
+			LATER_PARTS.filter(({ afterFirstFrame }) => !afterFirstFrame).map(({ module }) => module),
+		),
+	].map((module) => {
 		const stem = (module.split('/').at(-1) as string).replace(/\.ts$/, '');
 		return new RegExp(`/${escaped(module)}$|/${escaped(stem)}-[\\w-]{8}\\.js$`);
 	}),

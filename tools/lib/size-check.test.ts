@@ -8,8 +8,6 @@ import {
 	growthProblems,
 	growthSummary,
 	growthText,
-	MIN_GROWTH_BYTES,
-	needsReason,
 } from './size-check';
 
 /** A size record with the given Brotli sizes. */
@@ -35,25 +33,14 @@ describe('compareSizes', () => {
 describe('the growth limit', () => {
 	it('lets a file grow by 2% after Brotli, and fails more', () => {
 		const changes = compareSizes(
-			record({ 'at.wasm': 100_000, 'over.wasm': 100_000, 'shrunk.js': 100_000 }),
-			record({ 'at.wasm': 102_000, 'over.wasm': 102_100, 'shrunk.js': 90_000 }),
+			record({ 'at.wasm': 1000, 'over.wasm': 1000, 'shrunk.js': 1000 }),
+			record({ 'at.wasm': 1020, 'over.wasm': 1021, 'shrunk.js': 900 }),
 		);
 		expect(grownFiles(changes).map(({ file }) => file)).toEqual(['over.wasm']);
 		expect(growthOf(changes[1]!)).toBeCloseTo(0.021);
 	});
 
-	it('lets a file grow by the byte floor whatever its share, and fails more past 2%', () => {
-		expect(MIN_GROWTH_BYTES).toBe(256);
-		// A one-line change to a small file that loads on first use.
-		expect(needsReason({ file: 'js/page-preset-check.js', base: 394, head: 402 })).toBe(false);
-		expect(needsReason({ file: 'a.js', base: 1000, head: 1256 })).toBe(false);
-		expect(needsReason({ file: 'a.js', base: 1000, head: 1257 })).toBe(true);
-		// Past the floor but within 2% of a large file.
-		expect(needsReason({ file: 'a.wasm', base: 200_000, head: 203_000 })).toBe(false);
-		expect(needsReason({ file: 'a.wasm', base: 200_000, head: 204_001 })).toBe(true);
-	});
-
-	it('counts a new file as growth over the limit, however small, and a removed file as none', () => {
+	it('counts a new file as growth over the limit, and a removed file as none', () => {
 		const changes = compareSizes(record({ 'gone.js': 500 }), record({ 'new.js': 10 }));
 		expect(grownFiles(changes).map(({ file }) => file)).toEqual(['new.js']);
 	});

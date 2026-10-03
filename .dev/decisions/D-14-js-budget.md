@@ -1,6 +1,6 @@
 # D-14: The engine's JavaScript budget
 
-Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets and a byte floor for the growth rule proposed on 2026-10-04, for the owner, in [M2](#m2-the-start-the-files-that-load-later-and-the-growth-rule). Date: 2026-09-30.
+Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). Date: 2026-09-30.
 
 ## Question
 
@@ -187,22 +187,19 @@ The options in the table stay open, and each task can still take one to keep the
 - D-13 settles how shader text ships. This record counts each path's shader file in the download before the first frame, since a page needs it to draw.
 - Add the record to the table in [README.md](README.md). When the owner decides, update its status and the budget line in AGENTS.md if point 1 changes it.
 
-## M2: the start, the files that load later, and the growth rule
+## M2: the start and the files that load later
 
-Status: proposed on 2026-10-04, for the owner. The owner allowed the budget to rise in M2, so the size check applies these figures now. Task: M2-R5.
+Status: accepted. The owner approved the budgets in writing on 2026-10-04. Task: M2-R5.
 
 ### Question
 
 A pipelined page downloads 98.8 KB of the 100 KB budget once M2-C3's skinning on WebGPU merges (#264). Most of M2's features have not landed yet. The owner answered for M2 on 3 October 2026: the budget may rise in M2, and nothing is trimmed yet, because loading efficiency comes later. Code that loads on first use is counted and budgeted apart. What budgets hold for the rest of M2?
-
-The growth rule raises a second question. On 3 October the merge queue removed several pull requests for a few bytes of growth in a small file. One file of 404 bytes grew by 8 bytes. Growth of that size costs no page a time that anyone can measure.
 
 ### Rule
 
 - A budget holds every thread mode on each GPU path until the M2 gate, by the estimate below. It leaves room for the estimate to be 20% low, as M1's did.
 - Code that a page does not use adds nothing to its start. It loads on first use, in a file that the size report lists apart from the start. That file has a budget of its own.
 - Nothing is trimmed now (the owner, 3 October).
-- A growth that needs a reason in a commit trailer is large enough to matter to a page.
 
 ### Data
 
@@ -220,7 +217,7 @@ What a pipelined page downloads at its start:
 | The largest shader file | 19.5 | 23.5 |
 | Total | 94.6 | 98.8 |
 
-#264's SKIN variants make each WebGPU shader file about 4 KB larger after Brotli. Before compression, the files doubled from 0.8 MB to 1.6 MB. Its pull request says that 2.3 to 3.5 KB of the 4 KB go if D-20 keeps the compute pass. With #264, the other thread modes download 92.3 to 97.0 KB.
+#264's SKIN variants make each WebGPU shader file about 4 KB larger after Brotli. Before compression, the files doubled from 0.8 MB to 1.6 MB. Its pull request says that 2.3 to 3.5 KB of the 4 KB go if D-20 keeps the compute pass. With #264, the other thread modes download 92.3 to 97.0 KB. On 2026-10-04, main at 9ef7c7a (#265) measured 99.9 KB for a pipelined page. The other thread modes measured 93.3 to 98.1 KB. The largest file that loads later was `gltf-worker.js`, at 5.8 KB.
 
 What the code of each area adds to the pipelined start with #264. Each figure is a file's size after Brotli, less its size with the area's code taken out. The rest, about 11 KB, is code that the bundler adds and the bytes that the areas share after compression.
 
@@ -292,24 +289,20 @@ M2-A3's meshopt decoder (#263) adds `gltf-meshopt.js`, 6.2 KB, with the first fi
 
 What the budgets cost in time. The startup benchmark's Slow 4G profile downloads 157,500 bytes per second. A page's JavaScript shares the link with the core's 206 KB. At that rate, the 41 KB from 98.8 KB to 140 KB add about 0.27 s to a cold start. A cold load on the MacBook Pro took 4.0 s on Slow 4G on 30 September 2026. A file of 16 KB that loads on first use takes about 0.1 s on the same link. Its round trip of at least 562 ms comes on top. Where the loader starts both downloads at once, as the glTF loader does, that round trip overlaps the download of the feature's own data.
 
-How often the growth rule asked for a reason on main. The check compared consecutive commits on main with kept records, from 29 September to 3 October 2026. A file grew more than 2% 71 times. With a floor of 256 bytes, 63 of the 71 still need a reason. The other 8 were small. The core's glue, `null3d.js`, grew 6 times by 154 to 240 bytes when the core gained functions. The job worker's file grew by 23 bytes, and a GLSL shader file by 213 bytes. Every other growth was 267 bytes or more. With a floor of 512 bytes, 49 of the 71 still need a reason, and with 1 KB, 16 of them. A file under 12,800 bytes passes 2% with less than 256 bytes. Of the start's files, `job-worker.js` and `probe-worker.js` are under 1 KB, and so are most of the files that load later. The pull requests that the queue removed on 3 October fell in this group.
-
-### Proposal
+### Decision
 
 1. The start: up to 140 KB after Brotli for the engine's JavaScript that a page downloads at its start. The budget holds in each thread mode on each GPU path. That is the estimate for the M2 gate with all the P1 tasks and a 20% margin. The shader file and each path's renderer count as before.
 2. The files that load later: up to 16 KB after Brotli for each file of engine code that no thread mode downloads at its start. Each such file loads on a feature's first use, or after the first frame. The largest that M2 expects is the glTF worker at about 9 KB. The size report lists each file apart from the start, with its share of the budget. Third-party builds that the engine ships as they are, such as the KTX2 transcoder, keep a section of their own with no budget.
 3. The chunk rule for M2: a feature that a page does not use adds nothing to its start. Its code loads on first use, in a part that `ENGINE_PARTS` in `tools/lib/size-report.ts` names with the part that loads it. The engine test "a page that uses no feature that loads on first use downloads none of their files" checks every such part. It runs in every thread mode on both GPU paths, on the dev server and in a production build.
-4. The growth rule: a file needs a `Size-Growth:` trailer when it grows more than 2% and more than 256 bytes after Brotli against its base. A new file always needs one. The floor keeps the rule for every growth on main of more than a few lines. The two budgets bound what small growth adds up to, and the check still prints each file's growth.
-5. Trim nothing in M2, as the owner asked. When loading efficiency comes, the areas above give the order. Each needs its own work and measurements, and none is part of this proposal:
+4. Trim nothing in M2, as the owner asked. When loading efficiency comes, the areas above give the order. Each needs its own work and measurements, and none is part of this decision:
    - Shader text on first use: each feature's shaders in a file of their own, which loads with the feature. The shader files are the largest part of the start, and most of M2's growth goes into them.
    - One GPU path's backend for each page. The render worker holds both, and a page does not run 7.1 to 7.8 KB of it. #103 split them once. The split was set aside.
    - The fix text of the error codes in development builds only, 3.1 KB. It bends design principle 10, as option F says.
    - One copy of the shared helpers for all workers, as option G gives.
 
-The budgets and the floor need the owner's approval in writing. Until the owner decides, they stand as proposed, and a pull request that passes either budget fails the size check.
+The owner approved the budgets of points 1 and 2 in writing on 2026-10-04. Point 4 follows the owner's answer of 3 October. A pull request that passes either budget fails the size check.
 
 ### Consequences
 
 - `tools/lib/size-report.ts` holds the budgets (`START_BUDGET_BYTES` and `LATER_BUDGET_BYTES`) and the parts that load later (`LATER_PARTS`). `budgetProblems` judges both budgets. The size report prints the parts that load later in a section of their own.
-- `tools/lib/size-check.ts` holds the floor (`MIN_GROWTH_BYTES`), and the trailer hook prints the rule from the same constants.
-- AGENTS.md, the README and [Benchmarks](../benchmarks.md#download-size) give the new figures. When the owner decides, update this record's status and its row in [README.md](README.md).
+- AGENTS.md, the README and [Benchmarks](../benchmarks.md#download-size) give the new figures. A further raise of either budget needs the owner's approval in writing, recorded here.
