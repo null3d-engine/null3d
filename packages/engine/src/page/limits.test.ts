@@ -46,6 +46,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	shaderBits: 0,
 	cellCulling: true,
 	depthPrepass: false,
+	vertexSkinning: false,
 });
 
 /** A WebGL2 device that draws RGBA16F targets with the engine's MSAA. */
@@ -77,6 +78,7 @@ const PLAIN: DeviceOptions = {
 	freshShaders: false,
 	compression: undefined,
 	cells: true,
+	vertexSkinning: false,
 	hdr: true,
 	half: undefined,
 	antialias: 'msaa',

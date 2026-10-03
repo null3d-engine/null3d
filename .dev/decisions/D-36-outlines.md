@@ -40,6 +40,7 @@ PARITY_AND_COST
 
 - The scene's depth must outlive the scene's render pass while outlines draw. Where the device has transient attachments, the depth loses that usage then, and on a tile-based GPU it is written to memory.
 - On the 8-bit path the scene color holds display color. The final pass maps the overlay alone through the tone mapping and adds it after, which matches the HDR path over dark pixels and gives weaker edges over bright ones.
+- An outlined skinned object draws its mask in its pose of the frame. On WebGPU the mask pass reads the vertices that the skinning pass wrote, as the scene and shadow passes do ([D-20](D-20-webgpu-skinning.md)). With the switch that skins in the vertex shader, the mask template's `SKIN` build skins them, as the depth template's does.
 - The outline's passes and targets are switched on only while outlines are on and some object is outlined. Then the final pass runs in the build of its declaration that reads the outline's textures: one declaration for each pair of bloom and outline.
 
 ## Consequences

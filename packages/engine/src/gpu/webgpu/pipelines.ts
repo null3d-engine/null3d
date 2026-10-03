@@ -11,9 +11,12 @@ import {
 	LAYOUT_FINAL,
 	LAYOUT_FINAL_BLOOM,
 	LAYOUT_FRAME,
+	LAYOUT_JOINTS,
 	LAYOUT_LIGHT_CLUSTERS,
 	LAYOUT_MATERIAL_MAPS,
+	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
+	PERMUTATION_SKIN,
 	SIZE_INSTANCE_STRIDE,
 	STATE_BLEND,
 	STATE_BLEND_ADDITIVE,
@@ -44,6 +47,7 @@ import {
 	TEMPLATE_OUTLINE_EDGE,
 	TEMPLATE_OUTLINE_MASK,
 	TEMPLATE_SHADOW_DEPTH,
+	TEMPLATE_SKIN,
 	VERTEX_INSTANCE_LOCATION,
 	VERTEX_TYPE_F32,
 	VERTEX_TYPE_SINT8,
@@ -256,12 +260,18 @@ function scaleConstants(
 export class Pipelines {
 	private readonly layouts: (GPUBindGroupLayout | undefined)[] = [];
 	private readonly templates: (RenderTemplate | undefined)[] = [];
-	/** Each template's pipeline layout, made for its first pipeline. */
+	/**
+	 * Each template's pipeline layout, made for its first pipeline, and its layout with the joint
+	 * texture's group after its own, for the builds that skin in the vertex shader.
+	 */
 	private readonly pipelineLayouts: (GPUPipelineLayout | undefined)[] = [];
+	private readonly skinLayouts: (GPUPipelineLayout | undefined)[] = [];
 	private readonly cullLayout: GPUPipelineLayout;
 	private readonly cull: WgslShader | undefined;
 	private readonly lightLayout: GPUPipelineLayout;
 	private readonly lightClusters: WgslShader | undefined;
+	private readonly skinLayout: GPUPipelineLayout;
+	private readonly skin: WgslShader | undefined;
 	private readonly mipmap: WgslShader | undefined;
 	private readonly modules = new Map<WgslShader, GPUShaderModule>();
 	/** The pipelines that make mip levels, by the format they draw. */
@@ -347,6 +357,26 @@ export class Pipelines {
 			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+		]);
+		// The joint texture, which the builds that skin in the vertex shader read.
+		this.defineLayout(LAYOUT_JOINTS, 'joints', [
+			{
+				binding: 0,
+				visibility: GPUShaderStage.VERTEX,
+				texture: { sampleType: 'unfilterable-float' },
+			},
+		]);
+		// The skinning pass's table of formats and parts, a mesh page's vertices, the skinned
+		// vertices that it writes, and the joint matrices, which it reads with textureLoad.
+		this.defineLayout(LAYOUT_SKIN, 'skin', [
+			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{
+				binding: 3,
+				visibility: GPUShaderStage.COMPUTE,
+				texture: { sampleType: 'unfilterable-float' },
+			},
 		]);
 		// The final pass reads the scene color with textureLoad, which takes any float format, and
 		// its color grading table, a 3D texture, with a linear filter, which reads the outline's
@@ -469,6 +499,8 @@ export class Pipelines {
 			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_CLUSTERS)],
 		});
 		this.lightClusters = variantFor(shaders.light_clusters, 0, 'wgsl')?.wgsl ?? undefined;
+		this.skinLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_SKIN)] });
+		this.skin = variantFor(shaders.skin, 0, 'wgsl')?.wgsl ?? undefined;
 		this.mipmap = variantFor(shaders.mipmap, 0, 'wgsl')?.wgsl ?? undefined;
 	}
 
@@ -553,13 +585,16 @@ export class Pipelines {
 			throw new Error(`render template ${template} has no variant for permutation ${permutation}`);
 		const module = this.module(t.label, shader);
 		const entryPoints = shader.pipelines[t.pipeline];
-		let layout = this.pipelineLayouts[template];
+		const skins = (permutation & PERMUTATION_SKIN) !== 0;
+		const layouts = skins ? this.skinLayouts : this.pipelineLayouts;
+		let layout = layouts[template];
 		if (!layout) {
+			const groups = skins ? [...t.layouts, LAYOUT_JOINTS] : t.layouts;
 			layout = this.device.createPipelineLayout({
 				label: t.label,
-				bindGroupLayouts: t.layouts.map((id) => this.layout(id)),
+				bindGroupLayouts: groups.map((id) => this.layout(id)),
 			});
-			this.pipelineLayouts[template] = layout;
+			layouts[template] = layout;
 		}
 		return {
 			label: t.label,
@@ -626,8 +661,16 @@ export class Pipelines {
 		return pipeline;
 	}
 
-	/** How to build a compute pipeline of a template: culling, or a step of light clustering. */
+	/** How to build a compute pipeline of a template: culling, skinning, or a step of light clustering. */
 	compute(template: number): GPUComputePipelineDescriptor {
+		if (template === TEMPLATE_SKIN) {
+			if (!this.skin) throw new Error("the device's shader module has no skinning shader");
+			return {
+				label: 'skin',
+				layout: this.skinLayout,
+				compute: { module: this.module('skin', this.skin), entryPoint: 'main' },
+			};
+		}
 		if (template === TEMPLATE_CULL) {
 			if (!this.cull) throw new Error("the device's shader module has no culling shader");
 			return {

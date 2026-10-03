@@ -159,6 +159,50 @@ fn recording_frames_with_spot_light_shadows_allocates_nothing() {
     }
 }
 
+/// Records warm-up frames of `world` with three skinned columns that play their clip: one that
+/// the camera sees, one that only the sun's cascades see, and one that moves in and out of the
+/// camera's view. Then it records steady frames and frames whose structure changes, and returns
+/// what those allocated.
+fn skinning_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    world.add_skinned([0.0, 0.0, 0.0]);
+    world.add_skinned([0.0, 30.0, 0.0]);
+    let mover = world.add_skinned([3.0, 0.0, 0.0]);
+    let shadow = SunShadow {
+        cascades: 2,
+        map_size: 1024,
+        bias: 0.5,
+        normal_bias: 1.0,
+        distance: 40.0,
+        layers: 1,
+    };
+    world.renderer.settings_mut().set_sun_shadow(Some(shadow));
+    world.record(true);
+    let step = |world: &mut World<B>, frame: u32, rebuild: bool| {
+        let z = if frame % 6 < 3 { 0.0 } else { 40.0 };
+        world.scene.set_position(mover, [3.0, 0.0, z]).unwrap();
+        world.frame = frame;
+        world.record(rebuild);
+    };
+    // Frames of both parities, and a rebuild on each parity, warm up.
+    for frame in 2..=8 {
+        step(&mut world, frame, frame > 6);
+    }
+    CountingAllocator::arm();
+    for frame in 9..=100 {
+        step(&mut world, frame, frame.is_multiple_of(25));
+    }
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn skinning_frames_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(skinning_allocations(World::new()), 0, "WebGPU");
+    let allocated = skinning_allocations(webgl2_world(true));
+    assert_eq!(allocated, 0, "WebGL2");
+}
+
 /// Records warm-up frames of a world with a second view, then steady frames and frames whose
 /// structure changes, and returns what those allocated.
 fn two_view_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {

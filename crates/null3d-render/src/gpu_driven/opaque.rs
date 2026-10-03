@@ -20,12 +20,10 @@ use null3d_gpu::drawlist::{
 use super::cull::INDIRECT_BYTES;
 use super::ids;
 use super::layout::{Bucket, Layout};
+use super::skin::DrawGroups;
 use crate::frame::{MeshBuffers, RecordError, UploadArena};
 use crate::pipelines::PassTargets;
 use crate::view::{ViewFrame, ViewId};
-
-/// The group index of the maps' bind group in the mesh pipelines that sample a map.
-const TEXTURES_GROUP: u32 = 1;
 
 /// Records the creation of a view's frame uniform buffer.
 pub(super) fn create_frame_buffer(list: &mut DrawList, view: ViewId) -> Result<(), RecordError> {
@@ -135,16 +133,17 @@ pub(super) fn record_bundle(
 }
 
 /// Records the draws of every bucket of the layout with the pipeline that `pipeline_of` picks,
-/// leaving out the buckets for which it gives 0, with the maps' bind groups when `textures`.
+/// leaving out the buckets for which it gives 0, with the maps' bind groups when `maps`.
 fn draw_buckets(
     list: &mut DrawList,
     view: ViewId,
     layout: &Layout,
     meshes: &MeshBuffers,
     pipeline_of: impl Fn(&Bucket) -> u32,
-    textures: bool,
+    maps: bool,
 ) -> Result<(), RecordError> {
-    let (mut pipeline, mut page, mut group) = (None, None, 0);
+    let (mut pipeline, mut vertices, mut indices) = (None, None, None);
+    let mut groups = DrawGroups::default();
     for bucket in &layout.buckets {
         let id = pipeline_of(bucket);
         if id == 0 {
@@ -154,10 +153,7 @@ fn draw_buckets(
             list.push(Op::SetPipeline, &[id])?;
             pipeline = Some(id);
         }
-        if textures && bucket.group != 0 && bucket.group != group {
-            list.push(Op::SetBindGroup, &[TEXTURES_GROUP, bucket.group, 0])?;
-            group = bucket.group;
-        }
+        groups.set(list, if maps { bucket.group } else { 0 }, bucket.skins)?;
         list.push(
             Op::SetVertexBuffer,
             &[
@@ -169,11 +165,19 @@ fn draw_buckets(
         )?;
         for index in bucket.first_draw..bucket.first_draw + bucket.draws {
             let draw = layout.draws[index as usize];
-            if page != Some(draw.page) {
-                let (vertices, indices) = meshes.ids(draw.page);
-                list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
-                list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
-                page = Some(draw.page);
+            let (page_vertices, page_indices) = meshes.ids(draw.page);
+            // A skinned part draws its own region of skinned vertices with its page's indices.
+            let source = draw.vertices.unwrap_or((page_vertices, 0));
+            if vertices != Some(source) {
+                list.push(Op::SetVertexBuffer, &[0, source.0, source.1, 0])?;
+                vertices = Some(source);
+            }
+            if indices != Some(page_indices) {
+                list.push(
+                    Op::SetIndexBuffer,
+                    &[page_indices, index_format::UINT16, 0, 0],
+                )?;
+                indices = Some(page_indices);
             }
             list.push(
                 Op::DrawIndexedIndirect,

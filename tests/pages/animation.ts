@@ -121,7 +121,7 @@ run('animation', async () => {
 	check(
 		core,
 		'initEngine',
-		core.initEngine(jobWorkers, 64, 1, 64, 0, true, 0, 2048, 0, 0, false, true, false),
+		core.initEngine(jobWorkers, 64, 1, 64, 0, true, 0, 2048, 0, 0, false, true, false, false),
 	);
 	const { workers, stopped } = await startWorkers(module, memory, jobWorkers);
 	progress(`${jobWorkers} job workers ready`);
@@ -157,11 +157,6 @@ run('animation', async () => {
 		const slotClips = view(Uint32Array, C.ANIMATION_FIELD_SLOT_CLIPS, slots);
 		const slotTimes = view(Float32Array, C.ANIMATION_FIELD_SLOT_TIMES, slots);
 		const slotWeights = view(Float32Array, C.ANIMATION_FIELD_SLOT_WEIGHTS, slots);
-		const matrices = view(
-			Float32Array,
-			C.ANIMATION_FIELD_MATRICES,
-			characters * joints * C.CORE_MATRIX_FLOATS,
-		);
 		for (let i = 0; i < characters; i++) {
 			const at = i * C.ANIMATION_MAX_BLEND;
 			slotClips.set(clips, at);
@@ -188,6 +183,12 @@ run('animation', async () => {
 			if (frame >= warmup) times.push(performance.now() - start);
 		}
 		const jobMs = busy();
+		// The frame steps take turns between two buffers, so the last step's comes after them.
+		const matrices = view(
+			Float32Array,
+			C.ANIMATION_FIELD_MATRICES,
+			characters * joints * C.CORE_MATRIX_FLOATS,
+		);
 		const first = matrices.subarray(0, joints * C.CORE_MATRIX_FLOATS);
 		const second = matrices.subarray(
 			joints * C.CORE_MATRIX_FLOATS,

@@ -30,10 +30,22 @@ import {
 import type { EulerOrder, Mat4Like, QuatLike, Vec3Like } from '../math/types';
 import { transformQuat } from '../math/vec3';
 import { rowLimitWarning } from '../page/limits';
+import { controlViews, createControlBuffer } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import type { Animator, SceneAnimations } from './animation';
 import { type ColorInput, linearColor } from './color';
 import { type FogOptions, setSceneFog } from './fog';
+import {
+	FrameCameras,
+	LENS_CENTER_X,
+	LENS_CENTER_Y,
+	LENS_FLOATS,
+	LENS_HALF_HEIGHT,
+	LENS_HALF_WIDTH,
+	LENS_NEAR,
+	LENS_ORTHO,
+	type Ray,
+} from './frame-cameras';
 import {
 	checkFov,
 	checkNearFar,
@@ -1010,6 +1022,8 @@ export abstract class Camera extends Object3D {
 
 	/** @internal The layers of the objects the camera draws. */
 	layers: number = C.LAYERS_DEFAULT;
+	/** @internal The lens as the frame cameras keep it, which `updateLens` writes. */
+	readonly lens = new Float64Array(LENS_FLOATS);
 
 	/** @internal */
 	constructor(
@@ -1058,6 +1072,50 @@ export abstract class Camera extends Object3D {
 	}
 
 	/**
+	 * Writes the ray from the camera through a point on the canvas into `out`: `x` and `y` are CSS
+	 * pixels from the canvas's top-left corner, as `input.pointer` gives them. A perspective ray
+	 * starts at the camera, and an orthographic ray on the near plane. The direction has length 1.
+	 *
+	 * When the point is the position of the pointer or a finger from `input`, the ray uses the
+	 * camera of the frame that was on screen at that event, if it is one of the last four frames.
+	 * So a click during a fast pan picks what the user saw. Any other point uses the camera of the
+	 * frame that last ran, with its lens as it is now. Objects stay where they are now, so a moving
+	 * object can be up to a frame of its motion away from where the user saw it.
+	 */
+	screenToRay(x: number, y: number, out: Ray): void {
+		if (DEV) {
+			checkLive('screenToRay', this);
+			checkNumber('screenToRay', 'x', x, this);
+			checkNumber('screenToRay', 'y', y, this);
+		}
+		this.scene.frameCameras.screenToRay(this, x, y, out, 'screenToRay');
+	}
+
+	/**
+	 * Writes where a point in the world lies on the canvas into `out`: x and y in CSS pixels from the
+	 * canvas's top-left corner, then the point's depth, its distance in front of the camera along the
+	 * view. A depth below 0 puts the point behind the camera, where x and y have no meaning. It uses
+	 * the camera of the frame that last ran, with its lens as it is now, so in `onLateUpdate` it
+	 * places points where the frame draws them.
+	 */
+	worldToScreen(point: Vec3Like, out: Vec3Like): void {
+		if (DEV) {
+			checkLive('worldToScreen', this);
+			checkVector(
+				'worldToScreen',
+				this,
+				point[0] as number,
+				point[1] as number,
+				point[2] as number,
+			);
+		}
+		this.scene.frameCameras.worldToScreen(this, point, out, 'worldToScreen');
+	}
+
+	/** @internal Writes the lens into `lens`, after each change of its values. */
+	abstract updateLens(): void;
+
+	/**
 	 * @internal Gives the engine core this camera's lens and layers, which the active camera draws
 	 * with, or with `target` set to `CAMERA_TARGET_SHADOWS`, the lens that fits the shadow
 	 * cascades.
@@ -1084,6 +1142,7 @@ export class PerspectiveCamera extends Camera {
 		far: number,
 	) {
 		super(scene, handle, name, near, far);
+		this.updateLens();
 	}
 
 	/** The vertical field of view in degrees. */
@@ -1099,6 +1158,17 @@ export class PerspectiveCamera extends Camera {
 		}
 		this.verticalFov = degrees;
 		this.scene.lensChanged(this);
+	}
+
+	/** @internal */
+	updateLens(): void {
+		const lens = this.lens;
+		lens[LENS_ORTHO] = 0;
+		lens[LENS_HALF_HEIGHT] = Math.tan((this.verticalFov * Math.PI) / 360);
+		lens[LENS_HALF_WIDTH] = 0;
+		lens[LENS_CENTER_X] = 0;
+		lens[LENS_CENTER_Y] = 0;
+		lens[LENS_NEAR] = this.near;
 	}
 
 	/** @internal */
@@ -1148,6 +1218,7 @@ export class OrthographicCamera extends Camera {
 		far: number,
 	) {
 		super(scene, handle, name, near, far);
+		this.updateLens();
 	}
 
 	/** The view's height in world units. */
@@ -1175,6 +1246,17 @@ export class OrthographicCamera extends Camera {
 		}
 		setViewHeight(this.view, height);
 		this.scene.lensChanged(this);
+	}
+
+	/** @internal */
+	updateLens(): void {
+		const { lens, view } = this;
+		lens[LENS_ORTHO] = 1;
+		lens[LENS_HALF_HEIGHT] = view.height / 2;
+		lens[LENS_HALF_WIDTH] = view.width / 2;
+		lens[LENS_CENTER_X] = view.centerX;
+		lens[LENS_CENTER_Y] = view.centerY;
+		lens[LENS_NEAR] = this.near;
 	}
 
 	/** @internal */
@@ -1629,8 +1711,26 @@ export class Scene {
 		/** True when the engine draws with WebGL2, whose devices draw fewer rows than WebGPU's. */
 		private readonly webgl2: boolean,
 		private readonly warmUpScene: () => Promise<void> = () => Promise.resolve(),
+		/** The cameras of the last frames, which the sketch runner gives; tests get a stand-in. */
+		private cameras?: FrameCameras,
 	) {
 		if (DEV) this.unmarkedWrites = new UnmarkedWrites(this);
+	}
+
+	/** @internal The cameras of the last frames, for `screenToRay` and `worldToScreen`. */
+	get frameCameras(): FrameCameras {
+		this.cameras ??= new FrameCameras(this.core, controlViews(createControlBuffer(false)), {
+			frameAt: () => 0,
+		});
+		return this.cameras;
+	}
+
+	/**
+	 * @internal Keeps the active camera of sketch frame `frame`, which drew on a canvas of `width`
+	 * by `height` device pixels, so rays from that frame's input use it.
+	 */
+	keepFrameCamera(frame: number, width: number, height: number): void {
+		this.frameCameras.record(frame, this.activeCamera, width, height);
 	}
 
 	/** @internal */
@@ -1696,7 +1796,7 @@ export class Scene {
 	worldMatrix(object: Object3D, call: string): Float64Array {
 		// The core's error adds the slot to the object's name.
 		this.core.check(
-			this.core.glue.worldMatrix(object.handle, this.matrix),
+			this.core.readWorldMatrix(object.handle, this.matrix),
 			call,
 			object.label,
 			true,
@@ -1806,6 +1906,7 @@ export class Scene {
 
 	/** @internal */
 	lensChanged(camera: Camera): void {
+		camera.updateLens();
 		if (camera === this.activeCamera) camera.sendLens(this.core.glue);
 		if (camera === this.shadowCamera) camera.sendLens(this.core.glue, C.CAMERA_TARGET_SHADOWS);
 	}

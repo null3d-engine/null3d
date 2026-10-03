@@ -158,17 +158,17 @@ const VISIBLE_BIAS: DepthBias = DepthBias {
 /// mask: every part with no depth test, then the parts that nothing hides, nudged toward the
 /// camera so that its own surface passes. Both draw both faces and write no depth, as three.js
 /// draws its mask with both faces. The mask template places the vertices as the depth template
-/// does.
+/// does, and skins them in the vertex shader where `pipeline` does.
 pub(crate) const fn mask_keys(pipeline: DrawKey) -> (DrawKey, DrawKey) {
     let every = DrawKey {
         template: template::OUTLINE_MASK,
-        permutation: 0,
+        permutation: pipeline.permutation & permutation::SKIN,
         vertex_format: pipeline.vertex_format,
         state: state_flags::CULL_NONE | state_flags::NO_DEPTH_TEST,
         bias: DepthBias::NONE,
     };
     let visible = DrawKey {
-        permutation: permutation::OUTLINE_VISIBLE,
+        permutation: every.permutation | permutation::OUTLINE_VISIBLE,
         state: state_flags::CULL_NONE | state_flags::NO_DEPTH_WRITE,
         bias: VISIBLE_BIAS,
         ..every

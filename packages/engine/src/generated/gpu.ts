@@ -112,6 +112,8 @@ export const LAYOUT_DEPTH = 7;
 export const LAYOUT_LIGHT_CLUSTERS = 8;
 export const LAYOUT_BLOOM = 9;
 export const LAYOUT_FINAL_BLOOM = 10;
+export const LAYOUT_JOINTS = 11;
+export const LAYOUT_SKIN = 12;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -179,6 +181,7 @@ export const TEMPLATE_CULL = 16;
 export const TEMPLATE_LIGHT_COUNT = 17;
 export const TEMPLATE_LIGHT_PLACE = 18;
 export const TEMPLATE_LIGHT_WRITE = 19;
+export const TEMPLATE_SKIN = 20;
 export const TEMPLATE_OUTLINE_MASK = 21;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
@@ -203,6 +206,7 @@ export const SIZE_FRAME_UNIFORM_BYTES = 288;
 export const SIZE_OUTPUT_UNIFORM_BYTES = 16;
 export const SIZE_CULL_WORKGROUP_SIZE = 128;
 export const SIZE_INDIRECT_WORDS = 5;
+export const SIZE_BUCKET_WORDS = 9;
 export const SIZE_MATRIX_TEXELS = 3;
 export const SIZE_MATRICES_PER_TEXTURE_ROW = 512;
 export const SIZE_INDICES_PER_TEXTURE_ROW = 2048;
