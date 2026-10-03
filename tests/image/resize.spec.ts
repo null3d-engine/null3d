@@ -69,12 +69,19 @@ const DEFAULT_CANVAS = { width: 300, height: 150 };
 /** Frames that the engine draws before a test reads a size that must not change. */
 const SETTLE_FRAMES = 10;
 
-/** WebGPU's default limit on a texture's width and height, within which the engine stays. */
-const WEBGPU_MAX_TEXTURE_SIZE = 8192;
+/**
+ * Runs in the page: the largest drawing buffer of a GPU path, as the browser gives it. On WebGPU it
+ * is the texture size limit of a device requested as the engine requests it, and on WebGL2 the
+ * smallest limit of a texture, a renderbuffer and the viewport.
+ */
+const browserMaxDrawingSize = (gpu: string) =>
+	(globalThis as { maxDrawingSize?: (gpu: string) => Promise<number> }).maxDrawingSize?.(gpu);
 
-/** Runs in the page: WebGL2's largest texture width and height. */
-const webgl2MaxTextureSize = () =>
-	(globalThis as { webgl2MaxTextureSize?: () => number }).webgl2MaxTextureSize?.();
+/** Runs in the page: the largest drawing buffer that the engine reports for its GPU path. */
+const maxCanvasSize = () => (globalThis as { maxCanvasSize?: number }).maxCanvasSize;
+
+/** Runs in the page: the message of an engine failure after the start, if one came. */
+const engineFailure = () => (globalThis as { engineFailure?: string }).engineFailure;
 
 /** The thread modes where the page draws into its canvas, and where a worker draws into it. */
 const CANVAS_MODES = ENGINE_MODES.filter(({ query }) => query === '' || query === 'render=main');
@@ -95,26 +102,6 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			});
 		});
 	}
-
-	test(`a canvas wider than the largest texture draws at a lower ratio on ${gpu}`, async ({
-		page,
-	}) => {
-		// Wider than any GPU's largest texture at the screen's ratio, and thin, so its targets stay small.
-		const css = { width: 20_000, height: 8 };
-		const ratio = await openPage(page, `gpu=${gpu}&css=${css.width}x${css.height}`);
-		const maxSize =
-			gpu === 'webgpu'
-				? WEBGPU_MAX_TEXTURE_SIZE
-				: Number(await page.evaluate(webgl2MaxTextureSize));
-		const fit = maxSize / (css.width * ratio);
-		expect(fit).toBeLessThan(1);
-		await expect
-			.poll(() => page.evaluate(canvasSize), { timeout: RESIZE_TIMEOUT_MS })
-			.toEqual({
-				css,
-				buffer: { width: maxSize, height: Math.round(css.height * ratio * fit) },
-			});
-	});
 
 	for (const mode of ENGINE_MODES) {
 		test(`a resized canvas stays sharp on ${gpu}, ${mode.name}`, async ({ page }) => {
@@ -139,4 +126,27 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			await expectBuffers(page, ratio);
 		});
 	}
+}
+
+// Compatibility mode allows smaller textures than core WebGPU, so a canvas that fits core WebGPU's
+// limit can still be too large for it.
+for (const gpu of ['webgpu', 'compat', 'webgl2'] as const) {
+	test(`a canvas wider than the largest texture draws at a lower ratio on ${gpu}`, async ({
+		page,
+	}) => {
+		// Wider than any GPU's largest texture at the screen's ratio, and thin, so its targets stay small.
+		const css = { width: 20_000, height: 8 };
+		const ratio = await openPage(page, `gpu=${gpu}&css=${css.width}x${css.height}`);
+		const maxSize = Number(await page.evaluate(browserMaxDrawingSize, gpu));
+		const fit = maxSize / (css.width * ratio);
+		expect(fit).toBeLessThan(1);
+		await expect
+			.poll(() => page.evaluate(canvasSize), { timeout: RESIZE_TIMEOUT_MS })
+			.toEqual({
+				css,
+				buffer: { width: maxSize, height: Math.round(css.height * ratio * fit) },
+			});
+		expect(await page.evaluate(maxCanvasSize)).toBe(maxSize);
+		expect(await page.evaluate(engineFailure)).toBeUndefined();
+	});
 }
