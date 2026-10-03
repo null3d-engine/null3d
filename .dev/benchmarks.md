@@ -222,6 +222,7 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 - The WebAssembly memory's size comes from `Runtime.queryObjects` on the page, because the engine keeps the memory out of the page's global scope.
 - The soak judges the run after a 2-minute warm-up. The sketch worker's and the render worker's heaps may each grow by 256 KB. The growth is the median of the last three samples less the median of the first three.
 - The WebAssembly memory may not grow at all, and the engine must still draw at the end.
+- `--scene s4` soaks S4, the phone scene, as M1's exit gate asks. Its shadows, street lights, moving vehicles and quality governor run frame code that S1 never reaches. S4 has a fixed count of objects, so the soak ignores `--n` there. `bun run bench:allocation --scene s4` samples the same scene, on WebGPU or with `--gpu webgl2`.
 
 ## Allocation and profiling
 
