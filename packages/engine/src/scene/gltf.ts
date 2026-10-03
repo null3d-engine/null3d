@@ -172,7 +172,12 @@ function parse(
 								{ id, buffers },
 								buffers.map(([, bytes]) => bytes),
 							),
-						reject,
+						(error) => {
+							reject(error);
+							// The worker answers a request without its buffers with an error, which
+							// frees the file it keeps for the request.
+							worker.send({ id, buffers: [] }, []);
+						},
 					);
 				else resolve(answer);
 			},
