@@ -1,10 +1,11 @@
 // A moving caster's shadow follows it in a far cascade that keeps its layer for several frames.
-// The shadow contact sketch drives a dynamic box past still ones, live, in the last of three cascades.
+// The shadow contact sketch drives a dynamic box past still ones, live, in the last of three
+// cascades. The box moves a fixed step in each frame, so a slow GPU reads it where a fast one does.
 // Each frame read back gives the offset between the box and its shadow. With far cascades that
-// draw in every frame, the offset stays the same. With far cascades that draw once in 8 frames, it
-// must match: a layer kept from an earlier frame would show the shadow where the box stood then,
-// up to 7 frames of driving behind it. Hold mode cannot show this, as it draws one frame, in which
-// every cascade draws. On both GPU paths.
+// draw in every frame, the offset stays nearly the same. With far cascades that draw once in 8
+// frames, it must match: a layer kept from an earlier frame would show the shadow where the box
+// stood then, up to 7 frames of driving behind it. Hold mode cannot show this, as it draws one
+// frame, in which every cascade draws. On both GPU paths.
 import { expect, type Page, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -16,8 +17,9 @@ interface Result {
 
 /**
  * How far, in pixels, a frame's offset may stray from the median of every-frame cascades. The
- * shadow's edges step across the far cascade's coarse texels as the box drives, so a shadow that
- * follows its box still strays by about a texel. A shadow a few frames behind strays by several.
+ * offset depends on where the box is: the shadow's edges step across the far cascade's coarse
+ * texels, and the box's top stands nearer the camera than the ground. So a shadow that follows its
+ * box still strays by up to about a texel. A shadow two or more frames behind strays by more.
  */
 const MAX_STRAY = 5;
 

@@ -236,7 +236,7 @@ const DOCS = {
 	E1406: {
 		title: 'Engine file not downloaded',
 		cause:
-			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first color grading table loads its readers, and the first sprite batch the sprite code. The server answered with an error, or the connection broke off.',
+			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder. The first color grading table loads its readers, and the first sprite batch the sprite code. The server answered with an error, or the connection broke off.',
 		example: 'E1406: /assets/null3d_memory-3f9c1a2b.json did not download: HTTP 404.',
 		since: '0.1',
 	},

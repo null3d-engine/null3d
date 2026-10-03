@@ -118,12 +118,13 @@ export class Assets {
 	 * Downloads a glTF 2.0 model, a `.glb` file or a `.gltf` file with the files it names, and
 	 * makes a prefab of it: its meshes, materials, textures, lights and nodes, made once, which
 	 * `scene.instantiate` copies. A worker parses the file off the sketch's frames, and the first
-	 * call downloads the loader and its worker. The loads count for `onProgress`, the files the model
-	 * names too, and they take files that `preload` downloaded. Throws E1411 when a file does not
-	 * download, E1413 when a server of another origin does not allow the page to read it, E1416 for
-	 * a file that is not a glTF model the engine reads, E1417 for a file that requires an extension
-	 * the engine does not read, E1412 when an image does not decode, and E1406 when the loader does
-	 * not download.
+	 * call downloads the loader and its worker. The first file with meshopt compression also
+	 * downloads the meshopt decoder. The loads count for `onProgress`, the files the model names too,
+	 * and they take files that `preload` downloaded. Throws E1411 when a file does not download,
+	 * E1413 when a server of another origin does not allow the page to read it, E1416 for a file
+	 * that is not a glTF model the engine reads, E1417 for a file that requires an extension the
+	 * engine does not read, E1412 when an image does not decode, and E1406 when the loader or the
+	 * meshopt decoder does not download.
 	 */
 	async loadGltf(url: string | URL): Promise<Prefab> {
 		const call = 'assets.loadGltf';
