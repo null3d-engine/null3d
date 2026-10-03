@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { createServer } from 'vite';
 import null3d from '../../packages/vite-plugin/src/index.ts';
+import { sourceResolve } from '../../tools/lib/source-condition.ts';
 import { pageResult } from '../lib/page-result.ts';
 import { REPO_ROOT } from '../lib/server.ts';
 
@@ -35,6 +36,7 @@ test("a WGSL error in a sketch shows in Vite's overlay at the file, line and col
 		logLevel: 'silent',
 		cacheDir: 'node_modules/.vite-shader-errors',
 		plugins: [null3d()],
+		resolve: sourceResolve,
 		optimizeDeps: { noDiscovery: true },
 		server: { host: 'localhost', port: 0, watch: null },
 	});

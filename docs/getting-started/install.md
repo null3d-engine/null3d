@@ -23,9 +23,15 @@ bun add -d vite @null3d/vite-plugin
 
 | Package | What it holds |
 | --- | --- |
-| `@null3d/engine` | The TypeScript API, the worker entry points, both WebAssembly builds and these docs |
-| `@null3d/vite-plugin` | The build and dev server setup that null3D needs |
+| `@null3d/engine` | The API as JavaScript with TypeScript declarations, the worker entry points, both WebAssembly builds and these docs |
+| `@null3d/vite-plugin` | The build and dev server setup that null3D needs, and the shader compiler |
 | `@null3d/controls` | Orbit and map camera controls, for sketches that use them |
+
+Add the controls when a sketch uses them:
+
+```sh
+bun add @null3d/controls
+```
 
 ## Add the Vite plugin
 
@@ -68,6 +74,8 @@ The `null3d` command, in the `@null3d/cli` package, is optional. It does jobs th
 bun add -d @null3d/cli
 bunx @null3d/cli test
 ```
+
+The `test` command type checks your project with the project's own TypeScript, so add it with `bun add -d typescript`. For the types of `.wgsl` imports, add `@null3d/vite-plugin/client` to the `types` in your `tsconfig.json`, as [Custom shaders](../guides/custom-shaders.md) shows.
 
 [The `null3d` command](../cli/null3d.md) lists every command.
 

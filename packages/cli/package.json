@@ -41,7 +41,7 @@
 		"node": "^20.19.0 || >=22.12.0"
 	},
 	"scripts": {
-		"prepack": "cp ../../LICENSE-MIT ../../LICENSE-APACHE ."
+		"prepack": "bun ../../tools/build-package.ts cli"
 	},
 	"dependencies": {
 		"fast-png": "8.0.0",
