@@ -2,7 +2,12 @@
 // device runner.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ContactFigures, StabilityFigures, StairSteps } from '../pages/lib/shadow-check.ts';
+import type {
+	AcneFigures,
+	ContactFigures,
+	StabilityFigures,
+	StairSteps,
+} from '../pages/lib/shadow-check.ts';
 
 /** What the visual page publishes. */
 export interface VisualResult {
@@ -15,6 +20,8 @@ export interface VisualResult {
 	edges: { offsetPixels: number; steps?: StairSteps; referenceSteps?: StairSteps };
 	/** The contact figures, which runner pages from before the contact check leave out. */
 	contact?: ContactFigures;
+	/** The acne figures, which runner pages from before the acne check leave out. */
+	acne?: AcneFigures;
 	/** PNG files in base64, by name. */
 	images?: Record<string, string>;
 }
@@ -29,6 +36,8 @@ export interface VisualLimits {
 	stairStepPixels?: number;
 	/** The mean light between a caster's foot and its shadow, in pixels, where the scene has feet. */
 	contactGapPixels?: number;
+	/** The mean shadow on flat surfaces that the reference lights, in percent. */
+	acnePercent?: number;
 }
 
 /**
@@ -45,11 +54,18 @@ export interface VisualLimits {
 export const VISUAL_LIMITS: Readonly<Record<string, VisualLimits>> = {
 	'shadow-scene': { changedPercent: 0.05, edgeOffsetPixels: 0.15, stairStepPixels: 0.19 },
 	s2: { changedPercent: 0.05, edgeOffsetPixels: 0.15 },
-	s4: { changedPercent: 0.05, edgeOffsetPixels: 0.114, contactGapPixels: 0.06 },
+	s4: { changedPercent: 0.05, edgeOffsetPixels: 0.114, contactGapPixels: 0.06, acnePercent: 0.3 },
 };
 
 /** The views of the contact scene that the contact checks draw. */
-export type ContactCase = 'near' | 'far' | 'turn' | 'far-ground';
+export type ContactCase =
+	| 'near'
+	| 'far'
+	| 'turn'
+	| 'far-ground'
+	| 'far-slabs'
+	| 'far-slabs-sun-35'
+	| 'far-slabs-sun-20';
 
 /** A view of the contact scene, and the most that each of its figures may reach. */
 export interface ContactLimits {
@@ -61,6 +77,8 @@ export interface ContactLimits {
 	rimPixels?: number;
 	/** The share of the frame's pixels in shadow, in percent. */
 	shadowedPercent?: number;
+	/** The mean shadow on flat surfaces that the reference lights, in percent. */
+	acnePercent?: number;
 }
 
 /**
@@ -76,6 +94,9 @@ export const CONTACT_LIMITS: Readonly<Record<ContactCase, ContactLimits>> = {
 	far: { query: 'view=far', gapPixels: 0.13, rimPixels: 0.4 },
 	turn: { query: 'view=turn', gapPixels: 0.11, rimPixels: 0.3 },
 	'far-ground': { query: 'view=far&groundCasts', shadowedPercent: 9.6 },
+	'far-slabs': { query: 'view=far&slabs&filter=5', acnePercent: 6 },
+	'far-slabs-sun-35': { query: 'view=far&slabs&filter=5&sun=35', acnePercent: 10 },
+	'far-slabs-sun-20': { query: 'view=far&slabs&filter=5&sun=20', acnePercent: 11 },
 };
 
 /** A figure over its limit, as a problem, or nothing. */
@@ -88,7 +109,7 @@ function overLimit(what: string, value: number, limit: number | undefined, unit:
 /** What is wrong with a visual page's figures for a view of the contact scene; empty when nothing is. */
 export function contactProblems(name: ContactCase, result: VisualResult): string[] {
 	const limits = CONTACT_LIMITS[name];
-	const { contact, stability } = result;
+	const { contact, stability, acne } = result;
 	if (!contact) return ['the visual page measured no contact figures'];
 	return [
 		...(limits.gapPixels !== undefined && contact.feet < 20
@@ -97,7 +118,15 @@ export function contactProblems(name: ContactCase, result: VisualResult): string
 		...overLimit("the light at the boxes' feet", contact.meanGapPixels, limits.gapPixels, 'px'),
 		...overLimit("the shadow on the boxes' tops", contact.meanRimPixels, limits.rimPixels, 'px'),
 		...overLimit('the share in shadow', stability.shadowedPercent, limits.shadowedPercent, '%'),
+		...acneProblems(acne, limits.acnePercent),
 	];
+}
+
+/** The acne figure over its limit, as a problem, or nothing. */
+function acneProblems(acne: AcneFigures | undefined, limit: number | undefined): string[] {
+	if (limit === undefined) return [];
+	if (!acne || acne.pixels < 1000) return ['the visual page found too little open lit ground'];
+	return overLimit('the shadow on open lit ground', acne.meanShadowPercent, limit, '%');
 }
 
 /**
@@ -108,10 +137,10 @@ export function saveVisualResult(folder: string, result: VisualResult): void {
 	mkdirSync(folder, { recursive: true });
 	for (const [name, png] of Object.entries(result.images ?? {}))
 		writeFileSync(join(folder, `${name}.png`), Buffer.from(png, 'base64'));
-	const { stability, edges, contact } = result;
+	const { stability, edges, contact, acne } = result;
 	writeFileSync(
 		join(folder, 'figures.json'),
-		JSON.stringify({ stability, edges, contact }, null, '\t'),
+		JSON.stringify({ stability, edges, contact, acne }, null, '\t'),
 	);
 }
 
@@ -139,6 +168,7 @@ export function visualProblems(scene: string, result: VisualResult): string[] {
 				'px',
 			),
 		);
+	if (result.acne) problems.push(...acneProblems(result.acne, limits.acnePercent));
 	const steps = edges.steps?.rmsPixels;
 	if (limits.stairStepPixels !== undefined && steps !== undefined && steps > limits.stairStepPixels)
 		problems.push(

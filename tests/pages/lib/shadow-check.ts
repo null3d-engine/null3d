@@ -10,6 +10,9 @@
 //   the frame's edges stray from them measures the steps that coarse texels leave.
 // - Stair steps: the position of one long straight shadow edge, row by row, against the straight
 //   line through it. Steps of coarse texels move the edge back and forth across the line.
+// - Contact: the light between the foot of each caster and the start of its shadow.
+// - Acne: shadow on flat surfaces that the reference lights all around, such as the stripes and
+//   rings of self-shadow on a pavement slab's top.
 
 /** The still scene of the shadow checks, `shadow-scene-sketch.ts`. */
 export const SHADOW_SCENE = {
@@ -284,6 +287,75 @@ export function contactFigures(
 		gapPercent: feet === 0 ? 0 : (100 * gapped) / feet,
 		tops,
 		meanRimPixels: tops === 0 ? 0 : rimSum / tops,
+	};
+}
+
+/**
+ * The acne check's thresholds. A pixel counts as open lit ground where the normals view shows a
+ * level surface, as the contact check reads it, and the reference shows at least `lit` there and
+ * at every pixel within `margin` pixels. The margin keeps out the frame's shadow edges, which a
+ * coarser map softens and moves by a pixel or two. A pixel under `shadowed` counts as shadowed.
+ */
+export const ACNE = { lit: 0.95, margin: 3, shadowed: 0.5 } as const;
+
+/** The acne figures of a frame: shadow on flat surfaces that the reference shows in full light. */
+export interface AcneFigures {
+	/** The pixels of open lit ground: level, and in full light in the reference all around. */
+	pixels: number;
+	/**
+	 * The mean shadow on those pixels in the frame, in percent: each pixel adds one less its shadow
+	 * factor. Stripes and rings of self-shadow on a flat caster's lit top raise it. 0 where the frame
+	 * lights them all, as the reference does.
+	 */
+	meanShadowPercent: number;
+	/** The share of those pixels, in percent, that the frame shows in shadow. */
+	shadowedPercent: number;
+}
+
+/**
+ * The acne figures of a shadows-view frame `factors` against the reference frame `reference` and
+ * the normals-view frame `normals` (RGBA) of the same view, `width` pixels across. The reference's
+ * fine map leaves no acne on flat surfaces, so shadow in the frame where the reference is lit all
+ * around comes from the frame's coarser texels comparing a surface with its own caster.
+ */
+export function acneFigures(
+	factors: Float32Array,
+	reference: Float32Array,
+	normals: Uint8Array,
+	width: number,
+): AcneFigures {
+	const height = Math.floor(factors.length / width);
+	const { lit, margin, shadowed } = ACNE;
+	// The pixels within the margin of a pixel that the reference does not show in full light: first
+	// along each row, then along each column of that.
+	const dark = new Uint8Array(factors.length);
+	for (let i = 0; i < dark.length; i++) dark[i] = (reference[i] ?? 0) < lit ? 1 : 0;
+	const across = new Uint8Array(dark.length);
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			let near = 0;
+			for (let dx = Math.max(0, x - margin); dx <= Math.min(width - 1, x + margin) && !near; dx++)
+				near = dark[y * width + dx] ?? 0;
+			across[y * width + x] = near;
+		}
+	let [pixels, shadowSum, inShadow] = [0, 0, 0];
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			const i = y * width + x;
+			if (normalUp(normals, i) <= CONTACT.levelUp) continue;
+			let near = 0;
+			for (let dy = Math.max(0, y - margin); dy <= Math.min(height - 1, y + margin) && !near; dy++)
+				near = across[dy * width + x] ?? 0;
+			if (near) continue;
+			const factor = factors[i] ?? 1;
+			pixels++;
+			shadowSum += 1 - factor;
+			if (factor < shadowed) inShadow++;
+		}
+	return {
+		pixels,
+		meanShadowPercent: pixels === 0 ? 0 : (100 * shadowSum) / pixels,
+		shadowedPercent: pixels === 0 ? 0 : (100 * inShadow) / pixels,
 	};
 }
 
