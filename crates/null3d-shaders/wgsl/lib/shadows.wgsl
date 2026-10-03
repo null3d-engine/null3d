@@ -83,9 +83,11 @@ struct ReceiverPlane {
     slope: vec2f,
 }
 
-/// A plane that never raises a read's depth, for lookups without one.
+/// A plane that never raises a read's depth, for lookups without one. Its depth lies below every
+/// depth that a shadow map holds, which run from 0 to 1. A read whose depth it raises still
+/// compares as below every texel, so the read gives the same result as the receiver's own depth.
 fn no_plane() -> ReceiverPlane {
-    return ReceiverPlane(vec2f(0.0), -1.0e30, vec2f(0.0));
+    return ReceiverPlane(vec2f(0.0), -2.0, vec2f(0.0));
 }
 
 /// How far a receiver moves before its shadow lookup, relative to its position. `normal` is its unit
