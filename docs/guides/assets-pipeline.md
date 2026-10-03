@@ -52,7 +52,7 @@ scene.instantiate(ship);
 | --- | --- | --- |
 | `--lod` | Adds levels of detail to each mesh of 256 triangles or more | No levels |
 | `--max-texture-size <pixels>` | The largest side of a texture: a power of two up to 2048 | 2048 |
-| `--texture-quality <size\|high>` | `high` encodes color and data maps in UASTC, about four times larger than ETC1S with less loss | `size` |
+| `--texture-quality <size\|high>` | `high` encodes color and data maps in UASTC, several times larger than ETC1S, with less loss | `size` |
 | `--compression <none\|meshopt>` | `meshopt` compresses the file's buffers with `EXT_meshopt_compression`. The engine does not read it yet | `none` |
 | `--jobs <count>` | The worker threads that encode textures | One per CPU core |
 | `--report <file.json>` | Also writes the budget report as a JSON file | No file |
@@ -82,7 +82,7 @@ The command encodes each PNG and JPEG texture of a model as a KTX2 file of Basis
 | Normal maps | UASTC always, since ETC1S blurs their detail | Linear |
 | Metal-rough, occlusion and other maps | ETC1S, or UASTC with `--texture-quality high` | Linear |
 
-Each side of a texture becomes its nearest power of two, and then both halve together until the longer side fits `--max-texture-size`. A 1000 x 600 image becomes 1024 x 512. Every level of a mip chain then halves exactly, and textures of one size can share GPU memory.
+Each side of a texture becomes its nearest power of two, and then both halve together until the longer side fits `--max-texture-size`. A 1000 x 600 image becomes 1024 x 512. Every level of a mip chain then halves exactly.
 
 Textures are at most 2048 x 2048. The encoder is a 32-bit WebAssembly build, which refuses 4096 x 4096 images.
 

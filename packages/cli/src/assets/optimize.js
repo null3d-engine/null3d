@@ -43,7 +43,7 @@ Options:
   --lod                        Add levels of detail with a half, a quarter and an eighth of the
                                triangles, to meshes of 256 triangles or more (MSFT_lod)
   --max-texture-size <pixels>  The largest side of a texture: a power of two up to 2048 (2048)
-  --texture-quality <size|high> ETC1S for color and data maps, or UASTC, about four times
+  --texture-quality <size|high> ETC1S for color and data maps, or UASTC, several times
                                larger with less loss (size)
   --compression <none|meshopt> Compress the file's buffers with meshopt
                                (EXT_meshopt_compression), which the engine does not read yet (none)

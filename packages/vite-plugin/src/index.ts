@@ -292,7 +292,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		},
 		configureServer(server) {
 			server.middlewares.use(isolationMiddleware);
-			server.middlewares.use(`/${ASSET_FOLDER}/`, (req, res, next) => {
+			server.middlewares.use(`${server.config.base}${ASSET_FOLDER}/`, (req, res, next) => {
 				const path = decodeURIComponent((req.url ?? '').split('?')[0]?.slice(1) ?? '');
 				const bytes = cachedFile(root, path);
 				if (!bytes) return next();

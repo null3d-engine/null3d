@@ -24,7 +24,7 @@ export const ENCODER_FILES = {
  */
 
 /**
- * The texture format: `etc1s`, small with some loss, or `uastc`, about four times larger with
+ * The texture format: `etc1s`, small with some loss, or `uastc`, several times larger with
  * little loss.
  *
  * @typedef {'etc1s' | 'uastc'} Codec

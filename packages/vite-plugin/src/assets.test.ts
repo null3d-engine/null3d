@@ -1,7 +1,9 @@
 import { describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { copyFileSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { createServer as createHttpServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
-import { build } from 'vite';
+import { build, createServer } from 'vite';
 import { fixture } from '../../../tools/lib/fixture';
 import { ASSET_FOLDER, cachedFile, cacheFolder, modelKey, optimizedModel } from './assets';
 import null3d from './index';
@@ -50,6 +52,49 @@ describe('optimized models', () => {
 		const root = project();
 		for (const path of ['../package.json', 'textures/../../x', '.hidden/a.glb', 'a', 'a/b/c'])
 			expect(cachedFile(root, path)).toBeUndefined();
+	});
+
+	it('come from the dev server at the address that the import gives', async () => {
+		const root = project();
+		const server = await createServer({
+			root,
+			base: '/game/',
+			logLevel: 'silent',
+			configFile: false,
+			server: { middlewareMode: true, hmr: false, ws: false },
+			plugins: [null3d({ wgslDeclarations: false })],
+		});
+		try {
+			const module = await server.transformRequest('/models.glb?optimized');
+			const address = /"(\/game\/null3d-assets\/[\w-]+\/models\.glb)"/.exec(
+				module?.code ?? '',
+			)?.[1];
+			expect(address).toBeDefined();
+			// The plugin's routes on a server of the test's own, at a port that the system picks.
+			const http = createHttpServer(server.middlewares).listen(0, '127.0.0.1');
+			await new Promise((ready) => http.once('listening', ready));
+			const { port } = http.address() as AddressInfo;
+			const fetchFile = async (path: string) => {
+				const response = await fetch(`http://127.0.0.1:${port}${path}`);
+				return {
+					type: response.headers.get('content-type') ?? undefined,
+					body: Buffer.from(await response.arrayBuffer()),
+				};
+			};
+			const model = await fetchFile(address as string);
+			expect(model.type).toBe('model/gltf-binary');
+			expect(model.body?.subarray(0, 4).toString()).toBe('glTF');
+			const texture = await fetchFile(
+				new URL('../textures/x.ktx2', `http://host${address}`).pathname.replace(
+					'x.ktx2',
+					readdirSync(join(cacheFolder(root), 'textures'))[0] as string,
+				),
+			);
+			expect(texture.type).toBe('image/ktx2');
+			http.close();
+		} finally {
+			await server.close();
+		}
 	});
 
 	it("go into a build's assets folder, with the import giving the model's address", async () => {
