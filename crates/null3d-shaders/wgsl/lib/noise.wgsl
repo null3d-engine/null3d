@@ -222,13 +222,15 @@ fn worley2(p: vec2f) -> f32 {
 fn fbm3(p: vec3f, octaves: u32) -> f32 {
     var sum = 0.0;
     var total = 0.0;
-    var amplitude = 1.0;
-    var q = p;
     for (var octave = 0u; octave < octaves; octave++) {
-        sum += amplitude * simplex3(q);
+        // Each octave's frequency and amplitude come from its number, as the exponent bits of a
+        // float, so they are exact powers of 2 on every GPU. The loop carries only the sums. On
+        // the Adreno 830's WebGPU driver, a loop that doubles a 2D point at each pass returns the
+        // first pass's noise every time.
+        let frequency = bitcast<f32>((127u + octave) << 23u);
+        let amplitude = bitcast<f32>((127u - octave) << 23u);
+        sum += amplitude * simplex3(p * frequency);
         total += amplitude;
-        amplitude *= 0.5;
-        q *= 2.0;
     }
     return select(0.0, sum / total, total > 0.0);
 }
@@ -237,13 +239,11 @@ fn fbm3(p: vec3f, octaves: u32) -> f32 {
 fn fbm2(p: vec2f, octaves: u32) -> f32 {
     var sum = 0.0;
     var total = 0.0;
-    var amplitude = 1.0;
-    var q = p;
     for (var octave = 0u; octave < octaves; octave++) {
-        sum += amplitude * simplex2(q);
+        let frequency = bitcast<f32>((127u + octave) << 23u);
+        let amplitude = bitcast<f32>((127u - octave) << 23u);
+        sum += amplitude * simplex2(p * frequency);
         total += amplitude;
-        amplitude *= 0.5;
-        q *= 2.0;
     }
     return select(0.0, sum / total, total > 0.0);
 }

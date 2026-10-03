@@ -7,6 +7,7 @@ import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, KHRDracoMeshCompression } from '@gltf-transform/extensions';
 import { MeshoptDecoder } from 'meshoptimizer';
 import { ASSET_SCENE, assetSceneGlb } from '../../../../tests/lib/asset-scene.ts';
+import { meshoptDecoder } from '../../../engine/src/scene/gltf-meshopt.ts';
 import {
 	type GltfData,
 	type NodeData,
@@ -44,11 +45,7 @@ const scratch = mkdtempSync(join(tmpdir(), 'null3d-assets-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 const optimized = optimizeModel(at(ASSET_SCENE.source), DEFAULT_OPTIONS, encode);
-const lodMeshopt = optimizeModel(
-	at(ASSET_SCENE.source),
-	{ ...DEFAULT_OPTIONS, lod: true, meshopt: true },
-	encode,
-);
+const lodMeshopt = optimizeModel(at(ASSET_SCENE.source), { ...DEFAULT_OPTIONS, lod: true }, encode);
 
 /**
  * An output as glTF-Transform reads it, with meshopt's decoder: written to a folder with its
@@ -72,12 +69,16 @@ function glbJson(glb: Uint8Array) {
 	return JSON.parse(new TextDecoder().decode(glb.subarray(20, 20 + length)));
 }
 
+/** The meshopt decoder that the engine's glTF worker loads. */
+const decode = await meshoptDecoder();
+
 /** A file's data as the engine's loader parses it, with the buffers inside it. */
 const parse = (glb: Uint8Array): GltfData =>
 	parseGltf(
 		readContainer(glb, 'https://example.com/scene.glb'),
 		new Map(),
 		'https://example.com/scene.glb',
+		decode,
 	);
 
 /** A node's matrix in the scene, column-major, from the parsed nodes. */

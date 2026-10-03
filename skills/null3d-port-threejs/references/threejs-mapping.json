@@ -1122,7 +1122,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const prefab = await assets.loadGltf(url); scene.instantiate(prefab)",
-      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures need no transcoder path. Skins, animations, morph targets and meshopt compression are not read yet.",
+      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures and meshopt compression need no decoder setup. Skins, animations and morph targets are not read yet.",
       "docs": "api/assets",
       "detect": "\\bGLTFLoader\\b"
     },
@@ -1143,9 +1143,9 @@
       "three": "MeshoptDecoder / setMeshoptDecoder",
       "status": "direct",
       "since": "0.2",
-      "target": "Built in",
-      "notes": "Delete the setup. Every query walks the engine's own trees over each mesh's triangles and over the scene's objects.",
-      "docs": "guides/assets-pipeline",
+      "target": "Built in: assets.loadGltf(url) decodes meshopt data",
+      "notes": "Delete the setup. The loader reads KHR_meshopt_compression and EXT_meshopt_compression, and downloads the decoder with the first compressed file.",
+      "docs": "concepts/assets",
       "detect": "\\bMeshoptDecoder\\b|setMeshoptDecoder"
     },
     {

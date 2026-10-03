@@ -180,7 +180,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				preview: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				worker: { format: 'es' },
 				// A prebundled copy of the engine would lose the addresses of its workers and core files.
-				optimizeDeps: { exclude: ['@null3d/engine'] },
+				// The meshopt decoder is a plain module that the glTF worker imports on first use; a
+				// prebundle found that late would reload the page.
+				optimizeDeps: { exclude: ['@null3d/engine', 'meshoptimizer'] },
 			};
 		},
 		configResolved(config) {

@@ -8,7 +8,7 @@ summary: "glTF, KTX2, meshopt; prefabs and instantiate; upload budgets; memory."
 
 # Assets and prefabs
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Models, prefabs, textures, KTX2 files, integer vertex types and the upload budget are built. Not built yet: meshopt and Draco compression, the skins, animations and morph targets of glTF files, and the texture memory budget. Coding agents must not use them.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Models, prefabs, meshopt compression, textures, KTX2 files, integer vertex types and the upload budget are built. Not built yet: Draco compression, the skins, animations and morph targets of glTF files, and the texture memory budget. Coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -38,9 +38,21 @@ const many = scene.createInstances(ship, 200); // one row places a whole ship
 
 For hundreds or thousands of copies, `scene.createInstances(prefab, count)` draws them with instance batches instead of objects, one batch for each mesh of the model. The batches share their rows, so one write to a row moves every part of that copy. [Scene](../api/scene.md#models-and-copies) covers the three ways to copy, and [Assets](../api/assets.md#gltf-models) lists what each part of a file becomes.
 
-Before you publish a model, run it through `bunx @null3d/cli assets optimize`. The command stores its meshes as integers and its textures as KTX2 files, so the model downloads less and takes less GPU memory. [The asset pipeline](../guides/assets-pipeline.md) covers it.
+Before you publish a model, run it through `bunx @null3d/cli assets optimize`. The command stores its meshes as integers compressed with meshopt, and its textures as KTX2 files, so the model downloads less and takes less GPU memory. [The asset pipeline](../guides/assets-pipeline.md) covers it.
 
-The loader reads `.glb` files, and `.gltf` files with the files they name. It reads these extensions: `KHR_mesh_quantization`, `KHR_texture_basisu`, `KHR_texture_transform`, `KHR_materials_unlit`, `KHR_materials_emissive_strength`, `KHR_lights_punctual` and `EXT_mesh_gpu_instancing`. A file that requires another extension fails with E1417. The loader leaves out other extensions that a file only uses, and the model draws without them.
+The loader reads `.glb` files, and `.gltf` files with the files they name. It reads these extensions: `KHR_mesh_quantization`, `KHR_meshopt_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu`, `KHR_texture_transform`, `KHR_materials_unlit`, `KHR_materials_emissive_strength`, `KHR_lights_punctual` and `EXT_mesh_gpu_instancing`. A file that requires another extension fails with E1417. The loader leaves out other extensions that a file only uses, and the model draws without them.
+
+### Compressed meshes
+
+meshopt compression makes a model's vertex and index data several times smaller to download. The loader decodes it in its worker with meshoptimizer's own decoder, so the meshes match what any other meshopt decoder reads from the file. The decoder is about 6 KB after Brotli. It downloads with the first file that holds meshopt data, so a page without such files does not download it. It runs as WebAssembly, with SIMD instructions where the browser has them.
+
+```ts
+// sketch.ts: the same call loads a compressed model
+const city = await assets.loadGltf('/models/city-meshopt.glb');
+scene.instantiate(city);
+```
+
+The loader reads both names of the extension: `KHR_meshopt_compression`, and the older `EXT_meshopt_compression`. A file can carry a fallback buffer with the uncompressed data, for loaders without a decoder. The engine never downloads that buffer, because it always decodes. A file whose compressed data breaks the extension's rules, or does not decode, fails with E1416.
 
 ## Textures
 
@@ -87,5 +99,6 @@ Each texture reports its GPU memory in `memoryBytes`. The engine counts this mem
 | `new GLTFLoader().loadAsync(url)`, then `scene.add(gltf.scene)` | `const prefab = await assets.loadGltf(url)`, then `scene.instantiate(prefab)` |
 | `gltf.scene.clone()` or `SkeletonUtils.clone` for each copy | `scene.instantiate(prefab)` for each copy, which shares the GPU data |
 | `GLTFLoader` with `KTX2Loader` and its transcoder path | `assets.loadGltf(url)`. The engine ships the transcoder |
+| `GLTFLoader` with `setMeshoptDecoder(MeshoptDecoder)` | `assets.loadGltf(url)`. The engine ships the decoder, and downloads it with the first compressed file |
 | `GLTFLoader` with a quantized mesh | `assets.loadGltf(url)`. A glTF node's transform becomes the object's transform, so the integers stay on the GPU |
 | An `InstancedMesh` for each mesh of a model, kept in step by hand | `scene.createInstances(prefab, count)`: one set of rows for all the model's meshes |
