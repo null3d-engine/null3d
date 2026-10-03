@@ -16,7 +16,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `tools/` | The WebAssembly build, the docs generator, the skills check and the commit hooks |
 | `examples/` | Feature demos: one sketch of under 150 lines each, listed in `examples/demos.ts`. The examples page runs each demo live, and the image test manifest draws each one in hold mode |
 | `bench/`, `templates/`, `porting-corpus/` | Benchmarks, starter projects and the three.js porting corpus, as the milestones add them |
-| `.dev/` | Maintainer guides: [benchmarks](.dev/benchmarks.md), [device sessions](.dev/devices.md), [image tests](.dev/image-tests.md), [implementation notes](.dev/implementation-notes.md), [pull requests and parallel work](.dev/pull-requests.md), [releases](.dev/releases.md) and [tested devices](.dev/tested-devices.md) |
+| `.dev/` | Maintainer guides: [benchmarks](.dev/benchmarks.md), [device sessions](.dev/devices.md), [image tests](.dev/image-tests.md), [implementation notes](.dev/implementation-notes.md), [pull requests and parallel work](.dev/pull-requests.md), [releases](.dev/releases.md), [sample content](.dev/sample-content.md) and [tested devices](.dev/tested-devices.md) |
 | `.dev/decisions/` | [Decision records](.dev/decisions/README.md): the data behind measured design choices. Read the record before you change a choice it settled |
 
 ## Commands
@@ -49,6 +49,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run docs:style` | Check the writing rules in all published Markdown |
 | `bun run skills` | Sync `.claude/skills/` from `skills/`, then check the skills |
 | `bun run skills:check` | Check the skills without syncing |
+| `bun run samples:fetch` | Download the sample content at the pinned commit into the cache that every copy of the repository shares, and check each file's SHA-256. `--verify` hashes the cached copy again, and `--pin <commit or branch>` pins another commit. [Sample content](.dev/sample-content.md) says how tests use it |
 | `bun run shaders` | Build every shader variant in the shader manifest and write the generated TypeScript modules, when they are missing or out of date: the main module, and the engine's shaders in one module for each GPU path and each value of the bits a device fixes. Git ignores the modules, and the build, the type check, the tests and the dev server run this step first |
 | `bun run check` | Lint and format check (Biome), then the image test references: each manifest test must have the references of both sets, and each reference must belong to a test |
 | `bun run check:fix` | Lint and format, fixing what Biome can |
