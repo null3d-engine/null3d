@@ -116,6 +116,7 @@ import {
 	detectBrowser,
 	testedDeviceRow,
 } from './lib/device-record.ts';
+import { GPU_PATH_NAMES, type GpuPath, skippedPath, skippedPathsText } from './lib/gpu-paths.ts';
 import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } from './lib/heat.ts';
 import { clearCandidates } from './lib/images.ts';
 import { buildsForLoads, prepareLoads } from './lib/load-server.ts';
@@ -124,6 +125,7 @@ import {
 	type Check,
 	depthSummary,
 	governorSummary,
+	gpuPathOf,
 	itemsNeeded,
 	judge,
 	MEMORY_LIMIT_CHECKS,
@@ -131,7 +133,6 @@ import {
 	memorySummary,
 	NO_RESULT,
 	NONE_MISSING,
-	neededPath,
 	overloadSummary,
 	PLANS,
 	REPORT_ON_TOP_PLANS,
@@ -140,6 +141,7 @@ import {
 	startupSummary,
 	tabMemorySummary,
 	warmUpTimeSummary,
+	withGpuPaths,
 } from './lib/plans.ts';
 import { endTurnClaim, RUNS_DIR } from './lib/report-collector.ts';
 import {
@@ -400,14 +402,16 @@ export interface RunnerSummary {
 	endedEarly?: EndedEarly;
 	/** In a timed plan: what was wrong with the display's refresh rate, which makes its figures unreliable. */
 	unreliableTiming?: string;
+	/** The GPU paths that the device lacks, whose pages its runner page skipped. */
+	skippedPaths?: GpuPath[];
 	/** Brave only: the state of its Shields, or null when the run did not record it. */
 	braveShields?: ShieldsState | null;
 }
 
 /**
  * A runner's line in the run's summary: the browser its page ran in, its counts, on Brave the state
- * of its Shields, why its turn ended early, and why its timing figures are unreliable, where these
- * apply.
+ * of its Shields, the GPU paths whose pages it skipped, why its turn ended early, and why its timing
+ * figures are unreliable, where these apply.
  */
 export function summaryLine(runner: string, summary: RunnerSummary): string {
 	const browser = summary.browser ? ` (${summary.browser})` : '';
@@ -415,6 +419,7 @@ export function summaryLine(runner: string, summary: RunnerSummary): string {
 	return [
 		`${runner}${browser}: ${summary.pass} passed, ${summary.skip} skipped, ${summary.fail} failed${notRun}`,
 		...(summary.braveShields === undefined ? [] : [shieldsText(summary.braveShields)]),
+		...(summary.skippedPaths?.length ? [skippedPathsText(summary.skippedPaths)] : []),
 		...(summary.endedEarly ? [`ended early: ${summary.endedEarly.reason}`] : []),
 		...(summary.unreliableTiming ? [`timing figures unreliable: ${summary.unreliableTiming}`] : []),
 	].join('; ');
@@ -447,9 +452,6 @@ function runnersOf(options: Options): LaunchedRunner[] {
 		runners.push({ name, device: name.split('-')[0] as string, launch: { kind: 'lan' } });
 	return runners;
 }
-
-/** The GPU paths' names, as a skipped page's line gives the one the browser lacks. */
-const GPU_PATH_NAMES = { webgpu: 'WebGPU', webgl2: 'WebGL2' } as const;
 
 /** Time a macOS app may take to open the runner page before its turn counts as failed. */
 const OPEN_TIMEOUT_MS = 60_000;
@@ -1014,9 +1016,11 @@ async function runPlan(
 ): Promise<number> {
 	const run = runName(options.plan);
 	const timed = TIMED_PLANS.has(options.plan);
-	const plan = writePlan(run, items, {
+	const paths = withGpuPaths(items, options.missing);
+	const plan = writePlan(run, paths.items, {
 		...(REPORT_ON_TOP_PLANS.has(options.plan) && { reportOnTop: true }),
 		...(timed && { measureRefresh: true }),
+		...paths.flags,
 	});
 	const recovery = new QuietRecovery(plan, deviceReopener(run, launches, local.url));
 	let turns: string[] = [];
@@ -1138,9 +1142,10 @@ async function runPlan(
 			if (Object.keys(facts).length > 0) addToResult(run, name, item.id, facts);
 			if (verdict === 'skip') {
 				counts.skip++;
-				console.log(
-					`skip  ${name}: ${item.id}, no ${GPU_PATH_NAMES[neededPath(item.check) ?? 'webgpu']}`,
-				);
+				const path = (result && skippedPath(result)) ?? gpuPathOf(item) ?? 'webgpu';
+				const skipped = counts.skippedPaths ?? [];
+				if (!skipped.includes(path)) counts.skippedPaths = [...skipped, path];
+				console.log(`skip  ${name}: ${item.id}, no ${GPU_PATH_NAMES[path]}`);
 				continue;
 			}
 			if (verdict.length === 0) {
@@ -1173,6 +1178,9 @@ async function runPlan(
 			governorSummary,
 		].map((summary) => summary(plan.items, resultOf));
 		for (const table of tables) if (table) console.log(`\n${name}\n${table}\n`);
+		// The frames that the bench plan's pages captured, which people look at after each run.
+		const frames = join(RUNS_DIR, run, name, 'frames');
+		if (existsSync(frames)) console.log(`${name}, captured frames to look at: ${frames}`);
 		const heat = wholeHeatText(heatReadings.get(name) ?? []);
 		if (heat) console.log(`${name}, heat through the run: ${heat}`);
 	}

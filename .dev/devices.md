@@ -6,7 +6,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
 - The plans are `checks` (the default), `smoke`, `parity`, `bench`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `startup`, `tab-memory`, `soak` and `warm-up-time`. `bun run devices` runs the checks on the phone and on the iPad.
-- The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
+- The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-grey when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
 - `--switches <q>` gives every page of a plan more switches, such as `half=on` or `half=on&preset=ultra`. The checks plan's image tests then compare those pages with the usual references, at the device tolerance.
@@ -77,6 +77,21 @@ The runner watches each browser's results while a run goes on. Two guards keep a
 - Each reading adds about a second to each page. The plans that only check results do not take it.
 - The guard marks the figures and does not end the run. The run's other results still count, and the person decides whether to run it again.
 
+## GPU paths that a device lacks
+
+- A page that forces a GPU path with `?gpu=` cannot run on a device without that path. `--allow-no-webgpu` and `--allow-no-webgl2` let a device lack WebGPU or WebGL2. The runner then counts those pages as skipped, not failed.
+- The runner page decides from the capabilities page's report, the first page of the `checks` and `smoke` plans. The report holds the facts that the engine picks its path from. Core WebGPU needs an adapter with core features and limits. Compatibility mode needs any adapter, and WebGL2 needs a context.
+- After the report, the runner page skips each page that needs a path that the device lacks and that the run lets it lack. It posts a skip as the page's result and does not open the page.
+- `--allow-no-webgpu` covers both WebGPU paths. On a device that offers compatibility mode only, it skips the core WebGPU pages and runs the compatibility mode pages.
+- A page's path is the one that its `?gpu=` switch forces. A page without the switch takes its check's path. A WebGPU page without the switch, such as the uploads page, takes any adapter, so it needs compatibility mode only. The plan's file gives each page's path as `gpu`, and the skip flags as `skipMissing`.
+- Each browser's line in the run's summary names the paths whose pages it skipped. So does the result in its row for [the record of tested devices](tested-devices.md).
+- On 3 October 2026, TestingBot's Redmi Note 13 in Chrome 138 offered compatibility mode only: its adapter had no core features and limits. The engine refused each page that forced core WebGPU with E1301, as it must, and the run counted 85 such pages as failures.
+- Four pages that force core WebGPU passed on the Redmi: the clear page, two replay pages and the shader library page. They ask for an adapter themselves and do not start the engine. They now count as skips there too, because the engine never draws with core WebGPU on that device.
+- A plan without the capabilities page, and a shard without it, runs every page. Judging then counts a page as skipped when its error says that the browser lacks the page's path, as E1301 does.
+- Judging by the error alone was the only test before. It still opens each page, which costs minutes in a cloud session. E1301 can also come from a fault in the engine's choice of path, which a skip would then hide.
+- The runner page's own GPU facts in `device.json` do not decide. They come from an adapter asked for without a feature level. Chrome 138 on the Redmi gave the clear page such an adapter, while the engine refused core WebGPU there.
+- Without the flags, the runner skips nothing. A browser that should offer every path, such as Chrome on the Mac, must fail its run when it loses one.
+
 ## What the checks plan covers
 
 - The capabilities page loads first and again last. Each extension that the engine asks for by name must get the same answer in both loads. The runner notes whether the browser's list of supported extensions kept its order, because Brave shuffles it (hard rule 13).
@@ -101,6 +116,7 @@ The runner watches each browser's results while a run goes on. Two guards keep a
 - The runner builds the pages into `target/bench-pages` before the run. The dev server serves the build under the load routes, as it serves the startup loads, with one address prefix for each run and runner.
 - The phone over USB and the tablet over the local network both reach the main checkout's dev server, so both load the same build.
 - A dev server that started before the load routes served the benchmark pages cannot serve these plans. The runner then stops and asks you to restart that server.
+- After its timed runs, the bench plan runs the visual page of each scene on each GPU path, from the dev server. The first timed run of each null3D page captures its frame. The summary prints the shadow figures beside the timings, and the runner saves the frames in the run's folder. [Benchmarks](benchmarks.md#visual-figures-and-captured-frames) says what they show.
 
 ## Startup times
 
@@ -259,6 +275,7 @@ TestingBot lends real phones and tablets for live sessions. A device opens the r
 - Start a new live session after any restart of the tunnel. A model stays reserved for a while after a session ends.
 - A device opens its default browser, and another can be opened later. A name that names no browser, such as `tb-android`, works with any of them, and the summary says which browser ran.
 - Run `--plan smoke` first, because a session has limited time: `bun tests/real-browsers.ts --plan smoke --allow-no-webgpu --lan tb-android`.
+- Pass `--allow-no-webgpu` for any Android device. Some offer WebGPU's compatibility mode only, and the runner then skips their core WebGPU pages, as [GPU paths that a device lacks](#gpu-paths-that-a-device-lacks) explains.
 
 Test the devices in this order:
 

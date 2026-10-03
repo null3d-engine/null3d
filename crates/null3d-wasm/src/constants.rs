@@ -116,6 +116,14 @@ pub mod shadow_casters {
     pub const TILES: u32 = 1 << 8;
 }
 
+/// What a camera's lens is for, in `setPerspectiveCamera` and `setOrthographicCamera`.
+pub mod camera_target {
+    /// The camera's view, which draws the frame.
+    pub const VIEW: u32 = 0;
+    /// The camera that fits the main directional light's cascades, for the debug API.
+    pub const SHADOWS: u32 = 1;
+}
+
 /// The settings that `setTextureOption` changes.
 pub mod texture_option {
     /// The texel bytes that one frame may upload.
@@ -366,6 +374,7 @@ pub fn typescript() -> String {
                 ("DEPTH", debug_view::code::DEPTH),
                 ("OVERDRAW", debug_view::code::OVERDRAW),
                 ("WIREFRAME", debug_view::code::WIREFRAME),
+                ("SHADOWS", debug_view::code::SHADOWS),
             ],
         ),
         // The kinds of fog that `setFog` takes.
@@ -418,6 +427,13 @@ pub fn typescript() -> String {
                 ("MAX_SIZE", texture_stat::MAX_SIZE),
                 ("UPLOAD_BUDGET", texture_stat::UPLOAD_BUDGET),
                 ("MAX_ANISOTROPY", texture_stat::MAX_ANISOTROPY),
+            ],
+        ),
+        (
+            "CAMERA_TARGET",
+            &[
+                ("VIEW", camera_target::VIEW),
+                ("SHADOWS", camera_target::SHADOWS),
             ],
         ),
         (

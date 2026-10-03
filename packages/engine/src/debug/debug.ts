@@ -44,7 +44,7 @@ export interface DebugLightOptions {
  *
  * @category api/debug
  */
-export type DebugView = 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw';
+export type DebugView = 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw' | 'shadows';
 
 /**
  * Debug drawing and frame figures. The drawing calls draw lines that show where things are, such
@@ -79,11 +79,23 @@ export interface Debug {
 	 * world-space normal as a color, and `'depth'` its distance from the camera as a gray, white at
 	 * the near plane and black at the far plane. `'overdraw'` adds light for each surface that
 	 * covers a pixel, so bright pixels cost the most shading. `'wireframe'` draws each triangle's
-	 * edges in its material's color. Debug views clear to black and use no tone mapping. Only
+	 * edges in its material's color. `'shadows'` shows how much of the main directional light's
+	 * shadow falls on each surface, as a gray: black in full shadow, white in full light. Surfaces
+	 * that face away from the sun are black, and surfaces that receive no shadows are white. Debug
+	 * views clear to black and use no tone mapping. Only
 	 * development builds draw them: in a release build the call does nothing. A view's first frame
 	 * builds its pipelines, so objects can be missing for a few frames after a change.
 	 */
 	view(view: DebugView): void;
+	/**
+	 * Places the main directional light's shadow cascades from `camera` instead of from the active
+	 * camera, from the next frame on, until the next call. The active camera still draws the frame,
+	 * so it can watch from a fixed place how the cascades move as `camera` moves and turns: shadow
+	 * edges that shimmer or crawl show at once. Call it with no camera to place the cascades from
+	 * the active camera again. Only development builds use it: in a release build the call does
+	 * nothing.
+	 */
+	shadowCamera(camera?: Camera): void;
 	/** Draws a line from one point to another. The default color is yellow. */
 	line(from: Vec3Like, to: Vec3Like, color?: ColorInput): void;
 	/**
