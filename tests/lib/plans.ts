@@ -80,9 +80,13 @@ import { ROOM_KEPT } from '../pages/lib/room.ts';
 import { glslProgramsOf } from '../pages/lib/shader-list.ts';
 import {
 	frameSaving,
+	pathTiming,
 	SKINNING_CASCADES,
 	SKINNING_CHARACTERS,
+	type SkinningGpu,
+	type SkinningPath,
 	type SkinningResult,
+	skinningPaths,
 	skinningProblems,
 } from '../pages/lib/skinning.ts';
 import {
@@ -181,8 +185,8 @@ export type Check =
 	| { kind: 'overload'; tier: Tier; queue?: string }
 	/** The quality governor's stress test: one stage on one GPU path. */
 	| { kind: 'governor'; tier: Tier; stage: GovernorStage }
-	/** The skinning page, which draws on WebGL2 alone, with its crowd and its cascades. */
-	| { kind: 'skinning'; tier: 'webgl2'; characters: number; cascades: number }
+	/** A skinning page, on WebGL2 or on WebGPU's core path, with its crowd and its cascades. */
+	| { kind: 'skinning'; tier: SkinningGpu; characters: number; cascades: number }
 	/** The bloom cost page: bloom off and on in turns, at one render scale. */
 	| { kind: 'bloom'; tier: Tier; scale: number }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
@@ -751,16 +755,18 @@ export function overloadPlan(): PlanItem<Check>[] {
 const SKINNING_TIMEOUT_SECONDS = 120;
 
 /**
- * The skinning page at each crowd size and cascade count, from the lightest load. Each page draws
- * one pose on both skinning paths and compares the images, then times the two paths in turns.
+ * The skinning page of `gpu` at each crowd size and cascade count, from the lightest load. Each
+ * page draws one pose on both skinning paths and compares the images, then times the two paths in
+ * turns. The skinning plan runs the WebGL2 page, and the skinning-webgpu plan the WebGPU page.
  */
-export function skinningPlan(): PlanItem<Check>[] {
+export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
+	const prefix = gpu === 'webgl2' ? 'skinning' : 'skinning-webgpu';
 	return SKINNING_CHARACTERS.flatMap((characters) =>
 		SKINNING_CASCADES.map((cascades) =>
 			pageItem(
-				`skinning-${characters}-${cascades}`,
-				'skinning',
-				{ kind: 'skinning', tier: 'webgl2', characters, cascades },
+				`${prefix}-${characters}-${cascades}`,
+				prefix,
+				{ kind: 'skinning', tier: gpu, characters, cascades },
 				{
 					switches: [`characters=${characters}`, `cascades=${cascades}`],
 					timeoutSeconds: SKINNING_TIMEOUT_SECONDS,
@@ -1105,7 +1111,8 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	depth: depthPlan,
 	startup: startupPlan,
 	overload: overloadPlan,
-	skinning: skinningPlan,
+	skinning: () => skinningPlan('webgl2'),
+	'skinning-webgpu': () => skinningPlan('webgpu'),
 	bloom: bloomPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
@@ -1937,45 +1944,62 @@ export function animationSummary(
 }
 
 /**
- * The skinning page's results as a Markdown table: for each crowd and cascade count, the
- * characters that the main pass and each cascade drew, then each path's frame time, JavaScript
- * time and GPU time per frame, the share of the frame time that transform feedback saves, and the
- * pixels in which the two paths' images differ. Undefined when the plan has no skinning pages.
+ * The skinning pages' results as Markdown tables, one per GPU interface: for each crowd and cascade
+ * count, the characters that the main pass and each cascade drew, then each path's frame time,
+ * JavaScript time and GPU time per frame, the share of the frame time that skinning once saves,
+ * and the pixels in which the two paths' images differ. Undefined when the plan has no skinning
+ * pages.
  */
 export function skinningSummary(
 	items: readonly PlanItem<Check>[],
 	resultOf: (id: string) => ItemResult | undefined,
 ): string | undefined {
-	const rows = items.flatMap(({ id, check }) => {
-		if (check.kind !== 'skinning') return [];
-		const where = `${check.characters} | ${check.cascades}`;
-		const result = resultOf(id);
-		if (!result?.ok)
-			return [`| ${where} | ${result ? failureText(result) : NO_RESULT} | | | | | |`];
-		const skinning = result as ItemResult & SkinningResult;
-		const path = (name: keyof SkinningResult['paths']) => {
-			const { frameMs, cpuMs, gpuMs } = skinning.paths[name];
-			return `${msText(frameMs)} / ${msText(cpuMs)} / ${msText(gpuMs)}`;
-		};
-		const cells = [
-			where,
-			`${skinning.drawn.join(' / ')} (${skinning.skinned})`,
-			path('vertex-shader'),
-			path('transform-feedback'),
-			`${(100 * frameSaving(skinning)).toFixed(1)}%`,
-			`${skinning.image.differing} of ${skinning.image.pixels}`,
-			skinning.multiDraw ? 'yes' : 'no',
+	const tables = (['webgl2', 'webgpu'] as const).flatMap((gpu) => {
+		const [each, once] = skinningPaths(gpu);
+		const rows = items.flatMap(({ id, check }) => {
+			if (check.kind !== 'skinning' || check.tier !== gpu) return [];
+			const where = `${check.characters} | ${check.cascades}`;
+			const result = resultOf(id);
+			if (!result?.ok)
+				return [`| ${where} | ${result ? failureText(result) : NO_RESULT} | | | | | |`];
+			const skinning = result as ItemResult & SkinningResult;
+			const path = (name: SkinningPath) => {
+				const { frameMs, cpuMs, gpuMs } = pathTiming(skinning, name);
+				return `${msText(frameMs)} / ${msText(cpuMs)} / ${msText(gpuMs)}`;
+			};
+			const cells = [
+				where,
+				`${skinning.drawn.join(' / ')} (${skinning.skinned})`,
+				path(each),
+				path(once),
+				`${(100 * frameSaving(skinning)).toFixed(1)}%`,
+				`${skinning.image.differing} of ${skinning.image.pixels}`,
+				...(gpu === 'webgl2' ? [skinning.multiDraw ? 'yes' : 'no'] : []),
+			];
+			return [`| ${cells.join(' | ')} |`];
+		});
+		if (rows.length === 0) return [];
+		const heads = [
+			'Characters',
+			'Cascades',
+			'Drawn',
+			'Vertex shader',
+			gpu === 'webgl2' ? 'Transform feedback' : 'Compute pass',
+			'Saved',
+			'Pixels that differ',
+			...(gpu === 'webgl2' ? ['Multi-draw'] : []),
 		];
-		return [`| ${cells.join(' | ')} |`];
+		return [
+			[
+				`${gpu === 'webgl2' ? 'WebGL2' : 'WebGPU'}. Each path: frame ms / JavaScript ms / GPU ms per frame, medians. Drawn: the main pass, then each cascade, with the characters skinned once in brackets.`,
+				'',
+				`| ${heads.join(' | ')} |`,
+				`| ${heads.map(() => '---').join(' | ')} |`,
+				...rows,
+			].join('\n'),
+		];
 	});
-	if (rows.length === 0) return undefined;
-	return [
-		'Each path: frame ms / JavaScript ms / GPU ms per frame, medians. Drawn: the main pass, then each cascade, with the characters skinned once in brackets.',
-		'',
-		'| Characters | Cascades | Drawn | Vertex shader | Transform feedback | Saved | Pixels that differ | Multi-draw |',
-		'| --- | --- | --- | --- | --- | --- | --- | --- |',
-		...rows,
-	].join('\n');
+	return tables.length === 0 ? undefined : tables.join('\n\n');
 }
 
 /**
