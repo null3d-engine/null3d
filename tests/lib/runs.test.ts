@@ -789,6 +789,10 @@ describe('the checks plan', () => {
 		expect(judge(check, { ok: true, cases: 3, mismatches: [wrong] }, NONE_MISSING)).toEqual([
 			'math::square: expected 4, 0, got 4.5, 0',
 		]);
+		const failures = ['lighting: pipeline (internal): the driver failed'];
+		expect(judge(check, { ok: true, cases: 3, failures, mismatches: [] }, NONE_MISSING)).toEqual(
+			failures,
+		);
 		expect(judge(check, { ok: true, cases: 0, mismatches: [] }, NONE_MISSING)).toEqual([
 			'the page ran no cases',
 		]);
