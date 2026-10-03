@@ -1,7 +1,8 @@
 // Runs a plan of test pages in real browsers that Playwright cannot drive, through the runner page:
-// browser apps on this Mac, browsers on an Android phone connected by USB, and runner pages that
-// wait on tablets and phones on the local network. It starts the dev server, lets one browser per
-// device run at a time, then judges every result and prints a summary. On an Android phone it reads
+// browser apps on this Mac, browsers on an Android phone connected by USB, runner pages that wait
+// on tablets and phones on the local network, and sessions that it opens on a device cloud's real
+// devices. It starts the dev server, lets one browser per device run at a time, then judges every
+// result and prints a summary. On an Android phone it reads
 // the phone's heat through the run, and adds to each result the heat that the page ran in. When a
 // browser keeps refusing memory, the runner ends that browser's turn early, keeps the others going,
 // and prints what to reset and the --only list that goes on with the run. In plans that time pages,
@@ -25,6 +26,7 @@
 //   bun tests/real-browsers.ts --plan warm-up-time --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan smoke --allow-no-webgpu --lan bsgalaxys25-samsung
+//   bun tests/real-browsers.ts --plan smoke --cloud bsiphone17-safari,bspixel10-chrome --parallel 2
 // Options:
 //   --plan <name>       the plan to run: checks (the default), smoke, a tenth of the checks for a
 //                       device in a cloud session of limited time, parity, bench, memory, which loads
@@ -78,6 +80,13 @@
 //   --android <list>    browsers on the Android phone: chrome, chrome-beta, brave, firefox, samsung
 //   --lan <list>        names of runner pages that wait on the local network, as device-browser,
 //                       such as ipad-safari; pages on one device take turns
+//   --cloud <list>      runners of the device cloud list (tests/lib/browserstack-devices.ts): each
+//                       one's turn opens a BrowserStack Automate session on its device, through
+//                       BrowserStack Local, and ends it when the turn ends; bun run devices:cloud
+//                       picks them by tier
+//   --parallel <n>      at most n runners at once, as a device cloud plan's parallel sessions
+//                       allow; 1 by default with --cloud, and no limit without it
+//   --cloud-build <name> the build that groups the run's sessions on the cloud's dashboard
 //   --attended          someone is at the devices of --lan, so a plan whose pages end their tab,
 //                       such as tab-memory, may run there: Safari stops reloading a tab that
 //                       crashes again soon after the last crash, and only a person can reopen it
@@ -109,6 +118,9 @@ import {
 	type StoredBaselines,
 } from '../bench/lib/parity.ts';
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
+import { browserStackSessions, readCredentials } from './lib/browserstack.ts';
+import { type CloudDevice, cloudDevice } from './lib/browserstack-devices.ts';
+import type { CloudSessions } from './lib/cloud-sessions.ts';
 import {
 	browserMismatch,
 	browserText,
@@ -147,6 +159,7 @@ import { endTurnClaim, RUNS_DIR } from './lib/report-collector.ts';
 import {
 	addToResult,
 	type ItemResult,
+	inLanes,
 	keepsRefusingMemory,
 	OOM_WINDOW_PAGES,
 	outOfMemory,
@@ -183,7 +196,14 @@ import {
 	type ScaleSearch,
 	scaleItem,
 } from './lib/scale.ts';
-import { type DevServer, HTTP_PORT, REPO_ROOT, startServer } from './lib/server.ts';
+import {
+	type DevServer,
+	HTTP_PORT,
+	HTTPS_PORT,
+	onStopSignal,
+	REPO_ROOT,
+	startServer,
+} from './lib/server.ts';
 import { progressName, tabEndedResult } from './lib/tab-end.ts';
 
 export interface Options {
@@ -216,14 +236,20 @@ export interface Options {
 	switches?: string;
 	/** Someone is at the network devices, to reopen a runner page that a crash closed. */
 	attended?: boolean;
+	/** At most this many runners at once, when given. */
+	parallel?: number;
+	/** The build that groups a cloud run's sessions on the cloud's dashboard, when given. */
+	cloudBuild?: string;
 	/** macOS app names, such as Safari. */
 	mac: string[];
 	android: string[];
 	lan: string[];
+	/** Runners of the device cloud list, whose sessions the runner tool opens. */
+	cloud: string[];
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--attended] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--attended] [<macOS app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -234,7 +260,7 @@ const PLAN_NAMES = [...Object.keys(PLANS), SCALE_PLAN];
 
 export function parseArgs(args: readonly string[]): Options {
 	const missing = { ...NONE_MISSING };
-	const options: Options = { plan: 'checks', missing, mac: [], android: [], lan: [] };
+	const options: Options = { plan: 'checks', missing, mac: [], android: [], lan: [], cloud: [] };
 	const list = (value: string | undefined) => (value ?? '').split(',').filter(Boolean);
 	const known = <T extends string>(flag: string, values: string[], allowed: readonly T[]): T[] => {
 		const unknown = values.filter((v) => !(allowed as readonly string[]).includes(v));
@@ -281,6 +307,9 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--plan') options.plan = args[++i] ?? '';
 		else if (arg === '--android') options.android = list(args[++i]);
 		else if (arg === '--lan') options.lan = list(args[++i]);
+		else if (arg === '--cloud') options.cloud = list(args[++i]);
+		else if (arg === '--parallel') options.parallel = wholeNumber(arg, args[++i]);
+		else if (arg === '--cloud-build') options.cloudBuild = args[++i];
 		else if (arg === '--attended') options.attended = true;
 		else if (arg.startsWith('--')) throw new Error(`unknown option ${arg}\n${USAGE}`);
 		else options.mac.push(arg);
@@ -297,6 +326,13 @@ export function parseArgs(args: readonly string[]): Options {
 				`${flag} picks items of a fixed plan, so it does not work with --plan ${SCALE_PLAN}`,
 			);
 	if (options.only?.length === 0) throw new Error(`--only: name some items\n${USAGE}`);
+	const unknownCloud = options.cloud.filter((name) => !cloudDevice(name));
+	if (unknownCloud.length > 0)
+		throw new Error(
+			`--cloud: the device cloud list (tests/lib/browserstack-devices.ts) has no runner ${unknownCloud.join(', ')}`,
+		);
+	if (options.cloud.length > 0 && options.plan === SCALE_PLAN)
+		throw new Error(`--cloud runs fixed plans only, not --plan ${SCALE_PLAN}\n${USAGE}`);
 	// The memory plan still counts the room at each maximum without loads; other plans need runs.
 	if (options.runs === 0 && options.plan !== 'memory')
 		throw new Error(`--runs 0 works with --plan memory only\n${USAGE}`);
@@ -425,8 +461,15 @@ export function summaryLine(runner: string, summary: RunnerSummary): string {
 	].join('; ');
 }
 
-/** How a runner starts: an app on this Mac, a browser on the phone, or a page that waits on the network. */
-type Launch = { kind: 'mac'; app: string } | { kind: 'android'; browser: string } | { kind: 'lan' };
+/**
+ * How a runner starts: an app on this Mac, a browser on the phone, a page that waits on the network,
+ * or a session on a device cloud that opens a waiting page.
+ */
+type Launch =
+	| { kind: 'mac'; app: string }
+	| { kind: 'android'; browser: string }
+	| { kind: 'lan' }
+	| { kind: 'cloud'; device: CloudDevice };
 
 type LaunchedRunner = Runner & { launch: Launch };
 
@@ -450,6 +493,9 @@ function runnersOf(options: Options): LaunchedRunner[] {
 	}
 	for (const name of options.lan.map(slug))
 		runners.push({ name, device: name.split('-')[0] as string, launch: { kind: 'lan' } });
+	// Each cloud session runs on a device of its own, so cloud runners never wait for each other.
+	for (const name of options.cloud)
+		runners.push({ name, device: name, launch: { kind: 'cloud', device: cloudDevice(name)! } });
 	return runners;
 }
 
@@ -475,19 +521,35 @@ function openApp(app: string, url: string): boolean {
 const runnerUrl = (baseUrl: string, run: string, runner: string, from?: number) =>
 	`${baseUrl}/tests/pages/runner.html?run=${run}&runner=${runner}${from ? `&from=${from}` : ''}`;
 
-/** Opens a run's runner page for each of these runners, and returns the ones that opened. */
-function openRunners(
+/** Where cloud devices reach the dev server's HTTPS port, through BrowserStack Local. */
+const CLOUD_URL = `https://bs-local.com:${HTTPS_PORT}`;
+
+/** The address of the runner page that waits for its turn, on a device of the cloud. */
+const cloudRunnerUrl = (runner: string) =>
+	`${CLOUD_URL}/tests/pages/runner.html?listen&runner=${runner}`;
+
+/** How long a cloud device's runner page may take to start after its session loads it. */
+const CLOUD_START_MS = 180_000;
+
+/**
+ * Opens a run's runner page for each of these runners, and returns the ones that opened. A cloud
+ * runner gets a session that opens its waiting runner page, which starts the run at its turn.
+ */
+async function openRunners(
 	names: readonly string[],
 	launches: Launches,
 	run: string,
 	baseUrl: string,
-): string[] {
+	cloud?: CloudSessions,
+): Promise<string[]> {
 	const opened: string[] = [];
 	for (const name of names) {
 		const launch = launches.get(name) as Launch;
 		const url = runnerUrl(baseUrl, run, name);
 		if (launch.kind === 'mac') {
 			if (openApp(launch.app, url)) opened.push(name);
+		} else if (launch.kind === 'cloud') {
+			if (await cloud?.open(name, cloudRunnerUrl(name))) opened.push(name);
 		} else {
 			if (launch.kind === 'android') openOnPhone(launch.browser, url);
 			else console.log(`${name}: its turn now; bring its runner page to the front.`);
@@ -733,6 +795,12 @@ function deviceWords(runner: string, launch: Launch | undefined): DeviceWords {
 			place: 'the phone',
 			rateSettings: 'Motion smoothness is not Standard, or battery saver is on',
 		};
+	if (launch?.kind === 'cloud')
+		return {
+			app: titled(launch.device.browser),
+			place: `the cloud's ${launch.device.device ?? `${launch.device.os} ${launch.device.osVersion}`}`,
+			rateSettings: "the cloud's display or power settings differ",
+		};
 	const [device = runner, ...browser] = runner.split('-');
 	const apple = APPLE_DEVICES[device];
 	return {
@@ -754,6 +822,8 @@ export function memoryResetText(
 	launch: Launch | undefined,
 	only: string[],
 ): string {
+	if (launch?.kind === 'cloud')
+		return `Run it again with bun run devices:cloud --only ${runner} -- --only ${only.join(',')}, in a new session with a fresh browser`;
 	const { app, place } = deviceWords(runner, launch);
 	const front = launch?.kind === 'lan' ? ', bring the runner page to the front,' : ',';
 	return `Quit and reopen ${app} on ${place}${front} then run again with --only ${only.join(',')}`;
@@ -1004,8 +1074,10 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 }
 
 /**
- * Runs a fixed plan: each batch of runners at once, one browser per device, while the phone's heat
- * is read. Judges each result and prints a summary; returns the number of failures.
+ * Runs a fixed plan: each batch of runners, one browser per device, at most --parallel runners at
+ * once, while the phone's heat is read. A runner's turn starts as soon as a place frees. Each cloud
+ * runner's session ends with its turn, and is marked passed or failed once the run is judged. Judges
+ * each result and prints a summary; returns the number of failures.
  */
 async function runPlan(
 	options: Options,
@@ -1013,6 +1085,7 @@ async function runPlan(
 	runners: readonly LaunchedRunner[],
 	launches: Launches,
 	local: DevServer,
+	cloud?: CloudSessions,
 ): Promise<number> {
 	const run = runName(options.plan);
 	const timed = TIMED_PLANS.has(options.plan);
@@ -1032,19 +1105,37 @@ async function runPlan(
 		endTurnClaim(run, name);
 	});
 	const heatReadings = new Map<string, HeatSample[]>();
+	const parallel = options.parallel ?? (options.cloud.length > 0 ? 1 : Number.POSITIVE_INFINITY);
+	// One runner's turn: it joins the turn list, its runner page opens, and the turn ends when the
+	// page finishes, goes quiet, never starts, or loses its cloud session, or the guard ends it.
+	const turn = async (name: string) => {
+		turns = [...turns, name];
+		setTurns(run, turns);
+		const remote = launches.get(name)?.kind === 'cloud';
+		try {
+			await waitForRunners(plan, await openRunners([name], launches, run, local.url, cloud), {
+				onFinish: (runner) => console.log(`${runner}: finished`),
+				onQuiet: recovery.onQuiet,
+				endTurn: (runner) => guard.endTurn(runner) || cloud?.lost(runner) === true,
+				...(remote && {
+					startMs: CLOUD_START_MS,
+					onNoStart: (runner: string, seconds: number) =>
+						console.log(`${runner}: its runner page did not start within ${seconds} s`),
+				}),
+			});
+		} finally {
+			turns = turns.filter((other) => other !== name);
+			setTurns(run, turns);
+			if (remote) await cloud?.close(name);
+		}
+	};
 	try {
 		for (const batch of turnBatches(runners)) {
-			turns = batch;
-			setTurns(run, turns);
 			const phone = phoneRunner(batch, launches);
 			const log = phone === undefined ? undefined : new HeatLog();
 			log?.start();
 			try {
-				await waitForRunners(plan, openRunners(batch, launches, run, local.url), {
-					onFinish: (name) => console.log(`${name}: finished`),
-					onQuiet: recovery.onQuiet,
-					endTurn: guard.endTurn,
-				});
+				await inLanes(batch, parallel, turn);
 			} finally {
 				if (phone !== undefined && log) heatReadings.set(phone, await log.stop());
 			}
@@ -1185,6 +1276,11 @@ async function runPlan(
 		if (heat) console.log(`${name}, heat through the run: ${heat}`);
 	}
 	for (const [name, counts] of Object.entries(summary)) console.log(summaryLine(name, counts));
+	if (cloud) {
+		for (const [name, counts] of Object.entries(summary))
+			await cloud.mark(name, counts.fail === 0 && !counts.endedEarly, summaryLine(name, counts));
+		console.log(`\nCloud sessions:\n${cloud.summary().join('\n')}`);
+	}
 	for (const [name, { unreliableTiming, endedEarly }] of Object.entries(summary)) {
 		if (unreliableTiming) console.log(refreshText(name, launches.get(name), unreliableTiming));
 		if (endedEarly) console.log(endedEarlyText(name, endedEarly));
@@ -1253,7 +1349,7 @@ async function runScale(
 					const item = scaleItem(page, count);
 					const plan = writePlan(run, [item], { measureRefresh: true });
 					setTurns(run, [name]);
-					await waitForRunners(plan, openRunners([name], launches, run, local.url), {
+					await waitForRunners(plan, await openRunners([name], launches, run, local.url), {
 						onQuiet: reportQuiet,
 					});
 					const result = readResult(run, name, item.id);
@@ -1328,11 +1424,28 @@ async function runScale(
 	return failures;
 }
 
+/**
+ * The session manager for the run's cloud runners, with the account's credentials, or undefined
+ * without cloud runners. The sessions belong to the build that --cloud-build names, or to one named
+ * after the plan and the time.
+ */
+function cloudSessions(options: Options): CloudSessions | undefined {
+	if (options.cloud.length === 0) return undefined;
+	const build = options.cloudBuild ?? `null3D ${runName(options.plan)}`;
+	const localIdentifier = process.env.BROWSERSTACK_LOCAL_IDENTIFIER;
+	return browserStackSessions(
+		options.cloud.map((name) => cloudDevice(name)!),
+		readCredentials(),
+		{ build, ...(localIdentifier && { localIdentifier }) },
+	);
+}
+
 async function main(): Promise<void> {
 	const options = parseArgs(process.argv.slice(2));
 	const runners = runnersOf(options);
 	if (runners.length === 0) throw new Error(USAGE);
 	const launches = new Map(runners.map((runner) => [runner.name, runner.launch]));
+	const cloud = cloudSessions(options);
 	if (options.android.length > 0 || options.lan.length > 0) {
 		const names = runners.map((runner) => runner.name);
 		console.log(`${deviceChecklist(names, options.shields).join('\n')}\n`);
@@ -1347,8 +1460,12 @@ async function main(): Promise<void> {
 	const builds = buildsForLoads(paths);
 	for (const { build } of builds) build();
 	const local = await startServer();
-	const lan = options.lan.length > 0 ? await startServer(true) : undefined;
-	if (lan) {
+	const lan =
+		options.lan.length > 0 || options.cloud.length > 0 ? await startServer(true) : undefined;
+	const forgetCloud = cloud && onStopSignal(() => cloud.closeAll());
+	if (cloud)
+		console.log(`Cloud devices open ${cloudRunnerUrl('<name>')} through BrowserStack Local.`);
+	if (lan && options.lan.length > 0) {
 		console.log(
 			`On each tablet or phone, open ${lan.url}/tests/pages/runner.html?listen&runner=<name>`,
 		);
@@ -1362,9 +1479,11 @@ async function main(): Promise<void> {
 		if (names.length > 0)
 			for (const server of [local, lan]) if (server) await prepareLoads(server.selfUrl, names);
 		failures = items
-			? await runPlan(options, items, runners, launches, local)
+			? await runPlan(options, items, runners, launches, local, cloud)
 			: await runScale(options, runners, launches, local);
 	} finally {
+		await cloud?.closeAll();
+		forgetCloud?.();
 		local.stop();
 		lan?.stop();
 	}

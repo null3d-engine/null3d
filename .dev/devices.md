@@ -272,7 +272,7 @@ So the iPad shows that the engine works on an iPhone. It does not show that the 
 [BrowserStack Live](https://www.browserstack.com/live) lends real phones, tablets and desktop browsers for live sessions. Each device opens the runner page over BrowserStack's tunnel to the Mac. The person picks the browser for each session.
 
 - TestingBot was tried first, on 3 October 2026. Its device screens often did not load and its sessions dropped during runs, so the team moved to BrowserStack. TestingBot's rows stay in [the record of tested devices](tested-devices.md).
-- BrowserStack is not a lasting subscription. There are no nightly runs, no runs on each merge and no BrowserStack Automate. Each tier below is a manual sitting.
+- BrowserStack is not a lasting subscription. There are no nightly runs and no runs on each merge. Each tier below is a manual sitting, or one command while the team has [BrowserStack Automate](#browserstack-automate).
 - The tiers name device models, systems and GPUs. If BrowserStack lapses, another cloud, a borrowed device or a new team device of the same kind stands in.
 - The owner's S24+, iPad and Mac stay the timing devices. Cloud devices check that the engine works. Their timings are only a rough guide, because nobody controls their heat or display settings.
 
@@ -281,7 +281,7 @@ So the iPad shows that the engine works on an iPhone. It does not show that the 
 1. Download BrowserStackLocal for macOS from BrowserStack. Check its signature with `codesign -dv --verbose=2 BrowserStackLocal`. It must print `Authority=Developer ID Application: Browserstack Inc (YQ5FZQ855D)`.
 2. Keep the access key in `~/.browserstack`, with `chmod 600`. Never paste the key into a chat, a log or a commit. Start the tunnel with `./BrowserStackLocal --key "$(cat ~/.browserstack)"`.
 3. Serve HTTPS from a checkout of main: `NULL3D_PORT=3000 NULL3D_HTTPS=1 bun run dev`. HTTPS then answers on port 3001.
-4. The certificate must name `bs-local.com`: `CAROOT=target/dev-ca mkcert -cert-file target/dev-cert/cert.pem -key-file target/dev-cert/key.pem bs-local.com localhost`.
+4. The certificate must name `bs-local.com`. `bun run dev-cert` makes one that does.
 5. In BrowserStack Live, pick the device and the browser. Turn on Self-Signed Certificate in the session's toolbar, so the device accepts the certificate. It does not work together with network throttling, so leave throttling off.
 6. On the device, open `https://bs-local.com:3001/tests/pages/runner.html?listen&runner=<name>`. Type `bs-local.com` on every device. BrowserStack changes `localhost` to `bs-local.com` by itself in most browsers, but not in Chrome on iOS.
 7. Start the run on the Mac with the same port and name: `NULL3D_PORT=3000 bun tests/real-browsers.ts --plan smoke --lan bsgalaxys25-samsung`.
@@ -396,3 +396,55 @@ Swap these in when a device of a tier is busy, or to widen the cover from one mi
 - Mali: Redmi Note 14 Pro 5G and Motorola Edge 60 Fusion (Mali-G615), Pixel 7 (Mali-G710) and Galaxy A35 (Mali-G68).
 - Xclipse: Galaxy S26 (Xclipse 960 outside the US, China and Japan) and Galaxy S22 (Xclipse 920 in Europe).
 - Desktops: Chrome on Windows 10, and Chrome and Firefox on macOS Tahoe.
+
+## BrowserStack Automate
+
+[BrowserStack Automate](https://www.browserstack.com/automate) runs the tiers with nobody at the browser. `bun run devices:cloud` opens a session on each device of a tier, through BrowserStack Local. The device runner then drives the runner page there, as it drives a page on the local network.
+
+- The owner took Automate for one month, from 3 October 2026. It is not a lasting subscription, so nothing in CI or in nightly runs depends on it.
+- When it lapses, the command stops at its first check, because BrowserStack refuses the account. The manual steps of [BrowserStack Live](#browserstack-live) still work then, with the same tiers and runner names.
+- Cloud timings are only a rough guide, as in Live.
+
+### Run a tier
+
+1. Keep the username in `~/.browserstack-user` and the access key in `~/.browserstack`. Give both files `chmod 600`. The command sends them only in a request header, and never prints them.
+2. Start BrowserStack Local and the HTTPS dev server from a checkout of main, as steps 1 to 4 of [Set up a session](#set-up-a-session) say.
+3. From the same checkout, check the account and the devices: `NULL3D_PORT=3000 bun run devices:cloud --tier A --check`.
+4. Run the tier: `NULL3D_PORT=3000 bun run devices:cloud --tier A`.
+5. Paste the rows that the runner prints into [the record of tested devices](tested-devices.md). Their place cell says BrowserStack Automate.
+
+- `--tier B` or `--tier A,B` picks other tiers. `--only bsiphone17-safari,bspixel10-chrome` picks runners from any tier.
+- `--plan` picks the plan, which is `smoke` by default. `--parallel 2` opens at most two sessions at once.
+- Options after `--` go to the device runner as they are. For example, `bun run devices:cloud --only bspixel10-chrome -- --only capabilities` runs one page on one device.
+- Ctrl-C ends every open session before the command exits.
+
+### What the command does
+
+1. It reads the account's plan from BrowserStack's REST API, and opens at most as many sessions at once as the plan has free.
+2. It looks for each device in Automate's list of devices and browsers. When one is missing, it stops before any session opens, and names the nearest devices in the list.
+3. It splits the devices into two runs of the device runner: first the devices whose core WebGPU must work, then the ones that run with `--allow-no-webgpu`.
+4. Each run gives the device runner `--cloud` with the runner names, `--parallel` and the build name. Each runner's turn opens a session, which loads the runner page that waits at `https://bs-local.com:3001`. The page starts the run when its turn comes.
+5. Every 30 seconds, the runner reads the page's status line through the session, and prints it when it changes. A session ends after 300 seconds without a command, the longest idle time that Automate allows. So these reads also keep the session open.
+6. The session ends with the runner's turn. That happens when the page finishes, or the out-of-memory guard ends its turn. It also happens when the page goes quiet, does not start within 3 minutes, or loses its session.
+7. After the run, it marks each session passed or failed with the runner's summary line, and prints each session's link on BrowserStack's dashboard. Each session records video and the browser's console.
+
+- A command that is killed with no chance to clean up leaves its sessions open. BrowserStack ends them after 5 minutes without a command.
+- Automate ends any session after 2 hours. The smoke plan fits easily. Split a longer plan with the device runner's `--shard`.
+- The device runner can open cloud sessions without the command too: `NULL3D_PORT=3000 bun tests/real-browsers.ts --plan smoke --cloud bspixel10-chrome`. It then opens one session at a time.
+
+The code is in these files:
+
+- `tests/devices-cloud.ts`: the command. It picks the devices, checks them and the plan, and starts the device runner.
+- `tests/lib/browserstack-devices.ts`: the devices of tiers A and B, with BrowserStack's names. Edit it when Automate's list changes.
+- `tests/lib/browserstack.ts`: the credentials, each session's capabilities, and the REST calls.
+- `tests/lib/cloud-sessions.ts`: the sessions' lifecycle. `tests/lib/webdriver.ts`: a small client for the W3C WebDriver protocol, so no WebDriver package is needed.
+
+### Where Automate differs from Live
+
+These facts come from BrowserStack's Automate docs, read on 3 October 2026: [mobile browsers](https://www.browserstack.com/docs/automate/selenium/deliver-better-mobile-user-exp), [Chromium on iOS](https://www.browserstack.com/docs/automate/selenium/chromium-on-ios), [insecure certificates](https://www.browserstack.com/docs/automate/selenium/accept-insecure-certificates), [capabilities](https://www.browserstack.com/automate/capabilities), [timeouts](https://www.browserstack.com/docs/automate/selenium/timeouts) and the [REST API](https://www.browserstack.com/docs/automate/api-reference/selenium/plan).
+
+- Real Android devices offer Chrome, Samsung Internet, Firefox and Edge. Edge sessions record no video.
+- iPhones and iPads offer Safari, and Chromium in place of Chrome. Both draw with WebKit. So tier B's Chrome on the iPhone 17 runs as `bsiphone17-chromium`.
+- Automate's list lacks two devices of the tiers. In tier A, the Galaxy Tab A9 Plus stands in for the Redmi Note 12 4G. Its Adreno 619 is of the same line, with compatibility mode only. In tier B, the Galaxy M32 stands in for the Galaxy A16 5G. It has a low-end Mali GPU and little memory, on Android 11, so it runs WebGL2 only.
+- No toolbar setting is needed for the dev server's certificate. The capability `acceptInsecureCerts` accepts it in most browsers. In Safari and on iOS, BrowserStack's `acceptSsl` command passes the warning page after each load.
+- iOS does not send `localhost` through the tunnel, so every device opens `bs-local.com`. BrowserStack allows every port for current browsers.
