@@ -107,19 +107,6 @@ async function reached(slots: Int32Array, slot: number, target: number): Promise
 }
 
 /**
- * Waits without blocking for the engine to stop, then ends the job workers' loops. The page stops
- * the job workers only after they leave their loops, where each blocks its thread while it has no
- * work.
- */
-async function shutDownJobsOnStop(glue: CoreGlue, slots: Int32Array): Promise<void> {
-	while (Atomics.load(slots, Slot.Running) !== 0) {
-		const change = slotChange(slots, Slot.Running, 1);
-		if (change) await change;
-	}
-	glue.shutdownJobs();
-}
-
-/**
  * The pipelined frame loop of a thread that runs the sketch while another thread draws: the sketch
  * worker, or the page with sketchThread: 'main'. It steps the sketch once the thread that draws has
  * taken the frame before, and waits for that without blocking, so the thread's event loop stays free
@@ -239,9 +226,11 @@ export class SketchRunner {
 		const { shadowTiles, shadowTileSize, pointLightShadows } = sketch.quality.settings;
 		glue.setShadowTiles(shadowTiles, shadowTileSize, pointLightShadows);
 		if (sketch.jobWorkers > 0) {
+			// The page ends the job workers' loops through these words when the engine stops.
+			Atomics.store(slots, Slot.JobsWakeAddress, glue.jobsWakeAddress());
+			Atomics.store(slots, Slot.JobsStopAddress, glue.jobsStopAddress());
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.notify(slots, Slot.JobsReady);
-			void shutDownJobsOnStop(glue, slots);
 		}
 		this.core = new CoreMemory(glue, sketch.memory);
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);

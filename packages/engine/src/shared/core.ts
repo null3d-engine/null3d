@@ -44,7 +44,10 @@ export interface CoreGlue extends CoreErrors {
 	jobWorkerLoop(index: number): void;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
 	takeJobBusyMs(index: number): number;
-	shutdownJobs(): void;
+	/** The address of the job system's wake word, or 0 before it exists. */
+	jobsWakeAddress(): number;
+	/** The address of the job system's stop flag, a byte, or 0 before it exists. */
+	jobsStopAddress(): number;
 	/** Drops the engine, so this instance can create another; the page's own instance needs it. */
 	destroyEngine(): void;
 	/**
@@ -305,7 +308,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'initEngine',
 	'jobWorkerLoop',
 	'takeJobBusyMs',
-	'shutdownJobs',
+	'jobsWakeAddress',
+	'jobsStopAddress',
 	'destroyEngine',
 	'sceneCapacity',
 	'sceneArrays',

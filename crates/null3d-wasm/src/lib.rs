@@ -377,8 +377,8 @@ pub fn destroy_engine() {
     unsafe { *ENGINE.0.get() = None };
 }
 
-/// Serves the job system on a job worker until `shutdownJobs`. It first waits for the sketch
-/// thread to create the job system.
+/// Serves the job system on a job worker until the page sets its stop flag. It first waits for
+/// the sketch thread to create the job system.
 #[wasm_bindgen(js_name = jobWorkerLoop)]
 pub fn job_worker_loop(index: u32) {
     JOBS.wait().worker_loop(index);
@@ -391,12 +391,18 @@ pub fn take_job_busy_ms(index: u32) -> f64 {
     JOBS.get().map_or(0.0, |jobs| jobs.take_busy_ms(index))
 }
 
-/// Stops every job worker's loop.
-#[wasm_bindgen(js_name = shutdownJobs)]
-pub fn shutdown_jobs() {
-    if let Some(jobs) = JOBS.get() {
-        jobs.shutdown();
-    }
+/// The address of the job system's wake word, or 0 before it exists.
+#[wasm_bindgen(js_name = jobsWakeAddress)]
+pub fn jobs_wake_address() -> u32 {
+    JOBS.get()
+        .map_or(0, |jobs| jobs.stop_words().0.as_ptr() as usize as u32)
+}
+
+/// The address of the job system's stop flag, a byte, or 0 before it exists.
+#[wasm_bindgen(js_name = jobsStopAddress)]
+pub fn jobs_stop_address() -> u32 {
+    JOBS.get()
+        .map_or(0, |jobs| jobs.stop_words().1.as_ptr() as usize as u32)
 }
 
 // --- Scene objects ---

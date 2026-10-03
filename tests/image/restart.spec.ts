@@ -1,6 +1,6 @@
 import { type CDPSession, expect, test } from '@playwright/test';
 import * as Slot from '../../packages/engine/src/shared/slot.ts';
-import { ENGINE_MODES } from '../lib/engine-checks.ts';
+import { ENGINE_MODES, THREADED_MODES } from '../lib/engine-checks.ts';
 import { prefixEngineScripts, restoreEngineScripts } from '../lib/engine-scripts.ts';
 import { gpuObjectsHeld, watchGpuObjects } from '../lib/gpu-ledger.ts';
 import { pageResult } from '../lib/page-result.ts';
@@ -195,5 +195,31 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		expect(logs).toContain(HELD);
 		expect(result.error).toBeUndefined();
 		expect(result.failures).toEqual([]);
+	});
+}
+
+/** The job workers that the page's trail notes as started, and as stopped. */
+const JOB_STARTED = /null3d-job-\d+: started/g;
+const JOB_STOPPED = /null3d-job-\d+: stopped/g;
+
+// A page that leaves while its engine runs, as a page in a frame does when the frame goes away,
+// still ends the job workers' blocking waits: the browser then stops the workers wherever they are,
+// and Safari never frees the shared memory of a thread that it stops inside such a wait. So on
+// pagehide every job worker leaves its loop and says so, before anything stops the engine.
+for (const mode of THREADED_MODES) {
+	test(`a page that leaves without stopping the engine ends the job workers' waits, ${mode.name}`, async ({
+		page,
+	}) => {
+		await page.goto(`engine-frame.html?gpu=webgl2&${mode.query}`);
+		await expect
+			.poll(() => page.evaluate('window.__engineFrame?.engineFrame'), { timeout: 30_000 })
+			.toBe('running');
+		const trail = async () =>
+			String(await page.evaluate("window.__null3dProgress?.join('\\n') ?? ''"));
+		const jobs = (await trail()).match(JOB_STARTED)?.length ?? 0;
+		expect(jobs).toBeGreaterThan(0);
+		expect((await trail()).match(JOB_STOPPED)).toBeNull();
+		await page.evaluate("dispatchEvent(new PageTransitionEvent('pagehide'))");
+		await expect.poll(async () => (await trail()).match(JOB_STOPPED)?.length ?? 0).toBe(jobs);
 	});
 }

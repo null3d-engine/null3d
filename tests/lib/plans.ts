@@ -141,7 +141,11 @@ export type Check =
 	| { kind: 'capture'; tier: Tier; mode: EngineMode }
 	/** The KTX2 page: each file becomes the compressed format that the device supports. */
 	| { kind: 'ktx2'; tier: Tier }
-	| { kind: 'restarts'; mode: EngineMode }
+	/**
+	 * The shared memory page: engines that start and stop on the page, or that start in frames
+	 * that the page removes while they run, more of them than the browser has room for at once.
+	 */
+	| { kind: 'restarts'; mode: EngineMode; start: RestartStart }
 	| { kind: 'memory'; maximumMiB: number }
 	| { kind: 'room'; maximumMiB: number }
 	| { kind: 'uploads'; tier: Tier }
@@ -422,8 +426,16 @@ export function checksPlan(): PlanItem<Check>[] {
 			pageItem(
 				`restarts-${slug(mode.name)}`,
 				'shared-memory',
-				{ kind: 'restarts', mode },
+				{ kind: 'restarts', mode, start: 'engine' },
 				{ switches: [mode.query], timeoutSeconds: RESTARTS_TIMEOUT_SECONDS },
+			),
+		),
+		...THREADED_MODES.map((mode) =>
+			pageItem(
+				`frame-restarts-${slug(mode.name)}`,
+				'shared-memory',
+				{ kind: 'restarts', mode, start: 'frame' },
+				{ switches: ['kinds=frame', mode.query], timeoutSeconds: RESTARTS_TIMEOUT_SECONDS },
 			),
 		),
 		pageItem(`${CAPABILITIES}-reload`, 'capabilities', {
@@ -1094,22 +1106,41 @@ function imageRunProblems(
 	);
 }
 
+/**
+ * How the shared memory page starts each engine: on the page, which stops it, or in a frame, which
+ * the page removes while the engine runs.
+ */
+export type RestartStart = 'engine' | 'frame';
+
 /** What the restart page reports about the engine's starts and stops. */
 export interface RestartResult {
 	/** Shared memories the page could hold at once before the starts, where it counted them. */
 	room?: number;
 	cycles: number;
-	kinds: {
-		engine?: {
-			cycles: number;
-			error?: string;
-			trail?: string[];
-			/** The room when it came back, or when the page stopped waiting for it. */
-			roomLater?: number;
-			roomWaitMs?: number;
-		};
-	};
+	kinds: Partial<
+		Record<
+			RestartStart,
+			{
+				cycles: number;
+				error?: string;
+				trail?: string[];
+				/** The room when it came back, or when the page stopped waiting for it. */
+				roomLater?: number;
+				roomWaitMs?: number;
+			}
+		>
+	>;
 }
+
+/** Each way of starting engines, as the restart problems name it. */
+const RESTART_WORDS: Record<RestartStart, { cycle: string; cycles: string; engines: string }> = {
+	engine: { cycle: 'start and stop', cycles: 'starts and stops', engines: 'stopped engines' },
+	frame: {
+		cycle: 'start in a frame',
+		cycles: 'starts in frames',
+		engines: 'engines in removed frames',
+	},
+};
 
 /** How long the restart page waited for the room to come back, as the problem's text gives it. */
 const waitedText = (ms: number | undefined) =>
@@ -1119,13 +1150,14 @@ const waitedText = (ms: number | undefined) =>
  * What is wrong with the restart page's result: a start or a stop that failed, or room for shared
  * memory that the browser did not get back from the stopped engines.
  */
-export function restartProblems(result: RestartResult): string[] {
-	const engine = result.kinds.engine;
+export function restartProblems(result: RestartResult, start: RestartStart): string[] {
+	const engine = result.kinds[start];
 	if (!engine) return ['the page started no engine'];
+	const words = RESTART_WORDS[start];
 	const problems: string[] = [];
 	if (engine.error)
 		problems.push(
-			`start and stop ${engine.cycles + 1} of ${result.cycles} failed: ${engine.error}${lastSteps(engine.trail)}`,
+			`${words.cycle} ${engine.cycles + 1} of ${result.cycles} failed: ${engine.error}${lastSteps(engine.trail)}`,
 		);
 	if (
 		result.room !== undefined &&
@@ -1133,7 +1165,7 @@ export function restartProblems(result: RestartResult): string[] {
 		engine.roomLater < result.room - ROOM_KEPT
 	)
 		problems.push(
-			`the browser did not get back the memory of stopped engines${waitedText(engine.roomWaitMs)}: it had room for ${result.room} shared memories before ${engine.cycles} starts and stops, and for ${engine.roomLater} after`,
+			`the browser did not get back the memory of ${words.engines}${waitedText(engine.roomWaitMs)}: it had room for ${result.room} shared memories before ${engine.cycles} ${words.cycles}, and for ${engine.roomLater} after`,
 		);
 	return problems;
 }
@@ -1202,7 +1234,7 @@ export function judge(
 		case 'stats':
 			return statsProblems(result as unknown as StatsResult);
 		case 'restarts':
-			return restartProblems(result as unknown as RestartResult);
+			return restartProblems(result as unknown as RestartResult, check.start);
 		case 'memory':
 			return (result.mode as { build?: string } | undefined)?.build === 'threaded'
 				? []

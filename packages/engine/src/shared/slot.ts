@@ -84,3 +84,10 @@ export const PipelineHold = 26;
  * canvas's size, for the page's stats overlay.
  */
 export const RenderScale = 27;
+/**
+ * The addresses in engine memory of the job system's wake word and of its stop flag, a byte, or 0
+ * before the sketch thread has created the job system. The page stops the job workers through
+ * them, at once, when the engine stops and when the page leaves.
+ */
+export const JobsWakeAddress = 28;
+export const JobsStopAddress = 29;

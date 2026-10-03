@@ -70,6 +70,7 @@ import { MainThreadWatch } from './main-thread';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
 import { StatsSwitch } from './stats-switch';
+import { stopJobWorkers } from './stop-jobs';
 import {
 	type DepthMode,
 	type GpuSwitch,
@@ -1065,6 +1066,15 @@ async function startEngine(
 	let localCore: CoreGlue | undefined;
 	let stopping: Promise<void> | undefined;
 	/**
+	 * Ends the job workers' loops at once. A page that leaves without stopping the engine, such as a
+	 * page in a frame that goes away, does it too, because the browser then stops the workers
+	 * wherever they are.
+	 */
+	const stopJobs = () => {
+		if (core.memory) stopJobWorkers(core.memory, slots);
+	};
+	if (threads?.jobs.length) globalThis.addEventListener?.('pagehide', stopJobs);
+	/**
 	 * Stops every loop and then the workers, and wakes each thread that waits, so it sees the stop.
 	 * Then it drops the page's engine and lets go of the page's threaded core. A second call returns
 	 * the first call's promise.
@@ -1072,6 +1082,8 @@ async function startEngine(
 	const stop = () => {
 		stopping ??= (async () => {
 			Atomics.store(slots, Slot.Running, 0);
+			stopJobs();
+			globalThis.removeEventListener?.('pagehide', stopJobs);
 			statsSwitch.show(false);
 			for (const slot of [
 				Slot.Running,

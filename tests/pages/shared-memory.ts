@@ -13,6 +13,7 @@
 // ?room=off skips the counts of the room.
 import { createEngine, EngineError } from '@null3d/engine';
 import { coreUrls, probeCapabilities } from '@null3d/engine/internal';
+import type { EngineFrameMessage } from './engine-frame';
 import { CORE_KINDS, type HoldKind, type HoldMessage, WOKEN_KINDS } from './lib/memory-holder';
 import { progress, run } from './lib/result';
 import { ROOM_KEPT } from './lib/room';
@@ -42,14 +43,18 @@ const ENGINE_TIMEOUT_MS = 20_000;
 const ROOM_PAUSES_MS = [1_000, 1_000, 2_000, 4_000, 8_000, 15_000];
 /**
  * How long, in all, the starts that the browser refuses may wait for it to free the stopped
- * engines' memory, beyond the engine's own wait of about 3 seconds for each start.
+ * engines' memory, beyond the engine's own wait of about 10 seconds for each start.
  */
 const LATE_STARTS_MS = 30_000;
 /** The pause before the page tries a refused start again. */
 const LATE_START_PAUSE_MS = 1_000;
 
-/** The ways of holding a memory: the engine's start and stop, or one of the smaller tests. */
-type Kind = 'engine' | 'dropped' | 'probe' | HoldKind;
+/**
+ * The ways of holding a memory: the engine's start and stop on this page, the engine's start in a
+ * frame that the page removes while the engine runs or after the engine stops, or one of the smaller
+ * tests.
+ */
+type Kind = 'engine' | 'frame' | 'frame-destroyed' | 'dropped' | 'probe' | HoldKind;
 const KINDS = (params.get('kinds')?.split(',') ?? ['engine']) as Kind[];
 const COUNT_ROOM = params.get('room') !== 'off';
 
@@ -186,6 +191,39 @@ async function startAndStopEngine(): Promise<void> {
 	}
 }
 
+/**
+ * Starts the engine in a frame, in the mode the page's switches ask for, and removes the frame
+ * once the engine has drawn its first frame. With `destroy`, the frame stops the engine first.
+ */
+async function startEngineInFrame(destroy: boolean): Promise<void> {
+	const frame = document.createElement('iframe');
+	const switches = new URLSearchParams(location.search);
+	for (const name of ['kinds', 'cycles', 'room', 'maximum']) switches.delete(name);
+	if (destroy) switches.set('stop', 'destroy');
+	frame.src = `./engine-frame.html?${switches}`;
+	try {
+		const message = await withTimeout(
+			new Promise<EngineFrameMessage>((resolve) => {
+				const listen = ({ source, data }: MessageEvent) => {
+					if (source !== frame.contentWindow || !(data as EngineFrameMessage)?.engineFrame) return;
+					removeEventListener('message', listen);
+					resolve(data);
+				};
+				addEventListener('message', listen);
+				document.body.append(frame);
+			}),
+			ENGINE_TIMEOUT_MS,
+			'the engine start in a frame',
+		);
+		if (message.engineFrame === 'failed')
+			throw message.code === 'E1109'
+				? new EngineError('E1109', message.error ?? 'refused')
+				: new Error(message.error);
+	} finally {
+		frame.remove();
+	}
+}
+
 /** The starts that the browser refused at first, and their time from the first try to the last. */
 const late = { starts: 0, ms: 0 };
 
@@ -194,13 +232,13 @@ const late = { starts: 0, ms: 0 };
  * have freed the stopped engines' memory yet, so the page waits and tries again while its budget for
  * late starts lasts. Memory that never comes back uses up the budget, and the start then fails.
  */
-async function startAndStopEngineOnceFree(): Promise<void> {
+async function startAndStopEngineOnceFree(start: () => Promise<void>): Promise<void> {
 	const started = performance.now();
 	let refused = false;
 	try {
 		for (;;) {
 			try {
-				return await startAndStopEngine();
+				return await start();
 			} catch (e) {
 				const waited = performance.now() - started;
 				if (!(e instanceof EngineError && e.code === 'E1109') || late.ms + waited > LATE_STARTS_MS)
@@ -219,7 +257,10 @@ async function startAndStopEngineOnceFree(): Promise<void> {
 }
 
 async function cycle(kind: Kind): Promise<void> {
-	if (kind === 'engine') await startAndStopEngineOnceFree();
+	if (kind === 'engine') await startAndStopEngineOnceFree(startAndStopEngine);
+	else if (kind === 'frame') await startAndStopEngineOnceFree(() => startEngineInFrame(false));
+	else if (kind === 'frame-destroyed')
+		await startAndStopEngineOnceFree(() => startEngineInFrame(true));
 	else if (kind === 'dropped') allocate();
 	else if (kind === 'probe') await probeCapabilities('high-performance');
 	else await holdAndStop(kind);
