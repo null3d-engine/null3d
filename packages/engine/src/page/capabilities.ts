@@ -101,7 +101,10 @@ export interface WebGPUReport {
 	 * it to the targets that live within one render pass, such as the multisampled color and depth.
 	 */
 	transientAttachments: boolean;
-	/** Reported for the record only; the engine never branches on it. */
+	/**
+	 * Reported for the record. The engine reads no meaning from it, and only compares it with an
+	 * earlier start's, to tell whether a stored preset check came from the same GPU.
+	 */
 	adapterInfo: { vendor: string; architecture: string; device: string; description: string } | null;
 	/** Why the probe failed, when it did. */
 	error?: string;
@@ -148,7 +151,10 @@ export interface WebGL2Report {
 		rgba16f: { complete: boolean; readsBack: boolean; samples: number };
 		rgba32f: { complete: boolean; readsBack: boolean; samples: number };
 	} | null;
-	/** Reported for the record only; the engine never branches on it. */
+	/**
+	 * Reported for the record. The engine reads no meaning from it, and only compares it with an
+	 * earlier start's, to tell whether a stored preset check came from the same GPU.
+	 */
 	renderer: string | null;
 	/** Why the probe failed, when it did. */
 	error?: string;
