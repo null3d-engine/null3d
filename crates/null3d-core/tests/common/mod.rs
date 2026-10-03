@@ -328,3 +328,42 @@ pub fn random_spheres(count: usize, seed: u64) -> [Vec<f32>; 4] {
     }
     arrays
 }
+
+/// A height field of `n` × `n` quads on a unit grid, as indexed triangles.
+pub fn terrain(rng: &mut Rng, n: u32) -> (Vec<f32>, Vec<u32>) {
+    let mut positions = Vec::new();
+    for z in 0..=n {
+        for x in 0..=n {
+            positions.extend([x as f32, rng.range(0.0, 2.0), z as f32]);
+        }
+    }
+    let mut indices = Vec::new();
+    for z in 0..n {
+        for x in 0..n {
+            let i = z * (n + 1) + x;
+            indices.extend([i, i + n + 1, i + 1, i + 1, i + n + 1, i + n + 2]);
+        }
+    }
+    (positions, indices)
+}
+
+/// A unit sphere of `rings` × `segments` quads, as indexed triangles with 16-bit indices.
+pub fn sphere(rings: u16, segments: u16) -> (Vec<f32>, Vec<u16>) {
+    let mut positions = Vec::new();
+    for r in 0..=rings {
+        let phi = std::f32::consts::PI * f32::from(r) / f32::from(rings);
+        for s in 0..=segments {
+            let theta = std::f32::consts::TAU * f32::from(s) / f32::from(segments);
+            positions.extend([phi.sin() * theta.cos(), phi.cos(), phi.sin() * theta.sin()]);
+        }
+    }
+    let mut indices = Vec::new();
+    for r in 0..rings {
+        for s in 0..segments {
+            let i = r * (segments + 1) + s;
+            let j = i + segments + 1;
+            indices.extend([i, i + 1, j, i + 1, j + 1, j]);
+        }
+    }
+    (positions, indices)
+}

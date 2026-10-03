@@ -472,6 +472,9 @@ pub struct SceneStorage {
     /// True once a command that changes the structure applied, until
     /// [`Self::take_structure_changed`].
     structure_changed: bool,
+    /// Counts the commands that changed the structure, so readers that do not take the flag can
+    /// tell a change apart.
+    structure_epoch: u32,
     child_offsets: Vec<u32>,
     child_list: Vec<u32>,
     frame: u32,
@@ -522,6 +525,7 @@ impl SceneStorage {
             level_count: 0,
             order_dirty: false,
             structure_changed: false,
+            structure_epoch: 0,
             child_offsets: vec![0; rows],
             child_list: vec![0; rows],
             frame: 0,
@@ -834,6 +838,7 @@ impl SceneStorage {
         for (i, command) in commands.iter().enumerate() {
             if !command.keeps_structure() {
                 self.structure_changed = true;
+                self.structure_epoch = self.structure_epoch.wrapping_add(1);
             }
             match self.apply_one(command, &mut orphans_possible) {
                 Ok(()) => {}
@@ -862,6 +867,18 @@ impl SceneStorage {
     /// command but a visibility or layer change. The renderer then rebuilds its tables.
     pub fn take_structure_changed(&mut self) -> bool {
         std::mem::take(&mut self.structure_changed)
+    }
+
+    /// A number that changes with every applied command that changes the structure, as
+    /// [`Self::take_structure_changed`] counts them. Readers compare it with the value they last
+    /// saw, so several readers can follow changes without taking the flag from each other.
+    pub fn structure_epoch(&self) -> u32 {
+        self.structure_epoch
+    }
+
+    /// The slots whose objects are created and not destroyed.
+    pub fn created(&self) -> &Bitset {
+        &self.created
     }
 
     /// The slot of a handle whose create command has been applied.
