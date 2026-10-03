@@ -71,22 +71,20 @@ Decided by the owner on 2026-09-30; every row is in, and each supports it:
 
 The engine already applies this: `webgl2Depth` in `packages/engine/src/page/limits.ts` picks `reversed` where the capability probe finds `EXT_clip_control`, and `DEPTH_WITHOUT_CLIP_CONTROL` (`reversed-gl`) elsewhere. `engine.capabilities.depth` reports the mode. A render context that answers no `EXT_clip_control`, such as one lost while the WebGL2 backend starts, draws `reversed-gl` instead of failing, so the engine's recovery from the loss goes on.
 
-The S24+ (Chrome, run 20260929-074614-checks) and the iPad (Safari, run 20260929-150841-checks; Brave, run 20260929-153640-checks) reported `EXT_clip_control` in earlier capability checks, so they will draw `reversed`. Their rows check that `reversed` also fights least on their GPUs. They add their `reversed-gl` and `standard` counts to the fallback's evidence. Revisit this record if a device's `reversed` row fights more than its `reversed-gl` row, or if a device's `reversed-gl` row is no better than its `standard` row. S24+ Brave has no recorded `EXT_clip_control` answer yet; its depth run records one.
+The S24+ (Chrome and Brave) and the iPad (Safari and Brave) all have `EXT_clip_control`, so they draw `reversed`. Their rows confirm the decision on phone and tablet GPUs. `reversed` fought in no pixel on either device. `reversed-gl` fought in fewer pixels than `standard` on both. The S24+ counted 8,236 against 20,613, and the iPad 5,441 against 16,737.
 
-Command that fills the pending rows, from the main checkout on its usual ports (5173 and 5174):
+Revisit this record if a device's `reversed` row fights more than its `reversed-gl` row. Revisit it too if a device's `reversed-gl` row is no better than its `standard` row. The runner's `depth` plan measures a new device: `bun tests/real-browsers.ts --plan depth`, with the device options that [Device sessions](../devices.md) describes.
 
-```sh
-bun tests/real-browsers.ts --plan depth --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave --shields on
-```
+## How three.js handles it
 
-The phone connects by USB with USB debugging on; the runner forwards the port and opens each Android browser's runner page. On the iPad, open `https://<mac>.local:5174/tests/pages/runner.html?listen&runner=ipad-safari` in Safari and `...&runner=ipad-brave` in Brave. Record Brave's Shields with `--shields on` or `--shields off` to match. The run prints one table per browser: the depth each page drew, its fighting pixels, and the share at each distance.
+three.js's WebGL renderer draws standard depth by default, the first column of the tables above. It offers two options for far views. `logarithmicDepthBuffer` writes depth from the fragment shader. That turns off the GPU's early depth test, so every hidden fragment runs its shader. `reverseDepthBuffer` draws reversed depth, and works only where the browser has `EXT_clip_control`. An app chooses each option itself.
+
+null3D draws reversed depth on every GPU path, with no option to set. Where WebGL2 lacks the extension, it keeps reversed depth in GL's range, which the data shows is still better than standard depth. It never writes depth from the fragment shader.
 
 ## Consequences
 
 - Code: pull request #47 (https://github.com/null3d-engine/null3d/pull/47, "feat(engine): draw WebGL2 depth with EXT_clip_control where the browser has it", branch `feat/webgl2-clip-control`). It holds the uniform depth mapping in the GLSL build (`crates/null3d-shaders/src/glsl.rs`) and the three modes in the WebGL2 backend (`packages/engine/src/gpu/webgl2/depth.ts`). It also holds the `?depth=` switch, `engine.capabilities.depth`, the precision scene, its image tests, and the runner's `depth` plan.
 - Shadows (M1-F2): in `reversed` and `reversed-gl`, depth textures hold WebGPU's depth values, so shadow comparisons and their reference depths work unchanged on WebGL2. Choosing `standard` anywhere would have needed a flipped comparison and a flipped reference in every shader that reads depth.
 - Docs: `concepts/backends` has a section on depth on each tier. The mapping entry `logarithmicDepthBuffer / reverseDepthBuffer` points there. `api/engine` lists `DepthMode` and `EngineCapabilities.depth`.
-- Follow-ups for M1-L4, the decision records task:
-  - Large worlds: reversed depth on WebGL2 too, with clip control.
-  - Logarithmic depth: "WebGL2 keeps standard depth unless a clip-control extension exists" becomes `reversed-gl` without the extension.
-  - T-29: closed on 2026-09-30. Every team device and browser has a row.
+- Design notes: the large-world design and the note on logarithmic depth say that WebGL2 draws reversed depth too. It draws in the range 0 to 1 with `EXT_clip_control`, and as `reversed-gl` without it (M1-L4).
+- T-29 closed on 2026-09-30. Every team device and browser has a row.
