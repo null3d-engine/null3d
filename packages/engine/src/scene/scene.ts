@@ -37,13 +37,13 @@ import { type ColorInput, linearColor } from './color';
 import { type FogOptions, setSceneFog } from './fog';
 import {
 	FrameCameras,
-	LENS_ASPECT,
 	LENS_CENTER_X,
 	LENS_CENTER_Y,
+	LENS_FLOATS,
+	LENS_HALF_HEIGHT,
+	LENS_HALF_WIDTH,
 	LENS_NEAR,
 	LENS_ORTHO,
-	LENS_SCALE_X,
-	LENS_SCALE_Y,
 	type Ray,
 } from './frame-cameras';
 import {
@@ -1002,6 +1002,8 @@ export abstract class Camera extends Object3D {
 
 	/** @internal The layers of the objects the camera draws. */
 	layers: number = C.LAYERS_DEFAULT;
+	/** @internal The lens as the frame cameras keep it, which `updateLens` writes. */
+	readonly lens = new Float64Array(LENS_FLOATS);
 
 	/** @internal */
 	constructor(
@@ -1090,11 +1092,8 @@ export abstract class Camera extends Object3D {
 		this.scene.frameCameras.worldToScreen(this, point, out, 'worldToScreen');
 	}
 
-	/**
-	 * @internal Writes the lens at `at` of `entry`, as the frame cameras keep it, for the canvas
-	 * whose aspect ratio the entry holds.
-	 */
-	abstract writeLens(entry: Float64Array, at: number): void;
+	/** @internal Writes the lens into `lens`, after each change of its values. */
+	abstract updateLens(): void;
 
 	/**
 	 * @internal Gives the engine core this camera's lens and layers, which the active camera draws
@@ -1123,6 +1122,7 @@ export class PerspectiveCamera extends Camera {
 		far: number,
 	) {
 		super(scene, handle, name, near, far);
+		this.updateLens();
 	}
 
 	/** The vertical field of view in degrees. */
@@ -1141,14 +1141,14 @@ export class PerspectiveCamera extends Camera {
 	}
 
 	/** @internal */
-	writeLens(entry: Float64Array, at: number): void {
-		const halfHeight = Math.tan((this.verticalFov * Math.PI) / 360);
-		entry[at + LENS_ORTHO] = 0;
-		entry[at + LENS_SCALE_X] = halfHeight * (entry[at + LENS_ASPECT] as number);
-		entry[at + LENS_SCALE_Y] = halfHeight;
-		entry[at + LENS_CENTER_X] = 0;
-		entry[at + LENS_CENTER_Y] = 0;
-		entry[at + LENS_NEAR] = this.near;
+	updateLens(): void {
+		const lens = this.lens;
+		lens[LENS_ORTHO] = 0;
+		lens[LENS_HALF_HEIGHT] = Math.tan((this.verticalFov * Math.PI) / 360);
+		lens[LENS_HALF_WIDTH] = 0;
+		lens[LENS_CENTER_X] = 0;
+		lens[LENS_CENTER_Y] = 0;
+		lens[LENS_NEAR] = this.near;
 	}
 
 	/** @internal */
@@ -1198,6 +1198,7 @@ export class OrthographicCamera extends Camera {
 		far: number,
 	) {
 		super(scene, handle, name, near, far);
+		this.updateLens();
 	}
 
 	/** The view's height in world units. */
@@ -1228,15 +1229,14 @@ export class OrthographicCamera extends Camera {
 	}
 
 	/** @internal */
-	writeLens(entry: Float64Array, at: number): void {
-		const view = this.view;
-		const width = view.width > 0 ? view.width : view.height * (entry[at + LENS_ASPECT] as number);
-		entry[at + LENS_ORTHO] = 1;
-		entry[at + LENS_SCALE_X] = width / 2;
-		entry[at + LENS_SCALE_Y] = view.height / 2;
-		entry[at + LENS_CENTER_X] = view.centerX;
-		entry[at + LENS_CENTER_Y] = view.centerY;
-		entry[at + LENS_NEAR] = this.near;
+	updateLens(): void {
+		const { lens, view } = this;
+		lens[LENS_ORTHO] = 1;
+		lens[LENS_HALF_HEIGHT] = view.height / 2;
+		lens[LENS_HALF_WIDTH] = view.width / 2;
+		lens[LENS_CENTER_X] = view.centerX;
+		lens[LENS_CENTER_Y] = view.centerY;
+		lens[LENS_NEAR] = this.near;
 	}
 
 	/** @internal */
@@ -1886,6 +1886,7 @@ export class Scene {
 
 	/** @internal */
 	lensChanged(camera: Camera): void {
+		camera.updateLens();
 		if (camera === this.activeCamera) camera.sendLens(this.core.glue);
 		if (camera === this.shadowCamera) camera.sendLens(this.core.glue, C.CAMERA_TARGET_SHADOWS);
 	}

@@ -28,46 +28,46 @@ export interface EventFrames {
 	frameAt(x: number, y: number): number;
 }
 
-/** A camera's lens as a frame sees it: what `writeLens` writes into an entry. */
+/** A camera as the ring keeps it: its handle, its name and its lens. */
 export interface FrameLens {
-	/**
-	 * Writes the lens at `at` of `entry`: whether it is orthographic, the scales from device
-	 * coordinates to the view, the view's center, and the near distance, for the canvas whose aspect
-	 * ratio the entry holds at `LENS_ASPECT`.
-	 */
-	writeLens(entry: Float64Array, at: number): void;
 	readonly handle: number;
 	/** The camera's name for error messages. */
 	readonly label: string;
+	/**
+	 * The lens, `LENS_FLOATS` numbers at the `LENS_*` offsets, which the camera writes each time the
+	 * lens changes. So keeping a frame's camera copies numbers and computes none: a function that
+	 * runs once per frame can stay on the browser's slower tiers, where each fraction it computes
+	 * makes a new object.
+	 */
+	readonly lens: Float64Array;
 }
 
-/** The frames whose cameras the ring keeps. */
-const RING_FRAMES = 4;
-/** Each entry's fields: the frame, the camera's handle and its lens (`LENS_*`), then sizes and matrix. */
-const FRAME = 0;
-const HANDLE = 1;
-/** The first of the lens's fields, which `writeLens` fills. */
-export const LENS = 2;
-/** 1 for an orthographic lens, 0 for a perspective one. */
+/** The lens's numbers. 1 for an orthographic lens, 0 for a perspective one. */
 export const LENS_ORTHO = 0;
 /**
- * The scales from device coordinates to the view. For a perspective lens, the view's half width
- * and half height one unit in front of the camera; for an orthographic lens, the view's half width
- * and half height.
+ * Half the view's height: one unit in front of a perspective camera, or across an orthographic
+ * view.
  */
-export const LENS_SCALE_X = 1;
-export const LENS_SCALE_Y = 2;
+export const LENS_HALF_HEIGHT = 1;
+/** Half the width of an orthographic view made from edges, or 0 for a width that follows the canvas. */
+export const LENS_HALF_WIDTH = 2;
 /** The orthographic view's center, right of and above the camera's axis. */
 export const LENS_CENTER_X = 3;
 export const LENS_CENTER_Y = 4;
 /** The distance along the view to the near plane. */
 export const LENS_NEAR = 5;
-/**
- * The canvas's width over its height in device pixels, which the lens reads. It travels in the
- * entry, as a fraction passed to a call that the browser does not inline would allocate.
- */
-export const LENS_ASPECT = 6;
-const CSS_WIDTH = LENS + 7;
+export const LENS_FLOATS = 6;
+
+/** The frames whose cameras the ring keeps. */
+const RING_FRAMES = 4;
+/** Each entry's fields: the frame, the lens, the canvas's sizes, then the camera's world matrix. */
+const FRAME = 0;
+const LENS = 1;
+/** The canvas's size in device pixels, whose shape the frame's projection takes. */
+const WIDTH = LENS + LENS_FLOATS;
+const HEIGHT = WIDTH + 1;
+/** The canvas's size in CSS pixels, which input positions count in. */
+const CSS_WIDTH = HEIGHT + 1;
 const CSS_HEIGHT = CSS_WIDTH + 1;
 /** The camera's world matrix: 12 numbers, row by row, with the translation in 64 bits. */
 const MATRIX = CSS_HEIGHT + 1;
@@ -77,6 +77,8 @@ const ENTRY = MATRIX + MATRIX_FLOATS;
 /** The cameras of the last frames, and the math of rays and projections from them. */
 export class FrameCameras {
 	private readonly ring = new Float64Array(RING_FRAMES * ENTRY);
+	/** The camera of each entry of the ring. */
+	private readonly ringCameras: (FrameLens | undefined)[] = new Array(RING_FRAMES).fill(undefined);
 	/** The entry of the camera as it stands, which each call fills again. */
 	private readonly current = new Float64Array(ENTRY);
 	private readonly matrix = new Float64Array(MATRIX_FLOATS);
@@ -92,9 +94,11 @@ export class FrameCameras {
 	 * pixels, or forgets the frame when it drew from no camera.
 	 */
 	record(frame: number, camera: FrameLens | undefined, width: number, height: number): void {
-		const at = (frame % RING_FRAMES) * ENTRY;
+		const index = frame % RING_FRAMES;
+		const at = index * ENTRY;
 		const ring = this.ring;
 		ring[at + FRAME] = 0;
+		this.ringCameras[index] = camera;
 		if (camera === undefined || this.core.readWorldMatrix(camera.handle, this.matrix) !== 0) return;
 		this.fill(ring, at, camera, width, height);
 		ring[at + FRAME] = frame;
@@ -109,8 +113,9 @@ export class FrameCameras {
 	screenToRay(camera: FrameLens, x: number, y: number, out: Ray, call: string): void {
 		const frame = this.events.frameAt(x, y);
 		const ring = this.ring;
-		const at = (frame % RING_FRAMES) * ENTRY;
-		if (frame > 0 && ring[at + FRAME] === frame && ring[at + HANDLE] === camera.handle)
+		const index = frame % RING_FRAMES;
+		const at = index * ENTRY;
+		if (frame > 0 && ring[at + FRAME] === frame && this.ringCameras[index] === camera)
 			writeRay(ring, at, x, y, out);
 		else writeRay(this.stand(camera, call), 0, x, y, out);
 	}
@@ -141,14 +146,16 @@ export class FrameCameras {
 		const lx = ((f * j - g * i) * px + (c * i - b * j) * py + (b * g - c * f) * pz) * inv;
 		const ly = ((g * h - d * j) * px + (a * j - c * h) * py + (c * d - a * g) * pz) * inv;
 		const lz = ((d * i - f * h) * px + (b * h - a * i) * py + (a * f - b * d) * pz) * inv;
+		const sx = scaleX(e, 0);
+		const sy = e[LENS + LENS_HALF_HEIGHT] as number;
 		let ndcX: number;
 		let ndcY: number;
 		if (e[LENS + LENS_ORTHO] !== 0) {
-			ndcX = (lx - (e[LENS + LENS_CENTER_X] as number)) / (e[LENS + LENS_SCALE_X] as number);
-			ndcY = (ly - (e[LENS + LENS_CENTER_Y] as number)) / (e[LENS + LENS_SCALE_Y] as number);
+			ndcX = (lx - (e[LENS + LENS_CENTER_X] as number)) / sx;
+			ndcY = (ly - (e[LENS + LENS_CENTER_Y] as number)) / sy;
 		} else {
-			ndcX = lx / (-lz * (e[LENS + LENS_SCALE_X] as number));
-			ndcY = ly / (-lz * (e[LENS + LENS_SCALE_Y] as number));
+			ndcX = lx / (-lz * sx);
+			ndcY = ly / (-lz * sy);
 		}
 		out[0] = ((ndcX + 1) / 2) * (e[CSS_WIDTH] as number);
 		out[1] = ((1 - ndcY) / 2) * (e[CSS_HEIGHT] as number);
@@ -167,8 +174,8 @@ export class FrameCameras {
 	}
 
 	/**
-	 * Writes `camera`'s handle and lens for a canvas of `width` by `height` device pixels, the
-	 * canvas's CSS size and the matrix read last at `at`.
+	 * Writes `camera`'s lens, a canvas of `width` by `height` device pixels, the canvas's CSS size
+	 * and the matrix read last at `at`.
 	 */
 	private fill(
 		entry: Float64Array,
@@ -178,13 +185,25 @@ export class FrameCameras {
 		height: number,
 	): void {
 		const { slotFloats } = this.control;
-		entry[at + HANDLE] = camera.handle;
-		entry[at + LENS + LENS_ASPECT] = width / height;
-		camera.writeLens(entry, at + LENS);
+		entry.set(camera.lens, at + LENS);
+		entry[at + WIDTH] = width;
+		entry[at + HEIGHT] = height;
 		entry[at + CSS_WIDTH] = slotFloats[Slot.CanvasCssWidth] as number;
 		entry[at + CSS_HEIGHT] = slotFloats[Slot.CanvasCssHeight] as number;
 		entry.set(this.matrix, at + MATRIX);
 	}
+}
+
+/**
+ * Half the view's width in the entry at `at`: one unit in front of a perspective camera, or across
+ * an orthographic view. A view whose width follows the canvas takes the shape of the canvas in
+ * device pixels, as the core builds the frame's projection from it.
+ */
+function scaleX(e: Float64Array, at: number): number {
+	const halfWidth = e[at + LENS + LENS_HALF_WIDTH] as number;
+	if (halfWidth > 0) return halfWidth;
+	const aspect = (e[at + WIDTH] as number) / (e[at + HEIGHT] as number);
+	return (e[at + LENS + LENS_HALF_HEIGHT] as number) * aspect;
 }
 
 /**
@@ -199,8 +218,8 @@ function writeRay(e: Float64Array, at: number, x: number, y: number, out: Ray): 
 	const ndcX = width > 0 ? (x / width) * 2 - 1 : 0;
 	const ndcY = height > 0 ? 1 - (y / height) * 2 : 0;
 	const lens = at + LENS;
-	const sx = ndcX * (e[lens + LENS_SCALE_X] as number);
-	const sy = ndcY * (e[lens + LENS_SCALE_Y] as number);
+	const sx = ndcX * scaleX(e, at);
+	const sy = ndcY * (e[lens + LENS_HALF_HEIGHT] as number);
 	const ortho = e[lens + LENS_ORTHO] !== 0;
 	// The point and the direction in the camera's own space, which looks down -Z.
 	const ox = ortho ? (e[lens + LENS_CENTER_X] as number) + sx : 0;
