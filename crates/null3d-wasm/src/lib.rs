@@ -44,6 +44,7 @@ use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
+use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::RenderScale;
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
@@ -141,6 +142,28 @@ struct Engine {
     /// The world matrix that `worldMatrix` copies last, which TypeScript reads in place, so a read
     /// passes no array across and allocates nothing.
     world_matrix: [f64; 12],
+    /// The post-processing values that TypeScript writes (`constants::post_value`), with three.js's
+    /// defaults until it writes others.
+    post_values: Box<[f32; constants::post_value::COUNT as usize]>,
+}
+
+/// The post-processing values before TypeScript writes any: an exposure of 1, `UnrealBloomPass`'s
+/// strength, radius and threshold, a table at its full intensity over colors from 0 to 1, and
+/// `VignetteShader`'s offset and darkness.
+const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = [
+    1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+];
+
+impl Engine {
+    /// The post-processing value at `place` (`constants::post_value`).
+    fn post_value(&self, place: u32) -> f32 {
+        self.post_values[place as usize]
+    }
+
+    /// Three post-processing values from `place` on.
+    fn post_values3(&self, place: u32) -> [f32; 3] {
+        std::array::from_fn(|k| self.post_value(place + k as u32))
+    }
 }
 
 impl Engine {
@@ -397,8 +420,16 @@ pub fn init_engine(
         query_input: [0.0; query::INPUT_FLOATS as usize],
         query_hits: vec![0.0; query::HIT_FLOATS as usize],
         query_rays: Vec::new(),
+        post_values: Box::new(POST_DEFAULTS),
     });
     0
+}
+
+/// The address of the post-processing values (`constants::post_value`), which TypeScript writes
+/// before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`.
+#[wasm_bindgen(js_name = postValues)]
+pub fn post_values() -> u32 {
+    value_with_engine(|e| Ok(address(&e.post_values[..])))
 }
 
 // The page calls this when it stops an engine that runs on the page's own thread, as the
@@ -1240,6 +1271,22 @@ pub fn create_texture(
     })
 }
 
+// Creates a 3D texture of `width` x `height` x `depth` texels in `format`, linear 8-bit color or
+// half floats, with no texels yet, and returns its handle. It is read with a linear filter and
+// clamped at its edges, as a color grading table is. Its texels come from `setTextureData`, slice
+// after slice.
+/// Creates a 3D texture and returns its handle.
+#[wasm_bindgen(js_name = createVolumeTexture)]
+pub fn create_volume_texture(width: u32, height: u32, depth: u32, format: u32) -> u32 {
+    value_with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        textures
+            .create_volume(width, height, depth, format)
+            .map(Handle::raw)
+            .map_err(texture_failure)
+    })
+}
+
 // Gives a texture an image of `width` x `height` pixels, uploaded with the `upload_flags` in
 // `flags`, and returns the image's id. TypeScript sends the image to the thread that draws under
 // that id, in id order, and the image uploads once the thread has it. An image of another size
@@ -1559,11 +1606,12 @@ pub fn set_shadow_quality(filter: u32, far_interval: u32) -> u32 {
     })
 }
 
-/// The tone mapping, by code, and the exposure, from the next frame on. The TypeScript API checks
-/// both, so an unknown code keeps the tone mapping as it was.
+/// The tone mapping, by code, and the exposure from the post-processing values, from the next
+/// frame on. The TypeScript API checks both, so an unknown code keeps the tone mapping as it was.
 #[wasm_bindgen(js_name = setOutput)]
-pub fn set_output(tone_mapping: u32, exposure: f32) -> u32 {
+pub fn set_output(tone_mapping: u32) -> u32 {
     with_engine(|e| {
+        let exposure = e.post_value(constants::post_value::EXPOSURE);
         let settings = e.renderer.settings_mut();
         let tone_mapping =
             ToneMapping::from_code(tone_mapping).unwrap_or_else(|| settings.output().tone_mapping);
@@ -1575,17 +1623,59 @@ pub fn set_output(tone_mapping: u32, exposure: f32) -> u32 {
     })
 }
 
-/// Turns bloom on with its strength, radius and threshold, or off, from the next frame on. The
-/// TypeScript API checks the values.
+/// Turns bloom on with its strength, radius and threshold from the post-processing values, or off,
+/// from the next frame on. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setBloom)]
-pub fn set_bloom(on: bool, strength: f32, radius: f32, threshold: f32) -> u32 {
+pub fn set_bloom(on: bool) -> u32 {
     with_engine(|e| {
+        let [strength, radius, threshold] = e.post_values3(constants::post_value::BLOOM_STRENGTH);
         let bloom = on.then_some(Bloom {
             strength,
             radius,
             threshold,
         });
         e.renderer.settings_mut().set_bloom(bloom);
+        0
+    })
+}
+
+/// Grades the canvas color with the color grading table in 3D texture `texture`, or with none
+/// when `texture` is 0, from the next frame on. The post-processing values give its intensity, the
+/// share of the graded color, and its domain, the colors that the table's first and last texels
+/// along each axis stand for. The TypeScript API checks the values. Fails for a texture that is
+/// not live.
+#[wasm_bindgen(js_name = setLut)]
+pub fn set_lut(texture: u32) -> u32 {
+    with_engine(|e| {
+        let intensity = e.post_value(constants::post_value::LUT_INTENSITY);
+        let domain_min = e.post_values3(constants::post_value::LUT_DOMAIN_MIN);
+        let domain_max = e.post_values3(constants::post_value::LUT_DOMAIN_MAX);
+        let settings = e.renderer.settings_mut();
+        let texture = match texture_or_none(settings, texture) {
+            Ok(texture) => texture,
+            Err(failure) => return failure,
+        };
+        let lut = (!texture.is_none()).then_some(Lut {
+            texture,
+            intensity,
+            domain_min,
+            domain_max,
+        });
+        settings.set_lut(lut);
+        0
+    })
+}
+
+/// Turns the vignette on with three.js's offset and darkness from the post-processing values, or
+/// off, from the next frame on. The TypeScript API checks the values.
+#[wasm_bindgen(js_name = setVignette)]
+pub fn set_vignette(on: bool) -> u32 {
+    with_engine(|e| {
+        let vignette = on.then_some(Vignette {
+            offset: e.post_value(constants::post_value::VIGNETTE_OFFSET),
+            darkness: e.post_value(constants::post_value::VIGNETTE_DARKNESS),
+        });
+        e.renderer.settings_mut().set_vignette(vignette);
         0
     })
 }

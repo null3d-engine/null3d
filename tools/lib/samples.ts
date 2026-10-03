@@ -27,13 +27,14 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream } from 'node:stream/web';
 import type { Connect, Plugin } from 'vite';
+import { SAMPLES_URL } from './sample-url';
+
+export { SAMPLES_URL, sampleUrl } from './sample-url';
 
 /** The pinned commit of the sample-assets repository. */
 export const LOCK_PATH = 'tools/samples/lock.json';
 /** The copy of the pinned commit's manifest. */
 export const MANIFEST_PATH = 'tools/samples/manifest.json';
-/** The URL prefix under which the dev server and the preview server serve sample files. */
-export const SAMPLES_URL = '/samples/';
 /** Licences that sample content may use: CC0 and CC BY, which allow redistribution and commercial use. */
 export const ACCEPTED_LICENCES = /^(CC0-1\.0|CC-BY-[34]\.0)$/;
 /** The file in a cached copy that records the hash of the manifest it passed. */
@@ -127,14 +128,6 @@ export function samplePath(path: string): string {
 	const full = join(samplesDir(root), path);
 	if (!existsSync(full)) throw new Error(`${path} is missing: run bun run samples:fetch`);
 	return full;
-}
-
-/**
- * The address of a sample file on the dev server and the preview server, for pages. Name the file
- * with a string literal, so the sample check can read it.
- */
-export function sampleUrl(path: string): string {
-	return `${SAMPLES_URL}${path}`;
 }
 
 /** Problems with a cached copy: a manifest that differs from the pinned copy, or a missing or changed file. */
@@ -260,7 +253,11 @@ const SKIPPED_FOLDERS = new Set([
 	'vendor',
 ]);
 /** This module and its tests, which name sample files only to describe and test the check. */
-const SKIPPED_FILES = new Set(['tools/lib/samples.ts', 'tools/lib/samples.test.ts']);
+const SKIPPED_FILES = new Set([
+	'tools/lib/samples.ts',
+	'tools/lib/samples.test.ts',
+	'tools/lib/sample-url.ts',
+]);
 const CODE = /\.(ts|js|mjs|html)$/;
 const NAME_CALL = /\bsample(?:Path|Url)\(\s*(?:(['"`])([^'"`$\n]*)\1)?/g;
 
