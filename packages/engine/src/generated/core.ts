@@ -214,6 +214,30 @@ export const ARRAY_COLORS = 4;
 export const ARRAY_TANGENTS = 5;
 export const ARRAY_INDICES = 6;
 
+export const ANIMATION_FIELD_SLOT_CLIPS = 0;
+export const ANIMATION_FIELD_SLOT_TIMES = 1;
+export const ANIMATION_FIELD_SLOT_WEIGHTS = 2;
+export const ANIMATION_FIELD_MATRICES = 3;
+
+export const ANIMATION_MAX_BLEND = 4;
+export const ANIMATION_REST_FLOATS = 10;
+export const ANIMATION_TRACK_WORDS = 4;
+export const ANIMATION_DEFAULT_RATE = 30;
+export const ANIMATION_TRANSLATION = 0;
+export const ANIMATION_ROTATION = 1;
+export const ANIMATION_SCALE = 2;
+export const ANIMATION_LINEAR = 0;
+export const ANIMATION_STEP = 1;
+
+export const ANIMATION_PROBLEM_JOINTS = 1;
+export const ANIMATION_PROBLEM_PARENT = 2;
+export const ANIMATION_PROBLEM_LENGTH = 3;
+export const ANIMATION_PROBLEM_NOT_FINITE = 4;
+export const ANIMATION_PROBLEM_FRAMES = 5;
+export const ANIMATION_PROBLEM_UNKNOWN_SKELETON = 6;
+export const ANIMATION_PROBLEM_WRONG_SKELETON = 7;
+export const ANIMATION_PROBLEM_TRACK = 16;
+
 export const ARRAYS_PROBLEM_NO_VERTICES = 1;
 export const ARRAYS_PROBLEM_LENGTH = 2;
 export const ARRAYS_PROBLEM_NOT_TRIANGLES = 3;
