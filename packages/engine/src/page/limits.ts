@@ -41,6 +41,8 @@ export interface DeviceReport {
 	webgl2: {
 		extensions: Record<string, boolean>;
 		maxTextureSize: number | null;
+		maxRenderbufferSize: number | null;
+		maxViewportDims: [width: number, height: number] | null;
 		sharedMemoryUploads: {
 			bufferSubData: boolean;
 			texSubImage2D: boolean;
@@ -281,6 +283,34 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		shaderBits: (multiDraw ? PERMUTATION_DRAW_INDEX : 0) | toneMap | half,
 		...common,
 	};
+}
+
+/**
+ * The default limit on a WebGPU texture's width and height in each feature level. The engine asks
+ * for no higher limit, so every WebGPU device it requests has exactly this one.
+ */
+const WEBGPU_MAX_TEXTURE_SIZE = { webgpu: 8192, 'webgpu-compat': 4096 } as const;
+
+/**
+ * The widest and tallest drawing buffer that the GPU path draws into. The canvas and the render
+ * targets of the canvas's size must fit WebGPU's texture limit, and on WebGL2 its texture,
+ * renderbuffer and viewport limits too. A limit the report lacks counts as the least that WebGL2
+ * allows.
+ */
+export function maxCanvasSize(tier: Tier, report: DeviceReport): number {
+	if (tier !== 'webgl2') return WEBGPU_MAX_TEXTURE_SIZE[tier];
+	const least = C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE;
+	const gl = report.webgl2;
+	const [viewportWidth, viewportHeight] = gl.maxViewportDims ?? [least, least];
+	return Math.max(
+		least,
+		Math.min(
+			gl.maxTextureSize ?? least,
+			gl.maxRenderbufferSize ?? least,
+			viewportWidth,
+			viewportHeight,
+		),
+	);
 }
 
 /**

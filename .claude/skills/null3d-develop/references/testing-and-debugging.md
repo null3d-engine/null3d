@@ -8,10 +8,11 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 2. Image tests in hold mode
 3. Behavior tests
 4. Testing on real devices
-5. The MCP server for agents (0.3)
-6. Error codes
-7. Troubleshooting table
-8. Before you ship
+5. Debugging tools
+6. The MCP server for agents (0.3)
+7. Error codes
+8. Troubleshooting table
+9. Before you ship
 
 ## 1. Commands
 
@@ -52,6 +53,7 @@ const { width, height, pixels } = await engine.captureFrame(); // the held frame
 - Keep one reference image per GPU tier, and force the tier with `?gpu=`. Tiers, and software and real GPUs, can differ slightly at edges, so compare with a small tolerance, such as three.js's 0.1%.
 - Pixels come back through the engine, never through a canvas screenshot, because some browsers alter canvas reads for privacy.
 - When a comparison fails, open the actual image and the diff before deciding whether the code or the reference is wrong.
+- Hold mode has no frame-budget governor. The held frame draws at the highest render scale, with the quality settings as set. So the image does not depend on how fast the computer is.
 
 Keep held frames the same on every run:
 
@@ -93,8 +95,14 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?render=main` | Render on the main thread |
 | `?sketch-thread=main` | Run the sketch on the main thread, over the `sketchThread` option |
 | `?uploads=copy` | On WebGL2, copy each upload out of shared memory first, as browsers that refuse shared memory need |
+| `?compile=wait` | On WebGL2, wait for each shader program's compile at its first draw, as browsers without `KHR_parallel_shader_compile` do |
+| `?shaders=fresh` | Make the browser compile every shader again, as on a first visit, to time a cold warm-up |
+| `?compression=bc`, `?compression=astc,etc2`, `?compression=none` | Keep KTX2 textures to the compressed formats that the list names, as on a device with only those. `none` uploads them uncompressed (`api/textures`) |
+| `?wake=message` | Make the worker threads wake each other with messages, as browsers without `Atomics.waitAsync` do, such as Firefox before 145 |
+| `?hdr=off` | Take the 8-bit color path, where the scene shaders tone map themselves, as devices without float color targets do (`concepts/backends`) |
 | `?depth=reversed-gl` | On WebGL2, force a depth mode: `reversed`, `reversed-gl` (as in browsers without `EXT_clip_control`, such as Firefox) or `standard` (`concepts/backends`) |
 | `?latency=pipelined`, `?latency=low` | Latency mode |
+| `?prepass=on`, `?prepass=off` | Turn the depth prepass on or off over the `depthPrepass` option, to compare GPU time (WebGPU only; `concepts/quality-presets`) |
 | `?cells=off` | Cull every object, with no grid cell out of view skipped first, to measure what skipping cells saves (`concepts/culling`) |
 | `?half=on`, `?half=off` | Do the scene shaders' color math at half precision, or at full precision; WebGPU needs the device feature `shader-f16`, and `engine.capabilities.halfPrecision` says which one the engine took (`guides/testing`) |
 | `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest (`concepts/quality-presets`) |
@@ -111,7 +119,22 @@ Reaching the dev server:
 - iPhone or iPad: serve HTTPS with a local certificate through the Vite plugin's `https` option (`getting-started/hosting`). Install the root certificate on the device, and trust it in Settings > General > About > Certificate Trust Settings. Debug from Safari on a Mac through the Develop menu.
 - Record the device, browser version, GPU tier and preset with every result: `engine.capabilities.tier` and `engine.mode.preset` give the last two. `bunx @null3d/cli doctor --device` (0.3) will print them all.
 
-## 5. The MCP server for agents (0.3)
+## 5. Debugging tools
+
+Engine docs: `api/debug`, `guides/debugging`.
+
+| Tool | Shows | Builds |
+| --- | --- | --- |
+| `debug.stats(true)` in the sketch | An overlay over the canvas with the GPU path, the preset, the render scale, the frame rates and the CPU time per thread and phase | Every build |
+| `debug.frameStats()` | The overlay's figures for the sketch, as means over about half a second. It allocates nothing, so read it every frame if you need to | Every build |
+| `await engine.measure(5)` on the page | Every figure of section 3 of `references/performance.md`: CPU, GPU, frame rates, uploads, rebuilds, pipelines, memory | Every build |
+| `debug.view('normals')`, `'depth'`, `'wireframe'`, `'overdraw'`; `'lit'` to go back | The whole scene with one debug shading in place of every material. Views ignore maps, alpha and custom shaders | Development only |
+| `debug.line`, `box`, `sphere`, `arrow`, `axes`, `grid`, `frustum`, `light` | Lines for one frame, so call them in `onUpdate` in every frame that needs them | Development only |
+| `debug.skeleton` (0.2) | The bones of a skinned mesh | Development only |
+
+In a production build, the debug drawing calls and `debug.view` do nothing, but the code that computes their arguments still runs. Wrap work that only feeds them in `if (import.meta.env.DEV)`. A debug view's first frame builds its pipelines, so objects can be missing for a few frames after a change.
+
+## 6. The MCP server for agents (0.3)
 
 `bunx @null3d/cli mcp` starts a Model Context Protocol server connected to the running dev session. Its tool names can change until `guides/agents` is stable:
 
@@ -127,7 +150,7 @@ Reaching the dev server:
 
 Live changes through the MCP server are for exploring; put the final values into code and tests.
 
-## 6. Error codes
+## 7. Error codes
 
 Every engine error is an `EngineError` with a code, the object's name, what failed, and the fix:
 
@@ -137,7 +160,7 @@ E1203: setPosition() got NaN for x on "Player" (slot 12). Check the value comput
 
 Each code has a docs page, such as `errors/E1203`, with the full explanation. Release builds remove most checks, so reproduce problems in a development build.
 
-## 7. Troubleshooting table
+## 8. Troubleshooting table
 
 | Symptom | Likely cause | Fix | Docs |
 | --- | --- | --- | --- |
@@ -166,7 +189,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | `createEngine` rejects with E1410 | The sketch module did not load: a wrong address, or an error that its top-level code threw | Pass `sketch: new URL('./sketch.ts', import.meta.url)`; fix the error that the message quotes | `errors/E1410` |
 | Pointer position off by a factor | Mixing CSS pixels and render pixels | `input.pointer.x` and `y` are CSS pixels, as `ctx.engine.viewport` gives the canvas size | `api/input` |
 
-## 8. Before you ship
+## 9. Before you ship
 
 Work through this list before a release, on the production build (`bunx vite build`, then `bunx vite preview`), not the dev server.
 

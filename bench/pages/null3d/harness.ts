@@ -6,7 +6,7 @@
 // publishes each minute's figures. Otherwise it warms up, measures the engine, and publishes the
 // frame metrics. The engine's own switches, such
 // as `?gpu=webgpu`, `?latency=low` or `?preset=low`, pick the GPU path, the thread mode and the
-// quality preset.
+// quality preset. `?governor=off` keeps the quality governor off in a scene that turns it on.
 import { createEngine, type Engine, type SecondRates } from '@null3d/engine';
 import { timedRun } from '../../../packages/cli/src/protocol.js';
 import {
@@ -39,8 +39,9 @@ export interface Null3dPageOptions {
 /**
  * Runs `sketch`, a sketch module next to the page, as the scene `sceneName` with `defaultCount`
  * objects, or with the count `?n=` asks for. A scene built of whole parts passes `wholeCount`, which
- * turns an asked-for count into the count the scene draws. The sketch module reads `n`, and
- * `shadows` when the page asks for shadows, from its own address.
+ * turns an asked-for count into the count the scene draws. The sketch module reads `n`, `shadows`
+ * when the page asks for shadows, and `governor` when the page turns the governor off, from its own
+ * address.
  */
 export function runNull3dPage(
 	sceneName: string,
@@ -66,6 +67,7 @@ export function runNull3dPage(
 		const n = wholeCount(options.count ?? defaultCount);
 		sketchUrl.searchParams.set('n', String(n));
 		if (options.shadows !== null) sketchUrl.searchParams.set('shadows', String(options.shadows));
+		if (!options.governor) sketchUrl.searchParams.set('governor', 'off');
 
 		// A bare `?hold` holds at the scene's hold time, which the page passes as the engine's option.
 		// A page that fills the window leaves the pixel ratio's cap to the quality preset.

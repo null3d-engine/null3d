@@ -4,7 +4,7 @@ description: Build, extend, debug and speed up 3D web experiences made with the 
 compatibility: Needs Node.js 20 or newer and a null3D project. The engine docs ship inside the engine package, so their version always matches the installed engine.
 metadata:
   skill-version: 0.1.0
-  engine-versions: 0.1 to 1.0
+  engine-versions: "0.1"
 ---
 
 # Building with null3D
@@ -13,7 +13,7 @@ null3D is a browser 3D engine with a Rust core compiled to WebAssembly. Sketch c
 
 ## 1. Find the docs that match the installed engine
 
-The engine docs are the source of truth. This skill describes the API planned for version 1.0, and a project may use an earlier version, so check before you rely on anything here.
+The engine docs are the source of truth. This skill describes engine 0.1, and names the version of each later part it mentions. A project may use another version, so check before you rely on anything here.
 
 1. Find the engine version: `bunx @null3d/cli --version`, or the `@null3d/engine` entry in `package.json`.
 2. Read docs pages by ID, in this order:
@@ -23,7 +23,7 @@ The engine docs are the source of truth. This skill describes the API planned fo
 3. Each page starts with front matter. `status: stable` or `status: experimental` means the API exists (experimental APIs may still change). `status: planned` means it does not exist in this version. The note under an experimental page's title can name parts that are not built yet: treat those parts as planned too. Do not call a planned API; tell the user, and use the workaround the page gives.
 4. If the docs and this skill disagree, follow the docs and mention the difference in your summary, so the skill can be fixed.
 
-Doc IDs appear in backticks throughout, for example `concepts/architecture`. Version numbers in parentheses, such as (0.2), give the first engine version with that API; no number means 0.1. "Later in 0.1" marks a part of 0.1 that is not built yet.
+Doc IDs appear in backticks throughout, for example `concepts/architecture`. Version numbers in parentheses, such as (0.2), give the first engine version with that API; no number means 0.1.
 
 ## 2. The model
 
@@ -102,7 +102,7 @@ Each rule comes with its reason, because the reason covers cases the rule does n
 6. Load and warm up before play: `await assets.preload([...])` and `await scene.warmUp()` behind a loading screen. A new shading model, vertex format or shader feature, such as a normal map, needs a new pipeline. The first frame waits for its pipelines. During play, an object whose pipeline is still building draws nothing, or the frame waits in browsers that cannot build in the background. Shader features are fixed when you create a material, so create every variant before play. For a later stage, create its objects hidden, await `scene.warmUp()`, then show them. (`guides/loading-screens`)
 7. Keep the DOM on the page, and keep messages rare: send events, not per-frame state. Labels that follow objects use `ui.trackLabel` (0.2), which needs no messages. (`guides/ui-overlays`)
 8. Use layer masks to limit work. A camera with a mask draws fewer objects, and a raycast (0.2) with a mask tests fewer. (`concepts/render-layers`)
-9. Respect the quality preset. Do not force a heavier preset on phones. Keep your own values per preset, such as particle counts or AI update rates, in one table keyed by `quality.preset`. Never check the device type yourself, and listen to `quality.onChange` to apply the values. (`concepts/quality-presets`)
+9. Respect the quality preset. Do not force a heavier preset on phones. When frames run long, the engine's governor lowers the render scale, then the shadow settings, by itself. Keep your own values per preset, such as particle counts or AI update rates, in one table keyed by `quality.preset`. Never check the device type yourself, and listen to `quality.onChange` to apply the values. (`concepts/quality-presets`)
 10. Ship optimized assets: KTX2 textures, which stay compressed on the GPU, and glTF models with meshopt compression (0.2). Encode KTX2 files with `basisu`. From 0.2, `bunx @null3d/cli assets optimize` makes both. Large PNG files and uncompressed meshes cost download time and GPU memory. (`api/textures`, `guides/assets-pipeline`)
 11. Keep custom WGSL portable. Use only the three language features every browser shares, and write flat interpolation as `@interpolate(flat, either)`. The build rejects other features, `enable` lines and `f16`, but it cannot check the portable limits or `textureSample` in branches. Test those on each GPU path. (`shaders/wgsl-rules`)
 12. Never branch on GPU names or user agents; read `engine.capabilities` on the page. Several browsers hide GPU names, and a name does not tell you what the engine enabled.
@@ -133,7 +133,7 @@ Materials:
 | A custom look that still gets lights, shadows and fog | `materials.shader({ wgsl })` with `fn surface` in the WGSL | `shaders/surface-functions` |
 | A fully custom effect, such as a hologram | `materials.shader({ wgsl })` with a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one | `guides/custom-shaders` |
 
-Lighting and shadows: surfaces show one directional light, the ambient lights, and point and spot lights through clustered lighting. Hemisphere lights light surfaces later in 0.1. One directional light with shadows covers most outdoor scenes. Point and spot lights are cheap without shadows, because lighting is clustered. A spot light with shadows takes a tile of the shadow atlas, and a point light six, on High and Ultra only. A tile draws again only when its light or a caster in its range moves. Shadow quality follows the preset. Environment maps come in 0.2. (`api/lights`, `concepts/lighting`, `concepts/shadows`)
+Lighting and shadows: surfaces show one directional light, the ambient lights, and point and spot lights through clustered lighting. Hemisphere lights light surfaces from 0.2; until then, use an ambient light for fill. One directional light with shadows covers most outdoor scenes. Point and spot lights are cheap without shadows, because lighting is clustered. A spot light with shadows takes a tile of the shadow atlas, and a point light six, on High and Ultra only. A tile draws again only when its light or a caster in its range moves. Shadow quality follows the preset. Environment maps come in 0.2. (`api/lights`, `concepts/lighting`, `concepts/shadows`)
 
 Interaction:
 
@@ -176,7 +176,7 @@ const rings = materials.shader({
 rings.set({ roughness: 0.2 }); // the standard values, which defaultSurface reads
 ```
 
-`references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, uniforms (`struct Uniforms` in the WGSL, read from `material`), the names to avoid, and the WGSL rules. Vertex offsets (`fn vertexOffset` in the same WGSL) and the built-in values (`frame.time`, `camera.position`, `object.position`) are built too. So are full shaders (`guides/custom-shaders`). Textures come later in 0.1.
+`references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, uniforms (`struct Uniforms` in the WGSL, read from `material`), the names to avoid, and the WGSL rules. Vertex offsets (`fn vertexOffset` in the same WGSL) and the built-in values (`frame.time`, `camera.position`, `object.position`) are built too. So are full shaders (`guides/custom-shaders`). Textures in custom materials come in 0.2.
 
 ## 7. When something goes wrong
 

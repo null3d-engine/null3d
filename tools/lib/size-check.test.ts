@@ -120,6 +120,14 @@ describe('chooseBase', () => {
 		});
 	});
 
+	it('compares a merge queue run with the commit that its group builds on', () => {
+		const env = { GITHUB_EVENT_NAME: 'merge_group', GITHUB_BASE_REF: '' };
+		expect(chooseBase(undefined, env)).toEqual({
+			ref: 'HEAD^',
+			why: 'the commit that the merge group builds on, with the pull requests ahead of it',
+		});
+	});
+
 	it('compares a pull request with its merge base with the branch it targets', () => {
 		const env = { GITHUB_EVENT_NAME: 'pull_request', GITHUB_BASE_REF: 'main' };
 		expect(chooseBase(undefined, env)).toEqual({
