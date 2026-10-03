@@ -31,7 +31,9 @@ export type ShadowCheck =
 	/** The shadows view from a still observer, while the scene's camera moves frame by frame. */
 	| 'stability'
 	/** The shadows view with the reference's shadow map and filter. */
-	| 'reference';
+	| 'reference'
+	/** The normals view of the scene's own frame, which shows where sides meet the ground. */
+	| 'normals';
 
 /**
  * How far the scene's camera moves in each frame of the stability check: along its view and to its
@@ -178,6 +180,111 @@ export function stairSteps(factors: Float32Array, width: number, box: PixelBox):
 		max = Math.max(max, off);
 	}
 	return { rows: n, rmsPixels: Math.sqrt(sum / n), maxPixels: max };
+}
+
+/**
+ * The contact check's thresholds. A pixel of the normals view counts as level, such as the ground
+ * or a roof, where its normal points up within about 25 degrees, and as a side where its normal
+ * lies within 30 degrees of level. A side pixel darker than `dark` faces away from the sun or lies
+ * in shadow. The ground at its foot should then start in shadow too, and a shadow starts at the
+ * first pixel darker than `dark`. Each figure reads up to `reach` pixels from the side.
+ */
+export const CONTACT = { levelUp: 0.9, sideLevel: 0.5, dark: 0.1, reach: 4 } as const;
+
+/** The contact figures of a frame: where shadows meet the casters that cast them. */
+export interface ContactFigures {
+	/** The feet found: columns where a dark side meets the ground and a shadow starts below. */
+	feet: number;
+	/**
+	 * The mean light between a foot and the start of its shadow, in pixels of full light: each
+	 * ground pixel adds its shadow factor. 0 where every shadow starts at its caster's foot.
+	 */
+	meanGapPixels: number;
+	/** The share of feet, in percent, whose gap holds at least half a pixel of full light. */
+	gapPercent: number;
+	/** The top edges found: columns where a level top, such as a roof, rises from a dark side. */
+	tops: number;
+	/**
+	 * The mean shadow on a top just past its edge, in pixels of full shadow: each pixel of the top
+	 * adds one less its shadow factor. A caster that shadows its own lit top near the edge raises
+	 * it, as casters moved too far toward the light do. 0 where tops are lit to the edge.
+	 */
+	meanRimPixels: number;
+}
+
+/** The up component of the normal that a normals-view pixel shows, from its green channel. */
+function normalUp(normals: Uint8Array, i: number): number {
+	return ((normals[i * 4 + 1] ?? 128) / 255) * 2 - 1;
+}
+
+/**
+ * The contact figures of a shadows-view frame `factors` and a normals-view frame `normals` (RGBA)
+ * of the same view, `width` pixels across. Each column holds sides in shadow, each with a level
+ * surface below it, its foot on the ground, or above it, a top. An edge pixel that blends the two
+ * may lie between them. The side is dark, so the light that the edge pixel shows comes from the
+ * level surface.
+ *
+ * Below a foot, the ground should lie in its caster's shadow: each ground pixel down to the first
+ * one in shadow adds its light to the foot's gap. A foot whose ground has no shadow within the
+ * reach is left out, as its caster's shadow falls elsewhere. Above a top edge, the top should be
+ * lit: each of its pixels within the reach adds its shadow to the edge's rim.
+ */
+export function contactFigures(
+	factors: Float32Array,
+	normals: Uint8Array,
+	width: number,
+): ContactFigures {
+	const height = Math.floor(factors.length / width);
+	const level = (row: number, x: number) =>
+		row >= 0 && row < height && normalUp(normals, row * width + x) > CONTACT.levelUp;
+	const side = (row: number, x: number) =>
+		row >= 0 && row < height && Math.abs(normalUp(normals, row * width + x)) <= CONTACT.sideLevel;
+	const factor = (row: number, x: number) => factors[row * width + x] ?? 1;
+	/**
+	 * The first row past a side's row, one `step` away, when a level surface starts there or past
+	 * an edge pixel that is neither side nor level, or -1.
+	 */
+	const beside = (row: number, x: number, step: number) =>
+		level(row + step, x) || (!side(row + step, x) && level(row + 2 * step, x)) ? row + step : -1;
+	let [feet, gapSum, gapped, tops, rimSum] = [0, 0, 0, 0, 0];
+	for (let x = 0; x < width; x++)
+		for (let y = 0; y < height; y++) {
+			if (!side(y, x)) continue;
+			if (factor(y, x) >= CONTACT.dark) continue;
+			const foot = beside(y, x, 1);
+			if (foot >= 0) {
+				let gap = 0;
+				let shadowed = false;
+				for (let row = foot; row < Math.min(height, foot + 1 + CONTACT.reach); row++) {
+					if (row > foot && !level(row, x)) break;
+					shadowed = factor(row, x) < CONTACT.dark;
+					if (shadowed) break;
+					gap += factor(row, x);
+				}
+				if (shadowed) {
+					feet++;
+					gapSum += gap;
+					if (gap >= 0.5) gapped++;
+				}
+			}
+			const top = beside(y, x, -1);
+			if (top >= 0) {
+				let rim = 0;
+				for (let row = top; row >= Math.max(0, top - CONTACT.reach); row--) {
+					if (row < top && !level(row, x)) break;
+					rim += 1 - factor(row, x);
+				}
+				tops++;
+				rimSum += rim;
+			}
+		}
+	return {
+		feet,
+		meanGapPixels: feet === 0 ? 0 : gapSum / feet,
+		gapPercent: feet === 0 ? 0 : (100 * gapped) / feet,
+		tops,
+		meanRimPixels: tops === 0 ? 0 : rimSum / tops,
+	};
 }
 
 /** The box of the shadow scene's 480 x 270 frame that the wall's shadow edge crosses. */

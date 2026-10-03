@@ -191,11 +191,12 @@ fn each_cascade_culls_the_casters_and_draws_their_depth_into_its_layer() {
     else {
         panic!("ten operands")
     };
-    // No depth bias: the receivers' biases keep the casters off their own shadows.
+    // No depth bias: the receivers' biases keep the casters off their own shadows. The casters'
+    // back faces move toward the light, so the ground at a box's foot stays in its shadow.
     assert_eq!(
         [bits, color, depth_format, samples, state, bias, slope],
         [
-            0,
+            permutation::CASTER_OFFSET,
             format::NONE,
             format::DEPTH32_FLOAT,
             1,
@@ -439,7 +440,7 @@ fn each_cascade_culls_the_casters_of_the_cells_it_can_see() {
 }
 
 #[test]
-fn a_double_sided_caster_draws_both_faces_and_no_material_draws_its_depth_bias() {
+fn a_double_sided_caster_draws_both_faces_in_place_and_no_material_draws_its_depth_bias() {
     let mut world = shadowed(SUN);
     let table = world.renderer.settings_mut().materials_mut();
     let material = table
@@ -454,18 +455,19 @@ fn a_double_sided_caster_draws_both_faces_and_no_material_draws_its_depth_bias()
         .apply_commands(&[Command::set_material(ball, material + 1)], world.frame)
         .unwrap();
     world.record(true);
-    // Operand 6 is the state and operands 8 and 9 the depth bias.
-    let mut casters: Vec<[u32; 3]> = operands(&world.commands(), Op::CreateRenderPipeline)
+    // Operand 2 is the permutation, 6 the state and 8 and 9 the depth bias. A double-sided caster
+    // holds its own lit side, so it keeps its depth; the others move toward the light.
+    let mut casters: Vec<[u32; 4]> = operands(&world.commands(), Op::CreateRenderPipeline)
         .iter()
         .filter(|p| p[1] == template::SHADOW_DEPTH)
-        .map(|p| [p[6], p[8], p[9]])
+        .map(|p| [p[6], p[2], p[8], p[9]])
         .collect();
     casters.sort_unstable();
     assert_eq!(
         casters,
         [
-            [state_flags::CULL_NONE, 0, 0],
-            [state_flags::CULL_FRONT, 0, 0]
+            [state_flags::CULL_NONE, 0, 0, 0],
+            [state_flags::CULL_FRONT, permutation::CASTER_OFFSET, 0, 0]
         ]
     );
 }
