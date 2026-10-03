@@ -35,7 +35,7 @@ The page names the preset with the `preset` option of `createEngine`, or leaves 
 ```ts
 const engine = await createEngine({ canvas, sketch, preset: 'auto' });
 console.log(engine.mode.preset, engine.mode.crashedStarts, engine.mode.memoryMaximumMiB);
-console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: [...] }, or null
+console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: [...], reused: false }, or null
 ```
 
 | Option or switch | What it does |
@@ -169,6 +169,7 @@ What the preset check measured when the engine started, as `engine.mode.presetCh
 | `from: QualityPreset` | The preset that the engine chose from the device before the check. |
 | `targetFps: number` | The frame rate that each preset had to hold: the display's refresh rate, at most 60. |
 | `rounds: PresetCheckRound[]` | Each preset that the check measured, from `from` down. The last is the preset that the engine runs. |
+| `reused: boolean` | True when the engine took this result from an earlier start of the sketch in this browser on this device, and did not measure again. The engine stores each check's result for a week. |
 
 ### `PresetCheckRound`
 

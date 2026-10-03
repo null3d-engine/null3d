@@ -88,5 +88,5 @@ export async function checkPreset(
 		await host.lower();
 		start = performance.now();
 	}
-	return { from, targetFps, rounds };
+	return { from, targetFps, rounds, reused: false };
 }

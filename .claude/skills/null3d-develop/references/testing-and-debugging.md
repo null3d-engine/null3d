@@ -97,6 +97,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?uploads=copy` | On WebGL2, copy each upload out of shared memory first, as browsers that refuse shared memory need |
 | `?compile=wait` | On WebGL2, wait for each shader program's compile at its first draw, as browsers without `KHR_parallel_shader_compile` do |
 | `?shaders=fresh` | Make the browser compile every shader again, as on a first visit, to time a cold warm-up |
+| `?check=fresh` | Measure the quality preset again, as on a first visit, instead of taking the preset check's stored result (`concepts/quality-presets`) |
 | `?compression=bc`, `?compression=astc,etc2`, `?compression=none` | Keep KTX2 textures to the compressed formats that the list names, as on a device with only those. `none` uploads them uncompressed (`api/textures`) |
 | `?wake=message` | Make the worker threads wake each other with messages, as browsers without `Atomics.waitAsync` do, such as Firefox before 145 |
 | `?hdr=off` | Take the 8-bit color path, where the scene shaders tone map themselves, as devices without float color targets do (`concepts/backends`) |
