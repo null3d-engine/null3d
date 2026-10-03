@@ -106,6 +106,13 @@ export class TexelCopySetup {
 	};
 	/** How a write's texels lie in engine memory. */
 	readonly layout: GPUTexelCopyBufferLayout = { offset: 0, bytesPerRow: 0, rowsPerImage: 0 };
+	/** A buffer that a copy between textures passes through, with its texels' layout. */
+	readonly via: GPUTexelCopyBufferInfo = {
+		buffer: undefined as unknown as GPUBuffer,
+		offset: 0,
+		bytesPerRow: 0,
+		rowsPerImage: 0,
+	};
 	readonly size: GPUExtent3DDict = { width: 0, height: 0, depthOrArrayLayers: 1 };
 
 	/** Sets where a copy reads: `texture` at the location in `words[at, at + 5)`. */
@@ -137,6 +144,13 @@ export class TexelCopySetup {
 		this.size.width = width;
 		this.size.height = height;
 		this.size.depthOrArrayLayers = layers;
+	}
+
+	/** Sets the buffer that a copy passes through: rows of `bytesPerRow`, `rows` to a layer. */
+	setVia(buffer: GPUBuffer, bytesPerRow: number, rows: number): void {
+		this.via.buffer = buffer;
+		this.via.bytesPerRow = bytesPerRow;
+		this.via.rowsPerImage = rows;
 	}
 
 	/** Sets a write's source: tightly packed rows of `bytesPerRow`, `rows` to a layer, from `offset`. */
