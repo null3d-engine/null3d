@@ -203,6 +203,11 @@ export interface CoreGlue extends CoreErrors {
 		anisotropy: number,
 	): number;
 	/**
+	 * A 3D texture with no texels yet, in a `FORMAT_*` code of linear 8-bit color or half floats,
+	 * read with a linear filter and clamped at its edges. Returns its handle.
+	 */
+	createVolumeTexture(width: number, height: number, depth: number, format: number): number;
+	/**
 	 * Gives a texture an image, uploaded with the `TEXTURE_PREMULTIPLIED_ALPHA` flag or 0, and
 	 * returns the image's id for the thread that draws. An image of another size resizes it.
 	 */
@@ -279,6 +284,22 @@ export interface CoreGlue extends CoreErrors {
 	setBloom(on: boolean, strength: number, radius: number, threshold: number): number;
 	/** How many times fewer taps than three.js's bloom's blurs read, from the next frame on. */
 	setBloomSamples(divisor: number): number;
+	/**
+	 * Grades the canvas color with the color grading table in a 3D texture, or with none for 0,
+	 * from the next frame on: its intensity, then the color of its first texel and of its last.
+	 */
+	setLut(
+		texture: number,
+		intensity: number,
+		minR: number,
+		minG: number,
+		minB: number,
+		maxR: number,
+		maxG: number,
+		maxB: number,
+	): number;
+	/** Turns the vignette on with three.js's offset and darkness, or off, from the next frame on. */
+	setVignette(on: boolean, offset: number, darkness: number): number;
 	/**
 	 * Draws the scene into a target of another format, by code, with another anti-aliasing mode, by
 	 * code, from the next frame on.
@@ -415,6 +436,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMaterialValues',
 	'setMaterialMap',
 	'createTexture',
+	'createVolumeTexture',
 	'setTextureImage',
 	'setTextureData',
 	'destroyTexture',
@@ -434,6 +456,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOutput',
 	'setBloom',
 	'setBloomSamples',
+	'setLut',
+	'setVignette',
 	'setCanvasOutput',
 	'setRenderScaling',
 	'setShadowQuality',

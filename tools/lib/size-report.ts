@@ -51,7 +51,8 @@ export interface EnginePart {
  * The parts of the engine's JavaScript. The renderer loads on demand on the page and in the sketch
  * worker, so a page downloads it only for the thread that draws. The sketch runner and the scene API
  * load on demand on the page, which runs the sketch only in single-threaded mode. The KTX2 loader
- * loads on demand in the thread that runs the sketch, when the sketch loads its first KTX2 file.
+ * loads on demand in the thread that runs the sketch, when the sketch loads its first KTX2 file,
+ * and the readers of color grading tables when it loads its first table.
  * The preset check loads after the first frame, in the thread that runs the sketch, so no download
  * before the first frame counts it. The stats overlay loads on the page when the sketch first asks
  * for it, and the frame figures that it and `debug.frameStats` read load with it, or in the thread
@@ -68,6 +69,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	},
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
+	{ name: 'page-lut.js', module: 'scene/lut-files.ts', loadedBy: 'page-sketch-runner.js' },
 	{
 		name: 'page-preset-check.js',
 		module: 'sketch/preset-check.ts',
@@ -83,6 +85,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		loadedBy: 'sketch-worker-renderer.js',
 	},
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
+	{ name: 'sketch-worker-lut.js', module: 'scene/lut-files.ts', loadedBy: 'sketch-worker.js' },
 	{
 		name: 'sketch-worker-preset-check.js',
 		module: 'sketch/preset-check.ts',

@@ -40,6 +40,7 @@ use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
+use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::RenderScale;
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
@@ -1122,6 +1123,22 @@ pub fn create_texture(
     })
 }
 
+// Creates a 3D texture of `width` x `height` x `depth` texels in `format`, linear 8-bit color or
+// half floats, with no texels yet, and returns its handle. It is read with a linear filter and
+// clamped at its edges, as a color grading table is. Its texels come from `setTextureData`, slice
+// after slice.
+/// Creates a 3D texture and returns its handle.
+#[wasm_bindgen(js_name = createVolumeTexture)]
+pub fn create_volume_texture(width: u32, height: u32, depth: u32, format: u32) -> u32 {
+    value_with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        textures
+            .create_volume(width, height, depth, format)
+            .map(Handle::raw)
+            .map_err(texture_failure)
+    })
+}
+
 // Gives a texture an image of `width` x `height` pixels, uploaded with the `upload_flags` in
 // `flags`, and returns the image's id. TypeScript sends the image to the thread that draws under
 // that id, in id order, and the image uploads once the thread has it. An image of another size
@@ -1457,6 +1474,50 @@ pub fn set_bloom(on: bool, strength: f32, radius: f32, threshold: f32) -> u32 {
             threshold,
         });
         e.renderer.settings_mut().set_bloom(bloom);
+        0
+    })
+}
+
+/// Grades the canvas color with the color grading table in 3D texture `texture`, or with none
+/// when `texture` is 0, from the next frame on. `intensity` is the share of the graded color, and
+/// the domain is the color that the table's first and last texels along each axis stand for. The
+/// TypeScript API checks the values. Fails for a texture that is not live.
+#[wasm_bindgen(js_name = setLut)]
+#[allow(clippy::too_many_arguments)]
+pub fn set_lut(
+    texture: u32,
+    intensity: f32,
+    min_r: f32,
+    min_g: f32,
+    min_b: f32,
+    max_r: f32,
+    max_g: f32,
+    max_b: f32,
+) -> u32 {
+    with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        let texture = match texture_or_none(settings, texture) {
+            Ok(texture) => texture,
+            Err(failure) => return failure,
+        };
+        let lut = (!texture.is_none()).then_some(Lut {
+            texture,
+            intensity,
+            domain_min: [min_r, min_g, min_b],
+            domain_max: [max_r, max_g, max_b],
+        });
+        settings.set_lut(lut);
+        0
+    })
+}
+
+/// Turns the vignette on with three.js's offset and darkness, or off, from the next frame on. The
+/// TypeScript API checks the values.
+#[wasm_bindgen(js_name = setVignette)]
+pub fn set_vignette(on: bool, offset: f32, darkness: f32) -> u32 {
+    with_engine(|e| {
+        let vignette = on.then_some(Vignette { offset, darkness });
+        e.renderer.settings_mut().set_vignette(vignette);
         0
     })
 }

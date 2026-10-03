@@ -128,7 +128,7 @@ Warm loads and loads at full speed stayed within the spread between runs. The fi
 
 ## Cube, 3D and high dynamic range textures
 
-M2-E1 added these texture kinds to the GPU layer for environment maps, skies and color grading tables. The engine's scene code does not use them yet.
+M2-E1 added these texture kinds to the GPU layer for environment maps, skies and color grading tables. Color grading tables (M2-F3, [D-33](decisions/D-33-color-grading.md)) are the first scene code that uses 3D textures. The texture store keeps each table as a 3D texture of its own, with no bind group of the store's. The final pass binds it.
 
 - `CreateTexture` names the kind as its binding view: 2D, a 2D array, a cube or a 3D texture. Compatibility mode and WebGL2 both fix the kind when the texture is made, so the draw list gives it then.
 - A cube texture has 6 square layers, its faces, in WebGPU's order: +X, -X, +Y, -Y, +Z, -Z. WebGL2's face targets come in the same order, so the WebGL2 backend adds the layer to `TEXTURE_CUBE_MAP_POSITIVE_X`.

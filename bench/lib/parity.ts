@@ -249,6 +249,22 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 			webglOnly: true,
 		}),
 	),
+	// A color grading table from a .cube file, alone and at part of its intensity with the
+	// vignette, against three.js's LUTPass and VignetteShader after its OutputPass. The .3dl test
+	// has no twin: three.js's LUT3dlLoader refuses the sample file's grid, whose steps differ by one
+	// from rounding.
+	{
+		test: 'lut-cube',
+		twin: `${TWINS}/grading.html`,
+		switches: 'antialias=none',
+		webglOnly: true,
+	},
+	{
+		test: 'lut-vignette',
+		twin: `${TWINS}/grading.html?mix`,
+		switches: 'antialias=none',
+		webglOnly: true,
+	},
 ];
 
 /** The feature scene of an image test, or undefined when no twin draws that test's scene. */

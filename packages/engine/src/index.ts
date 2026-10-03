@@ -79,7 +79,14 @@ export type {
 } from './scene/assets';
 export type { ColorInput } from './scene/color';
 export type { Exp2FogOptions, FogOptions, LinearFogOptions } from './scene/fog';
-export type { BloomSettings, Post, PostSettings, ToneMapping } from './scene/post';
+export type { Lut, LutDomain } from './scene/lut';
+export type {
+	BloomSettings,
+	Post,
+	PostSettings,
+	ToneMapping,
+	VignetteSettings,
+} from './scene/post';
 export type {
 	AlphaMode,
 	Blending,

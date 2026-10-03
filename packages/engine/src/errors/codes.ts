@@ -236,7 +236,7 @@ const DOCS = {
 	E1406: {
 		title: 'Engine file not downloaded',
 		cause:
-			'A file of the engine core, or of the KTX2 transcoder that the first KTX2 file loads, did not download whole. The server answered with an error, or the connection broke off.',
+			'A file of the engine core did not download whole, or a file that a loading call loads the first time. Such files are the KTX2 transcoder, for the first KTX2 file, and the readers of color grading tables, for the first table. The server answered with an error, or the connection broke off.',
 		example: 'E1406: /assets/null3d_memory-3f9c1a2b.json did not download: HTTP 404.',
 		since: '0.1',
 	},
@@ -282,7 +282,7 @@ const DOCS = {
 	E1412: {
 		title: 'Asset not decoded',
 		cause:
-			'A loading call downloaded its file but could not read it. The browser could not decode the image, as with a format it does not support. Or the file was a KTX2 file that the engine does not load, or not valid JSON.',
+			'A loading call downloaded its file but could not read it. The browser could not decode the image, as with a format it does not support. Or the file was a KTX2 file that the engine does not load, or not valid JSON. Or it was a color grading table that the engine does not read, such as a 1D table or one with a texel missing. The message says what in the table the engine could not read, with its line where it has one.',
 		example:
 			'E1412: assets.loadTexture() could not decode https://example.com/tex/brick.tga as an image: The source image could not be decoded.',
 		since: '0.1',

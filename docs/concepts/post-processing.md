@@ -3,12 +3,12 @@ id: concepts/post-processing
 title: The post-processing chain
 status: experimental
 since: "0.2"
-summary: "HDR scene color, bloom at half size and below, and one final pass for exposure, tone mapping, FXAA and dithering."
+summary: "HDR scene color, bloom at half size and below, and one final pass for exposure, tone mapping, FXAA, dithering, color grading and the vignette."
 ---
 
 # The post-processing chain
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. In this version the chain has HDR scene color, bloom and the final pass. Ambient occlusion, color grading, the vignette, outlines and custom effects are not built yet. Coding agents must not use them.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. In this version the chain has HDR scene color, bloom, and the final pass with color grading and the vignette. Ambient occlusion, outlines and custom effects are not built yet. Coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -16,10 +16,11 @@ flowchart LR
     bright --> levels["Five blurred levels:<br/>each half the size<br/>of the one before"]
     scene --> final["Final pass: adds bloom,<br/>then exposure, tone mapping,<br/>FXAA and dithering"]
     levels --> final
-    final --> canvas["Canvas"]
+    final --> grade["In the same pass:<br/>color grading table,<br/>then the vignette"]
+    grade --> canvas["Canvas"]
 ```
 
-The scene passes draw linear color with no upper limit into a float target, the scene color. Effects that need that range, such as bloom, read it before the final pass. The final pass then does all of its work for each pixel in one pass. It adds the effects' results and applies the exposure and the tone mapping. Then it smooths edges with FXAA, encodes sRGB and dithers.
+The scene passes draw linear color with no upper limit into a float target, the scene color. Effects that need that range, such as bloom, read it before the final pass. The final pass then does all of its work for each pixel in one pass. It adds the effects' results and applies the exposure and the tone mapping. Then it smooths edges with FXAA, encodes sRGB and dithers. Last, it grades the display color with a color grading table and the vignette, when the sketch sets them.
 
 Every full-screen pass reads and writes the whole screen once more. On a phone at its full resolution that is tens of megabytes per frame, so the engine keeps such passes few. Bloom's passes draw at half the render size and below, and the final pass reads their results without a pass of its own.
 
@@ -65,6 +66,15 @@ Bloom draws eleven small passes and adds five texture reads to each pixel of the
 
 The `bloomSamples` quality setting is the share of `UnrealBloomPass`'s texture reads that each blur makes: 1, 0.5 or 0.25. A lower share reads the same blur in fewer, coarser steps, so the glow keeps its size. When frames take too long and bloom is on, the frame-budget governor halves the share, after its other steps. [Quality presets](quality-presets.md) lists the governor's steps.
 
+## Color grading and the vignette
+
+A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut`, maps each display color to a graded color. The vignette darkens the picture toward its edges. Both follow three.js: `LUTPass` and `VignetteShader`, placed after its `OutputPass`. [The post-processing API](../api/post.md#color-grading) lists their settings.
+
+- They work on display color, after the tone mapping, so they draw on every GPU path, the 8-bit path included.
+- They are settings of the final pass, not passes of their own. Turning one on builds no pipeline, so the picture changes in the next frame with no pause.
+- The table is a 3D texture, read with one filtered texture read per pixel. The vignette costs a few operations per pixel.
+- The engine's parity tests compare two scenes with three.js's composer: a `.cube` table alone, and a table at 0.7 of its intensity with the vignette. Both match in all but under 0.1% of the pixels on every GPU path.
+
 ## Effects on devices without HDR color
 
 Bloom needs the scene's linear color. Two kinds of device draw it with no float target at first, on the 8-bit path that [color management](color-management.md#the-8-bit-path) describes:
@@ -79,6 +89,8 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 - Delete `EffectComposer`, `RenderPass` and `OutputPass`. The scene pass and the final pass are built in.
 - `new UnrealBloomPass(resolution, strength, radius, threshold)` becomes `post.set({ bloom: { strength, radius, threshold } })`. The resolution is the canvas's, so it needs no setting.
 - `renderer.toneMapping` and `toneMappingExposure` become `post.set({ toneMapping, exposure })`. three.js applies no tone mapping by default, and null3D applies ACES.
+- `new LUTPass({ lut: result.texture3D, intensity })` after a `LUTCubeLoader` or `LUT3dlLoader` becomes `post.set({ lut: await assets.loadLut(url), lutIntensity: intensity })`.
+- A `ShaderPass(VignetteShader)` with its `offset` and `darkness` uniforms becomes `post.set({ vignette: { offset, darkness } })`.
 
 ## Related pages
 

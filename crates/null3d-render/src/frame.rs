@@ -29,6 +29,7 @@ use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
 use crate::fog::Fog;
 use crate::frame_data::{FrameUniform, normalized_direction};
+use crate::grading::{Grading, Lut, Vignette};
 use crate::graph::{GraphError, RenderScale, Size};
 use crate::materials::{
     MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, blend_state, feature,
@@ -501,6 +502,10 @@ pub struct SceneSettings {
     /// How many times fewer taps than three.js's each of bloom's blurs reads, which the quality
     /// settings raise.
     bloom_divisor: u32,
+    /// The color grading table while the sketch sets one.
+    lut: Option<Lut>,
+    /// The vignette while the sketch turns it on.
+    vignette: Option<Vignette>,
     /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
     /// the bits of a `u32`, as the frame uniform holds them.
     clock: [f32; 4],
@@ -544,6 +549,8 @@ impl SceneSettings {
             output: Output::default(),
             bloom: None,
             bloom_divisor: 1,
+            lut: None,
+            vignette: None,
             clock: [0.0; 4],
             render_scaling: false,
             tiles: TileSettings::default(),
@@ -640,6 +647,43 @@ impl SceneSettings {
     /// the same kernel more coarsely, so the glow keeps its size.
     pub fn set_bloom_divisor(&mut self, divisor: u32) {
         self.bloom_divisor = divisor.clamp(1, bloom::MAX_SAMPLE_DIVISOR);
+    }
+
+    /// Grades the canvas color with a color grading table, or with none with `None`, from the next
+    /// recorded frame on. A table that is not live, or whose texels are not on the GPU yet, grades
+    /// nothing.
+    pub fn set_lut(&mut self, lut: Option<Lut>) {
+        self.lut = lut;
+    }
+
+    /// Turns the vignette on with its settings, or off with `None`, from the next recorded frame
+    /// on.
+    pub fn set_vignette(&mut self, vignette: Option<Vignette>) {
+        self.vignette = vignette;
+    }
+
+    /// True while the sketch sets a color grading table or the vignette, outside a debug view,
+    /// whose colors reach the canvas as its shader writes them. The final pass then runs on every
+    /// path.
+    pub(crate) fn grades(&self) -> bool {
+        (self.lut.is_some() || self.vignette.is_some()) && !self.debug_view.is_debug()
+    }
+
+    /// What the final pass grades the frame with: the table once its texels are on the GPU, and
+    /// the vignette. Nothing in a debug view.
+    pub(crate) fn grading(&self) -> Grading {
+        if self.debug_view.is_debug() {
+            return Grading::default();
+        }
+        let lut = self.lut.and_then(|lut| {
+            let (texture, size) = self.textures.ready_volume(lut.texture)?;
+            let (scale, offset) = lut.placement(size);
+            Some((texture, scale, offset))
+        });
+        Grading {
+            lut,
+            vignette: self.vignette,
+        }
     }
 
     /// True when the render scale may drop below the whole canvas.
