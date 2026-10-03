@@ -48,7 +48,7 @@ High and Ultra start only on desktops, which T-25 did not measure. On the iPad, 
 
 **GPU buffers.** The presets set no buffer budget. Until a rerun shows whether the stall repeats, keep a scene's GPU buffers on the iPad's WebGPU path under 256 MiB, half the stall point.
 
-**Shadow maps.** Pending. The shadow maps share the GPU memory that the texture budget plans for. M1-G6 sets each preset's shadow cascades and map size in pull request #215. That pull request adds each preset's shadow map memory to this record. Its rows wait for #215's device reruns. Its proposed values add at most 8 MiB on Low and 48 MiB on Medium. Both fit well inside the room under 1008 MiB.
+**Shadow maps.** The shadow maps share the GPU memory that the texture budget plans for. M1-G6 set each preset's shadow cascades and map size (#215). They add 8 MiB on Low and 48 MiB on Medium, which fit well inside the room under 1008 MiB. "Each preset's memory" below gives the figures for every preset.
 
 ## How three.js handles it
 

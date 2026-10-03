@@ -1,6 +1,6 @@
 # D-11: Preset values, the governor's thresholds, and frames in flight
 
-Status: frames in flight decided by the owner on 2026-09-30. The preset check's thresholds proposed by M1-G3, the governor's thresholds by M1-G5. The preset values set by M1-G6 from the S24+ and iPad runs. Once warm, the iPad misses its gate at Medium. So the owner decided on 2026-10-03 to judge the iPad at Low. Date: 2026-09-30. Tasks: M1-G1 (frames in flight), then M1-G3, M1-G5 and M1-G6.
+Status: frames in flight decided by the owner on 2026-09-30. The preset check's thresholds proposed by M1-G3, the governor's thresholds by M1-G5 and kept by M1-G6. The preset values set by M1-G6 from the S24+ and iPad runs. Once warm, the iPad misses its gate at Medium. So the owner decided on 2026-10-03 to judge the iPad at Low. Date: 2026-09-30. Tasks: M1-G1 (frames in flight), then M1-G3, M1-G5 and M1-G6.
 
 This record settles three questions. M1-G1 answers the third, frames in flight, with the GPU-bound page. The preset values and the governor's thresholds follow from the S4 traces of M1-G5 and M1-G6, and from the live shadow-map resize test of M1-G3. Those tasks add their sections here. M1-G3 adds the preset check's thresholds at the end.
 
@@ -12,8 +12,8 @@ On 3 October 2026:
 | --- | --- | --- |
 | Frames in flight | Decided by the owner, 2026-09-30: at most two frames unfinished on the GPU, on both paths | The iPad's rows of the GPU-bound page. The four Mac browsers and the S24+ support the decision, so these rows can only confirm it or reopen it |
 | The preset check's thresholds | Proposed by M1-G3 | The owner's answer on the grace, the window and the target on 120 Hz displays (below) |
-| The governor's thresholds | Proposed by M1-G5. The stress test passes on the Mac, the S24+ and, after #222, the iPad | M1-G6's S4 traces show whether they flicker or step late |
-| The preset values | Proposed by M1-G6 in pull request #215, open while its device runs repeat | Pending: the S24+ and iPad reruns, and each device's 10-minute S4 run. #215 adds their section and its rows here |
+| The governor's thresholds | Proposed by M1-G5, kept by M1-G6. The stress test passes on the Mac, the S24+ and, after #222, the iPad. In M1-G6's S4 reruns, the render scale held still in every measured second | The owner's answer |
+| The preset values | Set by M1-G6 (#215), 2026-10-03. The S24+ passed its S4 gate at Low. Warm, the iPad held about 45 fps at Medium, so the owner decided to judge its gate at Low | The iPad's gate at Low and the S24+'s run at Medium ("Results still to come" below). A follow-up measures the render scale on tile-based GPUs |
 | The live shadow-map resize test | Not built | No setting that changes during play resizes a shadow map, so the presets do not need it (below) |
 
 ## Question
