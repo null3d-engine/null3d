@@ -113,6 +113,9 @@ export function runNull3dPage(
 				return { ...report, width, height, pixels: toBase64(pixels) };
 			}
 			const measureSeconds = options.seconds ?? MEASURE_SECONDS;
+			// The warm-up counts from the first frame. A start that takes the stored result of an
+			// earlier preset check resolves before its first frame, and a first visit only after it.
+			await firstFrameOrFailure(engine);
 			const timed = await timedRun({
 				engine,
 				warmupSeconds: options.seconds ?? WARMUP_SECONDS,
@@ -141,6 +144,17 @@ export function runNull3dPage(
 		} finally {
 			await engine.destroy();
 		}
+	});
+}
+
+/** Resolves once the GPU has finished the engine's first frame; rejects when a thread fails first. */
+function firstFrameOrFailure(engine: Engine): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
+		const stopWatching = engine.onFailure(reject);
+		engine.firstFrame.then(() => {
+			stopWatching();
+			resolve();
+		});
 	});
 }
 
