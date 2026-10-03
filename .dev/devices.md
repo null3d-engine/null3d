@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `bloom`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `startup`, `tab-memory`, `soak` and `warm-up-time`. `bun run devices` runs the checks on the phone and on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `bloom`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `animation`, `startup`, `tab-memory`, `soak` and `warm-up-time`. `bun run devices` runs the checks on the phone and on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-grey when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -179,6 +179,15 @@ To collect the numbers, rest each device first and close its other tabs:
 - After 2 seconds of play, the page measures 2 seconds with bloom off and 2 with it on, three times each. Heat then slows both sides alike. The page reports the medians of each side's frame interval and CPU time. Where the browser has a GPU timer, it reports the GPU time per frame too.
 - The plan runs the page on each GPU path at render scales of 1 and 0.5: 4 pages. The difference between the sides is bloom's cost at that scale.
 - Run it on the iPad and the phone: `bun tests/real-browsers.ts --plan bloom --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool. On a device that draws faster than its display, the GPU time tells the cost. The frame interval only shows whether the frames kept the display's rate.
+
+## The animation plan
+
+- The `animation` plan times the core's animation step on the job workers, for [D-26](decisions/D-26-animation-clips.md). The page (`tests/pages/animation.html`) draws nothing. It runs the core on its own thread, as the sketch worker does, and starts its own job workers.
+- The crowd is generated: each character has 48 joints in five chains, and two clips. One clip has keys every thirtieth of a second for one second, the other every 24th for 0.75 s. Each frame, every character blends both clips at its own times, with weights of 0.6 and 0.4.
+- Each frame starts in a `requestAnimationFrame` callback and wakes the job workers, as the engine's frame does. After 60 frames of warm-up, the page times 240 frames. It reports the step's median, 90th percentile and mean on its own thread, and the job workers' busy time per frame, added up. It also checks that every skinning matrix is finite and that two characters got different poses.
+- The plan runs a crowd of 100 and one of 500 with the default job worker count. The run's summary gives a row for each.
+- Run it on the phone and the iPad: `bun tests/real-browsers.ts --plan animation --android chrome --lan ipad-safari`. Start the phone cool. The page takes `?characters=`, `?joints=`, `?jobs=`, `?frames=` and `?warmup=`.
+- The browser tests run the page with a small crowd (`tests/image/animation.spec.ts`). The native benchmark of the same step is `bench_animation_crowd` in `crates/null3d-core/tests/bench.rs`.
 
 ## The governor plan
 

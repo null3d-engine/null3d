@@ -319,6 +319,34 @@ export interface CoreGlue extends CoreErrors {
 	setDebugView(view: number): number;
 }
 
+/**
+ * The core's animation table, which no engine code calls yet: the repository's animation test page
+ * drives it. Ids that the create calls return are the table's ids plus one, and 0 on failure.
+ */
+export interface AnimationGlue {
+	/** Creates the animation table for `instances` animated objects with `joints` joints in all. */
+	initAnimations(instances: number, joints: number): number;
+	/** Makes room for `words` staging words of animation data and returns their address. */
+	animationStaging(words: number): number;
+	/**
+	 * Creates a skeleton from the staging words: each joint's parent, then its rest pose
+	 * (`ANIMATION_REST_FLOATS` floats), then its inverse bind matrix (12 floats, row-major 3 × 4).
+	 */
+	createSkeleton(joints: number): number;
+	/**
+	 * Creates a clip from the staging words: `tracks` headers of `ANIMATION_TRACK_WORDS` words
+	 * (joint, channel, interpolation, key count), then each track's key times and values, resampled
+	 * at `rate` keys per second.
+	 */
+	createClip(skeleton: number, tracks: number, rate: number): number;
+	/** Adds an animated instance of a skeleton. */
+	createAnimatedInstance(skeleton: number): number;
+	/** The address of an animation table array (`ANIMATION_FIELD_*`). */
+	animationArrays(field: number): number;
+	/** Writes every animated instance's skinning matrices, on the job workers. */
+	updateAnimations(): number;
+}
+
 const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'initSync',
 	'engineVersion',
