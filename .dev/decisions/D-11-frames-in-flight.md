@@ -225,7 +225,16 @@ The fixes: the metrics hold the page's display rate once a worker's callbacks ha
 - A looser room line for each window. At 105% it would count 57 fps as room.
 - The highest rate measured since the start. It would miss a real drop of the display's rate, such as a low power mode at 30 Hz.
 
-In WebKit after the fixes, the walk took every step down and back up on both paths, one step up every 6 s. The hold lowered the scale to 0.5 on WebGPU and 0.7 on WebGL2. Chrome on the Mac still passed all 4 pages. The iPad rows come from `bun tests/real-browsers.ts --plan governor --lan ipad-safari`.
+In WebKit after the fixes, the walk took every step down and back up on both paths, one step up every 6 s. The hold lowered the scale to 0.5 on WebGPU and 0.7 on WebGL2. Chrome on the Mac still passed all 4 pages.
+
+The iPad then passed all 4 pages (`bun tests/real-browsers.ts --plan governor --lan ipad-safari`, 3 October 2026). The refresh rate held 60 Hz in every measurement:
+
+| Stage | Path | Result |
+| --- | --- | --- |
+| Walk | WebGPU | All 9 steps, down and back up |
+| Walk | WebGL2 | All 9 steps, down and back up |
+| Hold | WebGPU | Lowest scale 0.85; the last 15 seconds at 57 to 60 fps |
+| Hold | WebGL2 | Lowest scale 0.65; the last 15 seconds at 59 to 61 fps |
 
 ### How three.js handles it
 
