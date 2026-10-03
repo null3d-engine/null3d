@@ -264,6 +264,11 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
             return scalar(null3d::fog::fog_factor(scene_fog, f[4].xyz));
         }
 #endif
+#ifdef VERTEX
+        case 95u: { return triple(null3d::vertex::mesh_position(f[0].xyz)); }
+        case 96u: { return pair(null3d::vertex::mesh_uv(f[0].xy)); }
+        case 97u: { return pair(null3d::vertex::mesh_second_uv(f[0].xy)); }
+#endif
         default: { return whole(vec4u(0xffffffffu)); }
     }
 }

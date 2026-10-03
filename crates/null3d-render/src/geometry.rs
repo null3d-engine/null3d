@@ -12,27 +12,72 @@ use null3d_gpu::drawlist::vertex;
 /// Mesh data: vertices interleaved in the layout of their vertex format, and triangle indices.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Geometry {
-    /// The vertex format: the optional attributes (`vertex::*` bits) each vertex has.
+    /// The vertex format: the optional attributes (`vertex::*` bits) each vertex has, and each
+    /// attribute's type.
     pub format: u32,
-    pub vertices: Vec<f32>,
+    /// The vertices' bytes, little-endian, as the GPU reads them.
+    pub vertices: Vec<u8>,
     pub indices: Vec<u32>,
 }
 
 impl Geometry {
-    /// Floats per vertex of the geometry's format.
-    pub fn vertex_floats(&self) -> usize {
-        vertex::floats(self.format) as usize
+    /// A geometry of a format whose attributes are all floats, from its vertices' floats.
+    pub fn from_floats(format: u32, floats: &[f32], indices: Vec<u32>) -> Self {
+        Self {
+            format,
+            vertices: floats
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect(),
+            indices,
+        }
+    }
+
+    /// Bytes per vertex of the geometry's format.
+    pub fn stride(&self) -> usize {
+        vertex::stride(self.format) as usize
     }
 
     pub fn vertex_count(&self) -> usize {
-        self.vertices.len() / self.vertex_floats()
+        self.vertices.len() / self.stride()
+    }
+
+    /// The values of the attribute at `location` of vertex `v`, as shaders read them, or nothing
+    /// when the format lacks it.
+    pub fn values(&self, v: usize, location: usize) -> Vec<f32> {
+        let (Some(ty), Some(offset)) = (
+            vertex::type_of(self.format, location),
+            vertex::offset(self.format, location),
+        ) else {
+            return Vec::new();
+        };
+        let size = ty.bytes() as usize;
+        let start = v * self.stride() + offset as usize;
+        (0..vertex::ATTRIBUTES[location].components as usize)
+            .map(|c| ty.decode(&self.vertices[start + c * size..]))
+            .collect()
+    }
+
+    /// The values of the attribute at `location` of every vertex in turn, as shaders read them.
+    pub fn attribute(&self, location: usize) -> Vec<f32> {
+        (0..self.vertex_count())
+            .flat_map(|v| self.values(v, location))
+            .collect()
+    }
+
+    /// The position of vertex `v`, as shaders read it.
+    pub fn position(&self, v: usize) -> [f32; 3] {
+        let offset = v * self.stride();
+        let ty = vertex::type_of(self.format, vertex::POSITION).unwrap_or(vertex::Type::F32);
+        let size = ty.bytes() as usize;
+        [0, 1, 2].map(|c| ty.decode(&self.vertices[offset + c * size..]))
     }
 }
 
 /// The vertex format of every generator's meshes: a position, a normal and texture coordinates.
 pub const SHAPE_FORMAT: u32 = vertex::UV0;
-/// Floats per vertex of [`SHAPE_FORMAT`].
-const FLOATS: usize = vertex::floats(SHAPE_FORMAT) as usize;
+/// Bytes per vertex of [`SHAPE_FORMAT`].
+const STRIDE: usize = vertex::stride(SHAPE_FORMAT) as usize;
 
 /// The generators, by the codes that the engine's TypeScript passes. A cone is a cylinder whose top
 /// radius is 0, as in three.js.
@@ -495,16 +540,16 @@ impl Builder {
     #[inline(never)]
     fn new(vertices: u64, indices: u64) -> Result<Self, OutOfMemory> {
         // Below 2^61 vertices and 2^63 indices, as the segment counts' limit keeps them.
-        let floats = vertices * FLOATS as u64;
+        let bytes = vertices * STRIDE as u64;
         let out_of_memory = OutOfMemory {
-            bytes: floats.saturating_add(indices).saturating_mul(4),
+            bytes: bytes.saturating_add(indices.saturating_mul(4)),
         };
         let mut g = Geometry {
             format: SHAPE_FORMAT,
             ..Geometry::default()
         };
         let reserved = vertices <= u64::from(u32::MAX)
-            && usize::try_from(floats).is_ok_and(|n| g.vertices.try_reserve_exact(n).is_ok())
+            && usize::try_from(bytes).is_ok_and(|n| g.vertices.try_reserve_exact(n).is_ok())
             && usize::try_from(indices).is_ok_and(|n| g.indices.try_reserve_exact(n).is_ok());
         if reserved {
             Ok(Self(g))
@@ -519,15 +564,18 @@ impl Builder {
 
     /// The index of the next vertex.
     fn next(&self) -> u32 {
-        (self.0.vertices.len() / FLOATS) as u32
+        (self.0.vertices.len() / STRIDE) as u32
     }
 
     /// Adds a vertex, with each value rounded to a 32-bit float. Generators call it from many
     /// places, so one copy of it serves them all.
     #[inline(never)]
     fn vertex(&mut self, [x, y, z]: [f64; 3], [nx, ny, nz]: [f64; 3], [u, v]: [f64; 2]) {
-        let values = [x, y, z, nx, ny, nz, u, v].map(|value| value as f32);
-        self.0.vertices.extend_from_slice(&values);
+        for value in [x, y, z, nx, ny, nz, u, v] {
+            self.0
+                .vertices
+                .extend_from_slice(&(value as f32).to_le_bytes());
+        }
     }
 
     #[inline(never)]
@@ -670,16 +718,22 @@ mod tests {
         .collect()
     }
 
-    fn attribute(g: &Geometry, i: u32, first: usize, count: usize) -> &[f32] {
-        let at = i as usize * FLOATS + first;
-        &g.vertices[at..at + count]
+    /// `count` floats of vertex `i`, from its float `first` on.
+    fn attribute(g: &Geometry, i: u32, first: usize, count: usize) -> Vec<f32> {
+        let at = i as usize * STRIDE + first * 4;
+        g.vertices[at..at + count * 4]
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|&bytes| f32::from_le_bytes(bytes))
+            .collect()
     }
 
     #[test]
     fn every_front_face_winds_counter_clockwise_around_its_normals() {
         for (name, g) in every_shape() {
             assert_eq!(g.format, SHAPE_FORMAT);
-            assert_eq!(g.vertices.len() % FLOATS, 0);
+            assert_eq!(g.vertices.len() % STRIDE, 0);
             assert!(g.indices.iter().all(|&i| (i as usize) < g.vertex_count()));
             for tri in g.indices.chunks(3) {
                 let p = |k: usize| {

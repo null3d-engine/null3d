@@ -23,20 +23,10 @@ const SIZE: u32 = 16;
 /// A 2 x 2 grid with tangents, computed from its texture coordinates.
 fn grid_with_tangents() -> Geometry {
     let g = grid(2, 2);
-    let floats = g.vertex_floats();
-    let positions: Vec<f32> = g
-        .vertices
-        .chunks(floats)
-        .flat_map(|v| v[..3].to_vec())
-        .collect();
-    let uvs: Vec<f32> = g
-        .vertices
-        .chunks(floats)
-        .flat_map(|v| v[6..8].to_vec())
-        .collect();
+    let (positions, uvs) = (g.attribute(0), g.attribute(2));
     let arrays = MeshArrays {
-        positions: &positions,
-        uvs: Some(&uvs),
+        positions: (&positions[..]).into(),
+        uvs: Some((&uvs[..]).into()),
         indices: Some(&g.indices),
         compute_normals: true,
         compute_tangents: true,

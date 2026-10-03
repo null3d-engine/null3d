@@ -91,6 +91,7 @@ export type {
 	CylinderOptions,
 	DepthBias,
 	Geometry,
+	IntegerArray,
 	Material,
 	MaterialFeatures,
 	MaterialOptions,
@@ -110,6 +111,8 @@ export type {
 	UnlitOptions,
 	UnlitValues,
 	UvTransform,
+	VertexArray,
+	VertexValues,
 } from './scene/resources';
 export type {
 	AmbientLight,

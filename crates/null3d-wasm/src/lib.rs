@@ -28,7 +28,8 @@ use null3d_core::scene::{CommandRing, SceneStorage};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::sizes;
-use null3d_render::arrays::{ArrayName, ArraysError, MeshArrays, from_arrays};
+use null3d_gpu::drawlist::vertex::{self, Type};
+use null3d_render::arrays::{ArrayName, ArraysError, Data, MeshArrays, Values, from_arrays};
 use null3d_render::bloom::Bloom;
 use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
@@ -211,6 +212,7 @@ fn arrays_failure(error: ArraysError) -> u32 {
     let (problem, value) = match error {
         ArraysError::NoVertices => (arrays_problem::NO_VERTICES, 0),
         ArraysError::Length(array) => (arrays_problem::LENGTH, array as u32),
+        ArraysError::Type(array) => (arrays_problem::TYPE, array as u32),
         ArraysError::NotTriangles => (arrays_problem::NOT_TRIANGLES, 0),
         ArraysError::Twice(array) => (arrays_problem::TWICE, array as u32),
         ArraysError::Missing(array) => (arrays_problem::MISSING, array as u32),
@@ -871,16 +873,18 @@ pub fn mesh_arrays(words: u32) -> u32 {
 }
 
 /// A mesh from the arrays in the staging words, as `layout` (`constants::mesh_arrays` bits)
-/// describes them, for `vertices` vertices and `indices` indices. Normals and tangents that
-/// `layout` asks for are computed on the job workers. Returns the mesh id.
+/// describes them, for `vertices` vertices and `indices` indices. `types` gives each array's type
+/// in its attribute's type field of a vertex format. Normals and tangents that `layout` asks for
+/// are computed on the job workers. Returns the mesh id.
 #[wasm_bindgen(js_name = createMeshFromArrays)]
-pub fn create_mesh_from_arrays(vertices: u32, indices: u32, layout: u32) -> u32 {
+pub fn create_mesh_from_arrays(vertices: u32, indices: u32, layout: u32, types: u32) -> u32 {
     value_with_engine(|e| {
         let jobs = JOBS.get().ok_or_else(|| fail(codes::NOT_READY, [0, 0]))?;
         let staging = std::mem::take(&mut e.staging);
         let geometry = {
-            let arrays = staged_arrays(&staging, vertices as usize, indices as usize, layout)
-                .ok_or_else(|| arrays_failure(ArraysError::Length(ArrayName::Positions)))?;
+            let arrays =
+                staged_arrays(&staging, vertices as usize, indices as usize, layout, types)
+                    .ok_or_else(|| arrays_failure(ArraysError::Length(ArrayName::Positions)))?;
             from_arrays(&arrays, jobs).map_err(arrays_failure)?
         };
         drop(staging);
@@ -888,60 +892,95 @@ pub fn create_mesh_from_arrays(vertices: u32, indices: u32, layout: u32) -> u32 
     })
 }
 
-/// The arrays in the staging words, or `None` when the words are fewer than the layout needs.
+/// The arrays in the staging words, or `None` when the words do not hold what `layout` and
+/// `types` describe. The arrays follow each other in the order of `MeshArrays`' codes, each from a
+/// whole word on, then the indices.
 fn staged_arrays(
     words: &[u32],
     vertices: usize,
     indices: usize,
     layout: u32,
+    types: u32,
 ) -> Option<MeshArrays<'_>> {
     let has = |bit: u32| layout & bit != 0;
-    let color_floats = if has(mesh_arrays::COLORS_ALPHA) { 4 } else { 3 };
-    let float_words = vertices
-        * [
-            (true, 3),
-            (has(mesh_arrays::NORMALS), 3),
-            (has(mesh_arrays::UVS), 2),
-            (has(mesh_arrays::UVS1), 2),
-            (has(mesh_arrays::COLORS), color_floats),
-            (has(mesh_arrays::TANGENTS), 4),
-        ]
-        .iter()
-        .filter(|(present, _)| *present)
-        .map(|(_, floats)| floats)
-        .sum::<usize>();
+    let color_components = if has(mesh_arrays::COLORS_ALPHA) { 4 } else { 3 };
+    // Each array in staging order: whether it is there, its attribute's location and its values
+    // per vertex.
+    let staged = [
+        (true, vertex::POSITION, 3),
+        (has(mesh_arrays::NORMALS), vertex::NORMAL, 3),
+        (has(mesh_arrays::UVS), 2, 2),
+        (has(mesh_arrays::UVS1), 3, 2),
+        (has(mesh_arrays::COLORS), 5, color_components),
+        (has(mesh_arrays::TANGENTS), 4, 4),
+        (has(mesh_arrays::JOINTS), 6, 4),
+        (has(mesh_arrays::WEIGHTS), 7, 4),
+    ];
+    let mut arrays = [None; 8];
+    let mut at = 0;
+    for (array, &(present, location, per_vertex)) in arrays.iter_mut().zip(&staged) {
+        if !present {
+            continue;
+        }
+        let attribute = vertex::ATTRIBUTES[location];
+        let place = ((types & attribute.mask()) >> attribute.shift) as usize;
+        let ty = *attribute.types.get(place)?;
+        let count = vertices * per_vertex;
+        let size = (count * ty.bytes() as usize).div_ceil(4);
+        *array = Some(staged_values(words.get(at..at + size)?, ty, count));
+        at += size;
+    }
     let index_words = if has(mesh_arrays::INDICES) {
         indices
     } else {
         0
     };
-    if words.len() != float_words + index_words {
+    if words.len() != at + index_words {
         return None;
     }
-    // SAFETY: every `u32` is four initialized bytes that make a valid `f32`, of the same size and
-    // alignment, and the float words stay in bounds.
-    let floats: &[f32] =
-        unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<f32>(), float_words) };
-    let mut at = 0;
-    let mut next = |present: bool, per_vertex: usize| {
-        present.then(|| {
-            let array = &floats[at..at + vertices * per_vertex];
-            at += vertices * per_vertex;
-            array
-        })
-    };
+    let [
+        positions,
+        normals,
+        uvs,
+        uvs1,
+        colors,
+        tangents,
+        joints,
+        weights,
+    ] = arrays;
     Some(MeshArrays {
-        positions: next(true, 3)?,
-        normals: next(has(mesh_arrays::NORMALS), 3),
-        uvs: next(has(mesh_arrays::UVS), 2),
-        uvs1: next(has(mesh_arrays::UVS1), 2),
-        colors: next(has(mesh_arrays::COLORS), color_floats),
-        color_floats,
-        tangents: next(has(mesh_arrays::TANGENTS), 4),
-        indices: has(mesh_arrays::INDICES).then(|| &words[float_words..]),
+        positions: positions?,
+        normals,
+        uvs,
+        uvs1,
+        colors,
+        color_components,
+        tangents,
+        joints,
+        weights,
+        indices: has(mesh_arrays::INDICES).then(|| &words[at..]),
         compute_normals: has(mesh_arrays::COMPUTE_NORMALS),
         compute_tangents: has(mesh_arrays::COMPUTE_TANGENTS),
     })
+}
+
+/// The first `count` values of type `ty` in `words`, which hold at least that many.
+fn staged_values(words: &[u32], ty: Type, count: usize) -> Values<'_> {
+    assert!(count * ty.bytes() as usize <= words.len() * 4);
+    let at = words.as_ptr();
+    // SAFETY: the words are initialized, aligned for every narrower type, and hold `count` values
+    // of `ty`, as the assertion checks; every bit pattern is a valid float or integer.
+    let data = unsafe {
+        use std::slice::from_raw_parts;
+        match ty {
+            Type::F32 => Data::F32(from_raw_parts(at.cast(), count)),
+            Type::Unorm8 | Type::Uint8 => Data::U8(from_raw_parts(at.cast(), count)),
+            Type::Snorm8 | Type::Sint8 => Data::I8(from_raw_parts(at.cast(), count)),
+            Type::Unorm16 | Type::Uint16 => Data::U16(from_raw_parts(at.cast(), count)),
+            Type::Snorm16 | Type::Sint16 => Data::I16(from_raw_parts(at.cast(), count)),
+        }
+    };
+    Values::integers(data, ty.normalized())
 }
 
 /// The distance from a mesh's origin to its farthest vertex, or 0 for an unknown mesh.

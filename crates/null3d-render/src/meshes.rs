@@ -57,23 +57,25 @@ pub struct MeshSlot {
     pub radius: f32,
 }
 
-/// One shared buffer or page: interleaved vertices of one format, and 16-bit indices.
+/// One shared buffer or page: interleaved vertices of one format, as the GPU reads their bytes,
+/// and 16-bit indices.
 #[derive(Debug, Default)]
 pub struct Page {
     pub format: u32,
-    pub vertices: Vec<f32>,
+    pub vertices: Vec<u8>,
     pub indices: Vec<u16>,
 }
 
 impl Page {
     pub fn vertex_count(&self) -> u32 {
-        (self.vertices.len() / vertex::floats(self.format) as usize) as u32
+        (self.vertices.len() / vertex::stride(self.format) as usize) as u32
     }
 
     /// Bytes of the page's vertex buffer and index buffer, whose writes are whole 4-byte words.
+    /// Every vertex format takes whole words, so the vertices always do.
     pub fn buffer_bytes(&self) -> (u64, u64) {
         (
-            (self.vertices.len() * 4) as u64,
+            self.vertices.len() as u64,
             (self.indices.len() * 2).next_multiple_of(4) as u64,
         )
     }
@@ -217,10 +219,11 @@ impl MeshStorage {
             self.add_edge_parts();
         }
 
-        let radius = geometry
-            .vertices
-            .chunks_exact(geometry.vertex_floats())
-            .map(|v| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt())
+        let radius = (0..geometry.vertex_count())
+            .map(|v| {
+                let [x, y, z] = geometry.position(v);
+                (x * x + y * y + z * z).sqrt()
+            })
             .fold(0.0f32, f32::max);
         self.meshes.push(MeshSlot {
             format: geometry.format,
@@ -246,14 +249,14 @@ impl MeshStorage {
 
     /// Puts one part's vertices and part-local indices into the last page of their format, or
     /// into a new page when they do not fit it, and returns where the part landed.
-    fn place(&mut self, format: u32, vertices: &[f32], indices: &[u32]) -> MeshPart {
-        let count = (vertices.len() / vertex::floats(format) as usize) as u32;
+    fn place(&mut self, format: u32, vertices: &[u8], indices: &[u32]) -> MeshPart {
+        let count = (vertices.len() / vertex::stride(format) as usize) as u32;
         let (limit, packing) = (self.max_page_bytes, self.packing);
         // With edge lists, the part's edges follow its triangles: twice as many indices.
         let indices_placed = indices.len() * if self.edges { 3 } else { 1 };
         let fits = |page: &Page| {
             let (vertex_bytes, index_bytes) = page.buffer_bytes();
-            vertex_bytes + (vertices.len() * 4) as u64 <= limit
+            vertex_bytes + vertices.len() as u64 <= limit
                 && index_bytes + (indices_placed * 2).next_multiple_of(4) as u64 <= limit
                 && (packing == Packing::SharedBuffers
                     || page.vertex_count() + count <= MAX_PAGE_VERTICES)
@@ -323,8 +326,8 @@ struct PartBuilder {
     used: Vec<u32>,
     /// The part's indices, into `used`.
     indices: Vec<u32>,
-    /// The used vertices' floats, as the part's page receives them.
-    vertices: Vec<f32>,
+    /// The used vertices' bytes, as the part's page receives them.
+    vertices: Vec<u8>,
 }
 
 impl PartBuilder {
@@ -339,12 +342,12 @@ impl PartBuilder {
 
     /// Places the part in the storage, and starts the next one.
     fn finish(&mut self, storage: &mut MeshStorage, geometry: &Geometry) {
-        let floats = geometry.vertex_floats();
+        let stride = geometry.stride();
         self.vertices.clear();
         for &v in &self.used {
-            let at = v as usize * floats;
+            let at = v as usize * stride;
             self.vertices
-                .extend_from_slice(&geometry.vertices[at..at + floats]);
+                .extend_from_slice(&geometry.vertices[at..at + stride]);
             self.local[v as usize] = UNUSED;
         }
         let part = storage.place(geometry.format, &self.vertices, &self.indices);
@@ -367,9 +370,9 @@ mod tests {
     }
 
     /// The vertices that a mesh's triangles reach, in index order, through every part.
-    fn resolved_vertices(storage: &MeshStorage, id: u32) -> Vec<Vec<f32>> {
+    fn resolved_vertices(storage: &MeshStorage, id: u32) -> Vec<Vec<u8>> {
         let slot = storage.mesh(id).unwrap();
-        let floats = vertex::floats(slot.format) as usize;
+        let stride = vertex::stride(slot.format) as usize;
         storage
             .parts(slot)
             .iter()
@@ -379,36 +382,47 @@ mod tests {
                 let range =
                     part.first_index as usize..(part.first_index + part.index_count) as usize;
                 page.indices[range].iter().map(move |&i| {
-                    let v = (i as u32 + part.base_vertex) as usize * floats;
-                    page.vertices[v..v + floats].to_vec()
+                    let v = (i as u32 + part.base_vertex) as usize * stride;
+                    page.vertices[v..v + stride].to_vec()
                 })
             })
             .collect()
     }
 
-    fn original_vertices(g: &Geometry) -> Vec<Vec<f32>> {
-        let floats = g.vertex_floats();
+    fn original_vertices(g: &Geometry) -> Vec<Vec<u8>> {
+        let stride = g.stride();
         g.indices
             .iter()
-            .map(|&i| g.vertices[i as usize * floats..(i as usize + 1) * floats].to_vec())
+            .map(|&i| g.vertices[i as usize * stride..(i as usize + 1) * stride].to_vec())
             .collect()
     }
 
-    /// A grid of `columns` x `rows` quads in the XY plane, in `format`, each vertex's floats after
-    /// the position and the normal counting up from its index, so every vertex is unique.
+    /// A geometry of `vertices` vertices of the base format, all at the origin.
+    fn zeros(vertices: usize, indices: Vec<u32>) -> Geometry {
+        Geometry {
+            format: 0,
+            vertices: vec![0; vertices * vertex::stride(0) as usize],
+            indices,
+        }
+    }
+
+    /// A grid of `columns` x `rows` quads in the XY plane, in `format`, with float positions and
+    /// normals. Each vertex's bytes after them count up from its index, so every vertex is
+    /// unique.
     fn grid(columns: u32, rows: u32, format: u32) -> Geometry {
-        let floats = vertex::floats(format) as usize;
+        let stride = vertex::stride(format) as usize;
         let mut g = Geometry {
             format,
             ..Geometry::default()
         };
         for y in 0..=rows {
             for x in 0..=columns {
-                let index = g.vertices.len() / floats;
+                let index = g.vertices.len() / stride;
+                for value in [x as f32, y as f32, 0.0, 0.0, 0.0, 1.0] {
+                    g.vertices.extend_from_slice(&value.to_le_bytes());
+                }
                 g.vertices
-                    .extend_from_slice(&[x as f32, y as f32, 0.0, 0.0, 0.0, 1.0]);
-                g.vertices
-                    .extend((6..floats).map(|k| (index * 10 + k) as f32 / 1e3));
+                    .extend((24..stride).map(|k| (index * 10 + k) as u8));
             }
         }
         let row = columns + 1;
@@ -471,7 +485,7 @@ mod tests {
                 assert_eq!(resolved_vertices(&storage, *id), original_vertices(mesh));
             }
             for page in storage.pages() {
-                let stride = vertex::floats(page.format) as usize;
+                let stride = vertex::stride(page.format) as usize;
                 assert_eq!(page.vertices.len() % stride, 0);
             }
         }
@@ -546,10 +560,11 @@ mod tests {
     #[test]
     fn no_index_reaches_the_webgl2_restart_index() {
         // A strip of triangles over `vertices` vertices, the last of which uses the last vertex.
-        let strip = |vertices: u32| Geometry {
-            format: 0,
-            vertices: vec![0.0; vertices as usize * 6],
-            indices: (0..vertices - 2).flat_map(|v| [v, v + 1, v + 2]).collect(),
+        let strip = |vertices: u32| {
+            zeros(
+                vertices as usize,
+                (0..vertices - 2).flat_map(|v| [v, v + 1, v + 2]).collect(),
+            )
         };
         for packing in [Packing::SharedBuffers, Packing::Pages] {
             let mut storage = MeshStorage::new(packing);
@@ -598,12 +613,7 @@ mod tests {
     #[test]
     fn bad_meshes_are_rejected() {
         let mut storage = MeshStorage::new(Packing::Pages);
-        let floats = vertex::floats(0) as usize;
-        let broken = Geometry {
-            format: 0,
-            vertices: vec![0.0; floats * 3],
-            indices: vec![0, 1, 3],
-        };
+        let broken = zeros(3, vec![0, 1, 3]);
         assert_eq!(
             storage.add(&broken),
             Err(MeshError::IndexOutOfRange {
@@ -611,11 +621,7 @@ mod tests {
                 vertices: 3
             })
         );
-        let not_triangles = Geometry {
-            format: 0,
-            vertices: vec![0.0; floats * 3],
-            indices: vec![0, 1],
-        };
+        let not_triangles = zeros(3, vec![0, 1]);
         assert_eq!(storage.add(&not_triangles), Err(MeshError::NotTriangles));
     }
 
@@ -629,9 +635,9 @@ mod tests {
     }
 
     /// The pairs of vertices that a mesh's parts draw as lines, through each part's page.
-    fn drawn_lines(storage: &MeshStorage, id: u32) -> Vec<[Vec<f32>; 2]> {
+    fn drawn_lines(storage: &MeshStorage, id: u32) -> Vec<[Vec<u8>; 2]> {
         let slot = storage.mesh(id).unwrap();
-        let floats = vertex::floats(slot.format) as usize;
+        let stride = vertex::stride(slot.format) as usize;
         storage
             .parts(slot)
             .iter()
@@ -640,8 +646,8 @@ mod tests {
                 let range =
                     part.first_index as usize..(part.first_index + part.index_count) as usize;
                 let vertex = move |i: u16| {
-                    let v = (i as u32 + part.base_vertex) as usize * floats;
-                    page.vertices[v..v + floats].to_vec()
+                    let v = (i as u32 + part.base_vertex) as usize * stride;
+                    page.vertices[v..v + stride].to_vec()
                 };
                 page.indices[range]
                     .as_chunks::<2>()
@@ -669,7 +675,7 @@ mod tests {
             let corners = [first, second].map(|id| resolved_vertices(&storage, id));
             storage.draw_edges(true);
             for (id, corners) in [first, second].into_iter().zip(corners) {
-                let expected: Vec<[Vec<f32>; 2]> = corners
+                let expected: Vec<[Vec<u8>; 2]> = corners
                     .as_chunks::<3>()
                     .0
                     .iter()
@@ -685,12 +691,7 @@ mod tests {
     #[test]
     fn a_part_without_room_for_its_edges_draws_none() {
         // Pages of 256 bytes: 40 triangles take 240 bytes of indices, and their edges 480 more.
-        let floats = vertex::floats(0) as usize;
-        let triangles = |count: usize| Geometry {
-            format: 0,
-            vertices: vec![0.0; floats * 3],
-            indices: (0..count).flat_map(|_| [0, 1, 2]).collect(),
-        };
+        let triangles = |count: usize| zeros(3, (0..count).flat_map(|_| [0, 1, 2]).collect());
         let mut storage = MeshStorage::with_page_limit(Packing::SharedBuffers, 256);
         let full = storage.add(&triangles(40)).unwrap();
         storage.draw_edges(true);

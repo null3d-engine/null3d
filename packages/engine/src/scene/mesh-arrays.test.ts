@@ -9,12 +9,15 @@ import {
 	MESH_ARRAYS_COLORS_ALPHA,
 	MESH_ARRAYS_COMPUTE_TANGENTS,
 	MESH_ARRAYS_INDICES,
+	MESH_ARRAYS_JOINTS,
 	MESH_ARRAYS_NORMALS,
 	MESH_ARRAYS_UVS,
+	MESH_ARRAYS_WEIGHTS,
 } from '../generated/core';
+import { VERTEX_TYPE_SNORM8, VERTEX_TYPE_UINT16, VERTEX_TYPE_UNORM8 } from '../generated/gpu';
 import type { CoreGlue } from '../shared/core';
 import { CoreMemory } from './memory';
-import { arraysProblem, meshFromArrays } from './mesh-arrays';
+import { arraysProblem, meshFromArrays, typeField } from './mesh-arrays';
 import type { MeshArrays } from './resources';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
@@ -61,6 +64,32 @@ describe('the shape checks of geometry.fromArrays', () => {
 				'got tangents and computeTangents: true both.',
 			],
 			[{ ...QUAD, computeTangents: true }, 'got computeTangents: true but no uvs.'],
+			[
+				{ ...QUAD, normals: new Uint8Array(12) },
+				'got normals in a Uint8Array; normals take a Float32Array, an Int8Array or an Int16Array, or a plain array of numbers.',
+			],
+			[
+				{ ...QUAD, positions: new Float64Array(12) as unknown as Float32Array },
+				'got positions in a Float64Array; positions take a Float32Array, a Uint8Array, an Int8Array, a Uint16Array or an Int16Array, or a plain array of numbers.',
+			],
+			[
+				{ ...QUAD, normals: { array: new Int8Array(12), normalized: false } },
+				'got normalized: false for normals, whose integers always read as fractions.',
+			],
+			[
+				{ ...QUAD, positions: { array: new Float32Array(12), normalized: true } },
+				'got normalized: true for positions in a Float32Array; only integers can be normalized.',
+			],
+			[{ ...QUAD, joints: new Uint8Array(16) }, 'got joints but no weights.'],
+			[{ ...QUAD, weights: new Float32Array(16) }, 'got weights but no joints.'],
+			[
+				{ ...QUAD, joints: [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 1.5] },
+				'got 1.5 at joints[15], which is not a whole number from 0 to 65535.',
+			],
+			[
+				{ ...QUAD, joints: new Uint8Array(8), weights: new Uint8Array(16) },
+				'got 8 numbers in joints for 4 vertices, not 16.',
+			],
 		];
 		for (const [arrays, problem] of cases) expect(arraysProblem(arrays)).toBe(problem);
 	});
@@ -69,14 +98,20 @@ describe('the shape checks of geometry.fromArrays', () => {
 /** A core whose memory the arrays go into, and which records the mesh it is asked for. */
 function fakeCore(failure?: { code: number; details: [number, number] }) {
 	const memory = new WebAssembly.Memory({ initial: 1 });
-	const asked: { words: number; vertices: number; indices: number; layout: number }[] = [];
+	const asked: {
+		words: number;
+		vertices: number;
+		indices: number;
+		layout: number;
+		types: number;
+	}[] = [];
 	const glue = {
 		meshArrays: (words: number) => {
-			asked.push({ words, vertices: 0, indices: 0, layout: 0 });
+			asked.push({ words, vertices: 0, indices: 0, layout: 0, types: 0 });
 			return 256;
 		},
-		createMeshFromArrays: (vertices: number, indices: number, layout: number) => {
-			Object.assign(asked[asked.length - 1] as object, { vertices, indices, layout });
+		createMeshFromArrays: (vertices: number, indices: number, layout: number, types: number) => {
+			Object.assign(asked[asked.length - 1] as object, { vertices, indices, layout, types });
 			return failure ? 0 : 7;
 		},
 		lastErrorCode: () => failure?.code ?? 0,
@@ -102,12 +137,51 @@ describe('meshes from arrays in engine memory', () => {
 			MESH_ARRAYS_COLORS_ALPHA |
 			MESH_ARRAYS_INDICES |
 			MESH_ARRAYS_COMPUTE_TANGENTS;
-		expect(asked).toEqual([{ words: 12 + 12 + 8 + 16 + 6, vertices: 4, indices: 6, layout }]);
+		expect(asked).toEqual([
+			{ words: 12 + 12 + 8 + 16 + 6, vertices: 4, indices: 6, layout, types: 0 },
+		]);
 		const floats = new Float32Array(memory.buffer, 256, 48);
 		expect(Array.from(floats.subarray(0, 12))).toEqual([...(QUAD.positions as number[])]);
 		expect(Array.from(floats.subarray(24, 32))).toEqual([0, 0, 1, 0, 1, 1, 0, 1]);
 		expect(floats[32]).toBe(0.5);
 		expect(Array.from(new Uint32Array(memory.buffer, 256 + 48 * 4, 6))).toEqual([0, 1, 2, 0, 2, 3]);
+	});
+
+	test('keep their integers, each array from a whole word, with its type in the format', () => {
+		const { core, memory, asked } = fakeCore();
+		const arrays: MeshArrays = {
+			positions: new Uint16Array([0, 0, 0, 900, 0, 0, 900, 900, 0, 0, 900, 0]),
+			normals: new Int8Array([0, 0, 127, 0, 0, 127, 0, 0, 127, 0, 0, 127]),
+			uvs: { array: new Uint8Array([0, 0, 255, 0, 255, 255, 0, 255]), normalized: true },
+			colors: new Uint8Array(12).fill(200),
+			joints: [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 300],
+			weights: new Float32Array(16).fill(0.25),
+			indices: QUAD.indices,
+		};
+		expect(meshFromArrays(core, arrays, 'geometry.fromArrays')).toBe(7);
+		// Positions 24 bytes, normals 12, texture coordinates 8, colors 12, joints as 16-bit
+		// integers 32, weights 64, then the indices.
+		expect(asked[0]?.words).toBe(6 + 3 + 2 + 3 + 8 + 16 + 6);
+		const types =
+			(typeField(0, VERTEX_TYPE_UINT16) ?? 0) |
+			(typeField(1, VERTEX_TYPE_SNORM8) ?? 0) |
+			(typeField(2, VERTEX_TYPE_UNORM8) ?? 0) |
+			(typeField(5, VERTEX_TYPE_UNORM8) ?? 0) |
+			(typeField(6, VERTEX_TYPE_UINT16) ?? 0);
+		expect(asked[0]?.types).toBe(types);
+		expect(asked[0]?.layout).toBe(
+			MESH_ARRAYS_NORMALS |
+				MESH_ARRAYS_UVS |
+				MESH_ARRAYS_COLORS |
+				MESH_ARRAYS_JOINTS |
+				MESH_ARRAYS_WEIGHTS |
+				MESH_ARRAYS_INDICES,
+		);
+		expect(Array.from(new Uint16Array(memory.buffer, 256, 4))).toEqual([0, 0, 0, 900]);
+		expect(new Int8Array(memory.buffer, 256 + 24, 3)[2]).toBe(127);
+		expect(Array.from(new Uint8Array(memory.buffer, 256 + 36, 3))).toEqual([0, 0, 255]);
+		expect(new Uint16Array(memory.buffer, 256 + 56, 16)[15]).toBe(300);
+		expect(new Float32Array(memory.buffer, 256 + 88, 1)[0]).toBe(0.25);
 	});
 
 	test('that the core refuses name the value it found wrong', () => {
