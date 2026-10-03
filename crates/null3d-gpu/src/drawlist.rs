@@ -654,11 +654,17 @@ pub mod permutation {
     /// sRGB encoding. WebGPU builds use 16-bit floats, which need the device feature
     /// `shader-f16`, and WebGL2 builds run that math at `mediump`.
     pub const HALF: u32 = 8192;
+    /// The shadow depth template moves the back faces of a caster that draws only those toward
+    /// the light, by up to a texel of the map it draws into. A back face that lies on a receiver,
+    /// such as a box's bottom on the ground, then stays in front of it. Without it, a caster's
+    /// faces keep their depth, as the faces of a double-sided caster must: they hold its own lit
+    /// side.
+    pub const CASTER_OFFSET: u32 = 16384;
     /// The final pass adds bloom's levels to the scene color before the output transform.
-    pub const BLOOM: u32 = 16384;
+    pub const BLOOM: u32 = 32768;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 15] = [
+    pub const NAMES: [(&str, u32); 16] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -673,6 +679,7 @@ pub mod permutation {
         ("DEBUG_VIEW_HIGH", DEBUG_VIEW_HIGH),
         ("PREPASS", PREPASS),
         ("HALF", HALF),
+        ("CASTER_OFFSET", CASTER_OFFSET),
         ("BLOOM", BLOOM),
     ];
 

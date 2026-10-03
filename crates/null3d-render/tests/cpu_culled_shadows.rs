@@ -222,7 +222,7 @@ fn each_cascade_lists_the_casters_and_draws_their_depth_into_its_layer() {
                 depth[0][6]
             ],
             [
-                draw_index,
+                draw_index | permutation::CASTER_OFFSET,
                 format::NONE,
                 format::DEPTH32_FLOAT,
                 1,
