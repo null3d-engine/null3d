@@ -194,6 +194,15 @@ pipelines.solid = { vertex = "vs_main", fragment = "fs_solid" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
 
+# A test shader for cube, 3D and high dynamic range textures, which the cube and 3D texture replay
+# test page draws with. The engine does not import it, so its download does not hold it.
+[shaders.test_cubes]
+file = "test_cubes.wgsl"
+pipelines.sample = { vertex = "vs_main", fragment = "fs_sample" }
+pipelines.face = { vertex = "vs_face", fragment = "fs_solid" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
+
 # A test shader for the shader library, which the library test page draws with: each case runs one
 # library function on the GPU. Each variant holds the functions of one library module, so that no
 # driver has to compile the whole library as one shader. The engine does not import it, so its

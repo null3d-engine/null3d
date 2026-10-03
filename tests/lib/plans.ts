@@ -61,6 +61,7 @@ import {
 } from '../../packages/engine/src/quality/chooser.ts';
 import type { Tier as EngineTier } from '../../packages/engine/src/shared/tier.ts';
 import { IMAGE_RUNS, manifestRun } from '../image/manifest.ts';
+import { type AnimationResult, animationProblems } from '../pages/lib/animation.ts';
 import { distanceLabel, PRECISION, type PrecisionFacts } from '../pages/lib/depth-precision.ts';
 import {
 	GOVERNOR_STAGES,
@@ -179,6 +180,8 @@ export type Check =
 	| { kind: 'governor'; tier: Tier; stage: GovernorStage }
 	/** The skinning page, which draws on WebGL2 alone, with its crowd and its cascades. */
 	| { kind: 'skinning'; tier: 'webgl2'; characters: number; cascades: number }
+	/** The animation page, which times the core's animation step on the job workers for a crowd. */
+	| { kind: 'animation'; characters: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
 	| { kind: 'startup'; mode: EngineMode; load: LoadKind; first?: true }
 	/** The tab memory page, which grows one kind of memory until something gives. */
@@ -760,6 +763,24 @@ export function skinningPlan(): PlanItem<Check>[] {
 	);
 }
 
+/** The crowds that the animation plan times: a first draft of S5's crowd, then the full crowd. */
+export const ANIMATION_CHARACTERS = [100, 500] as const;
+
+/**
+ * The animation page at each crowd size. Each page starts the core and its job workers, then times
+ * the animation step over a few hundred frames, which takes a few seconds on a phone.
+ */
+export function animationPlan(): PlanItem<Check>[] {
+	return ANIMATION_CHARACTERS.map((characters) =>
+		pageItem(
+			`animation-${characters}`,
+			'animation',
+			{ kind: 'animation', characters },
+			{ switches: [`characters=${characters}`], timeoutSeconds: 60 },
+		),
+	);
+}
+
 /** How long a stage of the governor's stress test may take: its waits, plus the start. */
 const GOVERNOR_TIMEOUT_SECONDS = 150;
 
@@ -1056,6 +1077,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	startup: startupPlan,
 	overload: overloadPlan,
 	skinning: skinningPlan,
+	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
 	soak: soakPlan,
 	'warm-up-time': warmUpTimePlan,
@@ -1516,6 +1538,8 @@ export function judge(
 		}
 		case 'skinning':
 			return skinningProblems(result as ItemResult & SkinningResult);
+		case 'animation':
+			return animationProblems(result as ItemResult & AnimationResult);
 		case 'tab-memory':
 			return growthProblems(result, context?.progress);
 		case 'soak':
@@ -1831,6 +1855,39 @@ export function governorSummary(
 
 /** Milliseconds to two decimal places, or a dash when there are none. */
 const msText = (ms: number | null) => (ms === null ? '-' : ms.toFixed(2));
+
+/**
+ * The animation page's results as a Markdown table: for each crowd, the joints per character, the
+ * job workers, the step's median, 90th percentile and mean on the page's thread, and the job
+ * workers' busy time per frame. Undefined when the plan has no animation pages.
+ */
+export function animationSummary(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): string | undefined {
+	const rows = items.flatMap(({ id, check }) => {
+		if (check.kind !== 'animation') return [];
+		const result = resultOf(id);
+		if (!result?.ok)
+			return [`| ${check.characters} | ${result ? failureText(result) : NO_RESULT} | | | | | |`];
+		const { joints, jobWorkers, step, jobMsPerFrame } = result as ItemResult & AnimationResult;
+		const cells = [
+			String(check.characters),
+			String(joints),
+			String(jobWorkers),
+			...[step.medianMs, step.p90Ms, step.meanMs, jobMsPerFrame].map(msText),
+		];
+		return [`| ${cells.join(' | ')} |`];
+	});
+	if (rows.length === 0) return undefined;
+	return [
+		"Each frame, every character blends two clips. Step: ms on the page's thread per frame. Job workers: their busy ms per frame, added up.",
+		'',
+		'| Characters | Joints | Job workers | Step median | Step p90 | Step mean | Job workers |',
+		'| --- | --- | --- | --- | --- | --- | --- |',
+		...rows,
+	].join('\n');
+}
 
 /**
  * The skinning page's results as a Markdown table: for each crowd and cascade count, the

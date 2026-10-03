@@ -18,7 +18,8 @@ use std::simd::prelude::*;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use common::{Rng, Workers, mul4, perspective, translation, wait_for_every_thread};
+use common::{Rng, Workers, character, mul4, perspective, translation, wait_for_every_thread};
+use null3d_core::animation::Animations;
 use null3d_core::cells::CellTable;
 use null3d_core::culling::{
     CullOutput, Frustum, cull_parallel, cull_spheres, cull_spheres_reference,
@@ -294,6 +295,46 @@ fn bench_s1_batch_update() {
             micros(median),
             micros(best)
         );
+    }
+}
+
+#[test]
+#[ignore = "benchmark: run with --release --ignored"]
+fn bench_animation_crowd() {
+    // S5's crowd: each character blends two clips at times of its own, as a crossfade does.
+    const JOINTS: u32 = 48;
+    println!("\nanimation: characters of {JOINTS} joints, each blending two clips, per frame");
+    for characters in [100u32, 500] {
+        for workers in [0, 1, 3, 7] {
+            let (skeleton, clips) = character(JOINTS);
+            let pool = Workers::start(workers);
+            let jobs: &JobSystem = pool.jobs();
+            let mut animations = Animations::new(jobs, characters, characters * JOINTS).unwrap();
+            let id = animations.add_skeleton(skeleton).unwrap();
+            let ids: Vec<u32> = clips
+                .into_iter()
+                .map(|clip| animations.add_clip(id, clip).unwrap())
+                .collect();
+            for _ in 0..characters {
+                animations.add_instance(id).unwrap();
+            }
+            let mut frame = 0u32;
+            let (median, best) = median_and_fastest(500, || {
+                for i in 0..characters {
+                    let t = (frame + i * 7) as f32 / 60.0;
+                    animations.set_sample(i, 0, ids[0], t % 1.0, 0.6);
+                    animations.set_sample(i, 1, ids[1], (t * 1.3) % 0.75, 0.4);
+                }
+                animations.update(jobs);
+                frame += 1;
+            });
+            println!(
+                "  {characters} characters, {} threads: median {:>7.1} µs, fastest {:>7.1} µs",
+                workers + 1,
+                micros(median),
+                micros(best)
+            );
+        }
     }
 }
 

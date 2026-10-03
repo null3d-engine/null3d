@@ -61,12 +61,34 @@ async function answers(url: string): Promise<boolean> {
 
 /** Servers that this process started and has not stopped yet. */
 const running = new Set<ChildProcess>();
+/** Work that a signal waits for before the process ends, such as ending remote sessions. */
+const cleanups = new Set<() => Promise<unknown>>();
 const STOP_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
+/** How long a signal waits for the cleanups before the process ends anyway. */
+const CLEANUP_LIMIT_MS = 20_000;
+let stopping = false;
 
-/** Stops every server this process started, then ends the process as the signal asks. */
-function stopAllAndExit(signal: NodeJS.Signals): void {
+/**
+ * Runs the cleanups, for a limited time, then stops every server this process started and ends the
+ * process as the signal asks. A second signal while the first one's cleanups run changes nothing.
+ */
+async function stopAllAndExit(signal: NodeJS.Signals): Promise<void> {
+	if (stopping) return;
+	stopping = true;
+	await Promise.race([
+		Promise.allSettled([...cleanups].map((cleanup) => cleanup())),
+		new Promise((resolve) => setTimeout(resolve, CLEANUP_LIMIT_MS)),
+	]);
 	for (const child of running) child.kill();
 	process.exit(128 + (constants.signals[signal] ?? 1));
+}
+
+/** Listens for the stop signals while any server or cleanup needs them, and not after. */
+function updateSignalHandlers(): void {
+	const listening = process.listeners('SIGINT').includes(stopAllAndExit);
+	const needed = running.size > 0 || cleanups.size > 0;
+	if (needed && !listening) for (const signal of STOP_SIGNALS) process.on(signal, stopAllAndExit);
+	if (!needed && listening) for (const signal of STOP_SIGNALS) process.off(signal, stopAllAndExit);
 }
 
 /**
@@ -75,16 +97,29 @@ function stopAllAndExit(signal: NodeJS.Signals): void {
  * server stays behind on its port for the next run to trip over.
  */
 export function trackServer(child: ChildProcess): () => void {
-	if (running.size === 0) for (const signal of STOP_SIGNALS) process.on(signal, stopAllAndExit);
 	running.add(child);
+	updateSignalHandlers();
 	const forget = () => {
 		running.delete(child);
-		if (running.size === 0) for (const signal of STOP_SIGNALS) process.off(signal, stopAllAndExit);
+		updateSignalHandlers();
 	};
 	child.once('exit', forget);
 	return () => {
 		forget();
 		child.kill();
+	};
+}
+
+/**
+ * Runs `cleanup` when a signal stops the process, before its servers stop, and returns the function
+ * that forgets it. The process waits a limited time for it.
+ */
+export function onStopSignal(cleanup: () => Promise<unknown>): () => void {
+	cleanups.add(cleanup);
+	updateSignalHandlers();
+	return () => {
+		cleanups.delete(cleanup);
+		updateSignalHandlers();
 	};
 }
 

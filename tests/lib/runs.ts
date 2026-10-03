@@ -295,6 +295,25 @@ export function turnBatches(runners: readonly Runner[]): string[][] {
 	return batches;
 }
 
+/**
+ * Runs `work` for each item, at most `lanes` at a time: each lane takes the next item as soon as its
+ * last one ends. Waits for every lane, then throws the first error that any lane threw.
+ */
+export async function inLanes<T>(
+	items: readonly T[],
+	lanes: number,
+	work: (item: T) => Promise<void>,
+): Promise<void> {
+	let next = 0;
+	const lane = async () => {
+		while (next < items.length) await work(items[next++] as T);
+	};
+	const count = Math.max(1, Math.min(lanes, items.length));
+	const ended = await Promise.allSettled(Array.from({ length: count }, lane));
+	const failed = ended.find((result) => result.status === 'rejected');
+	if (failed) throw failed.reason;
+}
+
 /** Time a batch may take: every page's timeout, plus time to open the browser and pause between pages. */
 export function batchTimeoutMs(plan: Plan): number {
 	const PER_ITEM_SLACK_SECONDS = 5;
@@ -358,6 +377,13 @@ export interface WaitOptions<Check = unknown> {
 	/** The quiet time for a page, by default the page's timeout and time to open it. */
 	quietMs?: (item: PlanItem<Check>) => number;
 	/**
+	 * How long a runner page may take to start, for runners whose pages the tool opens itself on a
+	 * remote device. Without it, a runner that never starts waits for the plan's time.
+	 */
+	startMs?: number;
+	/** Reports a runner page that did not start within `startMs`. */
+	onNoStart?: (runner: string, seconds: number) => void;
+	/**
 	 * Looks at a runner's new results, and returns true when its turn must end now, as when its
 	 * browser keeps refusing memory. The wait then stops waiting for it.
 	 */
@@ -367,8 +393,8 @@ export interface WaitOptions<Check = unknown> {
 /**
  * Waits until each runner has finished the run, or has gone quiet after it started, or `endTurn`
  * ended its turn, or the plan's time runs out. A runner that never starts waits for the plan's time,
- * as a page on a tablet may need someone to open it. A runner page that `onQuiet` replaces adds its
- * quiet time to the plan's time. Returns the runners that finished.
+ * as a page on a tablet may need someone to open it, or for `startMs` where given. A runner page
+ * that `onQuiet` replaces adds its quiet time to the plan's time. Returns the runners that finished.
  */
 export async function waitForRunners<Check>(
 	plan: Plan<Check>,
@@ -378,9 +404,12 @@ export async function waitForRunners<Check>(
 		onQuiet = () => false,
 		quietMs = quietLimitMs,
 		endTurn = () => false,
+		startMs,
+		onNoStart = () => {},
 	}: WaitOptions<Check> = {},
 ): Promise<string[]> {
-	let deadline = Date.now() + batchTimeoutMs(plan);
+	const startedAt = Date.now();
+	let deadline = startedAt + batchTimeoutMs(plan);
 	const done: string[] = [];
 	const waiting = new Set(runners);
 	/** When the runner tool last opened a new runner page for a runner that went quiet. */
@@ -400,7 +429,14 @@ export async function waitForRunners<Check>(
 				onFinish(runner);
 				continue;
 			}
-			if (last === undefined) continue;
+			if (last === undefined) {
+				const waited = Date.now() - startedAt;
+				if (startMs !== undefined && waited > startMs) {
+					waiting.delete(runner);
+					onNoStart(runner, Math.round(waited / 1000));
+				}
+				continue;
+			}
 			const at = currentItem(plan, runner);
 			const limit = at ? quietMs(at.item) : LOAD_SECONDS * 1000;
 			const quiet = Date.now() - last;
