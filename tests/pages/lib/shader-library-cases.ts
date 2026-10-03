@@ -170,6 +170,13 @@ const samples =
 const uniform = (count: number, low: number, high: number) =>
 	samples((random) => new Inputs().setF(0, values(random, count, low, high)));
 
+/**
+ * A fractal noise case with many octaves near the origin, where the last octave's point stays
+ * small enough for 32-bit floats to keep its noise exact. It reaches octave scales up to 2^7.
+ */
+const MANY_OCTAVES = 8;
+const MANY_OCTAVES_POINT = [0.37, -0.81, 0.52];
+
 // References for null3d::noise, in 32-bit whole numbers.
 
 function pcg(v: number): number {
@@ -721,18 +728,22 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 	},
 	{
 		name: 'noise::fbm3',
-		cases: (random) =>
-			[0, 1, 3, 5].map((octaves) =>
+		cases: (random) => [
+			...[0, 1, 3, 5].map((octaves) =>
 				new Inputs().setF(0, values(random, 3, -20, 20)).setU(1, [octaves]),
 			),
+			new Inputs().setF(0, MANY_OCTAVES_POINT).setU(1, [MANY_OCTAVES]),
+		],
 		expected: (i) => scalar(fbm(simplex3, xyz(i.f(0)), i.u(1)[0])),
 	},
 	{
 		name: 'noise::fbm2',
-		cases: (random) =>
-			[0, 1, 3, 5].map((octaves) =>
+		cases: (random) => [
+			...[0, 1, 3, 5].map((octaves) =>
 				new Inputs().setF(0, values(random, 2, -20, 20)).setU(1, [octaves]),
 			),
+			new Inputs().setF(0, MANY_OCTAVES_POINT).setU(1, [MANY_OCTAVES]),
+		],
 		expected: (i) => scalar(fbm((p) => simplex2(xy([...p, 0])), [...xy(i.f(0)), 0], i.u(1)[0])),
 	},
 	// null3d::color
