@@ -1,14 +1,19 @@
 // The device checks of the tab memory test, the soak and recovery test, and the warm-up time test:
-// their plans, how the runner tool judges each page, and the run's tables.
+// their plans, how the runner tool judges each page, and the run's tables. Also the smoke plan's
+// choice of pages from the checks plan.
 import { describe, expect, it } from 'bun:test';
 import type { SoakMinute, SoakReport } from '../../bench/pages/lib/device-soak.ts';
 import { DEMOS } from '../../examples/demos.ts';
+import { IMAGE_RUNS } from '../image/manifest.ts';
 import { readGrowthSwitches, WASM_MOST_MIB } from '../pages/lib/tab-memory.ts';
 import { parseArgs, planItems } from '../real-browsers.ts';
 import { ENGINE_MODES } from './engine-checks.ts';
 import {
+	checksPlan,
 	judge,
 	NONE_MISSING,
+	SMOKE_IMAGE_TESTS,
+	smokePlan,
 	soakPlan,
 	soakSummary,
 	tabMemoryPlan,
@@ -21,6 +26,53 @@ import { tabEndedResult } from './tab-end.ts';
 import type { WarmUpTimeResult } from './warm-up-time.ts';
 
 const switches = (query: string) => readGrowthSwitches(new URLSearchParams(query));
+
+describe('the smoke plan', () => {
+	const smoke = smokePlan();
+	const ids = smoke.map(({ id }) => id);
+
+	it('keeps pages of the checks plan, in its order', () => {
+		const checks = checksPlan().map(({ id }) => id);
+		expect(ids).toEqual(checks.filter((id) => ids.includes(id)));
+		expect(ids.length).toBeLessThan(checks.length / 5);
+	});
+
+	it("runs each of its image tests on every tier the test draws on, in the test's first mode", () => {
+		const images = smoke.flatMap(({ check }) => (check.kind === 'image' ? [check.run] : []));
+		for (const test of SMOKE_IMAGE_TESTS) {
+			const firstRuns = IMAGE_RUNS.filter((run) => run.test === test && run.sameAs === undefined);
+			expect(firstRuns.length).toBeGreaterThan(0);
+			expect(images.filter((run) => run.test === test)).toEqual(firstRuns);
+		}
+		expect(images.every(({ test }) => SMOKE_IMAGE_TESTS.has(test))).toBe(true);
+	});
+
+	it('restarts the engine once in each build, and keeps the capability, shader and path pages', () => {
+		const restarts = smoke.flatMap(({ check }) => (check.kind === 'restarts' ? [check.mode] : []));
+		expect(restarts.map(({ build }) => build)).toEqual(['threaded', 'single']);
+		expect(restarts.map(({ name }) => name)).toEqual([ENGINE_MODES[0]?.name, 'single-threaded']);
+		for (const id of [
+			'capabilities',
+			'isolation',
+			'shaders',
+			'uploads',
+			'shader-library-webgpu',
+			'shader-library-webgl2',
+			'preset-change-webgl2',
+			'warm-up-webgpu',
+			'warm-up-webgl2',
+			'stats-webgl2',
+		])
+			expect(ids).toContain(id);
+		expect(ids).not.toContain('warm-up-webgl2-compile-wait');
+		expect(ids).not.toContain('capabilities-reload');
+	});
+
+	it('is a plan that the runner takes by name', () => {
+		expect(parseArgs(['--plan', 'smoke', '--lan', 'tb-android']).plan).toBe('smoke');
+		expect(planItems(parseArgs(['--plan', 'smoke']))?.map(({ id }) => id)).toEqual(ids);
+	});
+});
 
 describe("the tab memory page's switches", () => {
 	it('grow GPU memory on a GPU path, and WebAssembly memory up to its maximum', () => {
