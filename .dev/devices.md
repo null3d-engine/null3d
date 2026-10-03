@@ -204,10 +204,10 @@ To collect the numbers, rest each device first and close its other tabs:
 
 - The `warm-up-time` plan closes T-26, for [D-13](decisions/D-13-shader-variants.md) and the loading screens guide. The page (`tests/pages/warm-up-time.html`) starts a sketch on a canvas that fills the window, at the preset that the engine chooses.
 - Each load reports its pipeline wait: the warm-up, `load.warmUpMs`, plus the first draw, `load.firstDrawMs`. Where the browser cannot compile WebGL2 programs in the background, the warm-up is about 0 and the first draw waits for the compiles. Each load also reports the time from `createEngine` until the first frame was on screen.
-- The plan loads each benchmark scene at its own count and each demo, on each GPU path. The first two loads take `?shaders=fresh`, which gives each shader's text a new comment, so the browser cannot reuse programs that it compiled before. Then two loads take the shaders as they ship. The last of them reuses what the browser compiled for the first, as a repeat visit does.
+- The plan loads each benchmark scene at its own count and each demo, on each GPU path. The first two loads are first visits. They take `?shaders=fresh`, which gives each shader's text a new comment, so the browser cannot reuse programs that it compiled before. They also take `?check=fresh`, so the preset check measures again. Then two loads take the shaders as they ship and the preset check's stored result, as repeat visits do. The last of them reuses what the browser compiled for the first.
 - A fresh comment stops the browser's cache of compiled programs, which keys on the shader's text. A GPU driver may still keep compiled code of its own.
 - The phone runs it with `bun tests/real-browsers.ts --plan warm-up-time --allow-no-webgpu --android chrome`, and the iPad with `--lan ipad-safari`.
-- D-13 holds the results of 2 October 2026. On the iPad, the time until the first frame is mostly the preset check, about 1 s for each preset that it measures. The S24+ starts at Low, which skips the check.
+- D-13 holds the results of 2 October 2026. On the iPad, the time until the first frame is mostly the preset check, about 1 s for each preset that it measures. The S24+ starts at Low, which skips the check. Since [D-17](decisions/D-17-stored-preset-check.md), repeat visits take the check's stored result instead.
 
 ## Browser apps on the Mac
 

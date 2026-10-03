@@ -8,7 +8,7 @@ summary: "quality.preset, quality.set, quality.setPreset, the preset check, fram
 
 # Quality API
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy`, `uploadBytesPerFrame`, `shadowFilter`, `farCascadeInterval` and `governor`. `quality.settings` also holds `antialias`, `shadowTiles`, `shadowTileSize`, `pointLightShadows` and `depthPrepass`, which stay fixed while the engine runs. The settings that the preset table marks as planned are not built yet. Neither are frame budgets for a sketch's own systems (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy`, `uploadBytesPerFrame`, `shadowFilter`, `farCascadeInterval` and `governor`. `quality.settings` also holds `antialias`, `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `pointLightShadows` and `depthPrepass`, which stay fixed while the engine runs. The settings that the preset table marks as planned are not built yet. Neither are frame budgets for a sketch's own systems (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
 
 `ctx.quality` gives a sketch the quality preset that the engine runs and its settings. The sketch can change the settings that change during play, switch to another preset, and hear when either changes. [Quality presets](../concepts/quality-presets.md) explains how the engine chooses and checks the preset, and lists each preset's values.
 
@@ -35,7 +35,7 @@ The page names the preset with the `preset` option of `createEngine`, or leaves 
 ```ts
 const engine = await createEngine({ canvas, sketch, preset: 'auto' });
 console.log(engine.mode.preset, engine.mode.crashedStarts, engine.mode.memoryMaximumMiB);
-console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: [...] }, or null
+console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: [...], reused: false }, or null
 ```
 
 | Option or switch | What it does |
@@ -169,6 +169,7 @@ What the preset check measured when the engine started, as `engine.mode.presetCh
 | `from: QualityPreset` | The preset that the engine chose from the device before the check. |
 | `targetFps: number` | The frame rate that each preset had to hold: the display's refresh rate, at most 60. |
 | `rounds: PresetCheckRound[]` | Each preset that the check measured, from `from` down. The last is the preset that the engine runs. |
+| `reused: boolean` | True when the engine took this result from an earlier start of the sketch in this browser on this device, and did not measure again. The engine stores each check's result for a week. |
 
 ### `PresetCheckRound`
 
@@ -235,6 +236,8 @@ The quality settings that a sketch reads and changes through `ctx.quality`. Each
 | `farCascadeInterval: number` | How often each far shadow cascade draws: once in this many frames, a whole number from 1 to 8. The nearest cascade draws in every frame, and the far ones take turns. A higher value costs less, and far shadows then lag their moving casters by a few frames. It changes during play. |
 | `governor: boolean` | Whether the frame-budget governor runs. When frames take too long, it lowers the render scale toward `minRenderScale`, then how often far shadow cascades draw, then the shadow filter. It raises them again, in the reverse order, once frames have time to spare. `quality.governor` reports its steps. False keeps the render scale at `maxRenderScale` and the shadow settings as set, as benchmarks and captures need. It changes during play. |
 | `antialias: 'none' \| 'fxaa' \| 'msaa'` | How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa` smooths edges in the final pass, and `none` leaves them sharp. The mode is fixed when the engine starts: the page's `antialias` option of `createEngine` sets it, and `set` does not take it. |
+| `shadowCascades: number` | The cascades of a directional light's shadows, a whole number from 1 to 4, for each light whose `shadow` options name none. More cascades keep shadows sharp further from the camera, and each draws the shadow casters once more. The `shadowCascades` option of `createEngine` sets it, and `set` does not take it. |
+| `shadowMapSize: number` | Texels on each side of each cascade's shadow map, for each directional light whose `shadow` options name no `mapSize`: 512, 1,024, 2,048 or 4,096. A larger map gives sharper shadow edges and takes more memory, 4 bytes per texel in each cascade. The `shadowMapSize` option of `createEngine` sets it, and `set` does not take it. |
 | `shadowTiles: number` | The most tiles of the shadow atlas, which spot and point lights cast their shadows into: a spot light takes one tile. When more lights cast shadows than the tiles hold, the lights that look largest from the camera get them. It takes a whole number from 0, which turns the shadows of spot and point lights off, to 24. The `shadowTiles` option of `createEngine` sets it, and `set` does not take it. |
 | `shadowTileSize: number` | Texels on each side of each tile of the shadow atlas: 256, 512, 1,024 or 2,048. Larger tiles give sharper shadows and take more memory, 4 bytes per texel. The `shadowTileSize` option of `createEngine` sets it, and `set` does not take it. |
 | `pointLightShadows: boolean` | True when point lights cast shadows. Each point light that casts them takes six tiles of the shadow atlas, one for each face of a cube around it, within `shadowTiles`. The `pointLightShadows` option of `createEngine` sets it, and `set` does not take it. |

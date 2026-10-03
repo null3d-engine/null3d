@@ -271,7 +271,7 @@ describe('the warm-up time plan', () => {
 			'warm-up-s1-webgpu-plain-2',
 		]);
 		expect(items[0]?.path).toBe(
-			'/tests/pages/warm-up-time.html?gpu=webgpu&shaders=fresh&sketch=/bench/pages/null3d/s1-sketch.ts%3Fn%3D100000',
+			'/tests/pages/warm-up-time.html?gpu=webgpu&shaders=fresh&check=fresh&sketch=/bench/pages/null3d/s1-sketch.ts%3Fn%3D100000',
 		);
 		expect(items.some((item) => item.id === 'warm-up-demo-instances-webgl2-plain-2')).toBe(true);
 	});

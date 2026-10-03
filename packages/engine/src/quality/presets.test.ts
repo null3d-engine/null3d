@@ -72,16 +72,16 @@ describe('the preset table', () => {
 
 	it('orders each list of choices from the lightest to the heaviest', () => {
 		expect(QUALITY_SETTINGS.antialias.values).toEqual(['none', 'fxaa', 'msaa']);
-		expect(PLANNED_SETTINGS.shadowMapSize.values).toEqual([512, 1024, 2048, 4096]);
+		expect(QUALITY_SETTINGS.shadowMapSize.values).toEqual([512, 1024, 2048, 4096]);
 		expect(QUALITY_SETTINGS.shadowFilter.values).toEqual([3, 5]);
 	});
 
 	it('keeps every preset within the portable GPU budget', () => {
 		// The largest 2D texture that every WebGPU device offers: compatibility mode's 4096 texels.
-		for (const size of PLANNED_SETTINGS.shadowMapSize.values)
+		for (const size of QUALITY_SETTINGS.shadowMapSize.values)
 			expect(size).toBeLessThanOrEqual(4096);
 		// A texture array holds the cascades, and every device allows 256 layers.
-		expect(PLANNED_SETTINGS.shadowCascades.values.max).toBeLessThanOrEqual(256);
+		expect(QUALITY_SETTINGS.shadowCascades.values.max).toBeLessThanOrEqual(256);
 		// WebGPU samplers take an anisotropy of at most 16.
 		expect(QUALITY_SETTINGS.maxAnisotropy.values.max).toBe(16);
 		// The render scale draws into a corner of targets made at the full size, never past it.
@@ -96,6 +96,8 @@ describe('the preset table', () => {
 			'minRenderScale',
 			'maxRenderScale',
 			'antialias',
+			'shadowCascades',
+			'shadowMapSize',
 			'shadowFilter',
 			'farCascadeInterval',
 			'shadowTiles',
@@ -131,6 +133,8 @@ describe('the preset table', () => {
 			'farCascadeInterval',
 			'governor',
 			'antialias',
+			'shadowCascades',
+			'shadowMapSize',
 			'shadowTiles',
 			'shadowTileSize',
 			'pointLightShadows',
@@ -177,6 +181,8 @@ describe('presetSettings', () => {
 			maxAnisotropy: 2,
 			uploadBytesPerFrame: 2 * MIB,
 			antialias: 'fxaa',
+			shadowCascades: 2,
+			shadowMapSize: 1024,
 			shadowTiles: 4,
 			shadowTileSize: 512,
 			pointLightShadows: false,
@@ -185,11 +191,13 @@ describe('presetSettings', () => {
 			maxPixelRatio: 2,
 			minRenderScale: 0.6,
 			...full,
-			shadowFilter: 3,
+			shadowFilter: 5,
 			farCascadeInterval: 3,
 			maxAnisotropy: 4,
 			uploadBytesPerFrame: 4 * MIB,
 			antialias: 'msaa',
+			shadowCascades: 3,
+			shadowMapSize: 2048,
 			shadowTiles: 8,
 			shadowTileSize: 512,
 			pointLightShadows: false,
@@ -203,6 +211,8 @@ describe('presetSettings', () => {
 			maxAnisotropy: 8,
 			uploadBytesPerFrame: 8 * MIB,
 			antialias: 'msaa',
+			shadowCascades: 3,
+			shadowMapSize: 2048,
 			shadowTiles: 16,
 			shadowTileSize: 1024,
 			pointLightShadows: true,
@@ -216,6 +226,8 @@ describe('presetSettings', () => {
 			maxAnisotropy: 16,
 			uploadBytesPerFrame: 16 * MIB,
 			antialias: 'msaa',
+			shadowCascades: 4,
+			shadowMapSize: 4096,
 			shadowTiles: 24,
 			shadowTileSize: 1024,
 			pointLightShadows: true,
@@ -229,6 +241,8 @@ describe('presetSettings', () => {
 		expect(presetSettings('ultra', { shadowTiles: 0 }).shadowTiles).toBe(0);
 		expect(presetSettings('low', { shadowTileSize: 2048 }).shadowTileSize).toBe(2048);
 		expect(presetSettings('low', { pointLightShadows: true }).pointLightShadows).toBe(true);
+		expect(presetSettings('low', { shadowCascades: 4 }).shadowCascades).toBe(4);
+		expect(presetSettings('ultra', { shadowMapSize: 512 }).shadowMapSize).toBe(512);
 	});
 
 	it("reads one setting's value on a preset", () => {

@@ -169,8 +169,8 @@ The shadows of a directional light. The camera's view splits into cascades by di
 
 | Member | Description |
 | --- | --- |
-| `cascades?: number` | The cascades, a whole number from 1 to 4. More cascades keep shadows sharp further from the camera, and each draws the shadow casters once more. The default is 3. |
-| `mapSize?: number` | Texels on each side of each cascade's shadow map: 256, 512, 1,024, 2,048 or 4,096. The default is 2,048. |
+| `cascades?: number` | The cascades, a whole number from 1 to 4. More cascades keep shadows sharp further from the camera, and each draws the shadow casters once more. The default is the quality preset's `shadowCascades`. |
+| `mapSize?: number` | Texels on each side of each cascade's shadow map: 256, 512, 1,024, 2,048 or 4,096. The default is the quality preset's `shadowMapSize`. |
 | `bias?: number` | How far each receiving surface moves toward the light before its shadow test, in texels of its cascade, at least 0. Raise it when surfaces show stripes of shadow on themselves. The default is 0.5. |
 | `normalBias?: number` | How far each receiving surface moves along its normal before its shadow test, in texels of its cascade, at least 0. The default is 1. |
 | `distance?: number` | The distance from the camera in meters, along its view, out to which shadows fall, above 0. Shadows fade out over the last tenth of it. The camera's far plane ends them sooner. The default is 200. |

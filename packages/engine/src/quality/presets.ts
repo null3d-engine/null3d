@@ -90,9 +90,10 @@ export const QUALITY_SETTINGS = {
 		values: { min: 64 * 1024, max: 64 * MIB, whole: true },
 	},
 	// The texels on each side of the square that blends each shadow's edge. The shaders read it
-	// from a uniform, so it changes during play with no new pipeline.
+	// from a uniform, so it changes during play with no new pipeline. Tablets draw at a pixel ratio
+	// of 2, where the smaller square's edges look jagged, so Medium takes the larger one too.
 	shadowFilter: {
-		presets: [3, 3, 5, 5],
+		presets: [3, 5, 5, 5],
 		changes: 'live',
 		values: [3, 5],
 	},
@@ -115,6 +116,21 @@ export const QUALITY_SETTINGS = {
 		presets: ['fxaa', 'msaa', 'msaa', 'msaa'],
 		changes: 'start',
 		values: ['none', 'fxaa', 'msaa'],
+	},
+	// The cascades of a directional light's shadows, and the texels on each side of each cascade's
+	// layer of the shadow map, for each light that names neither. A light takes them when it is
+	// created, and the shadow map's size follows from them. One cascade spreads its texels over the
+	// whole shadow distance, which blurs the near shadows, so Low keeps two. Medium keeps three,
+	// as two make the near shadows coarser on a tablet's sharp screen.
+	shadowCascades: {
+		presets: [2, 3, 3, 4],
+		changes: 'start',
+		values: { min: 1, max: 4, whole: true },
+	},
+	shadowMapSize: {
+		presets: [1024, 2048, 2048, 4096],
+		changes: 'start',
+		values: [512, 1024, 2048, 4096],
 	},
 	// The tiles of the shadow atlas that spot and point lights cast their shadows into: a spot light
 	// takes one, and a point light six. The lights that look largest from the camera get them
@@ -229,6 +245,20 @@ export interface QualitySettings {
 	 */
 	antialias: 'none' | 'fxaa' | 'msaa';
 	/**
+	 * The cascades of a directional light's shadows, a whole number from 1 to 4, for each light whose
+	 * `shadow` options name none. More cascades keep shadows sharp further from the camera, and each
+	 * draws the shadow casters once more. The `shadowCascades` option of `createEngine` sets it, and
+	 * `set` does not take it.
+	 */
+	shadowCascades: number;
+	/**
+	 * Texels on each side of each cascade's shadow map, for each directional light whose `shadow`
+	 * options name no `mapSize`: 512, 1,024, 2,048 or 4,096. A larger map gives sharper shadow edges
+	 * and takes more memory, 4 bytes per texel in each cascade. The `shadowMapSize` option of
+	 * `createEngine` sets it, and `set` does not take it.
+	 */
+	shadowMapSize: number;
+	/**
 	 * The most tiles of the shadow atlas, which spot and point lights cast their shadows into: a
 	 * spot light takes one tile. When more lights cast shadows than the tiles hold, the lights that
 	 * look largest from the camera get them. It takes a whole number from 0, which turns the
@@ -307,6 +337,29 @@ export function presetSettings(
 	for (const name of SKETCH_SETTINGS)
 		settings[name] = (options as Record<string, unknown>)[name] ?? presetValue(name, preset);
 	return settings as unknown as QualitySettings;
+}
+
+/** The settings in `settings` that a sketch reads but cannot change during play. */
+export function startValues(settings: QualitySettings): Partial<QualitySettings> {
+	const values: Record<string, unknown> = {};
+	const all = settings as unknown as Record<string, unknown>;
+	for (const name of SKETCH_SETTINGS) if (!LIVE_SETTINGS.includes(name)) values[name] = all[name];
+	return values as Partial<QualitySettings>;
+}
+
+/**
+ * The settings of a start on `from` that the preset check lowered to `to`: `to`'s values for the
+ * settings that change during play, and `from`'s for those fixed at the start, with the values in
+ * `options` where the page's options give them. These are the settings that the check's steps
+ * leave, so a start that reuses an earlier check runs them from its first frame.
+ */
+export function checkedSettings(
+	from: QualityPreset,
+	to: QualityPreset,
+	options: Partial<QualitySettings> = {},
+): QualitySettings {
+	const start = presetSettings(from, options);
+	return to === from ? start : presetSettings(to, { ...options, ...startValues(start) });
 }
 
 /** "a, b or c", for the choices in an error message. */

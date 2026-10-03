@@ -13,16 +13,6 @@ import { MIB, QUALITY_SETTINGS, type Setting, type SettingChange } from './prese
  * feature moves its row into the engine's table (presets.ts) when it applies the setting.
  */
 export const PLANNED_SETTINGS = {
-	shadowCascades: {
-		presets: [1, 2, 3, 4],
-		changes: 'start',
-		values: { min: 1, max: 4, whole: true },
-	},
-	shadowMapSize: {
-		presets: [1024, 2048, 2048, 4096],
-		changes: 'start',
-		values: [512, 1024, 2048, 4096],
-	},
 	maxLights: {
 		presets: [256, 256, 512, 1024],
 		changes: 'start',
