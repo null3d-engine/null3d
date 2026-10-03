@@ -104,7 +104,7 @@ Textures are capped at 2048 x 2048, which the 32-bit encoder takes. A 64-bit bui
 | Texture coordinates | 16-bit normalized integers when every value lies from 0 to 1, else floats | Values past 1 would need a texture transform, and the engine's materials keep one transform for all maps |
 | Colors, joint weights | Normalized bytes; weights keep their sum at one | |
 | Index buffers | 16 bits when the vertices allow | |
-| Compression | None by default; `--compression meshopt` writes `EXT_meshopt_compression`, lossless | The engine reads meshopt only once M2-A3 lands. glTF-Transform writes the EXT form only, and the KHR form waits for the engine's decoder |
+| Compression | `EXT_meshopt_compression` by default, lossless; `--compression none` leaves it out | The engine decodes meshopt in its loader's worker and downloads the decoder only for such files ([D-34](D-34-meshopt-decoding.md)). glTF-Transform writes the EXT form only, which the engine reads as it reads the KHR form |
 | Levels of detail | A half, a quarter and an eighth of the triangles, under an error of a tenth of the mesh, in `MSFT_lod` | The extension that exists for levels; three.js and the engine ignore it until they read levels |
 | Texture sizes | Each side at its nearest power of two, then halved together to fit 2048 | Full mip chains, and fewer sizes for the engine's texture arrays |
 | ETC1S | Quality 128, effort 2 | The basisu command's defaults |
@@ -130,7 +130,7 @@ three.js has no asset tool of its own. Its users run other tools, such as gltfpa
 - `packages/cli/src/assets/` holds the tool: the command, the steps for meshes and textures, the encoder's threads, the budget report and the formats module.
 - `crates/null3d-assets-wasm` builds the formats module into `packages/cli/dist/assets.wasm`. `bun run build` makes it, and the CLI's package holds it.
 - `@null3d/cli/assets` exports the steps, and `@null3d/vite-plugin` loads them on the first `?optimized` import. The plugin names the CLI as an optional peer, so a project that imports no model installs no encoder.
-- When M2-A3 lands, meshopt compression becomes the default in `DEFAULT_OPTIONS` of `packages/cli/src/assets/pipeline.js`. The image test `asset-scene-optimized` then draws the compressed output.
+- meshopt compression is the default in `DEFAULT_OPTIONS` of `packages/cli/src/assets/pipeline.js`, for the command and the Vite plugin alike. The image test `asset-scene-optimized` draws the compressed output.
 - The test scene in `tests/lib/asset-scene.ts` and its outputs in `tests/pages/assets/models/` change only with the tool. `NULL3D_WRITE_ASSET_SCENE=1 bun test packages/cli/src/assets/optimize.test.ts` writes them again.
 - Open: layered KTX2 files that group textures of one size. Today the engine gives each compressed texture an array of its own, since compatibility mode copies no compressed texels. So the tool keeps one file per texture and reports the groups.
 - Open: a 64-bit encoder for 4096 x 4096 textures, if a scene needs them.
