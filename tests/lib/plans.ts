@@ -62,7 +62,7 @@ import {
 	type DeviceHints,
 	deviceKind,
 } from '../../packages/engine/src/quality/chooser.ts';
-import type { Tier as GpuPath } from '../../packages/engine/src/shared/tier.ts';
+import type { Tier as EngineTier } from '../../packages/engine/src/shared/tier.ts';
 import { IMAGE_RUNS, manifestRun } from '../image/manifest.ts';
 import { distanceLabel, PRECISION, type PrecisionFacts } from '../pages/lib/depth-precision.ts';
 import {
@@ -102,6 +102,7 @@ import {
 	jobWorkersProblem,
 	THREADED_MODES,
 } from './engine-checks.ts';
+import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './gpu-paths.ts';
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts';
 import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
@@ -115,7 +116,14 @@ import {
 	presetChangeProblems,
 	roundText,
 } from './preset-checks.ts';
-import { failureText, type ItemResult, lastSteps, type PlanItem, slug } from './runs.ts';
+import {
+	failureText,
+	type ItemResult,
+	lastSteps,
+	type PlanFlags,
+	type PlanItem,
+	slug,
+} from './runs.ts';
 import { type StatsResult, statsProblems } from './stats-checks.ts';
 import { progressName, REST_AFTER_TAB_END_SECONDS } from './tab-end.ts';
 import { type WarmUpResult, warmUpProblems } from './warm-up-checks.ts';
@@ -1011,11 +1019,7 @@ const NO_WEBGPU_ERRORS = [
 /** The starts of the errors that mean the browser offers no WebGL2: the test pages' and the engine's. */
 const NO_WEBGL2_ERRORS = ['no WebGL2 context', 'E1301'];
 
-/** The GPU paths a device may lack: a page that needs one it lacks is a skip, not a failure. */
-export type MissingAllowed = Readonly<Record<Tier, boolean>>;
-
-/** Nothing may be missing: every page must run. */
-export const NONE_MISSING: MissingAllowed = { webgpu: false, webgl2: false };
+export { type MissingAllowed, NONE_MISSING };
 
 /**
  * The GPU path a check needs, which a device may lack: its tier, or WebGL2 for the shaders page,
@@ -1025,6 +1029,36 @@ export function neededPath(check: Check): Tier | undefined {
 	if (check.kind === 'image') return gpuApiOf(check.run.tier);
 	if ('tier' in check) return check.tier;
 	return check.kind === 'shaders' ? 'webgl2' : undefined;
+}
+
+/**
+ * The GPU path a page needs: the one that its `?gpu=` switch forces, or else its check's. A page
+ * that does not force WebGPU's core path draws with any WebGPU adapter, as compatibility mode does.
+ */
+export function gpuPathOf({ path, check }: PlanItem<Check>): GpuPath | undefined {
+	const forced = /[?&]gpu=(webgpu|compat|webgl2)\b/.exec(path)?.[1] as GpuPath | undefined;
+	if (forced) return forced;
+	const needed = neededPath(check);
+	return needed === 'webgpu' ? 'compat' : needed;
+}
+
+/**
+ * A plan's items with the GPU path that each page needs, and the flag that lets the runner page
+ * skip the pages for the paths that the device lacks, by the report of the plan's capabilities
+ * page. A plan without that page, or a run that lets no path be missing, runs every page.
+ */
+export function withGpuPaths(
+	items: readonly PlanItem<Check>[],
+	allowed: MissingAllowed,
+): { items: PlanItem<Check>[]; flags: PlanFlags } {
+	const report = items.find((item) => item.check.kind === 'capabilities')?.id;
+	return {
+		items: items.map((item) => {
+			const gpu = gpuPathOf(item);
+			return gpu ? { ...item, gpu } : item;
+		}),
+		flags: report && (allowed.webgpu || allowed.webgl2) ? { skipMissing: { report, allowed } } : {},
+	};
 }
 
 /** True when a page failed because the browser lacks the GPU path `path` altogether. */
@@ -1206,9 +1240,10 @@ export function restartProblems(result: RestartResult): string[] {
 }
 
 /**
- * What is wrong with a page's result; empty when nothing is. A check whose GPU path the browser
- * lacks is a skip when `missing` allows it: some devices have no WebGPU in any browser, and some
- * virtual machines give a browser no WebGL2. A parity check and a second load of the capabilities
+ * What is wrong with a page's result; empty when nothing is. A page that the runner page skipped,
+ * and a check whose GPU path the browser lacks, are skips when `missing` allows it: some devices
+ * have no WebGPU in any browser, some offer only its compatibility mode, and some virtual machines
+ * give a browser no WebGL2. A parity check and a second load of the capabilities
  * page need the context, to reach the result that they compare with.
  */
 export function judge(
@@ -1217,6 +1252,7 @@ export function judge(
 	missing: MissingAllowed,
 	context?: JudgeContext,
 ): string[] | 'skip' {
+	if (skippedPath(result)) return 'skip';
 	if (!result.ok) {
 		const path = neededPath(check);
 		if (path && missing[path] && missingPath(path, result.error)) return 'skip';
@@ -1373,7 +1409,7 @@ export function judge(
 /** What the quality page reports: the preset, the GPU path and the device hints it chose from. */
 interface QualityResult {
 	mode: PresetMode & { crashedStarts: number };
-	tier: GpuPath;
+	tier: EngineTier;
 	hints: DeviceHints;
 }
 

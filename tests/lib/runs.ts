@@ -5,6 +5,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DeviceFacts } from './device-record.ts';
+import type { GpuPath, MissingAllowed } from './gpu-paths.ts';
 import { CURRENT_RUN_FILE, RUNS_DIR } from './report-collector.ts';
 
 export interface PlanItem<Check = unknown> {
@@ -27,6 +28,8 @@ export interface PlanItem<Check = unknown> {
 	 * its progress name, and a dead tab then counts as its result, not as a stopped runner page.
 	 */
 	endsTab?: true;
+	/** The GPU path that the page needs, which the runner page skips it for on a device that lacks it. */
+	gpu?: GpuPath;
 	/** What the command-line tool checks in the result. */
 	check: Check;
 }
@@ -47,10 +50,16 @@ export interface Plan<Check = unknown> {
 	 * depend on the rate, and the measurement adds a second to each page.
 	 */
 	measureRefresh?: true;
+	/**
+	 * Lets a device lack GPU paths. Once the result of the item that `report` names gives the
+	 * device's GPU paths, the runner page skips each later page that needs a path the device lacks,
+	 * where `allowed` lets it lack that path, and posts a skip as the page's result.
+	 */
+	skipMissing?: { report: string; allowed: MissingAllowed };
 }
 
 /** How the runner page runs a plan's pages. */
-export type PlanFlags = Pick<Plan, 'reportOnTop' | 'measureRefresh'>;
+export type PlanFlags = Pick<Plan, 'reportOnTop' | 'measureRefresh' | 'skipMissing'>;
 
 /** The run that waiting runner pages start, and the runners that may start it now. */
 export interface CurrentRun {
