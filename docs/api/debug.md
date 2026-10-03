@@ -3,14 +3,14 @@ id: api/debug
 title: Debug drawing and stats
 status: experimental
 since: "0.1"
-summary: "debug.line, box, sphere, arrow, axes, grid, frustum and light; debug.stats and frameStats; engine.measure and its figures; debug.view and debug.shadowCamera."
+summary: "debug.line, box, sphere, arrow, axes, grid, frustum, light and skeleton; debug.stats and frameStats; engine.measure and its figures; debug.view and debug.shadowCamera."
 ---
 
 # Debug drawing and stats
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Skeleton drawing, `debug.skeleton`, comes with animation in null3D 0.2.
+> Ships in null3D 0.1, and `debug.skeleton` in null3D 0.2. The API is experimental, so it can still change between versions.
 
-Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows, axes, grids, camera frustums and lights. Debug views draw the whole scene with one debug shading, such as its normals, its wireframe or its shadows. The overlay of `debug.stats` shows the engine's frame figures over the canvas, and `debug.frameStats` gives them to the sketch. On the page, `engine.measure` measures the running engine.
+Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows, axes, grids, camera frustums, lights and skeletons. Debug views draw the whole scene with one debug shading, such as its normals, its wireframe or its shadows. The overlay of `debug.stats` shows the engine's frame figures over the canvas, and `debug.frameStats` gives them to the sketch. On the page, `engine.measure` measures the running engine.
 
 ## Debug drawing
 
@@ -55,12 +55,13 @@ export default defineSketch(({ scene, materials, geometry, debug }) => {
 | `grid(size, divisions, options)` | A square grid on the horizontal plane, as three.js's `GridHelper` draws it | Gray, darker through the center |
 | `frustum(camera, color)` | The near and far planes of a camera's view, and the edges between them | Orange |
 | `light(light, options)` | A directional light: a square that faces the light, and an arrow in the direction its light travels | The light's color |
+| `skeleton(object, color)` | The joints of an animated object: a line from each joint of a skin to its parent joint, as three.js's `SkeletonHelper` draws them | Blue at the joint, green at its parent |
 
 Colors take the same forms as material colors: a hex string such as `'#ff0000'`, a number such as `0xff0000`, or three linear components from 0 to 1. Positions are in world space, in arrays such as `[x, y, z]` or typed arrays.
 
 ### Objects and cameras
 
-`debug.axes(object)`, `debug.frustum(camera)` and `debug.light(light)` draw at the object's place in the frame that draws them. A light draws where it stands unless its `position` option gives another place, which suits a directional light, whose position does not change its light. They wait until the engine has updated the frame's transforms, so they never trail a moving object by one frame. A camera's frustum takes the shape of the canvas, as its view does.
+`debug.axes(object)`, `debug.frustum(camera)`, `debug.light(light)` and `debug.skeleton(object)` draw at the object's place in the frame that draws them. A skeleton takes the pose that the frame's [animation](animation.md) step gave its joints. A light draws where it stands unless its `position` option gives another place, which suits a directional light, whose position does not change its light. They wait until the engine has updated the frame's transforms and poses, so they never trail a moving object by one frame. A camera's frustum takes the shape of the canvas, as its view does.
 
 ### Release builds
 

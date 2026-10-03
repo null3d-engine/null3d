@@ -89,7 +89,7 @@ export const ERROR_FIXES = {
 	E1415:
 		"Stop the other engine with destroy() and wait for its promise before you start this one. To run both at once, leave out sketchThread: 'main' on one of them, so that its sketch runs in a worker.",
 	E1416:
-		'Check that the file is a glTF 2.0 model, as a .glb file or a .gltf file with its buffers and images beside it. Open it in the Khronos glTF Validator, which names the broken part, and export it again from your modelling tool.',
+		'Check that the file is a glTF 2.0 model, as a .glb file or a .gltf file with its buffers and images beside it. Open it in the Khronos glTF Validator, which names the broken part, and export it again from your modelling tool. For a model whose skeleton is too large, export each character to a file of its own.',
 	E1417:
 		'Export the model again without the extension that the message names. Call createInstances with a model that has meshes and no instancing of its own, or with one of its meshes and a material.',
 	E1501:

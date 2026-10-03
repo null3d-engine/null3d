@@ -347,7 +347,7 @@ const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
 ship.find('Turret');       // (0.2) a node: { name, position, rotation, scale, mesh, material }
 ship.bounds;               // (0.2) { center, radius, min, max } of the whole model
 ship.materials;            // (0.2) the file's materials; set() changes every copy
-ship.animations;           // (0.2) clip names
+ship.clips;                // (0.2) clip names, which a copy's animator plays
 const env = await assets.loadEnvironment('/env/studio.ktx2');  // (0.2) from `bunx @null3d/cli assets env`
 const studio = assets.builtinEnvironment('studio');            // (0.2) neutral lighting, no download
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2)
@@ -360,8 +360,8 @@ Every load runs outside the sketch's frames, so a frame never waits for a downlo
 ## 12. Animation (0.2) (`api/animation`)
 
 ```ts
-const hero = scene.instantiate(await assets.loadGltf('/hero.glb')); // loading animated models: later in 0.2
-const anim = hero.animator();           // throws E1218 on an object without clips
+const hero = scene.instantiate(await assets.loadGltf('/hero.glb')); // skins and clips load with the model
+const anim = hero.animator();           // the copy's group animates; throws E1218 on an object without clips
 anim.clips;                             // the clip names
 anim.play('run', { fade: 0.2, loop: true, speed: 1 });  // loop: false holds the last frame
 anim.crossFade('walk', 0.3);            // = play('walk', { fade: 0.3 }); the layer's other clips fade out
@@ -374,6 +374,9 @@ const off = anim.onEvent('footstep', (e) => page.post('sfx', e.clip));  // also 
 anim.stop('walk', { fade: 0.3 });
 anim.stop();                            // every clip; the object holds its rest pose
 anim.setJointOverride('Head', rotation); // later in 0.2: procedural aiming
+const twin = scene.clone(hero);         // the clone gets an animator of its own
+// Joints are not objects. Meshes under bones (a sword in a hand) follow their joints.
+// Skinned meshes draw in their rest pose until the skinning passes ship (later in 0.2).
 
 // after 1.0: scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true });
 ```
@@ -512,7 +515,7 @@ debug.axes(objectOrPosition, size);             // an object's axes follow it in
 debug.grid(size, divisions, { center, color, centerColor });  // GridHelper's defaults, 10 and 10
 debug.frustum(camera, color);                   // in the canvas's shape
 debug.light(sun, { position, size, color });    // a directional light's direction
-debug.skeleton(obj);                            // (0.2)
+debug.skeleton(hero, color);                    // (0.2) skin joints: blue at the joint, green at its parent
 
 debug.stats(true);                       // overlay on the canvas: fps, CPU ms per thread and phase, tier, preset, render scale
 const s = debug.frameStats();            // the same figures: s.presentedFps, s.completedFps, s.cpuMs, s.threads, s.drawCalls

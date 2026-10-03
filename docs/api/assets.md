@@ -8,7 +8,7 @@ summary: "loadGltf, loadTexture, loadImageBitmap, loadJson, loadBinary, preload,
 
 # Assets
 
-> Ships in null3D 0.1, with glTF models from 0.2. The API is experimental, so it can still change between versions. Environments are not built yet: `loadEnvironment`, `builtinEnvironment`, `loadCubemap` and `loadLut`. glTF files do not yet bring their skins, animations, morph targets or meshopt and Draco compression. Coding agents must not use them.
+> Ships in null3D 0.1, with glTF models from 0.2. The API is experimental, so it can still change between versions. Environments are not built yet: `loadEnvironment`, `builtinEnvironment`, `loadCubemap` and `loadLut`. Skinned meshes draw in their rest pose: the engine poses their joints, but does not draw the poses yet. Morph targets load but do not draw. glTF files with meshopt or Draco compression do not load yet. Coding agents must not use these parts.
 
 The `assets` object of the sketch context downloads files and decodes them. Every call returns a promise, and its download and decode run outside the sketch's frames, so a frame never waits for them. The browser decodes images off the main thread.
 
@@ -53,7 +53,7 @@ export default defineSketch(async ({ scene, assets }) => {
 });
 ```
 
-A worker parses the file outside the sketch's frames, and decodes the images that the file holds there. The first `loadGltf` call downloads the loader and its worker, about 9 KB after Brotli, so a page without glTF files downloads neither. The files that a `.gltf` file names download through `assets`, so `preload` and `onProgress` cover them too. The engine copies the vertex data into its own memory, and keeps no other copy of it.
+A worker parses the file outside the sketch's frames, and decodes the images that the file holds there. The first `loadGltf` call downloads the loader and its worker, about 15 KB after Brotli, so a page without glTF files downloads neither. The files that a `.gltf` file names download through `assets`, so `preload` and `onProgress` cover them too. The engine copies the vertex data into its own memory, and keeps no other copy of it.
 
 The prefab turns each part of the file into the engine's own:
 
@@ -66,6 +66,9 @@ The prefab turns each part of the file into the engine's own:
 | `KHR_texture_transform` | The material's `uvTransform`: the base color map's transform, or the first map's |
 | `KHR_lights_punctual` | Directional, point and spot lights, in the units of glTF and three.js |
 | `EXT_mesh_gpu_instancing` | An instance batch for each copy, in `instance.batches` |
+| A skin | Joints of the model's skeleton, which every copy's [animator](animation.md#models-from-gltf-files) poses. Joints are not objects. A skinned mesh goes in the copy's group |
+| An animation | A clip that a copy's animator plays, with linear, step and cubic spline keys. The job workers resample it while `loadGltf` waits |
+| A morph target | Kept with its mesh for a later version to draw. The mesh draws in its shape at rest |
 
 Materials follow three.js's `GLTFLoader`. A mesh with vertex colors turns them on, and a mesh without normals shades flat. A mesh without tangents turns the normal map's green channel over. Blended materials write no depth. The engine finds the lights near each surface by their ranges. So a point or spot light without a range ends where its light falls below 0.001 lux.
 
@@ -75,6 +78,7 @@ Materials follow three.js's `GLTFLoader`. A mesh with vertex colors turns them o
 | `prefab.bounds` | `min`, `max`, `center` and `radius` of the whole model, around the origin of its copies |
 | `prefab.materials` | The file's materials, in the file's order. `set` changes them in every copy |
 | `prefab.textures` | The textures that the materials sample |
+| `prefab.clips` | The names of the model's clips, which a copy's animator plays |
 | `prefab.url` | The address the model came from |
 
 ## Addresses

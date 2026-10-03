@@ -313,7 +313,7 @@ const DOCS = {
 	E1416: {
 		title: 'glTF file not read',
 		cause:
-			'assets.loadGltf() downloaded a file that is not a glTF 2.0 model it can read. Its JSON or binary chunk may be broken, or an offset or a count may point past the data. A buffer or an image may be missing, or its nodes may form a loop.',
+			"assets.loadGltf() downloaded a file that is not a glTF 2.0 model it can read. Its JSON or binary chunk may be broken, or an offset or a count may point past the data. A buffer or an image may be missing, or its nodes may form a loop. A skin or a clip may break glTF's rules, such as key times that fall back. Or its skins and clips may move more than 1,024 nodes, which is more than one skeleton holds.",
 		example:
 			'E1416: assets.loadGltf() could not read https://example.com/ship.glb: accessor 3 reads 4800 bytes from bufferView 1, which holds 2400.',
 		since: '0.2',
