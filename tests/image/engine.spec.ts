@@ -1,5 +1,5 @@
-import { ISOLATION_HEADERS } from '@null3d/vite-plugin';
 import { expect, type Page, test } from '@playwright/test';
+import { ISOLATION_HEADERS } from '../../packages/vite-plugin/src/index.ts';
 import {
 	ENGINE_MODES,
 	type EngineMode,

@@ -4,6 +4,6 @@
 
 declare module '*.wgsl' {
 	/** The WGSL file, compiled for WebGPU and WebGL2: a whole shader, or a custom material. */
-	const shader: import('./src/shader-types').CompiledWgsl;
+	const shader: import('./shader-types').CompiledWgsl;
 	export default shader;
 }

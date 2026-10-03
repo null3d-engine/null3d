@@ -11,7 +11,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `skills/` | Agent skills for building with null3D and for porting three.js apps (the source) |
 | `.claude/skills/` | A generated copy of `skills/` for Claude Code. Never edit it. |
 | `crates/` | The Rust crates: core, GPU layer, renderer, shaders, the WebAssembly entry point, and the shader compiler that build tools load |
-| `packages/` | npm packages: `engine`, `vite-plugin`, and `cli`, which is the `null3d` command |
+| `packages/` | npm packages: `engine`, `vite-plugin`, `controls`, and `cli`, which is the `null3d` command. Code in the repository reads their TypeScript source, and a pack builds their JavaScript, as [Releases](.dev/releases.md#the-npm-packages) says |
 | `tests/` | Browser tests: test pages, the image test manifest and its reference images, the Playwright tests and the real-browser runner |
 | `tools/` | The WebAssembly build, the docs generator, the skills check and the commit hooks |
 | `examples/` | Feature demos: one sketch of under 150 lines each, listed in `examples/demos.ts`. The examples page runs each demo live, and the image test manifest draws each one in hold mode |
@@ -31,6 +31,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run test:images` | The image test manifest alone. Add Playwright's options, such as `-g scene` for the tests whose names hold scene |
 | `bun run images:review` | Show the images that runs saved because they have no reference or differ from it, each beside its reference and diff. `--accept` makes them references, and `--ci <run>` fetches a CI run's images first |
 | `bun run test:shader-compiler` | Run the shader crate's build tests again through the shader compiler, which must give the native build's results, then the compiler's own tests and the Vite plugin's WGSL tests. Run `bun run build` first |
+| `bun run test:packages` | Pack every public package as the publish job does, and check each tarball. Then install the tarballs into a fresh Vite project outside the repository, where the command-line tool's `test` command must pass on every GPU tier and `vite build` must work. Run `bun run build` first. `--keep` keeps the project's folder |
 | `bun run test:real-browsers Safari Firefox` | The same test pages and the image test manifest in browser apps that Playwright cannot drive, through the runner page (macOS) |
 | `bun run devices` | The same checks on an Android phone over USB (Chrome, then Brave) and on runner pages that wait on the local network (an iPad's Safari and Brave). Add `--shields on` or `--shields off` to record the state of Brave's Shields |
 | `bun run devices:cloud` | The same checks on BrowserStack Automate's real phones, tablets and desktops, with no setup in a browser: `--tier A` or `--tier B` picks the devices of [device sessions](.dev/devices.md#browserstack-automate), `--only` names runners, `--parallel` limits the sessions at once, and `--check` checks the account and the devices without a run |

@@ -1,23 +1,59 @@
 {
 	"name": "@null3d/engine",
 	"version": "0.0.0",
-	"private": true,
-	"description": "The null3D engine: the TypeScript API, the page shim, the worker entry points and both WebAssembly builds.",
+	"description": "The null3D engine, a browser 3D engine for games and heavy 3D apps: the TypeScript API, the page shim, the worker entry points, both WebAssembly builds and the docs.",
 	"license": "MIT OR Apache-2.0",
+	"author": "Ramesh Nair (https://hiddentao.com)",
+	"homepage": "https://github.com/null3d-engine/null3d#readme",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/null3d-engine/null3d.git",
 		"directory": "packages/engine"
 	},
-	"type": "module",
-	"scripts": {
-		"prepack": "bun ../../tools/shaders.ts"
+	"bugs": {
+		"url": "https://github.com/null3d-engine/null3d/issues"
 	},
+	"keywords": [
+		"null3d",
+		"3d",
+		"webgpu",
+		"webgl2",
+		"wasm",
+		"game-engine",
+		"threejs"
+	],
+	"type": "module",
 	"exports": {
-		".": "./src/index.ts",
-		"./internal": "./src/internal.ts",
-		"./stats": "./src/shared/stats.ts",
-		"./wasm/*": "./dist/wasm/*"
+		".": {
+			"null3d-source": "./src/index.ts",
+			"types": "./lib/index.d.ts",
+			"default": "./lib/index.js"
+		},
+		"./internal": {
+			"null3d-source": "./src/internal.ts"
+		},
+		"./stats": {
+			"null3d-source": "./src/shared/stats.ts"
+		},
+		"./wasm/*": "./dist/wasm/*",
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"lib",
+		"dist/wasm/*/*.js",
+		"dist/wasm/*/*.wasm",
+		"dist/wasm/*/*.json",
+		"vendor",
+		"docs",
+		"LICENSE-MIT",
+		"LICENSE-APACHE"
+	],
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
+	"scripts": {
+		"prepack": "bun ../../tools/build-package.ts engine"
 	},
 	"devDependencies": {
 		"@types/three": "0.186.0",

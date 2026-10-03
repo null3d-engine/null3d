@@ -60,6 +60,12 @@ function projectCopy({
 	// copy's dev server then empties that folder while the tests' dev server serves files from it.
 	writeFileSync(join(root, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
 	symlinkSync(join(REPO_ROOT, 'tests/node_modules'), join(root, 'node_modules'), 'dir');
+	// The fixture's Vite config imports the plugin's source by paths from the fixture.
+	const viteConfig = readFileSync(join(FIXTURE, 'vite.config.ts'), 'utf8');
+	writeFileSync(
+		join(root, 'vite.config.ts'),
+		viteConfig.replaceAll("from '../../../", `from '${REPO_ROOT}/`),
+	);
 	const tsconfig = JSON.parse(readFileSync(join(FIXTURE, 'tsconfig.json'), 'utf8'));
 	// The fixture's config extends the repository's base config by a path from the fixture.
 	tsconfig.extends = join(FIXTURE, tsconfig.extends);

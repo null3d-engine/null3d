@@ -1,0 +1,1 @@
+{ "tests": [{ "name": "start", "sketch": "sketch.ts", "hold": 1.5 }] }

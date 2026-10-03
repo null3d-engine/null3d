@@ -4,13 +4,13 @@
 		"lib": ["ES2024", "DOM", "DOM.Iterable"],
 		"module": "ESNext",
 		"moduleResolution": "bundler",
-		"customConditions": ["null3d-source"],
+		"types": ["@null3d/vite-plugin/client"],
 		"strict": true,
-		"noUncheckedIndexedAccess": true,
 		"noEmit": true,
-		"skipLibCheck": true,
+		"skipLibCheck": false,
 		"isolatedModules": true,
-		"verbatimModuleSyntax": true,
-		"allowImportingTsExtensions": true
-	}
+		"verbatimModuleSyntax": true
+	},
+	"include": ["*.ts"],
+	"exclude": ["vite.config.ts"]
 }
