@@ -1,6 +1,6 @@
 # null3D recipes
 
-Each recipe states the goal, gives the code, explains why it is written that way, and names the docs pages to read. Code runs in `sketch.ts` unless it says `page.ts`. A version in parentheses marks a recipe whose APIs arrive after 0.1, and "later in 0.1" marks one whose APIs are not built yet. Check the docs status before using them.
+Each recipe states the goal, gives the code, explains why it is written that way, and names the docs pages to read. Code runs in `sketch.ts` unless it says `page.ts`. A version in parentheses marks a recipe whose APIs arrive after 0.1. Check the docs status before using them.
 
 ## Contents
 
@@ -17,7 +17,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 11. Physics with a library in the sketch worker
 12. Minimap with a second camera (0.2)
 13. Screenshots
-14. Video on a surface (after 1.0; a workaround later in 0.1)
+14. Video on a surface, with frames from the page
 15. Custom full-screen effect (0.2)
 16. Very large worlds (0.2)
 17. Move a player with keys, a gamepad or touch
@@ -372,7 +372,7 @@ post.addEffect({
 });
 ```
 
-Several full views, such as split screens, come after 1.0 (`guides/multiple-views`). A minimap or picture in picture works now with a render-to-texture pass and a final effect. The effect samples the map with `textureSampleLevel` because the branch differs between pixels, and WGSL forbids implicit-mip sampling there (`references/shaders.md`, section 8). Docs: `guides/custom-passes`, `api/post`.
+Several full views, such as split screens, come after 1.0 (`guides/multiple-views`). From 0.2, a minimap or picture in picture works with a render-to-texture pass and a final effect. The effect samples the map with `textureSampleLevel` because the branch differs between pixels, and WGSL forbids implicit-mip sampling there (`references/shaders.md`, section 8). Docs: `guides/custom-passes`, `api/post`.
 
 ## 13. Screenshots
 
@@ -387,7 +387,7 @@ shotButton.onclick = async () => {
 
 The thread that draws reads the frame back and encodes it, so the canvas needs no `preserveDrawingBuffer`. After `destroy()` the call fails with E1414. For tests, use `bunx @null3d/cli shot` or hold-mode tests instead (`references/testing-and-debugging.md`). Docs: `api/engine`.
 
-## 14. Video on a surface (after 1.0; a workaround now)
+## 14. Video on a surface, with frames from the page
 
 Video textures (`engine.registerVideo` with `textures.fromVideo`) come after 1.0. Until then, the page can send frames as `ImageBitmap` objects, which transfer to the sketch without a copy. The sketch's half shows them with an unlit material's map:
 
@@ -405,10 +405,18 @@ video.requestVideoFrameCallback(sendFrame);
 ```
 
 ```ts
-// sketch.ts, at setup: create the material now, so no pipeline compiles during play
-const screenTex = textures.fromData({ width: 1, height: 1, format: 'rgba8unorm', colorSpace: 'srgb', data: new Uint8Array([0, 0, 0, 255]) });
-scene.createMesh({ mesh: geometry.plane({ width: 16 / 9, height: 1 }), material: materials.unlit({ map: screenTex }) });
-page.onMessage((type, bitmap) => { if (type === 'video-frame') screenTex.update(bitmap); });  // update accepts a new size
+// sketch.ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, textures, page }) => {
+  scene.setActiveCamera(scene.createPerspectiveCamera({ fov: 50, position: [0, 0, 1.6], target: [0, 0, 0] }));
+  // One dark texel until the first frame arrives. Create the material at setup, so no pipeline compiles during play.
+  const screen = textures.fromData({ width: 1, height: 1, format: 'rgba8unorm', colorSpace: 'srgb', data: new Uint8Array([24, 24, 24, 255]) });
+  scene.createMesh({ mesh: geometry.plane({ width: 16 / 9, height: 1 }), material: materials.unlit({ map: screen }) });
+  page.onMessage((type, bitmap) => {
+    if (type === 'video-frame') screen.update(bitmap as ImageBitmap);   // a new size is fine
+  });
+});
 ```
 
 Each frame costs one decode-and-resize on the page and one upload in the render worker, so keep frames small. Docs: `guides/video-textures`, `api/textures`.

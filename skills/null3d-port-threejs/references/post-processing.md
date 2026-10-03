@@ -1,6 +1,6 @@
 # Porting post-processing
 
-three.js chains full-screen passes, each reading and writing the whole screen. null3D plans a built-in chain: an HDR scene buffer, and optional half-resolution bloom and ambient occlusion. Then one final pass merges tone mapping, grading, per-pixel custom effects, FXAA and dithering. You port settings, not passes. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`, `concepts/backends`.
+three.js chains full-screen passes, each reading and writing the whole screen. null3D has a built-in chain: an HDR scene buffer, then one final pass that merges exposure, tone mapping, FXAA and dithering. Half-resolution bloom and ambient occlusion, color grading and per-pixel custom effects join the chain in 0.2. You port settings, not passes. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`, `concepts/backends`.
 
 Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, exposure })` are built. Every other setting in this file, `post.addEffect` and custom passes come in 0.2. Until then, a port keeps only the tone mapping and the exposure of the three.js chain, and the report lists each effect it dropped.
 
