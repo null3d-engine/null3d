@@ -104,7 +104,7 @@ function fakeCore() {
 	const control = controlViews(createControlBuffer(false));
 	/** The frame that the input event at each point names, by "x,y". */
 	const eventFrames = new Map<string, number>();
-	const frameAt = (x: number, y: number) => eventFrames.get(`${x},${y}`) ?? 0;
+	const frameAt = (x: number, y: number) => eventFrames.get(`${x},${y}`) ?? -1;
 	const cameras = new FrameCameras(core, control, { frameAt });
 	const scene = new Scene(core, { frame: FRAME }, false, undefined, cameras);
 	const box = new MeshGeometry(1, 0.87, core);
@@ -653,6 +653,31 @@ describe('screenToRay and worldToScreen', () => {
 		expectClose(rayOf(ray), threeRay(theirs, frameWorld(6), x, y), 9);
 		other.screenToRay(x, y, ray);
 		expectClose(rayOf(ray), threeRay(theirs, frameWorld(7), x, y), 9);
+	});
+
+	test("a ray from an input event during the setup's frames uses the setup's camera", () => {
+		const { scene, setWorld, eventFrames } = setup();
+		const camera = scene.createPerspectiveCamera({ fov: 60 });
+		scene.setActiveCamera(camera);
+		const theirs = new ThreePerspectiveCamera(60, CSS[0] / CSS[1], 0.1, 2000);
+		const frameWorld = (frame: number) => world([0, 1, 5], [0, frame * 0.1, 0]);
+		const ray = newRay();
+		const [x, y] = [100.5, 80.25];
+		// Frame 0 names a frame of the setup, so the ring must not mistake an empty entry for it.
+		eventFrames.set(`${x},${y}`, 0);
+		setWorld(camera, frameWorld(0));
+		camera.screenToRay(x, y, ray);
+		expectClose(rayOf(ray), threeRay(theirs, frameWorld(0), x, y), 9);
+		scene.keepFrameCamera(0, CSS[0] * 2, CSS[1] * 2);
+		// The sketch's first frames turn the camera while the setup's frame is still on screen.
+		for (let frame = 1; frame <= 2; frame++) {
+			setWorld(camera, frameWorld(frame));
+			scene.keepFrameCamera(frame, CSS[0] * 2, CSS[1] * 2);
+		}
+		camera.screenToRay(x, y, ray);
+		expectClose(rayOf(ray), threeRay(theirs, frameWorld(0), x, y), 9);
+		camera.screenToRay(x + 1, y, ray);
+		expectClose(rayOf(ray), threeRay(theirs, frameWorld(2), x + 1, y), 9);
 	});
 
 	test('development builds check the point and the camera', () => {

@@ -1,8 +1,10 @@
 // The three.js twin of the glTF model scenes (bench/scenes/gltf-models.ts), which null3D's image
-// tests draw. `?model=` names the scene. It loads the model with GLTFLoader, and its KTX2 textures
-// with KTX2Loader, frames it from its bounds as the null3D sketch does, draws one frame into an
-// offscreen target of the image's size, and publishes the pixels as the hold pages do.
-// `?renderer=webgl` draws with WebGLRenderer, and `?renderer=webgpu` with WebGPURenderer.
+// tests draw. `?model=` names the scene. It loads the model with GLTFLoader, its KTX2 textures
+// with KTX2Loader and its meshopt data with the MeshoptDecoder that three.js ships, frames it from
+// its bounds as the null3D sketch does, draws one frame into an offscreen target of the image's
+// size, and publishes the pixels as the hold pages do. `?renderer=webgl` draws with WebGLRenderer,
+// and `?renderer=webgpu` with WebGPURenderer.
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { run, toBase64 } from '../../../tests/pages/lib/result';
@@ -40,7 +42,7 @@ run('hold', async () => {
 	const ktx2 = new KTX2Loader();
 	if (rendererName === 'webgpu') await ktx2.detectSupportAsync(renderer as never);
 	else ktx2.detectSupport(renderer as never);
-	const loader = new GLTFLoader().setKTX2Loader(ktx2);
+	const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
 	const gltf = await loader.loadAsync(model.url);
 	scene.add(gltf.scene);
 	gltf.scene.updateMatrixWorld(true);

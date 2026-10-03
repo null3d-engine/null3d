@@ -20,11 +20,11 @@ import {
 	type FeatureScene,
 	featurePagePath,
 	featurePair,
-	featureTiers,
 	type PageKind,
 	parityFiles,
 	passesWithBaseline,
 	type RgbaImage,
+	TIERS,
 } from '../lib/parity';
 import { type PageReport, runPage } from './open-page';
 
@@ -71,7 +71,7 @@ for (const scene of FEATURE_SCENES) {
 			if (webgl && webgpu) baseline = compareImages(webgpu, webgl).share;
 		});
 
-		for (const tier of featureTiers(scene)) {
+		for (const tier of TIERS) {
 			test(`matches three.js on ${tier}`, async ({ page }) => {
 				const pair = featurePair(scene, tier);
 				const reference = twinImages.get(pair.reference) as RgbaImage;

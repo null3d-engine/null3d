@@ -10,7 +10,7 @@ How many shader variants does the engine build, and how do they reach a page? A 
 
 Stay within the 60 KB budget for the engine's JavaScript in each thread mode, with M1's permutation bits. Keep S4's warm-up on the S24+ within a target that T-26's data sets. T-26 set it at 250 ms of pipeline wait with fresh shaders, about twice the time measured.
 
-The budget was 60 KB when this rule was set. The owner has since raised it to 100 KB for the features that followed ([D-14](D-14-js-budget.md)). The sizes below compare the options at the time, so they keep the 60 KB budget as their measure.
+The budget was 60 KB when this rule was set. The owner has since raised it to 100 KB for the features that followed, and for M2 to 140 KB at a page's start ([D-14](D-14-js-budget.md)). The sizes below compare the options at the time, so they keep the 60 KB budget as their measure.
 
 ## Data
 

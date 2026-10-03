@@ -1,11 +1,11 @@
 // The cameras of the frames on screen, for `camera.screenToRay` and `camera.worldToScreen`. In
 // pipelined mode the thread that draws shows an older frame than the one the sketch computes, so a
 // click tested against the current camera would test a view the user never saw. After each frame
-// records, the sketch thread keeps the camera it drew from in a ring of the last four frames: its
-// world matrix with a 64-bit translation, its lens as the frame's canvas shaped it, and the canvas's
-// size in CSS pixels. A ray from the point of an input event then uses the frame that the event
-// names, and any other point uses the camera as it stands. Everything lives in typed arrays made
-// once, so neither call nor the per-frame record allocates.
+// records, the setup's frames included as frame 0, the sketch thread keeps the camera it drew from
+// in a ring of the last four frames: its world matrix with a 64-bit translation, its lens as the
+// frame's canvas shaped it, and the canvas's size in CSS pixels. A ray from the point of an input
+// event then uses the frame that the event names, and any other point uses the camera as it stands.
+// Everything lives in typed arrays made once, so neither call nor the per-frame record allocates.
 
 import type { Vec3Like } from '../math/types';
 import { type ControlViews, Slot } from '../shared/control';
@@ -23,7 +23,10 @@ export interface Ray {
 	direction: Vec3Like;
 }
 
-/** Finds the frame that was on screen at the input event at a point, or 0 when no event is there. */
+/**
+ * Finds the frame that was on screen at the input event at a point, or -1 when no event is there.
+ * Frame 0 is a frame that the setup drew, before the sketch's first update.
+ */
 export interface EventFrames {
 	frameAt(x: number, y: number): number;
 }
@@ -61,6 +64,8 @@ export const LENS_FLOATS = 7;
 
 /** The frames whose cameras the ring keeps. */
 const RING_FRAMES = 4;
+/** The frame of an entry that holds no camera. Frame 0 is the setup's, so an empty entry is -1. */
+const NO_FRAME = -1;
 /** Each entry's fields: the frame, the lens, the canvas's sizes, then the camera's world matrix. */
 const FRAME = 0;
 const LENS = 1;
@@ -90,7 +95,9 @@ export class FrameCameras {
 		private readonly core: CoreMemory,
 		private readonly control: ControlViews,
 		private readonly events: EventFrames,
-	) {}
+	) {
+		for (let index = 0; index < RING_FRAMES; index++) this.ring[index * ENTRY + FRAME] = NO_FRAME;
+	}
 
 	/**
 	 * Keeps the camera that frame `frame` drew from, on a canvas of `width` by `height` device
@@ -100,7 +107,7 @@ export class FrameCameras {
 		const index = frame % RING_FRAMES;
 		const at = index * ENTRY;
 		const ring = this.ring;
-		ring[at + FRAME] = 0;
+		ring[at + FRAME] = NO_FRAME;
 		this.ringCameras[index] = camera;
 		if (camera === undefined || this.core.readWorldMatrix(camera.handle, this.matrix) !== 0) return;
 		this.fill(ring, at, camera, width, height);
@@ -118,7 +125,7 @@ export class FrameCameras {
 		const ring = this.ring;
 		const index = frame % RING_FRAMES;
 		const at = index * ENTRY;
-		if (frame > 0 && ring[at + FRAME] === frame && this.ringCameras[index] === camera)
+		if (frame >= 0 && ring[at + FRAME] === frame && this.ringCameras[index] === camera)
 			writeRay(ring, at, x, y, out);
 		else writeRay(this.stand(camera, call), 0, x, y, out);
 	}

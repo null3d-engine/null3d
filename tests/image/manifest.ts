@@ -16,7 +16,12 @@ import { BENCH_SCENES, type FeatureScene } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { BLOOM_IMAGE } from '../../bench/scenes/bloom.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
-import { MODEL_NAMES, MODELS_IMAGE } from '../../bench/scenes/gltf-models.ts';
+import {
+	MODEL_NAMES,
+	MODEL_SCENES,
+	MODELS_IMAGE,
+	type ModelScene,
+} from '../../bench/scenes/gltf-models.ts';
 import { GRADING_IMAGE } from '../../bench/scenes/grading.ts';
 import { LIGHTS_IMAGE } from '../../bench/scenes/lights.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
@@ -360,16 +365,19 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	})),
 	// glTF sample models that assets.loadGltf loads and scene.instantiate copies, one for each feature
 	// of the loader: materials with their maps, texture transforms, unlit and emissive strength,
-	// lights, instancing, KTX2 textures, alpha modes, vertex colors and the second texture
-	// coordinates. The parity test compares each with three.js's GLTFLoader.
-	...MODEL_NAMES.map(
-		(model): ImageTest => ({
+	// lights, instancing, KTX2 textures, alpha modes, vertex colors, the second texture coordinates
+	// and meshopt compression. The parity test compares each with three.js's GLTFLoader. A model
+	// compressed with meshopt must draw as its uncompressed scene does.
+	...MODEL_NAMES.map((model): ImageTest => {
+		const { uncompressed } = MODEL_SCENES[model] as ModelScene;
+		return {
 			name: `gltf-${model}`,
 			sketch: `tests/pages/sketches/gltf-sketch.ts?model=${model}`,
 			size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
 			hold: 0,
-		}),
-	),
+			...(uncompressed ? { reference: `gltf-${uncompressed}` } : {}),
+		};
+	}),
 	// Copies of a glTF model made in code: scene.instantiate, scene.clone, a model with 16-bit
 	// positions, and an instance batch from scene.createInstances whose rows move every part of the
 	// model. Each tier must place every part the same way.
@@ -616,39 +624,42 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Skinning: three characters skinned to chains of joints, each in another pose of one clip. The
 	// parity test compares the image with three.js's SkinnedMesh. WebGPU skins them in a compute
-	// pass; the WebGL2 path does not skin yet. ?shadows stands them on a ground under a sun whose
-	// shadows must follow each pose. Both WebGPU tiers draw the same image.
+	// pass, and WebGL2 in the vertex shader of each pass. ?shadows stands them on a ground under a
+	// sun whose shadows must follow each pose. Every tier draws the same image.
 	...(['', 'shadows'] as const).map(
 		(variant): ImageTest => ({
 			name: variant ? `skinning-${variant}` : 'skinning',
 			sketch: `tests/pages/sketches/skinning-sketch.ts${variant ? `?${variant}` : ''}`,
 			hold: SKINNING_HOLD,
 			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
-			tiers: ['webgpu', 'compat'],
 			sameOnEveryTier: true,
 		}),
 	),
-	// The same characters from a quantized mesh, which the skinning pass reads type by type: it
-	// draws the image of floats, within the steps of 8-bit normals.
+	// The same characters from a quantized mesh, whose joints, weights and normals both paths
+	// read in their own types: it draws the image of floats, within the steps of 8-bit normals.
 	{
 		name: 'skinning-quantized',
 		sketch: 'tests/pages/sketches/skinning-sketch.ts?quantized',
 		hold: SKINNING_HOLD,
 		size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
-		tiers: ['webgpu', 'compat'],
 		reference: 'skinning',
 	},
 	// The middle character sees through, so the transparent pass draws it skinned, in front of its
-	// shadow, with each way to skin. Compatibility mode blends on the 8-bit path, which differs in
-	// the see-through pixels, so each tier has its own image.
+	// shadow, with each way to skin, and on WebGL2 in the vertex shader. Compatibility mode blends
+	// on the 8-bit path, which differs in the see-through pixels, so each tier has its own image.
 	...(['', '-vertex'] as const).map(
 		(way): ImageTest => ({
 			name: `skinning-blend${way}`,
 			sketch: 'tests/pages/sketches/skinning-sketch.ts?shadows&blend',
 			hold: SKINNING_HOLD,
 			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
-			tiers: ['webgpu', 'compat'],
-			...(way ? { switches: ['skinning=vertex'], reference: 'skinning-blend' } : {}),
+			...(way
+				? {
+						tiers: ['webgpu', 'compat'],
+						switches: ['skinning=vertex'],
+						reference: 'skinning-blend',
+					}
+				: {}),
 		}),
 	),
 	// The same scenes skinned in the vertex shader of each pass, which D-20 measures against the
@@ -1049,7 +1060,10 @@ export function featureImagePath({ test, sketchSwitches }: FeatureScene, tier: T
 		sketchSwitches && 'sketch' in own
 			? { ...own, sketch: `${own.sketch}${own.sketch.includes('?') ? '&' : '?'}${sketchSwitches}` }
 			: own;
-	const run = imageRuns([drawn]).find(
+	// The page's address depends on the test alone, so a test that shares another test's references
+	// runs here without them.
+	const { reference: _shared, ...alone } = drawn;
+	const run = imageRuns([alone]).find(
 		(candidate) => candidate.tier === tier && candidate.mode?.name === 'pipelined',
 	);
 	if (!run) throw new Error(`the manifest has no pipelined run of ${test} on ${tier}`);
