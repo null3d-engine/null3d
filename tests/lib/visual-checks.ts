@@ -49,12 +49,13 @@ export interface VisualLimits {
  * toward the logarithmic spread fails the shadow scene's stair steps and S4's edge offset. The
  * other edge limits catch only large faults, as that split leaves those figures alone or lowers
  * them. S4's contact limit fails its frame without the casters' offset in CI, and catches only
- * larger faults on the Mac's GPU.
+ * larger faults on the Mac's GPU. S4's acne limit fails its frame when the filter's reads compare
+ * with the receiver's depth at its point instead of its plane.
  */
 export const VISUAL_LIMITS: Readonly<Record<string, VisualLimits>> = {
 	'shadow-scene': { changedPercent: 0.05, edgeOffsetPixels: 0.15, stairStepPixels: 0.19 },
 	s2: { changedPercent: 0.05, edgeOffsetPixels: 0.15 },
-	s4: { changedPercent: 0.05, edgeOffsetPixels: 0.114, contactGapPixels: 0.06, acnePercent: 0.3 },
+	s4: { changedPercent: 0.05, edgeOffsetPixels: 0.114, contactGapPixels: 0.06, acnePercent: 0.2 },
 };
 
 /** The views of the contact scene that the contact checks draw. */
@@ -87,7 +88,8 @@ export interface ContactLimits {
  * limit sits between the figures with the casters' offset and without it, which fails each of
  * them. The rims' limits and the casting ground's share in shadow sit between the figures with the
  * offset and with a full texel for every back face, uncapped, which shadows the boxes' own tops and
- * the casting ground's top.
+ * the casting ground's top. The slab views' acne limits sit between the figures of filter reads
+ * that compare with the receiver's plane and of reads that compare with its depth at its point.
  */
 export const CONTACT_LIMITS: Readonly<Record<ContactCase, ContactLimits>> = {
 	near: { query: 'view=near', gapPixels: 0.06, rimPixels: 0.16 },
