@@ -78,6 +78,8 @@ interface KindResult {
 	/** The workers the page started, and those it can still reach, by name. */
 	workersStarted: number;
 	workersReachable: Record<string, number>;
+	/** Each start and stop of the engine on the page. */
+	starts: StartRecord[];
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -168,11 +170,34 @@ async function holdAndStop(kind: HoldKind): Promise<void> {
  */
 const canvases: HTMLCanvasElement[] = [];
 
+/**
+ * What each start and stop of the engine on the page did: when its first frame came and how long
+ * its stop took, and how many job workers had reported ready by the stop and stopped by its end.
+ */
+interface StartRecord {
+	firstFrameMs: number;
+	stopMs: number;
+	jobs: number;
+	jobsReadyAtStop: number;
+	jobsStopped: number;
+	roomAfter?: number;
+}
+const starts: StartRecord[] = [];
+const COUNT_EACH = params.get('room') === 'each';
+
+/** The job workers that a slice of the page's trail names with `reply`. */
+const jobsWith = (steps: readonly string[], reply: string) =>
+	new Set(steps.flatMap((s) => s.match(new RegExp(`(null3d-job-\\d+): ${reply}$`))?.[1] ?? []))
+		.size;
+
 /** Starts the engine on a new canvas, waits for its first frame, and stops it. */
 async function startAndStopEngine(): Promise<void> {
 	const canvas = document.createElement('canvas');
 	canvases.push(canvas);
 	document.body.append(canvas);
+	const trail = window.__null3dProgress ?? [];
+	const from = trail.length;
+	const began = performance.now();
 	try {
 		const engine = await withTimeout(
 			createEngine({
@@ -183,13 +208,29 @@ async function startAndStopEngine(): Promise<void> {
 			ENGINE_TIMEOUT_MS,
 			'the engine start',
 		);
+		let stopAt = 0;
+		let stopIndex = 0;
 		try {
 			await withTimeout(engine.firstFrame, ENGINE_TIMEOUT_MS, 'the first frame');
 		} finally {
+			stopAt = performance.now();
+			stopIndex = trail.length;
 			await engine.destroy();
+			const steps = trail.slice(from);
+			starts.push({
+				firstFrameMs: Math.round(stopAt - began),
+				stopMs: Math.round(performance.now() - stopAt),
+				jobs: jobsWith(steps, 'started'),
+				jobsReadyAtStop: jobsWith(trail.slice(from, stopIndex), 'ready'),
+				jobsStopped: jobsWith(steps, 'stopped'),
+			});
 		}
 	} finally {
 		canvas.remove();
+	}
+	if (COUNT_EACH) {
+		const last = starts.at(-1);
+		if (last) last.roomAfter = (await countRoomAndRelease()).room;
 	}
 }
 
@@ -357,6 +398,7 @@ run('shared-memory', async () => {
 			memoriesReachable: given.filter((ref) => ref.deref() !== undefined).length,
 			workersStarted: started.length,
 			workersReachable: reachableWorkers(),
+			starts: starts.splice(0),
 		};
 	}
 	return {
