@@ -821,47 +821,36 @@ impl FrameGraph {
         if !self.final_runs() {
             return Ok(());
         }
-        let plan = self
-            .graph
-            .plan()
-            .expect("the graph compiled before the frame uploads");
         let scene_color = self
-            .graph
-            .find_resource(SCENE_COLOR)
-            .and_then(|resource| plan.sampled_texture_of(resource))
-            .map(|surface| self.texture_id(surface))
+            .sampled_id(SCENE_COLOR)
             .expect("the final pass samples the scene color");
         let render_size = Size::Full.viewport(self.canvas, self.scale);
-        let bloom = match (self.bloom, self.bloom_pass.as_mut()) {
-            (Some(settings), Some(pass)) => {
-                let (graph, first_texture) = (&self.graph, self.first_texture);
-                let sampled = |name: &str| {
-                    let surface = plan.sampled_texture_of(graph.find_resource(name)?)?;
-                    Some(match surface {
-                        Surface::Canvas => 0,
-                        Surface::Texture(index) => first_texture + u32::from(index),
-                    })
-                };
-                let sources: [u32; STEPS] = std::array::from_fn(|step| {
-                    sampled(bloom_source(step)).expect("each step of bloom reads a planned texture")
-                });
-                let levels = std::array::from_fn(|level| {
-                    sampled(BLOOM_TARGETS[bloom_level(level)])
-                        .expect("the final pass reads each of bloom's levels")
-                });
-                pass.prepare(
-                    list,
-                    arena,
-                    self.canvas,
-                    self.scale,
-                    settings,
-                    self.bloom_divisor,
-                    &sources,
-                    self.textures_made,
-                )?;
-                Some(BloomInputs::new(pass.ids(), levels))
+        let bloom = if self.bloom_draws() {
+            let sources: [u32; STEPS] = std::array::from_fn(|step| {
+                self.sampled_id(bloom_source(step))
+                    .expect("each step of bloom reads a planned texture")
+            });
+            let levels = std::array::from_fn(|level| {
+                self.sampled_id(BLOOM_TARGETS[bloom_level(level)])
+                    .expect("the final pass reads each of bloom's levels")
+            });
+            let (canvas, scale, divisor, made) = (
+                self.canvas,
+                self.scale,
+                self.bloom_divisor,
+                self.textures_made,
+            );
+            match (self.bloom, self.bloom_pass.as_mut()) {
+                (Some(settings), Some(pass)) => {
+                    pass.prepare(
+                        list, arena, canvas, scale, settings, divisor, &sources, made,
+                    )?;
+                    Some(BloomInputs::new(pass.ids(), levels))
+                }
+                _ => None,
             }
-            _ => None,
+        } else {
+            None
         };
         self.final_pass.prepare(
             list,
@@ -1058,6 +1047,14 @@ impl FrameGraph {
         )?;
         list.push(Op::SetScissor, &[0, 0, width, height])?;
         Ok(())
+    }
+
+    /// The draw list's id of the texture that passes sample for the resource of `name`, once the
+    /// graph compiled, or `None` for a resource that the plan does not sample.
+    fn sampled_id(&self, name: &str) -> Option<u32> {
+        let plan = self.graph.plan()?;
+        let surface = plan.sampled_texture_of(self.graph.find_resource(name)?)?;
+        Some(self.texture_id(surface))
     }
 
     /// The draw list's id of a surface: 0 for the canvas.
