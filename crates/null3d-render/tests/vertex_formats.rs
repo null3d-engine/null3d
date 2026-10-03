@@ -6,12 +6,17 @@ mod common;
 
 use common::{BATCH_ROWS, World, base_sphere, count, grid};
 use null3d_core::handle::Handle;
+use null3d_core::jobs::JobSystem;
 use null3d_core::scene::{Command, flags};
+use null3d_gpu::drawlist::vertex::Type;
 use null3d_gpu::drawlist::{Op, template, vertex};
 use null3d_gpu::mock::MockBackend;
+use null3d_render::arrays::{Data, MeshArrays, Values, from_arrays};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
+use null3d_render::geometry::Geometry;
 use null3d_render::materials::Shading;
+use null3d_render::meshes::{MeshStorage, Packing};
 use null3d_render::view::ViewId;
 
 /// The world's scene, plus a small grid with the texture coordinate view, a grid of 90,601
@@ -142,4 +147,105 @@ fn a_page_that_outgrows_its_buffers_gets_new_ones_and_webgpu_records_its_bundle_
     let commands = world.commands();
     assert_eq!(count(&commands, Op::CreateBuffer), 0);
     assert_eq!(count(&commands, Op::BeginBundle), 0);
+}
+
+/// A grid's twin in integers: plain 16-bit positions, 8-bit normals and normalized 16-bit
+/// texture coordinates, which take 16 bytes per vertex where the grid's floats take 32.
+fn quantized(g: &Geometry) -> Geometry {
+    let positions: Vec<u16> = g.attribute(0).iter().map(|&p| p as u16).collect();
+    let normals: Vec<i8> = g.attribute(1).iter().map(|&n| (n * 127.0) as i8).collect();
+    let uvs: Vec<u16> = g
+        .attribute(2)
+        .iter()
+        .map(|&t| (t * 65535.0) as u16)
+        .collect();
+    let arrays = MeshArrays {
+        positions: Values::integers(Data::U16(&positions), false),
+        normals: Some(Values::integers(Data::I8(&normals), true)),
+        uvs: Some(Values::integers(Data::U16(&uvs), true)),
+        indices: Some(&g.indices),
+        ..MeshArrays::default()
+    };
+    from_arrays(&arrays, &JobSystem::new(0)).unwrap()
+}
+
+/// The bytes that a world's first frame writes into GPU buffers, with one object of `mesh`.
+fn uploaded<B: FrameBuilder>(mut world: World<B>, mesh: &Geometry) -> u32 {
+    world.add_object(mesh, Shading::TexCoords);
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(world.frame).words())
+        .unwrap();
+    world
+        .commands()
+        .iter()
+        .filter(|(op, _)| *op == Op::WriteBuffer)
+        .map(|(_, o)| o[3])
+        .sum()
+}
+
+#[test]
+fn a_quantized_mesh_uploads_half_the_vertex_bytes_of_its_float_twin_on_both_paths() {
+    // A grid of 65 x 65 = 4,225 vertices, whose floats take 32 bytes each.
+    let floats = grid(64, 64);
+    let integers = quantized(&floats);
+    assert_eq!(vertex::type_of(integers.format, 0), Some(Type::Uint16));
+    assert_eq!((floats.stride(), integers.stride()), (32, 16));
+    assert_eq!(integers.vertex_count(), 4225);
+    let saved = 4225 * (32 - 16);
+    let gpu = uploaded(World::new(), &floats) - uploaded(World::new(), &integers);
+    assert_eq!(gpu, saved);
+    let webgl2 = || World::build(CpuCulledRenderer::new(CpuCulledConfig::default()));
+    assert_eq!(
+        uploaded(webgl2(), &floats) - uploaded(webgl2(), &integers),
+        saved
+    );
+}
+
+#[test]
+fn every_attribute_type_packs_into_pages_of_its_own_format_in_both_packings() {
+    // One quad per type of each attribute, with every other attribute in its default type.
+    let quad = grid(1, 1);
+    let mut meshes = Vec::new();
+    for (location, attribute) in vertex::ATTRIBUTES.iter().enumerate() {
+        for &ty in attribute.types {
+            let format = vertex::with(quad.format, location, ty).unwrap();
+            let stride = vertex::stride(format) as usize;
+            // Each vertex's bytes count up, so every vertex is unique.
+            let vertices = (0..4 * stride).map(|k| (k % 251) as u8).collect();
+            meshes.push(Geometry {
+                format,
+                vertices,
+                indices: quad.indices.clone(),
+            });
+        }
+    }
+    let formats: std::collections::BTreeSet<u32> = meshes.iter().map(|m| m.format).collect();
+    // The quad has float positions, normals and first coordinates, so their float types repeat
+    // its format; every other type makes a format of its own.
+    assert_eq!((meshes.len(), formats.len()), (41, 39));
+    for packing in [Packing::SharedBuffers, Packing::Pages] {
+        let mut storage = MeshStorage::new(packing);
+        let ids: Vec<u32> = meshes.iter().map(|m| storage.add(m).unwrap()).collect();
+        for (mesh, id) in meshes.iter().zip(ids) {
+            let slot = storage.mesh(id).unwrap();
+            assert_eq!(slot.format, mesh.format);
+            let part = storage.parts(slot)[0];
+            let page = &storage.pages()[part.page as usize];
+            assert_eq!(page.format, mesh.format);
+            assert_eq!(page.vertices.len() % mesh.stride(), 0);
+            // Each index reaches the vertex whose bytes the mesh gave it.
+            for (k, &original) in mesh.indices.iter().enumerate() {
+                let index = page.indices[part.first_index as usize + k] as usize;
+                let at = (part.base_vertex as usize + index) * mesh.stride();
+                let from = original as usize * mesh.stride();
+                assert_eq!(
+                    page.vertices[at..at + mesh.stride()],
+                    mesh.vertices[from..from + mesh.stride()],
+                    "{packing:?}"
+                );
+            }
+        }
+        assert_eq!(storage.pages().len(), formats.len(), "{packing:?}");
+    }
 }

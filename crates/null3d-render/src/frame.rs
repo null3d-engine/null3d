@@ -1208,7 +1208,8 @@ pub(crate) fn bucket_of<K: Ord + Copy>(table: &[(K, u32)], key: Option<K>) -> Op
 struct PageBuffers {
     vertex_bytes: u32,
     index_bytes: u32,
-    vertex_floats: usize,
+    /// The page's vertex bytes that the buffers hold.
+    vertices: usize,
     indices: usize,
 }
 
@@ -1227,7 +1228,7 @@ impl PageBuffers {
         } else {
             *self
         };
-        (page.vertices.len() - held.vertex_floats) * 4
+        (page.vertices.len() - held.vertices)
             + ((page.indices.len() - (held.indices & !1)) * 2).next_multiple_of(4)
     }
 }
@@ -1307,12 +1308,12 @@ impl MeshBuffers {
                 )?;
                 remade = true;
             }
-            let new_vertices = &page.vertices[buffers.vertex_floats..];
+            let new_vertices = &page.vertices[buffers.vertices..];
             if !new_vertices.is_empty() {
-                let offset = (buffers.vertex_floats * 4) as u32;
-                let (at, bytes) = arena.push(floats_as_bytes(new_vertices))?;
+                let offset = buffers.vertices as u32;
+                let (at, bytes) = arena.push(new_vertices)?;
                 list.push(Op::WriteBuffer, &[vertex_id, offset, at, bytes])?;
-                buffers.vertex_floats = page.vertices.len();
+                buffers.vertices = page.vertices.len();
             }
             if buffers.indices < page.indices.len() {
                 let first = buffers.indices & !1;

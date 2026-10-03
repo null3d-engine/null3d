@@ -234,6 +234,9 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - WebGL2 always reads the largest value of the index type as a primitive restart, because WebGL 2.0 keeps `PRIMITIVE_RESTART_FIXED_INDEX` on. A triangle that uses 16-bit index 65,535 draws nothing. Pages and mesh parts therefore hold at most 65,535 vertices on both paths.
 - Each vertex attribute has a fixed shader location, and a pipeline reads only the attributes that its entry point declares. WebGPU needs a pipeline for each vertex format, since the format sets the stride and the offsets. On WebGL2 the vertex array holds that layout, so the pipelines of one template share one program.
 - The culling shader counts each visible instance in every draw of its bucket, one draw per part of the bucket's mesh. The parts' draws then read the same slice of instances.
+- A vertex format gives each attribute a type: floats, or the 8-bit and 16-bit integers that glTF allows for it ([D-25](decisions/D-25-vertex-types.md)). Mesh pages hold bytes, and each attribute takes whole 4-byte words, so a vertex's stride is always whole words.
+- WebGPU reads a plain integer that a shader takes as a float through its normalized twin, such as `unorm16x4` for 16-bit unsigned positions. The pipeline then sets the override constant of that location to the type's largest value. Its id is 1000 plus the location. The functions `mesh_position`, `mesh_uv` and `mesh_second_uv` of `null3d::vertex` multiply by it. WebGL2 reads the integer as its whole value with `vertexAttribPointer` and `normalized` false, so its GLSL keeps each constant at 1.
+- Joints are the one attribute that shaders read as integers (`vec4u`). WebGPU reads them with `uint8x4` or `uint16x4`, and WebGL2 with `vertexAttribIPointer`. A WebGL2 program that declares an integer input must get an integer pointer, or the draw fails. So only shaders that read joints declare location 6.
 
 ## Pipelines and warm-up
 

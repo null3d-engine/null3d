@@ -141,9 +141,10 @@ export interface CoreGlue extends CoreErrors {
 	meshArrays(words: number): number;
 	/**
 	 * A mesh from the arrays at `meshArrays`'s address, as `layout` (the `MESH_ARRAYS_*` bits)
-	 * describes them. Returns the mesh id.
+	 * describes them. `types` gives each array's type in its attribute's field of a vertex format.
+	 * Returns the mesh id.
 	 */
-	createMeshFromArrays(vertices: number, indices: number, layout: number): number;
+	createMeshFromArrays(vertices: number, indices: number, layout: number, types: number): number;
 	meshRadius(mesh: number): number;
 	/**
 	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
