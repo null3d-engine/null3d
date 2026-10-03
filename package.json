@@ -20,6 +20,7 @@
 		"docs:style": "bun tools/hooks/check-docs-style.ts --all",
 		"skills": "bun tools/skills.ts sync && bun tools/skills.ts check",
 		"skills:check": "bun tools/skills.ts check",
+		"samples:fetch": "bun tools/samples.ts",
 		"build": "bun tools/build-wasm.ts",
 		"build:check-size": "bun tools/build-wasm.ts --check-size",
 		"shaders": "bun tools/shaders.ts",
