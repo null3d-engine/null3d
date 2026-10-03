@@ -1,6 +1,6 @@
 # D-11: Preset values, the governor's thresholds, and frames in flight
 
-Status: frames in flight decided by the owner on 2026-09-30. The preset check's thresholds proposed by M1-G3, the governor's thresholds by M1-G5 and kept by M1-G6. The preset values set by M1-G6 from the S24+ and iPad runs. Once warm, the iPad misses its gate at Medium. So the owner decided on 2026-10-03 to judge the iPad at Low. Date: 2026-09-30. Tasks: M1-G1 (frames in flight), then M1-G3, M1-G5 and M1-G6.
+Status: frames in flight decided by the owner on 2026-09-30. The preset check's thresholds proposed by M1-G3, the governor's thresholds by M1-G5 and kept by M1-G6. The preset values set by M1-G6 from the S24+ and iPad runs. Once warm, the iPad misses its gate at Medium. So the owner decided on 2026-10-03 to judge the iPad at Low, where it passed. Date: 2026-09-30. Tasks: M1-G1 (frames in flight), then M1-G3, M1-G5 and M1-G6.
 
 This record settles three questions. M1-G1 answers the third, frames in flight, with the GPU-bound page. The preset values and the governor's thresholds follow from the S4 traces of M1-G5 and M1-G6, and from the live shadow-map resize test of M1-G3. Those tasks add their sections here. M1-G3 adds the preset check's thresholds at the end.
 
@@ -13,7 +13,7 @@ On 3 October 2026:
 | Frames in flight | Decided by the owner, 2026-09-30: at most two frames unfinished on the GPU, on both paths | The iPad's rows of the GPU-bound page. The four Mac browsers and the S24+ support the decision, so these rows can only confirm it or reopen it |
 | The preset check's thresholds | Proposed by M1-G3 | The owner's answer on the grace, the window and the target on 120 Hz displays (below) |
 | The governor's thresholds | Proposed by M1-G5, kept by M1-G6. The stress test passes on the Mac, the S24+ and, after #222, the iPad. In M1-G6's S4 reruns, the render scale held still in every measured second | The owner's answer |
-| The preset values | Set by M1-G6 (#215), 2026-10-03. The S24+ passed its S4 gate at Low. Warm, the iPad held about 45 fps at Medium, so the owner decided to judge its gate at Low | The iPad's gate at Low and the S24+'s run at Medium ("Results still to come" below). A follow-up measures the render scale on tile-based GPUs |
+| The preset values | Set by M1-G6 (#215), 2026-10-03. The S24+ passed its S4 gate at Low. Warm, the iPad held about 45 fps at Medium, so the owner decided to judge its gate at Low. It passed at Low: 298 of 299 seconds at 60 fps | Open for later: the chooser starts the S24+ at Low, though it held Medium for 5 minutes. A follow-up measures the render scale on tile-based GPUs |
 | The live shadow-map resize test | Not built | No setting that changes during play resizes a shadow map, so the presets do not need it (below) |
 
 ## Question
@@ -421,19 +421,19 @@ The reasons:
 - Developers keep the choice of fidelity. A slower rate with sharper shadows and edges can suit a product viewer, while a game can name Low.
 - A chooser that picked Low on every tablet would draw cool tablets lighter than they can hold. The engine has no signal that tells a tablet that will heat from one that will not.
 
-### Results still to come
+### Results of the gates at the decided presets
 
 | Run | Result |
 | --- | --- |
-| The iPad's gate at Low: S4, Safari, WebGPU, 5 minutes of warm-up, then 5 measured minutes | Pending |
-| The S24+'s gate at Medium: S4, Chrome and Brave, WebGL2 | Pending |
+| The iPad's gate at Low: S4, Safari 26.6.2, WebGPU, 5 minutes of warm-up, then 5 measured minutes | Passed. It held 60 fps in 298 of 299 seconds, with a lowest of 56 fps. The render scale stayed at 1, with no step. GPU time was 12.65 ms per frame (median), 13.44 ms at the 95th percentile. The iPad rested about 20 minutes first, so this run started cool. The gate at Medium started warm, after the candidates. Run `20261003-073734-bench`, from #215's branch with main at `f46c0686` |
+| The S24+'s gate at Medium: S4, Chrome and Brave, WebGL2 | Passed. Chrome held 60 fps in 300 of 300 seconds, and Brave in 299 of 299. The lowest was 58 fps, at a render scale of 1, with no step. The busiest thread took 4.05 ms in Chrome and 3.72 ms in Brave. The phone rested about 20 minutes first. Its skin peaked at 33.6 °C, at throttle level 0. Run `20261003-063922-bench`, from #215's branch with main at `f46c0686` |
 
 ```sh
 bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4 --pages null3d-webgpu --runs 1 --seconds 300 --switches preset=low
 bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome,brave --scenes s4 --pages null3d-webgl2 --runs 1 --seconds 300 --switches preset=medium
 ```
 
-The S24+ run shows whether the phone could keep Medium for 5 minutes. The chooser picks Low there today.
+So the iPad holds 60 fps at Low after 5 minutes of warm-up, as the decision needs. The S24+ keeps Medium for 5 minutes with room to spare, though the chooser still starts it at Low, the floor for phones. Open for later: whether the chooser should start such a phone at Medium. Nothing changes now.
 
 ### Follow-ups
 
