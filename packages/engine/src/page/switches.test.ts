@@ -20,6 +20,7 @@ describe('parseSwitches', () => {
 			half: undefined,
 			cells: true,
 			prepass: undefined,
+			vertexSkinning: false,
 			fps: undefined,
 			queue: undefined,
 			jobs: undefined,
@@ -29,6 +30,11 @@ describe('parseSwitches', () => {
 			bench: false,
 			glTiming: undefined,
 		});
+	});
+
+	it('skins in the vertex shader on WebGPU with ?skinning=vertex, and in a compute pass otherwise', () => {
+		expect(parseSwitches('?skinning=vertex').vertexSkinning).toBe(true);
+		expect(parseSwitches('?skinning=compute').vertexSkinning).toBe(false);
 	});
 
 	it('turns the depth prepass on or off with ?prepass=, and leaves it to the page otherwise', () => {

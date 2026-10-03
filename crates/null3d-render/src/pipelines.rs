@@ -162,7 +162,7 @@ impl DrawKey {
         let faces = state_flags::CULL_NONE | state_flags::CULL_FRONT;
         Some(DrawKey {
             template: template::SHADOW_DEPTH,
-            permutation: permutation::PREPASS,
+            permutation: permutation::PREPASS | (self.permutation & permutation::SKIN),
             vertex_format: self.vertex_format,
             state: (self.state & faces) | state_flags::NO_COLOR_WRITE,
             bias: self.bias,
