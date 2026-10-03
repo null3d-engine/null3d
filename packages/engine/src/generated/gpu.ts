@@ -121,6 +121,7 @@ export const PERMUTATION_DEBUG_VIEW_LOW = 1024;
 export const PERMUTATION_DEBUG_VIEW_HIGH = 2048;
 export const PERMUTATION_PREPASS = 4096;
 export const PERMUTATION_HALF = 8192;
+export const PERMUTATION_CASTER_OFFSET = 16384;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;

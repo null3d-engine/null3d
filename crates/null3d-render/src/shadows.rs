@@ -640,7 +640,9 @@ impl ShadowFrame {
 
     /// The values of a cascade's view: its matrix, its culling frustum, which has no plane on the
     /// light's side, and its depth, which runs from the box's face toward the light. Its culling
-    /// moves sources by the offsets from the camera, as the camera's view does.
+    /// moves sources by the offsets from the camera, as the camera's view does. Its camera is the
+    /// light, far away, so its position is the direction toward the light, and its target is the
+    /// layer, whose texels the casters' offset counts.
     pub fn view_frame(&self, cascade: usize) -> ViewFrame {
         let cascade = &self.cascades.cascades[cascade];
         // Clip depth falls from 1 at the light's face to 0 over the box's length in meters.
@@ -652,10 +654,13 @@ impl ShadowFrame {
             far: length,
             perspective: false,
         };
+        let [x, y, z] = [m[2], m[6], m[10]].map(|v| v * length);
+        let size = self.settings.map_size.max(1) as f32;
         ViewFrame {
             uniform: FrameUniform {
                 view_proj: cascade.view_proj,
-                camera_position: [0.0, 0.0, 0.0, 1.0],
+                camera_position: [x, y, z, 0.0],
+                target_size: [size, size, 1.0 / size, 1.0 / size],
                 ..FrameUniform::default()
             },
             frustum: cascade.frustum,
@@ -1099,6 +1104,36 @@ mod tests {
         assert_eq!(uniform.ends[3], 200.0);
         // The filter's values follow the map size and the kernel.
         assert_eq!(uniform.kernel, [2048.0, 1.0 / 2048.0, 3.0, 0.0]);
+    }
+
+    #[test]
+    fn each_cascade_s_pass_sees_the_light_as_its_camera_and_its_layer_as_its_target() {
+        let frame = ShadowFrame {
+            cascades: fit(&camera(), &LENS, 1.5, DOWN_AND_ACROSS, &SETTINGS),
+            settings: SETTINGS,
+            camera: CellPosition::default(),
+            layers: 1,
+            drawn: 0b111,
+        };
+        let size = SETTINGS.map_size as f32;
+        for (k, cascade) in frame.cascades.used().iter().enumerate() {
+            let uniform = frame.view_frame(k).uniform;
+            // The direction toward the light, as an orthographic camera's position gives it.
+            let [x, y, z, w] = uniform.camera_position;
+            let toward = DOWN_AND_ACROSS.map(|v| -v);
+            assert!((x - toward[0]).abs() + (y - toward[1]).abs() + (z - toward[2]).abs() < 1e-5);
+            assert_eq!(w, 0.0);
+            assert_eq!(uniform.target_size, [size, size, 1.0 / size, 1.0 / size]);
+            // The shadow depth shader's texel: two clip units over the texels across, in meters.
+            let m = &cascade.view_proj;
+            let row = (m[0] * m[0] + m[4] * m[4] + m[8] * m[8]).sqrt();
+            let texel = 2.0 * uniform.target_size[2] / row;
+            assert!(
+                (texel / cascade.texel - 1.0).abs() < 1e-4,
+                "{texel} {}",
+                cascade.texel
+            );
+        }
     }
 
     /// A camera far from the world's origin, in its own cell, as the core places it.

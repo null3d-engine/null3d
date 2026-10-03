@@ -212,7 +212,17 @@ A bias in meters keeps its size in every cascade. So where a shadow meets its ca
 
 The biases of spot and point lights work the same way, in meters. One texel of the light's tile at the surface's distance from the light caps them.
 
-Values that are too large make shadows start a little away from their casters. A thin lit line then shows at each object's base. A box's bottom face lies on the ground and draws into the map. A receiver moved too far from the ground counts that face as below it. The filter then reads the ground under the box as lit. The defaults keep shadows against the base of a car-sized box from near the camera out to the last cascade. Take the ground just past a box's base in the last cascade, under S4's sun, seen from above. Biases of 0.2 and 0.3 texels of each cascade left it at 0.62 of its lit brightness. The defaults leave it at 0.57, and no bias at 0.56. Raise the biases in small steps if a surface shows acne. A bias above one texel acts as one texel.
+Values that are too large make shadows start a little away from their casters. A thin lit line then shows at each object's base. Raise the biases in small steps if a surface shows acne. A bias above one texel acts as one texel.
+
+### Where shadows meet their casters
+
+A box's bottom face lies on the ground, and it points away from the light, so it draws into the map at the ground's depth. Near the box's base, some of the filter's reads land under the box. There the ground and the bottom face have equal depths, and those reads come out lit. A thin lit line would then show at the base, even with no bias.
+
+So the engine moves each caster's faces that point away from the light toward the light before it draws them. The move is up to one texel of the map at the face, and at most 5 cm. A face that points straight away from the light, such as a box's bottom under a high sun, moves the most. A face that the light only grazes moves little, so the caster's lit faces keep their light up to their edges. A double-sided material's faces stay in place, because they hold the caster's lit side. Spot and point lights move faces by texels of their tiles in the same way.
+
+The engine's contact check measures the light between a box's base and the start of its shadow, in pixels of full light. For car-sized boxes under S4's sun, in Chrome on a Mac with WebGPU, the move took it from 0.16 to 0.02 pixels near the camera. In the last cascade, it took it from 0.20 to 0.08 pixels. In S4's own frame, it halved the figure.
+
+The 5 cm cap protects floors that cast shadows. Such a floor compares its lit top with its own bottom. Where a texel is larger than the floor is thick, as in a far cascade, its top could shadow itself. With the cap, a floor 20 cm thick stays clear. Give a ground that needs to cast no shadows `receiveShadows` alone, as S4's streets have.
 
 ## Which objects cast and receive
 

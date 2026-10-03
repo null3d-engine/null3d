@@ -1286,10 +1286,11 @@ describe('the bench plan', () => {
 		const [visual] = benchPlan({ runs: 1, scenes: ['s4'], pages: ['null3d-webgpu'] }).slice(1);
 		if (visual?.check.kind !== 'visual') throw new Error('the plan has no visual check');
 		const png = Buffer.from('a PNG file').toString('base64');
-		const figures = (changedPercent: number, offsetPixels: number): ItemResult => ({
+		const figures = (changedPercent: number, offsetPixels: number, gap = 0.03): ItemResult => ({
 			ok: true,
 			stability: { changedPercent, meanChangedPercent: 0, shadowedPercent: 23 },
 			edges: { offsetPixels },
+			contact: { feet: 300, meanGapPixels: gap, gapPercent: 1, tops: 200, meanRimPixels: 2.6 },
 			images: { 'moving-1': png },
 		});
 		const context = { resultOf: () => undefined, imageDir: root };
@@ -1297,9 +1298,10 @@ describe('the bench plan', () => {
 		expect(readFileSync(join(root, 'frames', 's4-webgpu', 'moving-1.png'), 'utf8')).toBe(
 			'a PNG file',
 		);
-		expect(judge(visual.check, figures(1.86, 0.14), NONE_MISSING, context)).toEqual([
+		expect(judge(visual.check, figures(1.86, 0.14, 0.2), NONE_MISSING, context)).toEqual([
 			'1.860% of the pixels changed their shadow between frames, over the limit of 0.05%',
 			`shadow edges stray 0.140 px from the reference's, over the limit of ${VISUAL_LIMITS.s4?.edgeOffsetPixels} px`,
+			`the light between casters' feet and their shadows measures 0.200 px, over the limit of ${VISUAL_LIMITS.s4?.contactGapPixels} px`,
 		]);
 	});
 
@@ -1315,6 +1317,13 @@ describe('the bench plan', () => {
 						ok: true,
 						stability: { changedPercent: 1.86, meanChangedPercent: 1.8, shadowedPercent: 23 },
 						edges: { offsetPixels: 0.095 },
+						contact: {
+							feet: 300,
+							meanGapPixels: 0.03,
+							gapPercent: 1,
+							tops: 200,
+							meanRimPixels: 2.6,
+						},
 					}
 				: {
 						ok: true,
@@ -1323,10 +1332,12 @@ describe('the bench plan', () => {
 						intervalMs: { median: 16.7, p95: 17, p99: 18 },
 					};
 		const lines = benchSummary(items, result)?.split('\n') ?? [];
-		expect(lines[0]).toContain('| GPU ms | Shadow pixels changed, % | Shadow edge offset, px |');
-		const cells = (line: string | undefined) => line?.split(' | ').slice(10, 12);
-		expect(cells(lines[2])).toEqual(['1.860 OVER 0.05', '0.095']);
-		expect(cells(lines[3])).toEqual(['n/a', 'n/a']);
+		expect(lines[0]).toContain(
+			'| GPU ms | Shadow pixels changed, % | Shadow edge offset, px | Contact gap, px |',
+		);
+		const cells = (line: string | undefined) => line?.split(' | ').slice(10, 13);
+		expect(cells(lines[2])).toEqual(['1.860 OVER 0.05', '0.095', '0.030']);
+		expect(cells(lines[3])).toEqual(['n/a', 'n/a', 'n/a']);
 	});
 });
 
