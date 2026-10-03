@@ -293,7 +293,7 @@ export class DebugDraw extends SketchDebug {
 			this.followed[k] = undefined;
 			// An object destroyed after the call is gone from the core by now.
 			if (object.destroyedFrame >= 0) continue;
-			if (this.core.glue.worldMatrix(object.handle, this.matrix) !== 0) continue;
+			if (this.core.readWorldMatrix(object.handle, this.matrix) !== 0) continue;
 			const value = this.followedValues[k] as number;
 			const kind = this.followedKinds[k];
 			if (kind === FRUSTUM)

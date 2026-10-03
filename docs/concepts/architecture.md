@@ -61,7 +61,7 @@ The sketch worker, computing frame N+1:
 2. Judges the frames so far for [dynamic resolution and the frame-budget governor](quality-presets.md#dynamic-resolution). They can change this frame's render scale or the live shadow settings.
 3. Runs your `onFixedUpdate` once for each fixed step that fell due, then your `onUpdate`. Your code writes transforms straight into the shared arrays and queues structural changes, such as creating, destroying and reparenting objects.
 4. Applies the structural changes in one batch.
-5. Runs parallel jobs: transforms by hierarchy depth, with their bounds.
+5. Runs parallel jobs: the animation step, which poses the animated objects, then the transforms by hierarchy depth, with their bounds. A skinned mesh's bounds follow its pose.
 6. Runs your `onLateUpdate`, then updates the objects that it moved and the objects below them.
 7. Runs more parallel jobs: the instance batches.
 8. Gathers the point and spot lights nearest the camera, and tests each grid cell against each view. A view is the camera's, a shadow cascade's or a shadow tile's. Parallel jobs then cull the see-through objects and sort them back to front. On the WebGL2 path, they also cull the objects of the cells in view, and list the lights of each cluster.
@@ -85,12 +85,13 @@ A frame's draw list holds a series of passes, and the [render graph](render-grap
 
 1. Light clustering, on WebGPU: a compute pass lists the point and spot lights of each cluster of the camera's view ([Lighting and environment](lighting.md#clustered-forward-shading)).
 2. Culling, on WebGPU: a compute pass for each view tests the objects and instance rows against the view, on the GPU. In a scene over several grid cells, it skips the still objects of the cells out of view ([Culling](culling.md)).
-3. Shadows: while a directional light casts shadows, each cascade that draws in the frame draws its casters' depth into its layer of the shadow map. Each tile of the shadow atlas of spot and point lights draws too, but only in a frame in which it must draw again ([Shadows](shadows.md)).
-4. The depth prepass, on WebGPU and only when `depthPrepass` turns it on: the depth of the opaque objects, before they are shaded ([Quality presets](quality-presets.md#the-depth-prepass)).
-5. The opaque pass draws the objects in view into the scene color and depth, with 4 samples per pixel in the MSAA mode.
-6. In development builds, a frame with [debug drawing](../api/debug.md) draws the lines after the opaque pass, in the same render pass.
-7. While some object blends, the transparent pass draws the blended objects back to front, in the same render pass.
-8. The final pass draws the scene color into the canvas. On the HDR path it applies the exposure and the tone mapping, encodes sRGB and dithers. It also smooths edges in the FXAA mode, and scales the image up to the canvas when the render scale is below 1. On the 8-bit path the scene's shaders tone map their own output. There, with MSAA and a lowest render scale of 1, the scene's render pass averages its samples straight into the canvas. The frame then has no final pass ([GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier)).
+3. Skinning, on WebGPU: a compute pass skins each skinned mesh that some view draws, once, into a buffer of skinned vertices. The shadow passes and the scene passes draw that buffer ([Animation](../api/animation.md#skinned-meshes)).
+4. Shadows: while a directional light casts shadows, each cascade that draws in the frame draws its casters' depth into its layer of the shadow map. Each tile of the shadow atlas of spot and point lights draws too, but only in a frame in which it must draw again ([Shadows](shadows.md)).
+5. The depth prepass, on WebGPU and only when `depthPrepass` turns it on: the depth of the opaque objects, before they are shaded ([Quality presets](quality-presets.md#the-depth-prepass)).
+6. The opaque pass draws the objects in view into the scene color and depth, with 4 samples per pixel in the MSAA mode.
+7. In development builds, a frame with [debug drawing](../api/debug.md) draws the lines after the opaque pass, in the same render pass.
+8. While some object blends, the transparent pass draws the blended objects back to front, in the same render pass.
+9. The final pass draws the scene color into the canvas. On the HDR path it applies the exposure and the tone mapping, encodes sRGB and dithers. It also smooths edges in the FXAA mode, and scales the image up to the canvas when the render scale is below 1. On the 8-bit path the scene's shaders tone map their own output. There, with MSAA and a lowest render scale of 1, the scene's render pass averages its samples straight into the canvas. The frame then has no final pass ([GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier)).
 
 On WebGL2 the job workers cull and list the lights of each cluster before the frame records, so the frame has no compute passes there. The graph works out the order only when the passes change, so a frame whose passes stay the same pays nothing for it.
 

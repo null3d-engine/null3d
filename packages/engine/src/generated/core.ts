@@ -11,6 +11,7 @@ export const COMMAND_SET_VISIBLE = 7;
 export const COMMAND_SET_LAYERS = 8;
 export const COMMAND_SET_FLAGS = 9;
 export const COMMAND_SET_RENDER_ORDER = 10;
+export const COMMAND_SET_SKIN = 11;
 export const COMMAND_KEEP_WORLD = 1;
 export const COMMAND_WORDS = 4;
 

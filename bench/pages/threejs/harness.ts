@@ -28,7 +28,10 @@ import { fixedTrace } from '../lib/trace';
 export type Three = Pick<
 	typeof ThreeModule,
 	| 'AmbientLight'
+	| 'AnimationClip'
+	| 'AnimationMixer'
 	| 'BatchedMesh'
+	| 'Bone'
 	| 'Box3'
 	| 'BoxGeometry'
 	| 'BufferAttribute'
@@ -47,6 +50,7 @@ export type Three = Pick<
 	| 'FogExp2'
 	| 'HemisphereLight'
 	| 'InstancedMesh'
+	| 'InterpolateDiscrete'
 	| 'LinearFilter'
 	| 'LinearMipmapLinearFilter'
 	| 'Matrix4'
@@ -59,14 +63,18 @@ export type Three = Pick<
 	| 'PlaneGeometry'
 	| 'PointLight'
 	| 'Quaternion'
+	| 'QuaternionKeyframeTrack'
 	| 'RepeatWrapping'
 	| 'RingGeometry'
 	| 'Scene'
+	| 'Skeleton'
+	| 'SkinnedMesh'
 	| 'SphereGeometry'
 	| 'SpotLight'
 	| 'SRGBColorSpace'
 	| 'TextureLoader'
 	| 'TorusGeometry'
+	| 'Uint16BufferAttribute'
 	| 'Vector3'
 >;
 

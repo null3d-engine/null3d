@@ -36,6 +36,13 @@ enable draw_index;
 // multi-draw call and read each draw's record by `gl_DrawID`; the other builds get one record per
 // draw.
 //
+// The SKIN builds skin each vertex in the vertex shader: `skin_of` blends the skinning matrices of
+// the vertex's four joints by their weights, from the joint texture, which holds each animated
+// instance's matrices, three texels per joint and JOINTS_PER_ROW joints per row. Each instance
+// brings the first joint of its skin beside its material. The texture is the bind group after the
+// maps' in the builds that sample maps (JOINTS_AFTER_MAPS), and the group after the frame's in the
+// others.
+//
 // The fragment shaders write linear color into the HDR scene color, which the final pass tone maps.
 // On the 8-bit path (the TONE_MAP builds) `finish` applies the frame's exposure and tone mapping,
 // and encodes sRGB, into a target that resolves straight into the canvas.
@@ -106,14 +113,15 @@ struct InstanceIn {
 #endif
 }
 
-/// One instance: the rows of its world matrix that give x, y and z, its material, and whether it
-/// draws at all. (Library modules keep names that end in a digit out of their structs, because the
-/// shader composer cannot keep them.)
+/// One instance: the rows of its world matrix that give x, y and z, its material, the first joint
+/// of its skin in the joint texture, and whether it draws at all. (Library modules keep names that
+/// end in a digit out of their structs, because the shader composer cannot keep them.)
 struct Instance {
     row_x: vec4f,
     row_y: vec4f,
     row_z: vec4f,
     material: u32,
+    first_joint: u32,
     drawn: bool,
 }
 
@@ -239,6 +247,7 @@ fn instance_of(record: vec4u, instance: u32) -> Instance {
     out.row_y.w += offset.y;
     out.row_z.w += offset.z;
     out.material = record.y;
+    out.first_joint = 0u;
     return out;
 }
 #endif
@@ -252,7 +261,7 @@ fn find_instance(i: InstanceIn) -> Instance {
     return instance_of(draws.items[0], i.instance);
 #endif
 #else
-    return Instance(i.row_x, i.row_y, i.row_z, i.ids.x, true);
+    return Instance(i.row_x, i.row_y, i.row_z, i.ids.x, i.ids.y, true);
 #endif
 }
 
@@ -297,3 +306,53 @@ fn finish(c: vec3f, pixel: vec2f) -> vec4f {
 fn world_direction(found: Instance, direction: vec3f) -> vec3f {
     return transform_direction(transform_of(found), direction);
 }
+
+#ifdef SKIN
+/// Joints per row of the joint texture.
+const JOINTS_PER_ROW: u32 = 1024u;
+
+#ifdef JOINTS_AFTER_MAPS
+@group(2) @binding(0) var joint_matrices: texture_2d<f32>;
+#else
+@group(1) @binding(0) var joint_matrices: texture_2d<f32>;
+#endif
+
+/// A vertex's skinning matrix: the rows that give x, y and z.
+struct Skin {
+    row_x: vec4f,
+    row_y: vec4f,
+    row_z: vec4f,
+}
+
+/// Row `row` of joint `joint`'s skinning matrix.
+fn joint_row(joint: u32, row: u32) -> vec4f {
+    let x = (joint % JOINTS_PER_ROW) * 3u + row;
+    return textureLoad(joint_matrices, vec2u(x, joint / JOINTS_PER_ROW), 0);
+}
+
+/// The skinning matrix of a vertex of the instance's mesh: its joints' matrices, each times its
+/// weight, added up. The weights are used as they are, as three.js uses them.
+fn skin_of(found: Instance, joints: vec4u, weights: vec4f) -> Skin {
+    var s = Skin(vec4f(0.0), vec4f(0.0), vec4f(0.0));
+    for (var k = 0u; k < 4u; k++) {
+        let joint = found.first_joint + joints[k];
+        let w = weights[k];
+        s.row_x += w * joint_row(joint, 0u);
+        s.row_y += w * joint_row(joint, 1u);
+        s.row_z += w * joint_row(joint, 2u);
+    }
+    return s;
+}
+
+/// A position of the mesh in its skeleton's space, skinned.
+fn skinned_point(s: Skin, p: vec3f) -> vec3f {
+    let h = vec4f(p, 1.0);
+    return vec3f(dot(s.row_x, h), dot(s.row_y, h), dot(s.row_z, h));
+}
+
+/// A direction of the mesh, such as a normal or a tangent, turned by the skinning matrix without
+/// its translation, as three.js turns it.
+fn skinned_direction(s: Skin, d: vec3f) -> vec3f {
+    return vec3f(dot(s.row_x.xyz, d), dot(s.row_y.xyz, d), dot(s.row_z.xyz, d));
+}
+#endif

@@ -612,6 +612,12 @@ pub mod layout {
     /// uniform block, the texture of each of bloom's levels and their linear sampler, then
     /// [`FINAL`]'s color grading table and its sampler at bindings 9 and 10.
     pub const FINAL_BLOOM: u32 = 10;
+    /// Group 2 of render pipelines that skin in the vertex shader: the texture of every animated
+    /// instance's skinning matrices, which vertex shaders read.
+    pub const JOINTS: u32 = 11;
+    /// Group 0 of the skinning compute pipeline: its table of formats and parts, a mesh page's
+    /// vertices, the skinned vertices that it writes, and the texture of skinning matrices.
+    pub const SKIN: u32 = 12;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1096,6 +1102,10 @@ pub mod sizes {
     pub const CULL_WORKGROUP_SIZE: u32 = 128;
     /// 32-bit words per indexed indirect draw.
     pub const INDIRECT_WORDS: u32 = 5;
+    /// 32-bit words per bucket record of the culling shader: its slice's base, its material, its
+    /// local sphere's radius, its first draw and draw count, the sphere's centre, and the first
+    /// joint of a skin that the vertex shader skins.
+    pub const BUCKET_WORDS: u32 = 9;
     /// WebGPU's default `maxStorageBufferBindingSize`: the largest storage buffer that every device
     /// lets a shader bind. Many devices offer more.
     pub const PORTABLE_STORAGE_BINDING_BYTES: u32 = 128 * 1024 * 1024;
@@ -1190,6 +1200,9 @@ pub mod template {
     pub const LIGHT_PLACE: u32 = 18;
     /// Light clustering, last step: writes each cluster's lights into its place in the list.
     pub const LIGHT_WRITE: u32 = 19;
+    /// The skinning compute shader, which skins the parts of skinned meshes into a buffer of
+    /// skinned vertices.
+    pub const SKIN: u32 = 20;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1437,6 +1450,8 @@ pub fn typescript_constants() -> String {
                 ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),
                 ("BLOOM", layout::BLOOM),
                 ("FINAL_BLOOM", layout::FINAL_BLOOM),
+                ("JOINTS", layout::JOINTS),
+                ("SKIN", layout::SKIN),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1502,6 +1517,7 @@ pub fn typescript_constants() -> String {
                 ("LIGHT_COUNT", template::LIGHT_COUNT),
                 ("LIGHT_PLACE", template::LIGHT_PLACE),
                 ("LIGHT_WRITE", template::LIGHT_WRITE),
+                ("SKIN", template::SKIN),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),
@@ -1537,6 +1553,7 @@ pub fn typescript_constants() -> String {
                 ("OUTPUT_UNIFORM_BYTES", sizes::OUTPUT_UNIFORM_BYTES),
                 ("CULL_WORKGROUP_SIZE", sizes::CULL_WORKGROUP_SIZE),
                 ("INDIRECT_WORDS", sizes::INDIRECT_WORDS),
+                ("BUCKET_WORDS", sizes::BUCKET_WORDS),
                 ("MATRIX_TEXELS", sizes::MATRIX_TEXELS),
                 ("MATRICES_PER_TEXTURE_ROW", sizes::MATRICES_PER_TEXTURE_ROW),
                 ("INDICES_PER_TEXTURE_ROW", sizes::INDICES_PER_TEXTURE_ROW),
