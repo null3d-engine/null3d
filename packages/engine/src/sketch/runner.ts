@@ -324,7 +324,7 @@ export class SketchRunner {
 			materials,
 			geometry,
 			textures,
-			assets: new Assets(textures, sketch.pageUrl, { core: this.core, geometry, materials }),
+			assets: new Assets(textures, sketch.pageUrl, { core: this.core, geometry, materials, scene }),
 			input: this.input,
 			post: this.post,
 			quality: this.quality,

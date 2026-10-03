@@ -35,11 +35,7 @@ fn tracks(clip: &three::Clip) -> Vec<SourceTrack<'static>> {
         .map(|t| SourceTrack {
             joint: t.joint,
             channel: Channel::from_u32(t.channel).unwrap(),
-            interpolation: if t.step {
-                Interpolation::Step
-            } else {
-                Interpolation::Linear
-            },
+            interpolation: Interpolation::from_u32(t.interpolation).unwrap(),
             times: t.times,
             values: t.values,
         })
@@ -131,6 +127,11 @@ fn clips_keep_a_source_grid_up_to_the_rate_and_resample_others() {
             (43, (42.0f64 / 1.37) as f32, 1.37, 4, 4),
             // Keys every 24th of a second: kept.
             (19, 24.0, 0.75, 2, 2),
+            // Uneven cubic spline keys: 30 keys a second, so the curve between keys survives.
+            (76, 30.0, 2.5, 3, 3),
+            // Cubic spline keys every half second: 15 keys between each two, so the file's own
+            // keys stay exact.
+            (61, 30.0, 2.0, 3, 3),
         ]
     );
     // A rate of 60 keys a second is above the default rate, so it becomes 30.
@@ -381,6 +382,21 @@ fn resampling_refuses_bad_tracks() {
             ..good
         }]),
         Some((0, TrackProblem::Keys))
+    );
+    // A cubic spline key holds an in-tangent, a value and an out-tangent: three times the values.
+    let cubic = SourceTrack {
+        interpolation: Interpolation::CubicSpline,
+        ..good
+    };
+    assert_eq!(problem(&[cubic]), Some((0, TrackProblem::Keys)));
+    let tangents = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
+    let keys = [tangents, tangents].concat();
+    assert_eq!(
+        problem(&[SourceTrack {
+            values: &keys,
+            ..cubic
+        }]),
+        None
     );
     for times in [
         [1.0, 0.5],

@@ -12,6 +12,7 @@ import {
 	type Described,
 } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
+import type { ErrorCode } from '../errors/fixes';
 import * as C from '../generated/core';
 import {
 	compose as composeMatrix,
@@ -1546,11 +1547,28 @@ function rootTransform(options: NodeOptions): Float32Array {
 }
 
 /**
+ * @internal The scene API's checks and errors, which code that loads on first use, such as the
+ * animator, takes from the scene. That code imports no engine module but constants, so a bundle
+ * never moves these modules into a file of their own, which every page would download at its start.
+ */
+export const SCENE_CHECKS = {
+	// Code that takes these calls them in development builds only, so release builds hold none.
+	checkLive: DEV ? checkLive : () => {},
+	checkNumber: DEV ? checkNumber : () => {},
+	error: (code: ErrorCode, message: string): EngineError => new EngineError(code, message),
+};
+
+/** @internal The type of `SCENE_CHECKS`. */
+export type SceneChecks = typeof SCENE_CHECKS;
+
+/**
  * The scene: every object, the active camera, the lights and the background.
  *
  * @category api/scene
  */
 export class Scene {
+	/** @internal The scene API's checks and errors, for code that loads on first use. */
+	readonly checks: SceneChecks = SCENE_CHECKS;
 	private viewsGeneration = -1;
 	private currentViews!: SceneViews;
 	private activeCamera: Camera | undefined;
@@ -1841,7 +1859,8 @@ export class Scene {
 	 * Creates the objects of a model that `assets.loadGltf` loaded, under one new group that
 	 * `options` places, and returns that group. All the objects are created with one batch of
 	 * commands, and every copy shares the model's meshes, materials and textures. The group's
-	 * `find` gives the copy's object of a node, by the node's name. Throws E1102 when the scene has
+	 * `find` gives the copy's object of a node, by the node's name. A model with clips or skins
+	 * gives the group an animator, which plays the clips: `copy.animator().play('Walk')`. Throws E1102 when the scene has
 	 * no room for the objects, before it creates any.
 	 */
 	instantiate(prefab: Prefab, options: InstantiateOptions = {}): PrefabInstance {
@@ -1866,6 +1885,7 @@ export class Scene {
 		const objects = this.createNodes(template, call, options.parent ?? null, root, extra);
 		const instance = objects[0] as PrefabInstance;
 		instance.objects = objects;
+		prefab.animate(objects);
 		instance.batches = prefab.instancing.map((spec) => this.placeInstancing(instance, spec, call));
 		return instance;
 	}
@@ -1874,15 +1894,23 @@ export class Scene {
 	 * Copies an object and every object below it, as three.js's `clone` does, with their meshes,
 	 * materials, lights, cameras and settings, and returns the copy of the object. The copy has the
 	 * same parent, so it starts in the same place. The copies are created with one batch of
-	 * commands. Instance batches are not objects, so they are not copied. Throws E1102 when the
-	 * scene has no room for the copies, before it creates any.
+	 * commands. An animated object's copy gets an animator of its own, with no clip playing, which
+	 * moves the copies of its meshes, as three.js's `SkeletonUtils.clone` does. Instance batches are
+	 * not objects, so they are not copied. Throws E1102 when the scene has no room for the copies,
+	 * before it creates any.
 	 */
 	clone<T extends Object3D>(object: T): T {
 		const call = 'clone';
 		if (DEV) checkLive(call, object);
-		const objects = this.createNodes(this.subtree(object), call, object.liveParent);
+		const nodes = this.subtree(object);
+		const objects = this.createNodes(nodes, call, object.liveParent);
 		const copy = objects[0] as T;
 		if (copy instanceof PrefabInstance) copy.objects = objects;
+		// Animated objects in the tree give their copies animators, which skin the copied meshes.
+		const copies = new Map(
+			nodes.map((node, k) => [node.source as Object3D, objects[k] as Object3D]),
+		);
+		for (const [source, made] of copies) source.animation?.copyTo(made, copies);
 		return copy;
 	}
 

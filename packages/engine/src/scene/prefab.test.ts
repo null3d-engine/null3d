@@ -3,6 +3,7 @@ import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
 import type { CoreGlue } from '../shared/core';
+import { AnimationRig } from './animation';
 import { CoreMemory } from './memory';
 import { boundsOf, Prefab, type TemplateNode } from './prefab';
 import { Material, MeshGeometry } from './resources';
@@ -46,6 +47,7 @@ function fakeCore() {
 	}
 	const memory = new WebAssembly.Memory({ initial: Math.ceil(next / 65536) + 1 });
 	let slot = 1;
+	let instances = 0;
 	const calls = { reserveObjects: 0, reserveObject: 0, createLight: 0, copyLight: 0 };
 	const lights = new Map<number, { kind: number; values: Map<number, number> }>();
 	const batches: { source: number; mesh: number; material: number; part: number[] }[] = [];
@@ -107,6 +109,9 @@ function fakeCore() {
 		setBatchLayers: () => 0,
 		markBatchDirty: () => 0,
 		destroyBatch: () => 0,
+		initAnimations: () => 0,
+		createAnimatedInstance: () => ++instances,
+		removeAnimatedInstance: () => 0,
 		lastErrorCode: () => 0,
 		lastErrorDetail: () => 0,
 	};
@@ -359,5 +364,53 @@ describe('prefab.find and bounds', () => {
 		expect(prefab.find('nothing')).toBeUndefined();
 		expect(prefab.bounds.center).toEqual([0, 1, 0]);
 		expect(prefab.bounds.radius).toBeCloseTo(Math.hypot(0.5, 1, 0.5));
+	});
+});
+
+describe('animated prefabs', () => {
+	/** A prefab whose root animates with a rig of two joints, and a skinned mesh of it. */
+	function animatedPrefab(core: CoreMemory): Prefab {
+		const mesh = new MeshGeometry(7, 0.5, core);
+		const material = new Material(4, core, 'materials.standard.set');
+		const joint = (name: string, parent: number) => ({
+			name,
+			parent,
+			translation: [0, 1, 0] as [number, number, number],
+			rotation: [0, 0, 0, 1] as [number, number, number, number],
+			scale: [1, 1, 1] as [number, number, number],
+			inverseBind: [1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 1, 0],
+			bone: true,
+		});
+		const rig = new AnimationRig(1, new Map([['Wave', 1]]), [joint('Hip', -1), joint('Knee', 0)]);
+		const template = [
+			node({ parent: -1, root: true }),
+			node({ name: 'Leg', parent: 0, mesh, material, skinned: true }),
+			node({ name: 'Hat', parent: 0, mesh, material }),
+		];
+		const bounds = boundsOf([0, 0, 0], [1, 1, 1]);
+		return new Prefab(core, 'https://example.com/leg.glb', template, [], [], bounds, [], [], rig);
+	}
+
+	test("a copy's group gets the animator, which skins the copy's skinned meshes", () => {
+		const { core, scene } = fakeCore();
+		const prefab = animatedPrefab(core);
+		expect(prefab.clips).toEqual(['Wave']);
+		const copy = scene.instantiate(prefab);
+		const animator = copy.animator();
+		expect(animator.clips).toEqual(['Wave']);
+		expect(animator.skinned).toEqual([copy.find('Leg') as Mesh]);
+		expect(animator.rig.bindPlaces).toEqual(new Float64Array([0, 1, 0, 0, 1, 0]));
+		expect(scene.instantiate(prefab).animator()).not.toBe(animator);
+	});
+
+	test("a clone of an animated copy animates on its own, and skins the clone's meshes", () => {
+		const { core, scene } = fakeCore();
+		const copy = scene.instantiate(animatedPrefab(core));
+		const twin = scene.clone(copy);
+		const animator = twin.animator();
+		expect(animator).not.toBe(copy.animator());
+		expect(animator.instance).toBe(2);
+		expect(animator.skinned).toEqual([twin.find('Leg') as Mesh]);
+		expect((twin.find('Leg') as Mesh).animation).toBeUndefined();
 	});
 });

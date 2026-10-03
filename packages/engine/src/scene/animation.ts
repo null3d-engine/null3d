@@ -5,14 +5,26 @@
 // memory, which these calls write directly, so a sketch can change them every frame for free.
 // After each frame step, the events that the clips passed reach the sketch's handlers. A rig
 // holds a skeleton and its named clips in the core, which every object that animates with it
-// shares. Only engine code creates rigs, from the models it loads.
+// shares. Only engine code creates rigs: the glTF loader, from the models it loads, and test
+// pages. The engine imports this module only with the glTF loader, so a page that loads no model
+// downloads none of it.
 
-import { checkLive, checkNumber, DEV, type Described } from '../errors/checks';
-import { coreFailure } from '../errors/core-failure';
-import { EngineError } from '../errors/engine-error';
+import type { Described } from '../errors/checks';
 import * as C from '../generated/core';
 import type { CoreMemory } from './memory';
-import type { Object3D, Quat, Scene, Vec3 } from './scene';
+import type { Mesh, Object3D, Quat, Scene, SceneChecks, Vec3 } from './scene';
+
+declare const __NULL3D_DEV__: boolean | undefined;
+
+/**
+ * True in development builds, which check every call. The module reads the constant itself, as
+ * errors/checks.ts does: it imports no engine module but constants and types, and takes the scene
+ * API's checks and errors from the first scene that animates (`Scene.checks`).
+ */
+const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV__;
+
+/** The scene API's checks and errors, from the first scene that animates. */
+let checks: SceneChecks;
 
 /**
  * How `Animator.play` plays a clip.
@@ -98,6 +110,12 @@ const CHANNELS = {
 	scale: C.ANIMATION_SCALE,
 } as const;
 
+const INTERPOLATIONS = {
+	linear: C.ANIMATION_LINEAR,
+	step: C.ANIMATION_STEP,
+	cubic: C.ANIMATION_CUBIC_SPLINE,
+} as const;
+
 /** One joint of a rig's skeleton. Joints come parents first. */
 export interface RigJoint {
 	name: string;
@@ -108,16 +126,24 @@ export interface RigJoint {
 	scale: Vec3;
 	/** The inverse of the joint's matrix at bind time, row-major 3 × 4: 12 numbers. */
 	inverseBind: ArrayLike<number>;
+	/** True for a joint of a skin, which `debug.skeleton` draws. */
+	bone?: boolean;
 }
 
 /** One track of a rig's clip: keys of one channel of one joint, at any times. */
 export interface RigTrack {
 	joint: number;
 	channel: keyof typeof CHANNELS;
-	/** True holds each key until the next, instead of moving in a straight line. */
-	step?: boolean;
+	/**
+	 * How the value moves between keys: in a straight line (the default), held until the next key
+	 * ('step'), or along glTF's cubic spline ('cubic').
+	 */
+	interpolation?: 'linear' | 'step' | 'cubic';
 	times: ArrayLike<number>;
-	/** Three numbers per key, or four for a rotation. */
+	/**
+	 * Three numbers per key, or four for a rotation. A cubic key holds three times as many: an
+	 * in-tangent, the value and an out-tangent.
+	 */
 	values: ArrayLike<number>;
 }
 
@@ -140,20 +166,54 @@ export interface RigData {
 export class AnimationRig {
 	/** The joint masks made so far, by their joint names. */
 	readonly masks = new Map<string, number>();
+	readonly jointNames: readonly string[];
+	readonly parents: readonly number[];
+	/** True for each joint of a skin, which `debug.skeleton` draws. */
+	readonly bones: readonly boolean[];
+	/**
+	 * Each joint's place at bind time, 3 numbers per joint: the point that its inverse bind matrix
+	 * maps to the origin. Its skinning matrix carries that point to the joint's place in the pose.
+	 */
+	readonly bindPlaces: Float64Array;
 
 	constructor(
 		/** The skeleton's id in the core, plus one. */
 		readonly skeleton: number,
 		/** Each clip's id in the core, plus one, by name. */
 		readonly clips: ReadonlyMap<string, number>,
-		readonly jointNames: readonly string[],
-		readonly parents: readonly number[],
-	) {}
+		joints: readonly RigJoint[],
+	) {
+		this.jointNames = joints.map((j) => j.name);
+		this.parents = joints.map((j) => j.parent);
+		this.bones = joints.map((j) => j.bone === true);
+		this.bindPlaces = new Float64Array(joints.length * 3);
+		joints.forEach((joint, j) => {
+			invertedOrigin(joint.inverseBind, this.bindPlaces, j * 3);
+		});
+	}
+}
+
+/**
+ * Writes at `at` the point that a row-major 3 × 4 matrix maps to the origin: the translation of
+ * its inverse. A matrix with no inverse gives the origin.
+ */
+function invertedOrigin(m: ArrayLike<number>, out: Float64Array, at: number): void {
+	const e = (r: number, c: number) => m[r * 4 + c] as number;
+	const [a, b, c] = [e(0, 0), e(0, 1), e(0, 2)];
+	const [d, f, g] = [e(1, 0), e(1, 1), e(1, 2)];
+	const [h, i, k] = [e(2, 0), e(2, 1), e(2, 2)];
+	const det = a * (f * k - g * i) - b * (d * k - g * h) + c * (d * i - f * h);
+	if (det === 0) return;
+	// The inverse's rotation part, by the adjugate, times the negated translation.
+	const [x, y, z] = [-e(0, 3), -e(1, 3), -e(2, 3)];
+	out[at] = ((f * k - g * i) * x + (c * i - b * k) * y + (b * g - c * f) * z) / det;
+	out[at + 1] = ((g * h - d * k) * x + (a * k - c * h) * y + (c * d - a * g) * z) / det;
+	out[at + 2] = ((d * i - f * h) * x + (b * h - a * i) * y + (a * f - b * d) * z) / det;
 }
 
 /** Throws E1218 with `detail`. */
 function refuse(detail: string): never {
-	throw new EngineError('E1218', detail);
+	throw checks.error('E1218', detail);
 }
 
 /** A list of names for a message, such as "a, b and c". */
@@ -228,6 +288,18 @@ export class SceneAnimations {
 		this.generation = core.generation;
 	}
 
+	/**
+	 * The skinning matrices of an animated instance's joints from the last frame step, 12 numbers
+	 * per joint: a view of engine memory that is good until the next call into the core. Debug
+	 * drawing reads it.
+	 */
+	instanceMatrices(instance: number, joints: number): Float32Array {
+		const { core } = this;
+		const first = core.check(core.glue.animatedInstanceJoints(instance), 'debug.skeleton') - 1;
+		const at = core.glue.animationArrays(C.ANIMATION_FIELD_MATRICES);
+		return core.f32(at + first * 48, joints * 12);
+	}
+
 	/** The rate of each instance's time, by its id in the core. */
 	timeScales(): Float32Array {
 		this.views();
@@ -295,6 +367,8 @@ export class SceneAnimations {
 export class Animator implements Described {
 	/** Handlers by event name. */
 	private readonly handlers = new Map<string, AnimationEventHandler[]>();
+	/** @internal The meshes that the object's joints skin. */
+	readonly skinned: Mesh[] = [];
 
 	/** @internal */
 	constructor(
@@ -314,6 +388,11 @@ export class Animator implements Described {
 	/** The rate of the object's animation time: 1 by default, 0 to pause every clip. */
 	get timeScale(): number {
 		return this.system.timeScales()[this.instance - 1] ?? 1;
+	}
+
+	/** @internal The skinning matrices of the object's joints from the last frame step. */
+	matrices(): Float32Array {
+		return this.system.instanceMatrices(this.instance, this.rig.parents.length);
 	}
 
 	/** The object, as error messages name it. */
@@ -344,7 +423,7 @@ export class Animator implements Described {
 		const clip = name === undefined ? 0 : this.clip(call, name);
 		const fade = options?.fade ?? 0;
 		if (DEV) {
-			checkLive(call, this.object);
+			checks.checkLive(call, this.object);
 			this.checkFade(call, fade);
 		}
 		this.done(this.system.core.glue.animatorStop(this.instance, clip, fade), call);
@@ -358,9 +437,9 @@ export class Animator implements Described {
 	setLayerWeight(layer: number, weight: number): void {
 		if (DEV) {
 			const call = 'setLayerWeight';
-			checkLive(call, this.object);
+			checks.checkLive(call, this.object);
 			this.checkLayer(call, layer);
-			checkNumber(call, 'weight', weight, this);
+			checks.checkNumber(call, 'weight', weight, this);
 			if (weight < 0 || weight > 1)
 				refuse(`${call}() got the weight ${weight} on ${this.describe()}; it takes 0 to 1.`);
 		}
@@ -374,7 +453,7 @@ export class Animator implements Described {
 	setLayerMask(layer: number, joints: string | readonly string[] | null): void {
 		const call = 'setLayerMask';
 		if (DEV) {
-			checkLive(call, this.object);
+			checks.checkLive(call, this.object);
 			this.checkLayer(call, layer);
 		}
 		const mask =
@@ -385,8 +464,8 @@ export class Animator implements Described {
 	/** Sets the rate of the object's animation time: 1 plays clips as made, 0 pauses them all. */
 	setTimeScale(scale: number): void {
 		if (DEV) {
-			checkLive('setTimeScale', this.object);
-			checkNumber('setTimeScale', 'scale', scale, this);
+			checks.checkLive('setTimeScale', this.object);
+			checks.checkNumber('setTimeScale', 'scale', scale, this);
 		}
 		this.system.timeScales()[this.instance - 1] = scale;
 	}
@@ -423,6 +502,19 @@ export class Animator implements Described {
 		}
 	}
 
+	/**
+	 * @internal Gives `object`, a copy of this animator's object, an animator of the same rig, which
+	 * skins the copies of the meshes that this one skins: each mesh's copy in `copies`, or the mesh
+	 * itself when the copy left it out.
+	 */
+	copyTo(object: Object3D, copies: ReadonlyMap<Object3D, Object3D>): Animator {
+		const animator = animateObject(object, this.rig);
+		for (const mesh of this.skinned)
+			if (mesh.destroyedFrame < 0)
+				skinObject((copies.get(mesh) as Mesh | undefined) ?? mesh, animator);
+		return animator;
+	}
+
 	/** @internal Removes the object's animation from the engine core, when the object is destroyed. */
 	release(): void {
 		if (this.instance === 0) return;
@@ -436,9 +528,9 @@ export class Animator implements Described {
 		const speed = options?.speed ?? 1;
 		const layer = options?.layer ?? 0;
 		if (DEV) {
-			checkLive(call, this.object);
+			checks.checkLive(call, this.object);
 			this.checkFade(call, fade);
-			checkNumber(call, 'speed', speed, this);
+			checks.checkNumber(call, 'speed', speed, this);
 			this.checkLayer(call, layer);
 		}
 		const flags =
@@ -456,7 +548,7 @@ export class Animator implements Described {
 	 * only then, so a call that succeeds allocates nothing.
 	 */
 	private done(status: number, call: string): void {
-		if (status !== 0) throw coreFailure(this.system.core.glue, call, this.describe());
+		if (status !== 0) this.system.core.check(status, call, this.describe(), true);
 	}
 
 	/** The core's id, plus one, of the clip named `name`. */
@@ -470,7 +562,7 @@ export class Animator implements Described {
 	}
 
 	private checkFade(call: string, fade: number): void {
-		checkNumber(call, 'fade', fade, this);
+		checks.checkNumber(call, 'fade', fade, this);
 		if (fade < 0)
 			refuse(`${call}() got the fade ${fade} on ${this.describe()}; it takes 0 or more.`);
 	}
@@ -511,6 +603,7 @@ export class Animator implements Described {
 
 /** The scene's animated objects, which the first rig of the scene creates. */
 function animationsOf(scene: Scene): SceneAnimations {
+	checks = scene.checks;
 	scene.animations ??= new SceneAnimations(scene.core);
 	return scene.animations;
 }
@@ -521,15 +614,98 @@ function stage(core: CoreMemory, call: string, words: Float32Array): void {
 	core.f32(address, words.length).set(words);
 }
 
+/** A rig's skeleton in the core, while its clips are made. */
+interface RigStart {
+	animations: SceneAnimations;
+	core: CoreMemory;
+	skeleton: number;
+	rate: number;
+}
+
 /**
- * Stores a skeleton and its clips in the engine core, for objects to animate with. Loaders call it
- * once per model; it allocates.
+ * Stores a skeleton and its clips in the engine core, for objects to animate with, and resamples
+ * the clips on this thread. Test pages call it; the glTF loader calls `loadAnimationRig`. It
+ * allocates.
  */
 export function createAnimationRig(scene: Scene, data: RigData): AnimationRig {
-	const call = 'the animation data';
+	const start = startRig(scene, data);
+	const { core } = start;
+	const ids = data.clips.map((clip) => {
+		stageClip(core, clip);
+		const call = `the clip "${clip.name}"`;
+		return core.checkGrowth(
+			core.glue.createClip(start.skeleton, clip.tracks.length, start.rate),
+			call,
+		);
+	});
+	return finishRig(start, data, ids);
+}
+
+/**
+ * Stores a skeleton and its clips in the engine core, as `createAnimationRig` does, but the job
+ * workers resample the clips between frames, so no frame waits for them. Without job workers,
+ * this thread resamples them, a few milliseconds at a time between frames. Throws the core's
+ * E1218 for a clip that the core refuses, after every other clip is done.
+ */
+export async function loadAnimationRig(scene: Scene, data: RigData): Promise<AnimationRig> {
+	const start = startRig(scene, data);
+	const { core } = start;
+	const tickets = data.clips.map((clip) => {
+		stageClip(core, clip);
+		const call = `the clip "${clip.name}"`;
+		return core.checkGrowth(
+			core.glue.createClipLater(start.skeleton, clip.tracks.length, start.rate),
+			call,
+		);
+	});
+	const ids = new Array<number>(tickets.length).fill(0);
+	let failure: unknown;
+	for (let left = tickets.length; left > 0; ) {
+		const round = performance.now();
+		for (let k = 0; k < tickets.length && performance.now() - round < CLIP_ROUND_MS; k++) {
+			if (ids[k] !== 0) continue;
+			const id = core.glue.clipReady(tickets[k] as number);
+			if (id === C.ANIMATION_CLIP_PENDING) continue;
+			// A job worker's resampling can grow the engine's memory.
+			core.refresh();
+			left--;
+			ids[k] = id === 0 ? -1 : id;
+			if (id === 0 && failure === undefined)
+				try {
+					core.check(id, 'assets.loadGltf', `the clip "${data.clips[k]?.name}"`);
+				} catch (error) {
+					failure = error;
+				}
+		}
+		if (left > 0) await new Promise((resolve) => setTimeout(resolve, CLIP_WAIT_MS));
+	}
+	if (failure !== undefined) throw failure;
+	return finishRig(start, data, ids);
+}
+
+/**
+ * The longest that one round of `loadAnimationRig` asks for finished clips before it lets the
+ * thread run frames. Without job workers, each ask resamples a clip.
+ */
+const CLIP_ROUND_MS = 4;
+/** How long `loadAnimationRig` waits between rounds, in milliseconds. */
+const CLIP_WAIT_MS = 2;
+
+/** Checks a rig's names, and stores its skeleton in the core. */
+function startRig(scene: Scene, data: RigData): RigStart {
 	const animations = animationsOf(scene);
+	const names = new Set<string>();
+	for (const clip of data.clips) {
+		if (names.has(clip.name)) refuse(`the model has two clips named "${clip.name}".`);
+		names.add(clip.name);
+		for (const event of clip.events ?? [])
+			if (event.name === LOOP || event.name === FINISHED)
+				refuse(
+					`the clip "${clip.name}" has an event named "${event.name}", a name the animator keeps for itself.`,
+				);
+	}
 	const { core } = animations;
-	const { joints, clips } = data;
+	const { joints } = data;
 	const count = joints.length;
 	// Each joint's parent, then rest poses, then inverse bind matrices, as the core reads them.
 	const restAt = count;
@@ -542,61 +718,70 @@ export function createAnimationRig(scene: Scene, data: RigData): AnimationRig {
 			[...joint.translation, ...joint.rotation, ...joint.scale],
 			restAt + j * C.ANIMATION_REST_FLOATS,
 		);
-		words.set(Array.from(joint.inverseBind), bindAt + j * BIND_FLOATS);
+		words.set(joint.inverseBind, bindAt + j * BIND_FLOATS);
 	});
-	stage(core, call, words);
-	const skeleton = core.checkGrowth(core.glue.createSkeleton(count), call);
-	const ids = new Map<string, number>();
-	for (const clip of clips) {
-		if (ids.has(clip.name)) refuse(`the model has two clips named "${clip.name}".`);
-		const id = createClip(core, skeleton, clip, data.rate ?? 0);
-		ids.set(clip.name, id);
-		animations.clipNames[id - 1] = clip.name;
-		const events = clip.events ?? [];
-		if (events.length === 0) continue;
-		const eventWords = new Float32Array(events.length * 2);
-		const eventIds = new Uint32Array(eventWords.buffer, events.length * 4, events.length);
-		events.forEach((event, k) => {
-			if (event.name === LOOP || event.name === FINISHED)
-				refuse(
-					`the clip "${clip.name}" has an event named "${event.name}", a name the animator keeps for itself.`,
-				);
-			eventWords[k] = event.time;
-			eventIds[k] = animations.eventId(event.name);
-		});
-		stage(core, call, eventWords);
-		core.check(core.glue.setClipEvents(id, events.length), call, undefined, true);
-	}
-	return new AnimationRig(
-		skeleton,
-		ids,
-		joints.map((j) => j.name),
-		joints.map((j) => j.parent),
-	);
+	stage(core, RIG_CALL, words);
+	const skeleton = core.checkGrowth(core.glue.createSkeleton(count), RIG_CALL);
+	return { animations, core, skeleton, rate: data.rate ?? 0 };
 }
 
-/** Stores one clip's tracks in the core and returns its id plus one. */
-function createClip(core: CoreMemory, skeleton: number, clip: RigClip, rate: number): number {
+/** What error messages call the data of a rig. */
+const RIG_CALL = 'the animation data';
+
+/** Names a rig's clips and stores their events, once the core holds the clips with `ids`. */
+function finishRig(start: RigStart, data: RigData, ids: readonly number[]): AnimationRig {
+	const { animations, core } = start;
+	const named = new Map<string, number>();
+	data.clips.forEach((clip, k) => {
+		const id = ids[k] as number;
+		named.set(clip.name, id);
+		animations.clipNames[id - 1] = clip.name;
+		const events = clip.events ?? [];
+		if (events.length === 0) return;
+		const eventWords = new Float32Array(events.length * 2);
+		const eventIds = new Uint32Array(eventWords.buffer, events.length * 4, events.length);
+		events.forEach((event, e) => {
+			eventWords[e] = event.time;
+			eventIds[e] = animations.eventId(event.name);
+		});
+		stage(core, RIG_CALL, eventWords);
+		core.check(core.glue.setClipEvents(id, events.length), RIG_CALL, undefined, true);
+	});
+	return new AnimationRig(start.skeleton, named, data.joints);
+}
+
+/** Writes one clip's tracks into the staging words, as `createClip` reads them. */
+function stageClip(core: CoreMemory, clip: RigClip): void {
 	const { tracks } = clip;
 	const keys = tracks.reduce((sum, t) => sum + t.times.length + t.values.length, 0);
 	const words = new Float32Array(tracks.length * C.ANIMATION_TRACK_WORDS + keys);
 	const header = new Uint32Array(words.buffer);
 	let at = tracks.length * C.ANIMATION_TRACK_WORDS;
 	tracks.forEach((track, k) => {
-		const interpolation = track.step ? C.ANIMATION_STEP : C.ANIMATION_LINEAR;
+		const interpolation = INTERPOLATIONS[track.interpolation ?? 'linear'];
 		header.set(
 			[track.joint, CHANNELS[track.channel], interpolation, track.times.length],
 			k * C.ANIMATION_TRACK_WORDS,
 		);
-		words.set(Array.from(track.times), at);
-		words.set(Array.from(track.values), at + track.times.length);
+		words.set(track.times, at);
+		words.set(track.values, at + track.times.length);
 		at += track.times.length + track.values.length;
 	});
 	stage(core, `the clip "${clip.name}"`, words);
-	return core.checkGrowth(
-		core.glue.createClip(skeleton, tracks.length, rate),
-		`the clip "${clip.name}"`,
-	);
+}
+
+/**
+ * Skins `mesh`'s vertices with the joints of the object that `animator` moves, from the next
+ * frame: each vertex follows its four joints by its weights, in the space of that object, and the
+ * mesh's own world matrix then places it. The mesh's vertices name the skeleton's joints by their
+ * places in the rig. Loaders call it. This version only records the link, and the mesh draws in
+ * its rest pose until the skinning passes read it.
+ */
+export function skinObject(mesh: Mesh, animator: Animator): void {
+	if (DEV) checks.checkLive('skinObject', mesh);
+	if (animator.instance === 0)
+		refuse(`skinObject() got the animator of ${animator.describe()}, which is destroyed.`);
+	animator.skinned.push(mesh);
 }
 
 /** Animates `object` with `rig`: gives it an animator, which `object.animator()` returns. */

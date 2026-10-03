@@ -8,24 +8,35 @@
 // the images that the file holds, and the loader those it names by address. It allocates only what
 // it returns, so a file with huge counts fails with E1416 before it allocates anything.
 //
-// The module imports nothing at run time, so the worker's bundle holds only this file.
+// The module imports only its sibling modules of the glTF worker, so the worker's bundle holds no
+// engine code.
 
-/** The engine's codes for a file the parser refuses: broken data, or an extension it does not read. */
-export type GltfErrorCode = 'E1416' | 'E1417';
+import {
+	type AnimationData,
+	type MorphTargetsData,
+	morphWeights,
+	parseAnimation,
+	parseMorphTargets,
+} from './gltf-animation';
+import {
+	type AccessorArray,
+	broken,
+	count,
+	type Entry,
+	entry,
+	finite,
+	GltfError,
+	index,
+	list,
+	numbers,
+	type Reader,
+	text,
+	toFloats,
+	unit,
+} from './gltf-json';
+import { decomposeColumns } from './gltf-math';
 
-/** A file the parser refuses, with the engine's code and the reason in words. */
-export class GltfError extends Error {
-	constructor(
-		readonly code: GltfErrorCode,
-		message: string,
-	) {
-		super(message);
-	}
-}
-
-function broken(reason: string): never {
-	throw new GltfError('E1416', reason);
-}
+export { type AccessorArray, GltfError, type GltfErrorCode } from './gltf-json';
 
 /** The extensions that the loader reads. A file that requires any other fails with E1417. */
 export const READ_EXTENSIONS: readonly string[] = [
@@ -92,15 +103,6 @@ type TypedArrayClass =
 	| Uint32ArrayConstructor
 	| Float32ArrayConstructor;
 
-/** The typed arrays an accessor reads into. */
-export type AccessorArray =
-	| Int8Array
-	| Uint8Array
-	| Int16Array
-	| Uint16Array
-	| Uint32Array
-	| Float32Array;
-
 /** An attribute's values in the type the file holds them in, as `geometry.fromArrays` takes them. */
 export interface VertexData {
 	array: Float32Array | Int8Array | Uint8Array | Int16Array | Uint16Array;
@@ -124,11 +126,17 @@ export interface PrimitiveData {
 	/** The lowest and highest position on each axis, from the position accessor. */
 	min: [number, number, number];
 	max: [number, number, number];
+	/** The deltas of the primitive's morph targets, when it has any. */
+	morph?: MorphTargetsData;
 }
 
 export interface MeshData {
 	name: string;
 	primitives: PrimitiveData[];
+	/** The weight of each morph target when no clip sets it, when the primitives have targets. */
+	weights?: number[];
+	/** The targets' names, from the file's `extras.targetNames`, or none. */
+	targetNames?: string[];
 }
 
 /** A texture as one material slot uses it: its image, color space, coordinates and sampler. */
@@ -209,6 +217,21 @@ export interface NodeData {
 	/** The light's index in the light list, or -1. */
 	light: number;
 	instancing?: InstancingData;
+	/** The skin's index in the file, or -1. */
+	skin: number;
+	/**
+	 * The node's joint in the model's skeleton, or -1 for a node that is no joint. A joint is no
+	 * object: its mesh and light go under the copy's group.
+	 */
+	joint?: number;
+	/** True when the node moves with clips, as a joint or below one. */
+	moving?: boolean;
+	/**
+	 * True when joints move the node's mesh: a skinned mesh, or a mesh on a node that moves. Its
+	 * vertices name the skeleton's joints, and it goes under the copy's group with no transform of
+	 * its own.
+	 */
+	skinned?: boolean;
 }
 
 /** An image: its bytes when the file holds it, or its address when the file names it. */
@@ -228,6 +251,8 @@ export interface GltfData {
 	textures: TextureUse[];
 	images: ImageData[];
 	lights: LightData[];
+	/** The model's skeleton and clips, when the file has skins or animations. */
+	animation?: AnimationData;
 	/** What the parser left out, such as points and lines, for a warning in development builds. */
 	notes: string[];
 }
@@ -248,10 +273,9 @@ interface Json {
 	textures?: unknown;
 	images?: unknown;
 	samplers?: unknown;
+	skins?: unknown;
+	animations?: unknown;
 }
-
-/** An object of the JSON, whose fields the parser checks before it reads them. */
-type Entry = Record<string, unknown>;
 
 /** A file's container, read: its JSON, its binary chunk, and the buffers it names by address. */
 export interface GltfContainer {
@@ -365,7 +389,7 @@ export function parseGltf(
 	);
 
 	/** Reads accessor `k` into a tight typed array of its component type, with its sparse values. */
-	const read = (k: number, what: string) => {
+	const read = (k: number, what: string, shared = false) => {
 		const accessor = accessors[index(k, accessors.length, what)] as Entry;
 		const name = `accessor ${k}`;
 		const components = TYPES[String(accessor.type)];
@@ -380,7 +404,7 @@ export function parseGltf(
 			broken(
 				`${name} holds ${n} elements, more than the ${MAX_ACCESSOR_BYTES} bytes an accessor may read`,
 			);
-		const out = new Uint8Array(n * element);
+		let out: Uint8Array<ArrayBuffer> | undefined;
 		if (accessor.bufferView !== undefined) {
 			const v = index(accessor.bufferView, views.length, `${name}'s bufferView`);
 			const { bytes: source, stride } = views[v] as (typeof views)[number];
@@ -389,12 +413,23 @@ export function parseGltf(
 			const end = n === 0 ? 0 : offset + (n - 1) * step + element;
 			if (end > source.length)
 				broken(`${name} reads ${end} bytes from bufferView ${v}, which holds ${source.length}`);
+			const at = source.byteOffset + offset;
+			if (shared && step === element && accessor.sparse === undefined && at % bytes === 0)
+				return {
+					array: new Type(source.buffer as ArrayBuffer, at, n * components) as AccessorArray,
+					components,
+					componentType,
+					normalized: accessor.normalized === true,
+					count: n,
+					accessor,
+				};
+			out = new Uint8Array(n * element);
 			if (step === element) out.set(source.subarray(offset, offset + n * element));
 			else
 				for (let i = 0; i < n; i++)
 					out.set(source.subarray(offset + i * step, offset + i * step + element), i * element);
 		}
-		const array = new Type(out.buffer) as AccessorArray;
+		const array = new Type((out ?? new Uint8Array(n * element)).buffer) as AccessorArray;
 		if (accessor.sparse !== undefined) applySparse(array, accessor.sparse, components, n, name);
 		return {
 			array,
@@ -457,7 +492,10 @@ export function parseGltf(
 			const primitive = parsePrimitive(entry(p, what), what, read, notes);
 			if (primitive) primitives.push(primitive);
 		});
-		return { name: text(mesh.name), primitives };
+		const data: MeshData = { name: text(mesh.name), primitives };
+		if (primitives.some((p) => p.morph))
+			Object.assign(data, morphWeights(mesh, primitives, `mesh ${k}`));
+		return data;
 	});
 
 	const textureUses: TextureUse[] = [];
@@ -618,22 +656,12 @@ export function parseGltf(
 		};
 	});
 
-	const nodes = parseNodes(json, meshes.length, lights.length, read);
-	return { nodes, meshes, materials, textures: textureUses, images, lights, notes };
+	const { nodes, place } = parseNodes(json, meshes.length, lights.length, read);
+	const animation = parseAnimation(json, nodes, meshes, place, read, notes);
+	const data: GltfData = { nodes, meshes, materials, textures: textureUses, images, lights, notes };
+	if (animation) data.animation = animation;
+	return data;
 }
-
-/** The type of the accessor reader inside `parseGltf`. */
-type Reader = (
-	k: number,
-	what: string,
-) => {
-	array: AccessorArray;
-	components: number;
-	componentType: number;
-	normalized: boolean;
-	count: number;
-	accessor: Entry;
-};
 
 /**
  * Each attribute that the engine reads: its glTF name, its field, its components, and the
@@ -748,6 +776,8 @@ function parsePrimitive(
 	const corners = indices ? indices.length : vertices;
 	if (corners % 3 !== 0) broken(`${what} has ${corners} corners, which make no whole triangles`);
 	if (vertices === 0) return undefined;
+	const morph = parseMorphTargets(primitive, vertices, what, read);
+	if (morph) out.morph = morph;
 	const material =
 		primitive.material === undefined ? -1 : count(primitive.material, `${what}'s material`);
 	return { ...(out as PrimitiveData), indices, material };
@@ -771,8 +801,17 @@ function toTriangles(
 	return out;
 }
 
-/** The scene's nodes in an order where parents come first, each with its parent's index. */
-function parseNodes(json: Json, meshes: number, lights: number, read: Reader): NodeData[] {
+/**
+ * The scene's nodes in an order where parents come first, each with its parent's index, and each
+ * file node's index in that order, or -1 for a node outside the scene.
+ */
+function parseNodes(
+	json: Json,
+	meshes: number,
+	lights: number,
+	read: Reader,
+): { nodes: NodeData[]; place: Int32Array } {
+	const skins = list(json.skins, 'skins').length;
 	const defs = list(json.nodes, 'nodes').map((value, k) => entry(value, `node ${k}`));
 	const parents = new Int32Array(defs.length).fill(-1);
 	defs.forEach((node, k) => {
@@ -813,7 +852,7 @@ function parseNodes(json: Json, meshes: number, lights: number, read: Reader): N
 			order.push(child as number);
 		}
 	}
-	return order.map((k): NodeData => {
+	const nodes = order.map((k): NodeData => {
 		const node = defs[k] as Entry;
 		const what = `node ${k}`;
 		const extensions = (node.extensions ?? {}) as Entry;
@@ -824,11 +863,13 @@ function parseNodes(json: Json, meshes: number, lights: number, read: Reader): N
 			transform: transformOf(node, what),
 			mesh: node.mesh === undefined ? -1 : index(node.mesh, meshes, `${what}'s mesh`),
 			light: lightRef === undefined ? -1 : index(lightRef, lights, `${what}'s light`),
+			skin: node.skin === undefined ? -1 : index(node.skin, skins, `${what}'s skin`),
 		};
 		const instancing = extensions.EXT_mesh_gpu_instancing as Entry | undefined;
 		if (instancing && data.mesh >= 0) data.instancing = parseInstancing(instancing, what, read);
 		return data;
 	});
+	return { nodes, place };
 }
 
 /** A node's position, rotation and scale, from its matrix or its own values. */
@@ -842,47 +883,6 @@ function transformOf(node: Entry, what: string): Float32Array {
 	out.set(numbers(node.rotation, 4, [0, 0, 0, 1], `${what}'s rotation`), 3);
 	out.set(numbers(node.scale, 3, [1, 1, 1], `${what}'s scale`), 7);
 	return out;
-}
-
-/** Splits a matrix of 16 numbers, column by column, into position, rotation and scale, as three.js does. */
-function decomposeColumns(m: readonly number[], out: Float32Array): void {
-	const [m11, m21, m31, , m12, m22, m32, , m13, m23, m33, , tx, ty, tz] = m as number[];
-	let sx = Math.hypot(m11 as number, m21 as number, m31 as number);
-	const sy = Math.hypot(m12 as number, m22 as number, m32 as number);
-	const sz = Math.hypot(m13 as number, m23 as number, m33 as number);
-	const det =
-		(m11 as number) * ((m22 as number) * (m33 as number) - (m23 as number) * (m32 as number)) -
-		(m12 as number) * ((m21 as number) * (m33 as number) - (m23 as number) * (m31 as number)) +
-		(m13 as number) * ((m21 as number) * (m32 as number) - (m22 as number) * (m31 as number));
-	if (det < 0) sx = -sx;
-	out.set([tx as number, ty as number, tz as number], 0);
-	out.set([sx, sy, sz], 7);
-	if (sx === 0 || sy === 0 || sz === 0) return;
-	const r11 = (m11 as number) / sx;
-	const r21 = (m21 as number) / sx;
-	const r31 = (m31 as number) / sx;
-	const r12 = (m12 as number) / sy;
-	const r22 = (m22 as number) / sy;
-	const r32 = (m32 as number) / sy;
-	const r13 = (m13 as number) / sz;
-	const r23 = (m23 as number) / sz;
-	const r33 = (m33 as number) / sz;
-	const trace = r11 + r22 + r33;
-	let q: [number, number, number, number];
-	if (trace > 0) {
-		const s = 0.5 / Math.sqrt(trace + 1);
-		q = [(r32 - r23) * s, (r13 - r31) * s, (r21 - r12) * s, 0.25 / s];
-	} else if (r11 > r22 && r11 > r33) {
-		const s = 2 * Math.sqrt(1 + r11 - r22 - r33);
-		q = [0.25 * s, (r12 + r21) / s, (r13 + r31) / s, (r32 - r23) / s];
-	} else if (r22 > r33) {
-		const s = 2 * Math.sqrt(1 + r22 - r11 - r33);
-		q = [(r12 + r21) / s, 0.25 * s, (r23 + r32) / s, (r13 - r31) / s];
-	} else {
-		const s = 2 * Math.sqrt(1 + r33 - r11 - r22);
-		q = [(r13 + r31) / s, (r23 + r32) / s, 0.25 * s, (r21 - r12) / s];
-	}
-	out.set(q, 3);
 }
 
 /** A node's EXT_mesh_gpu_instancing transforms, as floats. */
@@ -914,85 +914,6 @@ function parseInstancing(instancing: Entry, what: string, read: Reader): Instanc
 		rotations: filled(rotations, [0, 0, 0, 1]),
 		scales: filled(scales, [1, 1, 1]),
 	};
-}
-
-/** Floats of an accessor's values, with normalized integers as fractions, as glTF reads them. */
-function toFloats(array: AccessorArray, normalized: boolean): Float32Array {
-	if (array instanceof Float32Array) return array;
-	const out = Float32Array.from(array);
-	if (!normalized) return out;
-	const scale =
-		array instanceof Int8Array
-			? 127
-			: array instanceof Uint8Array
-				? 255
-				: array instanceof Int16Array
-					? 32767
-					: 65535;
-	for (let i = 0; i < out.length; i++) out[i] = Math.max((out[i] as number) / scale, -1);
-	return out;
-}
-
-// Checks of the JSON's values. Each throws E1416 that names what it checked.
-
-function entry(value: unknown, what: string): Entry {
-	if (typeof value !== 'object' || value === null || Array.isArray(value))
-		broken(`${what} is not an object`);
-	return value as Entry;
-}
-
-function list(value: unknown, what: string): unknown[] {
-	if (value === undefined) return [];
-	if (!Array.isArray(value)) broken(`${what} is not a list`);
-	return value;
-}
-
-/** A whole number from 0, below 2^31. */
-function count(value: unknown, what: string): number {
-	if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 0x7fffffff)
-		broken(`${what} is ${String(value)}, not a whole number from 0`);
-	return value;
-}
-
-/** A whole number that names one of `length` items. */
-function index(value: unknown, length: number, what: string): number {
-	const k = count(value, what);
-	if (k >= length) broken(`${what} is ${k}, and there are ${length}`);
-	return k;
-}
-
-function finite(value: unknown, what: string): number {
-	if (typeof value !== 'number' || !Number.isFinite(value))
-		broken(`${what} is ${String(value)}, not a number`);
-	return value;
-}
-
-/** A number from 0 to `most`. */
-function unit(value: unknown, what: string, most = 1): number {
-	const n = finite(value, what);
-	if (n < 0 || n > most) broken(`${what} is ${n}, outside 0 to ${most}`);
-	return n;
-}
-
-/** A list of `length` finite numbers, or `fallback` when the value is missing. */
-function numbers(
-	value: unknown,
-	length: number,
-	fallback: readonly number[] | undefined,
-	what: string,
-): number[] {
-	if (value === undefined && fallback) return [...fallback];
-	if (
-		!Array.isArray(value) ||
-		value.length !== length ||
-		!value.every((n) => typeof n === 'number' && Number.isFinite(n))
-	)
-		broken(`${what} is not ${length} numbers`);
-	return value as number[];
-}
-
-function text(value: unknown): string {
-	return typeof value === 'string' ? value : '';
 }
 
 function wrapOf(value: unknown): 'clamp' | 'repeat' | 'mirror' {

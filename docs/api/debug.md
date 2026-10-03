@@ -239,6 +239,7 @@ Debug drawing and frame figures. The drawing calls draw lines that show where th
 | `grid(size?: number, divisions?: number, options?: DebugGridOptions): void` | Draws a square grid on the horizontal plane through its center, `size` meters wide, with `divisions` cells along each side, as three.js's `GridHelper` does. The defaults are 10 and 10. |
 | `frustum(camera: Camera, color?: ColorInput): void` | Draws the space that a camera sees: its near and far planes and the edges between them, in the canvas's shape. The camera takes its place in the frame it draws in. The default color is orange, as in three.js's `CameraHelper`. |
 | `light(light: DirectionalLight, options?: DebugLightOptions): void` | Draws a directional light as a square that faces its light, with an arrow in the direction its light travels. The light takes its place and direction in the frame it draws in. |
+| `skeleton(object: Object3D, color?: ColorInput): void` | Draws the skeleton that animates an object, such as the copy of a model that `scene.instantiate` made: a line from each joint of the model's skins to its parent joint, in the pose of the frame it draws in. As in three.js's `SkeletonHelper`, each line is blue at the joint and green at its parent, unless `color` gives one color. An object without an animator draws nothing. |
 
 ### `DebugGridOptions`
 

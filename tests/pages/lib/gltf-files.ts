@@ -271,3 +271,123 @@ export function shipBuilder(): GltfBuilder {
 	b.node({ name: 'Ship', children: [hull, turret] });
 	return b;
 }
+
+/** A column-major 4 × 4 matrix that moves points by `-x, -y, -z`: a joint's inverse bind matrix. */
+function untranslate(x: number, y: number, z: number): number[] {
+	return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -x, -y, -z, 1];
+}
+
+/**
+ * An arm. The root node Arm holds Shoulder, which holds Elbow, which holds Hand, which holds a
+ * Sword mesh. Arm also holds a Rock mesh that no clip moves. Shoulder, Elbow and Hand each sit
+ * 1 m above their parent. Sleeve, a tall box skinned to the skin's joints Elbow and Shoulder (in
+ * that order), sits at the scene's root: its lower half follows Shoulder, and its upper half
+ * follows Elbow at three quarters and Shoulder at one quarter. The clip Wave bends Elbow along a
+ * cubic spline and steps Shoulder, and an unnamed clip grows Hand.
+ */
+export function armBuilder(): GltfBuilder {
+	const b = new GltfBuilder();
+	const boxMesh = b.mesh([boxPrimitive(b)], 'box');
+	const box = boxArrays(0.4);
+	const joints = new Uint8Array(24 * 4);
+	const weights = new Float32Array(24 * 4);
+	for (let v = 0; v < 24; v++) {
+		const upper = (box.positions[v * 3 + 1] as number) > 0;
+		joints.set(upper ? [0, 1, 0, 0] : [1, 0, 0, 0], v * 4);
+		weights.set(upper ? [0.75, 0.25, 0, 0] : [1, 0, 0, 0], v * 4);
+	}
+	const tall = box.positions.map((p, i) => (i % 3 === 1 ? p * 5 + 2 : p));
+	const sleeveMesh = b.mesh(
+		[
+			{
+				attributes: {
+					POSITION: b.positions(tall),
+					NORMAL: b.accessor(box.normals, 3),
+					JOINTS_0: b.accessor(joints, 4),
+					WEIGHTS_0: b.accessor(weights, 4),
+				},
+				indices: b.accessor(box.indices, 1),
+			},
+		],
+		'sleeve',
+	);
+	const sword = b.node(
+		{ name: 'Sword', mesh: boxMesh, translation: [0, 0.5, 0], scale: [0.1, 1, 0.1] },
+		true,
+	);
+	const hand = b.node({ name: 'Hand', translation: [0, 1, 0], children: [sword] }, true);
+	const elbow = b.node({ name: 'Elbow', translation: [0, 1, 0], children: [hand] }, true);
+	const shoulder = b.node({ name: 'Shoulder', translation: [0, 1, 0], children: [elbow] }, true);
+	const rock = b.node({ name: 'Rock', mesh: boxMesh, translation: [2, 0, 0] }, true);
+	b.node({ name: 'Arm', translation: [0, 0, 1], children: [shoulder, rock] });
+	b.node({ name: 'Sleeve', mesh: sleeveMesh, skin: 0 });
+	const binds = new Float32Array([...untranslate(0, 2, 1), ...untranslate(0, 1, 1)]);
+	const bindMatrices = b.accessor(binds, 16, { type: 'MAT4', count: 2 });
+	b.json.skins = [{ joints: [elbow, shoulder], inverseBindMatrices: bindMatrices }];
+	const s = Math.SQRT1_2;
+	// Two cubic keys of Elbow's rotation, each an in-tangent, a value and an out-tangent.
+	const bend = new Float32Array([
+		...[0, 0, 0, 0],
+		...[0, 0, 0, 1],
+		...[0, 0, 1, 0],
+		...[0, 0, 0, 0],
+		...[0, 0, s, s],
+		...[0, 0, 0, 0],
+	]);
+	const times = (values: number[]) =>
+		b.accessor(new Float32Array(values), 1, { min: [values[0]], max: [values.at(-1)] });
+	b.json.animations = [
+		{
+			name: 'Wave',
+			samplers: [
+				{ input: times([0, 1]), output: b.accessor(bend, 4), interpolation: 'CUBICSPLINE' },
+				{
+					input: times([0, 0.5]),
+					output: b.accessor(new Float32Array([0, 1, 0, 0.2, 1, 0]), 3),
+					interpolation: 'STEP',
+				},
+			],
+			channels: [
+				{ sampler: 0, target: { node: elbow, path: 'rotation' } },
+				{ sampler: 1, target: { node: shoulder, path: 'translation' } },
+			],
+		},
+		{
+			samplers: [
+				{ input: times([0, 2]), output: b.accessor(new Float32Array([1, 1, 1, 2, 2, 2]), 3) },
+			],
+			channels: [{ sampler: 0, target: { node: hand, path: 'scale' } }],
+		},
+	];
+	return b;
+}
+
+/**
+ * A box with two morph targets, which stretch it up and out, at weights 0.25 and 0.5, and a clip,
+ * Pulse, that moves the weights in a straight line.
+ */
+export function morphBuilder(): GltfBuilder {
+	const b = new GltfBuilder();
+	const box = boxArrays(1);
+	const up = box.positions.map((p, i) => (i % 3 === 1 && p > 0 ? 0.5 : 0));
+	const out = box.positions.map((p, i) => (i % 3 === 0 ? p * 0.5 : 0));
+	const primitive = boxPrimitive(b);
+	primitive.targets = [{ POSITION: b.accessor(up, 3) }, { POSITION: b.accessor(out, 3) }];
+	const mesh = b.mesh([primitive], 'blob');
+	b.json.meshes[mesh].weights = [0.25, 0.5];
+	b.json.meshes[mesh].extras = { targetNames: ['Up', 'Out'] };
+	const node = b.node({ name: 'Blob', mesh });
+	b.json.animations = [
+		{
+			name: 'Pulse',
+			samplers: [
+				{
+					input: b.accessor(new Float32Array([0, 1]), 1, { min: [0], max: [1] }),
+					output: b.accessor(new Float32Array([0, 0, 1, 1]), 1),
+				},
+			],
+			channels: [{ sampler: 0, target: { node, path: 'weights' } }],
+		},
+	];
+	return b;
+}

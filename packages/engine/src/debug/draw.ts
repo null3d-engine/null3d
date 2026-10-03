@@ -3,9 +3,10 @@
 // records, the runner calls flush, which hands the points to the core. The core draws them over
 // the camera's view and forgets them after that frame.
 //
-// Shapes that follow an object, its axes or a camera's frustum, wait for the flush too. By then the
-// frame's transform update has run, so they take the object's place in the frame they draw in and
-// never trail it. Each reads the object's transform through the core, as getWorldPosition does.
+// Shapes that follow an object, its axes, a camera's frustum or an animated object's skeleton, wait
+// for the flush too. By then the frame's transform update and animation step have run, so they take
+// the object's place and pose in the frame they draw in and never trail it. Each reads the object's
+// transform through the core, as getWorldPosition does, and a skeleton its skinning matrices.
 //
 // The arrays grow by doubling, up to a frame's limit, so steady frames make no new arrays.
 //
@@ -54,6 +55,13 @@ const FRUSTUM = 1;
 /** A directional light, drawn where the light is, or at a place that the call gave. */
 const LIGHT = 2;
 const LIGHT_AT = 3;
+/** The skeleton of an animated object, in the colors of three.js's `SkeletonHelper`. */
+const SKELETON = 4;
+/** The color of a skeleton line's joint end and parent end: blue and green, as three.js's. */
+const JOINT_BLUE = 0xffff0000;
+const PARENT_GREEN = 0xff00ff00;
+/** The value of a skeleton shape that draws each line in the two colors. */
+const TWO_COLORS = -1;
 
 /** Cosines and sines around a circle, one pair per segment boundary, the first one repeated last. */
 const CIRCLE = new Float64Array(2 * (CIRCLE_SEGMENTS + 1));
@@ -130,7 +138,7 @@ export class DebugDraw extends SketchDebug {
 	private followedCount = 0;
 	private readonly followed: (Object3D | undefined)[] = [];
 	private readonly followedKinds: number[] = [];
-	/** An axes shape's size, or a frustum's or a light's color. */
+	/** An axes shape's size, or a frustum's, a light's or a skeleton's color. */
 	private readonly followedValues: number[] = [];
 	/** A light's size, and the place that its call gave: 4 numbers per shape. */
 	private readonly followedLights: number[] = [];
@@ -299,6 +307,7 @@ export class DebugDraw extends SketchDebug {
 			if (kind === FRUSTUM)
 				this.drawFrustum(object as PerspectiveCamera | OrthographicCamera, width / height, value);
 			else if (kind === AXES) this.drawAxes(value);
+			else if (kind === SKELETON) this.drawSkeleton(object, value);
 			else this.drawLight(k, kind === LIGHT_AT, value);
 		}
 		this.followedCount = 0;
@@ -306,6 +315,81 @@ export class DebugDraw extends SketchDebug {
 		const points = this.points;
 		this.points = 0;
 		this.core.check(this.core.glue.drawDebugLines(points), 'debug drawing', undefined, true);
+	}
+
+	skeleton(object: Object3D, color?: ColorInput): void {
+		const c = color === undefined ? TWO_COLORS : packedColor(color, 'debug.skeleton');
+		this.follow(SKELETON, object, c);
+	}
+
+	/**
+	 * The skeleton of the animated object whose world matrix the flush just read: a line from each
+	 * joint of its skins to its parent joint, where the last animation step posed them.
+	 */
+	private drawSkeleton(object: Object3D, color: number): void {
+		const animator = object.animation;
+		if (animator === undefined || animator.instance === 0) return;
+		const { rig } = animator;
+		const { bones, parents, bindPlaces } = rig;
+		const joints = parents.length;
+		let lines = 0;
+		for (let j = 0; j < joints; j++) if (bones[j] && bones[parents[j] as number]) lines++;
+		// Room first: growing the points can move engine memory, which the matrices are a view of.
+		if (lines === 0 || !this.room(lines * 2)) return;
+		const skin = animator.matrices();
+		const place = this.corners;
+		for (let j = 0; j < joints; j++) {
+			const parent = parents[j] as number;
+			if (!bones[j] || !bones[parent]) continue;
+			this.jointPlace(skin, bindPlaces, j, 0);
+			this.jointPlace(skin, bindPlaces, parent, 3);
+			const near = color === TWO_COLORS ? JOINT_BLUE : color;
+			const far = color === TWO_COLORS ? PARENT_GREEN : color;
+			this.segment(
+				place[0] as number,
+				place[1] as number,
+				place[2] as number,
+				place[3] as number,
+				place[4] as number,
+				place[5] as number,
+				near,
+				far,
+			);
+		}
+	}
+
+	/**
+	 * Writes into the corners, from `at`, the world place of a skeleton's joint: its place at bind
+	 * time, through its skinning matrix into the object's space, then through the object's world
+	 * matrix, which the flush just read.
+	 */
+	private jointPlace(
+		skin: Float32Array,
+		bindPlaces: Float64Array,
+		joint: number,
+		at: number,
+	): void {
+		const s = joint * 12;
+		const x = bindPlaces[joint * 3] as number;
+		const y = bindPlaces[joint * 3 + 1] as number;
+		const z = bindPlaces[joint * 3 + 2] as number;
+		const local = this.direction;
+		for (let r = 0; r < 3; r++)
+			local[r] =
+				(skin[s + r * 4] as number) * x +
+				(skin[s + r * 4 + 1] as number) * y +
+				(skin[s + r * 4 + 2] as number) * z +
+				(skin[s + r * 4 + 3] as number);
+		const m = this.matrix;
+		const px = local[0] as number;
+		const py = local[1] as number;
+		const pz = local[2] as number;
+		for (let r = 0; r < 3; r++)
+			this.corners[at + r] =
+				(m[r * 4] as number) * px +
+				(m[r * 4 + 1] as number) * py +
+				(m[r * 4 + 2] as number) * pz +
+				(m[r * 4 + 3] as number);
 	}
 
 	/** Keeps a shape that follows an object for the next flush. */
@@ -491,6 +575,7 @@ export class DebugDraw extends SketchDebug {
 		by: number,
 		bz: number,
 		color: number,
+		endColor = color,
 	): void {
 		const i = this.points;
 		const p = this.positions;
@@ -501,7 +586,7 @@ export class DebugDraw extends SketchDebug {
 		p[i * 3 + 4] = by;
 		p[i * 3 + 5] = bz;
 		this.colors[i] = color;
-		this.colors[i + 1] = color;
+		this.colors[i + 1] = endColor;
 		this.points = i + 2;
 	}
 

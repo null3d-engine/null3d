@@ -174,6 +174,7 @@ A model that `assets.loadGltf` loaded: a template whose meshes, materials and te
 | `readonly bounds: PrefabBounds` | The bounds of the whole model, around the origin of its copies. |
 | `readonly materials: readonly Material[]` | The model's materials, in the file's order. |
 | `readonly textures: readonly Texture[]` | The model's textures, in the order the file names their images. |
+| `readonly clips: readonly string[]` | The names of the model's clips, which a copy's animator plays. |
 | `find(name: string): PrefabNode \| undefined` | The first node with `name`, in the file's order, or undefined when no node has it. The nodes of a copy have the same names, and its `find` gives them. |
 
 ### `PrefabBounds`

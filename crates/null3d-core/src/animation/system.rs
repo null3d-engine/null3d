@@ -565,6 +565,14 @@ impl Animations {
         &self.matrices
     }
 
+    /// The first joint of instance `instance` in the matrix buffers and its skeleton's joint
+    /// count, or `None` when no live instance has that id.
+    pub fn instance_joints(&self, instance: u32) -> Option<(u32, u32)> {
+        let skeleton = self.live_skeleton(instance).ok()?;
+        let joints = self.skeletons[skeleton as usize].joints();
+        Some((self.first_joints[instance as usize], joints))
+    }
+
     /// The skinning matrices of instance `instance`, one per joint of its skeleton.
     ///
     /// # Panics
