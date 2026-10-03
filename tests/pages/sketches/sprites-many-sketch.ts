@@ -1,8 +1,9 @@
-// 100,000 sprites of one dynamic batch, which every frame moves, blends and sorts back to front:
-// a field of small half-clear squares seen from above at a slant, each with its own size,
-// rotation and color. A row of sprites sized in pixels stands just past the view's left and right
-// edges, so only the halves that reach into the view show: culling must keep them, as their size
-// in the world depends on their distance.
+// 100,000 sprites of one dynamic batch, which every frame moves: a field of small opaque squares
+// seen from above at a slant, each with its own size, rotation and color. The sprites scene tests
+// blending and sorting, where CI's software GPU draws a frame in seconds; a blended field of this
+// size there takes a minute. A row of sprites sized in pixels stands just past the view's left and
+// right edges, so only the halves that reach into the view show: culling must keep them, as their
+// size in the world depends on their distance.
 import { defineSketch } from '@null3d/engine';
 import { mulberry32 } from '../../../bench/scenes/spec';
 
@@ -16,7 +17,7 @@ export default defineSketch(({ scene, time }) => {
 		scene.createPerspectiveCamera({ fov: 50, position: [0, 45, 70], target: [0, 0, 5] }),
 	);
 
-	const field = scene.createSprites({ count: COUNT, dynamic: true, opacity: 0.6 });
+	const field = scene.createSprites({ count: COUNT, dynamic: true, alphaMode: 'opaque' });
 	const random = mulberry32(7);
 	const home = new Float32Array(COUNT * 2);
 	const sizes = field.sizes;

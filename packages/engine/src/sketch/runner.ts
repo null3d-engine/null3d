@@ -41,6 +41,7 @@ import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
+import { spriteParts } from '../scene/sprite-parts';
 import { Textures } from '../scene/textures';
 import { type ControlViews, controlViews, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
@@ -313,17 +314,18 @@ export class SketchRunner {
 				renderScaleThousandths: () => this.renderScale(),
 			},
 		};
+		const materials = new Materials(this.core, sketch.sendShader);
 		const scene = new Scene(
 			this.core,
 			this.recorded,
 			device.webgl2,
 			() => this.warmUp(),
 			new FrameCameras(this.core, sketch.control, this.input),
+			(quads, options, call) => spriteParts(this.core, materials, quads, options, call),
 		);
 		this.post = new Post(this.core, device.effectsSceneColor !== FORMAT_CANVAS);
 		this.debugDraw = DEV ? new DebugDraw(this.core, host, scene) : undefined;
 		const debug = this.debugDraw ?? new SketchDebug(host);
-		const materials = new Materials(this.core, sketch.sendShader);
 		const geometry = new Geometry(this.core);
 		this.context = {
 			time: this.time,

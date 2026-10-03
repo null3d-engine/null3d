@@ -869,12 +869,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [SPRITE_IMAGE.width, SPRITE_IMAGE.height],
 	},
-	// 100,000 sprites of a dynamic batch in one draw: a field of them seen from above, which blend
-	// and sort, and a ring of sprites sized in pixels whose centers lie outside the view.
+	// 100,000 sprites of a dynamic batch in one draw: a field of them seen from above, and a row of
+	// sprites sized in pixels whose centers lie outside the view. It holds its first frame, and takes
+	// S1's limit: SwiftShader draws 100,000 rows on WebGPU in tens of seconds.
 	{
 		name: 'sprites-100k',
 		sketch: 'tests/pages/sketches/sprites-many-sketch.ts',
-		hold: 0.5,
+		hold: 0,
+		timeoutSeconds: 90,
 	},
 	// Decals on a wall and on the floor, whose depth bias makes them win the depth test everywhere.
 	// WebGL2's other depth modes store depth another way round, and must draw the same image.

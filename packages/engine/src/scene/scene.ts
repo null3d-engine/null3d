@@ -71,7 +71,7 @@ import {
 } from './queries';
 import type { Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
-import { SpriteBatch, type SpriteOptions, spriteParts } from './sprites';
+import { SpriteBatch, type SpriteOptions, type SpritePartsMaker } from './sprites';
 import { Texture } from './textures';
 import { UnmarkedWrites } from './unmarked-writes';
 
@@ -1696,6 +1696,8 @@ export class Scene {
 		private readonly warmUpScene: () => Promise<void> = () => Promise.resolve(),
 		/** The cameras of the last frames, which the sketch runner gives; tests get a stand-in. */
 		private cameras?: FrameCameras,
+		/** Makes the quad and the material of each sprite batch, which the sketch runner gives. */
+		private readonly makeSpriteParts?: SpritePartsMaker,
 	) {
 		if (DEV) this.unmarkedWrites = new UnmarkedWrites(this);
 	}
@@ -2297,7 +2299,8 @@ export class Scene {
 		const { core } = this;
 		const { count, layers } = options;
 		if (DEV && layers !== undefined) checkLayers(call, layers);
-		const parts = spriteParts(core, this.spriteQuads, options, call);
+		if (!this.makeSpriteParts) throw new Error(`${call}() needs a scene that the engine made`);
+		const parts = this.makeSpriteParts(this.spriteQuads, options, call);
 		const id = core.checkGrowth(
 			core.glue.createSpriteBatch(
 				count,
