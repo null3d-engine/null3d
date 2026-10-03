@@ -1,5 +1,7 @@
 //! Skinning that both frame builders share: each skinned object's bounding sphere from its pose,
-//! the texture of joint matrices that the GPU reads, and the vertex format of skinned vertices.
+//! the texture of joint matrices that the GPU reads, the vertex format of vertices that the
+//! WebGPU builder's compute pass skins, and the pipelines of objects that the WebGL2 builder skins
+//! in their vertex shaders.
 //!
 //! # Skinned objects
 //!
@@ -30,10 +32,11 @@ use null3d_core::animation::Animations;
 use null3d_core::math::max_axis_scale;
 use null3d_core::scene::SceneStorage;
 use null3d_core::world::MATRIX_FLOATS;
-use null3d_gpu::drawlist::{DrawList, Op, format, texture_usage, vertex, view};
+use null3d_gpu::drawlist::{DrawList, Op, format, permutation, texture_usage, vertex, view};
 
 use crate::frame::{RecordError, address, floats_as_bytes};
 use crate::meshes::{MeshSlot, MeshStorage};
+use crate::pipelines::DrawKey;
 
 /// Joints per row of the joint texture.
 pub const JOINTS_PER_ROW: u32 = 1024;
@@ -91,6 +94,16 @@ pub fn skinned_format(format: u32) -> u32 {
         types |= vertex::ATTRIBUTES[location].mask();
     }
     format & !(vertex::JOINTS | vertex::WEIGHTS | types)
+}
+
+/// The pipeline that skins an object in its vertex shader, as WebGL2 draws skinned objects
+/// (decision record D-10): the [`permutation::SKIN`] variant of the object's own pipeline, which
+/// reads the mesh's joints and weights.
+pub fn skinned_in_vertex_shader(key: DrawKey) -> DrawKey {
+    DrawKey {
+        permutation: key.permutation | permutation::SKIN,
+        ..key
+    }
 }
 
 /// Writes the bounding sphere of every skinned object from its pose in the animation table's

@@ -1,6 +1,6 @@
-# D-14: The engine's JavaScript budget through M1
+# D-14: The engine's JavaScript budget
 
-Status: decided by the owner on 2026-09-30; budget raised to 80 KB and then 100 KB on 2026-10-01. Date: 2026-09-30.
+Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). Date: 2026-09-30.
 
 ## Question
 
@@ -186,3 +186,123 @@ The options in the table stay open, and each task can still take one to keep the
 - The pull requests of the tasks in point 2 state how their code loads, and the round trip that its first use costs.
 - D-13 settles how shader text ships. This record counts each path's shader file in the download before the first frame, since a page needs it to draw.
 - Add the record to the table in [README.md](README.md). When the owner decides, update its status and the budget line in AGENTS.md if point 1 changes it.
+
+## M2: the start and the files that load later
+
+Status: accepted. The owner approved the budgets in writing on 2026-10-04. Task: M2-R5.
+
+### Question
+
+A pipelined page downloads 98.8 KB of the 100 KB budget once M2-C3's skinning on WebGPU merges (#264). Most of M2's features have not landed yet. The owner answered for M2 on 3 October 2026: the budget may rise in M2, and nothing is trimmed yet, because loading efficiency comes later. Code that loads on first use is counted and budgeted apart. What budgets hold for the rest of M2?
+
+### Rule
+
+- A budget holds every thread mode on each GPU path until the M2 gate, by the estimate below. It leaves room for the estimate to be 20% low, as M1's did.
+- Code that a page does not use adds nothing to its start. It loads on first use, in a file that the size report lists apart from the start. That file has a budget of its own.
+- Nothing is trimmed now (the owner, 3 October).
+
+### Data
+
+All sizes are KB (1,024 bytes) after Brotli at quality 11, as `bun run build` prints them. Main is at a70f34e (#261). #264 is M2-C3 at 33a4920, as its CI measured it.
+
+What a pipelined page downloads at its start:
+
+| File | Main | With #264 |
+| --- | --- | --- |
+| `page.js` | 22.2 | 22.2 |
+| `sketch-worker.js` | 26.8 | 26.9 |
+| `render-worker.js` | 24.9 | 25.0 |
+| `job-worker.js` | 0.9 | 0.9 |
+| `probe-worker.js` | 0.4 | 0.4 |
+| The largest shader file | 19.5 | 23.5 |
+| Total | 94.6 | 98.8 |
+
+#264's SKIN variants make each WebGPU shader file about 4 KB larger after Brotli. Before compression, the files doubled from 0.8 MB to 1.6 MB. Its pull request says that 2.3 to 3.5 KB of the 4 KB go if D-20 keeps the compute pass. With #264, the other thread modes download 92.3 to 97.0 KB. On 2026-10-04, main at 9ef7c7a (#265) measured 99.9 KB for a pipelined page. The other thread modes measured 93.3 to 98.1 KB. The largest file that loads later was `gltf-worker.js`, at 5.8 KB.
+
+What the code of each area adds to the pipelined start with #264. Each figure is a file's size after Brotli, less its size with the area's code taken out. The rest, about 11 KB, is code that the bundler adds and the bytes that the areas share after compression.
+
+| Area | KB | Note |
+| --- | --- | --- |
+| Shader text, `generated/` | 24.3 | One file for each GPU path and each value of the bits that a device fixes (D-13). Each file holds the shaders of every feature, bloom and color grading among them |
+| The scene API, `scene/` | 11.5 | `scene.ts` 5.1, resources 1.9, mesh arrays 1.4, assets 1.0, textures 1.0, queries 0.7 |
+| The page, `page/` | 11.4 | `engine.ts` 4.4, the device probe 1.7, the frame figures of `engine.measure()` 1.2, limits 1.2 |
+| The WebGL2 backend, `gpu/webgl2/` | 7.8 | The render worker holds both GPU paths, so a WebGPU page downloads this code and does not run it |
+| The WebGPU backend, `gpu/webgpu/` | 7.1 | The same, for a WebGL2 page |
+| Shared helpers, `shared/` | 5.7 | The metrics writer 2.5 and the core loader 1.0, in several workers' files |
+| The sketch runner and input, `sketch/` | 5.0 | |
+| Error text, `errors/` | 4.2 | The fix text of every error code is 3.1 of it |
+| The renderer, `render/` | 3.4 | |
+| Presets and the governor, `quality/` | 3.1 | |
+| Workers, math, debug and shared GPU code | 4.0 | |
+
+Growth of a pipelined page's start on main in M2. The sizes come from the records that size checks keep for main's commits. A row that joins several commits had no record for the commits between them.
+
+| Commits | Change | KB | Step |
+| --- | --- | --- | --- |
+| ce48c00 | M1's last change before M2 | 85.2 | |
+| 69b252b to cde351f | cube and 3D textures, clips on the job workers, the BVHs, two GPU fixes | 86.0 | +0.8 |
+| 3b79b9d, cf673ad | a shadow fix, the animator | 86.6 | +0.6 |
+| 926dde9 | bloom | 88.3 | +1.7 |
+| 99eecef, 944689f | typed uniforms, glTF's vertex types | 90.0 | +1.7 |
+| f980a75, 2ab66e2 | the glTF loader, whose code loads on first use, and a shadow fix | 92.9 | +2.9 |
+| b0c9d55, 21de365 | raycasts and overlap queries, a governor fix | 94.0 | +1.1 |
+| a70f34e | color grading and the vignette, whose table readers load on first use | 94.6 | +0.7 |
+| #264 | skinning on WebGPU | 98.8 | +4.2 |
+
+Eleven features and their fixes added 13.6 KB, about 1.2 KB for each feature. The glTF loader, the color grading tables and the KTX2 transcoder load on first use. But each feature still adds its API to the scene API, and its shaders to every shader file. The shader file grew from 17.2 KB to 23.5 KB, so 6.3 KB of the 13.6 KB went into it.
+
+What the rest of M2 adds to the start, by estimate. Each estimate comes from the task's scope and the merges above. Code that loads on first use adds nothing here.
+
+| Tasks | What adds to the start | KB |
+| --- | --- | --- |
+| M2-C4 | Skinning in the WebGL2 renderer. Its GLSL variants stay under the size of the WebGPU shader file, which the start counts | 0.5 |
+| M2-C5 | MORPH variants in the shaders, like SKIN's 4 KB, and the morph weights API | 4.0 |
+| M2-C7 | Little: skins and clips from glTF files go into the glTF loader's files, and release builds drop `debug.skeleton` | 0.2 |
+| M2-A4 | The texture memory budget, which drops and restores mip levels | 0.8 |
+| M2-D3 to M2-D5 | `screenToRay`, pointer events on objects, HTML labels and the page's label loop | 2.5 |
+| M2-E2, M2-E3 | Environment light in the lit shaders, and sky and environment backgrounds. The built-in room environment loads on first use | 4.0 |
+| M2-F2 | Ambient occlusion: its passes and shaders | 2.2 |
+| M2-F4 to M2-F6 | Outlines, custom effects, custom passes and render targets | 4.0 |
+| M2-G1 to M2-G3 | Sprites, points and wide lines, with their shaders | 4.0 |
+| M2-H1 | `largeWorld` and batch origins | 0.8 |
+| M2-I1, M2-I2 | Occlusion culling: the depth pyramid and the test shaders on WebGPU, the blocker data on WebGL2. The software culling runs in WebAssembly | 2.5 |
+| M2-J3, M2-K1, M2-R1, M2-R2 | Material textures and `destroy`, the index-only test switch, cascade blending, the WebGL2 prepass | 1.7 |
+| M2-R6 | M1's engine follow-ups | 0.8 |
+| The P0 tasks | | about 28 |
+| The P1 tasks | Draco and HDR files load on first use. The rest: crowd rates, GPU picking, the shadow catcher, LOD groups, bump and displacement maps, custom instance attributes and `quality.setBudget` | about 5 |
+
+The rate of M2's merges so far gives about the same figure: about 25 P0 tasks with runtime code remain, at about 1.2 KB each. From 98.8 KB, the P0 tasks take a pipelined page to about 127 KB, or about 132 KB if the estimate is 20% low. The P1 tasks add about 6 KB more with the same margin, which gives about 138 KB.
+
+The files that load later, with #264. No start counts them:
+
+| File | KB | Loads |
+| --- | --- | --- |
+| `gltf-worker.js` | 5.8 | with the first glTF file |
+| `page-gltf.js`, `sketch-worker-gltf.js` | 3.0 | with the first glTF file, in the thread that runs the sketch |
+| `page-ktx2.js`, `sketch-worker-ktx2.js` | 1.9 | with the first KTX2 file |
+| `page-lut.js`, `sketch-worker-lut.js` | 1.7 | with the first color grading table |
+| `page-stats-overlay.js` and the frame figures' files | 0.8 to 0.9 | when the sketch asks for the overlay or its frame figures |
+| The WebGL call timing files | 0.9 | only with `?gl-timing`, on benchmark pages |
+| The preset check's files | 0.4 to 0.5 | after the first frame, unless a stored result skips the check (D-17) |
+
+M2-A3's meshopt decoder (#263) adds `gltf-meshopt.js`, 6.2 KB, with the first file that holds meshopt data. M2-C7 adds skins, clips and morph targets to the glTF worker, about 3 KB by estimate, which takes the worker to about 9 KB. The KTX2 transcoder's own files, the Basis Universal build of 365 KB, keep their own section with no budget. The engine ships them as their authors build them.
+
+What the budgets cost in time. The startup benchmark's Slow 4G profile downloads 157,500 bytes per second. A page's JavaScript shares the link with the core's 206 KB. At that rate, the 41 KB from 98.8 KB to 140 KB add about 0.27 s to a cold start. A cold load on the MacBook Pro took 4.0 s on Slow 4G on 30 September 2026. A file of 16 KB that loads on first use takes about 0.1 s on the same link. Its round trip of at least 562 ms comes on top. Where the loader starts both downloads at once, as the glTF loader does, that round trip overlaps the download of the feature's own data.
+
+### Decision
+
+1. The start: up to 140 KB after Brotli for the engine's JavaScript that a page downloads at its start. The budget holds in each thread mode on each GPU path. That is the estimate for the M2 gate with all the P1 tasks and a 20% margin. The shader file and each path's renderer count as before.
+2. The files that load later: up to 16 KB after Brotli for each file of engine code that no thread mode downloads at its start. Each such file loads on a feature's first use, or after the first frame. The largest that M2 expects is the glTF worker at about 9 KB. The size report lists each file apart from the start, with its share of the budget. Third-party builds that the engine ships as they are, such as the KTX2 transcoder, keep a section of their own with no budget.
+3. The chunk rule for M2: a feature that a page does not use adds nothing to its start. Its code loads on first use, in a part that `ENGINE_PARTS` in `tools/lib/size-report.ts` names with the part that loads it. The engine test "a page that uses no feature that loads on first use downloads none of their files" checks every such part. It runs in every thread mode on both GPU paths, on the dev server and in a production build.
+4. Trim nothing in M2, as the owner asked. When loading efficiency comes, the areas above give the order. Each needs its own work and measurements, and none is part of this decision:
+   - Shader text on first use: each feature's shaders in a file of their own, which loads with the feature. The shader files are the largest part of the start, and most of M2's growth goes into them.
+   - One GPU path's backend for each page. The render worker holds both, and a page does not run 7.1 to 7.8 KB of it. #103 split them once. The split was set aside.
+   - The fix text of the error codes in development builds only, 3.1 KB. It bends design principle 10, as option F says.
+   - One copy of the shared helpers for all workers, as option G gives.
+
+The owner approved the budgets of points 1 and 2 in writing on 2026-10-04. Point 4 follows the owner's answer of 3 October. A pull request that passes either budget fails the size check.
+
+### Consequences
+
+- `tools/lib/size-report.ts` holds the budgets (`START_BUDGET_BYTES` and `LATER_BUDGET_BYTES`) and the parts that load later (`LATER_PARTS`). `budgetProblems` judges both budgets. The size report prints the parts that load later in a section of their own.
+- AGENTS.md, the README and [Benchmarks](../benchmarks.md#download-size) give the new figures. A further raise of either budget needs the owner's approval in writing, recorded here.

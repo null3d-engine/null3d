@@ -5,11 +5,18 @@ enable draw_index;
 // paths.
 #import null3d::mesh::{InstanceIn, clip_position, find_instance, finish}
 #import null3d::vertex::{mesh_position, mesh_uv}
+#ifdef SKIN
+#import null3d::mesh::{skin_of, skinned_point}
+#endif
 
 /// The vertex attributes that the template reads.
 struct VertexIn {
     @location(0) position: vec3f,
     @location(2) uv0: vec2f,
+#ifdef SKIN
+    @location(6) joints: vec4u,
+    @location(7) weights: vec4f,
+#endif
 }
 
 struct VertexOut {
@@ -22,7 +29,12 @@ struct VertexOut {
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
+#ifdef SKIN
+    let skin = skin_of(found, v.joints, v.weights);
+    out.clip = clip_position(found, skinned_point(skin, mesh_position(v.position)));
+#else
     out.clip = clip_position(found, mesh_position(v.position));
+#endif
     out.uv0 = mesh_uv(v.uv0);
     return out;
 }

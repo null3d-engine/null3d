@@ -8,7 +8,7 @@ summary: "Generators with three.js parameters; meshes from arrays; vertex format
 
 # Geometry
 
-> Ships in null3D 0.1. Integer attributes, joints and weights ship in 0.2. The API is experimental, so it can still change between versions. Not built yet: the call `destroy` on a mesh, and skinning, so joints and weights do not move a mesh's vertices yet. Coding agents must not use them.
+> Ships in null3D 0.1. Integer attributes, joints and weights ship in 0.2. The API is experimental, so it can still change between versions. Not built yet: the call `destroy` on a mesh, and a call that skins a mesh you build. So joints and weights do not move its vertices yet. Coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -79,7 +79,7 @@ The arrays follow these rules:
 
 - `positions` is required. Give `normals`, or set `computeNormals: true`.
 - `indices` takes a `Uint16Array`, a `Uint32Array` or an array of numbers, with three indices per triangle. Without indices, each three vertices in a row make one triangle.
-- `joints` and `weights` come together. A mesh keeps them for skinning, which is not built yet, so it draws in the pose that its positions give.
+- `joints` and `weights` come together. A mesh keeps them for [skinning](animation.md#skinned-meshes). No call skins a mesh that you build yet, so it draws in the pose that its positions give.
 - A triangle's front face has its vertices in counter-clockwise order.
 - Each array's length must fit the vertex count, and its type must be one that its attribute takes. Each index must name a vertex, and each value must be a finite number. Otherwise the call throws [E1206](../errors/E1206.md).
 - The engine copies the arrays. You can change or drop them after the call.
