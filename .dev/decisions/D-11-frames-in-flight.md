@@ -1,6 +1,6 @@
 # D-11: Preset values, the governor's thresholds, and frames in flight
 
-Status: frames in flight decided by the owner on 2026-09-30. The preset check's thresholds proposed by M1-G3. The preset values and the governor's thresholds are still open. Date: 2026-09-30. Tasks: M1-G1 (frames in flight), then M1-G3, M1-G5 and M1-G6.
+Status: frames in flight decided by the owner on 2026-09-30. The preset check's thresholds proposed by M1-G3, and the governor's thresholds by M1-G5. The preset values are proposed in #215, pending its device runs. Date: 2026-09-30. Tasks: M1-G1 (frames in flight), then M1-G3, M1-G5 and M1-G6.
 
 This record settles three questions. M1-G1 answers the third, frames in flight, with the GPU-bound page. The preset values and the governor's thresholds follow from the S4 traces of M1-G5 and M1-G6, and from the live shadow-map resize test of M1-G3. Those tasks add their sections here. M1-G3 adds the preset check's thresholds at the end.
 
@@ -11,7 +11,7 @@ On 3 October 2026:
 | Part | State | What is left |
 | --- | --- | --- |
 | Frames in flight | Decided by the owner, 2026-09-30: at most two frames unfinished on the GPU, on both paths | The iPad's rows of the GPU-bound page. The four Mac browsers and the S24+ support the decision, so these rows can only confirm it or reopen it |
-| The preset check's thresholds | Proposed by M1-G3 | The owner's answer on the grace, the window and the target on 120 Hz displays (below) |
+| The preset check's thresholds | Proposed by M1-G3. The check holds `createEngine` about 1 s for each preset that it measures, 1.0 to 2.2 s on the iPad | The owner's answer on the grace, the window and the target on 120 Hz displays (below). Pending: work that stores the check's result for later starts |
 | The governor's thresholds | Proposed by M1-G5. The stress test passes on the Mac, the S24+ and, after #222, the iPad | M1-G6's S4 traces show whether they flicker or step late |
 | The preset values | Proposed by M1-G6 in pull request #215, open while its device runs repeat | Pending: the S24+ and iPad reruns, and each device's 10-minute S4 run. #215 adds their section and its rows here |
 | The live shadow-map resize test | Not built | No setting that changes during play resizes a shadow map, so the presets do not need it (below) |
@@ -162,7 +162,11 @@ Status: proposed, for the owner. When the engine chooses the preset itself, it c
 
 Headless Chrome 154 through Playwright on the MacBook Pro M5 Max, with the Mac's GPU, 30 September 2026. The canvas was 320 x 180 at a pixel ratio of 1, so each preset drew the same pixels. Other helpers built and tested on the same Mac.
 
-A light scene held the target. The engine test page's empty scene measured 60 presented and 60 completed frames per second on WebGPU and WebGL2, in 3 of 3 runs each. The call to `createEngine` then took 991 to 1,045 ms with the check, and 144 to 279 ms with `?preset=` fixing the preset. The first frame was done at 164 to 303 ms in both cases. So the check adds about 0.8 s before `createEngine` resolves, and nothing before the first frame.
+A light scene held the target. The engine test page's empty scene measured 60 presented and 60 completed frames per second on WebGPU and WebGL2, in 3 of 3 runs each. The call to `createEngine` then took 991 to 1,045 ms with the check, and 144 to 279 ms with `?preset=` fixing the preset. The engine's first frame was done at 164 to 303 ms in both cases. So the check adds about 0.8 s before `createEngine` resolves.
+
+That first frame is one of the check's own frames, which run none of the sketch's code. A page that awaits `createEngine` before it shows its scene therefore waits for the whole check. The warm-up time plan measures that wait, from `createEngine` until `engine.firstFrame`. On the iPad it took 1.0 to 2.2 s, about 1 s for each preset that the check measured ([D-13](D-13-shader-variants.md#device-warm-up-times-t-26)). The S24+ starts at Low, so it runs no check and showed its first frame in 0.23 to 0.43 s.
+
+Pending: work in progress stores the check's result, so that a later start on the same device skips the check. In Chrome on the Mac, it brought `createEngine` from 866 ms down to 52 ms. Until it merges, every start that the engine chooses a preset for runs the check.
 
 A heavy scene, 32,768 of the GPU-bound page's spheres, missed the target at every preset:
 
