@@ -1550,8 +1550,8 @@
       "three": "Sprite / SpriteMaterial",
       "status": "changed",
       "since": "0.2",
-      "target": "scene.createSprites(count, { texture | atlas, sizeMode: 'world' | 'screen' })",
-      "notes": "Camera-facing quads drawn in one batch.",
+      "target": "scene.createSprites({ count, map, atlas, sizeAttenuation, center })",
+      "notes": "Camera-facing quads drawn in one batch, with typed arrays of positions, sizes, rotations, colors and atlas frames per sprite. Sprites blend by default, as three.js's do. Without size attenuation, sizes are in CSS pixels, not a fraction of the view's height. Raycasts do not find sprites yet.",
       "docs": "api/sprites",
       "detect": "\\bSprite(Material)?\\b"
     },

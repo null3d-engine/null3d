@@ -471,9 +471,17 @@ impl Layout {
                 object,
             )
         };
-        // Instance batches cast no shadows yet.
+        // Instance batches cast no shadows yet. Sprites sized in pixels of the screen have no
+        // bounds in the world, so culling keeps them.
         let batch_key = |batch: &InstanceBatch| match drawn {
-            Drawn::Scene => key_of(batch.mesh(), batch.material(), MESH_BOUNDS, 0),
+            Drawn::Scene => {
+                let bounds = if batch.unculled() {
+                    UNCULLED_BOUNDS
+                } else {
+                    MESH_BOUNDS
+                };
+                key_of(batch.mesh(), batch.material(), bounds, 0)
+            }
             Drawn::Casters => None,
         };
 

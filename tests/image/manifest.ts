@@ -23,6 +23,7 @@ import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
+import { SPRITE_IMAGE } from '../../bench/scenes/sprites.ts';
 import { GRID_IMAGE } from '../../bench/scenes/standard-grid.ts';
 import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
 import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
@@ -807,6 +808,22 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/alpha-mask-sketch.ts',
 		hold: 0,
 		size: [MASK_IMAGE.width, MASK_IMAGE.height],
+	},
+	// Sprites: blended ones that show frames of an atlas at several sizes, rotations, colors and
+	// depths, sorted back to front, and opaque ones that keep their size in pixels and stand on their
+	// positions. The parity test compares it with three.js's Sprite and SpriteMaterial.
+	{
+		name: 'sprites',
+		sketch: 'tests/pages/sketches/sprites-sketch.ts',
+		hold: 0,
+		size: [SPRITE_IMAGE.width, SPRITE_IMAGE.height],
+	},
+	// 100,000 sprites of a dynamic batch in one draw: a field of them seen from above, which blend
+	// and sort, and a ring of sprites sized in pixels whose centers lie outside the view.
+	{
+		name: 'sprites-100k',
+		sketch: 'tests/pages/sketches/sprites-many-sketch.ts',
+		hold: 0.5,
 	},
 	// Decals on a wall and on the floor, whose depth bias makes them win the depth test everywhere.
 	// WebGL2's other depth modes store depth another way round, and must draw the same image.

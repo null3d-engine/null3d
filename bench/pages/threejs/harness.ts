@@ -64,6 +64,8 @@ export type Three = Pick<
 	| 'Scene'
 	| 'SphereGeometry'
 	| 'SpotLight'
+	| 'Sprite'
+	| 'SpriteMaterial'
 	| 'SRGBColorSpace'
 	| 'TextureLoader'
 	| 'TorusGeometry'

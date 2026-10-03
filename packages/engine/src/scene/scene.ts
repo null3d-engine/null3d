@@ -59,6 +59,7 @@ import {
 } from './queries';
 import type { Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
+import { SpriteBatch, type SpriteOptions, spriteParts } from './sprites';
 import { Texture } from './textures';
 import { UnmarkedWrites } from './unmarked-writes';
 
@@ -1586,6 +1587,8 @@ export class Scene {
 	private readonly objectSlots: (Object3D | undefined)[] = [];
 	/** The batch that each batch slot holds, or last held, which queries name by id. */
 	private readonly batchSlots: (InstanceBatch | undefined)[] = [];
+	/** The quad meshes of sprite batches, by their center, which batches with one center share. */
+	private readonly spriteQuads = new Map<string, number>();
 	/** Raycasts and overlap queries, made on the first query. */
 	private sceneQueries: SceneQueries | undefined;
 	/** Rows of the live instance batches, which development builds count. */
@@ -2179,6 +2182,39 @@ export class Scene {
 		batch.setActiveCount(count);
 		if (layers !== undefined) batch.setLayers(layers);
 		return batch;
+	}
+
+	/**
+	 * Many sprites in one batch: quads that face the camera, like three.js's `Sprite` with a
+	 * `SpriteMaterial`. Typed arrays give each sprite its position, size, rotation, color and atlas
+	 * frame, as an instance batch's arrays give its rows. Sprites blend by default, and blended
+	 * sprites draw back to front with the other blended objects. Throws E1108 for an atlas side that
+	 * is not a whole number from 1 to 2048, and E1203 for a center that is not two finite numbers.
+	 */
+	createSprites(options: SpriteOptions): SpriteBatch {
+		const call = 'createSprites';
+		const { core } = this;
+		const { count, layers } = options;
+		if (DEV && layers !== undefined) checkLayers(call, layers);
+		const parts = spriteParts(core, this.spriteQuads, options, call);
+		const id = core.checkGrowth(
+			core.glue.createSpriteBatch(
+				count,
+				options.dynamic ?? false,
+				parts.mesh,
+				parts.material.id,
+				parts.columns,
+				parts.rows,
+				options.sizeAttenuation === false,
+			),
+			call,
+		);
+		if (DEV) this.countBatchRows(count);
+		const rows = new InstanceBatch(this, id, count, false);
+		this.rememberBatch(rows);
+		const sprites = new SpriteBatch(core, id, count, parts.material, rows);
+		if (layers !== undefined) sprites.setLayers(layers);
+		return sprites;
 	}
 
 	/** A perspective camera; `fov` is vertical, in degrees. Cameras are dynamic by default. */

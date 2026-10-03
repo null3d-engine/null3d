@@ -177,6 +177,8 @@ export const TEMPLATE_CULL = 16;
 export const TEMPLATE_LIGHT_COUNT = 17;
 export const TEMPLATE_LIGHT_PLACE = 18;
 export const TEMPLATE_LIGHT_WRITE = 19;
+export const TEMPLATE_SPRITE = 22;
+export const TEMPLATE_SPRITE_MAP = 23;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;

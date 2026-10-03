@@ -483,6 +483,7 @@ export class SketchRunner {
 		viewport.width = slotFloats[Slot.CanvasCssWidth] as number;
 		viewport.height = slotFloats[Slot.CanvasCssHeight] as number;
 		viewport.pixelRatio = slotFloats[Slot.PixelRatio] as number;
+		this.sketch.glue.setPixelRatio(viewport.pixelRatio);
 	}
 
 	/** Records the time since the previous phase ended as a phase of the frame. */
