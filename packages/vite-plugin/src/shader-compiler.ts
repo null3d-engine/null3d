@@ -10,7 +10,7 @@
 // library modules it composed.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { ShaderVariant, WgslPipeline } from './shader-types.ts';
+import type { CompiledUniform, ShaderVariant, WgslPipeline } from './shader-types.ts';
 
 /** Where `bun run build` writes the module. */
 export const SHADER_COMPILER_URL = new URL('../dist/shader-compiler.wasm', import.meta.url);
@@ -93,7 +93,7 @@ export interface MaterialBuild {
 	/** The functions that the WGSL declares for the engine to call, such as `surface`. */
 	readonly functions: readonly string[];
 	/** The fields of the WGSL's `struct Uniforms`, where the engine writes each. */
-	readonly uniforms: readonly MaterialUniform[];
+	readonly uniforms: readonly CompiledUniform[];
 	/** The standard material's variants with the WGSL's functions, or a full shader's, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
 	/** The vertex shader locations that the vertex stage reads from a mesh's vertices. */
@@ -102,16 +102,6 @@ export interface MaterialBuild {
 	readonly attributes: number;
 	/** True when the shader reads the material's base color and opacity, as the template does. */
 	readonly baseColor: boolean;
-}
-
-/** A uniform of a custom material, and where the engine writes its value. */
-export interface MaterialUniform {
-	/** The field's name in `struct Uniforms`. */
-	readonly name: string;
-	/** Its type. */
-	readonly type: 'f32' | 'i32' | 'u32' | 'vec2f' | 'vec3f' | 'vec4f';
-	/** The float of the material's row of custom values where it starts. */
-	readonly offset: number;
 }
 
 /** The result of a custom material's compile. */

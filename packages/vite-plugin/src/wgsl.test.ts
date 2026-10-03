@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { build, createServer, type Rollup } from 'vite';
 import { fixture } from '../../../tools/lib/fixture';
-import null3d from './index';
+import null3d, { type Null3dPluginOptions } from './index';
 import type { ShaderProblem } from './shader-compiler';
 import type { CompiledMaterial, CompiledShader } from './shader-types';
 import {
@@ -435,12 +435,15 @@ function project(changes: Record<string, string> = {}): string {
 }
 
 /** Builds a project in memory with the plugin, and returns its chunks, or throws its error. */
-async function buildProject(root: string): Promise<Rollup.OutputChunk[]> {
+async function buildProject(
+	root: string,
+	options: Null3dPluginOptions = {},
+): Promise<Rollup.OutputChunk[]> {
 	const result = await build({
 		root,
 		configFile: false,
 		logLevel: 'silent',
-		plugins: [null3d()],
+		plugins: [null3d(options)],
 		build: { write: false },
 	});
 	const outputs = Array.isArray(result) ? result : [result];
@@ -474,6 +477,16 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 		expect(sketch?.code).not.toContain(
 			'fn vs_main() -> @builtin(position) vec4f {\\n    return vec4f(0.0);\\n}\\n\\n@fragment',
 		);
+	});
+
+	it('writes the types of each WGSL file that a module imports beside it', async () => {
+		const root = project();
+		await buildProject(root);
+		const declaration = readFileSync(join(root, 'src/shaders/glow.wgsl.d.ts'), 'utf8');
+		expect(declaration).toContain('declare const shader: CompiledShader;');
+		const off = project();
+		await buildProject(off, { wgslDeclarations: false });
+		expect(existsSync(join(off, 'src/shaders/glow.wgsl.d.ts'))).toBe(false);
 	});
 
 	it('stops a production build at the line and column of tagged WGSL', async () => {

@@ -24,6 +24,7 @@ enable draw_index;
 // The position is invariant, as in those templates, so both compute the same depth for the same
 // vertex, and the opaque pass's test for equal depth passes on exactly the nearest surfaces.
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, frame, relative_position, world_normal}
+#import null3d::vertex::{mesh_position}
 
 /// How far a back face that faces straight away from the light moves toward it, in texels of the
 /// map where it stands.
@@ -42,7 +43,7 @@ struct VertexIn {
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> @invariant @builtin(position) vec4f {
     let found = find_instance(i);
-    let relative = relative_position(found, v.position);
+    let relative = relative_position(found, mesh_position(v.position));
     var clip = clip_of(found, relative);
 #ifdef CASTER_OFFSET
     // A texel spans two clip units over the map's texels across. The first row of the matrix turns

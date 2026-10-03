@@ -92,6 +92,7 @@ export type {
 	CylinderOptions,
 	DepthBias,
 	Geometry,
+	IntegerArray,
 	Material,
 	MaterialFeatures,
 	MaterialOptions,
@@ -108,10 +109,11 @@ export type {
 	StandardOptions,
 	StandardValues,
 	TorusOptions,
-	UniformValue,
 	UnlitOptions,
 	UnlitValues,
 	UvTransform,
+	VertexArray,
+	VertexValues,
 } from './scene/resources';
 export type {
 	AmbientLight,
@@ -157,6 +159,13 @@ export type {
 	Textures,
 	TextureWrap,
 } from './scene/textures';
+export type {
+	UniformType,
+	UniformValue,
+	UniformValueByType,
+	UniformValues,
+	WgslUniforms,
+} from './scene/wgsl-uniforms';
 export type { PhaseName } from './shared/metrics';
 export type { Percentiles } from './shared/stats';
 export type { Tier } from './shared/tier';
