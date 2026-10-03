@@ -4,9 +4,14 @@
 // with the TypeScript references of `lib/shader-library-cases.ts`. The values are numbers, not an
 // image, so the page reads them straight from the GPU objects it made. The page binds three.js's
 // table of specular terms where the engine binds it, for `lighting::dfg_lut`.
-import { SHADERS } from '@null3d/engine/internal';
+//
+// The test shader has one variant per library module, and the page draws each variant over the
+// rows of its module's cases. A variant that does not compile, link or build a pipeline is a
+// failure that names the module and the GPU's own message, in the result and in the page's
+// trail. The page still draws the other modules and compares their results.
+import { type GlslProgram, SHADERS, type ShaderVariant } from '@null3d/engine/internal';
 import { DFG_SIZE, dfgTexels } from './lib/dfg-table';
-import { run } from './lib/result';
+import { progress, run } from './lib/result';
 import {
 	allCases,
 	type Case,
@@ -27,9 +32,11 @@ const RESULT_TEXELS = RESULT_VALUES / 4;
 /** WebGPU copies texture rows into buffers at offsets aligned to this many bytes. */
 const COPY_ROW_ALIGNMENT = 256;
 
-const shader = SHADERS.test_library.main;
-const wgsl = shader.wgsl!;
-const glsl = shader.glsl!.main;
+/** The test shader's variants, one per library module, by the module's name. */
+const VARIANTS: [string, ShaderVariant<'main'>][] = Object.entries(SHADERS.test_library);
+
+/** The library module of each function, by function number. */
+const MODULES = FUNCTIONS.map((fn) => fn.name.slice(0, fn.name.indexOf('::')));
 
 /** The input texture's texels: one row per case. */
 function inputTexels(cases: readonly Case[]): Uint32Array {
@@ -42,19 +49,99 @@ function inputTexels(cases: readonly Case[]): Uint32Array {
 	return texels;
 }
 
-async function runWebGPU(input: Uint32Array, rows: number): Promise<Uint32Array> {
+/** A module's runs of consecutive rows, each as its first row and its number of rows. */
+function moduleRows(cases: readonly Case[], module: string): [number, number][] {
+	const runs: [number, number][] = [];
+	cases.forEach((c, row) => {
+		if (MODULES[c.function] !== module) return;
+		const last = runs.at(-1);
+		if (last && last[0] + last[1] === row) last[1]++;
+		else runs.push([row, 1]);
+	});
+	return runs;
+}
+
+/** The bits that the draws wrote, and the modules that could not draw, each with the reason. */
+interface Drawn {
+	bits: Uint32Array;
+	failures: Map<string, string>;
+}
+
+function message(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+/** Notes a module whose variant could not draw, in the trail and in the failures. */
+function fail(failures: Map<string, string>, module: string, error: unknown): void {
+	const reason = message(error);
+	progress(`${module}: ${reason}`);
+	failures.set(module, reason);
+}
+
+/** The kinds of GPU error that a scope catches. A pipeline that a driver cannot build is internal. */
+const ERROR_FILTERS: readonly GPUErrorFilter[] = ['validation', 'internal', 'out-of-memory'];
+
+/**
+ * Runs `work` inside an error scope of each kind, and throws with every error that the scopes
+ * caught or that `work` threw.
+ */
+async function scoped<T>(device: GPUDevice, work: () => Promise<T>): Promise<T> {
+	for (const filter of ERROR_FILTERS) device.pushErrorScope(filter);
+	const reasons: string[] = [];
+	let value: T | undefined;
+	try {
+		value = await work();
+	} catch (error) {
+		reasons.push(message(error));
+	}
+	for (const _ of ERROR_FILTERS) {
+		const error = await device.popErrorScope();
+		if (error) reasons.push(`${error.constructor.name}: ${error.message.trim()}`);
+	}
+	if (reasons.length > 0) throw new Error(reasons.join('; '));
+	return value as T;
+}
+
+/** Builds a module's pipeline, and throws with the compiler's or the driver's message. */
+async function libraryPipeline(
+	device: GPUDevice,
+	layout: GPUPipelineLayout,
+	module: string,
+	wgsl: NonNullable<ShaderVariant<'main'>['wgsl']>,
+): Promise<GPURenderPipeline> {
+	const shader = device.createShaderModule({ label: module, code: wgsl.source });
+	const { messages } = await shader.getCompilationInfo();
+	for (const m of messages)
+		progress(`${module} WGSL ${m.type} ${m.lineNum}:${m.linePos} ${m.message}`);
+	if (messages.some((m) => m.type === 'error')) throw new Error('the WGSL did not compile');
+	try {
+		return await device.createRenderPipelineAsync({
+			label: module,
+			layout,
+			vertex: { module: shader, entryPoint: wgsl.pipelines.main.vertex },
+			fragment: {
+				module: shader,
+				entryPoint: wgsl.pipelines.main.fragment,
+				targets: [{ format: 'rgba32uint' }],
+			},
+		});
+	} catch (error) {
+		const reason = error instanceof GPUPipelineError ? ` (${error.reason})` : '';
+		throw new Error(`pipeline${reason}: ${message(error).trim()}`);
+	}
+}
+
+async function runWebGPU(cases: readonly Case[], input: Uint32Array): Promise<Drawn> {
+	const rows = cases.length;
 	const adapter = await navigator.gpu?.requestAdapter({ featureLevel: 'compatibility' });
 	if (!adapter) throw new Error('no WebGPU adapter');
 	const coreFeatures = 'core-features-and-limits' as GPUFeatureName;
 	const wanted = tier === 'webgpu' && adapter.features.has(coreFeatures);
 	const device = await adapter.requestDevice({ requiredFeatures: wanted ? [coreFeatures] : [] });
-	device.pushErrorScope('validation');
-	const module = device.createShaderModule({ code: wgsl.source });
-	const messages = (await module.getCompilationInfo()).messages.filter((m) => m.type === 'error');
-	if (messages.length > 0)
-		throw new Error(
-			`WGSL: ${messages.map((m) => `${m.lineNum}:${m.linePos} ${m.message}`).join('; ')}`,
-		);
+	void device.lost.then((lost) => progress(`device lost (${lost.reason}): ${lost.message}`));
+	device.addEventListener('uncapturederror', (event) =>
+		progress(`uncaptured ${event.error.constructor.name}: ${event.error.message}`),
+	);
 	const fragment = GPUShaderStage.FRAGMENT;
 	const layout = device.createBindGroupLayout({
 		entries: [
@@ -62,80 +149,94 @@ async function runWebGPU(input: Uint32Array, rows: number): Promise<Uint32Array>
 			{ binding: 3, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
 		],
 	});
-	const dfg = device.createTexture({
-		size: [DFG_SIZE, DFG_SIZE],
-		format: 'rgba32float',
-		usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-	});
-	device.queue.writeTexture({ texture: dfg }, dfgTexels(), { bytesPerRow: DFG_SIZE * 16 }, [
-		DFG_SIZE,
-		DFG_SIZE,
-	]);
-	const pipeline = device.createRenderPipeline({
-		layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-		vertex: { module, entryPoint: wgsl.pipelines.main.vertex },
-		fragment: {
-			module,
-			entryPoint: wgsl.pipelines.main.fragment,
-			targets: [{ format: 'rgba32uint' }],
-		},
-	});
-	const cases = device.createTexture({
-		size: [CASE_TEXELS, rows],
-		format: 'rgba32uint',
-		usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-	});
-	device.queue.writeTexture({ texture: cases }, input, { bytesPerRow: CASE_TEXELS * 16 }, [
-		CASE_TEXELS,
-		rows,
-	]);
-	const target = device.createTexture({
-		size: [RESULT_TEXELS, rows],
-		format: 'rgba32uint',
-		usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-	});
-	const rowBytes = RESULT_TEXELS * 16;
-	const alignedRow = Math.ceil(rowBytes / COPY_ROW_ALIGNMENT) * COPY_ROW_ALIGNMENT;
-	const readback = device.createBuffer({
-		size: alignedRow * rows,
-		usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-	});
-	const encoder = device.createCommandEncoder();
-	const pass = encoder.beginRenderPass({
-		colorAttachments: [
-			{ view: target.createView(), loadOp: 'clear', clearValue: [0, 0, 0, 0], storeOp: 'store' },
-		],
-	});
-	pass.setPipeline(pipeline);
-	pass.setBindGroup(
-		0,
-		device.createBindGroup({
-			layout,
-			entries: [
-				{ binding: 0, resource: cases.createView() },
-				{ binding: 3, resource: dfg.createView() },
+	const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
+	const failures = new Map<string, string>();
+	const pipelines: [string, GPURenderPipeline][] = [];
+	for (const [module, variant] of VARIANTS) {
+		try {
+			const wgsl = variant.wgsl!;
+			pipelines.push([
+				module,
+				await scoped(device, () => libraryPipeline(device, pipelineLayout, module, wgsl)),
+			]);
+		} catch (error) {
+			fail(failures, module, error);
+		}
+	}
+
+	const bits = await scoped(device, async () => {
+		const dfg = device.createTexture({
+			size: [DFG_SIZE, DFG_SIZE],
+			format: 'rgba32float',
+			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+		});
+		device.queue.writeTexture({ texture: dfg }, dfgTexels(), { bytesPerRow: DFG_SIZE * 16 }, [
+			DFG_SIZE,
+			DFG_SIZE,
+		]);
+		const inputs = device.createTexture({
+			size: [CASE_TEXELS, rows],
+			format: 'rgba32uint',
+			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+		});
+		device.queue.writeTexture({ texture: inputs }, input, { bytesPerRow: CASE_TEXELS * 16 }, [
+			CASE_TEXELS,
+			rows,
+		]);
+		const target = device.createTexture({
+			size: [RESULT_TEXELS, rows],
+			format: 'rgba32uint',
+			usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+		});
+		const rowBytes = RESULT_TEXELS * 16;
+		const alignedRow = Math.ceil(rowBytes / COPY_ROW_ALIGNMENT) * COPY_ROW_ALIGNMENT;
+		const readback = device.createBuffer({
+			size: alignedRow * rows,
+			usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+		});
+		const encoder = device.createCommandEncoder();
+		const pass = encoder.beginRenderPass({
+			colorAttachments: [
+				{ view: target.createView(), loadOp: 'clear', clearValue: [0, 0, 0, 0], storeOp: 'store' },
 			],
-		}),
-	);
-	pass.draw(3);
-	pass.end();
-	encoder.copyTextureToBuffer(
-		{ texture: target },
-		{ buffer: readback, bytesPerRow: alignedRow, rowsPerImage: rows },
-		[RESULT_TEXELS, rows],
-	);
-	device.queue.submit([encoder.finish()]);
-	const error = await device.popErrorScope();
-	if (error) throw new Error(`WebGPU: ${error.message}`);
-	await readback.mapAsync(GPUMapMode.READ);
-	const mapped = new Uint32Array(readback.getMappedRange());
-	const out = new Uint32Array(rows * RESULT_VALUES);
-	const stride = alignedRow / 4;
-	for (let row = 0; row < rows; row++)
-		out.set(mapped.subarray(row * stride, row * stride + RESULT_VALUES), row * RESULT_VALUES);
-	readback.unmap();
+		});
+		pass.setBindGroup(
+			0,
+			device.createBindGroup({
+				layout,
+				entries: [
+					{ binding: 0, resource: inputs.createView() },
+					{ binding: 3, resource: dfg.createView() },
+				],
+			}),
+		);
+		for (const [module, pipeline] of pipelines) {
+			pass.setPipeline(pipeline);
+			for (const [first, count] of moduleRows(cases, module)) {
+				pass.setScissorRect(0, first, RESULT_TEXELS, count);
+				pass.draw(3);
+			}
+		}
+		pass.end();
+		encoder.copyTextureToBuffer(
+			{ texture: target },
+			{ buffer: readback, bytesPerRow: alignedRow, rowsPerImage: rows },
+			[RESULT_TEXELS, rows],
+		);
+		device.queue.submit([encoder.finish()]);
+		await readback.mapAsync(GPUMapMode.READ);
+		const mapped = new Uint32Array(readback.getMappedRange());
+		const out = new Uint32Array(rows * RESULT_VALUES);
+		const stride = alignedRow / 4;
+		for (let row = 0; row < rows; row++)
+			out.set(mapped.subarray(row * stride, row * stride + RESULT_VALUES), row * RESULT_VALUES);
+		readback.unmap();
+		return out;
+	}).catch((error: unknown) => {
+		throw new Error(`WebGPU: ${message(error)}`);
+	});
 	device.destroy();
-	return out;
+	return { bits, failures };
 }
 
 function compile(gl: WebGL2RenderingContext, type: GLenum, source: string): WebGLShader {
@@ -148,9 +249,8 @@ function compile(gl: WebGL2RenderingContext, type: GLenum, source: string): WebG
 	return compiled;
 }
 
-function runWebGL2(input: Uint32Array, rows: number): Uint32Array {
-	const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
-	if (!gl) throw new Error('no WebGL2 context');
+/** Links a module's program and makes it current, or throws with the compiler's or linker's log. */
+function useProgram(gl: WebGL2RenderingContext, glsl: GlslProgram): void {
 	const program = gl.createProgram();
 	gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, glsl.vertex.source));
 	gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, glsl.fragment.source));
@@ -158,11 +258,20 @@ function runWebGL2(input: Uint32Array, rows: number): Uint32Array {
 	if (!gl.getProgramParameter(program, gl.LINK_STATUS))
 		throw new Error(`GLSL link: ${gl.getProgramInfoLog(program) ?? ''}`);
 	gl.useProgram(program);
+	// The cases go in unit 0 and the table of specular terms in unit 1.
+	for (const texture of glsl.fragment.textures)
+		gl.uniform1i(gl.getUniformLocation(program, texture.name), texture.binding === 3 ? 1 : 0);
+}
+
+function runWebGL2(cases: readonly Case[], input: Uint32Array): Drawn {
+	const rows = cases.length;
+	const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
+	if (!gl) throw new Error('no WebGL2 context');
 
 	// Integer textures are complete only with nearest filtering.
-	const cases = gl.createTexture();
+	const inputs = gl.createTexture();
 	gl.activeTexture(gl.TEXTURE0);
-	gl.bindTexture(gl.TEXTURE_2D, cases);
+	gl.bindTexture(gl.TEXTURE_2D, inputs);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 	gl.texImage2D(
@@ -176,7 +285,7 @@ function runWebGL2(input: Uint32Array, rows: number): Uint32Array {
 		gl.UNSIGNED_INT,
 		input,
 	);
-	// The table of specular terms goes in unit 1; its floats are read with texelFetch.
+	// The table of specular terms is read with texelFetch.
 	const dfg = gl.createTexture();
 	gl.activeTexture(gl.TEXTURE1);
 	gl.bindTexture(gl.TEXTURE_2D, dfg);
@@ -193,8 +302,6 @@ function runWebGL2(input: Uint32Array, rows: number): Uint32Array {
 		gl.FLOAT,
 		dfgTexels(),
 	);
-	for (const texture of glsl.fragment.textures)
-		gl.uniform1i(gl.getUniformLocation(program, texture.name), texture.binding === 3 ? 1 : 0);
 
 	const target = gl.createRenderbuffer();
 	gl.bindRenderbuffer(gl.RENDERBUFFER, target);
@@ -205,27 +312,51 @@ function runWebGL2(input: Uint32Array, rows: number): Uint32Array {
 	if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
 		throw new Error('the rgba32uint target is not complete');
 	gl.viewport(0, 0, RESULT_TEXELS, rows);
-	gl.drawArrays(gl.TRIANGLES, 0, 3);
-	// GL counts rows from the bottom, both in the fragment position and in readPixels, so row k of
-	// the readback is case k, as on WebGPU.
-	const out = new Uint32Array(rows * RESULT_VALUES);
-	gl.readPixels(0, 0, RESULT_TEXELS, rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, out);
+	gl.enable(gl.SCISSOR_TEST);
+	// GL counts rows from the bottom, in the fragment position, the scissor box and readPixels, so
+	// row k of the target and of the readback is case k, as on WebGPU.
+	const failures = new Map<string, string>();
+	for (const [module, variant] of VARIANTS) {
+		try {
+			useProgram(gl, variant.glsl!.main);
+			for (const [first, count] of moduleRows(cases, module)) {
+				gl.scissor(0, first, RESULT_TEXELS, count);
+				gl.drawArrays(gl.TRIANGLES, 0, 3);
+			}
+			const error = gl.getError();
+			if (error !== gl.NO_ERROR) throw new Error(`WebGL2 error ${error} after the draws`);
+		} catch (error) {
+			fail(failures, module, error);
+		}
+	}
+	const bits = new Uint32Array(rows * RESULT_VALUES);
+	gl.readPixels(0, 0, RESULT_TEXELS, rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, bits);
 	const error = gl.getError();
-	if (error !== gl.NO_ERROR) throw new Error(`WebGL2 error ${error}`);
+	if (error !== gl.NO_ERROR) throw new Error(`WebGL2 error ${error} after the readback`);
+	if (gl.isContextLost()) throw new Error('the WebGL2 context was lost');
 	gl.getExtension('WEBGL_lose_context')?.loseContext();
-	return out;
+	return { bits, failures };
 }
 
 run('shader-library', async () => {
 	const cases = allCases();
 	const input = inputTexels(cases);
-	const bits =
-		tier === 'webgl2' ? runWebGL2(input, cases.length) : await runWebGPU(input, cases.length);
-	const mismatches = compareResults(cases, bits);
+	const { bits, failures } =
+		tier === 'webgl2' ? runWebGL2(cases, input) : await runWebGPU(cases, input);
+	// The rows of a module that could not draw hold no results, so its failure alone reports it.
+	const drawn = cases.flatMap((c, row) => (failures.has(MODULES[c.function]!) ? [] : [row]));
+	const drawnBits = new Uint32Array(drawn.length * RESULT_VALUES);
+	drawn.forEach((row, k) => {
+		drawnBits.set(bits.subarray(row * RESULT_VALUES, (row + 1) * RESULT_VALUES), k * RESULT_VALUES);
+	});
 	return {
 		tier,
 		functions: FUNCTIONS.length,
 		cases: cases.length,
-		mismatches,
+		failures: [...failures].map(([module, reason]) => `${module}: ${reason}`),
+		mismatches: compareResults(
+			drawn.map((row) => cases[row]!),
+			drawnBits,
+		),
 	};
 });
