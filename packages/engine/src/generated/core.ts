@@ -55,6 +55,28 @@ export const BATCH_FIELD_ROTATIONS = 1;
 export const BATCH_FIELD_SCALES = 2;
 export const BATCH_FIELD_COLORS = 3;
 
+export const QUERY_INPUT = 0;
+export const QUERY_HITS = 1;
+export const QUERY_HIT_CAPACITY = 2;
+export const QUERY_RAYS = 3;
+export const QUERY_INPUT_FLOATS = 8;
+export const QUERY_INPUT_LIMIT = 6;
+export const QUERY_RAY_FLOATS = 6;
+export const QUERY_HIT_FLOATS = 11;
+export const QUERY_HIT_SLOT = 0;
+export const QUERY_HIT_BATCH = 1;
+export const QUERY_HIT_ROW = 2;
+export const QUERY_HIT_TRIANGLE = 3;
+export const QUERY_HIT_DISTANCE = 4;
+export const QUERY_HIT_POINT = 5;
+export const QUERY_HIT_NORMAL = 8;
+export const QUERY_CLOSEST = 0;
+export const QUERY_ANY = 1;
+export const QUERY_ALL = 2;
+export const QUERY_SPHERE = 3;
+export const QUERY_BOX = 4;
+export const QUERY_FAILED = 4294967295;
+
 export const DEBUG_LINE_FIELD_POSITIONS = 0;
 export const DEBUG_LINE_FIELD_COLORS = 1;
 

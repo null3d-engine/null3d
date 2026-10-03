@@ -89,6 +89,13 @@ export type {
 } from './scene/post';
 export type { Prefab, PrefabBounds, PrefabNode } from './scene/prefab';
 export type {
+	OverlapHit,
+	QueryOptions,
+	RaycastBatchHits,
+	RaycastHit,
+	RaycastOptions,
+} from './scene/queries';
+export type {
 	AlphaMode,
 	Blending,
 	BoxOptions,

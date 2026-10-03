@@ -139,6 +139,25 @@ export interface CoreGlue extends CoreErrors {
 	markBatchDirty(batch: number, start: number, count: number): number;
 	memoryEpoch(): number;
 	/**
+	 * The address of a query array (`QUERY_INPUT`, `QUERY_HITS` or `QUERY_RAYS`), or with
+	 * `QUERY_HIT_CAPACITY` the hit records the hit array holds. The hit array moves when it grows.
+	 */
+	queryArrays(field: number): number;
+	/** Makes room for a batch of rays and their hit records. */
+	reserveRays(count: number): number;
+	/**
+	 * Casts the ray of the input array: its closest hit, whether it hits anything, or every hit
+	 * (`QUERY_CLOSEST`, `QUERY_ANY` or `QUERY_ALL`). Returns the hit count, or `QUERY_FAILED`.
+	 */
+	raycast(kind: number, layers: number): number;
+	/** Casts the first `count` rays of the ray array on the job workers; returns the hit count. */
+	raycastBatch(count: number, layers: number): number;
+	/**
+	 * Finds the objects with a triangle in the input's sphere or box (`QUERY_SPHERE` or
+	 * `QUERY_BOX`); returns their count, or `QUERY_FAILED`.
+	 */
+	overlap(kind: number, layers: number): number;
+	/**
 	 * A mesh from a geometry generator: `shape` is one of the `SHAPE_*` codes, and the numbers after
 	 * it are the arguments of the three.js class's constructor, in their order. Returns the mesh id.
 	 */
@@ -447,6 +466,11 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBatchLayers',
 	'markBatchDirty',
 	'memoryEpoch',
+	'queryArrays',
+	'reserveRays',
+	'raycast',
+	'raycastBatch',
+	'overlap',
 	'createShapeMesh',
 	'meshArrays',
 	'createMeshFromArrays',
