@@ -32,6 +32,51 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 - After a fixed plan, the runner prints a row for each browser for [the record of tested devices](tested-devices.md).
 - Close the browser tabs that testing opens as soon as each test ends. Old tabs keep pages running, which costs heat and skews later runs.
 
+## Guards on device runs
+
+The runner watches each browser's results while a run goes on. Two guards keep a tired device from wasting a run, or from giving figures that look true but are not.
+
+### A browser that keeps refusing memory
+
+- After hours of runs, Safari on the iPad can refuse the engine's shared memory on every page. Each page then fails with E1109, or with the browser's own "Out of memory" error.
+- This happened twice. On 2 October 2026, a checks run failed 433 of its 490 pages. A later run failed 82 of its 116 pages. Each time, only quitting and opening Safari again brought the memory back.
+- So the runner ends a browser's turn when 3 of its last 5 pages failed for lack of memory. Three such pages in a row end it too, because they lie among the last 5. The counts are `OOM_STOP_PAGES` and `OOM_WINDOW_PAGES` in `tests/lib/runs.ts`.
+- A single page that fails for lack of memory does not end the turn. One page can leak or ask for too much on its own, and the next page then starts fresh.
+- Replayed on the results of the run that failed 433 of 490 pages, the guard ends that run after 9 pages.
+- Pages that push the memory limit on purpose do not count. These are the memory plan's loads, the shared memory page's counts of its room, and the tab memory plan. A refused memory is what they measure. The list is `MEMORY_LIMIT_CHECKS` in `tests/lib/plans.ts`.
+- The other runners keep going. The runner prints a message that names the runner, its browser and its device, and what to do:
+
+  ```text
+  ipad-safari: the browser keeps refusing the engine's memory (E1109 on 3 of its last 5 pages). Quit and reopen Safari on the iPad, bring the runner page to the front, then run again with --only <the pages left>
+  ```
+
+- The `--only` list holds the pages without a result and the pages that failed for lack of memory. A page of a later round appears under its own id. Give the new run no `--shard`, because the list holds only the pages of the shard that ran.
+- To end the turn, the runner first takes the browser out of the run's turn list. A reloaded runner page then does not start the run again. Next, the runner marks the browser's claim on its results as ended.
+- The dev server then refuses the runner page's next result, and any new claim, with 410. The runner page stops at the end of the page that runs. A runner page that waits on the local network waits for the next run, and a runner page in a Mac app closes its tab.
+- The runner records why the turn ended in `ended-early.json`, in the browser's folder of the run. The record holds the reason, the failed pages, what to do and the `--only` list. The run's `summary.json` holds the same record.
+- The browser's line in the summary says that its turn ended early, and counts the pages that never ran. Those pages print no failure lines of their own.
+- The guard does not stop the whole run. The other browsers' results stay good, because each device has memory of its own.
+- The guard does not pause and try the failed pages again. Safari does not give the memory back until it quits, so a pause only wastes time.
+- The guard looks at the last pages, not at the whole run. A long run can see a few unrelated refusals over hours, and those must not end it.
+
+### A display whose refresh rate changes
+
+- Frame rates mean little without the display's refresh rate. On 3 October 2026, the iPad reported refresh rates from 35 to 65 Hz between runs. A drop from 49 to 35 frames per second looked like a regression in the code. It followed the display's rate instead.
+- So in the plans that time pages, the runner page measures the refresh rate before each page. These plans are `bench`, `startup`, `governor`, `skinning`, `overload` and `soak`, and the scale search. The list is `TIMED_PLANS` in `tests/real-browsers.ts`.
+- The runner page measures with no test page loaded, from the middle interval of 60 animation frames. It adds the rate to the page's result as `runnerRefreshHz`. Each runner page also measures it once at its start, in `device.json`.
+- After the run, the runner marks a browser's timing figures as unreliable when a reading is below 55 Hz. It marks them too when the readings differ by more than a tenth of the highest one. The device checklist asks for 60 Hz.
+- The limits are `EXPECTED_REFRESH_HZ`, `LOWEST_REFRESH_HZ` and `REFRESH_SPREAD` in `tests/real-browsers.ts`. A display that holds 120 Hz all through the run passes, as on a Mac with a 120 Hz screen.
+- The browser's line in the summary then says why its timing figures are unreliable, and `summary.json` keeps the reason. The runner also prints what to check:
+
+  ```text
+  ipad-safari: the display ran at 37 Hz (expected 60): the iPad is hot, or Limit Frame Rate is off, or Low Power Mode or Reduce Motion is on; let it cool and check its settings. Its timing figures in this run are unreliable.
+  ```
+
+- The guard does not use the refresh rate that the engine's own figures report. The engine reads it on the thread that draws, and under a heavy scene that reading falls with the frame rate.
+- For example, on 30 September 2026 the iPad's bench pages reported 57 and 28 Hz in turn, with the scene. The runner page read 59 Hz at the start of the same run.
+- Each reading adds about a second to each page. The plans that only check results do not take it.
+- The guard marks the figures and does not end the run. The run's other results still count, and the person decides whether to run it again.
+
 ## What the checks plan covers
 
 - The capabilities page loads first and again last. Each extension that the engine asks for by name must get the same answer in both loads. The runner notes whether the browser's list of supported extensions kept its order, because Brave shuffles it (hard rule 13).
@@ -189,7 +234,7 @@ The team's tablet is an iPad Pro 11-inch with 8 cores. Safari there reports a Ma
 - For benchmarks, turn on Settings > Accessibility > Motion > Limit Frame Rate, which holds the display at 60 Hz.
 - Safari there holds only a few shared memories at once. It holds 6 with the engine's default maximum of 1 GiB, 18 at 256 MiB and 3 at 4 GiB. A test that stops a worker inside a blocking wait leaks one until Safari quits. After such a test, quit Safari from the app switcher and open the runner page again.
 - After a tab crash, Safari on the iPad can stay stuck until it is quit and opened again. It shows its own error page in place of the runner page, and no later run starts. On 2 and 3 October 2026, this held up the iPad's runs of several pull requests after the tab memory plan. Quit Safari from the app switcher after any run that crashes a tab, before the next run.
-- Safari on the iPad keeps memory from earlier runs until it quits. On 2 October 2026, a checks run failed 433 of its 490 pages. Its first page failed with "Out of memory", and every later page with E1109. Safari had run out of room for shared memory before the run began. After a quit and a fresh start, the same plan passed 490 of 490. A run that fails from its first page this way says nothing about the code.
+- Safari on the iPad keeps memory from earlier runs until it quits. On 2 October 2026, a checks run failed 433 of its 490 pages. Its first page failed with "Out of memory", and every later page with E1109. Safari had run out of room for shared memory before the run began. After a quit and a fresh start, the same plan passed 490 of 490. A run that fails from its first page this way says nothing about the code. The runner now ends such a run after a few pages, as [Guards on device runs](#guards-on-device-runs) explains.
 - Until 3 October 2026, the memory built up within runs too. Each page that left its engine running, such as the stats pages, kept its engine's memory once the runner removed its frame. The engine now ends its job workers' waits when its page goes away, as [the implementation notes](implementation-notes.md#threads-and-shared-memory) explain. The `frame-restarts-*` checks start more engines in frames than the iPad has room for, and remove each frame while its engine runs.
 - Brave with Shields on reports 3 cores, where Safari reports 8, so the engine starts fewer job workers there.
 - The iPad's scale at 60 Hz was measured in Safari 26.6 on 29 September 2026. three.js's WebGPU renderer holds 30 frames per second up to 240,000 objects, and its WebGL renderer up to 140,000.

@@ -12,7 +12,7 @@ null3D is a browser 3D engine for games and heavy 3D apps. Its core is Rust comp
 
 In null3D, a 3D scene is called a **sketch**. A sketch is a TypeScript module that builds its scene with `defineSketch` and updates it every frame. It runs in a worker of its own, while the page keeps the HTML. Its names follow three.js where the ideas match.
 
-null3D is in early development. Most pages here describe planned features, and each page's status label says which is which.
+null3D is in early development. Some pages here describe planned features, and each page's status label says which is which.
 
 ## Status labels
 
@@ -36,7 +36,7 @@ The version column in the page list gives the first engine version with the page
 - [Architecture: threads and the frame](concepts/architecture.md) explains where sketch code runs, and why.
 - [GPU tiers and backends](concepts/backends.md) shows which browsers get WebGPU and which get WebGL2.
 - [Hosting and cross-origin isolation](getting-started/hosting.md) covers the two HTTP headers that turn on worker threads.
-- If you are porting a three.js app, the [three.js to null3D mapping](porting/threejs-mapping.md) lists 147 three.js APIs with their null3D equivalents.
+- If you are porting a three.js app, the [three.js to null3D mapping](porting/threejs-mapping.md) lists the three.js APIs with their null3D equivalents.
 
 Coding agents can look pages up by ID. A page's ID is its path under `docs/` without `.md`, such as `concepts/architecture`. From version 0.1, the same pages ship inside the `@null3d/engine` package, so they always match the installed engine.
 
@@ -48,7 +48,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [Install null3D](getting-started/install.md) | The npm packages; the Vite plugin; package versions always match; the optional `null3d` command. | planned | 0.1 |
+| [Install null3D](getting-started/install.md) | The npm packages; the Vite plugin; package versions always match; the optional `null3d` command. | experimental | 0.1 |
 | [Your first scene](getting-started/first-scene.md) | page.ts with createEngine; sketch.ts with defineSketch; camera, light, mesh; running it with Vite. | experimental | 0.1 |
 | [Hosting and cross-origin isolation](getting-started/hosting.md) | COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the single-threaded fallback. | experimental | 0.1 |
 | [Project structure](getting-started/project-structure.md) | Starting from a template with `bunx @null3d/cli create`; page.ts, sketch.ts, assets/, AGENTS.md, .claude/skills/; what runs where. | planned | 0.3 |
