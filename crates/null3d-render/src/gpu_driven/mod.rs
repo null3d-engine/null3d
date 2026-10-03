@@ -545,6 +545,8 @@ impl GpuDrivenRenderer {
                     input.scene,
                     input.batches,
                     |_, _| (0, 0),
+                    // WebGPU skins in its compute pass, never in a vertex shader.
+                    |_| false,
                     0,
                     shadows,
                 )

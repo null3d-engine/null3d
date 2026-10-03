@@ -556,26 +556,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Skinning: three characters skinned to chains of joints, each in another pose of one clip. The
 	// parity test compares the image with three.js's SkinnedMesh. WebGPU skins them in a compute
-	// pass; the WebGL2 path does not skin yet. ?shadows stands them on a ground under a sun whose
-	// shadows must follow each pose. Both WebGPU tiers draw the same image.
+	// pass, and WebGL2 in the vertex shader of each pass. ?shadows stands them on a ground under a
+	// sun whose shadows must follow each pose. Every tier draws the same image.
 	...(['', 'shadows'] as const).map(
 		(variant): ImageTest => ({
 			name: variant ? `skinning-${variant}` : 'skinning',
 			sketch: `tests/pages/sketches/skinning-sketch.ts${variant ? `?${variant}` : ''}`,
 			hold: SKINNING_HOLD,
 			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
-			tiers: ['webgpu', 'compat'],
 			sameOnEveryTier: true,
 		}),
 	),
-	// The same characters from a quantized mesh, which the skinning pass reads type by type: it
-	// draws the image of floats, within the steps of 8-bit normals.
+	// The same characters from a quantized mesh, whose joints, weights and normals both paths
+	// read in their own types: it draws the image of floats, within the steps of 8-bit normals.
 	{
 		name: 'skinning-quantized',
 		sketch: 'tests/pages/sketches/skinning-sketch.ts?quantized',
 		hold: SKINNING_HOLD,
 		size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
-		tiers: ['webgpu', 'compat'],
 		reference: 'skinning',
 	},
 	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the

@@ -40,6 +40,7 @@ use crate::frame::{
     CellOffsets, RunCells, SceneSettings, bucket_of, collect_bucket_keys, push_runs,
 };
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
+use crate::skinning::skinned_in_vertex_shader;
 use crate::view::ViewFrame;
 
 /// What makes a sorted bucket: what the mesh and material ask of their pipeline, the bind group of
@@ -198,7 +199,8 @@ impl SortedLayout {
     /// key a bucket, with its pipeline id from `pipelines` for a pass that draws into `targets`.
     /// `place` gives a batch's first row in the builder's data and its data texture. While
     /// `shadows` is true, scene objects that receive shadows draw with pipelines that read the
-    /// shadow map. The layout then reserves every list that a frame's sort takes.
+    /// shadow map. The scene slots that `skinned` names draw with pipelines that skin in the vertex
+    /// shader. The layout then reserves every list that a frame's sort takes.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn rebuild(
         &mut self,
@@ -208,11 +210,12 @@ impl SortedLayout {
         scene: &SceneStorage,
         batches: &BatchTable,
         place: impl Fn(usize, &InstanceBatch) -> (u32, u32),
+        skinned: impl Fn(usize) -> bool,
         resident: u32,
         shadows: bool,
     ) -> Result<(), TryReserveError> {
         let meshes = settings.meshes();
-        let key_of = |mesh: u32, material: u32, group: u32, object: u32| -> Option<SortedKey> {
+        let key_of = |mesh: u32, material: u32, group: u32, object: u32, skinned: bool| {
             let pipeline = settings.pipeline_of(mesh, material)?;
             if !pipeline.blends() {
                 return None;
@@ -222,17 +225,28 @@ impl SortedLayout {
             } else {
                 pipeline
             };
+            let pipeline = if skinned {
+                skinned_in_vertex_shader(pipeline)
+            } else {
+                pipeline
+            };
             let textures = settings.texture_group(material, pipeline);
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             Some((pipeline, textures, page, mesh, material, group))
         };
         let scene_key = |slot: usize| {
             let (mesh, material) = (scene.meshes()[slot], scene.materials()[slot]);
-            key_of(mesh, material, resident, scene.flags()[slot])
+            key_of(mesh, material, resident, scene.flags()[slot], skinned(slot))
         };
-        // Instance batches receive no shadows yet.
+        // Instance batches receive no shadows yet, and no skins.
         let batch_key = |index: usize, batch: &InstanceBatch| {
-            key_of(batch.mesh(), batch.material(), place(index, batch).1, 0)
+            key_of(
+                batch.mesh(),
+                batch.material(),
+                place(index, batch).1,
+                0,
+                false,
+            )
         };
         collect_bucket_keys(&mut self.key_counts, scene, batches, scene_key, batch_key);
 

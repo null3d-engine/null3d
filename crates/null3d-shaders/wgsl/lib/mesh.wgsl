@@ -36,6 +36,13 @@ enable draw_index;
 // multi-draw call and read each draw's record by `gl_DrawID`; the other builds get one record per
 // draw.
 //
+// The SKIN builds, which only WebGL2 has, skin each vertex as three.js's SkinnedMesh does: the
+// vertex's four joints' skinning matrices, blended by its weights as they are, move its position,
+// normal and tangent in the mesh's space, before the instance's world matrix places them. The
+// joint texture holds every animated instance's skinning matrices, and a texture of indices gives
+// each source row the first joint of the instance that skins it. WebGPU skins in a compute pass
+// instead, and draws the skinned vertices with the plain builds.
+//
 // The fragment shaders write linear color into the HDR scene color, which the final pass tone maps.
 // On the 8-bit path (the TONE_MAP builds) `finish` applies the frame's exposure and tone mapping,
 // and encodes sRGB, into a target that resolves straight into the canvas.
@@ -82,6 +89,14 @@ struct CellOffsets {
 @group(2) @binding(1) var streamed_rows: texture_2d<f32>;
 @group(2) @binding(2) var visible: texture_2d<u32>;
 @group(2) @binding(3) var cluster_rows: texture_2d<u32>;
+#ifdef SKIN
+/// Joints per row of the joint texture, three texels each: one per row of a joint's 3 x 4 matrix.
+const JOINTS_PER_ROW: u32 = 1024u;
+/// Every animated instance's skinning matrices.
+@group(2) @binding(4) var joint_matrices: texture_2d<f32>;
+/// The first joint of the instance that skins each source row, laid out as the index list is.
+@group(2) @binding(5) var first_joints: texture_2d<u32>;
+#endif
 #else
 @group(0) @binding(1) var<storage, read> materials: array<Material>;
 /// The materials' custom values: row `id` holds material `id`'s, one texel per `vec4f`. Vertex
@@ -115,6 +130,10 @@ struct Instance {
     row_z: vec4f,
     material: u32,
     drawn: bool,
+#ifdef SKIN
+    /// The first joint of the instance's skeleton in the joint texture.
+    first_joint: u32,
+#endif
 }
 
 /// A material's parameters, by its id in the material table. (A shader that imports it by name
@@ -239,7 +258,46 @@ fn instance_of(record: vec4u, instance: u32) -> Instance {
     out.row_y.w += offset.y;
     out.row_z.w += offset.z;
     out.material = record.y;
+#ifdef SKIN
+    out.first_joint = textureLoad(first_joints, vec2u(row & index_row, row >> INDEX_ROW_SHIFT), 0).x;
+#endif
     return out;
+}
+#endif
+
+#ifdef SKIN
+/// Row `row` of joint `joint`'s skinning matrix.
+fn joint_row(joint: u32, row: u32) -> vec4f {
+    let x = (joint % JOINTS_PER_ROW) * 3u + row;
+    return textureLoad(joint_matrices, vec2u(x, joint / JOINTS_PER_ROW), 0);
+}
+
+/// The skinning matrix of a vertex of the instance: its joints' matrices blended by its weights,
+/// which count as they are. A joint without weight is not read, so it may name any joint.
+fn skin_transform(found: Instance, joints: vec4u, weights: vec4f) -> Transform {
+    var skin = Transform(vec4f(0.0), vec4f(0.0), vec4f(0.0));
+    for (var k = 0u; k < 4u; k++) {
+        let weight = weights[k];
+        if weight == 0.0 {
+            continue;
+        }
+        let joint = found.first_joint + joints[k];
+        skin.x += weight * joint_row(joint, 0u);
+        skin.y += weight * joint_row(joint, 1u);
+        skin.z += weight * joint_row(joint, 2u);
+    }
+    return skin;
+}
+
+/// A position in the mesh's space moved by a vertex's skinning matrix.
+fn skin_point(skin: Transform, p: vec3f) -> vec3f {
+    return transform_point(skin, p);
+}
+
+/// A normal or a tangent in the mesh's space turned by a vertex's skinning matrix, without its
+/// translation. The instance's world matrix normalizes it later.
+fn skin_direction(skin: Transform, d: vec3f) -> vec3f {
+    return transform_direction(skin, d);
 }
 #endif
 

@@ -47,6 +47,9 @@ enable draw_index;
 #import null3d::mesh::{custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
+#ifdef SKIN
+#import null3d::mesh::{skin_direction, skin_point, skin_transform}
+#endif
 #ifdef MAPS
 #import null3d::mesh::{map_layer, map_ready, straight_texel, world_direction}
 #endif
@@ -147,6 +150,10 @@ struct VertexIn {
 #endif
 #ifdef VERTEX_COLOR
     @location(5) vertex_color: vec4f,
+#endif
+#ifdef SKIN
+    @location(6) joints: vec4u,
+    @location(7) weights: vec4f,
 #endif
 }
 
@@ -357,15 +364,24 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     material = load_material_uniforms(found.material);
 #endif
     var out: VertexOut;
+    // Skinning moves the vertex first, so a custom vertex offset moves the posed vertex, as on
+    // WebGPU, whose compute pass skins before any vertex shader runs.
+#ifdef SKIN
+    let skin = skin_transform(found, v.joints, v.weights);
+    let position = skin_point(skin, mesh_position(v.position));
+    let normal = skin_direction(skin, v.normal);
+#else
     let position = mesh_position(v.position);
+    let normal = v.normal;
+#endif
 #ifdef CUSTOM_VERTEX_OFFSET
-    let offset = vertexOffset(VertexInput(position, v.normal, mesh_uv(v.uv0)));
+    let offset = vertexOffset(VertexInput(position, normal, mesh_uv(v.uv0)));
     out.relative = relative_position(found, position + offset);
 #else
     out.relative = relative_position(found, position);
 #endif
     out.clip = clip_of(found, out.relative);
-    out.normal = world_normal(found, v.normal);
+    out.normal = world_normal(found, normal);
     out.material = found.material;
 #ifdef VERTEX_COLOR
     out.vertex_color = v.vertex_color;
@@ -378,7 +394,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #ifdef VERTEX_TANGENT
     // As three.js does: the tangent through the world matrix, and the bitangent at right angles
     // to the normal and the tangent, on the side that the tangent's w gives.
+#ifdef SKIN
+    let tangent = normalize(world_direction(found, skin_direction(skin, v.tangent.xyz)));
+#else
     let tangent = normalize(world_direction(found, v.tangent.xyz));
+#endif
     out.tangent = tangent;
     out.bitangent = normalize(cross(out.normal, tangent) * v.tangent.w);
 #endif

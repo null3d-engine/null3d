@@ -165,7 +165,7 @@ To collect the numbers, rest each device first and close its other tabs:
 
 ## The skinning plan
 
-- The `skinning` plan times two ways to skin characters on WebGL2, for [D-10](decisions/D-10-webgl2-skinning.md). The engine does not skin yet, so the page (`tests/pages/skinning.html`) draws with WebGL2 calls of its own, and no engine code runs.
+- The `skinning` plan times two ways to skin characters on WebGL2, for [D-10](decisions/D-10-webgl2-skinning.md). The page (`tests/pages/skinning.html`) draws with WebGL2 calls of its own, and no engine code runs. So it can time the path that the engine does not take. The engine skins in the vertex shader, as D-10 decided.
 - The scene is a crowd of generated characters on a ground plane, under a directional light with 1 to 4 shadow cascades. Each character has 2,560 vertices and a chain of 32 joints, with four joint weights per vertex. The page bends each chain every frame and uploads the joint matrices to a float texture.
 - The vertex shader path skins each character again in each pass that draws it: each cascade and the main pass. The transform feedback path skins each character that some pass draws once per frame, into a buffer of positions and a buffer of normals. Then the cascades and the main pass draw those buffers as plain vertices.
 - Both paths cull the crowd per pass on the CPU, and fit each cascade's box to its slice of the view, as the engine does. The frame is 1280 x 720 pixels on every device, with 2048 x 2048 texels in each cascade.

@@ -25,6 +25,9 @@ enable draw_index;
 // vertex, and the opaque pass's test for equal depth passes on exactly the nearest surfaces.
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, frame, relative_position, world_normal}
 #import null3d::vertex::{mesh_position}
+#ifdef SKIN
+#import null3d::mesh::{skin_direction, skin_point, skin_transform}
+#endif
 
 /// How far a back face that faces straight away from the light moves toward it, in texels of the
 /// map where it stands.
@@ -38,12 +41,23 @@ const CASTER_OFFSET_MAX: f32 = 0.05;
 struct VertexIn {
     @location(0) position: vec3f,
     @location(1) normal: vec3f,
+#ifdef SKIN
+    @location(6) joints: vec4u,
+    @location(7) weights: vec4f,
+#endif
 }
 
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> @invariant @builtin(position) vec4f {
     let found = find_instance(i);
+#ifdef SKIN
+    let skin = skin_transform(found, v.joints, v.weights);
+    let relative = relative_position(found, skin_point(skin, mesh_position(v.position)));
+    let normal = skin_direction(skin, v.normal);
+#else
     let relative = relative_position(found, mesh_position(v.position));
+    let normal = v.normal;
+#endif
     var clip = clip_of(found, relative);
 #ifdef CASTER_OFFSET
     // A texel spans two clip units over the map's texels across. The first row of the matrix turns
@@ -55,7 +69,7 @@ fn vs(v: VertexIn, i: InstanceIn) -> @invariant @builtin(position) vec4f {
     // A face that lies on a receiver faces away from the light as squarely as the receiver faces
     // it, and the share squared moves it. A face seen nearly edge-on from the light moves little,
     // so the caster's lit faces beside it keep their light up to the edge.
-    let away = clamp(-dot(world_normal(found, v.normal), toward), 0.0, 1.0);
+    let away = clamp(-dot(world_normal(found, normal), toward), 0.0, 1.0);
     let offset = min(CASTER_OFFSET_TEXELS * away * away * texel, CASTER_OFFSET_MAX);
     clip = clip_of(found, relative + toward * offset);
 #endif
