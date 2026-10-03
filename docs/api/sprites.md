@@ -25,7 +25,7 @@ A batch is one draw for the GPU, whatever its size. The engine culls the sprites
 ```ts
 import { defineSketch } from '@null3d/engine';
 
-export default defineSketch(({ scene, textures, time }) => {
+export default defineSketch(async ({ scene, textures, time }) => {
   scene.setActiveCamera(scene.createPerspectiveCamera({ position: [0, 3, 10], target: [0, 1, 0] }));
 
   // An atlas of two frames side by side: a warm disc and a cool disc, 8 x 8 texels each.
@@ -40,7 +40,7 @@ export default defineSketch(({ scene, textures, time }) => {
   }
   const atlas = textures.fromData({ width: 16, height: 8, data: texels, colorSpace: 'srgb' });
 
-  const puffs = scene.createSprites({
+  const puffs = await scene.createSprites({
     count: 500,
     map: atlas,
     atlas: { columns: 2, rows: 1 },
@@ -74,7 +74,9 @@ export default defineSketch(({ scene, textures, time }) => {
 
 ## Create a batch
 
-`scene.createSprites(options)` takes these options:
+`scene.createSprites(options)` returns a promise of the batch. The first call downloads the sprite code, so a page without sprites never downloads it. Await the call in the setup function, as the example does. If the sprite code does not download, the promise rejects with [E1406](../errors/E1406.md).
+
+`scene.createSprites` takes these options:
 
 | Option | Default | What it does |
 | --- | --- | --- |

@@ -7,6 +7,7 @@ Status: decided, 2026-10-04. Date: 2026-10-04. Task: M2-G1.
 1. How does a batch of sprites reach the GPU? It can use the rows, culling and sorting of instance batches, or a draw path of its own.
 2. How does each sprite's size, rotation, color and atlas frame reach the vertex shader on both GPU paths? Hard rule 7 allows instance data in vertex buffers only.
 3. What does a size mean without size attenuation, and how does a port of three.js's `Sprite` keep its look?
+4. What does the sprite code add to a page's download, and does a page without sprites pay for it?
 
 ## Rule
 
@@ -14,6 +15,7 @@ Status: decided, 2026-10-04. Date: 2026-10-04. Task: M2-G1.
 - 100,000 sprites draw on all three tiers, at a cost per sprite within S1's cost per row.
 - The parity scene passes three.js's rule against `Sprite` and `SpriteMaterial`. Under 0.1% of the pixels differ, or no more than between three.js's two renderers.
 - A frame that draws no sprites does no new work. The culling shader and the WebGL2 data textures, which every other row pays for, do not change.
+- A page without sprites downloads none of their code ([D-14](D-14-js-budget.md)'s rule for M2). The start stays within 140 KB after Brotli, and the sprite code's own file within 16 KB.
 
 ## Data
 
@@ -33,6 +35,18 @@ The `sprites-100k` image test draws one dynamic batch of 100,000 sprites in one 
 
 A sprite costs what an instance row costs on the GPU and in culling: the same 48-byte matrix, the same culling, the same draw. The batch's update differs. It packs each sprite one at a time, where a mesh batch composes four rows at a time with SIMD. The packing has no trigonometry: the shader turns the corners. A timed comparison with S1 is left to the benchmark job, as this Mac is shared.
 
+### Download size
+
+Sizes after Brotli from `bun run build:check-size`, against main at 9ef7c7a (#265), 4 October 2026. A pipelined page on main downloads 99.9 KB at its start, of the 100 KB budget that held before M2-R5.
+
+| Version of the sprite code | `sketch-worker.js` | `page-sketch-runner.js` | Largest shader file | Pipelined start |
+| --- | --- | --- | --- | --- |
+| main, no sprites | 28,552 bytes | 24,620 bytes | 23,285 bytes | 99.9 KB |
+| All sprite code in the start, `createSprites` returns the batch | +623 bytes | +569 bytes | +692 bytes | 101.2 KB |
+| Sprite code on first use, `createSprites` returns a promise | about +200 bytes | about +200 bytes | +692 bytes | 100.8 KB |
+
+The sprite templates add their WGSL and GLSL to every shader file, as each feature's shaders do (D-13). That growth alone takes the start past 100 KB, so sprites fit only with M2-R5's budget of 140 KB. The two files that load on first use, `page-sprites.js` and `sketch-worker-sprites.js`, are 0.8 KB each.
+
 ## Decision
 
 1. A sprite batch is an instance batch of the core, with a flag and rows of its own. It keeps its positions where every batch keeps them. So grid cells, active counts, dirty marks, layers and uploads work as they do for any batch. In place of quaternions and scales, it holds sizes (2 floats), rotations in radians (1), linear colors (4) and atlas frames (one 32-bit integer).
@@ -42,12 +56,13 @@ A sprite costs what an instance row costs on the GPU and in culling: the same 48
 4. Without size attenuation, sizes are in CSS pixels. The frame uniform's spare `camera_range.zw` carries the change in normalized device coordinates across one CSS pixel. It comes from the pixel ratio that the sketch runner passes to the core (`setPixelRatio`). Such sprites have no bounds in the world. So the core gives them an unbounded sphere, and the GPU culling's bucket takes `UNCULLED_BOUNDS`.
 5. The anchor, three.js's `center`, moves the quad mesh: each batch's quad has its anchor at the origin, and batches with one anchor share the mesh. The mesh's radius then bounds the sprite at any rotation. The atlas sets the material's texture coordinate transform to one frame's size, and the frame's column and row move the coordinates in the vertex shader.
 6. Sprite batches stay out of the depth prepass, which places vertices by the mesh's template. They stay out of the scene's raycast trees too, whose items have boxes in the world. Batch rows cast no shadows yet, so sprites cast none.
-7. The scene's module imports no value from the material and mesh modules, so its release build keeps none of their error text. The sketch runner hands the scene `spriteParts` (`scene/sprite-parts.ts`), which makes each batch's quad and material.
+7. The sprite code loads on first use, as [D-14](D-14-js-budget.md)'s rule for M2 asks. The call `scene.createSprites` checks the options first, so a wrong atlas or center fails before any download. Then it imports `scene/sprites.ts` and returns a promise of the batch. That module holds the `SpriteBatch` class, and makes each batch's quad and material. Like the glTF loader, it imports only constants and types. A value that it shared with its thread's first file would go into a file of its own. Every page would then download that file at its start. So the sketch runner hands the scene the engine's geometry and materials, for the module to use. The size report lists the module's two files apart from the start. The engine test of first-use files checks that a page without sprites downloads neither.
 
 ## Options rejected
 
 - A draw path of its own, as the debug lines have: a vertex buffer of sprites, uploaded from the typed arrays. It needs its own culling and its own cells for precision far from the origin. Its sort must also mix by hand with the transparent pass's. The instance path has all three on both GPU paths already.
 - Color and frame as an extra instance attribute. WebGPU reads each instance's ids from a fourth `vec4u`, whose last three words are free. But the culling shader would need a buffer of colors and frames to copy from. WebGL2 would need a fourth texel per row in its data textures, which every row of every batch would pay for in memory and uploads. M2-K2's custom attributes may take that route later.
+- `scene.createSprites` that returns the batch at once, with its code in every page's start, as three.js makes a `Sprite` at once. It cost about 1.2 KB at the start of every page. D-14's rule for M2 keeps a feature's code out of the start of pages that do not use it. The promise costs a page with sprites one round trip at its first batch, in the setup function. A sprite batch with a map waits for its texture's download too.
 - Rotation as a quaternion about the view axis, written into the batch's rotations. Sketches would build a quaternion per sprite for one angle, and three.js's `SpriteMaterial.rotation` is an angle.
 - Colors in 8 bits. Linear 8-bit colors band in the dark. The packed floats keep full precision, and allow components up to 1,024 for bloom.
 - Sizes without attenuation as a fraction of the view's height, as three.js's sprites take them. Pixels are what markers and icons need, and points (M2-G2) take pixels as three.js's `PointsMaterial` does. The docs give the conversion.
@@ -55,7 +70,7 @@ A sprite costs what an instance row costs on the GPU and in culling: the same 48
 
 ## Consequences
 
-- Code: `crates/null3d-core/src/sprites.rs`, the sprite rows of `instances.rs`, `Shading::Sprite` and `SpriteMap` in the renderer, the templates `SPRITE` and `SPRITE_MAP`, `wgsl/sprite.wgsl`, the core calls `createSpriteBatch` and `setPixelRatio`, and `scene/sprites.ts` with `scene.createSprites`.
+- Code: `crates/null3d-core/src/sprites.rs`, the sprite rows of `instances.rs`, `Shading::Sprite` and `SpriteMap` in the renderer, the templates `SPRITE` and `SPRITE_MAP`, `wgsl/sprite.wgsl`, the core calls `createSpriteBatch` and `setPixelRatio`, `scene/sprites.ts`, which loads on first use, and `scene.createSprites`.
 - Tests: the core's packing and update tests, the render crate's `sprites.rs`, `scene/sprites.test.ts`, the image tests `sprites` and `sprites-100k`, and the parity scene `sprites`.
 - Docs: `api/sprites`, the mapping's `sprite` entry, and both skills.
 - M2-G2's points can draw on this path: a point is a sprite with one size, and its shader can read the same packed rows.

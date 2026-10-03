@@ -42,8 +42,12 @@ export default defineSketch(async ({ scene, materials, geometry, assets, post })
 	const map = await assets.loadTexture(url);
 	URL.revokeObjectURL(url);
 	const { columns, rows } = SPRITE_ATLAS;
-	const world = scene.createSprites({ count: WORLD_SPRITES.length, map, atlas: { columns, rows } });
-	const onScreen = scene.createSprites({
+	const world = await scene.createSprites({
+		count: WORLD_SPRITES.length,
+		map,
+		atlas: { columns, rows },
+	});
+	const onScreen = await scene.createSprites({
 		count: SCREEN_SPRITES.length,
 		alphaMode: 'opaque',
 		sizeAttenuation: false,

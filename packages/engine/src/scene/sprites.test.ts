@@ -17,9 +17,15 @@ import {
 } from '../generated/core';
 import type { CoreGlue } from '../shared/core';
 import { CoreMemory } from './memory';
-import { Materials } from './resources';
-import { spriteParts } from './sprite-parts';
-import { SpriteBatch, type SpriteBatchRows, type SpriteOptions } from './sprites';
+import { Geometry, Materials, type MeshGeometry } from './resources';
+import { Scene } from './scene';
+import {
+	SpriteBatch,
+	type SpriteBatchRows,
+	type SpriteMakers,
+	type SpriteOptions,
+	spriteParts,
+} from './sprites';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
 
@@ -28,12 +34,17 @@ const fieldAddress = (field: number) => 4096 * (field + 2);
 
 /**
  * A core that records the sprite materials it creates, with their features and texture coordinate
- * transforms, and the quads it makes, and that gives each batch array a block of its memory.
+ * transforms, the quads it makes and the sprite batches it creates, and that gives each batch
+ * array a block of its memory.
  */
 function fakeCore() {
 	const materials: { shading: number; features: number; values: Map<number, number[]> }[] = [];
 	const quads: number[][] = [];
+	const batches: unknown[][] = [];
 	const glue = {
+		sceneCapacity: () => 15,
+		createSpriteBatch: (...args: unknown[]) => batches.push(args),
+		setBatchLayers: () => 0,
 		createMaterial: (shading: number, features: number) =>
 			materials.push({ shading, features, values: new Map() }),
 		setMaterialValue: (material: number, param: number, x: number, y: number, z: number) => {
@@ -46,13 +57,16 @@ function fakeCore() {
 			quads.push([...new Float32Array(memory.buffer, 1024, 12)]);
 			return quads.length;
 		},
+		meshRadius: () => Math.SQRT1_2,
 		batchArrays: (_batch: number, field: number) => fieldAddress(field),
 		lastErrorCode: () => 0,
 		lastErrorDetail: () => 0,
 	};
 	const memory = new WebAssembly.Memory({ initial: 1 });
 	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
-	return { core, materials, quads, memory };
+	const makers: SpriteMakers = { geometry: new Geometry(core), materials: new Materials(core) };
+	const scene = new Scene(core, { frame: 1 }, false, undefined, undefined, makers);
+	return { core, makers, scene, materials, quads, batches, memory };
 }
 
 /** The calls of a sprite batch that reach the instance batch, as a log. */
@@ -67,15 +81,8 @@ function rowCalls(log: string[]): SpriteBatchRows {
 
 describe('sprite parts', () => {
 	test('a sprite material blends, draws both faces and scales the atlas into its frames', () => {
-		const { core, materials } = fakeCore();
-		const parts = spriteParts(
-			core,
-			new Materials(core),
-			new Map(),
-			{ count: 4, atlas: { columns: 4, rows: 2 } },
-			'createSprites',
-		);
-		expect([parts.columns, parts.rows]).toEqual([4, 2]);
+		const { makers, materials } = fakeCore();
+		spriteParts(makers, new Map(), { count: 4 }, [4, 2], 'createSprites');
 		const [material] = materials;
 		expect(material?.shading).toBe(SHADING_SPRITE);
 		expect((material?.features ?? 0) & MATERIAL_FEATURE_BLEND).toBe(MATERIAL_FEATURE_BLEND);
@@ -89,24 +96,18 @@ describe('sprite parts', () => {
 	});
 
 	test('a masked sprite material does not blend', () => {
-		const { core, materials } = fakeCore();
-		spriteParts(
-			core,
-			new Materials(core),
-			new Map(),
-			{ count: 1, alphaMode: 'mask' },
-			'createSprites',
-		);
+		const { makers, materials } = fakeCore();
+		spriteParts(makers, new Map(), { count: 1, alphaMode: 'mask' }, [1, 1], 'createSprites');
 		const features = materials[0]?.features ?? 0;
 		expect(features & MATERIAL_FEATURE_BLEND).toBe(0);
 		expect(features & MATERIAL_FEATURE_ALPHA_MASK).toBe(MATERIAL_FEATURE_ALPHA_MASK);
 	});
 
 	test('the quad puts the center at the origin, and batches with one center share it', () => {
-		const { core, quads } = fakeCore();
-		const shared = new Map<string, number>();
+		const { makers, quads } = fakeCore();
+		const shared = new Map<string, MeshGeometry>();
 		const make = (options: SpriteOptions) =>
-			spriteParts(core, new Materials(core), shared, options, 'createSprites');
+			spriteParts(makers, shared, options, [1, 1], 'createSprites');
 		const middle = make({ count: 1 });
 		expect(make({ count: 2 }).mesh).toBe(middle.mesh);
 		const standing = make({ count: 1, center: [0.5, 0] });
@@ -116,47 +117,57 @@ describe('sprite parts', () => {
 			[-0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0],
 		]);
 	});
+});
 
-	test('an atlas side that is not a whole number from 1 to the limit throws E1108', () => {
-		const { core } = fakeCore();
+/** The error that `call` rejects with. */
+async function rejected(call: () => Promise<unknown>): Promise<EngineError> {
+	try {
+		await call();
+	} catch (error) {
+		return error as EngineError;
+	}
+	throw new Error('the call did not reject');
+}
+
+describe('scene.createSprites', () => {
+	test('makes a batch of the quad and the material, with the atlas and the size mode', async () => {
+		const { scene, batches } = fakeCore();
+		const sprites = await scene.createSprites({
+			count: 6,
+			dynamic: true,
+			atlas: { columns: 3, rows: 2 },
+			sizeAttenuation: false,
+		});
+		expect(sprites).toBeInstanceOf(SpriteBatch);
+		expect(sprites.count).toBe(6);
+		// Capacity, dynamic, quad, material, columns, rows and sizes in pixels.
+		expect(batches).toEqual([[6, true, 1, 1, 3, 2, true]]);
+	});
+
+	test('an atlas side that is not a whole number from 1 to the limit rejects with E1108', async () => {
+		const { scene, batches } = fakeCore();
 		for (const atlas of [
 			{ columns: 0, rows: 1 },
 			{ columns: 2.5, rows: 1 },
 			{ columns: 1, rows: SPRITE_MAX_ATLAS_SIDE + 1 },
 		]) {
-			const make = () =>
-				spriteParts(core, new Materials(core), new Map(), { count: 1, atlas }, 'createSprites');
-			expect(make).toThrow(/E1108: createSprites\(\) got .* atlas (columns|rows)/);
+			const error = await rejected(() => scene.createSprites({ count: 1, atlas }));
+			expect(error.message).toMatch(/E1108: createSprites\(\) got .* atlas (columns|rows)/);
 		}
+		expect(batches).toEqual([]);
 	});
 
-	test('a center that is not two finite numbers throws E1203', () => {
-		const { core } = fakeCore();
-		try {
-			spriteParts(
-				core,
-				new Materials(core),
-				new Map(),
-				{ count: 1, center: [Number.NaN, 0] },
-				'createSprites',
-			);
-			throw new Error('no error');
-		} catch (error) {
-			expect((error as EngineError).code).toBe('E1203');
-		}
+	test('a center that is not two finite numbers rejects with E1203', async () => {
+		const { scene } = fakeCore();
+		const error = await rejected(() => scene.createSprites({ count: 1, center: [Number.NaN, 0] }));
+		expect(error.code).toBe('E1203');
 	});
 });
 
 describe('sprite batches', () => {
 	test('the arrays view each field of the batch with its floats per sprite', () => {
-		const { core } = fakeCore();
-		const { material } = spriteParts(
-			core,
-			new Materials(core),
-			new Map(),
-			{ count: 1 },
-			'createSprites',
-		);
+		const { core, makers } = fakeCore();
+		const { material } = spriteParts(makers, new Map(), { count: 1 }, [1, 1], 'createSprites');
 		const sprites = new SpriteBatch(core, 7, 5, material, rowCalls([]));
 		const views: [ArrayLike<number> & { byteOffset: number }, number, number][] = [
 			[sprites.positions, BATCH_FIELD_POSITIONS, 15],
@@ -175,14 +186,8 @@ describe('sprite batches', () => {
 	});
 
 	test('the views are made again after the memory grows', () => {
-		const { core, memory } = fakeCore();
-		const { material } = spriteParts(
-			core,
-			new Materials(core),
-			new Map(),
-			{ count: 1 },
-			'createSprites',
-		);
+		const { core, makers, memory } = fakeCore();
+		const { material } = spriteParts(makers, new Map(), { count: 1 }, [1, 1], 'createSprites');
 		const sprites = new SpriteBatch(core, 7, 5, material, rowCalls([]));
 		const before = sprites.positions;
 		memory.grow(1);
@@ -192,14 +197,8 @@ describe('sprite batches', () => {
 	});
 
 	test('row calls reach the instance batch, with markDirty defaulting to every sprite', () => {
-		const { core } = fakeCore();
-		const { material } = spriteParts(
-			core,
-			new Materials(core),
-			new Map(),
-			{ count: 1 },
-			'createSprites',
-		);
+		const { core, makers } = fakeCore();
+		const { material } = spriteParts(makers, new Map(), { count: 1 }, [1, 1], 'createSprites');
 		const log: string[] = [];
 		const sprites = new SpriteBatch(core, 7, 5, material, rowCalls(log));
 		sprites.setActiveCount(3);

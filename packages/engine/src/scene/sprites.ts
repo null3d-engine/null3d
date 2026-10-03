@@ -1,13 +1,24 @@
 // Sprites: quads that face the camera, drawn in batches. A sprite batch is an instance batch in
 // the engine core whose rows hold a size, a rotation, a color and an atlas frame instead of a
 // rotation and a scale. The core packs each row into the row's world matrix, so sprites cull, sort
-// and draw as other rows do, and the sprite shaders unpack them. The quad and the material of a
-// new batch come from `sprite-parts.ts`, which the sketch runner hands to the scene, so the scene's
-// module imports no value from the material and mesh modules.
+// and draw as other rows do, and the sprite shaders unpack them.
+//
+// `scene.createSprites` imports this module the first time, so a page without sprites downloads
+// none of it. Like the glTF loader, it imports no engine module but constants and types. The
+// bundler would move a module that it shares with its thread's first file into a file of its own,
+// which every page would then download at its start. So the scene checks the options, and hands
+// this module the engine's geometry and materials.
 
 import * as C from '../generated/core';
 import type { CoreMemory } from './memory';
-import type { Material, MaterialFeatures, MaterialOptions } from './resources';
+import type {
+	Geometry,
+	Material,
+	MaterialFeatures,
+	MaterialOptions,
+	Materials,
+	MeshGeometry,
+} from './resources';
 import type { Texture } from './textures';
 
 /**
@@ -68,24 +79,69 @@ export interface SpriteOptions
 	alphaMode?: MaterialFeatures['alphaMode'];
 }
 
+/** What a sprite batch's quad and material are made with: the engine's objects. */
+export interface SpriteMakers {
+	geometry: Geometry;
+	materials: Materials;
+}
+
 /** The parts of a sprite batch that the scene makes for it. */
 export interface SpriteParts {
 	/** The quad mesh around the sprites' anchor. */
-	mesh: number;
+	mesh: MeshGeometry;
 	material: Material<SpriteValues>;
-	columns: number;
-	rows: number;
 }
 
 /**
- * Checks the options of `scene.createSprites` and makes a batch's quad and material. `quads` holds
- * the quads made so far, by center, which batches with one center share.
+ * The quad of the sprites with anchor `center`: one unit wide and high, in the xy plane, with
+ * texture coordinates from 0 at its bottom left to 1 at its top right, and the anchor at the
+ * origin. `quads` holds the quads made so far, by center, which batches with one center share.
  */
-export type SpritePartsMaker = (
-	quads: Map<string, number>,
+function quadMesh(
+	geometry: Geometry,
+	quads: Map<string, MeshGeometry>,
+	[cx, cy]: readonly [number, number],
+): MeshGeometry {
+	const key = `${cx},${cy}`;
+	const known = quads.get(key);
+	if (known) return known;
+	const [left, bottom, right, top] = [0 - cx, 0 - cy, 1 - cx, 1 - cy];
+	const mesh = geometry.fromArrays({
+		positions: new Float32Array([left, bottom, 0, right, bottom, 0, right, top, 0, left, top, 0]),
+		// Every mesh has normals. The sprite shaders read none, so the quad's face +z.
+		normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]),
+		uvs: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]),
+		indices: [0, 1, 2, 0, 2, 3],
+	});
+	quads.set(key, mesh);
+	return mesh;
+}
+
+/**
+ * Makes a batch's quad and material from the options of `scene.createSprites`, which the scene
+ * has checked, and the atlas's frames across and down. `quads` holds the quads made so far, by
+ * center.
+ */
+export function spriteParts(
+	{ geometry, materials }: SpriteMakers,
+	quads: Map<string, MeshGeometry>,
 	options: SpriteOptions,
+	[columns, rows]: readonly [number, number],
 	call: string,
-) => SpriteParts;
+): SpriteParts {
+	const material = materials.create<SpriteValues>(
+		C.SHADING_SPRITE,
+		{
+			...options,
+			alphaMode: options.alphaMode ?? 'blend',
+			doubleSided: true,
+			vertexColors: false,
+			uvTransform: { repeat: [1 / columns, 1 / rows] },
+		},
+		`${call}.material`,
+	);
+	return { mesh: quadMesh(geometry, quads, options.center ?? [0.5, 0.5]), material };
+}
 
 /** The row arrays of a sprite batch, as views of engine memory. */
 interface SpriteRows {

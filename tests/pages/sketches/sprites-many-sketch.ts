@@ -11,13 +11,13 @@ import { mulberry32 } from '../../../bench/scenes/spec';
 const COUNT = 100_000;
 const HALF = 60;
 
-export default defineSketch(({ scene, time }) => {
+export default defineSketch(async ({ scene, time }) => {
 	scene.setBackground('#101418');
 	scene.setActiveCamera(
 		scene.createPerspectiveCamera({ fov: 50, position: [0, 45, 70], target: [0, 0, 5] }),
 	);
 
-	const field = scene.createSprites({ count: COUNT, dynamic: true, alphaMode: 'opaque' });
+	const field = await scene.createSprites({ count: COUNT, dynamic: true, alphaMode: 'opaque' });
 	const random = mulberry32(7);
 	const home = new Float32Array(COUNT * 2);
 	const sizes = field.sizes;
@@ -37,7 +37,11 @@ export default defineSketch(({ scene, time }) => {
 	// pixels: the camera looks down the unit vector `forward`, so a point's depth is its distance
 	// along it, and the half width of the view at a depth follows the field of view and the image's
 	// shape.
-	const edges = scene.createSprites({ count: 8, alphaMode: 'opaque', sizeAttenuation: false });
+	const edges = await scene.createSprites({
+		count: 8,
+		alphaMode: 'opaque',
+		sizeAttenuation: false,
+	});
 	const forward = [-45 / Math.hypot(45, 65), -65 / Math.hypot(45, 65)];
 	const halfWidth = (depth: number) => depth * Math.tan((25 * Math.PI) / 180) * (320 / 180);
 	for (let k = 0; k < 8; k++) {
