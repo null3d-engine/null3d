@@ -614,7 +614,8 @@ pub mod layout {
     /// instance's skinning matrices, which vertex shaders read.
     pub const JOINTS: u32 = 11;
     /// Group 0 of the skinning compute pipeline: its table of formats and parts, a mesh page's
-    /// vertices, the skinned vertices that it writes, and the texture of skinning matrices.
+    /// vertices, the skinned vertices that it writes, the texture of skinning matrices, and the
+    /// morph textures of deltas and of weights.
     pub const SKIN: u32 = 12;
 }
 

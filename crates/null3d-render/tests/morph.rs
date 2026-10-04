@@ -35,13 +35,17 @@ fn bound(group: &[u32]) -> Vec<u32> {
         .collect()
 }
 
-/// The morph texture among the resources `among`: the RGBA32F texture of its width that the frame
-/// made. WebGL2's instance textures have that width and format too, so a group's entries pick it.
-fn morph_texture(commands: &[(Op, Vec<u32>)], among: &[u32]) -> u32 {
-    operands(commands, Op::CreateTexture)
-        .into_iter()
-        .find(|t| among.contains(&t[0]) && t[1] == TEXTURE_WIDTH && t[4] == format::RGBA32_FLOAT)
-        .expect("the morph texture")[0]
+/// The morph textures among the resources `among`: the texture of deltas, RGBA16F, and the
+/// texture of weights, RGBA32F, each of the morph textures' width. WebGL2's instance textures have
+/// that width and RGBA32F too, so a group's entries pick them.
+fn morph_textures(commands: &[(Op, Vec<u32>)], among: &[u32]) -> [u32; 2] {
+    let made = operands(commands, Op::CreateTexture);
+    [format::RGBA16_FLOAT, format::RGBA32_FLOAT].map(|f| {
+        made.iter()
+            .rev()
+            .find(|t| among.contains(&t[0]) && t[1] == TEXTURE_WIDTH && t[4] == f)
+            .expect("a morph texture")[0]
+    })
 }
 
 /// The writes into texture `id`.
@@ -103,7 +107,7 @@ fn webgpu_morphs_a_morphed_object_once_in_the_skinning_pass() {
         .iter()
         .find(|g| g[1] == layout::SKIN)
         .expect("the skinning pass's group");
-    let morphs = morph_texture(&first, &bound(skin_group));
+    let [deltas, weights] = morph_textures(&first, &bound(skin_group)[4..]);
     // The pass reads the mesh page's vertices as storage, so the page's buffer allows it, as each
     // buffer that the group binds must.
     let buffers = operands(&first, Op::CreateBuffer);
@@ -115,7 +119,7 @@ fn webgpu_morphs_a_morphed_object_once_in_the_skinning_pass() {
         assert_ne!(made[2] & buffer_usage::STORAGE, 0, "buffer {id}");
     }
     // The deltas and the weights go up.
-    assert!(writes(&first, morphs) >= 2);
+    assert_eq!((writes(&first, deltas), writes(&first, weights)), (1, 1));
     let mut dispatches = 0;
     let mut current = 0;
     for (op, o) in &first {
@@ -142,9 +146,9 @@ fn webgpu_morphs_a_morphed_object_once_in_the_skinning_pass() {
             .all(|p| p[2] & permutation::MORPH == 0)
     );
 
-    // Later frames upload the weights again and make nothing.
+    // Later frames upload only the weights again, and make nothing.
     let second = world.step(&mut mock, false);
-    assert_eq!(writes(&second, morphs), 1);
+    assert_eq!((writes(&second, deltas), writes(&second, weights)), (0, 1));
     assert_eq!(count(&second, Op::CreateTexture), 0);
     assert_eq!(count(&second, Op::CreateBindGroup), 0);
 }
@@ -199,24 +203,23 @@ fn webgl2_morphs_in_the_vertex_shader_of_every_pass_that_draws_a_morphed_object(
         );
         assert_eq!(count(&first, Op::CreateComputePipeline), 0);
 
-        // Every instance group binds the morph texture last, after the joint texture and the
-        // texture of first joints and weights.
+        // Every instance group binds the morph textures of deltas and of weights last, after the
+        // joint texture and the texture of first joints and weights.
         let groups: Vec<Vec<u32>> = operands(&first, Op::CreateBindGroup)
             .into_iter()
             .filter(|g| g[1] == layout::INSTANCES)
             .collect();
         assert!(!groups.is_empty());
-        let morphs = bound(&groups[0])[6];
-        assert_eq!(morph_texture(&first, &[morphs]), morphs);
+        let [deltas, weights] = morph_textures(&first, &bound(&groups[0])[6..]);
         assert!(
             groups
                 .iter()
-                .all(|g| bound(g).len() == 7 && bound(g)[6] == morphs)
+                .all(|g| bound(g).len() == 8 && bound(g)[6..] == [deltas, weights])
         );
 
         // Later frames upload the weights and make nothing.
         let second = world.step(&mut mock, false);
-        assert_eq!(writes(&second, morphs), 1);
+        assert_eq!((writes(&second, deltas), writes(&second, weights)), (0, 1));
         assert_eq!(count(&second, Op::CreateTexture), 0);
         assert_eq!(count(&second, Op::CreateBindGroup), 0);
     }

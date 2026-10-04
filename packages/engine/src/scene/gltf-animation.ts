@@ -130,6 +130,9 @@ const WEIGHTS_PER_JOINT = 3;
 /** The paths of glTF's animation channels that move a node, by the channel of a rig track. */
 const PATHS = { translation: 'translation', rotation: 'rotation', scale: 'scale' } as const;
 
+/** The attributes that the engine morphs. */
+const MORPHED_ATTRIBUTES: ReadonlySet<string> = new Set(['POSITION', 'NORMAL', 'TANGENT']);
+
 const INTERPOLATIONS: Readonly<Record<string, KeyInterpolation>> = {
 	LINEAR: 'linear',
 	STEP: 'step',
@@ -138,16 +141,27 @@ const INTERPOLATIONS: Readonly<Record<string, KeyInterpolation>> = {
 
 /**
  * Reads a primitive's morph targets: the deltas of its positions, normals and tangents, as floats.
- * Returns undefined when it has none.
+ * Returns undefined when it has none. Targets of other attributes, such as colors and texture
+ * coordinates, are left out with a note.
  */
 export function parseMorphTargets(
 	primitive: Entry,
 	vertices: number,
 	what: string,
 	read: Reader,
+	notes: string[],
 ): MorphTargetsData | undefined {
 	const targets = list(primitive.targets, `${what}'s targets`);
 	if (targets.length === 0) return undefined;
+	const others = new Set(
+		targets.flatMap((target) =>
+			Object.keys(target as object).filter((k) => !MORPHED_ATTRIBUTES.has(k)),
+		),
+	);
+	if (others.size > 0)
+		notes.push(
+			`${what}'s morph targets move ${[...others].join(', ')}, which the engine does not morph`,
+		);
 	const out: MorphTargetsData = {};
 	const fields = [
 		['POSITION', 'positions'],

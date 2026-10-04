@@ -5,7 +5,7 @@
 //!
 //! A morph target moves some of a mesh's vertices: their positions, and maybe their normals and
 //! tangents. A mesh stores, for each vertex, only the targets that move it, as entries one after
-//! another in the storage's list of delta texels. An entry is one texel of the position's delta,
+//! another in the storage's list of delta texels, in half floats. An entry is one texel of the position's delta,
 //! with the target's number in its fourth value, then one texel of the normal's delta and one of
 //! the tangent's, where the mesh's targets move them. The vertex's morph attribute (location 8)
 //! holds its first entry's texel and, as `count * 4 + attributes`, its entry count and whether the
@@ -22,12 +22,16 @@
 //! largest weights of each object ([`cap_weights`]), since its vertex shaders morph in every pass
 //! that draws the mesh.
 //!
-//! # The morph texture
+//! # The morph textures
 //!
-//! One RGBA32F texture of [`TEXTURE_WIDTH`] texels per row holds every mesh's delta texels from
-//! its first texel on, then each morphed object's weights, four per texel, in the rows after the
-//! deltas. A morphed vertex reads its entries, and each entry's weight from its object's texels.
-//! The WebGPU skinning pass and the WebGL2 vertex shaders read it with `textureLoad`.
+//! One RGBA16F texture of [`TEXTURE_WIDTH`] texels per row holds every mesh's delta texels, and
+//! one small RGBA32F texture of the same width each morphed object's weights, four per texel. A
+//! morphed vertex reads its entries, and each entry's weight from its object's texels. The deltas
+//! go up once, and each frame uploads only the weights. More objects remake only the texture of
+//! weights, and more meshes only the texture of deltas. Half floats halve the deltas' memory: a
+//! delta keeps 11 bits of precision, a step of 1/2048 of its size. A target's number, up to 255,
+//! is exact in a half float. The WebGPU skinning pass and the WebGL2 vertex shaders read both
+//! textures with `textureLoad`.
 
 use null3d_core::animation::Animations;
 use null3d_core::morph::{
@@ -36,17 +40,22 @@ use null3d_core::morph::{
 use null3d_core::scene::SceneStorage;
 use null3d_gpu::drawlist::{DrawList, Op, format, texture_usage, vertex, view};
 
+use crate::dfg::half_to_f32;
 use crate::frame::{RecordError, UploadArena, floats_as_bytes};
 use crate::geometry::Geometry;
 use crate::meshes::{MeshSlot, MeshStorage};
 
-/// Texels per row of the morph texture: the widest that every WebGL2 device takes.
+/// Texels per row of the morph textures: the widest that every WebGL2 device takes.
 pub const TEXTURE_WIDTH: u32 = 2048;
 /// Rows that the weights may take at most: every weight of the core's table in a block of its own.
-const MAX_WEIGHT_ROWS: u32 = MAX_WEIGHTS.div_ceil(TEXTURE_WIDTH);
-/// The most delta texels that every mesh's targets may take together: what fits a texture of
-/// [`TEXTURE_WIDTH`] rows beside the weights.
-pub const MAX_DELTA_TEXELS: u32 = TEXTURE_WIDTH * (TEXTURE_WIDTH - MAX_WEIGHT_ROWS);
+const MAX_WEIGHT_ROWS: u32 = MAX_WEIGHTS.div_ceil(4 * TEXTURE_WIDTH);
+/// The most delta texels that every mesh's targets may take together: a square texture of
+/// [`TEXTURE_WIDTH`] rows.
+pub const MAX_DELTA_TEXELS: u32 = TEXTURE_WIDTH * TEXTURE_WIDTH;
+/// Bytes of a delta texel: four half floats.
+const DELTA_BYTES: u32 = 8;
+/// Bytes of a weight texel: four floats.
+const WEIGHT_BYTES: u32 = 16;
 /// The most entries of one vertex: what its attribute's count holds.
 pub const MAX_VERTEX_ENTRIES: usize = 255;
 /// The vertex location of the morph attribute.
@@ -81,14 +90,53 @@ pub enum MorphError {
     TooLarge,
 }
 
+/// The half float nearest to `value`, ties to even, as the GPU reads an RGBA16F texel. Values past
+/// the largest half float become infinite, and NaN stays NaN.
+pub fn half(value: f32) -> u16 {
+    let bits = value.to_bits();
+    let sign = ((bits >> 16) & 0x8000) as u16;
+    let exponent = ((bits >> 23) & 0xff) as i32;
+    let mantissa = bits & 0x7f_ffff;
+    if exponent == 0xff {
+        return sign | 0x7c00 | if mantissa != 0 { 0x200 } else { 0 };
+    }
+    let unbiased = exponent - 127 + 15;
+    if unbiased >= 0x1f {
+        return sign | 0x7c00;
+    }
+    // Below the smallest normal half, the value counts units of 2 to the -24.
+    let (shift, kept) = if unbiased <= 0 {
+        if unbiased < -10 {
+            return sign;
+        }
+        (14 - unbiased, mantissa | 0x80_0000)
+    } else {
+        (13, mantissa)
+    };
+    let mut out = (kept >> shift) as u16;
+    let rest = kept & ((1 << shift) - 1);
+    let halfway = 1 << (shift - 1);
+    if rest > halfway || (rest == halfway && out & 1 == 1) {
+        out += 1;
+    }
+    // A carry out of the mantissa moves to the next exponent, as the bits add up.
+    sign | ((unbiased.max(0) as u16) << 10).wrapping_add(out)
+}
+
+/// A texel of four values in half floats.
+fn half_texel(values: [f32; 4]) -> [u16; 4] {
+    values.map(half)
+}
+
 /// A mesh's targets as the storage keeps them.
 #[derive(Debug, Default)]
 pub struct SparseDeltas {
-    /// The entries' texels, vertex after vertex.
-    pub texels: Vec<[f32; 4]>,
+    /// The entries' texels in half floats, vertex after vertex.
+    pub texels: Vec<[u16; 4]>,
     /// Each vertex's morph attribute: its first entry's texel and its count and attributes.
     pub ranges: Vec<[f32; 2]>,
-    /// How far each target moves any position at weight 1, which bounds the morphed mesh.
+    /// How far each target moves any position at weight 1, as the half floats hold it, which
+    /// bounds the morphed mesh.
     pub reach: Vec<f32>,
 }
 
@@ -146,11 +194,13 @@ impl MorphTargets<'_> {
             let mut entries = 0u32;
             for t in (0..targets).filter(|&t| moves(t, v)) {
                 let [x, y, z] = delta(self.positions, t, v);
+                let texel = half_texel([x, y, z, t as f32]);
+                let [x, y, z, _] = texel.map(half_to_f32);
                 out.reach[t] = out.reach[t].max((x * x + y * y + z * z).sqrt());
-                out.texels.push([x, y, z, t as f32]);
+                out.texels.push(texel);
                 for array in [self.normals, self.tangents].into_iter().flatten() {
                     let [x, y, z] = delta(Some(array), t, v);
-                    out.texels.push([x, y, z, 0.0]);
+                    out.texels.push(half_texel([x, y, z, 0.0]));
                 }
                 entries += 1;
             }
@@ -271,24 +321,26 @@ pub fn reach(meshes: &MeshStorage, mesh: &MeshSlot, weights: &[f32]) -> f32 {
         .sum()
 }
 
-/// One morphed object of the morph texture's layout.
+/// One morphed object of the texture of weights.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct MorphedObject {
     /// Its scene slot and morph weight block.
     pub(crate) slot: u32,
     block: u32,
-    /// Its first weight texel after the deltas.
+    /// Its first texel in the texture of weights.
     offset: u32,
 }
 
-/// The morph texture (see the module documentation) and the morphed objects whose weights it
-/// holds.
+/// The morph textures (see the module documentation) and the morphed objects whose weights they
+/// hold.
 #[derive(Debug)]
 pub(crate) struct MorphTexture {
-    id: u32,
-    /// Its rows, 0 before it exists, and the rows that the deltas take.
-    rows: u32,
+    /// The ids of the texture of deltas and of the texture of weights.
+    deltas: u32,
+    weights: u32,
+    /// The rows of each, 0 before it exists.
     delta_rows: u32,
+    weight_rows: u32,
     /// The delta texels uploaded so far.
     uploaded: u32,
     objects: Vec<MorphedObject>,
@@ -299,11 +351,13 @@ pub(crate) struct MorphTexture {
 }
 
 impl MorphTexture {
-    pub(crate) fn new(id: u32) -> Self {
+    /// The textures under ids `deltas` and `weights`.
+    pub(crate) fn new(deltas: u32, weights: u32) -> Self {
         Self {
-            id,
-            rows: 0,
+            deltas,
+            weights,
             delta_rows: 0,
+            weight_rows: 0,
             uploaded: 0,
             objects: Vec::new(),
             weight_texels: 0,
@@ -311,14 +365,14 @@ impl MorphTexture {
         }
     }
 
-    /// The texture's id.
-    pub(crate) fn id(&self) -> u32 {
-        self.id
+    /// The ids of the texture of deltas and of the texture of weights.
+    pub(crate) fn ids(&self) -> [u32; 2] {
+        [self.deltas, self.weights]
     }
 
-    /// True once the texture exists.
+    /// True once both textures exist.
     pub(crate) fn exists(&self) -> bool {
-        self.rows > 0
+        self.delta_rows > 0 && self.weight_rows > 0
     }
 
     /// True while the scene has morphed objects.
@@ -357,10 +411,11 @@ impl MorphTexture {
         }
     }
 
-    /// The first texel of the weights of the object in scene slot `slot`, or [`NOT_MORPHED`].
+    /// The first texel of the weights of the object in scene slot `slot` in the texture of
+    /// weights, or [`NOT_MORPHED`].
     pub(crate) fn base(&self, slot: u32) -> u32 {
         match self.objects.binary_search_by_key(&slot, |o| o.slot) {
-            Ok(k) => self.delta_rows * TEXTURE_WIDTH + self.objects[k].offset,
+            Ok(k) => self.objects[k].offset,
             Err(_) => NOT_MORPHED,
         }
     }
@@ -370,10 +425,10 @@ impl MorphTexture {
         &self.objects
     }
 
-    /// Records the texture's creation when it lacks room for every mesh's deltas or the objects'
-    /// weights, with room for more deltas, while the scene has morphed objects or bind groups
-    /// that bind it (`bound`). Returns true when it made the texture, after which the objects'
-    /// weights sit at other texels, and bind groups that read it must see it.
+    /// Records the creation of the texture of deltas when it lacks room for every mesh's deltas,
+    /// and of the texture of weights when it lacks room for the objects' weights, each with room
+    /// for more. It makes them while the scene has morphed objects or bind groups that bind them
+    /// (`bound`). Returns true when it made one, which bind groups that read it must see.
     pub(crate) fn size(
         &mut self,
         list: &mut DrawList,
@@ -383,34 +438,23 @@ impl MorphTexture {
         if !self.active() && (!bound || self.exists()) {
             return Ok(false);
         }
-        let deltas = meshes.morph_texels().len() as u32;
-        let delta_rows = deltas.div_ceil(TEXTURE_WIDTH).max(1);
-        let weight_rows = self.weight_texels.div_ceil(TEXTURE_WIDTH);
-        if self.exists()
-            && delta_rows <= self.delta_rows
-            && weight_rows <= self.rows - self.delta_rows
-        {
-            return Ok(false);
+        let delta_rows = (meshes.morph_texels().len() as u32)
+            .div_ceil(TEXTURE_WIDTH)
+            .max(1);
+        let weight_rows = self.weight_texels.div_ceil(TEXTURE_WIDTH).max(1);
+        let mut made = false;
+        if delta_rows > self.delta_rows {
+            self.delta_rows = (delta_rows + delta_rows / 2).min(TEXTURE_WIDTH);
+            self.uploaded = 0;
+            create(list, self.deltas, self.delta_rows, format::RGBA16_FLOAT)?;
+            made = true;
         }
-        let room = TEXTURE_WIDTH - MAX_WEIGHT_ROWS;
-        self.delta_rows = (delta_rows + delta_rows / 2).min(room).max(delta_rows);
-        self.rows = self.delta_rows + (weight_rows + weight_rows / 2).clamp(1, MAX_WEIGHT_ROWS);
-        self.uploaded = 0;
-        list.push(
-            Op::CreateTexture,
-            &[
-                self.id,
-                TEXTURE_WIDTH,
-                self.rows,
-                1,
-                format::RGBA32_FLOAT,
-                texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
-                1,
-                1,
-                view::D2,
-            ],
-        )?;
-        Ok(true)
+        if weight_rows > self.weight_rows {
+            self.weight_rows = (weight_rows + weight_rows / 2).min(MAX_WEIGHT_ROWS);
+            create(list, self.weights, self.weight_rows, format::RGBA32_FLOAT)?;
+            made = true;
+        }
+        Ok(made)
     }
 
     /// The most that one frame copies into its arena: the deltas not uploaded yet, and the
@@ -420,11 +464,11 @@ impl MorphTexture {
             return 0;
         }
         let deltas = (meshes.morph_texels().len() as u32).saturating_sub(self.uploaded);
-        (deltas + self.weight_texels) as usize * 16
+        (deltas * DELTA_BYTES + self.weight_texels * WEIGHT_BYTES) as usize
     }
 
-    /// Uploads the deltas that the texture lacks, and every object's weights for the frame, at
-    /// most `cap` of each.
+    /// Uploads the deltas that the texture of deltas lacks, and every object's weights for the
+    /// frame, at most `cap` of each.
     pub(crate) fn upload(
         &mut self,
         list: &mut DrawList,
@@ -440,14 +484,16 @@ impl MorphTexture {
         let fits = (self.delta_rows * TEXTURE_WIDTH) as usize;
         if (self.uploaded as usize) < deltas.len().min(fits) {
             let new = &deltas[self.uploaded as usize..deltas.len().min(fits)];
-            let (at, _) = arena.push(floats_as_bytes(new.as_flattened()))?;
-            write_texels(list, self.id, self.uploaded, new.len() as u32, at)?;
+            let (at, _) = arena.push(halves_as_bytes(new.as_flattened()))?;
+            let texels = (self.uploaded, new.len() as u32);
+            write_texels(list, self.deltas, texels, DELTA_BYTES, at)?;
             self.uploaded += new.len() as u32;
         }
         if self.weight_texels == 0 {
             return Ok(());
         }
-        let (at, bytes) = arena.push_zeroed(self.weight_texels as usize * 16)?;
+        let bytes = (self.weight_texels * WEIGHT_BYTES) as usize;
+        let (at, bytes) = arena.push_zeroed(bytes)?;
         let mut weights = [0.0f32; MAX_TARGETS as usize];
         for object in &self.objects {
             let Some(block) = morphs.block(object.block) else {
@@ -456,27 +502,46 @@ impl MorphTexture {
             let count = block.count as usize;
             posed_weights(block, morphs, animations, &mut weights[..count]);
             cap_weights(&mut weights[..count], self.cap as usize);
-            let out = &mut bytes[object.offset as usize * 16..][..count * 4];
+            let out = &mut bytes[(object.offset * WEIGHT_BYTES) as usize..][..count * 4];
             out.copy_from_slice(floats_as_bytes(&weights[..count]));
         }
-        let first = self.delta_rows * TEXTURE_WIDTH;
-        write_texels(list, self.id, first, self.weight_texels, at)
+        let texels = (0, self.weight_texels);
+        write_texels(list, self.weights, texels, WEIGHT_BYTES, at)
     }
 
-    /// Forgets the texture, after the thread that draws replaced the GPU.
+    /// Forgets the textures, after the thread that draws replaced the GPU.
     pub(crate) fn forget_gpu(&mut self) {
-        self.rows = 0;
+        self.delta_rows = 0;
+        self.weight_rows = 0;
         self.uploaded = 0;
     }
 }
 
-/// Writes `count` texels from texel `first` of a texture [`TEXTURE_WIDTH`] texels wide, from the
-/// arena's `source`: the end of the first row, the whole rows after it and the start of the last.
+/// Records the creation of a morph texture of `rows` rows of [`TEXTURE_WIDTH`] texels in `format`,
+/// under id `id`.
+fn create(list: &mut DrawList, id: u32, rows: u32, format: u32) -> Result<(), RecordError> {
+    let usage = texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST;
+    let words = [id, TEXTURE_WIDTH, rows, 1, format, usage, 1, 1, view::D2];
+    list.push(Op::CreateTexture, &words)?;
+    Ok(())
+}
+
+/// The bytes of half floats, as the GPU reads them.
+fn halves_as_bytes(halves: &[u16]) -> &[u8] {
+    // SAFETY: u16 has no padding and every byte pattern is a valid u8, so its bytes can be read.
+    unsafe {
+        std::slice::from_raw_parts(halves.as_ptr().cast::<u8>(), std::mem::size_of_val(halves))
+    }
+}
+
+/// Writes texels `(first, count)` of a texture [`TEXTURE_WIDTH`] texels wide, of `bytes` bytes
+/// each, from the arena's `source`: the end of the first row, the whole rows after it and the
+/// start of the last.
 fn write_texels(
     list: &mut DrawList,
     texture: u32,
-    first: u32,
-    count: u32,
+    (first, count): (u32, u32),
+    bytes: u32,
     source: u32,
 ) -> Result<(), RecordError> {
     let (end, mut texel, mut at) = (first + count, first, source);
@@ -499,11 +564,11 @@ fn write_texels(
                 height,
                 1,
                 at,
-                width * 16,
+                width * bytes,
             ],
         )?;
         texel += width * height;
-        at += width * height * 16;
+        at += width * height * bytes;
     }
     Ok(())
 }
@@ -530,10 +595,10 @@ mod tests {
         let sparse = targets.sparse(3, 10).unwrap();
         // Vertex 0: two entries of two texels; vertex 1: the normal of target 1; vertex 2: one.
         assert_eq!(sparse.ranges, vec![[10.0, 9.0], [14.0, 5.0], [16.0, 5.0]]);
-        assert_eq!(sparse.texels[0], [1.0, 0.0, 0.0, 0.0]);
-        assert_eq!(sparse.texels[2], [0.0, 2.0, 0.0, 1.0]);
-        assert_eq!(sparse.texels[5], [0.5, 0.0, 0.0, 0.0]);
-        assert_eq!(sparse.texels[6], [0.0, 0.0, 3.0, 1.0]);
+        assert_eq!(sparse.texels[0].map(half_to_f32), [1.0, 0.0, 0.0, 0.0]);
+        assert_eq!(sparse.texels[2].map(half_to_f32), [0.0, 2.0, 0.0, 1.0]);
+        assert_eq!(sparse.texels[5].map(half_to_f32), [0.5, 0.0, 0.0, 0.0]);
+        assert_eq!(sparse.texels[6].map(half_to_f32), [0.0, 0.0, 3.0, 1.0]);
         assert_eq!(sparse.texels.len(), 8);
         assert_eq!(sparse.reach, vec![1.0, 3.0]);
 
@@ -619,7 +684,7 @@ mod tests {
         ];
         scene.apply_commands(&commands, 1).unwrap();
 
-        let mut texture = MorphTexture::new(1);
+        let mut texture = MorphTexture::new(1, 2);
         texture.rebuild(&scene, &morphs, &meshes);
         let mut list = DrawList::with_capacity(256);
         assert!(texture.size(&mut list, &meshes, true).unwrap());
@@ -643,8 +708,46 @@ mod tests {
         assert_eq!(weights(&mut texture), [0.2, -0.7, 0.4]);
         texture.set_cap(2);
         assert_eq!(weights(&mut texture), [0.0, -0.7, 0.4]);
-        // The object's weights sit after the deltas' rows.
-        assert_eq!(texture.base(1), TEXTURE_WIDTH);
+        // The object's weights start the texture of weights.
+        assert_eq!(texture.base(1), 0);
+    }
+
+    #[test]
+    fn half_floats_round_to_the_nearest_and_keep_eleven_bits() {
+        // Exact values, the largest and the smallest normal half, and a target's number.
+        for (value, bits) in [
+            (0.0, 0x0000),
+            (-0.0, 0x8000),
+            (1.0, 0x3c00),
+            (-2.0, 0xc000),
+            (0.5, 0x3800),
+            (65504.0, 0x7bff),
+            (6.103_515_6e-5, 0x0400),
+            (255.0, 0x5bf8),
+        ] {
+            assert_eq!(half(value), bits, "{value}");
+            assert_eq!(half_to_f32(bits), value);
+        }
+        // Ties go to the even half; past the largest, infinity; a subnormal keeps its units.
+        assert_eq!(half(1.0 + 1.0 / 2048.0), 0x3c00);
+        assert_eq!(half(1.0 + 3.0 / 2048.0), 0x3c02);
+        assert_eq!(half(70000.0), 0x7c00);
+        assert_eq!(half(5.960_464_5e-8), 0x0001);
+        assert_eq!(half(1e-9), 0x0000);
+        // Every value from a millionth to 60,000 comes back within half a step of 11 bits.
+        let mut value = 1e-6f32;
+        while value < 60_000.0 {
+            for v in [value, -value] {
+                let back = half_to_f32(half(v));
+                let step = if v.abs() < 6.1e-5 {
+                    5.97e-8
+                } else {
+                    v.abs() / 1024.0
+                };
+                assert!((back - v).abs() <= step / 2.0 * 1.0001, "{v} -> {back}");
+            }
+            value *= 1.013;
+        }
     }
 
     #[test]

@@ -125,7 +125,7 @@ pub struct MeshStorage {
     /// The joint spheres of every skinned mesh, mesh after mesh (see [`joint_spheres`]).
     spheres: Vec<[f32; 4]>,
     /// The delta texels of every morphed mesh's targets, mesh after mesh (see [`crate::morph`]).
-    morph_texels: Vec<[f32; 4]>,
+    morph_texels: Vec<[u16; 4]>,
     /// How far each target of each morphed mesh moves a position at weight 1.
     reaches: Vec<f32>,
     /// Each part's edge list as a part of its page, in the order of `parts`, once made.
@@ -209,8 +209,9 @@ impl MeshStorage {
         &self.spheres[first..first + mesh.joints as usize]
     }
 
-    /// The delta texels of every morphed mesh's targets, which the morph texture uploads.
-    pub fn morph_texels(&self) -> &[[f32; 4]] {
+    /// The delta texels of every morphed mesh's targets, in half floats, which the texture of
+    /// deltas uploads.
+    pub fn morph_texels(&self) -> &[[u16; 4]] {
         &self.morph_texels
     }
 

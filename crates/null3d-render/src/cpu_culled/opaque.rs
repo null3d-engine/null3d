@@ -326,19 +326,19 @@ impl Opaque {
     /// Makes a view's draw record buffer big enough for the layout, with the group that binds
     /// one block or record of it, and binds the view's instance textures again when one of them
     /// is new (`textures_remade`). With `skins`, the joint texture, the texture of first joints and
-    /// weights and the morph texture, the instance groups bind them too, for the pipelines that
-    /// skin and morph.
+    /// weights and the morph textures of deltas and weights, the instance groups bind them too, for
+    /// the pipelines that skin and morph.
     pub(super) fn size(
         &mut self,
         list: &mut DrawList,
         view: ViewId,
         layout: &Layout,
-        skins: Option<[u32; 3]>,
+        skins: Option<[u32; 4]>,
         textures_remade: bool,
     ) -> Result<(), RecordError> {
         if textures_remade {
-            let bindings = if skins.is_some() { 7 } else { 4 };
-            let [joints, first_joints, morphs] = skins.unwrap_or_default();
+            let bindings = if skins.is_some() { 8 } else { 4 };
+            let [joints, first_joints, deltas, weights] = skins.unwrap_or_default();
             let mut words = [
                 0,
                 bind_layout::INSTANCES,
@@ -375,7 +375,12 @@ impl Opaque {
                 0,
                 6,
                 resource_kind::TEXTURE,
-                morphs,
+                deltas,
+                0,
+                0,
+                7,
+                resource_kind::TEXTURE,
+                weights,
                 0,
                 0,
             ];

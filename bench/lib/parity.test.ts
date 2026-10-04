@@ -258,7 +258,7 @@ describe('feature scenes', () => {
 			expect(names).toContain(feature);
 	});
 
-	test('give the shadows and three glTF models a looser limit, and draw tone mapping without anti-aliasing', () => {
+	test('give the shadows, three glTF models and the wide morph scene a looser limit, and draw tone mapping without anti-aliasing', () => {
 		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		expect(SHADOW_MAX_DIFFERENT_PERCENT).toBeGreaterThan(MAX_DIFFERENT_PERCENT);
 		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);
@@ -267,7 +267,10 @@ describe('feature scenes', () => {
 			'gltf-ktx2',
 			'gltf-meshopt-ext',
 			'shadows',
+			'morph',
 		]);
+		// The close-up of the morph scene shows the deltas' precision best, so it keeps three.js's rule.
+		expect(featureScene('morph-closeup')?.limit).toBeUndefined();
 		// three.js's WebGPURenderer draws the Khronos meshopt test wrong, so WebGLRenderer is its reference.
 		expect(featureScene('gltf-meshopt-khr')?.webglOnly).toBe(true);
 		expect(featureScene('gltf-meshopt-ext')?.webglOnly).toBeUndefined();

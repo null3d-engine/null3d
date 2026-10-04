@@ -137,7 +137,7 @@ const head = scene.createMesh({ mesh: face, material });
 head.setMorphWeight('Smile', 0.8);
 ```
 
-Each object of the mesh has weights of its own, which start at 0. `setMorphWeight` sets them, and clips from glTF files animate them ([Morph targets](animation.md#morph-targets)). The engine stores, for each vertex, only the targets that move it. So a face whose targets each move a small part of it takes far less memory than three.js's copy of every vertex for every target. A vertex can take up to 255 targets. The targets of every mesh together can take up to 4,128,768 deltas, counting each of a vertex's positions, normals and tangents once. Past those limits, `fromArrays` throws E1206.
+Each object of the mesh has weights of its own, which start at 0. `setMorphWeight` sets them, and clips from glTF files animate them ([Morph targets](animation.md#morph-targets)). The engine stores, for each vertex, only the targets that move it. So a face whose targets each move a small part of it takes far less memory than three.js's copy of every vertex for every target. A vertex can take up to 255 targets. The targets of every mesh together can take up to 4,194,304 deltas, counting each of a vertex's positions, normals and tangents once. Past those limits, `fromArrays` throws E1206. The GPU keeps each delta in a 16-bit float, which is exact to 1/2048 of the delta's size, and each weight in a 32-bit float. The engine does not morph vertex colors: a glTF file's color targets draw at rest.
 
 ## Vertex formats
 

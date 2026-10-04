@@ -175,7 +175,7 @@ impl Skinning {
             groups_stale: true,
             pipeline_made: false,
             joints: JointTexture::new(ids::JOINTS),
-            morph: MorphTexture::new(ids::MORPHS),
+            morph: MorphTexture::new(ids::MORPHS, ids::MORPH_WEIGHTS),
             computed: 0,
             seen: Vec::new(),
             table: Vec::new(),
@@ -472,6 +472,7 @@ impl Skinning {
             self.groups_stale = true;
         }
         if remade || self.groups_stale {
+            let [deltas, weights] = self.morph.ids();
             for (k, segment) in self.segments.iter().enumerate() {
                 let (vertices, _) = meshes.ids(segment.page);
                 let source = meshes.vertex_bytes(segment.page).min(binding_bytes);
@@ -485,10 +486,11 @@ impl Skinning {
                     entry(1, resource_kind::BUFFER, vertices, 0, source),
                     entry(2, resource_kind::BUFFER, ids::SKINNED, 0, 0),
                     entry(3, resource_kind::TEXTURE, self.joints.id(), 0, 0),
-                    entry(4, resource_kind::TEXTURE, self.morph.id(), 0, 0),
+                    entry(4, resource_kind::TEXTURE, deltas, 0, 0),
+                    entry(5, resource_kind::TEXTURE, weights, 0, 0),
                 ];
-                let mut words = [0u32; 3 + 5 * 5];
-                words[..3].copy_from_slice(&[ids::SKIN_GROUPS + k as u32, bind_layout::SKIN, 5]);
+                let mut words = [0u32; 3 + 6 * 5];
+                words[..3].copy_from_slice(&[ids::SKIN_GROUPS + k as u32, bind_layout::SKIN, 6]);
                 words[3..].copy_from_slice(entries.as_flattened());
                 list.push(Op::CreateBindGroup, &words)?;
             }

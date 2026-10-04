@@ -749,6 +749,9 @@ describe('morph targets', () => {
 		const c = morphBuilder();
 		c.json.animations[0].samplers[0].output = c.accessor(new Float32Array([0, 1, 1]), 1);
 		expect(refusal(c.glb())[1]).toContain('3 values for 2 keys of 2');
+		const e = morphBuilder();
+		e.json.meshes[0].primitives[0].targets[1].COLOR_0 = e.accessor(new Float32Array(96), 4);
+		expect(parse(e.glb()).notes.join()).toContain('move COLOR_0, which the engine does not morph');
 		const d = morphBuilder();
 		d.json.nodes[0].weights = [1, 2, 3];
 		expect(refusal(d.glb())[1]).toContain("node 0's weights is not 2 numbers");

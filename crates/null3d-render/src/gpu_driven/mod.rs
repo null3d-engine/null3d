@@ -246,10 +246,12 @@ mod ids {
     pub const BLANK_LUT: u32 = CUSTOM_VALUES + 1;
     /// Every animated instance's skinning matrices (see [`crate::skinning`]).
     pub const JOINTS: u32 = BLANK_LUT + 1;
-    /// Every morphed mesh's deltas and every morphed object's weights (see [`crate::morph`]).
+    /// Every morphed mesh's deltas, in half floats (see [`crate::morph`]).
     pub const MORPHS: u32 = JOINTS + 1;
+    /// Every morphed object's weights (see [`crate::morph`]).
+    pub const MORPH_WEIGHTS: u32 = MORPHS + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = MORPHS + 1;
+    pub const TARGETS: u32 = MORPH_WEIGHTS + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow map.

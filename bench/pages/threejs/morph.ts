@@ -2,10 +2,17 @@
 // draw. Each sphere is a Mesh of one BufferGeometry whose morphAttributes hold the targets' deltas,
 // with morphTargetsRelative set as glTF files have it, and whose morphTargetInfluences hold the
 // sphere's weights. It draws the scene once into an offscreen target of the image's size, and
-// publishes the pixels as the hold pages do. `?renderer=webgl` draws with WebGLRenderer, and
-// `?renderer=webgpu` with WebGPURenderer.
+// publishes the pixels as the hold pages do. `?closeup` looks at the third sphere from close by.
+// `?renderer=webgl` draws with WebGLRenderer, and `?renderer=webgpu` with WebGPURenderer.
 import { run, toBase64 } from '../../../tests/pages/lib/result';
-import { MORPH_CAMERA, MORPH_IMAGE, morphMesh, SPHERES, TARGET_NAMES } from '../../scenes/morph';
+import {
+	MORPH_CAMERA,
+	MORPH_CLOSEUP_CAMERA,
+	MORPH_IMAGE,
+	morphMesh,
+	SPHERES,
+	TARGET_NAMES,
+} from '../../scenes/morph';
 import { showPageName } from '../lib/fit';
 import { readChoice } from '../lib/options';
 import { lightScene, RENDERERS, startThree } from './harness';
@@ -39,14 +46,15 @@ run('hold', async () => {
 	}
 
 	const { width, height } = MORPH_IMAGE;
-	const { fov, position, target, near, far } = MORPH_CAMERA;
+	const closeup = params.has('closeup');
+	const { fov, position, target, near, far } = closeup ? MORPH_CLOSEUP_CAMERA : MORPH_CAMERA;
 	const camera = new three.PerspectiveCamera(fov, width / height, near, far);
 	camera.position.set(...position);
 	camera.lookAt(...target);
 
 	const pixels = await readFrame(width, height, () => renderer.render(scene, camera));
 	return {
-		scene: 'morph',
+		scene: closeup ? 'morph-closeup' : 'morph',
 		renderer: rendererName,
 		n: SPHERES.length,
 		width,

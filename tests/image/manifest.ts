@@ -755,6 +755,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(variant && { tolerance: { maxDiffRatio: 0.002 } }),
 		}),
 	),
+	// The third sphere from close by, where a step of the half floats that hold the deltas would
+	// show. The parity test compares it with three.js's deltas in 32-bit floats.
+	{
+		name: 'morph-closeup',
+		sketch: 'tests/pages/sketches/morph-sketch.ts?closeup',
+		hold: 0,
+		size: [MORPH_IMAGE.width, MORPH_IMAGE.height],
+		sameOnEveryTier: true,
+	},
 	{
 		name: 'morph-names',
 		sketch: 'tests/pages/sketches/morph-sketch.ts?names',

@@ -317,10 +317,10 @@ fn webgl2_skins_in_the_vertex_shader_of_every_pass_that_draws_a_skinned_object()
         assert_eq!(count(&first, Op::CreateComputePipeline), 0);
 
         // Every instance group binds the joint texture, the texture of first joints and the morph
-        // texture after the instance textures.
+        // textures of deltas and weights after the instance textures.
         let groups = instance_groups(&first);
         assert!(!groups.is_empty());
-        assert!(groups.iter().all(|g| g[2] == 7));
+        assert!(groups.iter().all(|g| g[2] == 8));
         let (joints, firsts) = (bound(&groups[0], 4), bound(&groups[0], 5));
         let textures = operands(&first, Op::CreateTexture);
         let created = |id: u32| textures.iter().find(|t| t[0] == id).unwrap().clone();

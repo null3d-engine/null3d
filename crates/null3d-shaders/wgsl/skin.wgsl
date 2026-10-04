@@ -31,7 +31,8 @@
 // The morph attribute names the vertex's entries in the morph texture (see the renderer's morph
 // module): its first entry's texel, then its entry count times four plus 1 when entries hold a
 // normal's delta and 2 when they hold a tangent's. An entry is the position's delta with the
-// target's number, then the normal's and the tangent's deltas. Four weights share a texel.
+// target's number, then the normal's and the tangent's deltas, in half floats. The weights sit in
+// a texture of their own, four to a texel.
 //
 // Each workgroup finds its part with a binary search of the parts' first workgroups. The joint
 // texture holds each joint's three matrix rows in three texels, JOINTS_PER_ROW joints per row.
@@ -52,6 +53,7 @@ const NONE: u32 = 0xffffffffu;
 @group(0) @binding(2) var<storage, read_write> skinned: array<u32>;
 @group(0) @binding(3) var joints: texture_2d<f32>;
 @group(0) @binding(4) var morph_texels: texture_2d<f32>;
+@group(0) @binding(5) var morph_weights: texture_2d<f32>;
 
 /// Component `c` of the attribute that `field` places, in the source vertex at word `vertex`, as
 /// a vertex shader reads it: a float, a normalized integer as a fraction, or a plain integer as
@@ -89,9 +91,14 @@ fn joint_row(joint: u32, row: u32) -> vec4f {
     return textureLoad(joints, vec2u(x, joint / JOINTS_PER_ROW), 0);
 }
 
-/// Texel `k` of the morph texture.
+/// Texel `k` of the texture of deltas.
 fn morph_texel(k: u32) -> vec4f {
     return textureLoad(morph_texels, vec2u(k % MORPH_TEXELS_PER_ROW, k / MORPH_TEXELS_PER_ROW), 0);
+}
+
+/// Texel `k` of the texture of weights.
+fn morph_weight_texel(k: u32) -> vec4f {
+    return textureLoad(morph_weights, vec2u(k % MORPH_TEXELS_PER_ROW, k / MORPH_TEXELS_PER_ROW), 0);
 }
 
 /// A vertex's position, normal and tangent direction.
@@ -113,7 +120,7 @@ fn morphed(rest: Morphed, range: vec2f, weights: u32) -> Morphed {
         let at = first + k * stride;
         let entry = morph_texel(at);
         let t = u32(entry.w);
-        let w = morph_texel(weights + t / 4u)[t % 4u];
+        let w = morph_weight_texel(weights + t / 4u)[t % 4u];
         if w == 0.0 {
             continue;
         }

@@ -28,6 +28,18 @@ export const MORPH_CAMERA = {
 	far: 50,
 } as const;
 
+/**
+ * The close-up: the third sphere, which blends all three targets, nearly filling the view, so a
+ * step of the half floats that hold the deltas would show at its edges and in its shading.
+ */
+export const MORPH_CLOSEUP_CAMERA = {
+	fov: 30,
+	position: [2.6, 0.5, 2.8] as Vec3,
+	target: [1.9, 0.15, 0.4] as Vec3,
+	near: 0.1,
+	far: 50,
+} as const;
+
 /** The spheres: where each stands, its sRGB color, and its weight for each target. */
 export const SPHERES: readonly { position: Vec3; color: string; weights: readonly number[] }[] = [
 	{ position: [-1.9, 0, 0], color: '#e8554e', weights: [0, 0, 0] },

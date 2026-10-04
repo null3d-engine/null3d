@@ -12,14 +12,23 @@ A morph target is a second shape of a mesh: a face that smiles, a door that bend
 - A page that draws no morphed mesh downloads none of the morph shader builds, and its start does not grow.
 - No per-frame allocation, on either GPU path.
 - WebGL2 stays within 16 texture units per shader stage, the fewest that WebGL2 allows.
+- Morph targets are intent ([D-52](D-52-intent-parity.md)): they must show what the file means. So parity with three.js's morph results stays strict, by three.js's own image rule.
 
 ## Data
 
 ### Storage: sparse deltas
 
-A target of a face moves a small part of the face. three.js's morph texture holds every vertex of every target, so a face of 52 targets stores 52 copies of its vertices. The engine stores, for each vertex, only the targets that move it. An entry is one texel of the position's delta, with the target's number in its fourth value. A texel of the normal's delta and one of the tangent's follow, where the targets move them. Each vertex gets a morph attribute at location 8: its first entry's texel, and its count of entries. One RGBA32F texture, 2,048 texels wide, holds every mesh's entries, then each morphed object's weights, four to a texel. Its width is the widest that every WebGL2 device takes.
+A target of a face moves a small part of the face. three.js's morph texture holds every vertex of every target, so a face of 52 targets stores 52 copies of its vertices. The engine stores, for each vertex, only the targets that move it. An entry is one texel of the position's delta, with the target's number in its fourth value. A texel of the normal's delta and one of the tangent's follow, where the targets move them. Each vertex gets a morph attribute at location 8: its first entry's texel, and its count of entries. An RGBA16F texture, 2,048 texels wide, holds every mesh's entries. A small RGBA32F texture of the same width holds each morphed object's weights, four to a texel. That width is the widest that every WebGL2 device takes.
 
-The limits are 256 targets per mesh and 255 entries per vertex. Every mesh's deltas together take up to 4,128,768 texels, and the core's table holds 65,536 weights. The engine refuses a mesh past them with E1206, and a weight past the table with E1102.
+The limits are 256 targets per mesh and 255 entries per vertex. Every mesh's deltas together take up to 4,194,304 texels, and the core's table holds 65,536 weights. The engine refuses a mesh past them with E1206, and a weight past the table with E1102.
+
+### Half floats, and weights in a texture of their own
+
+The deltas are half floats, as Babylon.js stores its morph textures and as three.js's glTF tools can quantize them. A delta texel then takes 8 bytes in place of 16, in the GPU's texture and in the engine's own copy. The texture of deltas holds up to 4,194,304 texels: 32 MiB in half floats, against 64 MiB in floats. RGBA16F textures that shaders read with `textureLoad` are core in WebGPU, its compatibility mode and WebGL2, so every tier takes them. The 32-bit store stays nowhere.
+
+A half float keeps 11 bits, so a delta is off by at most 1/2048 of its size. A face's delta of 2 cm is then off by at most 10 micrometers. A target's number, up to 255, is exact. The core rounds each delta to the nearest half float, ties to even, and grows the bounds by the deltas as rounded. The parity check below measures what the rounding shows. A close-up of the sphere that blends all three targets matches three.js's 32-bit deltas within 0.069% of the pixels on every tier.
+
+The weights stay 32-bit floats, in a texture of their own. Each frame uploads only the weights, as before: the deltas go up once. The split matters when the scene grows. With one texture, objects whose weights outgrew their rows remade the whole texture, and every mesh's deltas went up again. Now more objects remake only the texture of weights, at most 8 rows. More meshes remake only the texture of deltas. The second texture costs one more texture unit in WebGL2's vertex stage, and one more binding on each path.
 
 ### Where vertices morph
 
@@ -28,9 +37,9 @@ The limits are 256 targets per mesh and 255 entries per vertex. Every mesh's del
 | WebGPU, both tiers | In the skinning pass, before the joints. An object that only morphs goes through the pass too | The pass already writes each skinned mesh's vertices once per frame, and every pass then draws them. Each template, custom materials' too, draws morphed meshes as they are, with no MORPH build. `?skinning=vertex` still morphs in the pass, as WebGPU has no MORPH build |
 | WebGL2 | In the vertex shader of each pass that draws the mesh, under the MORPH bit, before skinning | WebGL2 has no compute pass. D-10 measured transform feedback slower than skinning in the vertex shader, and morphing reads the same kind of data |
 
-On WebGL2 the morph texture takes binding 6 of the instance group, after the joint texture and the texture of first joints. The texture of first joints has a second half of rows: the first weight texel of each instance's object. A crowd of one morphed mesh therefore still draws in one instanced draw per part. Group 3's slots start one later (21).
+On WebGL2 the texture of deltas takes binding 6 of the instance group, and the texture of weights binding 7. They follow the joint texture and the texture of first joints. The texture of first joints has a second half of rows: the first weight texel of each instance's object. A crowd of one morphed mesh therefore still draws in one instanced draw per part. Group 3's slots start two later (22). On WebGPU the skinning pass's group binds the two textures at bindings 4 and 5.
 
-The largest WebGL2 program is `standard_maps` with alpha mask, shadows, SKIN and MORPH. It reads 7 textures in its vertex stage, 12 in its fragment stage and 19 in all. WebGL2 allows at least 16 per stage and 32 in all. The unit test of the slots now checks every build of every shader module, the morph modules included.
+The largest WebGL2 program is `standard_maps` with alpha mask, shadows, SKIN and MORPH. It reads 8 textures in its vertex stage, 12 in its fragment stage and 20 in all. WebGL2 allows at least 16 per stage and 32 in all. The unit test of the slots now checks every build of every shader module, the morph modules included.
 
 The lit, standard maps, unlit, unlit map, shadow depth and debug view templates have MORPH builds. Custom materials and sprites have none. On WebGL2 a custom material therefore draws a morphed mesh at rest, its targets left out. A custom material's vertex code may move vertices itself, and a MORPH build of every custom shader would double each one's programs.
 
@@ -79,28 +88,32 @@ Chrome on the MacBook Pro (M5 Max) parses and runs a morph shader file about as 
 
 ### Measurements
 
-The image tests `morph`, `morph-shadows` and `morph-names` draw three spheres of one mesh at their own weights, with the shadow passes and with weights set by name. Every tier draws the WebGPU image. On the Mac's GPU, WebGL2 differs in 0.128% of the pixels without the ground and 0.113% with it, all on outline edges. The test with the ground takes a tolerance of 0.2%. `morph-cap` draws the scene on WebGL2 with a cap of 2. It matches `morph-capped`, which draws the same scene with the third sphere's smallest weight set to 0.
+The image tests `morph`, `morph-shadows`, `morph-names` and `morph-closeup` draw three spheres of one mesh at their own weights, with the shadow passes and with weights set by name. Every tier draws the WebGPU image. On the Mac's GPU, WebGL2 differs in 0.128% of the pixels without the ground and 0.113% with it, all on outline edges. The test with the ground takes a tolerance of 0.2%. `morph-cap` draws the scene on WebGL2 with a cap of 2. It matches `morph-capped`, which draws the same scene with the third sphere's smallest weight set to 0.
 
-The parity check compares each scene with three.js r186 by three.js's own image rule, under 0.1% of the pixels:
+The parity check compares each scene with three.js r186 by three.js's own image rule, under 0.1% of the pixels. Figures with the deltas in half floats:
 
 | Scene | WebGPU | Compatibility mode | WebGL2 | three.js's two renderers |
 | --- | --- | --- | --- | --- |
-| The three spheres, against `morphTargetInfluences` | 0.000% | 0.100% | 0.000% | 0.062% |
+| The three spheres, against `morphTargetInfluences` | 0.000% | 0.102% | 0.003% | 0.062% |
+| The close-up of the third sphere, which blends all three targets | 0.005% | 0.069% | 0.006% | 0.049% |
 | AnimatedMorphCube, its clip at 2.4 s, against `AnimationMixer` | 0.000% | 0.000% | 0.000% | 0.001% |
 | MorphStressTest, 8 targets on two primitives, its clip at 0.5 s | 0.000% | 0.037% | 0.000% | 0.027% |
 | MorphPrimitivesTest, the file's default weight of 0.5 | 0.000% | 0.001% | 0.000% | 0.004% |
 
-`bun run bench:allocation --morphed 64` adds 64 spheres to S1 whose three weights the sketch sets in every frame. Every place stayed within its budget on both GPU paths. On WebGL2 the sketch worker's frame code took 202 bytes per frame with the spheres and 191 without, inside its budget of 240.
+With 32-bit deltas the three spheres differed in 0.000%, 0.100% and 0.000%. In compatibility mode, all 234 differing pixels are on outlines, where its 8-bit path averages the edge samples after it encodes them. 53 of them are on the red sphere, whose weights are all 0, so the deltas' precision cannot move them. The wide scene takes a limit of 0.2% in `bench/lib/parity.ts` for that reason. The close-up, which shows precision best, keeps three.js's rule.
+
+`bun run bench:allocation --morphed 64` adds 64 spheres to S1 whose three weights the sketch sets in every frame. Every place stayed within its budget on both GPU paths. On WebGL2 the sketch worker's frame code took 202 bytes per frame with the spheres and 191 without, inside its budget of 240. With half floats and the texture of weights, the sketch worker took 333 bytes per frame in all on WebGL2 and 294 on WebGPU. Every place stayed within its budget.
 
 The Rust tests cover both frame builders. On WebGPU they check the skinning pass's morph texture and buffers, and on WebGL2 the MORPH builds of every pass and of the depth prepass. They also check custom materials at rest, bounds, the weight upload and its cap, split meshes, and frames that allocate nothing.
 
 ## Decision
 
-- Sparse deltas in one morph texture, for both GPU paths.
+- Sparse deltas in half floats in one texture, and the weights in 32-bit floats in a texture of their own, for both GPU paths.
 - WebGPU morphs in the skinning pass; WebGL2 in each pass's vertex shader under the MORPH bit, with the preset's cap.
 - Clips animate weights through joints that move no vertex.
 - The MORPH builds load on demand, in shader files whose limit is the start shader file's size.
 - Custom materials draw morphed meshes at rest on WebGL2.
+- Color morph targets are a gap. three.js morphs vertex colors through `morphAttributes.color`, and glTF allows `COLOR_0` in a target. The engine reads targets of positions, normals and tangents. Development builds note a file's other targets, and the mesh draws them at rest. Colors would add a texel to each entry, and a color input to each template's MORPH build. No sample model or port needs them yet.
 
 ## How three.js handles it
 

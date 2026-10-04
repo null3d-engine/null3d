@@ -2,7 +2,9 @@
 // morphTargetInfluences. Each sphere is an object of one mesh with three targets, at its own
 // weights. ?shadows stands the spheres on a ground under a sun, so the shadow passes must morph
 // them too. ?capped draws the weights that WebGL2 keeps at a cap of two targets per object, which
-// the cap's image test compares with. ?names sets the weights by the targets' names. ?tone=none
+// the cap's image test compares with. ?names sets the weights by the targets' names. ?closeup
+// looks at the third sphere from close by, where a step of the deltas' half floats would show.
+// ?tone=none
 // turns off the engine's default of ACES, as the parity test asks: the three.js twin draws with no
 // tone mapping, three.js's default.
 import { defineSketch } from '@null3d/engine';
@@ -11,6 +13,7 @@ import {
 	BACKGROUND,
 	cappedWeights,
 	MORPH_CAMERA,
+	MORPH_CLOSEUP_CAMERA,
 	morphMesh,
 	SPHERES,
 	SUN,
@@ -25,7 +28,8 @@ const NAMES = params.has('names');
 export default defineSketch(({ scene, materials, geometry, post }) => {
 	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	scene.setBackground(BACKGROUND);
-	const { fov, position, target, near, far } = MORPH_CAMERA;
+	const camera = params.has('closeup') ? MORPH_CLOSEUP_CAMERA : MORPH_CAMERA;
+	const { fov, position, target, near, far } = camera;
 	scene.setActiveCamera(scene.createPerspectiveCamera({ fov, position, target, near, far }));
 	scene.createDirectionalLight({
 		direction: SUN.direction,

@@ -46,9 +46,9 @@ enable draw_index;
 //
 // The MORPH builds, which only WebGL2 has, add each vertex's morph target deltas times their
 // weights before skinning (`morph_vertex`). The vertex's morph attribute names its entries in the
-// morph texture, which follows the joint texture in the data textures' group. The second half of
-// the rows of the texture of indices gives each source row the first texel of its morph weights
-// there. WebGPU morphs in its skinning pass instead.
+// texture of deltas, which follows the joint texture in the data textures' group, beside the
+// texture of weights. The second half of the rows of the texture of indices gives each source row
+// the first texel of its morph weights. WebGPU morphs in its skinning pass instead.
 //
 // The fragment shaders write linear color into the HDR scene color, which the final pass tone maps.
 // On the 8-bit path (the TONE_MAP builds) `finish` applies the frame's exposure and tone mapping,
@@ -104,8 +104,10 @@ struct CellOffsets {
 @group(2) @binding(5) var first_joints: texture_2d<u32>;
 #endif
 #ifdef MORPH
-/// Every morphed mesh's deltas, then every morphed object's weights.
+/// Every morphed mesh's deltas, in half floats.
 @group(2) @binding(6) var morph_texels: texture_2d<f32>;
+/// Every morphed object's weights.
+@group(2) @binding(7) var morph_weights: texture_2d<f32>;
 #endif
 #else
 @group(0) @binding(1) var<storage, read> materials: array<Material>;
@@ -405,9 +407,14 @@ struct Morphed {
     tangent: vec3f,
 }
 
-/// Texel `k` of the morph texture.
+/// Texel `k` of the texture of deltas.
 fn morph_texel(k: u32) -> vec4f {
     return textureLoad(morph_texels, vec2u(k % MORPH_TEXELS_PER_ROW, k / MORPH_TEXELS_PER_ROW), 0);
+}
+
+/// Texel `k` of the texture of weights.
+fn morph_weight_texel(k: u32) -> vec4f {
+    return textureLoad(morph_weights, vec2u(k % MORPH_TEXELS_PER_ROW, k / MORPH_TEXELS_PER_ROW), 0);
 }
 
 /// A vertex moved by its morph targets, as three.js moves it: each entry that the vertex's morph
@@ -425,7 +432,7 @@ fn morph_vertex(found: Instance, range: vec2f, rest: Morphed) -> Morphed {
         let at = first + k * stride;
         let entry = morph_texel(at);
         let t = u32(entry.w);
-        let w = morph_texel(found.morph_weights + t / 4u)[t % 4u];
+        let w = morph_weight_texel(found.morph_weights + t / 4u)[t % 4u];
         if w == 0.0 {
             continue;
         }

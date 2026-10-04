@@ -70,7 +70,7 @@ impl Default for Skins {
     fn default() -> Self {
         Self {
             joints: JointTexture::new(ids::JOINTS),
-            morph: MorphTexture::new(ids::MORPHS),
+            morph: MorphTexture::new(ids::MORPHS, ids::MORPH_WEIGHTS),
             firsts: Vec::new(),
             bases: Vec::new(),
             span: None,
@@ -217,13 +217,15 @@ impl Skins {
         self.morph.set_cap(cap);
     }
 
-    /// The joint texture, the texture of first joints and weights, and the morph texture, once
-    /// they exist, for the views' instance groups.
-    pub(super) fn textures(&self) -> Option<[u32; 3]> {
+    /// The joint texture, the texture of first joints and weights, and the morph textures of
+    /// deltas and of weights, once they exist, for the views' instance groups.
+    pub(super) fn textures(&self) -> Option<[u32; 4]> {
+        let [deltas, weights] = self.morph.ids();
         (self.joints.exists() && self.morph.exists() && self.rows > 0).then_some([
             ids::JOINTS,
             ids::FIRST_JOINTS,
-            ids::MORPHS,
+            deltas,
+            weights,
         ])
     }
 
