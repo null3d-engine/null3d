@@ -3,12 +3,12 @@ id: guides/custom-shaders
 title: Custom shaders
 status: experimental
 since: "0.1"
-summary: "WGSL in sketch code; shader errors; surface functions; full shaders; uniforms and typed materials; hot reload."
+summary: "WGSL in sketch code; shader errors; surface functions; full shaders; uniforms, textures and typed materials; hot reload."
 ---
 
 # Custom shaders
 
-> Ships in null3D 0.1, with typed uniforms in 0.2. The API is experimental, so it can still change between versions. Custom materials with surface functions, vertex offsets, uniforms and full shaders are built. Textures in custom materials are not built yet, so coding agents must not use them. Hot reload that keeps the page running comes in null3D 0.2.
+> Ships in null3D 0.1, with typed uniforms and textures in 0.2. The API is experimental, so it can still change between versions. Custom materials with surface functions, vertex offsets, uniforms, textures and full shaders are built. Hot reload that keeps the page running is not built yet, so coding agents must not use it.
 
 ```mermaid
 flowchart LR
@@ -40,7 +40,7 @@ fn surface(input: SurfaceInput) -> Surface {
 const red = materials.shader({ wgsl: rings, color: '#e04040', roughness: 0.5 });
 ```
 
-The WGSL can declare uniforms as `struct Uniforms`, which `set()` changes at any time, and a vertex offset, `fn vertexOffset`, which moves the mesh's vertices. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface`, uniforms and vertex offsets. [Built-in shader inputs](../shaders/builtins.md) lists the values that every custom material reads, such as `frame.time`.
+The WGSL can declare uniforms as `struct Uniforms`, which `set()` changes at any time. It can declare textures as `var name: texture_2d<f32>;`, which the `textures` option gives. A vertex offset, `fn vertexOffset`, moves the mesh's vertices. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface`, uniforms, textures and vertex offsets. [Built-in shader inputs](../shaders/builtins.md) lists the values that every custom material reads, such as `frame.time`.
 
 ## Full shaders
 
@@ -93,7 +93,7 @@ The plugin takes WGSL as a full shader when its `@vertex` entry point takes an `
 - `null3d::mesh` also gives `clip_position(found, position)`, `relative_position(found, position)` and `world_normal(found, normal)`. Positions are relative to the camera, as in the engine's own shaders.
 - The fragment entry point writes its linear color through `finish(color, clip.xy)` from `null3d::mesh`, which prepares it for the engine's output.
 - `fill_builtins(origin)` from `null3d::builtins` fills `frame`, `camera` and `object` in a stage. Pass the object's origin relative to the camera, or zero when the shader does not read `object`.
-- The fixed options for faces and depth apply, such as `doubleSided` and `depthBias`. The standard values and uniforms do not reach a full shader, and `vertexColors` and the `mask` alpha mode change nothing: the shader reads the colors and discards pixels itself.
+- The fixed options for faces and depth apply, such as `doubleSided` and `depthBias`. The standard values, uniforms and textures do not reach a full shader. `vertexColors` and the `mask` alpha mode change nothing. The shader reads the colors and discards pixels itself. The build stops at a texture that a full shader declares.
 
 ## WGSL in sketch code
 
@@ -219,7 +219,9 @@ TypeScript finds the uniforms in each form of WGSL in its own way:
 - For a template literal tagged `/* wgsl */`, TypeScript reads `struct Uniforms` from the literal's text. Keep the literal in a `const`, or write it in the call. A variable of type `string` hides the text, and then any name passes the type check.
 - For a `.wgsl` file, the plugin writes a declaration beside the file each time it compiles it, such as `glow.wgsl.d.ts` beside `glow.wgsl`. Commit the declarations with your WGSL, so that a type check without Vite sees them. Until the plugin writes a file's declaration, its import takes any name. The `wgslDeclarations: false` option of the plugin turns the declarations off, for a project without TypeScript.
 
-The engine also checks each name and value when the call runs, so JavaScript gets the same checks. It throws [E1216](../errors/E1216.md) for a name that is not a uniform, and for a value of the wrong kind.
+The `textures` option takes the names of the WGSL's texture declarations in the same way. A name that the WGSL does not declare fails the type check.
+
+The engine also checks each name and value when the call runs, so JavaScript gets the same checks. It throws [E1216](../errors/E1216.md) for a name that is not a uniform or a texture of the WGSL, and for a value of the wrong kind.
 
 A list of values for several materials needs a type. In a plain array, TypeScript makes `[0, 1]` a list of any length. `UniformValues<typeof rings>` types the `uniforms` option, and `ShaderValues<typeof rings>` types what `set()` takes:
 

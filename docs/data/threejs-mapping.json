@@ -428,8 +428,8 @@
       "three": "geometry.dispose() / material.dispose() / texture.dispose()",
       "status": "changed",
       "since": "0.1",
-      "target": "texture.destroy(); mesh.destroy() (0.2)",
-      "notes": "texture.destroy() frees a texture's GPU memory, and materials that map it draw with their colors alone. Meshes get destroy() in 0.2. Materials have no destroy call. A prefab (0.2) frees its GPU data when the prefab and its last instance are destroyed.",
+      "target": "texture.destroy(); material.destroy() (0.2); mesh.destroy() (0.2)",
+      "notes": "texture.destroy() frees a texture's GPU memory, and materials that map it draw with their colors alone. material.destroy() (0.2) frees the material's place, and a custom material's pipelines with its last material, once no object uses it; objects that still use it draw nothing. Meshes get destroy() in 0.2. A prefab (0.2) frees its GPU data when the prefab and its last instance are destroyed.",
       "docs": "api/textures",
       "detect": "\\.dispose\\s*\\("
     },
@@ -802,8 +802,8 @@
       "three": "ShaderMaterial / RawShaderMaterial (GLSL)",
       "status": "manual",
       "since": "0.1",
-      "target": "materials.shader({ wgsl, uniforms }) with a WGSL surface function, or a full WGSL shader",
-      "notes": "Rewrite in WGSL, in one literal tagged /* wgsl */. Prefer a surface function, so lighting, shadows, fog and instancing keep working. Declare the uniforms once, as struct Uniforms. Updates such as material.uniforms.uSpeed.value = 2 become material.set({ speed: 2 }), and from 0.2 the type check rejects a name that struct Uniforms lacks. Textures in custom materials come in 0.2.",
+      "target": "materials.shader({ wgsl, uniforms, textures }) with a WGSL surface function, or a full WGSL shader",
+      "notes": "Rewrite in WGSL, in one literal tagged /* wgsl */. Prefer a surface function, so lighting, shadows, fog and instancing keep working. Declare the uniforms once, as struct Uniforms. Updates such as material.uniforms.uSpeed.value = 2 become material.set({ speed: 2 }), and from 0.2 the type check rejects a name that struct Uniforms lacks. A sampler2D uniform (0.2) becomes var name: texture_2d<f32>; in the WGSL and an entry of the textures option, sampled with textureSample(name, nameSampler, uv). Textures are fixed when the material is created. Full shaders take no textures.",
       "docs": "shaders/surface-functions",
       "detect": "\\b(Raw)?ShaderMaterial\\b"
     },

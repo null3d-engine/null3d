@@ -10,7 +10,12 @@
 // library modules it composed.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { CompiledUniform, ShaderVariant, WgslPipeline } from './shader-types.ts';
+import type {
+	CompiledTexture,
+	CompiledUniform,
+	ShaderVariant,
+	WgslPipeline,
+} from './shader-types.ts';
 
 /** Where `bun run build` writes the module. */
 export const SHADER_COMPILER_URL = new URL('../dist/shader-compiler.wasm', import.meta.url);
@@ -94,6 +99,8 @@ export interface MaterialBuild {
 	readonly functions: readonly string[];
 	/** The fields of the WGSL's `struct Uniforms`, where the engine writes each. */
 	readonly uniforms: readonly CompiledUniform[];
+	/** The textures that the WGSL declares, where the engine writes the layer of each. */
+	readonly textures: readonly CompiledTexture[];
 	/** The standard material's variants with the WGSL's functions, or a full shader's, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
 	/** The vertex shader locations that the vertex stage reads from a mesh's vertices. */

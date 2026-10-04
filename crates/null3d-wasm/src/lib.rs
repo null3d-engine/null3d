@@ -344,7 +344,7 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// 8-bit path. `antialias` is the anti-aliasing mode's code; an unknown code takes MSAA.
 /// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
 /// every object, with no grid cells skipped first. With `depth_prepass`, each camera view draws its
-/// opaque objects' depth before it shades them, on WebGPU. With `vertex_skinning`, WebGPU skins in
+/// opaque objects' depth before it shades them. With `vertex_skinning`, WebGPU skins in
 /// the vertex shader of each pass, not in a compute pass. With `large_world`, each object's position
 /// holds whole cells besides its 32-bit part, so positions keep their precision at any distance.
 /// Every capacity is fixed from here on.
@@ -410,6 +410,7 @@ pub fn init_engine(
                 multi_draw: capabilities.contains(Capabilities::MULTI_DRAW),
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
                 cell_culling,
+                depth_prepass,
                 ..CpuCulledConfig::default()
             }))
         } else {
@@ -1184,7 +1185,8 @@ pub fn mesh_radius(mesh: u32) -> f32 {
 /// `MeshStandardMaterial`, unlit, like its `MeshBasicMaterial`, or the first texture coordinates as
 /// colors, for the engine's own tests. A shading from `shading::CUSTOM_FIRST` up is a custom
 /// material's: its template in the low 16 bits, the vertex attributes that its shader reads from
-/// `shading::CUSTOM_ATTRIBUTE_SHIFT`, and `shading::CUSTOM_BASE_COLOR`. Its features
+/// `shading::CUSTOM_ATTRIBUTE_SHIFT`, `shading::CUSTOM_BASE_COLOR`, and the number of textures
+/// that its WGSL declares from `shading::CUSTOM_TEXTURE_SHIFT`. Its features
 /// (`constants::material_feature`) and its depth bias are fixed from now on. The bias takes
 /// three.js's `polygonOffsetUnits` as `bias_constant` and its `polygonOffsetFactor` as
 /// `bias_slope`, whose positive values push the surface away.
@@ -1209,6 +1211,7 @@ pub fn create_material(
             template: custom & 0xffff,
             attributes: (custom >> shading::CUSTOM_ATTRIBUTE_SHIFT) & 0xff,
             base_color: custom & shading::CUSTOM_BASE_COLOR != 0,
+            textures: (custom >> shading::CUSTOM_TEXTURE_SHIFT) & 7,
         }),
         _ => Shading::Lit,
     };
@@ -1220,6 +1223,23 @@ pub fn create_material(
             .map_err(material_failure)?;
         table.set_depth_bias(id, bias).map_err(material_failure)?;
         Ok(id + 1)
+    })
+}
+
+// Destroying a material changes which objects draw, as a new material does. Its id goes back to
+// the table once no object or batch names it, at a rebuild of the draw tables.
+/// Destroys a material: objects that still use it draw nothing.
+#[wasm_bindgen(js_name = destroyMaterial)]
+pub fn destroy_material(material: u32) -> u32 {
+    with_engine(|e| {
+        let table = e.renderer.settings_mut().materials_mut();
+        match table.destroy(material.wrapping_sub(1)) {
+            Ok(()) => {
+                e.structure_changed = true;
+                0
+            }
+            Err(error) => material_failure(error),
+        }
     })
 }
 

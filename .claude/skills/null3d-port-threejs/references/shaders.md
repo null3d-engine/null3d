@@ -4,7 +4,7 @@ null3D shaders are WGSL. The build translates them to GLSL for the WebGL2 path, 
 
 A custom material takes its WGSL in one `wgsl` option: a template literal tagged `/* wgsl */`, or a `.wgsl` import. That WGSL holds `fn surface`, `fn vertexOffset`, or both, or a full shader's `@vertex` and `@fragment` entry points. It declares its uniforms once, as `struct Uniforms`, and reads them from `material`.
 
-Versions: `materials.shader` is built, with surface functions, `vertexOffset`, uniforms in `struct Uniforms`, and full shaders. So are the built-in values `frame.time`, `frame.deltaTime`, `frame.index`, `frame.resolution`, `camera.position`, `camera.viewProjection`, `object.position` and `material`. Textures in custom materials come in 0.2, with the inputs and built-in values that the tables below mark (0.2). Post effects and custom passes come in 0.2 too. A port that needs a later part waits for it, or keeps its values in the standard options.
+Versions: `materials.shader` is built, with surface functions, `vertexOffset`, uniforms in `struct Uniforms`, and full shaders. So are the built-in values `frame.time`, `frame.deltaTime`, `frame.index`, `frame.resolution`, `camera.position`, `camera.viewProjection`, `object.position` and `material`. So are textures in custom materials (0.2): each `var name: texture_2d<f32>;` of the WGSL, given in the `textures` option. The inputs and built-in values that the tables below mark (0.2) come later in 0.2. Post effects and custom passes come in 0.2 too. A port that needs a later part waits for it, or keeps its values in the standard options.
 
 ## Contents
 
@@ -99,7 +99,7 @@ These exist now: the surface input's `relativePosition`, `worldPosition`, `norma
 
 ## 5. ShaderMaterial and RawShaderMaterial
 
-1. List the uniforms. Each becomes a field of `struct Uniforms` in the WGSL, with its first value in `uniforms` (numbers, `'#rrggbb'` colors, arrays). Texture uniforms wait for textures in custom materials (0.2). Updates such as `material.uniforms.uSpeed.value = 2` become `material.set({ speed: 2 })`. three.js's `uniforms` record takes any name, and a name that the GLSL does not use changes nothing. In null3D (0.2), a name that `struct Uniforms` lacks fails the type check, and the engine throws E1216 when it runs.
+1. List the uniforms. Each becomes a field of `struct Uniforms` in the WGSL, with its first value in `uniforms` (numbers, `'#rrggbb'` colors, arrays). A `sampler2D` uniform becomes `var name: texture_2d<f32>;` in the WGSL, sampled as `textureSample(name, nameSampler, uv)`, and an entry of the `textures` option (0.2). Up to 6 textures, fixed at creation; each takes one of the uniforms' 32 numbers. Updates such as `material.uniforms.uSpeed.value = 2` become `material.set({ speed: 2 })`. three.js's `uniforms` record takes any name, and a name that the GLSL does not use changes nothing. In null3D (0.2), a name that `struct Uniforms` lacks fails the type check, and the engine throws E1216 when it runs.
 2. Read the vertex shader. If it only applies `projectionMatrix * modelViewMatrix * vec4(position, 1.0)` and passes varyings along, drop it: the engine does both. If it moves vertices, port that part as `vertexOffset`.
 3. Read the fragment shader, and map its varyings to `SurfaceInput` fields. Map its output to `Surface` fields: lit look to `baseColor`, `roughness` and `metalness`; unlit look to `emissive` with `baseColor` set to zero; transparency to `alpha` plus the right `alphaMode`.
 4. Set the material options that were ShaderMaterial flags: `transparent` becomes `alphaMode: 'blend'`, `side: DoubleSide` becomes `doubleSided: true`, `blending: AdditiveBlending` becomes `blending: 'additive'`, `depthWrite: false` stays `depthWrite: false`.
@@ -122,14 +122,14 @@ A shader whose look the engine's lighting cannot give, such as a hologram, becom
 | Replaces a lighting chunk | Full shader with `null3d::lighting`; confirm the need first |
 | Stores `shader.uniforms` to update them later | `material.set({ ... })`, or `frame.time` for time |
 
-Keep the original's standard options (color, roughness, metalness, emissive) on the new material: `materials.shader` accepts every `materials.standard` option but the texture maps, and feeds them to `defaultSurface()`. Texture maps on custom materials come in 0.2.
+Keep the original's standard options (color, roughness, metalness, emissive) on the new material: `materials.shader` accepts every `materials.standard` option but the texture maps, and feeds them to `defaultSurface()`. The original's maps become textures of the WGSL (0.2), which the surface function samples itself.
 
 ## 7. TSL and node materials
 
 | TSL | WGSL surface function |
 | --- | --- |
 | `uniform(0.5)`, and `u.value = x` | `uniforms: { name: 0.5 }`, and `material.set({ name: x })` |
-| `texture(map, uv())` | A texture sample, once custom materials take textures (0.2) |
+| `texture(map, uv())` | `textureSample(map, mapSampler, input.uv)`, with `var map: texture_2d<f32>;` and the `textures` option (0.2) |
 | `uv()`, `uv(1)` | `input.uv`; `input.uv1` (0.2) |
 | `positionGeometry` | `VertexInput.position` in `vertexOffset` |
 | `positionLocal` | `VertexInput.position` in `vertexOffset`, except inside `positionNode` on an `InstancedMesh` (see below) |
@@ -150,7 +150,7 @@ On an `InstancedMesh`, three.js r186 applies the instance matrix before `positio
 
 ## 8. Vertex displacement and displacement maps
 
-A displacement computed from the vertex, such as wind or waves, works now (section 9 shows one). The example below reads a height map, so it waits for textures in custom materials (0.2).
+A displacement computed from the vertex, such as wind or waves, works (section 9 shows one). So does a height map, through the textures of custom materials (0.2):
 
 ```ts
 const terrain = materials.shader({
@@ -159,6 +159,8 @@ const terrain = materials.shader({
   textures: { height: heightMap },                  // linear color space
   wgsl: /* wgsl */ `
     struct Uniforms { scale: f32, bias: f32 }
+
+    var height: texture_2d<f32>;
 
     fn vertexOffset(input: VertexInput) -> vec3f {
       let h = textureSampleLevel(height, heightSampler, input.uv, 0.0).r;
@@ -226,8 +228,8 @@ material.onBeforeCompile = (shader) => {
 ```
 
 ```ts
-// null3d: the standard values of the original material stay; its map waits for texture maps
-// on custom materials (0.2)
+// null3d: the standard values of the original material stay; its map becomes a texture of the
+// WGSL (0.2), which the surface function samples
 const foliage = materials.shader({
   color: '#4f7a32', doubleSided: true,
   uniforms: { strength: 0.1 },

@@ -36,14 +36,7 @@ import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
-import {
-	ALL_MODES,
-	type ImageRun,
-	type ImageTest,
-	imageRuns,
-	type Tier,
-	tiersOf,
-} from '../lib/images.ts';
+import { ALL_MODES, type ImageRun, type ImageTest, imageRuns, type Tier } from '../lib/images.ts';
 import { STOPS, TONE_MAPPINGS, toneMappingTest } from '../pages/lib/bright-scene.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 
@@ -695,6 +688,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			sameOnEveryTier: true,
 		}),
 	),
+	// The characters with a custom material that samples a texture, which WebGPU skins in the
+	// skinning pass and WebGL2 in the vertex shader of the material's own skinned builds.
+	{
+		name: 'skinning-custom-textures',
+		sketch: 'tests/pages/sketches/skinning-sketch.ts?textured',
+		hold: SKINNING_HOLD,
+		size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+		sameOnEveryTier: true,
+	},
 	// The same characters from a quantized mesh, whose joints, weights and normals both paths
 	// read in their own types: it draws the image of floats, within the steps of 8-bit normals.
 	{
@@ -911,6 +913,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// Custom materials with textures: two textures that a surface function samples, the same WGSL
+	// without them, which samples white, a vertex offset that reads a height in the vertex stage,
+	// and a texture with a nearest filter. The thread modes send textures and shaders apart.
+	{
+		name: 'custom-textures',
+		sketch: 'tests/pages/sketches/custom-textures-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
 	// Each texture map of the standard material, made in code: base color, metal-rough, normal maps
 	// on quads with and without tangents, occlusion, emissive, a light map on the second texture
 	// coordinates, and base color maps through a texture coordinate transform, standard and unlit.
@@ -1076,11 +1088,14 @@ function copyWithSwitch(name: string, suffix: string, extra: string): ImageTest 
 }
 
 /**
- * The scenes that the depth prepass draws again on the WebGPU tiers, which must match their images
+ * The scenes that the depth prepass draws again on every tier, which must match their images
  * without it: shadows, masked cards that stay out of the prepass, decals whose depth bias the
  * prepass keeps, see-through objects that draw after it, an orthographic camera whose near plane
- * cuts a slab, and S2. WebGL2 draws without the prepass: in Chrome on the Mac, two of its programs
- * gave the shadows test's ground, which the near plane cuts, different depths.
+ * cuts a slab, S2, and skinned characters with shadows. The depth debug view replaces every
+ * material, and a background texture draws after the prepass in its render pass. Custom materials
+ * stay out of the prepass, a vertex offset that samples a texture among them. The shadows test's
+ * ground, which the near plane cuts, caught WebGL2's prepass when it drew with a program of its
+ * own (D-43).
  */
 const PREPASS_SCENES = [
 	'shadows',
@@ -1089,6 +1104,10 @@ const PREPASS_SCENES = [
 	'transparency',
 	'ortho-camera',
 	's2',
+	'skinning-shadows',
+	'debug-view-depth',
+	'texture-background',
+	'custom-textures',
 ];
 
 /** A prepass scene's test again with ?prepass=on, in its first thread mode. */
@@ -1096,7 +1115,6 @@ function withPrepass(name: string): ImageTest {
 	const test = copyWithSwitch(name, 'prepass', 'prepass=on');
 	return {
 		...test,
-		tiers: tiersOf(test).filter((tier) => tier !== 'webgl2'),
 		...(test.modes && { modes: test.modes.slice(0, 1) }),
 	};
 }

@@ -55,6 +55,13 @@
 //! casters' layout into an index list of its own, but only in the frames in which the tile must
 //! draw again. Every camera view's frame groups bind the atlas and the tiles' uniform block.
 //!
+//! # Depth prepass
+//!
+//! With the depth prepass, each camera view first draws its opaque draws' depth, from the same
+//! index list and draw records, with each draw's own vertex shader and a fragment shader that
+//! writes nothing ([`Prepass::OwnVertexShader`], [`opaque`]). The opaque pass then shades only
+//! where its depth equals the prepass's.
+//!
 //! # Memory
 //!
 //! Frames record without the general-purpose allocator. Each frame parity keeps its own culling
@@ -95,7 +102,7 @@ use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
 use crate::output::{Antialias, SceneColor};
-use crate::pipelines::{PassTargets, PipelineCache};
+use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
 use crate::shadows::{self, MAX_CASCADES, ShadowFrame, ShadowUniform};
 use crate::skinning::skinned_in_vertex_shader;
@@ -106,7 +113,7 @@ use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices};
 use layout::{Clusters, Drawn, Layout, RESIDENT, STREAMED};
 use lights::LightTextures;
-use opaque::{OFFSETS_BYTES, Opaque, ViewUpload};
+use opaque::{OFFSETS_BYTES, Opaque, Shading, ViewUpload};
 use skin::Skins;
 use transparent::Transparent;
 
@@ -223,6 +230,9 @@ pub struct CpuCulledConfig {
     pub cell_culling: bool,
     /// The most point and spot lights that the camera's light grid lists.
     pub light_limits: LightLimits,
+    /// True to draw each camera view's opaque objects' depth in a depth prepass, before the opaque
+    /// pass shades them.
+    pub depth_prepass: bool,
 }
 
 impl Default for CpuCulledConfig {
@@ -235,6 +245,7 @@ impl Default for CpuCulledConfig {
             multi_draw: false,
             cell_culling: true,
             light_limits: LightLimits::default(),
+            depth_prepass: false,
         }
     }
 }
@@ -353,6 +364,7 @@ impl CpuCulledRenderer {
                     },
                 );
                 graph.bind_shadow_map();
+                graph.set_depth_prepass(config.depth_prepass);
                 graph
             },
             layout: Layout::new(Drawn::Scene),
@@ -465,7 +477,8 @@ impl CpuCulledRenderer {
     /// the clusters, the culling runs and every view's output, and the upload arenas. With
     /// `shadows`, the casters' layout holds the casters, and the receivers read the shadow map.
     fn rebuild_layout(&mut self, input: &FrameInput<'_>, shadows: bool) -> Result<(), RecordError> {
-        self.settings.update_map_groups();
+        self.settings
+            .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
         let rows = input.scene.capacity().saturating_add(1);
         self.skins
             .rebuild(input.scene, input.animations, self.settings.meshes())
@@ -475,16 +488,25 @@ impl CpuCulledRenderer {
         let limit = FrameBuilder::max_sources(self);
         let multi_draw = self.config.multi_draw;
         let targets = self.with_draw_index(self.graph.scene_targets());
+        let prepass = Prepass::OwnVertexShader.if_on(self.graph.depth_prepass());
         let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
         self.layout.rebuild(
-            settings, pipelines, skins, targets, input, limit, multi_draw, shadows,
+            settings, pipelines, skins, targets, input, limit, multi_draw, shadows, prepass,
         )?;
         // The casters' layout holds buckets only while the light casts shadows.
         if shadows {
             let targets = self.with_draw_index(shadows::TARGETS);
             let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
             self.casters.rebuild(
-                settings, pipelines, skins, targets, input, limit, multi_draw, shadows,
+                settings,
+                pipelines,
+                skins,
+                targets,
+                input,
+                limit,
+                multi_draw,
+                shadows,
+                Prepass::Off,
             )?;
         } else {
             self.casters.clear();
@@ -1003,16 +1025,22 @@ impl CpuCulledRenderer {
                         background.record(list, group, &[slot, slot])?;
                     }
                     let starts = culling.culled(frame, view).bucket_starts();
-                    opaque.record(list, arena, view, starts, layout, meshes, light_slot)
+                    let shading = Shading::Lit { light_slot };
+                    opaque.record(list, arena, view, starts, layout, meshes, shading)
+                }
+                Role::Prepass(view) if culling.frame(view).is_some() => {
+                    let starts = culling.culled(frame, view).bucket_starts();
+                    let shading = Shading::Prepass { light_slot };
+                    opaque.record(list, arena, view, starts, layout, meshes, shading)
                 }
                 Role::Shadow(view) if cascade_culling.frame(view).is_some() => {
                     let starts = cascade_culling.culled(frame, view).bucket_starts();
-                    // A cascade's view has a single frame group, which binds no light textures.
-                    cascade_draws.record(list, arena, view, starts, casters, meshes, 0)
+                    let shading = Shading::Depth;
+                    cascade_draws.record(list, arena, view, starts, casters, meshes, shading)
                 }
                 Role::Shadow(view) if tile_culling.frame(view).is_some() => {
                     let starts = tile_culling.culled(frame, view).bucket_starts();
-                    tile_draws.record(list, arena, view, starts, casters, meshes, 0)
+                    tile_draws.record(list, arena, view, starts, casters, meshes, Shading::Depth)
                 }
                 Role::Transparent(view) if culling.frame(view).is_some() => {
                     let at = opaque.sorted_records_at(view, layout);
