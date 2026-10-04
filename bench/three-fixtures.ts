@@ -7,11 +7,16 @@
 //   enclose no area, a triangle that repeats a vertex, and a vertex that no triangle uses.
 // - three_geometry.rs: the arrays that each geometry class builds, with its defaults and with
 //   arguments that reach its special cases, as counts and digests of their bits.
-// - three_animation.rs (in the core's tests): a small skeleton, clips with linear and step tracks
-//   on grids of 30 and 24 keys per second and at uneven times, and the local pose and skinning
-//   matrices that three.js's AnimationMixer and Skeleton give for single clips and blends. Scripts
-//   of plays, fades, masked layers and additive clips give the poses after chosen steps.
-import { mkdirSync, writeFileSync } from 'node:fs';
+// - three_animation.rs (in the core's tests): a small skeleton, clips with linear, step and glTF
+//   cubic spline tracks on grids of 30, 24 and 2 keys per second and at uneven times, and the
+//   local pose and skinning matrices that three.js's AnimationMixer and Skeleton give for single
+//   clips and blends. Scripts of plays, fades, masked layers and additive clips give the poses
+//   after chosen steps.
+// - tests/pages/lib/gltf-poses.json: the skinning matrices and moved meshes' world matrices that
+//   three.js's GLTFLoader and AnimationMixer give for the clips of glTF sample models at chosen
+//   times (tests/pages/lib/gltf-poses.ts), which the poses page compares with. It reads the sample
+//   content, so run `bun run samples:fetch` first.
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
 	AnimationClip,
@@ -30,7 +35,8 @@ import {
 	InterpolateLinear,
 	type KeyframeTrack,
 	LoopOnce,
-	type Matrix4,
+	Matrix4,
+	type Object3D,
 	PlaneGeometry,
 	Quaternion,
 	QuaternionKeyframeTrack,
@@ -42,6 +48,15 @@ import {
 	Vector3,
 	VectorKeyframeTrack,
 } from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import {
+	POSE_MODELS,
+	type PoseCase,
+	type PoseFixture,
+	poseTime,
+	SAMPLES_PREFIX,
+} from '../tests/pages/lib/gltf-poses';
+import { repositoryRoot, samplesDir } from '../tools/lib/samples';
 
 const FIXTURES = join(import.meta.dirname, '../crates/null3d-render/tests/fixtures');
 const CORE_FIXTURES = join(import.meta.dirname, '../crates/null3d-core/tests/fixtures');
@@ -295,8 +310,9 @@ function axisAngle(x: number, y: number, z: number, angle: number): number[] {
 interface Track {
 	joint: number;
 	channel: 'translation' | 'rotation' | 'scale';
-	step: boolean;
+	interpolation: 'linear' | 'step' | 'cubic';
 	times: number[];
+	/** One value per key, or for a cubic track an in-tangent, a value and an out-tangent. */
 	values: number[];
 }
 
@@ -311,9 +327,36 @@ function track(
 	return {
 		joint,
 		channel,
-		step,
+		interpolation: step ? 'step' : 'linear',
 		times: times.map(Math.fround),
 		values: times.flatMap((t) => value(Math.fround(t)).map(Math.fround)),
+	};
+}
+
+/**
+ * A cubic spline track of `channel` on `joint` through `value` at each of `times`, with the
+ * function's slope as both tangents of each key, as glTF stores them: per second.
+ */
+function cubicTrack(
+	joint: number,
+	channel: Track['channel'],
+	times: number[],
+	value: (t: number) => number[],
+): Track {
+	const h = 1e-4;
+	const slope = (t: number) => {
+		const [a, b] = [value(t - h), value(t + h)];
+		return a.map((v, c) => ((b[c] as number) - v) / (2 * h));
+	};
+	return {
+		joint,
+		channel,
+		interpolation: 'cubic',
+		times: times.map(Math.fround),
+		values: times.flatMap((time) => {
+			const t = Math.fround(time);
+			return [...slope(t), ...value(t), ...slope(t)].map(Math.fround);
+		}),
 	};
 }
 
@@ -378,6 +421,28 @@ const CLIPS: { name: string; tracks: Track[] }[] = [
 			track(2, 'rotation', grid(24, 18), (t) => axisAngle(0, 1, 0, -0.2 + 2 * t * t)),
 		],
 	},
+	{
+		name: 'cubic',
+		tracks: [
+			cubicTrack(0, 'translation', [0, 0.7, 1.9, 2.5], (t) => [
+				0.3 * Math.sin(2 * t),
+				1 + 0.2 * t,
+				0.4 * Math.cos(t),
+			]),
+			cubicTrack(1, 'rotation', [0, 0.7, 1.9, 2.5], (t) =>
+				axisAngle(1, 0, 0, 0.1 + 0.6 * Math.sin(1.5 * t)),
+			),
+			cubicTrack(5, 'scale', [0, 0.7, 1.9, 2.5], (t) => [1 + 0.2 * t, 1.2, 1 - 0.1 * t * t]),
+		],
+	},
+	{
+		name: 'cubic grid',
+		tracks: [
+			cubicTrack(0, 'translation', grid(2, 4), (t) => [0.5 * t * t, 1, -0.2 * t]),
+			cubicTrack(4, 'rotation', grid(2, 4), (t) => axisAngle(0, 0, 1, 1.2 + 1.5 * Math.sin(t))),
+			track(2, 'rotation', grid(2, 4), (t) => axisAngle(0, 1, 0, 0.3 * t)),
+		],
+	},
 ];
 
 /** The uneven clip's frame times once resampled at 30 keys per second: 42 intervals over 1.37 s. */
@@ -402,6 +467,12 @@ const CASES: { name: string; samples: [clip: number, time: number, weight: numbe
 	{ name: 'uneven at its end', samples: [[1, 1.37, 1]] },
 	{ name: 'grid24 at 0.3', samples: [[2, 0.3, 1]] },
 	{ name: 'grid24 at 0.61', samples: [[2, 0.61, 1]] },
+	{ name: 'cubic at 0', samples: [[3, 0, 1]] },
+	{ name: 'cubic at 0.4', samples: [[3, 0.4, 1]] },
+	{ name: 'cubic at its key at 1.9', samples: [[3, 1.9, 1]] },
+	{ name: 'cubic at 2.2', samples: [[3, 2.2, 1]] },
+	{ name: 'cubic grid at 0.5', samples: [[4, 0.5, 1]] },
+	{ name: 'cubic grid at 1.3', samples: [[4, 1.3, 1]] },
 	{
 		name: 'grid30 and grid24, weights 0.6 and 0.4',
 		samples: [
@@ -463,13 +534,71 @@ function buildBones(): { group: Group; bones: Bone[] } {
 	return { group, bones };
 }
 
+/** A track's factory of interpolants, which three.js's types leave out. */
+type InterpolantFactory = (result?: ArrayLike<number>) => unknown;
+/** A track with its factory of interpolants in view. */
+type WithFactory = { createInterpolant: InterpolantFactory };
+
+/**
+ * The factory that three.js's GLTFLoader gives a cubic spline track. Its interpolant is private to
+ * the loader, so the loader parses a small file with such a track to hand it over.
+ */
+async function cubicFactory(): Promise<InterpolantFactory> {
+	const bin = new Float32Array([0, 1, ...Array.from({ length: 18 }, (_, k) => k / 10)]);
+	const json = {
+		asset: { version: '2.0' },
+		scenes: [{ nodes: [0] }],
+		nodes: [{ name: 'n' }],
+		buffers: [{ byteLength: bin.byteLength }],
+		bufferViews: [
+			{ buffer: 0, byteLength: 8 },
+			{ buffer: 0, byteOffset: 8, byteLength: 72 },
+		],
+		accessors: [
+			{ bufferView: 0, componentType: 5126, count: 2, type: 'SCALAR', min: [0], max: [1] },
+			{ bufferView: 1, componentType: 5126, count: 6, type: 'VEC3' },
+		],
+		animations: [
+			{
+				channels: [{ sampler: 0, target: { node: 0, path: 'translation' } }],
+				samplers: [{ input: 0, output: 1, interpolation: 'CUBICSPLINE' }],
+			},
+		],
+	};
+	const source = JSON.stringify(json);
+	const text = new TextEncoder().encode(source.padEnd(Math.ceil(source.length / 4) * 4));
+	const glb = new Uint8Array(28 + text.length + bin.byteLength);
+	const view = new DataView(glb.buffer);
+	for (const [at, word] of [
+		[0, 0x46546c67],
+		[4, 2],
+		[8, glb.length],
+		[12, text.length],
+		[16, 0x4e4f534a],
+		[20 + text.length, bin.byteLength],
+		[24 + text.length, 0x004e4942],
+	] as const)
+		view.setUint32(at, word, true);
+	glb.set(text, 20);
+	glb.set(new Uint8Array(bin.buffer), 28 + text.length);
+	const gltf = await new GLTFLoader().parseAsync(glb.buffer, '');
+	const track = gltf.animations[0]?.tracks[0];
+	if (!track) throw new Error("three.js's GLTFLoader made no track of the cubic spline file");
+	return (track as unknown as WithFactory).createInterpolant;
+}
+
+const CUBIC = await cubicFactory();
+
 function threeClip(clip: (typeof CLIPS)[number]): AnimationClip {
 	const tracks: KeyframeTrack[] = clip.tracks.map((t) => {
 		const name = `joint${t.joint}.${t.channel === 'translation' ? 'position' : t.channel === 'rotation' ? 'quaternion' : 'scale'}`;
-		const interpolation = t.step ? InterpolateDiscrete : InterpolateLinear;
-		return t.channel === 'rotation'
-			? new QuaternionKeyframeTrack(name, t.times, t.values, interpolation)
-			: new VectorKeyframeTrack(name, t.times, t.values, interpolation);
+		const interpolation = t.interpolation === 'step' ? InterpolateDiscrete : InterpolateLinear;
+		const made =
+			t.channel === 'rotation'
+				? new QuaternionKeyframeTrack(name, t.times, t.values, interpolation)
+				: new VectorKeyframeTrack(name, t.times, t.values, interpolation);
+		if (t.interpolation === 'cubic') (made as unknown as WithFactory).createInterpolant = CUBIC;
+		return made;
 	});
 	return new AnimationClip(clip.name, -1, tracks);
 }
@@ -497,11 +626,12 @@ function animationFixture(): string {
 		10,
 	)};\n`;
 	out += `/// The inverse bind matrix of each joint, row-major 3 × 4.\n#[rustfmt::skip]\npub const INVERSE_BIND: [f32; ${JOINTS.length * 12}] = ${floats(binds.map(Math.fround), 12)};\n\n`;
-	out += `/// A track as a file holds it. Channel 0 is translation, 1 rotation, 2 scale.
+	out += `/// A track as a file holds it. Channel 0 is translation, 1 rotation, 2 scale. Interpolation 0 is
+/// linear, 1 step and 2 cubic spline, whose keys hold an in-tangent, a value and an out-tangent.
 pub struct Track {
     pub joint: u32,
     pub channel: u32,
-    pub step: bool,
+    pub interpolation: u32,
     pub times: &'static [f32],
     pub values: &'static [f32],
 }
@@ -519,8 +649,9 @@ pub const CLIPS: [Clip; ${CLIPS.length}] = [\n`;
 		out += `    Clip {\n        name: "${clip.name}",\n        duration: ${float(clips[c]?.duration ?? 0)},\n        tracks: &[\n`;
 		for (const t of clip.tracks) {
 			const channel = ['translation', 'rotation', 'scale'].indexOf(t.channel);
-			out += `            Track {\n                joint: ${t.joint},\n                channel: ${channel},\n                step: ${t.step},\n`;
-			const perKey = t.channel === 'rotation' ? 4 : 3;
+			const interpolation = ['linear', 'step', 'cubic'].indexOf(t.interpolation);
+			out += `            Track {\n                joint: ${t.joint},\n                channel: ${channel},\n                interpolation: ${interpolation},\n`;
+			const perKey = (t.channel === 'rotation' ? 4 : 3) * (t.interpolation === 'cubic' ? 3 : 1);
 			out += `                times: &${floats(t.times, 8, nested)},\n`;
 			out += `                values: &${floats(t.values, 2 * perKey, nested)},\n            },\n`;
 		}
@@ -775,6 +906,138 @@ pub static SCRIPTS: [Script; ${SCRIPTS.length}] = [\n`;
 	return `${out}];\n`;
 }
 
+/** A glTF file with its images, textures and samplers left out, which three.js cannot load in Bun. */
+function withoutImages(bytes: Uint8Array, binary: boolean): ArrayBuffer | string {
+	const strip = (json: Record<string, unknown>) => {
+		json.images = undefined;
+		json.textures = undefined;
+		json.samplers = undefined;
+		for (const material of (json.materials ?? []) as Record<string, unknown>[]) {
+			const pbr = (material.pbrMetallicRoughness ?? {}) as Record<string, unknown>;
+			pbr.baseColorTexture = undefined;
+			pbr.metallicRoughnessTexture = undefined;
+			material.normalTexture = undefined;
+			material.occlusionTexture = undefined;
+			material.emissiveTexture = undefined;
+		}
+		return JSON.stringify(json);
+	};
+	if (!binary) return strip(JSON.parse(new TextDecoder().decode(bytes)));
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	const jsonLength = view.getUint32(12, true);
+	const json = JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + jsonLength)));
+	const text = new TextEncoder().encode(strip(json));
+	const padded = Math.ceil(text.length / 4) * 4;
+	const rest = bytes.subarray(20 + jsonLength);
+	const out = new Uint8Array(20 + padded + rest.length);
+	out.set(bytes.subarray(0, 12));
+	const outView = new DataView(out.buffer);
+	outView.setUint32(8, out.length, true);
+	outView.setUint32(12, padded, true);
+	outView.setUint32(16, 0x4e4f534a, true);
+	out.fill(0x20, 20, 20 + padded);
+	out.set(text, 20);
+	out.set(rest, 20 + padded);
+	return out.buffer;
+}
+
+/**
+ * A column-major 4 × 4 matrix's first three rows, by rows, to 7 significant digits: finer than the
+ * comparison needs, and a small file.
+ */
+function rows32(m: Matrix4): number[] {
+	return rows(m.elements).map((v) => Number(v.toPrecision(7)));
+}
+
+/**
+ * What three.js's GLTFLoader and AnimationMixer give for the pose cases of `gltf-poses.ts`: each
+ * skin's skinning matrices, and the world matrix of each mesh without a skin that a clip moves.
+ */
+async function gltfPosesFixture(): Promise<string> {
+	// three.js's file loader, which reads a .gltf file's data: buffers, reports progress with the
+	// browser's ProgressEvent, which Bun lacks.
+	const scope = globalThis as { ProgressEvent?: unknown };
+	scope.ProgressEvent ??= class extends Event {
+		constructor(type: string, init: Record<string, unknown> = {}) {
+			super(type);
+			Object.assign(this, init);
+		}
+	};
+	const root = repositoryRoot();
+	const fixture: PoseFixture = { revision: REVISION, models: [] };
+	for (const model of POSE_MODELS) {
+		const path = join(samplesDir(root), model.url.slice(SAMPLES_PREFIX.length));
+		const source = withoutImages(new Uint8Array(readFileSync(path)), path.endsWith('.glb'));
+		const gltf = await new GLTFLoader().parseAsync(source, '');
+		const { parser, scene, animations } = gltf;
+		const json = parser.json as {
+			nodes: { mesh?: number; skin?: number; children?: number[]; name?: string }[];
+			skins?: { joints: number[]; inverseBindMatrices?: number }[];
+			animations?: { channels: { target: { node?: number; path: string } }[] }[];
+		};
+		const node = (k: number) => parser.getDependency('node', k) as Promise<Object3D>;
+		const skins = await Promise.all(
+			(json.skins ?? []).map(async (skin) => {
+				const joints = await Promise.all(skin.joints.map(node));
+				const binds =
+					skin.inverseBindMatrices === undefined
+						? null
+						: (
+								(await parser.getDependency('accessor', skin.inverseBindMatrices)) as {
+									array: Float32Array;
+								}
+							).array;
+				const inverses = joints.map((_, j) =>
+					binds ? new Matrix4().fromArray(binds, j * 16) : new Matrix4(),
+				);
+				return { joints, inverses };
+			}),
+		);
+		// The meshes without a skin that move: on a node that a clip moves or a skin names, or below one.
+		const moving = new Set<number>();
+		for (const skin of json.skins ?? []) for (const j of skin.joints) moving.add(j);
+		for (const animation of json.animations ?? [])
+			for (const channel of animation.channels)
+				if (channel.target.node !== undefined && channel.target.path !== 'weights')
+					moving.add(channel.target.node);
+		const below = (k: number): number[] => [k, ...(json.nodes[k]?.children ?? []).flatMap(below)];
+		for (const k of [...moving]) for (const b of below(k)) moving.add(b);
+		const moved = await Promise.all(
+			[...moving]
+				.filter((k) => json.nodes[k]?.mesh !== undefined && json.nodes[k]?.skin === undefined)
+				.map(async (k) => [json.nodes[k]?.name ?? '', await node(k)] as const),
+		);
+		const cases: PoseCase[] = [];
+		const mixer = new AnimationMixer(scene);
+		for (const [name, shares] of Object.entries(model.clips)) {
+			const clip = animations.find((a) => a.name === name);
+			if (!clip) throw new Error(`${model.url} has no clip named ${name}`);
+			for (const share of shares) {
+				const time = poseTime(share, clip.duration);
+				mixer.stopAllAction();
+				const action = mixer.clipAction(clip);
+				action.reset().play();
+				action.time = time;
+				mixer.update(0);
+				scene.updateMatrixWorld(true);
+				const product = new Matrix4();
+				cases.push({
+					clip: name,
+					time,
+					skins: skins.map((skin) =>
+						skin.joints.flatMap((joint, j) =>
+							rows32(product.multiplyMatrices(joint.matrixWorld, skin.inverses[j] as Matrix4)),
+						),
+					),
+					moved: Object.fromEntries(moved.map(([n, object]) => [n, rows32(object.matrixWorld)])),
+				});
+			}
+		}
+		fixture.models.push({ url: model.url, cases });
+	}
+	return `${JSON.stringify(fixture)}\n`;
+}
+
 mkdirSync(FIXTURES, { recursive: true });
 mkdirSync(CORE_FIXTURES, { recursive: true });
 for (const [folder, file, text] of [
@@ -789,3 +1052,6 @@ for (const [folder, file, text] of [
 	if (formatted.exitCode !== 0) throw new Error(`rustfmt failed: ${formatted.stderr.toString()}`);
 	console.log(`wrote ${dirname(path)}/${file}`);
 }
+const poses = join(import.meta.dirname, '../tests/pages/lib/gltf-poses.json');
+writeFileSync(poses, await gltfPosesFixture());
+console.log(`wrote ${poses}`);

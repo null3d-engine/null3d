@@ -2,9 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+	armBuilder,
 	boxPrimitive,
 	GltfBuilder,
 	type GltfJson,
+	morphBuilder,
 	shipBuilder,
 } from '../../../../tests/pages/lib/gltf-files';
 import {
@@ -506,5 +508,204 @@ describe('materials, textures and lights', () => {
 		const b = new GltfBuilder();
 		b.node({ mesh: b.mesh([boxPrimitive(b)]) });
 		expect(parse(b.glb()).meshes[0]?.primitives[0]?.material).toBe(-1);
+	});
+});
+
+describe('skins and clips', () => {
+	test('one skeleton holds the skin joints, the nodes clips move, what is below and above them', () => {
+		const data = parse(armBuilder().glb());
+		const animation = data.animation;
+		expect(animation?.joints.map((j) => [j.name, j.parent, j.bone === true])).toEqual([
+			['Arm', -1, false],
+			['Shoulder', 0, true],
+			['Elbow', 1, true],
+			['Hand', 2, true],
+			['Sword', 3, false],
+		]);
+		// Each skin joint carries its inverse bind matrix by rows; the others have none.
+		expect(Array.from(animation?.joints[2]?.inverseBind ?? []).map((v) => v + 0)).toEqual([
+			1, 0, 0, 0, 0, 1, 0, -2, 0, 0, 1, -1,
+		]);
+		expect(Array.from(animation?.joints[1]?.inverseBind ?? []).map((v) => v + 0)).toEqual([
+			1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 1, -1,
+		]);
+		expect(Array.from(animation?.joints[4]?.inverseBind ?? [])).toEqual([
+			1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0,
+		]);
+		const byName = new Map(data.nodes.map((n) => [n.name, n]));
+		// Joints are no objects; a node below one goes under the copy's group, where it rests.
+		expect(data.nodes.filter((n) => (n.joint ?? -1) < 0).map((n) => n.name)).toEqual([
+			'Sleeve',
+			'Rock',
+		]);
+		expect(byName.get('Rock')?.parent).toBe(-1);
+		expect([...(byName.get('Rock')?.transform ?? [])]).toEqual([2, 0, 1, 0, 0, 0, 1, 1, 1, 1]);
+		expect(byName.get('Sword')?.moving).toBe(true);
+		expect(byName.get('Rock')?.moving).toBe(false);
+	});
+
+	test('skinned meshes name the skeleton joints, and a mesh on a moving node gets its own', () => {
+		const data = parse(armBuilder().glb());
+		const byName = new Map(data.nodes.map((n) => [n.name, n]));
+		const sleeve = byName.get('Sleeve');
+		expect(sleeve?.skinned).toBe(true);
+		const skinned = data.meshes[sleeve?.mesh ?? -1]?.primitives[0];
+		const joints = [...(skinned?.joints?.array ?? [])];
+		// The skin's joint 0 is Elbow, joint 2 of the skeleton, and its joint 1 is Shoulder, joint 1.
+		expect(new Set(joints.filter((_, i) => i % 4 === 0))).toEqual(new Set([2, 1]));
+		expect(joints.filter((_, i) => i % 4 === 1 && skinned?.weights?.array[i] !== 0)).toEqual(
+			new Array(12).fill(1),
+		);
+		const sword = byName.get('Sword');
+		expect(sword?.skinned).toBe(true);
+		const rigid = data.meshes[sword?.mesh ?? -1]?.primitives[0];
+		expect(rigid?.joints?.array.slice(0, 8)).toEqual(new Uint8Array([4, 0, 0, 0, 4, 0, 0, 0]));
+		expect(rigid?.weights).toEqual({
+			array: expect.any(Uint8Array) as unknown as Uint8Array,
+			normalized: true,
+		});
+		expect(rigid?.weights?.array.slice(0, 4)).toEqual(new Uint8Array([255, 0, 0, 0]));
+		// The rock keeps the file's mesh: nothing moves it.
+		expect(byName.get('Rock')?.mesh).toBe(0);
+	});
+
+	test('clips keep their keys, with joints in place of nodes and three.js names', () => {
+		const clips = parse(armBuilder().glb()).animation?.clips ?? [];
+		expect(clips.map((c) => c.name)).toEqual(['Wave', 'animation_1']);
+		const [bend, step] = clips[0]?.tracks ?? [];
+		expect([bend?.joint, bend?.channel, bend?.interpolation, bend?.values.length]).toEqual([
+			2,
+			'rotation',
+			'cubic',
+			24,
+		]);
+		expect([
+			step?.joint,
+			step?.channel,
+			step?.interpolation,
+			Array.from(step?.times ?? []),
+		]).toEqual([1, 'translation', 'step', [0, 0.5]]);
+		expect(clips[1]?.tracks.map((t) => [t.joint, t.channel, t.interpolation])).toEqual([
+			[3, 'scale', 'linear'],
+		]);
+	});
+
+	test('two clips of one name both stay, the second with a number', () => {
+		const b = armBuilder();
+		b.json.animations[1].name = 'Wave';
+		expect(parse(b.glb()).animation?.clips.map((c) => c.name)).toEqual(['Wave', 'Wave 2']);
+	});
+
+	test('a joint that two skins bind differently gets a joint at rest under it for the second', () => {
+		const b = armBuilder();
+		// Elbow at a new bind place, and Shoulder where the first skin binds it.
+		const second = b.accessor(
+			new Float32Array([
+				...[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -3, 0, 1],
+				...[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -1, -1, 1],
+			]),
+			16,
+			{ type: 'MAT4', count: 2 },
+		);
+		b.json.skins.push({ joints: [2, 3], inverseBindMatrices: second });
+		b.node({ name: 'Glove', mesh: b.json.nodes[6].mesh, skin: 1 });
+		const data = parse(b.glb());
+		const joints = data.animation?.joints ?? [];
+		expect(joints).toHaveLength(6);
+		expect([joints[5]?.name, joints[5]?.parent, Array.from(joints[5]?.inverseBind ?? [])]).toEqual([
+			'Elbow',
+			2,
+			[1, 0, 0, 0, 0, 1, 0, -3, 0, 0, 1, 0],
+		]);
+		const glove = data.nodes.find((n) => n.name === 'Glove');
+		const array = [...(data.meshes[glove?.mesh ?? -1]?.primitives[0]?.joints?.array ?? [])];
+		expect(new Set(array.filter((_, i) => i % 4 === 0))).toEqual(new Set([5, 1]));
+	});
+
+	test('a file without skins or clips has no animation data', () => {
+		expect(parse(shipBuilder().glb()).animation).toBeUndefined();
+	});
+
+	test('broken skins and clips are refused with E1416', () => {
+		const broken = (change: (b: GltfBuilder) => void) => {
+			const b = armBuilder();
+			change(b);
+			return refusal(b.glb());
+		};
+		expect(
+			broken((b) => {
+				b.json.animations[0].samplers[0].interpolation = 'BEZIER';
+			})[1],
+		).toContain('the interpolation BEZIER');
+		expect(
+			broken((b) => {
+				b.json.animations[0].samplers[1].interpolation = 'CUBICSPLINE';
+			})[1],
+		).toContain('has 6 values for 2 keys of 9');
+		expect(
+			broken((b) => {
+				b.json.animations[0].channels[1] = b.json.animations[0].channels[0];
+			})[1],
+		).toContain('twice');
+		expect(
+			broken((b) => {
+				b.json.animations[0].channels[0].target.path = 'color';
+			})[1],
+		).toContain('the path color');
+		expect(
+			broken((b) => {
+				b.json.skins[0].joints = [2, 2];
+			})[1],
+		).toContain('names a node twice');
+		expect(
+			broken((b) => {
+				b.json.skins[0].joints = [2, 99];
+			})[1],
+		).toContain("skin 0's joint is 99");
+		expect(
+			broken((b) => {
+				b.json.skins[0].joints = [2];
+			})[1],
+		).toContain('names joint 1, and the skin has 1');
+		// Key times that fall back.
+		expect(
+			broken((b) => {
+				const times = b.accessor(new Float32Array([1, 0]), 1);
+				b.json.animations[1].samplers[0].input = times;
+			})[1],
+		).toContain('never fall back');
+		expect(
+			broken((b) => {
+				b.json.nodes[6].skin = 3;
+			})[1],
+		).toContain("node 6's skin is 3");
+	});
+});
+
+describe('morph targets', () => {
+	test('primitives keep their deltas, and meshes their weights and target names', () => {
+		const data = parse(morphBuilder().glb());
+		const mesh = data.meshes[0];
+		expect(mesh?.weights).toEqual([0.25, 0.5]);
+		expect(mesh?.targetNames).toEqual(['Up', 'Out']);
+		const morph = mesh?.primitives[0]?.morph;
+		expect(morph?.positions).toHaveLength(2);
+		expect(morph?.positions?.[0]?.length).toBe(72);
+		expect(morph?.normals).toBeUndefined();
+		// The weights clip names no joint, so the model has no skeleton.
+		expect(data.animation?.joints).toEqual([]);
+		const [pulse] = data.animation?.clips ?? [];
+		expect(pulse?.weights.map((w) => [w.node, w.interpolation, [...w.values]])).toEqual([
+			[0, 'linear', [0, 0, 1, 1]],
+		]);
+	});
+
+	test('broken morph targets are refused with E1416', () => {
+		const b = morphBuilder();
+		b.json.meshes[0].weights = [1];
+		expect(refusal(b.glb())[1]).toContain('1 weights for 2 morph targets');
+		const c = morphBuilder();
+		c.json.animations[0].samplers[0].output = c.accessor(new Float32Array([0, 1, 1]), 1);
+		expect(refusal(c.glb())[1]).toContain('3 values for 2 keys of 2');
 	});
 });

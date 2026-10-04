@@ -41,6 +41,7 @@ export interface CoreGlue extends CoreErrors {
 		cellCulling: boolean,
 		depthPrepass: boolean,
 		vertexSkinning: boolean,
+		largeWorld: boolean,
 	): number;
 	jobWorkerLoop(index: number): void;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
@@ -167,6 +168,8 @@ export interface CoreGlue extends CoreErrors {
 	/** Sets the width of a line batch's segments, which updates every segment again. */
 	setLineWidth(batch: number, width: number): number;
 	destroyBatch(batch: number, frame: number): number;
+	/** Places a batch's origin, which its rows are relative to, and marks every row for update. */
+	setBatchOrigin(batch: number, x: number, y: number, z: number): number;
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
 	/** Sets the layer mask of every row of a batch, as an unsigned 32-bit number. */
@@ -429,12 +432,28 @@ export interface CoreGlue extends CoreErrors {
 	 * at `rate` keys per second.
 	 */
 	createClip(skeleton: number, tracks: number, rate: number): number;
+	/**
+	 * Starts resampling a clip of the staging words, as `createClip` reads them, on a job worker
+	 * between frames. Returns a ticket for `clipReady`, plus one, or 0 on failure.
+	 */
+	createClipLater(skeleton: number, tracks: number, rate: number): number;
+	/**
+	 * The clip of a `createClipLater` ticket: its id plus one once it is resampled,
+	 * `ANIMATION_CLIP_PENDING` before that, or 0 on failure. Without job workers it resamples the
+	 * clip itself.
+	 */
+	clipReady(ticket: number): number;
 	/** Adds an animated instance of a skeleton. */
 	createAnimatedInstance(skeleton: number): number;
 	/** Removes an animated instance; later instances take its id and joints. */
 	removeAnimatedInstance(instance: number): number;
 	/** The address of an animation table array (`ANIMATION_FIELD_*`). */
 	animationArrays(field: number): number;
+	/**
+	 * The first joint of an animated instance in the skinning matrices, plus one, or 0 when no live
+	 * instance has the id.
+	 */
+	animatedInstanceJoints(instance: number): number;
 	/**
 	 * Plays a clip on an instance's layer, fading over `fade` seconds at `speed`, with
 	 * `ANIMATION_PLAY_*` flags.
@@ -557,6 +576,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'animationStaging',
 	'createSkeleton',
 	'createClip',
+	'createClipLater',
+	'clipReady',
+	'animatedInstanceJoints',
 	'createAnimatedInstance',
 	'removeAnimatedInstance',
 	'animationArrays',

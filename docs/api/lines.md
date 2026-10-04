@@ -99,6 +99,7 @@ export default defineSketch(async ({ scene, time }) => {
 | `depthBias` | None | Moves the lines' depth, as for any [material](materials.md) |
 | `dynamic` | `false` | `true` updates and uploads every segment in use, in every frame. A static batch updates only the segments of the points that you mark |
 | `layers` | `1`, layer 0 | The [layers](../concepts/render-layers.md) of every segment, as a 32-bit mask |
+| `origin` | `[0, 0, 0]` | The point that every point's position is relative to, kept at full precision: [Batch origins](../concepts/large-worlds.md#batch-origins) |
 
 A strip or a loop needs at least 2 points, and `segments` an even number of points. Positions whose length is not a multiple of 3, or `colors` of another length than `positions`, throw [E1206](../errors/E1206.md). An unknown mode throws [E1217](../errors/E1217.md). A width that is not above 0, or a negative dash or gap, throws [E1108](../errors/E1108.md), and a number that is not finite throws [E1203](../errors/E1203.md).
 
@@ -108,7 +109,7 @@ The call `lines.material.set` changes the look of every segment at any time. It 
 
 | Array | Values per point | What each point holds | A new point holds |
 | --- | --- | --- | --- |
-| `positions` | 3 | Its position in the world (x, y, z) | The value from `positions` |
+| `positions` | 3 | Its position in the world (x, y, z), relative to the batch's `origin` | The value from `positions` |
 | `colors` | 3 | A linear color (r, g, b) | The value from `colors`, or 1, 1, 1 |
 
 Point `i` starts at index `i * 3` in both arrays. Both are `Float32Array` views of engine memory, and the rules of [instance batches](../concepts/instances.md#the-row-arrays) apply. Read the arrays from the batch each time you use them, such as at the start of `onUpdate`. A view from before the engine's memory grew can be empty.
@@ -225,6 +226,7 @@ Options of `scene.createLines`. The look of the lines takes the options of an un
 | `lit?: boolean` | Lights the lines as a standard material lights a surface that faces the camera: the sun, the point and spot lights and the ambient light shade them. False draws the color as it is, as three.js's line materials do. The default is false. |
 | `dynamic?: boolean` | Every point updates and uploads every frame; a static batch updates points marked dirty only. |
 | `layers?: number` | The layers every segment is on, as a 32-bit mask. The default, 1, is layer 0. |
+| `origin?: Vec3` | The point that every point's position is relative to, as an instance batch's `origin`. The default is (0, 0, 0). Lines near it keep the precision of 32-bit floats at any distance from the world's origin. |
 | `alphaMode?: 'opaque' \| 'blend'` | How the lines use their opacity. The default is `opaque`, as three.js's lines are. |
 
 ### `LineValues`

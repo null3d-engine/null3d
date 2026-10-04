@@ -83,5 +83,5 @@ The line code that loads on first use is one file of 0.9 KB after Brotli, which 
 - Code: `crates/null3d-core/src/lines.rs`, the line rows of `instances.rs`, `Shading::Line` and `LineLit` in the renderer, the templates `LINE` and `LINE_LIT`, `wgsl/line.wgsl`, the core calls `createLineBatch` and `setLineWidth`, `scene/lines.ts`, which loads on first use, and `scene.createLines`.
 - Tests: the core's packing and update tests, the render crate's `lines.rs`, `scene/lines.test.ts`, the image tests `lines`, `lines-basic` and `lines-lit`, the parity scenes `lines` and `lines-basic`, and `bun run bench:allocation --lines`.
 - Docs: `api/lines`, the mapping's `lines` entry and the edge and wireframe entries, and both skills.
-- M2-H1's batch origins apply to line batches as to any batch.
+- Line batches take M2-H1's batch origins: each point is relative to the batch's origin, and the update adds the origin to each segment's middle.
 - null3D finds no edges of a mesh for lines yet. The mapping's edge and wireframe entries tell a port to build the edge points itself.

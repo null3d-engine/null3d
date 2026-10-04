@@ -48,7 +48,7 @@ const engine = await createEngine({
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
   transparent: false,    // true for a see-through canvas, with premultiplied alpha
   sketchThread: 'worker',  // or 'main': sketch code on the page's thread, for DOM-heavy apps and debugging
-  largeWorld: false,     // (0.2) planet-scale scenes: cell-relative positions, batch origins
+  largeWorld: false,     // (0.2) true for planet-scale scenes: setters keep positions exact far out
 });
 // createEngine rejects with an EngineError when the browser cannot run the engine (error.code)
 
@@ -108,7 +108,7 @@ export default defineSketch(async (ctx) => {
 | --- | --- | --- |
 | `scene.createGroup({ name, position, rotation, scale, parent, dynamic, layers })` | Group | Empty node for hierarchy |
 | `scene.createMesh({ mesh, material, position, rotation, scale, parent, dynamic, layers, castShadows, receiveShadows, name })` | Mesh | Static unless `dynamic: true` |
-| `scene.createInstances(mesh, count, { material, dynamic, colors, layers })` | InstanceBatch | Section 5 |
+| `scene.createInstances(mesh, count, { material, dynamic, colors, layers, origin })` | InstanceBatch; rows are relative to `origin` (0.2) | Section 5 |
 | `scene.instantiate(prefab, { name, position, rotation, scale, parent, dynamic, layers, castShadows, receiveShadows })` (0.2) | PrefabInstance | A group holding one copy of a loaded glTF model, made with one batch of changes; `instance.find(name)` gives the copy's object of a node |
 | `scene.clone(obj)` (0.2) | same type | Copies the object and every object below it, lights and cameras included, under the same parent |
 | `scene.find(name)` | Object3D or undefined | The first live object with the name; use at setup, not per frame |
@@ -121,8 +121,8 @@ export default defineSketch(async (ctx) => {
 | `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment` |
 | `scene.setBackground(env, { blur, intensity, rotation })` (0.2) | | Blurred environment backgrounds |
 | `scene.setFog({ type: 'linear', color, near, far })`, `{ type: 'exp2', color, density }` or `null` | | three.js's formulas and defaults. The background takes no fog, so give it the fog's color. Materials opt out with `fog: false` |
-| `scene.createSprites({ count, map, atlas, sizeAttenuation, center, dynamic, layers, color, opacity, alphaMode, blending })` (0.2) | Promise<SpriteBatch> | Camera-facing quads in one batch; the first call downloads the sprite code: typed arrays `positions` (3), `sizes` (2), `rotations` (1, radians), `colors` (4, linear), `frames` (1, atlas frame from the top left); `markDirty`, `setActiveCount`, `material.set`, as instance batches. Blends by default; `sizeAttenuation: false` gives sizes in CSS pixels. Docs `api/sprites` |
-| `scene.createLines({ positions, colors, mode, width, worldUnits, dashed, dashSize, gapSize, dashScale, dashOffset, lit, dynamic, layers, color, opacity, alphaMode, blending })` (0.2) | Promise<LineBatch> | Segments between points in one batch, drawn as quads with round ends at any width; the first call downloads the line code. `mode`: `'strip'` (default), `'loop'` or `'segments'` (pairs). `width` in CSS pixels, or world units with `worldUnits`. Typed arrays `positions` (3 per point) and `colors` (3 per point, linear, 8 bits per channel); `markDirty` takes points; `setActiveCount` takes points; `setWidth`; `material.set` takes the dash values and, with `lit`, the standard values. Docs `api/lines` |
+| `scene.createSprites({ count, map, atlas, sizeAttenuation, center, dynamic, layers, origin, color, opacity, alphaMode, blending })` (0.2) | Promise<SpriteBatch> | Camera-facing quads in one batch; the first call downloads the sprite code: typed arrays `positions` (3), `sizes` (2), `rotations` (1, radians), `colors` (4, linear), `frames` (1, atlas frame from the top left); `markDirty`, `setActiveCount`, `material.set`, as instance batches. Blends by default; `sizeAttenuation: false` gives sizes in CSS pixels. Docs `api/sprites` |
+| `scene.createLines({ positions, colors, mode, width, worldUnits, dashed, dashSize, gapSize, dashScale, dashOffset, lit, dynamic, layers, origin, color, opacity, alphaMode, blending })` (0.2) | Promise<LineBatch> | Segments between points in one batch, drawn as quads with round ends at any width; the first call downloads the line code. `mode`: `'strip'` (default), `'loop'` or `'segments'` (pairs). `width` in CSS pixels, or world units with `worldUnits`. Typed arrays `positions` (3 per point) and `colors` (3 per point, linear, 8 bits per channel); `markDirty` takes points; `setActiveCount` takes points; `setWidth`; `material.set` takes the dash values and, with `lit`, the standard values. Docs `api/lines` |
 | `scene.createPoints`, `createLod` (0.2) | | Docs `api/points`, `concepts/lod` |
 | `scene.createView({ camera, rect })` (after 1.0) | View | Split screens; until then, minimaps use a render-to-texture pass (`guides/multiple-views`) |
 | `scene.animateProperty(target, path, keyframes)` (after 1.0) | Animation | Until then, animate values in `onUpdate` |
@@ -351,7 +351,7 @@ const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
 ship.find('Turret');       // (0.2) a node: { name, position, rotation, scale, mesh, material }
 ship.bounds;               // (0.2) { center, radius, min, max } of the whole model
 ship.materials;            // (0.2) the file's materials; set() changes every copy
-ship.animations;           // (0.2) clip names
+ship.clips;                // (0.2) clip names, which a copy's animator plays
 const env = await assets.loadEnvironment('/env/studio.ktx2');  // (0.2) from `bunx @null3d/cli assets env`
 const studio = assets.builtinEnvironment('studio');            // (0.2) neutral lighting, no download
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2)
@@ -364,8 +364,8 @@ Every load runs outside the sketch's frames, so a frame never waits for a downlo
 ## 12. Animation (0.2) (`api/animation`)
 
 ```ts
-const hero = scene.instantiate(await assets.loadGltf('/hero.glb')); // loading animated models: later in 0.2
-const anim = hero.animator();           // throws E1218 on an object without clips
+const hero = scene.instantiate(await assets.loadGltf('/hero.glb')); // skins and clips load with the model
+const anim = hero.animator();           // the copy's group animates; throws E1218 on an object without clips
 anim.clips;                             // the clip names
 anim.play('run', { fade: 0.2, loop: true, speed: 1 });  // loop: false holds the last frame
 anim.crossFade('walk', 0.3);            // = play('walk', { fade: 0.3 }); the layer's other clips fade out
@@ -378,6 +378,8 @@ const off = anim.onEvent('footstep', (e) => page.post('sfx', e.clip));  // also 
 anim.stop('walk', { fade: 0.3 });
 anim.stop();                            // every clip; the object holds its rest pose
 anim.setJointOverride('Head', rotation); // later in 0.2: procedural aiming
+const twin = scene.clone(hero);         // the clone gets an animator of its own
+// Joints are not objects. Meshes under bones (a sword in a hand) follow their joints.
 
 // after 1.0: scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true });
 ```
@@ -518,7 +520,7 @@ debug.axes(objectOrPosition, size);             // an object's axes follow it in
 debug.grid(size, divisions, { center, color, centerColor });  // GridHelper's defaults, 10 and 10
 debug.frustum(camera, color);                   // in the canvas's shape
 debug.light(sun, { position, size, color });    // a directional light's direction
-debug.skeleton(obj);                            // (0.2)
+debug.skeleton(hero, color);                    // (0.2) skin joints: blue at the joint, green at its parent
 
 debug.stats(true);                       // overlay on the canvas: fps, CPU ms per thread and phase, tier, preset, render scale
 const s = debug.frameStats();            // the same figures: s.presentedFps, s.completedFps, s.cpuMs, s.threads, s.drawCalls

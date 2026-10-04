@@ -51,11 +51,13 @@ Each object has a position, a rotation and a scale, all relative to its parent. 
 
 Setters write straight into the engine's memory and mark the object as changed. They send no message and allocate nothing, so `onUpdate` can call them for many objects in every frame. In development builds, a setter that gets `NaN` or an infinite number throws E1203.
 
+Positions are 32-bit floats by default, which move in steps of 6 cm at 1,000 km from the origin. An engine started with `largeWorld: true` keeps each position that you set exact at any distance. [Large worlds and precision](../concepts/large-worlds.md) explains both.
+
 ## Reading transforms
 
 Getters copy into an array you pass, so they allocate nothing. Make the array once, for example with `vec3.create()`, and reuse it.
 
-- `getPosition(out)` copies the position that you set, relative to the parent. `getRotation(out)` copies the rotation, as a quaternion (x, y, z, w).
+- `getPosition(out)` copies the position that you set, relative to the parent. In large-world mode it keeps its full precision, so pass a plain array or a `Float64Array`. `getRotation(out)` copies the rotation, as a quaternion (x, y, z, w).
 - `getWorldPosition(out)` copies the position in the world, and `getWorldQuaternion(out)` the rotation in the world.
 - `getWorldMatrix(out)` copies the world matrix: 16 numbers, column by column, as the [math helpers](math.md) and three.js's `matrixWorld` hold them.
 

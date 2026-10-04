@@ -95,6 +95,7 @@ export default defineSketch(async ({ scene, textures, time }) => {
 | `depthTest` | `true` | `false` draws the sprites in front of everything |
 | `dynamic` | `false` | `true` updates and uploads every sprite in use, in every frame. A static batch updates only the sprites that you mark |
 | `layers` | `1`, layer 0 | The [layers](../concepts/render-layers.md) of every sprite, as a 32-bit mask |
+| `origin` | `[0, 0, 0]` | The point that every sprite's position is relative to, kept at full precision: [Batch origins](../concepts/large-worlds.md#batch-origins) |
 
 An atlas side that is not a whole number from 1 to 2,048 throws [E1108](../errors/E1108.md). A `center` that is not two finite numbers throws [E1203](../errors/E1203.md).
 
@@ -104,7 +105,7 @@ An atlas side that is not a whole number from 1 to 2,048 throws [E1108](../error
 
 | Array | Values per sprite | What each sprite holds | A new sprite holds |
 | --- | --- | --- | --- |
-| `positions` | 3 | Its position in the world (x, y, z) | 0, 0, 0 |
+| `positions` | 3 | Its position in the world (x, y, z), relative to the batch's `origin` | 0, 0, 0 |
 | `sizes` | 2 | Its width and height | 1, 1 |
 | `rotations` | 1 | Its turn on the screen, in radians, counterclockwise | 0 |
 | `colors` | 4 | A linear color (r, g, b, a) | 1, 1, 1, 1 |
@@ -214,6 +215,7 @@ Options of `scene.createSprites`. The look of the sprites takes the options of a
 | `center?: readonly [number, number]` | The point of each sprite that sits at its position, as a fraction of its width and height from its bottom left corner, like three.js's `Sprite.center`. The sprite turns about it. The default, `[0.5, 0.5]`, is the middle; `[0.5, 0]` stands a sprite on its position. |
 | `dynamic?: boolean` | Every sprite updates and uploads every frame; a static batch updates rows marked dirty only. |
 | `layers?: number` | The layers every sprite is on, as a 32-bit mask. The default, 1, is layer 0. |
+| `origin?: Vec3` | The point that every sprite's position is relative to, as an instance batch's `origin`. The default is (0, 0, 0). Sprites near it keep the precision of 32-bit floats at any distance from the world's origin. |
 | `alphaMode?: MaterialFeatures['alphaMode']` | How the sprites use their alpha. The default is `blend`, as three.js's sprites blend. |
 
 ### `SpriteValues`

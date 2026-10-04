@@ -52,6 +52,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `dynamic` | `false` | `true` recomputes and uploads every row in use, in every frame. A static batch updates only the rows that you mark. |
 | `colors` | `false` | `true` adds a `colors` array |
 | `layers` | `1`, layer 0 | The [layers](render-layers.md) of every row, as a 32-bit mask |
+| `origin` | `[0, 0, 0]` | The point that every row's position is relative to, kept at full precision: [Batch origins](large-worlds.md#batch-origins) |
 
 `count` is the batch's capacity, which never changes. All rows draw at first. A new batch computes every row in its first frame, so rows that you write before that frame need no mark.
 
@@ -64,7 +65,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `scales` | 3 | The scale on each axis | 1, 1, 1 |
 | `colors` | 4 | A linear color (r, g, b, a), with `colors: true` only | 1, 1, 1, 1 |
 
-Row `i` starts at index `i * 3` in an array of 3 floats per row, and at `i * 4` in an array of 4. Rows have no parent, so each position is in world space.
+Row `i` starts at index `i * 3` in an array of 3 floats per row, and at `i * 4` in an array of 4. Rows have no parent, so each position is in world space, relative to the batch's `origin`. Far from the world's origin, give the batch an origin near its rows, so their 32-bit positions stay small and precise.
 
 The arrays are `Float32Array` views of engine memory. The engine's memory can grow when the scene grows: new meshes, batches, materials and lights, and textures made or updated from data. In the single-threaded build, growth empties every older view, and a write to an empty view does nothing. So read the arrays from the batch each time you use them, such as at the start of `onUpdate`. Do not keep them from the setup. A read allocates nothing while the memory keeps its size.
 

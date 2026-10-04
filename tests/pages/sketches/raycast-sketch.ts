@@ -6,6 +6,11 @@
 // objects that overlap queries find there, and that a batch of 10,000 rays on the job workers
 // gives each ray's own raycast. On 'results' it posts what it found, once the scene has had two
 // frames. On 'batches' it casts a batch of 10,000 rays in every frame, until 'stop'.
+//
+// ?far moves the whole scene to the Earth's radius: root objects, the batches' origins, the camera
+// and every ray's start. three.js computes in 64-bit numbers, so it finds the same hits there. Each
+// hit point in front of the camera also goes to the screen with worldToScreen and back as a ray
+// with screenToRay, which must pass through the point, as a label placed on it would need.
 import {
 	defineSketch,
 	type InstanceBatch,
@@ -15,6 +20,7 @@ import {
 	type OverlapHit,
 	type RaycastHit,
 	type RaycastOptions,
+	type Vec3Like,
 } from '@null3d/engine';
 import {
 	BoxGeometry,
@@ -45,6 +51,16 @@ import type { RaycastResults } from '../lib/raycast';
 const BATCH_RAYS = 10_000;
 /** Distances and points may differ by this much: 32-bit floats against three.js's 64-bit. */
 const TOLERANCE = 2e-4;
+/** Where the scene stands: the origin, or with ?far a point at the Earth's radius, off any cell. */
+const OFFSET = new URL(import.meta.url).searchParams.has('far')
+	? [1_234.5678, 6_378_137.3, -98_765.4321]
+	: [0, 0, 0];
+/** A position moved to where the scene stands. */
+const moved = (p: readonly number[]): [number, number, number] => [
+	(p[0] as number) + (OFFSET[0] as number),
+	(p[1] as number) + (OFFSET[1] as number),
+	(p[2] as number) + (OFFSET[2] as number),
+];
 
 /** A small seeded generator, so every run casts the same rays. */
 function generator(seed: number) {
@@ -63,8 +79,8 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 	const range = (lo: number, hi: number) => lo + (hi - lo) * random();
 	const camera = scene.createPerspectiveCamera({
 		fov: 60,
-		position: [0, 10, 45],
-		target: [0, 0, 0],
+		position: moved([0, 10, 45]),
+		target: moved([0, 0, 0]),
 	});
 	scene.setActiveCamera(camera);
 	scene.createAmbientLight({ intensity: 1 });
@@ -113,6 +129,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 		},
 	) => {
 		const [mesh, shape] = shapes[k % shapes.length] as [MeshGeometry, BufferGeometry];
+		if (!options.parent) options.position = moved(options.position);
 		const object = scene.createMesh({ mesh, material, ...options });
 		const twin = new Mesh(shape, material === both ? threeBoth : threeFront);
 		place(twin, options.position, options.rotation, options.scale);
@@ -141,9 +158,13 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 	}
 	// A child under a turned and scaled group.
 	const turn = randomRotation();
-	const group = scene.createGroup({ position: [5, 3, -4], rotation: turn, scale: [2, 1, 1.5] });
+	const group = scene.createGroup({
+		position: moved([5, 3, -4]),
+		rotation: turn,
+		scale: [2, 1, 1.5],
+	});
 	const threeGroup = new Group();
-	place(threeGroup, [5, 3, -4], turn, [2, 1, 1.5]);
+	place(threeGroup, moved([5, 3, -4]), turn, [2, 1, 1.5]);
 	three.add(threeGroup);
 	twins.set(group, threeGroup);
 	add(1, front, {
@@ -156,9 +177,9 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 	twins.delete(group);
 	// A sphere of 321 × 221 vertices, more than one WebGL2 page holds.
 	const big = geometry.sphere({ radius: 6, widthSegments: 320, heightSegments: 220 });
-	const bigObject = scene.createMesh({ mesh: big, material: front, position: [0, -25, 0] });
+	const bigObject = scene.createMesh({ mesh: big, material: front, position: moved([0, -25, 0]) });
 	const bigTwin = new Mesh(new SphereGeometry(6, 320, 220), threeFront);
-	bigTwin.position.set(0, -25, 0);
+	bigTwin.position.fromArray(moved([0, -25, 0]));
 	three.add(bigTwin);
 	twins.set(bigObject, bigTwin);
 	// A static batch of boxes and a dynamic batch of spheres.
@@ -167,8 +188,14 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 		[1, true, 30],
 	] as const) {
 		const [mesh, shape] = shapes[k] as [MeshGeometry, BufferGeometry];
-		const batch = scene.createInstances(mesh, count, { material: front, dynamic });
+		// Rows are relative to the batch's origin, as three.js's instance matrices are to their mesh.
+		const batch = scene.createInstances(mesh, count, {
+			material: front,
+			dynamic,
+			origin: moved([0, 0, 0]),
+		});
 		const twin = new InstancedMesh(shape, threeFront, count);
+		twin.position.fromArray(moved([0, 0, 0]));
 		const m = new Matrix4();
 		for (let r = 0; r < count; r++) {
 			const p = [range(-25, 25), range(-10, 10), range(-25, 25)];
@@ -218,10 +245,31 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 			? `${objects.indexOf(hit.object)}${hit.instanceId !== undefined ? `#${hit.instanceId}` : ''}`
 			: 'none';
 	const near = (a: number, b: number) => Math.abs(a - b) <= TOLERANCE * Math.max(1, Math.abs(b));
+	/** True when two points match, each taken from where the scene stands. */
+	const nearPoint = (a: Vec3Like, b: Vec3Like) =>
+		[0, 1, 2].every((k) =>
+			near((a[k] as number) - (OFFSET[k] as number), (b[k] as number) - (OFFSET[k] as number)),
+		);
+	const screen = [0, 0, 0];
+	const back = { origin: [0, 0, 0], direction: [0, 0, 0] };
+	/**
+	 * Takes a point in front of the camera to the screen and back as a ray, and records how far the
+	 * ray passes from it.
+	 */
+	const project = (point: Vec3Like) => {
+		camera.worldToScreen(point, screen);
+		if ((screen[2] as number) < 1) return;
+		camera.screenToRay(screen[0] as number, screen[1] as number, back);
+		const v = [0, 1, 2].map((k) => (point[k] as number) - (back.origin[k] as number));
+		const along = v.reduce((sum, value, k) => sum + value * (back.direction[k] as number), 0);
+		const off = Math.hypot(...v.map((value, k) => value - along * (back.direction[k] as number)));
+		results.projections++;
+		results.projectionError = Math.max(results.projectionError, off);
+	};
 
 	/** A seeded ray: toward a random object, or in a random direction. */
 	const newRay = () => {
-		const o = [range(-35, 35), range(-30, 20), range(-35, 35)];
+		const o = moved([range(-35, 35), range(-30, 20), range(-35, 35)]);
 		let d: number[];
 		if (random() < 0.7) {
 			const target = objects[Math.floor(random() * objects.length)] as ThreeObject;
@@ -229,7 +277,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 			if (target instanceof InstancedMesh) {
 				const m = new Matrix4();
 				target.getMatrixAt(Math.floor(random() * target.count), m);
-				at.setFromMatrixPosition(m);
+				at.setFromMatrixPosition(m).applyMatrix4(target.matrixWorld);
 			} else target.getWorldPosition(at);
 			d = [at.x - o[0]! + range(-1, 1), at.y - o[1]! + range(-1, 1), at.z - o[2]! + range(-1, 1)];
 		} else d = [range(-1, 1), range(-1, 1), range(-1, 1)];
@@ -247,6 +295,8 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 		batchRays: BATCH_RAYS,
 		batchHits: 0,
 		batchMismatches: 0,
+		projections: 0,
+		projectionError: 0,
 	};
 	const mismatch = (text: string) => {
 		results.mismatches++;
@@ -300,13 +350,14 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 				if (
 					!near(hit.distance, first.distance) ||
 					hit.triangle !== first.faceIndex ||
-					![p.x, p.y, p.z].every((v, k) => near(hit.point[k] as number, v)) ||
+					!nearPoint(hit.point, [p.x, p.y, p.z]) ||
 					![n.x, n.y, n.z].every((v, k) => Math.abs((hit.normal[k] as number) - v) < 1e-3)
 				)
 					mismatch(
 						`ray ${r}: ${describeThree(first)} distance ${hit.distance} / ${first.distance}, triangle ${hit.triangle} / ${first.faceIndex}, point ${[...(hit.point as number[])]} / ${p.toArray()}, normal ${[...(hit.normal as number[])]} / ${n.toArray()}`,
 					);
 			}
+			project(hit.point);
 			// Overlap queries at the hit's point find the hit object.
 			const isThere = (count: number) =>
 				found.slice(0, count).some((f) => f.object === hit.object && f.instance === hit.instance);

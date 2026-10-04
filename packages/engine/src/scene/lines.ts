@@ -20,6 +20,7 @@ import type {
 	MeshGeometry,
 	StandardValues,
 } from './resources';
+import type { Vec3 } from './scene';
 
 /**
  * Which points each segment joins. With `segments`, each pair of points makes a segment, like
@@ -92,6 +93,12 @@ export interface LineOptions
 	dynamic?: boolean;
 	/** The layers every segment is on, as a 32-bit mask. The default, 1, is layer 0. */
 	layers?: number;
+	/**
+	 * The point that every point's position is relative to, as an instance batch's `origin`. The
+	 * default is (0, 0, 0). Lines near it keep the precision of 32-bit floats at any distance from
+	 * the world's origin.
+	 */
+	origin?: Vec3;
 	/** How the lines use their opacity. The default is `opaque`, as three.js's lines are. */
 	alphaMode?: 'opaque' | 'blend';
 }

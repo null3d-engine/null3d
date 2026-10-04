@@ -5,6 +5,7 @@ use null3d_core::animation::{
     Channel, DEFAULT_RATE, EVENT_CAPACITY, EVENT_WORDS, Interpolation, MAX_BLEND,
     MAX_LAYERS as MAX_ANIMATION_LAYERS, REST_FLOATS, event_kind,
 };
+use null3d_core::cells::CELL_SIZE;
 use null3d_core::handle::{GENERATION_BITS, SLOT_BITS};
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{color as light_color, kind as light_kind, value as light_value};
@@ -31,6 +32,7 @@ pub mod scene_field {
     pub const LOCAL_RADII: u32 = 3;
     pub const DIRTY_WORDS: u32 = 4;
     pub const LOCAL_CENTERS: u32 = 5;
+    pub const POSITION_CELLS: u32 = 6;
 }
 
 /// Fields of `batchArrays`.
@@ -233,6 +235,9 @@ pub mod animation_field {
 /// interpolation and key count.
 pub const TRACK_WORDS: u32 = 4;
 
+/// What `clipReady` returns while a job worker still resamples the clip: no clip id reaches it.
+pub const CLIP_PENDING: u32 = u32::MAX;
+
 /// The bits of `animatorPlay`'s `flags`.
 pub mod play_flag {
     /// The clip repeats.
@@ -370,6 +375,7 @@ pub fn typescript() -> String {
             ],
         ),
         ("LAYERS", &[("DEFAULT", DEFAULT_LAYERS)]),
+        ("CELL", &[("SIZE", CELL_SIZE as u32)]),
         (
             "LIGHT_KIND",
             &[
@@ -408,6 +414,7 @@ pub fn typescript() -> String {
                 ("LOCAL_RADII", scene_field::LOCAL_RADII),
                 ("DIRTY_WORDS", scene_field::DIRTY_WORDS),
                 ("LOCAL_CENTERS", scene_field::LOCAL_CENTERS),
+                ("POSITION_CELLS", scene_field::POSITION_CELLS),
             ],
         ),
         (
@@ -772,12 +779,14 @@ pub fn typescript() -> String {
                 ("EVENT_FINISHED", event_kind::FINISHED),
                 ("REST_FLOATS", REST_FLOATS as u32),
                 ("TRACK_WORDS", TRACK_WORDS),
+                ("CLIP_PENDING", CLIP_PENDING),
                 ("DEFAULT_RATE", DEFAULT_RATE as u32),
                 ("TRANSLATION", Channel::Translation as u32),
                 ("ROTATION", Channel::Rotation as u32),
                 ("SCALE", Channel::Scale as u32),
                 ("LINEAR", Interpolation::Linear as u32),
                 ("STEP", Interpolation::Step as u32),
+                ("CUBIC_SPLINE", Interpolation::CubicSpline as u32),
             ],
         ),
         (
