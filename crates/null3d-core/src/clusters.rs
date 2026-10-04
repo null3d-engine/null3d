@@ -386,6 +386,20 @@ fn spread_bits(v: u32) -> u32 {
     (x | (x << 2)) & 0x0924_9249
 }
 
+/// Sorts 32-bit keys, and the values beside them, by key, keeping the order of equal keys: four
+/// counting-sort passes through `scratch_keys` and `scratch_values`, each as long as the keys.
+pub fn sort_pairs(
+    keys: &mut [u32],
+    values: &mut [u32],
+    scratch_keys: &mut [u32],
+    scratch_values: &mut [u32],
+) {
+    radix_pass(0, keys, Some(values), scratch_keys, scratch_values);
+    radix_pass(8, scratch_keys, Some(scratch_values), keys, values);
+    radix_pass(16, keys, Some(values), scratch_keys, scratch_values);
+    radix_pass(24, scratch_keys, Some(scratch_values), keys, values);
+}
+
 /// One stable counting-sort pass by the byte of each code at `shift`, from `codes` and `order`
 /// (the rows in their own order when `None`) into `out_codes` and `out_order`.
 fn radix_pass(
