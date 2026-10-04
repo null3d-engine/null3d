@@ -111,6 +111,7 @@ mod codes {
 
 /// Details of `codes::RENDER` failures.
 mod render_detail {
+    /// The second detail is the most the draw list holds, in mebibytes.
     pub const DRAW_LIST_FULL: u32 = 1;
     pub const TOO_MANY_SOURCES: u32 = 3;
     pub const MATERIALS_FULL: u32 = 4;
@@ -123,6 +124,11 @@ mod render_detail {
     /// The second detail is the most textures that live at once.
     pub const TEXTURES_FULL: u32 = 10;
     pub const BAD_TEXTURE: u32 = 11;
+    /// The second detail is the most bytes of skinned vertices that WebGPU skinning holds, in
+    /// mebibytes.
+    pub const SKINNED_VERTICES_FULL: u32 = 12;
+    /// The second detail is the most mesh pages of skinned meshes that WebGPU skinning reads.
+    pub const SKINNED_PAGES_FULL: u32 = 13;
 }
 
 struct Engine {
@@ -254,8 +260,12 @@ fn render_failure(detail: u32, value: u32) -> u32 {
 
 fn record_failure(error: RecordError) -> u32 {
     let (detail, value) = match error {
-        RecordError::DrawListFull => (render_detail::DRAW_LIST_FULL, 0),
+        RecordError::DrawListFull { megabytes } => (render_detail::DRAW_LIST_FULL, megabytes),
         RecordError::TooManySources { limit } => (render_detail::TOO_MANY_SOURCES, limit),
+        RecordError::SkinnedVerticesFull { megabytes } => {
+            (render_detail::SKINNED_VERTICES_FULL, megabytes)
+        }
+        RecordError::SkinnedPagesFull { limit } => (render_detail::SKINNED_PAGES_FULL, limit),
         RecordError::UploadsFull => (render_detail::UPLOADS_FULL, 0),
         RecordError::OutOfMemory { bytes } => {
             return core_failure(CoreError::OutOfMemory { bytes });
@@ -2217,7 +2227,8 @@ fn with_animations(f: impl FnOnce(&mut Animations, &mut Vec<u32>) -> Result<u32,
     })
 }
 
-/// Creates the animation table for `instances` animated objects with `joints` joints in all.
+/// Creates the animation table for `instances` animated objects with `joints` joints in all, at
+/// most as many as the joint texture's rows hold on every WebGL2 device.
 #[wasm_bindgen(js_name = initAnimations)]
 pub fn init_animations(instances: u32, joints: u32) -> u32 {
     let Some(jobs) = JOBS.get() else {
@@ -2226,6 +2237,9 @@ pub fn init_animations(instances: u32, joints: u32) -> u32 {
     with_engine(|e| {
         if e.animations.is_some() {
             return fail(codes::NOT_READY, [2, 1]);
+        }
+        if let Err(error) = skinning::check_table_joints(joints) {
+            return core_failure(error);
         }
         match Animations::new(jobs, instances, joints) {
             Ok(animations) => {

@@ -20,10 +20,6 @@ use crate::sorted::{SortedLayout, SortedView};
 
 /// The group index of the maps' bind group in the mesh pipelines that sample a map.
 const TEXTURES_GROUP: u32 = 3;
-/// Words that each call records at most: its pipeline, maps group, vertex and index buffers, draw
-/// records group and draw.
-const CALL_WORDS: usize = 2 + 4 + 5 + 5 + 5 + 6;
-
 /// One draw of a part of a sorted run's mesh.
 #[derive(Clone, Copy, Debug, Default)]
 struct PartDraw {
@@ -89,11 +85,6 @@ impl Transparent {
             0
         };
         draws * OFFSET_ALIGNMENT + tail
-    }
-
-    /// The most words that the transparent passes of `views` views record.
-    pub(super) fn words_bound(layout: &SortedLayout, views: usize) -> usize {
-        views * (4 + 4 + Self::most_parts(layout) * CALL_WORDS)
     }
 
     /// The most bytes that one frame copies into its arena for the passes: the records, and each
