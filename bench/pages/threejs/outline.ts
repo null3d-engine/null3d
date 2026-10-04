@@ -33,17 +33,19 @@ import { packRows } from '../lib/pixels';
 const SUN_DISTANCE = 10;
 
 /**
- * null3D's crisp line over display color, from OutlinePass's mask. That mask is white where no
- * selected object covers it, and a selected object writes 0 in red and 1 in green where other
- * objects hide it, so coverage is 1 minus red and the visible parts are 1 minus green. The line
- * then follows null3D's final pass: the highest coverage at 8 places on a circle of the width.
+ * null3D's crisp line over display color, from OutlinePass's mask, which the caller sets on the
+ * built pass: a ShaderPass copies its uniforms, and the copy drops a render target's texture. The
+ * mask is white where no selected object covers it, and a selected object writes 0 in red and 1
+ * in green where other objects hide it, so coverage is 1 minus red and the visible parts are 1
+ * minus green. The line then follows null3D's final pass: the highest coverage at 8 places on a
+ * circle of the width.
  */
-function crispLine(mask: three.Texture, outline: (typeof OUTLINE_SETTINGS)[OutlineName]) {
+function crispLine(outline: (typeof OUTLINE_SETTINGS)[OutlineName]) {
 	const { width, height } = OUTLINE_IMAGE;
 	return {
 		uniforms: {
 			tDiffuse: { value: null },
-			maskTexture: { value: mask },
+			maskTexture: { value: null },
 			texel: { value: new three.Vector2(1 / width, 1 / height) },
 			width: { value: outline.width },
 			color: { value: displayColor(outline.color) },
@@ -139,7 +141,9 @@ run('hold', async () => {
 	mask.edgeStrength = 0;
 	composer.addPass(mask);
 	composer.addPass(new OutputPass());
-	composer.addPass(new ShaderPass(crispLine(mask.renderTargetMaskBuffer.texture, settings)));
+	const line = new ShaderPass(crispLine(settings));
+	line.uniforms.maskTexture = { value: mask.renderTargetMaskBuffer.texture };
+	composer.addPass(line);
 	document.body.append(renderer.domElement);
 	composer.render();
 	const gl = renderer.getContext();
