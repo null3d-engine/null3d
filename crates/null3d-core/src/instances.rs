@@ -24,6 +24,13 @@
 //! and active count, and computes its own world output. One write to the first part's rows thus
 //! moves every part.
 //!
+//! # Sprites
+//!
+//! A sprite batch owns positions like any batch, and sizes, rotations, colours and atlas frames in
+//! place of rotations as quaternions and scales. Its update packs each row's sprite into the row's
+//! world matrix (see [`crate::sprites`]), so the rest of the engine draws, culls and sorts its rows
+//! as it does any batch's.
+//!
 //! # Cells
 //!
 //! Each row takes the grid cell that holds its position (see [`crate::cells`]), and its world
@@ -55,6 +62,7 @@ use crate::layers::DEFAULT_LAYERS;
 use crate::math::{
     self, Affine, IDENTITY_ROTATION, compose4, deinterleave3, max_axis_scale4, mul4, transpose4,
 };
+use crate::sprites::{self, SpriteLook};
 use crate::world::{COLOR_FLOATS, MATRIX_FLOATS, WorldArrays, WorldPtrs};
 
 /// Rows per chunk of the parallel update: a whole number of 64-row bitset words.
@@ -75,6 +83,22 @@ pub struct RowRange {
     pub count: u32,
 }
 
+/// The rows of a sprite batch besides their positions, and the look its sprites share.
+struct SpriteRows {
+    look: SpriteLook,
+    /// Width and height, 2 floats per row.
+    sizes: Vec<f32>,
+    /// The rotation in radians, 1 float per row.
+    rotations: Vec<f32>,
+    /// Linear colour `(r, g, b, a)`, 4 floats per row.
+    colors: Vec<f32>,
+    /// The atlas frame, 1 per row.
+    frames: Vec<u32>,
+}
+
+/// Floats of a sprite's own rows besides its position: size, rotation, colour and frame.
+const SPRITE_INPUTS: usize = 2 + 1 + 4 + 1;
+
 /// One instance batch. See the module documentation.
 pub struct InstanceBatch {
     capacity: u32,
@@ -90,6 +114,8 @@ pub struct InstanceBatch {
     source: Option<Handle>,
     /// The matrix that places the mesh in the space of each row, applied before the row's own.
     part: Option<Affine>,
+    /// The sprites' own rows, for a sprite batch.
+    sprite: Option<SpriteRows>,
     /// Empty for a part that reads another batch's rows, as are the other row arrays.
     positions: Vec<f32>,
     rotations: Vec<f32>,
@@ -163,6 +189,41 @@ impl InstanceBatch {
         )
     }
 
+    /// A sprite batch (see the module documentation) of `capacity` rows of a quad mesh whose
+    /// bounding radius around its anchor is `local_radius`: every sprite one unit wide and high,
+    /// unturned, white, showing frame 0, at the origin. Fails when memory cannot grow for its
+    /// arrays.
+    pub fn try_new_sprites(
+        capacity: u32,
+        dynamic: bool,
+        mesh: u32,
+        material: u32,
+        local_radius: f32,
+        look: SpriteLook,
+    ) -> Result<Self, TryReserveError> {
+        let rows = capacity as usize;
+        let sprite = SpriteRows {
+            look,
+            sizes: filled(rows * 2, 1.0)?,
+            rotations: filled(rows, 0.0)?,
+            colors: filled(rows * 4, 1.0)?,
+            frames: filled(rows, 0)?,
+        };
+        let mut batch = Self::try_new_rows(
+            capacity,
+            dynamic,
+            false,
+            mesh,
+            material,
+            local_radius,
+            None,
+            None,
+            false,
+        )?;
+        batch.sprite = Some(sprite);
+        Ok(batch)
+    }
+
     /// As [`InstanceBatch::try_new`], for one part of a model (see the module documentation):
     /// `part` places the mesh in the space of each row, and with a `source`, the batch reads that
     /// batch's rows and owns none.
@@ -177,8 +238,36 @@ impl InstanceBatch {
         source: Option<Handle>,
         part: Option<Affine>,
     ) -> Result<Self, TryReserveError> {
+        Self::try_new_rows(
+            capacity,
+            dynamic,
+            with_colors,
+            mesh,
+            material,
+            local_radius,
+            source,
+            part,
+            true,
+        )
+    }
+
+    /// As [`InstanceBatch::try_new_part`]. With `transforms` false, the batch has no rotations
+    /// and scales, as a sprite batch keeps rows of its own in their place.
+    #[allow(clippy::too_many_arguments)]
+    fn try_new_rows(
+        capacity: u32,
+        dynamic: bool,
+        with_colors: bool,
+        mesh: u32,
+        material: u32,
+        local_radius: f32,
+        source: Option<Handle>,
+        part: Option<Affine>,
+        transforms: bool,
+    ) -> Result<Self, TryReserveError> {
         let rows = capacity as usize;
-        let inputs = if source.is_some() { 0 } else { rows };
+        let owned = if source.is_some() { 0 } else { rows };
+        let inputs = if transforms { owned } else { 0 };
         let mut rotations = filled(inputs * 4, 0.0)?;
         for q in rotations.as_chunks_mut::<4>().0 {
             *q = IDENTITY_ROTATION;
@@ -196,7 +285,8 @@ impl InstanceBatch {
             with_colors,
             source,
             part,
-            positions: filled(inputs * 3, 0.0)?,
+            sprite: None,
+            positions: filled(owned * 3, 0.0)?,
             rotations,
             scales: filled(inputs * 3, 1.0)?,
             colors: filled(if with_colors { inputs * 4 } else { 0 }, 1.0)?,
@@ -236,6 +326,41 @@ impl InstanceBatch {
         let inputs = 3 + 4 + 3 + colors;
         let world = MATRIX_FLOATS + 4 + colors;
         ((inputs + 1 + 2 * world) * 4) as u64
+    }
+
+    /// Engine memory that one row of a sprite batch takes, as [`InstanceBatch::row_bytes`] counts
+    /// it.
+    pub const fn sprite_row_bytes() -> u64 {
+        let world = MATRIX_FLOATS + 4;
+        ((3 + SPRITE_INPUTS + 1 + 2 * world) * 4) as u64
+    }
+
+    /// The look of a sprite batch's sprites, or `None` for a batch of meshes.
+    pub fn sprite_look(&self) -> Option<SpriteLook> {
+        self.sprite.as_ref().map(|s| s.look)
+    }
+
+    /// True for a batch whose rows culling must never reject: sprites sized in pixels of the
+    /// screen, whose size in the world changes with their distance.
+    pub fn unculled(&self) -> bool {
+        self.sprite_look().is_some_and(|look| look.screen_size)
+    }
+
+    /// A sprite batch's sizes, 2 floats per row, its rotations in radians, 1 float per row, its
+    /// colours, 4 floats per row, and its atlas frames, 1 per row; empty for a batch of meshes.
+    pub fn sprite_rows(&self) -> (&[f32], &[f32], &[f32], &[u32]) {
+        match &self.sprite {
+            Some(s) => (&s.sizes, &s.rotations, &s.colors, &s.frames),
+            None => (&[], &[], &[], &[]),
+        }
+    }
+
+    /// A sprite batch's rows for direct writes, as [`InstanceBatch::sprite_rows`] gives them.
+    pub fn sprite_rows_mut(&mut self) -> (&mut [f32], &mut [f32], &mut [f32], &mut [u32]) {
+        match &mut self.sprite {
+            Some(s) => (&mut s.sizes, &mut s.rotations, &mut s.colors, &mut s.frames),
+            None => (&mut [], &mut [], &mut [], &mut []),
+        }
     }
 
     /// True for a batch that recomputes every active row every frame.
@@ -538,6 +663,7 @@ impl InstanceBatch {
             },
             part: self.part.unwrap_or(math::IDENTITY),
             has_part: self.part.is_some(),
+            sprite: rows.sprite,
             local_radius: self.local_radius,
             out: self.world[parity].ptrs(),
             previous,
@@ -643,6 +769,18 @@ struct RowSource {
     active: u32,
     /// The rows that the arrays hold.
     rows: u32,
+    /// A sprite batch's own rows.
+    sprite: Option<SpriteKernel>,
+}
+
+/// Raw pointers into a sprite batch's own rows, for the chunks of a parallel update.
+#[derive(Clone, Copy)]
+struct SpriteKernel {
+    look: SpriteLook,
+    sizes: *const f32,
+    rotations: *const f32,
+    colors: *const f32,
+    frames: *const u32,
 }
 
 impl RowSource {
@@ -658,6 +796,13 @@ impl RowSource {
             dirty_any: batch.dirty_any,
             active: batch.active,
             rows: (batch.positions.len() / 3) as u32,
+            sprite: batch.sprite.as_ref().map(|s| SpriteKernel {
+                look: s.look,
+                sizes: s.sizes.as_ptr(),
+                rotations: s.rotations.as_ptr(),
+                colors: s.colors.as_ptr(),
+                frames: s.frames.as_ptr(),
+            }),
         }
     }
 
@@ -674,6 +819,7 @@ impl RowSource {
             dirty_any: false,
             active: 0,
             rows: 0,
+            sprite: None,
         }
     }
 
@@ -710,6 +856,8 @@ struct RowKernel {
     /// The part matrix, applied before each row's transform when `has_part` is set.
     part: Affine,
     has_part: bool,
+    /// A sprite batch's own rows, which each row packs into its matrix in place of a transform.
+    sprite: Option<SpriteKernel>,
     local_radius: f32,
     out: WorldPtrs,
     previous: WorldPtrs,
@@ -801,6 +949,13 @@ impl RowKernel {
     /// The four rows are active and belong to the calling chunk.
     #[inline(always)]
     unsafe fn compute4(&self, row: usize) {
+        if let Some(sprite) = &self.sprite {
+            for lane in row..row + 4 {
+                // SAFETY: as the caller guarantees for the four rows.
+                unsafe { self.compute_sprite(sprite, lane) };
+            }
+            return;
+        }
         let load = |p: *const f32| {
             // SAFETY: the reads below stay inside the four active rows.
             f32x4::from_array(unsafe { p.cast::<[f32; 4]>().read_unaligned() })
@@ -835,6 +990,11 @@ impl RowKernel {
     /// The row is active and belongs to the calling chunk.
     #[inline(always)]
     unsafe fn compute(&self, row: usize) {
+        if let Some(sprite) = &self.sprite {
+            // SAFETY: as the caller guarantees.
+            unsafe { self.compute_sprite(sprite, row) };
+            return;
+        }
         // SAFETY: the row is below the active count, so every input read is in bounds, and only
         // this chunk writes the row.
         unsafe {
@@ -861,6 +1021,42 @@ impl RowKernel {
                 let color = self.colors.add(row * 4).cast::<[f32; 4]>().read_unaligned();
                 self.out.write_color(row, color);
             }
+        }
+    }
+
+    /// Packs one sprite into its row's world matrix (see [`crate::sprites`]).
+    ///
+    /// # Safety
+    /// As for [`RowKernel::compute`], with `sprite` pointing at the batch's sprite rows.
+    #[inline(always)]
+    unsafe fn compute_sprite(&self, sprite: &SpriteKernel, row: usize) {
+        // SAFETY: the row is below the active count, so every input read is in bounds, and only
+        // this chunk writes the row.
+        unsafe {
+            let p = self
+                .positions
+                .add(row * 3)
+                .cast::<[f32; 3]>()
+                .read_unaligned();
+            let o = self.origin_local;
+            let local = self.localize(row, [p[0] + o[0], p[1] + o[1], p[2] + o[2]]);
+            let size = sprite
+                .sizes
+                .add(row * 2)
+                .cast::<[f32; 2]>()
+                .read_unaligned();
+            let color = sprite
+                .colors
+                .add(row * 4)
+                .cast::<[f32; 4]>()
+                .read_unaligned();
+            let bits = sprite.look.frame_bits(*sprite.frames.add(row));
+            let matrix = sprites::pack(local, size, *sprite.rotations.add(row), color, bits);
+            self.out.write(
+                row,
+                &matrix,
+                sprites::sphere(&matrix, self.local_radius, bits),
+            );
         }
     }
 
@@ -1056,8 +1252,26 @@ impl BatchTable {
         material: u32,
         local_radius: f32,
     ) -> Result<Handle, CoreError> {
-        self.insert(capacity, with_colors, || {
+        let bytes = InstanceBatch::row_bytes(with_colors);
+        self.insert(capacity, bytes, || {
             InstanceBatch::try_new(capacity, dynamic, with_colors, mesh, material, local_radius)
+        })
+    }
+
+    /// Creates a sprite batch (see [`InstanceBatch::try_new_sprites`]) and returns its id. Fails
+    /// as [`BatchTable::create`] does.
+    pub fn create_sprites(
+        &mut self,
+        capacity: u32,
+        dynamic: bool,
+        mesh: u32,
+        material: u32,
+        local_radius: f32,
+        look: SpriteLook,
+    ) -> Result<Handle, CoreError> {
+        let bytes = InstanceBatch::sprite_row_bytes();
+        self.insert(capacity, bytes, || {
+            InstanceBatch::try_new_sprites(capacity, dynamic, mesh, material, local_radius, look)
         })
     }
 
@@ -1066,12 +1280,11 @@ impl BatchTable {
     fn insert(
         &mut self,
         capacity: u32,
-        with_colors: bool,
+        row_bytes: u64,
         make: impl FnOnce() -> Result<InstanceBatch, TryReserveError>,
     ) -> Result<Handle, CoreError> {
         let out_of_memory = |_| CoreError::OutOfMemory {
-            bytes: u32::try_from(u64::from(capacity) * InstanceBatch::row_bytes(with_colors))
-                .unwrap_or(u32::MAX),
+            bytes: u32::try_from(u64::from(capacity) * row_bytes).unwrap_or(u32::MAX),
         };
         // Room for every batch's work items at once, so updates never grow the list.
         let work_needed = self.work_needed + capacity.div_ceil(ROW_CHUNK) as usize;
@@ -1119,7 +1332,7 @@ impl BatchTable {
             }
             None => (capacity, dynamic, with_colors),
         };
-        self.insert(capacity, with_colors, || {
+        self.insert(capacity, InstanceBatch::row_bytes(with_colors), || {
             InstanceBatch::try_new_part(
                 capacity,
                 dynamic,
@@ -1270,6 +1483,52 @@ mod tests {
         assert_eq!(&batch.world(1).colors()[4..8], &[0.1, 0.2, 0.3, 0.4]);
         assert_eq!(batch.changed_ranges(), &[RowRange { start: 0, count: 5 }]);
         assert_eq!(batch.frame_active_count(1), 5);
+    }
+
+    #[test]
+    fn sprite_rows_pack_into_their_matrices_and_take_their_cells() {
+        let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
+        let look = SpriteLook::new(2, 2, false);
+        // Nine rows, so both the four-row blocks and the single rows run, static and dynamic.
+        for dynamic in [false, true] {
+            let mut batch = InstanceBatch::try_new_sprites(9, dynamic, 3, 4, 0.75, look).unwrap();
+            assert!(batch.rotations().is_empty() && batch.scales().is_empty());
+            write_row(&mut batch, 2, 100_000.5);
+            {
+                let (sizes, rotations, colors, frames) = batch.sprite_rows_mut();
+                sizes[4..6].copy_from_slice(&[2.0, 0.5]);
+                rotations[2] = 0.25;
+                colors[8..12].copy_from_slice(&[0.5, 0.25, 0.125, 0.75]);
+                frames[2] = 3;
+            }
+            batch.update(&jobs, 1, &mut cells);
+            let far = cells.find([98, 0, 0]).unwrap();
+            assert_eq!(batch.cells()[1..3], [0, far]);
+            let bits = look.frame_bits(3);
+            let packed = sprites::pack(
+                [-351.5, 0.0, 0.0],
+                [2.0, 0.5],
+                0.25,
+                [0.5, 0.25, 0.125, 0.75],
+                bits,
+            );
+            assert_eq!(batch.world(1).matrix(2), &packed);
+            assert_eq!(
+                batch.world(1).sphere(2),
+                sprites::sphere(&packed, 0.75, bits)
+            );
+            // An untouched sprite: one unit wide and high, white, frame 0, at its cell's center.
+            let plain = sprites::pack([0.0; 3], [1.0, 1.0], 0.0, [1.0; 4], look.frame_bits(0));
+            assert_eq!(batch.world(1).matrix(8), &plain);
+            assert!(!batch.unculled());
+            batch.release_cells(&mut cells);
+        }
+        let screen = SpriteLook::new(1, 1, true);
+        let mut batch = InstanceBatch::try_new_sprites(1, false, 3, 4, 0.75, screen).unwrap();
+        batch.update(&jobs, 1, &mut cells);
+        assert!(batch.unculled());
+        assert_eq!(batch.world(1).sphere(0)[3], crate::world::UNBOUNDED_RADIUS);
     }
 
     #[test]
@@ -1537,6 +1796,25 @@ mod tests {
             }
             batch.release_cells(&mut cells);
             assert!(cells.origin_only());
+        }
+        // Sprite rows are relative to their batch's origin too.
+        let look = SpriteLook::new(1, 1, false);
+        let mut sprites = InstanceBatch::try_new_sprites(2, false, 3, 4, 0.75, look).unwrap();
+        sprites.set_origin(origin);
+        write_row(&mut sprites, 1, 0.001);
+        sprites.update(&jobs, 1, &mut cells);
+        for (row, x) in [(0, 0.0), (1, 0.001)] {
+            let m = sprites.current_world().matrix(row);
+            let got = CellPosition {
+                cell: cells.coords(sprites.cells()[row]),
+                local: [m[3], m[7], m[11]],
+            }
+            .absolute();
+            let want = [origin[0] + x, origin[1], origin[2]];
+            assert!(
+                (0..3).all(|k| (got[k] - want[k]).abs() < 1e-4),
+                "sprite {row}: {got:?}"
+            );
         }
     }
 

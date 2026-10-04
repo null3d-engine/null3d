@@ -1,7 +1,9 @@
 // The null3d command: reads the name of the command to run, runs it, and turns a mistake in its
 // options into a message that points at the command's help.
-import { readFileSync } from 'node:fs';
 import { UsageError } from './args.js';
+import { VERSION } from './version.js';
+
+export { VERSION };
 
 /** @typedef {{ run(args: readonly string[]): Promise<number> }} Command */
 
@@ -11,6 +13,10 @@ import { UsageError } from './args.js';
  * @type {Record<string, { summary: string, load: () => Promise<Command> }>}
  */
 const COMMANDS = {
+	assets: {
+		summary: 'Optimizes glTF models and their textures for the engine',
+		load: () => import('./assets.js'),
+	},
 	bench: {
 		summary: "Measures the engine on the project's page: CPU time by thread and frame rates",
 		load: () => import('./bench.js'),
@@ -25,11 +31,6 @@ const COMMANDS = {
 		load: () => import('./test.js'),
 	},
 };
-
-/** The version of this package. */
-export const VERSION = /** @type {string} */ (
-	JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
-);
 
 const HELP = `null3D ${VERSION}: the command-line tool of the null3D engine
 

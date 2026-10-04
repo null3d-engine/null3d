@@ -1,11 +1,21 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { relative, resolve, sep } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import MagicString from 'magic-string';
 import type { Connect, Plugin } from 'vite';
+import {
+	ASSET_FOLDER,
+	type AssetOptions,
+	assetType,
+	cachedFile,
+	cacheFolder,
+	OPTIMIZED_MODEL,
+	optimizedModel,
+} from './assets.ts';
 import { writeWgslDeclaration } from './declarations.ts';
 import { compileTaggedWgsl, compileWgslFile, WGSL_TAG } from './wgsl.ts';
 
+export type { AssetOptions } from './assets.ts';
 export type * from './shader-types.ts';
 
 /** Headers that make a page cross-origin isolated, which shared memory and worker threads need. */
@@ -31,6 +41,12 @@ export interface Null3dPluginOptions {
 	 * true. Set it to false in a project without TypeScript.
 	 */
 	wgslDeclarations?: boolean;
+	/**
+	 * Options of the asset tool for the models that modules import with `?optimized`, such as
+	 * `import city from './city.glb?optimized'`. The import gives the optimized model's address,
+	 * which `assets.loadGltf` takes. The tool comes from `@null3d/cli`, which the project installs.
+	 */
+	assets?: AssetOptions;
 }
 
 /** Sets the isolation headers on every response, including `.wasm` files and worker scripts. */
@@ -143,6 +159,10 @@ export function missingCoreFiles(root: string): string[] | null {
 export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	let building = false;
 	let root = process.cwd();
+	let base = '/';
+	let assetsDir = 'assets';
+	/** The optimized files that this build has written, so each texture goes in once. */
+	const emitted = new Map<string, string>();
 	return {
 		name: 'null3d',
 		// Runs before Vite's own asset handling, which would copy a sketch file as raw text, and
@@ -168,8 +188,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		configResolved(config) {
 			building = config.command === 'build';
 			root = config.root;
+			base = config.base;
+			assetsDir = config.build.assetsDir;
 		},
 		buildStart() {
+			emitted.clear();
 			if (!building) return;
 			const missing = missingCoreFiles(root);
 			if (missing && missing.length > 0) {
@@ -179,8 +202,37 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			}
 		},
 		load: {
-			filter: { id: { include: WGSL_FILE, exclude: /^\0/ } },
-			handler(id) {
+			filter: { id: { include: [WGSL_FILE, OPTIMIZED_MODEL], exclude: /^\0/ } },
+			async handler(id) {
+				if (OPTIMIZED_MODEL.test(id)) {
+					const file = id.slice(0, id.indexOf('?'));
+					let model: Awaited<ReturnType<typeof optimizedModel>>;
+					try {
+						model = await optimizedModel(root, file, options.assets);
+					} catch (e) {
+						return this.error(
+							`null3D could not optimize ${projectPath(root, file)}: ${(e as Error).message}`,
+						);
+					}
+					this.addWatchFile(file);
+					const address = `${model.key}/${model.name}`;
+					if (!building)
+						return `export default ${JSON.stringify(`${base}${ASSET_FOLDER}/${address}`)};\n`;
+					let ref = '';
+					for (const path of model.files) {
+						if (!emitted.has(path))
+							emitted.set(
+								path,
+								this.emitFile({
+									type: 'asset',
+									fileName: `${assetsDir}/${ASSET_FOLDER}/${path}`,
+									source: readFileSync(join(cacheFolder(root), path)),
+								}),
+							);
+						if (path === address) ref = emitted.get(path) ?? '';
+					}
+					return `export default new URL(import.meta.ROLLUP_FILE_URL_${ref}, import.meta.url).href;\n`;
+				}
 				const compiled = compileWgslFile(projectPath(root, id), id, readFileSync(id, 'utf8'));
 				if ('error' in compiled) return this.error(compiled.error);
 				if (options.wgslDeclarations !== false && !PACKAGE_MODULE.test(id)) {
@@ -242,6 +294,14 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		},
 		configureServer(server) {
 			server.middlewares.use(isolationMiddleware);
+			server.middlewares.use(`${server.config.base}${ASSET_FOLDER}/`, (req, res, next) => {
+				const path = decodeURIComponent((req.url ?? '').split('?')[0]?.slice(1) ?? '');
+				const bytes = cachedFile(root, path);
+				if (!bytes) return next();
+				res.setHeader('Content-Type', assetType(path));
+				res.setHeader('Cache-Control', 'no-cache');
+				res.end(bytes);
+			});
 		},
 		configurePreviewServer(server) {
 			server.middlewares.use(isolationMiddleware);

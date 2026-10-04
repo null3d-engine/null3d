@@ -237,7 +237,7 @@ The "Since" column gives the first engine version with the feature:
 
 | three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
-| Sprite / SpriteMaterial | scene.createSprites(count, { texture \| atlas, sizeMode: 'world' \| 'screen' }) | changed | 0.2 | Camera-facing quads drawn in one batch. | `api/sprites` |
+| Sprite / SpriteMaterial | await scene.createSprites({ count, map, atlas, sizeAttenuation, center }) | changed | 0.2 | Camera-facing quads drawn in one batch, with typed arrays of positions, sizes, rotations, colors and atlas frames per sprite. The call is async, because the first one downloads the sprite code. Sprites blend by default, as three.js's do. Without size attenuation, sizes are in CSS pixels, not a fraction of the view's height. Raycasts do not find sprites yet. | `api/sprites` |
 | Points / PointsMaterial | scene.createPoints({ positions, colors, size, sizeAttenuation, texture }) | changed | 0.2 | Point sizes above one pixel work on every backend. | `api/points` |
 | Line / LineSegments / LineLoop / LineBasicMaterial / LineDashedMaterial / Line2 / LineMaterial | scene.createLines({ positions, colors, width, widthUnits: 'pixels' \| 'world', dashed }) | changed | 0.2 | Widths above one pixel work on every backend, so Line2 and LineMaterial need no special handling. | `api/lines` |
 | CSS2DRenderer / CSS3DRenderer (HTML labels) | Sketch: ui.trackLabel(obj, 'hp-12', { offset: [0, 2, 0] }). Page: engine.labels.bind('hp-12', element) | changed | 0.2 | The engine writes screen positions into shared memory each frame, and the page moves the elements; no messages per frame. CSS3D transforms come after 1.0. | `guides/ui-overlays` |
