@@ -12,6 +12,11 @@ const COMMANDS = {
 			'Makes glTF models load and draw faster: quantized, compressed meshes and KTX2 textures',
 		load: () => import('./assets/optimize.js'),
 	},
+	env: {
+		summary:
+			'Makes an environment map from an HDR image: a prefiltered cube map and its diffuse light',
+		load: () => import('./assets/env.js'),
+	},
 };
 
 export const HELP = `Usage: bunx @null3d/cli assets <command> [options]

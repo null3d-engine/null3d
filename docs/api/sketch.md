@@ -8,7 +8,7 @@ summary: "The context object: scene, assets, materials, geometry, textures, inpu
 
 # Sketch API: defineSketch and the context
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The context fields `render` and `ui` are not built yet, so coding agents must not use them. Of `post`, only `post.set` with `toneMapping` and `exposure` is built.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The context field `render` is not built yet, so coding agents must not use it. Of `post`, only `post.set` with `toneMapping` and `exposure` is built.
 
 In null3D, a 3D scene is called a sketch. A sketch module builds the scene and updates it every frame, and its default export is `defineSketch(setup)`. The engine loads the module, calls `setup` once with the sketch's context, and then calls the callbacks that `setup` returns.
 
@@ -83,6 +83,7 @@ An option out of its range fails the start with [E1214](../errors/E1214.md), bef
 | `engine` | The canvas's size, and what the device can do: [The engine field](#the-engine-field) |
 | `preferences` | What the user's system asks of every page, such as less motion: [Accessibility](../guides/accessibility.md) |
 | `page` | Messages to and from the page: [Messages between sketch and page](page.md) |
+| `ui` | HTML labels that follow scene objects: [UI overlays and labels](ui.md) |
 | `debug` | Lines, boxes, spheres, axes, grids, frustums and lights, drawn for one frame in development builds: [Debug drawing and stats](debug.md) |
 
 ## The engine field
@@ -201,6 +202,7 @@ What the engine passes to a sketch's setup function.
 | `assets: Assets` | Loading of textures and files, with a count of downloads for loading screens. |
 | `input: Input` | Pointer, touch, keyboard and gamepad input, which the page forwards to the sketch. |
 | `post: Post` | Post-processing: the tone mapping and the exposure of the scene's color. |
+| `ui: Ui` | HTML labels that follow scene objects, which the page binds with `engine.labels.bind`. |
 | `quality: Quality` | The quality preset that the engine runs, its settings, and a notice when they change. |
 | `time: SketchTime` | Sketch time, the frame's step and the frame number. |
 | `engine: SketchEngine` | The canvas's size, and what the device can do. |

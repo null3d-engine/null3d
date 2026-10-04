@@ -5,8 +5,10 @@
 // changes the table's intensity and the vignette every frame, for the allocation sample of
 // post.set and the final pass's grading. The `sprites` switch draws the swarm as blended sprites
 // instead of boxes, for the allocation sample of sprite batches, and the `lines` switch as dashed
-// line segments, for the allocation sample of line batches.
-import { defineSketch } from '@null3d/engine';
+// line segments, for the allocation sample of line batches. The `labels` switch adds that many
+// objects, each with an HTML label that moves on the canvas as the camera orbits, for the
+// allocation sample of the labels.
+import { defineSketch, type SketchContext } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { s1Camera } from '../../scenes/spec';
 import { createAnimatedCrowd, readAnimated } from './crowd';
@@ -24,6 +26,7 @@ export default defineSketch(async (context) => {
 			? await createLineSwarm(context, count)
 			: createSwarm(context, count, true, undefined, switches.has('blend')).pose;
 	const animate = createAnimatedCrowd(context, readAnimated(import.meta.url));
+	createLabels(context, Number(switches.get('labels') ?? 0));
 	const grading = switches.has('grading');
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
 	const vignette = { offset: 1, darkness: 1 };
@@ -46,3 +49,17 @@ export default defineSketch(async (context) => {
 		},
 	};
 });
+
+/**
+ * Adds `count` objects on a ring, each with a label `label-0` onward. The camera orbits, so every
+ * label moves on the canvas in every frame, and the objects need no code per frame.
+ */
+function createLabels({ scene, ui }: SketchContext, count: number): void {
+	for (let k = 0; k < count; k++) {
+		const angle = (k / count) * Math.PI * 2;
+		const anchor = scene.createGroup({
+			position: [Math.cos(angle) * 20, 5 + (k % 8), Math.sin(angle) * 20],
+		});
+		ui.trackLabel(anchor, `label-${k}`, { offset: [0, 1, 0] });
+	}
+}

@@ -41,6 +41,7 @@ import {
 	FrameCameras,
 	LENS_CENTER_X,
 	LENS_CENTER_Y,
+	LENS_FAR,
 	LENS_FLOATS,
 	LENS_HALF_HEIGHT,
 	LENS_HALF_WIDTH,
@@ -1117,7 +1118,15 @@ export abstract class Camera extends Object3D {
 	}
 
 	/** @internal Writes the lens into `lens`, after each change of its values. */
-	abstract updateLens(): void;
+	updateLens(): void {
+		const lens = this.lens;
+		this.writeLensShape(lens);
+		lens[LENS_NEAR] = this.nearPlane;
+		lens[LENS_FAR] = this.farPlane;
+	}
+
+	/** @internal Writes the lens's kind, its view's size and its center into `lens`. */
+	protected abstract writeLensShape(lens: Float64Array): void;
 
 	/**
 	 * @internal Gives the engine core this camera's lens and layers, which the active camera draws
@@ -1165,14 +1174,12 @@ export class PerspectiveCamera extends Camera {
 	}
 
 	/** @internal */
-	updateLens(): void {
-		const lens = this.lens;
+	protected writeLensShape(lens: Float64Array): void {
 		lens[LENS_ORTHO] = 0;
 		lens[LENS_HALF_HEIGHT] = Math.tan((this.verticalFov * Math.PI) / 360);
 		lens[LENS_HALF_WIDTH] = 0;
 		lens[LENS_CENTER_X] = 0;
 		lens[LENS_CENTER_Y] = 0;
-		lens[LENS_NEAR] = this.near;
 	}
 
 	/** @internal */
@@ -1253,14 +1260,13 @@ export class OrthographicCamera extends Camera {
 	}
 
 	/** @internal */
-	updateLens(): void {
-		const { lens, view } = this;
+	protected writeLensShape(lens: Float64Array): void {
+		const view = this.view;
 		lens[LENS_ORTHO] = 1;
 		lens[LENS_HALF_HEIGHT] = view.height / 2;
 		lens[LENS_HALF_WIDTH] = view.width / 2;
 		lens[LENS_CENTER_X] = view.centerX;
 		lens[LENS_CENTER_Y] = view.centerY;
-		lens[LENS_NEAR] = this.near;
 	}
 
 	/** @internal */
@@ -1870,6 +1876,11 @@ export class Scene {
 	/** @internal */
 	get frame(): number {
 		return this.time.frame;
+	}
+
+	/** @internal The camera that the canvas shows, which each frame draws from. */
+	get shownCamera(): Camera | undefined {
+		return this.activeCamera;
 	}
 
 	/** @internal */

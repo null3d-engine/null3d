@@ -102,7 +102,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Sprites](api/sprites.md) | createSprites; world and screen size modes; atlases. | experimental | 0.2 |
 | [Points](api/points.md) | createPoints; size attenuation; textures. | planned | 0.2 |
 | [Lines](api/lines.md) | createLines; strips, loops and pairs; pixel and world widths; dashes; lit lines. | experimental | 0.2 |
-| [UI overlays and labels](api/ui.md) | ui.trackLabel in the sketch; engine.labels.bind on the page. | planned | 0.2 |
+| [UI overlays and labels](api/ui.md) | ui.trackLabel in the sketch; engine.labels.bind on the page. | experimental | 0.2 |
 | [Messages between sketch and page](api/page.md) | page.post and page.onMessage in the sketch; engine.postToSketch and engine.onSketchMessage on the page. | experimental | 0.1 |
 
 ### Guides
@@ -116,7 +116,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Loading screens and warm-up](guides/loading-screens.md) | preload; onProgress; scene.warmUp; the preset check; upload budgets; switching presets behind a loading screen. | experimental | 0.1 |
 | [Accessibility](guides/accessibility.md) | What the canvas tells assistive technology; keyboard use; reduced motion; pausing; loading and errors. | experimental | 0.1 |
 | [3D scenes on content pages](guides/content-pages.md) | Product and marketing pages: the fallback page, a load deadline, pausing off screen, scroll-driven cameras, second visits and crashes. | experimental | 0.1 |
-| [UI, HTML overlays and labels](guides/ui-overlays.md) | HTML UI on the page; labels that follow objects; GUI panels. | planned | 0.2 |
+| [UI, HTML overlays and labels](guides/ui-overlays.md) | HTML UI on the page; labels that follow objects; GUI panels. | experimental | 0.2 |
 | [Video textures](guides/video-textures.md) | Planned after 1.0. Until then, the page sends ImageBitmap frames to the sketch; browser limits. | planned | after 1.0 |
 | [Audio with Web Audio](guides/audio.md) | Why audio stays on the page; sending positions from the sketch. | experimental | 0.1 |
 | [Using a physics library](guides/physics.md) | Running Rapier or cannon-es in the sketch worker; copying transforms. | experimental | 0.1 |
@@ -182,6 +182,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1216: Invalid uniform](errors/E1216.md) | A custom material's uniforms did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too. | generated | 0.1 |
 | [E1217: Invalid material option](errors/E1217.md) | A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. | generated | 0.1 |
 | [E1218: Invalid animation call](errors/E1218.md) | An animator call named a clip, layer or joint that the object's animation does not have. Or it got an option out of range, such as a negative fade. animator() was called on an object that has no animation clips. Or the engine refused animation data, such as a skeleton that lists a joint before its parent. | generated | 0.2 |
+| [E1219: Invalid label](errors/E1219.md) | ui.trackLabel() or ui.untrackLabel() got an id that is not a string with at least one character. Or the sketch tracked more labels at once than createEngine's maxLabels option allows: 4,096 by default. | generated | 0.2 |
 | [E1301: No usable GPU path](errors/E1301.md) | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. | generated | 0.1 |
 | [E1302: GPU lost](errors/E1302.md) | The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash, and the engine could not carry on. No new GPU device started, or the GPU was lost more than twice within a minute. The engine stopped drawing. | generated | 0.1 |
 | [E1303: WebAssembly SIMD missing](errors/E1303.md) | The browser runs WebAssembly without SIMD, which the engine's core needs. | generated | 0.1 |

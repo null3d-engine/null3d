@@ -6,7 +6,8 @@
 // display's rate, draws nothing. In a worker, each callback also sets a timer that wakes the thread
 // shortly before the next callback is due.
 
-import { controlViews, Slot } from '../shared/control';
+import { controlLabels, controlViews, Slot } from '../shared/control';
+import { type LabelRegion, presentLabels } from '../shared/labels';
 import { FrameRecorder, Role } from '../shared/metrics';
 import { notifySlot, type WakeTarget } from '../shared/wake';
 import { FramePacer } from './pacer';
@@ -113,12 +114,15 @@ export class Presenter {
 	private timerDriven = false;
 	/** The page's display period in microseconds that the metrics hold as the refresh rate, or -1. */
 	private recordedInterval = -1;
+	/** The label tables, whose presented table follows each frame this thread presents. */
+	private readonly labels: LabelRegion | undefined;
 	readonly record: FrameRecorder;
 
 	/**
 	 * `fps` is the frame rate that ?fps= holds, or undefined to draw at the display's rate. `queue`
 	 * is the most frames that may wait unfinished on the GPU. `wake` carries wake messages to the
-	 * sketch thread, where another thread runs the sketch.
+	 * sketch thread, where another thread runs the sketch. `presented` runs after each frame this
+	 * thread presents, once the frame's labels are in place.
 	 */
 	constructor(
 		private readonly slots: Int32Array,
@@ -127,9 +131,11 @@ export class Presenter {
 		fps: number | undefined,
 		private readonly queue = MAX_FRAMES_IN_FLIGHT,
 		private readonly wake?: WakeTarget,
+		private readonly presented?: () => void,
 	) {
 		this.record = new FrameRecorder(metrics, Role.Render);
 		this.pacer = new FramePacer(fps);
+		this.labels = controlLabels(slots.buffer);
 	}
 
 	/**
@@ -214,9 +220,9 @@ export class Presenter {
 	}
 
 	/**
-	 * Draws a frame and records its CPU time and the interval since the previous one. A frame whose
-	 * draw list was recorded for a GPU device the browser took away is skipped: its list names
-	 * objects the new device lacks.
+	 * Draws a frame and records its CPU time and the interval since the previous one, and gives the
+	 * page the frame's labels. A frame whose draw list was recorded for a GPU device the browser took
+	 * away is skipped: its list names objects the new device lacks.
 	 */
 	draw(frame: number, timestamp: number): void {
 		if (this.stale(frame)) return;
@@ -224,6 +230,8 @@ export class Presenter {
 		this.record.begin(frame);
 		this.renderer.drawFrame(emptySceneInput(frame, this.input), this.record);
 		Atomics.store(this.slots, Slot.FramePresented, frame);
+		if (this.labels) presentLabels(this.labels, frame);
+		this.presented?.();
 		const lastPresented = this.lastPresented[0] as number;
 		if (lastPresented < 0) this.markFirstFrame(performance.now() - start);
 		else this.record.interval(timestamp - lastPresented);
@@ -256,8 +264,17 @@ export class HoldLoop implements RenderLoop {
 		private readonly slots: Int32Array,
 		renderer: Renderer,
 		metrics: ArrayBufferLike,
+		presented?: () => void,
 	) {
-		this.presenter = new Presenter(slots, renderer, metrics, undefined);
+		this.presenter = new Presenter(
+			slots,
+			renderer,
+			metrics,
+			undefined,
+			undefined,
+			undefined,
+			presented,
+		);
 	}
 
 	drawHeld(): Promise<void> {
@@ -298,9 +315,10 @@ export function runRenderLoop(
 	queue?: number,
 	wake?: WakeTarget,
 	fault?: LoopFault,
+	presented?: () => void,
 ): RenderLoop {
 	const { slots } = controlViews(control);
-	const presenter = new Presenter(slots, renderer, metrics, fps, queue, wake);
+	const presenter = new Presenter(slots, renderer, metrics, fps, queue, wake, presented);
 	let taken = 0;
 	let stopped = false;
 

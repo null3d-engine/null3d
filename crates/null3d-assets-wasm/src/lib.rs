@@ -11,7 +11,15 @@
 //!   little-endian 32-bit integers, then three 32-bit floats per vertex, then three 32-bit
 //!   indices per triangle. It returns 0 when the response holds the tree, and 1 when it holds a
 //!   message that says why the tree could not be built.
+//! - `environment()` builds an environment map's KTX2 file (see [`environment`]). The request is
+//!   four little-endian 32-bit integers, then the source: the source's kind (0 for a Radiance or
+//!   OpenEXR file, 1 for a built-in environment, whose name follows as UTF-8), the width of the
+//!   largest faces, the texel format (0 for `rgb9e5ufloat`, 1 for `rgba16float`) and the filter's
+//!   directions per texel (0 for the default). It returns 0 when the response holds the file, and 1
+//!   when it holds a message that says why the file could not be built.
 //! - `response()` and `response_length()` give the last call's response.
+
+pub mod environment;
 
 use std::cell::RefCell;
 
@@ -36,6 +44,15 @@ pub extern "C" fn request(length: usize) -> *mut u8 {
 #[unsafe(no_mangle)]
 pub extern "C" fn mesh_bvh() -> u32 {
     let result = REQUEST.with_borrow(|request| mesh_bvh_bytes(request));
+    let failed = u32::from(result.is_err());
+    RESPONSE.set(result.unwrap_or_else(String::into_bytes));
+    failed
+}
+
+/// Builds the environment map in the request.
+#[unsafe(no_mangle)]
+pub extern "C" fn environment() -> u32 {
+    let result = REQUEST.with_borrow(|request| environment_bytes(request));
     let failed = u32::from(result.is_err());
     RESPONSE.set(result.unwrap_or_else(String::into_bytes));
     failed
@@ -95,6 +112,51 @@ pub fn mesh_bvh_bytes(request: &[u8]) -> Result<Vec<u8>, String> {
     };
     let bvh = MeshBvh::build(&mesh).map_err(|e| format!("the tree could not be built: {e:?}"))?;
     Ok(bvh.to_bytes())
+}
+
+/// The KTX2 file of the environment map in the request's layout, or why it could not be built.
+///
+/// # Errors
+/// When the request is shorter than its settings, names an unknown kind or format, or the
+/// environment cannot be built.
+pub fn environment_bytes(request: &[u8]) -> Result<Vec<u8>, String> {
+    use environment::{DEFAULT_SAMPLES, Settings, Source, TexelFormat, build};
+    let mut head =
+        words(request.get(..16).ok_or("the request has no settings")?).map(u32::from_le_bytes);
+    let mut next = || head.next().unwrap_or(0);
+    let (kind, size, format, samples) = (next(), next(), next(), next());
+    let body = &request[16..];
+    let name;
+    let source = match kind {
+        0 => Source::File(body),
+        1 => {
+            name = std::str::from_utf8(body).map_err(|_| "the built-in name is not text")?;
+            Source::Builtin(name)
+        }
+        _ => return Err(format!("the request names the unknown source kind {kind}")),
+    };
+    let format = match format {
+        0 => TexelFormat::Rgb9e5,
+        1 => TexelFormat::Rgba16Float,
+        _ => {
+            return Err(format!(
+                "the request names the unknown texel format {format}"
+            ));
+        }
+    };
+    let samples = if samples == 0 {
+        DEFAULT_SAMPLES
+    } else {
+        samples
+    };
+    build(
+        &source,
+        &Settings {
+            size: size as usize,
+            format,
+            samples,
+        },
+    )
 }
 
 #[cfg(test)]
