@@ -282,6 +282,15 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - The WebGL2 backend reads the `PREPASS` bit on a mesh template's pipeline that way (`buildPermutation` in `gpu/webgl2/programs.ts`). The debug view template counts as one, since it replaces every material. The shadow depth template has no `PREPASS` build in GLSL.
 - Two opaque surfaces at exactly the same depth both pass the opaque pass's test for equal depth, so the one drawn last shows. Without the prepass the one drawn first shows. The depth precision test's tie tile shows it on every tier with `?prepass=on`.
 
+## Reading the depth in a shader
+
+- Ambient occlusion reads the depth that the prepass leaves, between the prepass and the opaque pass ([D-21](decisions/D-21-effect-chain.md#ambient-occlusion)).
+- Compatibility mode refuses `textureLoad` on WebGPU's depth texture types: `texture_depth_2d` and the others. It also refuses a depth texture with a non-comparison sampler, and copies of multisampled textures. It does read a depth format bound as a plain float texture: a layout entry with `sampleType: 'unfilterable-float'`, and `texture_2d<f32>` or `texture_multisampled_2d<f32>` in WGSL. A probe of 1 and 4 samples passed in Chrome 154 on the Mac's GPU and on SwiftShader, in both WebGPU modes. Safari 26.6.2 and Firefox 157 passed it too.
+- So every WebGPU path binds a depth target that a shader reads in that way. The proposal's restrictions name only the depth texture types, so the binding follows its rules. A device on OpenGL ES that refuses it is the case to watch in device runs.
+- WebGL2 has no multisampled textures. A multisampled depth target that a shader reads lives in a renderbuffer, beside a texture of one sample. Each render pass that stores the depth blits it into that texture at its end, and bind groups read the texture. GL copies one sample of each pixel, as WebGPU's shaders read sample 0. A blit of a multisampled depth must cover the whole target, and the backend turns the scissor test off first.
+- A shader reads the depth texture with `texelFetch`. The texture's own filters are nearest, and no comparison mode is set, so it returns the depth value.
+- In the `standard` depth mode, depth textures hold 1 minus WebGPU's value. Ambient occlusion then finds the wrong surfaces, as shadows light every surface there. The mode is a test switch.
+
 ## Shadows
 
 - The cascade split leans 65% toward the logarithmic spread. [D-15](decisions/D-15-cascade-split.md) gives the texel sizes, the options that lost and the cost.

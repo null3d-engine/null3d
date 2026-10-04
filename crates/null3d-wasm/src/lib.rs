@@ -33,6 +33,7 @@ use null3d_core::sprites::SpriteLook;
 use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::sizes;
 use null3d_gpu::drawlist::vertex::{self, Type};
+use null3d_render::ao::Ao;
 use null3d_render::arrays::{ArrayName, ArraysError, Data, MeshArrays, Values, from_arrays};
 use null3d_render::bloom::Bloom;
 use null3d_render::camera::{Lens, Orthographic, Perspective};
@@ -150,10 +151,12 @@ struct Engine {
 }
 
 /// The post-processing values before TypeScript writes any: an exposure of 1, `UnrealBloomPass`'s
-/// strength, radius and threshold, a table at its full intensity over colors from 0 to 1, and
-/// `VignetteShader`'s offset and darkness.
+/// strength, radius and threshold, a table at its full intensity over colors from 0 to 1,
+/// `VignetteShader`'s offset and darkness, and `GTAOPass`'s radius, thickness, distance exponent,
+/// distance falloff, scale, samples and blend intensity.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = [
-    1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
+    16.0, 1.0,
 ];
 
 impl Engine {
@@ -1713,6 +1716,39 @@ pub fn set_bloom(on: bool) -> u32 {
             threshold,
         });
         e.renderer.settings_mut().set_bloom(bloom);
+        0
+    })
+}
+
+/// Turns ambient occlusion on with its settings from the post-processing values, or off, from the
+/// next frame on. The TypeScript API checks the values.
+#[wasm_bindgen(js_name = setAo)]
+pub fn set_ao(on: bool) -> u32 {
+    with_engine(|e| {
+        let value = |place| e.post_value(place);
+        use constants::post_value as v;
+        let ao = on.then(|| Ao {
+            radius: value(v::AO_RADIUS),
+            thickness: value(v::AO_THICKNESS),
+            distance_exponent: value(v::AO_DISTANCE_EXPONENT),
+            distance_falloff: value(v::AO_DISTANCE_FALLOFF),
+            scale: value(v::AO_SCALE),
+            samples: value(v::AO_SAMPLES) as u32,
+            intensity: value(v::AO_INTENSITY),
+        });
+        e.renderer.settings_mut().set_ao(ao);
+        0
+    })
+}
+
+/// Sets the size of ambient occlusion's targets, in thousandths of the render size each way, from
+/// the next frame on: 0 draws none.
+#[wasm_bindgen(js_name = setAoScale)]
+pub fn set_ao_scale(thousandths: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .set_ao_scale(thousandths as f32 / 1000.0);
         0
     })
 }

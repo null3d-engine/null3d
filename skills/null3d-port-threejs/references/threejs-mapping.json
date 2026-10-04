@@ -1418,9 +1418,9 @@
       "three": "SSAOPass / SAOPass / GTAOPass / N8AO",
       "status": "changed",
       "since": "0.2",
-      "target": "post.set({ ao: { radius, intensity } })",
-      "notes": "GTAO at half resolution, on the High and Ultra presets.",
-      "docs": "porting/threejs-postprocessing",
+      "target": "post.set({ ao: { radius, thickness, distanceExponent, distanceFalloff, scale, samples, intensity } })",
+      "notes": "GTAOPass's search and denoise at half resolution, with its setting names; blendIntensity becomes intensity, and distanceFallOff is spelled distanceFalloff. It darkens only the ambient light, where GTAOPass darkens the whole image. It draws where the quality setting aoScale is above 0: on High and Ultra, or after quality.set({ aoScale: 0.5 }) on phones and tablets. For SSAOPass, SAOPass and N8AO, start from the defaults and tune radius and scale by eye.",
+      "docs": "concepts/post-processing",
       "detect": "\\b(SSAO|SAO|GTAO|N8AO)(Pass|PostPass)?\\b"
     },
     {

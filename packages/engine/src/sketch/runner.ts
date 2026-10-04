@@ -195,6 +195,12 @@ export class SketchRunner {
 	private bloomOn = false;
 	/** The divisor of bloom's taps that the `bloomSamples` setting gives. */
 	private bloomSetting = 1;
+	/** True while the sketch has ambient occlusion on, as the governor knows it. */
+	private aoOn = false;
+	/** The scale of ambient occlusion's targets that the `aoScale` setting gives, in thousandths. */
+	private aoSetting = 0;
+	/** True while ambient occlusion draws: the sketch has it on, and its scale is above 0. */
+	private aoDrawn = false;
 	/** True once the core draws HDR color for an effect, on a device that started on the 8-bit path. */
 	private hdrForEffects = false;
 	/** The render scale in thousandths where the governor does not move it: the highest. */
@@ -300,6 +306,9 @@ export class SketchRunner {
 				get bloomSamples() {
 					return 1 / governor.bloomDivisor;
 				},
+				get aoScale() {
+					return governor.aoScale / FULL_SCALE;
+				},
 			},
 		);
 		this.applyFrameSettings(this.quality.settings);
@@ -324,7 +333,11 @@ export class SketchRunner {
 			new FrameCameras(this.core, sketch.control, this.input),
 			{ geometry, materials },
 		);
-		this.post = new Post(this.core, device.effectsSceneColor !== FORMAT_CANVAS);
+		this.post = new Post(
+			this.core,
+			device.effectsSceneColor !== FORMAT_CANVAS,
+			device.occlusionTargets,
+		);
 		this.debugDraw = DEV ? new DebugDraw(this.core, host, scene) : undefined;
 		const debug = this.debugDraw ?? new SketchDebug(host);
 		this.context = {
@@ -538,12 +551,15 @@ export class SketchRunner {
 		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval);
 		this.bloomSetting = bloomDivisor(settings.bloomSamples);
 		governor.setBloom(this.bloomOn, this.bloomSetting);
+		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
+		governor.setAo(this.aoOn, this.aoSetting);
 		this.stepChanges = governor.stepChanges;
 		const { glue } = this.sketch;
 		if (
 			glue.setRenderScaling((settings.governor ? low : high) < FULL_SCALE) !== 0 ||
 			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0 ||
-			glue.setBloomSamples(governor.bloomDivisor) !== 0
+			glue.setBloomSamples(governor.bloomDivisor) !== 0 ||
+			glue.setAoScale(governor.aoScale) !== 0
 		)
 			this.report(coreFailure(glue, 'quality.set'));
 	}
@@ -558,10 +574,38 @@ export class SketchRunner {
 		this.stepChanges = governor.stepChanges;
 		if (
 			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0 ||
-			glue.setBloomSamples(governor.bloomDivisor) !== 0
+			glue.setBloomSamples(governor.bloomDivisor) !== 0 ||
+			glue.setAoScale(governor.aoScale) !== 0
 		)
 			this.report(coreFailure(glue, 'the quality governor'));
 		this.quality.governed();
+	}
+
+	/**
+	 * Follows the sketch's effects. Returns true when the frame has new targets and pipelines, so
+	 * the thread that draws holds it until they are built, and the frame before stays on screen
+	 * meanwhile.
+	 */
+	private followEffects(): boolean {
+		const ao = this.followAo();
+		const bloom = this.followBloom();
+		return ao || bloom;
+	}
+
+	/**
+	 * Follows the sketch's ambient occlusion: the governor's step needs it on. Returns true when it
+	 * starts or stops drawing: the frame adds or removes the depth prepass and the steps.
+	 */
+	private followAo(): boolean {
+		const on = this.post.aoOn;
+		if (on !== this.aoOn) {
+			this.aoOn = on;
+			this.governor.setAo(on, this.aoSetting);
+		}
+		const drawn = on && this.aoSetting > 0;
+		if (drawn === this.aoDrawn) return false;
+		this.aoDrawn = drawn;
+		return true;
 	}
 
 	/**
@@ -571,7 +615,7 @@ export class SketchRunner {
 	 * targets and pipelines, so the thread that draws holds it until they are built, and the frame
 	 * before stays on screen meanwhile.
 	 */
-	private followEffects(): boolean {
+	private followBloom(): boolean {
 		const on = this.post.bloomOn;
 		if (on === this.bloomOn) return false;
 		this.bloomOn = on;

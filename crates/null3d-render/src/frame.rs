@@ -24,8 +24,9 @@ use null3d_gpu::drawlist::{
     DrawList, DrawListError, Op, buffer_usage, permutation, state_flags, template, vertex,
 };
 
+use crate::ao::{self, Ao};
 use crate::bloom::{self, Bloom};
-use crate::camera::Lens;
+use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
 use crate::fog::Fog;
@@ -506,6 +507,11 @@ pub struct SceneSettings {
     /// How many times fewer taps than three.js's each of bloom's blurs reads, which the quality
     /// settings raise.
     bloom_divisor: u32,
+    /// Ambient occlusion's settings while the sketch turns it on.
+    ao: Option<Ao>,
+    /// The size of ambient occlusion's targets, as a share of the render size each way, which the
+    /// quality settings set: 0 draws none.
+    ao_scale: f32,
     /// The color grading table while the sketch sets one.
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
@@ -555,6 +561,8 @@ impl SceneSettings {
             output: Output::default(),
             bloom: None,
             bloom_divisor: 1,
+            ao: None,
+            ao_scale: ao::MAX_SCALE,
             lut: None,
             vignette: None,
             clock: [0.0; 4],
@@ -654,6 +662,40 @@ impl SceneSettings {
     /// the same kernel more coarsely, so the glow keeps its size.
     pub fn set_bloom_divisor(&mut self, divisor: u32) {
         self.bloom_divisor = divisor.clamp(1, bloom::MAX_SAMPLE_DIVISOR);
+    }
+
+    /// Ambient occlusion's settings while it draws: while the sketch turns it on, its scale is
+    /// above 0, and no debug view draws.
+    pub fn ao(&self) -> Option<Ao> {
+        self.ao
+            .filter(|_| self.ao_scale > 0.0 && !self.debug_view.is_debug())
+    }
+
+    /// Turns ambient occlusion on with its settings, or off with `None`, from the next recorded
+    /// frame on.
+    pub fn set_ao(&mut self, ao: Option<Ao>) {
+        self.ao = ao;
+    }
+
+    /// The size of ambient occlusion's targets, as a share of the render size each way.
+    pub fn ao_scale(&self) -> f32 {
+        self.ao_scale
+    }
+
+    /// Sets the size of ambient occlusion's targets, from 0, which draws none, to
+    /// [`ao::MAX_SCALE`], from the next recorded frame on. A scale above 0 draws a corner of the
+    /// same targets, so it makes no GPU object.
+    pub fn set_ao_scale(&mut self, scale: f32) {
+        self.ao_scale = scale.clamp(0.0, ao::MAX_SCALE);
+    }
+
+    /// The camera's projection for a canvas of `canvas` pixels, and its inverse, or `None` without
+    /// a camera.
+    pub(crate) fn camera_projection(&self, canvas: (u32, u32)) -> Option<(Mat4, Mat4)> {
+        let (_, lens) = self.views.first()?.camera()?;
+        let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
+        let projection = lens.projection(aspect);
+        Some((projection, crate::camera::invert(&projection)?))
     }
 
     /// Grades the canvas color with a color grading table, or with none with `None`, from the next
@@ -1153,6 +1195,7 @@ impl SceneSettings {
         scale: RenderScale,
     ) -> Option<ViewFrame> {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
+        let view_id = view;
         let view = self.views.get(view.index())?;
         let camera = view.transform(scene, parity, aspect)?;
         let [x, y, z] = camera.cell.absolute().map(|v| v as f32);
@@ -1175,6 +1218,12 @@ impl SceneSettings {
                 2.0 * self.pixel_ratio / canvas.0.max(1) as f32,
                 2.0 * self.pixel_ratio / canvas.1.max(1) as f32,
             ],
+            occlusion: match self.ao() {
+                Some(ao) if view_id == ViewId::CAMERA => {
+                    ao::frame_values(ao, canvas, scale, self.ao_scale)
+                }
+                _ => [0.0; 4],
+            },
             ..FrameUniform::default()
         };
         Some(ViewFrame::new(

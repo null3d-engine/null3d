@@ -152,6 +152,27 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
+# Ambient occlusion's steps at a fraction of the render size, three.js's GTAOPass: `depth` copies
+# one texel of the depth prepass's depth per pixel, `horizon` finds how open each surface is, and
+# `denoise` blurs it along each surface. The opaque pass then reads the result (null3d::gtao). The
+# WebGL2 variant counts rows from the bottom. They load by device, in every module of its target.
+[shaders.ao]
+file = "ao.wgsl"
+by_device = true
+pipelines.depth = { vertex = "vs", fragment = "depth" }
+pipelines.horizon = { vertex = "vs", fragment = "horizon" }
+pipelines.denoise = { vertex = "vs", fragment = "denoise" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
+
+# The depth step from a multisampled depth target, from the same file: it reads sample 0. Only
+# WebGPU reads multisampled textures; WebGL2 reads the one-sample copy that its backend keeps.
+[shaders.ao_ms]
+file = "ao.wgsl"
+by_device = true
+pipelines.depth = { vertex = "vs", fragment = "depth" }
+variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
+
 # Debug lines, which development builds of the engine draw after the opaque objects: a position
 # relative to the camera and an sRGB color per vertex, from a vertex buffer of their own. It stays
 # in shaders.ts, where only development builds import it, so release builds hold none of it.

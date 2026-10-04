@@ -5,6 +5,9 @@
 // templates of the debug lines and the debug views, so release builds hold none of their code.
 
 import {
+	LAYOUT_AO,
+	LAYOUT_AO_DEPTH,
+	LAYOUT_AO_DEPTH_MS,
 	LAYOUT_BLOOM,
 	LAYOUT_CULL,
 	LAYOUT_DEPTH,
@@ -29,6 +32,10 @@ import {
 	STATE_NO_COLOR_WRITE,
 	STATE_NO_DEPTH_TEST,
 	STATE_NO_DEPTH_WRITE,
+	TEMPLATE_AO,
+	TEMPLATE_AO_DENOISE,
+	TEMPLATE_AO_DEPTH,
+	TEMPLATE_AO_DEPTH_MS,
 	TEMPLATE_BACKGROUND,
 	TEMPLATE_BLOOM,
 	TEMPLATE_CULL,
@@ -295,7 +302,8 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_DEPTH, 'depth', frameEntries);
 		// The materials' custom values, the table of specular terms, then the shadow map, the
 		// sampler that compares depths in it, its cascades, the camera's light grid and light list,
-		// and the shadow atlas of point and spot lights with its tiles.
+		// the shadow atlas of point and spot lights with its tiles, and ambient occlusion's
+		// texture, which the lit shading reads with textureLoad.
 		this.defineLayout(LAYOUT_FRAME, 'frame', [
 			...frameEntries,
 			{
@@ -320,6 +328,7 @@ export class Pipelines {
 				texture: { sampleType: 'depth', viewDimension: '2d-array' },
 			},
 			{ binding: 10, visibility: fragment, buffer: { type: 'uniform' } },
+			{ binding: 11, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
 		]);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
@@ -407,6 +416,22 @@ export class Pipelines {
 			{ binding: 1, visibility: fragment, texture: {} },
 			{ binding: 2, visibility: fragment, sampler: {} },
 		]);
+		// Ambient occlusion's steps read every texture with textureLoad. The depth step reads the
+		// depth target as plain floats: compatibility mode reads no depth texture type with
+		// textureLoad, and it does read a depth format bound as unfilterable floats.
+		const aoSettings: GPUBindGroupLayoutEntry = {
+			binding: 0,
+			visibility: fragment,
+			buffer: { type: 'uniform' },
+		};
+		const unfiltered = (binding: number, multisampled = false): GPUBindGroupLayoutEntry => ({
+			binding,
+			visibility: fragment,
+			texture: { sampleType: 'unfilterable-float', multisampled },
+		});
+		this.defineLayout(LAYOUT_AO_DEPTH, 'ao depth', [aoSettings, unfiltered(1)]);
+		this.defineLayout(LAYOUT_AO_DEPTH_MS, 'ao depth ms', [aoSettings, unfiltered(1, true)]);
+		this.defineLayout(LAYOUT_AO, 'ao', [aoSettings, unfiltered(1), unfiltered(2)]);
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
 			[TEMPLATE_INSTANCED_UNLIT, 'unlit', shaders.unlit, [0], [LAYOUT_FRAME]],
@@ -465,6 +490,14 @@ export class Pipelines {
 			layouts: [LAYOUT_BLOOM],
 			vertexBuffers: [],
 		});
+		for (const [id, label, shader, pipeline, layout] of [
+			[TEMPLATE_AO_DEPTH, 'ao depth', shaders.ao, 'depth', LAYOUT_AO_DEPTH],
+			[TEMPLATE_AO_DEPTH_MS, 'ao depth ms', shaders.ao_ms, 'depth', LAYOUT_AO_DEPTH_MS],
+			[TEMPLATE_AO, 'ao horizon', shaders.ao, 'horizon', LAYOUT_AO],
+			[TEMPLATE_AO_DENOISE, 'ao denoise', shaders.ao, 'denoise', LAYOUT_AO],
+		] as const) {
+			this.defineTemplate(id, { label, shader, pipeline, layouts: [layout], vertexBuffers: [] });
+		}
 		this.defineTemplate(TEMPLATE_BACKGROUND, {
 			label: 'background',
 			shader: shaders.background,

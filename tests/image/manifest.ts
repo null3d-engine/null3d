@@ -14,6 +14,7 @@
 // bun run check fails until the test has both references.
 import { BENCH_SCENES, type FeatureScene } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
+import { AO_IMAGE } from '../../bench/scenes/ao.ts';
 import { BLOOM_IMAGE } from '../../bench/scenes/bloom.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
 import {
@@ -142,6 +143,33 @@ function bloomTests(): ImageTest[] {
 			tolerance: EIGHT_BIT_TOLERANCE,
 			deviceTolerance: EIGHT_BIT_TOLERANCE,
 		},
+	];
+}
+
+/** The sketch of the ambient occlusion tests: a floor, a wall and shapes on them (bench/scenes/ao.ts). */
+const AO_SKETCH = 'tests/pages/sketches/ao-sketch.ts';
+
+/**
+ * Ambient occlusion with three.js's defaults and with a wider search, and the scene without it, on
+ * every tier. The parity test compares the two with three.js's GTAOPass. The sun's test shows that
+ * the occlusion darkens only the ambient light, beside the sun's shadows. Ambient occlusion at half
+ * the render scale draws into the corners of the same targets, and a quarter-size scale into a
+ * smaller corner.
+ */
+function aoTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${AO_SKETCH}${query}`,
+		hold: 1,
+		size: [AO_IMAGE.width, AO_IMAGE.height],
+	});
+	return [
+		test('ao-off', ''),
+		test('ao-default', '?ao=default'),
+		test('ao-wide', '?ao=wide'),
+		test('ao-sun', '?ao=wide&sun'),
+		test('ao-scale-50', '?scale=0.5&ao=wide'),
+		test('ao-quarter', '?ao=wide&aoscale=0.25'),
 	];
 }
 
@@ -494,6 +522,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...toneMappingTests(),
 	...antialiasTests(),
 	...bloomTests(),
+	...aoTests(),
 	...gradingTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
 	// alpha: the output spec checks the alpha of the captured pixels.
