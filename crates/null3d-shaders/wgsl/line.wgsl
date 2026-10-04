@@ -27,7 +27,7 @@ enable draw_index;
 #ifdef LIT
 #import null3d::globals::{Material}
 #import null3d::lighting::{direct_light, dfg_lut, indirect_diffuse, multiscatter_compensation}
-#import null3d::lighting::{pbr_material}
+#import null3d::lighting::{pbr_material, with_specular}
 #import null3d::lights::{clustered_light}
 #endif
 
@@ -176,7 +176,8 @@ fn closest_line_to_line(p1: vec3f, p2: vec3f, p3: vec3f, p4: vec3f) -> vec2f {
 fn lit_color(m: Material, base: vec3f, relative: vec3f) -> vec3f {
     let eye = engine_frame.camera_position;
     let normal = normalize(eye.xyz - relative * eye.w);
-    let pbr = pbr_material(base, m.surface.x, m.surface.y, 0.0);
+    let plain = pbr_material(base, m.surface.x, m.surface.y, 0.0);
+    let pbr = with_specular(plain, m.uv_u.w, m.specular.rgb, m.specular.w);
     let dfg = dfg_lut(1.0, pbr.roughness);
     let compensation = multiscatter_compensation(pbr.specular_blended, dfg);
     let to_light = -engine_frame.sun_direction.xyz;

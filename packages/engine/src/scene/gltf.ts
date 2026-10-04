@@ -559,10 +559,15 @@ class FileMaterials {
 			emissiveIntensity: m.emissiveIntensity,
 			normalScale: [m.normalScale, tangents ? m.normalScale : -m.normalScale],
 			aoMapIntensity: m.aoMapIntensity,
+			ior: m.ior,
+			specularIntensity: m.specularIntensity,
+			specularColor: m.specularColor,
 			metalnessRoughnessMap: map(m.maps.metalnessRoughnessMap),
 			normalMap: map(m.maps.normalMap),
 			aoMap: map(m.maps.aoMap),
 			emissiveMap: map(m.maps.emissiveMap),
+			specularIntensityMap: map(m.maps.specularIntensityMap),
+			specularColorMap: map(m.maps.specularColorMap),
 		};
 		return materials.standard(options);
 	}

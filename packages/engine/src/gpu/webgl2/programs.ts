@@ -50,13 +50,14 @@ import { variantFor } from '../variants';
 import type { DepthSetup } from './depth';
 
 /**
- * The first slot of each bind group. A slot is a texture unit, a uniform block binding point and a
- * sampler's place, and each binding of a group takes its group's first slot plus its binding
- * number. The per-frame group, which holds the most bindings, comes first. Group 1 has three
- * slots, group 2 eight (the instance textures, then the two textures that skinned meshes read and
- * the two that morphed meshes read) and group 3 the last twelve, whose samplers take the last
- * places. The groups' uniform blocks stay below the fewest binding points that WebGL2 allows, and
- * their textures below the texture upload unit.
+ * The first slot of each bind group. A slot is a uniform block binding point, a sampler's place and
+ * the place where a bind group leaves a texture, and each binding of a group takes its group's
+ * first slot plus its binding number. The per-frame group, which holds the most bindings, comes
+ * first. Group 1 has three slots, group 2 eight (the instance textures, then the two textures that
+ * skinned meshes read and the two that morphed meshes read) and group 3 the last sixteen: the
+ * eight map textures, then their samplers. Slots are no texture units: each program numbers the
+ * textures it reads from unit 0, so the groups' bindings never run out of units. The groups'
+ * uniform blocks stay below the fewest binding points that WebGL2 allows.
  */
 const GROUP_BASES = Uint8Array.of(0, 12, 15, 23);
 
@@ -64,10 +65,16 @@ const GROUP_BASES = Uint8Array.of(0, 12, 15, 23);
 export const MIN_UNIFORM_BLOCK_SLOTS = 24;
 
 /**
- * The texture unit that texture uploads and copies use, apart from the units that bind groups use:
+ * The texture unit that texture uploads and copies use, apart from the units that programs read:
  * the last of the 32 that every WebGL2 context has.
  */
 export const UPLOAD_UNIT = 31;
+
+/**
+ * The fewest texture units that a WebGL2 context gives each shader stage. A program whose stage
+ * reads more would fail to link on some devices.
+ */
+export const MIN_STAGE_TEXTURE_UNITS = 16;
 
 /** The slot of a binding of a bind group: its texture unit, uniform block binding point or sampler's place. */
 export function slotOf(group: number, binding: number): number {
@@ -121,13 +128,12 @@ export interface Program {
 	firstInstance: WebGLUniformLocation | null;
 	firstInstanceValue: number;
 	/**
-	 * Pairs of a texture unit that the program reads and the slot of the sampler it reads that
-	 * unit with, or `NO_SAMPLER`. GLSL joins each texture with its sampler, so the backend binds
-	 * the sampler of each pair to the pair's unit.
+	 * Triples of a texture unit that the program reads, the slot where bind groups leave the
+	 * unit's texture, and the slot of the sampler it reads the unit with, or `NO_SAMPLER`. Units
+	 * count from 0, one for each texture the program reads. GLSL joins each texture with its
+	 * sampler, so the backend binds each triple's texture and sampler to its unit.
 	 */
-	samplerUnits: readonly number[];
-	/** True when the program samples a texture with a sampler, so the units' samplers matter to it. */
-	sampled: boolean;
+	textureUnits: readonly number[];
 	/** True once the link result was checked and the blocks and textures were bound. */
 	ready: boolean;
 	/**
@@ -251,8 +257,7 @@ export function createProgram(
 		shaders,
 		firstInstance: null,
 		firstInstanceValue: 0,
-		samplerUnits: [],
-		sampled: false,
+		textureUnits: [],
 		ready: false,
 		background: false,
 	};
@@ -270,10 +275,11 @@ export function declaresUniform(source: string, name: string): boolean {
 }
 
 /**
- * Checks the program's link result, binds its uniform blocks and textures to the slots of their
- * WGSL groups and bindings, and sets its vertex shader's depth mapping for the backend's depth mode,
- * once, at its first use. A block or texture that the driver removed, because the program never
- * reads it, needs no binding and is skipped. The program is in use afterwards.
+ * Checks the program's link result, binds its uniform blocks to the slots of their WGSL groups and
+ * bindings, gives each texture it reads a unit, counting from 0, and sets its vertex shader's
+ * depth mapping for the backend's depth mode, once, at its first use. A texture that both stages
+ * read takes one unit. A block or texture that the driver removed, because the program never reads
+ * it, needs no binding and is skipped. The program is in use afterwards.
  */
 export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: DepthSetup): void {
 	if (!gl.getProgramParameter(p.program, gl.LINK_STATUS)) {
@@ -288,7 +294,7 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: De
 		gl.deleteShader(shader);
 	}
 	gl.useProgram(p.program);
-	const samplerUnits: number[] = [];
+	const textureUnits: number[] = [];
 	for (const stage of [p.source.vertex, p.source.fragment]) {
 		for (const block of stage.uniformBlocks) {
 			const index = gl.getUniformBlockIndex(p.program, block.name);
@@ -296,22 +302,25 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: De
 				gl.uniformBlockBinding(p.program, index, slotOf(block.group, block.binding));
 		}
 		for (const texture of stage.textures) {
-			const unit = slotOf(texture.group, texture.binding);
 			const location = gl.getUniformLocation(p.program, texture.name);
-			if (location) gl.uniform1i(location, unit);
+			if (!location) continue;
+			const slot = slotOf(texture.group, texture.binding);
 			const sampler = texture.sampler;
-			const slot = sampler ? slotOf(sampler.group, sampler.binding) : NO_SAMPLER;
+			const samplerSlot = sampler ? slotOf(sampler.group, sampler.binding) : NO_SAMPLER;
 			let known = -1;
-			for (let k = 0; k < samplerUnits.length; k += 2) if (samplerUnits[k] === unit) known = k;
+			for (let k = 0; k < textureUnits.length; k += 3) if (textureUnits[k + 1] === slot) known = k;
 			if (known < 0) {
-				samplerUnits.push(unit, slot);
-			} else if (samplerUnits[known + 1] !== slot) {
+				known = textureUnits.length;
+				textureUnits.push(known / 3, slot, samplerSlot);
+			} else if (textureUnits[known + 2] !== samplerSlot) {
 				throw new Error('a WebGL2 program samples one texture with two samplers');
 			}
-			if (slot !== NO_SAMPLER) p.sampled = true;
+			gl.uniform1i(location, textureUnits[known] as number);
 		}
 	}
-	p.samplerUnits = samplerUnits;
+	if (textureUnits.length / 3 > UPLOAD_UNIT)
+		throw new Error(`a WebGL2 program reads ${textureUnits.length / 3} textures, past its units`);
+	p.textureUnits = textureUnits;
 	p.firstInstance = gl.getUniformLocation(p.program, 'naga_vs_first_instance');
 	const mapping = gl.getUniformLocation(p.program, DEPTH_MAPPING_UNIFORM);
 	if (mapping) gl.uniform2f(mapping, depth.scale, depth.offset);

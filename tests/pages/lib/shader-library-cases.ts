@@ -1418,6 +1418,27 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		expected: (i) => floats(i.f(0).slice(0, 2)),
 		tolerance: 0,
 	},
+	{
+		name: 'lighting::with_specular',
+		// A reflectance, a specular color whose components may exceed 1, and an intensity.
+		cases: materialCase((random, i) => {
+			i.setF(2, [between(random, 0, 1), ...values(random, 3, 0, 4)]).setF(3, [
+				between(random, 0, 1),
+			]);
+		}),
+		expected: (i) => {
+			const m = materialOf(i);
+			const [reflectance, r, g, b] = i.f(2);
+			const [intensity] = i.f(3);
+			const specular = map3([r, g, b], (c) => Math.min(reflectance * c, 1) * intensity);
+			return floats(
+				[...m.base, intensity + (1 - intensity) * m.metalness],
+				[...m.diffuse, m.roughness],
+				[...specular, m.metalness],
+				mix3(specular, m.base, m.metalness),
+			);
+		},
+	},
 ];
 
 function box(p: V3, half: V3): number {

@@ -5,6 +5,8 @@ import {
 	MAP_SLOT_BASE_COLOR,
 	MAP_SLOT_LIGHT,
 	MAP_SLOT_NORMAL,
+	MAP_SLOT_SPECULAR_COLOR,
+	MAP_SLOT_SPECULAR_INTENSITY,
 	MATERIAL_FEATURE_ADDITIVE,
 	MATERIAL_FEATURE_ALPHA_MASK,
 	MATERIAL_FEATURE_BLEND,
@@ -24,7 +26,10 @@ import {
 	MATERIAL_PARAM_NORMAL_SCALE,
 	MATERIAL_PARAM_OCCLUSION_STRENGTH,
 	MATERIAL_PARAM_OPACITY,
+	MATERIAL_PARAM_REFLECTANCE,
 	MATERIAL_PARAM_ROUGHNESS,
+	MATERIAL_PARAM_SPECULAR_COLOR,
+	MATERIAL_PARAM_SPECULAR_INTENSITY,
 	MATERIAL_PARAM_UV_U,
 	MATERIAL_PARAM_UV_V,
 	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
@@ -35,7 +40,7 @@ import {
 	SHADING_UNLIT,
 	SHADING_UNLIT_MAP,
 } from '../generated/core';
-import { VERTEX_COLOR, VERTEX_UV0 } from '../generated/gpu';
+import { SIZE_MATERIAL_BYTES, VERTEX_COLOR, VERTEX_UV0 } from '../generated/gpu';
 import { fromHex } from '../math/color';
 import type { CoreGlue } from '../shared/core';
 import type { CustomShader } from '../shared/images';
@@ -62,6 +67,9 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_LIGHT_MAP_INTENSITY, 1],
 	[MATERIAL_PARAM_UV_U, 3],
 	[MATERIAL_PARAM_UV_V, 3],
+	[MATERIAL_PARAM_REFLECTANCE, 1],
+	[MATERIAL_PARAM_SPECULAR_COLOR, 3],
+	[MATERIAL_PARAM_SPECULAR_INTENSITY, 1],
 ]);
 
 /** A texture as materials see it: its handle, and the coordinates its maps read. */
@@ -105,7 +113,7 @@ function fakeCore() {
 			biasConstant: number,
 			biasSlope: number,
 		) => {
-			const row = new Array<number>(32).fill(0);
+			const row = new Array<number>(SIZE_MATERIAL_BYTES / 4).fill(0);
 			row.splice(0, 4, r, g, b, a);
 			row[MATERIAL_PARAM_ALPHA_CUTOFF] = 0.5;
 			row[MATERIAL_PARAM_ROUGHNESS] = 1;
@@ -336,6 +344,47 @@ describe('Material.set', () => {
 		close(row().slice(MATERIAL_PARAM_UV_U, MATERIAL_PARAM_UV_U + 3), [4, 0, 0]);
 		stone.set({ lightMapIntensity: 3 });
 		expect(row()[MATERIAL_PARAM_LIGHT_MAP_INTENSITY]).toBe(3);
+	});
+
+	test('writes the specular values, with the reflectance that the index of refraction gives', () => {
+		const { table, maps, materials } = fakeCore();
+		const glass = materials.standard({
+			ior: 2,
+			specularIntensity: 0.5,
+			specularColor: [2, 0.5, 0],
+			specularIntensityMap: texture(5),
+			specularColorMap: texture(6, 1),
+		});
+		const row = () => table[0] as number[];
+		expect(row()[MATERIAL_PARAM_REFLECTANCE]).toBeCloseTo(1 / 9, 12);
+		expect(row()[MATERIAL_PARAM_SPECULAR_INTENSITY]).toBe(0.5);
+		// Linear components above 1 stay, as glTF's specular color factor allows.
+		expect(row().slice(MATERIAL_PARAM_SPECULAR_COLOR, MATERIAL_PARAM_SPECULAR_COLOR + 3)).toEqual([
+			2, 0.5, 0,
+		]);
+		expect(maps).toEqual([
+			[1, MAP_SLOT_SPECULAR_INTENSITY, 5, 0],
+			[1, MAP_SLOT_SPECULAR_COLOR, 6, 1],
+		]);
+		glass.set({ ior: 1.5, specularColor: '#ffffff' });
+		expect(row()[MATERIAL_PARAM_REFLECTANCE]).toBeCloseTo(0.04, 15);
+		expect(row().slice(MATERIAL_PARAM_SPECULAR_COLOR, MATERIAL_PARAM_SPECULAR_COLOR + 3)).toEqual([
+			1, 1, 1,
+		]);
+	});
+
+	test('refuses an index of refraction below 1 and a specular intensity above 1', () => {
+		const { table, materials } = fakeCore();
+		const glass = materials.standard();
+		const before = [...(table[0] as number[])];
+		for (const values of [
+			{ ior: 0.5 },
+			{ ior: Number.POSITIVE_INFINITY },
+			{ specularIntensity: 2 },
+		])
+			expect(thrown(() => glass.set(values)).code).toBe('E1108');
+		expect(thrown(() => glass.set({ specularColor: [-1, 0, 0] })).code).toBe('E1204');
+		expect(table[0]).toEqual(before);
 	});
 
 	test('checks the map values before it changes any', () => {

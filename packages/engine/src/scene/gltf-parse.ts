@@ -48,6 +48,8 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_texture_transform',
 	'KHR_materials_unlit',
 	'KHR_materials_emissive_strength',
+	'KHR_materials_specular',
+	'KHR_materials_ior',
 	'KHR_lights_punctual',
 	'EXT_mesh_gpu_instancing',
 	'KHR_meshopt_compression',
@@ -128,6 +130,23 @@ const NEAREST = 9728;
 const NEAREST_MIPMAP_NEAREST = 9984;
 const CLAMP_TO_EDGE = 33071;
 const MIRRORED_REPEAT = 33648;
+
+/**
+ * The index of refraction that stands for KHR_materials_ior's 0, which the extension allows for a
+ * surface that reflects nearly all light, as three.js's GLTFLoader reads it.
+ */
+const IOR_OF_ZERO = 1000;
+
+/**
+ * A material's index of refraction from its KHR_materials_ior extension: glTF's default of 1.5
+ * without one, and 1 or more, or 0, which stands for a very large index.
+ */
+function indexOfRefraction(extension: Entry | undefined, what: string): number {
+	const ior = finite(extension?.ior ?? 1.5, `${what}'s ior`);
+	if (ior === 0) return IOR_OF_ZERO;
+	if (ior < 1) broken(`${what}'s ior is ${ior}, and it takes 0 or 1 or more`);
+	return ior;
+}
 
 /** Each component type's bytes and the typed array that holds it. */
 const COMPONENTS: Readonly<Record<number, readonly [bytes: number, type: TypedArrayClass]>> = {
@@ -250,12 +269,20 @@ export interface MaterialData {
 	emissiveIntensity: number;
 	normalScale: number;
 	aoMapIntensity: number;
+	/** KHR_materials_ior's index of refraction, 1 or more. */
+	ior: number;
+	/** KHR_materials_specular's specular factor. */
+	specularIntensity: number;
+	/** KHR_materials_specular's specular color factor: linear RGB, which may exceed 1. */
+	specularColor: [number, number, number];
 	maps: {
 		map?: number;
 		metalnessRoughnessMap?: number;
 		normalMap?: number;
 		aoMap?: number;
 		emissiveMap?: number;
+		specularIntensityMap?: number;
+		specularColorMap?: number;
 	};
 	uvTransform?: UvTransformData;
 }
@@ -667,6 +694,15 @@ export function parseGltf(
 		const emissive = numbers(material.emissiveFactor, 3, [0, 0, 0], `${what}'s emissiveFactor`);
 		const strength = (extensions.KHR_materials_emissive_strength as Entry | undefined)
 			?.emissiveStrength;
+		const specular = (extensions.KHR_materials_specular ?? {}) as Entry;
+		const specularColor = numbers(
+			specular.specularColorFactor,
+			3,
+			[1, 1, 1],
+			`${what}'s specularColorFactor`,
+		);
+		if (specularColor.some((c) => c < 0))
+			broken(`${what}'s specularColorFactor has a component below 0`);
 		const slots = {
 			map: useTexture(pbr.baseColorTexture, 'srgb', `${what}'s baseColorTexture`),
 			metalnessRoughnessMap: useTexture(
@@ -677,6 +713,16 @@ export function parseGltf(
 			normalMap: useTexture(material.normalTexture, 'linear', `${what}'s normalTexture`),
 			aoMap: useTexture(material.occlusionTexture, 'linear', `${what}'s occlusionTexture`),
 			emissiveMap: useTexture(material.emissiveTexture, 'srgb', `${what}'s emissiveTexture`),
+			specularIntensityMap: useTexture(
+				specular.specularTexture,
+				'linear',
+				`${what}'s specularTexture`,
+			),
+			specularColorMap: useTexture(
+				specular.specularColorTexture,
+				'srgb',
+				`${what}'s specularColorTexture`,
+			),
 		};
 		const maps: MaterialData['maps'] = {};
 		let transform: Entry | undefined;
@@ -710,6 +756,13 @@ export function parseGltf(
 				(material.occlusionTexture as Entry | undefined)?.strength ?? 1,
 				`${what}'s occlusion strength`,
 			),
+			ior: indexOfRefraction(extensions.KHR_materials_ior as Entry | undefined, what),
+			specularIntensity: unit(specular.specularFactor ?? 1, `${what}'s specularFactor`),
+			specularColor: [
+				specularColor[0] as number,
+				specularColor[1] as number,
+				specularColor[2] as number,
+			],
 			maps,
 		};
 		if (transform) {

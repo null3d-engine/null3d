@@ -374,7 +374,7 @@ struct SamplerSlot {
 }
 
 /// The maps of one map set's bind group, in the order of the material's map slots.
-pub const MAP_SET_SLOTS: usize = 6;
+pub const MAP_SET_SLOTS: usize = crate::materials::MAP_SLOTS;
 
 /// What a bind group binds: one array and its sampler, or a map set of an array and a sampler
 /// for each map slot.
