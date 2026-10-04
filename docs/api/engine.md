@@ -319,7 +319,7 @@ Options for `createEngine`.
 | `onSketchMessage?: (name: string, data: unknown) => void` | Receives the messages the sketch sends with `ctx.page.post`, from the start of the sketch's setup. Use it for progress that the sketch reports while it loads. `engine.onSketchMessage` adds more handlers once the engine has started. |
 | `signal?: AbortSignal` | Cancels a start in progress, for example when the user leaves the page. `createEngine` then stops the engine's threads and rejects with the signal's reason. |
 | `hold?: number` | Starts the engine in hold mode for image tests, held at this many seconds of sketch time. The engine steps the sketch from 0 to the time in fixed steps of 1/60 second, with no frame loop. `math.random` and `Math.random` in the sketch's thread give the same numbers on every run, and the sketch gets no input: every key and button stays up. The engine then draws that one frame and reads it back, and `createEngine` resolves. The `?hold=<seconds>` switch overrides this time, and a bare `?hold` holds at it, or at 0 without it. |
-| `preload?: readonly ShaderFeature[]` | Features whose shaders load before the first frame, for a game that must fetch nothing while it plays. Each feature's shaders otherwise download the first time the sketch uses it: `'skinning'` with the first skinned mesh, `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first batch, and `'background'` with a texture background. Listed features download beside the engine's own shaders, so the start waits only for the largest. Loading a glTF file with skins, or making a batch, also starts its feature's download at once, before the objects draw. Throws E1421 for a name it does not know. |
+| `preload?: readonly ShaderFeature[]` | Features whose shaders load before the first frame, for a game that must fetch nothing while it plays. Each feature's shaders otherwise download the first time the sketch uses it: `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh on WebGL2, `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first batch, and `'background'` with a texture background. WebGPU morphs in the skinning pass, so a morphed mesh there downloads `'skinning'`. Listed features download beside the engine's own shaders, so the start waits only for the largest. Loading a glTF file with skins, or making a batch, also starts its feature's download at once, before the objects draw. Throws E1421 for a name it does not know. |
 
 ### `ErrorCode`
 
@@ -427,7 +427,15 @@ How the engine trades latency for speed. In `pipelined` mode, the render worker 
 ### `ShaderFeature`
 
 ```ts
-type ShaderFeature = 'ao' | 'background' | 'bloom' | 'lines' | 'skinning' | 'sprites' | 'texcoords';
+type ShaderFeature =
+	| 'ao'
+	| 'background'
+	| 'bloom'
+	| 'lines'
+	| 'morph'
+	| 'skinning'
+	| 'sprites'
+	| 'texcoords';
 ```
 
 A feature whose shader builds load on first use, which `createEngine`'s `preload` lists.
