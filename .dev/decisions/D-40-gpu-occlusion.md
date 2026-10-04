@@ -109,7 +109,7 @@ The tables above and D-22's room figures come from a Mac that other helpers' bro
 
 So the stall is probably not a barrier in the engine's frame. Other programs' GPU work runs in the gaps between its passes. Culling makes a chain of 5 dependent passes in place of 3, so a frame has more points where it waits behind other work. The GPU timestamps count that wait. A Metal trace under load, which would show whose work fills the gaps, is not read yet. Safari's WebGPU on a quiet Mac is not measured yet.
 
-The preset rules for it were decided in D-53 on 4 October 2026:
+The preset rules for it were decided in [D-53](D-53-technique-defaults.md) on 4 October 2026:
 
 - Desktops: High and Ultra turn GPU occlusion culling on only if a second run on a quiet Mac saves time, and a run with another program loading the GPU loses no more than 5%. Today's loaded runs lose 19 to 40%, so it stays off for now.
 - Android: it stays off until prototype G1 passes on the GPUs whose drivers Bevy and Unity block for GPU culling. These are Adreno 730 and older, Mali drivers before r48, and the PowerVR GPUs of the Pixel 10 and 11.

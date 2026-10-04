@@ -16,6 +16,7 @@ use null3d_core::scene::{Command, flags};
 use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::{Op, format, pass_flags, template};
 use null3d_gpu::mock::MockBackend;
+use null3d_render::ao::Ao;
 use null3d_render::frame::{CanvasOutput, FrameBuilder};
 use null3d_render::gpu_driven::RendererConfig;
 use null3d_render::graph::RenderScale;
@@ -459,6 +460,49 @@ fn marking_an_object_turns_the_two_phases_on_from_the_next_frame_and_unmarking_t
             early,
             "marked {}",
             mark != 0
+        );
+    }
+}
+
+#[test]
+fn culling_starts_in_two_phases_once_ambient_occlusion_turns_the_prepass_off() {
+    let mut world = world(Antialias::Msaa, occluding());
+    world.renderer.settings_mut().set_ao(Some(Ao::default()));
+    let mut mock = device();
+    let (first, steady) = frames(&mut world, &mut mock);
+    let mut templates: HashMap<u32, u32> = compute_pipelines(&first)
+        .iter()
+        .map(|(&id, &(t, _))| (id, t))
+        .collect();
+    // Ambient occlusion holds the depth prepass, so the camera culls once. The two phases'
+    // pipelines are made at the start all the same, for when it turns off.
+    for phase in [template::OCCLUSION_EARLY, template::OCCLUSION_LATE] {
+        assert!(templates.values().any(|&t| t == phase), "{templates:?}");
+    }
+    let runs = |commands: &Commands, templates: &HashMap<u32, u32>, wanted: u32| {
+        passes(commands, templates)
+            .iter()
+            .any(|p| matches!(p, Pass::Compute(d) if d.contains(&wanted)))
+    };
+    assert!(!runs(&steady, &templates, template::OCCLUSION_EARLY));
+
+    world.renderer.settings_mut().set_ao(None);
+    let switched = world.step(&mut mock, false);
+    templates.extend(
+        compute_pipelines(&switched)
+            .iter()
+            .map(|(&id, &(t, _))| (id, t)),
+    );
+    let steady = world.step(&mut mock, false);
+    for wanted in [
+        template::OCCLUSION_EARLY,
+        template::DEPTH_PYRAMID,
+        template::OCCLUSION_LATE,
+    ] {
+        assert!(
+            runs(&steady, &templates, wanted),
+            "{wanted}: {:?}",
+            passes(&steady, &templates)
         );
     }
 }
