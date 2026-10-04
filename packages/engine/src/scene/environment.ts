@@ -25,8 +25,8 @@ export type EnvironmentFormat = 'rgb9e5ufloat' | 'rgba16float';
 
 /**
  * The names of the built-in environments that `assets.builtinEnvironment` loads. `room` is the
- * room that three.js's `RoomEnvironment` builds: a white room with six boxes and glowing panels,
- * which gives soft, neutral light.
+ * room that three.js's `RoomEnvironment` builds, blurred as three.js's examples blur it. It is a
+ * white room with six boxes and glowing panels, which gives soft, neutral light.
  *
  * @category api/assets
  */

@@ -150,13 +150,13 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 | Call | Gives |
 | --- | --- |
 | `assets.loadEnvironment(url)` | An environment from a file of `bunx @null3d/cli assets env` |
-| `assets.builtinEnvironment('room')` | The room that three.js's `RoomEnvironment` builds: a white room with six boxes and glowing panels |
+| `assets.builtinEnvironment('room')` | The room that three.js's `RoomEnvironment` builds: a white room with six boxes and glowing panels. It is blurred as three.js's examples blur it, with `fromScene(room, 0.04)` |
 | `scene.setEnvironment(environment, options)` | Nothing: it lights the scene with the environment from the next frame |
 | `environment.destroy()` | Nothing: it frees the cube map's GPU memory |
 
 ### Cost
 
-- A page downloads the environment code, under 1 KB after Brotli, with its first environment. The built-in room's file, 2 MB, comes with the engine's package, and downloads only when a sketch asks for it. A server that compresses it with Brotli sends about 330 KB.
+- A page downloads the environment code, under 1 KB after Brotli, with its first environment. The built-in room's file, 2 MB, comes with the engine's package, and downloads only when a sketch asks for it. A server that compresses it with Brotli sends about 390 KB.
 - A map of the default size takes 2 MB of GPU memory. It uploads in the frames after the load, within the frame's upload budget, and the scene draws without it until it is on the GPU.
 - The environment is a value of each frame, not a build of the shaders. So setting one builds no pipeline, and each pixel of a standard material pays one branch while the scene has none.
 - With an environment, each pixel of a standard material reads the cube map once and adds up the nine coefficients.
@@ -165,7 +165,6 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 ### Differences from three.js
 
 - three.js takes `scene.environmentIntensity` in place of a material's `envMapIntensity` when the material has no map of its own. The engine multiplies the two, so `envIntensity` keeps its meaning with a scene environment.
-- three.js's examples prefilter `RoomEnvironment` with `fromScene(room, 0.04)`, which blurs mirror reflections a little. The built-in room has no such blur. Mirror-like surfaces therefore show its panels with sharper edges.
 - Each material can have its own `envMap` in three.js. The engine has one environment per scene.
 
 ## Related pages

@@ -214,7 +214,7 @@ export class Assets {
 	/**
 	 * Loads a built-in environment: `room`, the room that three.js's `RoomEnvironment` builds, for
 	 * soft, neutral light with no file of your own. Its file comes with the engine's package, and
-	 * downloads the first time a page asks for it: 2 MB, or about 330 KB from a server that
+	 * downloads the first time a page asks for it: 2 MB, or about 390 KB from a server that
 	 * compresses it with Brotli. Throws E1213 for a name that no built-in environment has, and the
 	 * errors of `loadEnvironment`.
 	 */

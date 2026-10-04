@@ -99,7 +99,23 @@ The turned scene sets `scene.environmentRotation` in three.js and `rotation` in 
 
 ### The built-in room
 
-The built-in room is three.js's `RoomEnvironment`, which the tool traces from the room's center. three.js's examples prefilter it with `fromScene(room, 0.04)`: a blur of 0.04 radians before the levels. The room's file has no such blur. On the CPU, against three.js's PMREM with no blur, its level 0 lay 1.53 / 3.0 steps away. Its total light lay 0.7% above three.js's. With the blur, level 0 lay 5.49 / 108 steps away, all of it at the panels' sharp edges. From roughness 0.1 up, the room lay 2.6 to 5.3 steps from three.js at the table's roughness, with p99 up to 34. Its light lay 1.2% to 2.4% above three.js's. The diffuse light lay 3.20 / 7.9 steps away. The panels are small and over 50 times as bright as the walls. So small differences in a filter's shape show at their edges, as a sun's edge shows in an HDR file. The lit spheres meet three.js's rule all the same (0.064% and 0.060% of pixels, above).
+The built-in room is three.js's `RoomEnvironment`, which the tool traces from the room's center. three.js's examples prefilter it with `fromScene(room, 0.04)`: a Gaussian blur of 0.04 radians before the levels. Nearly every three.js scene that uses the room makes it that way, so the tool blurs the traced room by the same 0.04 radians. Each texel weighs the directions around it on a grid of half a sigma, out to three sigmas.
+
+The first room file had no blur, and shaded the walls with only part of three.js's standard material. On the CPU, against three.js's blurred room, its level 0 lay 5.49 / 108 steps away, all of it at the panels' sharp edges. Its total light lay 0.7% to 2.4% above three.js's, rising with roughness. The gap was a real difference in the walls' light. The tool's diffuse light kept the light that the specular layer reflects, where three.js's `RE_Direct_Physical` takes it away by `(1 - F)`. Its specular light also lacked three.js's compensation for multiple scattering, and its Fresnel term used the fifth power where three.js uses its exponential fit.
+
+The room now shades as `RE_Direct_Physical` does, with three.js's table of split-sum terms at roughness 1 for the compensation, and takes the blur. Against three.js's blurred room:
+
+| | Before | After |
+| --- | --- | --- |
+| Level 0, mean / p99 | 5.49 / 108 | 0.79 / 13.7 |
+| Total light against three.js's, roughness 0.1 to 1 | +1.1% to +2.2% | -0.8% to +0.3% |
+| Diffuse light, mean / p99, and total | 3.20 / 7.9, +2.4% | 3.27 / 9.2, +0.5% |
+| Table's roughness, worst mean / p99 | 5.27 / 34.3 | 3.95 / 22.9 |
+| Lit spheres, WebGPU: mean / p99, and the rule | 4.01 / 13.3, 0.064% | 3.27 / 10.7, 0.008% |
+| Lit spheres, WebGL2 | 4.21 / 14.3, 0.060% | 3.39 / 11.0, 0.008% |
+| Lit spheres, compatibility mode, the rule | 0.301% | 0.268% |
+
+The light left over sits in the rough levels, as with the HDR files, and at the panels' edges. The panels are small and over 50 times as bright as the walls, so small differences between the two blurs show there. The blur leaves the file less compressible: 393 KB with Brotli, up from 331 KB, and 562 KB with gzip.
 
 ### The lookup as a value, not a build
 
@@ -118,13 +134,13 @@ The lookup's code adds 0.7 to 2.2 KB after Brotli to each device module, 2.9% to
   - 3.5 / 14 at the matching roughness of the table;
   - 4 / 14 for diffuse light;
   - the total light within 2% from roughness 0.1 up.
-- The built-in room repeats three.js's `RoomEnvironment` scene. The tool traces it from the center. It shades it as `MeshStandardMaterial` does with its defaults, with no shadows, as three.js draws it.
+- The built-in room repeats three.js's `RoomEnvironment` scene. The tool traces it from the center. It shades it as `MeshStandardMaterial` does with its defaults, with no shadows, as three.js draws it. It then blurs it by 0.04 radians, as three.js's examples prefilter it.
 - The built-in environment is named `room`, after three.js's `RoomEnvironment`, which porters know. A sketch calls `assets.builtinEnvironment('room')` for it. The tool, the docs, the skills and the mapping all use that name. The studio preset of drei is an HDR file of its own, which ports through the tool.
 - The lit template reads each material's roughness from the level of the table's GGX roughness, `THREE_PMREM_ROUGHNESS`, blended between its steps of 0.05: `lod = (n - 1) * g * (2 - g)`. The porting promise is the look of the three.js scene, and three.js's PMREM sets that look. The table brings the lit spheres within three.js's image rule on both environments and every tier, which the material's own roughness misses on the room. The table lives in `crates/null3d-shaders/wgsl/lib/ibl.wgsl`.
 - Diffuse light comes from the nine coefficients. Specular light comes from the cube map along the reflection, bent toward the normal by roughness to the fourth power, as three.js's `getIBLRadiance` bends it. Both go through three.js's `RE_IndirectSpecular_Physical`, and the occlusion map darkens the specular light by `computeSpecularOcclusion`.
 - `scene.setEnvironment(env, { intensity, rotation })` sets the scene's environment from the next frame, with three.js's `environmentIntensity` and `environmentRotation` (Euler angles in the order X, Y, Z). A material's `envIntensity` multiplies the intensity. three.js uses `environmentIntensity` in place of a material's `envMapIntensity` under a scene environment. The engine multiplies them, so the material's value keeps its meaning.
 - The environment is a value of each frame, not a permutation bit. The frame's group binds the environment's cube, or a blank one, at bindings 12 and 13. A frame builder reads the environment after the frame's texture uploads, so a held frame, which uploads everything, draws with it.
-- Tolerances for lit scenes: three.js's image rule, as for every feature scene (`FEATURE_SCENES` in `bench/lib/parity.ts`). The CPU test of the room's file compares it with three.js's room with no blur. Its own limits are 9 / 50 at the material's roughness, 6 / 40 at the table's, and 3% of total light. The panels' edges set them.
+- Tolerances for lit scenes: three.js's image rule, as for every feature scene (`FEATURE_SCENES` in `bench/lib/parity.ts`). The CPU test of the room's file compares it with three.js's room blurred by 0.04 radians. Its own limits are 9 / 40 at the material's roughness and 4.5 / 25 at the table's. The panels' edges set them.
 
 ## Consequences
 
@@ -134,7 +150,6 @@ The lookup's code adds 0.7 to 2.2 KB after Brotli to each device module, 2.9% to
 - The image tests `environment-room`, `environment-venice` and `environment-venice-rotated` draw the grid on all three tiers, and the parity scenes of the same names compare it with three.js. The dev server builds the Venice map from the sample content's HDR file with the tool, on the first request (`tools/lib/sample-environments.ts`).
 - On WebGL2 the cube map takes one texture unit of the fragment stage. The standard material with all six maps reads 13 of the 16 that every device allows.
 - Open: the lookup's GPU cost on the iPad, and the frame time at a GPU-bound size on the S24+. The device runner's `environment` plan measures both (`tests/pages/environment-cost.html`). Its scene draws 8 planes of the standard material over the whole window, without and with the room in turns. The difference over the layers is the lookup's cost. A functional run in Chrome on the Mac (Apple M5 Max) drew 1280 x 800 pixels. It gave 0.46 ms of GPU time without the room and 0.52 ms with it.
-- Open: blur the room's level 0 by three.js's 0.04 radians in the tool, if ports of mirror-like surfaces need it.
 - Open: after the browser replaces the GPU, an environment whose texels the store freed draws as none until the sketch loads it again. Every texture from data does the same, as M2-R6 notes for #76.
 - Open for M2-E3: a blurred background reads the same levels. A sharp background may want `--size 512` or larger.
-- Open: KTX2 supercompression. The room's 2.0 MB file is 331 KB with Brotli and 497 KB with gzip, so a host that compresses `.ktx2` files saves most of it. Zstandard in the file would need a decoder in the engine.
+- Open: KTX2 supercompression. The room's 2.0 MB file is 393 KB with Brotli and 562 KB with gzip, so a host that compresses `.ktx2` files saves most of it. Zstandard in the file would need a decoder in the engine.

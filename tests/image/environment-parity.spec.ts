@@ -26,13 +26,13 @@ type Tolerances = typeof TOLERANCE;
 
 /**
  * HDR files with and without a sun, each on disk for the tool and on the dev server for three.js,
- * and the engine's built-in room beside three.js's RoomEnvironment, prefiltered with no blur. The
- * room's panels are small and far brighter than its walls, so the edges of their reflections take
- * looser limits than an HDR file's (D-19).
+ * and the engine's built-in room beside three.js's RoomEnvironment, prefiltered with the blur of
+ * three.js's examples. The room's panels are small and far brighter than its walls, so the edges
+ * of their reflections take looser limits than an HDR file's (D-19).
  */
 const FILES: Record<
 	string,
-	{ path: string; url: string; builtin?: boolean; tolerance?: Partial<Tolerances> }
+	{ path: string; url: string; builtin?: boolean; sigma?: number; tolerance?: Partial<Tolerances> }
 > = {
 	'a sunset': {
 		path: samplePath('sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr'),
@@ -46,10 +46,10 @@ const FILES: Record<
 		path: join(import.meta.dirname, '../../packages/engine/environments/room.ktx2'),
 		url: 'room',
 		builtin: true,
+		sigma: 0.04,
 		tolerance: {
-			same: { mean: 9, p99: 50 },
-			matched: { mean: 6, p99: 40 },
-			ratio: 0.03,
+			same: { mean: 9, p99: 40 },
+			matched: { mean: 4.5, p99: 25 },
 		},
 	},
 };
@@ -58,6 +58,7 @@ const FILES: Record<
 interface PmremPage {
 	pmremLight?: (request: {
 		url: string;
+		sigma?: number;
 		directions: number[];
 		roughness: number[];
 	}) => Promise<{ cubeSize: number; light: number[] }>;
@@ -138,6 +139,7 @@ for (const [name, source] of Object.entries(FILES))
 			(request) => (globalThis as PmremPage).pmremLight?.(request),
 			{
 				url: source.url,
+				sigma: source.sigma,
 				directions: dirs,
 				roughness: ROUGHNESS,
 			},

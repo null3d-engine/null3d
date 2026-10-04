@@ -114,7 +114,7 @@ export default defineSketch(async ({ scene, assets }) => {
 ```
 
 - An `Environment` has its cube map's `size`, the width of the largest faces, its `levels`, its `format` and its GPU `bytes`.
-- The first environment loads the file reader, under 1 KB after Brotli. The built-in room's file, 2 MB, downloads only when a sketch asks for it. A server that compresses `.ktx2` files with Brotli sends about 330 KB.
+- The first environment loads the file reader, under 1 KB after Brotli. The built-in room's file, 2 MB, downloads only when a sketch asks for it. A server that compresses `.ktx2` files with Brotli sends about 390 KB.
 - The cube map uploads in the frames after the load, and the scene draws without it until it is on the GPU.
 - `environment.destroy()` frees the cube map's GPU memory. The scene then draws without it.
 - Other KTX2 files, such as `loadTexture`'s, fail with E1412. So do supercompressed files.
@@ -181,7 +181,7 @@ Loads files, and textures from image files. Every call runs outside the sketch's
 | `loadImageBitmap(url: string \| URL, options: LoadImageOptions = {}): Promise<ImageBitmap>` | Downloads an image file and decodes it into an `ImageBitmap`, off the sketch's frames. By default it decodes as `loadTexture` does, so `textures.fromImageBitmap` makes the same texture. Throws E1411, E1412 or E1413 as `loadTexture` does. |
 | `loadLut(url: string \| URL): Promise<Lut>` | Downloads a color grading table in a `.cube` or a `.3dl` file and makes a `Lut` from it, for `post.set({ lut })`. It reads the forms that three.js's `LUTCubeLoader` and `LUT3dlLoader` read, with tables of 2 to 256 texels a side. A `.cube` file's domain and title come along; a `.3dl` file's values are whole numbers of the depth that its largest value or its `Mesh` line gives. The first table loads the readers. Throws E1411 or E1413 as `loadTexture` does, E1412 when the file holds no table that the engine reads, and E1406 when the readers do not load. |
 | `loadEnvironment(url: string \| URL): Promise<Environment>` | Downloads an environment map that `bunx |
-| `builtinEnvironment(name: BuiltinEnvironmentName): Promise<Environment>` | Loads a built-in environment: `room`, the room that three.js's `RoomEnvironment` builds, for soft, neutral light with no file of your own. Its file comes with the engine's package, and downloads the first time a page asks for it: 2 MB, or about 330 KB from a server that compresses it with Brotli. Throws E1213 for a name that no built-in environment has, and the errors of `loadEnvironment`. |
+| `builtinEnvironment(name: BuiltinEnvironmentName): Promise<Environment>` | Loads a built-in environment: `room`, the room that three.js's `RoomEnvironment` builds, for soft, neutral light with no file of your own. Its file comes with the engine's package, and downloads the first time a page asks for it: 2 MB, or about 390 KB from a server that compresses it with Brotli. Throws E1213 for a name that no built-in environment has, and the errors of `loadEnvironment`. |
 | `loadJson<T = unknown>(url: string \| URL): Promise<T>` | Downloads a JSON file and parses it. Throws E1411 or E1413 as `loadTexture` does, and E1412 when the file is not valid JSON. |
 | `loadBinary(url: string \| URL): Promise<ArrayBuffer>` | Downloads a file as bytes. Throws E1411 or E1413 as `loadTexture` does. |
 | `preload(urls: readonly (string \| URL)[]): Promise<void>` | Downloads files ahead of their loads, all at once, and resolves when every one has arrived. The next load of each address takes its file from memory. Pair it with `onProgress` for a loading screen. Throws the error of the first file that fails, as `loadBinary` does. |
@@ -193,7 +193,7 @@ Loads files, and textures from image files. Every call runs outside the sketch's
 type BuiltinEnvironmentName = 'room';
 ```
 
-The names of the built-in environments that `assets.builtinEnvironment` loads. `room` is the room that three.js's `RoomEnvironment` builds: a white room with six boxes and glowing panels, which gives soft, neutral light.
+The names of the built-in environments that `assets.builtinEnvironment` loads. `room` is the room that three.js's `RoomEnvironment` builds, blurred as three.js's examples blur it. It is a white room with six boxes and glowing panels, which gives soft, neutral light.
 
 ### `Environment`
 
