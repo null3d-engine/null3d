@@ -159,9 +159,13 @@ export function gpuApiOfPage(kind: BenchPageKind): 'webgpu' | 'webgl2' {
 	return kind === SCENE_CODE ? 'webgl2' : PAGES[kind].api;
 }
 
-/** True for a null3D page, whose engine takes switches such as `?jobs=`. */
+/**
+ * True for a null3D page, whose engine takes switches such as `?jobs=`. A kind that the table no
+ * longer lists, from the record of an older run, counts by its name.
+ */
 export function isNull3dPage(kind: BenchPageKind): boolean {
-	return kind !== SCENE_CODE && PAGES[kind].folder === 'null3d';
+	if (kind === SCENE_CODE) return false;
+	return (PAGES[kind]?.folder ?? kind.split('-')[0]) === 'null3d';
 }
 
 /** The pages that a sweep of job worker counts runs: both null3D GPU paths, pipelined. */
