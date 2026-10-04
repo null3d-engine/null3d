@@ -22,6 +22,7 @@ export const FLAG_CAST_SHADOWS = 4;
 export const FLAG_RECEIVE_SHADOWS = 8;
 export const FLAG_UNCULLED = 16;
 export const FLAG_CUSTOM_BOUNDS = 32;
+export const FLAG_OCCLUDER = 128;
 
 export const LAYERS_DEFAULT = 1;
 
@@ -63,6 +64,10 @@ export const BATCH_FIELD_SIZES = 4;
 export const BATCH_FIELD_FRAMES = 5;
 
 export const SPRITE_MAX_ATLAS_SIDE = 2048;
+
+export const LINE_MODE_SEGMENTS = 0;
+export const LINE_MODE_STRIP = 1;
+export const LINE_MODE_LOOP = 2;
 
 export const QUERY_INPUT = 0;
 export const QUERY_HITS = 1;
@@ -132,6 +137,8 @@ export const SHADING_UNLIT = 1;
 export const SHADING_TEXCOORDS = 2;
 export const SHADING_UNLIT_MAP = 3;
 export const SHADING_SPRITE = 4;
+export const SHADING_LINE = 5;
+export const SHADING_LINE_LIT = 7;
 export const SHADING_CUSTOM_FIRST = 64;
 export const SHADING_CUSTOM_ATTRIBUTE_SHIFT = 16;
 export const SHADING_CUSTOM_BASE_COLOR = 16777216;

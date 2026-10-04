@@ -233,6 +233,7 @@ describe('SketchQuality.lower', () => {
 			shadowFilter: low.shadowFilter,
 			farCascadeInterval: low.farCascadeInterval,
 			bloomSamples: low.bloomSamples,
+			softwareOcclusion: low.softwareOcclusion,
 			governor: true,
 			maxAnisotropy: 16,
 			uploadBytesPerFrame: MEDIUM.uploadBytesPerFrame,
@@ -245,9 +246,14 @@ describe('SketchQuality.lower', () => {
 			depthPrepass: MEDIUM.depthPrepass,
 			morphTargets: MEDIUM.morphTargets,
 		});
-		// The preset changed, and of the settings only the lowest render scale and the far cascades'
-		// interval did.
-		expect(changes.at(-1)).toEqual(['minRenderScale', 'shadowFilter', 'farCascadeInterval']);
+		// The preset changed, and of the settings only the lowest render scale, the shadow filter, the
+		// far cascades' interval and software occlusion culling did.
+		expect(changes.at(-1)).toEqual([
+			'minRenderScale',
+			'shadowFilter',
+			'farCascadeInterval',
+			'softwareOcclusion',
+		]);
 	});
 });
 

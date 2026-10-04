@@ -1,6 +1,6 @@
 # D-14: The engine's JavaScript budget
 
-Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The limit of shader files that load on first use decided by the owner on 2026-10-04, in [Shader files that load on first use](#shader-files-that-load-on-first-use). Date: 2026-09-30.
+Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). Date: 2026-09-30.
 
 ## Question
 
@@ -307,19 +307,51 @@ The owner approved the budgets of points 1 and 2 in writing on 2026-10-04. Point
 - `tools/lib/size-report.ts` holds the budgets (`START_BUDGET_BYTES` and `LATER_BUDGET_BYTES`) and the parts that load later (`LATER_PARTS`). `budgetProblems` judges both budgets. The size report prints the parts that load later in a section of their own.
 - AGENTS.md, the README and [Benchmarks](../benchmarks.md#download-size) give the new figures. A further raise of either budget needs the owner's approval in writing, recorded here.
 
-## Shader files that load on first use
+## Additions of 4 October 2026
 
-Status: decided by the owner on 2026-10-04. Task: M2-C5.
+Status: decided by the owner on 2026-10-04. Tasks: M2-C5, M2-E2, M2-A6, M2-R11.
 
-### Question
+### First-use shader files
 
-WebGL2's MORPH builds double the mesh builds of the shader files. In each start shader file, which every WebGL2 page downloads, they would have taken the file past its size. So they go into eight shader files of their own, which a page loads when it first draws a morphed mesh ([D-51](D-51-morph-targets.md)). Each such file holds every MORPH build for one value of the bits that a device fixes. It takes 18.6 to 20.5 KB after Brotli, more than the 16 KB budget of the other files that load later. Which budget holds them?
+The morph builds (M2-C5) and the room's generator (M2-E2, [D-19](D-19-environment-maps.md)) put their shaders in files of their own, which load when the feature first runs. A shader file is mostly WGSL or GLSL text, and the start's shader file alone is about 24 KB after Brotli. So the 16 KB limit for first-use JavaScript does not fit it.
 
-### Decision
+The owner's decision: each shader file that loads on first use may take about 24 KB after Brotli, the size of the start's shader file. The size report lists these files apart from the start, with their share of that limit. The first two use little of it: the room's shaders are 4.2 KB of WGSL or 4.4 KB of GLSL.
 
-The owner decided on 2026-10-04 that shader files that load on a feature's first use have a limit of their own. It is the size of the start shader file, about 24 KB after Brotli per file. A page that draws the feature downloads one such file, of the same size as the shader file of its start. The start shader files took 23.2 to 24.4 KB after Brotli on 4 October 2026.
+This is also the way to trim the start. Each feature's shaders move into a file of their own (M2-R11, with its own record D-56, [D-53](D-53-technique-defaults.md) ruling 23).
+
+### Recorded exceptions
+
+| File | After Brotli | Loads | Why it may pass its limit |
+| --- | --- | --- | --- |
+| Draco's glTF-only decoder: 49 KB of WebAssembly and 10 KB of JavaScript | 59 KB | On first use, only for files that hold Draco data, in the glTF worker, once per page ([D-54](D-54-addon-modules.md)) | The owner decided on 4 October 2026 that the engine reads Draco files. Draco's authors build the decoder, and no smaller build reads glTF's Draco data. The first figure quoted, 66 KB, was the full build's `.wasm` alone |
+| The two fitted tables of area lights, as half floats | To be measured when built | On first use, with the first area light, after 1.0 | Every engine with rectangle lights uses fitted tables, and they cannot be made at load at a sensible cost ([D-53](D-53-technique-defaults.md) ruling 20). The tables are data, so they are also an exception to the rule that built-in assets are made at run time |
+
+Like the KTX2 transcoder, the Draco decoder is a third-party build that the engine ships as its authors build it. The size report may list it in that section. Either way, a page that reads no Draco file never downloads it.
+
+### Hosts that compress with gzip
+
+The budgets count bytes after Brotli. Many hosts compress with gzip instead: GitHub Pages and nginx's defaults among them. The library code review measured what a page downloads at its start there (R8-02, [Code review, October 2026](../code-review-2026-10.md)):
+
+A pipelined WebGL2 page, in a fresh project's production build:
+
+| Compression | The page's shader file (GLSL) | The rest of the start | The start | Against the 140 KB budget |
+| --- | --- | --- | --- | --- |
+| Brotli 11, which the budget measures | 23.4 KB | 82.4 KB | 105.8 KB | 76% |
+| Brotli 5, a common setting for compression on the fly | 27.6 KB | 87.9 KB | 115.5 KB | 83% |
+| gzip 9 | 402.6 KB | 93.5 KB | 496 KB | 354% |
+| gzip 6 | 495.2 KB | 94.1 KB | 589 KB | 421% |
+| None | 3,368 KB | 264 KB | 3.6 MB | |
+
+A WebGPU page with gzip 9 downloads 378 KB at its start. Each shader file holds every variant of every template as a full text, 87 WGSL modules or 164 GLSL programs. Brotli at quality 11 finds the repeats across its 4 MB window, and gzip's 32 KB window cannot. 35 of the 164 GLSL stage sources are exact copies, 543 KB in all (R6-03).
+
+The owner's decision (ruling 23 of D-53):
+
+- The size report adds a gzip column and an uncompressed column beside Brotli, for the start and for each file that loads later. The budgets stay in bytes after Brotli.
+- The size is fixed at its cause, not by a budget. The cure is per-feature shader files, and one copy of each unique shader stage per file, with variants as indexes into it.
 
 ### Consequences
 
-- `ON_DEMAND_SHADER_PARTS` in `tools/lib/size-report.ts` names the files, and `ON_DEMAND_SHADER_BUDGET_BYTES` holds the budget of 24 KB. `budgetProblems` judges each file against it. The size report prints them in a section of their own, which no start counts.
-- AGENTS.md and [Benchmarks](../benchmarks.md#download-size) give the figure.
+- M2-C5 adds the shader files' limit, with the WebGL2 morph builds as the first such files ([D-51](D-51-morph-targets.md)). `ON_DEMAND_SHADER_PARTS` in `tools/lib/size-report.ts` names the files, and `ON_DEMAND_SHADER_BUDGET_BYTES` holds the limit of 24 KB. `budgetProblems` judges each file against it. The size report prints them in a section of their own, which no start counts. AGENTS.md and [Benchmarks](../benchmarks.md#download-size) give the figure.
+- `tools/lib/size-report.ts` gains the exceptions' rows and the two columns.
+- M2-A6 builds Draco on the on-demand loader of [D-54](D-54-addon-modules.md), and its pull request gives the decoder's measured size.
+- M2-R11 measures the start in each column before and after, and writes the figures here and in [D-13](D-13-shader-variants.md).

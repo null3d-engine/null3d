@@ -21,6 +21,7 @@ use std::simd::prelude::*;
 use crate::cells::CELL_SHIFT;
 use crate::jobs::JobSystem;
 use crate::layers::shares_layer;
+use crate::occlusion::OcclusionBuffer;
 use crate::shared::SharedMut;
 use crate::world::SphereArrays;
 
@@ -352,7 +353,7 @@ fn cull_positions(
 /// this is one `i8x16.swizzle`: the portable `swizzle_dyn` lowers to it only in code compiled
 /// with SIMD, and the standard library that the single-threaded build links was compiled without.
 #[inline(always)]
-fn shuffle_bytes(bytes: u8x16, picks: u8x16) -> u8x16 {
+pub(crate) fn shuffle_bytes(bytes: u8x16, picks: u8x16) -> u8x16 {
     #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
     {
         use std::arch::wasm32::{u8x16_swizzle, v128};
@@ -615,7 +616,8 @@ pub struct CullSet<'a> {
 }
 
 /// What one view culls against: its frustum, relative to its camera, the offset from its camera
-/// to each cell's center, by cell index, and its layer mask.
+/// to each cell's center, by cell index, its layer mask, and the occlusion buffer that its
+/// blockers drew, if any.
 #[derive(Clone, Copy, Debug)]
 pub struct CullView<'a> {
     /// The view's frustum, relative to its camera.
@@ -624,6 +626,40 @@ pub struct CullView<'a> {
     pub offsets: &'a [[f32; 4]],
     /// The view's layer mask: a row draws when its mask shares a bit with it.
     pub layers: u32,
+    /// The buffer that hides rows behind the view's blockers, or `None` for a view without.
+    pub occlusion: Option<&'a OcclusionBuffer>,
+}
+
+/// Keeps the entries of `entries` whose spheres the occlusion buffer does not hide, in order, and
+/// returns how many it kept. Each entry indexes `spheres`, and `offset` gives the offset from the
+/// camera to the entry's cell. The buffer tests four spheres at a time.
+pub(crate) fn keep_unoccluded(
+    buffer: &OcclusionBuffer,
+    entries: &mut [u32],
+    spheres: SphereArrays<'_>,
+    offset: &dyn Fn(u32) -> [f32; 4],
+) -> usize {
+    let (n, mut kept, mut i) = (entries.len(), 0, 0);
+    while i < n {
+        let lanes = (n - i).min(4);
+        // Lanes past the entries keep a negative radius, which is never hidden.
+        let ([mut x, mut y, mut z], mut r) = ([[0.0f32; 4]; 3], [-1.0f32; 4]);
+        for l in 0..lanes {
+            let entry = entries[i + l];
+            let k = entry as usize;
+            let [ox, oy, oz, _] = offset(entry);
+            (x[l], y[l], z[l]) = (spheres.xs[k] + ox, spheres.ys[k] + oy, spheres.zs[k] + oz);
+            r[l] = spheres.radii[k];
+        }
+        let [x, y, z, r] = [x, y, z, r].map(f32x4::from_array);
+        let hidden = buffer.hidden4(x, y, z, r);
+        for l in 0..lanes {
+            entries[kept] = entries[i + l];
+            kept += usize::from(hidden & (1 << l) == 0);
+        }
+        i += lanes;
+    }
+    kept
 }
 
 /// Keeps the rows of `rows` whose masks share a bit with the view's `layers`, in order, and
@@ -638,37 +674,50 @@ pub(crate) fn keep_layers(rows: &mut [u32], masks: &[u32], layers: u32) -> usize
     kept
 }
 
-/// Culls one run of a set into `dst`, and returns how many rows it wrote there: the rows of the
-/// run's positions whose spheres are inside the frustum, moved into the run's cell, or with each
-/// sphere moved by its row's offset for [`ROW_CELLS`]. A run of a set whose spheres are by row
-/// through a list always moves each sphere by its row's offset, whatever the run's cell.
+/// Culls one run of a set into `dst`, and returns how many rows it wrote there, and how many of
+/// those inside the frustum the view's occlusion buffer hid: the rows of the run's positions whose
+/// spheres are inside the frustum, moved into the run's cell, or with each sphere moved by its
+/// row's offset for [`ROW_CELLS`], and not behind the view's blockers. A run of a set whose
+/// spheres are by row through a list always moves each sphere by its row's offset, whatever the
+/// run's cell.
 ///
 /// # Panics
 /// When the run is past its set's spheres or list of rows, or a copied set's run looks cells up.
 fn cull_run(
-    frustum: &Frustum,
-    offsets: &[[f32; 4]],
+    view: &CullView<'_>,
     set: CullSet<'_>,
     run: &CullRun,
     dst: &mut [u32],
-) -> usize {
+) -> (usize, usize) {
+    let (frustum, offsets) = (view.frustum, view.offsets);
     let range = run.start..run.end;
     let (spheres, cells) = (set.spheres, set.cells);
+    let by_row = |row: u32| offsets[cells[row as usize] as usize];
+    let unoccluded = |dst: &mut [u32], offset: &dyn Fn(u32) -> [f32; 4]| match view.occlusion {
+        Some(buffer) => keep_unoccluded(buffer, dst, spheres, offset),
+        None => dst.len(),
+    };
     match set.order {
         SetOrder::Rows | SetOrder::Copied(_) if run.cell != ROW_CELLS => {
-            let [x, y, z, _] = offsets[run.cell as usize];
+            let offset = offsets[run.cell as usize];
+            let [x, y, z, _] = offset;
             check_range(shortest(&spheres), &range, dst);
-            let visible =
+            let inside =
                 cull_positions(&frustum.moved_by([x, y, z]), range, dst, &InOrder(spheres));
+            // The entries index the spheres until the copies turn into the rows they stand for.
+            let visible = unoccluded(&mut dst[..inside], &|_| offset);
             if let SetOrder::Copied(rows) = set.order {
-                // The copies stand for the rows that the list names at their positions.
                 for entry in &mut dst[..visible] {
                     *entry = rows[*entry as usize];
                 }
             }
-            visible
+            (visible, inside - visible)
         }
-        SetOrder::Rows => cull_spheres_in_cells(frustum, spheres, cells, offsets, range, dst),
+        SetOrder::Rows => {
+            let inside = cull_spheres_in_cells(frustum, spheres, cells, offsets, range, dst);
+            let visible = unoccluded(&mut dst[..inside], &by_row);
+            (visible, inside - visible)
+        }
         SetOrder::Copied(_) => panic!("a run of copied spheres lies in one cell"),
         SetOrder::Gathered(rows) => {
             check_range(rows.len(), &range, dst);
@@ -677,7 +726,9 @@ fn cull_run(
                 cells,
                 offsets,
             };
-            cull_positions(frustum, range, dst, &positions)
+            let inside = cull_positions(frustum, range, dst, &positions);
+            let visible = unoccluded(&mut dst[..inside], &by_row);
+            (visible, inside - visible)
         }
     }
 }
@@ -692,12 +743,15 @@ pub struct BucketedCull {
     scratch: Vec<u32>,
     run_offsets: Vec<u32>,
     run_counts: Vec<u32>,
+    /// Each run's rows inside the frustum that the occlusion buffer hid.
+    run_hidden: Vec<u32>,
     run_positions: Vec<u32>,
     /// Per [`BY_ROW`] run, one count per bucket; then the next write position per bucket.
     histograms: Vec<u32>,
     cursors: Vec<u32>,
     buckets: usize,
     len: usize,
+    hidden: usize,
 }
 
 impl BucketedCull {
@@ -724,6 +778,7 @@ impl BucketedCull {
         grow(&mut self.cursors, buckets)?;
         grow(&mut self.run_offsets, runs)?;
         grow(&mut self.run_counts, runs)?;
+        grow(&mut self.run_hidden, runs)?;
         grow(&mut self.run_positions, runs)?;
         grow(&mut self.histograms, by_row_runs as usize * buckets)?;
         Ok(())
@@ -747,6 +802,12 @@ impl BucketedCull {
     /// True when nothing is visible.
     pub fn is_empty(&self) -> bool {
         self.len == 0
+    }
+
+    /// The rows inside the frustum that the view's occlusion buffer hid, entries of rows on
+    /// other layers included.
+    pub fn hidden(&self) -> usize {
+        self.hidden
     }
 
     /// True when both outputs list the same entries in the same buckets.
@@ -801,9 +862,7 @@ pub fn cull_into_buckets<'a>(
     out: &mut BucketedCull,
 ) -> usize {
     let CullView {
-        frustum,
-        offsets,
-        layers,
+        offsets, layers, ..
     } = view;
     let bucket_count = buckets as usize;
     assert!(
@@ -845,18 +904,21 @@ pub fn cull_into_buckets<'a>(
     // and count looked-up rows per bucket in the run's histogram.
     let scratch = SharedMut::new(&mut out.scratch);
     let counts = SharedMut::new(&mut out.run_counts);
+    let hidden = SharedMut::new(&mut out.run_hidden);
     let histograms = SharedMut::new(&mut out.histograms);
     let (run_offsets, positions) = (&out.run_offsets, &out.run_positions);
     let cull = |index: usize| {
         let run = runs[index];
         let set = sets(run.set);
-        // SAFETY: each run writes only its own part of the scratch list, its own count and its
+        // SAFETY: each run writes only its own part of the scratch list, its own counts and its
         // own histogram; the parts of different runs do not overlap.
         let dst = unsafe { scratch.slice(run_offsets[index] as usize, run.len()) };
-        let visible = match set.layers {
-            SetLayers::All(mask) if !shares_layer(mask, layers) => 0,
-            _ => cull_run(frustum, offsets, set, &run, dst),
+        let (visible, occluded) = match set.layers {
+            SetLayers::All(mask) if !shares_layer(mask, layers) => (0, 0),
+            _ => cull_run(&view, set, &run, dst),
         };
+        // SAFETY: as above.
+        unsafe { hidden.write(index, occluded as u32) };
         // The culled entries are rows, whichever order the set's runs reach them in.
         let visible = match set.layers {
             SetLayers::Rows(masks) => keep_layers(&mut dst[..visible], masks, layers),
@@ -996,6 +1058,10 @@ pub fn cull_into_buckets<'a>(
         (0..runs.len()).for_each(place);
     }
     out.len = total as usize;
+    out.hidden = out.run_hidden[..runs.len()]
+        .iter()
+        .map(|&n| n as usize)
+        .sum();
     out.len
 }
 

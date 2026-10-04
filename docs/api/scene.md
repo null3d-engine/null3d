@@ -234,6 +234,7 @@ Options for `scene.instantiate`: where the copy's group goes, and settings for a
 | --- | --- |
 | `castShadows?: boolean` | True makes every mesh of the copy cast the shadows of a directional light. The default is false. |
 | `receiveShadows?: boolean` | True makes shadows fall on every mesh of the copy. The default is false. |
+| `occluder?: boolean` | True makes every mesh of the copy block the view for software occlusion culling on WebGL2, like `setOccluder(true)`. The default is false. |
 
 ### `LinearFogOptions`
 
@@ -260,6 +261,7 @@ Options for `scene.createMesh`.
 | `material: Material` | How the surface looks, from `ctx.materials`. |
 | `castShadows?: boolean` | True makes the mesh cast the shadows of a directional light, like `setCastShadows(true)`. The default is false. |
 | `receiveShadows?: boolean` | True makes shadows fall on the mesh, like `setReceiveShadows(true)`. The default is false. Unlit materials show no shadows. |
+| `occluder?: boolean` | True makes the mesh block the view for software occlusion culling on WebGL2, like `setOccluder(true)`. The default is false. |
 
 ### `NodeOptions`
 
@@ -304,6 +306,7 @@ The scene: every object, the active camera, the lights and the background.
 | `createInstances(mesh: MeshGeometry, count: number, options: InstanceOptions): InstanceBatch` | Many copies of one mesh and material, with typed arrays of rows. Or many copies of a model that `assets.loadGltf` loaded, without a material: one batch for each mesh of the model, which share one set of rows, so one row places a whole copy. The model's lights are left out. Throws E1417 for a model with no meshes, or with instancing of its own. |
 | `createInstances(prefab: Prefab, count: number, options?: Omit<InstanceOptions, 'material'>): InstanceBatch` | Many copies of one mesh and material, with typed arrays of rows. Or many copies of a model that `assets.loadGltf` loaded, without a material: one batch for each mesh of the model, which share one set of rows, so one row places a whole copy. The model's lights are left out. Throws E1417 for a model with no meshes, or with instancing of its own. |
 | `createSprites(options: SpriteOptions): Promise<SpriteBatch>` | Many sprites in one batch: quads that face the camera, like three.js's `Sprite` with a `SpriteMaterial`. Typed arrays give each sprite its position, size, rotation, color and atlas frame, as an instance batch's arrays give its rows. Sprites blend by default, and blended sprites draw back to front with the other blended objects. The first call downloads the sprite code. Throws E1108 for an atlas side that is not a whole number from 1 to 2048, E1203 for a center that is not two finite numbers, and E1406 when the sprite code does not download. |
+| `createLines(options: LineOptions): Promise<LineBatch>` | Lines of any width in one batch, like three.js's `Line2` and `LineSegments2` with a `LineMaterial`, and its `Line`, `LineSegments` and `LineLoop`. Each segment between two points draws as a quad with round ends that faces the camera, `width` CSS pixels wide, or world units wide with `worldUnits`. A typed array gives each point its position and color, as an instance batch's arrays give its rows. The first call downloads the line code. Throws E1206 for points or colors that make no line, E1217 for an unknown mode, E1108 for a width that is not positive or a dash or gap below 0, E1203 for a value that is not finite, and E1406 when the line code does not download. |
 | `createPerspectiveCamera(options: PerspectiveCameraOptions = {}): PerspectiveCamera` | A perspective camera; `fov` is vertical, in degrees. Cameras are dynamic by default. |
 | `createOrthographicCamera(options: OrthographicCameraOptions = {}): OrthographicCamera` | An orthographic camera, whose view is a box: things keep their size at every distance. Give `height`, and the width follows the canvas, or give `left`, `right`, `top` and `bottom`. Cameras are dynamic by default. |
 | `setActiveCamera(camera: Camera): void` | Draws the scene from this camera. |
