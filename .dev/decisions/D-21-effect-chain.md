@@ -81,6 +81,7 @@ Pending: the `bloom` plan on the iPad and the S24+ ([device sessions](../devices
 
 - Code: `crates/null3d-render/src/bloom.rs`, the frame graph's bloom passes and `setCanvasOutput`, `wgsl/bloom.wgsl` and the final pass's `BLOOM` build, the `bloomSamples` quality setting and the governor's bloom steps, `effectsOutput` in `page/limits.ts`, and `gpu/device-shaders.ts`.
 - Tests: the bloom image tests, `bloom-switch.spec.ts`, the render scale test with bloom, the parity scenes `bloom-soft` and `bloom-strong`, and the `bloom` device plan.
+- Bloom's steps and the final pass's BLOOM builds load on first use ([D-56](D-56-first-use-shader-files.md)). The frames keep the final pass without bloom until those pipelines are built, so turning bloom on skips no draw.
 - Docs: `concepts/post-processing`, `api/post`, `concepts/color-management`, `concepts/backends`, the mapping's composer and bloom entries, and both skills.
 
 ## Addendum, 2026-10-04: bloom's method is open again

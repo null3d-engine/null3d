@@ -253,7 +253,7 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 
 ## Pipelines and warm-up
 
-- The thread that draws loads the shader module of its device's fixed bits. When bloom moves the 8-bit path to HDR color, pipelines ask for builds without the tone mapping bit, which that module lacks. `DeviceShaderSet` (`gpu/device-shaders.ts`) then loads the module of those bits once, and adds its builds to the variants that the backends hold. The pipeline waits meanwhile, as a custom material's pipeline waits for its shader, and the frame waits with it ([D-21](decisions/D-21-effect-chain.md)).
+- The thread that draws loads the shader module of its device's fixed bits. When bloom moves the 8-bit path to HDR color, pipelines ask for builds without the tone mapping bit, which that module lacks. `DeviceShaderSet` (`gpu/device-shaders.ts`) then loads the module of those bits once, and adds its builds to the variants that the backends hold. It loads a feature's module in the same way, as "Shader files that load on first use" says. The pipeline waits meanwhile, as a custom material's pipeline waits for its shader ([D-21](decisions/D-21-effect-chain.md)).
 
 - A frame's draw list creates its pipelines before any other command. The renderer starts their builds the first time it prepares the frame, and replays the rest of the list later. The render crate's test world checks this order in every list it records.
 - A list that creates a pipeline after other commands builds it at once. So a hand-written list, as on the replay test pages, draws everything in one replay.
@@ -265,7 +265,24 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - The direct loop takes the frames that the setup publishes only when `Presenter.due` allows, as it steps play frames. The preset check then measures at the pace of play, within the limit of frames in flight. The loop wakes waiters on `FramesTaken`, because the check's code on the same thread waits for each frame to be taken.
 - Each backend counts the draw commands that a building pipeline skips, in `counts.skippedDraws`. The measurement sums them, and a test that expects no missing objects checks that the sum stays at 0.
 - The engine's shaders ship in one module for each GPU path and each value of the permutation bits that a device fixes ([D-13](decisions/D-13-shader-variants.md)). The thread that draws starts to load its module while it waits for the WebGPU device or the WebGL2 context. The renderer starts once both are ready.
-- A device module holds the builds of each shader that a device with its bits asks for. So the culling shader, which has no bits, is in every WGSL module. A device whose bits have no module fails to start its renderer, with an error that names the bits.
+- A device module holds the builds of each shader that a device with its bits asks for. The builds of features that load on first use are the exception. So the culling shader, which has no bits, is in every WGSL module. A device whose bits have no module fails to start its renderer, with an error that names the bits.
+
+## Shader files that load on first use
+
+A feature that most pages do not use keeps its shader builds out of the start files ([D-56](decisions/D-56-first-use-shader-files.md)). Sprites, lines, skinning, bloom, the texture background and the engine's test template do so today.
+
+- A feature declares its file with a `[first_use.<feature>]` table in `crates/null3d-shaders/shaders.toml`.
+  - `shaders` lists templates whose every build belongs to the feature.
+  - `bits` lists permutation bits that a device does not fix. Every build with one of them belongs to the feature, such as every template's SKIN builds.
+  - A build belongs to its template's feature, or else to the feature of its lowest bit that a table names.
+- The shader build writes the feature's builds to `generated/shaders-<feature>-<target>-<bits>.js`. There is one file for each value of the device's fixed bits that they vary in. The size report holds each one to the limits of one start shader file, in a section of its own.
+- Device modules are plain JavaScript. With `new URL(address, import.meta.url)`, the main module imports each one by its address. Vite copies a file that an address names once, so the page's bundle and the workers' bundles share one copy. An `import()` by name would give each bundle a copy of its own. The `?no-inline` query keeps a small module from becoming a `data:` address, which a strict Content Security Policy blocks.
+- A pipeline whose build is in a feature's file waits for the file, and then builds. Before the first frame, the frame waits with it. After it, the pipeline's draws draw nothing until it is built. That suits an object of its own, such as a sprite batch, which then appears once it is built. On WebGPU a compute pipeline waits in the same way.
+- Two kinds of pass must not draw while their pipelines wait. They keep to what they had until `PipelineCache::built` says every pipeline they need is built.
+  - A full-screen pass, which would leave the canvas without its frame. `FrameGraph::request_pipelines` keeps the final pass without bloom until bloom's pipelines are built.
+  - A pass whose output another pass reads. On WebGPU the skinning pass writes the vertices that the other passes draw. So `SkinnedGate` (`skinning.rs`) leaves skinned objects out of every layout until their pipelines are built: the skinning pass's, and every one that draws them. The layouts still ask for those pipelines, and then take the objects in. The main pass, the depth prepass, the shadow passes and the transparent pass then show them in the same frame. Both builders use the gate. On WebGL2 it keeps in step the passes, each of which skins in its own vertex shader.
+- `PipelineCache::built` compares the frame whose list created a pipeline with the newest frame that the thread that draws drew with every pipeline built. Both steps of the WebGL2 builder must get that frame: the culling and the recording. A 0 reads as "before the first frame", when every pipeline counts as built.
+- A new feature adds its table, and moves no build that every scene draws. It gives each pass of either kind above the same wait. The engine test "a page that uses no feature that loads on first use downloads none of their files" then covers its files. A test of its own checks that its first use downloads one file once.
 
 ## Depth on WebGL2
 

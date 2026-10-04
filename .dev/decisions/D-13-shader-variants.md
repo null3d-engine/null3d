@@ -145,3 +145,9 @@ null3D does the same work at build time. A page downloads one file with only the
 - The warm-up time plan watches the target: S4's pipeline wait with fresh shaders stays under 250 ms on the S24+. A new material bit, or a pass that adds pipelines to S4, reruns it on the S24+.
 - T-26's times give the device figures in the loading screens guide.
 - The record is in the table in README.md.
+
+## Addendum, 2026-10-04: features that load on first use
+
+[D-56](D-56-first-use-shader-files.md) takes out of this record's files the builds of features that most pages do not use. Those are sprites, lines, skinning with every SKIN build, bloom's steps and the final pass's BLOOM builds, the texture background and the engine's test template. Each feature has files of its own, by the same fixed bits. A page downloads one the first time it uses the feature. A start shader file now holds 17.0 to 18.8 KB after Brotli and 0.8 to 1.3 MB uncompressed. So a page parses about half the shader text of before at its start. A permutation bit that a feature's table names adds nothing to the start files. Another material bit still doubles each one.
+
+Device modules are now plain JavaScript files, `generated/shaders-<target>-<bits>.js`, which the main module imports by address. So one copy of each serves the page's bundle and every worker's.
