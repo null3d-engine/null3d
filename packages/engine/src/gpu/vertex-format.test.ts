@@ -5,6 +5,7 @@ import {
 	VERTEX_ALL,
 	VERTEX_COLOR,
 	VERTEX_JOINTS,
+	VERTEX_MORPH,
 	VERTEX_TANGENT,
 	VERTEX_TYPE_F32,
 	VERTEX_TYPE_SINT16,
@@ -21,6 +22,7 @@ import { typeField } from '../scene/mesh-arrays';
 import {
 	forEachFallbackAttribute,
 	forEachVertexAttribute,
+	locationOfAttribute,
 	plainScale,
 	typeOf,
 	type VertexAttribute,
@@ -83,8 +85,9 @@ describe('vertex formats', () => {
 	});
 
 	test('each optional attribute follows the ones before it, at its own location', () => {
-		// Floats, apart from the joints, whose default is four 8-bit integers in one word.
-		expect(vertexStride(VERTEX_ALL)).toBe(92);
+		// Floats, apart from the joints, whose default is four 8-bit integers in one word. The core
+		// gives the same stride.
+		expect(vertexStride(VERTEX_ALL)).toBe(100);
 		expect(vertexAttribute(VERTEX_ALL, 2)).toEqual(floats(2, 2, 24));
 		expect(vertexAttribute(VERTEX_ALL, 3)).toEqual(floats(3, 2, 32));
 		expect(vertexAttribute(VERTEX_ALL, 4)).toEqual(floats(4, 4, 40));
@@ -97,6 +100,7 @@ describe('vertex formats', () => {
 			integer: true,
 		});
 		expect(vertexAttribute(VERTEX_ALL, 7)).toEqual(floats(7, 4, 76));
+		expect(vertexAttribute(VERTEX_ALL, 8)).toEqual(floats(8, 2, 92));
 		// Without the first texture coordinates, the second take their place.
 		expect(vertexAttribute(VERTEX_UV1, 3)).toEqual(floats(3, 2, 24));
 		expect(vertexAttribute(VERTEX_UV1, 2)).toBeUndefined();
@@ -149,6 +153,13 @@ describe('vertex formats', () => {
 		expect(typeField(5, VERTEX_TYPE_SNORM8)).toBeUndefined();
 		expect(typeField(0, VERTEX_TYPE_F32)).toBe(0);
 		expect(typeField(6, VERTEX_TYPE_UINT8)).toBe(0);
+	});
+
+	test('an attribute of one type has no type field, so its own bit does not hide it', () => {
+		const morph = locationOfAttribute(VERTEX_MORPH);
+		expect(typeOf(VERTEX_MORPH, morph)).toBe(VERTEX_TYPE_F32);
+		// Two floats after the position and the normal.
+		expect(vertexStride(VERTEX_MORPH)).toBe(vertexStride(0) + 8);
 	});
 
 	test('in every format of floats, the last attribute ends at the stride', () => {

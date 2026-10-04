@@ -122,6 +122,10 @@ pub fn update_bounds(
     morphs: &MorphWeights,
     meshes: &MeshStorage,
 ) {
+    // Without clips or morph weights, no object is posed.
+    if animations.is_none() && morphs.values().is_empty() {
+        return;
+    }
     let mut weights = [0.0f32; MAX_TARGETS as usize];
     for slot in 0..scene.skins().len() {
         let (skin, morph) = (scene.skins()[slot], scene.morphs()[slot]);

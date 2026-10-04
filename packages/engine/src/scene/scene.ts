@@ -1824,6 +1824,8 @@ export class Scene {
 	declare readonly unmarkedWrites: UnmarkedWrites | undefined;
 	/** @internal The scene's animated objects, from the first model with animations on. */
 	animations: SceneAnimations | undefined;
+	/** @internal True once an object has morph weights, so each frame's animation step runs. */
+	morphed = false;
 	/** The core's table of morph weights, made again after the engine's memory grew. */
 	private morphTable: Float32Array = new Float32Array(0);
 	private morphGeneration = -1;
@@ -2021,6 +2023,7 @@ export class Scene {
 		if (!count) return 0;
 		const { core } = this;
 		const block = core.checkGrowth(core.glue.createMorphWeights(count), call, mesh.label);
+		this.morphed = true;
 		mesh.morphBlock = block;
 		mesh.morphFirst = core.glue.morphWeightsFirst(block - 1);
 		mesh.morphCount = count;

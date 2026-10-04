@@ -3,12 +3,12 @@ id: api/geometry
 title: Geometry
 status: experimental
 since: "0.1"
-summary: "Generators with three.js parameters; meshes from arrays; vertex formats; large meshes."
+summary: "Generators with three.js parameters; meshes from arrays; morph targets; vertex formats; large meshes."
 ---
 
 # Geometry
 
-> Ships in null3D 0.1. Integer attributes, joints and weights ship in 0.2. The API is experimental, so it can still change between versions. Not built yet: the call `destroy` on a mesh, and a call that skins a mesh you build. So joints and weights do not move its vertices yet. Coding agents must not use them.
+> Ships in null3D 0.1. Integer attributes, joints and weights, and morph targets ship in 0.2. The API is experimental, so it can still change between versions. Not built yet: the call `destroy` on a mesh, and a call that skins a mesh you build. So joints and weights do not move its vertices yet. Coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -118,6 +118,27 @@ Integer positions keep their own units. Give the object the scale and the positi
 
 `computeTangents: true` computes tangents as three.js's `computeTangents` does, from the positions, the normals and `uvs`. It needs `uvs`, and it works with or without indices. The job workers share the work, so a large mesh takes less time. Both options give the same numbers as three.js, bit for bit. They compute from integer positions, normals and texture coordinates too, as shaders read them, and give 32-bit floats.
 
+## Morph targets
+
+A morph target is another shape of a mesh, such as a smile on a face. The `morphTargets` option gives a mesh its targets, as three.js's `morphAttributes` with `morphTargetsRelative` does. Each target is an array of three numbers per vertex: how far the target moves the vertex at weight 1. The list `positions` moves the vertices, `normals` turns their normals, and `tangents` turns their tangents. Every list holds the same number of targets, from 1 to 256. The list `names` names the targets.
+
+```ts
+const count = positions.length / 3;
+const smile = new Float32Array(count * 3);
+const blink = new Float32Array(count * 3);
+// ... fill in how far each target moves each vertex ...
+const face = geometry.fromArrays({
+  positions,
+  normals,
+  indices,
+  morphTargets: { positions: [smile, blink], names: ['Smile', 'Blink'] },
+});
+const head = scene.createMesh({ mesh: face, material });
+head.setMorphWeight('Smile', 0.8);
+```
+
+Each object of the mesh has weights of its own, which start at 0. `setMorphWeight` sets them, and clips from glTF files animate them ([Morph targets](animation.md#morph-targets)). The engine stores, for each vertex, only the targets that move it. So a face whose targets each move a small part of it takes far less memory than three.js's copy of every vertex for every target. A vertex can take up to 255 targets. The targets of every mesh together can take up to 4,128,768 deltas, counting each of a vertex's positions, normals and tangents once. Past those limits, `fromArrays` throws E1206.
+
 ## Vertex formats
 
 A mesh keeps the attributes that you give it, each in the type that it came in. Its vertex format is that set of attributes and their types. Every vertex holds its position and its normal, and each other attribute adds to its size. Each attribute takes whole groups of 4 bytes, as glTF lays them out. So three 8-bit values take 4 bytes, and three 16-bit values take 8:
@@ -146,6 +167,8 @@ A mesh can have any number of vertices. The engine uses 16-bit indices. WebGL2 a
 | `geometry.computeVertexNormals()` | `computeNormals: true` |
 | `geometry.computeTangents()` | `computeTangents: true` |
 | `geometry.computeBoundingSphere()` | Nothing: the engine computes bounds itself |
+| `geometry.morphAttributes.position = [...]` with `morphTargetsRelative = true` | `morphTargets: { positions: [...] }` |
+| `mesh.morphTargetDictionary` | `mesh.mesh.morphTargetNames`, a list in target order; `setMorphWeight` takes a name too |
 
 [three.js to null3D](../porting/threejs-mapping.md) lists every mapping.
 
@@ -292,7 +315,7 @@ A mesh the engine can draw: its id in the engine core, its bounding radius, and 
 
 Interface `MorphTargets`.
 
-A mesh's morph targets, like three.js's `morphAttributes` with `morphTargetsRelative` set, as glTF stores them. Each list holds one array per target, of three numbers per vertex: how far the target moves the vertex's position, normal or tangent at weight 1. Every list has the same number of targets, from 1 to 256. A mesh's targets move its vertices by their weights, which each object sets with `setMorphWeight`, and clips animate.
+A mesh's morph targets, like three.js's `morphAttributes` with `morphTargetsRelative` set, as glTF stores them. Each list holds one array per target, of three numbers per vertex. They say how far the target moves the vertex's position, normal or tangent at weight 1. Every list has the same number of targets, from 1 to 256. A mesh's targets move its vertices by their weights, which each object sets with `setMorphWeight`, and clips animate.
 
 | Member | Description |
 | --- | --- |

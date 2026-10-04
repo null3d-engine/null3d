@@ -69,11 +69,30 @@ Sizes after Brotli at quality 11, from `bun run build` on 4 October 2026:
 
 The engine's other files that load later have a budget of 16 KB each. The morph shader files cannot fit it, as each holds every MORPH build of one device's bits. The owner decided on 4 October 2026 that shader files that load on first use have a limit of their own. It is the size of the start shader file, about 24 KB after Brotli. `ON_DEMAND_SHADER_BUDGET_BYTES` in `tools/lib/size-report.ts` holds it, and the size check enforces it.
 
-Parse time of a morph shader file in Chrome on the Mac: see [the measurements](#measurements).
+Chrome on the MacBook Pro (M5 Max) parses and runs a morph shader file about as fast as a start shader file. The page imported each file seven times from memory, so no download counts. Medians, 4 October 2026:
+
+| File | Parse and run |
+| --- | --- |
+| The morph file with the draw index and tone mapping bits, the largest | 9.0 ms |
+| The start file with the same bits | 9.2 ms |
+| The morph file with no fixed bits | 7.7 ms |
 
 ### Measurements
 
-To be filled with the image tests, the parity against three.js, the parse time and the allocation runs.
+The image tests `morph`, `morph-shadows` and `morph-names` draw three spheres of one mesh at their own weights, with the shadow passes and with weights set by name. Every tier draws the WebGPU image. On the Mac's GPU, WebGL2 differs in 0.128% of the pixels without the ground and 0.113% with it, all on outline edges. The test with the ground takes a tolerance of 0.2%. `morph-cap` draws the scene on WebGL2 with a cap of 2. It matches `morph-capped`, which draws the same scene with the third sphere's smallest weight set to 0.
+
+The parity check compares each scene with three.js r186 by three.js's own image rule, under 0.1% of the pixels:
+
+| Scene | WebGPU | Compatibility mode | WebGL2 | three.js's two renderers |
+| --- | --- | --- | --- | --- |
+| The three spheres, against `morphTargetInfluences` | 0.000% | 0.100% | 0.000% | 0.062% |
+| AnimatedMorphCube, its clip at 2.4 s, against `AnimationMixer` | 0.000% | 0.000% | 0.000% | 0.001% |
+| MorphStressTest, 8 targets on two primitives, its clip at 0.5 s | 0.000% | 0.037% | 0.000% | 0.027% |
+| MorphPrimitivesTest, the file's default weight of 0.5 | 0.000% | 0.001% | 0.000% | 0.004% |
+
+`bun run bench:allocation --morphed 64` adds 64 spheres to S1 whose three weights the sketch sets in every frame. Every place stayed within its budget on both GPU paths. On WebGL2 the sketch worker's frame code took 202 bytes per frame with the spheres and 191 without, inside its budget of 240.
+
+The Rust tests cover both frame builders. On WebGPU they check the skinning pass's morph texture and buffers, and on WebGL2 the MORPH builds of every pass and of the depth prepass. They also check custom materials at rest, bounds, the weight upload and its cap, split meshes, and frames that allocate nothing.
 
 ## Decision
 

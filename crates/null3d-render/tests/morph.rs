@@ -11,7 +11,7 @@ use common::morphed::{LIFT, PUSH};
 use common::{World, count};
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::SunShadow;
-use null3d_gpu::drawlist::{Op, format, layout, permutation, template, vertex};
+use null3d_gpu::drawlist::{Op, buffer_usage, format, layout, permutation, template, vertex};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
@@ -104,6 +104,16 @@ fn webgpu_morphs_a_morphed_object_once_in_the_skinning_pass() {
         .find(|g| g[1] == layout::SKIN)
         .expect("the skinning pass's group");
     let morphs = morph_texture(&first, &bound(skin_group));
+    // The pass reads the mesh page's vertices as storage, so the page's buffer allows it, as each
+    // buffer that the group binds must.
+    let buffers = operands(&first, Op::CreateBuffer);
+    for id in &bound(skin_group)[..3] {
+        let made = buffers
+            .iter()
+            .find(|b| b[0] == *id)
+            .expect("a buffer the group binds");
+        assert_ne!(made[2] & buffer_usage::STORAGE, 0, "buffer {id}");
+    }
     // The deltas and the weights go up.
     assert!(writes(&first, morphs) >= 2);
     let mut dispatches = 0;

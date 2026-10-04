@@ -270,14 +270,6 @@ export class SceneAnimations {
 	}
 
 	/**
-	 * The frame step: advances every played clip by `stepUs` whole microseconds and poses every
-	 * animated object, on the job workers.
-	 */
-	update(stepUs: number): void {
-		this.core.check(this.core.glue.updateAnimations(stepUs), 'the animation step', undefined, true);
-	}
-
-	/**
 	 * Calls the handlers of each event of the last frame step, in order of object and time. A
 	 * handler's error goes to `report`, and the other handlers still run.
 	 */

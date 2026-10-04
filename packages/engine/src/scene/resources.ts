@@ -377,8 +377,8 @@ export type VertexValues = Float32Array | IntegerArray | readonly number[] | Ver
 
 /**
  * A mesh's morph targets, like three.js's `morphAttributes` with `morphTargetsRelative` set, as
- * glTF stores them. Each list holds one array per target, of three numbers per vertex: how far the
- * target moves the vertex's position, normal or tangent at weight 1. Every list has the same number
+ * glTF stores them. Each list holds one array per target, of three numbers per vertex. They say how
+ * far the target moves the vertex's position, normal or tangent at weight 1. Every list has the same number
  * of targets, from 1 to 256. A mesh's targets move its vertices by their weights, which each
  * object sets with `setMorphWeight`, and clips animate.
  *

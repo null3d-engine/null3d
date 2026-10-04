@@ -1388,12 +1388,10 @@ impl MeshBuffers {
                     ..PageBuffers::default()
                 };
                 let copied = buffer_usage::COPY_DST;
-                // The skinning pass reads skinned meshes' vertices as storage.
-                let read = if crate::skinning::has_joints(page.format) {
-                    buffer_usage::STORAGE
-                } else {
-                    0
-                };
+                // The skinning pass reads skinned and morphed meshes' vertices as storage.
+                let posed = crate::skinning::has_joints(page.format)
+                    || crate::morph::has_targets(page.format);
+                let read = if posed { buffer_usage::STORAGE } else { 0 };
                 list.push(
                     Op::CreateBuffer,
                     &[

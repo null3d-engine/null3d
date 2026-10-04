@@ -280,6 +280,12 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		twin: `${TWINS}/skinning.html`,
 		sketchSwitches: NO_TONE,
 	},
+	// Morph targets against three.js's morphTargetInfluences.
+	{
+		test: 'morph',
+		twin: `${TWINS}/morph.html`,
+		sketchSwitches: NO_TONE,
+	},
 	// Bloom at two settings against three.js's UnrealBloomPass. The composer's targets have no MSAA,
 	// so null3D's page draws without anti-aliasing too.
 	...(['soft', 'strong'] as const).map(

@@ -85,7 +85,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Objects and transforms](api/objects.md) | Setters and getters; parents; flags; destroy. | experimental | 0.1 |
 | [Cameras](api/cameras.md) | Perspective and orthographic cameras; screenToRay; worldToScreen; layers. | experimental | 0.1 |
 | [Lights](api/lights.md) | Directional, point, spot, hemisphere and ambient lights; shadow options. | experimental | 0.1 |
-| [Geometry](api/geometry.md) | Generators with three.js parameters; meshes from arrays; vertex formats; large meshes. | experimental | 0.1 |
+| [Geometry](api/geometry.md) | Generators with three.js parameters; meshes from arrays; morph targets; vertex formats; large meshes. | experimental | 0.1 |
 | [Materials](api/materials.md) | standard, unlit, shader, shadowCatcher; every option. | experimental | 0.1 |
 | [Textures](api/textures.md) | loadTexture options; KTX2 files; fromData; fromImageBitmap; fromPass; cube maps. | experimental | 0.1 |
 | [Assets](api/assets.md) | loadGltf, loadTexture, loadImageBitmap, loadLut, loadJson, loadBinary, preload, onProgress; environments. | experimental | 0.1 |

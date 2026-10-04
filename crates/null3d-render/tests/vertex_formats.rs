@@ -222,8 +222,8 @@ fn every_attribute_type_packs_into_pages_of_its_own_format_in_both_packings() {
     }
     let formats: std::collections::BTreeSet<u32> = meshes.iter().map(|m| m.format).collect();
     // The quad has float positions, normals and first coordinates, so their float types repeat
-    // its format; every other type makes a format of its own.
-    assert_eq!((meshes.len(), formats.len()), (41, 39));
+    // its format; every other type makes a format of its own, the morph attribute's too.
+    assert_eq!((meshes.len(), formats.len()), (42, 40));
     for packing in [Packing::SharedBuffers, Packing::Pages] {
         let mut storage = MeshStorage::new(packing);
         let ids: Vec<u32> = meshes.iter().map(|m| storage.add(m).unwrap()).collect();

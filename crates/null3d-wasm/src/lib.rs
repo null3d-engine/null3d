@@ -613,16 +613,13 @@ pub fn prepare_jobs() {
     }
 }
 
-/// Updates world matrices and bounding spheres of scene objects, in parallel on the job workers,
-/// after the bounds of skinned and morphed objects follow their poses and weights.
+/// Updates world matrices and bounding spheres of scene objects, in parallel on the job workers.
 #[wasm_bindgen(js_name = updateTransforms)]
 pub fn update_transforms() -> u32 {
     let Some(jobs) = JOBS.get() else {
         return fail(codes::NOT_READY, [0, 0]);
     };
     with_engine(|e| {
-        let meshes = e.renderer.settings().meshes();
-        skinning::update_bounds(&mut e.scene, e.animations.as_ref(), &e.morphs, meshes);
         e.scene.update_transforms(jobs);
         0
     })
@@ -2388,8 +2385,9 @@ pub fn set_clip_events(clip: u32, count: u32) -> u32 {
 }
 
 /// Advances every played clip by `step_us` microseconds, then writes every animated instance's
-/// skinning matrices, on the job workers. The microseconds cross from TypeScript as a whole
-/// number, so no number object is made for them.
+/// skinning matrices, on the job workers. Then the bounds of skinned and morphed objects follow
+/// their poses and weights, which marks the objects before the transform update. The microseconds
+/// cross from TypeScript as a whole number, so no number object is made for them.
 #[wasm_bindgen(js_name = updateAnimations)]
 pub fn update_animations(step_us: u32) -> u32 {
     let Some(jobs) = JOBS.get() else {
@@ -2399,6 +2397,8 @@ pub fn update_animations(step_us: u32) -> u32 {
         if let Some(animations) = e.animations.as_mut() {
             animations.update(jobs, step_us as f32 * 1e-6);
         }
+        let meshes = e.renderer.settings().meshes();
+        skinning::update_bounds(&mut e.scene, e.animations.as_ref(), &e.morphs, meshes);
         0
     })
 }
