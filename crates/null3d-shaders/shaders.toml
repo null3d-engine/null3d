@@ -194,13 +194,14 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP",
 # The depth of shadow casters, drawn from a light into one cascade's layer of the shadow map or one
 # tile of the shadow atlas. The CASTER_OFFSET builds move casters that draw only their back faces
 # toward the light. The PREPASS builds draw the depth of a camera's opaque objects for the depth
-# prepass, and clip what lies in front of the camera as the templates that shade do.
+# prepass on WebGPU, and clip what lies in front of the camera as the templates that shade do.
+# WebGL2 draws the prepass with each mesh template's own vertex shader instead.
 [shaders.shadow_depth]
 file = "shadow_depth.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["SKIN", "PREPASS", "CASTER_OFFSET"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "PREPASS", "CASTER_OFFSET", "SKIN"], targets = ["glsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "CASTER_OFFSET", "SKIN"], targets = ["glsl"] }
 
 # GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
 [shaders.cull]
