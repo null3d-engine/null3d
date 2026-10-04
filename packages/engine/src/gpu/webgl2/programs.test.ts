@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import {
+	everyShader,
 	type GlslProgram,
 	type GlslStage,
-	SHADERS,
 	type ShaderBinding,
 } from '../../generated/shaders';
 import { DEPTH_SETUPS } from './depth';
@@ -15,7 +15,12 @@ import {
 	UPLOAD_UNIT,
 } from './programs';
 
-/** Every GLSL stage that the shader build writes, by a name that says where it comes from. */
+const SHADERS = await everyShader();
+
+/**
+ * Every GLSL stage that the shader build writes, those of every device module too, by a name that
+ * says where it comes from.
+ */
 function glslStages(): [string, GlslStage][] {
 	const stages: [string, GlslStage][] = [];
 	for (const [shader, variants] of Object.entries(SHADERS)) {

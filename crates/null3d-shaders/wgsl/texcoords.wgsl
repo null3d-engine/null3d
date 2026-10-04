@@ -8,6 +8,9 @@ enable draw_index;
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_point}
 #endif
+#ifdef MORPH
+#import null3d::mesh::{Morphed, morph_vertex}
+#endif
 
 /// The vertex attributes that the template reads.
 struct VertexIn {
@@ -16,6 +19,9 @@ struct VertexIn {
 #ifdef SKIN
     @location(6) joints: vec4u,
     @location(7) weights: vec4f,
+#endif
+#ifdef MORPH
+    @location(8) morph: vec2f,
 #endif
 }
 
@@ -29,11 +35,17 @@ struct VertexOut {
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
+#ifdef MORPH
+    let rest = morph_vertex(found, v.morph, Morphed(mesh_position(v.position), vec3f(0.0), vec3f(0.0)));
+    let rest_position = rest.position;
+#else
+    let rest_position = mesh_position(v.position);
+#endif
 #ifdef SKIN
     let skin = skin_of(found, v.joints, v.weights);
-    out.clip = clip_position(found, skinned_point(skin, mesh_position(v.position)));
+    out.clip = clip_position(found, skinned_point(skin, rest_position));
 #else
-    out.clip = clip_position(found, mesh_position(v.position));
+    out.clip = clip_position(found, rest_position);
 #endif
     out.uv0 = mesh_uv(v.uv0);
     return out;

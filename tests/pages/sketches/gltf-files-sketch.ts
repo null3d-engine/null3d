@@ -1,7 +1,8 @@
-// glTF files made in code, for the glTF loader's page test: a model that loads and copies, and files
-// that must fail with their codes. The sketch posts what it found as `result`.
-import { defineSketch, EngineError } from '@null3d/engine';
-import { GltfBuilder, shipBuilder } from '../lib/gltf-files';
+// glTF files made in code, for the glTF loader's page test: a model that loads and copies, a face
+// with shape keys in sparse accessors as Blender writes it, and files that must fail with their
+// codes. The sketch posts what it found as `result`.
+import { defineSketch, EngineError, type Mesh } from '@null3d/engine';
+import { blenderMorphBuilder, GltfBuilder, shipBuilder } from '../lib/gltf-files';
 
 /** The address of bytes, for assets.loadGltf. */
 const addressOf = (bytes: Uint8Array, type = 'model/gltf-binary') =>
@@ -14,6 +15,8 @@ export default defineSketch(async ({ scene, assets, page }) => {
 	const copy = scene.instantiate(ship, { position: [1, 0, 0] });
 	const clone = scene.clone(copy);
 	const batch = scene.createInstances(ship, 8);
+	const face = await assets.loadGltf(addressOf(blenderMorphBuilder().glb()));
+	const faceMesh = scene.instantiate(face, { position: [-3, 0, 0] }).find('Face') as Mesh;
 
 	/** The code of the error that loading `url` gives, or 'none'. */
 	const codeOf = async (url: string) => {
@@ -51,6 +54,7 @@ export default defineSketch(async ({ scene, assets, page }) => {
 		batchRows: batch.count,
 		bounds: [ship.bounds.min, ship.bounds.max],
 		materials: ship.materials.length,
+		faceWeights: ['Smile', 'Blink', 'Rest'].map((name) => faceMesh.getMorphWeight(name)),
 		codes,
 	});
 	return {};

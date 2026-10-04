@@ -134,6 +134,62 @@ export class GltfBuilder {
 		return this.accessor(array, 3, { min, max, ...fields });
 	}
 
+	/**
+	 * Adds a float accessor that reads as `values`, with `components` values per element, and returns
+	 * its index. Without `base` it holds zeros, and with `base` it reads that array from a buffer
+	 * view. A sparse list holds each element where `values` differs, as Blender's exporter writes
+	 * morph targets. Its indices take the smallest unsigned type that holds the largest one, unless
+	 * `indexType` names a component type. When no element differs, the accessor has no sparse list.
+	 */
+	sparse(
+		values: Float32Array,
+		components: number,
+		options: { base?: Float32Array; indexType?: number } = {},
+	): number {
+		const { base } = options;
+		const n = values.length / components;
+		const changed: number[] = [];
+		for (let i = 0; i < n; i++)
+			for (let c = 0; c < components; c++)
+				if (values[i * components + c] !== (base?.[i * components + c] ?? 0)) {
+					changed.push(i);
+					break;
+				}
+		const min = Array<number>(components).fill(Infinity);
+		const max = Array<number>(components).fill(-Infinity);
+		values.forEach((v, k) => {
+			min[k % components] = Math.min(min[k % components] as number, v);
+			max[k % components] = Math.max(max[k % components] as number, v);
+		});
+		const accessor: GltfJson = {
+			componentType: 5126,
+			count: n,
+			type: TYPE[components],
+			min,
+			max,
+		};
+		if (base) accessor.bufferView = this.view(new Uint8Array(base.slice().buffer));
+		if (changed.length > 0) {
+			const last = changed.at(-1) as number;
+			const indexType = options.indexType ?? (last < 256 ? 5121 : last < 65536 ? 5123 : 5125);
+			const Indices = { 5121: Uint8Array, 5123: Uint16Array, 5125: Uint32Array }[indexType];
+			if (!Indices) throw new Error(`${indexType} is not a sparse index type`);
+			const replaced = new Float32Array(changed.length * components);
+			changed.forEach((i, k) => {
+				replaced.set(values.subarray(i * components, (i + 1) * components), k * components);
+			});
+			accessor.sparse = {
+				count: changed.length,
+				indices: {
+					bufferView: this.view(new Uint8Array(Indices.from(changed).buffer)),
+					componentType: indexType,
+				},
+				values: { bufferView: this.view(new Uint8Array(replaced.buffer)) },
+			};
+		}
+		return this.json.accessors.push(accessor) - 1;
+	}
+
 	/** Adds a mesh of the primitives given, and returns its index. */
 	mesh(primitives: GltfJson[], name = ''): number {
 		return this.json.meshes.push({ name, primitives }) - 1;
@@ -451,6 +507,86 @@ export function morphBuilder(): GltfBuilder {
 				{
 					input: b.accessor(new Float32Array([0, 1]), 1, { min: [0], max: [1] }),
 					output: b.accessor(new Float32Array([0, 0, 1, 1]), 1),
+				},
+			],
+			channels: [{ sampler: 0, target: { node, path: 'weights' } }],
+		},
+	];
+	return b;
+}
+
+/** The vertices of each side of the face that `blenderMorphBuilder` writes. */
+const FACE_SIDE = 17;
+
+/**
+ * The deltas of the three shape keys of `blenderMorphBuilder`'s face, one position array and one
+ * normal array per key. Smile lifts the top two rows, whose vertex numbers pass 255, and tilts
+ * their normals. Blink lowers the bottom two rows. Rest moves nothing.
+ */
+export function faceTargets() {
+	const n = FACE_SIDE * FACE_SIDE;
+	const positions = [new Float32Array(n * 3), new Float32Array(n * 3), new Float32Array(n * 3)];
+	const normals = [new Float32Array(n * 3), new Float32Array(n * 3), new Float32Array(n * 3)];
+	const [smile, blink] = positions as [Float32Array, Float32Array];
+	const [smileNormals] = normals as [Float32Array];
+	for (let i = 0; i < n; i++) {
+		const row = Math.floor(i / FACE_SIDE);
+		if (row >= FACE_SIDE - 2) {
+			smile[i * 3 + 2] = 0.25;
+			smileNormals[i * 3 + 1] = -0.125;
+		}
+		if (row < 2) blink[i * 3 + 1] = -0.125;
+	}
+	return { names: ['Smile', 'Blink', 'Rest'], positions, normals };
+}
+
+/**
+ * A face as Blender's glTF exporter writes a mesh with shape keys: a flat grid of 289 vertices,
+ * and three morph targets whose positions and normals are sparse accessors with no buffer view.
+ * Their indices take the smallest type that holds the largest one, so Smile's are 16-bit and
+ * Blink's 8-bit. A target that moves nothing has no sparse list, so it reads as zeros. The mesh
+ * names its targets in its extras, and the clip Talk animates the weights.
+ */
+export function blenderMorphBuilder(): GltfBuilder {
+	const b = new GltfBuilder();
+	const positions: number[] = [];
+	const indices: number[] = [];
+	for (let row = 0; row < FACE_SIDE; row++)
+		for (let column = 0; column < FACE_SIDE; column++) {
+			positions.push((column / (FACE_SIDE - 1)) * 2 - 1, (row / (FACE_SIDE - 1)) * 2 - 1, 0);
+			if (row > 0 && column > 0) {
+				const at = row * FACE_SIDE + column;
+				indices.push(at - FACE_SIDE - 1, at - FACE_SIDE, at, at - FACE_SIDE - 1, at, at - 1);
+			}
+		}
+	const normals = new Float32Array(positions.length).map((_, k) => (k % 3 === 2 ? 1 : 0));
+	const targets = faceTargets();
+	const mesh = b.mesh(
+		[
+			{
+				attributes: {
+					POSITION: b.positions(new Float32Array(positions)),
+					NORMAL: b.accessor(normals, 3),
+				},
+				indices: b.accessor(new Uint16Array(indices), 1),
+				targets: targets.positions.map((delta, k) => ({
+					POSITION: b.sparse(delta, 3),
+					NORMAL: b.sparse(targets.normals[k] as Float32Array, 3),
+				})),
+			},
+		],
+		'Face',
+	);
+	b.json.meshes[mesh].weights = [0.5, 0, 0];
+	b.json.meshes[mesh].extras = { targetNames: targets.names };
+	const node = b.node({ name: 'Face', mesh });
+	b.json.animations = [
+		{
+			name: 'Talk',
+			samplers: [
+				{
+					input: b.accessor(new Float32Array([0, 1]), 1, { min: [0], max: [1] }),
+					output: b.accessor(new Float32Array([0.5, 0, 0, 1, 1, 0]), 1),
 				},
 			],
 			channels: [{ sampler: 0, target: { node, path: 'weights' } }],

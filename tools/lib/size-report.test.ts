@@ -10,6 +10,7 @@ import {
 	LATER_BUDGET_BYTES,
 	LATER_PARTS,
 	measure,
+	ON_DEMAND_SHADER_BUDGET_BYTES,
 	REPORTED_FILES,
 	START_BUDGET_BYTES,
 } from './size-report';
@@ -208,6 +209,23 @@ describe('budgetProblems', () => {
 		expect(budgetProblems(sizes(START_BUDGET_BYTES, LATER_BUDGET_BYTES), downloads, later)).toEqual(
 			[],
 		);
+	});
+
+	it('holds shader modules of on-demand features to their own budget, which no start counts', () => {
+		const morph = 'shaders-glsl-morph.js';
+		const within = new Map([
+			...sizes(START_BUDGET_BYTES, 0),
+			[morph, { raw: 0, brotli: ON_DEMAND_SHADER_BUDGET_BYTES }],
+		]);
+		expect(budgetProblems(within, downloads, later, [morph])).toEqual([]);
+		expect(downloadSizes(within, downloads)[0]?.size.brotli).toBe(START_BUDGET_BYTES);
+		const over = new Map([
+			...within,
+			[morph, { raw: 0, brotli: ON_DEMAND_SHADER_BUDGET_BYTES + 1 }],
+		]);
+		expect(budgetProblems(over, downloads, later, [morph])).toEqual([
+			'js/shaders-glsl-morph.js, the shader builds of a feature that loads on demand, is 24,577 bytes after Brotli, over its 24 KB budget',
+		]);
 	});
 
 	it('names a start over its budget, and a later part over its own, which no start counts', () => {

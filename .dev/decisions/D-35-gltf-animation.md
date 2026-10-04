@@ -12,7 +12,7 @@ How does a glTF file's animation reach the engine core? A file has skins, which 
 - No frame of the sketch waits for a model's clips to resample.
 - A page that loads no glTF file downloads none of the animation code (M2-R5's rule, as [D-29](D-29-gltf-loader.md) keeps it).
 - A crowd of copies costs no object per joint.
-- Morph targets load and wait for the task that draws them (M2-C5).
+- Clips that animate morph weights play through the same skeleton and animator as clips that move joints ([D-51](D-51-morph-targets.md)).
 
 ## Data
 
@@ -129,7 +129,11 @@ A clip without a name takes three.js's name, `animation_` and its index. A secon
 
 ### Morph targets
 
-The parser reads each primitive's position, normal and tangent deltas as floats, the mesh's default weights and target names, and each clip's weights tracks. The prefab keeps them, on the template nodes and in `morphClips`, for M2-C5. Until then the mesh draws its shape at rest, and development builds say so.
+The parser reads each primitive's position, normal and tangent deltas as floats, and the mesh's default weights and target names. A node's own `weights` replace its mesh's, as three.js's `GLTFLoader` sets them. The deltas go into the mesh, and each object of the mesh gets its own block of weights ([D-51](D-51-morph-targets.md)).
+
+A clip's weights track becomes tracks of the model's skeleton. Each node whose weights a clip animates gets one joint per three weights. These joints are roots at rest at the origin with scale 0, which no skin names, so they move no vertex and `debug.skeleton` leaves them out. A weights track becomes a translation track of each such joint, with one weight along each axis, in the track's interpolation. A cubic key keeps its in-tangent, value and out-tangent in order. Each joint also gets one key of scale 1 in that clip. The core reads a weight as `t + (1 - s) * own`. Here `t` is the blended translation and `s` the blended scale. The own weight `own` comes from the file or `setMorphWeight`. A clip at full weight sets the weight, and a fade blends it with the object's own. The own weight holds when no clip animates it. three.js's `AnimationMixer` blends a property with its value from before the clips in the same way.
+
+Joints won over a second kind of track. The core already resamples, blends, fades, masks and adds clips by joint, on the job workers. A new kind of track would need its own copy of each of those steps. The joints take the node's name, so a layer mask that names the node takes its weights too. A face with 52 weights adds 18 joints, which the skeleton's limit of 1,024 counts.
 
 ### `debug.skeleton`
 
