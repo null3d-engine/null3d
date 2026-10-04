@@ -1276,6 +1276,7 @@ export class Materials {
 	private readonly templates = new WeakMap<CompiledWgsl, number>();
 	private nextTemplate = SHADING_CUSTOM_FIRST;
 
+	/** @internal */
 	constructor(
 		private readonly core: CoreMemory,
 		/** Sends each custom material's shader to the thread that draws, once. */
