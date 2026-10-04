@@ -68,3 +68,7 @@ The sample content's tables (`sources/luts/`): warm, cool and identity, each as 
 - Per frame: `post.set` writes its numbers, the exposure and bloom's among them, into a block of the core's memory (`postValues`), and the core calls take none. A fraction passed as an argument made a heap object per call, which the allocation check (`bun run bench:allocation --grading`) caught: 22 bytes per frame before, none after, on both GPU paths.
 - Tests: the render crate's `grading.rs`, the readers' unit tests, the image tests `lut-cube`, `lut-3dl`, `vignette`, `lut-vignette`, `lut-vignette-8-bit` and `lut-vignette-scale-50`, and the parity scenes `lut-cube` and `lut-vignette`.
 - Docs: `api/post`, `api/assets`, `concepts/post-processing`, the mapping's `lut` and `vignette` entries, and both skills.
+
+## Addendum, 2026-10-04: the table and the vignette under intent parity
+
+The owner's decision of 4 October 2026 ([D-52](D-52-intent-parity.md)) splits this record's second rule. A grading table is the author's own data, so applying it is intent parity: `LUTPass`'s table and intensity keep their strict parity test. The vignette is a look. Its default follows the best technique, and three.js's vignette is a candidate for the opt-in `three-compat` add-on module. The `lut-vignette` parity scene keeps its strict limit until the vignette's default changes.
