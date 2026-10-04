@@ -1479,3 +1479,31 @@ export function compareResults(cases: readonly Case[], bits: Uint32Array): Misma
 	});
 	return mismatches;
 }
+
+/**
+ * Whole numbers that the WebGL2 page writes into its 32-bit integer target and reads back before
+ * the library draws. Each has bits set in both halves, so a target or a readback that keeps fewer
+ * than 32 bits changes every one of them.
+ */
+export const TARGET_PROBE: readonly number[] = [0x89abcdef, 0x12345678, 0xfedcba98, 0x76543210];
+
+/**
+ * What a probe of the 32-bit integer target found, when the values it read back differ from
+ * `TARGET_PROBE`: how many low bits of each value survived, and the values both ways. Undefined
+ * when every value came back whole.
+ */
+export function probeFault(what: string, read: ArrayLike<number>): string | undefined {
+	const got = TARGET_PROBE.map((_, k) => (read[k] ?? 0) >>> 0);
+	if (TARGET_PROBE.every((value, k) => got[k] === value)) return undefined;
+	const hex = (values: readonly number[]) =>
+		values.map((v) => `0x${v.toString(16).padStart(8, '0')}`).join(', ');
+	// A value's lowest changed bit counts the low bits that it kept.
+	const kept = Math.min(
+		...TARGET_PROBE.map((value, k) => {
+			const changed = (value ^ got[k]!) >>> 0;
+			return changed === 0 ? 32 : 31 - Math.clz32(changed & -changed);
+		}),
+	);
+	const bits = kept > 0 ? `kept only the low ${kept} bits of each value` : 'changed the values';
+	return `${what} ${bits}: wrote ${hex(TARGET_PROBE)}, read ${hex(got)}`;
+}

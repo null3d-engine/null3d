@@ -11,6 +11,7 @@ interface LibraryResult {
 	functions: number;
 	cases: number;
 	failures: string[];
+	deviceFault?: string;
 	mismatches: Mismatch[];
 }
 
@@ -23,6 +24,7 @@ for (const tier of ['webgpu', 'compat', 'webgl2'] as const) {
 		expect(result.functions).toBe(FUNCTIONS.length);
 		expect(result.cases).toBe(allCases().length);
 		expect(result.failures).toEqual([]);
+		expect(result.deviceFault).toBeUndefined();
 		expect(result.mismatches).toEqual([]);
 	});
 }

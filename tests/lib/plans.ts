@@ -1532,6 +1532,12 @@ export function judge(
 				),
 			];
 			if (!(Number(result.cases) > 0)) problems.push('the page ran no cases');
+			// The engine draws no whole numbers into a target on WebGL2, so a device that cannot hand
+			// them back is a fault of the check's readback, which the run records without a failure.
+			if (typeof result.deviceFault === 'string')
+				context?.note?.(
+					`device fault: ${result.deviceFault}. The page could not read the library's results back on this device`,
+				);
 			return problems;
 		}
 		case 'engine':

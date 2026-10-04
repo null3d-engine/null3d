@@ -18,7 +18,9 @@ import {
 	compareResults,
 	FUNCTIONS,
 	INPUT_TEXELS,
+	probeFault,
 	RESULT_VALUES,
+	TARGET_PROBE,
 } from './lib/shader-library-cases';
 
 type Tier = 'webgpu' | 'compat' | 'webgl2';
@@ -65,6 +67,13 @@ function moduleRows(cases: readonly Case[], module: string): [number, number][] 
 interface Drawn {
 	bits: Uint32Array;
 	failures: Map<string, string>;
+	/** On WebGL2: the kind of storage that held the results. */
+	target?: string;
+	/**
+	 * On WebGL2: why the device cannot hand back 32-bit results whole, from the probe of the
+	 * target. The values it read back then say nothing of the library.
+	 */
+	deviceFault?: string;
 }
 
 function message(error: unknown): string {
@@ -249,15 +258,21 @@ function compile(gl: WebGL2RenderingContext, type: GLenum, source: string): WebG
 	return compiled;
 }
 
-/** Links a module's program and makes it current, or throws with the compiler's or linker's log. */
-function useProgram(gl: WebGL2RenderingContext, glsl: GlslProgram): void {
+/** Links a program and makes it current, or throws with the compiler's or linker's log. */
+function linkProgram(gl: WebGL2RenderingContext, vertex: string, fragment: string): WebGLProgram {
 	const program = gl.createProgram();
-	gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, glsl.vertex.source));
-	gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, glsl.fragment.source));
+	gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, vertex));
+	gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, fragment));
 	gl.linkProgram(program);
 	if (!gl.getProgramParameter(program, gl.LINK_STATUS))
 		throw new Error(`GLSL link: ${gl.getProgramInfoLog(program) ?? ''}`);
 	gl.useProgram(program);
+	return program;
+}
+
+/** Links a module's program, makes it current, and points its samplers at their units. */
+function useProgram(gl: WebGL2RenderingContext, glsl: GlslProgram): void {
+	const program = linkProgram(gl, glsl.vertex.source, glsl.fragment.source);
 	// The cases go in unit 0 and the table of specular terms in unit 1.
 	for (const texture of glsl.fragment.textures)
 		gl.uniform1i(gl.getUniformLocation(program, texture.name), texture.binding === 3 ? 1 : 0);
@@ -303,15 +318,7 @@ function runWebGL2(cases: readonly Case[], input: Uint32Array): Drawn {
 		dfgTexels(),
 	);
 
-	const target = gl.createRenderbuffer();
-	gl.bindRenderbuffer(gl.RENDERBUFFER, target);
-	gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA32UI, RESULT_TEXELS, rows);
-	const framebuffer = gl.createFramebuffer();
-	gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-	gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, target);
-	if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
-		throw new Error('the rgba32uint target is not complete');
-	gl.viewport(0, 0, RESULT_TEXELS, rows);
+	const { target, deviceFault } = integerTarget(gl, rows);
 	gl.enable(gl.SCISSOR_TEST);
 	// GL counts rows from the bottom, in the fragment position, the scissor box and readPixels, so
 	// row k of the target and of the readback is case k, as on WebGPU.
@@ -335,13 +342,91 @@ function runWebGL2(cases: readonly Case[], input: Uint32Array): Drawn {
 	if (error !== gl.NO_ERROR) throw new Error(`WebGL2 error ${error} after the readback`);
 	if (gl.isContextLost()) throw new Error('the WebGL2 context was lost');
 	gl.getExtension('WEBGL_lose_context')?.loseContext();
-	return { bits, failures };
+	return { bits, failures, target, ...(deviceFault && { deviceFault }) };
+}
+
+/** A full-screen triangle, and a fragment shader that writes the probe's values from a uniform. */
+const PROBE_VERTEX = `#version 300 es
+void main() {
+	vec2 corner = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+	gl_Position = vec4(corner * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const PROBE_FRAGMENT = `#version 300 es
+precision highp float;
+precision highp int;
+uniform highp uvec4 probe;
+layout(location = 0) out highp uvec4 color;
+void main() {
+	color = probe;
+}`;
+
+/** The kinds of storage that the page tries for its target, in order. */
+type TargetKind = 'texture' | 'renderbuffer';
+const TARGET_KINDS: readonly TargetKind[] = ['texture', 'renderbuffer'];
+
+/** Reads the first texel of the bound target. */
+function firstTexel(gl: WebGL2RenderingContext): Uint32Array {
+	const texel = new Uint32Array(4);
+	gl.readPixels(0, 0, 1, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, texel);
+	return texel;
+}
+
+/** Binds a framebuffer with an rgba32uint target of this kind, or throws when it is incomplete. */
+function bindTarget(gl: WebGL2RenderingContext, kind: TargetKind, rows: number): void {
+	gl.bindFramebuffer(gl.FRAMEBUFFER, gl.createFramebuffer());
+	if (kind === 'texture') {
+		// A unit of its own, as the library's programs read units 0 and 1.
+		gl.activeTexture(gl.TEXTURE2);
+		const texture = gl.createTexture();
+		gl.bindTexture(gl.TEXTURE_2D, texture);
+		gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32UI, RESULT_TEXELS, rows);
+		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+	} else {
+		const storage = gl.createRenderbuffer();
+		gl.bindRenderbuffer(gl.RENDERBUFFER, storage);
+		gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA32UI, RESULT_TEXELS, rows);
+		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, storage);
+	}
+	if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
+		throw new Error(`the rgba32uint ${kind} target is not complete`);
+}
+
+/**
+ * Binds an rgba32uint target for the results, after a probe of its 32 bits: a clear with whole
+ * numbers that use both halves of each value, read back, then a shader's write of the same numbers,
+ * read back. The page takes the first kind of storage that keeps every bit. When none does, the
+ * device cannot hand back the library's results whole, and `deviceFault` says what each probe read.
+ * The target then is the last kind tried.
+ */
+function integerTarget(
+	gl: WebGL2RenderingContext,
+	rows: number,
+): { target: TargetKind; deviceFault?: string } {
+	const probe = linkProgram(gl, PROBE_VERTEX, PROBE_FRAGMENT);
+	const values = new Uint32Array(TARGET_PROBE);
+	gl.uniform4uiv(gl.getUniformLocation(probe, 'probe'), values);
+	gl.viewport(0, 0, RESULT_TEXELS, rows);
+	const faults: string[] = [];
+	for (const kind of TARGET_KINDS) {
+		bindTarget(gl, kind, rows);
+		gl.clearBufferuiv(gl.COLOR, 0, values);
+		const cleared = probeFault(`a clear of the ${kind} target`, firstTexel(gl));
+		gl.clearBufferuiv(gl.COLOR, 0, [0, 0, 0, 0]);
+		gl.drawArrays(gl.TRIANGLES, 0, 3);
+		const drawn = probeFault(`a shader's write into the ${kind} target`, firstTexel(gl));
+		gl.clearBufferuiv(gl.COLOR, 0, [0, 0, 0, 0]);
+		const found = [cleared, drawn].filter((fault) => fault !== undefined);
+		for (const fault of found) progress(fault);
+		if (found.length === 0) return { target: kind };
+		faults.push(...found);
+	}
+	return { target: TARGET_KINDS.at(-1)!, deviceFault: faults.join('; ') };
 }
 
 run('shader-library', async () => {
 	const cases = allCases();
 	const input = inputTexels(cases);
-	const { bits, failures } =
+	const { bits, failures, target, deviceFault } =
 		tier === 'webgl2' ? runWebGL2(cases, input) : await runWebGPU(cases, input);
 	// The rows of a module that could not draw hold no results, so its failure alone reports it.
 	const drawn = cases.flatMap((c, row) => (failures.has(MODULES[c.function]!) ? [] : [row]));
@@ -354,9 +439,13 @@ run('shader-library', async () => {
 		functions: FUNCTIONS.length,
 		cases: cases.length,
 		failures: [...failures].map(([module, reason]) => `${module}: ${reason}`),
-		mismatches: compareResults(
-			drawn.map((row) => cases[row]!),
-			drawnBits,
-		),
+		...(target && { target }),
+		...(deviceFault && { deviceFault }),
+		mismatches: deviceFault
+			? []
+			: compareResults(
+					drawn.map((row) => cases[row]!),
+					drawnBits,
+				),
 	};
 });
