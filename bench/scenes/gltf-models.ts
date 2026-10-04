@@ -39,14 +39,22 @@ export interface ModelScene {
 	 * test must match.
 	 */
 	uncompressed?: string;
+	/** A clip that both engines play from the start, and the time in seconds that they draw. */
+	clip?: { name: string; time: number };
+	/**
+	 * A frame that both engines place the camera from, in place of their bounds. three.js's bounds
+	 * of a mesh with morph targets hold every target's shape, and null3D's the shape at rest.
+	 */
+	frame?: { center: readonly [number, number, number]; radius: number };
 }
 
 /**
  * The model scenes by name. Each names a feature of the loader: metal-rough materials with their
  * texture maps, texture transforms in a .gltf file whose buffers and images are files of their
  * own, unlit materials, emissive strength, lights, a node with instancing of its own, KTX2 textures
- * in a .gltf file, alpha modes, vertex colors, the second texture coordinates, and meshopt
- * compression under each of its two names. The vendor name's file is the instancing model as
+ * in a .gltf file, alpha modes, vertex colors, the second texture coordinates, meshopt
+ * compression under each of its two names, and morph targets: weights that a clip animates, eight
+ * targets on two primitives, and a file's default weight on primitives that share targets. The vendor name's file is the instancing model as
  * gltfpack compresses it (tests/lib/meshopt-fixtures.ts), which the repository keeps. The Khronos
  * name's file covers every mode and filter.
  */
@@ -90,6 +98,23 @@ export const MODEL_SCENES = {
 	},
 	'meshopt-khr': {
 		url: sampleUrl('sources/khronos/MeshoptCubeTest/glTF-Meshopt/MeshoptCubeTest.gltf'),
+	},
+	'morph-cube': {
+		url: sampleUrl('sources/khronos/AnimatedMorphCube/glTF-Binary/AnimatedMorphCube.glb'),
+		clip: { name: 'Square', time: 2.4 },
+		frame: { center: [0, 0, 0], radius: 3 },
+		view: [1, 0.6, 1.4],
+	},
+	'morph-stress': {
+		url: sampleUrl('sources/khronos/MorphStressTest/glTF-Binary/MorphStressTest.glb'),
+		clip: { name: 'TheWave', time: 0.5 },
+		frame: { center: [0, 0.6, 0], radius: 2.3 },
+		view: [0, 0.6, 1],
+	},
+	'morph-primitives': {
+		url: sampleUrl('sources/khronos/MorphPrimitivesTest/glTF-Binary/MorphPrimitivesTest.glb'),
+		frame: { center: [0, 0.1, 0], radius: 0.8 },
+		view: [0, 1, 1],
 	},
 } as const satisfies Record<string, ModelScene>;
 

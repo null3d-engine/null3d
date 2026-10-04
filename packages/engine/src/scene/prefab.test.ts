@@ -31,7 +31,8 @@ function fakeCore(largeWorld = false) {
 		| 'read'
 		| 'handles'
 		| 'batch'
-		| 'cells';
+		| 'cells'
+		| 'morphs';
 	const at = {} as Record<Field, number>;
 	let next = 64;
 	for (const [name, bytes] of Object.entries({
@@ -44,6 +45,7 @@ function fakeCore(largeWorld = false) {
 		handles: rows * 4,
 		batch: 4096,
 		cells: rows * 12,
+		morphs: C.MORPH_MAX_WEIGHTS * 4,
 	})) {
 		at[name as Field] = next;
 		next += Math.ceil(bytes / 64) * 64;
@@ -58,6 +60,9 @@ function fakeCore(largeWorld = false) {
 	/** The batches destroyed, by id. */
 	const destroyedBatches: number[] = [];
 	const calls = { reserveObjects: 0, reserveObject: 0, createLight: 0, copyLight: 0 };
+	/** Each block of morph weights by id: its first weight, its count and its link. */
+	const morphs: { first: number; count: number; link: number[] }[] = [];
+	let morphEnd = 0;
 	const lights = new Map<number, { kind: number; values: Map<number, number> }>();
 	const batches: { source: number; mesh: number; material: number; part: number[] }[] = [];
 	/** The origin that each batch was given, by id. */
@@ -135,6 +140,21 @@ function fakeCore(largeWorld = false) {
 		initAnimations: () => 0,
 		createAnimatedInstance: () => (failure.animations ? 0 : ++instances),
 		removeAnimatedInstance: () => 0,
+		createMorphWeights: (count: number) => {
+			morphs.push({ first: morphEnd, count, link: [] });
+			morphEnd += count;
+			return morphs.length;
+		},
+		destroyMorphWeights: (id: number) => {
+			(morphs[id] as (typeof morphs)[number]).count = 0;
+			return 0;
+		},
+		linkMorphWeights: (id: number, instance: number, joint: number) => {
+			(morphs[id] as (typeof morphs)[number]).link = [instance, joint];
+			return 0;
+		},
+		morphWeightsAddress: () => at.morphs,
+		morphWeightsFirst: (id: number) => morphs[id]?.first ?? 0,
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
@@ -147,6 +167,7 @@ function fakeCore(largeWorld = false) {
 		calls,
 		lights,
 		batches,
+		morphs,
 		origins,
 		failure,
 		batchLayers,
@@ -488,6 +509,71 @@ describe('animated prefabs', () => {
 		expect(animator.skinned).toEqual([copy.find('Leg') as Mesh]);
 		expect(animator.rig.bindPlaces).toEqual(new Float64Array([0, 1, 0, 0, 1, 0]));
 		expect(scene.instantiate(prefab).animator()).not.toBe(animator);
+	});
+
+	/** A prefab whose root animates with a rig, and a face of two morph targets that its clips animate. */
+	function facePrefab(core: CoreMemory): Prefab {
+		const face = new MeshGeometry(9, 0.5, core, 2, ['Smile', 'Blink']);
+		const material = new Material(4, core, 'materials.standard.set');
+		const weights = (name: string) => ({
+			name,
+			parent: -1,
+			translation: [0, 0, 0] as [number, number, number],
+			rotation: [0, 0, 0, 1] as [number, number, number, number],
+			scale: [0, 0, 0] as [number, number, number],
+			inverseBind: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0],
+		});
+		const rig = new AnimationRig(1, new Map([['Talk', 1]]), [weights('Face')]);
+		const morph = { weights: [0.25, 0.5], joint: 0 };
+		const template = [
+			node({ parent: -1, root: true }),
+			node({ name: 'Face', parent: 0, mesh: face, material, morph }),
+		];
+		const bounds = boundsOf([0, 0, 0], [1, 1, 1]);
+		return new Prefab(core, 'https://example.com/face.glb', template, [], [], bounds, [], [], rig);
+	}
+
+	test("a copy's morphed mesh gets weights of its own, which the copy's clips animate", () => {
+		const { core, scene, take, morphs } = fakeCore();
+		const copy = scene.instantiate(facePrefab(core));
+		const face = copy.find('Face') as Mesh;
+		// The file's default weights, by number or by name.
+		expect([face.getMorphWeight(0), face.getMorphWeight('Blink')]).toEqual([0.25, 0.5]);
+		const block = face.morphBlock;
+		expect(block).toBeGreaterThan(0);
+		expect(take().some(([op, , a]) => op === C.COMMAND_SET_MORPH && a === block)).toBe(true);
+		// The weights link to the copy's animated instance and the rig's first weights joint.
+		expect(copy.animator().morphed).toEqual([face]);
+		expect(morphs[block - 1]?.link).toEqual([copy.animator().instance, 0]);
+
+		face.setMorphWeight('Smile', 0.75);
+		face.setMorphWeight(1, -1);
+		expect([face.getMorphWeight(0), face.getMorphWeight(1)]).toEqual([0.75, -1]);
+		// A clone copies the weights into a block of its own, linked to its own animator.
+		const twin = scene.clone(copy);
+		const twinFace = twin.find('Face') as Mesh;
+		expect(twinFace.morphBlock).not.toBe(block);
+		expect([twinFace.getMorphWeight(0), twinFace.getMorphWeight(1)]).toEqual([0.75, -1]);
+		expect(morphs[twinFace.morphBlock - 1]?.link).toEqual([twin.animator().instance, 0]);
+		// Destroying the face frees its weights.
+		face.destroy();
+		expect(morphs[block - 1]?.count).toBe(0);
+	});
+
+	test('setMorphWeight names the target it cannot find, and refuses a weight that is not finite', () => {
+		const { core, scene } = fakeCore();
+		const face = scene.instantiate(facePrefab(core)).find('Face') as Mesh;
+		expect(() => face.setMorphWeight('Frown', 1)).toThrow(
+			'E1218: setMorphWeight() got "Frown", which names no morph target of "Face" (slot 2), which has 2 morph targets: Smile, Blink.',
+		);
+		expect(() => face.getMorphWeight(2)).toThrow('E1218: getMorphWeight() got 2');
+		expect(() => face.setMorphWeight(-1, 1)).toThrow('E1218');
+		expect(() => face.setMorphWeight(0, Number.NaN)).toThrow('E1203');
+		const plain = scene.createMesh({
+			mesh: new MeshGeometry(7, 0.5, core),
+			material: new Material(4, core, 'materials.standard.set'),
+		});
+		expect(() => plain.setMorphWeight(0, 1)).toThrow('which has no morph targets');
 	});
 
 	test("a clone of an animated copy animates on its own, and skins the clone's meshes", () => {

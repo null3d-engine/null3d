@@ -38,6 +38,7 @@ import type {
 	LightData,
 	MaterialData,
 	MeshData,
+	NodeData,
 	PrimitiveData,
 	TextureUse,
 } from './gltf-parse';
@@ -251,8 +252,6 @@ async function buildPrefab(
 	const instancing: InstancingTemplate[] = [];
 	/** Each file node's template node, which its children go under, or -1 for a joint. */
 	const placed: number[] = [];
-	/** Each file node's template nodes of its mesh's parts. */
-	const partNodes: number[][] = [];
 	const parents = new Set(data.nodes.map((n) => n.parent));
 	const node = (
 		fields: Partial<TemplateNode> & Pick<TemplateNode, 'name' | 'parent' | 'transform'>,
@@ -265,20 +264,17 @@ async function buildPrefab(
 		const parts = (mesh?.primitives ?? []).map((p, k) => ({
 			mesh: made[k] as MeshGeometry,
 			material: materials.of(p),
-			...morphOf(mesh as MeshData, p),
+			...morphOf(mesh as MeshData, p, n),
 			// The asset tool marks the primitives that block the view, as `setOccluder` does.
 			...(p.occluder && { flags: FLAG_VISIBLE | FLAG_OCCLUDER }),
 		}));
 		const light = n.light < 0 ? undefined : lights[n.light];
-		const first = template.length + (parts.length > 1 || light ? 1 : 0);
-		partNodes.push(parts.map((_, k) => first + k));
 		if (n.skinned) {
 			// Joints move the mesh in the space of the copy's group. A mesh that one joint moves
 			// rests where that joint does.
 			const rest = n.skin >= 0 ? IDENTITY : n.transform;
-			partNodes[index] = parts.map((part) =>
-				node({ name: n.name, parent: 0, transform: IDENTITY, ...part, skinned: true, rest }),
-			);
+			for (const part of parts)
+				node({ name: n.name, parent: 0, transform: IDENTITY, ...part, skinned: true, rest });
 			const isObject = (n.joint ?? -1) < 0 && parents.has(index);
 			placed.push(isObject ? node({ name: n.name, parent, transform: n.transform }) : -1);
 			continue;
@@ -289,7 +285,6 @@ async function buildPrefab(
 			continue;
 		}
 		if (n.instancing) {
-			partNodes[index] = [];
 			const at = node({ name: n.name, parent, transform: n.transform });
 			placed.push(at);
 			instancing.push({
@@ -315,14 +310,6 @@ async function buildPrefab(
 		if (light) node({ name: n.name, parent: at, transform: IDENTITY, light });
 	}
 	const { parts, bounds } = partsOf(template, data, meshes, instancing);
-	const morphClips = (data.animation?.clips ?? []).map((clip) => ({
-		name: clip.name,
-		tracks: clip.weights.map(({ node: k, ...track }) => ({ nodes: partNodes[k] ?? [], ...track })),
-	}));
-	if (template.some((t) => t.morph))
-		data.notes.push(
-			'its morph targets keep their shapes at rest, as the engine does not draw them yet',
-		);
 	if (DEV_NOTES && data.notes.length > 0)
 		console.warn(`${call}() left out parts of ${address}: ${data.notes.join('; ')}.`);
 	return new Prefab(
@@ -335,7 +322,6 @@ async function buildPrefab(
 		materials.list(),
 		textures.filter((t): t is Texture => t !== undefined),
 		rig,
-		morphClips,
 	);
 }
 
@@ -350,12 +336,14 @@ const DEV_NOTES: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL
 const IDENTITY = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
 const IDENTITY_PART = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
 
-/** A primitive's morph targets as a template node keeps them, or nothing for a primitive without. */
-function morphOf(mesh: MeshData, p: PrimitiveData): { morph?: MorphTemplate } {
+/**
+ * The morph weights of a node's primitive as a template node keeps them: the node's default
+ * weights, else the mesh's, and the first joint that animates them, or nothing for a primitive
+ * without targets.
+ */
+function morphOf(mesh: MeshData, p: PrimitiveData, n: NodeData): { morph?: MorphTemplate } {
 	if (!p.morph) return {};
-	return {
-		morph: { targets: p.morph, weights: mesh.weights ?? [], names: mesh.targetNames ?? [] },
-	};
+	return { morph: { weights: n.weights ?? mesh.weights ?? [], joint: n.morphJoint ?? -1 } };
 }
 
 /**
@@ -491,6 +479,12 @@ function makeMeshes(
 			weights: p.weights,
 			indices: p.indices,
 			computeNormals: !p.normals,
+			...(p.morph && {
+				morphTargets: {
+					...p.morph,
+					...(mesh.targetNames?.length ? { names: mesh.targetNames } : {}),
+				},
+			}),
 		};
 		let made: MeshGeometry;
 		try {

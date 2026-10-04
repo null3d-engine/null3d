@@ -18,6 +18,7 @@ use null3d_core::bvh::mesh::Triangles;
 use null3d_gpu::drawlist::vertex;
 
 use crate::geometry::Geometry;
+use crate::morph::{MorphError, MorphTargets, with_ranges};
 
 /// The most vertices one part of a mesh uses, and the most a WebGL2 page holds: what 16-bit
 /// indices reach below 65,535, the index that WebGL2 always reads as a primitive restart.
@@ -63,6 +64,10 @@ pub struct MeshSlot {
     pub joints: u32,
     /// Where the mesh's joint spheres start in the storage's list of them.
     first_sphere: u32,
+    /// The mesh's morph targets, 0 for none.
+    pub targets: u32,
+    /// Where each target's reach starts in the storage's list of them.
+    first_reach: u32,
 }
 
 /// One shared buffer or page: interleaved vertices of one format, as the GPU reads their bytes,
@@ -106,6 +111,8 @@ pub enum MeshError {
     NotTriangles,
     /// A page cannot hold one triangle of the mesh's format: the page limit is too small.
     PageTooSmall,
+    /// The mesh's morph targets make no morphed mesh.
+    Morph(MorphError),
     /// The engine's memory could not grow by `bytes` for the mesh. The storage holds no part of it.
     OutOfMemory { bytes: u64 },
 }
@@ -126,6 +133,10 @@ pub struct MeshStorage {
     meshes: Vec<MeshSlot>,
     /// The joint spheres of every skinned mesh, mesh after mesh (see [`joint_spheres`]).
     spheres: Vec<[f32; 4]>,
+    /// The delta texels of every morphed mesh's targets, mesh after mesh (see [`crate::morph`]).
+    morph_texels: Vec<[u16; 4]>,
+    /// How far each target of each morphed mesh moves a position at weight 1.
+    reaches: Vec<f32>,
     /// Each part's edge list as a part of its page, in the order of `parts`, once made.
     edge_parts: Vec<MeshPart>,
     /// True once every part has an edge list, so each new part gets one too.
@@ -184,6 +195,8 @@ impl MeshStorage {
             parts: Vec::new(),
             meshes: Vec::new(),
             spheres: Vec::new(),
+            morph_texels: Vec::new(),
+            reaches: Vec::new(),
             edge_parts: Vec::new(),
             edges: false,
             drawing_edges: false,
@@ -203,6 +216,39 @@ impl MeshStorage {
     pub fn joint_spheres(&self, mesh: &MeshSlot) -> &[[f32; 4]] {
         let first = mesh.first_sphere as usize;
         &self.spheres[first..first + mesh.joints as usize]
+    }
+
+    /// The delta texels of every morphed mesh's targets, in half floats, which the texture of
+    /// deltas uploads.
+    pub fn morph_texels(&self) -> &[[u16; 4]] {
+        &self.morph_texels
+    }
+
+    /// How far each morph target of a mesh moves any position at weight 1, or none for a mesh
+    /// without targets.
+    pub fn reach(&self, mesh: &MeshSlot) -> &[f32] {
+        let first = mesh.first_reach as usize;
+        &self.reaches[first..first + mesh.targets as usize]
+    }
+
+    /// Adds a mesh whose vertices `targets` morph, and returns its id: each vertex gets the morph
+    /// attribute that names its sparse entries (see [`crate::morph`]).
+    pub fn add_morphed(
+        &mut self,
+        geometry: &Geometry,
+        targets: &MorphTargets<'_>,
+    ) -> Result<u32, MeshError> {
+        let first = self.morph_texels.len() as u32;
+        let sparse = targets
+            .sparse(geometry.vertex_count(), first)
+            .map_err(MeshError::Morph)?;
+        let id = self.add(&with_ranges(geometry, &sparse.ranges))?;
+        self.morph_texels.extend_from_slice(&sparse.texels);
+        let mesh = &mut self.meshes[id as usize];
+        mesh.targets = targets.targets;
+        mesh.first_reach = self.reaches.len() as u32;
+        self.reaches.extend_from_slice(&sparse.reach);
+        Ok(id)
     }
 
     /// The number of meshes.
@@ -327,6 +373,8 @@ impl MeshStorage {
             radius,
             joints: self.spheres.len() as u32 - first_sphere,
             first_sphere,
+            targets: 0,
+            first_reach: 0,
         });
         Ok(self.meshes.len() as u32 - 1)
     }
@@ -658,14 +706,17 @@ mod tests {
             let mut ids = Vec::new();
             // Every format twice, in format order, so each format's second mesh follows another
             // format's mesh.
+            // The morph attribute's bit sits above the others, which a morphed mesh's own test
+            // covers.
+            let all = vertex::ALL & !vertex::MORPH;
             for round in 0..2 {
-                for format in 0..=vertex::ALL {
+                for format in 0..=all {
                     let mesh = grid(2 + round, 3, format);
                     ids.push((storage.add(&mesh).unwrap(), mesh));
                 }
             }
             // One page per format, each holding only its own format's vertices.
-            assert_eq!(storage.pages().len(), (vertex::ALL + 1) as usize);
+            assert_eq!(storage.pages().len(), (all + 1) as usize);
             for (id, mesh) in &ids {
                 let slot = storage.mesh(*id).unwrap();
                 assert_eq!(slot.format, mesh.format);
@@ -744,6 +795,44 @@ mod tests {
                         .all(|p| p.vertex_count() <= MAX_PAGE_VERTICES)
                 );
             }
+        }
+    }
+
+    #[test]
+    fn a_morphed_mesh_past_65535_vertices_keeps_each_vertexs_entries_in_every_part() {
+        use crate::morph::{MorphTargets, has_targets, with_ranges};
+
+        // 300 x 300 quads, whose one target lifts the first and the last vertex.
+        let big = grid(300, 300, 0);
+        let vertices = big.vertex_count();
+        let mut positions = vec![0.0; vertices * 3];
+        positions[1] = 1.0;
+        positions[vertices * 3 - 2] = 2.0;
+        let targets = MorphTargets {
+            targets: 1,
+            positions: Some(&positions),
+            normals: None,
+            tangents: None,
+        };
+        let sparse = targets.sparse(vertices, 0).unwrap();
+        for packing in [Packing::SharedBuffers, Packing::Pages] {
+            let mut storage = MeshStorage::new(packing);
+            let id = storage.add_morphed(&big, &targets).unwrap();
+            let slot = *storage.mesh(id).unwrap();
+            assert!(has_targets(slot.format));
+            assert_eq!(storage.parts(&slot).len(), 2, "{packing:?}");
+            // Each vertex keeps the attribute that names its own entries, in whichever part.
+            assert_eq!(
+                resolved_vertices(&storage, id),
+                original_vertices(&with_ranges(&big, &sparse.ranges))
+            );
+            assert_eq!(storage.morph_texels().len(), 2);
+            assert_eq!(storage.reach(&slot), [2.0]);
+            // A second mesh's entries follow the first's.
+            let second = storage.add_morphed(&big, &targets).unwrap();
+            let second = *storage.mesh(second).unwrap();
+            assert_eq!(storage.morph_texels().len(), 4);
+            assert_eq!(second.targets, 1);
         }
     }
 

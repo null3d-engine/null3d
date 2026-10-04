@@ -250,9 +250,16 @@ export class SketchRunner {
 			device.largeWorld,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
-		const { shadowTiles, shadowTileSize, pointLightShadows, shadowCascades, shadowMapSize } =
-			sketch.quality.settings;
+		const {
+			shadowTiles,
+			shadowTileSize,
+			pointLightShadows,
+			shadowCascades,
+			shadowMapSize,
+			morphTargets,
+		} = sketch.quality.settings;
 		glue.setShadowTiles(shadowTiles, shadowTileSize, pointLightShadows);
+		glue.setMorphTargets(morphTargets);
 		// Directional lights that name no cascades or map size take the preset's.
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES, shadowCascades);
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE, shadowMapSize);
@@ -722,16 +729,18 @@ export class SketchRunner {
 	}
 
 	/**
-	 * The animation step, once the scene has animated objects: advances their clips by `stepUs`
-	 * whole microseconds and poses them on the job workers. It counts as transform time, with the
-	 * transform update that follows it. The events it collects reach the sketch's handlers at the
-	 * start of the next frame's update.
+	 * The animation step, once the scene has animated or morphed objects: advances their clips by
+	 * `stepUs` whole microseconds, poses them on the job workers, and moves the bounds of skinned
+	 * and morphed objects, which marks them. It runs before the transform update and its check of
+	 * static objects. It counts as transform time, with the transform update that follows it. The
+	 * events it collects reach the sketch's handlers at the start of the next frame's update.
 	 */
 	private animate(stepUs: number): void {
-		const animations = this.context.scene.animations;
-		if (animations === undefined) return;
+		const { scene } = this.context;
+		if (scene.animations === undefined && !scene.morphed) return;
 		try {
-			animations.update(stepUs);
+			const step = this.sketch.glue.updateAnimations(stepUs);
+			this.core.check(step, 'the animation step', undefined, true);
 		} catch (error) {
 			this.report(error);
 		}

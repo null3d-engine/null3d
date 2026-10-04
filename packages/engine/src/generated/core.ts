@@ -12,6 +12,7 @@ export const COMMAND_SET_LAYERS = 8;
 export const COMMAND_SET_FLAGS = 9;
 export const COMMAND_SET_RENDER_ORDER = 10;
 export const COMMAND_SET_SKIN = 11;
+export const COMMAND_SET_MORPH = 12;
 export const COMMAND_KEEP_WORLD = 1;
 export const COMMAND_WORDS = 4;
 
@@ -265,6 +266,14 @@ export const MESH_ARRAYS_COMPUTE_TANGENTS = 256;
 export const MESH_ARRAYS_JOINTS = 512;
 export const MESH_ARRAYS_WEIGHTS = 1024;
 
+export const MORPH_POSITIONS = 1;
+export const MORPH_NORMALS = 2;
+export const MORPH_TANGENTS = 4;
+export const MORPH_MAX_WEIGHTS = 65536;
+export const MORPH_MAX_TARGETS = 256;
+export const MORPH_WEIGHTS_PER_JOINT = 3;
+export const MORPH_DELTA_BYTES = 8;
+
 export const ARRAY_POSITIONS = 0;
 export const ARRAY_NORMALS = 1;
 export const ARRAY_UVS = 2;
@@ -328,4 +337,7 @@ export const ARRAYS_PROBLEM_TWICE = 4;
 export const ARRAYS_PROBLEM_MISSING = 5;
 export const ARRAYS_PROBLEM_INDEX_OUT_OF_RANGE = 6;
 export const ARRAYS_PROBLEM_TYPE = 7;
+export const ARRAYS_PROBLEM_MORPH_TOO_LARGE = 8;
+export const ARRAYS_PROBLEM_MORPH_LENGTH = 9;
+export const ARRAYS_PROBLEM_MORPH_NOT_FINITE = 10;
 export const ARRAYS_PROBLEM_NOT_FINITE = 16;

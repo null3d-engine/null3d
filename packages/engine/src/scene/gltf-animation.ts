@@ -14,11 +14,15 @@
 // - The other nodes stay objects. One under a joint goes under the copy's group, with the place
 //   that its joints give it at rest, which never changes, because nothing moves them.
 //
-// Clips keep their keys as the file holds them. The core resamples them on its job workers.
-// Morph targets and the clips' weights tracks are read and kept for the loader, which keeps them
-// on the prefab. The module also defines the rig data that animation.ts stores in the core. It
-// imports only its sibling modules of the glTF worker, so code that type checks the parser alone
-// needs no browser types.
+// - Each node whose morph weights a clip animates gets joints that move no vertex: roots at rest at
+//   the origin with scale 0, three weights to a joint. A clip's weights track becomes translation
+//   tracks of those joints, one weight along each axis, and a constant scale of 1 marks the weights
+//   as the clip's, as the core's `posed_weight` reads them.
+//
+// Clips keep their keys as the file holds them. The core resamples them on its job workers. The
+// module also defines the rig data that animation.ts stores in the core. It imports only its
+// sibling modules of the glTF worker, so code that type checks the parser alone needs no browser
+// types.
 
 import type { FileBudget } from './file-limits';
 import { broken, type Entry, entry, index, list, type Reader, text, toFloats } from './gltf-json';
@@ -36,7 +40,7 @@ const SCALAR = 1;
 export type KeyInterpolation = 'linear' | 'step' | 'cubic';
 
 /** A clip's track of a mesh's morph target weights, with one weight per target in each key. */
-export interface WeightTrackData {
+interface WeightTrack {
 	/** The node whose mesh the weights shape, by its index in the node list. */
 	node: number;
 	interpolation: KeyInterpolation;
@@ -98,10 +102,14 @@ export interface RigData {
 	rate?: number;
 }
 
-/** A clip of the file: its tracks of joints and its tracks of morph target weights. */
+/** A clip of the file. */
 export interface ClipData extends RigClip {
 	tracks: RigTrack[];
-	weights: WeightTrackData[];
+}
+
+/** A clip as the reader first reads it: its tracks of nodes, and its tracks of morph weights. */
+interface ParsedClip extends ClipData {
+	weights: WeightTrack[];
 }
 
 /** What the reader adds to a parsed file. */
@@ -117,12 +125,18 @@ export interface AnimationData {
 /** The identity as a row-major 3 × 4 matrix. */
 const IDENTITY_BIND = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
 
+/** The morph weights that one joint holds, one along each axis of its translation (the core's `WEIGHTS_PER_JOINT`). */
+const WEIGHTS_PER_JOINT = 3;
+
 /**
  * The paths of glTF's animation channels that move a node, which are the channels of rig tracks.
  * Tables that the file's text names a key of are sets and maps, so a name such as "constructor"
  * finds nothing.
  */
 const PATHS: ReadonlySet<string> = new Set(['translation', 'rotation', 'scale']);
+
+/** The attributes that the engine morphs. */
+const MORPHED_ATTRIBUTES: ReadonlySet<string> = new Set(['POSITION', 'NORMAL', 'TANGENT']);
 
 const INTERPOLATIONS: ReadonlyMap<string, KeyInterpolation> = new Map([
 	['LINEAR', 'linear'],
@@ -132,7 +146,8 @@ const INTERPOLATIONS: ReadonlyMap<string, KeyInterpolation> = new Map([
 
 /**
  * Reads a primitive's morph targets: the deltas of its positions, normals and tangents, as floats.
- * Returns undefined when it has none.
+ * Returns undefined when it has none. Targets of other attributes, such as colors and texture
+ * coordinates, are left out with a note.
  */
 export function parseMorphTargets(
 	primitive: Entry,
@@ -140,9 +155,19 @@ export function parseMorphTargets(
 	what: string,
 	read: Reader,
 	budget: FileBudget,
+	notes: string[],
 ): MorphTargetsData | undefined {
 	const targets = list(primitive.targets, `${what}'s targets`);
 	if (targets.length === 0) return undefined;
+	const others = new Set(
+		targets.flatMap((target) =>
+			Object.keys(target as object).filter((k) => !MORPHED_ATTRIBUTES.has(k)),
+		),
+	);
+	if (others.size > 0)
+		notes.push(
+			`${what}'s morph targets move ${[...others].join(', ')}, which the engine does not morph`,
+		);
 	const out: MorphTargetsData = {};
 	const fields = [
 		['POSITION', 'positions'],
@@ -336,6 +361,7 @@ export function parseAnimation(
 	nodes.forEach((node, k) => {
 		node.moving = moving[k] === 1;
 		node.joint = jointOf[k] as number;
+		node.morphJoint = -1;
 		if (inRig[k] || (node.parent >= 0 && inRig[node.parent])) {
 			node.transform = decomposeAffine(worlds[k] as Float64Array);
 			node.parent = -1;
@@ -348,7 +374,78 @@ export function parseAnimation(
 			notes.push(`the instancing of node "${node.name}" moves with clips, and draws at rest`);
 		}
 	});
-	return { joints, clips, skins: skinJoints };
+	addWeightJoints(clips, nodes, meshes, joints);
+	if (joints.length > MAX_RIG_JOINTS)
+		broken(
+			`its skins and clips need ${joints.length} joints, three morph weights to a joint, and the engine's skeletons hold up to ${MAX_RIG_JOINTS}`,
+		);
+	return { joints, clips: clips.map(({ weights: _, ...clip }) => clip), skins: skinJoints };
+}
+
+/**
+ * Gives each node whose morph weights a clip animates the joints that hold them, and adds each
+ * clip's weights tracks to its tracks as tracks of those joints.
+ */
+function addWeightJoints(
+	clips: readonly ParsedClip[],
+	nodes: NodeData[],
+	meshes: readonly MeshData[],
+	joints: RigJoint[],
+): void {
+	for (const clip of clips)
+		for (const track of clip.weights) {
+			const node = nodes[track.node] as NodeData;
+			const targets = (meshes[node.mesh] as MeshData).weights?.length ?? 0;
+			const count = Math.ceil(targets / WEIGHTS_PER_JOINT);
+			if ((node.morphJoint ?? -1) < 0) {
+				node.morphJoint = joints.length;
+				for (let j = 0; j < count; j++)
+					joints.push({
+						name: node.name,
+						parent: -1,
+						translation: [0, 0, 0],
+						rotation: [0, 0, 0, 1],
+						scale: [0, 0, 0],
+						inverseBind: IDENTITY_BIND,
+					});
+			}
+			const first = node.morphJoint as number;
+			for (let j = 0; j < count; j++) {
+				clip.tracks.push({
+					joint: first + j,
+					channel: 'translation',
+					interpolation: track.interpolation,
+					times: track.times,
+					values: jointWeights(track, targets, j),
+				});
+				// One key of scale 1 marks the weights as the clip's. Each track has arrays of its own,
+				// because the worker hands every track's arrays over to the page.
+				clip.tracks.push({
+					joint: first + j,
+					channel: 'scale',
+					times: new Float32Array(1),
+					values: new Float32Array([1, 1, 1]),
+				});
+			}
+		}
+}
+
+/**
+ * The keys of joint `j`'s translation from a weights track of `targets` weights per key: weights
+ * `3j` to `3j + 2`, with 0 past the last target. A cubic key keeps its in-tangent, value and
+ * out-tangent in that order.
+ */
+function jointWeights(track: WeightTrack, targets: number, j: number): Float32Array {
+	const parts = track.interpolation === 'cubic' ? 3 : 1;
+	const keys = track.times.length * parts;
+	const out = new Float32Array(keys * WEIGHTS_PER_JOINT);
+	for (let key = 0; key < keys; key++)
+		for (let axis = 0; axis < WEIGHTS_PER_JOINT; axis++) {
+			const target = j * WEIGHTS_PER_JOINT + axis;
+			if (target < targets)
+				out[key * WEIGHTS_PER_JOINT + axis] = track.values[key * targets + target] as number;
+		}
+	return out;
 }
 
 /**
@@ -432,7 +529,7 @@ function parseClip(
 	read: Reader,
 	budget: FileBudget,
 	notes: string[],
-): ClipData {
+): ParsedClip {
 	const what = `animation ${k}`;
 	// three.js's GLTFLoader names an unnamed clip so.
 	const name = text(animation.name) || `animation_${k}`;
@@ -440,7 +537,7 @@ function parseClip(
 		entry(s, `${what}'s sampler ${j}`),
 	);
 	const tracks: RigTrack[] = [];
-	const weights: WeightTrackData[] = [];
+	const weights: WeightTrack[] = [];
 	const seen = new Set<string>();
 	list(animation.channels, `${what}'s channels`).forEach((value, c) => {
 		const channel = entry(value, `${what}'s channel ${c}`);
@@ -507,7 +604,7 @@ function parseClip(
 }
 
 /** Gives clips with the same name the suffixes " 2", " 3" and on, so each name finds one clip. */
-function uniqueNames(clips: ClipData[]): void {
+function uniqueNames(clips: ParsedClip[]): void {
 	const taken = new Set<string>();
 	for (const clip of clips) {
 		let name = clip.name;

@@ -979,6 +979,17 @@ export class Mesh extends Object3D {
 	material: Material | undefined;
 	/** @internal The render order, as `setRenderOrder` gave it. */
 	renderOrder = 0;
+	/** @internal The mesh's block of morph weights in the engine core, plus one, or 0 for none. */
+	morphBlock = 0;
+	/** @internal The place of the block's first weight in the core's table of morph weights. */
+	morphFirst = 0;
+	/** @internal The weights that the block holds: the mesh's morph targets, or 0. */
+	morphCount = 0;
+	/**
+	 * @internal The first joint of the model's skeleton that animates the weights, or -1 when no
+	 * clip of the model animates them.
+	 */
+	morphJoint = -1;
 
 	/** @internal */
 	override twin(handle: number): Object3D {
@@ -986,7 +997,65 @@ export class Mesh extends Object3D {
 		twin.mesh = this.mesh;
 		twin.material = this.material;
 		twin.renderOrder = this.renderOrder;
+		twin.morphJoint = this.morphJoint;
 		return twin;
+	}
+
+	/**
+	 * Sets how far the mesh moves toward one of its morph targets, from the next frame: 0 keeps
+	 * the target's shape out, 1 adds all of it, and other numbers scale it. Like setting three.js's
+	 * `morphTargetInfluences[target]`. `target` is the target's number, from 0, or its name. A clip
+	 * that animates the weight blends its own value with this one while it plays, as three.js's
+	 * mixer does, and this one holds when no clip moves it. A WebGL2 device draws a preset's count
+	 * of each mesh's largest weights (the `morphTargets` quality setting). Throws E1218 for a
+	 * target that the mesh does not have, and E1203 for a weight that is not a finite number.
+	 */
+	setMorphWeight(target: number | string, weight: number): void {
+		const k = this.morphIndex('setMorphWeight', target);
+		if (DEV) checkNumber('setMorphWeight', 'weight', weight, this);
+		this.scene.morphWeights()[this.morphFirst + k] = weight;
+	}
+
+	/**
+	 * The weight of one of the mesh's morph targets, as `setMorphWeight` or the model's file set
+	 * it, without what a playing clip adds. Throws E1218 for a target that the mesh does not have.
+	 */
+	getMorphWeight(target: number | string): number {
+		return this.scene.morphWeights()[
+			this.morphFirst + this.morphIndex('getMorphWeight', target)
+		] as number;
+	}
+
+	/**
+	 * The number of the morph target that `target` names. A whole number below the target count
+	 * takes the short path, which the browser can inline into a sketch's frame code.
+	 */
+	private morphIndex(call: string, target: number | string): number {
+		return typeof target === 'number' && target >>> 0 === target && target < this.morphCount
+			? target
+			: this.morphTarget(call, target);
+	}
+
+	/** The number of a morph target that `target` names, or E1218 when the mesh lacks it. */
+	private morphTarget(call: string, target: number | string): number {
+		if (DEV) checkLive(call, this);
+		const names = this.mesh?.morphTargetNames ?? [];
+		const k = typeof target === 'string' ? names.indexOf(target) : target;
+		if (Number.isInteger(k) && k >= 0 && k < this.morphCount) return k;
+		const has =
+			this.morphCount === 0
+				? 'which has no morph targets'
+				: `which has ${this.morphCount} morph targets${names.length > 0 ? `: ${names.join(', ')}` : ''}`;
+		throw new EngineError(
+			'E1218',
+			`${call}() got ${typeof target === 'string' ? `"${target}"` : target}, which names no morph target of ${this.describe()}, ${has}.`,
+		);
+	}
+
+	/** Removes the object at the next frame, and frees its morph weights. Its children become roots. */
+	override destroy(): void {
+		super.destroy();
+		this.scene.releaseMorph(this);
 	}
 
 	/** Changes the material from the next frame. */
@@ -1013,6 +1082,12 @@ export class Mesh extends Object3D {
 		this.scene.command(C.COMMAND_SET_MESH, this.handle, mesh.id, 0, 'setMesh');
 		this.mesh = mesh;
 		this.keepFlag(C.FLAG_CUSTOM_BOUNDS, false);
+		// A mesh of as many morph targets keeps its weights; another gets weights of its own.
+		if (mesh.morphTargets !== this.morphCount) {
+			this.scene.releaseMorph(this);
+			const block = this.scene.makeMorph(this, mesh, undefined, 'setMesh');
+			if (block !== 0) this.scene.command(C.COMMAND_SET_MORPH, this.handle, block, 0, 'setMesh');
+		}
 	}
 
 	/**
@@ -1954,6 +2029,11 @@ export class Scene {
 	declare readonly unmarkedWrites: UnmarkedWrites | undefined;
 	/** @internal The scene's animated objects, from the first model with animations on. */
 	animations: SceneAnimations | undefined;
+	/** @internal True once an object has morph weights, so each frame's animation step runs. */
+	morphed = false;
+	/** The core's table of morph weights, made again after the engine's memory grew. */
+	private morphTable: Float32Array = new Float32Array(0);
+	private morphGeneration = -1;
 
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
@@ -2154,6 +2234,60 @@ export class Scene {
 	}
 
 	/**
+	 * @internal The core's table of morph weights. Sketches set weights every frame, so the check
+	 * stays small enough for the browser to inline into their code.
+	 */
+	morphWeights(): Float32Array {
+		if (this.morphGeneration !== this.core.generation) this.morphView();
+		return this.morphTable;
+	}
+
+	private morphView(): void {
+		const { core } = this;
+		this.morphTable = core.f32(core.glue.morphWeightsAddress(), C.MORPH_MAX_WEIGHTS);
+		this.morphGeneration = core.generation;
+	}
+
+	/**
+	 * @internal Gives `mesh` a block of morph weights for `geometry`'s targets, which start at
+	 * `weights` or at 0, and returns the block's id plus one for its `SET_MORPH` command, or 0 for
+	 * a geometry without morph targets.
+	 */
+	makeMorph(
+		mesh: Mesh,
+		geometry: MeshGeometry,
+		weights: ArrayLike<number> | undefined,
+		call: string,
+	): number {
+		const count = geometry.morphTargets;
+		if (!count) return 0;
+		const { core } = this;
+		const block = core.checkGrowth(core.glue.createMorphWeights(count), call, mesh.label);
+		this.morphed = true;
+		mesh.morphBlock = block;
+		mesh.morphFirst = core.glue.morphWeightsFirst(block - 1);
+		mesh.morphCount = count;
+		this.morphView();
+		if (weights)
+			for (let k = 0; k < count; k++) this.morphTable[mesh.morphFirst + k] = weights[k] ?? 0;
+		return block;
+	}
+
+	/** @internal The weights of `mesh`'s block, copied, or none for a mesh without one. */
+	morphWeightsOf(mesh: Mesh): Float32Array | undefined {
+		if (mesh.morphBlock === 0) return undefined;
+		return this.morphWeights().slice(mesh.morphFirst, mesh.morphFirst + mesh.morphCount);
+	}
+
+	/** @internal Frees `mesh`'s block of morph weights, if it has one. */
+	releaseMorph(mesh: Mesh): void {
+		if (mesh.morphBlock === 0) return;
+		this.core.glue.destroyMorphWeights(mesh.morphBlock - 1);
+		mesh.morphBlock = 0;
+		mesh.morphCount = 0;
+	}
+
+	/**
 	 * @internal Writes the local bounding sphere of the object in `slot`. The command that follows
 	 * makes the engine recompute the object.
 	 */
@@ -2319,6 +2453,8 @@ export class Scene {
 		);
 		object.mesh = mesh;
 		object.material = material;
+		const block = this.makeMorph(object, mesh, undefined, 'createMesh');
+		if (block !== 0) this.command(C.COMMAND_SET_MORPH, object.handle, block, 0, 'createMesh');
 		return object;
 	}
 
@@ -2466,6 +2602,7 @@ export class Scene {
 		for (let k = 0; k < count; k++) {
 			const { mesh, layers, renderOrder } = node(k);
 			records += 1 + (mesh ? 1 : 0) + (layers !== C.LAYERS_DEFAULT ? 1 : 0);
+			if (mesh && mesh.morphTargets > 0) records++;
 			if (renderOrder !== 0) records++;
 		}
 		let write = this.reserveCommands(records, call);
@@ -2500,6 +2637,13 @@ export class Scene {
 				this.writeCommand(write++, C.COMMAND_SET_RENDER_ORDER, handle, bits, 0);
 			}
 			const object = this.makeObject(n, handle, call);
+			if (n.mesh && n.mesh.morphTargets > 0) {
+				const source = n.source as Mesh | undefined;
+				const weights = source ? this.morphWeightsOf(source) : n.morph?.weights;
+				const block = this.makeMorph(object as Mesh, n.mesh, weights, call);
+				this.writeCommand(write++, C.COMMAND_SET_MORPH, handle, block, 0);
+				if (n.morph) (object as Mesh).morphJoint = n.morph.joint;
+			}
 			object.attachTo(n.parent < 0 ? parent : (objects[n.parent] as Object3D));
 			object.flags = flags;
 			object.layerMask = n.layers;
