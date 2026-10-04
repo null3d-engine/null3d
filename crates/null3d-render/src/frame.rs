@@ -18,14 +18,16 @@ use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
 use null3d_core::lights::{LightShadow, LightTable, LightView, SunShadow, VisibleLight};
+use null3d_core::morph::MorphWeights;
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{
     DrawList, DrawListError, Op, buffer_usage, permutation, state_flags, template, vertex,
 };
 
+use crate::ao::{self, Ao};
 use crate::bloom::{self, Bloom};
-use crate::camera::Lens;
+use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
 use crate::fog::Fog;
@@ -69,6 +71,22 @@ pub(crate) fn drawn_rows(buckets: &[u32], start: u32, count: u32) -> Option<(u32
     let first = (start..end).find(draws)?;
     let last = (first..end).rev().find(draws)?;
     Some((first, last + 1 - first))
+}
+
+/// The most unchanged scene rows that one upload carries between two runs of changed rows. Each
+/// write of a data texture on WebGL2 goes through a pixel unpack buffer, and many small writes in
+/// a frame hold up the GPU far longer than the few kilobytes of rows that a merged write repeats.
+pub const MERGE_GAP_ROWS: u32 = 64;
+
+/// Rows `start..start + count` joined to the upload `span` (a start and a count) when they begin
+/// inside it or at most [`MERGE_GAP_ROWS`] rows past its end, or `None` when they lie apart. Both
+/// world buffers hold every row's latest matrix, so rows between two runs upload unchanged.
+pub(crate) fn joined_rows(span: (u32, u32), start: u32, count: u32) -> Option<(u32, u32)> {
+    let end = span.0 + span.1;
+    if start < span.0 || start > end.saturating_add(MERGE_GAP_ROWS) {
+        return None;
+    }
+    Some((span.0, end.max(start + count) - span.0))
 }
 
 /// Where the rows of a run's positions lie: all in one cell, each in the cell of its entry in a
@@ -188,6 +206,8 @@ pub struct FrameInput<'a> {
     /// Skeletons, clips and animated instances, with the skinning matrices of the frame's
     /// animation step, once the scene has any.
     pub animations: Option<&'a Animations>,
+    /// The morph weights of morphed objects, which the sketch writes.
+    pub morphs: &'a MorphWeights,
 }
 
 impl FrameInput<'_> {
@@ -386,6 +406,12 @@ impl UploadArena {
         Ok((address(&self.bytes[start..]), padded as u32))
     }
 
+    /// The bytes that the frame copied so far.
+    #[cfg(test)]
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
     /// Adds `len` zero bytes, padded to four bytes, for the caller to fill in place, and returns
     /// their address and the bytes. Like [`UploadArena::push`], it never grows the arena.
     pub(crate) fn push_zeroed(&mut self, len: usize) -> Result<(u32, &mut [u8]), RecordError> {
@@ -527,6 +553,13 @@ pub struct SceneSettings {
     /// How many times fewer taps than three.js's each of bloom's blurs reads, which the quality
     /// settings raise.
     bloom_divisor: u32,
+    /// The most morph weights of each object that a builder whose vertex shaders morph keeps.
+    morph_cap: u32,
+    /// Ambient occlusion's settings while the sketch turns it on.
+    ao: Option<Ao>,
+    /// The size of ambient occlusion's targets, as a share of the render size each way, which the
+    /// quality settings set: 0 draws none.
+    ao_scale: f32,
     /// The color grading table while the sketch sets one.
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
@@ -577,6 +610,9 @@ impl SceneSettings {
             output: Output::default(),
             bloom: None,
             bloom_divisor: 1,
+            morph_cap: u32::MAX,
+            ao: None,
+            ao_scale: ao::MAX_SCALE,
             lut: None,
             vignette: None,
             clock: [0.0; 4],
@@ -676,6 +712,51 @@ impl SceneSettings {
     /// the same kernel more coarsely, so the glow keeps its size.
     pub fn set_bloom_divisor(&mut self, divisor: u32) {
         self.bloom_divisor = divisor.clamp(1, bloom::MAX_SAMPLE_DIVISOR);
+    }
+
+    /// The most morph weights of each object that a builder whose vertex shaders morph keeps.
+    pub fn morph_cap(&self) -> u32 {
+        self.morph_cap
+    }
+
+    /// Keeps the `cap` largest morph weights of each object where vertex shaders morph, from the
+    /// next recorded frame on, and drops the others' targets (see [`crate::morph::cap_weights`]).
+    pub fn set_morph_cap(&mut self, cap: u32) {
+        self.morph_cap = cap;
+    }
+
+    /// Ambient occlusion's settings while it draws: while the sketch turns it on, its scale is
+    /// above 0, and no debug view draws.
+    pub fn ao(&self) -> Option<Ao> {
+        self.ao
+            .filter(|_| self.ao_scale > 0.0 && !self.debug_view.is_debug())
+    }
+
+    /// Turns ambient occlusion on with its settings, or off with `None`, from the next recorded
+    /// frame on.
+    pub fn set_ao(&mut self, ao: Option<Ao>) {
+        self.ao = ao;
+    }
+
+    /// The size of ambient occlusion's targets, as a share of the render size each way.
+    pub fn ao_scale(&self) -> f32 {
+        self.ao_scale
+    }
+
+    /// Sets the size of ambient occlusion's targets, from 0, which draws none, to
+    /// [`ao::MAX_SCALE`], from the next recorded frame on. A scale above 0 draws a corner of the
+    /// same targets, so it makes no GPU object.
+    pub fn set_ao_scale(&mut self, scale: f32) {
+        self.ao_scale = scale.clamp(0.0, ao::MAX_SCALE);
+    }
+
+    /// The camera's projection for a canvas of `canvas` pixels, and its inverse, or `None` without
+    /// a camera.
+    pub(crate) fn camera_projection(&self, canvas: (u32, u32)) -> Option<(Mat4, Mat4)> {
+        let (_, lens) = self.views.first()?.camera()?;
+        let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
+        let projection = lens.projection(aspect);
+        Some((projection, crate::camera::invert(&projection)?))
     }
 
     /// Grades the canvas color with a color grading table, or with none with `None`, from the next
@@ -1210,6 +1291,7 @@ impl SceneSettings {
         scale: RenderScale,
     ) -> Option<ViewFrame> {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
+        let view_id = view;
         let view = self.views.get(view.index())?;
         let camera = view.transform(scene, parity, aspect)?;
         let [x, y, z] = camera.cell.absolute().map(|v| v as f32);
@@ -1232,6 +1314,12 @@ impl SceneSettings {
                 2.0 * self.pixel_ratio / canvas.0.max(1) as f32,
                 2.0 * self.pixel_ratio / canvas.1.max(1) as f32,
             ],
+            occlusion: match self.ao() {
+                Some(ao) if view_id == ViewId::CAMERA => {
+                    ao::frame_values(ao, canvas, scale, self.ao_scale)
+                }
+                _ => [0.0; 4],
+            },
             ..FrameUniform::default()
         };
         Some(ViewFrame::new(
@@ -1383,12 +1471,10 @@ impl MeshBuffers {
                     ..PageBuffers::default()
                 };
                 let copied = buffer_usage::COPY_DST;
-                // The skinning pass reads skinned meshes' vertices as storage.
-                let read = if crate::skinning::has_joints(page.format) {
-                    buffer_usage::STORAGE
-                } else {
-                    0
-                };
+                // The skinning pass reads skinned and morphed meshes' vertices as storage.
+                let posed = crate::skinning::has_joints(page.format)
+                    || crate::morph::has_targets(page.format);
+                let read = if posed { buffer_usage::STORAGE } else { 0 };
                 list.push(
                     Op::CreateBuffer,
                     &[
@@ -1459,5 +1545,17 @@ mod tests {
         assert_eq!(drawn_rows(&buckets, 4, 2), None);
         assert_eq!(drawn_rows(&buckets, 5, 9), None);
         assert_eq!(drawn_rows(&buckets, 1, 0), None);
+    }
+
+    #[test]
+    fn joined_rows_merge_runs_that_lie_close_together() {
+        assert_eq!(joined_rows((10, 5), 15, 3), Some((10, 8)));
+        assert_eq!(joined_rows((10, 5), 12, 1), Some((10, 5)));
+        assert_eq!(
+            joined_rows((10, 5), 15 + MERGE_GAP_ROWS, 2),
+            Some((10, 7 + MERGE_GAP_ROWS))
+        );
+        assert_eq!(joined_rows((10, 5), 16 + MERGE_GAP_ROWS, 2), None);
+        assert_eq!(joined_rows((10, 5), 9, 3), None);
     }
 }

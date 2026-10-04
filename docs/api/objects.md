@@ -3,12 +3,12 @@ id: api/objects
 title: Objects and transforms
 status: experimental
 since: "0.1"
-summary: "Setters and getters; parents; flags; destroy."
+summary: "Setters and getters; parents; flags; destroy; pointer events."
 ---
 
 # Objects and transforms
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
+> Ships in null3D 0.1, with pointer events from null3D 0.2. The API is experimental, so it can still change between versions.
 
 Groups, meshes, cameras and lights are objects: nodes in the scene with a position, a rotation, a scale and a parent. Each class extends `Object3D`, so the calls in the first sections of this page work on all of them. Meshes have more calls, which [Mesh calls](#mesh-calls) lists, and [Lights](lights.md) gives the calls of each kind of light.
 
@@ -120,6 +120,16 @@ A mesh has these calls besides the ones above. Like the structural calls, they t
 
 An object that a model with animations created has an animator, and `animator()` returns it. The animator plays, fades and layers the model's clips, and calls your handlers for their events. On an object without animation clips, `animator()` throws E1218. Destroying the object stops its clips. The engine cannot load animated models yet. [Animation](animation.md) describes the animator.
 
+## Pointer events
+
+`on(type, handler)` calls `handler` for each pointer event of `type` on the object: `'click'`, `'pointerdown'`, `'pointerup'`, `'pointermove'`, `'pointerenter'` or `'pointerleave'`. `off(type, handler)` removes the handler. An event on a child goes on to its parents, so a handler on a group hears the events of everything under it.
+
+```ts
+door.on('click', () => door.rotateY(Math.PI / 2));
+```
+
+The engine tests objects where the last frame's update put them, with the camera of the frame that was on screen at each event. Destroying an object removes its handlers. An event type that objects do not have throws [E1205](../errors/E1205.md) in development builds. [Input](input.md#pointer-events-on-objects) describes the events in full.
+
 ## Names
 
 The `name` option gives an object a name that error messages show, such as `"Crate" (slot 7)`. `describe()` returns that text. `scene.find(name)` returns the first object created with a name. [Scene](scene.md#finding-objects-by-name) describes it.
@@ -132,6 +142,7 @@ The `name` option gives an object a name that error messages show, such as `"Cra
 - [Render layers](../concepts/render-layers.md): which cameras draw which objects.
 - [Math helpers](math.md): vectors, quaternions and matrices for the setters and getters.
 - [Animation](animation.md): the animator of an animated object.
+- [Input](input.md#pointer-events-on-objects): pointer events on objects.
 
 ## API reference
 
@@ -151,6 +162,9 @@ A drawn object: a mesh and a material.
 
 | Member | Description |
 | --- | --- |
+| `setMorphWeight(target: number \| string, weight: number): void` | Sets how far the mesh moves toward one of its morph targets, from the next frame: 0 keeps the target's shape out, 1 adds all of it, and other numbers scale it. Like setting three.js's `morphTargetInfluences[target]`. `target` is the target's number, from 0, or its name. A clip that animates the weight blends its own value with this one while it plays, as three.js's mixer does, and this one holds when no clip moves it. A WebGL2 device draws a preset's count of each mesh's largest weights (the `morphTargets` quality setting). Throws E1218 for a target that the mesh does not have, and E1203 for a weight that is not a finite number. |
+| `getMorphWeight(target: number \| string): number` | The weight of one of the mesh's morph targets, as `setMorphWeight` or the model's file set it, without what a playing clip adds. Throws E1218 for a target that the mesh does not have. |
+| `destroy(): void` | Removes the object at the next frame, and frees its morph weights. Its children become roots. |
 | `setMaterial(material: Material): void` | Changes the material from the next frame. |
 | `setMesh(mesh: MeshGeometry): void` | Changes the shape from the next frame. The mesh's bounds replace the object's, so call `setBounds` again after this when the object needs bounds of its own. |
 | `setCastShadows(cast: boolean): void` | Makes the mesh cast the shadows of a directional light, or stop. The default is false. A change rebuilds the engine's tables of what it draws, as a new material does. |
@@ -190,6 +204,8 @@ A node in the scene: position, rotation and scale, a parent, visibility.
 | `setDynamic(dynamic: boolean): void` | Makes the object dynamic or static from the next frame. See `NodeOptions.dynamic`. |
 | `animator(): Animator` | The object's animator, which plays the clips of the model that created the object. An object without animation clips has none, and the call throws. |
 | `destroy(): void` | Removes the object at the next frame. Its children become roots. |
+| `on(type: ObjectEventType, handler: ObjectEventHandler): void` | Calls `handler` for each pointer event of `type` on the object: 'click', 'pointerdown', 'pointerup', 'pointermove', 'pointerenter' or 'pointerleave'. An event on a child goes on to its parents, so a handler on a model's group hears clicks on all its parts. The engine casts a ray from the frame that was on screen at each event, against objects where they are now. Handlers run on the sketch's thread at the start of the next frame, before `onUpdate`. |
+| `off(type: ObjectEventType, handler: ObjectEventHandler): void` | Removes a handler that `on` added for events of `type`. |
 
 ### `ParentOptions`
 

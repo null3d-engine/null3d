@@ -5,8 +5,7 @@
 // so the scene imports this module for its types alone, and calls the prefab's methods.
 
 import type { Vec3Like } from '../math/types';
-import { type AnimationRig, animateObject, skinObject } from './animation';
-import type { KeyInterpolation, MorphTargetsData } from './gltf-animation';
+import { type AnimationRig, animateObject, morphObject, skinObject } from './animation';
 import type { CoreMemory } from './memory';
 import type { Material, MeshGeometry } from './resources';
 import type { Mesh, Object3D } from './scene';
@@ -52,27 +51,16 @@ export interface TemplateNode {
 	 * instance batch of the model draws it, and where it counts for the model's bounds.
 	 */
 	rest?: ArrayLike<number>;
-	/** The mesh's morph targets, which a later version of the engine draws. */
+	/** The weights of the mesh's morph targets, for a mesh that has any. */
 	morph?: MorphTemplate;
 }
 
-/** @internal The morph targets of a template node's mesh: deltas, default weights and names. */
+/** @internal The morph weights of a template node's mesh. */
 export interface MorphTemplate {
-	targets: MorphTargetsData;
+	/** The weight of each target when no clip moves it. */
 	weights: readonly number[];
-	names: readonly string[];
-}
-
-/** @internal A clip's tracks of morph weights, each on the template nodes of one file node. */
-export interface MorphClipTemplate {
-	name: string;
-	tracks: readonly {
-		/** The template nodes whose meshes the weights shape. */
-		nodes: readonly number[];
-		interpolation: KeyInterpolation;
-		times: Float32Array;
-		values: Float32Array;
-	}[];
+	/** The first joint of the model's skeleton that animates the weights, or -1 for none. */
+	joint: number;
 }
 
 /** @internal One mesh of a model as a part of its instance batches. */
@@ -160,8 +148,6 @@ export class Prefab {
 		readonly textures: readonly Texture[],
 		/** @internal The skeleton and clips that every copy animates with, if the model has any. */
 		readonly rig?: AnimationRig,
-		/** @internal The clips' tracks of morph weights, which a later version of the engine plays. */
-		readonly morphClips: readonly MorphClipTemplate[] = [],
 	) {}
 
 	/** The names of the model's clips, which a copy's animator plays. */
@@ -171,7 +157,8 @@ export class Prefab {
 
 	/**
 	 * @internal Gives a copy's group, the first of `objects`, the animator of the model's skeleton,
-	 * and links the copy's skinned meshes to it. `objects` holds one object per template node.
+	 * and links the copy's skinned meshes, and the meshes whose morph weights clips animate, to it.
+	 * `objects` holds one object per template node.
 	 */
 	animate(objects: readonly Object3D[]): void {
 		const { rig } = this;
@@ -179,6 +166,7 @@ export class Prefab {
 		const animator = animateObject(objects[0] as Object3D, rig);
 		this.template.forEach((node, k) => {
 			if (node.skinned) skinObject(objects[k] as Mesh, animator);
+			if ((node.morph?.joint ?? -1) >= 0) morphObject(objects[k] as Mesh, animator);
 		});
 	}
 

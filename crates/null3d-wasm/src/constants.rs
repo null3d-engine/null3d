@@ -127,8 +127,17 @@ pub mod post_value {
     /// The vignette's offset and darkness.
     pub const VIGNETTE_OFFSET: u32 = 11;
     pub const VIGNETTE_DARKNESS: u32 = 12;
+    /// Ambient occlusion's radius, thickness, distance exponent, distance falloff, scale, samples
+    /// and intensity.
+    pub const AO_RADIUS: u32 = 13;
+    pub const AO_THICKNESS: u32 = 14;
+    pub const AO_DISTANCE_EXPONENT: u32 = 15;
+    pub const AO_DISTANCE_FALLOFF: u32 = 16;
+    pub const AO_SCALE: u32 = 17;
+    pub const AO_SAMPLES: u32 = 18;
+    pub const AO_INTENSITY: u32 = 19;
     /// The values in the block.
-    pub const COUNT: u32 = 13;
+    pub const COUNT: u32 = 20;
 }
 
 pub mod texture_stat {
@@ -197,6 +206,15 @@ pub mod mesh_arrays {
     pub const WEIGHTS: u32 = 1024;
 }
 
+/// The morph target arrays that `createMeshFromArrays` finds in the staging words after the
+/// indices: the deltas of the positions, the normals and the tangents, each three 32-bit floats
+/// per vertex of each target, target after target, in this order.
+pub mod morph_arrays {
+    pub const POSITIONS: u32 = 1;
+    pub const NORMALS: u32 = 2;
+    pub const TANGENTS: u32 = 4;
+}
+
 /// The first detail of an E1206 failure: what is wrong with the arrays. The second detail is the
 /// array's code, or for the last two problems the element's place.
 pub mod arrays_problem {
@@ -209,6 +227,15 @@ pub mod arrays_problem {
     pub const INDEX_OUT_OF_RANGE: u32 = 6;
     /// The array's type of number is not one that its attribute takes.
     pub const TYPE: u32 = 7;
+    /// The morph targets move one vertex more than 255 times, or every mesh's morph targets
+    /// together pass what the engine holds. The second detail is that limit in texels.
+    pub const MORPH_TOO_LARGE: u32 = 8;
+    /// A morph target array does not hold three values per vertex of each target. The second
+    /// detail is the array: 0 for positions, 1 for normals and 2 for tangents.
+    pub const MORPH_LENGTH: u32 = 9;
+    /// A morph target delta is NaN or infinite. The second detail is its place, and the array's
+    /// number, as in `MORPH_LENGTH`, times 2^28.
+    pub const MORPH_NOT_FINITE: u32 = 10;
     /// Plus the array's code; the second detail is the place of the value in the array.
     pub const NOT_FINITE: u32 = 16;
 }
@@ -362,6 +389,7 @@ pub fn typescript() -> String {
                 ("SET_FLAGS", op::SET_FLAGS),
                 ("SET_RENDER_ORDER", op::SET_RENDER_ORDER),
                 ("SET_SKIN", op::SET_SKIN),
+                ("SET_MORPH", op::SET_MORPH),
                 ("KEEP_WORLD", op::KEEP_WORLD),
                 ("WORDS", COMMAND_WORDS),
             ],
@@ -646,6 +674,13 @@ pub fn typescript() -> String {
                 ("LUT_DOMAIN_MAX", post_value::LUT_DOMAIN_MAX),
                 ("VIGNETTE_OFFSET", post_value::VIGNETTE_OFFSET),
                 ("VIGNETTE_DARKNESS", post_value::VIGNETTE_DARKNESS),
+                ("AO_RADIUS", post_value::AO_RADIUS),
+                ("AO_THICKNESS", post_value::AO_THICKNESS),
+                ("AO_DISTANCE_EXPONENT", post_value::AO_DISTANCE_EXPONENT),
+                ("AO_DISTANCE_FALLOFF", post_value::AO_DISTANCE_FALLOFF),
+                ("AO_SCALE", post_value::AO_SCALE),
+                ("AO_SAMPLES", post_value::AO_SAMPLES),
+                ("AO_INTENSITY", post_value::AO_INTENSITY),
                 ("COUNT", post_value::COUNT),
             ],
         ),
@@ -741,6 +776,20 @@ pub fn typescript() -> String {
                 ("WEIGHTS", mesh_arrays::WEIGHTS),
             ],
         ),
+        // The morph target arrays of `createMeshFromArrays`, the morph weight table, and the bytes of
+        // each delta texel on the GPU.
+        (
+            "MORPH",
+            &[
+                ("POSITIONS", morph_arrays::POSITIONS),
+                ("NORMALS", morph_arrays::NORMALS),
+                ("TANGENTS", morph_arrays::TANGENTS),
+                ("MAX_WEIGHTS", null3d_core::morph::MAX_WEIGHTS),
+                ("MAX_TARGETS", null3d_core::morph::MAX_TARGETS),
+                ("WEIGHTS_PER_JOINT", null3d_core::morph::WEIGHTS_PER_JOINT),
+                ("DELTA_BYTES", null3d_render::morph::DELTA_BYTES),
+            ],
+        ),
         (
             "ARRAY",
             &[
@@ -824,6 +873,9 @@ pub fn typescript() -> String {
                 ("MISSING", arrays_problem::MISSING),
                 ("INDEX_OUT_OF_RANGE", arrays_problem::INDEX_OUT_OF_RANGE),
                 ("TYPE", arrays_problem::TYPE),
+                ("MORPH_TOO_LARGE", arrays_problem::MORPH_TOO_LARGE),
+                ("MORPH_LENGTH", arrays_problem::MORPH_LENGTH),
+                ("MORPH_NOT_FINITE", arrays_problem::MORPH_NOT_FINITE),
                 ("NOT_FINITE", arrays_problem::NOT_FINITE),
             ],
         ),

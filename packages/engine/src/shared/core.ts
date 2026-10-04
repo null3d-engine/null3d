@@ -228,9 +228,17 @@ export interface CoreGlue extends CoreErrors {
 	/**
 	 * A mesh from the arrays at `meshArrays`'s address, as `layout` (the `MESH_ARRAYS_*` bits)
 	 * describes them. `types` gives each array's type in its attribute's field of a vertex format.
-	 * Returns the mesh id.
+	 * With `targets` morph targets, the arrays that `morph` (the `MORPH_*` bits) names follow the
+	 * indices. Returns the mesh id.
 	 */
-	createMeshFromArrays(vertices: number, indices: number, layout: number, types: number): number;
+	createMeshFromArrays(
+		vertices: number,
+		indices: number,
+		layout: number,
+		types: number,
+		targets: number,
+		morph: number,
+	): number;
 	/**
 	 * Gives a mesh the tree over its triangles that a model file stores, from the first `bytes`
 	 * bytes at `meshArrays`'s address. 1 when the mesh takes it, 0 when the tree does not fit the
@@ -382,7 +390,7 @@ export interface CoreGlue extends CoreErrors {
 	setBackground(r: number, g: number, b: number): number;
 	/**
 	 * The address of the block of post-processing values (`POST_VALUE_*`), 32-bit floats that
-	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`.
+	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setAo`, `setLut` or `setVignette`.
 	 */
 	postValues(): number;
 	/** The tone mapping, by code, and the exposure from the post-processing values, from the next frame on. */
@@ -391,6 +399,13 @@ export interface CoreGlue extends CoreErrors {
 	setBloom(on: boolean): number;
 	/** How many times fewer taps than three.js's bloom's blurs read, from the next frame on. */
 	setBloomSamples(divisor: number): number;
+	/** Turns ambient occlusion on with the post-processing values' settings, or off. */
+	setAo(on: boolean): number;
+	/**
+	 * The size of ambient occlusion's targets, in thousandths of the render size each way, from
+	 * the next frame on: 0 draws none.
+	 */
+	setAoScale(thousandths: number): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/**
@@ -472,6 +487,21 @@ export interface CoreGlue extends CoreErrors {
 	createAnimatedInstance(skeleton: number): number;
 	/** Removes an animated instance; later instances take its id and joints. */
 	removeAnimatedInstance(instance: number): number;
+	/** Makes a block of `count` morph weights, all 0, and returns its id plus one. */
+	createMorphWeights(count: number): number;
+	/** Frees a block of morph weights. */
+	destroyMorphWeights(id: number): number;
+	/**
+	 * Links a block of morph weights to an animated instance (its id plus one, or 0 to unlink),
+	 * whose skeleton's joints from `joint` on animate them.
+	 */
+	linkMorphWeights(id: number, instance: number, joint: number): number;
+	/** The address of the morph weight table, or 0 before its first block. */
+	morphWeightsAddress(): number;
+	/** The first weight of a block of morph weights in the table. */
+	morphWeightsFirst(id: number): number;
+	/** The most morph weights of each object that vertex shaders that morph keep, the largest. */
+	setMorphTargets(cap: number): number;
 	/** The address of an animation table array (`ANIMATION_FIELD_*`). */
 	animationArrays(field: number): number;
 	/**
@@ -592,6 +622,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOutput',
 	'setBloom',
 	'setBloomSamples',
+	'setAo',
+	'setAoScale',
 	'setSoftwareOcclusion',
 	'setLut',
 	'setVignette',
@@ -612,6 +644,12 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'animatedInstanceJoints',
 	'createAnimatedInstance',
 	'removeAnimatedInstance',
+	'createMorphWeights',
+	'destroyMorphWeights',
+	'linkMorphWeights',
+	'morphWeightsAddress',
+	'morphWeightsFirst',
+	'setMorphTargets',
 	'animationArrays',
 	'animatorPlay',
 	'animatorStop',

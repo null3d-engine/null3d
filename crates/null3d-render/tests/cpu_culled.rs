@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{BATCH_ROWS, LENS, World, count, far_out};
+use common::{BATCH_ROWS, LENS, World, count, far_out, grid};
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::clusters::{CLUSTER_ROWS, CLUSTER_SHIFT};
 use null3d_core::handle::Handle;
@@ -15,7 +15,7 @@ use null3d_gpu::drawlist::{NO_TARGET, Op, sizes};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::camera::Perspective;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
-use null3d_render::frame::{FrameBuilder, RecordError};
+use null3d_render::frame::{FrameBuilder, MERGE_GAP_ROWS, NO_MESH, RecordError};
 use null3d_render::graph::ALL_LAYERS;
 use null3d_render::materials::{Shading, feature};
 use null3d_render::view::{View, ViewId};
@@ -141,7 +141,7 @@ fn two_views_list_their_own_visible_objects_and_draw_them_in_passes_of_their_own
         );
         assert_eq!(passes[0][0], passes[1][0]);
         assert_eq!(passes[0][2], passes[1][2]);
-        assert_eq!(count(&commands, Op::CreateTexture), 20 + 3);
+        assert_eq!(count(&commands, Op::CreateTexture), 21 + 3);
         // Each pass binds its view's frame uniform and index list textures.
         let bound = |group: u32| -> Vec<u32> {
             commands
@@ -235,6 +235,7 @@ fn a_view_added_after_the_frame_culled_draws_from_the_next_frame() {
         shadow_lights: &[],
         pipelines_built: u32::MAX,
         animations: None,
+        morphs: &world.morphs,
     };
     world.renderer.cull(&input).unwrap();
     let late = world
@@ -309,9 +310,9 @@ fn the_first_frame_creates_everything_and_replays_on_both_draw_paths() {
         assert_eq!(count(&commands, Op::CreateRenderPipeline), 3);
         // The color and depth targets, the shadow map and the shadow atlas (one texel each while
         // no light casts shadows), the resident texture, the two rings of three, the cluster
-        // texture, the material table, the table of specular terms, and the two rings of three
-        // light textures.
-        assert_eq!(count(&commands, Op::CreateTexture), 20);
+        // texture, the material table, the table of specular terms, the two rings of three light
+        // textures, and the blank texture that stands in for ambient occlusion.
+        assert_eq!(count(&commands, Op::CreateTexture), 21);
         // Buckets: lit boxes (the object, and the batch in the streamed texture), lit balls, and
         // unlit boxes. The hidden ball culls away; everything else is in view. Nothing is static
         // but the scene, so no bucket has clusters.
@@ -509,6 +510,66 @@ fn a_moved_static_object_uploads_only_its_row() {
     assert_eq!(
         texture_writes(&world.commands(), RESIDENT),
         vec![[slot * 3, 0, 3, 1, 48]]
+    );
+}
+
+#[test]
+fn moved_objects_close_together_upload_their_rows_in_one_write() {
+    // Two objects with a third between them: one write from the first's row to the second's.
+    let mut world = World::build_sized(CpuCulledRenderer::new(CpuCulledConfig::default()), 128);
+    world.record(true);
+    world.frame = 2;
+    world.scene.begin_frame(2);
+    let (first, last) = (world.objects[0], world.objects[2]);
+    world.scene.set_position(first, [0.0, 1.0, 0.0]).unwrap();
+    world.scene.set_position(last, [0.0, 1.0, 0.0]).unwrap();
+    world.record(false);
+    let (a, b) = (
+        world.scene.resolve(first).unwrap(),
+        world.scene.resolve(last).unwrap(),
+    );
+    let rows = b - a + 1;
+    assert_eq!(
+        texture_writes(&world.commands(), RESIDENT),
+        vec![[a * 3, 0, rows * 3, 1, rows * 48]]
+    );
+
+    // An object past more rows than one write repeats uploads in a write of its own.
+    world.frame = 3;
+    world.scene.begin_frame(3);
+    let mut commands = Vec::new();
+    for _ in 0..=MERGE_GAP_ROWS {
+        let group = world.scene.reserve().unwrap();
+        commands.push(Command::create(
+            group,
+            Handle::NONE,
+            NO_MESH,
+            flags::VISIBLE,
+        ));
+    }
+    let settings = world.renderer.settings_mut();
+    let mesh = settings.meshes_mut().add(&grid(1, 1)).unwrap() + 1;
+    let material = settings
+        .materials_mut()
+        .create(Shading::Unlit, 0, [1.0; 4])
+        .unwrap()
+        + 1;
+    let far = world.scene.reserve().unwrap();
+    world.scene.set_local_radius(far, 1.0).unwrap();
+    commands.push(Command::create(far, Handle::NONE, mesh, flags::VISIBLE));
+    commands.push(Command::set_material(far, material));
+    world.scene.apply_commands(&commands, 3).unwrap();
+    world.record(true);
+    world.frame = 4;
+    world.scene.begin_frame(4);
+    world.scene.set_position(first, [0.0, 2.0, 0.0]).unwrap();
+    world.scene.set_position(far, [0.0, 2.0, 0.0]).unwrap();
+    world.record(false);
+    let far_row = world.scene.resolve(far).unwrap();
+    assert!(far_row > a + MERGE_GAP_ROWS + 1);
+    assert_eq!(
+        texture_writes(&world.commands(), RESIDENT),
+        vec![[a * 3, 0, 3, 1, 48], [far_row * 3, 0, 3, 1, 48]]
     );
 }
 

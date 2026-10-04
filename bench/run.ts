@@ -108,6 +108,7 @@ import {
 	sweepReport,
 } from './lib/report';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
+import { S5_DEFAULT_COUNT } from './scenes/s5';
 import {
 	createS4,
 	MEASURE_SECONDS,
@@ -131,7 +132,15 @@ const SWEEP_COUNTS: Record<BenchScene, readonly number[]> = {
 	s3: [1, 100, 1_000, 5_000, S3_DEFAULT_COUNT, 4 * S3_DEFAULT_COUNT],
 	// S4 is one town, which ignores the count.
 	s4: [createS4().count],
+	// S5's counts are characters.
+	s5: [1, 10, 50, 100, 250, S5_DEFAULT_COUNT, 2 * S5_DEFAULT_COUNT],
 };
+/**
+ * The scenes that a comparison of two builds runs unless `--scenes` names others: every scene but
+ * S5. S5 joins the benchmark job in CI once that job pins a preset for it; `--scenes s5` compares
+ * it now. Each build of the pages still holds S5's pages, so the job needs the sample content.
+ */
+const COMPARED_SCENES = BENCH_SCENES.filter((scene) => scene !== 's5');
 const DEFAULT_PAGES: BenchPageKind[] = [
 	'null3d-webgpu',
 	'threejs-webgpu',
@@ -511,7 +520,7 @@ async function runComparison(
 	for (const root of Object.values(roots))
 		if (!existsSync(join(root, BUILT_CORE)))
 			throw new Error(`${root} holds no built engine: run bun run build there first`);
-	const plan = (options.scenes ?? BENCH_SCENES).flatMap((scene) =>
+	const plan = (options.scenes ?? COMPARED_SCENES).flatMap((scene) =>
 		(options.pages ?? JOBS_PAGES).map((kind) => ({ scene, kind })),
 	);
 	const share = options.shard ? shardPages(plan, options.shard) : plan;

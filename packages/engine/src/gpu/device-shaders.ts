@@ -4,14 +4,24 @@
 // core switches to HDR color, and its pipelines then lack the tone mapping bit. The set then loads
 // the module of those bits, once, and adds its builds to the variants that the backends already
 // hold, so their templates find them. Until it arrives, the pipeline waits as a custom material's
-// pipeline waits for its shader, and the frames that need it wait with it.
+// pipeline waits for its shader, and the frames that need it wait with it. The builds of a feature
+// that loads on demand, such as the MORPH builds of WebGL2, sit in modules of their own, which the
+// set loads in the same way when the first pipeline with the feature's bits asks for one.
 
-import { PERMUTATION_DRAW_INDEX, PERMUTATION_HALF, PERMUTATION_TONE_MAP } from '../generated/gpu';
+import {
+	PERMUTATION_DRAW_INDEX,
+	PERMUTATION_HALF,
+	PERMUTATION_ON_DEMAND,
+	PERMUTATION_TONE_MAP,
+} from '../generated/gpu';
 import type { DeviceShaders, ShaderVariant, ShaderVariants } from '../generated/shaders';
 import { variantFor } from './variants';
 
-/** The permutation bits that a device fixes and that a pipeline's word can hold. */
-const PIPELINE_DEVICE_BITS = PERMUTATION_DRAW_INDEX | PERMUTATION_TONE_MAP;
+/**
+ * The permutation bits that pick a module and that a pipeline's word can hold: those a device fixes,
+ * and those of features that load on demand.
+ */
+const PIPELINE_MODULE_BITS = PERMUTATION_DRAW_INDEX | PERMUTATION_TONE_MAP | PERMUTATION_ON_DEMAND;
 
 /** The device shaders that a backend reads, which grow by another module when a pipeline needs it. */
 export class DeviceShaderSet {
@@ -43,7 +53,7 @@ export class DeviceShaderSet {
 	 */
 	ready(variants: ShaderVariants, permutation: number, target: 'wgsl' | 'glsl'): boolean {
 		if (variantFor(variants, permutation, target)) return true;
-		const bits = (permutation & PIPELINE_DEVICE_BITS) | (this.bits & PERMUTATION_HALF);
+		const bits = (permutation & PIPELINE_MODULE_BITS) | (this.bits & PERMUTATION_HALF);
 		if (this.modules.has(bits)) {
 			if (this.failures.has(bits)) {
 				const reason = this.failures.get(bits);

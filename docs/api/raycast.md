@@ -8,7 +8,7 @@ summary: "raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointe
 
 # Raycasting and spatial queries
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Pointer events on objects (`object.on`), `camera.screenToRay` and pixel-exact GPU picking are not built yet, so coding agents must not use them.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Pixel-exact GPU picking is not built yet, so coding agents must not use it.
 
 ```mermaid
 flowchart LR
@@ -93,6 +93,19 @@ A hit has these fields:
 
 `raycast` sets `hit.object` to `null` after a miss, and leaves the other fields as they were. `raycastAll` fills the first entries of `hits` and returns how many it filled. When the array is too short, it adds hit objects to it. It leaves the entries after the hits as they were, so read only the first ones.
 
+## Rays from the pointer
+
+For clicks and hover on objects, `object.on('click', handler)` casts the ray itself. [Pointer events on objects](input.md#pointer-events-on-objects) describes it. For a ray of your own, such as one that tests only some layers, `camera.screenToRay(x, y, ray)` writes the ray through a point on the canvas. Pass `input.pointer.x` and `input.pointer.y`, and the ray comes from the frame that was on screen at the pointer's event.
+
+```ts
+const ray = { origin: vec3.create(), direction: vec3.create() };   // made once
+// in onUpdate:
+if (input.wasPressed('Mouse0')) {
+  camera.screenToRay(input.pointer.x, input.pointer.y, ray);
+  if (scene.raycast(ray.origin, ray.direction, { layers: GROUND }, hit)) moveTo(hit.point);
+}
+```
+
 ## Batches of rays
 
 The call `scene.raycastBatch(rays, options, out)` casts many rays at once, on the job workers. Its `rays` array holds six numbers per ray: its origin, then its direction. Its `out` object holds typed arrays with one entry per ray, or three numbers per ray for points and normals. Only `distances` is required, and the call fills each other array that you give. It returns how many rays hit something.
@@ -156,7 +169,8 @@ The trees give the same hits as testing every triangle of every object in turn. 
 
 | three.js | null3D |
 | --- | --- |
-| `raycaster.setFromCamera(pointer, camera)` | `camera.screenToRay` is not built yet. Build a ray from the camera's world matrix |
+| `raycaster.setFromCamera(pointer, camera)` | `camera.screenToRay(input.pointer.x, input.pointer.y, ray)`, with the camera of the frame on screen at the pointer's event |
+| DOM listeners that raycast for clicks and hover | `object.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects) |
 | `raycaster.intersectObjects(scene.children, true)` | `scene.raycastAll(origin, direction, options, hits)` tests the whole scene |
 | `intersects[0]` | `scene.raycast(origin, direction, options, hit)` |
 | `raycaster.far` | `maxDistance` |

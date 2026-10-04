@@ -87,7 +87,7 @@ return {
 };
 ```
 
-The joints of a model's skins, and every node that its clips move, become the copy's skeleton, not objects. So `hero.find('Hips')` finds nothing, and a crowd costs one object per mesh. A mesh that the file puts under a bone, such as a sword in a hand, follows its joint; hide it with `sword.setVisible(false)`. The job workers resample every clip while `loadGltf` waits, so no frame stalls. Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/ public/models/` (0.2): integer vertices and KTX2 textures in a `textures` folder beside each `.glb`. In a Vite project, `import heroUrl from './models/hero.glb?optimized'` (0.2) runs the same steps, cached, and gives the URL for `loadGltf`. Cross-fade on state changes only; calling `play` every frame restarts blending work. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
+The joints of a model's skins, and every node that its clips move, become the copy's skeleton, not objects. So `hero.find('Hips')` finds nothing, and a crowd costs one object per mesh. A mesh that the file puts under a bone, such as a sword in a hand, follows its joint; hide it with `sword.setVisible(false)`. The job workers resample every clip while `loadGltf` waits, so no frame stalls. Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/ public/models/` (0.2): integer vertices and KTX2 textures in a `textures` folder beside each `.glb`. In a Vite project, `import heroUrl from './models/hero.glb?optimized'` (0.2) runs the same steps, cached, and gives the URL for `loadGltf`. Cross-fade on state changes only; calling `play` every frame restarts blending work. A face's morph targets load with the model. The call `(hero.find('Face') as Mesh).setMorphWeight('Smile', 0.8)` sets a weight by name. The file's clips animate the weights too, blended with the ones you set. Set weights in `onUpdate` freely; it allocates nothing. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
 
 ## 4. Thousands of moving objects
 
@@ -174,28 +174,38 @@ No objects are created or destroyed during play. `setActiveCount` draws only the
 ## 6. Click to select, with an outline (0.2)
 
 ```ts
-const PICKABLE = 1 << 1;
-for (const u of units) u.setLayers(1 | PICKABLE);   // layer 0 stays on so cameras still draw it
 post.set({ outline: { color: '#ffcc00', thickness: 2 } });
 
-let selected: typeof units[number] | null = null;
-for (const u of units) {
-  u.on('click', () => {
+let selected: (typeof units)[number] | null = null;
+let clicked = false;
+for (const unit of units) {
+  unit.on('click', () => {
+    clicked = true;
     selected?.setOutlined(false);
-    selected = u;
-    u.setOutlined(true);
-    page.post('selected', { name: u.name });
+    selected = unit;
+    unit.setOutlined(true);
+    page.post('selected', { name: unit.name });
   });
 }
+// in onUpdate: a click on nothing clears the selection. Handlers run before onUpdate.
+if (input.wasReleased('Mouse0') && !clicked && selected) {
+  selected.setOutlined(false);
+  selected = null;
+}
+clicked = false;
 ```
 
-A ray from the pointer, also in 0.2, lets walls block the pick:
+A click goes to the closest object under the pointer that the camera draws. So a wall in front of a unit takes the click, and the unit behind it stays unselected. A drag that turns the camera is no click. On a model, put the handler on the group that `scene.instantiate` returns: clicks on its parts go on up to it. Each click casts its ray from the frame that was on screen, and a frame with no handlers casts none.
+
+A ray of your own skips objects that should not block, such as effects:
 
 ```ts
+const PICKABLE = 1 << 1;
 const WORLD = 1 << 2;   // walls and terrain: they block the ray
+for (const u of units) u.setLayers(1 | PICKABLE);   // layer 0 stays on so cameras still draw it
 for (const wall of walls) wall.setLayers(1 | WORLD);
 const unitSet = new Set(units);
-const ray = { origin: [0, 0, 0], direction: [0, 0, -1] };
+const ray = { origin: vec3.create(), direction: vec3.create() };
 const hit: RaycastHit = { object: null, instance: -1, point: vec3.create(), normal: vec3.create(), distance: 0, triangle: -1 };
 // in onUpdate:
 if (input.wasPressed('Mouse0')) {
@@ -206,7 +216,7 @@ if (input.wasPressed('Mouse0')) {
 }
 ```
 
-The ray tests units and the walls and terrain on `WORLD`, and returns the nearest hit. A wall in front of a unit is that nearest hit, so a unit behind a wall is not selected. Effects stay off both layers, so they never block the ray. Create `ray`, `hit` and `unitSet` once. Docs: `api/raycast`, `concepts/render-layers`, `api/post`.
+The ray tests units and the walls and terrain on `WORLD`, and returns the nearest hit. Effects stay off both layers, so they never block the ray. Create `ray`, `hit` and `unitSet` once. Docs: `api/input` (pointer events on objects), `api/raycast`, `concepts/render-layers`, `api/post`.
 
 ## 7. HTML labels above objects (0.2)
 

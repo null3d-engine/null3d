@@ -98,7 +98,9 @@ interface GlFormat {
 
 /**
  * A texture, a render target that WebGL2 keeps in a renderbuffer, or a view of one mip level and
- * one layer of a texture. Its size is the size of the level that it draws into.
+ * one layer of a texture. Its size is the size of the level that it draws into. A multisampled
+ * depth target that shaders read has both: passes draw into the renderbuffer, and bind groups
+ * read the texture, a copy of one sample that each render pass that stores the depth updates.
  */
 interface GlTexture {
 	readonly texture: WebGLTexture | null;
@@ -125,6 +127,8 @@ interface GlTexture {
 	framebufferDepth: GlTexture | null;
 	/** A framebuffer with only this target in it: for passes that draw depth only, and resolves. */
 	soloFramebuffer: WebGLFramebuffer | null;
+	/** The framebuffer of the one-sample copy of a multisampled depth target that shaders read. */
+	copyFramebuffer: WebGLFramebuffer | null;
 }
 
 interface BindEntry {
@@ -256,6 +260,7 @@ function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat 
 	add(G.FORMAT_RGB9E5_UFLOAT, gl.RGB9_E5, gl.RGB, gl.UNSIGNED_INT_5_9_9_9_REV, color);
 	add(G.FORMAT_RGBA32_FLOAT, gl.RGBA32F, gl.RGBA, gl.FLOAT, color);
 	add(G.FORMAT_R32_UINT, gl.R32UI, gl.RED_INTEGER, gl.UNSIGNED_INT, color);
+	add(G.FORMAT_R32_FLOAT, gl.R32F, gl.RED, gl.FLOAT, color);
 	const depth = gl.DEPTH_ATTACHMENT;
 	add(G.FORMAT_DEPTH24_PLUS, gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, depth);
 	add(G.FORMAT_DEPTH32_FLOAT, gl.DEPTH_COMPONENT32F, gl.DEPTH_COMPONENT, gl.FLOAT, depth);
@@ -289,6 +294,7 @@ function glTexture(
 		framebuffer: null,
 		framebufferDepth: null,
 		soloFramebuffer: null,
+		copyFramebuffer: null,
 	};
 }
 
@@ -435,6 +441,8 @@ export class WebGL2Backend {
 	private passWidth = 0;
 	private passHeight = 0;
 	private passResolve = G.NO_TARGET;
+	/** The pass's depth target, whose one-sample copy the pass's end updates when it has one. */
+	private passDepth: GlTexture | null = null;
 	private passFlags = 0;
 	private passToCanvas = false;
 
@@ -559,7 +567,8 @@ export class WebGL2Backend {
 		if (!defined) {
 			const shader = this.images.shaders.get(template);
 			if (!shader) return false;
-			defined = { shader: shader.variants, pipeline: 'main' };
+			// A custom material's prepass draws with its own vertex shader, as every mesh's does.
+			defined = { shader: shader.variants, pipeline: 'main', meshPrepass: true };
 			this.templates[template] = defined;
 		}
 		const build = buildPermutation(defined, permutation);
@@ -1053,7 +1062,9 @@ export class WebGL2Backend {
 
 	/**
 	 * Creates a texture. A render target that nothing samples or copies lives in a renderbuffer,
-	 * and so does every multisampled one, since WebGL2 has no multisampled textures.
+	 * and so does every multisampled one, since WebGL2 has no multisampled textures. A multisampled
+	 * depth target that shaders read also gets a texture of one sample, which they read instead:
+	 * WebGPU's shaders read its sample 0, and WebGL2 copies one sample of each pixel.
 	 */
 	private createTexture(words: Uint32Array, a: number): void {
 		const gl = this.gl;
@@ -1083,7 +1094,21 @@ export class WebGL2Backend {
 			} else {
 				gl.renderbufferStorage(gl.RENDERBUFFER, format.internal, width, height);
 			}
-			this.textures[id] = glTexture(null, renderbuffer, 0, width, height, format, 1, 0, 0, false);
+			const copied = samples > 1 && usage & G.TEXTURE_USAGE_TEXTURE_BINDING;
+			const copy = copied ? this.depthCopy(width, height, format) : null;
+			const target = copy ? gl.TEXTURE_2D : 0;
+			this.textures[id] = glTexture(
+				copy,
+				renderbuffer,
+				target,
+				width,
+				height,
+				format,
+				1,
+				0,
+				0,
+				false,
+			);
 			return;
 		}
 		const texture = gl.createTexture();
@@ -1100,6 +1125,20 @@ export class WebGL2Backend {
 		gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 		gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 		this.textures[id] = glTexture(texture, null, target, width, height, format, mips, 0, 0, false);
+	}
+
+	/** The texture of one sample that shaders read in place of a multisampled depth target. */
+	private depthCopy(width: number, height: number, format: GlFormat): WebGLTexture {
+		const gl = this.gl;
+		if (format.attachment !== gl.DEPTH_ATTACHMENT)
+			throw new Error('WebGL2 reads only multisampled depth targets, through a copy of one sample');
+		const texture = gl.createTexture();
+		if (!texture) throw new Error('WebGL2 could not create a texture');
+		this.editTexture(UPLOAD_UNIT, gl.TEXTURE_2D, texture);
+		gl.texStorage2D(gl.TEXTURE_2D, 1, format.internal, width, height);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+		return texture;
 	}
 
 	/** A texture by id, which a view, a write, an upload or a copy can use: not a render-only one. */
@@ -1151,6 +1190,8 @@ export class WebGL2Backend {
 		const gl = this.gl;
 		if (target.framebuffer) gl.deleteFramebuffer(target.framebuffer);
 		if (target.soloFramebuffer) gl.deleteFramebuffer(target.soloFramebuffer);
+		if (target.copyFramebuffer) gl.deleteFramebuffer(target.copyFramebuffer);
+		target.copyFramebuffer = null;
 		target.framebuffer = null;
 		target.framebufferDepth = null;
 		target.soloFramebuffer = null;
@@ -1680,6 +1721,7 @@ export class WebGL2Backend {
 		this.passFlags = flags;
 		this.passToCanvas = color === 0;
 		const depthTarget = depth === G.NO_TARGET ? null : this.need(this.textures, depth, 'texture');
+		this.passDepth = depthTarget;
 		let framebuffer: WebGLFramebuffer | null;
 		if (color === 0) {
 			if (depthTarget) throw new Error('WebGL2 cannot draw into the canvas with a depth target');
@@ -1760,6 +1802,8 @@ export class WebGL2Backend {
 		// Tile-based GPUs then skip writing the multisampled targets back to memory.
 		const storeColor = (this.passFlags & G.PASS_STORE_COLOR) !== 0;
 		const storeDepth = (this.passFlags & G.PASS_STORE_DEPTH) !== 0;
+		const depth = this.passDepth;
+		if (storeDepth && depth?.renderbuffer && depth.texture) this.copyDepth(framebuffer, depth);
 		const discard = storeColor
 			? storeDepth
 				? undefined
@@ -1771,6 +1815,29 @@ export class WebGL2Backend {
 			gl.bindFramebuffer(gl.READ_FRAMEBUFFER, framebuffer);
 			gl.invalidateFramebuffer(gl.READ_FRAMEBUFFER, discard);
 		}
+	}
+
+	/**
+	 * Copies one sample of each pixel of a multisampled depth target into the texture that shaders
+	 * read in its place. GL copies a multisampled depth through a blit, of the whole target.
+	 */
+	private copyDepth(framebuffer: WebGLFramebuffer | null, depth: GlTexture): void {
+		const gl = this.gl;
+		if (!depth.copyFramebuffer) {
+			const copy = gl.createFramebuffer();
+			if (!copy) throw new Error('WebGL2 could not create a framebuffer');
+			gl.bindFramebuffer(gl.FRAMEBUFFER, copy);
+			gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, depth.texture, 0);
+			depth.copyFramebuffer = copy;
+		}
+		gl.bindFramebuffer(gl.READ_FRAMEBUFFER, framebuffer);
+		gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, depth.copyFramebuffer);
+		if (!this.depthMask) {
+			gl.depthMask(true);
+			this.depthMask = true;
+		}
+		const { width, height } = depth;
+		gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.DEPTH_BUFFER_BIT, gl.NEAREST);
 	}
 
 	/** Sets the viewport from a rectangle given from the target's top, as GL counts from its bottom. */

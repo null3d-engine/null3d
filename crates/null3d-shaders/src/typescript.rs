@@ -8,7 +8,10 @@
 //! keeps only the shaders that its code imports: the engine's download holds none of the test
 //! shaders. The shaders that load by device go into one device module for each target and each
 //! value of the permutation bits that a device fixes. Each is a file of its own that the loader
-//! imports on demand, so a page downloads only the builds its device draws with.
+//! imports on demand, so a page downloads only the builds its device draws with. The builds with
+//! the bits of a feature that loads on demand (`permutation::ON_DEMAND`) go into modules of their
+//! own beside those, which hold only those builds, so a page that never draws the feature
+//! downloads none of them.
 
 use std::collections::BTreeMap;
 
@@ -141,8 +144,9 @@ export function loadWgslShaders(bits: number): Promise<DeviceShaders> {
 
 /**
  * Loads the GLSL builds of the shaders that load by device, with the permutation bits `bits`,
- * which holds only bits that a device fixes. Each value of those bits is a module of its own, so a
- * page downloads one.
+ * which holds only bits that a device fixes and bits of features that load on demand. Each value
+ * of those bits is a module of its own, so a page downloads one, and one more for each such
+ * feature that it draws. A feature's module holds only the builds with its bits.
  */
 export function loadGlslShaders(bits: number): Promise<DeviceShaders> {
 	return loadDeviceModule(GLSL_MODULES, 'GLSL', bits);
@@ -181,7 +185,7 @@ impl DeviceModule {
         };
         Self {
             target,
-            bits: variant.permutation & permutation::DEVICE,
+            bits: variant.permutation & (permutation::DEVICE | permutation::ON_DEMAND),
         }
     }
 
@@ -241,6 +245,12 @@ fn device_builds(output: &Output) -> BTreeMap<DeviceModule, Builds<'_>> {
                     target,
                     bits: asked,
                 };
+                // A module of a feature that loads on demand holds only that feature's builds.
+                let on_demand = permutation::ON_DEMAND;
+                if (bits ^ asked) & on_demand != 0 {
+                    builds.insert(shader, BTreeMap::new());
+                    continue;
+                }
                 builds.insert(
                     shader,
                     variants

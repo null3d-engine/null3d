@@ -90,6 +90,12 @@ export type {
 } from './scene/lines';
 export type { Lut, LutDomain } from './scene/lut';
 export type {
+	ObjectEventHandler,
+	ObjectEventType,
+	ObjectPointerEvent,
+} from './scene/pointer-events';
+export type {
+	AoSettings,
 	BloomSettings,
 	Post,
 	PostSettings,
@@ -122,6 +128,7 @@ export type {
 	Materials,
 	MeshArrays,
 	MeshGeometry,
+	MorphTargets,
 	PlaneOptions,
 	RingOptions,
 	ShaderOptions,

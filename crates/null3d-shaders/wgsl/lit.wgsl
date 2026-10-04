@@ -14,7 +14,8 @@ enable draw_index;
 // it. The ALPHA_MASK builds draw nothing where the surface's alpha falls below the material's
 // cutoff, and a material that blends writes premultiplied color. The RECEIVE_SHADOWS builds dim the
 // sun's light where the main directional light's shadows fall. The SKIN builds skin each vertex by
-// its joints (null3d::mesh), before the instance's world matrix places it.
+// its joints (null3d::mesh), before the instance's world matrix places it, and the MORPH builds
+// of WebGL2 add its morph targets' deltas before that.
 //
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive and light maps, each a layer of a texture array with a sampler of its own. A map reads
@@ -45,12 +46,16 @@ enable draw_index;
 #endif
 #import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::globals::{Material}
+#import null3d::gtao::{screen_occlusion}
 #import null3d::lights::{clustered_light}
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
 #endif
+#ifdef MORPH
+#import null3d::mesh::{Morphed, morph_vertex}
+#endif
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
-#import null3d::mesh::{custom_value, frame as engine_frame, material_of}
+#import null3d::mesh::{BLEND_FLAG, custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
 #ifdef MAPS
@@ -157,6 +162,9 @@ struct VertexIn {
 #ifdef SKIN
     @location(6) joints: vec4u,
     @location(7) weights: vec4f,
+#endif
+#ifdef MORPH
+    @location(8) morph: vec2f,
 #endif
 }
 
@@ -370,13 +378,28 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     load_custom_texture_layers(found.material);
 #endif
     var out: VertexOut;
+#ifdef VERTEX_TANGENT
+    let source_tangent = v.tangent.xyz;
+#else
+    let source_tangent = vec3f(0.0);
+#endif
+#ifdef MORPH
+    let rest = morph_vertex(found, v.morph, Morphed(mesh_position(v.position), v.normal, source_tangent));
+    let rest_position = rest.position;
+    let rest_normal = rest.normal;
+    let rest_tangent = rest.tangent;
+#else
+    let rest_position = mesh_position(v.position);
+    let rest_normal = v.normal;
+    let rest_tangent = source_tangent;
+#endif
 #ifdef SKIN
     let skin = skin_of(found, v.joints, v.weights);
-    let position = skinned_point(skin, mesh_position(v.position));
-    let normal = skinned_direction(skin, v.normal);
+    let position = skinned_point(skin, rest_position);
+    let normal = skinned_direction(skin, rest_normal);
 #else
-    let position = mesh_position(v.position);
-    let normal = v.normal;
+    let position = rest_position;
+    let normal = rest_normal;
 #endif
 #ifdef CUSTOM_VERTEX_OFFSET
     let offset = vertexOffset(VertexInput(position, normal, mesh_uv(v.uv0)));
@@ -399,9 +422,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     // As three.js does: the tangent through the world matrix, and the bitangent at right angles
     // to the normal and the tangent, on the side that the tangent's w gives.
 #ifdef SKIN
-    let mesh_tangent = skinned_direction(skin, v.tangent.xyz);
+    let mesh_tangent = skinned_direction(skin, rest_tangent);
 #else
-    let mesh_tangent = v.tangent.xyz;
+    let mesh_tangent = rest_tangent;
 #endif
     let tangent = normalize(world_direction(found, mesh_tangent));
     out.tangent = tangent;
@@ -449,8 +472,9 @@ fn light_surface(
 
 /// The color of a pixel that shows the surface: the light it reflects and the light it gives off,
 /// in the scene's fog, finished for the screen at the pixel's position, and premultiplied by its
-/// alpha when the material blends.
-fn shade(s: Surface, input: SurfaceInput, pixel: vec2f) -> vec4f {
+/// alpha when the material blends. `pixel` is the fragment's position, whose depth places it in
+/// the frame's ambient occlusion, which darkens the ambient light with the surface's own occlusion.
+fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let normal = normalize(s.normal);
     // Where the mesh's normal changes fast between pixels, highlights soften, as three.js softens
     // them. As in three.js, the normal is the mesh's own, before a map or a surface function bends
@@ -460,6 +484,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec2f) -> vec4f {
     let pbr = pbr_material(s.baseColor, s.metalness, s.roughness, geometry_roughness);
     let n_dot_v = saturate(dot(normal, input.viewDirection));
     let dfg = dfg_lut(n_dot_v, pbr.roughness);
+    let blended = (u32(material_row.strengths.z) & BLEND_FLAG) != 0u;
     let reflected = light_surface(
         pbr,
         input.relativePosition,
@@ -467,7 +492,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec2f) -> vec4f {
         input.viewDirection,
         dfg,
         s.irradiance,
-        s.occlusion,
+        s.occlusion * screen_occlusion(pixel.xyz, blended),
     );
     let outgoing = reflected + s.emissive;
     // The test comes last, after every derivative, which a discarded fragment still helps compute.
@@ -476,7 +501,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec2f) -> vec4f {
         discard;
     }
 #endif
-    let finished = finish(fogged(outgoing, input.relativePosition, material_row), pixel);
+    let finished = finish(fogged(outgoing, input.relativePosition, material_row), pixel.xy);
     return fragment_color(material_row, finished.rgb, s.alpha);
 }
 
@@ -530,5 +555,5 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #else
     let s = defaultSurface(input);
 #endif
-    return shade(s, input, in.clip.xy);
+    return shade(s, input, in.clip);
 }

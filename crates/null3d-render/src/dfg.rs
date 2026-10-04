@@ -109,7 +109,7 @@ const HALVES: [u16; 2 * (SIZE * SIZE) as usize] = [
 pub const BYTES: usize = 16 * (SIZE * SIZE) as usize;
 
 /// A half float's value. The table holds no infinities and no NaNs.
-const fn half_to_f32(half: u16) -> f32 {
+pub(crate) const fn half_to_f32(half: u16) -> f32 {
     let sign = ((half as u32) & 0x8000) << 16;
     let exponent = ((half as u32) >> 10) & 0x1f;
     let fraction = (half as u32) & 0x3ff;

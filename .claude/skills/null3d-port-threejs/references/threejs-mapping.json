@@ -725,8 +725,8 @@
       "three": "morphAttributes / morphTargetInfluences / morphTargetDictionary",
       "status": "changed",
       "since": "0.2",
-      "target": "glTF morph targets load automatically; obj.setMorphWeight(indexOrName, weight)",
-      "notes": "",
+      "target": "mesh.setMorphWeight(indexOrName, weight) and mesh.getMorphWeight(indexOrName); geometry.fromArrays({ ..., morphTargets: { positions, normals, names } })",
+      "notes": "glTF morph targets and their default weights load with the model, and its clips animate the weights. Targets are deltas, as with morphTargetsRelative = true. mesh.mesh.morphTargetNames lists the names in target order, in place of morphTargetDictionary. A clip blends its weights with the object's own, as AnimationMixer does. On WebGL2 each object draws only its largest weights, by the morphTargets quality setting: 8 on Low up to 64 on Ultra.",
       "docs": "api/animation",
       "detect": "morphAttributes|morphTargetInfluences|morphTargetDictionary"
     },
@@ -1122,7 +1122,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const prefab = await assets.loadGltf(url); scene.instantiate(prefab)",
-      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures and meshopt compression need no decoder setup. Clips play through the copy's animator: scene.instantiate(prefab).animator().play(name), with the names in prefab.clips. Joints are not objects. Morph targets load but do not draw yet.",
+      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures and meshopt compression need no decoder setup. Clips play through the copy's animator: scene.instantiate(prefab).animator().play(name), with the names in prefab.clips. Joints are not objects. Morph targets draw, and clips animate their weights.",
       "docs": "api/assets",
       "detect": "\\bGLTFLoader\\b"
     },
@@ -1287,7 +1287,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "camera.screenToRay(x, y, ray); scene.raycast(ray.origin, ray.direction, { layers }, hit)",
-      "notes": "scene.raycast writes the closest hit into a hit object that you create once, and scene.raycastAll writes every hit, nearest first, into an array. A hit has object, instance (instanceId), point, normal, distance and triangle (faceIndex). The layer mask defaults to layer 0 alone, as Raycaster's does, and the whole scene is tested. Hidden objects are never hit. camera.screenToRay is not built yet. Acceleration structures are built in.",
+      "notes": "scene.raycast writes the closest hit into a hit object that you create once, and scene.raycastAll writes every hit, nearest first, into an array. A hit has object, instance (instanceId), point, normal, distance and triangle (faceIndex). The layer mask defaults to layer 0 alone, as Raycaster's does, and the whole scene is tested. Hidden objects are never hit. camera.screenToRay uses the camera of the frame on screen at the pointer's event. For clicks and hover on objects, obj.on('click', fn) casts the ray itself. Acceleration structures are built in.",
       "docs": "api/raycast",
       "detect": "\\bRaycaster\\b|\\.setFromCamera\\s*\\(|\\.intersectObjects?\\s*\\("
     },
@@ -1297,8 +1297,8 @@
       "three": "DOM pointer, mouse, touch and keyboard listeners",
       "status": "changed",
       "since": "0.1",
-      "target": "input.pointer, input.isDown('KeyW'), input.wasPressed('Mouse0'), input.touches, input.actions.define(); obj.on('pointerenter' | 'pointerleave' | 'click', fn) (0.2)",
-      "notes": "The page forwards pointer, touch, keyboard and gamepad input to the sketch, which reads it once per frame and adds no DOM listeners. Keys take KeyboardEvent.code names, and the main mouse button or a tap is Mouse0. A canvas that takes touch gestures needs touch-action: none in its CSS.",
+      "target": "input.pointer, input.isDown('KeyW'), input.wasPressed('Mouse0'), input.touches, input.actions.define(); obj.on('click' | 'pointerdown' | 'pointerup' | 'pointermove' | 'pointerenter' | 'pointerleave', fn) (0.2)",
+      "notes": "The page forwards pointer, touch, keyboard and gamepad input to the sketch, which reads it once per frame and adds no DOM listeners. Keys take KeyboardEvent.code names, and the main mouse button or a tap is Mouse0. A canvas that takes touch gestures needs touch-action: none in its CSS. obj.on replaces a canvas listener that raycasts: the closest object under the pointer gets the event, then its parents.",
       "docs": "api/input",
       "detect": "addEventListener\\s*\\(\\s*['\"](pointer\\w*|mouse\\w*|click|dblclick|touch\\w*|keydown|keyup|wheel|contextmenu)['\"]"
     },
@@ -1418,9 +1418,9 @@
       "three": "SSAOPass / SAOPass / GTAOPass / N8AO",
       "status": "changed",
       "since": "0.2",
-      "target": "post.set({ ao: { radius, intensity } })",
-      "notes": "GTAO at half resolution, on the High and Ultra presets.",
-      "docs": "porting/threejs-postprocessing",
+      "target": "post.set({ ao: { radius, thickness, distanceExponent, distanceFalloff, scale, samples, intensity } })",
+      "notes": "GTAOPass's search and denoise at half resolution, with its setting names; blendIntensity becomes intensity, and distanceFallOff is spelled distanceFalloff. It darkens only the ambient light, where GTAOPass darkens the whole image. It draws where the quality setting aoScale is above 0: on High and Ultra, or after quality.set({ aoScale: 0.5 }) on phones and tablets. For SSAOPass, SAOPass and N8AO, start from the defaults and tune radius and scale by eye.",
+      "docs": "concepts/post-processing",
       "detect": "\\b(SSAO|SAO|GTAO|N8AO)(Pass|PostPass)?\\b"
     },
     {

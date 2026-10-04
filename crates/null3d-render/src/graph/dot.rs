@@ -95,6 +95,10 @@ impl RenderGraph {
             for access in self.accesses_of(pass.index()) {
                 let pass_node = PassNode(self.pass_name(pass));
                 let resource_node = ResourceNode(self.resource_name(ResourceId(access.resource)));
+                if access.mode == Mode::ReadSoFar {
+                    writeln!(out, "  {resource_node} -> {pass_node} [label=\"so far\"];")?;
+                    continue;
+                }
                 if !access.mode.writes() {
                     writeln!(out, "  {resource_node} -> {pass_node};")?;
                     continue;

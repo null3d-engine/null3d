@@ -86,6 +86,7 @@ use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{DrawList, Op, format, permutation, sizes, texture_usage, view};
 
+use crate::ao::{self, AoIds};
 use crate::background::BackgroundPass;
 use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
@@ -94,7 +95,7 @@ use crate::dfg;
 use crate::final_pass::FinalIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
-    SceneSettings, UploadArena, drawn_rows,
+    SceneSettings, UploadArena, drawn_rows, joined_rows,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::graph::RenderGraph;
@@ -106,7 +107,6 @@ use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
 use crate::shadows::{self, MAX_CASCADES, ShadowFrame, ShadowUniform};
-use crate::skinning::skinned_in_vertex_shader;
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
@@ -114,7 +114,7 @@ use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices};
 use layout::{Clusters, Drawn, Layout, RESIDENT, STREAMED};
 use lights::LightTextures;
-use opaque::{OFFSETS_BYTES, Opaque, Shading, ViewUpload};
+use opaque::{LitTextures, OFFSETS_BYTES, Opaque, Shading, ViewUpload};
 use skin::Skins;
 use transparent::Transparent;
 
@@ -122,6 +122,7 @@ use transparent::Transparent;
 /// shadow cascades' views after the camera views.
 mod ids {
     use super::data::RING;
+    use crate::ao::STEPS as AO_STEPS;
     use crate::bloom::STEPS;
     use crate::view::{MAX_VIEW_IDS, ViewId};
 
@@ -145,8 +146,10 @@ mod ids {
     pub const SHADOW_TILES: u32 = FINAL_SETTINGS + 1;
     /// The uniform buffer of bloom's steps and of the final pass's bloom build.
     pub const BLOOM: u32 = SHADOW_TILES + 1;
+    /// The uniform buffer of ambient occlusion's steps.
+    pub const AO: u32 = BLOOM + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = BLOOM + 1;
+    pub const PAGES: u32 = AO + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -173,10 +176,17 @@ mod ids {
     pub const BLANK_LUT: u32 = LIGHTS + RING;
     /// Every animated instance's skinning matrices (see [`crate::skinning`]).
     pub const JOINTS: u32 = BLANK_LUT + 1;
-    /// The first joint of the instance that skins each source row.
+    /// The first joint of the instance that skins each source row, then the first texel of the
+    /// morph weights of each source row.
     pub const FIRST_JOINTS: u32 = JOINTS + 1;
+    /// Every morphed mesh's deltas, in half floats (see [`crate::morph`]).
+    pub const MORPHS: u32 = FIRST_JOINTS + 1;
+    /// Every morphed object's weights (see [`crate::morph`]).
+    pub const MORPH_WEIGHTS: u32 = MORPHS + 1;
+    /// The texture that frame groups bind in place of ambient occlusion's while it draws none.
+    pub const BLANK_AO: u32 = MORPH_WEIGHTS + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = FIRST_JOINTS + 1;
+    pub const TARGETS: u32 = BLANK_AO + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow map.
@@ -209,8 +219,10 @@ mod ids {
     }
     /// The bind group of each step of bloom, after the final pass's group.
     pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1;
-    /// The bind groups of materials' maps, after bloom's.
-    pub const TEXTURE_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
+    /// The bind group of each step of ambient occlusion, after bloom's.
+    pub const AO_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
+    /// The bind groups of materials' maps, after ambient occlusion's.
+    pub const TEXTURE_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -278,6 +290,8 @@ pub struct CpuCulledRenderer {
     casters: Layout,
     /// True when the layouts were built for a frame with shadows.
     layouts_shadowed: bool,
+    /// True when the scene's layout was built with the depth prepass's pipelines.
+    layout_prepass: bool,
     clusters: Clusters,
     /// Grid-cell culling: the still scene objects in cell order, and each cell's box.
     cells: CellCulling,
@@ -364,6 +378,10 @@ impl CpuCulledRenderer {
                             sampler: ids::BLOOM_SAMPLER,
                             first_group: ids::BLOOM_GROUPS,
                         },
+                        ao: AoIds {
+                            buffer: ids::AO,
+                            first_group: ids::AO_GROUPS,
+                        },
                     },
                 );
                 graph.bind_shadow_map();
@@ -373,6 +391,7 @@ impl CpuCulledRenderer {
             layout: Layout::new(Drawn::Scene),
             casters: Layout::new(Drawn::Casters),
             layouts_shadowed: false,
+            layout_prepass: false,
             clusters: Clusters::default(),
             cells: CellCulling::new(config.cell_culling, true),
             culling: Culling::new(ViewId::CAMERA),
@@ -485,14 +504,20 @@ impl CpuCulledRenderer {
             .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
         let rows = input.scene.capacity().saturating_add(1);
         self.skins
-            .rebuild(input.scene, input.animations, self.settings.meshes())
+            .rebuild(
+                input.scene,
+                input.animations,
+                input.morphs,
+                self.settings.meshes(),
+            )
             .map_err(|_| RecordError::OutOfMemory {
                 bytes: rows.saturating_mul(4),
             })?;
         let limit = FrameBuilder::max_sources(self);
         let multi_draw = self.config.multi_draw;
         let targets = self.with_draw_index(self.graph.scene_targets());
-        let prepass = Prepass::OwnVertexShader.if_on(self.graph.depth_prepass());
+        self.layout_prepass = self.graph.depth_prepass();
+        let prepass = Prepass::OwnVertexShader.if_on(self.layout_prepass);
         let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
         self.layout.rebuild(
             settings, pipelines, skins, targets, input, limit, multi_draw, shadows, prepass,
@@ -536,7 +561,7 @@ impl CpuCulledRenderer {
                 place,
                 RESIDENT,
                 shadows,
-                |slot, key| skins.skinned(slot).then(|| skinned_in_vertex_shader(key)),
+                |slot, key| skins.key(slot, key),
             )
             .map_err(out_of_memory)?;
         let records = Transparent::records_bound(&self.sorted, self.config.multi_draw);
@@ -648,7 +673,7 @@ impl CpuCulledRenderer {
             + Transparent::upload_bound(&self.sorted, views, self.config.multi_draw)
             + cascades
             + shadows
-            + self.skins.upload_bound()
+            + self.skins.upload_bound(self.settings.meshes())
             + self.graph.upload_bound()
     }
 
@@ -673,6 +698,7 @@ impl CpuCulledRenderer {
             ],
         )?;
         dfg::create(list, ids::DFG)?;
+        ao::create_blank(list, ids::BLANK_AO)?;
         self.dfg_pending = true;
         self.created = true;
         Ok(())
@@ -693,7 +719,8 @@ impl CpuCulledRenderer {
         let limit = self.config.max_texture_size;
         let remade = if rebuilt {
             let mut remade = self.textures.size(list, &self.layout, limit)?;
-            remade.any |= self.skins.size(list, input.animations, limit)?;
+            let meshes = self.settings.meshes();
+            remade.any |= self.skins.size(list, input.animations, meshes, limit)?;
             remade
         } else {
             Default::default()
@@ -776,14 +803,26 @@ impl CpuCulledRenderer {
             }
             return Ok(());
         }
+        // Scene rows that changed close together upload in one write, as a span that grows until
+        // the next run lies too far from it.
+        let scene = input.scene.world(parity).matrices();
+        let mut span: Option<(u32, u32)> = None;
         for range in input.snapshot.uploads() {
             if range.target == SCENE_TARGET {
-                let scene = input.scene.world(parity).matrices();
-                if let Some((start, count)) =
+                let Some((start, count)) =
                     drawn_rows(&layout.drawn_slots, range.start, range.count)
-                {
-                    upload(list, 0, scene, start, count)?;
-                }
+                else {
+                    continue;
+                };
+                span = match span.and_then(|span| joined_rows(span, start, count)) {
+                    Some(joined) => Some(joined),
+                    None => {
+                        if let Some((first, rows)) = span {
+                            upload(list, 0, scene, first, rows)?;
+                        }
+                        Some((start, count))
+                    }
+                };
                 continue;
             }
             let Some(slot) = layout.batch(range.target).filter(|slot| !slot.dynamic) else {
@@ -799,6 +838,9 @@ impl CpuCulledRenderer {
                 range.start,
                 range.count,
             )?;
+        }
+        if let Some((first, rows)) = span {
+            upload(list, 0, scene, first, rows)?;
         }
         Ok(())
     }
@@ -882,11 +924,16 @@ impl CpuCulledRenderer {
         self.graph.set_transparent(!self.sorted.is_empty());
         self.graph.set_scaling(self.settings.render_scaling());
         self.graph.prepare(list, input.canvas, input.render_scale)?;
-        let shadow_maps = self
+        let (shadow_map, atlas) = self
             .graph
             .shadow_map()
             .zip(self.graph.shadow_atlas())
             .expect("the builder's graph binds a shadow map and a shadow atlas");
+        let lit = LitTextures {
+            shadow_map,
+            atlas,
+            occlusion: self.graph.ao_texture().unwrap_or(ids::BLANK_AO),
+        };
         let first_new = self.opaque.views();
         let lights_remade =
             self.light_textures
@@ -897,7 +944,7 @@ impl CpuCulledRenderer {
         let rebind = lights_remade || self.graph.textures_made();
         for index in 0..self.opaque.views() {
             if index >= first_new || rebind {
-                Opaque::bind_frame(list, ViewId::from_index(index), Some(shadow_maps))?;
+                Opaque::bind_frame(list, ViewId::from_index(index), Some(lit))?;
             }
         }
         let cascades = self.cascades();
@@ -938,7 +985,10 @@ impl CpuCulledRenderer {
             false
         };
         self.upload_resident(list, input, rebuilt || new_texture)?;
-        self.skins.upload(list, arena, input.animations)?;
+        self.skins.set_morph_cap(self.settings.morph_cap());
+        let meshes = self.settings.meshes();
+        self.skins
+            .upload(list, arena, input.animations, input.morphs, meshes)?;
         self.clusters.upload(list, arena, &self.layout)?;
         self.light_textures
             .upload(list, arena, &mut self.lights, input.frame)?;
@@ -1143,7 +1193,19 @@ impl FrameBuilder for CpuCulledRenderer {
             .plan(input, tile_settings, filter, camera.as_ref());
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows.
         let shadows = self.shadow.is_some() || self.tiles.shape().is_some();
-        if input.structure_changed || !self.layout.built || shadows != self.layouts_shadowed {
+        // Ambient occlusion reads the depth prepass's depth, so turning it on or off can switch
+        // the prepass, whose pipelines the layout holds.
+        let ao = self
+            .settings
+            .ao()
+            .zip(self.settings.camera_projection(canvas));
+        self.graph.set_ao(ao, self.settings.ao_scale());
+        let prepass_changed = self.graph.depth_prepass() != self.layout_prepass;
+        if input.structure_changed
+            || !self.layout.built
+            || shadows != self.layouts_shadowed
+            || prepass_changed
+        {
             self.rebuild_layout(input, shadows)?;
         }
         self.add_culled_views()?;

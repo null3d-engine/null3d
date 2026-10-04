@@ -64,6 +64,14 @@ import {
 } from './lens';
 import type { LineBatch, LineChecks, LineMode, LineOptions, LineValues } from './lines';
 import type { CoreMemory } from './memory';
+import {
+	type ObjectEventHandler,
+	type ObjectEventType,
+	PointerEvents,
+	type PointerInput,
+	type PointerListeners,
+	type PointerTarget,
+} from './pointer-events';
 import type { InstancingTemplate, PartTemplate, Prefab, TemplateNode } from './prefab';
 import {
 	type OverlapHit,
@@ -559,6 +567,8 @@ export class Object3D implements Described {
 	layerMask: number = C.LAYERS_DEFAULT;
 	/** @internal The object's animator, when a model with animations created the object. */
 	animation: Animator | undefined;
+	/** @internal The object's pointer event handlers, from its first `on`. */
+	pointerListeners: PointerListeners | undefined = undefined;
 
 	constructor(
 		/** @internal */ readonly scene: Scene,
@@ -853,11 +863,34 @@ export class Object3D implements Described {
 			this.scene.unmarkedWrites?.watch(this, false);
 		}
 		this.animation?.release();
+		this.scene.forgetListeners(this);
 		// The core checks the handle's generation, so a second destroy frees no other object.
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
 		this.row = 0;
 		this.scene.forget(this);
+	}
+
+	/**
+	 * Calls `handler` for each pointer event of `type` on the object: 'click', 'pointerdown',
+	 * 'pointerup', 'pointermove', 'pointerenter' or 'pointerleave'. An event on a child goes on to
+	 * its parents, so a handler on a model's group hears clicks on all its parts. The engine casts
+	 * a ray from the frame that was on screen at each event, against objects where they are now.
+	 * Handlers run on the sketch's thread at the start of the next frame, before `onUpdate`.
+	 */
+	on(type: ObjectEventType, handler: ObjectEventHandler): void {
+		if (DEV) checkLive('on', this);
+		this.scene.pointerEvents.add(this, type, handler);
+	}
+
+	/** Removes a handler that `on` added for events of `type`. */
+	off(type: ObjectEventType, handler: ObjectEventHandler): void {
+		this.scene.pointerEvents.remove(this, type, handler);
+	}
+
+	/** @internal The parent that the object's pointer events go on to. */
+	pointerParent(): PointerTarget | null {
+		return this.liveParent;
 	}
 
 	/** @internal Sets or clears one of the object's flags from the next frame. */
@@ -913,6 +946,17 @@ export class Mesh extends Object3D {
 	material: Material | undefined;
 	/** @internal The render order, as `setRenderOrder` gave it. */
 	renderOrder = 0;
+	/** @internal The mesh's block of morph weights in the engine core, plus one, or 0 for none. */
+	morphBlock = 0;
+	/** @internal The place of the block's first weight in the core's table of morph weights. */
+	morphFirst = 0;
+	/** @internal The weights that the block holds: the mesh's morph targets, or 0. */
+	morphCount = 0;
+	/**
+	 * @internal The first joint of the model's skeleton that animates the weights, or -1 when no
+	 * clip of the model animates them.
+	 */
+	morphJoint = -1;
 
 	/** @internal */
 	override twin(handle: number): Object3D {
@@ -920,7 +964,65 @@ export class Mesh extends Object3D {
 		twin.mesh = this.mesh;
 		twin.material = this.material;
 		twin.renderOrder = this.renderOrder;
+		twin.morphJoint = this.morphJoint;
 		return twin;
+	}
+
+	/**
+	 * Sets how far the mesh moves toward one of its morph targets, from the next frame: 0 keeps
+	 * the target's shape out, 1 adds all of it, and other numbers scale it. Like setting three.js's
+	 * `morphTargetInfluences[target]`. `target` is the target's number, from 0, or its name. A clip
+	 * that animates the weight blends its own value with this one while it plays, as three.js's
+	 * mixer does, and this one holds when no clip moves it. A WebGL2 device draws a preset's count
+	 * of each mesh's largest weights (the `morphTargets` quality setting). Throws E1218 for a
+	 * target that the mesh does not have, and E1203 for a weight that is not a finite number.
+	 */
+	setMorphWeight(target: number | string, weight: number): void {
+		const k = this.morphIndex('setMorphWeight', target);
+		if (DEV) checkNumber('setMorphWeight', 'weight', weight, this);
+		this.scene.morphWeights()[this.morphFirst + k] = weight;
+	}
+
+	/**
+	 * The weight of one of the mesh's morph targets, as `setMorphWeight` or the model's file set
+	 * it, without what a playing clip adds. Throws E1218 for a target that the mesh does not have.
+	 */
+	getMorphWeight(target: number | string): number {
+		return this.scene.morphWeights()[
+			this.morphFirst + this.morphIndex('getMorphWeight', target)
+		] as number;
+	}
+
+	/**
+	 * The number of the morph target that `target` names. A whole number below the target count
+	 * takes the short path, which the browser can inline into a sketch's frame code.
+	 */
+	private morphIndex(call: string, target: number | string): number {
+		return typeof target === 'number' && target >>> 0 === target && target < this.morphCount
+			? target
+			: this.morphTarget(call, target);
+	}
+
+	/** The number of a morph target that `target` names, or E1218 when the mesh lacks it. */
+	private morphTarget(call: string, target: number | string): number {
+		if (DEV) checkLive(call, this);
+		const names = this.mesh?.morphTargetNames ?? [];
+		const k = typeof target === 'string' ? names.indexOf(target) : target;
+		if (Number.isInteger(k) && k >= 0 && k < this.morphCount) return k;
+		const has =
+			this.morphCount === 0
+				? 'which has no morph targets'
+				: `which has ${this.morphCount} morph targets${names.length > 0 ? `: ${names.join(', ')}` : ''}`;
+		throw new EngineError(
+			'E1218',
+			`${call}() got ${typeof target === 'string' ? `"${target}"` : target}, which names no morph target of ${this.describe()}, ${has}.`,
+		);
+	}
+
+	/** Removes the object at the next frame, and frees its morph weights. Its children become roots. */
+	override destroy(): void {
+		super.destroy();
+		this.scene.releaseMorph(this);
 	}
 
 	/** Changes the material from the next frame. */
@@ -947,6 +1049,12 @@ export class Mesh extends Object3D {
 		this.scene.command(C.COMMAND_SET_MESH, this.handle, mesh.id, 0, 'setMesh');
 		this.mesh = mesh;
 		this.keepFlag(C.FLAG_CUSTOM_BOUNDS, false);
+		// A mesh of as many morph targets keeps its weights; another gets weights of its own.
+		if (mesh.morphTargets !== this.morphCount) {
+			this.scene.releaseMorph(this);
+			const block = this.scene.makeMorph(this, mesh, undefined, 'setMesh');
+			if (block !== 0) this.scene.command(C.COMMAND_SET_MORPH, this.handle, block, 0, 'setMesh');
+		}
 	}
 
 	/**
@@ -1109,8 +1217,9 @@ export abstract class Camera extends Object3D {
 	 * starts at the camera, and an orthographic ray on the near plane. The direction has length 1.
 	 *
 	 * When the point is the position of the pointer or a finger from `input`, the ray uses the
-	 * camera of the frame that was on screen at that event, if it is one of the last four frames.
-	 * So a click during a fast pan picks what the user saw. Any other point uses the camera of the
+	 * camera of the frame that was on screen at that event, if the engine still keeps it. It keeps
+	 * the last four views, and frames in a row with the same view count as one. So a click during
+	 * a fast pan picks what the user saw. Any other point uses the camera of the
 	 * frame that last ran, with its lens as it is now. Objects stay where they are now, so a moving
 	 * object can be up to a frame of its motion away from where the user saw it.
 	 */
@@ -1580,6 +1689,8 @@ export class InstanceBatch {
 	};
 	/** @internal */
 	destroyedFrame = -1;
+	/** @internal The batch's pointer event handlers, from its first `on`. */
+	pointerListeners: PointerListeners | undefined = undefined;
 
 	constructor(
 		private readonly scene: Scene,
@@ -1654,6 +1765,25 @@ export class InstanceBatch {
 		for (const part of this.parts) core.glue.setBatchLayers(part, mask >>> 0);
 	}
 
+	/**
+	 * Calls `handler` for each pointer event of `type` on a row of the batch, as `Object3D.on` does.
+	 * The event's `instance` names the row.
+	 */
+	on(type: ObjectEventType, handler: ObjectEventHandler): void {
+		if (DEV) checkLive('on', { destroyedFrame: this.destroyedFrame, describe: () => 'a batch' });
+		this.scene.pointerEvents.add(this, type, handler);
+	}
+
+	/** Removes a handler that `on` added for events of `type`. */
+	off(type: ObjectEventType, handler: ObjectEventHandler): void {
+		this.scene.pointerEvents.remove(this, type, handler);
+	}
+
+	/** @internal A batch has no parent for its pointer events to go on to. */
+	pointerParent(): PointerTarget | null {
+		return null;
+	}
+
 	/** @internal Places the origin that the rows of the batch and of its parts are relative to. */
 	setOrigin([x, y, z]: Vec3, call: string): void {
 		const { core } = this.scene;
@@ -1676,6 +1806,7 @@ export class InstanceBatch {
 		core.checkGrowth(core.glue.destroyBatch(this.id, this.scene.frame), 'destroy', undefined, true);
 		for (const part of this.parts) core.glue.destroyBatch(part, this.scene.frame);
 		if (DEV) this.scene.countBatchRows(-this.count * (1 + this.parts.length));
+		this.scene.forgetListeners(this);
 		this.destroyedFrame = this.scene.frame;
 		// The next read of the arrays asks the core for them again, and the core refuses a
 		// destroyed batch.
@@ -1851,6 +1982,8 @@ export class Scene {
 	private lineMesh: MeshGeometry | undefined;
 	/** Raycasts and overlap queries, made on the first query. */
 	private sceneQueries: SceneQueries | undefined;
+	/** Pointer events on objects, made on the first `on`. */
+	private objectEvents: PointerEvents | undefined;
 	/** Rows of the live instance batches, which development builds count. */
 	private batchRows = 0;
 	/** Every live object, which `clone` searches for the objects below the one it copies. */
@@ -1865,6 +1998,11 @@ export class Scene {
 	declare readonly unmarkedWrites: UnmarkedWrites | undefined;
 	/** @internal The scene's animated objects, from the first model with animations on. */
 	animations: SceneAnimations | undefined;
+	/** @internal True once an object has morph weights, so each frame's animation step runs. */
+	morphed = false;
+	/** The core's table of morph weights, made again after the engine's memory grew. */
+	private morphTable: Float32Array = new Float32Array(0);
+	private morphGeneration = -1;
 
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
@@ -1879,6 +2017,8 @@ export class Scene {
 		 * gives.
 		 */
 		private readonly makers?: SpriteMakers,
+		/** The input reader, whose pointer events reach objects' handlers. */
+		private readonly pointerInput?: PointerInput,
 	) {
 		if (DEV) this.unmarkedWrites = new UnmarkedWrites(this);
 	}
@@ -1891,10 +2031,40 @@ export class Scene {
 		return this.cameras;
 	}
 
+	/** @internal Pointer events on objects, made on the first call. */
+	get pointerEvents(): PointerEvents {
+		this.objectEvents ??= new PointerEvents(
+			{ pick: (frame, numbers, ray) => this.pick(frame, numbers, ray) },
+			this.pointerInput,
+		);
+		return this.objectEvents;
+	}
+
 	/**
-	 * @internal Keeps the active camera of sketch frame `frame`, which drew on a canvas of `width`
-	 * by `height` device pixels, so rays from that frame's input use it. The setup's frames are
-	 * frame 0.
+	 * Casts the ray of a pointer event from the camera of engine frame `frame`, or from the active
+	 * camera as it stands when the ring no longer holds the frame, on the camera's layers.
+	 */
+	private pick(frame: number, numbers: Float64Array, ray: Ray): PointerTarget | null {
+		const camera = this.activeCamera;
+		const live = camera !== undefined && camera.destroyedFrame < 0 ? camera : undefined;
+		const layers = this.frameCameras.frameRay(frame, numbers, ray, live);
+		return layers < 0 ? null : this.queries.pick(ray, layers, numbers);
+	}
+
+	/** @internal Calls the handlers of the pointer events that the input of this frame brought. */
+	dispatchPointerEvents(report: (error: unknown) => void): void {
+		this.objectEvents?.dispatch(report);
+	}
+
+	/** @internal Removes the pointer event handlers of an object or a batch that is destroyed. */
+	forgetListeners(target: PointerTarget): void {
+		if (target.pointerListeners !== undefined) this.objectEvents?.forget(target);
+	}
+
+	/**
+	 * @internal Keeps the active camera of engine frame `frame`, which drew on a canvas of `width`
+	 * by `height` device pixels, so rays from that frame's input use it. The engine's count includes
+	 * the frames that ran no sketch code, such as the setup's.
 	 */
 	keepFrameCamera(frame: number, width: number, height: number): void {
 		this.frameCameras.record(frame, this.activeCamera, width, height);
@@ -2030,6 +2200,60 @@ export class Scene {
 		out[1] = r[i + 1] as number;
 		out[2] = r[i + 2] as number;
 		out[3] = r[i + 3] as number;
+	}
+
+	/**
+	 * @internal The core's table of morph weights. Sketches set weights every frame, so the check
+	 * stays small enough for the browser to inline into their code.
+	 */
+	morphWeights(): Float32Array {
+		if (this.morphGeneration !== this.core.generation) this.morphView();
+		return this.morphTable;
+	}
+
+	private morphView(): void {
+		const { core } = this;
+		this.morphTable = core.f32(core.glue.morphWeightsAddress(), C.MORPH_MAX_WEIGHTS);
+		this.morphGeneration = core.generation;
+	}
+
+	/**
+	 * @internal Gives `mesh` a block of morph weights for `geometry`'s targets, which start at
+	 * `weights` or at 0, and returns the block's id plus one for its `SET_MORPH` command, or 0 for
+	 * a geometry without morph targets.
+	 */
+	makeMorph(
+		mesh: Mesh,
+		geometry: MeshGeometry,
+		weights: ArrayLike<number> | undefined,
+		call: string,
+	): number {
+		const count = geometry.morphTargets;
+		if (!count) return 0;
+		const { core } = this;
+		const block = core.checkGrowth(core.glue.createMorphWeights(count), call, mesh.label);
+		this.morphed = true;
+		mesh.morphBlock = block;
+		mesh.morphFirst = core.glue.morphWeightsFirst(block - 1);
+		mesh.morphCount = count;
+		this.morphView();
+		if (weights)
+			for (let k = 0; k < count; k++) this.morphTable[mesh.morphFirst + k] = weights[k] ?? 0;
+		return block;
+	}
+
+	/** @internal The weights of `mesh`'s block, copied, or none for a mesh without one. */
+	morphWeightsOf(mesh: Mesh): Float32Array | undefined {
+		if (mesh.morphBlock === 0) return undefined;
+		return this.morphWeights().slice(mesh.morphFirst, mesh.morphFirst + mesh.morphCount);
+	}
+
+	/** @internal Frees `mesh`'s block of morph weights, if it has one. */
+	releaseMorph(mesh: Mesh): void {
+		if (mesh.morphBlock === 0) return;
+		this.core.glue.destroyMorphWeights(mesh.morphBlock - 1);
+		mesh.morphBlock = 0;
+		mesh.morphCount = 0;
 	}
 
 	/**
@@ -2185,6 +2409,8 @@ export class Scene {
 		this.command(C.COMMAND_SET_MATERIAL, object.handle, material.id, 0, 'createMesh');
 		object.mesh = mesh;
 		object.material = material;
+		const block = this.makeMorph(object, mesh, undefined, 'createMesh');
+		if (block !== 0) this.command(C.COMMAND_SET_MORPH, object.handle, block, 0, 'createMesh');
 		return object;
 	}
 
@@ -2316,6 +2542,7 @@ export class Scene {
 		for (let k = 0; k < count; k++) {
 			const { mesh, layers, renderOrder } = node(k);
 			records += 1 + (mesh ? 1 : 0) + (layers !== C.LAYERS_DEFAULT ? 1 : 0);
+			if (mesh && mesh.morphTargets > 0) records++;
 			if (renderOrder !== 0) records++;
 		}
 		let write = this.reserveCommands(records, call);
@@ -2350,6 +2577,13 @@ export class Scene {
 				this.writeCommand(write++, C.COMMAND_SET_RENDER_ORDER, handle, bits, 0);
 			}
 			const object = this.makeObject(n, handle, call);
+			if (n.mesh && n.mesh.morphTargets > 0) {
+				const source = n.source as Mesh | undefined;
+				const weights = source ? this.morphWeightsOf(source) : n.morph?.weights;
+				const block = this.makeMorph(object as Mesh, n.mesh, weights, call);
+				this.writeCommand(write++, C.COMMAND_SET_MORPH, handle, block, 0);
+				if (n.morph) (object as Mesh).morphJoint = n.morph.joint;
+			}
 			object.parentObject = n.parent < 0 ? parent : (objects[n.parent] as Object3D);
 			object.flags = flags;
 			object.layerMask = n.layers;

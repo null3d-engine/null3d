@@ -208,6 +208,12 @@ export class SketchRunner {
 	private bloomOn = false;
 	/** The divisor of bloom's taps that the `bloomSamples` setting gives. */
 	private bloomSetting = 1;
+	/** True while the sketch has ambient occlusion on, as the governor knows it. */
+	private aoOn = false;
+	/** The scale of ambient occlusion's targets that the `aoScale` setting gives, in thousandths. */
+	private aoSetting = 0;
+	/** True while ambient occlusion draws: the sketch has it on, and its scale is above 0. */
+	private aoDrawn = false;
 	/** True once the core draws HDR color for an effect, on a device that started on the 8-bit path. */
 	private hdrForEffects = false;
 	/** The render scale in thousandths where the governor does not move it: the highest. */
@@ -254,9 +260,16 @@ export class SketchRunner {
 			device.largeWorld,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
-		const { shadowTiles, shadowTileSize, pointLightShadows, shadowCascades, shadowMapSize } =
-			sketch.quality.settings;
+		const {
+			shadowTiles,
+			shadowTileSize,
+			pointLightShadows,
+			shadowCascades,
+			shadowMapSize,
+			morphTargets,
+		} = sketch.quality.settings;
 		glue.setShadowTiles(shadowTiles, shadowTileSize, pointLightShadows);
+		glue.setMorphTargets(morphTargets);
 		// Directional lights that name no cascades or map size take the preset's.
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES, shadowCascades);
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE, shadowMapSize);
@@ -315,6 +328,9 @@ export class SketchRunner {
 				get bloomSamples() {
 					return 1 / governor.bloomDivisor;
 				},
+				get aoScale() {
+					return governor.aoScale / FULL_SCALE;
+				},
 			},
 		);
 		this.applyFrameSettings(this.quality.settings);
@@ -338,8 +354,13 @@ export class SketchRunner {
 			() => this.warmUp(),
 			new FrameCameras(this.core, sketch.control, this.input),
 			{ geometry, materials },
+			this.input,
 		);
-		this.post = new Post(this.core, device.effectsSceneColor !== FORMAT_CANVAS);
+		this.post = new Post(
+			this.core,
+			device.effectsSceneColor !== FORMAT_CANVAS,
+			device.occlusionTargets,
+		);
 		this.ui = new Ui(
 			controlLabels(slots.buffer),
 			scene,
@@ -581,12 +602,15 @@ export class SketchRunner {
 		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval);
 		this.bloomSetting = bloomDivisor(settings.bloomSamples);
 		governor.setBloom(this.bloomOn, this.bloomSetting);
+		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
+		governor.setAo(this.aoOn, this.aoSetting);
 		this.stepChanges = governor.stepChanges;
 		const { glue } = this.sketch;
 		if (
 			glue.setRenderScaling((settings.governor ? low : high) < FULL_SCALE) !== 0 ||
 			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0 ||
 			glue.setBloomSamples(governor.bloomDivisor) !== 0 ||
+			glue.setAoScale(governor.aoScale) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
 		)
 			this.report(coreFailure(glue, 'quality.set'));
@@ -602,10 +626,38 @@ export class SketchRunner {
 		this.stepChanges = governor.stepChanges;
 		if (
 			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0 ||
-			glue.setBloomSamples(governor.bloomDivisor) !== 0
+			glue.setBloomSamples(governor.bloomDivisor) !== 0 ||
+			glue.setAoScale(governor.aoScale) !== 0
 		)
 			this.report(coreFailure(glue, 'the quality governor'));
 		this.quality.governed();
+	}
+
+	/**
+	 * Follows the sketch's effects. Returns true when the frame has new targets and pipelines, so
+	 * the thread that draws holds it until they are built, and the frame before stays on screen
+	 * meanwhile.
+	 */
+	private followEffects(): boolean {
+		const ao = this.followAo();
+		const bloom = this.followBloom();
+		return ao || bloom;
+	}
+
+	/**
+	 * Follows the sketch's ambient occlusion: the governor's step needs it on. Returns true when it
+	 * starts or stops drawing: the frame adds or removes the depth prepass and the steps.
+	 */
+	private followAo(): boolean {
+		const on = this.post.aoOn;
+		if (on !== this.aoOn) {
+			this.aoOn = on;
+			this.governor.setAo(on, this.aoSetting);
+		}
+		const drawn = on && this.aoSetting > 0;
+		if (drawn === this.aoDrawn) return false;
+		this.aoDrawn = drawn;
+		return true;
 	}
 
 	/**
@@ -615,7 +667,7 @@ export class SketchRunner {
 	 * targets and pipelines, so the thread that draws holds it until they are built, and the frame
 	 * before stays on screen meanwhile.
 	 */
-	private followEffects(): boolean {
+	private followBloom(): boolean {
 		const on = this.post.bloomOn;
 		if (on === this.bloomOn) return false;
 		this.bloomOn = on;
@@ -706,16 +758,18 @@ export class SketchRunner {
 	}
 
 	/**
-	 * The animation step, once the scene has animated objects: advances their clips by `stepUs`
-	 * whole microseconds and poses them on the job workers. It counts as transform time, with the
-	 * transform update that follows it. The events it collects reach the sketch's handlers at the
-	 * start of the next frame's update.
+	 * The animation step, once the scene has animated or morphed objects: advances their clips by
+	 * `stepUs` whole microseconds, poses them on the job workers, and moves the bounds of skinned
+	 * and morphed objects, which marks them. It runs before the transform update and its check of
+	 * static objects. It counts as transform time, with the transform update that follows it. The
+	 * events it collects reach the sketch's handlers at the start of the next frame's update.
 	 */
 	private animate(stepUs: number): void {
-		const animations = this.context.scene.animations;
-		if (animations === undefined) return;
+		const { scene } = this.context;
+		if (scene.animations === undefined && !scene.morphed) return;
 		try {
-			animations.update(stepUs);
+			const step = this.sketch.glue.updateAnimations(stepUs);
+			this.core.check(step, 'the animation step', undefined, true);
 		} catch (error) {
 			this.report(error);
 		}
@@ -751,11 +805,14 @@ export class SketchRunner {
 		// Handlers that hear of a restart may create objects with new pipelines, so their frame
 		// waits for them.
 		let restart = false;
-		// The sketch's part of the frame: the input the page wrote, preference changes, the fixed
-		// steps and the update. It stays in this function: a call that passed the step on would
-		// allocate a number for it in every frame.
+		// The sketch's part of the frame: the input the page wrote and its pointer events on
+		// objects, preference changes, the fixed steps and the update. It stays in this function: a
+		// call that passed the step on would allocate a number for it in every frame.
 		if (play) {
-			if (this.holdSeconds === undefined) this.input.beginFrame(frame, frame - time.frame);
+			if (this.holdSeconds === undefined) {
+				this.input.beginFrame(frame, frame - time.frame);
+				this.context.scene.dispatchPointerEvents(this.reportError);
+			}
 			const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 			if (reducedMotion !== this.reducedMotion) {
 				this.reducedMotion = reducedMotion;
@@ -840,9 +897,9 @@ export class SketchRunner {
 		if (glue.recordFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		Atomics.store(slots, Slot.RenderScale, scale);
-		// Input names frames in the sketch's count. Each frame of the setup is frame 0 in that count,
-		// and a click can come while one is on screen, so the setup's frames keep their camera too.
-		this.context.scene.keepFrameCamera(time.frame, width, height);
+		// Input names frames in the engine's count, so each frame of the setup and of the preset
+		// check keeps its own camera: a click can come while any of them is on screen.
+		this.context.scene.keepFrameCamera(frame, width, height);
 		// Every frame places the labels, as the thread that draws presents each one.
 		try {
 			this.ui.project(frame, width, height);

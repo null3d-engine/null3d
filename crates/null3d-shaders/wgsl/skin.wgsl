@@ -1,27 +1,38 @@
-// The skinning pass: one thread per vertex of each part of each skinned mesh that some view draws
-// in the frame. A thread reads its vertex from the mesh page that holds the part, blends the
-// skinning matrices of the vertex's four joints by their weights, and writes the skinned vertex
-// into the skinned vertex buffer, where the shadow and main passes draw it as a plain mesh.
+// The skinning pass: one thread per vertex of each part of each skinned or morphed mesh that some
+// view draws in the frame. A thread reads its vertex from the mesh page that holds the part, adds
+// its morph target deltas times their weights, blends the skinning matrices of the vertex's four
+// joints by their weights, and writes the vertex into the skinned vertex buffer, where the shadow
+// and main passes draw it as a plain mesh.
 //
 // A dispatch covers the parts of one mesh page, whose vertices all have the page's vertex format.
 // The table names the format and each part, which the CPU lists each frame:
 //
 // - entry 0: the part count, then padding;
 // - entries 1 to 3: the format: the strides of a source and a skinned vertex in 32-bit words, and
-//   where each attribute sits, each a word offset in the low byte and the type code above it;
-//   the tangent's skinned offset in the third byte, or every bit set for no tangent; and two runs
+//   where each attribute sits, each a word offset in the low byte and the type code above it, or
+//   every bit set for an attribute that the format lacks; the tangent's skinned offset in the
+//   third byte; then the joints, the weights and the morph attribute; and two runs
 //   of words that the pass copies unchanged (the texture coordinates, then the color), each its
 //   source offset, its skinned offset and its length in words, a byte each;
 // - two entries per part: its first workgroup, its vertex count, its first vertex in the page and
 //   its first word in the skinned vertex buffer; then the first joint of its animated instance in
-//   the joint texture, and padding.
+//   the joint texture, or every bit set for a mesh that no joint skins, the first texel of its
+//   object's morph weights in the morph texture, and padding.
 //
 // A skinned vertex has its position, then its normal, as 32-bit floats, then the source's other
 // attributes in their order, with a tangent as 32-bit floats. Each attribute takes whole words, so
 // the skinned vertex is the mesh's vertex format without joints and weights.
 //
-// Skinning follows three.js's: the weights are used as they are, and the normal and the tangent's
-// direction turn by each joint's matrix without its translation.
+// Morphing and skinning follow three.js's: each morph target moves the position, the normal and
+// the tangent by its deltas times its weight, before skinning. The joint weights are used as they
+// are, and the normal and the tangent's direction turn by each joint's matrix without its
+// translation.
+//
+// The morph attribute names the vertex's entries in the morph texture (see the renderer's morph
+// module): its first entry's texel, then its entry count times four plus 1 when entries hold a
+// normal's delta and 2 when they hold a tangent's. An entry is the position's delta with the
+// target's number, then the normal's and the tangent's deltas, in half floats. The weights sit in
+// a texture of their own, four to a texel.
 //
 // Each workgroup finds its part with a binary search of the parts' first workgroups. The joint
 // texture holds each joint's three matrix rows in three texels, JOINTS_PER_ROW joints per row.
@@ -29,7 +40,9 @@
 /// Threads per workgroup.
 const WORKGROUP_SIZE: u32 = 64u;
 /// Joints per row of the joint texture.
-const JOINTS_PER_ROW: u32 = 1024u;
+const JOINTS_PER_ROW: u32 = 512u;
+/// Texels per row of the morph texture.
+const MORPH_TEXELS_PER_ROW: u32 = 2048u;
 /// Table entries before the first part: the count, then the format.
 const HEADER: u32 = 4u;
 /// A field of the format that names no attribute.
@@ -39,6 +52,8 @@ const NONE: u32 = 0xffffffffu;
 @group(0) @binding(1) var<storage, read> source: array<u32>;
 @group(0) @binding(2) var<storage, read_write> skinned: array<u32>;
 @group(0) @binding(3) var joints: texture_2d<f32>;
+@group(0) @binding(4) var morph_texels: texture_2d<f32>;
+@group(0) @binding(5) var morph_weights: texture_2d<f32>;
 
 /// Component `c` of the attribute that `field` places, in the source vertex at word `vertex`, as
 /// a vertex shader reads it: a float, a normalized integer as a fraction, or a plain integer as
@@ -74,6 +89,52 @@ fn vector(vertex: u32, field: u32) -> vec3f {
 fn joint_row(joint: u32, row: u32) -> vec4f {
     let x = (joint % JOINTS_PER_ROW) * 3u + row;
     return textureLoad(joints, vec2u(x, joint / JOINTS_PER_ROW), 0);
+}
+
+/// Texel `k` of the texture of deltas.
+fn morph_texel(k: u32) -> vec4f {
+    return textureLoad(morph_texels, vec2u(k % MORPH_TEXELS_PER_ROW, k / MORPH_TEXELS_PER_ROW), 0);
+}
+
+/// Texel `k` of the texture of weights.
+fn morph_weight_texel(k: u32) -> vec4f {
+    return textureLoad(morph_weights, vec2u(k % MORPH_TEXELS_PER_ROW, k / MORPH_TEXELS_PER_ROW), 0);
+}
+
+/// A vertex's position, normal and tangent direction.
+struct Morphed {
+    position: vec3f,
+    normal: vec3f,
+    tangent: vec3f,
+}
+
+/// `rest` moved by the entries that `range` names, each by its target's weight among the texels
+/// from `weights` on.
+fn morphed(rest: Morphed, range: vec2f, weights: u32) -> Morphed {
+    var out = rest;
+    let first = u32(range.x);
+    let word = u32(range.y);
+    let stride = 1u + (word & 1u) + ((word >> 1u) & 1u);
+    let count = word >> 2u;
+    for (var k = 0u; k < count; k++) {
+        let at = first + k * stride;
+        let entry = morph_texel(at);
+        let t = u32(entry.w);
+        let w = morph_weight_texel(weights + t / 4u)[t % 4u];
+        if w == 0.0 {
+            continue;
+        }
+        out.position += w * entry.xyz;
+        var next = at + 1u;
+        if (word & 1u) != 0u {
+            out.normal += w * morph_texel(next).xyz;
+            next += 1u;
+        }
+        if (word & 2u) != 0u {
+            out.tangent += w * morph_texel(next).xyz;
+        }
+    }
+    return out;
 }
 
 /// Copies a run of words unchanged: `run` holds its source offset, its skinned offset and its
@@ -115,32 +176,45 @@ fn main(
     if parts == 0u || v >= part.y {
         return;
     }
-    let first_joint = table[HEADER + 2u * low + 1u].x;
+    let object = table[HEADER + 2u * low + 1u];
     let strides = table[1];
     let more = table[2];
     let runs = table[3];
     let vertex = (part.z + v) * strides.x;
     let out = part.w + v * strides.y;
 
-    var row_x = vec4f(0.0);
-    var row_y = vec4f(0.0);
-    var row_z = vec4f(0.0);
-    for (var k = 0u; k < 4u; k++) {
-        let weight = component(vertex, more.z, k);
-        if weight == 0.0 {
-            continue;
-        }
-        let joint = first_joint + u32(component(vertex, more.y, k));
-        row_x += weight * joint_row(joint, 0u);
-        row_y += weight * joint_row(joint, 1u);
-        row_z += weight * joint_row(joint, 2u);
+    var rest = Morphed(vector(vertex, strides.z), vector(vertex, strides.w), vec3f(0.0));
+    if more.x != NONE {
+        rest.tangent = vector(vertex, more.x);
     }
-    let p = vec4f(vector(vertex, strides.z), 1.0);
+    if more.w != NONE && object.y != NONE {
+        let range = vec2f(component(vertex, more.w, 0u), component(vertex, more.w, 1u));
+        rest = morphed(rest, range, object.y);
+    }
+    var row_x = vec4f(1.0, 0.0, 0.0, 0.0);
+    var row_y = vec4f(0.0, 1.0, 0.0, 0.0);
+    var row_z = vec4f(0.0, 0.0, 1.0, 0.0);
+    if object.x != NONE && more.y != NONE {
+        row_x = vec4f(0.0);
+        row_y = vec4f(0.0);
+        row_z = vec4f(0.0);
+        for (var k = 0u; k < 4u; k++) {
+            let weight = component(vertex, more.z, k);
+            if weight == 0.0 {
+                continue;
+            }
+            let joint = object.x + u32(component(vertex, more.y, k));
+            row_x += weight * joint_row(joint, 0u);
+            row_y += weight * joint_row(joint, 1u);
+            row_z += weight * joint_row(joint, 2u);
+        }
+    }
+    let p = vec4f(rest.position, 1.0);
     store(out, vec3f(dot(row_x, p), dot(row_y, p), dot(row_z, p)));
-    let n = vector(vertex, strides.w);
+    let n = rest.normal;
     store(out + 3u, vec3f(dot(row_x.xyz, n), dot(row_y.xyz, n), dot(row_z.xyz, n)));
     if more.x != NONE {
-        let t = vector(vertex, more.x);
+        let t = rest.tangent;
         let at = out + ((more.x >> 16u) & 0xffu);
         store(at, vec3f(dot(row_x.xyz, t), dot(row_y.xyz, t), dot(row_z.xyz, t)));
         skinned[at + 3u] = bitcast<u32>(component(vertex, more.x, 3u));

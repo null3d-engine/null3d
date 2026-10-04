@@ -13,12 +13,14 @@
 //!
 //! # Bounds
 //!
-//! A skinned object culls with a sphere of its own, which [`update_bounds`] writes after each
-//! animation step. Each joint of the mesh has a sphere around the vertices that it moves (see
-//! [`crate::meshes::joint_spheres`]). A skinned vertex is a weighted average of its joints'
-//! matrices applied to it, and each matrix keeps the vertex inside its joint's moved sphere, so a
-//! sphere around every moved joint sphere holds the whole pose, whatever limbs swing out. It
-//! costs one matrix product per joint, not per vertex.
+//! A skinned or morphed object culls with a sphere of its own, which [`update_bounds`] writes
+//! before each transform update. Each joint of the mesh has a sphere around the vertices that it
+//! moves (see [`crate::meshes::joint_spheres`]). A skinned vertex is a weighted average of its
+//! joints' matrices applied to it, and each matrix keeps the vertex inside its joint's moved
+//! sphere, so a sphere around every moved joint sphere holds the whole pose, whatever limbs swing
+//! out. It costs one matrix product per joint, not per vertex. Morph targets move each vertex
+//! before it is skinned by at most their reach times their weights (see [`crate::morph::reach`]),
+//! so each joint sphere grows by that much first.
 //!
 //! # The joint texture
 //!
@@ -30,16 +32,19 @@
 
 use null3d_core::animation::Animations;
 use null3d_core::math::max_axis_scale;
+use null3d_core::morph::{MAX_TARGETS, MorphWeights};
 use null3d_core::scene::SceneStorage;
 use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::drawlist::{DrawList, Op, format, permutation, texture_usage, vertex, view};
 
 use crate::frame::{RecordError, address, floats_as_bytes};
 use crate::meshes::{MeshSlot, MeshStorage};
+use crate::morph::{morph_of, posed_weights, reach};
 use crate::pipelines::DrawKey;
 
-/// Joints per row of the joint texture.
-pub const JOINTS_PER_ROW: u32 = 1024;
+/// Joints per row of the joint texture. A row's texels fit the narrowest texture that WebGL2
+/// allows, as the other data textures' rows do.
+pub const JOINTS_PER_ROW: u32 = 512;
 /// Texels per joint: one per row of its 3 × 4 matrix.
 pub const TEXELS_PER_JOINT: u32 = 3;
 /// Bytes of one row of the joint texture: a row of joints' matrices, as the matrix buffer holds
@@ -79,9 +84,10 @@ pub fn skin_of(
         .filter(|&(_, joints)| mesh.joints <= joints)
 }
 
-/// The vertex format of a skinned mesh's vertices once a compute pass has skinned them: the
-/// mesh's format without its joints and weights, with positions, normals and tangents as 32-bit
-/// floats. The other attributes keep their types, as the pass copies them unchanged.
+/// The vertex format of a skinned or morphed mesh's vertices once a compute pass has skinned and
+/// morphed them: the mesh's format without its joints, weights and morph attribute, with
+/// positions, normals and tangents as 32-bit floats. The other attributes keep their types, as the
+/// pass copies them unchanged.
 pub fn skinned_format(format: u32) -> u32 {
     let mut types = 0;
     for location in [
@@ -93,7 +99,7 @@ pub fn skinned_format(format: u32) -> u32 {
     ] {
         types |= vertex::ATTRIBUTES[location].mask();
     }
-    format & !(vertex::JOINTS | vertex::WEIGHTS | types)
+    format & !(vertex::JOINTS | vertex::WEIGHTS | vertex::MORPH | types)
 }
 
 /// The pipeline that skins an object in its vertex shader, as WebGL2 draws skinned objects
@@ -106,15 +112,25 @@ pub fn skinned_in_vertex_shader(key: DrawKey) -> DrawKey {
     }
 }
 
-/// Writes the bounding sphere of every skinned object from its pose in the animation table's
-/// last step, in the object's space, for the transform update that follows (see the module
-/// documentation). Joints past the instance's skeleton are left out. It allocates nothing.
-pub fn update_bounds(scene: &mut SceneStorage, animations: &Animations, meshes: &MeshStorage) {
-    let matrices = animations.matrices();
-    let slots = scene.skins().len();
-    for slot in 0..slots {
-        let skin = scene.skins()[slot];
-        if skin == 0 {
+/// Writes the bounding sphere of every skinned or morphed object, in the object's space, for the
+/// transform update that follows (see the module documentation): from its pose in the animation
+/// table's last step, grown by how far its morph weights move its vertices. Joints past the
+/// instance's skeleton are left out. A sphere that did not change leaves the object as it is. It
+/// allocates nothing.
+pub fn update_bounds(
+    scene: &mut SceneStorage,
+    animations: Option<&Animations>,
+    morphs: &MorphWeights,
+    meshes: &MeshStorage,
+) {
+    // Without clips or morph weights, no object is posed.
+    if animations.is_none() && morphs.values().is_empty() {
+        return;
+    }
+    let mut weights = [0.0f32; MAX_TARGETS as usize];
+    for slot in 0..scene.skins().len() {
+        let (skin, morph) = (scene.skins()[slot], scene.morphs()[slot]);
+        if skin == 0 && morph == 0 {
             continue;
         }
         let Some(mesh) = scene.meshes()[slot]
@@ -123,19 +139,40 @@ pub fn update_bounds(scene: &mut SceneStorage, animations: &Animations, meshes: 
         else {
             continue;
         };
-        let Some((first, joints)) = animations.instance_joints(skin - 1) else {
-            continue;
+        let extra = morph_of(scene, morphs, meshes, slot).map_or(0.0, |block| {
+            let weights = &mut weights[..block.count as usize];
+            posed_weights(block, morphs, animations, weights);
+            reach(meshes, mesh, weights)
+        });
+        let pose = animations
+            .zip(skin.checked_sub(1))
+            .and_then(|(animations, instance)| {
+                let (first, joints) = animations.instance_joints(instance)?;
+                let matrices = animations.matrices();
+                Some(&matrices[first as usize * MATRIX_FLOATS..][..joints as usize * MATRIX_FLOATS])
+            });
+        let sphere = match pose.and_then(|pose| posed_sphere(meshes, mesh, pose, extra)) {
+            Some(sphere) => sphere,
+            None if morph != 0 => ([0.0; 3], mesh.radius + extra),
+            None => continue,
         };
-        let pose = &matrices[first as usize * MATRIX_FLOATS..][..joints as usize * MATRIX_FLOATS];
-        if let Some((center, radius)) = posed_sphere(meshes, mesh, pose) {
-            scene.set_local_sphere(slot as u32, center, radius);
+        let s = slot;
+        let same = scene.local_radii()[s] == sphere.1
+            && scene.local_centers()[s * 3..s * 3 + 3] == sphere.0;
+        if !same {
+            scene.set_local_sphere(slot as u32, sphere.0, sphere.1);
         }
     }
 }
 
-/// The sphere around a mesh's joint spheres moved by the skinning matrices of `pose`, or `None`
-/// for a mesh whose joints move no vertex.
-fn posed_sphere(meshes: &MeshStorage, mesh: &MeshSlot, pose: &[f32]) -> Option<([f32; 3], f32)> {
+/// The sphere around a mesh's joint spheres, each grown by `extra`, moved by the skinning matrices
+/// of `pose`, or `None` for a mesh whose joints move no vertex.
+fn posed_sphere(
+    meshes: &MeshStorage,
+    mesh: &MeshSlot,
+    pose: &[f32],
+    extra: f32,
+) -> Option<([f32; 3], f32)> {
     let moved = |(joint, sphere): (usize, &[f32; 4])| {
         let m: &[f32; MATRIX_FLOATS] = pose
             .get(joint * MATRIX_FLOATS..(joint + 1) * MATRIX_FLOATS)?
@@ -148,7 +185,7 @@ fn posed_sphere(meshes: &MeshStorage, mesh: &MeshSlot, pose: &[f32]) -> Option<(
             let r = &m[row * 4..row * 4 + 4];
             r[0] * sphere[0] + r[1] * sphere[1] + r[2] * sphere[2] + r[3]
         });
-        Some((c, sphere[3] * max_axis_scale(m)))
+        Some((c, (sphere[3] + extra) * max_axis_scale(m)))
     };
     let spheres = meshes.joint_spheres(mesh);
     let (mut low, mut high) = ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]);
@@ -200,17 +237,19 @@ impl JointTexture {
     }
 
     /// Records the texture's creation when it does not exist yet, with a row for every
-    /// [`JOINTS_PER_ROW`] joints that the animation table can hold. Returns true when it made the
-    /// texture, which bind groups that read it must see.
+    /// [`JOINTS_PER_ROW`] joints that the animation table can hold, or one row before the scene
+    /// has an animation table, for the bind groups of morphed objects that no joint skins.
+    /// Returns true when it made the texture, which bind groups that read it must see.
     pub(crate) fn create(
         &mut self,
         list: &mut DrawList,
-        animations: &Animations,
+        animations: Option<&Animations>,
     ) -> Result<bool, RecordError> {
-        if self.exists() {
+        let rows = animations.map_or(1, |a| a.joint_capacity().div_ceil(JOINTS_PER_ROW).max(1));
+        if self.rows >= rows {
             return Ok(false);
         }
-        self.rows = animations.joint_capacity().div_ceil(JOINTS_PER_ROW).max(1);
+        self.rows = rows;
         list.push(
             Op::CreateTexture,
             &[
@@ -283,6 +322,25 @@ mod tests {
     use super::*;
     use crate::geometry::Geometry;
     use crate::meshes::{Packing, joint_spheres};
+
+    #[test]
+    fn the_shaders_read_the_joint_texture_as_it_is_written_and_it_fits_every_device() {
+        let line = format!("const JOINTS_PER_ROW: u32 = {JOINTS_PER_ROW}u;");
+        for (name, shader) in [
+            (
+                "skin.wgsl",
+                include_str!("../../null3d-shaders/wgsl/skin.wgsl"),
+            ),
+            (
+                "lib/mesh.wgsl",
+                include_str!("../../null3d-shaders/wgsl/lib/mesh.wgsl"),
+            ),
+        ] {
+            assert!(shader.contains(&line), "{name} lacks {line}");
+        }
+        let narrowest = crate::cpu_culled::CpuCulledConfig::default().max_texture_size;
+        assert!(JOINTS_PER_ROW * TEXELS_PER_JOINT <= narrowest);
+    }
 
     /// A chain of `joints` joints up the y axis, one unit apart, with no turn at rest.
     fn chain(joints: u32) -> Skeleton {
@@ -398,7 +456,7 @@ mod tests {
         );
 
         // At rest the column stands from y = -0.5 to 2.5 around its middle ring.
-        update_bounds(&mut scene, &animations, &meshes);
+        update_bounds(&mut scene, Some(&animations), &MorphWeights::new(), &meshes);
         assert_eq!(
             &scene.local_centers()[slot * 3..slot * 3 + 3],
             &[0.0, 1.0, 0.0]
@@ -411,7 +469,8 @@ mod tests {
             let x = if j == 2 { 10.0 } else { 0.0 };
             m.copy_from_slice(&[1.0, 0.0, 0.0, x, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
         }
-        let (center, radius) = posed_sphere(&meshes, meshes.mesh(mesh).unwrap(), pose).unwrap();
+        let (center, radius) =
+            posed_sphere(&meshes, meshes.mesh(mesh).unwrap(), pose, 0.0).unwrap();
         for ring in 0..3 {
             let x = if ring == 2 { 10.0 } else { 0.0 };
             for [dx, dz] in [[0.5, 0.0], [-0.5, 0.0], [0.0, 0.5], [0.0, -0.5]] {
@@ -495,7 +554,7 @@ mod tests {
                     m[row * 4 + 3] = 3.0 * next();
                 }
             }
-            let (center, radius) = posed_sphere(&meshes, &slot, &pose).unwrap();
+            let (center, radius) = posed_sphere(&meshes, &slot, &pose, 0.0).unwrap();
             for v in 0..geometry.vertex_count() {
                 let p = geometry.position(v);
                 let joints = geometry.values(v, JOINTS_LOCATION);
