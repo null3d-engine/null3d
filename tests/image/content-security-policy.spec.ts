@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { POLICY_WITHOUT_WASM, STRICT_POLICY } from '../lib/content-security-policy.ts';
 import { ENGINE_MODES, type EngineResult, engineProblems } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -6,10 +7,6 @@ import { pageResult } from '../lib/page-result.ts';
 // every file from the page's own origin, WebAssembly allowed, and no other code. The production
 // build runs these tests, because a bundler decides which addresses the engine fetches: an
 // address that Vite inlines as data: is blocked by such a policy, which the dev server never shows.
-
-/** The strict policy. The test page's own style element needs inline styles; the engine needs none. */
-const STRICT =
-	"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self' 'unsafe-inline'";
 
 /**
  * Serves every response to the page with `policy`, as a host that sets the header on every file
@@ -37,7 +34,7 @@ for (const mode of ENGINE_MODES)
 	test(`the engine starts under a strict Content-Security-Policy, ${mode.name}`, async ({
 		page,
 	}) => {
-		const violations = await withPolicy(page, STRICT);
+		const violations = await withPolicy(page, STRICT_POLICY);
 		await page.goto(`engine.html?gpu=webgl2&seconds=1&${mode.query}`);
 		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 		expect(result.error).toBeUndefined();
@@ -51,7 +48,7 @@ for (const mode of ENGINE_MODES.filter(({ name }) =>
 	test(`a policy without 'wasm-unsafe-eval' stops the start with E1418, ${mode.name}`, async ({
 		page,
 	}) => {
-		await withPolicy(page, STRICT.replace(" 'wasm-unsafe-eval'", ''));
+		await withPolicy(page, POLICY_WITHOUT_WASM);
 		await page.goto(`engine.html?gpu=webgl2&seconds=1&${mode.query}`);
 		const result = await pageResult<{ error?: string }>(page, 30_000);
 		expect(result.error ?? '').toMatch(

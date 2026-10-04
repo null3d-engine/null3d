@@ -206,6 +206,31 @@ M2-E1 reserved the opcode numbers that other M2 tasks need, so lanes that work a
 - An upload of a band of rows reads the image from a row inside it: `copyExternalImageToTexture` takes an origin, and WebGL2 applies `UNPACK_SKIP_PIXELS` and `UNPACK_SKIP_ROWS` to image bitmaps.
 - The sketch thread reads the texture constants from the core's generated module, not the GPU layer's. A value import of the GPU layer's constants would put them in a file of their own, which the size report refuses.
 
+## Switches in the page's address
+
+- The engine reads its test switches, such as `?gpu=`, `?hold=` and `?bench`, only in development builds. A production build reads them only when its Vite plugin has `urlSwitches: true` (`URL_SWITCHES` in `shared/dev.ts`). A shipped game ignores them. Otherwise a link could start 255 job workers on a phone or freeze the game in hold mode. It could also put the engine on `window` for any script (review R3, R3-14).
+- The repository's Vite configs turn the option on, because the production build tests and the benchmarks set the switches in the address. The `null3d` command defines the same constant for its production runs, so it works with a project's own config.
+- Without the option, the plugin leaves the constant undefined, and the engine follows its development flag. A build that defines the constant itself, as the `null3d` command does, keeps its value.
+- `?jobs=` starts at most one job worker for each logical core, and `?memory=` counts only from 256 to 4096 MiB, the range of the `memory` option. A value outside counts as no switch, as other bad switch values do.
+- The development flag and this one live in one module. It holds constants only, so the bundler folds them into each file that reads them. The files that load on first use still share no module with the start's files (review R8, R8-11).
+
+## Public type declarations
+
+- The package build strips members marked `@internal` from the type declarations (`--stripInternal`). Users then do not see the engine's own methods, such as the label projection of `ctx.ui` (review R3, R3-13). The build fails if a declaration still holds an `@internal` tag.
+- A class that only the engine makes marks its constructor `@internal`. Stripping it would leave the class constructible with no arguments, so the build writes `protected constructor();` in its place. Protected, not private, so that the engine's own subclasses still type check.
+- The internal entry point that tests import (`src/internal.ts`) leaves the package. The tarball check fails if it returns (review R8, R8-10).
+
+## Loading WebAssembly under a strict policy
+
+A game may send a strict Content-Security-Policy, such as `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'`. The engine starts under it in every thread mode. The production build tests (`tests/image/content-security-policy.spec.ts`) and the fresh-project test (`tests/fresh-project.ts`) check that.
+
+- The page reads the core's memory limits from the core itself (`readMemoryLimits` in `shared/wasm.ts`). It splits the core's download in two. The browser compiles one copy as it arrives, and the page reads the other only up to the import section, which holds the memory's limits. The page then makes the shared memory before the compile ends, as it did before.
+- The limits were once a 46-byte JSON file. Vite turns any file under 4 KB into a `data:` address, and the page fetched that address. A policy's `connect-src`, or its `default-src`, blocks such a fetch, so a threaded page did not start under a normal strict policy (review R8, R8-01). Reading the core also takes one request away from the start.
+- The core's glue and module addresses carry `?no-inline`, as the KTX2 transcoder's do. The glue is about 45 KB. A game that raises Vite's inline limit above that would get the glue as a `data:` address, and `script-src 'self'` blocks an import of one.
+- A compile that fails tells the reason apart. The loader compiles the smallest valid module. If that fails too, the page's policy blocks WebAssembly, and the error is E1418, which names `'wasm-unsafe-eval'`. Otherwise the error is E1406. The file is then damaged, or it is not WebAssembly, such as a web page that a host sends in its place. Each names the file by its role, not by its address, which can be a long `data:` address.
+- A browser starts a dedicated worker only from a script on the page's own origin. A CDN with every header cannot change that. So the page catches the refusal of a worker's constructor and rejects with E1405, which says so. Starting workers from a CDN through a same-origin bootstrap is M2-R18's work.
+- A start that fails before the job workers have the core marks the engine as stopped before it stops them. Each job worker's start then fails with "the engine stopped". The page no longer reports that as a false E1405 for each job worker (review R8, R8-08).
+
 ## KTX2 textures
 
 - `assets.loadTexture` finds a KTX2 file by its first 12 bytes, and imports the KTX2 loader (`scene/ktx2.ts`) only then. The loader reads the file's header on the sketch thread. It picks the format from the device's capability flags, which the page sets from the probe's WebGPU features or WebGL2 extensions.

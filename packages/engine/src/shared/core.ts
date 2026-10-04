@@ -230,6 +230,17 @@ export interface CoreGlue extends CoreErrors {
 	 * Returns the mesh id.
 	 */
 	createMeshFromArrays(vertices: number, indices: number, layout: number, types: number): number;
+	/**
+	 * Gives a mesh the tree over its triangles that a model file stores, from the first `bytes`
+	 * bytes at `meshArrays`'s address. 1 when the mesh takes it, 0 when the tree does not fit the
+	 * mesh, which then gets a tree of its own on the first query.
+	 */
+	setMeshBvh(mesh: number, bytes: number): number;
+	/**
+	 * Gives a mesh a blocker of its own for software occlusion culling: `vertices` corners of three
+	 * floats, then `indices` indices, at `meshArrays`'s address. 1 when the mesh takes it.
+	 */
+	setMeshBlocker(mesh: number, vertices: number, indices: number): number;
 	meshRadius(mesh: number): number;
 	/**
 	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
@@ -548,6 +559,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createShapeMesh',
 	'meshArrays',
 	'createMeshFromArrays',
+	'setMeshBvh',
+	'setMeshBlocker',
 	'meshRadius',
 	'createMaterial',
 	'setMaterialValue',

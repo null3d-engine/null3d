@@ -209,7 +209,7 @@ The governor lowers the far cascades' rate and the shadow filter when frames run
 
 ## Blockers on WebGL2
 
-On WebGL2, objects marked with `setOccluder(true)` or the `occluder` option hide what lies wholly behind them, and the GPU skips it. The job workers draw the blockers into a small depth buffer each frame, so each blocker costs CPU time on them. Mark a few large, solid objects that hide many others, such as the buildings along a street. Then compare `occludedEntries` with `visibleEntries` in `measure`, and the job workers' time with the `softwareOcclusion` setting on and off. [Culling](../concepts/culling.md#software-occlusion-culling-on-webgl2) explains the method and its limits.
+On WebGL2, objects marked with `setOccluder(true)` or the `occluder` option hide what lies wholly behind them, and the GPU skips it. The job workers draw the blockers into a small depth buffer each frame, so each blocker costs CPU time on them. Mark a few large, solid objects that hide many others, such as the buildings along a street. A model from `assets optimize` blocks with every mesh that got a blocker, small props too. Each such blocker takes only a few dozen triangles, and the engine skips those under 2 pixels of the buffer. Where the job workers' time grows, keep the small ones from blocking with `setOccluder(false)`, or with `"occluder": false` in the mesh's extras ([Blockers and stored trees](assets-pipeline.md#blockers-and-stored-trees)). Then compare `occludedEntries` with `visibleEntries` in `measure`, and the job workers' time with the `softwareOcclusion` setting on and off. [Culling](../concepts/culling.md#software-occlusion-culling-on-webgl2) explains the method and its limits.
 
 ## The depth prepass
 

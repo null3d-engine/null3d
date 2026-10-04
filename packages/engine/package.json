@@ -46,7 +46,8 @@
 		"environments",
 		"docs",
 		"LICENSE-MIT",
-		"LICENSE-APACHE"
+		"LICENSE-APACHE",
+		"THIRD-PARTY-NOTICES.txt"
 	],
 	"publishConfig": {
 		"access": "public",

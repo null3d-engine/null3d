@@ -70,6 +70,15 @@ three.js's WebGPU renderer (0.186) skins in the vertex shader, as its WebGL rend
 - WebGL2 (M2-C4) skins in the vertex shader, by D-10, with the same joint texture and the GLSL builds of the same SKIN code.
 - The record is in the table in [README.md](README.md).
 
+## Addendum, 2026-10-04: what decides this record
+
+The technique review and the owner's rulings of 4 October 2026 ([D-53](D-53-technique-defaults.md)) change how this record is decided:
+
+- Decide it in S5 as well as on the timing page, and on an Android phone with WebGPU. The Galaxy S24+ has no WebGPU adapter, so BrowserStack's Galaxy S25 (Adreno 830) and Pixel 9 (Mali-G715) run it (ruling 10). Prototype A1 runs S5 with the compute pass, with `?skinning=vertex`, and with the lean changes below.
+- Mali compiles each vertex shader into a position shader and a varying shader, and Adreno's binning pass runs a position-only vertex shader. So a joint blend that feeds both the position and the normal can run twice there ([Arm's Mali Offline Compiler guide](https://documentation-service.arm.com/static/648aeb7f153eb247a5450a90), [Qualcomm's best practices](https://docs.qualcomm.com/bundle/publicresource/topics/80-78185-2/mobile_best_practices.html)). Compute skinning blends once. That favors the compute pass on Android, but no vendor advises either way, and Qualcomm advises keeping graphics submits apart from compute dispatches.
+- The timing page writes 24 bytes per skinned vertex; the engine writes 28 to 48. So the page's figures understate the compute pass's cost.
+- If the compute pass stays, it gets lean (proposed M2-C8). It skips objects whose pose did not change, and writes normals and tangents in 8 bits. The Knight's skinned vertex falls from 28 to 20 bytes, and S5's skinned memory from 69 MB to about 49 MB. It carries the fixes of R5-02: a dispatch split by GPU limits, and an error past them.
+
 ## Addendum, 2026-10-04: skinning loads on first use
 
 [D-56](D-56-first-use-shader-files.md) moves the skinning pass and every SKIN build into the skinning feature's own shader files, which a page downloads with its first skinned mesh. Every pass leaves a page's skinned meshes out until their pipelines are built: the skinning pass's, and every one that draws them. So no pass draws vertices that the skinning pass has not written. So neither way's shaders count at a page's start any longer.

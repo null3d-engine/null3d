@@ -48,9 +48,9 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [Install null3D](getting-started/install.md) | The npm packages; the Vite plugin; package versions always match; the optional `null3d` command. | experimental | 0.1 |
+| [Install null3D](getting-started/install.md) | The npm packages; the Vite plugin, which every Vite build needs; package versions always match; the optional `null3d` command. | experimental | 0.1 |
 | [Your first scene](getting-started/first-scene.md) | page.ts with createEngine; sketch.ts with defineSketch; camera, light, mesh; running it with Vite. | experimental | 0.1 |
-| [Hosting and cross-origin isolation](getting-started/hosting.md) | COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the single-threaded fallback. | experimental | 0.1 |
+| [Hosting and cross-origin isolation](getting-started/hosting.md) | COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; worker scripts from the page's origin; the Content-Security-Policy; Brotli; the third-party notices; the single-threaded fallback. | experimental | 0.1 |
 | [Project structure](getting-started/project-structure.md) | Starting from a template with `bunx @null3d/cli create`; page.ts, sketch.ts, assets/, AGENTS.md, .claude/skills/; what runs where. | planned | 0.3 |
 
 ### Concepts
@@ -121,7 +121,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Audio with Web Audio](guides/audio.md) | Why audio stays on the page; sending positions from the sketch. | experimental | 0.1 |
 | [Using a physics library](guides/physics.md) | Running Rapier or cannon-es in the sketch worker; copying transforms. | experimental | 0.1 |
 | [Multiple views](guides/multiple-views.md) | Split screens with scene.createView, after 1.0; minimaps work from 0.2 through render-to-texture passes. | planned | after 1.0 |
-| [The asset pipeline (the `assets` command)](guides/assets-pipeline.md) | optimize, env, convert; LODs; texture compression; budget reports. | experimental | 0.2 |
+| [The asset pipeline (the `assets` command)](guides/assets-pipeline.md) | optimize, env, convert; LODs; texture compression; blockers and stored trees; budget reports. | experimental | 0.2 |
 | [Testing your sketch](guides/testing.md) | Hold mode; image tests; reading results; frames that stay the same on every run. | experimental | 0.1 |
 | [Debugging](guides/debugging.md) | Error codes; the inspector; the MCP server; the render-graph dump; common failures. | experimental | 0.1 |
 | [Deploying](guides/deploying.md) | Headers on common hosts; asset caching; size budgets. | planned | 0.3 |

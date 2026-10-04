@@ -11,20 +11,12 @@
 
 import type { Described } from '../errors/checks';
 import * as C from '../generated/core';
+import { DEV } from '../shared/dev';
 import type { RigClip, RigData, RigJoint, RigTrack } from './gltf-animation';
 import type { CoreMemory } from './memory';
 import type { Mesh, Object3D, Scene, SceneChecks } from './scene';
 
 export type { RigClip, RigData, RigJoint, RigTrack };
-
-declare const __NULL3D_DEV__: boolean | undefined;
-
-/**
- * True in development builds, which check every call. The module reads the constant itself, as
- * errors/checks.ts does: it imports no engine module but constants and types, and takes the scene
- * API's checks and errors from the first scene that animates (`Scene.checks`).
- */
-const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV__;
 
 /** The scene API's checks and errors, from the first scene that animates. */
 let checks: SceneChecks;

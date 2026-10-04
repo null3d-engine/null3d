@@ -25,7 +25,7 @@ export default defineConfig({
 	root,
 	// Relative addresses, so the build works under any address prefix, such as a load route's.
 	base: './',
-	plugins: [null3d()],
+	plugins: [null3d({ urlSwitches: true })],
 	// The pages take the packages' source, not the files that their pack step builds.
 	resolve: sourceResolve,
 	logLevel: 'warn',

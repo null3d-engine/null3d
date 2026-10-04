@@ -84,6 +84,20 @@ Pending: the `bloom` plan on the iPad and the S24+ ([device sessions](../devices
 - Bloom's steps and the final pass's BLOOM builds load on first use ([D-56](D-56-first-use-shader-files.md)). The frames keep the final pass without bloom until those pipelines are built, so turning bloom on skips no draw.
 - Docs: `concepts/post-processing`, `api/post`, `concepts/color-management`, `concepts/backends`, the mapping's composer and bloom entries, and both skills.
 
+## The owner's ruling, 2026-10-04: the mip chain becomes the default
+
+The addendum below reopened decision 1. The owner settled it the same evening, as ruling 1 of [D-53](D-53-technique-defaults.md):
+
+- The default becomes a mip chain, after prototype P2 sets its settings. Its base is 512 rows (384 on Low). A 13-tap downsample with a Karis average on the first step, a 9-tap tent upsample and an energy-conserving mix follow, with a threshold of 0. Low takes Filament's mobile kernels. The governor's step halves the base.
+- Every engine read uses a mip chain, apart from three.js and Babylon.js. It reads about 8.3 texels per pixel against 10.8. It keeps the glow's size and cost the same at any pixel ratio or render scale. Its Karis average stops bright points from flickering.
+- No `UnrealBloomPass` mode stays in the core. The porting skill maps `strength` to the intensity, `radius` to the upsample mix and `threshold` to the threshold divided by exposure. It maps pmndrs `BloomEffect`'s settings and level weights too. `UnrealBloomPass`'s halo goes to the `three-compat` add-on only if P2 shows that the mapping cannot reach it.
+- P2 runs on the iPad and on BrowserStack's Galaxy S25, Pixel 9 and Pixel 11, with a side-by-side on the Mac. It also gives this record the device timings that are still pending.
+- The parity scenes `bloom-soft` and `bloom-strong` become sanity comparisons with null3D's own references, once the default changes.
+- Bloom's input gets a limit, as URP's does (65,472). The Karis average damps single bright pixels but does not stop infinity (R7-01).
+- Decision 2, the 8-bit path, stands.
+
+The work is the proposed task M2-F7.
+
 ## Addendum, 2026-10-04: bloom's method is open again
 
 The owner's decision of 4 October 2026 ([D-52](D-52-intent-parity.md)) withdraws this record's second rule. A port no longer keeps three.js's look by default. Each effect uses the best technique as its default, and the porting skill maps a port's settings onto it. So decision 1 is open again. The chain down and back up is cheaper per pixel, as the table above shows, and it flickers less on small bright points. The halo of `UnrealBloomPass` is a candidate for the opt-in `three-compat` add-on module. The combined technique analysis settles the default. Decision 2, the 8-bit path, stands.

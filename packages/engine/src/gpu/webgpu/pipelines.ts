@@ -68,8 +68,8 @@ import {
 	type ShaderVariants,
 	type WgslShader,
 } from '../../generated/shaders';
+import { DEV } from '../../shared/dev';
 import type { CustomShader } from '../../shared/images';
-import { DEV } from '../dev';
 import { LINE_VERTICES } from '../line-vertices';
 import { variantFor } from '../variants';
 import {

@@ -30,6 +30,7 @@ import type { Renderer, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
+import { URL_SWITCHES } from '../shared/dev';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
@@ -77,6 +78,7 @@ import { stopJobWorkers, waitForJobWorkersToLeave } from './stop-jobs';
 import {
 	type DepthMode,
 	type GpuSwitch,
+	jobWorkerCount,
 	type LatencyMode,
 	parseSwitches,
 	type SketchThread,
@@ -437,8 +439,6 @@ export interface Engine {
 const BENCH_GLOBAL = '__null3dEngine';
 /** The GPU the engine asks for on a device with two: the faster one. */
 const DEFAULT_POWER_PREFERENCE: PowerPreference = 'high-performance';
-/** Logical cores kept free of job workers: one for the sketch worker, one for the render worker. */
-const RESERVED_CORES = 2;
 /** How often the page reads the frame records while it measures. */
 const DRAIN_INTERVAL_MS = 250;
 /** How many sketch messages the page keeps while no handler listens. */
@@ -757,7 +757,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	// The page's errors end with the fixes from its own table, and each worker gets the same table
 	// in its handoff.
 	setErrorFixes(ERROR_FIXES);
-	const switches = parseSwitches(globalThis.location?.search ?? '');
+	const switches = parseSwitches(URL_SWITCHES ? (globalThis.location?.search ?? '') : '');
 	const holding = options.hold !== undefined || switches.hold !== undefined;
 	const place = placement(options, switches);
 	/** True once this start holds the page's copy of the core, which serves one engine at a time. */
@@ -926,7 +926,7 @@ async function startEngine(
 	let pageLabels: PageLabels | undefined;
 
 	const jobWorkers = threaded
-		? (switches.jobs ?? Math.max(1, (navigator.hardwareConcurrency ?? 1) - RESERVED_CORES))
+		? jobWorkerCount(switches.jobs, navigator.hardwareConcurrency ?? 1)
 		: 0;
 	const control = createControlBuffer(threaded, labelCapacity(options.maxLabels));
 	const metrics = createMetricsBuffer(threaded, jobWorkers);

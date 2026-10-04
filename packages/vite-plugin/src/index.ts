@@ -47,6 +47,12 @@ export interface Null3dPluginOptions {
 	 * which `assets.loadGltf` takes. The tool comes from `@null3d/cli`, which the project installs.
 	 */
 	assets?: AssetOptions;
+	/**
+	 * Let the page's address set the engine's test switches, such as `?gpu=` and `?hold=`, in
+	 * production builds too. Development builds always read them. The default is false, so a link
+	 * cannot change how a shipped game runs. Turn it on for builds of test and benchmark pages.
+	 */
+	urlSwitches?: boolean;
 }
 
 /** Sets the isolation headers on every response, including `.wasm` files and worker scripts. */
@@ -191,6 +197,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	let root = process.cwd();
 	let base = '/';
 	let assetsDir = 'assets';
+	/** The third-party notices that a client build writes beside the page; null in other builds. */
+	let notices: string | null = null;
 	/** The optimized files that this build has written, so each texture goes in once. */
 	const emitted = new Map<string, string>();
 	return {
@@ -205,7 +213,13 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				: undefined;
 			return {
 				// Development checks stay in dev builds; release builds drop them as dead code.
-				define: { __NULL3D_DEV__: JSON.stringify(mode !== 'production') },
+				define: {
+					__NULL3D_DEV__: JSON.stringify(mode !== 'production'),
+					// Without the option, a build that defines the constant itself keeps its value.
+					...(options.urlSwitches === undefined
+						? {}
+						: { __NULL3D_URL_SWITCHES__: JSON.stringify(options.urlSwitches) }),
+				},
 				server: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				preview: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				worker: { format: 'es' },
@@ -220,6 +234,12 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			root = config.root;
 			base = config.base;
 			assetsDir = config.build.assetsDir;
+			if (config.worker.format !== 'es') {
+				config.logger.warn(
+					`null3D: workers build as ${config.worker.format}, not as ES modules, so each engine worker takes in every shader file and grows to tens of MB. Set worker.format to 'es', or leave it unset for the null3D plugin to set.`,
+				);
+			}
+			notices = building && !config.build.ssr ? thirdPartyNotices(root) : null;
 		},
 		buildStart() {
 			emitted.clear();
@@ -321,6 +341,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					? { code: out.toString(), map: out.generateMap({ hires: 'boundary' }) }
 					: undefined;
 			},
+		},
+		generateBundle() {
+			if (notices) this.emitFile({ type: 'asset', fileName: NOTICES_FILE, source: notices });
 		},
 		configureServer(server) {
 			server.middlewares.use(isolationMiddleware);
