@@ -133,65 +133,94 @@ fn pack(light: vec3f) -> vec4f {
 
 // The room of three.js's RoomEnvironment: a large white room with six white boxes and six glowing
 // panels, lit by one point light. three.js moves the scene down by 3.5, so its center sits near
-// the floor. Each box has its center, its half sizes along its own axes, and its turn about Y in
-// radians. The tables are functions, not constant arrays: Arm's Mali GPUs reject a GLSL array type
-// with its size, which an array constant becomes.
+// the floor. Each box has its center, its half sizes along its own axes, and the cosine and sine
+// of its turn about Y, so no ray computes them. The tables are functions, not constant arrays:
+// Arm's Mali GPUs reject a GLSL array type with its size, which an array constant becomes.
 
 struct Box {
     center: vec3f,
     half_size: vec3f,
-    turn: f32,
+    turn: vec2f,
 }
 
 const LIFT: f32 = -3.5;
 
-const ROOM: Box = Box(vec3f(-0.757, 13.219 + LIFT, 0.717), vec3f(15.8565, 14.1525, 14.2955), 0.0);
+const ROOM: Box = Box(
+    vec3f(-0.757, 13.219 + LIFT, 0.717),
+    vec3f(15.8565, 14.1525, 14.2955),
+    vec2f(1.0, 0.0),
+);
 
-/// The white box `k`, from 0 to 5.
+/// The white box `k`, from 0 to 5, turned by -0.195, 0.994, 0.561, 0.333, -0.286 and 0.516
+/// radians.
 fn white_box(k: i32) -> Box {
     switch k {
         case 0: {
-            return Box(vec3f(-10.906, 2.009 + LIFT, 1.846), vec3f(1.164, 3.9525, 2.3255), -0.195);
+            return Box(
+                vec3f(-10.906, 2.009 + LIFT, 1.846),
+                vec3f(1.164, 3.9525, 2.3255),
+                vec2f(0.98104767, -0.19376653),
+            );
         }
         case 1: {
-            return Box(vec3f(-5.607, -0.754 + LIFT, -0.758), vec3f(0.985, 0.767, 1.9775), 0.994);
+            return Box(
+                vec3f(-5.607, -0.754 + LIFT, -0.758),
+                vec3f(0.985, 0.767, 1.9775),
+                vec2f(0.54534138, 0.83821404),
+            );
         }
         case 2: {
-            return Box(vec3f(6.167, 0.857 + LIFT, 7.803), vec3f(1.9635, 3.1425, 1.8435), 0.561);
+            return Box(
+                vec3f(6.167, 0.857 + LIFT, 7.803),
+                vec3f(1.9635, 3.1425, 1.8435),
+                vec2f(0.8467235, 0.53203319),
+            );
         }
         case 3: {
-            return Box(vec3f(-2.017, 0.018 + LIFT, 6.124), vec3f(1.001, 2.283, 1.032), 0.333);
+            return Box(
+                vec3f(-2.017, 0.018 + LIFT, 6.124),
+                vec3f(1.001, 2.283, 1.032),
+                vec2f(0.94506596, 0.32687969),
+            );
         }
         case 4: {
-            return Box(vec3f(2.291, -0.756 + LIFT, -2.621), vec3f(0.773, 0.776, 0.748), -0.286);
+            return Box(
+                vec3f(2.291, -0.756 + LIFT, -2.621),
+                vec3f(0.773, 0.776, 0.748),
+                vec2f(0.95938002, -0.28211697),
+            );
         }
         default: {
-            return Box(vec3f(-2.193, -0.369 + LIFT, -5.547), vec3f(1.9375, 1.7435, 1.493), 0.516);
+            return Box(
+                vec3f(-2.193, -0.369 + LIFT, -5.547),
+                vec3f(1.9375, 1.7435, 1.493),
+                vec2f(0.86979975, 0.4934049),
+            );
         }
     }
 }
 
-/// The glowing panel `k`, from 0 to 5, with its emissive strength in place of a turn: no panel
-/// turns.
+/// The glowing panel `k`, from 0 to 5: its center and half sizes, and its emissive strength in
+/// place of a turn. No panel turns.
 fn panel(k: i32) -> Box {
     switch k {
         case 0: {
-            return Box(vec3f(-16.116, 14.37 + LIFT, 8.208), vec3f(0.05, 1.214, 1.3695), 50.0);
+            return Box(vec3f(-16.116, 14.37 + LIFT, 8.208), vec3f(0.05, 1.214, 1.3695), vec2f(50.0));
         }
         case 1: {
-            return Box(vec3f(-16.109, 18.021 + LIFT, -8.207), vec3f(0.05, 1.2125, 1.3755), 50.0);
+            return Box(vec3f(-16.109, 18.021 + LIFT, -8.207), vec3f(0.05, 1.2125, 1.3755), vec2f(50.0));
         }
         case 2: {
-            return Box(vec3f(14.904, 12.198 + LIFT, -1.832), vec3f(0.075, 2.1325, 3.1655), 17.0);
+            return Box(vec3f(14.904, 12.198 + LIFT, -1.832), vec3f(0.075, 2.1325, 3.1655), vec2f(17.0));
         }
         case 3: {
-            return Box(vec3f(-0.462, 8.89 + LIFT, 14.520), vec3f(2.19, 2.7205, 0.044), 43.0);
+            return Box(vec3f(-0.462, 8.89 + LIFT, 14.520), vec3f(2.19, 2.7205, 0.044), vec2f(43.0));
         }
         case 4: {
-            return Box(vec3f(3.235, 11.486 + LIFT, -12.541), vec3f(1.25, 1.0, 0.05), 20.0);
+            return Box(vec3f(3.235, 11.486 + LIFT, -12.541), vec3f(1.25, 1.0, 0.05), vec2f(20.0));
         }
         default: {
-            return Box(vec3f(0.0, 20.0 + LIFT, 0.0), vec3f(0.5, 0.05, 0.5), 100.0);
+            return Box(vec3f(0.0, 20.0 + LIFT, 0.0), vec3f(0.5, 0.05, 0.5), vec2f(100.0));
         }
     }
 }
@@ -234,67 +263,59 @@ fn dfg_sum(n_dot_v: f32) -> f32 {
     return dfg_entry(low) * (1.0 - t) + dfg_entry(min(low + 1u, 15u)) * t;
 }
 
-/// Turns a vector about Y by `angle`.
-fn turn(v: vec3f, angle: f32) -> vec3f {
-    let s = sin(angle);
-    let c = cos(angle);
-    return vec3f(c * v.x + s * v.z, v.y, -s * v.x + c * v.z);
+/// Turns a vector about Y by the angle whose cosine and sine `turn` holds.
+fn turn_by(v: vec3f, turn: vec2f) -> vec3f {
+    return vec3f(turn.x * v.x + turn.y * v.z, v.y, -turn.y * v.x + turn.x * v.z);
 }
 
-/// Where a ray from the room's center along `d` crosses a box: the distances in and out, and the
-/// box's outward normals there, in world space. A ray that misses has `far` below 0.
-struct Crossing {
-    near: f32,
-    near_normal: vec3f,
-    far: f32,
-    far_normal: vec3f,
+/// The distances along a ray from `origin` in the direction `dir`, both in a box's own frame, to
+/// the box's planes on each axis: the nearer as `enter`, the farther as `leave`. On an axis that the
+/// ray runs along, both distances lie far beyond the room, and of one sign when the ray runs
+/// outside the box's planes, so that axis rules the ray out or leaves it to the others.
+struct Slabs {
+    enter: vec3f,
+    leave: vec3f,
 }
 
-fn axis_normal(axis: i32, sign: f32, angle: f32) -> vec3f {
+fn slabs(origin: vec3f, dir: vec3f, half_size: vec3f) -> Slabs {
+    let inverse = 1.0 / select(dir, vec3f(1.0e-30), dir == vec3f(0.0));
+    let a = (-half_size - origin) * inverse;
+    let c = (half_size - origin) * inverse;
+    return Slabs(min(a, c), max(a, c));
+}
+
+/// A ray from the room's center along `d`, in a box's own frame.
+fn box_slabs(b: Box, d: vec3f) -> Slabs {
+    let back = vec2f(b.turn.x, -b.turn.y);
+    return slabs(turn_by(-b.center, back), turn_by(d, back), b.half_size);
+}
+
+/// The distance at which a ray enters a box whose planes `s` gives, or -1 where it misses.
+fn enter_distance(s: Slabs) -> f32 {
+    let near = max(s.enter.x, max(s.enter.y, s.enter.z));
+    let far = min(s.leave.x, min(s.leave.y, s.leave.z));
+    return select(-1.0, near, near <= far);
+}
+
+/// The axis of the largest of `v`'s components, the first on a tie.
+fn largest_axis(v: vec3f) -> i32 {
+    var axis = 0;
+    var most = v.x;
+    if v.y > most {
+        axis = 1;
+        most = v.y;
+    }
+    if v.z > most {
+        axis = 2;
+    }
+    return axis;
+}
+
+/// A unit vector along `axis` with the sign `sign`.
+fn axis_vector(axis: i32, sign: f32) -> vec3f {
     var n = vec3f(0.0);
     n[axis] = sign;
-    return turn(n, angle);
-}
-
-fn cross_box(b: Box, d: vec3f) -> Crossing {
-    let miss = Crossing(0.0, vec3f(0.0), -1.0, vec3f(0.0));
-    let origin = turn(-b.center, -b.turn);
-    let dir = turn(d, -b.turn);
-    var near = -3.0e38;
-    var far = 3.0e38;
-    var near_axis = 0;
-    var far_axis = 0;
-    for (var axis = 0; axis < 3; axis++) {
-        if dir[axis] == 0.0 {
-            if abs(origin[axis]) > b.half_size[axis] {
-                return miss;
-            }
-            continue;
-        }
-        let a = (-b.half_size[axis] - origin[axis]) / dir[axis];
-        let c = (b.half_size[axis] - origin[axis]) / dir[axis];
-        let enter = min(a, c);
-        let leave = max(a, c);
-        if enter > near {
-            near = enter;
-            near_axis = axis;
-        }
-        if leave < far {
-            far = leave;
-            far_axis = axis;
-        }
-    }
-    if near > far || far <= 0.0 {
-        return miss;
-    }
-    let near_sign = select(1.0, -1.0, dir[near_axis] > 0.0);
-    let far_sign = select(-1.0, 1.0, dir[far_axis] > 0.0);
-    return Crossing(
-        near,
-        axis_normal(near_axis, near_sign, b.turn),
-        far,
-        axis_normal(far_axis, far_sign, b.turn),
-    );
+    return n;
 }
 
 /// The light that a white standard material reflects toward the room's center from a point with
@@ -328,32 +349,42 @@ fn shade(p: vec3f, n: vec3f) -> f32 {
     return irradiance * ((1.0 - fresnel) / PI + specular * compensation);
 }
 
-/// The light that reaches the room's center from a unit direction. Nothing casts shadows, as in
-/// three.js's scene.
+/// The light that reaches the room's center from a unit direction: the nearest surface along it,
+/// shaded once. Nothing casts shadows, as in three.js's scene.
 fn room_light(d: vec3f) -> f32 {
-    var nearest = 3.0e38;
-    var light = 0.0;
-    let room = cross_box(ROOM, d);
-    if room.far > 0.0 {
-        nearest = room.far;
-        light = shade(d * room.far, -room.far_normal);
-    }
+    // The ray leaves the room where it meets a wall. Surface -1 is the room's walls, 0 to 5 the
+    // white boxes and 6 to 11 the panels.
+    let room = slabs(-ROOM.center, d, ROOM.half_size);
+    var nearest = min(room.leave.x, min(room.leave.y, room.leave.z));
+    var surface = -1;
     for (var k = 0; k < 6; k++) {
-        let hit = cross_box(white_box(k), d);
-        if hit.far > 0.0 && hit.near > 0.0 && hit.near < nearest {
-            nearest = hit.near;
-            light = shade(d * hit.near, hit.near_normal);
+        let near = enter_distance(box_slabs(white_box(k), d));
+        if near > 0.0 && near < nearest {
+            nearest = near;
+            surface = k;
         }
     }
     for (var k = 0; k < 6; k++) {
         let glowing = panel(k);
-        let hit = cross_box(Box(glowing.center, glowing.half_size, 0.0), d);
-        if hit.far > 0.0 && hit.near > 0.0 && hit.near < nearest {
-            nearest = hit.near;
-            light = glowing.turn;
+        let near = enter_distance(slabs(-glowing.center, d, glowing.half_size));
+        if near > 0.0 && near < nearest {
+            nearest = near;
+            surface = 6 + k;
         }
     }
-    return light;
+    if surface >= 6 {
+        return panel(surface - 6).turn.x;
+    }
+    if surface < 0 {
+        // The wall's normal faces into the room, against the axis on which the ray leaves first.
+        let axis = largest_axis(-room.leave);
+        return shade(d * nearest, axis_vector(axis, select(1.0, -1.0, d[axis] > 0.0)));
+    }
+    let b = white_box(surface);
+    let back = vec2f(b.turn.x, -b.turn.y);
+    let local = turn_by(d, back);
+    let axis = largest_axis(slabs(turn_by(-b.center, back), local, b.half_size).enter);
+    return shade(d * nearest, turn_by(axis_vector(axis, select(1.0, -1.0, local[axis] > 0.0)), b.turn));
 }
 
 /// The room's light averaged over 4 x 4 directions spread evenly over the texel.
