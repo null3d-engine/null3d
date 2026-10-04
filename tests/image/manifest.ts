@@ -149,9 +149,11 @@ function bloomTests(): ImageTest[] {
 const OCCLUSION_SKETCH = 'tests/pages/sketches/occlusion-sketch.ts';
 
 /**
- * The city with software occlusion culling off, and on, which must draw the same image to the
- * pixel: the culling skips only what the buildings hide. WebGPU ignores the setting, so the
- * second test runs on WebGL2 alone. The occlusion spec checks that the culling hid objects.
+ * The city with software occlusion culling off, and on, which must match the same references: the
+ * culling skips only what the buildings hide. WebGPU ignores the setting, so the second test runs
+ * on WebGL2 alone. The references allow the usual tolerance, since a software GPU on another kind
+ * of processor can round a pixel otherwise. The occlusion spec checks that the culling hid objects
+ * and draws the same image to the pixel as without it, both drawn on one machine.
  */
 function occlusionTests(): ImageTest[] {
 	const test = (name: string, side: 'on' | 'off'): ImageTest => ({
@@ -166,7 +168,6 @@ function occlusionTests(): ImageTest[] {
 			...test('occlusion-on', 'on'),
 			tiers: ['webgl2'],
 			reference: 'occlusion-off',
-			tolerance: { threshold: 0, maxDiffRatio: 0 },
 		},
 	];
 }
