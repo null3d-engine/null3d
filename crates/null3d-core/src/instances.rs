@@ -31,6 +31,15 @@
 //! world matrix (see [`crate::sprites`]), so the rest of the engine draws, culls and sorts its rows
 //! as it does any batch's.
 //!
+//! # Lines
+//!
+//! A line batch owns points, each with a linear colour, and has one row per segment between two
+//! of them (see [`crate::lines`]). Its active count and dirty marks count points: the batch turns
+//! them into the rows of the segments that use those points. Its update reads each segment's two
+//! points, writes the segment's middle as the row's position, and packs the segment into the row's
+//! world matrix. A dashed batch also keeps the length of the line before each segment, which the
+//! update recomputes from the first segment that a change reached.
+//!
 //! # Cells
 //!
 //! Each row takes the grid cell that holds its position (see [`crate::cells`]), and its world
@@ -51,6 +60,7 @@ use crate::error::{CoreError, Resource};
 use crate::handle::{Handle, SlotAllocator};
 use crate::jobs::JobSystem;
 use crate::layers::DEFAULT_LAYERS;
+use crate::lines::{self, LineLook, LineMode, Segment};
 use crate::math::{
     self, Affine, IDENTITY_ROTATION, compose4, deinterleave3, max_axis_scale4, mul4, transpose4,
 };
@@ -91,6 +101,62 @@ struct SpriteRows {
 /// Floats of a sprite's own rows besides its position: size, rotation, colour and frame.
 const SPRITE_INPUTS: usize = 2 + 1 + 4 + 1;
 
+/// The points of a line batch, and the look its segments share.
+struct LineRows {
+    look: LineLook,
+    /// Positions, 3 floats per point.
+    points: Vec<f32>,
+    /// Linear colours `(r, g, b)`, 3 floats per point.
+    colors: Vec<f32>,
+    /// The length of the line before each segment, 1 float per row; empty unless dashed.
+    distances: Vec<f32>,
+    /// The points in use: the segments between them draw.
+    active: u32,
+    /// The first row whose distance is out of date, or `u32::MAX` when none is.
+    stale: u32,
+}
+
+impl LineRows {
+    /// The number of points the batch holds.
+    fn capacity(&self) -> u32 {
+        (self.points.len() / 3) as u32
+    }
+
+    /// The length of segment `row`.
+    fn length(&self, row: u32) -> f64 {
+        let (a, b) = self.look.mode.ends(row, self.active);
+        let (a, b) = (a as usize * 3, b as usize * 3);
+        let d = [0, 1, 2].map(|k| f64::from(self.points[b + k]) - f64::from(self.points[a + k]));
+        (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+    }
+
+    /// Brings the distances of the first `rows` rows up to date: all of them for a dynamic batch,
+    /// and from the first stale row for a static one.
+    fn update_distances(&mut self, rows: u32, dynamic: bool) {
+        let from = if dynamic { 0 } else { self.stale.min(rows) };
+        self.stale = u32::MAX;
+        if !self.look.dashed || from >= rows {
+            return;
+        }
+        let mut distance = match from.checked_sub(1) {
+            Some(before) => f64::from(self.distances[before as usize]) + self.length(before),
+            None => 0.0,
+        };
+        for row in from..rows {
+            self.distances[row as usize] = distance as f32;
+            distance += self.length(row);
+        }
+    }
+
+    /// Notes that the distances of the rows from `row` on are out of date.
+    fn mark_stale(&mut self, row: u32) {
+        self.stale = self.stale.min(row);
+    }
+}
+
+/// Floats of a line's point: its position and its colour.
+const LINE_POINT_FLOATS: usize = 3 + 3;
+
 /// One instance batch. See the module documentation.
 pub struct InstanceBatch {
     capacity: u32,
@@ -108,6 +174,8 @@ pub struct InstanceBatch {
     part: Option<Affine>,
     /// The sprites' own rows, for a sprite batch.
     sprite: Option<SpriteRows>,
+    /// The points, for a line batch.
+    line: Option<LineRows>,
     /// Empty for a part that reads another batch's rows, as are the other row arrays.
     positions: Vec<f32>,
     rotations: Vec<f32>,
@@ -212,6 +280,42 @@ impl InstanceBatch {
         Ok(batch)
     }
 
+    /// A line batch (see the module documentation) of `points` points, all in use, at the origin
+    /// and white, with one row per segment that `look.mode` makes of them. `local_radius` is the
+    /// radius of the segment mesh around its origin. Fails when memory cannot grow for its arrays.
+    pub fn try_new_lines(
+        points: u32,
+        dynamic: bool,
+        mesh: u32,
+        material: u32,
+        local_radius: f32,
+        look: LineLook,
+    ) -> Result<Self, TryReserveError> {
+        let rows = look.mode.rows(points);
+        let count = points as usize;
+        let line = LineRows {
+            look,
+            points: filled(count * 3, 0.0)?,
+            colors: filled(count * 3, 1.0)?,
+            distances: filled(if look.dashed { rows as usize } else { 0 }, 0.0)?,
+            active: points,
+            stale: 0,
+        };
+        let mut batch = Self::try_new_rows(
+            rows,
+            dynamic,
+            false,
+            mesh,
+            material,
+            local_radius,
+            None,
+            None,
+            false,
+        )?;
+        batch.line = Some(line);
+        Ok(batch)
+    }
+
     /// As [`InstanceBatch::try_new`], for one part of a model (see the module documentation):
     /// `part` places the mesh in the space of each row, and with a `source`, the batch reads that
     /// batch's rows and owns none.
@@ -274,6 +378,7 @@ impl InstanceBatch {
             source,
             part,
             sprite: None,
+            line: None,
             positions: filled(owned * 3, 0.0)?,
             rotations,
             scales: filled(inputs * 3, 1.0)?,
@@ -319,6 +424,125 @@ impl InstanceBatch {
     pub const fn sprite_row_bytes() -> u64 {
         let world = MATRIX_FLOATS + 4;
         ((3 + SPRITE_INPUTS + 1 + 2 * world) * 4) as u64
+    }
+
+    /// Engine memory that one point of a line batch takes at most, as [`InstanceBatch::row_bytes`]
+    /// counts a row: its position and colour, and one segment's middle, distance, cell and world
+    /// rows.
+    pub const fn line_point_bytes() -> u64 {
+        let world = MATRIX_FLOATS + 4;
+        ((LINE_POINT_FLOATS + 3 + 1 + 1 + 2 * world) * 4) as u64
+    }
+
+    /// True for a batch whose update packs its rows' own values into their matrices, in place of
+    /// a transform that places a mesh: a sprite batch or a line batch.
+    pub fn packed(&self) -> bool {
+        self.sprite.is_some() || self.line.is_some()
+    }
+
+    /// The look of a line batch's segments, or `None` for any other batch.
+    pub fn line_look(&self) -> Option<LineLook> {
+        self.line.as_ref().map(|l| l.look)
+    }
+
+    /// A line batch's points, 3 floats each, and their linear colours, 3 floats each; empty for
+    /// any other batch.
+    pub fn line_points(&self) -> (&[f32], &[f32]) {
+        match &self.line {
+            Some(l) => (&l.points, &l.colors),
+            None => (&[], &[]),
+        }
+    }
+
+    /// A line batch's points and colours for direct writes, as [`InstanceBatch::line_points`]
+    /// gives them.
+    pub fn line_points_mut(&mut self) -> (&mut [f32], &mut [f32]) {
+        match &mut self.line {
+            Some(l) => (&mut l.points, &mut l.colors),
+            None => (&mut [], &mut []),
+        }
+    }
+
+    /// The points of a line batch that its segments join, or the active rows of any other batch.
+    pub fn active_points(&self) -> u32 {
+        self.line.as_ref().map_or(self.active, |l| l.active)
+    }
+
+    /// Sets the width of a line batch's segments, and marks every segment to pack it again. A
+    /// width that is not a positive number draws nothing. Does nothing to any other batch.
+    pub fn set_line_width(&mut self, width: f32) {
+        if let Some(line) = &mut self.line {
+            line.look.width = lines::valid_width(width);
+            self.dirty.set_range(0, self.capacity);
+            self.dirty_any |= self.capacity > 0;
+        }
+    }
+
+    /// Sets how many points a line batch joins, as [`InstanceBatch::set_active_count`] sets the
+    /// rows of any other batch. The segments that change are marked dirty: the new ones, and a
+    /// loop's segment that closes it. Fails with [`CoreError::OutOfRange`] past the points that
+    /// the batch holds.
+    pub fn set_active_points(&mut self, count: u32) -> Result<(), CoreError> {
+        let Some(line) = &mut self.line else {
+            return self.set_active_count(count);
+        };
+        let capacity = line.capacity();
+        if count > capacity {
+            return Err(CoreError::OutOfRange {
+                value: count,
+                limit: capacity,
+            });
+        }
+        let mode = line.look.mode;
+        let (before, after) = (mode.rows(line.active), mode.rows(count));
+        line.active = count;
+        line.mark_stale(before.min(after).saturating_sub(1));
+        if mode == LineMode::Loop {
+            for closing in [before, after] {
+                if let Some(row) = closing.checked_sub(1) {
+                    self.dirty.set_range(row, 1);
+                    self.dirty_any = true;
+                }
+            }
+        }
+        self.set_active_count(after)
+    }
+
+    /// Marks points `start..start + count` of a line batch as changed, so the segments that use
+    /// them update and upload, and for a dashed batch every segment after them too, as their
+    /// distances along the line change. Marks rows of any other batch as
+    /// [`InstanceBatch::mark_dirty`] does. Fails with [`CoreError::OutOfRange`] when the points go
+    /// past the batch's points.
+    pub fn mark_points_dirty(&mut self, start: u32, count: u32) -> Result<(), CoreError> {
+        let Some(line) = &mut self.line else {
+            return self.mark_dirty(start, count);
+        };
+        let capacity = line.capacity();
+        let Some(end) = start.checked_add(count).filter(|&end| end <= capacity) else {
+            return Err(CoreError::OutOfRange {
+                value: start.saturating_add(count),
+                limit: capacity,
+            });
+        };
+        if count == 0 {
+            return Ok(());
+        }
+        let mode = line.look.mode;
+        let mut rows = mode.rows_of_points(start..end, line.active);
+        let all = mode.rows(line.active);
+        if line.look.dashed {
+            rows.end = all;
+            line.mark_stale(rows.start);
+        }
+        if mode == LineMode::Loop && start == 0 && all > 0 {
+            self.dirty.set_range(all - 1, 1);
+            self.dirty_any = true;
+        }
+        if !rows.is_empty() {
+            self.dirty.set_range(rows.start, rows.end - rows.start);
+            self.dirty_any = true;
+        }
+        Ok(())
     }
 
     /// The look of a sprite batch's sprites, or `None` for a batch of meshes.
@@ -600,6 +824,22 @@ impl InstanceBatch {
         if self.active == 0 || !(self.dynamic || self.dirty_any || mirror) {
             return None;
         }
+        let rows_active = self.active;
+        let line = self.line.as_mut().map(|line| {
+            line.update_distances(rows_active, self.dynamic);
+            LineKernel {
+                look: line.look,
+                points: line.points.as_ptr(),
+                colors: line.colors.as_ptr(),
+                distances: if line.look.dashed {
+                    line.distances.as_ptr()
+                } else {
+                    std::ptr::null()
+                },
+                middles: self.positions.as_mut_ptr(),
+                active: line.active,
+            }
+        });
         let previous = self.world[parity ^ 1].ptrs();
         let (previous_changed, changed) = if parity == 0 {
             let (a, b) = self.changed.split_at_mut(1);
@@ -628,6 +868,7 @@ impl InstanceBatch {
             part: self.part.unwrap_or(math::IDENTITY),
             has_part: self.part.is_some(),
             sprite: rows.sprite,
+            line,
             local_radius: self.local_radius,
             out: self.world[parity].ptrs(),
             previous,
@@ -735,6 +976,20 @@ struct RowSource {
     sprite: Option<SpriteKernel>,
 }
 
+/// Raw pointers into a line batch's points, for the chunks of a parallel update, and the
+/// segments' middles, which each chunk writes for its own rows as their positions.
+#[derive(Clone, Copy)]
+struct LineKernel {
+    look: LineLook,
+    points: *const f32,
+    colors: *const f32,
+    /// Null unless the batch is dashed.
+    distances: *const f32,
+    middles: *mut f32,
+    /// The points in use.
+    active: u32,
+}
+
 /// Raw pointers into a sprite batch's own rows, for the chunks of a parallel update.
 #[derive(Clone, Copy)]
 struct SpriteKernel {
@@ -816,6 +1071,8 @@ struct RowKernel {
     has_part: bool,
     /// A sprite batch's own rows, which each row packs into its matrix in place of a transform.
     sprite: Option<SpriteKernel>,
+    /// A line batch's points, which each row packs into its matrix as a segment.
+    line: Option<LineKernel>,
     local_radius: f32,
     out: WorldPtrs,
     previous: WorldPtrs,
@@ -914,6 +1171,13 @@ impl RowKernel {
             }
             return;
         }
+        if let Some(line) = &self.line {
+            for lane in row..row + 4 {
+                // SAFETY: as the caller guarantees for the four rows.
+                unsafe { self.compute_line(line, lane) };
+            }
+            return;
+        }
         let load = |p: *const f32| {
             // SAFETY: the reads below stay inside the four active rows.
             f32x4::from_array(unsafe { p.cast::<[f32; 4]>().read_unaligned() })
@@ -949,6 +1213,11 @@ impl RowKernel {
         if let Some(sprite) = &self.sprite {
             // SAFETY: as the caller guarantees.
             unsafe { self.compute_sprite(sprite, row) };
+            return;
+        }
+        if let Some(line) = &self.line {
+            // SAFETY: as the caller guarantees.
+            unsafe { self.compute_line(line, row) };
             return;
         }
         // SAFETY: the row is below the active count, so every input read is in bounds, and only
@@ -1012,6 +1281,47 @@ impl RowKernel {
                 &matrix,
                 sprites::sphere(&matrix, self.local_radius, bits),
             );
+        }
+    }
+
+    /// Packs one segment into its row's world matrix (see [`crate::lines`]), and writes its middle
+    /// as the row's position, which places the row in its cell.
+    ///
+    /// # Safety
+    /// As for [`RowKernel::compute`], with `line` pointing at the batch's points.
+    #[inline(always)]
+    unsafe fn compute_line(&self, line: &LineKernel, row: usize) {
+        let (a, b) = line.look.mode.ends(row as u32, line.active);
+        // SAFETY: the row is below the active count, so its points are below the points in use,
+        // and only this chunk writes the row's middle and world output.
+        unsafe {
+            let read = |p: *const f32, point: u32| {
+                p.add(point as usize * 3)
+                    .cast::<[f32; 3]>()
+                    .read_unaligned()
+            };
+            let (start, end) = (read(line.points, a), read(line.points, b));
+            let middle = [0, 1, 2].map(|k| (start[k] + end[k]) * 0.5);
+            line.middles
+                .add(row * 3)
+                .cast::<[f32; 3]>()
+                .write_unaligned(middle);
+            let segment = Segment {
+                middle: self.localize(row, middle),
+                half: [0, 1, 2].map(|k| (end[k] - start[k]) * 0.5),
+                colors: [
+                    lines::srgb8(read(line.colors, a)),
+                    lines::srgb8(read(line.colors, b)),
+                ],
+                distance: if line.distances.is_null() {
+                    0.0
+                } else {
+                    *line.distances.add(row)
+                },
+            };
+            let matrix = lines::pack(&segment, &line.look, self.local_radius);
+            self.out
+                .write(row, &matrix, math::world_sphere(&matrix, self.local_radius));
         }
     }
 
@@ -1225,6 +1535,24 @@ impl BatchTable {
         let bytes = InstanceBatch::sprite_row_bytes();
         self.insert(capacity, bytes, || {
             InstanceBatch::try_new_sprites(capacity, dynamic, mesh, material, local_radius, look)
+        })
+    }
+
+    /// Creates a line batch (see [`InstanceBatch::try_new_lines`]) of `points` points and returns
+    /// its id. Fails as [`BatchTable::create`] does.
+    pub fn create_lines(
+        &mut self,
+        points: u32,
+        dynamic: bool,
+        mesh: u32,
+        material: u32,
+        local_radius: f32,
+        look: LineLook,
+    ) -> Result<Handle, CoreError> {
+        let rows = look.mode.rows(points);
+        let bytes = InstanceBatch::line_point_bytes() * u64::from(points) / u64::from(rows.max(1));
+        self.insert(rows, bytes, || {
+            InstanceBatch::try_new_lines(points, dynamic, mesh, material, local_radius, look)
         })
     }
 
@@ -1482,6 +1810,154 @@ mod tests {
         batch.update(&jobs, 1, &mut cells);
         assert!(batch.unculled());
         assert_eq!(batch.world(1).sphere(0)[3], crate::world::UNBOUNDED_RADIUS);
+    }
+
+    /// Positions along x of a line's six points, and each point's linear colour.
+    const LINE_XS: [f32; 6] = [0.0, 1.0, 3.0, 6.0, 10.0, 15.0];
+
+    fn line_color(point: usize) -> [f32; 3] {
+        [point as f32 / 5.0, 1.0, 0.25]
+    }
+
+    fn line_batch(mode: LineMode, dynamic: bool, dashed: bool) -> InstanceBatch {
+        let look = LineLook::new(mode, 3.0, false, dashed);
+        let mut batch = InstanceBatch::try_new_lines(6, dynamic, 3, 4, 1.0, look).unwrap();
+        let (points, colors) = batch.line_points_mut();
+        for (k, x) in LINE_XS.into_iter().enumerate() {
+            points[k * 3] = x;
+            colors[k * 3..k * 3 + 3].copy_from_slice(&line_color(k));
+        }
+        batch
+    }
+
+    /// The packed matrix that segment `row` of a line through `xs` should have, with the line's
+    /// length before it.
+    fn line_matrix(batch: &InstanceBatch, xs: &[f32], row: u32, distance: f32) -> Affine {
+        let look = batch.line_look().unwrap();
+        let (a, b) = look.mode.ends(row, batch.active_points());
+        let (a, b) = (a as usize, b as usize);
+        let segment = Segment {
+            middle: [(xs[a] + xs[b]) * 0.5, 0.0, 0.0],
+            half: [(xs[b] - xs[a]) * 0.5, 0.0, 0.0],
+            colors: [lines::srgb8(line_color(a)), lines::srgb8(line_color(b))],
+            distance: if look.dashed { distance } else { 0.0 },
+        };
+        lines::pack(&segment, &look, 1.0)
+    }
+
+    /// Checks every active segment of `batch` against a line through `xs`.
+    fn check_line(batch: &InstanceBatch, parity: usize, xs: &[f32]) {
+        let look = batch.line_look().unwrap();
+        let mut distance = 0.0f64;
+        for row in 0..batch.active_count() {
+            let expected = line_matrix(batch, xs, row, distance as f32);
+            assert_eq!(
+                batch.world(parity).matrix(row as usize),
+                &expected,
+                "row {row}"
+            );
+            assert_eq!(batch.positions()[row as usize * 3], expected[3]);
+            let (a, b) = look.mode.ends(row, batch.active_points());
+            distance += f64::from(xs[b as usize] - xs[a as usize]).abs();
+        }
+    }
+
+    #[test]
+    fn line_rows_pack_the_segments_of_their_points() {
+        let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
+        for dynamic in [false, true] {
+            for mode in [LineMode::Segments, LineMode::Strip, LineMode::Loop] {
+                for dashed in [false, true] {
+                    let mut batch = line_batch(mode, dynamic, dashed);
+                    assert_eq!(batch.capacity(), mode.rows(6));
+                    assert!(batch.packed() && batch.rotations().is_empty());
+                    batch.update(&jobs, 1, &mut cells);
+                    check_line(&batch, 1, &LINE_XS);
+                    let count = batch.capacity();
+                    assert_eq!(batch.changed_ranges(), &[RowRange { start: 0, count }]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_moved_point_updates_the_segments_that_use_it() {
+        let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
+        let moved = |xs: &mut [f32; 6], point: usize, batch: &mut InstanceBatch| {
+            xs[point] += 0.5;
+            batch.line_points_mut().0[point * 3] = xs[point];
+            batch.mark_points_dirty(point as u32, 1).unwrap();
+        };
+        // (mode, dashed, the point that moves, the segments that change)
+        let cases = [
+            (LineMode::Segments, false, 3, 1..2),
+            (LineMode::Strip, false, 3, 2..4),
+            (LineMode::Strip, true, 3, 2..5),
+            (LineMode::Loop, false, 3, 2..4),
+            (LineMode::Loop, true, 3, 2..6),
+        ];
+        for (mode, dashed, point, rows) in cases {
+            let mut batch = line_batch(mode, false, dashed);
+            let mut xs = LINE_XS;
+            batch.update(&jobs, 1, &mut cells);
+            moved(&mut xs, point, &mut batch);
+            batch.update(&jobs, 2, &mut cells);
+            check_line(&batch, 0, &xs);
+            let changed = RowRange {
+                start: rows.start,
+                count: rows.end - rows.start,
+            };
+            assert_eq!(batch.changed_ranges(), &[changed], "{mode:?}");
+        }
+        // A loop's first point also moves the segment that closes it.
+        let mut batch = line_batch(LineMode::Loop, false, false);
+        let mut xs = LINE_XS;
+        batch.update(&jobs, 1, &mut cells);
+        moved(&mut xs, 0, &mut batch);
+        batch.update(&jobs, 2, &mut cells);
+        check_line(&batch, 0, &xs);
+        let ends = [
+            RowRange { start: 0, count: 1 },
+            RowRange { start: 5, count: 1 },
+        ];
+        assert_eq!(batch.changed_ranges(), &ends);
+        assert!(batch.mark_points_dirty(5, 2).is_err());
+    }
+
+    #[test]
+    fn fewer_points_make_fewer_segments_and_close_a_loop_sooner() {
+        let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
+        for dashed in [false, true] {
+            let mut batch = line_batch(LineMode::Loop, false, dashed);
+            batch.update(&jobs, 1, &mut cells);
+            batch.set_active_points(4).unwrap();
+            assert_eq!((batch.active_count(), batch.active_points()), (4, 4));
+            batch.update(&jobs, 2, &mut cells);
+            check_line(&batch, 0, &LINE_XS);
+            batch.set_active_points(6).unwrap();
+            batch.update(&jobs, 3, &mut cells);
+            check_line(&batch, 1, &LINE_XS);
+        }
+        let mut strip = line_batch(LineMode::Strip, false, false);
+        strip.set_active_points(1).unwrap();
+        assert_eq!(strip.active_count(), 0);
+        assert!(strip.set_active_points(7).is_err());
+    }
+
+    #[test]
+    fn a_new_width_packs_every_segment_again() {
+        let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
+        let mut batch = line_batch(LineMode::Strip, false, false);
+        batch.update(&jobs, 1, &mut cells);
+        batch.set_line_width(8.0);
+        batch.update(&jobs, 2, &mut cells);
+        assert_eq!(batch.line_look().unwrap().width, 8.0);
+        check_line(&batch, 0, &LINE_XS);
+        assert_eq!(batch.changed_ranges(), &[RowRange { start: 0, count: 5 }]);
     }
 
     #[test]

@@ -8,6 +8,7 @@ use null3d_core::animation::{
 use null3d_core::handle::{GENERATION_BITS, SLOT_BITS};
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{color as light_color, kind as light_kind, value as light_value};
+use null3d_core::lines::LineMode;
 use null3d_core::scene::{NO_PARENT, flags, op};
 use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::caps::Capabilities;
@@ -73,6 +74,11 @@ pub mod shading {
     pub const UNLIT_MAP: u32 = 3;
     /// Sprites, as three.js's `SpriteMaterial` draws them, for the rows of a sprite batch only.
     pub const SPRITE: u32 = 4;
+    /// Wide lines, as three.js's `LineMaterial` draws them, for the rows of a line batch only.
+    pub const LINE: u32 = 5;
+    /// Wide lines lit as a standard material that faces the camera, for the rows of a line batch
+    /// only.
+    pub const LINE_LIT: u32 = 7;
     /// The first custom material: a shading from here up is a custom material's. Its low 16 bits
     /// are the render pipeline template of the material's compiled WGSL.
     pub const CUSTOM_FIRST: u32 = null3d_gpu::drawlist::template::CUSTOM_FIRST;
@@ -420,6 +426,14 @@ pub fn typescript() -> String {
             &[("MAX_ATLAS_SIDE", null3d_core::sprites::MAX_ATLAS_SIDE)],
         ),
         (
+            "LINE_MODE",
+            &[
+                ("SEGMENTS", LineMode::Segments as u32),
+                ("STRIP", LineMode::Strip as u32),
+                ("LOOP", LineMode::Loop as u32),
+            ],
+        ),
+        (
             "QUERY",
             &[
                 ("INPUT", query::INPUT),
@@ -535,6 +549,8 @@ pub fn typescript() -> String {
                 ("TEXCOORDS", shading::TEXCOORDS),
                 ("UNLIT_MAP", shading::UNLIT_MAP),
                 ("SPRITE", shading::SPRITE),
+                ("LINE", shading::LINE),
+                ("LINE_LIT", shading::LINE_LIT),
                 ("CUSTOM_FIRST", shading::CUSTOM_FIRST),
                 ("CUSTOM_ATTRIBUTE_SHIFT", shading::CUSTOM_ATTRIBUTE_SHIFT),
                 ("CUSTOM_BASE_COLOR", shading::CUSTOM_BASE_COLOR),

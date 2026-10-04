@@ -150,6 +150,22 @@ export interface CoreGlue extends CoreErrors {
 		rows: number,
 		screenSize: boolean,
 	): number;
+	/**
+	 * Creates a line batch of `points` points of the segment mesh and a line material, joined as
+	 * `mode` says (a `LINE_MODE_*` code), `width` CSS pixels wide, or world units with `worldUnits`.
+	 */
+	createLineBatch(
+		points: number,
+		dynamic: boolean,
+		mesh: number,
+		material: number,
+		mode: number,
+		width: number,
+		worldUnits: boolean,
+		dashed: boolean,
+	): number;
+	/** Sets the width of a line batch's segments, which updates every segment again. */
+	setLineWidth(batch: number, width: number): number;
 	destroyBatch(batch: number, frame: number): number;
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
@@ -483,6 +499,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createBatch',
 	'createBatchPart',
 	'createSpriteBatch',
+	'createLineBatch',
+	'setLineWidth',
 	'destroyBatch',
 	'batchArrays',
 	'setBatchActiveCount',

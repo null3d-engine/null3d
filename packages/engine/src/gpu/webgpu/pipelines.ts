@@ -44,6 +44,8 @@ import {
 	TEMPLATE_LIGHT_COUNT,
 	TEMPLATE_LIGHT_PLACE,
 	TEMPLATE_LIGHT_WRITE,
+	TEMPLATE_LINE,
+	TEMPLATE_LINE_LIT,
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SKIN,
 	TEMPLATE_SPRITE,
@@ -427,6 +429,8 @@ export class Pipelines {
 			],
 			[TEMPLATE_SHADOW_DEPTH, 'shadow depth', shaders.shadow_depth, [0, 1], [LAYOUT_DEPTH]],
 			[TEMPLATE_SPRITE, 'sprite', shaders.sprite, [0, 2], [LAYOUT_FRAME]],
+			[TEMPLATE_LINE, 'line', shaders.line, [0], [LAYOUT_FRAME]],
+			[TEMPLATE_LINE_LIT, 'lit line', shaders.line_lit, [0], [LAYOUT_FRAME]],
 			[
 				TEMPLATE_SPRITE_MAP,
 				'sprite map',

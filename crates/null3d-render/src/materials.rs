@@ -54,6 +54,13 @@ pub enum Shading {
     Sprite,
     /// A sprite material with its map, at each sprite's frame of the atlas; nothing creates it.
     SpriteMap,
+    /// Wide lines, as three.js's `LineMaterial` draws them: a quad with round ends for each
+    /// segment of a line batch, in the base color times the segment's colors, with dashes that the
+    /// material's custom values set.
+    Line,
+    /// Wide lines lit as a standard material whose surface faces the camera, with the material's
+    /// metalness, roughness and emissive color.
+    LineLit,
     /// A custom material: the standard material's template with the sketch's own WGSL, or a full
     /// shader of the sketch's, under its own template id, from [`template::CUSTOM_FIRST`] up.
     Custom(CustomShading),
@@ -94,6 +101,8 @@ impl Shading {
             Shading::StandardMaps => template::INSTANCED_STANDARD_MAPS,
             Shading::Sprite => template::SPRITE,
             Shading::SpriteMap => template::SPRITE_MAP,
+            Shading::Line => template::LINE,
+            Shading::LineLit => template::LINE_LIT,
             Shading::Custom(custom) => custom.template,
         }
     }
@@ -102,7 +111,7 @@ impl Shading {
     /// needs to draw with it.
     pub const fn attributes(self) -> u32 {
         match self {
-            Shading::Lit | Shading::Unlit => 0,
+            Shading::Lit | Shading::Unlit | Shading::Line | Shading::LineLit => 0,
             Shading::TexCoords
             | Shading::UnlitMap
             | Shading::StandardMaps

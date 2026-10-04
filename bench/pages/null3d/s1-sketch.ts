@@ -4,13 +4,14 @@
 // animator. The `grading` switch loads a color grading table and turns the vignette on, then
 // changes the table's intensity and the vignette every frame, for the allocation sample of
 // post.set and the final pass's grading. The `sprites` switch draws the swarm as blended sprites
-// instead of boxes, for the allocation sample of sprite batches.
+// instead of boxes, for the allocation sample of sprite batches, and the `lines` switch as dashed
+// line segments, for the allocation sample of line batches.
 import { defineSketch } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { s1Camera } from '../../scenes/spec';
 import { createAnimatedCrowd, readAnimated } from './crowd';
 import { followPath, readCount, setUpView } from './sketch-common';
-import { createSpriteSwarm, createSwarm } from './swarm';
+import { createLineSwarm, createSpriteSwarm, createSwarm } from './swarm';
 
 export default defineSketch(async (context) => {
 	const { time } = context;
@@ -19,7 +20,9 @@ export default defineSketch(async (context) => {
 	const count = readCount(import.meta.url);
 	const poseSwarm = switches.has('sprites')
 		? await createSpriteSwarm(context, count)
-		: createSwarm(context, count, true, undefined, switches.has('blend')).pose;
+		: switches.has('lines')
+			? await createLineSwarm(context, count)
+			: createSwarm(context, count, true, undefined, switches.has('blend')).pose;
 	const animate = createAnimatedCrowd(context, readAnimated(import.meta.url));
 	const grading = switches.has('grading');
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
