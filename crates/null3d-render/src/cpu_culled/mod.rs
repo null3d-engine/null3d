@@ -101,6 +101,7 @@ use crate::graph::RenderGraph;
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
+use crate::occlusion::Occluders;
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
@@ -281,6 +282,8 @@ pub struct CpuCulledRenderer {
     /// Grid-cell culling: the still scene objects in cell order, and each cell's box.
     cells: CellCulling,
     culling: Culling,
+    /// The camera's blockers for software occlusion culling.
+    occluders: Occluders,
     opaque: Opaque,
     /// The shadow cascades' culling output and draws.
     cascade_culling: Culling,
@@ -373,6 +376,7 @@ impl CpuCulledRenderer {
             clusters: Clusters::default(),
             cells: CellCulling::new(config.cell_culling, true),
             culling: Culling::new(ViewId::CAMERA),
+            occluders: Occluders::default(),
             opaque: Opaque::new(ViewId::CAMERA, config.multi_draw),
             cascade_culling: Culling::new(ViewId::cascade(0)),
             cascade_draws: Opaque::new(ViewId::cascade(0), config.multi_draw),
@@ -1174,6 +1178,11 @@ impl FrameBuilder for CpuCulledRenderer {
                 cells,
                 &|view| settings.view_frame(view, scene, parity, canvas, scale),
                 Some(sorted),
+                Some(cull::Occlusion {
+                    occluders: &mut self.occluders,
+                    meshes: settings.meshes(),
+                    materials: settings.materials(),
+                }),
             )
             .map_err(|_| out_of_memory(&self.layout))?;
         if let Some(frame) = self.culling.frame_mut(ViewId::CAMERA) {
@@ -1195,6 +1204,7 @@ impl FrameBuilder for CpuCulledRenderer {
                     Some(shadow.view_frame(cascade))
                 },
                 None,
+                None,
             )
             .map_err(|_| out_of_memory(&self.casters))?;
         let tiles = &self.tiles;
@@ -1205,6 +1215,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 &mut self.clusters,
                 cells,
                 &|view| tiles.frame(view.tile_index()?).copied(),
+                None,
                 None,
             )
             .map_err(|_| out_of_memory(&self.casters))
@@ -1219,6 +1230,14 @@ impl FrameBuilder for CpuCulledRenderer {
 
     fn visible_entries(&self, frame: u32) -> Option<u32> {
         Some(self.culling.visible_entries(frame))
+    }
+
+    fn occluded_entries(&self, frame: u32) -> Option<u32> {
+        Some(self.culling.occluded_entries(frame))
+    }
+
+    fn set_software_occlusion(&mut self, on: bool) {
+        self.occluders.set_on(on);
     }
 
     fn casts_tile_shadows(&self) -> bool {
