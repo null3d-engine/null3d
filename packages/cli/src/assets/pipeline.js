@@ -14,7 +14,12 @@ import { MAX_TEXTURE_SIDE } from './images.js';
 import { MSFTLod } from './lod-extension.js';
 import { modelReport } from './report.js';
 import { addSpatialData, BVH_MIN_TRIANGLES } from './spatial.js';
-import { Null3dMeshBvh, Null3dOccluder } from './spatial-extensions.js';
+import {
+	NULL3D_MESH_BVH,
+	NULL3D_OCCLUDER,
+	Null3dMeshBvh,
+	Null3dOccluder,
+} from './spatial-extensions.js';
 import { encodeTextures, TEXTURE_FOLDER } from './textures.js';
 
 /** @import { Document } from '@gltf-transform/core' */
@@ -212,9 +217,15 @@ export async function optimizeModel(path, options, encode) {
 		0,
 	);
 	doc.getRoot().getAsset().generator = GENERATOR;
-	// Compression of the input stays out of the output: the steps below choose their own.
+	// Compression, blockers and trees of the input stay out of the output: the steps below make
+	// their own.
 	for (const extension of doc.getRoot().listExtensionsUsed())
-		if (['EXT_meshopt_compression', DRACO].includes(extension.extensionName)) extension.dispose();
+		if (
+			['EXT_meshopt_compression', DRACO, NULL3D_OCCLUDER, NULL3D_MESH_BVH].includes(
+				extension.extensionName,
+			)
+		)
+			extension.dispose();
 	await reorderMeshes(doc);
 	const levels = options.lod ? await planLevels(doc) : new Map();
 	quantizeMeshes(doc);

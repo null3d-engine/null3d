@@ -165,8 +165,9 @@ impl std::fmt::Display for Dropped {
             ),
             Dropped::TooLittle { fill } => write!(
                 f,
-                "its blocker would fill {:.0}% of its box, under {:.0}%",
-                fill * 100.0,
+                "its blocker would fill {:.1}% of its box, under {:.0}%",
+                // Rounded down, so a share just under the least never reads as the least.
+                (fill * 1000.0).floor() / 10.0,
                 MIN_FILL * 100.0
             ),
             Dropped::Failed(Failure::NotClosed) => write!(f, "its blocker is not closed"),

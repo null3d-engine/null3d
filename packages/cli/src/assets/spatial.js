@@ -3,12 +3,11 @@
 // the triangles of each large mesh, which raycasts load instead of building. Both come from the
 // engine's Rust core through the formats module, so their bytes are the same on every machine.
 // The step runs after quantization, on the positions that the engine reads.
-import { Accessor } from '@gltf-transform/core';
 import { blockerMesh, meshBvh } from './formats.js';
 import { triangleIndices, triangleLists } from './geometry.js';
 import { Null3dMeshBvh, Null3dOccluder } from './spatial-extensions.js';
 
-/** @import { Document, Mesh, Node, Primitive } from '@gltf-transform/core' */
+/** @import { Accessor, Document, Mesh, Node, Primitive } from '@gltf-transform/core' */
 
 /**
  * The fewest triangles of a primitive whose tree the tool stores, by default. A stored tree takes
@@ -60,7 +59,11 @@ function drawnMeshes(doc) {
 	/** @param {Node} node */
 	const visit = (node) => {
 		const mesh = node.getMesh();
-		if (mesh) drawn.set(mesh, [...(drawn.get(mesh) ?? []), node]);
+		if (mesh) {
+			const nodes = drawn.get(mesh);
+			if (nodes) nodes.push(node);
+			else drawn.set(mesh, [node]);
+		}
 		for (const child of node.listChildren()) visit(child);
 	};
 	for (const scene of doc.getRoot().listScenes())
@@ -103,7 +106,8 @@ function upright(nodes) {
 const solid = (prim) => (prim.getMaterial()?.getAlphaMode() ?? 'OPAQUE') === 'OPAQUE';
 
 /**
- * Gives the document's meshes their blockers and their stored trees.
+ * Gives the document's meshes their blockers and their stored trees. The document holds neither
+ * yet.
  *
  * @param {Document} doc
  * @param {SpatialOptions} options
@@ -119,10 +123,6 @@ export function addSpatialData(doc, { blockers, bvhMinTriangles }) {
 		trees: 0,
 		treeBytes: 0,
 	};
-	// A file optimized before keeps none of its old data: each mesh gets its own again.
-	for (const extension of doc.getRoot().listExtensionsUsed())
-		if (extension instanceof Null3dOccluder || extension instanceof Null3dMeshBvh)
-			extension.dispose();
 	const occluders = doc.createExtension(Null3dOccluder);
 	const trees = doc.createExtension(Null3dMeshBvh);
 	const buffer = doc.getRoot().listBuffers()[0] ?? doc.createBuffer();
@@ -176,20 +176,28 @@ export function addSpatialData(doc, { blockers, bvhMinTriangles }) {
 			base += own.length / 3;
 		}
 		const blocker = blockerMesh(positions, indices, { ground: upright(nodes) });
-		const occluder = occluders.createOccluder();
 		if ('dropped' in blocker) {
 			report.noBlocker.push({ mesh: mesh.getName(), reason: blocker.dropped });
 			if (setting !== true) continue;
+			// Each solid primitive then blocks with its own triangles.
+			for (const s of opaque)
+				s.prim.setExtension(
+					occluders.extensionName,
+					/** @type {any} */ (occluders.createOccluder()),
+				);
 			report.ownBlockers++;
-		} else {
-			occluder.setBlocker(
+			continue;
+		}
+		// The first solid primitive draws the blocker of the whole mesh.
+		const occluder = occluders
+			.createOccluder()
+			.setBlocker(
 				accessor(blocker.positions.slice(), 'VEC3'),
 				accessor(blocker.indices.slice(), 'SCALAR'),
 			);
-			report.blockers++;
-			report.blockerTriangles += blocker.indices.length / 3;
-		}
 		first.prim.setExtension(occluders.extensionName, /** @type {any} */ (occluder));
+		report.blockers++;
+		report.blockerTriangles += blocker.indices.length / 3;
 	}
 	if (report.trees === 0) trees.dispose();
 	if (report.blockers + report.ownBlockers === 0) occluders.dispose();

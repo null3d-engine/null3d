@@ -965,14 +965,16 @@ export class Mesh extends Object3D {
 	}
 
 	/**
-	 * Makes the mesh block the view, or stop. The default is false. On WebGL2, while the
-	 * `softwareOcclusion` quality setting is on, the job workers draw each blocker into a small
-	 * depth buffer every frame, and the engine skips every object that lies wholly behind the
-	 * blockers. Mark large, solid meshes that hide much of the scene, such as buildings and walls,
-	 * whose mesh has at most 4,096 triangles. A blocker's mesh must lie inside what the object
-	 * draws, as the object's own mesh does. Objects that blend, cut holes with an alpha mask, use
-	 * a custom material or are skinned never block, whatever this says. WebGPU culls hidden
-	 * objects on the GPU, and ignores it. A change needs no rebuild of the engine's tables.
+	 * Makes the mesh block the view, or stop. The default is false, except for the meshes of a
+	 * model file that the asset tool gave blockers. On WebGL2, while the `softwareOcclusion`
+	 * quality setting is on, the job workers draw each blocker into a small depth buffer every
+	 * frame, and the engine skips every object that lies wholly behind the blockers. Mark large,
+	 * solid meshes that hide much of the scene, such as buildings and walls, whose mesh has at most
+	 * 4,096 triangles. A mesh that the asset tool gave a blocker draws that blocker instead, a few
+	 * boxes inside the mesh, whatever the mesh's own size. A blocker's mesh must lie inside what
+	 * the object draws, as the object's own mesh does. Objects that blend, cut holes with an alpha
+	 * mask, use a custom material or are skinned never block, whatever this says. WebGPU culls
+	 * hidden objects on the GPU, and ignores it. A change needs no rebuild of the engine's tables.
 	 */
 	setOccluder(occluder: boolean): void {
 		this.setFlag('setOccluder', C.FLAG_OCCLUDER, occluder);
