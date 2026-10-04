@@ -398,3 +398,7 @@ On 2 October 2026, the runner's bench plan ran S3 and S4 on the S24+ and the iPa
 Runs: S24+ in Chrome `target/runs/20261002-053620-bench` (S4), `20261002-054912-bench` (S3) and `20261002-062931-bench` (the long S4 run); in Brave `20261002-130920-bench`; the iPad `20261002-151739-bench` and `20261002-160138-bench`.
 
 On the MacBook Pro in Chrome at 144 Hz, 3 October 2026, five runs: S4 on WebGPU took 0.08 ms per frame. three.js took 2.38 ms with its WebGL renderer and 4.87 ms with its WebGPU renderer. It held its target in 146 of 146 seconds. S3 on WebGPU took 0.09 ms, against 0.44 ms for three.js's WebGPU renderer.
+
+## Addendum, 2026-10-04: equal work, not identical pixels
+
+The owner's decision of 4 October 2026 ([D-52](D-52-intent-parity.md)) sets how the targets compare the two engines. A comparison measures equal work: the same scene content and comparable quality settings. Where null3D's default technique differs from three.js's, its report gives a quality note beside the timings. The two engines' images need not be identical. The figures above stand: each scene drew the same content in both engines.
