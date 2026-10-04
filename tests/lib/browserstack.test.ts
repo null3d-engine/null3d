@@ -310,6 +310,8 @@ describe('devices:cloud', () => {
 			passOn: ['--only', 'x'],
 		});
 		expect(() => parseCloudArgs(['--tier', 'C'])).toThrow('--tier: use A, B');
+		expect(parseCloudArgs(['--part', '2/3']).part).toEqual({ index: 2, count: 3 });
+		expect(() => parseCloudArgs(['--part', '4/3'])).toThrow('--part: use <i>/<n>');
 		expect(() => parseCloudArgs(['--parallel', '0'])).toThrow('--parallel');
 		expect(() => parseCloudArgs(['--allow-no-webgpu'])).toThrow(
 			"put the device runner's options after --",
@@ -326,6 +328,20 @@ describe('devices:cloud', () => {
 		expect(() => pickDevices({ tiers: ['A'], only: ['bsnokia-chrome'] })).toThrow(
 			'has no runner bsnokia-chrome',
 		);
+	});
+
+	it('splits the picked devices into parts in the list order, every device in one part', () => {
+		const all = pickDevices({ tiers: ['A'] }).map((d) => d.runner);
+		const parts = [1, 2, 3].map((index) =>
+			pickDevices({ tiers: ['A'], part: { index, count: 3 } }).map((d) => d.runner),
+		);
+		expect(parts.map((part) => part.length)).toEqual([3, 3, 4]);
+		expect(parts.flat()).toEqual(all);
+		expect(
+			pickDevices({ tiers: ['A'], only: all.slice(0, 2), part: { index: 2, count: 2 } }).map(
+				(d) => d.runner,
+			),
+		).toEqual(all.slice(1, 2));
 	});
 
 	it('runs the devices that need core WebGPU apart from those that may lack it', () => {
