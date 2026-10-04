@@ -11,7 +11,8 @@
 //!   shaders import as `null3d::<file name>`.
 //! - [`OUTPUT_PATH`] is the main generated module. The device modules sit beside it in
 //!   [`OUTPUT_DIR`], one for each target and each value of the permutation bits that a device
-//!   fixes, with the builds of the shaders that load by device.
+//!   fixes, with the builds of the shaders that load by device. The builds of each feature that
+//!   loads on first use go into device modules of their own there.
 
 mod composition;
 mod features;
@@ -45,8 +46,8 @@ pub use literals::literals_safari_refuses;
 pub use manifest::{Pipeline, Target, Variant};
 pub use material::{MaterialOutput, MaterialSource, MaterialTemplate};
 pub use output::{
-    Binding, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Output, Response,
-    VariantOutput, WgslOutput,
+    Binding, FirstUseFeatures, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Output,
+    Response, VariantOutput, WgslOutput,
 };
 pub use position::Position;
 pub use problem::{BuildError, Problem};
@@ -159,6 +160,21 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
         output.pipelines.insert(shader_name.clone(), pipelines);
         if shader.by_device {
             output.by_device.insert(shader_name.clone());
+        }
+    }
+    for (feature, first_use) in &manifest.first_use {
+        for shader in &first_use.shaders {
+            output
+                .first_use
+                .shaders
+                .insert(shader.clone(), feature.clone());
+        }
+        for bit in first_use
+            .bits
+            .iter()
+            .filter_map(|bit| permutation::bit(bit))
+        {
+            output.first_use.bits.insert(bit, feature.clone());
         }
     }
     errors.or(output)

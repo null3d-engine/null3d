@@ -2,7 +2,14 @@
 // worker (low-latency mode) or on the page's main thread (single-threaded mode and ?render=main).
 
 import { FORMAT_RG11B10_UFLOAT, PERMUTATION_HALF } from '../generated/gpu';
-import { type DeviceShaders, loadGlslShaders, loadWgslShaders } from '../generated/shaders';
+import {
+	type DeviceShaders,
+	type FirstUseShaders,
+	loadGlslFeature,
+	loadGlslShaders,
+	loadWgslFeature,
+	loadWgslShaders,
+} from '../generated/shaders';
 import { type CanvasHolder, clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
 import { type Completion, FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { DeviceShaderSet } from '../gpu/device-shaders';
@@ -275,19 +282,25 @@ class WebGL2Renderer implements Renderer {
 }
 
 /** The loaded shaders, or a fresh copy that the browser must compile again when the device asks. */
-const freshIf = (device: CoreDevice, shaders: DeviceShaders) =>
-	device.freshShaders ? saltShaders(shaders, freshSalt()) : shaders;
+const freshIf = <Shaders extends FirstUseShaders>(device: CoreDevice, shaders: Promise<Shaders>) =>
+	device.freshShaders ? shaders.then((loaded) => saltShaders(loaded, freshSalt())) : shaders;
 
 /**
- * The device's shaders, from the module of its fixed bits, as a set that loads the module of
- * other fixed bits through `load` when a pipeline needs it.
+ * The device's shaders, from the start's module of its fixed bits, as a set that loads the module
+ * of other fixed bits through `load`, and the module of a feature that loads on first use through
+ * `loadFeature`, when a pipeline needs it.
  */
 async function deviceShaders(
 	device: CoreDevice,
 	load: (bits: number) => Promise<DeviceShaders>,
+	loadFeature: (feature: string, bits: number) => Promise<FirstUseShaders>,
 ): Promise<DeviceShaderSet> {
-	const loadFresh = (bits: number) => load(bits).then((loaded) => freshIf(device, loaded));
-	return new DeviceShaderSet(await loadFresh(device.shaderBits), device.shaderBits, loadFresh);
+	return new DeviceShaderSet(
+		await freshIf(device, load(device.shaderBits)),
+		device.shaderBits,
+		(bits, feature) =>
+			freshIf(device, feature === undefined ? load(bits) : loadFeature(feature, bits)),
+	);
 }
 
 /** Creates the renderer for a tier on the canvas this thread owns. */
@@ -304,7 +317,7 @@ export async function createRenderer(
 		// scene's shaders download meanwhile.
 		const [, shaders] = await Promise.all([
 			contextRestored(gl),
-			scene && deviceShaders(device, loadGlslShaders),
+			scene && deviceShaders(device, loadGlslShaders, loadGlslFeature),
 		]);
 		if (scene && shaders)
 			return new WebGL2SceneRenderer(
@@ -323,7 +336,7 @@ export async function createRenderer(
 	}
 	const [gpu, shaders] = await Promise.all([
 		requestDevice(options),
-		scene && deviceShaders(device, loadWgslShaders),
+		scene && deviceShaders(device, loadWgslShaders, loadWgslFeature),
 	]);
 	if (scene && shaders)
 		return new WebGPUSceneRenderer(

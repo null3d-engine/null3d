@@ -315,10 +315,10 @@ impl BloomPass {
     pub(crate) const UPLOAD_BYTES: usize = BUFFER_BYTES;
 
     /// Asks `pipelines` for the steps' pipeline, once.
-    pub(crate) fn request_pipeline(&mut self, pipelines: &mut PipelineCache) {
-        if self.pipeline.is_none() {
-            self.pipeline = Some(pipelines.id(pipeline(self.format)));
-        }
+    pub(crate) fn request_pipeline(&mut self, pipelines: &mut PipelineCache) -> u32 {
+        *self
+            .pipeline
+            .get_or_insert_with(|| pipelines.id(pipeline(self.format)))
     }
 
     /// Makes the buffer and the sampler when the GPU lacks them, uploads the settings for the

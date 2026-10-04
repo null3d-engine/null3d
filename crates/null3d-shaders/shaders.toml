@@ -56,6 +56,24 @@
 # other than `@interpolate(flat, either)` (AGENTS.md hard rule 10). A variant whose only target is
 # "glsl" may read `@builtin(draw_index)`: its vertex shader reads `gl_DrawID` from
 # WEBGL_multi_draw, which WebGPU does not have.
+#
+# Each [first_use.<feature>] table names a feature whose builds load on first use: a page that
+# never uses the feature downloads none of them. The feature's builds go into device modules of
+# their own, generated/shaders-<feature>-<target>[-<bit>...].ts, one for each target and each value
+# of the device's bits that those builds vary in. The engine loads one the first time a pipeline
+# asks for one of its builds, and the pipeline waits for it as for a custom material's shader.
+#
+#   shaders  Shaders that load by device, each of whose builds belongs to the feature: its templates.
+#   bits     Permutation bits that a device does not fix: each build of a shader that loads by
+#            device with one of them belongs to the feature, such as the final pass's BLOOM builds.
+#
+# A build with no feature stays in the device modules of the start. A build of a feature's shader
+# belongs to that feature, and any other build to the feature of its lowest bit that a feature
+# names. The template of custom materials stays at the start. The size check holds each module of
+# a feature to the start shader file's own limit after Brotli.
+#
+# A new feature that adds templates or bits adds its table here. Its passes must not draw until
+# their pipelines are built, as bloom's do, since a pipeline that waits for its file draws nothing.
 
 # The templates of meshes drawn by instance, one file each. Each builds for WebGPU, and for WebGL2
 # with and without the draw index of WEBGL_multi_draw: WebGL2 reads instances from data textures,
@@ -123,6 +141,10 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { defs = ["MAP"], permutations = ["TONE_MAP", "ALPHA_MASK"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2", "MAP"], permutations = ["DRAW_INDEX", "TONE_MAP", "ALPHA_MASK"], targets = ["glsl"] }
 
+# A page downloads the sprite templates with its first sprite batch.
+[first_use.sprites]
+shaders = ["sprite", "sprite_map"]
+
 # Colored by the first texture coordinates, for the engine's own tests of vertex formats.
 [shaders.texcoords]
 file = "texcoords.wgsl"
@@ -130,6 +152,10 @@ by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "SKIN"], targets = ["glsl"] }
+
+# Only the engine's own tests draw with it, so a page downloads it with the first mesh that does.
+[first_use.texcoords]
+shaders = ["texcoords"]
 
 # The final pass: one triangle over the canvas, which scales the scene color up to it and tone
 # maps HDR color. The FXAA builds smooth edges first, for the FXAA anti-aliasing mode. The BLOOM
@@ -151,6 +177,12 @@ by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
+
+# A page downloads bloom's steps and the final pass's BLOOM builds when the sketch first turns
+# bloom on.
+[first_use.bloom]
+shaders = ["bloom"]
+bits = ["BLOOM"]
 
 # Debug lines, which development builds of the engine draw after the opaque objects: a position
 # relative to the camera and an sRGB color per vertex, from a vertex buffer of their own. It stays
@@ -202,14 +234,18 @@ variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
 # A texture behind every object, drawn first in the camera's opaque pass as one triangle over the
-# whole view. It loads by device, with the mesh templates, and its TONE_MAP builds tone map and
-# encode their color themselves, for the 8-bit path.
+# whole view. Its TONE_MAP builds tone map and encode their color themselves, for the 8-bit path.
 [shaders.background]
 file = "background.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
+
+# A page downloads it with its first background texture. The background appears once its pipeline
+# is built, as it appears once the texture's texels are on the GPU.
+[first_use.background]
+shaders = ["background"]
 
 # The GPU timer's start mark, one invocation that does nothing; its compute entry point is `main`.
 # WebGPU only. It stays in shaders.ts, where the GPU timer imports it.

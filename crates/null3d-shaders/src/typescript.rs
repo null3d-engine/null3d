@@ -8,7 +8,11 @@
 //! keeps only the shaders that its code imports: the engine's download holds none of the test
 //! shaders. The shaders that load by device go into one device module for each target and each
 //! value of the permutation bits that a device fixes. Each is a file of its own that the loader
-//! imports on demand, so a page downloads only the builds its device draws with.
+//! imports on demand, so a page downloads only the builds its device draws with. The builds of a
+//! feature that loads on first use go into device modules of the feature's own, one for each
+//! target and each value of the device's bits that those builds vary in. A page loads one of them
+//! the first time a pipeline asks for one of the feature's builds, so a page that never uses the
+//! feature downloads none of them.
 //!
 //! Many builds share a stage's source: a vertex shader stays the same across bits that change only
 //! the fragment shader. Each module writes a source that several of its builds use once, as a
@@ -19,7 +23,7 @@ use std::collections::{BTreeMap, HashMap};
 use null3d_gpu::drawlist::permutation;
 
 use crate::glsl::DEPTH_MAPPING_UNIFORM;
-use crate::{GlslStage, Output, Target, VariantOutput};
+use crate::{FirstUseFeatures, GlslStage, Output, Target, VariantOutput};
 
 /// The formatter's line width, and the width it counts for one tab.
 const LINE_WIDTH: usize = 100;
@@ -116,10 +120,20 @@ export type ShaderVariants<Pipeline extends string = string> = Readonly<
 >;
 ";
 
-/// The type of the loader tables, before them.
+/// The types of the loader tables, before them.
 const LOADER_TYPE: &str = r"
 /** Loaders of device modules, by the permutation bits that a device fixes. */
 type DeviceModules = Readonly<Record<number, () => Promise<{ SHADERS: DeviceShaders }>>>;
+
+/**
+ * The device modules of a feature that loads on first use, for one target: the permutation bits
+ * that a device fixes and that the feature's builds vary in, and the loader of the module of each
+ * value of those bits.
+ */
+interface FirstUseFiles {
+	readonly bits: number;
+	readonly modules: Readonly<Record<number, () => Promise<{ SHADERS: FirstUseShaders }>>>;
+}
 ";
 
 /// The loaders of the device modules, after the loader tables. Each target has a table and a
@@ -153,12 +167,63 @@ export function loadGlslShaders(bits: number): Promise<DeviceShaders> {
 }
 
 /**
+ * The feature that loads on first use whose device modules hold the build of `shader` with the
+ * permutation word `permutation`: the shader's own feature, or else that of the word's lowest bit
+ * that a feature names. Undefined for a build that the device modules of the start hold.
+ */
+export function firstUseFeature(shader: string, permutation: number): string | undefined {
+	const feature = SHADER_FEATURES[shader];
+	if (feature !== undefined) return feature;
+	for (const [bit, name] of FEATURE_BITS) if ((permutation & bit) !== 0) return name;
+	return undefined;
+}
+
+function loadFirstUse(
+	files: Readonly<Record<string, FirstUseFiles>>,
+	target: string,
+	feature: string,
+	bits: number,
+) {
+	const of = files[feature];
+	const load = of?.modules[bits & of.bits];
+	if (!load) {
+		const message = `no shader module holds the ${target} builds of ${feature} with permutation bits ${bits}`;
+		return Promise.reject(new Error(message));
+	}
+	return load().then((module) => module.SHADERS);
+}
+
+/**
+ * Loads the WGSL builds of `feature`, a feature that loads on first use, for a device whose fixed
+ * permutation bits are `bits`. Its module holds only the feature's builds.
+ */
+export function loadWgslFeature(feature: string, bits: number): Promise<FirstUseShaders> {
+	return loadFirstUse(WGSL_FIRST_USE, 'WGSL', feature, bits);
+}
+
+/**
+ * Loads the GLSL builds of `feature`, a feature that loads on first use, for a device whose fixed
+ * permutation bits are `bits`. Its module holds only the feature's builds.
+ */
+export function loadGlslFeature(feature: string, bits: number): Promise<FirstUseShaders> {
+	return loadFirstUse(GLSL_FIRST_USE, 'GLSL', feature, bits);
+}
+
+/**
  * Every shader variant, by shader name and variant name: those of this module and those of every
- * device module, for the tests that check them all.
+ * device module, the modules of features that load on first use among them, for the tests that
+ * check them all.
  */
 export async function everyShader(): Promise<Record<string, ShaderVariants>> {
 	const every: Record<string, ShaderVariants> = { ...SHADERS };
-	for (const load of [...Object.values(WGSL_MODULES), ...Object.values(GLSL_MODULES)]) {
+	const loads = [
+		...Object.values(WGSL_MODULES),
+		...Object.values(GLSL_MODULES),
+		...[...Object.values(WGSL_FIRST_USE), ...Object.values(GLSL_FIRST_USE)].flatMap((files) =>
+			Object.values(files.modules),
+		),
+	];
+	for (const load of loads) {
 		for (const [name, variants] of Object.entries((await load()).SHADERS)) {
 			every[name] = { ...every[name], ...variants };
 		}
@@ -168,22 +233,26 @@ export async function everyShader(): Promise<Record<string, ShaderVariants>> {
 ";
 
 /// A device module: the builds of the shaders that load by device for one target, with one value
-/// of the permutation bits that a device fixes.
+/// of the permutation bits that a device fixes. A module of a feature that loads on first use holds
+/// only that feature's builds, and the modules without a feature hold the builds of the start.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct DeviceModule {
+struct DeviceModule<'a> {
+    feature: Option<&'a str>,
     target: Target,
     bits: u32,
 }
 
-impl DeviceModule {
-    /// The module that holds a build of a shader that loads by device. Such a build has one target.
-    fn of(variant: &VariantOutput) -> Self {
+impl<'a> DeviceModule<'a> {
+    /// The module that holds a build of `shader`, which loads by device. Such a build has one
+    /// target.
+    fn of(shader: &str, variant: &VariantOutput, first_use: &'a FirstUseFeatures) -> Self {
         let target = if variant.wgsl.is_some() {
             Target::Wgsl
         } else {
             Target::Glsl
         };
         Self {
+            feature: first_use.feature_of(shader, variant.permutation),
             target,
             bits: variant.permutation & permutation::DEVICE,
         }
@@ -197,10 +266,16 @@ impl DeviceModule {
             .map(|(name, _)| name)
     }
 
-    /// The file name without its extension: the prefix, the target, then each bit's name in
-    /// lowercase with hyphens, such as `shaders-glsl-draw-index`.
+    /// The file name without its extension: the prefix, the feature's name for a feature that
+    /// loads on first use, the target, then each bit's name in lowercase, all joined with
+    /// hyphens, such as `shaders-glsl-draw-index` or `shaders-sprites-glsl-draw-index`.
     fn stem(self) -> String {
-        let mut stem = format!("{DEVICE_MODULE_PREFIX}{}", self.target.name());
+        let mut stem = DEVICE_MODULE_PREFIX.to_owned();
+        if let Some(feature) = self.feature {
+            stem.push_str(&feature.replace('_', "-"));
+            stem.push('-');
+        }
+        stem.push_str(self.target.name());
         for name in self.bit_names() {
             stem.push('-');
             stem.push_str(&name.to_ascii_lowercase().replace('_', "-"));
@@ -212,44 +287,62 @@ impl DeviceModule {
 /// Builds by shader name, then by variant name.
 type Builds<'a> = BTreeMap<&'a str, BTreeMap<&'a str, &'a VariantOutput>>;
 
-/// The builds of the shaders that load by device, by device module. A target has a module for
-/// each combination of the device's bits that any of its shaders varies in. Each module holds, of
-/// each shader, the builds that a device with the module's bits asks for: those with the module's
-/// bits that the shader varies in, so a shader that varies in none is in every module of its
-/// target. Each module lists every shader that loads by device, with or without builds in it.
-fn device_builds(output: &Output) -> BTreeMap<DeviceModule, Builds<'_>> {
+/// The builds of the shaders that load by device, by device module. A target has a module of the
+/// start for each combination of the device's bits that any of its shaders varies in, and each
+/// feature that loads on first use has a module for each combination of the device's bits that
+/// its builds vary in. Each module holds, of each shader, the builds of its feature, or of the
+/// start, that a device with the module's bits asks for: those with the module's bits that those
+/// builds vary in, so a shader whose builds vary in none is in every module of its target. Each
+/// module of the start lists every shader that loads by device, with or without builds in it, and
+/// a feature's module lists the shaders that have builds of the feature.
+fn device_builds(output: &Output) -> BTreeMap<DeviceModule<'_>, Builds<'_>> {
     let shaders = || {
         output
             .by_device
             .iter()
             .filter_map(|shader| Some((shader.as_str(), output.shaders.get(shader)?)))
     };
-    let mut varies: BTreeMap<(&str, Target), u32> = BTreeMap::new();
-    let mut targets: BTreeMap<Target, u32> = BTreeMap::new();
+    let first_use = &output.first_use;
+    let mut varies: BTreeMap<(&str, Option<&str>, Target), u32> = BTreeMap::new();
+    let mut groups: BTreeMap<(Option<&str>, Target), u32> = BTreeMap::new();
     for (shader, variants) in shaders() {
         for variant in variants.values() {
-            let of = DeviceModule::of(variant);
-            *varies.entry((shader, of.target)).or_default() |= of.bits;
-            *targets.entry(of.target).or_default() |= of.bits;
+            let of = DeviceModule::of(shader, variant, first_use);
+            *varies.entry((shader, of.feature, of.target)).or_default() |= of.bits;
+            *groups.entry((of.feature, of.target)).or_default() |= of.bits;
+            // A device loads a module of the start for its bits, whichever builds vary in them.
+            *groups.entry((None, of.target)).or_default() |= of.bits;
         }
     }
     let mut modules = BTreeMap::new();
-    for (&target, &all) in &targets {
+    for (&(feature, target), &all) in &groups {
         let mut bits = all;
         loop {
-            let module = DeviceModule { target, bits };
+            let module = DeviceModule {
+                feature,
+                target,
+                bits,
+            };
             let mut builds = Builds::new();
             for (shader, variants) in shaders() {
-                let asked = bits & varies.get(&(shader, target)).copied().unwrap_or(0);
+                let Some(&varied) = varies.get(&(shader, feature, target)) else {
+                    if feature.is_none() {
+                        builds.insert(shader, BTreeMap::new());
+                    }
+                    continue;
+                };
                 let wanted = DeviceModule {
+                    feature,
                     target,
-                    bits: asked,
+                    bits: bits & varied,
                 };
                 builds.insert(
                     shader,
                     variants
                         .iter()
-                        .filter(|(_, variant)| DeviceModule::of(variant) == wanted)
+                        .filter(|(_, variant)| {
+                            DeviceModule::of(shader, variant, first_use) == wanted
+                        })
                         .map(|(name, variant)| (name.as_str(), variant))
                         .collect(),
                 );
@@ -276,8 +369,9 @@ pub(crate) fn modules(output: &Output) -> BTreeMap<String, String> {
 }
 
 /// The main module: the types, one export per shader that does not load by device, `SHADERS`,
-/// which gathers them by name, and the loaders of the device modules.
-fn main_module(output: &Output, devices: &BTreeMap<DeviceModule, Builds<'_>>) -> String {
+/// which gathers them by name, and the loaders of the device modules, those of the features that
+/// load on first use among them.
+fn main_module(output: &Output, devices: &BTreeMap<DeviceModule<'_>, Builds<'_>>) -> String {
     let mut ts = Writer::default();
     ts.out.push_str(HEADER);
     ts.out.push_str(TYPES);
@@ -300,6 +394,11 @@ fn main_module(output: &Output, devices: &BTreeMap<DeviceModule, Builds<'_>>) ->
         ));
     }
     ts.close("}");
+    ts.line("");
+    ts.line(
+        "/** The builds of a feature that loads on first use, in one of the feature's device modules. */",
+    );
+    ts.line("export type FirstUseShaders = Partial<DeviceShaders>;");
     ts.line("");
     ts.line("/**");
     ts.line(
@@ -354,7 +453,7 @@ fn main_module(output: &Output, devices: &BTreeMap<DeviceModule, Builds<'_>>) ->
         let modules: Vec<DeviceModule> = devices
             .keys()
             .copied()
-            .filter(|module| module.target == target)
+            .filter(|module| module.target == target && module.feature.is_none())
             .collect();
         ts.line("");
         ts.line(&format!(
@@ -374,19 +473,94 @@ fn main_module(output: &Output, devices: &BTreeMap<DeviceModule, Builds<'_>>) ->
         }
         ts.close("};");
     }
+    first_use_tables(&mut ts, &output.first_use, devices);
     ts.out.push_str(LOADERS);
     ts.out
 }
 
+/// The tables of the features that load on first use: each target's modules of each feature, the
+/// feature of each shader whose builds all belong to one, and the feature of each permutation bit.
+fn first_use_tables(
+    ts: &mut Writer,
+    first_use: &FirstUseFeatures,
+    devices: &BTreeMap<DeviceModule<'_>, Builds<'_>>,
+) {
+    for target in [Target::Wgsl, Target::Glsl] {
+        let name = target.name().to_ascii_uppercase();
+        let mut features: BTreeMap<&str, (u32, Vec<DeviceModule>)> = BTreeMap::new();
+        for module in devices.keys().filter(|module| module.target == target) {
+            if let Some(feature) = module.feature {
+                let (bits, modules) = features.entry(feature).or_default();
+                *bits |= module.bits;
+                modules.push(*module);
+            }
+        }
+        let table = format!("const {name}_FIRST_USE: Readonly<Record<string, FirstUseFiles>> =");
+        ts.line("");
+        ts.line(&format!(
+            "/** The {name} device modules of each feature that loads on first use, by feature. */"
+        ));
+        if features.is_empty() {
+            ts.line(&format!("{table} {{}};"));
+            continue;
+        }
+        ts.open(&format!("{table} {{"));
+        for (feature, (bits, modules)) in &features {
+            ts.open(&format!("{feature}: {{"));
+            ts.line(&format!("bits: {bits},"));
+            ts.open("modules: {");
+            for module in modules {
+                ts.line(&format!(
+                    "{}: () => import('./{}'),",
+                    module.bits,
+                    module.stem()
+                ));
+            }
+            ts.close("},");
+            ts.close("},");
+        }
+        ts.close("};");
+    }
+    ts.line("");
+    ts.line(
+        "/** The feature that loads on first use with every build of a shader, by shader name. */",
+    );
+    if first_use.shaders.is_empty() {
+        ts.line("const SHADER_FEATURES: Readonly<Record<string, string>> = {};");
+    } else {
+        ts.open("const SHADER_FEATURES: Readonly<Record<string, string>> = {");
+        for (shader, feature) in &first_use.shaders {
+            ts.line(&format!("{shader}: {},", quote(feature)));
+        }
+        ts.close("};");
+    }
+    ts.line("");
+    ts.line(
+        "/** Each permutation bit whose builds load on first use, in bit order, with its feature. */",
+    );
+    let bits: Vec<String> = first_use
+        .bits
+        .iter()
+        .map(|(bit, feature)| format!("[{bit}, {}]", quote(feature)))
+        .collect();
+    ts.line(&format!(
+        "const FEATURE_BITS: readonly (readonly [number, string])[] = [{}];",
+        bits.join(", ")
+    ));
+}
+
 /// A device module: `SHADERS`, the builds of every shader that loads by device for the module's
-/// target and bits.
+/// target and bits, of the module's feature that loads on first use or of the start.
 fn device_module(module: DeviceModule, builds: &Builds<'_>) -> String {
     let mut ts = Writer::default();
     ts.out.push_str(HEADER);
     ts.line("");
-    ts.line(&format!(
-        "import type {{ DeviceShaders }} from './{MAIN_MODULE}';"
-    ));
+    let kind = if module.feature.is_some() {
+        "FirstUseShaders"
+    } else {
+        "DeviceShaders"
+    };
+    ts.line(&format!("import type {{ {kind} }} from './{MAIN_MODULE}';"));
     ts.shared_sources(
         builds
             .values()
@@ -399,11 +573,16 @@ fn device_module(module: DeviceModule, builds: &Builds<'_>) -> String {
     } else {
         format!("with {}", bits.join(" and "))
     };
-    ts.line(&format!(
-        "/** The {} builds of the shaders that load by device, {with}. */",
-        module.target.name().to_ascii_uppercase()
-    ));
-    ts.open("export const SHADERS: DeviceShaders = {");
+    let target = module.target.name().to_ascii_uppercase();
+    match module.feature {
+        None => ts.line(&format!(
+            "/** The {target} builds of the shaders that load by device, {with}. */"
+        )),
+        Some(feature) => ts.line(&format!(
+            "/** The {target} builds of `{feature}`, which load on its first use, {with}. */"
+        )),
+    }
+    ts.open(&format!("export const SHADERS: {kind} = {{"));
     for (shader, variants) in builds {
         if variants.is_empty() {
             ts.line(&format!("{shader}: {{}},"));
@@ -706,7 +885,13 @@ mod tests {
                 "shaders-glsl-draw-index-tone-map",
             ]
         );
-        let module = |target, bits| &modules[&DeviceModule { target, bits }];
+        let module = |target, bits| {
+            &modules[&DeviceModule {
+                feature: None,
+                target,
+                bits,
+            }]
+        };
         let tone_map = permutation::TONE_MAP;
         let both = permutation::DRAW_INDEX | tone_map;
         assert_eq!(names(module(Target::Wgsl, 0), "lit"), ["webgpu"]);
@@ -738,6 +923,120 @@ mod tests {
         let glsl = &modules["shaders-glsl-draw-index-tone-map"];
         assert!(glsl.contains("with DRAW_INDEX and TONE_MAP. */"));
         assert!(glsl.contains("\tcull: {},\n\tlit: {\n\t\twebgl2_draw_index_tone_map: {\n"));
+    }
+
+    /// The shaders of [`output`], with a sprite shader whose builds all load on first use, and the
+    /// lit template's BLOOM builds, which load with bloom.
+    fn output_with_features() -> Output {
+        use permutation::{BLOOM, DRAW_INDEX, TONE_MAP};
+        let mut output = output();
+        let lit = output.shaders.get_mut("lit").unwrap();
+        lit.insert("webgpu_bloom".to_owned(), build(Target::Wgsl, BLOOM));
+        lit.insert(
+            "webgl2_draw_index_bloom".to_owned(),
+            build(Target::Glsl, DRAW_INDEX | BLOOM),
+        );
+        let sprite = BTreeMap::from([
+            ("webgpu".to_owned(), build(Target::Wgsl, 0)),
+            ("webgpu_tone_map".to_owned(), build(Target::Wgsl, TONE_MAP)),
+            ("webgl2".to_owned(), build(Target::Glsl, 0)),
+        ]);
+        output.shaders.insert("sprite".to_owned(), sprite);
+        output.by_device.insert("sprite".to_owned());
+        output
+            .first_use
+            .shaders
+            .insert("sprite".to_owned(), "sprites".to_owned());
+        output.first_use.bits.insert(BLOOM, "bloom".to_owned());
+        output
+    }
+
+    #[test]
+    fn each_feature_that_loads_on_first_use_has_modules_of_its_own_by_the_bits_its_builds_vary_in()
+    {
+        let output = output_with_features();
+        let modules = device_builds(&output);
+        let stems: Vec<String> = modules.keys().map(|module| module.stem()).collect();
+        assert_eq!(
+            stems,
+            [
+                "shaders-wgsl",
+                "shaders-wgsl-tone-map",
+                "shaders-glsl",
+                "shaders-glsl-draw-index",
+                "shaders-glsl-tone-map",
+                "shaders-glsl-draw-index-tone-map",
+                "shaders-bloom-wgsl",
+                "shaders-bloom-glsl",
+                "shaders-bloom-glsl-draw-index",
+                "shaders-sprites-wgsl",
+                "shaders-sprites-wgsl-tone-map",
+                "shaders-sprites-glsl",
+            ]
+        );
+        let module = |feature, target, bits| {
+            &modules[&DeviceModule {
+                feature,
+                target,
+                bits,
+            }]
+        };
+        let start = module(None, Target::Wgsl, 0);
+        assert_eq!(names(start, "lit"), ["webgpu"], "the start holds no bloom");
+        assert!(names(start, "sprite").is_empty(), "nor any sprite");
+        let bloom = module(Some("bloom"), Target::Glsl, permutation::DRAW_INDEX);
+        assert_eq!(names(bloom, "lit"), ["webgl2_draw_index_bloom"]);
+        assert!(
+            !bloom.contains_key("sprite"),
+            "a feature lists its own shaders"
+        );
+        let sprites = module(Some("sprites"), Target::Wgsl, permutation::TONE_MAP);
+        assert_eq!(names(sprites, "sprite"), ["webgpu_tone_map"]);
+        assert_eq!(sprites.keys().copied().collect::<Vec<_>>(), ["sprite"]);
+    }
+
+    #[test]
+    fn the_main_module_finds_and_loads_the_modules_of_each_feature() {
+        let modules = modules(&output_with_features());
+        assert_eq!(modules.len(), 13);
+        let main = &modules[MAIN_MODULE];
+        let sprites = "	sprites: {
+		bits: 2,
+		modules: {
+			0: () => import('./shaders-sprites-wgsl'),
+			2: () => import('./shaders-sprites-wgsl-tone-map'),
+		},
+	},
+";
+        assert!(main.contains(sprites), "{main}");
+        assert!(main.contains(
+            "			1: () => import('./shaders-bloom-glsl-draw-index'),
+"
+        ));
+        assert!(main.contains(
+            "	sprite: 'sprites',
+"
+        ));
+        assert!(main.contains(&format!(
+            "FEATURE_BITS: readonly (readonly [number, string])[] = [[{}, 'bloom']];",
+            permutation::BLOOM
+        )));
+        let start = "const WGSL_MODULES: DeviceModules = {
+	0: () => import('./shaders-wgsl'),
+	2: () => import('./shaders-wgsl-tone-map'),
+};";
+        assert!(main.contains(start), "{main}");
+        let sprites = &modules["shaders-sprites-wgsl-tone-map"];
+        assert!(sprites.contains("import type { FirstUseShaders } from './shaders';"));
+        assert!(sprites.contains(
+            "export const SHADERS: FirstUseShaders = {
+	sprite: {
+"
+        ));
+        assert!(modules["shaders-wgsl"].contains(
+            "	sprite: {},
+"
+        ));
     }
 
     fn glsl_program(vertex: &str, fragment: &str) -> crate::GlslProgram {

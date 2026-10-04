@@ -327,6 +327,8 @@ pub(crate) struct FrameGraph {
     bloom_passes: Vec<PassId>,
     /// Bloom's settings while the sketch turns it on.
     bloom: Option<Bloom>,
+    /// True once bloom's pipelines draw: built, after the frame whose list created them.
+    bloom_built: bool,
     /// The sample divisor of bloom's blurs.
     bloom_divisor: u32,
     /// The number of views the declarations cover.
@@ -402,6 +404,7 @@ impl FrameGraph {
             bloom_passes: Vec::new(),
             bloom_ids: ids.bloom,
             bloom: None,
+            bloom_built: false,
             bloom_divisor: 1,
             views: 0,
             debug_lines: None,
@@ -582,8 +585,14 @@ impl FrameGraph {
         }
     }
 
-    /// True while bloom draws: the sketch turned it on, and the scene color holds HDR color.
+    /// True while bloom draws: the sketch turned it on, the scene color holds HDR color, and
+    /// bloom's pipelines are built.
     pub(crate) fn bloom_draws(&self) -> bool {
+        self.bloom_wanted() && self.bloom_built
+    }
+
+    /// True while the sketch turns bloom on and the scene color holds HDR color.
+    fn bloom_wanted(&self) -> bool {
         self.bloom.is_some() && self.bloom_pass.is_some()
     }
 
@@ -856,14 +865,34 @@ impl FrameGraph {
         Ok(())
     }
 
-    /// Asks `pipelines` for the pipelines of the graph's own passes: the final pass's. A builder
-    /// asks before it records the pipelines that its frame creates. Frames that resolve into the
-    /// canvas ask too, so the pipeline is ready once the render scale can drop.
-    pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) {
-        let blooms = self.bloom_draws();
-        self.final_pass.request_pipeline(pipelines, blooms);
-        if let (true, Some(bloom)) = (blooms, self.bloom_pass.as_mut()) {
-            bloom.request_pipeline(pipelines);
+    /// Asks `pipelines` for the pipelines of the graph's own passes: the final pass's, and bloom's
+    /// while the sketch turns it on. A builder asks before it records the pipelines that its frame
+    /// creates. Frames that resolve into the canvas ask too, so the pipeline is ready once the
+    /// render scale can drop. Bloom's passes draw once its pipelines are built, by
+    /// `pipelines_built`, the newest frame that the thread that draws drew with every pipeline
+    /// built. Until then the frame keeps the final pass without bloom: a final pass whose pipeline
+    /// still builds, or waits for bloom's shader file, would leave the canvas without its frame.
+    pub(crate) fn request_pipelines(
+        &mut self,
+        pipelines: &mut PipelineCache,
+        pipelines_built: u32,
+    ) {
+        let wanted = self.bloom_wanted();
+        let final_bloom = self.final_pass.request_pipeline(pipelines, wanted);
+        let built = match (wanted, final_bloom, self.bloom_pass.as_mut()) {
+            (true, Some(final_bloom), Some(bloom)) => {
+                let steps = bloom.request_pipeline(pipelines);
+                pipelines.built(steps, pipelines_built)
+                    && pipelines.built(final_bloom, pipelines_built)
+            }
+            _ => false,
+        };
+        if built != self.bloom_built {
+            let was = self.bloom_draws();
+            self.bloom_built = built;
+            if self.bloom_draws() != was {
+                self.enable_outputs();
+            }
         }
     }
 
@@ -1680,7 +1709,7 @@ mod tests {
         assert_eq!(steps(&frames).last().unwrap(), &["Final"]);
 
         frames.set_bloom(Some(Bloom::default()), 1);
-        frames.request_pipelines(&mut PipelineCache::default());
+        frames.request_pipelines(&mut PipelineCache::default(), 0);
         frames
             .prepare(&mut list, (320, 180), RenderScale::FULL)
             .unwrap();
@@ -1746,6 +1775,42 @@ mod tests {
             .prepare(&mut list, (320, 180), RenderScale::FULL)
             .unwrap();
         assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
+    }
+
+    #[test]
+    fn bloom_draws_after_the_first_frame_only_once_its_pipelines_are_built() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync_views(&[View::default()]);
+        let mut pipelines = PipelineCache::default();
+        let mut list = DrawList::with_capacity(4096);
+        frames.request_pipelines(&mut pipelines, 0);
+        pipelines.create_new(&mut list, 1).unwrap();
+        // The sketch turns bloom on in frame 5, after the thread that draws drew frame 3.
+        frames.set_bloom(Some(Bloom::default()), 1);
+        frames.request_pipelines(&mut pipelines, 3);
+        pipelines.create_new(&mut list, 5).unwrap();
+        assert!(!frames.bloom_draws(), "bloom waits for its pipelines");
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        assert_eq!(steps(&frames).last().unwrap(), &["Final"]);
+        frames.request_pipelines(&mut pipelines, 4);
+        assert!(!frames.bloom_draws());
+        frames.request_pipelines(&mut pipelines, 5);
+        assert!(
+            frames.bloom_draws(),
+            "bloom draws once a frame drew them built"
+        );
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        assert_eq!(steps(&frames).last().unwrap(), &["FinalBloom"]);
+        frames.set_bloom(None, 1);
+        frames.request_pipelines(&mut pipelines, 6);
+        assert!(!frames.bloom_draws());
+        frames.set_bloom(Some(Bloom::default()), 1);
+        frames.request_pipelines(&mut pipelines, 6);
+        assert!(frames.bloom_draws(), "built pipelines draw at once");
     }
 
     #[test]

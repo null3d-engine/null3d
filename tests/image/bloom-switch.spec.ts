@@ -1,8 +1,9 @@
 // Bloom turned on during play, on every GPU tier. In compatibility mode the engine started on the
 // 8-bit path for MSAA, and moves to HDR color with FXAA: the frames after the change make bloom's
-// targets and pipelines and raise no error, and the frames after it make no GPU object. The image
-// tests check what the frames draw, in hold mode. Each run logs the change's figures, which D-21
-// records.
+// targets and pipelines and raise no error, and the frames after it make no GPU object. No frame
+// skips a draw meanwhile: the frames keep the final pass without bloom until bloom's shader file has
+// loaded and its pipelines are built. The image tests check what the frames draw, in hold mode.
+// Each run logs the change's figures, which D-21 and D-56 record.
 import { expect, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -16,6 +17,7 @@ interface BloomSwitchResult {
 	acrossIntervalP99: number;
 	acrossGpuObjects: number;
 	acrossPipelines: number;
+	acrossSkippedDraws: number;
 	afterGpuObjects: number;
 	afterPipelines: number;
 	failures: string[];
@@ -38,6 +40,7 @@ for (const { tier, query, startedHdr } of TIERS)
 		expect(result.startedHdr).toBe(startedHdr);
 		expect(result.acrossGpuObjects).toBeGreaterThan(0);
 		expect(result.acrossPipelines).toBeGreaterThan(0);
+		expect(result.acrossSkippedDraws).toBe(0);
 		expect(result.afterGpuObjects).toBe(0);
 		expect(result.afterPipelines).toBe(0);
 	});

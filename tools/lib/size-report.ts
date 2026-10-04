@@ -1,7 +1,8 @@
 // The size report's measuring: raw and Brotli sizes, and the parts of the engine's JavaScript in a
 // production build. Vite names each built file after a module and adds a content hash, so the report
 // names each part by the engine module that its file holds, a file loaded on demand by the part
-// that loads it, and a shader file by the device module of the shader build that it holds.
+// that loads it, and a shader file by the device module of the shader build that it holds: a module
+// of the start, or the module of a feature that loads on first use.
 // tools/lib/size-check.ts judges how the sizes changed against a base build. The
 // functions here do no file or process work: tools/build-wasm.ts builds, reads and prints.
 import { brotliCompressSync, constants } from 'node:zlib';
@@ -137,6 +138,19 @@ export const SHADER_PARTS: readonly string[] = [
 	'shaders-glsl-draw-index-half.js',
 	'shaders-glsl-draw-index-tone-map-half.js',
 ];
+
+/**
+ * True for the part of a device module of a feature that loads on first use: the shader build
+ * names it after the feature, then the target and the bits, as `shaders-sprites-glsl-draw-index.js`.
+ * A page downloads one the first time it uses the feature, so no start counts it. The manifest's
+ * `[first_use.<feature>]` tables name the features, and the parts follow from them.
+ */
+export function isFirstUseShaderPart(name: string): boolean {
+	return (
+		!SHADER_PARTS.includes(name) &&
+		/^shaders-[a-z][a-z0-9-]*?-(wgsl|glsl)(-[a-z-]+)?\.js$/.test(name)
+	);
+}
 
 /**
  * The KTX2 transcoder's files, which a page downloads when it loads its first KTX2 file: the
@@ -289,7 +303,7 @@ export function findEngineParts(
 	for (const file of files) {
 		const part = claimed.has(file) ? undefined : shaderPartOf(file);
 		if (!part) continue;
-		if (!shaderParts.includes(part))
+		if (!shaderParts.includes(part) && !isFirstUseShaderPart(part))
 			throw new Error(
 				`${file.file} holds the shader build's device module of ${part}, which the size report does not name: add it to SHADER_PARTS in tools/lib/size-report.ts`,
 			);
@@ -314,7 +328,9 @@ export function findEngineParts(
 				`${name} (${file.file}) also holds a page's own code (${pageCode.join(', ')}), so its size is not the engine's`,
 			);
 	}
-	const names = [...parts.map(({ name }) => name), ...shaderParts];
+	const firstUse = [...shaders.keys()].filter((part) => !shaderParts.includes(part)).sort();
+	for (const part of firstUse) found.set(part, shaders.get(part)!);
+	const names = [...parts.map(({ name }) => name), ...shaderParts, ...firstUse];
 	return new Map(names.flatMap((name) => (found.has(name) ? [[name, found.get(name)!]] : [])));
 }
 
@@ -330,7 +346,7 @@ export function totalSize(sizes: Iterable<SizeEntry>): SizeEntry {
 
 /**
  * What a page downloads in each thread mode: the total size of the parts it loads, and of the
- * largest shader part that it may load. A part that the build lacks adds nothing.
+ * largest shader part of the start that it may load. A part that the build lacks adds nothing.
  */
 export function downloadSizes(
 	sizes: ReadonlyMap<string, SizeEntry>,
@@ -338,7 +354,7 @@ export function downloadSizes(
 ): { mode: string; size: SizeEntry }[] {
 	return downloads.map(({ mode, parts, shaders }) => {
 		const largest = [...sizes]
-			.filter(([part]) => part.startsWith(shaders))
+			.filter(([part]) => part.startsWith(shaders) && !isFirstUseShaderPart(part))
 			.map(([, size]) => size)
 			.sort((a, b) => b.brotli - a.brotli)
 			.slice(0, 1);
@@ -359,8 +375,16 @@ export const START_BUDGET_BYTES = 140 * 1024;
 export const LATER_BUDGET_BYTES = 16 * 1024;
 
 /**
- * A problem for each thread mode whose start passes the start budget, and for each part that loads
- * after the start and passes its own budget.
+ * Brotli budget for each device module of a feature that loads on first use. Such a module is
+ * shader data, as the modules of the start are, so its limit is the size of a start shader file.
+ * The owner set it on 4 October 2026 (decision records D-14 and D-56).
+ */
+export const FIRST_USE_SHADER_BUDGET_BYTES = 24 * 1024;
+
+/**
+ * A problem for each thread mode whose start passes the start budget, for each part that loads
+ * after the start and passes its own budget, and for each device module of a feature that loads
+ * on first use and passes its budget.
  */
 export function budgetProblems(
 	sizes: ReadonlyMap<string, SizeEntry>,
@@ -383,5 +407,14 @@ export function budgetProblems(
 					]
 				: [];
 		}),
+		...[...sizes]
+			.filter(
+				([name, { brotli }]) =>
+					isFirstUseShaderPart(name) && brotli > FIRST_USE_SHADER_BUDGET_BYTES,
+			)
+			.map(
+				([name, { brotli }]) =>
+					`js/${name}, the shader builds of a feature that loads on first use, is ${brotli.toLocaleString('en-US')} bytes after Brotli, over its ${kb(FIRST_USE_SHADER_BUDGET_BYTES)} budget`,
+			),
 	];
 }

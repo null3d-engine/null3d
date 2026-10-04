@@ -1,5 +1,6 @@
 //! The shader manifest, `shaders.toml`: the entry shaders to build, their render pipelines, and
-//! their variants with shader defs, permutation bits and output targets.
+//! their variants with shader defs, permutation bits and output targets, and the features whose
+//! builds load on first use.
 
 use std::collections::BTreeMap;
 
@@ -33,6 +34,24 @@ pub struct Manifest {
     /// Entry shaders by name.
     #[serde(default)]
     pub shaders: BTreeMap<String, Shader>,
+    /// Features whose builds load on first use, by feature name.
+    #[serde(default)]
+    pub first_use: BTreeMap<String, FirstUse>,
+}
+
+/// A feature whose shader builds go into files of their own, which a page loads the first time a
+/// pipeline asks for one of the builds. A build belongs to the feature of its shader, or else to
+/// the feature of its lowest permutation bit that a feature names.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FirstUse {
+    /// Shaders that load by device, every build of which belongs to the feature.
+    #[serde(default)]
+    pub shaders: Vec<String>,
+    /// Permutation bits by name: a build of a shader that loads by device with one of them belongs
+    /// to the feature.
+    #[serde(default)]
+    pub bits: Vec<String>,
 }
 
 /// One entry shader.
@@ -156,6 +175,7 @@ impl Manifest {
                 check_by_device(&mut errors, &key, &shader.variants);
             }
         }
+        check_first_use(&mut errors, &manifest);
         if !errors.is_empty() {
             return Err(errors);
         }
@@ -287,6 +307,83 @@ fn check_by_device(errors: &mut Vec<String>, key: &str, variants: &BTreeMap<Stri
             errors.push(format!(
                 "{key}.variants.{name} targets both \"wgsl\" and \"glsl\", but {key} loads by device, and a device module holds one target's builds. Give the variant one target, and add a variant for the other."
             ));
+        }
+    }
+}
+
+/// Checks the features whose builds load on first use: each has a name that a file name can hold,
+/// and names shaders that load by device and permutation bits that a device does not fix, each in
+/// one feature only. The template of custom materials stays in the files that load at the start,
+/// since a custom material's build comes from the page's own code.
+fn check_first_use(errors: &mut Vec<String>, manifest: &Manifest) {
+    let mut shader_owners: BTreeMap<&str, &str> = BTreeMap::new();
+    let mut bit_owners: BTreeMap<&str, &str> = BTreeMap::new();
+    for (feature, first_use) in &manifest.first_use {
+        let key = format!("first_use.{feature}");
+        let named = feature.starts_with(|c: char| c.is_ascii_lowercase())
+            && feature
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+        if !named
+            || [Target::Wgsl, Target::Glsl]
+                .iter()
+                .any(|t| t.name() == feature)
+        {
+            errors.push(format!(
+                "{key}: \"{feature}\" is not a valid feature name. Use lowercase letters, digits and underscores, start with a letter, and do not use \"wgsl\" or \"glsl\", because the name becomes part of a file name."
+            ));
+        }
+        if first_use.shaders.is_empty() && first_use.bits.is_empty() {
+            errors.push(format!(
+                "{key} names no shaders and no bits, so no build loads on its first use. List its shaders in `shaders`, its permutation bits in `bits`, or both."
+            ));
+        }
+        for shader_name in &first_use.shaders {
+            match manifest.shaders.get(shader_name) {
+                None => errors.push(format!(
+                    "{key}.shaders has \"{shader_name}\", which is not a shader of the manifest."
+                )),
+                Some(shader) if !shader.by_device => errors.push(format!(
+                    "{key}.shaders has \"{shader_name}\", which does not load by device. Set `by_device = true` on shaders.{shader_name}: only builds that load by device can load on first use."
+                )),
+                Some(shader) if shader.custom_materials => errors.push(format!(
+                    "{key}.shaders has \"{shader_name}\", the template of custom materials, which stays in the files that load at the start."
+                )),
+                Some(_) => {}
+            }
+            if let Some(other) = shader_owners.insert(shader_name, feature) {
+                errors.push(format!(
+                    "{key}.shaders has \"{shader_name}\", which first_use.{other} names too. A shader's builds load with one feature."
+                ));
+            }
+        }
+        for bit in &first_use.bits {
+            match permutation::bit(bit) {
+                None => errors.push(format!(
+                    "{key}.bits has \"{bit}\", which is not a permutation bit."
+                )),
+                Some(value) if value & permutation::DEVICE != 0 => errors.push(format!(
+                    "{key}.bits has \"{bit}\", which a device fixes. Each device loads its builds at the start."
+                )),
+                Some(_) => {}
+            }
+            let used = manifest.shaders.values().any(|shader| {
+                shader.by_device
+                    && shader
+                        .variants
+                        .values()
+                        .any(|variant| variant.permutations.contains(bit))
+            });
+            if permutation::bit(bit).is_some() && !used {
+                errors.push(format!(
+                    "{key}.bits has \"{bit}\", which no variant of a shader that loads by device lists, so it moves no build."
+                ));
+            }
+            if let Some(other) = bit_owners.insert(bit, feature) {
+                errors.push(format!(
+                    "{key}.bits has \"{bit}\", which first_use.{other} names too. A bit's builds load with one feature."
+                ));
+            }
         }
     }
 }
@@ -481,6 +578,60 @@ variants.a_tone_map = { targets = ["wgsl"] }
         );
         let one_target = text.replace("[\"glsl\", \"wgsl\"]", "[\"glsl\"]");
         assert!(Manifest::parse(&one_target).unwrap().shaders["mesh"].by_device);
+    }
+
+    const FEATURES: &str = r#"
+[shaders.sprite]
+file = "sprite.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+
+[shaders.final]
+file = "final.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["FXAA", "BLOOM"], targets = ["wgsl"] }
+
+[first_use.sprites]
+shaders = ["sprite"]
+
+[first_use.bloom]
+bits = ["BLOOM"]
+"#;
+
+    #[test]
+    fn features_that_load_on_first_use_name_their_shaders_and_bits() {
+        let manifest = Manifest::parse(FEATURES).unwrap();
+        assert_eq!(manifest.first_use["sprites"].shaders, ["sprite"]);
+        assert_eq!(manifest.first_use["bloom"].bits, ["BLOOM"]);
+    }
+
+    #[test]
+    fn features_that_load_on_first_use_are_checked() {
+        let text = format!(
+            "{FEATURES}\n[first_use.Glow]\nshaders = [\"sprite\", \"mesh\"]\nbits = [\"TONE_MAP\", \"SHINY\", \"BLOOM\", \"SKIN\"]\n\n[first_use.wgsl]\n"
+        );
+        let all = Manifest::parse(&text).unwrap_err().join("\n");
+        for expected in [
+            "first_use.Glow: \"Glow\" is not a valid feature name",
+            "first_use.wgsl: \"wgsl\" is not a valid feature name",
+            "first_use.wgsl names no shaders and no bits",
+            "first_use.Glow.shaders has \"mesh\", which is not a shader of the manifest",
+            "first_use.sprites.shaders has \"sprite\", which first_use.Glow names too",
+            "first_use.Glow.bits has \"TONE_MAP\", which a device fixes",
+            "first_use.Glow.bits has \"SHINY\", which is not a permutation bit",
+            "first_use.bloom.bits has \"BLOOM\", which first_use.Glow names too",
+            "first_use.Glow.bits has \"SKIN\", which no variant of a shader that loads by device lists",
+        ] {
+            assert!(all.contains(expected), "{expected}\n{all}");
+        }
+        let unlisted = FEATURES.replace("by_device = true\npipelines.main = { vertex = \"vs\", fragment = \"fs\" }\nvariants.webgpu = { permutations = [\"TONE_MAP\"]", "pipelines.main = { vertex = \"vs\", fragment = \"fs\" }\nvariants.webgpu = { permutations = [\"TONE_MAP\"]");
+        let errors = Manifest::parse(&unlisted).unwrap_err();
+        assert!(
+            errors[0].contains("which does not load by device"),
+            "{errors:?}"
+        );
     }
 
     #[test]

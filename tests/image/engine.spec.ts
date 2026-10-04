@@ -1,6 +1,10 @@
 import { expect, type Page, test } from '@playwright/test';
 import { ISOLATION_HEADERS } from '../../packages/vite-plugin/src/index.ts';
-import { LATER_PARTS, TRANSCODER_FILES } from '../../tools/lib/size-report.ts';
+import {
+	isFirstUseShaderPart,
+	LATER_PARTS,
+	TRANSCODER_FILES,
+} from '../../tools/lib/size-report.ts';
 import {
 	ENGINE_MODES,
 	type EngineMode,
@@ -119,8 +123,19 @@ const FIRST_USE_FILES: readonly RegExp[] = [
 	}),
 ];
 
+/**
+ * True for the address of a shader build's device module of a feature that loads on first use: the
+ * module itself on the dev server, and its file with a hash in a production build.
+ */
+function isFirstUseShaderFile(path: string): boolean {
+	const name = path.split('/').at(-1) as string;
+	const stem = /^(shaders-[a-z0-9-]+)(\.ts|-[\w-]{8}\.js)$/.exec(name)?.[1];
+	return stem !== undefined && isFirstUseShaderPart(`${stem}.js`);
+}
+
 // A page that uses no feature that loads on first use downloads none of their files, on either GPU
-// path and in every thread mode. The engine test page uses none, and the startup benchmark times it.
+// path and in every thread mode: neither their code nor their shader builds. The engine test page
+// uses none, and the startup benchmark times it.
 for (const gpu of ['webgpu', 'webgl2'] as const)
 	for (const mode of ENGINE_MODES)
 		test(`a page that uses no feature that loads on first use downloads none of their files, ${mode.name} on ${gpu}`, async ({
@@ -133,9 +148,11 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			expect(result.error).toBeUndefined();
 			expect(engineProblems(result, mode, gpu)).toEqual([]);
 			expect(requests.some((path) => /\/null3d_bg(-[\w-]+)?\.wasm$/.test(path))).toBe(true);
-			expect(requests.filter((path) => FIRST_USE_FILES.some((file) => file.test(path)))).toEqual(
-				[],
-			);
+			expect(
+				requests.filter(
+					(path) => FIRST_USE_FILES.some((file) => file.test(path)) || isFirstUseShaderFile(path),
+				),
+			).toEqual([]);
 		});
 
 for (const gpu of ['webgpu', 'webgl2'] as const) {

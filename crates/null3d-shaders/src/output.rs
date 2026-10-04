@@ -38,6 +38,36 @@ pub struct Output {
     /// The shaders that load by device, whose builds go into the device modules.
     #[serde(skip)]
     pub by_device: BTreeSet<String>,
+    /// The features whose builds load on first use, in device modules of their own.
+    #[serde(skip)]
+    pub first_use: FirstUseFeatures,
+}
+
+/// The features whose builds load on first use: the feature of each shader whose builds all belong
+/// to one, and the feature of each permutation bit whose builds belong to one.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FirstUseFeatures {
+    /// Features by shader name.
+    pub shaders: BTreeMap<String, String>,
+    /// Features by permutation bit, in bit order.
+    pub bits: BTreeMap<u32, String>,
+}
+
+impl FirstUseFeatures {
+    /// The feature that a build of `shader` with the permutation word `permutation` belongs to:
+    /// the shader's, or else that of the lowest bit of the word that a feature names. None for a
+    /// build that loads at the start.
+    pub fn feature_of(&self, shader: &str, permutation: u32) -> Option<&str> {
+        self.shaders
+            .get(shader)
+            .or_else(|| {
+                self.bits
+                    .iter()
+                    .find(|&(&bit, _)| permutation & bit != 0)
+                    .map(|(_, feature)| feature)
+            })
+            .map(String::as_str)
+    }
 }
 
 /// One built variant.
@@ -111,4 +141,25 @@ pub struct GlslTexture {
     pub binding: Binding,
     /// The WGSL sampler the stage samples the texture with, if any.
     pub sampler: Option<Binding>,
+}
+
+#[cfg(test)]
+mod tests {
+    use null3d_gpu::drawlist::permutation::{BLOOM, FXAA, MORPH};
+
+    use super::*;
+
+    #[test]
+    fn a_build_belongs_to_its_shaders_feature_or_else_to_that_of_its_lowest_feature_bit() {
+        let mut first_use = FirstUseFeatures::default();
+        first_use
+            .shaders
+            .insert("sprite".to_owned(), "sprites".to_owned());
+        first_use.bits.insert(BLOOM, "bloom".to_owned());
+        first_use.bits.insert(MORPH, "morph".to_owned());
+        assert_eq!(first_use.feature_of("sprite", BLOOM), Some("sprites"));
+        assert_eq!(first_use.feature_of("final", FXAA | BLOOM), Some("bloom"));
+        assert_eq!(first_use.feature_of("lit", MORPH | BLOOM), Some("morph"));
+        assert_eq!(first_use.feature_of("lit", FXAA), None);
+    }
 }

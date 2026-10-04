@@ -536,11 +536,17 @@ export class Pipelines {
 		return template.shader;
 	}
 
-	/** Adds a render pipeline template under an id that no other template has. */
+	/**
+	 * Adds a render pipeline template under an id that no other template has. The shader of a
+	 * feature that loads on first use has no variants until its module arrives.
+	 */
 	defineTemplate(id: number, template: RenderTemplate): void {
 		if (this.templates[id]) throw new Error(`render pipeline template ${id} already exists`);
 		const variants = Object.values(template.shader);
-		if (!variants.some((variant) => variant.wgsl?.pipelines[template.pipeline]))
+		if (
+			variants.length > 0 &&
+			!variants.some((variant) => variant.wgsl?.pipelines[template.pipeline])
+		)
 			throw new Error(`the shader of template ${id} has no pipeline ${template.pipeline}`);
 		this.templates[id] = template;
 	}

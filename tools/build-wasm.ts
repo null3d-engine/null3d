@@ -61,8 +61,10 @@ import {
 	type CORE_BUILDS,
 	CORE_FILES,
 	downloadSizes,
+	FIRST_USE_SHADER_BUDGET_BYTES,
 	findEngineParts,
 	findTranscoderFiles,
+	isFirstUseShaderPart,
 	LATER_BUDGET_BYTES,
 	LATER_PARTS,
 	measure,
@@ -641,6 +643,11 @@ async function main(): Promise<void> {
 	);
 	for (const [part, size] of later) printSize(`js/${part}`, size, LATER_BUDGET_BYTES);
 	printSize('after the start, total', totalSize(later.values()));
+	console.log(
+		`\nthe shader builds of each feature that loads on first use, one file for each GPU path and each value of the bits a device fixes (budget: ${kb(FIRST_USE_SHADER_BUDGET_BYTES)} after Brotli for each file; no start counts them)`,
+	);
+	for (const [part, size] of parts)
+		if (isFirstUseShaderPart(part)) printSize(`js/${part}`, size, FIRST_USE_SHADER_BUDGET_BYTES);
 	console.log(
 		'\nthe KTX2 transcoder, which a page downloads when it loads its first KTX2 file (no budget)',
 	);

@@ -5,8 +5,10 @@ import {
 	DOWNLOADS,
 	downloadSizes,
 	ENGINE_SOURCE,
+	FIRST_USE_SHADER_BUDGET_BYTES,
 	findEngineParts,
 	findTranscoderFiles,
+	isFirstUseShaderPart,
 	LATER_BUDGET_BYTES,
 	LATER_PARTS,
 	measure,
@@ -129,11 +131,47 @@ describe('findEngineParts', () => {
 		);
 	});
 
+	it("names the files of each feature's shader modules after their modules, after the start's", () => {
+		const shaders = ['shaders-wgsl.js'];
+		const wgsl = built('shaders-wgsl-P1.js', ['generated/shaders-wgsl.ts'], 'wgsl');
+		const bloom = built('shaders-bloom-wgsl-P2.js', ['generated/shaders-bloom-wgsl.ts'], 'b');
+		const sprites = built(
+			'shaders-sprites-glsl-draw-index-P3.js',
+			['generated/shaders-sprites-glsl-draw-index.ts'],
+			's',
+		);
+		const files = [page, pageRenderer, worker, workerRenderer, sprites, wgsl, bloom];
+		const found = findEngineParts(files, parts, shaders);
+		expect([...found.keys()].slice(4)).toEqual([
+			'shaders-wgsl.js',
+			'shaders-bloom-wgsl.js',
+			'shaders-sprites-glsl-draw-index.js',
+		]);
+	});
+
 	it("fails when a part's file also holds a page's own code", () => {
 		const mixed = built('engine-T1.js', ['page/engine.ts'], '', ['tests/pages/engine.ts']);
 		expect(() => findEngineParts([mixed, worker], parts)).toThrow(
 			"page.js (engine-T1.js) also holds a page's own code (tests/pages/engine.ts)",
 		);
+	});
+});
+
+describe('isFirstUseShaderPart', () => {
+	it("is true for a feature's shader modules and false for the start's", () => {
+		for (const part of [
+			'shaders-sprites-glsl-draw-index.js',
+			'shaders-bloom-wgsl.js',
+			'shaders-occlusion-culling-wgsl-half.js',
+		])
+			expect(isFirstUseShaderPart(part)).toBe(true);
+		for (const part of [
+			'shaders-wgsl.js',
+			'shaders-glsl-draw-index-tone-map.js',
+			'shaders-glsl-skin.js',
+			'shaders.js',
+		])
+			expect(isFirstUseShaderPart(part)).toBe(false);
 	});
 });
 
@@ -167,6 +205,18 @@ describe('downloadSizes', () => {
 		expect(downloadSizes(sizes, downloads)).toEqual([
 			{ mode: 'WebGPU', size: { raw: 130, brotli: 45 } },
 			{ mode: 'WebGL2', size: { raw: 161, brotli: 50 } },
+		]);
+	});
+
+	it("counts no feature's shader module, which loads on first use", () => {
+		const sizes = new Map([
+			['page.js', { raw: 100, brotli: 40 }],
+			['shaders-wgsl.js', { raw: 30, brotli: 5 }],
+			['shaders-sprites-wgsl.js', { raw: 90, brotli: 20 }],
+		]);
+		const downloads = [{ mode: 'pipelined', parts: ['page.js'], shaders: 'shaders-' }];
+		expect(downloadSizes(sizes, downloads)).toEqual([
+			{ mode: 'pipelined', size: { raw: 130, brotli: 45 } },
 		]);
 	});
 });
@@ -216,6 +266,17 @@ describe('budgetProblems', () => {
 		).toEqual([
 			'the engine JavaScript that a page downloads at its start in pipelined mode is 143,361 bytes after Brotli, over its 140 KB budget',
 			'js/page-gltf.js, which loads after the start, is 16,385 bytes after Brotli, over its 16 KB budget',
+		]);
+	});
+
+	it("names a feature's shader module over its budget, which no start counts", () => {
+		expect(FIRST_USE_SHADER_BUDGET_BYTES).toBe(24 * 1024);
+		const within = sizes(START_BUDGET_BYTES, LATER_BUDGET_BYTES);
+		within.set('shaders-bloom-wgsl.js', { raw: 0, brotli: FIRST_USE_SHADER_BUDGET_BYTES });
+		expect(budgetProblems(within, downloads, later)).toEqual([]);
+		within.set('shaders-bloom-wgsl.js', { raw: 0, brotli: FIRST_USE_SHADER_BUDGET_BYTES + 1 });
+		expect(budgetProblems(within, downloads, later)).toEqual([
+			'js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is 24,577 bytes after Brotli, over its 24 KB budget',
 		]);
 	});
 });

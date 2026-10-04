@@ -857,13 +857,14 @@ impl CpuCulledRenderer {
         self.graph
             .set_bloom(self.settings.bloom(), self.settings.bloom_divisor());
         self.graph.set_grading(self.settings.grades());
-        self.graph.request_pipelines(&mut self.pipelines);
+        self.graph
+            .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.background.request_pipeline(
             &self.settings,
             &mut self.pipelines,
             self.graph.scene_targets(),
         );
-        let created_pipelines = self.pipelines.create_new(list)? > 0;
+        let created_pipelines = self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
             self.create_fixed(list)?;
         }
