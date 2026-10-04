@@ -203,7 +203,7 @@ export const RECORD_COLUMNS = [
 ] as const;
 
 /** The device's kind and model, with its screen and cores, which help to tell models apart. */
-function deviceText({
+export function deviceText({
 	userAgent = '',
 	userAgentData,
 	maxTouchPoints,
@@ -243,7 +243,7 @@ function windowsText(platformVersion: string): string {
  * gives iOS 18.7 on iOS 26, Chrome gives Android 10 on every Android, and every browser gives
  * Windows 10 on Windows 11. So without client hints the cell stays empty, for a person to fill in.
  */
-function osText({ userAgentData }: DeviceFacts): string {
+export function osText({ userAgentData }: DeviceFacts): string {
 	const platform = userAgentData?.platform;
 	if (!platform) return '';
 	const platformVersion = userAgentData.platformVersion ?? '';
