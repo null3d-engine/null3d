@@ -246,6 +246,26 @@ describe('CloudSessions', () => {
 		expect(lines.at(-1)).toBe('bspixel10-chrome: session ended');
 	});
 
+	it('counts an answer whose body timed out as no answer, not as a lost session', async () => {
+		const timeout = () =>
+			Promise.reject(new DOMException('The operation timed out.', 'TimeoutError'));
+		const driver = webDriver(
+			'https://hub.example',
+			{},
+			(text) => text,
+			(async () =>
+				({
+					ok: true,
+					status: 200,
+					text: timeout,
+				}) as unknown as Response) as unknown as typeof fetch,
+		);
+		const error = await driver.execute('session-1', 'return 1').catch((e: unknown) => e);
+		expect(error).toBeInstanceOf(WebDriverError);
+		expect((error as WebDriverError).code).toBe('no answer');
+		expect((error as WebDriverError).message).toContain('The operation timed out.');
+	});
+
 	it('reports a session the cloud refused, without the credentials that the error quoted', async () => {
 		hub = fakeHub({ refuseSessions: true });
 		const lines: string[] = [];
