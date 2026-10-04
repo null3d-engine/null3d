@@ -187,6 +187,8 @@ export const TEMPLATE_SPRITE_MAP = 23;
 export const TEMPLATE_OCCLUSION_EARLY = 24;
 export const TEMPLATE_OCCLUSION_LATE = 25;
 export const TEMPLATE_DEPTH_PYRAMID = 28;
+export const TEMPLATE_LINE = 29;
+export const TEMPLATE_LINE_LIT = 30;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;

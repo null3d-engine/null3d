@@ -88,7 +88,7 @@ for (let i = 0; i < trees.count; i++) {
 }
 ```
 
-Sprite batches take the same `origin` option. Batch origins work with large-world mode and without it. A model's own instancing, from the `EXT_mesh_gpu_instancing` extension, takes its node's place as its batch's origin, so its rows stay precise too.
+Sprite and line batches take the same `origin` option. Batch origins work with large-world mode and without it. A model's own instancing, from the `EXT_mesh_gpu_instancing` extension, takes its node's place as its batch's origin, so its rows stay precise too.
 
 ## Floating-origin geometry
 
