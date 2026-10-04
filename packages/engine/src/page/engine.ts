@@ -164,6 +164,14 @@ export interface EngineOptions {
 	 */
 	depthPrepass?: boolean;
 	/**
+	 * True to run software occlusion culling on WebGL2: objects that `setOccluder(true)` marks hide
+	 * the objects that lie wholly behind them, so the GPU skips those. False turns it off. Without
+	 * it, the quality preset decides, and a sketch can change it during play with `quality.set`.
+	 * The `?occlusion=on` or `?occlusion=off` switch wins over this option. WebGPU ignores it.
+	 * Another value fails with E1213.
+	 */
+	softwareOcclusion?: boolean;
+	/**
 	 * True for a see-through canvas: the page shows through wherever no object draws, until the
 	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
 	 * it. The default is false, an opaque canvas.
@@ -777,6 +785,7 @@ async function startEngine(
 		shadowTileSize: options.shadowTileSize,
 		pointLightShadows: options.pointLightShadows,
 		depthPrepass: switches.prepass ?? options.depthPrepass,
+		softwareOcclusion: switches.occlusion ?? options.softwareOcclusion,
 	};
 	checkSettings('createEngine()', pageSettings);
 	const presetRequest: PresetRequest = {
@@ -968,8 +977,12 @@ async function startEngine(
 	const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
 	const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
 	// WebGL2 draws without the depth prepass, whatever the page asks: two of its shader programs
-	// can compute different depths for one triangle that the near plane cuts.
-	const tierSettings = tier === 'webgl2' ? { ...pageSettings, depthPrepass: false } : pageSettings;
+	// can compute different depths for one triangle that the near plane cuts. Software occlusion
+	// culling runs on WebGL2 alone.
+	const tierSettings =
+		tier === 'webgl2'
+			? { ...pageSettings, depthPrepass: false }
+			: { ...pageSettings, softwareOcclusion: false };
 	const quality: QualityStart = {
 		preset,
 		settings: checkedSettings(chosen, preset, tierSettings),

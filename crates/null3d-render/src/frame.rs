@@ -223,6 +223,14 @@ pub trait FrameBuilder {
     fn visible_entries(&self, _frame: u32) -> Option<u32> {
         None
     }
+    /// The sources inside the camera's frustum that software occlusion culling hid in a recorded
+    /// frame, where the builder culls on the CPU. `None` where the GPU culls.
+    fn occluded_entries(&self, _frame: u32) -> Option<u32> {
+        None
+    }
+    /// Turns software occlusion culling on or off from the next frame on, where the builder culls
+    /// on the CPU. Elsewhere it does nothing.
+    fn set_software_occlusion(&mut self, _on: bool) {}
     /// True when point or spot lights cast shadows into the shadow atlas in the frame recorded
     /// last.
     fn casts_tile_shadows(&self) -> bool {

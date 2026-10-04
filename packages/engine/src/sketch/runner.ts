@@ -540,7 +540,8 @@ export class SketchRunner {
 		if (
 			glue.setRenderScaling((settings.governor ? low : high) < FULL_SCALE) !== 0 ||
 			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0 ||
-			glue.setBloomSamples(governor.bloomDivisor) !== 0
+			glue.setBloomSamples(governor.bloomDivisor) !== 0 ||
+			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
 		)
 			this.report(coreFailure(glue, 'quality.set'));
 	}
@@ -798,6 +799,7 @@ export class SketchRunner {
 		this.context.scene.keepFrameCamera(time.frame, width, height);
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
+		this.record.count(Counter.OccludedEntries, glue.occludedEntries(frame));
 		// A frame whose list needs more room than any before moves the list, so each frame gives
 		// the thread that draws its list's address.
 		const parity = frame & 1;
