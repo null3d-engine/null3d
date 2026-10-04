@@ -13,7 +13,8 @@ use null3d_core::animation::Animations;
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::JobSystem;
-use null3d_core::lights::{LightShadow, LightTable, VisibleLight, kind, value};
+use null3d_core::layers::DEFAULT_LAYERS;
+use null3d_core::lights::{LightShadow, LightTable, SunShadow, VisibleLight, kind, value};
 use null3d_core::scene::{Command, SceneStorage, flags};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::format;
@@ -182,6 +183,20 @@ impl<B: FrameBuilder> World<B> {
             animations: None,
             animation_step: 0.0,
         }
+    }
+
+    /// Turns on the sun's shadows, straight down, in `cascades` cascades that reach 40 meters.
+    pub fn cast_sun_shadows(&mut self, cascades: u32) {
+        let settings = self.renderer.settings_mut();
+        settings.set_sun([0.0, -1.0, 0.0], [3.0; 3]);
+        settings.set_sun_shadow(Some(SunShadow {
+            cascades,
+            map_size: 1024,
+            bias: 0.5,
+            normal_bias: 1.0,
+            distance: 40.0,
+            layers: DEFAULT_LAYERS,
+        }));
     }
 
     /// Adds a spot light at `position` that points straight down and casts shadows, with a range

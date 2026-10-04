@@ -3,7 +3,8 @@
 //! holds the device to the portable budget, plus the capabilities a test gives it.
 
 use crate::caps::{
-    BUDGET, CUBE_TEXTURE_SIZE, Capabilities, Limit, OFFSET_ALIGNMENT, TEXTURE_3D_SIZE,
+    BUDGET, CUBE_TEXTURE_SIZE, Capabilities, Limit, MAX_WORKGROUPS_PER_DIMENSION, OFFSET_ALIGNMENT,
+    TEXTURE_3D_SIZE,
 };
 use crate::drawlist::{
     Command, NO_TARGET, Op, address, compare, decode, filter, format, permutation, resource_kind,
@@ -1149,6 +1150,11 @@ impl MockBackend {
                         needs: "a compute pass",
                     });
                 }
+                check(
+                    o[..3].iter().all(|&n| n <= MAX_WORKGROUPS_PER_DIMENSION),
+                    op,
+                    "a dispatch has at most maxComputeWorkgroupsPerDimension workgroups per axis",
+                )?;
                 self.dispatches += 1;
             }
             Op::EndComputePass => {
@@ -1506,6 +1512,18 @@ mod tests {
             run(&|l| l.push(Op::Dispatch, &[1, 1, 1]).unwrap()),
             Err(MockError::Outside { .. })
         ));
+        for workgroups in [[65_536, 1, 1], [1, 65_536, 1], [1, 1, 65_536]] {
+            assert!(matches!(
+                run(&|l| {
+                    l.push(Op::BeginComputePass, &[]).unwrap();
+                    l.push(Op::Dispatch, &workgroups).unwrap();
+                }),
+                Err(MockError::Invalid {
+                    op: Op::Dispatch,
+                    ..
+                })
+            ));
+        }
         assert!(
             matches!(
                 run(&|l| {

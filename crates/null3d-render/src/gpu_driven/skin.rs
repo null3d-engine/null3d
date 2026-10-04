@@ -44,6 +44,7 @@
 
 use null3d_core::animation::Animations;
 use null3d_core::scene::{SceneStorage, flags};
+use null3d_gpu::caps::MAX_WORKGROUPS_PER_DIMENSION;
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, layout as bind_layout, resource_kind, sizes, template,
     vertex,
@@ -76,8 +77,6 @@ pub const MAX_SKINNED_BUFFERS: u32 = 8;
 /// The most segments of the table. Each page's parts lie together, so the segments number at most
 /// the pages plus the buffers that their runs cross into.
 pub(super) const MAX_SEGMENTS: u32 = MAX_PAGES + MAX_SKINNED_BUFFERS;
-/// The most workgroups of a dispatch along one axis, on every device.
-const MAX_GROUPS_PER_AXIS: u32 = u16::MAX as u32;
 /// Threads per workgroup of the skinning pass.
 const WORKGROUP_SIZE: u32 = 64;
 /// 32-bit words of one table entry.
@@ -712,7 +711,7 @@ impl Skinning {
 /// and otherwise over the fewest rows that fit, with at most one workgroup per row more than
 /// `groups`. The shader numbers a workgroup by its row and its place in the row.
 fn dispatch_size(groups: u32) -> [u32; 3] {
-    let rows = groups.div_ceil(MAX_GROUPS_PER_AXIS);
+    let rows = groups.div_ceil(MAX_WORKGROUPS_PER_DIMENSION);
     [groups.div_ceil(rows.max(1)), rows.max(1), 1]
 }
 
@@ -729,17 +728,19 @@ mod tests {
     fn a_dispatch_spreads_past_an_axis_over_rows_that_cover_every_workgroup() {
         assert_eq!(dispatch_size(141), [141, 1, 1]);
         assert_eq!(
-            dispatch_size(MAX_GROUPS_PER_AXIS),
-            [MAX_GROUPS_PER_AXIS, 1, 1]
+            dispatch_size(MAX_WORKGROUPS_PER_DIMENSION),
+            [MAX_WORKGROUPS_PER_DIMENSION, 1, 1]
         );
         for groups in [
-            MAX_GROUPS_PER_AXIS + 1,
+            MAX_WORKGROUPS_PER_DIMENSION + 1,
             66_270,
             1_000_000,
-            MAX_GROUPS_PER_AXIS * 300 + 7,
+            MAX_WORKGROUPS_PER_DIMENSION * 300 + 7,
         ] {
             let [x, y, z] = dispatch_size(groups);
-            assert!(x <= MAX_GROUPS_PER_AXIS && y <= MAX_GROUPS_PER_AXIS && z == 1);
+            assert!(
+                x <= MAX_WORKGROUPS_PER_DIMENSION && y <= MAX_WORKGROUPS_PER_DIMENSION && z == 1
+            );
             assert!(x * y >= groups && x * y - groups < y, "{groups}: {x} x {y}");
         }
     }

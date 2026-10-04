@@ -1904,7 +1904,8 @@ fn with_animations(f: impl FnOnce(&mut Animations, &mut Vec<u32>) -> Result<u32,
     })
 }
 
-/// Creates the animation table for `instances` animated objects with `joints` joints in all.
+/// Creates the animation table for `instances` animated objects with `joints` joints in all, at
+/// most as many as the joint texture's rows hold on every WebGL2 device.
 #[wasm_bindgen(js_name = initAnimations)]
 pub fn init_animations(instances: u32, joints: u32) -> u32 {
     let Some(jobs) = JOBS.get() else {
@@ -1913,6 +1914,9 @@ pub fn init_animations(instances: u32, joints: u32) -> u32 {
     with_engine(|e| {
         if e.animations.is_some() {
             return fail(codes::NOT_READY, [2, 1]);
+        }
+        if let Err(error) = skinning::check_table_joints(joints) {
+            return core_failure(error);
         }
         match Animations::new(jobs, instances, joints) {
             Ok(animations) => {

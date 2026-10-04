@@ -105,7 +105,7 @@ mod transparent;
 
 use std::collections::TryReserveError;
 
-use null3d_gpu::caps::{BUDGET, Limit};
+use null3d_gpu::caps::{BUDGET, Limit, MAX_WORKGROUPS_PER_DIMENSION};
 use null3d_gpu::drawlist::{
     DrawList, MAX_WORDS, Op, buffer_usage as usage, format, sizes, texture_usage, view,
 };
@@ -167,7 +167,7 @@ pub const PORTABLE_MAX_SOURCES: u32 = max_sources(sizes::PORTABLE_STORAGE_BINDIN
 /// The largest storage binding the builder can use: the instance buffer of the most sources one
 /// dispatch covers. A device that offers more gains nothing from a larger binding.
 pub const MAX_USEFUL_BINDING_BYTES: u32 =
-    u16::MAX as u32 * sizes::CULL_WORKGROUP_SIZE * sizes::INSTANCE_STRIDE;
+    MAX_WORKGROUPS_PER_DIMENSION * sizes::CULL_WORKGROUP_SIZE * sizes::INSTANCE_STRIDE;
 
 /// The error of a table that memory could not grow for.
 fn out_of_memory(_: std::collections::TryReserveError) -> RecordError {
