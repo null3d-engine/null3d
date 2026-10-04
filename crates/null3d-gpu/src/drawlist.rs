@@ -621,7 +621,8 @@ pub mod layout {
     /// instance's skinning matrices, which vertex shaders read.
     pub const JOINTS: u32 = 11;
     /// Group 0 of the skinning compute pipeline: its table of formats and parts, a mesh page's
-    /// vertices, the skinned vertices that it writes, and the texture of skinning matrices.
+    /// vertices, the skinned vertices that it writes, the texture of skinning matrices, and the
+    /// morph textures of deltas and of weights.
     pub const SKIN: u32 = 12;
     /// Group 0 of ambient occlusion's depth step on a depth target of one sample: the steps'
     /// uniform block, then the depth target, which the step reads as unfilterable floats with
@@ -720,6 +721,11 @@ pub mod permutation {
     /// these bits, and a page loads only its own.
     pub const DEVICE: u32 = DRAW_INDEX | TONE_MAP | HALF;
 
+    /// The bits of features whose builds go into device modules of their own, beside those of
+    /// the device's bits, which a page loads the first time a pipeline asks for one: morph
+    /// targets, which WebGL2 draws with MORPH builds of every template that draws meshes.
+    pub const ON_DEMAND: u32 = MORPH;
+
     /// Every bit.
     pub const ALL: u32 = {
         let mut all = 0;
@@ -800,11 +806,14 @@ pub mod vertex {
     pub const JOINTS: u32 = 16;
     /// How much each of the four joints moves a skinned vertex.
     pub const WEIGHTS: u32 = 32;
+    /// Where a morphed vertex's morph target deltas start, and how many there are: two whole
+    /// numbers as floats.
+    pub const MORPH: u32 = 1 << 27;
     /// Every optional attribute's bit.
-    pub const ALL: u32 = UV0 | UV1 | TANGENT | COLOR | JOINTS | WEIGHTS;
+    pub const ALL: u32 = UV0 | UV1 | TANGENT | COLOR | JOINTS | WEIGHTS | MORPH;
     /// The first vertex shader location of the per-instance attributes, after every location
     /// that a vertex attribute can take.
-    pub const INSTANCE_LOCATION: u32 = 8;
+    pub const INSTANCE_LOCATION: u32 = 9;
     /// The location of the position.
     pub const POSITION: usize = 0;
     /// The location of the normal.
@@ -899,6 +908,8 @@ pub mod vertex {
     const FRACTION: &[Type] = &[Type::F32, Type::Unorm8, Type::Unorm16];
     /// The types of joint indices: plain unsigned integers.
     const INDEX: &[Type] = &[Type::Uint8, Type::Uint16];
+    /// The type of the morph attribute: floats alone.
+    const FLOAT: &[Type] = &[Type::F32];
 
     /// One vertex attribute.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -950,7 +961,7 @@ pub mod vertex {
     /// Every attribute, in the order they sit in a vertex: the position, the normal, then the
     /// optional attributes in bit order. The type fields follow the attribute bits in the same
     /// order.
-    pub const ATTRIBUTES: [Attribute; 8] = [
+    pub const ATTRIBUTES: [Attribute; 9] = [
         Attribute {
             bit: 0,
             components: 3,
@@ -1013,6 +1024,14 @@ pub mod vertex {
             location: 7,
             shift: 25,
             types: FRACTION,
+            integer: false,
+        },
+        Attribute {
+            bit: MORPH,
+            components: 2,
+            location: 8,
+            shift: 27,
+            types: FLOAT,
             integer: false,
         },
     ];
@@ -1395,7 +1414,7 @@ pub fn typescript_constants() -> String {
         out.push_str(&format!("export const OP_{} = {};\n", op.name(), op as u8));
     }
     out.push_str(&format!("\nexport const NO_TARGET = {NO_TARGET};\n\n"));
-    let groups: [(&str, &[(&str, u32)]); 18] = [
+    let groups: &[(&str, &[(&str, u32)])] = &[
         (
             "FORMAT",
             &[
@@ -1511,6 +1530,8 @@ pub fn typescript_constants() -> String {
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
+        // The bits of features whose builds load on demand, in modules of their own.
+        ("PERMUTATION", &[("ON_DEMAND", permutation::ON_DEMAND)]),
         (
             "VERTEX",
             &[
@@ -1520,6 +1541,7 @@ pub fn typescript_constants() -> String {
                 ("COLOR", vertex::COLOR),
                 ("JOINTS", vertex::JOINTS),
                 ("WEIGHTS", vertex::WEIGHTS),
+                ("MORPH", vertex::MORPH),
                 ("ALL", vertex::ALL),
                 ("INSTANCE_LOCATION", vertex::INSTANCE_LOCATION),
             ],
@@ -1640,7 +1662,7 @@ pub fn typescript_constants() -> String {
             ],
         ),
     ];
-    for (prefix, entries) in groups {
+    for &(prefix, entries) in groups {
         for (name, value) in entries {
             out.push_str(&format!("export const {prefix}_{name} = {value};\n"));
         }
@@ -1813,7 +1835,7 @@ mod tests {
     fn vertex_formats_place_each_attribute_after_the_ones_before_it() {
         use vertex::ATTRIBUTES;
         assert_eq!(vertex::stride(0), 24);
-        assert_eq!(vertex::stride(vertex::ALL), 92);
+        assert_eq!(vertex::stride(vertex::ALL), 100);
         assert_eq!(vertex::offset(vertex::UV0, 2), Some(24));
         assert_eq!(vertex::offset(vertex::UV1, 3), Some(24));
         assert_eq!(vertex::offset(vertex::UV0 | vertex::TANGENT, 4), Some(32));
@@ -1821,7 +1843,16 @@ mod tests {
         assert_eq!(vertex::offset(vertex::UV1, 2), None);
         assert_eq!(vertex::offset(0, 0), Some(0));
         assert_eq!(vertex::offset(0, 1), Some(12));
-        for bits in 0..=vertex::ALL {
+        // Every combination of the optional attributes' bits.
+        let optional: Vec<u32> = ATTRIBUTES
+            .iter()
+            .map(|a| a.bit)
+            .filter(|&b| b != 0)
+            .collect();
+        for combination in 0..1u32 << optional.len() {
+            let bits = (0..optional.len())
+                .filter(|k| combination & (1 << k) != 0)
+                .fold(0, |bits, k| bits | optional[k]);
             // Each attribute of a format of floats starts where the ones before it end, and the
             // last ends at the stride.
             let mut end = 0;

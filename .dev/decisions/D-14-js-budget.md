@@ -351,6 +351,7 @@ The owner's decision (ruling 23 of D-53):
 
 ### Consequences
 
-- `tools/lib/size-report.ts` gains the shader files' limit, the exceptions' rows and the two columns. The branch that first ships a first-use shader file (#283 or M2-C5's) adds the limit and the line in AGENTS.md.
+- M2-C5 adds the shader files' limit, with the WebGL2 morph builds as the first such files ([D-51](D-51-morph-targets.md)). `ON_DEMAND_SHADER_PARTS` in `tools/lib/size-report.ts` names the files, and `ON_DEMAND_SHADER_BUDGET_BYTES` holds the limit of 24 KB. `budgetProblems` judges each file against it. The size report prints them in a section of their own, which no start counts. AGENTS.md and [Benchmarks](../benchmarks.md#download-size) give the figure.
+- `tools/lib/size-report.ts` gains the exceptions' rows and the two columns.
 - M2-A6 builds Draco on the on-demand loader of [D-54](D-54-addon-modules.md), and its pull request gives the decoder's measured size.
 - M2-R11 measures the start in each column before and after, and writes the figures here and in [D-13](D-13-shader-variants.md).

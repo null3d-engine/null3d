@@ -80,6 +80,7 @@
 //! | [`op::SET_FLAGS`] | the [`flags::SETTABLE`] bits to change | their new values |
 //! | [`op::SET_RENDER_ORDER`] | the order's 32-bit float bits | unused |
 //! | [`op::SET_SKIN`] | the animated instance's id plus one, or 0 | unused |
+//! | [`op::SET_MORPH`] | the morph weight block's id plus one, or 0 | unused |
 //!
 //! The handle is reserved with [`SceneStorage::reserve`] before its create command, so TypeScript
 //! can write the object's position, rotation, scale and local bounds straight away. Destroying an
@@ -173,6 +174,12 @@ pub mod op {
     /// gives the object its mesh's bounds again, so write the mesh's local radius and a zero
     /// local centre first.
     pub const SET_SKIN: u32 = 11;
+    /// Shapes an object's mesh by its morph targets with a block of morph weights, or with `a` =
+    /// 0, stops. `a`: the block's id plus one (see [`crate::morph`]). A morphed object has a
+    /// bounding sphere of its own ([`super::flags::CUSTOM_BOUNDS`]), which each frame writes from
+    /// its weights. Stopping gives the object its mesh's bounds again, unless it is skinned, so
+    /// write the mesh's local radius and a zero local centre first.
+    pub const SET_MORPH: u32 = 12;
     /// The `b` of [`SET_PARENT`] that keeps the object's place in the world.
     pub const KEEP_WORLD: u32 = 1;
 }
@@ -315,6 +322,20 @@ impl Command {
             handle: handle.raw(),
             a: match instance {
                 Some(instance) => instance + 1,
+                None => 0,
+            },
+            b: 0,
+        }
+    }
+
+    /// Shapes the mesh of `handle` by its morph targets with the weights of block `block`, or with
+    /// `None`, stops.
+    pub const fn set_morph(handle: Handle, block: Option<u32>) -> Command {
+        Command {
+            op: op::SET_MORPH,
+            handle: handle.raw(),
+            a: match block {
+                Some(block) => block + 1,
                 None => 0,
             },
             b: 0,
@@ -485,6 +506,8 @@ pub struct SceneStorage {
     materials: Vec<u32>,
     /// The animated instance that skins each object's mesh, plus one, or 0 for none.
     skins: Vec<u32>,
+    /// The morph weight block that shapes each object's mesh, plus one, or 0 for none.
+    morphs: Vec<u32>,
     layers: Vec<u32>,
     /// The number of created objects whose layer mask is not the default one.
     custom_layers: u32,
@@ -550,6 +573,7 @@ impl SceneStorage {
             meshes: vec![0; rows],
             materials: vec![0; rows],
             skins: vec![0; rows],
+            morphs: vec![0; rows],
             layers: vec![DEFAULT_LAYERS; rows],
             custom_layers: 0,
             cells: vec![ORIGIN_CELL; rows],
@@ -744,6 +768,18 @@ impl SceneStorage {
     /// instance skins.
     pub fn skins(&self) -> &[u32] {
         &self.skins
+    }
+
+    /// The morph weight block that shapes each slot's mesh, plus one, or 0 for a mesh that none
+    /// shapes.
+    pub fn morphs(&self) -> &[u32] {
+        &self.morphs
+    }
+
+    /// True while the object in slot `s` has bounds that a frame step writes: it is skinned or
+    /// morphed.
+    fn posed(&self, s: usize) -> bool {
+        self.skins[s] != 0 || self.morphs[s] != 0
     }
 
     /// Writes the bounding sphere of slot `slot`'s own bounds, in the object's space, and marks
@@ -1088,6 +1124,7 @@ impl SceneStorage {
                 self.meshes[s] = 0;
                 self.materials[s] = 0;
                 self.skins[s] = 0;
+                self.morphs[s] = 0;
                 self.change_layers(s, DEFAULT_LAYERS);
                 self.table.release(self.cells[s]);
                 self.cells[s] = ORIGIN_CELL;
@@ -1116,7 +1153,7 @@ impl SceneStorage {
             op::SET_MESH => {
                 let slot = self.created_slot(command.handle)?;
                 self.meshes[slot as usize] = command.a;
-                if self.skins[slot as usize] == 0 {
+                if !self.posed(slot as usize) {
                     self.flags[slot as usize] &= !flags::CUSTOM_BOUNDS;
                 }
                 self.dirty.set(slot);
@@ -1168,14 +1205,18 @@ impl SceneStorage {
                 let slot = self.created_slot(command.handle)?;
                 self.render_orders[slot as usize] = f32::from_bits(command.a);
             }
-            op::SET_SKIN => {
+            op::SET_SKIN | op::SET_MORPH => {
                 let slot = self.created_slot(command.handle)?;
                 let s = slot as usize;
-                self.skins[s] = command.a;
-                if command.a == 0 {
-                    self.flags[s] &= !flags::CUSTOM_BOUNDS;
+                if command.opcode() == op::SET_SKIN {
+                    self.skins[s] = command.a;
                 } else {
+                    self.morphs[s] = command.a;
+                }
+                if self.posed(s) {
                     self.flags[s] |= flags::CUSTOM_BOUNDS;
+                } else {
+                    self.flags[s] &= !flags::CUSTOM_BOUNDS;
                 }
                 self.dirty.set(slot);
             }
@@ -2807,6 +2848,45 @@ mod tests {
             .apply_commands(&[Command::set_skin(h, Some(0)), Command::destroy(h)], 5)
             .unwrap();
         assert_eq!(scene.skins()[s as usize], 0);
+    }
+
+    #[test]
+    fn a_morphed_object_keeps_its_weights_and_a_sphere_of_its_own_while_skinned_or_morphed() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (h, c) = object(&mut scene, [0.0; 3], Handle::NONE, SHOWN);
+        scene.apply_commands(&[c], 1).unwrap();
+        scene.update_transforms(&jobs);
+        assert!(scene.take_structure_changed());
+        let s = scene.resolve(h).unwrap() as usize;
+
+        // A block of weights changes the structure, as a skin does, and the object's sphere
+        // comes from the frame's weights from then on.
+        scene
+            .apply_commands(&[Command::set_morph(h, Some(2))], 2)
+            .unwrap();
+        assert!(scene.take_structure_changed());
+        assert_eq!(scene.morphs()[s], 3);
+        assert_ne!(scene.flags()[s] & flags::CUSTOM_BOUNDS, 0);
+        // A skin as well, then none: the weights still shape the object.
+        scene
+            .apply_commands(
+                &[Command::set_skin(h, Some(0)), Command::set_skin(h, None)],
+                3,
+            )
+            .unwrap();
+        assert_ne!(scene.flags()[s] & flags::CUSTOM_BOUNDS, 0);
+        scene
+            .apply_commands(&[Command::set_morph(h, None)], 4)
+            .unwrap();
+        assert!(scene.take_structure_changed());
+        assert_eq!(scene.morphs()[s], 0);
+        assert_eq!(scene.flags()[s] & flags::CUSTOM_BOUNDS, 0);
+        // A destroyed object's slot forgets its block.
+        scene
+            .apply_commands(&[Command::set_morph(h, Some(0)), Command::destroy(h)], 5)
+            .unwrap();
+        assert_eq!(scene.morphs()[s], 0);
     }
 
     #[test]

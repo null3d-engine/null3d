@@ -39,7 +39,8 @@ export interface Null3dPageOptions {
 
 /**
  * The page's switches that reach the sketch module's address as they are: `blend` makes S1's
- * boxes see through, `animated` adds that many animated characters to S1, `grading` gives S1 a
+ * boxes see through, `animated` adds that many animated characters to S1, `morphed` adds that
+ * many morphed spheres whose weights change every frame, `grading` gives S1 a
  * color grading table and the vignette, `sprites` draws S1's swarm as sprites, `lines` draws it
  * as dashed line segments, `ao` turns ambient occlusion on in S1, `outline` adds outlined boxes
  * to S1, and `labels` adds that many labeled objects to S1, whose elements the page binds.
@@ -47,6 +48,7 @@ export interface Null3dPageOptions {
 const SKETCH_SWITCHES = [
 	'blend',
 	'animated',
+	'morphed',
 	'grading',
 	'sprites',
 	'lines',

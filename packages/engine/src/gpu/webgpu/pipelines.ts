@@ -394,16 +394,16 @@ export class Pipelines {
 			},
 		]);
 		// The skinning pass's table of formats and parts, a mesh page's vertices, the skinned
-		// vertices that it writes, and the joint matrices, which it reads with textureLoad.
+		// vertices that it writes, the joint matrices, and the morph textures of deltas and of
+		// weights, which it reads with textureLoad.
+		const computeData: GPUBindGroupLayoutEntry['texture'] = { sampleType: 'unfilterable-float' };
 		this.defineLayout(LAYOUT_SKIN, 'skin', [
 			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-			{
-				binding: 3,
-				visibility: GPUShaderStage.COMPUTE,
-				texture: { sampleType: 'unfilterable-float' },
-			},
+			{ binding: 3, visibility: GPUShaderStage.COMPUTE, texture: computeData },
+			{ binding: 4, visibility: GPUShaderStage.COMPUTE, texture: computeData },
+			{ binding: 5, visibility: GPUShaderStage.COMPUTE, texture: computeData },
 		]);
 		// The final pass reads the scene color with textureLoad, which takes any float format, and
 		// its color grading table, a 3D texture, with a linear filter, which reads the outline mask

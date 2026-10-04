@@ -14,7 +14,9 @@
 // S4, the phone scene, with its shadows, street lights and quality governor. `--blend` makes
 // S1's boxes see through, so each frame sorts every visible row for the transparent pass.
 // `--animated 64` adds 64 animated characters to S1, which play, cross-fade, blend a masked layer
-// and an additive one, and fire events to the sketch's handlers through the animator. `--grading`
+// and an additive one, and fire events to the sketch's handlers through the animator. `--morphed 64`
+// adds 64 spheres with three morph targets each, whose weights the sketch sets in every frame.
+// `--grading`
 // gives S1 a color grading table and the vignette, and changes both every frame. `--sprites` draws
 // S1's swarm as one dynamic batch of blended sprites instead of boxes, and `--lines` as one dynamic
 // batch of dashed line segments, whose dashes move every frame. `--labels 256` adds 256
@@ -36,6 +38,7 @@
 //   bun run bench:allocation --scene s4 --gpu webgl2
 //   bun run bench:allocation --blend --n 30000 --gpu webgl2
 //   bun run bench:allocation --animated 64 --gpu webgl2
+//   bun run bench:allocation --morphed 64 --gpu webgl2
 //   bun run bench:allocation --grading --gpu webgl2
 //   bun run bench:allocation --sprites --gpu webgl2
 //   bun run bench:allocation --lines --gpu webgl2
@@ -204,6 +207,10 @@ async function main(): Promise<void> {
 		if (animatedCount > 0 && scene !== 's1')
 			throw new Error('--animated adds animated characters to S1 only');
 		const animated = animatedCount > 0 ? `&animated=${animatedCount}` : '';
+		const morphedCount = option('--morphed', 0);
+		if (morphedCount > 0 && scene !== 's1')
+			throw new Error('--morphed adds morphed objects to S1 only');
+		const morphed = morphedCount > 0 ? `&morphed=${morphedCount}` : '';
 		const grading = args.includes('--grading') ? '&grading' : '';
 		if (grading && scene !== 's1') throw new Error('--grading grades S1 only');
 		const sprites = args.includes('--sprites') ? '&sprites' : '';
@@ -218,7 +225,7 @@ async function main(): Promise<void> {
 		const labelCount = option('--labels', 0);
 		if (labelCount > 0 && scene !== 's1') throw new Error('--labels adds labels to S1 only');
 		const labels = labelCount > 0 ? `&labels=${labelCount}` : '';
-		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${grading}${sprites}${lines}${ao}${outline}${prepass}${labels}`;
+		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${outline}${prepass}${labels}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
@@ -297,7 +304,7 @@ async function main(): Promise<void> {
 		await input;
 		devtools.close();
 		console.log(
-			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
 		);
 		console.log(
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',

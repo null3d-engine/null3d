@@ -1,8 +1,9 @@
 // The three.js twin of the glTF model scenes (bench/scenes/gltf-models.ts), which null3D's image
 // tests draw. `?model=` names the scene. It loads the model with GLTFLoader, its KTX2 textures
-// with KTX2Loader and its meshopt data with the MeshoptDecoder that three.js ships, frames it from
-// its bounds as the null3D sketch does, draws one frame into an offscreen target of the image's
-// size, and publishes the pixels as the hold pages do. `?renderer=webgl` draws with WebGLRenderer,
+// with KTX2Loader and its meshopt data with the MeshoptDecoder that three.js ships, plays the
+// scene's clip to its time with an AnimationMixer, frames it from its bounds or the scene's frame
+// as the null3D sketch does, draws one frame into an offscreen target of the image's size, and
+// publishes the pixels as the hold pages do. `?renderer=webgl` draws with WebGLRenderer,
 // and `?renderer=webgpu` with WebGPURenderer.
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -45,11 +46,21 @@ run('hold', async () => {
 	const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
 	const gltf = await loader.loadAsync(model.url);
 	scene.add(gltf.scene);
+	if (model.clip) {
+		const clip = three.AnimationClip.findByName(gltf.animations, model.clip.name);
+		if (!clip) throw new Error(`the model has no clip named ${model.clip.name}`);
+		const mixer = new three.AnimationMixer(gltf.scene);
+		mixer.clipAction(clip).play();
+		mixer.update(model.clip.time);
+	}
 	gltf.scene.updateMatrixWorld(true);
 	const box = new three.Box3().setFromObject(gltf.scene);
 	const center = box.getCenter(new three.Vector3());
-	const radius = box.getSize(new three.Vector3()).length() / 2;
-	const view = modelCamera([center.x, center.y, center.z], radius, model.view);
+	const { center: framed, radius } = model.frame ?? {
+		center: [center.x, center.y, center.z] as const,
+		radius: box.getSize(new three.Vector3()).length() / 2,
+	};
+	const view = modelCamera(framed, radius, model.view);
 
 	const { width, height } = MODELS_IMAGE;
 	const camera = new three.PerspectiveCamera(MODELS_FOV, width / height, view.near, view.far);

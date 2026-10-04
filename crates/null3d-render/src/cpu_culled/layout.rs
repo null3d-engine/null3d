@@ -32,7 +32,6 @@ use crate::frame::{
 };
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
-use crate::skinning::skinned_in_vertex_shader;
 
 /// The data texture of a bucket's instances, as its draw record names it.
 pub(super) const RESIDENT: u32 = 0;
@@ -246,14 +245,10 @@ impl Layout {
 
         let meshes = settings.meshes();
         let drawn = self.drawn;
-        let skin = |key: DrawKey, skinned: bool| {
-            if skinned {
-                skinned_in_vertex_shader(key)
-            } else {
-                key
-            }
+        let skin = |key: DrawKey, slot: Option<usize>| {
+            slot.and_then(|slot| skins.key(slot, key)).unwrap_or(key)
         };
-        let key_of = |mesh: u32, material: u32, group: u32, object: u32, skinned: bool| {
+        let key_of = |mesh: u32, material: u32, group: u32, object: u32, skinned: Option<usize>| {
             let pipeline = settings.pipeline_of(mesh, material)?;
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             match drawn {
@@ -308,13 +303,13 @@ impl Layout {
                 scene.materials()[slot],
                 RESIDENT,
                 object,
-                skins.skinned(slot),
+                Some(slot),
             )
         };
         // Instance batches cast no shadows yet, take no outlines, and no animated instance skins
         // them.
         let batch_key = |batch: &InstanceBatch| match drawn {
-            Drawn::Scene => key_of(batch.mesh(), batch.material(), group_of(batch), 0, false),
+            Drawn::Scene => key_of(batch.mesh(), batch.material(), group_of(batch), 0, None),
             Drawn::Casters | Drawn::Outlined => None,
         };
         collect_bucket_keys(

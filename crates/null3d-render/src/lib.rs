@@ -64,6 +64,7 @@ pub mod graph;
 pub mod light_grid;
 pub mod materials;
 pub mod meshes;
+pub mod morph;
 pub mod occlusion;
 pub mod outline;
 pub mod output;
