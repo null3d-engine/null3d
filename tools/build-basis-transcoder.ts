@@ -13,7 +13,14 @@
 // every format the engine asks for, and fails unless both write the same bytes.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+	chmodSync,
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { transcodeTestFiles } from './lib/basis-transcoder.ts';
 
@@ -134,8 +141,11 @@ async function main(): Promise<void> {
 		if (built.get(key) !== hash) throw new Error(`${key}: the two builds write different bytes`);
 		console.log(`${key}: the same bytes, SHA-256 ${hash}`);
 	}
-	for (const file of ['basis_transcoder.mjs', 'basis_transcoder.wasm'])
+	// The compiler marks its output executable, which a vendored file must not be.
+	for (const file of ['basis_transcoder.mjs', 'basis_transcoder.wasm']) {
 		copyFileSync(join(out, file), join(VENDOR, file));
+		chmodSync(join(VENDOR, file), 0o644);
+	}
 	console.log(`wrote ${VENDOR}`);
 }
 
