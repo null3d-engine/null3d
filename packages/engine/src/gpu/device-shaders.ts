@@ -23,6 +23,12 @@ import { variantFor } from './variants';
 const PIPELINE_DEVICE_BITS = PERMUTATION_DRAW_INDEX | PERMUTATION_TONE_MAP;
 
 /**
+ * Features that move the 8-bit path to HDR color, whose pipelines then ask for builds without the
+ * tone mapping bit. Preloading one on that path also loads the start's builds without the bit.
+ */
+const HDR_FEATURES: ReadonlySet<string> = new Set(['bloom']);
+
+/**
  * Loads a device module: the start's module of the fixed bits `bits` when `feature` is undefined,
  * or else the module of that feature, which loads on first use, for a device with those bits.
  */
@@ -33,8 +39,8 @@ export type DeviceModuleLoader = (
 
 /** The device shaders that a backend reads, which grow by another module when a pipeline needs it. */
 export class DeviceShaderSet {
-	/** The key of each module that this set loaded or is loading: its feature and fixed bits. */
-	private readonly modules = new Set<string>();
+	/** Each module that this set loaded or is loading, by its key: its feature and fixed bits. */
+	private readonly modules = new Map<string, Promise<void>>();
 	/** The key of each module whose builds the set holds, or that failed to load. */
 	private readonly settled = new Set<string>();
 	/** The name of each shader whose variants the backends hold, by those variants. */
@@ -50,7 +56,7 @@ export class DeviceShaderSet {
 		private readonly load: DeviceModuleLoader,
 	) {
 		const key = moduleKey(undefined, bits);
-		this.modules.add(key);
+		this.modules.set(key, Promise.resolve());
 		this.settled.add(key);
 		for (const [name, variants] of Object.entries(shaders)) this.names.set(variants, name);
 	}
@@ -65,17 +71,43 @@ export class DeviceShaderSet {
 		const bits = (permutation & PIPELINE_DEVICE_BITS) | (this.bits & PERMUTATION_HALF);
 		const name = this.names.get(variants);
 		const feature = name === undefined ? undefined : firstUseFeature(name, permutation);
+		const key = this.loadModule(feature, bits);
+		return this.settled.has(key);
+	}
+
+	/**
+	 * Loads the modules of `features`, which load on first use, for this device's fixed bits, so
+	 * that their pipelines need not wait for a download. A module that the set loaded or is loading
+	 * loads only once. Resolves once each module has arrived or failed to.
+	 */
+	preload(features: Iterable<string>): Promise<void> {
+		const bits = this.bits & (PIPELINE_DEVICE_BITS | PERMUTATION_HALF);
+		const keys: string[] = [];
+		for (const feature of features) {
+			keys.push(this.loadModule(feature, bits));
+			if (HDR_FEATURES.has(feature) && bits & PERMUTATION_TONE_MAP) {
+				const hdr = bits & ~PERMUTATION_TONE_MAP;
+				keys.push(this.loadModule(undefined, hdr), this.loadModule(feature, hdr));
+			}
+		}
+		return Promise.all(keys.map((key) => this.modules.get(key))).then(() => undefined);
+	}
+
+	/** Starts to load the module of `feature` and `bits`, once, and returns its key. */
+	private loadModule(feature: string | undefined, bits: number): string {
 		const key = moduleKey(feature, bits);
-		if (this.modules.has(key)) return this.settled.has(key);
-		this.modules.add(key);
-		this.load(bits, feature).then(
-			(more) => {
+		if (this.modules.has(key)) return key;
+		const settle = () => {
+			this.settled.add(key);
+		};
+		this.modules.set(
+			key,
+			this.load(bits, feature).then((more) => {
 				this.add(more);
-				this.settled.add(key);
-			},
-			() => this.settled.add(key),
+				settle();
+			}, settle),
 		);
-		return false;
+		return key;
 	}
 
 	/** Adds another module's builds to the variants of each shader, which keep their own. */

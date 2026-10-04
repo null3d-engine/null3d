@@ -8,6 +8,7 @@ import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error'
 import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
+import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
 import type { PresetCheck } from '../quality/check';
 import {
 	choosePreset,
@@ -240,6 +241,16 @@ export interface EngineOptions {
 	 * switch overrides this time, and a bare `?hold` holds at it, or at 0 without it.
 	 */
 	hold?: number;
+	/**
+	 * Features whose shaders load before the first frame, for a game that must fetch nothing while
+	 * it plays. Each feature's shaders otherwise download the first time the sketch uses it:
+	 * `'skinning'` with the first skinned mesh, `'bloom'` and `'ao'` when `post.set` turns them on,
+	 * `'sprites'` and `'lines'` with the first batch, and `'background'` with a texture background.
+	 * Listed features download beside the engine's own shaders, so the start waits only for the
+	 * largest. Loading a glTF file with skins, or making a batch, also starts its feature's download
+	 * at once, before the objects draw. Throws E1421 for a name it does not know.
+	 */
+	preload?: readonly ShaderFeature[];
 }
 
 /**
@@ -763,6 +774,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	/** True once this start holds the page's copy of the core, which serves one engine at a time. */
 	let claimed = false;
 	try {
+		checkPreload(options.preload);
 		const hold = holdSeconds(options.hold, switches.hold);
 		if (holding) publishHold(undefined);
 		if (place.sketchThread === 'main') {
@@ -779,6 +791,17 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		if (holding) publishHold(holdFailure(error));
 		throw error;
 	}
+}
+
+/** Throws E1421 for a name in `preload` that names no feature whose shaders load on first use. */
+function checkPreload(preload: readonly string[] | undefined): void {
+	const known: readonly string[] = SHADER_FEATURES;
+	for (const feature of preload ?? [])
+		if (!known.includes(feature))
+			throw new EngineError(
+				'E1421',
+				`createEngine() got '${feature}' in preload. The features are ${known.join(', ')}.`,
+			);
 }
 
 /** Where the engine runs: its build, and the thread that runs the sketch and the core. */
@@ -1061,6 +1084,7 @@ async function startEngine(
 		queue: switches.queue,
 		hold: hold !== undefined,
 		glTiming: switches.glTiming,
+		preload: options.preload,
 	};
 
 	const core = await abortable(coreLoad, signal).catch((e: unknown) => {

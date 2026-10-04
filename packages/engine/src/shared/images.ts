@@ -7,6 +7,10 @@
 // Custom materials' shaders take the same way, each under its render pipeline template. A backend
 // looks a template up in the table when a draw list first names it. A pipeline whose shader has
 // not arrived yet builds once it has.
+//
+// So do the names of features whose shader files the sketch will need, such as skinning when a
+// glTF file with skins loads. The thread that draws starts to download each feature's file then,
+// before the objects that need it are drawn.
 
 import type { ShaderVariants } from '../generated/shaders';
 import { Slot } from './control';
@@ -28,6 +32,19 @@ export class ImageTable {
 	private readonly images = new Map<number, ImageBitmap>();
 	/** Custom materials' shaders, by render pipeline template. */
 	readonly shaders = new Map<number, CustomShader>();
+	/** The features whose shader files the sketch asked for, which every renderer loads. */
+	readonly preloads = new Set<string>();
+	/** Hears each feature that the sketch asks for, while a renderer runs. */
+	onPreload: ((feature: string) => void) | undefined;
+
+	/** Keeps the features that the sketch asked for, and tells the renderer of each new one. */
+	preload(features: readonly string[]): void {
+		for (const feature of features) {
+			if (this.preloads.has(feature)) continue;
+			this.preloads.add(feature);
+			this.onPreload?.(feature);
+		}
+	}
 
 	/** Keeps an image under its id, and closes one that the id named before. */
 	set(id: number, image: ImageBitmap): void {
@@ -66,10 +83,17 @@ export type ImageSender = (id: number, image: ImageBitmap) => void;
 /** Sends a custom material's shader variants, under its template, to the thread that draws. */
 export type ShaderSender = (template: number, shader: CustomShader) => void;
 
-/** A message that carries an image or a custom material's shader to the thread that draws. */
+/** Asks the thread that draws to load the shader files of features that the sketch will use. */
+export type PreloadSender = (features: readonly string[]) => void;
+
+/**
+ * A message that carries an image, a custom material's shader or features to preload to the
+ * thread that draws.
+ */
 type DrawingMessage =
 	| { id: number; image: ImageBitmap }
-	| { template: number; shader: CustomShader };
+	| { template: number; shader: CustomShader }
+	| { preload: readonly string[] };
 
 /**
  * Counts an image that the thread that draws received, and wakes a thread that waits for it, through
@@ -94,6 +118,11 @@ export function shadersThrough(port: MessagePort): ShaderSender {
 	return (template, shader) => port.postMessage({ template, shader } satisfies DrawingMessage);
 }
 
+/** Sends features to preload through a port to another thread, which receives them with `receiveImages`. */
+export function preloadsThrough(port: MessagePort): PreloadSender {
+	return (features) => port.postMessage({ preload: features } satisfies DrawingMessage);
+}
+
 /** Puts shaders straight into the table of this thread, which draws as well. */
 export function shadersToTable(table: ImageTable): ShaderSender {
 	return (template, shader) => table.shaders.set(template, shader);
@@ -107,10 +136,14 @@ export function sendToTable(table: ImageTable, slots: Int32Array): ImageSender {
 	};
 }
 
-/** What a sketch sends to the thread that draws: texture images and custom materials' shaders. */
+/**
+ * What a sketch sends to the thread that draws: texture images, custom materials' shaders and the
+ * features whose shader files to load early.
+ */
 export interface DrawingSenders {
 	sendImage: ImageSender;
 	sendShader: ShaderSender;
+	sendPreload: PreloadSender;
 }
 
 /**
@@ -123,8 +156,16 @@ export function drawingSenders(
 	port: MessagePort | undefined,
 ): DrawingSenders {
 	return port
-		? { sendImage: sendThrough(port), sendShader: shadersThrough(port) }
-		: { sendImage: sendToTable(table, slots), sendShader: shadersToTable(table) };
+		? {
+				sendImage: sendThrough(port),
+				sendShader: shadersThrough(port),
+				sendPreload: preloadsThrough(port),
+			}
+		: {
+				sendImage: sendToTable(table, slots),
+				sendShader: shadersToTable(table),
+				sendPreload: (features) => table.preload(features),
+			};
 }
 
 /**
@@ -137,6 +178,10 @@ export function receiveImages(port: MessagePort, table: ImageTable, slots: Int32
 		const data = event.data;
 		if ('shader' in data) {
 			table.shaders.set(data.template, data.shader);
+			return;
+		}
+		if ('preload' in data) {
+			table.preload(data.preload);
 			return;
 		}
 		table.set(data.id, data.image);

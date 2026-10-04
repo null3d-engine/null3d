@@ -8,6 +8,7 @@ import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import { Lut } from './lut';
 import type { CoreMemory } from './memory';
+import { ShaderPreloads } from './shader-preloads';
 
 /**
  * How the engine maps the scene's high dynamic range color to the screen, with three.js's
@@ -214,6 +215,8 @@ export class Post {
 		private readonly core: CoreMemory,
 		private readonly hdrEffects = true,
 		private readonly occlusionTargets = true,
+		/** Asks for bloom's and ambient occlusion's shader files when they turn on. */
+		private readonly shaders = new ShaderPreloads(),
 	) {}
 
 	/**
@@ -267,6 +270,7 @@ export class Post {
 				'null3D: bloom stays off on this device: it needs HDR color, and the device has no HDR target. See the post-processing concepts page.',
 			);
 		}
+		if (this.bloom && this.hdrEffects) this.shaders.need('bloom');
 		core.check(glue.setBloom(this.bloom), 'post.set', undefined, true);
 	}
 
@@ -285,6 +289,7 @@ export class Post {
 			if (ao.intensity !== undefined) values[C.POST_VALUE_AO_INTENSITY] = ao.intensity;
 		}
 		const on = this.ao && this.occlusionTargets;
+		if (on) this.shaders.need('ao');
 		if (DEV && this.ao && !this.occlusionTargets && !this.warnedNoAo) {
 			this.warnedNoAo = true;
 			console.warn(

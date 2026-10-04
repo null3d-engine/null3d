@@ -32,6 +32,7 @@ Each feature has one file for each GPU path and each value of the device's fixed
 | `lines` | 6 | 5.6 to 7.6 KB | 6.4 to 10.6 KB | 32 to 73 KB | The `line` and `line_lit` templates ([D-46](D-46-wide-lines.md)) |
 | `sprites` | 6 | 2.9 to 4.7 KB | 3.5 to 6.0 KB | 33 to 68 KB | The `sprite` and `sprite_map` templates ([D-37](D-37-sprites.md)) |
 | `bloom` | 4 | 4.1 to 4.5 KB | 4.8 to 5.3 KB | 26 to 42 KB | Bloom's steps, and the final pass's BLOOM builds ([D-21](D-21-effect-chain.md)) |
+| `ao` | 2 | 2.9 to 3.2 KB | 3.4 to 3.7 KB | 23 KB | Ambient occlusion's depth, horizon and denoise steps |
 | `background` | 4 | 1.0 to 2.0 KB | 1.1 to 2.3 KB | 3 to 10 KB | The texture background |
 | `texcoords` | 6 | 1.3 to 3.7 KB | 1.5 to 4.3 KB | 5 to 36 KB | The engine's own test template, which only test pages use |
 
@@ -102,7 +103,7 @@ Each feature gets a file, such as `generated/shaders-skinning-wgsl.js`, for each
 
 A draw that waits for its pipeline draws nothing. That is right for an object of its own, such as a sprite batch or a line batch. It appears once it is built, as a texture appears once its texels arrive. It is wrong in two cases. There, the passes keep to what they had until every pipeline they need is built. `PipelineCache::built` says when. It compares the frame that created a pipeline with the newest frame drawn with every pipeline built.
 
-- A full-screen pass. A final pass whose pipeline waits leaves the canvas without its frame. So the frame graph keeps the final pass without bloom until bloom's steps and the final pass's BLOOM build are built.
+- A full-screen pass. A final pass whose pipeline waits leaves the canvas without its frame. So the frame graph keeps the final pass without bloom until bloom's steps and the final pass's BLOOM build are built. Ambient occlusion's steps write a target that the opaque pass reads. So the frame graph adds the steps only once their pipelines are built, and only then does the opaque pass read their result. The depth prepass that they read runs as soon as the sketch turns ambient occlusion on, so its pipelines build meanwhile.
 - A pass whose output another pass reads. On WebGPU the skinning pass writes the vertices that the shadow, prepass, opaque and transparent passes draw. A draw before the skinning pass first runs would read vertices that it has not written. So `SkinnedGate` leaves skinned objects out of every layout until their pipelines are built: the skinning pass's, and every one that draws them. The layouts still ask for those pipelines, so the file loads and they build. Then the layouts take the skinned objects in. The main pass, the depth prepass, the shadow passes and the transparent pass show them in the same frame. On WebGL2, each pass skins in its own vertex shader with the SKIN builds. The same gate keeps those passes in step.
 
 Before the first frame neither case waits: that frame waits for every pipeline.
@@ -112,7 +113,18 @@ Before the first frame neither case waits: that frame waits for every pipeline.
 - The mesh templates without SKIN: `lit`, `standard_maps`, `unlit` and `unlit_map`. Every scene draws with them, and custom materials build on `lit`.
 - The shadow pass, the culling pass, light clustering and the mip levels, which most scenes run.
 - The final pass without BLOOM.
+- The opaque pass's reading of ambient occlusion. It is a branch on the frame's settings in the mesh templates, not a bit, as color grading is in the final pass.
 - Color grading and the vignette. Their code is a branch on the final pass's settings, not a permutation bit. It adds 0.1 to 0.3 KB after Brotli, and 2.2 to 2.5 KB uncompressed, to each start shader file. That is the difference between the files built with it and without it. A file of its own would need a bit on the final pass. That bit would double the pass's builds in every start file, at about 2 KB after Brotli. And a page that turns grading on would show ungraded frames until the file arrived and the pipeline built. The code that reads grading tables already loads on first use (`page-lut.js`, D-14).
+
+### Loading everything up front
+
+The owner decided on 4 October 2026 that a game can have every shader it needs before play starts, and fetch nothing during play.
+
+- `createEngine({ preload: ['skinning', 'bloom', 'lines'] })` names features by their tables' names. The page checks each name against the generated `shader-features.ts`, which holds no shader text, and throws E1421 for one it does not know. The thread that draws starts each listed file's download beside the start's file, and the renderer starts once all have arrived. So the first frame comes after them, and no listed file downloads during play.
+- On the 8-bit path, bloom moves the scene to HDR color, and its pipelines ask for builds without the tone mapping bit. Preloading bloom there also loads the start's builds and bloom's builds without that bit.
+- Loaders and calls that know a feature is coming ask for its file at once, through `ShaderPreloads` (`scene/shader-preloads.ts`). A glTF file with skins asks for skinning as soon as it is parsed, while its textures decode. The first sprite or line batch, a texture background, and `post.set` with bloom or ambient occlusion ask for theirs. The request travels to the thread that draws with the images and custom materials' shaders, and that thread loads the file at once. A model that the setup adds is then in the first frame, which waits for its pipelines. One that comes during play appears once its pipelines are built.
+- `ShaderPreloads.needAll` takes a list of features. M2-B5's list of what each asset needs, which the asset tool will record, can feed it.
+- Bundling every feature into the start's file is not the default: it would grow every page's start, also the pages that never use a feature. A preload list puts the cost on the games that ask for it.
 
 ### Limits and copies
 
@@ -123,13 +135,17 @@ Before the first frame neither case waits: that frame waits for every pipeline.
 
 ## Consequences
 
-- The shader manifest holds a `[first_use.<feature>]` table for `skinning`, `lines`, `sprites`, `bloom`, `background` and `texcoords`. The manifest's header says how to add one.
+- The shader manifest holds a `[first_use.<feature>]` table for `skinning`, `lines`, `sprites`, `bloom`, `ao`, `background` and `texcoords`. The manifest's header says how to add one.
+- The test "a preload list fetches every feature's shader file before the first frame" turns skinning, bloom and lines on during play. No shader file may download after the first frame. The line batch may skip draws until its pipeline is built, as any new object does.
+- The test "a glTF file with skins fetches the skinning file before its model is added" checks the order of the request and the instantiation. It also checks that the first frame shows the model in its pose.
+- A third test checks E1421.
+- [Loading screens](../../docs/guides/loading-screens.md#loading-everything-up-front) tells developers how to load everything up front, and the develop skill gives the option.
 - The engine test "a page that uses no feature that loads on first use downloads none of their files" checks every feature's shader files too.
 - The engine test "the first use of lines, sprites and background downloads its shader file once" checks those features' files. The bloom switch test checks bloom's file, and the skinning test checks skinning's.
 - [Implementation notes](../implementation-notes.md#shader-files-that-load-on-first-use) say how a feature declares its file and which passes keep to the draw-once-built rule.
 - D-13 and D-14 point here for the new grouping and its figures.
 - Later branches move their own builds when they land:
-  - Ambient occlusion (M2-F2) and outlines (M2-F4) are full-screen passes. Each declares a table with its templates. Its pass keeps the frame as it was until its pipelines are built, as bloom's does in `FrameGraph::request_pipelines`.
+  - Outlines (M2-F4) are a full-screen pass. Their branch declares a table with their templates. Their pass keeps the frame as it was until its pipelines are built, as bloom's and ambient occlusion's do in `FrameGraph::request_pipelines`. Ambient occlusion (M2-F2) landed during this task, and moved here.
   - Morph targets (M2-C5) add a bit, as SKIN does. Where the GPU blends them, they add a pass whose output the drawing passes read. Their table names the bit. Their objects keep out of the layouts until their pipelines are built, as `SkinnedGate` keeps skinned objects out.
   - GPU occlusion culling (M2-I1) adds compute templates, which wait for their file as the skinning pass's does. Its culling must keep the previous frame's results, or none, until its pipelines are built.
 - The record is in the table in README.md.

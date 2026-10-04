@@ -343,6 +343,14 @@ const DOCS = {
 			"E1418: the page's Content-Security-Policy does not let the threaded engine core compile: WebAssembly.compileStreaming(): Refused to compile or instantiate WebAssembly module.",
 		since: '0.2',
 	},
+	E1421: {
+		title: 'Unknown feature to preload',
+		cause:
+			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, lines, skinning and sprites, and texcoords for the engine's own tests.",
+		example:
+			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, lines, skinning, sprites, texcoords.",
+		since: '0.2',
+	},
 	E1501: {
 		title: 'Render space full',
 		cause:

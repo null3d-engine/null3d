@@ -11,7 +11,9 @@
 // stripes along their height, at texture coordinates from their positions, so custom materials'
 // textures must follow each way to skin. ?still holds every character in the clip's first pose.
 // ?late adds the characters during play, on the page's 'characters' message, and posts 'added'
-// once their pipelines are built: the first skinned mesh downloads the skinning shader file. The
+// once their pipelines are built: the first skinned mesh downloads the skinning shader file. With
+// ?extras the same message also turns bloom on and makes a line batch, two more features whose
+// shaders load on first use. The
 // engine cannot load animated models yet, so the rig comes from the engine's internal loader calls.
 import { defineSketch } from '@null3d/engine';
 import { animateObject, createAnimationRig, skinObject } from '@null3d/engine/internal';
@@ -36,6 +38,7 @@ const BLEND = params.has('blend');
 const TEXTURED = params.has('textured');
 const STILL = params.has('still');
 const LATE = params.has('late');
+const EXTRAS = params.has('extras');
 /** Millimeters per meter: the scale of quantized positions. */
 const MM = 1000;
 
@@ -156,6 +159,15 @@ export default defineSketch(({ scene, materials, geometry, post, textures, page 
 	page.onMessage((message) => {
 		if (message !== 'characters') return;
 		addCharacters();
-		void scene.warmUp().then(() => page.post('added', null));
+		const extras = EXTRAS ? addExtras() : Promise.resolve();
+		void extras.then(() => scene.warmUp()).then(() => page.post('added', null));
 	});
+	/** Turns bloom on and draws a line across the characters' feet. */
+	const addExtras = async () => {
+		post.set({ bloom: { strength: 0.4 } });
+		await scene.createLines({
+			positions: Float32Array.of(-2, 0.02, 0.5, 2, 0.02, 0.5),
+			width: 3,
+		});
+	};
 });

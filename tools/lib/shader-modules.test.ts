@@ -36,6 +36,7 @@ describe('the shader modules', () => {
 		expect(isShaderModule('shaders.ts')).toBe(true);
 		expect(isShaderModule('shaders-glsl-draw-index.js')).toBe(true);
 		expect(isShaderModule('shaders-glsl-draw-index.ts')).toBe(false);
+		expect(isShaderModule('shader-features.ts')).toBe(true);
 		expect(isShaderModule('gpu.ts')).toBe(false);
 		expect(isShaderModule('shaders.ts.map')).toBe(false);
 	});

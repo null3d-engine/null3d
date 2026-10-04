@@ -208,6 +208,9 @@ export async function loadGltf(
 	call: string,
 ): Promise<Prefab> {
 	const { data, bitmaps } = await parse(context, await file.arrayBuffer(), address, call);
+	// The thread that draws downloads the skinning shader file while the textures decode, so a
+	// skinned model waits less for its pipelines.
+	if (data.nodes.some((n) => n.skinned)) context.materials.shaders.need('skinning');
 	const textures = await makeTextures(context, data, bitmaps, address, call);
 	const materials = new FileMaterials(context, data, textures);
 	// Only the meshes that nodes draw: joints move copies of some of the file's meshes.

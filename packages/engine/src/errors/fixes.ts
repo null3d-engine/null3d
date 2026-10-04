@@ -96,6 +96,8 @@ export const ERROR_FIXES = {
 		'Export the model again without the extension that the message names. Call createInstances with a model that has meshes and no instancing of its own, or with one of its meshes and a material.',
 	E1418:
 		"Add 'wasm-unsafe-eval' to the script-src of the page's Content-Security-Policy, for example script-src 'self' 'wasm-unsafe-eval'. It allows WebAssembly and no JavaScript eval. The hosting page of the docs gives the whole policy that the engine needs.",
+	E1421:
+		'Name each feature as the message lists it. Leave a feature out to let its shaders download the first time the sketch uses it.',
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses.',
 	E1502: RENDER_GRAPH_FIX,

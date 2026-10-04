@@ -105,6 +105,11 @@ export interface RendererOptions {
 	imageTable?: ImageTable;
 	/** How to time each WebGL call of the scene's renderer, for a benchmark page (?gl-timing). */
 	glTiming?: GlTimingMode;
+	/**
+	 * The features whose shader files load with the start's, before the first frame, as
+	 * `createEngine`'s `preload` lists them.
+	 */
+	preload?: readonly string[];
 }
 
 /** WebGPU's default `maxBufferSize`, which every device offers. */
@@ -288,19 +293,30 @@ const freshIf = <Shaders extends FirstUseShaders>(device: CoreDevice, shaders: P
 /**
  * The device's shaders, from the start's module of its fixed bits, as a set that loads the module
  * of other fixed bits through `load`, and the module of a feature that loads on first use through
- * `loadFeature`, when a pipeline needs it.
+ * `loadFeature`, when a pipeline needs it. The modules of the features that `options` preloads
+ * download with the start's, and the set holds them before the renderer starts. The features that
+ * the sketch asks for later, through the image table, load as soon as they are asked for.
  */
 async function deviceShaders(
 	device: CoreDevice,
+	options: RendererOptions,
 	load: (bits: number) => Promise<DeviceShaders>,
 	loadFeature: (feature: string, bits: number) => Promise<FirstUseShaders>,
 ): Promise<DeviceShaderSet> {
-	return new DeviceShaderSet(
-		await freshIf(device, load(device.shaderBits)),
-		device.shaderBits,
-		(bits, feature) =>
-			freshIf(device, feature === undefined ? load(bits) : loadFeature(feature, bits)),
+	const bits = device.shaderBits;
+	const preload = options.preload ?? [];
+	// Every download starts at once: a module that the set imports again comes from the cache.
+	for (const feature of preload) loadFeature(feature, bits).catch(() => undefined);
+	const shaders = new DeviceShaderSet(await freshIf(device, load(bits)), bits, (more, feature) =>
+		freshIf(device, feature === undefined ? load(more) : loadFeature(feature, more)),
 	);
+	await shaders.preload(preload);
+	const table = options.imageTable;
+	if (table) {
+		void shaders.preload(table.preloads);
+		table.onPreload = (feature) => void shaders.preload([feature]);
+	}
+	return shaders;
 }
 
 /** Creates the renderer for a tier on the canvas this thread owns. */
@@ -317,7 +333,7 @@ export async function createRenderer(
 		// scene's shaders download meanwhile.
 		const [, shaders] = await Promise.all([
 			contextRestored(gl),
-			scene && deviceShaders(device, loadGlslShaders, loadGlslFeature),
+			scene && deviceShaders(device, options, loadGlslShaders, loadGlslFeature),
 		]);
 		if (scene && shaders)
 			return new WebGL2SceneRenderer(
@@ -336,7 +352,7 @@ export async function createRenderer(
 	}
 	const [gpu, shaders] = await Promise.all([
 		requestDevice(options),
-		scene && deviceShaders(device, loadWgslShaders, loadWgslFeature),
+		scene && deviceShaders(device, options, loadWgslShaders, loadWgslFeature),
 	]);
 	if (scene && shaders)
 		return new WebGPUSceneRenderer(

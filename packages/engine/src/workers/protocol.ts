@@ -65,6 +65,8 @@ export interface RendererSetup {
 	hold?: boolean;
 	/** How ?gl-timing asks the WebGL2 path to time each WebGL call for a benchmark page. */
 	glTiming?: GlTimingMode;
+	/** The features whose shader files load before the first frame, as `createEngine` lists them. */
+	preload?: readonly string[];
 }
 
 export type SketchWorkerInit = CoreHandoff & {

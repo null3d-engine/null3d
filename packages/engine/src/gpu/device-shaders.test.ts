@@ -82,4 +82,29 @@ describe('DeviceShaderSet', () => {
 		await Promise.resolve();
 		expect(set.ready(set.shaders.sprite, 0, 'wgsl')).toBe(true);
 	});
+
+	it("preloads a feature's module, which a pipeline then finds without loading it again", async () => {
+		const { asked, load, settle } = loader();
+		const set = new DeviceShaderSet(start(), PERMUTATION_TONE_MAP, load);
+		const preloaded = set.preload(['sprites']);
+		expect(asked).toEqual([`sprites ${PERMUTATION_TONE_MAP}`]);
+		expect(set.ready(set.shaders.sprite, PERMUTATION_TONE_MAP, 'wgsl')).toBe(false);
+		await settle();
+		await preloaded;
+		expect(set.ready(set.shaders.sprite, PERMUTATION_TONE_MAP, 'wgsl')).toBe(true);
+		await set.preload(['sprites']);
+		expect(asked).toEqual([`sprites ${PERMUTATION_TONE_MAP}`]);
+	});
+
+	it("preloads bloom's HDR builds and the start's on the 8-bit path, which bloom moves to HDR", () => {
+		const { asked, load } = loader();
+		const set = new DeviceShaderSet(start(), PERMUTATION_TONE_MAP | PERMUTATION_HALF, load);
+		void set.preload(['bloom']);
+		const half = PERMUTATION_HALF;
+		expect(asked).toEqual([
+			`bloom ${PERMUTATION_TONE_MAP | half}`,
+			`start ${half}`,
+			`bloom ${half}`,
+		]);
+	});
 });

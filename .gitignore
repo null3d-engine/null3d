@@ -11,6 +11,7 @@ dist/
 # of date (tools/shaders.ts), and the engine's npm package holds them.
 packages/engine/src/generated/shaders*.ts
 packages/engine/src/generated/shaders-*.js
+packages/engine/src/generated/shader-features.ts
 
 # Test output
 coverage/

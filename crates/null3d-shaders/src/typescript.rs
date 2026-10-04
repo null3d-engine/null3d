@@ -32,6 +32,10 @@ const TAB_WIDTH: usize = 2;
 /// The file name of the main module, without its extension.
 pub(crate) const MAIN_MODULE: &str = "shaders";
 
+/// The file name of the module that names the features that load on first use, without its
+/// extension. The page imports it alone, so it holds no shader text.
+pub(crate) const FEATURES_MODULE: &str = "shader-features";
+
 /// The extension of each device module's file: plain JavaScript, which the main module imports by
 /// address, so that a bundler copies it as it is.
 pub(crate) const DEVICE_MODULE_EXTENSION: &str = "js";
@@ -375,8 +379,10 @@ fn device_builds(output: &Output) -> BTreeMap<DeviceModule<'_>, Builds<'_>> {
 /// JavaScript.
 pub(crate) fn modules(output: &Output) -> BTreeMap<String, String> {
     let devices = device_builds(output);
-    let mut modules =
-        BTreeMap::from([(format!("{MAIN_MODULE}.ts"), main_module(output, &devices))]);
+    let mut modules = BTreeMap::from([
+        (format!("{MAIN_MODULE}.ts"), main_module(output, &devices)),
+        (format!("{FEATURES_MODULE}.ts"), features_module(output)),
+    ]);
     for (module, builds) in &devices {
         modules.insert(
             format!("{}.{DEVICE_MODULE_EXTENSION}", module.stem()),
@@ -384,6 +390,33 @@ pub(crate) fn modules(output: &Output) -> BTreeMap<String, String> {
         );
     }
     modules
+}
+
+/// The module that names the features that load on first use, which a page may preload: no shader
+/// text, so the page that checks a preload list downloads none.
+fn features_module(output: &Output) -> String {
+    let mut ts = Writer::default();
+    ts.out.push_str(HEADER);
+    ts.line("");
+    ts.line("/** The features whose shader builds load on first use, as the shader manifest names them. */");
+    let features = &output.first_use;
+    let names: std::collections::BTreeSet<String> = (features.shaders.values())
+        .chain(features.bits.values())
+        .map(|name| quote(name))
+        .collect();
+    let names: Vec<String> = names.into_iter().collect();
+    ts.line(&format!(
+        "export const SHADER_FEATURES = [{}] as const;",
+        names.join(", ")
+    ));
+    ts.line("");
+    ts.line("/**");
+    ts.line(" * A feature whose shader builds load on first use, which `createEngine`'s `preload` lists.");
+    ts.line(" *");
+    ts.line(" * @category api/engine");
+    ts.line(" */");
+    ts.line("export type ShaderFeature = (typeof SHADER_FEATURES)[number];");
+    ts.out
 }
 
 /// The main module: the types, one export per shader that does not load by device, `SHADERS`,
@@ -925,7 +958,7 @@ mod tests {
     #[test]
     fn the_main_module_loads_each_device_module_and_holds_none_of_their_shaders() {
         let modules = modules(&output());
-        assert_eq!(modules.len(), 7);
+        assert_eq!(modules.len(), 8);
         let main = &modules["shaders.ts"];
         assert!(main.contains("\treadonly cull: ShaderVariants<never>;\n"));
         assert!(main.contains("\t3: () => importShaders(new URL('./shaders-glsl-draw-index-tone-map.js?no-inline', import.meta.url)),\n"));
@@ -1011,7 +1044,11 @@ mod tests {
     #[test]
     fn the_main_module_finds_and_loads_the_modules_of_each_feature() {
         let modules = modules(&output_with_features());
-        assert_eq!(modules.len(), 13);
+        assert_eq!(modules.len(), 14);
+        assert!(
+            modules["shader-features.ts"]
+                .contains("export const SHADER_FEATURES = ['bloom', 'sprites'] as const;")
+        );
         let main = &modules["shaders.ts"];
         let sprites = "	sprites: {
 		bits: 2,

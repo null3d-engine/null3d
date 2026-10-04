@@ -41,11 +41,13 @@ interface ModuleRecord {
 }
 
 /**
- * True for a file that the shader build writes: the main module, TypeScript, or a device module,
- * plain JavaScript.
+ * True for a file that the shader build writes: the main module and the module of feature names,
+ * TypeScript, or a device module, plain JavaScript.
  */
 export function isShaderModule(name: string): boolean {
-	return name === 'shaders.ts' || /^shaders-[a-z0-9-]+\.js$/.test(name);
+	return (
+		name === 'shaders.ts' || name === 'shader-features.ts' || /^shaders-[a-z0-9-]+\.js$/.test(name)
+	);
 }
 
 /** The crate folders that the shader build compiles: its own and its path dependencies. */

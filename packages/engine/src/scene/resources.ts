@@ -54,6 +54,7 @@ import type { ShaderSender } from '../shared/images';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import { arraysProblem, meshFromArrays } from './mesh-arrays';
+import { ShaderPreloads } from './shader-preloads';
 import { Texture } from './textures';
 import type { TextureValues, UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
 
@@ -1233,6 +1234,8 @@ export class Materials {
 		private readonly core: CoreMemory,
 		/** Sends each custom material's shader to the thread that draws, once. */
 		private readonly sendShader: ShaderSender = () => {},
+		/** @internal Asks the thread that draws for the shader files of features early. */
+		readonly shaders: ShaderPreloads = new ShaderPreloads(),
 	) {}
 
 	/**
