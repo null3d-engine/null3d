@@ -96,6 +96,7 @@ export type {
 } from './scene/pointer-events';
 export type {
 	AoSettings,
+	BloomBlend,
 	BloomSettings,
 	OutlineSettings,
 	Post,

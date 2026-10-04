@@ -21,7 +21,8 @@
 // S1's swarm as one dynamic batch of blended sprites instead of boxes, and `--lines` as one dynamic
 // batch of dashed line segments, whose dashes move every frame. `--labels 256` adds 256
 // objects to S1, each with an HTML label that the page binds. `--ao` turns ambient occlusion
-// on in S1, and changes its intensity every frame. The camera orbits, so each frame
+// on in S1, and changes its intensity every frame. `--bloom` turns bloom on in S1, and changes
+// its intensity every frame, so the core writes the chain's settings again in each frame. The camera orbits, so each frame
 // places every label at a new point, and the thread that draws copies them for the page.
 // `--outline` adds 16 outlined boxes to S1, turns outlines on with a hidden line, and changes the
 // line's width every frame. `--prepass` turns the depth prepass on, in any scene. It samples the production build of the
@@ -43,6 +44,7 @@
 //   bun run bench:allocation --sprites --gpu webgl2
 //   bun run bench:allocation --lines --gpu webgl2
 //   bun run bench:allocation --ao --gpu webgl2
+//   bun run bench:allocation --bloom --gpu webgl2
 //   bun run bench:allocation --outline --gpu webgl2
 //   bun run bench:allocation --scene s4 --prepass --gpu webgl2
 //   bun run bench:allocation --labels 256 --gpu webgl2
@@ -139,6 +141,14 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 /** The most bytes per frame any other place may allocate: sampling noise, less than one object. */
 const OTHER_BUDGET = 4;
 
+/**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--bloom`: the
+ * encoders of bloom's render passes, which the browser returns for each pass. The default bloom
+ * draws 15 passes, and with them the replay allocated about 56 bytes more per pass, 836 per frame
+ * in all, on the Mac.
+ */
+const BLOOM_REPLAY_BUDGET = 15 * 64;
+
 /** Gives each node of a profile its function's name and file from the build's source maps. */
 function nameNodes(node: ProfileNode, names: BuildNames): void {
 	node.callFrame = names.name(node.callFrame);
@@ -219,13 +229,15 @@ async function main(): Promise<void> {
 		if (lines && scene !== 's1') throw new Error('--lines draws S1 as lines only');
 		const ao = args.includes('--ao') ? '&ao' : '';
 		if (ao && scene !== 's1') throw new Error('--ao turns ambient occlusion on in S1 only');
+		const bloom = args.includes('--bloom') ? '&bloom' : '';
+		if (bloom && scene !== 's1') throw new Error('--bloom turns bloom on in S1 only');
 		const outline = args.includes('--outline') ? '&outline' : '';
 		if (outline && scene !== 's1') throw new Error('--outline outlines boxes in S1 only');
 		const prepass = args.includes('--prepass') ? '&prepass=on' : '';
 		const labelCount = option('--labels', 0);
 		if (labelCount > 0 && scene !== 's1') throw new Error('--labels adds labels to S1 only');
 		const labels = labelCount > 0 ? `&labels=${labelCount}` : '';
-		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${outline}${prepass}${labels}`;
+		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${outline}${prepass}${labels}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
@@ -314,7 +326,8 @@ async function main(): Promise<void> {
 			const budgets = BUDGETS[worker as (typeof WORKERS)[number]];
 			console.log(`${worker}: ${((bytes.get(worker) ?? 0) / frames).toFixed(1)} bytes per frame`);
 			for (const [name, { perFrame, most, callers }] of steadyPlaces(workerSamples)) {
-				const budget = budgets[name] ?? OTHER_BUDGET;
+				const extra = bloom && name === 'replay webgpu/backend.ts' ? BLOOM_REPLAY_BUDGET : 0;
+				const budget = (budgets[name] ?? OTHER_BUDGET) + extra;
 				if (perFrame > budget) over.push(`${worker}: ${name}`);
 				console.log(
 					`  ${perFrame.toFixed(1).padStart(6)} of ${String(budget).padStart(3)} (${most.toFixed(1).padStart(6)})  ${name}${callers ? ` < ${callers}` : ''}`,

@@ -3,7 +3,8 @@
 // with the governor off. After a warm-up, the page measures play with the effect off and on in
 // turns, ROUNDS times each, and reports the medians of each side's GPU time per frame, where the
 // device has a GPU timer, and of its frame interval and CPU time. The device runner's bloom and ao
-// plans run it on each GPU path at the scales of 1 and 0.5.
+// plans run it on each GPU path at the scales of 1 and 0.5. With bloom, ?size= sets the quality
+// setting bloomSize, the base of its chain, as the bloom-sizes plan does.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 
@@ -26,6 +27,7 @@ type Effect = keyof typeof SKETCHES;
 
 const params = new URLSearchParams(location.search);
 const scale = Number(params.get('scale') ?? '1');
+const size = params.get('size');
 const asked = params.get('effect') ?? 'bloom';
 if (!Object.hasOwn(SKETCHES, asked)) throw new Error(`the page measures no effect ${asked}`);
 const effect = asked as Effect;
@@ -44,7 +46,7 @@ run('effect-cost', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL(SKETCHES[effect], import.meta.url);
-	sketch.search = `?scale=${scale}&fixed`;
+	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}`;
 	const engine = await createEngine({ canvas, sketch });
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
@@ -86,6 +88,7 @@ run('effect-cost', async () => {
 		tier: engine.capabilities.tier,
 		hdr: engine.capabilities.hdr,
 		scale,
+		bloomSize: size === null ? null : Number(size),
 		// The window in CSS pixels and the screen's pixel ratio: the preset's cap on the ratio sets
 		// the drawing buffer's size from them.
 		window: [innerWidth, innerHeight],

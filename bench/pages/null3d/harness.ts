@@ -42,8 +42,9 @@ export interface Null3dPageOptions {
  * boxes see through, `animated` adds that many animated characters to S1, `morphed` adds that
  * many morphed spheres whose weights change every frame, `grading` gives S1 a
  * color grading table and the vignette, `sprites` draws S1's swarm as sprites, `lines` draws it
- * as dashed line segments, `ao` turns ambient occlusion on in S1, `outline` adds outlined boxes
- * to S1, and `labels` adds that many labeled objects to S1, whose elements the page binds.
+ * as dashed line segments, `ao` turns ambient occlusion on in S1, `bloom` turns bloom on in S1,
+ * `outline` adds outlined boxes to S1, and `labels` adds that many labeled objects to S1, whose
+ * elements the page binds.
  */
 const SKETCH_SWITCHES = [
 	'blend',
@@ -53,6 +54,7 @@ const SKETCH_SWITCHES = [
 	'sprites',
 	'lines',
 	'ao',
+	'bloom',
 	'outline',
 	'labels',
 ] as const;

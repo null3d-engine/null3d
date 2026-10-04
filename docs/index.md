@@ -73,7 +73,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Culling](concepts/culling.md) | Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells, whole cells out of view skipped first, positions relative to the camera, and software occlusion culling behind blockers on WebGL2. | experimental | 0.1 |
 | [Levels of detail](concepts/lod.md) | LOD groups; generated LODs; per-instance selection. | planned | 0.2 |
 | [Assets and prefabs](concepts/assets.md) | glTF, KTX2, meshopt; prefabs and instantiate; upload budgets; memory. | experimental | 0.2 |
-| [The post-processing chain](concepts/post-processing.md) | HDR scene color, ambient occlusion at half size, bloom at half size and below, an outline mask, and one final pass for exposure, tone mapping, FXAA, dithering, outlines, color grading and the vignette. | experimental | 0.2 |
+| [The post-processing chain](concepts/post-processing.md) | HDR scene color, ambient occlusion at half size, bloom through a chain of mip levels, an outline mask, and one final pass for exposure, tone mapping, FXAA, dithering, outlines, color grading and the vignette. | experimental | 0.2 |
 
 ### API reference
 

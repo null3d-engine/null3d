@@ -33,7 +33,7 @@ import {
 import { FORMAT_CANVAS } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
-import { bloomDivisor, FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
+import { FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
 import { Assets } from '../scene/assets';
 import { FrameCameras } from '../scene/frame-cameras';
@@ -196,8 +196,8 @@ export class SketchRunner {
 	private readonly post: Post;
 	/** True while the sketch has bloom on, as the governor knows it. */
 	private bloomOn = false;
-	/** The divisor of bloom's taps that the `bloomSamples` setting gives. */
-	private bloomSetting = 1;
+	/** The base of bloom's chain that the `bloomSize` setting gives. */
+	private bloomSetting = 0;
 	/** True while the sketch has ambient occlusion on, as the governor knows it. */
 	private aoOn = false;
 	/** The scale of ambient occlusion's targets that the `aoScale` setting gives, in thousandths. */
@@ -296,6 +296,7 @@ export class SketchRunner {
 					)
 				: undefined;
 		const { governor } = this;
+		const bloomSize = () => this.bloomSetting / 2 ** governor.bloomHalvings;
 		this.quality = new SketchQuality(
 			sketch.quality,
 			(update, changed) => {
@@ -315,8 +316,8 @@ export class SketchRunner {
 				get shadowFilter() {
 					return governor.filter as 3 | 5;
 				},
-				get bloomSamples() {
-					return 1 / governor.bloomDivisor;
+				get bloomSize() {
+					return bloomSize();
 				},
 				get aoScale() {
 					return governor.aoScale / FULL_SCALE;
@@ -570,7 +571,7 @@ export class SketchRunner {
 		governor.setOn(settings.governor);
 		governor.setRange(low, high);
 		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval);
-		this.bloomSetting = bloomDivisor(settings.bloomSamples);
+		this.bloomSetting = settings.bloomSize;
 		governor.setBloom(this.bloomOn, this.bloomSetting);
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
 		governor.setAo(this.aoOn, this.aoSetting);
@@ -579,7 +580,7 @@ export class SketchRunner {
 		if (
 			glue.setRenderScaling((settings.governor ? low : high) < FULL_SCALE) !== 0 ||
 			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0 ||
-			glue.setBloomSamples(governor.bloomDivisor) !== 0 ||
+			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
 		)
@@ -587,7 +588,7 @@ export class SketchRunner {
 	}
 
 	/**
-	 * Gives the core the shadow settings and bloom's samples after a step of the governor, and tells
+	 * Gives the core the shadow settings and bloom's base after a step of the governor, and tells
 	 * the sketch's change handlers of it.
 	 */
 	private applyGovernedSteps(): void {
@@ -596,7 +597,7 @@ export class SketchRunner {
 		this.stepChanges = governor.stepChanges;
 		if (
 			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0 ||
-			glue.setBloomSamples(governor.bloomDivisor) !== 0 ||
+			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0
 		)
 			this.report(coreFailure(glue, 'the quality governor'));
@@ -631,7 +632,7 @@ export class SketchRunner {
 	}
 
 	/**
-	 * Follows the sketch's bloom: the governor's bloom steps need it on. The first time an effect
+	 * Follows the sketch's bloom: the governor's bloom step needs it on. The first time an effect
 	 * that needs HDR color turns on, on a device that started on the 8-bit path only for MSAA, the
 	 * core moves to HDR color with FXAA for the engine's life. Returns true then: the frame has new
 	 * targets and pipelines, so the thread that draws holds it until they are built, and the frame
