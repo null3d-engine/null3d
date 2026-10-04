@@ -17,7 +17,8 @@ const RING = 8192;
 const SLOT_MASK = (1 << C.HANDLE_SLOT_BITS) - 1;
 
 /** A core with the scene's arrays and command ring, which counts the calls a test watches. */
-function fakeCore() {
+/** A core with the scene's arrays in a memory of its own. With `largeWorld`, positions hold cells. */
+function fakeCore(largeWorld = false) {
 	const rows = CAPACITY + 1;
 	const sizes = { positions: rows * 12, rotations: rows * 16, scales: rows * 12, radii: rows * 4 };
 	type Field =
@@ -28,7 +29,8 @@ function fakeCore() {
 		| 'write'
 		| 'read'
 		| 'handles'
-		| 'batch';
+		| 'batch'
+		| 'cells';
 	const at = {} as Record<Field, number>;
 	let next = 64;
 	for (const [name, bytes] of Object.entries({
@@ -40,6 +42,7 @@ function fakeCore() {
 		read: 4,
 		handles: rows * 4,
 		batch: 4096,
+		cells: rows * 12,
 	})) {
 		at[name as Field] = next;
 		next += Math.ceil(bytes / 64) * 64;
@@ -49,6 +52,8 @@ function fakeCore() {
 	const calls = { reserveObjects: 0, reserveObject: 0, createLight: 0, copyLight: 0 };
 	const lights = new Map<number, { kind: number; values: Map<number, number> }>();
 	const batches: { source: number; mesh: number; material: number; part: number[] }[] = [];
+	/** The origin that each batch was given, by id. */
+	const origins = new Map<number, number[]>();
 	const glue = {
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: (field: number) =>
@@ -59,6 +64,7 @@ function fakeCore() {
 				[C.SCENE_FIELD_LOCAL_RADII]: at.radii,
 				[C.SCENE_FIELD_LOCAL_CENTERS]: at.centers,
 				[C.SCENE_FIELD_DIRTY_WORDS]: at.dirty,
+				[C.SCENE_FIELD_POSITION_CELLS]: largeWorld ? at.cells : 0,
 			})[field],
 		commandRing: (field: number) =>
 			({
@@ -102,7 +108,11 @@ function fakeCore() {
 			material: number,
 			part: Float32Array,
 		) => batches.push({ source, mesh, material, part: [...part] }),
-		batchArrays: () => at.batch,
+		batchArrays: (_id: number, field: number) => at.batch + field * 1024,
+		setBatchOrigin: (id: number, x: number, y: number, z: number) => {
+			origins.set(id, [x, y, z]);
+			return 0;
+		},
 		setBatchActiveCount: () => 0,
 		setBatchLayers: () => 0,
 		markBatchDirty: () => 0,
@@ -119,6 +129,11 @@ function fakeCore() {
 		calls,
 		lights,
 		batches,
+		origins,
+		/** A batch's first rows of positions. */
+		batchPositions(count: number) {
+			return [...new Float32Array(memory.buffer, at.batch, count * 3)];
+		},
 		/** The commands written since the last call, as [operation, handle, a, b]. */
 		take(): number[][] {
 			const [write, read] = [u32(at.write, 1)[0] as number, u32(at.read, 1)[0] as number];
@@ -133,6 +148,12 @@ function fakeCore() {
 		},
 		positionOf(object: { slot: number }) {
 			return [...new Float32Array(memory.buffer, at.positions + object.slot * 12, 3)];
+		},
+		/** An object's full position: its whole cells, in large-world mode, and its 32-bit rest. */
+		placeOf(object: { slot: number }) {
+			const rest = new Float32Array(memory.buffer, at.positions + object.slot * 12, 3);
+			const cells = new Int32Array(memory.buffer, at.cells + object.slot * 12, 3);
+			return [0, 1, 2].map((k) => (cells[k] as number) * C.CELL_SIZE + (rest[k] as number));
 		},
 	};
 }
@@ -258,6 +279,56 @@ describe('scene.instantiate', () => {
 				[C.LIGHT_VALUE_RANGE, 12],
 			]),
 		});
+	});
+});
+
+describe('far from the origin', () => {
+	/** A point at the Earth's radius, 0.3 m past a whole meter on the far axis. */
+	const FAR: [number, number, number] = [1_234.5678, 6_378_137.3, -98_765.4321];
+	const error = (a: ArrayLike<number>, b: ArrayLike<number>) =>
+		Math.max(...[0, 1, 2].map((k) => Math.abs((a[k] as number) - (b[k] as number))));
+
+	test('in large-world mode, copies and clones keep their full positions', () => {
+		const { core, scene, placeOf } = fakeCore(true);
+		const copy = scene.instantiate(chainPrefab(core, 1), { position: FAR });
+		expect(error(placeOf(copy), FAR)).toBeLessThan(3e-5);
+		const cart = scene.createGroup({ position: FAR });
+		expect(error(placeOf(scene.clone(cart)), FAR)).toBeLessThan(3e-5);
+	});
+
+	test("a model's own instancing takes its node's place as its batch origin", () => {
+		const { core, scene, origins, batchPositions } = fakeCore(true);
+		const chain = chainPrefab(core, 1);
+		const [part] = chain.parts;
+		const instancing = [
+			{
+				node: 1,
+				count: 2,
+				positions: new Float32Array([0.001, 0, 0, -2, 0, 0.5]),
+				rotations: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1]),
+				scales: new Float32Array([1, 1, 1, 1, 1, 1]),
+				parts: [part as (typeof chain.parts)[number]],
+			},
+		];
+		const prefab = new Prefab(
+			core,
+			chain.url,
+			chain.template,
+			chain.parts,
+			instancing,
+			chain.bounds,
+			[],
+			[],
+		);
+		const copy = scene.instantiate(prefab, { position: FAR });
+		const [batch] = copy.batches;
+		// The node is the chain's first link, 1 m above the copy's root.
+		const origin = origins.get(batch?.id ?? -1) ?? [];
+		expect(error(origin, [FAR[0], FAR[1] + 1, FAR[2]])).toBeLessThan(3e-5);
+		// The rows keep their small offsets from the node, a millimeter included.
+		const rows = batchPositions(2);
+		expect(error(rows, [0.001, 0, 0])).toBeLessThan(1e-6);
+		expect(error(rows.slice(3), [-2, 0, 0.5])).toBeLessThan(1e-6);
 	});
 });
 

@@ -345,7 +345,9 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
 /// every object, with no grid cells skipped first. With `depth_prepass`, each camera view draws its
 /// opaque objects' depth before it shades them, on WebGPU. With `vertex_skinning`, WebGPU skins in
-/// the vertex shader of each pass, not in a compute pass. Every capacity is fixed from here on.
+/// the vertex shader of each pass, not in a compute pass. With `large_world`, each object's position
+/// holds whole cells besides its 32-bit part, so positions keep their precision at any distance.
+/// Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
 pub fn init_engine(
@@ -363,6 +365,7 @@ pub fn init_engine(
     cell_culling: bool,
     depth_prepass: bool,
     vertex_skinning: bool,
+    large_world: bool,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
     let cell = unsafe { &mut *ENGINE.0.get() };
@@ -392,7 +395,11 @@ pub fn init_engine(
     };
     let capabilities = Capabilities::from_bits(u64::from(capabilities));
     *cell = Some(Engine {
-        scene: SceneStorage::with_capacity(scene_capacity),
+        scene: if large_world {
+            SceneStorage::with_large_world(scene_capacity)
+        } else {
+            SceneStorage::with_capacity(scene_capacity)
+        },
         ring: CommandRing::with_capacity(commands),
         batches: BatchTable::with_capacity(max_batches),
         lights: LightTable::new(),
@@ -497,7 +504,8 @@ pub fn scene_capacity() -> u32 {
 
 /// The address of one of the per-slot arrays TypeScript writes (see `constants::scene_field`):
 /// positions (3 floats), rotations (4), scales (3), local bounding radii (1), local bounding
-/// sphere centres (3), or the dirty bitset's words, which TypeScript views as 32-bit words.
+/// sphere centres (3), the whole cells of each position (3 integers, or 0 without large-world
+/// mode), or the dirty bitset's words, which TypeScript views as 32-bit words.
 #[wasm_bindgen(js_name = sceneArrays)]
 pub fn scene_arrays(field: u32) -> u32 {
     value_with_engine(|e| {
@@ -507,6 +515,10 @@ pub fn scene_arrays(field: u32) -> u32 {
             scene_field::SCALES => address(e.scene.scales()),
             scene_field::LOCAL_RADII => address(e.scene.local_radii()),
             scene_field::LOCAL_CENTERS => address(e.scene.local_centers()),
+            scene_field::POSITION_CELLS if e.scene.is_large_world() => {
+                address(e.scene.position_cells())
+            }
+            scene_field::POSITION_CELLS => 0,
             _ => address(e.scene.dirty().words()),
         })
     })
@@ -944,6 +956,19 @@ pub fn set_batch_layers(batch: u32, mask: u32) -> u32 {
     with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
         Ok(batch) => {
             batch.set_layers(mask);
+            0
+        }
+        Err(error) => core_failure(error),
+    })
+}
+
+/// Places a batch's origin, which its rows' positions are relative to, in 64-bit floats, and marks
+/// every row for update.
+#[wasm_bindgen(js_name = setBatchOrigin)]
+pub fn set_batch_origin(batch: u32, x: f64, y: f64, z: f64) -> u32 {
+    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
+        Ok(batch) => {
+            batch.set_origin([x, y, z]);
             0
         }
         Err(error) => core_failure(error),
