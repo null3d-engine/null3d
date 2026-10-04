@@ -107,7 +107,7 @@ use std::collections::TryReserveError;
 
 use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{
-    DrawList, Op, buffer_usage as usage, format, sizes, texture_usage, view,
+    DrawList, MAX_WORDS, Op, buffer_usage as usage, format, sizes, texture_usage, view,
 };
 
 use crate::background::BackgroundPass;
@@ -124,7 +124,7 @@ use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::graph::RenderGraph;
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
-use crate::meshes::{MeshStorage, Packing};
+use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Packing};
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PipelineCache, Prepass};
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
@@ -230,11 +230,15 @@ mod ids {
     pub const LIGHT_PARAMS: u32 = LIGHTS + 1;
     /// The uniform buffer of bloom's steps and of the final pass's bloom build.
     pub const BLOOM: u32 = LIGHT_PARAMS + 1;
-    /// The skinned vertices that the skinning pass writes and the passes that draw skinned meshes
-    /// read.
-    pub const SKINNED: u32 = BLOOM + 1;
-    /// The skinning pass's table of formats and parts, one segment per mesh page.
-    pub const SKIN_TABLE: u32 = SKINNED + 1;
+    /// The skinned vertex buffers that the skinning pass writes and the passes that draw skinned
+    /// meshes read, one id each from here.
+    const SKINNED: u32 = BLOOM + 1;
+
+    pub const fn skinned(buffer: u32) -> u32 {
+        SKINNED + buffer
+    }
+    /// The skinning pass's table of formats and parts, one segment per dispatch.
+    pub const SKIN_TABLE: u32 = SKINNED + super::skin::MAX_SKINNED_BUFFERS;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = SKIN_TABLE + 1;
 
@@ -284,11 +288,10 @@ mod ids {
     }
     /// The bind group of each step of bloom, after the groups of the depth prepass.
     pub const BLOOM_GROUPS: u32 = LIGHT_GROUP + 1 + MAX_VIEWS as u32;
-    /// The skinning pass's bind group for each mesh page that holds skinned meshes, by its place
-    /// among those pages, after bloom's.
+    /// The skinning pass's bind group for each of its segments, by their order, after bloom's.
     pub const SKIN_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The joint texture's bind group, which pipelines that skin in the vertex shader read.
-    pub const JOINTS_GROUP: u32 = SKIN_GROUPS + super::skin::MAX_PAGES;
+    pub const JOINTS_GROUP: u32 = SKIN_GROUPS + super::skin::MAX_SEGMENTS;
     /// The bind groups of materials' maps, after the skinning pass's.
     pub const TEXTURE_GROUPS: u32 = JOINTS_GROUP + 1;
 
@@ -310,8 +313,10 @@ pub struct RendererConfig {
     /// memory (`Capabilities::TRANSIENT_ATTACHMENTS`).
     pub transient_attachments: bool,
     pub max_materials: u32,
-    /// Words of each frame's draw list.
+    /// Words of room in each frame's draw list at the start. A list grows when a frame needs more.
     pub draw_list_words: usize,
+    /// The most words that a frame's draw list grows to. A frame that needs more fails.
+    pub draw_list_limit: usize,
     /// The device's largest storage binding, at most [`MAX_USEFUL_BINDING_BYTES`]. It caps the
     /// builder's buffers and the sources it can draw.
     pub storage_binding_bytes: u32,
@@ -335,6 +340,7 @@ impl Default for RendererConfig {
             transient_attachments: false,
             max_materials: sizes::MAX_MATERIALS,
             draw_list_words: 16 * 1024,
+            draw_list_limit: MAX_WORDS,
             storage_binding_bytes: sizes::PORTABLE_STORAGE_BINDING_BYTES,
             cell_culling: true,
             light_limits: LightLimits::default(),
@@ -391,10 +397,11 @@ pub struct GpuDrivenRenderer {
     dfg_pending: bool,
 }
 
-/// The builder's scene settings: meshes in shared buffers, `max_materials` materials, textures
+/// The builder's scene settings from `config`: meshes in shared buffers, each page within one
+/// storage binding, which the skinning pass reads it through, `max_materials` materials, textures
 /// with the builder's ids, as large as every WebGPU device allows, and frames that reach the canvas
 /// as `canvas` says.
-fn scene_settings(max_materials: u32, canvas: CanvasOutput) -> SceneSettings {
+fn scene_settings(config: &RendererConfig) -> SceneSettings {
     let textures = TextureStore::new(
         TextureIds {
             first_texture: ids::TEXTURE_ARRAYS,
@@ -404,10 +411,13 @@ fn scene_settings(max_materials: u32, canvas: CanvasOutput) -> SceneSettings {
         BUDGET[Limit::TextureDimension2D as usize],
     );
     SceneSettings::new(
-        MeshStorage::new(Packing::SharedBuffers),
-        max_materials,
+        MeshStorage::with_page_limit(
+            Packing::SharedBuffers,
+            MAX_BUFFER_BYTES.min(u64::from(config.storage_binding_bytes)),
+        ),
+        config.max_materials,
         textures,
-        canvas,
+        config.canvas,
     )
 }
 
@@ -415,10 +425,10 @@ impl GpuDrivenRenderer {
     pub fn new(config: RendererConfig) -> Self {
         Self {
             config,
-            settings: scene_settings(config.max_materials, config.canvas),
+            settings: scene_settings(&config),
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
-            lists: ParityLists::new(config.draw_list_words),
+            lists: ParityLists::new(config.draw_list_words, config.draw_list_limit),
             graph: {
                 let mut graph = FrameGraph::new(
                     true,
@@ -535,8 +545,12 @@ impl GpuDrivenRenderer {
             let limit = max_sources(self.config.storage_binding_bytes);
             self.settings
                 .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
-            self.skinning
-                .rebuild(input.scene, input.animations, self.settings.meshes());
+            self.skinning.rebuild(
+                input.scene,
+                input.animations,
+                self.settings.meshes(),
+                self.config.storage_binding_bytes,
+            )?;
             let targets = self.graph.scene_targets();
             self.layout.rebuild(
                 &self.settings,
@@ -601,11 +615,6 @@ impl GpuDrivenRenderer {
         self.transparent
             .reserve(&self.sorted, views)
             .map_err(out_of_memory)?;
-        list.reserve_words(
-            self.config.draw_list_words
-                + Transparent::words_bound(&self.sorted, views)
-                + self.bundles_bound(),
-        );
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
         let mut created_pipelines = !self.created;
@@ -975,17 +984,6 @@ impl GpuDrivenRenderer {
         Ok(())
     }
 
-    /// The most words that one frame's bundles take for the scene as it stands, when the frame
-    /// records them all: each camera view's, and its depth prepass's, and each cascade's and shadow
-    /// tile's. The list grows only when the layouts do, so steady frames allocate nothing.
-    fn bundles_bound(&self) -> usize {
-        let cameras = 2 * self.settings.views().len();
-        let tiles = self.settings.tile_settings().tiles as usize;
-        let shadow_views = MAX_CASCADES + tiles.min(MAX_TILES);
-        cameras * opaque::bundle_words(&self.layout)
-            + shadow_views * opaque::bundle_words(&self.casters)
-    }
-
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
     /// uploaded yet, the whole material table, three.js's table of specular terms, both layouts'
     /// tables, the light grid, each view's, each cascade's and each tile's frame uniform, culling
@@ -1046,10 +1044,9 @@ impl FrameBuilder for GpuDrivenRenderer {
     }
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
-        let (mut list, mut arena) = self.lists.take(input.frame);
+        let (mut list, mut arena) = self.lists.take(input.frame)?;
         let result = self.record_into(input, &mut list, &mut arena);
-        self.lists.restore(input.frame, list, arena);
-        result
+        self.lists.restore(input.frame, list, arena, result)
     }
 
     fn casts_tile_shadows(&self) -> bool {
@@ -1057,6 +1054,7 @@ impl FrameBuilder for GpuDrivenRenderer {
     }
 
     fn reset_gpu(&mut self) {
+        self.lists.reset_gpu();
         self.created = false;
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();

@@ -20,7 +20,7 @@ use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use super::ids;
-use super::skin::Skinning;
+use super::skin::{SkinnedPart, Skinning};
 use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
 use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
@@ -126,7 +126,7 @@ pub(super) struct Draw {
     pub(super) first_index: u32,
     pub(super) base_vertex: u32,
     /// The buffer and byte offset of the vertices it draws in place of its page's: a skinned
-    /// part's region of the skinned vertex buffer.
+    /// part's region of a skinned vertex buffer.
     pub(super) vertices: Option<(u32, u32)>,
 }
 
@@ -563,7 +563,7 @@ impl Layout {
                     } else {
                         part.base_vertex
                     },
-                    vertices: region.map(|region| (ids::SKINNED, region.region)),
+                    vertices: region.map(SkinnedPart::vertices),
                 }
             }));
             base += count;
@@ -857,14 +857,16 @@ mod tests {
     use null3d_gpu::drawlist::format;
 
     use super::*;
-    use crate::frame::CanvasOutput;
     use crate::geometry::box_geometry;
-    use crate::gpu_driven::scene_settings;
+    use crate::gpu_driven::{RendererConfig, scene_settings};
     use crate::materials::Shading;
 
     #[test]
     fn objects_with_bounds_of_their_own_or_none_cull_in_buckets_of_their_own() {
-        let mut settings = scene_settings(4, CanvasOutput::default());
+        let mut settings = scene_settings(&RendererConfig {
+            max_materials: 4,
+            ..RendererConfig::default()
+        });
         let box_mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
         let mesh = settings.meshes_mut().add(&box_mesh).unwrap() + 1;
         let material = settings.materials_mut().create(Shading::Lit, 0, [1.0; 4]);
