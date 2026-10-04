@@ -210,13 +210,13 @@ const DOCS = {
 		title: 'GPU out of memory',
 		cause:
 			'The GPU had no room for a buffer or texture that the engine made after the start, so the objects that use it draw wrong or not at all. The engine reports the first time this happens on each GPU device, and draws on.',
-		example: 'E1304: the render worker\'s GPU ran out of memory: Not enough memory left.',
+		example: "E1304: the render worker's GPU ran out of memory: Not enough memory left.",
 		since: '0.2',
 	},
 	E1305: {
 		title: 'GPU rejected work',
 		cause:
-			"The GPU path refused a command that the engine gave it after the start, such as a buffer larger than the device allows. The objects that the command made or drew are missing, and the canvas can stay black. The engine reports the first time this happens on each GPU device, and draws on.",
+			'The GPU path refused a command that the engine gave it after the start, such as a buffer larger than the device allows. The objects that the command made or drew are missing, and the canvas can stay black. The engine reports the first time this happens on each GPU device, and draws on.',
 		example:
 			"E1305: the render worker's GPU rejected a command: Buffer size (377487360) exceeds the max buffer size limit (268435456).",
 		since: '0.2',
@@ -360,7 +360,7 @@ const DOCS = {
 	E1420: {
 		title: 'Engine stopped',
 		cause:
-			"Sketch code called the engine after the engine stopped, from a timer, a promise or an event handler that outlived destroy(). The call did nothing.",
+			'Sketch code called the engine after the engine stopped, from a timer, a promise or an event handler that outlived destroy(). The call did nothing.',
 		example: 'E1420: scene.createMesh() ran after the engine stopped.',
 		since: '0.2',
 	},
