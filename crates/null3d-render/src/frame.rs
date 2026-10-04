@@ -518,6 +518,8 @@ pub struct SceneSettings {
     clock: [f32; 4],
     /// True when the render scale may drop below the whole canvas.
     render_scaling: bool,
+    /// Device pixels per CSS pixel, which size sprites given in pixels of the screen.
+    pixel_ratio: f32,
     /// How the point and spot lights' shadow atlas is set up.
     tiles: TileSettings,
     /// The materials' shading, or a debug view in its place.
@@ -561,6 +563,7 @@ impl SceneSettings {
             outline: None,
             clock: [0.0; 4],
             render_scaling: false,
+            pixel_ratio: 1.0,
             tiles: TileSettings::default(),
             debug_view: DebugView::Lit,
             shadow_camera: None,
@@ -718,6 +721,16 @@ impl SceneSettings {
         self.render_scaling = scaling;
     }
 
+    /// Sets the device pixels per CSS pixel that the canvas draws with. A ratio that is not a
+    /// positive number counts as 1.
+    pub fn set_pixel_ratio(&mut self, ratio: f32) {
+        self.pixel_ratio = if ratio > 0.0 && ratio.is_finite() {
+            ratio
+        } else {
+            1.0
+        };
+    }
+
     /// How the point and spot lights' shadow atlas is set up.
     pub fn tile_settings(&self) -> TileSettings {
         self.tiles
@@ -820,7 +833,7 @@ impl SceneSettings {
     /// [`SceneSettings::pipeline_of`] chose it, or 0 when that pipeline reads no map.
     pub fn texture_group(&self, material: u32, pipeline: DrawKey) -> u32 {
         match pipeline.template {
-            template::INSTANCED_UNLIT_MAP => {
+            template::INSTANCED_UNLIT_MAP | template::SPRITE_MAP => {
                 let map = self.materials.map(material - 1, MapSlot::BaseColor);
                 self.textures.group_id(map).unwrap_or(0)
             }
@@ -1111,6 +1124,9 @@ impl SceneSettings {
         if shading == Shading::UnlitMap && !(uv0 && live(MapSlot::BaseColor)) {
             shading = Shading::Unlit;
         }
+        if shading == Shading::Sprite && live(MapSlot::BaseColor) {
+            shading = Shading::SpriteMap;
+        }
         if shading == Shading::Lit && uv0 && self.has_live_map(id) {
             shading = Shading::StandardMaps;
         }
@@ -1169,7 +1185,12 @@ impl SceneSettings {
             clock: self.clock,
             camera_world: [x, y, z, 0.0],
             target_size: [width, height, 1.0 / width, 1.0 / height],
-            camera_range: [camera.depth.near, camera.depth.far, 0.0, 0.0],
+            camera_range: [
+                camera.depth.near,
+                camera.depth.far,
+                2.0 * self.pixel_ratio / canvas.0.max(1) as f32,
+                2.0 * self.pixel_ratio / canvas.1.max(1) as f32,
+            ],
             ..FrameUniform::default()
         };
         Some(ViewFrame::new(

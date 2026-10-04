@@ -48,6 +48,8 @@ import {
 	TEMPLATE_OUTLINE_MASK,
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SKIN,
+	TEMPLATE_SPRITE,
+	TEMPLATE_SPRITE_MAP,
 	VERTEX_INSTANCE_LOCATION,
 	VERTEX_TYPE_F32,
 	VERTEX_TYPE_SINT8,
@@ -431,6 +433,14 @@ export class Pipelines {
 			],
 			[TEMPLATE_SHADOW_DEPTH, 'shadow depth', shaders.shadow_depth, [0, 1], [LAYOUT_DEPTH]],
 			[TEMPLATE_OUTLINE_MASK, 'outline mask', shaders.outline_mask, [0, 1], [LAYOUT_DEPTH]],
+			[TEMPLATE_SPRITE, 'sprite', shaders.sprite, [0, 2], [LAYOUT_FRAME]],
+			[
+				TEMPLATE_SPRITE_MAP,
+				'sprite map',
+				shaders.sprite_map,
+				[0, 2],
+				[LAYOUT_FRAME, LAYOUT_TEXTURES],
+			],
 		] as const) {
 			this.defineTemplate(id, {
 				label: `mesh ${label}`,

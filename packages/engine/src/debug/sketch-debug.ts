@@ -58,6 +58,7 @@ export class SketchDebug implements Debug {
 	grid(_size?: number, _divisions?: number, _options?: DebugGridOptions): void {}
 	frustum(_camera: Camera, _color?: ColorInput): void {}
 	light(_light: DirectionalLight, _options?: DebugLightOptions): void {}
+	skeleton(_object: Object3D, _color?: ColorInput): void {}
 	view(_view: DebugView): void {}
 	shadowCamera(_camera?: Camera): void {}
 

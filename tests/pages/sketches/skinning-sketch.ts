@@ -91,7 +91,7 @@ export default defineSketch(({ scene, materials, geometry, post }) => {
 				tracks: CHAIN.map((_, j) => ({
 					joint: j,
 					channel: 'rotation' as const,
-					step: true,
+					interpolation: 'step' as const,
 					times: KEY_TIMES,
 					values: rotationKeys(j),
 				})),

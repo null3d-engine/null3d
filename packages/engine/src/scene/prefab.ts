@@ -1,12 +1,15 @@
 // Prefabs: the templates that `assets.loadGltf` makes from glTF files, and the template nodes that
 // `scene.instantiate` and `scene.clone` create objects from. A prefab holds plain data and the
-// meshes, materials and textures that every copy shares. The glTF loader, which loads on first
-// use, is the only code that constructs one, so the scene imports this module for its types alone.
+// meshes, materials and textures that every copy shares, and the skeleton and clips that every copy
+// animates with. The glTF loader, which loads on first use, is the only code that constructs one,
+// so the scene imports this module for its types alone, and calls the prefab's methods.
 
 import type { Vec3Like } from '../math/types';
+import { type AnimationRig, animateObject, skinObject } from './animation';
+import type { KeyInterpolation, MorphTargetsData } from './gltf-animation';
 import type { CoreMemory } from './memory';
 import type { Material, MeshGeometry } from './resources';
-import type { Object3D } from './scene';
+import type { Mesh, Object3D } from './scene';
 import type { Texture } from './textures';
 
 /** @internal A light that a template node creates: its kind and values in the light table. */
@@ -39,6 +42,37 @@ export interface TemplateNode {
 	source?: Object3D;
 	/** True for the group that holds a prefab's copy. */
 	root?: boolean;
+	/**
+	 * True for a mesh that the copy's joints move: its vertices name the skeleton's joints, and it
+	 * sits in the copy's group with no transform of its own.
+	 */
+	skinned?: boolean;
+	/**
+	 * For a mesh that one joint moves, the joint's place at rest in the copy's space: where an
+	 * instance batch of the model draws it, and where it counts for the model's bounds.
+	 */
+	rest?: ArrayLike<number>;
+	/** The mesh's morph targets, which a later version of the engine draws. */
+	morph?: MorphTemplate;
+}
+
+/** @internal The morph targets of a template node's mesh: deltas, default weights and names. */
+export interface MorphTemplate {
+	targets: MorphTargetsData;
+	weights: readonly number[];
+	names: readonly string[];
+}
+
+/** @internal A clip's tracks of morph weights, each on the template nodes of one file node. */
+export interface MorphClipTemplate {
+	name: string;
+	tracks: readonly {
+		/** The template nodes whose meshes the weights shape. */
+		nodes: readonly number[];
+		interpolation: KeyInterpolation;
+		times: Float32Array;
+		values: Float32Array;
+	}[];
 }
 
 /** @internal One mesh of a model as a part of its instance batches. */
@@ -124,7 +158,29 @@ export class Prefab {
 		readonly materials: readonly Material[],
 		/** The model's textures, in the order the file names their images. */
 		readonly textures: readonly Texture[],
+		/** @internal The skeleton and clips that every copy animates with, if the model has any. */
+		readonly rig?: AnimationRig,
+		/** @internal The clips' tracks of morph weights, which a later version of the engine plays. */
+		readonly morphClips: readonly MorphClipTemplate[] = [],
 	) {}
+
+	/** The names of the model's clips, which a copy's animator plays. */
+	get clips(): readonly string[] {
+		return this.rig ? [...this.rig.clips.keys()] : [];
+	}
+
+	/**
+	 * @internal Gives a copy's group, the first of `objects`, the animator of the model's skeleton,
+	 * and links the copy's skinned meshes to it. `objects` holds one object per template node.
+	 */
+	animate(objects: readonly Object3D[]): void {
+		const { rig } = this;
+		if (!rig) return;
+		const animator = animateObject(objects[0] as Object3D, rig);
+		this.template.forEach((node, k) => {
+			if (node.skinned) skinObject(objects[k] as Mesh, animator);
+		});
+	}
 
 	/** @internal The model's address, as error messages show it. */
 	describe(): string {

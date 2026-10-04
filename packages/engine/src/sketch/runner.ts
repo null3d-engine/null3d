@@ -236,6 +236,7 @@ export class SketchRunner {
 			device.cellCulling,
 			device.depthPrepass,
 			device.vertexSkinning,
+			device.largeWorld,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
 		const { shadowTiles, shadowTileSize, pointLightShadows, shadowCascades, shadowMapSize } =
@@ -313,18 +314,19 @@ export class SketchRunner {
 				renderScaleThousandths: () => this.renderScale(),
 			},
 		};
+		const materials = new Materials(this.core, sketch.sendShader);
+		const geometry = new Geometry(this.core);
 		const scene = new Scene(
 			this.core,
 			this.recorded,
 			device.webgl2,
 			() => this.warmUp(),
 			new FrameCameras(this.core, sketch.control, this.input),
+			{ geometry, materials },
 		);
 		this.post = new Post(this.core, device.effectsSceneColor !== FORMAT_CANVAS);
 		this.debugDraw = DEV ? new DebugDraw(this.core, host, scene) : undefined;
 		const debug = this.debugDraw ?? new SketchDebug(host);
-		const materials = new Materials(this.core, sketch.sendShader);
-		const geometry = new Geometry(this.core);
 		this.context = {
 			time: this.time,
 			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
@@ -332,7 +334,7 @@ export class SketchRunner {
 			materials,
 			geometry,
 			textures,
-			assets: new Assets(textures, sketch.pageUrl, { core: this.core, geometry, materials }),
+			assets: new Assets(textures, sketch.pageUrl, { core: this.core, geometry, materials, scene }),
 			input: this.input,
 			post: this.post,
 			quality: this.quality,
@@ -491,6 +493,7 @@ export class SketchRunner {
 		viewport.width = slotFloats[Slot.CanvasCssWidth] as number;
 		viewport.height = slotFloats[Slot.CanvasCssHeight] as number;
 		viewport.pixelRatio = slotFloats[Slot.PixelRatio] as number;
+		this.sketch.glue.setPixelRatio(viewport.pixelRatio);
 	}
 
 	/** Records the time since the previous phase ended as a phase of the frame. */

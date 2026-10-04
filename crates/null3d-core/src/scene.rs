@@ -48,6 +48,12 @@
 //! changed cells in each level's loop, and moves them in the table between levels, one thread
 //! alone, so each level's children read their parents' final cells.
 //!
+//! In large-world mode ([`SceneStorage::with_large_world`]) each position has two parts: a whole
+//! number of cells in [`SceneStorage::position_cells`], and the rest in the 32-bit positions. A
+//! 64-bit position splits into the two when it is written, so it keeps its precision at any
+//! distance: a root's cell is its whole cells plus the cell of the rest. Without the mode, a
+//! position is its 32-bit part alone, which moves in steps of about 0.5 m at the Earth's radius.
+//!
 //! # Layers
 //!
 //! Each object has a 32-bit layer mask (see [`crate::layers`]), which a view tests against its own
@@ -93,7 +99,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use crate::arena::Pod;
 use crate::bitset::Bitset;
-use crate::cells::{self, CellCoords, CellPosition, CellTable, ORIGIN_CELL};
+use crate::cells::{self, CELL_SIZE, CellCoords, CellPosition, CellTable, ORIGIN_CELL};
 use crate::error::{CoreError, Resource};
 use crate::handle::{Handle, SlotAllocator};
 use crate::jobs::JobSystem;
@@ -435,6 +441,7 @@ macro_rules! update_context {
             frame: $scene.frame,
             order: &$scene.order,
             positions: &$scene.positions,
+            position_cells: &$scene.position_cells,
             rotations: &$scene.rotations,
             scales: &$scene.scales,
             local_radii: &$scene.local_radii,
@@ -460,6 +467,8 @@ pub struct SceneStorage {
     slots: SlotAllocator,
     created: Bitset,
     positions: Vec<f32>,
+    /// The whole cells of each position, 3 per slot, in large-world mode; empty without it.
+    position_cells: Vec<i32>,
     rotations: Vec<f32>,
     scales: Vec<f32>,
     local_radii: Vec<f32>,
@@ -527,6 +536,7 @@ impl SceneStorage {
             slots,
             created: Bitset::new(rows as u32),
             positions: vec![0.0; rows * 3],
+            position_cells: Vec::new(),
             rotations,
             scales: vec![1.0; rows * 3],
             local_radii: vec![0.0; rows],
@@ -563,6 +573,30 @@ impl SceneStorage {
             frame: 0,
             world_version: 0,
         }
+    }
+
+    /// Storage as [`SceneStorage::with_capacity`] makes it, in large-world mode: each position
+    /// holds a whole number of cells besides its 32-bit part (see the module documentation).
+    pub fn with_large_world(capacity: u32) -> Self {
+        let mut scene = Self::with_capacity(capacity);
+        scene.position_cells = vec![0; (capacity as usize + 1) * 3];
+        scene
+    }
+
+    /// True in large-world mode.
+    pub fn is_large_world(&self) -> bool {
+        !self.position_cells.is_empty()
+    }
+
+    /// The whole cells of each position, 3 per slot, in large-world mode; empty without it. A
+    /// position is these cells times [`cells::CELL_SIZE`] plus its 32-bit part.
+    pub fn position_cells(&self) -> &[i32] {
+        &self.position_cells
+    }
+
+    /// The whole cells of each position, for direct writes.
+    pub fn position_cells_mut(&mut self) -> &mut [i32] {
+        &mut self.position_cells
     }
 
     /// The number of objects the storage holds.
@@ -794,10 +828,41 @@ impl SceneStorage {
 
     /// Writes a position and marks the object dirty.
     pub fn set_position(&mut self, handle: Handle, position: [f32; 3]) -> Result<(), CoreError> {
-        let slot = self.slots.resolve(handle)? as usize;
-        self.positions[slot * 3..slot * 3 + 3].copy_from_slice(&position);
-        self.dirty.set(slot as u32);
+        self.set_position64(handle, position.map(f64::from))
+    }
+
+    /// Writes a 64-bit position and marks the object dirty. In large-world mode it keeps its
+    /// precision at any distance; without the mode it rounds to 32 bits.
+    pub fn set_position64(&mut self, handle: Handle, position: [f64; 3]) -> Result<(), CoreError> {
+        let slot = self.slots.resolve(handle)?;
+        self.store_position(slot as usize, position);
+        self.dirty.set(slot);
         Ok(())
+    }
+
+    /// The position of the object in `slot` relative to its parent, in 64-bit floats.
+    pub fn position64(&self, slot: u32) -> [f64; 3] {
+        let s = slot as usize;
+        let p = [
+            self.positions[s * 3],
+            self.positions[s * 3 + 1],
+            self.positions[s * 3 + 2],
+        ];
+        let whole = whole_cells(&self.position_cells, s);
+        std::array::from_fn(|k| f64::from(whole[k]) * f64::from(CELL_SIZE) + f64::from(p[k]))
+    }
+
+    /// Stores a position in row `s`: split into whole cells and a 32-bit rest in large-world mode,
+    /// or rounded to 32 bits without it.
+    fn store_position(&mut self, s: usize, position: [f64; 3]) {
+        let local = if self.is_large_world() {
+            let (cell, local) = cells::split64(position);
+            self.position_cells[s * 3..s * 3 + 3].copy_from_slice(&cell);
+            local
+        } else {
+            position.map(|v| v as f32)
+        };
+        self.positions[s * 3..s * 3 + 3].copy_from_slice(&local);
     }
 
     /// Writes a rotation quaternion `(x, y, z, w)` and marks the object dirty.
@@ -1007,6 +1072,9 @@ impl SceneStorage {
                 }
                 self.dirty.clear(slot);
                 self.positions[s * 3..s * 3 + 3].fill(0.0);
+                if let Some(whole) = self.position_cells.get_mut(s * 3..s * 3 + 3) {
+                    whole.fill(0);
+                }
                 self.rotations[s * 4..s * 4 + 4].copy_from_slice(&IDENTITY_ROTATION);
                 self.scales[s * 3..s * 3 + 3].fill(1.0);
                 self.local_radii[s] = 0.0;
@@ -1124,11 +1192,10 @@ impl SceneStorage {
 
     /// The local transform of the object in `slot`, in 64-bit floats.
     fn local_matrix64(&self, slot: usize) -> Affine64 {
-        let p = &self.positions[slot * 3..slot * 3 + 3];
         let r = &self.rotations[slot * 4..slot * 4 + 4];
         let s = &self.scales[slot * 3..slot * 3 + 3];
         math::compose(
-            [p[0], p[1], p[2]].map(f64::from),
+            self.position64(slot as u32),
             [r[0], r[1], r[2], r[3]].map(f64::from),
             [s[0], s[1], s[2]].map(f64::from),
         )
@@ -1162,8 +1229,7 @@ impl SceneStorage {
         };
         let local = math::mul64(&undo_parent, &self.world_matrix64(slot));
         let s = slot as usize;
-        let position = [local[3], local[7], local[11]].map(|v| v as f32);
-        self.positions[s * 3..s * 3 + 3].copy_from_slice(&position);
+        self.store_position(s, [local[3], local[7], local[11]]);
         if let Some((rotation, scale)) = math::rotation_and_scale64(&local) {
             self.rotations[s * 4..s * 4 + 4].copy_from_slice(&rotation.map(|v| v as f32));
             self.scales[s * 3..s * 3 + 3].copy_from_slice(&scale.map(|v| v as f32));
@@ -1404,8 +1470,10 @@ impl SceneStorage {
                     self.positions[s * 3 + 1],
                     self.positions[s * 3 + 2],
                 ];
+                let whole = whole_cells(&self.position_cells, s);
+                let cell = cells::offset_cell(cells::cell_of(position), whole);
                 let world = &mut self.world[parity];
-                cells::enter_cell(&mut self.table, world, s, position, self.cells[s])
+                cells::enter_cell(&mut self.table, world, s, cell, self.cells[s])
             } else {
                 let cell = self.cells[parent as usize];
                 self.table.retain(cell);
@@ -1454,11 +1522,22 @@ impl SceneStorage {
     }
 }
 
+/// The whole cells of row `s`'s position in large-world mode: none without the mode.
+#[inline(always)]
+fn whole_cells(position_cells: &[i32], s: usize) -> CellCoords {
+    match position_cells.get(s * 3..s * 3 + 3) {
+        Some(&[x, y, z]) => [x, y, z],
+        _ => [0; 3],
+    }
+}
+
 /// Read-only inputs and raw outputs of one transform update, shared by the level loops.
 struct UpdateContext<'a> {
     frame: u32,
     order: &'a [u32],
     positions: &'a [f32],
+    /// The whole cells of each position in large-world mode, or empty.
+    position_cells: &'a [i32],
     rotations: &'a [f32],
     scales: &'a [f32],
     local_radii: &'a [f32],
@@ -1532,13 +1611,23 @@ impl UpdateContext<'_> {
             self.positions[s * 3 + 1],
             self.positions[s * 3 + 2],
         ];
+        let whole = whole_cells(self.position_cells, s);
         let (translation, moved) = if root {
             let (cell, local) = cells::split(position);
+            let cell = cells::offset_cell(cell, whole);
             (local, self.cell_coords[self.cells[s] as usize] != cell)
         } else {
             let parent = self.parents[s] as usize;
+            let translation = if whole == [0; 3] {
+                position
+            } else {
+                let size = f64::from(CELL_SIZE);
+                std::array::from_fn(|k| {
+                    (f64::from(whole[k]) * size + f64::from(position[k])) as f32
+                })
+            };
             (
-                position,
+                translation,
                 !self.origin_only && self.cells[s] != self.cells[parent],
             )
         };
@@ -2329,6 +2418,126 @@ mod tests {
             (ORIGIN_CELL, [0.0, 1.0, 0.0])
         );
         assert_eq!(scene.cell_table().count(far_cell), 1);
+    }
+
+    /// Creates a root at the 64-bit `position` in frame 1 and updates the scene.
+    fn far_root(scene: &mut SceneStorage, position: [f64; 3]) -> Handle {
+        let h = scene.reserve().unwrap();
+        scene.set_position64(h, position).unwrap();
+        scene.set_local_radius(h, 1.0).unwrap();
+        let create = Command::create(h, Handle::NONE, 7, SHOWN);
+        scene.apply_commands(&[create], 1).unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+        h
+    }
+
+    /// The largest difference along any axis between an object's world position and `want`.
+    fn world_error(scene: &SceneStorage, h: Handle, want: [f64; 3]) -> f64 {
+        let m = scene.absolute_world_matrix(h).unwrap();
+        (0..3)
+            .map(|k| (m[k * 4 + 3] - want[k]).abs())
+            .fold(0.0, f64::max)
+    }
+
+    #[test]
+    fn large_world_roots_keep_their_64_bit_positions_at_the_earths_radius() {
+        // A root at the Earth's radius, 0.3 m past a whole meter on the far axis.
+        let position = [1_234.567_8, 6_378_137.3, -98_765.432_1];
+        let mut large = SceneStorage::with_large_world(4);
+        let h = far_root(&mut large, position);
+        assert!(large.is_large_world());
+        let slot = large.resolve(h).unwrap();
+        let row = slot as usize * 3..slot as usize * 3 + 3;
+        // The setter splits the position into whole cells and a rest of at most half a cell.
+        assert_eq!(large.position_cells()[row.clone()], [1, 6229, -96]);
+        let rest = &large.positions()[row];
+        assert!(rest.iter().all(|v| v.abs() <= cells::HALF_CELL), "{rest:?}");
+        let stored = large.position64(slot);
+        assert!(
+            (0..3).all(|k| (stored[k] - position[k]).abs() < 3e-5),
+            "{stored:?}"
+        );
+        // The root's cell is the cell of its whole position, and its world position keeps 0.1 mm.
+        let cell = large.cells()[slot as usize];
+        assert_eq!(large.cell_table().coords(cell), [1, 6229, -96]);
+        assert!(world_error(&large, h, position) < 1e-4);
+
+        // Without the mode, the same position rounds to 32 bits: 6,378 km out, in 0.5 m steps.
+        let mut plain = SceneStorage::with_capacity(4);
+        assert!(!plain.is_large_world() && plain.position_cells().is_empty());
+        let h = far_root(&mut plain, position);
+        assert!(world_error(&plain, h, position) > 0.1);
+    }
+
+    #[test]
+    fn large_world_objects_move_in_steps_of_a_millimeter_at_the_earths_radius() {
+        let jobs = JobSystem::new(0);
+        let start = [0.0, 6_378_137.0, 0.0];
+        let mut scene = SceneStorage::with_large_world(8);
+        let root = far_root(&mut scene, start);
+        // A child 600 m from its root: its position holds whole cells too.
+        let child = scene.reserve().unwrap();
+        scene.set_position64(child, [600.25, 0.0, 0.0]).unwrap();
+        scene.set_local_radius(child, 1.0).unwrap();
+        let create = Command::create(child, root, 7, SHOWN);
+        scene.apply_commands(&[create], 2).unwrap();
+        scene.update_transforms(&jobs);
+        // The root crosses cell boundaries in steps of 1 mm along the far axis; each step moves
+        // both objects by 1 mm, where 32-bit positions would hold still or jump by 0.5 m.
+        for step in 1..=600u32 {
+            let y = start[1] + 300.0 + f64::from(step) * 1e-3;
+            scene.set_position64(root, [0.0, y, 0.0]).unwrap();
+            scene.begin_frame(2 + step);
+            scene.update_transforms(&jobs);
+            assert!(
+                world_error(&scene, root, [0.0, y, 0.0]) < 1e-4,
+                "step {step}"
+            );
+            assert!(
+                world_error(&scene, child, [600.25, y, 0.0]) < 1e-4,
+                "step {step}"
+            );
+        }
+        let cell = scene.cells()[scene.resolve(root).unwrap() as usize];
+        assert_eq!(scene.cell_table().coords(cell), [0, 6229, 0]);
+    }
+
+    #[test]
+    fn large_world_objects_keep_their_world_place_under_a_new_parent() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_large_world(8);
+        let ship_at = [2_000_000.0, 6_378_137.0, -1_000_000.0];
+        let ship = far_root(&mut scene, ship_at);
+        let crate_at = [2_000_003.25, 6_378_138.5, -1_000_000.125];
+        let crate_ = scene.reserve().unwrap();
+        scene.set_position64(crate_, crate_at).unwrap();
+        scene.set_local_radius(crate_, 1.0).unwrap();
+        scene.set_rotation(ship, turn(0.0, 1.0, 0.0, 0.5)).unwrap();
+        let create = Command::create(crate_, Handle::NONE, 7, SHOWN);
+        scene.apply_commands(&[create], 2).unwrap();
+        scene.update_transforms(&jobs);
+
+        // Under the ship, the crate's local position is small: no whole cells.
+        let keep = Command::set_parent_keeping_world(crate_, ship);
+        scene.apply_commands(&[keep], 3).unwrap();
+        scene.update_transforms(&jobs);
+        let slot = scene.resolve(crate_).unwrap() as usize;
+        assert_eq!(scene.position_cells()[slot * 3..slot * 3 + 3], [0; 3]);
+        assert!(world_error(&scene, crate_, crate_at) < 1e-4);
+        // A root again, it takes its whole position back, split into cells and a rest.
+        let keep = Command::set_parent_keeping_world(crate_, Handle::NONE);
+        scene.apply_commands(&[keep], 4).unwrap();
+        scene.update_transforms(&jobs);
+        assert_eq!(
+            scene.position_cells()[slot * 3..slot * 3 + 3],
+            [1953, 6229, -977]
+        );
+        assert!(world_error(&scene, crate_, crate_at) < 1e-4);
+        // A destroyed object's slot starts again at the origin.
+        scene
+            .apply_commands(&[Command::destroy(crate_)], 5)
+            .unwrap();
+        assert_eq!(scene.position_cells()[slot * 3..slot * 3 + 3], [0; 3]);
     }
 
     /// True when two world matrices, relative to the origin, differ by at most `tolerance`.

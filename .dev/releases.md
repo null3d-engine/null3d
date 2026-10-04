@@ -33,7 +33,7 @@ Before 1.0, decide whether every `since` becomes "1.0", or names the milestone t
 - A GitHub App with write access to contents and pull requests, installed on the repository. Its ID and private key go in the `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` secrets. A pull request opened with the default token starts no workflows, so its CI would never run.
 - npm trusted publishing for each public package. npm cannot publish a package's first version that way, so the owner publishes it by hand, as [The first version of a new package](#the-first-version-of-a-new-package) shows. A public package also needs `"publishConfig": { "access": "public", "provenance": true }`, and the pack check fails without it.
 - No npm token in the repository. npm skips trusted publishing when `NPM_TOKEN` or `NODE_AUTH_TOKEN` is set, even to an empty string, so the publish job sets neither. It gets an OIDC token through `id-token: write`, and `actions/setup-node` with `registry-url: https://registry.npmjs.org`. Trusted publishing needs npm 11.5.1 or newer and Node 22.14 or newer, so the job uses Node 24 and installs the latest npm.
-- Git keeps neither the WebAssembly files nor the shader modules (`packages/engine/src/generated/shaders*.ts`). The publish job therefore sets up Bun and the pinned Rust toolchain, and runs `bun tools/build-wasm.ts --pages-only` before it packs. That builds the shader modules, both WebAssembly files of the engine and the Vite plugin's shader compiler, with no size report.
+- Git keeps neither the WebAssembly files nor the shader modules (`packages/engine/src/generated/shaders*.ts`). The publish job therefore sets up Bun and the pinned Rust toolchain, and runs `bun tools/build-wasm.ts --pages-only` before it packs. That builds the shader modules and both WebAssembly files of the engine, with no size report. It also builds the Vite plugin's shader compiler and the command-line tool's asset formats.
 - The repository's own script, `tools/release.ts`, makes each release, and semantic-release is not installed. So the rule that semantic-release needs `@semantic-release/npm` 13.1.0 or newer for trusted publishing does not apply. The publish job sets `HUSKY: "0"`, as the Release workflow does, so no git hook runs in CI.
 
 ## The npm packages
@@ -45,7 +45,7 @@ Four packages are public. Each one's `prepack` script runs `bun tools/build-pack
 | `@null3d/engine` | `lib/`, the built JavaScript and declarations. Both WebAssembly builds in `dist/wasm/`, the KTX2 transcoder in `vendor/`, and a copy of `docs/` | The shader modules, then `lib/` and the copy of the docs |
 | `@null3d/vite-plugin` | `lib/`, and the shader compiler in `dist/shader-compiler.wasm` | `lib/` |
 | `@null3d/controls` | `lib/` | The engine's `lib/`, whose declarations it reads, then its own |
-| `@null3d/cli` | `bin/` and `src/`, plain JavaScript with JSDoc types | Nothing |
+| `@null3d/cli` | `bin/` and `src/`, plain JavaScript with JSDoc types. The Basis Universal encoder in `vendor/`, and the asset tool's formats in `dist/assets.wasm` | Nothing |
 
 ### Source in the repository, built files on npm
 
@@ -79,7 +79,7 @@ The publish job packs each package with `bun pm pack`, then publishes each tarba
 - npm publishes, because trusted publishing and provenance need npm's own command-line tool.
 - `npm publish` reads `publishConfig` from the manifest inside the tarball, so each package still asks for public access and provenance. A flag on the command line overrides it.
 
-`bun tools/pack-packages.ts` packs every public package into `target/packages/`, or into the folder that `--out` names, and checks each tarball. It fails unless the manifest asks for public access and provenance, and names no `workspace:` version. The tarball must hold every file that `exports` and `bin` name, and the files that the code loads by address. Those are the engine's workers, both WebAssembly builds, the shader modules, the transcoder and the docs, and the plugin's shader compiler.
+`bun tools/pack-packages.ts` packs every public package into `target/packages/`, or into the folder that `--out` names, and checks each tarball. It fails unless the manifest asks for public access and provenance, and names no `workspace:` version. The tarball must hold every file that `exports` and `bin` name, and the files that the code loads by address. Those are the engine's workers, both WebAssembly builds, the shader modules, the transcoder and the docs, and the plugin's shader compiler. For the command-line tool, they are its encoder, the encoder's worker and the asset formats.
 
 ### The fresh-project test
 

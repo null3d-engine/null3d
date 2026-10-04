@@ -518,9 +518,17 @@ impl Layout {
                 skinning.object(slot as u32).is_some(),
             )
         };
-        // Instance batches cast no shadows yet, and take no outlines.
+        // Instance batches cast no shadows yet, and take no outlines. Sprites sized in pixels of the screen have no
+        // bounds in the world, so culling keeps them.
         let batch_key = |batch: &InstanceBatch| match drawn {
-            Drawn::Scene => key_of(batch.mesh(), batch.material(), MESH_BOUNDS, 0, false),
+            Drawn::Scene => {
+                let bounds = if batch.unculled() {
+                    UNCULLED_BOUNDS
+                } else {
+                    MESH_BOUNDS
+                };
+                key_of(batch.mesh(), batch.material(), bounds, 0, false)
+            }
             Drawn::Casters | Drawn::Outlined => None,
         };
 

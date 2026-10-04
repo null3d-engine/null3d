@@ -43,7 +43,8 @@ describe('meshopt sample files', () => {
 			],
 		]);
 		const decoded = parseGltf(compressed, bin, url, decode);
-		expect(decoded.meshes).toHaveLength(35);
+		// The file's 35 meshes, and copies of the 5 that its clip turns, which name their joints.
+		expect(decoded.meshes).toHaveLength(40);
 		expect(decoded).toEqual(parseGltf(compressed, bin, url, reference));
 		// The variant whose fallback buffer holds the decoded bytes, read without the decoder.
 		const withFallback = readContainer(

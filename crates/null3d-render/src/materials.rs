@@ -48,6 +48,12 @@ pub enum Shading {
     /// The standard material with its texture maps. A standard material draws with it when it
     /// has a live map and its mesh has texture coordinates; nothing creates it.
     StandardMaps,
+    /// Sprites, as three.js's `SpriteMaterial` draws them: quads that face the camera, in the base
+    /// color times each sprite's color, from the rows of a sprite batch. With a live map the
+    /// material draws as [`Shading::SpriteMap`].
+    Sprite,
+    /// A sprite material with its map, at each sprite's frame of the atlas; nothing creates it.
+    SpriteMap,
     /// A custom material: the standard material's template with the sketch's own WGSL, or a full
     /// shader of the sketch's, under its own template id, from [`template::CUSTOM_FIRST`] up.
     Custom(CustomShading),
@@ -86,6 +92,8 @@ impl Shading {
             Shading::TexCoords => template::INSTANCED_TEXCOORDS,
             Shading::UnlitMap => template::INSTANCED_UNLIT_MAP,
             Shading::StandardMaps => template::INSTANCED_STANDARD_MAPS,
+            Shading::Sprite => template::SPRITE,
+            Shading::SpriteMap => template::SPRITE_MAP,
             Shading::Custom(custom) => custom.template,
         }
     }
@@ -95,7 +103,11 @@ impl Shading {
     pub const fn attributes(self) -> u32 {
         match self {
             Shading::Lit | Shading::Unlit => 0,
-            Shading::TexCoords | Shading::UnlitMap | Shading::StandardMaps => vertex::UV0,
+            Shading::TexCoords
+            | Shading::UnlitMap
+            | Shading::StandardMaps
+            | Shading::Sprite
+            | Shading::SpriteMap => vertex::UV0,
             Shading::Custom(custom) => custom.attributes,
         }
     }

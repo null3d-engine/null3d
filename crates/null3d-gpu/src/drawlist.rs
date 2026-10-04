@@ -1216,6 +1216,13 @@ pub mod template {
     /// [`OUTLINE_VISIBLE`](super::permutation::OUTLINE_VISIBLE) the parts of it that nothing
     /// hides. It binds as the depth template does.
     pub const OUTLINE_MASK: u32 = 21;
+    /// Sprites: quads of instance batch rows that face the camera, whose world matrices hold each
+    /// sprite's size, rotation, color and atlas frame packed (see `null3d_core::sprites`), in the
+    /// material's color.
+    pub const SPRITE: u32 = 22;
+    /// [`SPRITE`] times the material's map, at each sprite's frame of the atlas. The bind group of
+    /// index 1 is the map's, as for [`INSTANCED_UNLIT_MAP`].
+    pub const SPRITE_MAP: u32 = 23;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1533,6 +1540,8 @@ pub fn typescript_constants() -> String {
                 ("LIGHT_WRITE", template::LIGHT_WRITE),
                 ("SKIN", template::SKIN),
                 ("OUTLINE_MASK", template::OUTLINE_MASK),
+                ("SPRITE", template::SPRITE),
+                ("SPRITE_MAP", template::SPRITE_MAP),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),
@@ -1723,6 +1732,10 @@ mod tests {
             (
                 "unlit_map",
                 include_str!("../../null3d-shaders/wgsl/unlit_map.wgsl"),
+            ),
+            (
+                "sprite",
+                include_str!("../../null3d-shaders/wgsl/sprite.wgsl"),
             ),
         ];
         for (name, source) in templates {

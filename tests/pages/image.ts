@@ -40,6 +40,7 @@ run('image', async () => {
 		antialias: (params.get('antialias') ?? undefined) as EngineOptions['antialias'],
 		shadowTileSize: params.has('shadowTileSize') ? Number(params.get('shadowTileSize')) : undefined,
 		pointLightShadows: params.has('pointLightShadows') || undefined,
+		largeWorld: params.has('largeWorld'),
 	});
 	const frame = await engine.captureFrame();
 	await engine.destroy();
