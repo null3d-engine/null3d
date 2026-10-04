@@ -201,6 +201,9 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
+      # S5's pages import their character from the sample content, so each build of the pages needs
+      # it, even while the comparison leaves S5 out.
+      - uses: ./.github/actions/samples
       - uses: actions/download-artifact@v4
         with:
           pattern: bench-build-*
