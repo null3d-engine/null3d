@@ -698,7 +698,7 @@ Sets up a PbrMaterial as three.js does. It raises `roughness` to at least 0.0525
 fn with_specular(m: PbrMaterial, reflectance: f32, color: vec3f, intensity: f32) -> PbrMaterial
 ```
 
-A PbrMaterial with the dielectric specular values of glTF's KHR_materials_ior and KHR_materials_specular, set as three.js's MeshPhysicalMaterial sets them. `reflectance` is `((ior - 1) / (ior + 1))^2`, which the color tints up to a reflectance of 1, and `intensity` scales. Metals keep their base color, and their grazing reflectance stays 1. A reflectance of 0.04 with a white color at full intensity gives `m` back unchanged.
+A PbrMaterial with the dielectric specular values of glTF's KHR_materials_ior and KHR_materials_specular. It sets them as three.js's MeshPhysicalMaterial does. `reflectance` is `((ior - 1) / (ior + 1))^2`, which the color tints up to a reflectance of 1, and `intensity` scales. Metals keep their base color, and their grazing reflectance stays 1. A reflectance of 0.04 with a white color at full intensity gives `m` back unchanged.
 
 ### `Reflected`
 

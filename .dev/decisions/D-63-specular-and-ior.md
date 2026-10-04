@@ -41,12 +41,14 @@ Two scenes make their files in code, as small equivalents of the Khronos test mo
 - `gltf-specular`: the specular factor, and the same values in a texture's alpha whose purple color must not show. Then gray and yellow color factors and textures, and color factors up to 25.
 - `gltf-ior`: indices of 1, 1.25, 1.5, 2, 3 and 0, at three roughnesses, half metal with a specular factor and color, and a color of 2.
 
-Pixels that differ, by three.js's rule (`bun run parity`, Chrome on the Mac's GPU, 5 October 2026):
+Pixels that differ, by three.js's rule, on 5 October 2026. The first rows come from `bun run parity` in Chrome on the Mac's GPU, and the SwiftShader rows from the parity test of `bun run test:bench`:
 
 | Scene | WebGPU | Compatibility | WebGL2 | three.js's two renderers |
 | --- | --- | --- | --- | --- |
 | `gltf-specular` | 0.040% | 0.043% | 0.004% | 0.087% |
 | `gltf-ior` | 0.008% | 0.006% | 0.008% | 0.059% |
+| `gltf-specular`, SwiftShader | 0.039% | 0.043% | 0.003% | 0.087% |
+| `gltf-ior`, SwiftShader | 0.008% | 0.007% | 0.009% | 0.061% |
 | `gltf-specular`, loader ignoring both extensions | 0.523% | | | |
 | `gltf-ior`, loader ignoring both extensions | 1.781% | | | |
 
