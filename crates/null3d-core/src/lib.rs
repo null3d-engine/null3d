@@ -17,9 +17,11 @@
 //! | [`scene`] | Scene objects by slot, 16-byte commands, the hierarchy and the transform update |
 //! | [`instances`] | Instance batches: per-row arrays, dirty ranges, the batch table, memory epoch |
 //! | [`sprites`] | Sprites: how a sprite batch packs each sprite into its row's world matrix |
+//! | [`lines`] | Lines: how a line batch packs each segment into its row's world matrix |
 //! | [`layers`] | Render layers: the masks that choose which views draw which sources |
 //! | [`lights`] | The light table, and the lights each frame finds for a view |
 //! | [`culling`] | Frustum planes and SIMD sphere culling, serial and parallel |
+//! | [`occlusion`] | Software occlusion culling: blockers drawn into a small masked depth buffer, and spheres tested against it |
 //! | [`depth_sort`] | Culling and back-to-front sorting of blended rows, for the transparent pass |
 //! | [`clusters`] | Groups of nearby rows that culling tests as one sphere each |
 //! | [`arena`] | Per-thread bump allocators reset each frame |
@@ -53,7 +55,9 @@ pub mod instances;
 pub mod jobs;
 pub mod layers;
 pub mod lights;
+pub mod lines;
 pub mod math;
+pub mod occlusion;
 pub mod scene;
 pub mod shared;
 pub mod snapshot;

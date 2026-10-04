@@ -19,7 +19,8 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use common::{
-    Rng, Workers, character, mul4, perspective, sphere, terrain, translation, wait_for_every_thread,
+    Rng, Workers, character, mul4, perspective, reversed_perspective, sphere, terrain, translation,
+    wait_for_every_thread,
 };
 use null3d_core::animation::Animations;
 use null3d_core::bvh::mesh::{IndexedTriangles, MeshBvh, Side, Triangles, raycast_brute_force};
@@ -905,4 +906,138 @@ fn bench_scene_queries() {
         "  a sync where 2,000 dynamic objects moved, 4 threads: {:.1} µs",
         micros(times[times.len() / 2])
     );
+}
+
+/// A sphere's center and radius.
+type Ball = ([f32; 3], f32);
+
+/// The occlusion city at `blocks` x `blocks` buildings of 12 triangles, 20 m wide on a 30 m grid,
+/// 12 to 60 m high, and 20,000 spheres along its streets: the buildings' world matrices and the
+/// spheres, both relative to the city's center.
+fn occlusion_city(blocks: u32) -> (Vec<[f32; 12]>, Vec<Ball>) {
+    let mut rng = Rng::new(36);
+    let first = -((blocks - 1) as f32 * 30.0) / 2.0;
+    let mut buildings = Vec::new();
+    for i in 0..blocks {
+        for j in 0..blocks {
+            let h = rng.range(12.0, 60.0);
+            let (x, z) = (first + i as f32 * 30.0, first + j as f32 * 30.0);
+            buildings.push([20.0, 0.0, 0.0, x, 0.0, h, 0.0, h / 2.0, 0.0, 0.0, 20.0, z]);
+        }
+    }
+    let side = blocks as f32 * 30.0;
+    let spheres = (0..20_000)
+        .map(|_| {
+            let street = first - 15.0 + 30.0 * rng.range(0.0, blocks as f32 + 0.999).floor();
+            let along = rng.range(-side / 2.0, side / 2.0);
+            let across = street + rng.range(-4.0, 4.0);
+            let at = if rng.range(0.0, 1.0) < 0.5 {
+                [across, 0.5, along]
+            } else {
+                [along, 0.5, across]
+            };
+            (at, rng.range(0.15, 0.6))
+        })
+        .collect();
+    (buildings, spheres)
+}
+
+#[test]
+#[ignore = "benchmark: run with --release --ignored"]
+fn bench_software_occlusion() {
+    use null3d_core::bvh::mesh::IndexedTriangles;
+    use null3d_core::occlusion::{Blocker, BlockerMesh, OcclusionBuffer, clip_matrix};
+
+    // A unit box from -0.5 to 0.5, wound counterclockwise seen from outside.
+    let positions = [
+        -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, //
+        -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5,
+    ];
+    let indices: [u32; 36] = [
+        0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 2, 3, 7, 2, 7, 6, 1, 2, 6, 1, 6, 5,
+        0, 4, 7, 0, 7, 3,
+    ];
+    let meshes = [BlockerMesh::build(&IndexedTriangles {
+        positions: &positions,
+        indices: &indices,
+    })
+    .unwrap()];
+    let projection = reversed_perspective(1.2, 16.0 / 9.0, 0.2, Some(600.0));
+    println!("\nsoftware occlusion: the occlusion city, a camera 2 m up in a street, 1280 x 720");
+    for blocks in [8, 16] {
+        let (buildings, spheres) = occlusion_city(blocks);
+        // Camera poses down the middle street, each turning its head: the camera's position, and
+        // the view-projection matrix for positions relative to it.
+        let poses: Vec<([f32; 3], [f32; 16])> = (0..32)
+            .map(|k| {
+                let at = [-(blocks as f32) * 15.0 + 4.0 * k as f32, 2.0, 0.0];
+                let yaw = (k as f32 * 0.7).sin() * 0.6 + std::f32::consts::FRAC_PI_2;
+                let (s, c) = yaw.sin_cos();
+                let mut view = [0.0; 16];
+                (view[0], view[2], view[8], view[10]) = (c, -s, s, c);
+                (view[5], view[15]) = (1.0, 1.0);
+                (at, mul4(&projection, &view))
+            })
+            .collect();
+        for workers in [0, 3, 4] {
+            let pool = Workers::start(workers);
+            let mut buffer = OcclusionBuffer::new();
+            buffer.resize(1280, 720).unwrap();
+            let mut blockers = Vec::with_capacity(buildings.len());
+            let (mut draws, mut tests) = (Vec::new(), Vec::new());
+            let (mut hidden, mut tested) = (0, 0);
+            for round in 0..20 {
+                for (at, view_proj) in &poses {
+                    let offset = [-at[0], -at[1], -at[2]];
+                    let start = Instant::now();
+                    blockers.clear();
+                    for world in &buildings {
+                        blockers.push(Blocker {
+                            mesh: 0,
+                            clip: clip_matrix(view_proj, world, offset),
+                            double_sided: false,
+                        });
+                    }
+                    buffer
+                        .draw(pool.jobs(), view_proj, &meshes, &blockers)
+                        .unwrap();
+                    let drawn = start.elapsed();
+                    let start = Instant::now();
+                    // Four spheres at a time, as culling tests them.
+                    let n: u32 = spheres
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .map(|four| {
+                            let axis =
+                                |i: usize| f32x4::from_array(four.map(|(c, _)| c[i] + offset[i]));
+                            let radii = f32x4::from_array(four.map(|(_, r)| r));
+                            buffer
+                                .hidden4(axis(0), axis(1), axis(2), radii)
+                                .count_ones()
+                        })
+                        .sum();
+                    let test = start.elapsed();
+                    if round > 2 {
+                        draws.push(drawn);
+                        tests.push(test);
+                        hidden += n as usize;
+                        tested += spheres.len();
+                    }
+                }
+            }
+            draws.sort();
+            tests.sort();
+            println!(
+                "  {} buildings, {} threads: draw median {:.1} µs, fastest {:.1} µs; \
+                 20,000 sphere tests {:.1} µs on one thread; {:.0}% hidden",
+                buildings.len(),
+                workers + 1,
+                micros(draws[draws.len() / 2]),
+                micros(draws[0]),
+                micros(tests[tests.len() / 2]),
+                100.0 * hidden as f64 / tested as f64
+            );
+        }
+    }
 }
