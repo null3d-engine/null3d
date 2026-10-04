@@ -671,8 +671,7 @@ impl GpuDrivenRenderer {
         );
         created_pipelines |= self.skinning.create_pipeline(list)?;
         if occlusion {
-            let samples = self.graph.scene_targets().samples;
-            created_pipelines |= self.pyramids.create_pipeline(list, samples)?;
+            created_pipelines |= self.pyramids.create_pipeline(list)?;
         }
         created_pipelines |= self.pipelines.create_new(list)? > 0;
         if !self.created {
@@ -831,7 +830,7 @@ impl GpuDrivenRenderer {
             // With occlusion culling, the opaque pass draws the second set of indirect draws, and
             // the occluders' pass the first, into its depth target alone.
             let (first_draw, depth_targets) = if occlusion {
-                (layout.draws.len() as u32, scene_targets.without_color())
+                (layout.draws.len() as u32, scene_targets.occluder_depth())
             } else {
                 (0, scene_targets)
             };

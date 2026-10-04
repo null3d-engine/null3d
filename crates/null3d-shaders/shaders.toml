@@ -267,13 +267,12 @@ file = "skin.wgsl"
 by_device = true
 variants.webgpu = { targets = ["wgsl"] }
 
-# The depth pyramid of two-phase occlusion culling, one level per dispatch; its compute entry
-# point is `main`. The DEPTH_MULTISAMPLED build reads a multisampled depth target. WebGPU only; it
-# loads by device, with the culling shader.
+# The depth pyramid of two-phase occlusion culling, a batch of levels per dispatch; its compute
+# entry point is `main`. WebGPU only; it loads by device, with the culling shader.
 [shaders.pyramid]
 file = "pyramid.wgsl"
 by_device = true
-variants.webgpu = { permutations = ["DEPTH_MULTISAMPLED"], targets = ["wgsl"] }
+variants.webgpu = { targets = ["wgsl"] }
 
 # Light clustering on the GPU: three compute entry points, `count_lights`, `place_lights` and
 # `write_lights`, that list each cluster's point and spot lights in the light grid. WebGPU only;

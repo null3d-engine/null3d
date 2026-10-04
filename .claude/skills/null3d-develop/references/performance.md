@@ -134,7 +134,7 @@ The preset sets these groups of settings. The `concepts/quality-presets` page ha
 | Anti-aliasing | `antialias`: FXAA on Low, MSAA above | At the start |
 | Spot and point light shadows | `shadowTiles`, `shadowTileSize`, `pointLightShadows` (High and Ultra only) | At the start |
 | Depth prepass | `depthPrepass`, off on every preset | At the start |
-| GPU occlusion culling | `gpuOcclusion`, on at High and Ultra (WebGPU only) | At the start |
+| GPU occlusion culling | `gpuOcclusion`, off on every preset (WebGPU only) | At the start |
 | Engine memory | `memoryMaximumMiB` | Before the engine loads |
 
 The table marks its other rows as planned, such as the light caps and the texture memory budget. A light's own `cascades` and `mapSize`, in its `shadow` options, replace the preset's.
@@ -165,7 +165,7 @@ Every preset leaves it off. S2 is a benchmark scene with little overdraw. In Chr
 
 ### GPU occlusion culling
 
-With `gpuOcclusion` on, each camera draws the depth of the opaque objects that showed in its last frame and builds a depth pyramid from it. Then it draws only the objects that show. The image matches the image without it, and no object shows a frame late. High and Ultra turn it on. It runs only on WebGPU, and not with the depth prepass. Engine docs: `concepts/culling`.
+With `gpuOcclusion` on, each camera draws the depth of the opaque objects that showed in its last frame and builds a depth pyramid from it. Then it draws only the objects that show. The image matches the image without it, and no object shows a frame late. Only objects that `setOccluder(true)` marks hide others. Every preset leaves it off, because on a fast desktop GPU its passes cost more than they saved. It runs only on WebGPU, and not with the depth prepass. Engine docs: `concepts/culling`.
 
 It pays where walls and large objects hide many detailed objects, such as the streets of a city. In open scenes it costs a little. Compare the scene's GPU time with `?occlusion=on` and `?occlusion=off` before you change the preset's choice. Shadow passes and see-through objects do not use it.
 

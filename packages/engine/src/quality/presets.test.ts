@@ -234,7 +234,7 @@ describe('presetSettings', () => {
 			shadowTiles: 16,
 			shadowTileSize: 1024,
 			pointLightShadows: true,
-			gpuOcclusion: true,
+			gpuOcclusion: false,
 		});
 		expect(presetSettings('ultra')).toEqual({
 			maxPixelRatio: Number.POSITIVE_INFINITY,
@@ -251,7 +251,7 @@ describe('presetSettings', () => {
 			shadowTiles: 24,
 			shadowTileSize: 1024,
 			pointLightShadows: true,
-			gpuOcclusion: true,
+			gpuOcclusion: false,
 		});
 	});
 

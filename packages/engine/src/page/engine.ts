@@ -168,7 +168,8 @@ export interface EngineOptions {
 	 * objects that lie wholly behind them, so the GPU skips those. Each camera view draws the depth
 	 * of the marked objects that it showed in the last frame and tests every object against it. It
 	 * saves GPU time where walls and large objects hide many detailed ones; a scene that marks no
-	 * object pays nothing. Without it, the quality preset decides: High and Ultra turn it on. It
+	 * object pays nothing. Every quality preset leaves it off: measure your scene's GPU time with it
+	 * first, as its passes can cost more than they save. It
 	 * stays fixed while the engine runs, and the `?occlusion=on` or `?occlusion=off` switch wins
 	 * over this option. WebGL2 and the depth prepass draw without it. Another value fails with E1213.
 	 */

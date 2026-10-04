@@ -178,7 +178,7 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Bloom samples (`bloomSamples`) | 100% of three.js's | 100% of three.js's | 100% of three.js's | 100% of three.js's | during play | built |
 | Frame-budget governor (`governor`) | on | on | on | on | during play | built |
 | Depth prepass (`depthPrepass`) | no | no | no | no | at the start | built |
-| GPU occlusion culling (WebGPU) (`gpuOcclusion`) | no | no | yes | yes | at the start | built |
+| GPU occlusion culling (WebGPU) (`gpuOcclusion`) | no | no | no | no | at the start | built |
 | Software occlusion culling (WebGL2) (`softwareOcclusion`) | no | yes | yes | yes | during play | built |
 | Anisotropic filtering cap (`maxAnisotropy`) | 2x | 4x | 8x | 16x | during play | built |
 | Texture uploads per frame (`uploadBytesPerFrame`) | 2 MiB | 4 MiB | 8 MiB | 16 MiB | during play | built |
@@ -211,7 +211,7 @@ const engine = await createEngine({ canvas, sketch, depthPrepass: true });
 
 ### GPU occlusion culling
 
-With GPU occlusion culling, each camera skips the opaque objects that others hide. It draws the depth of the objects that showed in its last frame and builds a depth pyramid from it. Then it draws only the objects that show. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the two phases. High and Ultra turn it on, and Low and Medium, which phones and tablets start at, leave it off.
+With GPU occlusion culling, each camera skips the opaque objects that others hide. It draws the depth of the marked occluders that showed in its last frame, and builds a depth pyramid from it. Then it draws only the objects that show. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the two phases. Every preset leaves it off. Its passes cost GPU time in each frame with marked occluders. On a fast desktop GPU they cost more than skipping hidden objects saved, in every scene measured.
 
 The `gpuOcclusion` option of `createEngine` replaces the preset's choice, and `?occlusion=on` or `?occlusion=off` wins over the option, to compare the scene's GPU time. It is fixed while the engine runs. It runs only on WebGPU, and not with the depth prepass, so `quality.settings.gpuOcclusion` is false on WebGL2 and when the page turns the prepass on.
 

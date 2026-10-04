@@ -9,7 +9,6 @@ import {
 	LAYOUT_CULL,
 	LAYOUT_DEPTH,
 	LAYOUT_DEPTH_PYRAMID,
-	LAYOUT_DEPTH_PYRAMID_MULTISAMPLED,
 	LAYOUT_FINAL,
 	LAYOUT_FINAL_BLOOM,
 	LAYOUT_FRAME,
@@ -18,7 +17,6 @@ import {
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
-	PERMUTATION_DEPTH_MULTISAMPLED,
 	PERMUTATION_SKIN,
 	SIZE_INSTANCE_STRIDE,
 	STATE_BLEND,
@@ -278,10 +276,8 @@ export class Pipelines {
 	private readonly skinLayouts: (GPUPipelineLayout | undefined)[] = [];
 	private readonly cullLayout: GPUPipelineLayout;
 	private readonly cull: WgslShader | undefined;
-	/** The depth pyramid's builds, by the permutation bits that pick them. */
-	private readonly pyramid: ShaderVariants;
-	/** The depth pyramid's pipeline layouts, for a depth target of one sample and a multisampled one. */
-	private readonly pyramidLayouts: readonly [GPUPipelineLayout, GPUPipelineLayout];
+	private readonly pyramid: WgslShader | undefined;
+	private readonly pyramidLayout: GPUPipelineLayout;
 	private readonly lightLayout: GPUPipelineLayout;
 	private readonly lightClusters: WgslShader | undefined;
 	private readonly skinLayout: GPUPipelineLayout;
@@ -372,24 +368,13 @@ export class Pipelines {
 			{ binding: 7, visibility: compute, buffer: { type: 'read-only-storage' } },
 			{ binding: 8, visibility: compute, buffer: { type: 'storage' } },
 		]);
-		// A level's parameters at a dynamic offset, the pyramid, and the view's depth target, read
-		// with textureLoad as a float texture of one sample or four: compatibility mode forbids
-		// depth textures in textureLoad.
-		const pyramidEntries = (texture: GPUTextureBindingLayout): GPUBindGroupLayoutEntry[] => [
+		// A batch's parameters at a dynamic offset, the pyramid, and the occluders' depth, read with
+		// textureLoad as a float texture: compatibility mode forbids depth textures in textureLoad.
+		this.defineLayout(LAYOUT_DEPTH_PYRAMID, 'depth pyramid', [
 			{ binding: 0, visibility: compute, buffer: { type: 'uniform', hasDynamicOffset: true } },
 			{ binding: 1, visibility: compute, buffer: { type: 'storage' } },
-			{ binding: 2, visibility: compute, texture },
-		];
-		this.defineLayout(
-			LAYOUT_DEPTH_PYRAMID,
-			'depth pyramid',
-			pyramidEntries({ sampleType: 'unfilterable-float' }),
-		);
-		this.defineLayout(
-			LAYOUT_DEPTH_PYRAMID_MULTISAMPLED,
-			'depth pyramid multisampled',
-			pyramidEntries({ sampleType: 'unfilterable-float', multisampled: true }),
-		);
+			{ binding: 2, visibility: compute, texture: { sampleType: 'unfilterable-float' } },
+		]);
 		// Light clustering's parameters, the light list, and the light grid that it fills.
 		this.defineLayout(LAYOUT_LIGHT_CLUSTERS, 'light clusters', [
 			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
@@ -529,13 +514,10 @@ export class Pipelines {
 		}
 		this.cullLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_CULL)] });
 		this.cull = variantFor(shaders.cull, 0, 'wgsl')?.wgsl ?? undefined;
-		this.pyramid = shaders.pyramid;
-		this.pyramidLayouts = [
-			device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_DEPTH_PYRAMID)] }),
-			device.createPipelineLayout({
-				bindGroupLayouts: [this.layout(LAYOUT_DEPTH_PYRAMID_MULTISAMPLED)],
-			}),
-		];
+		this.pyramid = variantFor(shaders.pyramid, 0, 'wgsl')?.wgsl ?? undefined;
+		this.pyramidLayout = device.createPipelineLayout({
+			bindGroupLayouts: [this.layout(LAYOUT_DEPTH_PYRAMID)],
+		});
 		this.lightLayout = device.createPipelineLayout({
 			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_CLUSTERS)],
 		});
@@ -703,11 +685,10 @@ export class Pipelines {
 	}
 
 	/**
-	 * How to build a compute pipeline of a template, in the shader variant that its permutation bits
-	 * pick: culling or a phase of occlusion culling, the depth pyramid, skinning, or a step of light
-	 * clustering.
+	 * How to build a compute pipeline of a template: culling or a phase of occlusion culling, the
+	 * depth pyramid, skinning, or a step of light clustering.
 	 */
-	compute(template: number, permutation: number): GPUComputePipelineDescriptor {
+	compute(template: number): GPUComputePipelineDescriptor {
 		if (template === TEMPLATE_SKIN) {
 			if (!this.skin) throw new Error("the device's shader module has no skinning shader");
 			return {
@@ -726,13 +707,11 @@ export class Pipelines {
 			};
 		}
 		if (template === TEMPLATE_DEPTH_PYRAMID) {
-			const shader = variantFor(this.pyramid, permutation, 'wgsl')?.wgsl;
-			if (!shader) throw new Error("the device's shader module has no depth pyramid shader");
-			const multisampled = (permutation & PERMUTATION_DEPTH_MULTISAMPLED) !== 0;
+			if (!this.pyramid) throw new Error("the device's shader module has no depth pyramid shader");
 			return {
 				label: 'depth pyramid',
-				layout: this.pyramidLayouts[multisampled ? 1 : 0],
-				compute: { module: this.module('depth pyramid', shader), entryPoint: 'main' },
+				layout: this.pyramidLayout,
+				compute: { module: this.module('depth pyramid', this.pyramid), entryPoint: 'main' },
 			};
 		}
 		const entryPoint = LIGHT_ENTRY_POINTS[template];

@@ -37,7 +37,7 @@ const engine = await createEngine({
   maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
   antialias: 'msaa',     // 'msaa' | 'fxaa' | 'none' in place of the preset's mode (FXAA on Low, MSAA above)
   depthPrepass: false,   // true draws opaque depth first, so each pixel shades once (WebGPU only); presets leave it off
-  gpuOcclusion: true,    // skip opaque objects that others hide (WebGPU only, not with the prepass); High and Ultra turn it on
+  gpuOcclusion: false,   // true skips objects that marked occluders hide (WebGPU only); presets leave it off
   shadowTiles: 8, shadowTileSize: 512, pointLightShadows: false,  // spot and point light shadows; the preset sets each
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs

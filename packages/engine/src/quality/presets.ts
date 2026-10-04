@@ -177,11 +177,12 @@ export const QUALITY_SETTINGS = {
 		changes: 'start',
 		values: 'flag',
 	},
-	// Two-phase occlusion culling on WebGPU: objects that others hide do not draw. It costs a
-	// depth-only draw of last frame's visible objects, a depth pyramid and a second culling dispatch
-	// each frame (D-40, D-22). WebGL2 never runs it.
+	// Two-phase occlusion culling on WebGPU: objects that marked occluders hide do not draw. It
+	// costs a depth-only draw of the occluders, a depth pyramid and a second culling dispatch in
+	// each frame with marked occluders. On the Mac those passes cost more GPU time than skipping
+	// hidden objects saved, in every scene measured, so every preset leaves it off (D-22).
 	gpuOcclusion: {
-		presets: [false, false, true, true],
+		presets: [false, false, false, false],
 		changes: 'start',
 		values: 'flag',
 	},

@@ -14,10 +14,12 @@
 // from the pyramid. Batches keep the GPU from waiting on many small dispatches in turn.
 // Each dispatch binds its batch's parameters at a dynamic offset of its own.
 //
-// The batch that starts at level 0 reads the depth target as a float texture, which compatibility
-// mode allows where it forbids depth textures in `textureLoad`, multisampled ones too. The
-// DEPTH_MULTISAMPLED build reads a multisampled depth target, and keeps the farthest of each
-// texel's samples.
+// The batch that starts at level 0 reads the occluders' depth as a float texture, which
+// compatibility mode allows where it forbids depth textures in `textureLoad`. That depth has one
+// sample per pixel, at the pixel's center, where the scene may draw with four. So each texel of
+// level 0 keeps the farthest depth of the 4 x 4 pixels around its own 2 x 2: an object that shows
+// at a sample of a pixel whose center an occluder covers lies within a pixel of a center that it
+// does not cover, unless the occluders leave only a gap thinner than a pixel.
 
 /// Levels that one dispatch builds at most.
 const LEVELS_PER_BATCH: u32 = 4u;
@@ -35,39 +37,35 @@ struct Batch {
 
 @group(0) @binding(0) var<uniform> batch: Batch;
 @group(0) @binding(1) var<storage, read_write> pyramid: array<f32>;
-#ifdef DEPTH_MULTISAMPLED
-@group(0) @binding(2) var depth: texture_multisampled_2d<f32>;
-#else
 @group(0) @binding(2) var depth: texture_2d<f32>;
-#endif
 
 /// The workgroup's tile of the level it builds, rows of the tile's width.
 var<workgroup> tile: array<f32, 64>;
 /// The frame's occluders, as the pyramid's first word counts them.
 var<workgroup> occluders: u32;
 
-/// Samples of each texel of a multisampled depth target.
-const SAMPLES: i32 = 4;
-
-/// The depth target's farthest depth at a texel.
-fn depth_at(texel: vec2u) -> f32 {
-#ifdef DEPTH_MULTISAMPLED
-    var far = textureLoad(depth, texel, 0).x;
-    for (var s = 1; s < SAMPLES; s++) {
-        far = min(far, textureLoad(depth, texel, s).x);
+/// The farthest depth that the level below the batch holds under a texel of the batch's first
+/// level: of the 2 x 2 texels below it in the pyramid, or of the 4 x 4 pixels of the occluders'
+/// depth around them, clamped to the edges.
+fn below(texel: vec2u) -> f32 {
+    let last = batch.source.xy - vec2u(1u);
+    if batch.source.w == 0u {
+        let t0 = min(texel * 2u, last);
+        let t1 = min(t0 + vec2u(1u), last);
+        let row0 = batch.source.z + t0.y * batch.source.x;
+        let row1 = batch.source.z + t1.y * batch.source.x;
+        return min(
+            min(pyramid[row0 + t0.x], pyramid[row0 + t1.x]),
+            min(pyramid[row1 + t0.x], pyramid[row1 + t1.x]),
+        );
+    }
+    let corner = vec2i(texel * 2u) - vec2i(1);
+    var far = 1.0;
+    for (var k = 0; k < 16; k++) {
+        let pixel = clamp(corner + vec2i(k & 3, k >> 2), vec2i(0), vec2i(last));
+        far = min(far, textureLoad(depth, pixel, 0).x);
     }
     return far;
-#else
-    return textureLoad(depth, texel, 0).x;
-#endif
-}
-
-/// The value of the level below the batch at a texel: the depth target's, or the pyramid's.
-fn source_at(texel: vec2u) -> f32 {
-    if batch.source.w != 0u {
-        return depth_at(texel);
-    }
-    return pyramid[batch.source.z + texel.y * batch.source.x + texel.x];
 }
 
 /// Writes a texel of a level into the pyramid, unless it lies past the level's edge.
@@ -87,14 +85,8 @@ fn main(@builtin(workgroup_id) group: vec3u, @builtin(local_invocation_id) local
     }
     // The batch's first level: each thread builds one texel of the tile.
     let first = batch.levels[0];
-    let source_last = batch.source.xy - vec2u(1u);
     let texel = group.xy * TILE + local.xy;
-    let t0 = min(texel * 2u, source_last);
-    let t1 = min(t0 + vec2u(1u), source_last);
-    let far = min(
-        min(source_at(t0), source_at(vec2u(t1.x, t0.y))),
-        min(source_at(vec2u(t0.x, t1.y)), source_at(t1)),
-    );
+    let far = below(texel);
     tile[local.y * TILE + local.x] = far;
     store(first, texel, far);
     // Each later level of the batch, from the tile of the level below it.

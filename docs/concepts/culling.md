@@ -63,9 +63,10 @@ What it costs and where it runs:
 - A frame in which no object is marked culls once, as without occlusion culling, and costs nothing more.
 - Otherwise it costs a depth-only draw of the marked objects that showed last frame, a depth pyramid and a second culling pass.
 - It saves the GPU time of every hidden object: its vertices, and the pixels that the depth test would discard. Mark large, solid objects that hide many detailed ones, such as buildings and walls.
-- The High and Ultra presets turn it on. The `gpuOcclusion` option of `createEngine` turns it on or off, and the `?occlusion=on` and `?occlusion=off` switches win over the option. It is fixed while the engine runs.
+- It pays only where the hidden objects cost more GPU time than its passes. On a desktop GPU that draws millions of triangles in a millisecond, it cost more than it saved in every scene measured. Compare your scene's GPU time in `engine.measure` with `?occlusion=on` and `?occlusion=off` before you keep it on.
+- Every preset leaves it off. The `gpuOcclusion` option of `createEngine` turns it on, and the `?occlusion=on` and `?occlusion=off` switches win over the option. It is fixed while the engine runs.
 - It runs on WebGPU, in compatibility mode too, without the depth prepass. Shadow cascades and tiles cull with the frustum test alone. See-through objects draw from the sorted list of the transparent pass, and hide nothing.
-- Objects that blend, cut holes with an alpha mask, skip the depth buffer or use a custom material draw no depth in the first phase, so they hide nothing. Instance rows are never occluders.
+- Some objects draw no depth in the first phase, so they hide nothing. These are objects that blend, cut holes with an alpha mask, skip the depth buffer or use a custom material. Instance rows are never occluders.
 - An object hides only behind the occluders that the first phase kept. An occluder that comes into view hides others from the next frame on. A hidden object costs two culling tests, and no draw.
 
 ```ts

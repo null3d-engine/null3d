@@ -1126,8 +1126,7 @@ const PREPASS_SCENES = [
  * occluders: hold mode's frame keeps no occluder from a frame before, but the frame read back
  * draws again, and its first phase draws the walls. The other scenes mark no occluder, so they
  * check that a frame without one culls once and draws as before: shadows, see-through objects, an
- * orthographic camera and S2. The High preset of the image tests turns occlusion culling on in
- * core WebGPU already, so the copies add compatibility mode, whose highest preset is Medium.
+ * orthographic camera and S2. Every preset leaves GPU occlusion culling off.
  */
 const GPU_OCCLUSION_SCENES = ['room', 'room-fxaa', 'shadows', 'transparency', 'ortho-camera', 's2'];
 

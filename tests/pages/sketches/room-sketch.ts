@@ -2,7 +2,8 @@
 // spheres outside that the walls hide, but for those seen through a doorway. The walls are
 // occluders. ?view= names the view to start in, by its place in the scene's list, 0 by default.
 // The render scale stays at 1 with the governor off, so frames compare from engine to engine and
-// time alike. On the page's 'view' message, with a view's place, the sketch turns the camera to
+// time alike. ?segments= sets the segments around each sphere, to make hidden objects cost more.
+// On the page's 'view' message, with a view's place, the sketch turns the camera to
 // that view and posts 'turned' with whether the engine culls occluded objects on the GPU.
 import { defineSketch } from '@null3d/engine';
 import {
@@ -19,6 +20,8 @@ import {
 
 const params = new URL(import.meta.url).searchParams;
 const START = Number(params.get('view') ?? '0');
+/** Segments around each sphere, from ?segments=; the scene's own count without it. */
+const SEGMENTS = Number(params.get('segments') ?? SPHERE_SEGMENTS[0]);
 
 export default defineSketch(({ scene, materials, geometry, quality, page }) => {
 	quality.set({ minRenderScale: 1, maxRenderScale: 1, governor: false });
@@ -49,8 +52,8 @@ export default defineSketch(({ scene, materials, geometry, quality, page }) => {
 	for (const wall of ROOM_WALLS) box(wall.size, wall.position, ROOM_COLORS.wall, true);
 	const sphere = geometry.sphere({
 		radius: SPHERE_RADIUS,
-		widthSegments: SPHERE_SEGMENTS[0],
-		heightSegments: SPHERE_SEGMENTS[1],
+		widthSegments: SEGMENTS,
+		heightSegments: SEGMENTS / 2,
 	});
 	const colors = ROOM_COLORS.spheres.map((color) => materials.standard({ color, roughness: 0.5 }));
 	ROOM_SPHERES.forEach((position, k) => {

@@ -758,7 +758,7 @@ impl FrameGraph {
                 pass = pass.creates(depth_name, depth);
             }
             if self.occlusion() {
-                self.declare_occluders(view, index, depth);
+                self.declare_occluders(view, index);
             }
             if self.gpu_culling {
                 pass = pass.reads(view_name(index, "visible", "visible"));
@@ -810,17 +810,17 @@ impl FrameGraph {
 
     /// Declares a camera view's occlusion culling before its opaque pass: the occluders' pass,
     /// which draws the depth of the objects that its first culling phase kept into a depth target
-    /// of its own, of the scene depth's shape; the compute pass that builds the view's depth
-    /// pyramid from that depth; and the late culling pass, which tests every object against the
-    /// pyramid and writes the compacted instances that the opaque pass draws.
-    fn declare_occluders(&mut self, view: &View, index: usize, depth: Target) {
+    /// of its own, of one sample; the compute pass that builds the view's depth pyramid from that
+    /// depth; and the late culling pass, which tests every object against the pyramid and writes
+    /// the compacted instances that the opaque pass draws.
+    fn declare_occluders(&mut self, view: &View, index: usize) {
         let id = ViewId::from_index(index);
         let visible = view_name(index, "visible", "visible");
         let occluders = view_name(index, "occluderDepth", "occluderDepth");
         let pyramid = view_name(index, "depthPyramid", "depthPyramid");
         let mut pass = Pass::new(view_name(index, "Occluders", "Occluders"), PassKind::Scene)
             .layers(view.layers())
-            .creates(occluders.clone(), depth)
+            .creates(occluders.clone(), Target::depth(DEPTH_FORMAT))
             .reads_so_far(visible.clone());
         if self.skins() {
             pass = pass.reads(SKINNED);

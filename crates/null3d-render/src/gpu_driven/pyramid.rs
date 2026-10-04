@@ -14,8 +14,7 @@
 //! new render scale only uploads new parameters.
 
 use null3d_gpu::drawlist::{
-    DrawList, Op, buffer_usage as usage, layout as bind_layout, permutation, resource_kind,
-    template,
+    DrawList, Op, buffer_usage as usage, layout as bind_layout, resource_kind, template,
 };
 
 use super::ids;
@@ -97,44 +96,30 @@ struct ViewPyramid {
 #[derive(Debug)]
 pub(super) struct Pyramids {
     views: [Option<ViewPyramid>; MAX_VIEWS],
-    /// The depth target's samples that the pipeline was made for, or 0 before it exists.
-    samples: u32,
+    /// True once the pipeline exists.
+    pipeline: bool,
 }
 
 impl Default for Pyramids {
     fn default() -> Self {
         Self {
             views: [None; MAX_VIEWS],
-            samples: 0,
+            pipeline: false,
         }
     }
 }
 
 impl Pyramids {
-    /// Records the creation of the pipeline for depth targets of `samples` samples, unless it
-    /// exists. A pipeline made for another sample count is made again, and every view's group
-    /// with it. Returns true when it recorded one.
-    pub(super) fn create_pipeline(
-        &mut self,
-        list: &mut DrawList,
-        samples: u32,
-    ) -> Result<bool, RecordError> {
-        if self.samples == samples {
+    /// Records the creation of the pipeline, unless it exists. Returns true when it recorded it.
+    pub(super) fn create_pipeline(&mut self, list: &mut DrawList) -> Result<bool, RecordError> {
+        if self.pipeline {
             return Ok(false);
         }
-        let bits = if samples > 1 {
-            permutation::DEPTH_MULTISAMPLED
-        } else {
-            0
-        };
         list.push(
             Op::CreateComputePipeline,
-            &[ids::PYRAMID, template::DEPTH_PYRAMID, bits],
+            &[ids::PYRAMID, template::DEPTH_PYRAMID, 0],
         )?;
-        self.samples = samples;
-        for view in self.views.iter_mut().flatten() {
-            view.bound_depth = 0;
-        }
+        self.pipeline = true;
         Ok(true)
     }
 
@@ -182,13 +167,8 @@ impl Pyramids {
                 entry(1, resource_kind::BUFFER, ids::pyramid(view), 0),
                 entry(2, resource_kind::TEXTURE, depth, 0),
             ];
-            let group_layout = if self.samples > 1 {
-                bind_layout::DEPTH_PYRAMID_MULTISAMPLED
-            } else {
-                bind_layout::DEPTH_PYRAMID
-            };
             let mut words = [0u32; 3 + 5 * 3];
-            words[..3].copy_from_slice(&[ids::pyramid_group(view), group_layout, 3]);
+            words[..3].copy_from_slice(&[ids::pyramid_group(view), bind_layout::DEPTH_PYRAMID, 3]);
             words[3..].copy_from_slice(entries.as_flattened());
             list.push(Op::CreateBindGroup, &words)?;
             pyramid.bound_depth = depth;

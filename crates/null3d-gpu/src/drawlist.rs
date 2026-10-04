@@ -624,8 +624,6 @@ pub mod layout {
     /// offset, the pyramid, which it writes, and the view's depth target of one sample, which it
     /// reads as a float texture.
     pub const DEPTH_PYRAMID: u32 = 14;
-    /// [`DEPTH_PYRAMID`] for a multisampled depth target.
-    pub const DEPTH_PYRAMID_MULTISAMPLED: u32 = 15;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -678,12 +676,9 @@ pub mod permutation {
     pub const CASTER_OFFSET: u32 = 16384;
     /// The final pass adds bloom's levels to the scene color before the output transform.
     pub const BLOOM: u32 = 32768;
-    /// The depth pyramid reads a multisampled depth target, and keeps the farthest of each
-    /// texel's samples.
-    pub const DEPTH_MULTISAMPLED: u32 = 131072;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 17] = [
+    pub const NAMES: [(&str, u32); 16] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -700,7 +695,6 @@ pub mod permutation {
         ("HALF", HALF),
         ("CASTER_OFFSET", CASTER_OFFSET),
         ("BLOOM", BLOOM),
-        ("DEPTH_MULTISAMPLED", DEPTH_MULTISAMPLED),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -1485,10 +1479,6 @@ pub fn typescript_constants() -> String {
                 ("JOINTS", layout::JOINTS),
                 ("SKIN", layout::SKIN),
                 ("DEPTH_PYRAMID", layout::DEPTH_PYRAMID),
-                (
-                    "DEPTH_PYRAMID_MULTISAMPLED",
-                    layout::DEPTH_PYRAMID_MULTISAMPLED,
-                ),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),

@@ -123,11 +123,12 @@ impl PassTargets {
         }
     }
 
-    /// The depth target alone, with its samples, for a pass that draws depth and has no color
-    /// target, such as the occluders' pass of occlusion culling.
-    pub(crate) const fn without_color(self) -> PassTargets {
+    /// The occluders' pass of occlusion culling: the depth target alone, with one sample, whatever
+    /// the scene's samples.
+    pub(crate) const fn occluder_depth(self) -> PassTargets {
         PassTargets {
             color_format: format::NONE,
+            samples: 1,
             ..self.depth_only()
         }
     }
@@ -264,7 +265,7 @@ impl PipelineCache {
             ),
             (Some(depth), DepthPass::Occluders) => (
                 self.id(key.in_pass(targets)),
-                self.id(depth.in_pass(targets.without_color())),
+                self.id(depth.in_pass(targets.occluder_depth())),
             ),
             _ => (self.id(key.in_pass(targets)), 0),
         }
@@ -577,7 +578,7 @@ mod tests {
         assert_eq!(depth.template, template::SHADOW_DEPTH);
         assert_eq!(
             (depth.color_format, depth.depth_format, depth.samples),
-            (format::NONE, TARGETS.depth_format, TARGETS.samples)
+            (format::NONE, TARGETS.depth_format, 1)
         );
     }
 }

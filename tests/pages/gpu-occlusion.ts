@@ -17,6 +17,8 @@ import { run, toBase64 } from './lib/result';
 const params = new URLSearchParams(location.search);
 const SECONDS = Number(params.get('seconds') ?? '0');
 const ROUNDS = Number(params.get('rounds') ?? '3');
+/** Segments around each sphere of the scene, from ?segments=. */
+const SEGMENTS = Number(params.get('segments') ?? '32');
 /** The anti-aliasing mode from ?antialias=, or the preset's. */
 const ANTIALIAS = (['msaa', 'fxaa', 'none'] as const).find(
 	(mode) => mode === params.get('antialias'),
@@ -43,9 +45,11 @@ async function start(gpuOcclusion: boolean): Promise<Engine> {
 	canvas.style.width = params.has('seconds') ? '100vw' : '320px';
 	canvas.style.height = params.has('seconds') ? '100vh' : '180px';
 	document.body.prepend(canvas);
+	const sketch = new URL('./sketches/room-sketch.ts', import.meta.url);
+	sketch.search = `?segments=${SEGMENTS}`;
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL('./sketches/room-sketch.ts', import.meta.url),
+		sketch,
 		preset: 'high',
 		maxPixelRatio: params.has('seconds') ? undefined : 1,
 		antialias: ANTIALIAS,

@@ -115,7 +115,6 @@ export const LAYOUT_FINAL_BLOOM = 10;
 export const LAYOUT_JOINTS = 11;
 export const LAYOUT_SKIN = 12;
 export const LAYOUT_DEPTH_PYRAMID = 14;
-export const LAYOUT_DEPTH_PYRAMID_MULTISAMPLED = 15;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -133,7 +132,6 @@ export const PERMUTATION_PREPASS = 4096;
 export const PERMUTATION_HALF = 8192;
 export const PERMUTATION_CASTER_OFFSET = 16384;
 export const PERMUTATION_BLOOM = 32768;
-export const PERMUTATION_DEPTH_MULTISAMPLED = 131072;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;

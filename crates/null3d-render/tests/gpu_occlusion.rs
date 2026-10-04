@@ -14,7 +14,7 @@ use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::SunShadow;
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::caps::Capabilities;
-use null3d_gpu::drawlist::{Op, format, pass_flags, permutation, template};
+use null3d_gpu::drawlist::{Op, format, pass_flags, template};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::frame::{CanvasOutput, FrameBuilder};
 use null3d_render::gpu_driven::RendererConfig;
@@ -285,20 +285,26 @@ fn each_batch_of_pyramid_levels_dispatches_at_its_own_offset_and_size() {
 }
 
 #[test]
-fn a_multisampled_depth_target_takes_the_multisampled_pyramid_build() {
-    for (antialias, bits) in [
-        (Antialias::Msaa, permutation::DEPTH_MULTISAMPLED),
-        (Antialias::Fxaa, 0),
-        (Antialias::None, 0),
-    ] {
+fn the_occluders_depth_has_one_sample_whatever_the_scenes_samples() {
+    for antialias in [Antialias::Msaa, Antialias::Fxaa, Antialias::None] {
         let mut world = world(antialias, occluding());
         let mut mock = device();
         let (first, _) = frames(&mut world, &mut mock);
+        // The depth-only bundle, which the occluders' pass replays, draws into one sample.
+        let bundles: Vec<(u32, u32, u32)> = first
+            .iter()
+            .filter(|(op, _)| *op == Op::BeginBundle)
+            .map(|(_, o)| (o[1], o[2], o[3]))
+            .collect();
+        assert!(
+            bundles.contains(&(format::NONE, format::DEPTH32_FLOAT, 1)),
+            "{antialias:?}: {bundles:?}"
+        );
         let pyramid: Vec<_> = compute_pipelines(&first)
             .into_values()
             .filter(|&(t, _)| t == template::DEPTH_PYRAMID)
             .collect();
-        assert_eq!(pyramid, [(template::DEPTH_PYRAMID, bits)], "{antialias:?}");
+        assert_eq!(pyramid, [(template::DEPTH_PYRAMID, 0)], "{antialias:?}");
     }
 }
 
