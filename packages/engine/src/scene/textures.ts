@@ -94,7 +94,8 @@ export type CompressedTextureFormat =
 
 /**
  * Texel data: bytes for `rgba8unorm`, and for `rgba16float` either half floats as 16-bit words or
- * 32-bit floats, which the engine turns into half floats.
+ * 32-bit floats, which the engine turns into half floats. A 32-bit float outside the half float range
+ * of -65,504 to 65,504 takes the nearer end of it, because an infinite texel would draw black.
  *
  * @category api/textures
  */

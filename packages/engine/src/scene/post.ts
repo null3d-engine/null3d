@@ -387,13 +387,22 @@ export class Post {
 	}
 }
 
+/**
+ * The largest 32-bit float. The core keeps each post-processing value in one, so a larger value
+ * would become infinite there, and an infinite exposure turns black pixels into NaN.
+ */
+const F32_MAX = 3.4028234663852886e38;
+
 /** Throws E1203 for a value that is not a finite number, and E1213 for one out of its range. */
-function checkNumber(name: string, value: number | undefined, max = Number.POSITIVE_INFINITY) {
+function checkNumber(name: string, value: number | undefined, max = F32_MAX) {
 	if (value === undefined) return;
 	if (!Number.isFinite(value))
 		throw new EngineError('E1203', `post.set() got ${value} for ${name}.`);
 	if (value < 0 || value > max) {
-		const range = max === Number.POSITIVE_INFINITY ? 'below 0' : `outside 0 to ${max}`;
+		const range =
+			max === F32_MAX
+				? 'outside 0 to the largest 32-bit float, about 3.4e38'
+				: `outside 0 to ${max}`;
 		throw new EngineError('E1213', `post.set() got ${value} for ${name}, ${range}.`);
 	}
 }
