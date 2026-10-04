@@ -529,14 +529,24 @@ impl GpuDrivenRenderer {
             .plan(input, tile_settings, filter, camera.as_ref());
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows.
         let shadows = shadow.is_some() || self.tiles.shape().is_some();
-        let upload_everything =
-            input.structure_changed || !self.layout.built || shadows != self.layouts_shadowed;
+        let waiting = (self.layout.waiting().iter())
+            .chain(self.casters.waiting())
+            .chain(self.sorted.waiting())
+            .copied();
+        let skinned_appear =
+            self.skinning
+                .open_when_built(&self.pipelines, waiting, input.pipelines_built);
+        let upload_everything = input.structure_changed
+            || !self.layout.built
+            || shadows != self.layouts_shadowed
+            || skinned_appear;
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
             self.settings
                 .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
             self.skinning
                 .rebuild(input.scene, input.animations, self.settings.meshes());
+            self.skinning.open_before_first_frame(input.pipelines_built);
             let targets = self.graph.scene_targets();
             self.layout.rebuild(
                 &self.settings,
@@ -561,10 +571,7 @@ impl GpuDrivenRenderer {
                     |_, _| (0, 0),
                     0,
                     shadows,
-                    |slot, key| {
-                        let skinned = skinning.object(slot as u32).is_some();
-                        skinned.then(|| skinning.skinned_key(key))
-                    },
+                    |slot, key| skinning.sorted_pipeline(slot as u32, key),
                 )
                 .map_err(out_of_memory)?;
             // The casters' layout holds buckets only while the light casts shadows.
@@ -584,6 +591,7 @@ impl GpuDrivenRenderer {
             } else {
                 self.casters.clear();
             }
+            self.skinning.asked();
             self.layouts_shadowed = shadows;
             // The cell order holds every object that a view or a cascade culls: blended casters
             // have no bucket in the scene's layout, as the transparent pass draws them, but cast
@@ -626,7 +634,7 @@ impl GpuDrivenRenderer {
             &mut self.pipelines,
             self.graph.scene_targets(),
         );
-        created_pipelines |= self.skinning.create_pipeline(list)?;
+        created_pipelines |= self.skinning.create_pipeline(list, input.frame)?;
         created_pipelines |= self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
             self.create_fixed(list)?;

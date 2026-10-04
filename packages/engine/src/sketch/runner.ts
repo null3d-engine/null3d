@@ -795,7 +795,9 @@ export class SketchRunner {
 			if (glue.resetGpu() !== 0) this.report(coreFailure(glue, 'the GPU reset'));
 			this.gpuEpoch = epoch;
 		}
-		if (glue.cullFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
+		const built = Atomics.load(slots, Slot.PipelinesBuilt);
+		if (glue.cullFrame(frame, width, height, built) !== 0)
+			this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);
 		if (DEV && this.debugDraw) {
 			this.core.refresh();
@@ -806,7 +808,6 @@ export class SketchRunner {
 			}
 		}
 		const scale = this.renderScale();
-		const built = Atomics.load(slots, Slot.PipelinesBuilt);
 		if (glue.recordFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		Atomics.store(slots, Slot.RenderScale, scale);

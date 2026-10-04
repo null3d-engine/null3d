@@ -106,7 +106,6 @@ use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
 use crate::shadows::{self, MAX_CASCADES, ShadowFrame, ShadowUniform};
-use crate::skinning::skinned_in_vertex_shader;
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
@@ -489,6 +488,7 @@ impl CpuCulledRenderer {
             .map_err(|_| RecordError::OutOfMemory {
                 bytes: rows.saturating_mul(4),
             })?;
+        self.skins.open_before_first_frame(input.pipelines_built);
         let limit = FrameBuilder::max_sources(self);
         let multi_draw = self.config.multi_draw;
         let targets = self.with_draw_index(self.graph.scene_targets());
@@ -536,9 +536,10 @@ impl CpuCulledRenderer {
                 place,
                 RESIDENT,
                 shadows,
-                |slot, key| skins.skinned(slot).then(|| skinned_in_vertex_shader(key)),
+                |slot, key| skins.sorted_pipeline(slot, key),
             )
             .map_err(out_of_memory)?;
+        self.skins.asked();
         let records = Transparent::records_bound(&self.sorted, self.config.multi_draw);
         self.layout.add_sorted(records, self.sorted.scene_slots());
         self.clusters
@@ -1144,7 +1145,18 @@ impl FrameBuilder for CpuCulledRenderer {
             .plan(input, tile_settings, filter, camera.as_ref());
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows.
         let shadows = self.shadow.is_some() || self.tiles.shape().is_some();
-        if input.structure_changed || !self.layout.built || shadows != self.layouts_shadowed {
+        let waiting = (self.layout.waiting().iter())
+            .chain(self.casters.waiting())
+            .chain(self.sorted.waiting())
+            .copied();
+        let skinned_appear =
+            self.skins
+                .open_when_built(&self.pipelines, waiting, input.pipelines_built);
+        if input.structure_changed
+            || !self.layout.built
+            || shadows != self.layouts_shadowed
+            || skinned_appear
+        {
             self.rebuild_layout(input, shadows)?;
         }
         self.add_culled_views()?;

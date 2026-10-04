@@ -27,6 +27,13 @@
 //! animation table's matrix buffer gives its texel, so each frame uploads the rows that hold joints
 //! in use straight from the buffer that the frame's animation step wrote. Shaders that skin read
 //! it with `textureLoad`, which WebGL2's vertex shaders can do too.
+//!
+//! # When skinned objects first draw
+//!
+//! The skinning pass and every SKIN build load on first use, with the first skinned mesh (decision
+//! record D-56). Until the pipelines that skin and draw a page's skinned objects are built, the
+//! builders leave those objects out of every pass, as [`SkinnedGate`] says, so no pass draws them
+//! unskinned or from vertices that the skinning pass has not written.
 
 use null3d_core::animation::Animations;
 use null3d_core::math::max_axis_scale;
@@ -174,6 +181,53 @@ fn posed_sphere(meshes: &MeshStorage, mesh: &MeshSlot, pose: &[f32]) -> Option<(
     Some((center, radius))
 }
 
+/// Whether the passes draw a page's skinned objects. Before the first frame, the frame waits for
+/// every pipeline, so they draw at once. A skinned object that comes after it waits for its file
+/// and its pipelines: until they are built, every layout leaves skinned objects out, and asks for
+/// their pipelines only, so the main pass, the depth prepass, the shadow passes and the transparent
+/// pass all show them in the same frame. Once they draw, they keep drawing, and a later skinned
+/// object waits for its own pipelines as any new object does, since the skinning file is there.
+#[derive(Debug, Default)]
+pub(crate) struct SkinnedGate {
+    /// True once the passes draw skinned objects.
+    drawn: bool,
+    /// True once the layouts left the skinned objects out and asked for their pipelines.
+    asked: bool,
+}
+
+impl SkinnedGate {
+    /// True while the passes draw skinned objects.
+    pub(crate) fn drawn(&self) -> bool {
+        self.drawn
+    }
+
+    /// Opens the gate when the scene has `skinned` objects and their pipelines are built: before
+    /// the first frame, while `pipelines_built` is 0, or once the layouts asked for the pipelines
+    /// and `built` says so. Returns true when it opened, so the layouts take the skinned objects in.
+    pub(crate) fn open_when_built(
+        &mut self,
+        skinned: bool,
+        pipelines_built: u32,
+        built: impl FnOnce() -> bool,
+    ) -> bool {
+        if self.drawn || !skinned || (pipelines_built != 0 && !(self.asked && built())) {
+            return false;
+        }
+        self.drawn = true;
+        true
+    }
+
+    /// Records that the layouts left the skinned objects out and asked for their pipelines.
+    pub(crate) fn asked(&mut self) {
+        self.asked = !self.drawn;
+    }
+
+    /// Closes the gate after the thread that draws replaced the GPU, whose pipelines build again.
+    pub(crate) fn forget_gpu(&mut self) {
+        *self = Self::default();
+    }
+}
+
 /// The texture of every instance's skinning matrices on the GPU (see the module documentation),
 /// made the first time a frame draws a skinned object.
 #[derive(Debug)]
@@ -283,6 +337,34 @@ mod tests {
     use super::*;
     use crate::geometry::Geometry;
     use crate::meshes::{Packing, joint_spheres};
+
+    #[test]
+    fn skinned_objects_draw_at_once_before_the_first_frame() {
+        let mut gate = SkinnedGate::default();
+        assert!(
+            !gate.open_when_built(false, 0, || true),
+            "no skinned object, no change"
+        );
+        assert!(gate.open_when_built(true, 0, || false));
+        assert!(gate.drawn());
+        assert!(!gate.open_when_built(true, 0, || true), "it opens once");
+    }
+
+    #[test]
+    fn skinned_objects_after_the_first_frame_wait_until_their_pipelines_are_built() {
+        let mut gate = SkinnedGate::default();
+        assert!(
+            !gate.open_when_built(true, 4, || true),
+            "the layouts have not asked for the pipelines yet"
+        );
+        gate.asked();
+        assert!(!gate.open_when_built(true, 5, || false));
+        assert!(!gate.drawn());
+        assert!(gate.open_when_built(true, 6, || true));
+        assert!(gate.drawn());
+        gate.forget_gpu();
+        assert!(!gate.drawn(), "a new GPU builds every pipeline again");
+    }
 
     /// A chain of `joints` joints up the y axis, one unit apart, with no turn at rest.
     fn chain(joints: u32) -> Skeleton {

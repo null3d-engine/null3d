@@ -405,13 +405,14 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
 
 /**
  * The budget for each device module of a feature that loads on first use. Such a module is shader
- * data, as the modules of the start are, so its limit is the size of a start shader file. Brotli's
- * budget is the owner's, set on 4 October 2026 (decision records D-14 and D-56). The gzip and raw
- * budgets keep the start budget's proportions to Brotli, rounded up.
+ * data, as the modules of the start are, so in each column its limit is the size of a start shader
+ * file. Shader text shrinks far more under compression than code does, so these limits do not keep
+ * the start budget's proportions. The owner set them on 4 October 2026 (decision records D-14 and
+ * D-56).
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
-	raw: 576 * 1024,
-	gzip: 80 * 1024,
+	raw: 1_536 * 1024,
+	gzip: 224 * 1024,
 	brotli: 24 * 1024,
 };
 

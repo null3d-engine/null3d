@@ -319,12 +319,17 @@ variants.instanced = { defs = ["INSTANCED"], targets = ["wgsl", "glsl"] }
 variants.multi_draw = { defs = ["INSTANCED", "DRAW_INDEX"], targets = ["glsl"] }
 
 # The skinning pass on WebGPU: one thread per vertex of each part of each skinned mesh that a view
-# draws, into the skinned vertex buffer that the shadow and main passes draw. It loads by device,
-# with the culling shader.
+# draws, into the skinned vertex buffer that the shadow and main passes draw.
 [shaders.skin]
 file = "skin.wgsl"
 by_device = true
 variants.webgpu = { targets = ["wgsl"] }
+
+# A page downloads the skinning pass and every SKIN build with its first skinned mesh. The passes
+# leave skinned meshes out until every pipeline that draws or skins them is built.
+[first_use.skinning]
+shaders = ["skin"]
+bits = ["SKIN"]
 
 # Light clustering on the GPU: three compute entry points, `count_lights`, `place_lights` and
 # `write_lights`, that list each cluster's point and spot lights in the light grid. WebGPU only;

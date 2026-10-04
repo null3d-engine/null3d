@@ -336,6 +336,11 @@ impl PipelineCache {
                     .is_some_and(|&frame| frame <= pipelines_built))
     }
 
+    /// True when every pipeline of `ids` draws, by [`Self::built`].
+    pub fn all_built(&self, mut ids: impl Iterator<Item = u32>, pipelines_built: u32) -> bool {
+        ids.all(|id| self.built(id, pipelines_built))
+    }
+
     /// Forgets which pipelines the GPU has, after the thread that draws replaced it, so the next
     /// frame creates each again under the same id.
     pub fn forget(&mut self) {

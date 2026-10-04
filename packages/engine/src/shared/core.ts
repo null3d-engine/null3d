@@ -91,8 +91,12 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	updateLateTransforms(): number;
 	updateBatches(frame: number): number;
-	/** Finds the frame's visible objects on the job workers, where the path culls on the CPU. */
-	cullFrame(frame: number, width: number, height: number): number;
+	/**
+	 * Finds the frame's visible objects on the job workers, where the path culls on the CPU. `built`
+	 * is the newest frame that the thread that draws drew with every pipeline built, as for
+	 * `recordFrame`.
+	 */
+	cullFrame(frame: number, width: number, height: number, built: number): number;
 	/**
 	 * Records the frame's draw list. `built` is the newest frame that the thread that draws drew
 	 * with every pipeline built.
