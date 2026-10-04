@@ -38,12 +38,14 @@ pub(super) fn create_frame_buffer(list: &mut DrawList, view: ViewId) -> Result<(
 /// the materials' custom values, three.js's table of the split-sum terms of specular light, the
 /// main directional light's shadow map, which is `shadow_map`, with its comparison sampler and its
 /// cascades, the camera's light grid and light records, and the shadow atlas of point and spot
-/// lights, which is `atlas`, with its tiles. A new shadow map or atlas needs the group again.
+/// lights, which is `atlas`, with its tiles, and the texture of ambient occlusion, `occlusion`. A
+/// new shadow map, atlas or occlusion texture needs the group again.
 pub(super) fn bind_frame(
     list: &mut DrawList,
     view: ViewId,
     shadow_map: u32,
     atlas: u32,
+    occlusion: u32,
 ) -> Result<(), RecordError> {
     let entry = |binding: u32, kind: u32, id: u32| [binding, kind, id, 0, 0];
     let entries = [
@@ -58,9 +60,10 @@ pub(super) fn bind_frame(
         entry(8, resource_kind::BUFFER, ids::LIGHTS),
         entry(9, resource_kind::TEXTURE, atlas),
         entry(10, resource_kind::BUFFER, ids::SHADOW_TILES),
+        entry(11, resource_kind::TEXTURE, occlusion),
     ];
-    let mut words = [0u32; 3 + 5 * 11];
-    words[..3].copy_from_slice(&[ids::frame_group(view), bind_layout::FRAME, 11]);
+    let mut words = [0u32; 3 + 5 * 12];
+    words[..3].copy_from_slice(&[ids::frame_group(view), bind_layout::FRAME, 12]);
     words[3..].copy_from_slice(entries.as_flattened());
     list.push(Op::CreateBindGroup, &words)?;
     Ok(())
@@ -104,9 +107,9 @@ pub(super) fn record_bundle(
             targets.samples,
         ],
     )?;
-    list.push(Op::SetBindGroup, &[0, frame_group, 0])?;
     let (mut pipeline, mut vertices, mut indices) = (None, None, None);
     let mut groups = DrawGroups::default();
+    let mut bound = None;
     for bucket in &layout.buckets {
         let id = if prepass {
             bucket.prepass
@@ -116,11 +119,23 @@ pub(super) fn record_bundle(
         if id == 0 {
             continue;
         }
+        // In the prepass, a pair that draws with its own vertex shader reads the frame group and
+        // its maps' group as its shading does, and the depth template reads the depth group.
+        let own = !prepass || bucket.prepass_own;
+        let group = if own {
+            ids::frame_group(view)
+        } else {
+            frame_group
+        };
+        if bound != Some(group) {
+            list.push(Op::SetBindGroup, &[0, group, 0])?;
+            bound = Some(group);
+        }
         if pipeline != Some(id) {
             list.push(Op::SetPipeline, &[id])?;
             pipeline = Some(id);
         }
-        let maps = if prepass { 0 } else { bucket.group };
+        let maps = if own { bucket.group } else { 0 };
         groups.set(list, maps, bucket.skins)?;
         list.push(
             Op::SetVertexBuffer,

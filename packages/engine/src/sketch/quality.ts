@@ -76,6 +76,11 @@ export interface QualityGovernor {
 	 * many for each of the governor's steps after the shadow steps, at least a quarter.
 	 */
 	readonly bloomSamples: number;
+	/**
+	 * The size of ambient occlusion's targets now: `settings.aoScale`, or half as large after the
+	 * governor's last step while ambient occlusion draws.
+	 */
+	readonly aoScale: number;
 }
 
 /**
@@ -189,6 +194,9 @@ export class SketchQuality implements Quality {
 			},
 			get bloomSamples() {
 				return settings.bloomSamples;
+			},
+			get aoScale() {
+				return settings.aoScale;
 			},
 		};
 	}
