@@ -147,7 +147,6 @@ obj.setVisible(false);               obj.setDynamic(true);
 obj.setLayers(mask);                                                // bit n puts it on layer n; no rebuild
 obj.destroy();                                                      // at the next frame; its children become roots
 obj.name;                                                           // string, read-only after creation
-obj.setMorphWeight(nameOrIndex, w);  // (0.2)
 obj.setOutlined(true);               // (0.2) with post.set({ outline })
 obj.setOccluder(false);              // (0.2) WebGL2 path: stop this object hiding others; true makes it a blocker
 obj.on('click', fn); obj.off('click', fn);  // (0.2) also 'pointerdown', 'pointerup', 'pointermove', 'pointerenter', 'pointerleave'; on parents too
@@ -161,6 +160,7 @@ mesh.setMaterial(material);          mesh.setMesh(geometry);       // setMesh br
 mesh.setCastShadows(true);           mesh.setReceiveShadows(true); // false by default, as in three.js
 mesh.setRenderOrder(n);                                             // blended objects, lower first
 mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center relative to the origin, before scale
+mesh.setMorphWeight('Smile', 0.8);   mesh.getMorphWeight(0);       // (0.2) by name or number; E1218 for a target it lacks
 mesh.setOccluder(true);              // (0.2) WebGL2: large solid meshes, such as buildings, hide what lies behind them
 ```
 
@@ -258,8 +258,10 @@ const mesh = geometry.fromArrays({
   tangents,                 // 4 per vertex, or computeTangents: true (needs uvs)
   joints, weights,          // (0.2) 4 per vertex each, together; skinning itself comes later in 0.2
   indices,                  // Uint16Array, Uint32Array or number[]; omit for one triangle per 3 vertices
+  morphTargets: { positions: [smile, blink], normals, names: ['Smile', 'Blink'] },  // (0.2) deltas, 3 per vertex per target
 });
 mesh.radius;                // the distance from the mesh's origin to its farthest vertex
+mesh.morphTargets;          // (0.2) the target count; mesh.morphTargetNames lists their names
 mesh.destroy();             // (0.2)
 mesh.updateVertices('positions', data, start, count);  // (0.2) vertices that change at run time
 ```
@@ -386,6 +388,7 @@ anim.stop();                            // every clip; the object holds its rest
 anim.setJointOverride('Head', rotation); // later in 0.2: procedural aiming
 const twin = scene.clone(hero);         // the clone gets an animator of its own
 // Joints are not objects. Meshes under bones (a sword in a hand) follow their joints.
+// Clips also animate a model's morph weights, blended with the weights that setMorphWeight sets.
 
 // after 1.0: scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true });
 ```
@@ -488,6 +491,7 @@ quality.governor.steps;                 // the governor's steps past the render 
 quality.governor.farCascadeInterval;    // the shadow settings drawn now, which the governor may lower
 quality.set({ governor: false });       // no governor: maxRenderScale, and the shadow settings as set
 quality.settings.shadowCascades;        // cascades of lights that name none; fixed at the start, with shadowMapSize
+quality.settings.morphTargets;          // (0.2) most morph weights per object on WebGL2, the largest; fixed at the start
 await quality.setPreset('low');         // the live settings take Low's values; start-time ones stay; resolves once its frame is on screen
 const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
 quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });
