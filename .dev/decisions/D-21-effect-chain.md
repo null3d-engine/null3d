@@ -14,7 +14,7 @@ Status: decided for bloom's method and the 8-bit path, 2026-10-03. Decided for a
 - A port that copies `UnrealBloomPass`'s strength, radius and threshold keeps its look: the parity test passes three.js's rule, under 0.1% of the pixels.
 - Bloom adds as little memory traffic as it can, and a new render scale makes no GPU object.
 - The owner's answer of 3 October: where a GPU's mode has no HDR target, bloom and AO may move it to HDR color with FXAA.
-- Ambient occlusion draws on every tier, with the best image that its cost allows. Its placement costs at most a set share of the GPU time on the presets that turn it on. A looser comparison with `GTAOPass` checks that the shade falls in the same places, at the same size, as D-52 asks of an effect's look.
+- Ambient occlusion draws on every tier, with the best image that its cost allows. Its placement costs at most a set share of the GPU time on the presets that turn it on. [D-52](D-52-intent-parity.md) asks a looser sanity comparison of an improved technique. With `GTAOPass`, it checks that the shade falls in the same places and is of the same size.
 
 ## Data
 
@@ -85,7 +85,7 @@ The upsample has no pass of its own. The opaque pass reads the four half-size te
 | `GTAOPass`'s defaults (`ao-default`) | 0.036% | 0.036% | 0.040% |
 | A wider search, gathered toward the surface, and darker (`ao-wide`) | 0.659% | 0.659% | 0.608% |
 
-`bun run parity -- --scene ao-default,ao-wide --tier webgpu,compat,webgl2`, Chrome 154 on the Mac, 4 October 2026. Both sides draw without anti-aliasing, as the composer's targets have no MSAA. The defaults pass three.js's own limit of 0.1%. The wide search differs along the soft edges of the darkened areas. null3D rebuilds normals from the depth at half size, and three.js reads them from a normal pass at the whole size. The comparison with three.js holds ambient occlusion to 1%.
+`bun run parity -- --scene ao-default,ao-wide --tier webgpu,compat,webgl2`, Chrome 154 on the Mac, 4 October 2026. Both sides draw without anti-aliasing, as the composer's targets have no MSAA. The defaults pass three.js's own limit of 0.1%. The wide search differs along the soft edges of the darkened areas. null3D rebuilds normals from the depth at half size, and three.js reads them from a normal pass at the whole size. The sanity comparison with three.js holds ambient occlusion to 1%. The `ao-*` image tests keep null3D's own references.
 
 One search sample's place matters. A first build read each sample's position at the center of the texel under it. On a flat floor that moved samples off the search's line, so the floor seemed to hide itself, in grain and in bands. three.js keeps the sample's own place on the screen and takes only the depth of the texel under it. The build does the same, and the floor stays clean.
 
@@ -140,4 +140,4 @@ Its preset rows. The quality setting `aoScale` sets its targets' share of the re
 
 ## Addendum, 2026-10-04: bloom's method is open again
 
-The owner's decision of 4 October 2026 ([D-52](D-52-intent-parity.md)) withdraws this record's second rule. A port no longer keeps three.js's look by default. Each effect uses the best technique as its default, and the porting skill maps a port's settings onto it. So decision 1 is open again. The chain down and back up is cheaper per pixel, as the table above shows, and it flickers less on small bright points. The halo of `UnrealBloomPass` is a candidate for the opt-in `three-compat` add-on module. The combined technique analysis settles the default. Decision 2, the 8-bit path, stands.
+The owner's decision of 4 October 2026 ([D-52](D-52-intent-parity.md)) withdraws this record's second rule. A port no longer keeps three.js's look by default. Each effect uses the best technique as its default, and the porting skill maps a port's settings onto it. So decision 1 is open again. The chain down and back up is cheaper per pixel, as the table above shows, and it flickers less on small bright points. The halo of `UnrealBloomPass` is a candidate for the opt-in `three-compat` add-on module. The combined technique analysis settles the default. Decision 2, the 8-bit path, stands. Decision 3 argues ambient occlusion's placement and method on image quality and cost, so it stands under D-52. Its placement is an improved technique: it keeps direct light bright, where `GTAOPass` darkens the whole image. So its comparison with three.js is the looser sanity one, and its image tests keep their own references.
