@@ -24,3 +24,8 @@ export const SkippedDraws = 6;
  * made, on the record of the thread that draws.
  */
 export const GpuObjects = 7;
+/**
+ * The sources inside the camera's frustum that software occlusion culling hid, on the sketch
+ * thread's record, or `CORE_NOT_COUNTED` where the GPU culls.
+ */
+export const OccludedEntries = 8;

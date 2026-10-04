@@ -369,6 +369,7 @@ pub fn typescript() -> String {
                 ("RECEIVE_SHADOWS", flags::RECEIVE_SHADOWS),
                 ("UNCULLED", flags::UNCULLED),
                 ("CUSTOM_BOUNDS", flags::CUSTOM_BOUNDS),
+                ("OCCLUDER", flags::OCCLUDER),
             ],
         ),
         ("LAYERS", &[("DEFAULT", DEFAULT_LAYERS)]),
