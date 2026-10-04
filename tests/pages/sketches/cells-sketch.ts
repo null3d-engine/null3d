@@ -6,10 +6,18 @@
 // numbers. The engine then computes the world matrices of the tree's children and of the camera.
 // Relative to the origin, those sums would move in steps of about 8 mm at 100 km and 6 cm at
 // 1,000 km; relative to a cell, they keep a hundredth of a millimeter.
+//
+// With ?origin, each instance batch takes the scene's place as its origin, and its rows hold their
+// small positions around it. With large-world mode on the page, root positions keep 64-bit
+// precision too, so the scene can stand where 32-bit floats would round it, such as the Earth's
+// radius.
 import { defineSketch } from '@null3d/engine';
 
+const params = new URL(import.meta.url).searchParams;
 /** How far along x the scene sits, from the sketch module's ?x= switch. */
-const X = Number(new URL(import.meta.url).searchParams.get('x') ?? '0');
+const X = Number(params.get('x') ?? '0');
+/** True when instance batches take an origin at the scene's place, from the ?origin switch. */
+const ORIGIN = params.has('origin');
 /** The number of spinning boxes of the moving batch; one more row sits far behind them. */
 const SPINNERS = 6;
 /** How fast the spinning boxes turn, in radians per second. */
@@ -17,6 +25,10 @@ const SPIN = 0.8;
 
 /** A position in the scene, moved along x by the ?x= switch. */
 const at = (x: number, y: number, z: number): [number, number, number] => [X + x, y, z];
+/** A row's position: relative to its batch's origin with ?origin, or moved as `at` moves it. */
+const row = (x: number, y: number, z: number) => (ORIGIN ? [x, y, z] : at(x, y, z));
+/** The batches' options: an origin at the scene's place with ?origin. */
+const batchOrigin = ORIGIN ? { origin: at(0, 0, 0) } : {};
 
 export default defineSketch(({ scene, materials, geometry, time }) => {
 	if (!Number.isFinite(X)) throw new Error('?x= must be a number of meters');
@@ -64,20 +76,24 @@ export default defineSketch(({ scene, materials, geometry, time }) => {
 		scale: [60, 60, 60],
 	});
 
-	const floor = scene.createInstances(box, 25, { material: green });
+	const floor = scene.createInstances(box, 25, { material: green, ...batchOrigin });
 	for (let i = 0; i < 25; i++) {
-		floor.positions.set(at(((i % 5) - 2) * 1.25, -1.5, (Math.floor(i / 5) - 2) * 1.25), i * 3);
+		floor.positions.set(row(((i % 5) - 2) * 1.25, -1.5, (Math.floor(i / 5) - 2) * 1.25), i * 3);
 		floor.scales.set([1, 0.25, 1], i * 3);
 	}
 	floor.markDirty();
 
 	// Spinning boxes, and one large row 600 m behind them, in the next cell along z.
-	const spinners = scene.createInstances(box, SPINNERS + 1, { material: yellow, dynamic: true });
+	const spinners = scene.createInstances(box, SPINNERS + 1, {
+		material: yellow,
+		dynamic: true,
+		...batchOrigin,
+	});
 	for (let k = 0; k < SPINNERS; k++) {
-		spinners.positions.set(at(-2.5 + k, 2.5, -1), k * 3);
+		spinners.positions.set(row(-2.5 + k, 2.5, -1), k * 3);
 		spinners.scales.set([0.5, 0.5, 0.5], k * 3);
 	}
-	spinners.positions.set(at(0, 30, -600), SPINNERS * 3);
+	spinners.positions.set(row(0, 30, -600), SPINNERS * 3);
 	spinners.scales.set([20, 20, 20], SPINNERS * 3);
 
 	return {
