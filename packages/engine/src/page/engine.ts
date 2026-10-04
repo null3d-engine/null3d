@@ -977,12 +977,8 @@ async function startEngine(
 	const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
 	const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
 	// WebGL2 draws without the depth prepass, whatever the page asks: two of its shader programs
-	// can compute different depths for one triangle that the near plane cuts. Software occlusion
-	// culling runs on WebGL2 alone.
-	const tierSettings =
-		tier === 'webgl2'
-			? { ...pageSettings, depthPrepass: false }
-			: { ...pageSettings, softwareOcclusion: false };
+	// can compute different depths for one triangle that the near plane cuts.
+	const tierSettings = tier === 'webgl2' ? { ...pageSettings, depthPrepass: false } : pageSettings;
 	const quality: QualityStart = {
 		preset,
 		settings: checkedSettings(chosen, preset, tierSettings),

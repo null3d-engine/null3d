@@ -313,8 +313,7 @@ export interface QualitySettings {
 	 * True when software occlusion culling runs on WebGL2: each frame, the job workers draw the
 	 * objects that `setOccluder(true)` marks into a small depth buffer, and the engine skips every
 	 * object that lies wholly behind them. It costs the job workers time for each blocker, and
-	 * saves drawing what they hide. It changes during play. WebGPU, which has no software occlusion
-	 * culling, starts it at false and ignores it.
+	 * saves drawing what they hide. It changes during play. WebGPU ignores it.
 	 */
 	softwareOcclusion: boolean;
 }
