@@ -82,11 +82,15 @@ fn cast_sun_shadows<B: FrameBuilder>(world: &mut World<B>) {
 
 /// The WebGL2 frame builder, with `WEBGL_multi_draw` or without, and the depth prepass or not.
 fn webgl2(multi_draw: bool, depth_prepass: bool) -> World<CpuCulledRenderer> {
-    World::build(CpuCulledRenderer::new(CpuCulledConfig {
+    let mut world = World::build(CpuCulledRenderer::new(CpuCulledConfig {
         multi_draw,
         depth_prepass,
         ..CpuCulledConfig::default()
-    }))
+    }));
+    // No frame has drawn yet, so the first frame waits for every pipeline and draws the morphed
+    // objects at once.
+    world.pipelines_built = 0;
+    world
 }
 
 #[test]
