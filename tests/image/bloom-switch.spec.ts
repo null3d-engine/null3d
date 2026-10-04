@@ -2,7 +2,8 @@
 // 8-bit path for MSAA, and moves to HDR color with FXAA: the frames after the change make bloom's
 // targets and pipelines and raise no error, and the frames after it make no GPU object. No frame
 // skips a draw meanwhile: the frames keep the final pass without bloom until bloom's shader file has
-// loaded and its pipelines are built. The image tests check what the frames draw, in hold mode.
+// loaded and its pipelines are built, and the page downloads that file once. The image tests check
+// what the frames draw, in hold mode.
 // Each run logs the change's figures, which D-21 and D-56 record.
 import { expect, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
@@ -31,6 +32,8 @@ const TIERS = [
 
 for (const { tier, query, startedHdr } of TIERS)
 	test(`bloom turned on during play draws on ${tier}`, async ({ page }) => {
+		const requests: string[] = [];
+		page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
 		await page.goto(`bloom-switch.html?${query}`);
 		const result = await pageResult<BloomSwitchResult>(page, 60_000);
 		console.log(`bloom switch on ${tier}: ${JSON.stringify(result)}`);
@@ -43,4 +46,5 @@ for (const { tier, query, startedHdr } of TIERS)
 		expect(result.acrossSkippedDraws).toBe(0);
 		expect(result.afterGpuObjects).toBe(0);
 		expect(result.afterPipelines).toBe(0);
+		expect(requests.filter((path) => /\/shaders-bloom-[^/]*$/.test(path))).toHaveLength(1);
 	});

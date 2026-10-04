@@ -155,6 +155,33 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			).toEqual([]);
 		});
 
+/** Sketches of the image tests, each of which uses one feature whose shader builds load on first use. */
+const FIRST_USE_SHADER_SKETCHES = [
+	{ feature: 'lines', sketch: 'tests/pages/sketches/lines-sketch.ts' },
+	{ feature: 'sprites', sketch: 'tests/pages/sketches/sprites-sketch.ts' },
+	{ feature: 'background', sketch: 'tests/pages/sketches/texture-background-sketch.ts' },
+] as const;
+
+// A page that uses one such feature downloads that feature's shader file once, for its device's
+// fixed bits, and no other feature's shader file. The production build serves no image test page.
+for (const gpu of ['webgpu', 'webgl2'] as const)
+	for (const { feature, sketch } of FIRST_USE_SHADER_SKETCHES)
+		test(`the first use of ${feature} downloads its shader file once on ${gpu}`, async ({
+			page,
+		}, testInfo) => {
+			test.skip(testInfo.project.name === 'production build', 'no image test page');
+			const requests: string[] = [];
+			page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
+			await page.goto(
+				`image.html?gpu=${gpu}&hold=0&size=320x180&sketch=${encodeURIComponent(`/${sketch}`)}`,
+			);
+			const result = await pageResult<{ error?: string }>(page, 30_000);
+			expect(result.error).toBeUndefined();
+			const shaderFiles = requests.filter(isFirstUseShaderFile);
+			expect(shaderFiles).toHaveLength(1);
+			expect(shaderFiles[0]).toMatch(new RegExp(`/shaders-${feature}-(wgsl|glsl)[^/]*$`));
+		});
+
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {
 		test(`the engine runs ${mode.name} on ${gpu}`, async ({ page }) => {

@@ -164,6 +164,10 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { defs = ["LIT"], permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2", "LIT"], permutations = ["DRAW_INDEX", "TONE_MAP"], targets = ["glsl"] }
 
+# A page downloads both line templates with its first line batch.
+[first_use.lines]
+shaders = ["line", "line_lit"]
+
 # Colored by the first texture coordinates, for the engine's own tests of vertex formats.
 [shaders.texcoords]
 file = "texcoords.wgsl"
