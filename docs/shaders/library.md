@@ -329,10 +329,10 @@ Cellular noise in 2D: the distance from `p` to the nearest random point.
 ### `MAX_OCTAVES`
 
 ```wgsl
-const MAX_OCTAVES: u32 = 24u;
+const MAX_OCTAVES: u32 = 16u;
 ```
 
-The most octaves that fractal noise sums. An octave past it would add an amplitude below a 32-bit float's precision next to the first octave's, so a larger count gives the same result within that precision.
+The most octaves that fractal noise sums. The octaves past it would together add less than 1/32768 of the first octave's amplitude, far below the step between two colors on screen.
 
 ### `fbm3`
 

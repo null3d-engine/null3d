@@ -216,10 +216,9 @@ fn worley2(p: vec2f) -> f32 {
     return sqrt(nearest);
 }
 
-/// The most octaves that fractal noise sums. An octave past it would add an amplitude below a
-/// 32-bit float's precision next to the first octave's, so a larger count gives the same result
-/// within that precision.
-const MAX_OCTAVES: u32 = 24u;
+/// The most octaves that fractal noise sums. The octaves past it would together add less than
+/// 1/32768 of the first octave's amplitude, far below the step between two colors on screen.
+const MAX_OCTAVES: u32 = 16u;
 
 /// Fractal noise in 3D: `octaves` layers of simplex noise, each at twice the frequency and half
 /// the amplitude of the one before. The sum is divided by the total amplitude, so it stays from

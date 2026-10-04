@@ -177,8 +177,8 @@ const uniform = (count: number, low: number, high: number) =>
 const MANY_OCTAVES = 8;
 const MANY_OCTAVES_POINT = [0.37, -0.81, 0.52];
 /**
- * An octave count past the most that the library sums. The octaves it leaves out are too faint to
- * change a 32-bit result, so the reference, which sums them all, still holds.
+ * An octave count past the most that the library sums. The octaves it leaves out change the result
+ * by far less than the tolerance, so the reference, which sums them all, still holds.
  */
 const TOO_MANY_OCTAVES = 40;
 
