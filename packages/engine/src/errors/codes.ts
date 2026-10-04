@@ -109,7 +109,7 @@ const DOCS = {
 	E1205: {
 		title: 'Unknown input name',
 		cause:
-			'An input call received a name that no key, button or action has, or `input.actions.define()` received an action name that a key or button already has. Names are case-sensitive: `KeyW` is the W key, and `keyW` names nothing.',
+			'An input call received a name that no key, button or action has, or `input.actions.define()` received an action name that a key or button already has. `on()` and `off()` received an event type that objects do not have. Names are case-sensitive: `KeyW` is the W key, and `keyW` names nothing.',
 		example: 'E1205: isDown() got "keyW", which names no key, button or action.',
 		since: '0.1',
 	},

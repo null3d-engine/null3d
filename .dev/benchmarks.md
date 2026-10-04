@@ -128,6 +128,22 @@ A change can make a scene faster and make it look worse, such as a smaller shado
 - The bench plan runs S1 on its usual pages. `--pages` and `--scenes` pick others. For example, to compare two null3D paths on a phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s1-static,s2 --pages null3d-webgl2,null3d-webgl2-low`.
 - `--seconds <n>` sets each bench page's warm-up and measured time, n seconds each. For the protocol's 10-minute sustained run on a phone, use `--seconds 300`: 5 minutes of warm-up, then 5 measured.
 
+## The results archive
+
+A run folder holds every page's full result, with frames and images, and stays on the machine that ran it. The command `bun run bench:archive` keeps a small record of each run in `bench/results/<run>.json`, so the figures outlive the machine. [Benchmark results](benchmark-results.md) takes its tables from these records.
+
+- Give it run folders, or run names that this checkout's `target/runs`, `target/bench` or `target/gate` holds. It reads runs of the device runner, of `bun run bench:run` and of `bun run gate`.
+- It keeps benchmark, job worker, comparison, sweep, scale, governor, soak, startup and gate runs. Other plans, such as the checks plan, have no figures to keep.
+- A benchmark record keeps the plan's pages, each runner's device and browser, and each page's medians. It also keeps each null3D page's share of three.js, by whole frame and by own work. Each run's figures stay too: CPU time, own work, frame interval percentiles, frames per second, GPU time, preset and heat.
+- A comparison keeps its verdict, each page's medians and changes, and each run. A gate run keeps each step's figure and verdict, and the benchmark runs of its timing steps.
+- The governor, soak and startup plans keep the runner's report, and each page's result without images, browser facts or lists of more than 120 entries.
+- Records keep no frames, images, per-second lists of benchmark runs, or WebGL call tables. Fractions keep four significant digits. A record takes under 1 KB to 35 KB, and the 229 runs of 27 September to 4 October 2026 take 1.75 MB.
+- The commit comes from the run's own record where it has one, as the gate and comparisons do. Otherwise it is the commit that the checkout held at the run's start, read from the checkout's HEAD reflog. Edits that were not committed do not show.
+- A run in Playwright records the machine that archives it as its device. So archive such runs on the machine that ran them.
+- Pages from before the engine's rename get null3D's page names in the record.
+- The command prints the run's rows for the results page. `--rows` prints the rows of every record, one table for each scene.
+- `bench/lib/archive.ts` holds the reading and the rows, and `bench/lib/archive.test.ts` tests them on small run folders.
+
 ## Grid-cell culling
 
 - S1-cells spreads S1-static's boxes over 8 x 8 grid cells, 8 km on each side. Its camera flies low along -Z at 200 m/s, so a few cells are in view. New ones come into view about every 5 seconds.
