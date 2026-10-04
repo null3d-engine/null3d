@@ -512,7 +512,8 @@ impl CpuCulledRenderer {
         shadows: bool,
         outlines: bool,
     ) -> Result<(), RecordError> {
-        self.settings.update_map_groups();
+        self.settings
+            .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
         let rows = input.scene.capacity().saturating_add(1);
         self.skins
             .rebuild(input.scene, input.animations, self.settings.meshes())

@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Ships in null3D 0.1, with typed uniforms in 0.2. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes a surface function, a vertex offset and their uniforms, or a full shader, without texture maps. Coding agents must not use the parts that are not built.
+> Ships in null3D 0.1, with typed uniforms, custom material textures and `destroy` in 0.2. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -107,6 +107,12 @@ Until a map's image reaches the GPU, the material draws as without that map.
 `set(options)` changes a material's values at any time, and every object that uses the material changes with it. It changes only the options that you pass. The others keep their values, so `set({ roughness: 0.5 })` keeps the color. A standard material's `set` takes every value in the table above, and an unlit material's `set` takes `color`, `opacity`, `alphaCutoff` and `uvTransform`.
 
 `set` checks every value before it changes any, so a call that throws changes nothing. Converting a new color allocates a little, as a light's `setColor` does, so do not change a color in every frame. To change one object alone, give it another material with `mesh.setMaterial(material)`.
+
+## Destroying a material
+
+`material.destroy()` frees a material that the sketch no longer needs, as three.js's `material.dispose()` does. From the next frame, objects and instance batches that still use it draw nothing, until `setMaterial` gives them another material. Once no object or batch uses it, its place in the engine's table of materials goes to the next material that you create. When the last material of a custom material's WGSL goes, the engine also frees that WGSL's pipelines.
+
+`destroy` leaves the material's textures, which other materials may share. Destroy them apart with `texture.destroy()`. Calls on a destroyed material, and calls that pass it, such as `createMesh`, throw [E1101](../errors/E1101.md). Destroying a material changes which objects draw, so the next frame rebuilds the engine's draw tables, as creating one does.
 
 ## Options fixed at creation
 
@@ -217,7 +223,25 @@ paint.set({ strength: 0.8, roughness: 0.3 });
 
 TypeScript reads the uniforms' names and types from the WGSL. The `uniforms` option and `set` take only the names that `struct Uniforms` declares. Each name takes a value of its kind, and a misspelled name fails the type check. [Typed uniforms](../guides/custom-shaders.md#typed-uniforms) covers tagged literals and `.wgsl` files.
 
-With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls below `alphaCutoff` draw nothing. Materials made from the same WGSL share one shader, and each has its own uniforms. A mesh needs texture coordinates to draw with a custom material. WGSL as plain text, which the plugin did not compile, throws E1215. So does a whole shader that is not a [full shader](../guides/custom-shaders.md#full-shaders) of a material. A uniform that the WGSL does not declare, or a value of the wrong kind, throws E1216. The WGSL can also move the mesh's vertices with a vertex offset. [Surface functions](../shaders/surface-functions.md) describes the WGSL.
+The WGSL can sample up to 6 textures of its own. It declares each one as `var name: texture_2d<f32>;`, and samples it with the sampler `nameSampler`, which the engine declares. The `textures` option gives the textures by name, and they are fixed when the material is created:
+
+```ts
+const masked = /* wgsl */ `
+var mask: texture_2d<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.alpha *= textureSample(mask, maskSampler, input.uv).g;
+    return s;
+}
+`;
+const leaf = await assets.loadTexture('/textures/leaf-mask.png', { colorSpace: 'linear' });
+const leaves = materials.shader({ wgsl: masked, alphaMode: 'mask', textures: { mask: leaf } });
+```
+
+A texture samples as white until its image is on the GPU. [Textures](../shaders/surface-functions.md#textures) on the Surface functions page gives the rules.
+
+With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls below `alphaCutoff` draw nothing. Materials made from the same WGSL share one shader, and each has its own uniforms. A mesh needs texture coordinates to draw with a custom material. WGSL as plain text, which the plugin did not compile, throws E1215. So does a whole shader that is not a [full shader](../guides/custom-shaders.md#full-shaders) of a material. A uniform or a texture that the WGSL does not declare, or a value of the wrong kind, throws E1216. The WGSL can also move the mesh's vertices with a vertex offset. [Surface functions](../shaders/surface-functions.md) describes the WGSL.
 
 ## Ranges
 
@@ -225,7 +249,7 @@ With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls 
 
 ## Limits
 
-One engine holds up to 1,024 materials, and a material lasts as long as the engine. One more throws E1501. Create materials once in the setup and share them, and never create one per object or per frame.
+One engine holds up to 1,024 materials at once. One more throws E1501. A material lasts until `destroy`, or as long as the engine. Create materials once in the setup and share them, and never create one per object or per frame.
 
 ## Related pages
 
@@ -292,7 +316,8 @@ A material: how the surfaces of the objects that use it look. `Values` are the o
 
 | Member | Description |
 | --- | --- |
-| `set(options: Values): void` | Changes the values that it gets and keeps the others. Every object that uses the material changes with it. Converting a new color allocates. |
+| `set(options: Values): void` | Changes the values that it gets and keeps the others. Every object that uses the material changes with it. Converting a new color allocates. Throws E1101 once the material is destroyed. |
+| `destroy(): void` | Destroys the material, like three.js's `material.dispose()`. Objects and instance batches that still use it draw nothing until `setMaterial` gives them another material. Once no object uses it, its place in the engine's table of materials goes to the next material. When the last material of a custom material's WGSL goes, the engine frees that WGSL's pipelines. The material's textures stay, so destroy them apart. Later calls on the material, and calls that pass it, throw E1101. |
 
 ### `MaterialFeatures`
 
@@ -333,18 +358,19 @@ Material factories. The standard material follows glTF's metallic-roughness mode
 | --- | --- |
 | `standard(options: StandardOptions = {}): Material<StandardValues>` | A lit material with glTF's metallic-roughness model, like three.js's `MeshStandardMaterial`. |
 | `unlit(options: UnlitOptions = {}): Material<UnlitValues>` | A material that ignores lights and shows its color unlit, like three.js's `MeshBasicMaterial`. The exposure and the tone mapping still apply to it, as three.js applies them to that material. |
-| `shader<const Wgsl extends string \| CompiledWgsl>(options: ShaderOptions<Wgsl>): Material<ShaderValues<Wgsl>>` | A custom material: the standard material with a surface function in WGSL, which changes how each pixel of the surface looks before the engine lights it, or a full shader of your own. It takes every option of `materials.standard` but the texture maps, and the first values of the uniforms that its WGSL declares. `set` changes the standard values and the uniforms. Meshes need texture coordinates to draw with a surface function, and the attributes that a full shader reads. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole shader whose `@vertex` entry point takes no `InstanceIn`. Throws E1216 for a uniform that the WGSL does not declare, for a value of the wrong kind, and for a uniform named as a standard value, such as `color`. When TypeScript can see the WGSL's `struct Uniforms`, a wrong name or a value of the wrong kind also fails the type check. |
+| `shader<const Wgsl extends string \| CompiledWgsl>(options: ShaderOptions<Wgsl>): Material<ShaderValues<Wgsl>>` | A custom material: the standard material with a surface function in WGSL, which changes how each pixel of the surface looks before the engine lights it, or a full shader of your own. It takes every option of `materials.standard` but the texture maps, the first values of the uniforms that its WGSL declares, and the textures that its WGSL samples. `set` changes the standard values and the uniforms. Meshes need texture coordinates to draw with a surface function, and the attributes that a full shader reads. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole shader whose `@vertex` entry point takes no `InstanceIn`. Throws E1216 for a uniform or a texture that the WGSL does not declare, for a value of the wrong kind, and for a uniform named as a standard value, such as `color`. When TypeScript can see the WGSL, a wrong name or a value of the wrong kind also fails the type check. |
 
 ### `ShaderOptions`
 
 Interface `ShaderOptions`, which extends `StandardBaseOptions`.
 
-Options of `materials.shader`: the material's WGSL, the first values of its uniforms, and every option of `materials.standard` but its texture maps, which `defaultSurface` applies. Custom materials take no texture maps in this version, so the values of maps have no effect on them. `Wgsl` is the type of the material's WGSL, which gives the uniforms' names and types.
+Options of `materials.shader`: the material's WGSL, the first values of its uniforms, and the textures that its WGSL samples. It also takes every option of `materials.standard` but the texture maps. `defaultSurface` applies the standard values. Custom materials take no standard maps, so the values of maps have no effect on them. `Wgsl` is the type of the material's WGSL. It gives the names and types of the uniforms, and the names of the textures.
 
 | Member | Description |
 | --- | --- |
 | `wgsl: Wgsl` | The material's WGSL, compiled by the null3D Vite plugin. It declares `fn surface(input: SurfaceInput) -> Surface`, which the engine calls for each pixel, and which can start from `defaultSurface(input)`. The engine lights the surface that it returns. It can declare `struct Uniforms`, whose fields the surface function reads from `material`, and `fn vertexOffset`, which moves the mesh's vertices. A full shader has a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one, instead. Materials made from the same WGSL share their shader. |
 | `uniforms?: NoInfer<[keyof UniformValues<Wgsl>] extends [never] ? { readonly [name: string]: never; } : UniformValues<Wgsl>>` | The first value of each uniform, by name. A uniform without one starts at 0. When TypeScript can see the WGSL's uniforms, a name that the WGSL does not declare fails the type check, and WGSL without uniforms takes none. |
+| `textures?: NoInfer<TextureValues<Wgsl>>` | The texture of each `var name: texture_2d<f32>;` that the WGSL declares, by name. The WGSL samples it as `textureSample(name, nameSampler, uv)`, with the sampler of the texture's `wrap` and `filter` options. A texture samples as white until its image is on the GPU, and a declared texture without one stays white. The textures are fixed when the material is created. When TypeScript can see the WGSL, a name that it does not declare fails the type check. |
 
 ### `ShaderValues`
 
@@ -401,6 +427,14 @@ The values of a standard material, which `set` changes at any time.
 | `aoMapIntensity?: number` | How much the occlusion map darkens ambient light, from 0 to 1. The default is 1. |
 | `lightMapIntensity?: number` | The factor of the light map's light: 0 or more. The default is 1. |
 | `uvTransform?: UvTransform` | Where the maps sit on the texture coordinates. The default leaves them as they are. |
+
+### `TextureValues`
+
+```ts
+type TextureValues<Wgsl> = string extends WgslTextures<Wgsl> ? { readonly [name: string]: Texture | undefined; } : [WgslTextures<Wgsl>] extends [never] ? { readonly [name: string]: never; } : { readonly [Name in WgslTextures<Wgsl>]?: Texture; };
+```
+
+The textures of a custom material by name, each optional, which the `textures` option takes. A name that the WGSL does not declare fails the type check. WGSL whose textures TypeScript cannot see takes any name, and the engine checks the names when it runs.
 
 ### `UniformType`
 
@@ -472,6 +506,14 @@ Where a material's maps sit on the texture coordinates, as three.js's texture `o
 | `offset?: readonly [number, number]` | The shift along u and v. The default is `[0, 0]`. |
 | `repeat?: readonly [number, number]` | How many times the maps repeat along u and v. The default is `[1, 1]`. |
 | `rotation?: number` | The turn in radians, about the coordinates' origin. The default is 0. |
+
+### `WgslTextures`
+
+```ts
+type WgslTextures<Wgsl> = [Wgsl] extends [string] ? TextTextures<Wgsl, never> : CompiledTextures<Wgsl>;
+```
+
+The names of the textures that WGSL declares as `var name: texture_2d<f32>;`, as one union, such as `'detail' | 'noise'`. TypeScript sees them in a template literal that a `wgsl` block comment tags. It sees them in a `.wgsl` file once the null3D Vite plugin has written the file's declaration. WGSL whose textures TypeScript cannot see gives `string`, which takes any name.
 
 ### `WgslUniforms`
 

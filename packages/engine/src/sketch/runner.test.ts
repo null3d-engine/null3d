@@ -229,6 +229,7 @@ async function start(
 			pageUrl: 'http://localhost/',
 			threads: [['sketch-worker', [Role.Sketch, Role.Render]]],
 			showStats: (show) => log.push(`stats ${show}`),
+			sendLabelSlot: () => {},
 		},
 		holdSeconds,
 	);

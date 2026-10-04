@@ -60,6 +60,7 @@ export type {
 	ThreadStats,
 } from './page/frame-stats';
 export type { HeldFrame, HoldFailure, HoldResult } from './page/hold';
+export type { EngineLabels } from './page/labels';
 export type { DepthMode, LatencyMode, SketchThread } from './page/switches';
 export type { PresetCheck, PresetCheckRound } from './quality/check';
 export type { DeviceHints } from './quality/chooser';
@@ -184,10 +185,12 @@ export type {
 	TextureWrap,
 } from './scene/textures';
 export type {
+	TextureValues,
 	UniformType,
 	UniformValue,
 	UniformValueByType,
 	UniformValues,
+	WgslTextures,
 	WgslUniforms,
 } from './scene/wgsl-uniforms';
 export type { PhaseName } from './shared/metrics';
@@ -207,6 +210,7 @@ export type {
 export { defineSketch } from './sketch/define-sketch';
 export type { Input, InputActions, InputPointer, InputTouch } from './sketch/input';
 export type { Quality, QualityGovernor } from './sketch/quality';
+export type { LabelOptions, Ui } from './sketch/ui';
 export type { WorkerProbe } from './workers/probe-worker';
 
 /**

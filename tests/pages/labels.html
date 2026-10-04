@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>null3d test: labels</title>
+		<style>
+			html { overflow: hidden; }
+			body { margin: 0; }
+			#view { position: relative; width: 320px; height: 180px; }
+			canvas { width: 320px; height: 180px; display: block; }
+			#labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+			.label { width: 10px; height: 10px; border: 1px solid #fff; }
+		</style>
+	</head>
+	<body>
+		<div id="view">
+			<canvas></canvas>
+			<div id="labels"></div>
+		</div>
+		<pre id="status">running</pre>
+		<script type="module" src="./labels.ts"></script>
+	</body>
+</html>

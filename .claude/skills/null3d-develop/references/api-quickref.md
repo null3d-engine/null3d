@@ -42,6 +42,7 @@ const engine = await createEngine({
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
   memory: { maximumMiB: 1024 },          // the default; up to 4096 for scenes that need more (E1409 outside 256 to 4096)
+  maxLabels: 4096,                       // (0.2) the default; labels that ui.trackLabel holds at once, 1 to 65,536
   onProgress: (stage) => {},             // 'core', then 'sketch' after the setup and any preset check, then 'first-frame'
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
@@ -68,7 +69,7 @@ engine.simulateGpuLoss();                         // acts out a driver reset; th
 await engine.destroy();                 // workers stop; wait before this page starts another engine
 
 const image = await engine.capture();             // PNG Blob of the next frame; E1414 after destroy()
-engine.labels.bind('hp-12', element);             // (0.2) HTML label that follows an object
+const unbind = engine.labels.bind('hp-12', element);   // (0.2) element follows the sketch's label 'hp-12'
 await engine.requestPointerLock();                // (0.2) for first-person controls
 // engine.registerVideo and textures.fromVideo come after 1.0; recipe 14 shows the workaround
 ```
@@ -293,6 +294,8 @@ const decal = materials.unlit({ map: color, alphaMode: 'mask', alphaCutoff: 0.5 
 
 const stripes = materials.shader({ ...standardOptions, wgsl, uniforms });  // any standard option but the maps; wgsl: a tagged /* wgsl */ literal or .wgsl import with fn surface, fn vertexOffset or both, or a full shader
 stripes.set({ speed: 2, roughness: 0.3 });  // uniforms of struct Uniforms and standard values alike
+const worn = materials.shader({ wgsl, textures: { detail, wear } });  // (0.2) each `var detail: texture_2d<f32>;` of the WGSL, sampled with detailSampler
+worn.destroy();   // (0.2) objects that still use it draw nothing; its place frees once none does
 ```
 
 - `materials.standard` shades as three.js's `MeshStandardMaterial` does, with its formulas and its table of specular terms.
@@ -300,7 +303,9 @@ stripes.set({ speed: 2, roughness: 0.3 });  // uniforms of struct Uniforms and s
 - `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option but the texture maps feeds `defaultSurface()`. `references/shaders.md` has the contract.
 - A map reads the texture coordinates that its texture's `uvSet` names, and a mesh without a second set gives its first. A mesh without texture coordinates draws the material without its maps. A normal map takes its frame from the mesh's tangents (`computeTangents: true`) where the mesh has them, and otherwise from the pixels around it, as three.js does.
 - `alphaMode: 'mask'` with `alphaCutoff` draws nothing where the alpha falls below the cutoff, as three.js's `alphaTest`. `alphaMode: 'blend'` is three.js's `transparent: true`, and `blending` picks `'normal'`, `'additive'` or `'multiply'`. Blended objects cost culling and sorting in every frame, so use `'mask'` for cut-out shapes. `depthWrite`, `depthTest` and `depthBias: { constant, slopeScale }` set the depth state.
-- Full shaders work in `materials.shader`: a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one (`guides/custom-shaders`). Texture maps and textures in `materials.shader` come in 0.2.
+- Full shaders work in `materials.shader`: a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one (`guides/custom-shaders`). They take no textures.
+- (0.2) A custom material's `textures` option gives the textures that its WGSL declares, up to 6, fixed at creation. `references/shaders.md` section 4 has the rules. Standard texture maps do not reach `materials.shader`.
+- (0.2) `material.destroy()` frees a material that no object needs, as three.js's `material.dispose()`. Objects that still use it draw nothing, and later calls with it throw E1101. Its textures stay: destroy them apart.
 - `envIntensity` (0.2) comes with environment lighting, and `materials.shadowCatcher` in 0.2.
 - `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `blending`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
 

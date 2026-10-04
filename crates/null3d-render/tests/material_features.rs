@@ -171,6 +171,7 @@ fn check_custom<B: FrameBuilder>(mut world: World<B>) {
         template: first + 3,
         attributes: vertex::COLOR,
         base_color: false,
+        textures: 0,
     });
     let colors_and_mask = feature::VERTEX_COLORS | feature::ALPHA_MASK;
     add(&mut world, &triangle(true), full, colors_and_mask);

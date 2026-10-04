@@ -158,9 +158,9 @@ const DOCS = {
 		since: '0.1',
 	},
 	E1216: {
-		title: 'Invalid uniform',
+		title: 'Invalid uniform or texture',
 		cause:
-			"A custom material's uniforms did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too.",
+			"A custom material's uniforms or textures did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too. The textures option takes the names of the WGSL's `var name: texture_2d<f32>;` declarations, each with a texture of one layer.",
 		example:
 			"E1216: materials.shader.set() got speeed, which is not a uniform of the material's WGSL.",
 		since: '0.1',
@@ -177,6 +177,14 @@ const DOCS = {
 		cause:
 			"An animator call named a clip, layer or joint that the object's animation does not have. Or it got an option out of range, such as a negative fade. animator() was called on an object that has no animation clips. Or the engine refused animation data, such as a skeleton that lists a joint before its parent.",
 		example: `E1218: play() got "rnu", which names no clip of "Hero" (slot 3). Its clips are idle, run and walk.`,
+		since: '0.2',
+	},
+	E1219: {
+		title: 'Invalid label',
+		cause:
+			"ui.trackLabel() or ui.untrackLabel() got an id that is not a string with at least one character. Or the sketch tracked more labels at once than createEngine's maxLabels option allows: 4,096 by default.",
+		example:
+			'E1219: trackLabel() could not track "hp-4097": the engine already tracks 4096 labels.',
 		since: '0.2',
 	},
 	E1301: {

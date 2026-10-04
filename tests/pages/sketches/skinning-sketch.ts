@@ -8,8 +8,10 @@
 // through, so the transparent pass draws it skinned. ?outline outlines the middle character with
 // three.js's default outline, whose mask must follow the pose. ?tone=none turns off the engine's
 // default of ACES, as the parity test asks: the three.js twin draws with no tone mapping,
-// three.js's default. The engine cannot load animated models yet, so the rig comes from the
-// engine's internal loader calls.
+// three.js's default. ?textured draws the characters with a custom material that samples a texture
+// of stripes along their height, at texture coordinates from their positions, so custom materials'
+// textures must follow each way to skin. The engine cannot load animated models yet, so the rig
+// comes from the engine's internal loader calls.
 import { defineSketch } from '@null3d/engine';
 import { animateObject, createAnimationRig, skinObject } from '@null3d/engine/internal';
 import { OUTLINE_SETTINGS } from '../../../bench/scenes/outline';
@@ -32,12 +34,22 @@ const SHADOWS = params.has('shadows');
 const QUANTIZED = params.has('quantized');
 const BLEND = params.has('blend');
 const OUTLINE = params.has('outline');
+const TEXTURED = params.has('textured');
 /** Millimeters per meter: the scale of quantized positions. */
 const MM = 1000;
 
 /** The character's arrays, stored as the ?quantized switch asks. */
 function characterArrays() {
 	const { positions, normals, joints, weights, indices } = characterMesh();
+	if (TEXTURED) {
+		// Texture coordinates from the front: x across, and y up the character.
+		const uvs = Array.from({ length: (positions.length / 3) * 2 }, (_, k) =>
+			k % 2 === 0
+				? (positions[(k >> 1) * 3] as number) + 0.5
+				: (positions[(k >> 1) * 3 + 1] as number) / 2,
+		);
+		return { positions, normals, joints, weights, indices, uvs };
+	}
 	if (!QUANTIZED) return { positions, normals, joints, weights, indices };
 	return {
 		positions: Int16Array.from(positions, (v) => Math.round(v * MM)),
@@ -54,7 +66,18 @@ function inverseBind(matrix: readonly number[]): number[] {
 	return matrix.map((v, k) => (k % 4 === 3 ? v : v * scale));
 }
 
-export default defineSketch(({ scene, materials, geometry, post }) => {
+/** Stripes of a texture along the characters' height, for ?textured. */
+const STRIPED = /* wgsl */ `
+var stripes: texture_2d<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor *= textureSample(stripes, stripesSampler, input.uv * vec2f(1.0, 6.0)).rgb;
+    return s;
+}
+`;
+
+export default defineSketch(({ scene, materials, geometry, post, textures }) => {
 	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	if (OUTLINE) post.set({ outline: OUTLINE_SETTINGS.plain });
 	scene.setBackground(BACKGROUND);
@@ -99,11 +122,23 @@ export default defineSketch(({ scene, materials, geometry, post }) => {
 		],
 	});
 	const mesh = geometry.fromArrays(characterArrays());
+	const stripes = TEXTURED
+		? textures.fromData({
+				width: 1,
+				height: 2,
+				data: Uint8Array.of(255, 255, 255, 255, 60, 60, 60, 255),
+				colorSpace: 'srgb',
+				wrap: 'repeat',
+				filter: 'nearest',
+			})
+		: undefined;
 	for (const [k, character] of CHARACTERS.entries()) {
 		const seeThrough = BLEND && k === 1 ? { alphaMode: 'blend' as const, opacity: 0.6 } : {};
 		const object = scene.createMesh({
 			mesh,
-			material: materials.standard({ color: character.color, ...seeThrough }),
+			material: stripes
+				? materials.shader({ wgsl: STRIPED, color: character.color, textures: { stripes } })
+				: materials.standard({ color: character.color, ...seeThrough }),
 			position: [...character.position],
 			castShadows: SHADOWS,
 			receiveShadows: SHADOWS,

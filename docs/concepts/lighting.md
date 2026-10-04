@@ -8,7 +8,7 @@ summary: "Light types and units; clustered lighting; fog; environment maps and s
 
 # Lighting and environment
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. The quality presets do not set the light limits yet. Environment maps and spherical harmonics come in null3D 0.2. Coding agents must not rely on these parts.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. The quality presets do not set the light limits yet. `bunx @null3d/cli assets env` makes environment maps, but the engine does not light scenes with them yet. That comes in null3D 0.2. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -107,6 +107,17 @@ Fog fades objects toward one color with their distance from the camera, as air d
 
 The engine mixes the fog into each pixel's color as it shades the pixel, after lighting and before it encodes the color for the screen. Fog therefore needs no pass and no texture, and adds almost no work. The mix happens in linear color, as in three.js's WebGPURenderer. The background takes no fog, so scenes with fog usually give the background the fog's color. A material created with `fog: false` keeps its color at every distance.
 
+## Environment maps
+
+An environment map holds the light that reaches a point from every direction, such as a sky, a street or a studio. Metal and glossy surfaces reflect it, and every surface takes some of it as diffuse light. Metals need it most, since they have almost no diffuse color and show only what they reflect.
+
+The engine takes an environment as one file, which `bunx @null3d/cli assets env` makes from an HDR image before you publish:
+
+- A cube map with one level for each step of roughness. Level 0 holds the light itself, for mirrors. Each smaller level holds the light blurred as a rougher surface reflects it, with the GGX distribution of the standard material.
+- Nine spherical harmonics coefficients, the diffuse light from each direction in a few numbers, as three.js's `LightProbe` holds it.
+
+three.js builds the same data in the browser on every visit with `PMREMGenerator`. The engine reads the finished file. [The asset pipeline](../guides/assets-pipeline.md#environment-maps) gives the command's options and the file's sizes.
+
 ## Related pages
 
 - [Lights](../api/lights.md): the calls and options of each kind of light.
@@ -114,3 +125,4 @@ The engine mixes the fog into each pixel's color as it shades the pixel, after l
 - [Objects and transforms](../api/objects.md): the calls that lights share with every object.
 - [Render layers](render-layers.md): which cameras a light lights.
 - [Materials](../api/materials.md): the standard material, which lights shade.
+- [The asset pipeline](../guides/assets-pipeline.md#environment-maps): the command that makes environment maps.
