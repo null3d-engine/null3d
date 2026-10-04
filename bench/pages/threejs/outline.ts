@@ -1,15 +1,19 @@
 // The three.js twin of the outline's scene (bench/scenes/outline.ts), which null3D's image tests
-// draw. It draws one frame with an EffectComposer: a RenderPass, an OutlinePass with the settings
-// that ?outline=plain or ?outline=glow names and the scene's outlined shapes as its selected
-// objects, and an OutputPass, which applies the ACES tone mapping that null3D applies by default.
-// The OutputPass draws into the canvas, which the page reads back at once and publishes. The
-// composer's targets have no MSAA, so null3D's page draws with ?antialias=none. Only WebGLRenderer
-// draws it: WebGPURenderer's outline is a node of its own.
+// draw. It draws one frame with an EffectComposer: a RenderPass, an OutlinePass with the scene's
+// outlined shapes as its selected objects, an OutputPass, which applies the ACES tone mapping that
+// null3D applies by default, and a ShaderPass that draws null3D's crisp line from OutlinePass's
+// mask, with the settings that ?outline=plain or ?outline=hidden names. The OutlinePass has no
+// strength, so its own soft edges add nothing: it serves only for its mask, so the comparison
+// checks which parts the mask counts as hidden, and where the line falls. The last pass draws into
+// the canvas, which the page reads back at once and publishes. The composer's targets have no
+// MSAA, so null3D's page draws with ?antialias=none. Only WebGLRenderer draws it: WebGPURenderer's
+// outline is a node of its own.
 import * as three from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { run, toBase64 } from '../../../tests/pages/lib/result';
 import {
 	OUTLINE_AMBIENT,
@@ -28,9 +32,65 @@ import { packRows } from '../lib/pixels';
 /** The sun's distance from the origin. Its light travels from there toward the origin. */
 const SUN_DISTANCE = 10;
 
-/** A three.js color from a hex string, in sRGB, or from linear components. */
-function colorOf(color: string | readonly [number, number, number]): three.Color {
-	return typeof color === 'string' ? new three.Color(color) : new three.Color(...color);
+/**
+ * null3D's crisp line over display color, from OutlinePass's mask. That mask is white where no
+ * selected object covers it, and a selected object writes 0 in red and 1 in green where other
+ * objects hide it, so coverage is 1 minus red and the visible parts are 1 minus green. The line
+ * then follows null3D's final pass: the highest coverage at 8 places on a circle of the width.
+ */
+function crispLine(mask: three.Texture, outline: (typeof OUTLINE_SETTINGS)[OutlineName]) {
+	const { width, height } = OUTLINE_IMAGE;
+	return {
+		uniforms: {
+			tDiffuse: { value: null },
+			maskTexture: { value: mask },
+			texel: { value: new three.Vector2(1 / width, 1 / height) },
+			width: { value: outline.width },
+			color: { value: displayColor(outline.color) },
+			hiddenColor: { value: displayColor(outline.hiddenColor || outline.color) },
+			hidden: { value: outline.hiddenColor === false ? 0 : 1 },
+		},
+		vertexShader: `
+		varying vec2 vUv;
+		void main() {
+			vUv = uv;
+			gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+		}`,
+		fragmentShader: `
+		uniform sampler2D tDiffuse;
+		uniform sampler2D maskTexture;
+		uniform vec2 texel;
+		uniform float width;
+		uniform vec3 color;
+		uniform vec3 hiddenColor;
+		uniform float hidden;
+		varying vec2 vUv;
+		vec2 maskAt(vec2 uv) {
+			return 1.0 - texture2D(maskTexture, uv).rg;
+		}
+		void main() {
+			vec4 base = texture2D(tDiffuse, vUv);
+			float inside = maskAt(vUv).x;
+			vec2 across = vec2(width * texel.x, 0.0);
+			vec2 down = vec2(0.0, width * texel.y);
+			vec2 diagonal = (across + down) * 0.70710678;
+			vec2 slant = (across - down) * 0.70710678;
+			vec2 found = max(maskAt(vUv + across), maskAt(vUv - across));
+			found = max(found, max(maskAt(vUv + down), maskAt(vUv - down)));
+			found = max(found, max(maskAt(vUv + diagonal), maskAt(vUv - diagonal)));
+			found = max(found, max(maskAt(vUv + slant), maskAt(vUv - slant)));
+			float line = max(found.y, found.x * hidden) * (1.0 - inside);
+			float shown = found.y / max(found.x, 0.0001);
+			vec3 lineColor = mix(hiddenColor, color, shown);
+			gl_FragColor = base * (1.0 - line) + vec4(lineColor, 1.0) * line;
+		}`,
+	};
+}
+
+/** A color's display components, from a hex string in sRGB. */
+function displayColor(hex: string): three.Vector3 {
+	const { r, g, b } = new three.Color(hex).convertLinearToSRGB();
+	return new three.Vector3(r, g, b);
 }
 
 const params = new URLSearchParams(location.search);
@@ -75,14 +135,11 @@ run('hold', async () => {
 	composer.setPixelRatio(1);
 	composer.setSize(width, height);
 	composer.addPass(new RenderPass(scene, camera));
-	const outline = new OutlinePass(new three.Vector2(width, height), scene, camera, selected);
-	outline.visibleEdgeColor = colorOf(settings.color);
-	outline.hiddenEdgeColor = colorOf(settings.hiddenColor);
-	outline.edgeStrength = settings.strength;
-	outline.edgeThickness = settings.thickness;
-	outline.edgeGlow = settings.glow;
-	composer.addPass(outline);
+	const mask = new OutlinePass(new three.Vector2(width, height), scene, camera, selected);
+	mask.edgeStrength = 0;
+	composer.addPass(mask);
 	composer.addPass(new OutputPass());
+	composer.addPass(new ShaderPass(crispLine(mask.renderTargetMaskBuffer.texture, settings)));
 	document.body.append(renderer.domElement);
 	composer.render();
 	const gl = renderer.getContext();

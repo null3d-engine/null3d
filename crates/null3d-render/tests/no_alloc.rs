@@ -318,8 +318,8 @@ fn render_scale_changes_allocate_nothing() {
     }
 }
 
-/// Records warm-up frames of a world with two outlined objects, then frames whose outline glow and
-/// render scale change every frame, while the camera moves, and returns what those allocated.
+/// Records warm-up frames of a world with two outlined objects, then frames whose outline width
+/// and render scale change every frame, while the camera moves, and returns what those allocated.
 fn outline_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     let settings = world.renderer.settings_mut();
     settings.set_render_scaling(true);
@@ -336,7 +336,7 @@ fn outline_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     for frame in 7..=200 {
         world.frame = frame;
         world.renderer.settings_mut().set_outline(Some(Outline {
-            glow: (frame % 7) as f32 * 0.25,
+            width: 1.0 + (frame % 7) as f32 * 0.5,
             ..Outline::default()
         }));
         world.render_scale = RenderScale::from_thousandths(500 + (frame * 37) % 501);

@@ -55,11 +55,11 @@
 //! While the sketch turns outlines on and some object is outlined, the outline passes come after
 //! the transparent passes (see [`crate::outline`]). On WebGPU a culling pass culls the outlined
 //! objects for the outline view. The mask pass draws them into the outline mask, with the scene's
-//! depth as its depth target, so the scene's render pass stores the depth for it. Each step after
-//! it reads the mask or the step before it, and the final pass runs in a build of its declaration
-//! that reads the mask and the two edge levels too. There is one such declaration for each build
-//! of the final pass, and the frame switches on the one that it needs. The outline passes and their
-//! targets are off while nothing is outlined, and on every path the final pass then runs as it did.
+//! depth as its depth target, so the scene's render pass stores the depth for it. The final pass
+//! then runs in a declaration that reads the mask too, and draws the line from it. There is one
+//! such declaration for each build of the final pass, and the frame switches on the one that it
+//! needs. The outline passes and the mask are off while nothing is outlined, and on every path the
+//! final pass then runs as it did.
 //!
 //! The final pass also grades the canvas color with a color grading table and the vignette (see
 //! [`crate::grading`]). Both work on display color, so they draw on the 8-bit path too: while the
@@ -100,7 +100,7 @@ use crate::graph::{
     CANVAS, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph, RenderScale, Size,
     Step, StepKind, StoreOp, Surface, Target,
 };
-use crate::outline::{self, LEVEL_STEPS, Outline, OutlineIds, OutlinePass};
+use crate::outline::{self, Outline};
 use crate::output::{Antialias, Output, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache};
 use crate::shadows::{MAX_CASCADES, ShadowFrame};
@@ -116,7 +116,6 @@ pub(crate) struct GraphIds {
     pub(crate) first_texture: u32,
     pub(crate) final_pass: FinalIds,
     pub(crate) bloom: BloomIds,
-    pub(crate) outline: OutlineIds,
 }
 
 /// The buffers that the culling passes read: the world matrices and the bucket tables, which the
@@ -201,33 +200,8 @@ const fn bloom_source(step: usize) -> &'static str {
 /// indirect draws.
 const OUTLINE_CULLING: &str = "OutlineCulling";
 const OUTLINE_VISIBLE: &str = "outlineVisible";
-/// The outline mask, which the mask pass creates.
+/// The outline mask, which the mask pass creates and the final pass reads.
 const OUTLINE_MASK: &str = "outlineMask";
-/// Each step after the mask pass, and the target it creates: the edge step, then the thickness's
-/// blur across and down, then the glow's.
-const OUTLINE_PASSES: [&str; outline::STEPS] = [
-    "OutlineEdge",
-    "OutlineBlurX0",
-    "OutlineBlurY0",
-    "OutlineBlurX1",
-    "OutlineBlurY1",
-];
-const OUTLINE_TARGETS: [&str; outline::STEPS] = [
-    "outlineEdge",
-    "outlineX0",
-    "outlineY0",
-    "outlineX1",
-    "outlineY1",
-];
-/// The target that step `step` of the outline reads: the mask for the edge step, else the target
-/// of the step before it.
-const fn outline_source(step: usize) -> &'static str {
-    if step == 0 {
-        OUTLINE_MASK
-    } else {
-        OUTLINE_TARGETS[step - 1]
-    }
-}
 /// The shadow atlas of point and spot lights: a depth texture array with one layer per tile,
 /// kept between frames.
 const SHADOW_ATLAS: &str = "shadowAtlas";
@@ -291,8 +265,6 @@ pub(crate) enum Role {
     Bloom(u8),
     /// Draws the outlined objects into the outline mask, from the outline view.
     OutlineMask,
-    /// A step of the outline after its mask, by its place. The graph records it itself.
-    Outline(u8),
     /// Tone maps the HDR scene color into the canvas. The graph records it itself.
     Final,
     /// Tone maps the HDR scene color into the canvas, with bloom's levels added. The graph records
@@ -301,7 +273,7 @@ pub(crate) enum Role {
 }
 
 /// The passes that can take the scene color to the canvas: the resolve pass, and the final pass's
-/// declarations by whether they read bloom's levels and then the outline's. Only the HDR path
+/// declarations by whether they read bloom's levels and then the outline mask. Only the HDR path
 /// declares the ones with bloom.
 #[derive(Clone, Copy, Debug)]
 struct Outputs {
@@ -373,9 +345,7 @@ pub(crate) struct FrameGraph {
     outline: Option<Outline>,
     /// True while some object is outlined.
     outlined: bool,
-    /// The outline's steps after its mask, and their GPU objects.
-    outline_pass: OutlinePass,
-    /// The outline's culling pass on WebGPU, its mask pass and its steps, once declared.
+    /// The outline's culling pass on WebGPU and its mask pass, once declared.
     outline_passes: Vec<PassId>,
     /// The render scale of the frame being recorded.
     scale: RenderScale,
@@ -458,7 +428,6 @@ impl FrameGraph {
             grades: false,
             outline: None,
             outlined: false,
-            outline_pass: OutlinePass::new(ids.outline, scene_color, !gpu_culling),
             outline_passes: Vec::new(),
             scale: RenderScale::FULL,
             outputs: None,
@@ -506,7 +475,6 @@ impl FrameGraph {
         self.bloom_pass = scene_color
             .is_hdr()
             .then(|| BloomPass::new(self.bloom_ids, scene_color.format(), rows_from_bottom));
-        self.outline_pass.set_scene_color(scene_color);
         self.declared = false;
     }
 
@@ -604,7 +572,7 @@ impl FrameGraph {
         } else {
             0
         };
-        FinalPass::UPLOAD_BYTES + bloom + OutlinePass::UPLOAD_BYTES
+        FinalPass::UPLOAD_BYTES + bloom
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -870,8 +838,7 @@ impl FrameGraph {
     }
 
     /// Declares the outline's passes: on WebGPU the outline view's culling pass, then the mask
-    /// pass, which draws into a mask of the scene's `samples` with the scene's depth, then each step
-    /// after it, which reads the mask or the target of the step before it.
+    /// pass, which draws into a mask of the scene's `samples` with the scene's depth.
     fn declare_outline(&mut self, samples: u32) {
         let mask = Target::color(outline::MASK_FORMAT).samples(samples);
         let mut pass = Pass::new("OutlineMask", PassKind::Scene)
@@ -890,15 +857,6 @@ impl FrameGraph {
         }
         let pass = self.add(pass, Role::OutlineMask);
         self.outline_passes.push(pass);
-        let target = Target::color(self.outline_pass.format());
-        for step in 0..outline::STEPS {
-            let pass = Pass::new(OUTLINE_PASSES[step], PassKind::Fullscreen)
-                .size(outline::step_size(step))
-                .reads(outline_source(step))
-                .creates(OUTLINE_TARGETS[step], target);
-            let pass = self.add(pass, Role::Outline(step as u8));
-            self.outline_passes.push(pass);
-        }
     }
 
     /// Declares bloom's steps, each reading the target of the step before it, and returns the
@@ -1012,9 +970,6 @@ impl FrameGraph {
         if let (true, Some(bloom)) = (blooms, self.bloom_pass.as_mut()) {
             bloom.request_pipeline(pipelines);
         }
-        if self.outline_draws() {
-            self.outline_pass.request_pipelines(pipelines);
-        }
     }
 
     /// Records what the graph's own passes need before the frame's passes, from copies in the
@@ -1064,26 +1019,12 @@ impl FrameGraph {
             None
         };
         let outline = match (self.outline, self.outline_draws()) {
-            (Some(settings), true) => {
-                let sources: [u32; outline::STEPS] = std::array::from_fn(|step| {
-                    self.sampled_id(outline_source(step))
-                        .expect("each step of the outline reads a planned texture")
-                });
-                let level = |step: usize| {
-                    self.sampled_id(OUTLINE_TARGETS[step])
-                        .expect("the final pass reads each of the outline's levels")
-                };
-                let inputs = OutlineInputs {
-                    mask: sources[0],
-                    levels: LEVEL_STEPS.map(level),
-                    strength: settings.strength,
-                    glow: settings.glow,
-                };
-                let (canvas, scale, made) = (self.canvas, self.scale, self.textures_made);
-                self.outline_pass
-                    .prepare(list, arena, canvas, scale, settings, &sources, made)?;
-                Some(inputs)
-            }
+            (Some(outline), true) => Some(OutlineInputs {
+                mask: self
+                    .sampled_id(OUTLINE_MASK)
+                    .expect("the final pass reads the outline mask while outlines draw"),
+                outline,
+            }),
             _ => None,
         };
         self.final_pass.prepare(
@@ -1212,9 +1153,6 @@ impl FrameGraph {
                                 .as_ref()
                                 .expect("bloom's passes run only on the HDR path")
                                 .record(list, usize::from(step))?,
-                            Role::Outline(step) => {
-                                self.outline_pass.record(list, usize::from(step))?
-                            }
                             role => record(list, role)?,
                         }
                     }
@@ -1364,16 +1302,12 @@ impl FrameGraph {
         if let Some(bloom) = self.bloom_pass.as_mut() {
             bloom.reset_gpu();
         }
-        self.outline_pass.reset_gpu();
     }
 }
 
-/// The same declaration of a final pass, which reads the outline's mask and its two edge levels
-/// too.
+/// The same declaration of a final pass, which reads the outline mask too.
 fn with_outline(pass: Pass) -> Pass {
     pass.reads(OUTLINE_MASK)
-        .reads(OUTLINE_TARGETS[LEVEL_STEPS[0]])
-        .reads(OUTLINE_TARGETS[LEVEL_STEPS[1]])
 }
 
 /// Records the creation of a plan's texture under `id`, with its shape and the size it takes,
@@ -1432,11 +1366,6 @@ mod tests {
             sampler: 10,
             first_group: 10,
         },
-        outline: OutlineIds {
-            buffer: 11,
-            sampler: 11,
-            first_group: 20,
-        },
     };
 
     /// A graph for a scene color in `format`, in the `antialias` mode, with or without GPU culling
@@ -1471,11 +1400,6 @@ mod tests {
             "Transparent1",
             "OutlineCulling",
             "OutlineMask",
-            "OutlineEdge",
-            "OutlineBlurX0",
-            "OutlineBlurY0",
-            "OutlineBlurX1",
-            "OutlineBlurY1",
             "Resolve",
             "Final",
             "FinalOutline",
@@ -1497,11 +1421,6 @@ mod tests {
                 Role::Transparent(ViewId::from_index(1)),
                 Role::Cull(ViewId::OUTLINE),
                 Role::OutlineMask,
-                Role::Outline(0),
-                Role::Outline(1),
-                Role::Outline(2),
-                Role::Outline(3),
-                Role::Outline(4),
                 Role::Resolve,
                 Role::Final,
                 Role::Final,
@@ -1528,7 +1447,7 @@ mod tests {
         // The WebGL2 path culls on the job workers, so its graph has no culling passes.
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
         frames.sync_views(&[View::default()]);
-        assert_eq!(frames.graph().pass_count(), 12);
+        assert_eq!(frames.graph().pass_count(), 7);
         assert_eq!(frames.roles[0], Role::Opaque(ViewId::CAMERA));
     }
 
@@ -1555,7 +1474,7 @@ mod tests {
             assert_eq!(plan.steps().len(), 2);
             assert_eq!(
                 frames.upload_bound(),
-                FinalPass::UPLOAD_BYTES + BloomPass::UPLOAD_BYTES + OutlinePass::UPLOAD_BYTES
+                FinalPass::UPLOAD_BYTES + BloomPass::UPLOAD_BYTES
             );
         }
     }
@@ -1589,10 +1508,7 @@ mod tests {
                 } else {
                     BloomPass::UPLOAD_BYTES
                 };
-                assert_eq!(
-                    frames.upload_bound(),
-                    FinalPass::UPLOAD_BYTES + bloom + OutlinePass::UPLOAD_BYTES
-                );
+                assert_eq!(frames.upload_bound(), FinalPass::UPLOAD_BYTES + bloom);
             }
         }
     }
@@ -1972,7 +1888,7 @@ mod tests {
     }
 
     #[test]
-    fn outlines_run_their_mask_and_steps_with_the_scene_depth_only_while_something_is_outlined() {
+    fn outlines_run_their_mask_with_the_scene_depth_only_while_something_is_outlined() {
         for (scene_color, gpu_culling) in [(format::RGBA16_FLOAT, true), (format::CANVAS, false)] {
             let mut frames = frame_graph(scene_color, Antialias::Msaa, gpu_culling, true);
             frames.sync_views(&[View::default()]);
@@ -1996,22 +1912,14 @@ mod tests {
                 .prepare(&mut list, (320, 180), RenderScale::FULL)
                 .unwrap();
             let names = steps(&frames);
-            let tail: Vec<&str> = names[names.len() - 7..]
+            let tail: Vec<&str> = names[names.len() - 2..]
                 .iter()
                 .map(|step| step[0].as_str())
                 .collect();
             assert_eq!(
                 tail,
-                [
-                    "OutlineMask",
-                    "OutlineEdge",
-                    "OutlineBlurX0",
-                    "OutlineBlurY0",
-                    "OutlineBlurX1",
-                    "OutlineBlurY1",
-                    "FinalOutline"
-                ],
-                "the final pass runs in place of the resolve pass, after the outline's steps"
+                ["OutlineMask", "FinalOutline"],
+                "the final pass runs in place of the resolve pass, after the mask pass"
             );
             let graph = frames.graph();
             let plan = graph.plan().unwrap();
@@ -2047,14 +1955,6 @@ mod tests {
                 background,
                 "the scene clears to the background"
             );
-            let texture = |name: &str| plan.texture_of(graph.find_resource(name).unwrap());
-            for step in 1..outline::STEPS {
-                assert_ne!(
-                    texture(OUTLINE_TARGETS[step - 1]),
-                    texture(OUTLINE_TARGETS[step]),
-                    "no step reads its target"
-                );
-            }
 
             let mut arena = UploadArena::default();
             arena.reset(frames.upload_bound());
@@ -2064,21 +1964,20 @@ mod tests {
                 .upload(&mut list, &mut arena, output, Grading::default())
                 .unwrap();
             let groups = operands(&list, Op::CreateBindGroup);
-            let outline_groups = groups.iter().filter(|g| g[0] >= 20).count();
-            assert_eq!(outline_groups, outline::STEPS);
-            let final_group = groups
-                .iter()
-                .find(|g| g[1] != null3d_gpu::drawlist::layout::BLOOM)
-                .unwrap();
-            let outline_entries: Vec<_> = final_group[3..]
+            assert_eq!(
+                groups.len(),
+                1,
+                "the final pass binds the mask in its own group"
+            );
+            let outline_entries: Vec<_> = groups[0][3..]
                 .chunks(5)
                 .filter(|entry| entry[0] >= 11)
                 .map(|entry| entry[2])
                 .collect();
-            assert_eq!(outline_entries.len(), 3);
-            assert!(outline_entries.iter().all(|&texture| texture != 901));
+            assert_eq!(outline_entries.len(), 1);
+            assert_ne!(outline_entries[0], 901, "the mask, not the blank texture");
 
-            // Nothing outlined: the steps and their targets are gone.
+            // Nothing outlined: the mask pass and the mask are gone.
             frames.set_outline(Some(Outline::default()), false);
             frames
                 .prepare(&mut list, (320, 180), RenderScale::FULL)

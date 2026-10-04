@@ -25,7 +25,6 @@ import {
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
-	TEMPLATE_OUTLINE_EDGE,
 	TEMPLATE_OUTLINE_MASK,
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SPRITE,
@@ -177,7 +176,6 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_BLOOM] = { shader: shaders.bloom, pipeline: 'main' };
 	templates[TEMPLATE_SHADOW_DEPTH] = { shader: shaders.shadow_depth, pipeline: 'main' };
 	templates[TEMPLATE_OUTLINE_MASK] = { shader: shaders.outline_mask, pipeline: 'main' };
-	templates[TEMPLATE_OUTLINE_EDGE] = { shader: shaders.outline_edge, pipeline: 'main' };
 	templates[TEMPLATE_SPRITE] = { shader: shaders.sprite, pipeline: 'main' };
 	templates[TEMPLATE_SPRITE_MAP] = { shader: shaders.sprite_map, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND] = { shader: shaders.background, pipeline: 'main' };

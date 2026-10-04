@@ -109,7 +109,6 @@ use crate::graph::RenderGraph;
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
-use crate::outline::OutlineIds;
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
@@ -131,7 +130,6 @@ use transparent::Transparent;
 mod ids {
     use super::data::RING;
     use crate::bloom::STEPS;
-    use crate::outline;
     use crate::view::{MAX_VIEW_IDS, ViewId};
 
     /// Each view's buffers: its ring of frame uniforms, then its draw records, from
@@ -154,10 +152,8 @@ mod ids {
     pub const SHADOW_TILES: u32 = FINAL_SETTINGS + 1;
     /// The uniform buffer of bloom's steps and of the final pass's bloom build.
     pub const BLOOM: u32 = SHADOW_TILES + 1;
-    /// The uniform buffer of the outline's steps.
-    pub const OUTLINE: u32 = BLOOM + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = OUTLINE + 1;
+    pub const PAGES: u32 = BLOOM + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -198,10 +194,8 @@ mod ids {
     pub const BLOOM_SAMPLER: u32 = 2;
     /// The linear sampler of the final pass's color grading table.
     pub const LUT_SAMPLER: u32 = 3;
-    /// The linear sampler of the outline's steps.
-    pub const OUTLINE_SAMPLER: u32 = 4;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 5;
+    pub const SAMPLERS: u32 = 4;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -224,10 +218,8 @@ mod ids {
     }
     /// The bind group of each step of bloom, after the final pass's group.
     pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1;
-    /// The bind group of each step of the outline, after bloom's.
-    pub const OUTLINE_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
-    /// The bind groups of materials' maps, after the outline's.
-    pub const TEXTURE_GROUPS: u32 = OUTLINE_GROUPS + outline::STEPS as u32;
+    /// The bind groups of materials' maps, after bloom's.
+    pub const TEXTURE_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -386,11 +378,6 @@ impl CpuCulledRenderer {
                             buffer: ids::BLOOM,
                             sampler: ids::BLOOM_SAMPLER,
                             first_group: ids::BLOOM_GROUPS,
-                        },
-                        outline: OutlineIds {
-                            buffer: ids::OUTLINE,
-                            sampler: ids::OUTLINE_SAMPLER,
-                            first_group: ids::OUTLINE_GROUPS,
                         },
                     },
                 );

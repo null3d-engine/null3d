@@ -154,11 +154,12 @@ struct Engine {
 }
 
 /// The post-processing values before TypeScript writes any: an exposure of 1, `UnrealBloomPass`'s
-/// strength, radius and threshold, a table at its full intensity over colors from 0 to 1, and
-/// `VignetteShader`'s offset and darkness.
+/// strength, radius and threshold, a table at its full intensity over colors from 0 to 1,
+/// `VignetteShader`'s offset and darkness, and a white outline of 2 CSS pixels with no line around
+/// hidden parts.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = [
-    1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.1, 0.04,
-    0.02, 3.0, 1.0, 0.0,
+    1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    0.0, 2.0,
 ];
 
 impl Engine {
@@ -1783,18 +1784,17 @@ pub fn set_vignette(on: bool) -> u32 {
     })
 }
 
-/// Turns outlines on with three.js's edge colors, strength, thickness and glow from the
-/// post-processing values, or off, from the next frame on. They draw around the objects whose
-/// outlined flag is set. The TypeScript API checks the values.
+/// Turns outlines on with the line's colors and width from the post-processing values, or off, from
+/// the next frame on. They draw around the objects whose outlined flag is set. The TypeScript API
+/// checks the values.
 #[wasm_bindgen(js_name = setOutline)]
 pub fn set_outline(on: bool) -> u32 {
     with_engine(|e| {
         let outline = on.then(|| Outline {
             color: e.post_values3(constants::post_value::OUTLINE_COLOR),
-            hidden_color: e.post_values3(constants::post_value::OUTLINE_HIDDEN_COLOR),
-            strength: e.post_value(constants::post_value::OUTLINE_STRENGTH),
-            thickness: e.post_value(constants::post_value::OUTLINE_THICKNESS),
-            glow: e.post_value(constants::post_value::OUTLINE_GLOW),
+            hidden_color: (e.post_value(constants::post_value::OUTLINE_HIDDEN) > 0.0)
+                .then(|| e.post_values3(constants::post_value::OUTLINE_HIDDEN_COLOR)),
+            width: e.post_value(constants::post_value::OUTLINE_WIDTH),
         });
         e.renderer.settings_mut().set_outline(outline);
         0

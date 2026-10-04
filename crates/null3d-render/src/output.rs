@@ -135,7 +135,7 @@ impl OutputUniform {
     pub const VIGNETTE: u32 = 2;
     /// The flag that turns the final pass's color grading table on.
     pub const LUT: u32 = 4;
-    /// The flag that makes the final pass add the outline effect's edges.
+    /// The flag that makes the final pass draw the outline's line.
     pub const OUTLINE: u32 = 8;
 
     /// Sets the size the scene drew at, in pixels. Each side keeps its low 16 bits, which hold any

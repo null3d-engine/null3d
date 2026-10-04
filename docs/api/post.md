@@ -193,15 +193,13 @@ Bloom's settings, with the meanings of three.js's `UnrealBloomPass`. A setting t
 
 Interface `OutlineSettings`.
 
-The outline's settings, with the meanings of three.js's `OutlinePass`. Objects take the outline with `setOutlined(true)`. A setting that a call leaves out keeps its value.
+The outline's settings: a sharp line of one width around the objects that `setOutlined(true)` marks. A setting that a call leaves out keeps its value.
 
 | Member | Description |
 | --- | --- |
-| `color?: ColorInput` | The color of the edges around the parts that nothing hides, as `visibleEdgeColor`. It is white by default. |
-| `hiddenColor?: ColorInput \| false` | The color of the edges around the parts that other objects hide, as `hiddenEdgeColor`, or `false` for no edges there. It is three.js's dark brown, `[0.1, 0.04, 0.02]`, by default. |
-| `strength?: number` | How bright the edges are, as `edgeStrength`: 0 or more, and 3 by default. |
-| `thickness?: number` | How far the edges spread, as `edgeThickness`: the radius of their blur in pixels at half the render size. It is 0 or more, and 1 by default. |
-| `glow?: number` | How much of a wide, soft glow joins the edges, as `edgeGlow`: 0 or more, and 0 by default. Change it every frame for a pulse. |
+| `color?: ColorInput` | The color of the line around the parts that nothing hides. The canvas shows this color exactly: the exposure and the tone mapping do not change it. It is white by default. |
+| `hiddenColor?: ColorInput \| false` | The color of the line around the parts that other objects hide, or `false` for no line there. It is `false` by default. |
+| `width?: number` | The line's width in CSS pixels: 0 or more, and 2 by default. Above about 4 pixels of the canvas, parts thinner than the line can leave a gap between themselves and their line. |
 
 ### `Post`
 
@@ -227,7 +225,7 @@ Settings for `post.set`. A setting that the call leaves out keeps its value.
 | `lut?: Lut \| false` | A color grading table from `assets.loadLut`, which maps each pixel's color after the tone mapping, as three.js's `LUTPass` does. `false` turns it off. It is off by default. |
 | `lutIntensity?: number` | The share of the table's color in each pixel, from 0 for none to 1 for all of it, as `LUTPass`'s `intensity`. It is 1 by default. |
 | `vignette?: VignetteSettings \| false` | Darkens the picture toward its edges, as three.js's `VignetteShader` does. Settings turn the vignette on, `{}` with the values it had, and `false` turns it off. It is off by default. |
-| `outline?: OutlineSettings \| false` | Edges around the objects that `setOutlined(true)` marks, as three.js's `OutlinePass` draws them. Settings turn outlines on, `{}` with the values they had, and `false` turns them off. They are off by default. |
+| `outline?: OutlineSettings \| false` | A sharp line around the objects that `setOutlined(true)` marks. Settings turn outlines on, `{}` with the values they had, and `false` turns them off. They are off by default. |
 
 ### `ToneMapping`
 

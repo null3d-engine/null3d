@@ -1,7 +1,7 @@
 // The outline's scene, defined once for null3D's image tests and for its three.js twin, which the
-// parity test compares them with. It is plain data with no engine imports: a sphere half behind a
-// wall, so its outline has a visible part and a hidden part, a box in the open, and a box without an
-// outline, on a ground under a sun.
+// parity test compares them with as a sanity check. It is plain data with no engine imports: a
+// sphere half behind a wall, so its outline has a visible part and a hidden part, a box in the
+// open, and a box without an outline, on a ground under a sun.
 import { PARITY_CANVAS } from './spec';
 
 type Vec3 = readonly [number, number, number];
@@ -39,9 +39,9 @@ export interface OutlineShape {
 
 /**
  * The ground, the wall, the sphere half behind it, the box in the open and the plain box. The box
- * in the open floats a little above the ground. Where it rests on the ground, three.js's mask
- * marks its lowest rows as hidden, because the depth that OutlinePass packs into a half float
- * target loses precision, and the parity test would measure that fault.
+ * in the open floats a little above the ground. Where it rests on the ground, the mask of
+ * three.js's OutlinePass marks its lowest rows as hidden, because the depth that OutlinePass packs
+ * into a half float target loses precision, and the sanity check would measure that fault.
  */
 export const OUTLINE_SHAPES: readonly OutlineShape[] = [
 	{ kind: 'box', size: [12, 0.2, 6], position: [0, -0.6, 0], color: '#6a6e74', outlined: false },
@@ -63,11 +63,13 @@ export const OUTLINE_SHAPES: readonly OutlineShape[] = [
 	},
 ];
 
-/** Each outline that the tests draw, by name, with three.js's `OutlinePass` meanings. */
+/**
+ * Each outline that the tests draw, by name: the engine's defaults, a white line of 2 pixels around
+ * the parts that nothing hides, and a wider orange line with a blue line around hidden parts.
+ */
 export const OUTLINE_SETTINGS = {
-	// three.js's defaults: white edges, dark brown hidden edges, a strength of 3 and a thickness of 1.
-	plain: { color: '#ffffff', hiddenColor: [0.1, 0.04, 0.02], strength: 3, thickness: 1, glow: 0 },
-	glow: { color: '#ffaa00', hiddenColor: '#3070ff', strength: 4, thickness: 2.5, glow: 1.5 },
+	plain: { color: '#ffffff', hiddenColor: false, width: 2 },
+	hidden: { color: '#ffaa00', hiddenColor: '#3070ff', width: 3 },
 } as const;
 
 export type OutlineName = keyof typeof OUTLINE_SETTINGS;

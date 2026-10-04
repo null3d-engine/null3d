@@ -30,9 +30,10 @@ export const MAX_DIFFERENT_PERCENT = 0.1;
 export const SHADOW_MAX_DIFFERENT_PERCENT = 0.5;
 
 /**
- * The outline scenes' limit, in percent of the pixels: above the scene's own edges on SwiftShader's
- * WebGPU, and below the 0.24% to 0.84% that a fault which drew hidden edges in the visible color
- * gave.
+ * The outline scenes' limit, in percent of the pixels. The outline is a look of null3D's own, so
+ * these scenes are a sanity check: the twin draws the same line from the mask of three.js's
+ * OutlinePass. The limit sits above the scene's own edges on SwiftShader's WebGPU, and below what a
+ * line around the wrong parts gives.
  */
 export const OUTLINE_MAX_DIFFERENT_PERCENT = 0.15;
 
@@ -313,11 +314,11 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		switches: 'antialias=none',
 		webglOnly: true,
 	},
-	// Outlines with three.js's defaults and with glow, against three.js's OutlinePass. The
-	// composer's targets have no MSAA, so null3D's page draws without anti-aliasing too. SwiftShader's
-	// WebGPU draws the ground's far edge and the plain box's top edge a row apart from WebGL, which
-	// alone differs in 0.105% of the pixels, so the scenes have a limit of their own.
-	...(['plain', 'glow'] as const).map(
+	// Outlines with the engine's defaults and with a line around hidden parts, against the same line
+	// drawn from the mask of three.js's OutlinePass. The composer's targets have no MSAA, so null3D's
+	// page draws without anti-aliasing too. SwiftShader's WebGPU draws the ground's far edge and the
+	// plain box's top edge a row apart from WebGL, so the scenes have a limit of their own.
+	...(['plain', 'hidden'] as const).map(
 		(outline): FeatureScene => ({
 			test: `outline-${outline}`,
 			twin: `${TWINS}/outline.html?outline=${outline}`,

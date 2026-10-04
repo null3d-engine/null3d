@@ -587,8 +587,8 @@ pub mod layout {
     /// Group 2 of render pipelines that read instances from data textures: the textures.
     pub const INSTANCES: u32 = 3;
     /// Group 0 of the final pass: its settings and the scene color it reads, then at bindings 9
-    /// and 10 the color grading table, a 3D texture, and its linear sampler, and at bindings 11
-    /// to 13 the outline effect's mask and its two edge levels, which the table's sampler reads.
+    /// and 10 the color grading table, a 3D texture, and its linear sampler, and at binding 11 the
+    /// outline effect's mask, which the table's sampler reads.
     pub const FINAL: u32 = 4;
     /// The maps of render pipelines that sample them: a 2D array texture, then its sampler. It is
     /// group 1 on WebGPU, and group 3 on WebGL2, after the groups of the data textures.
@@ -609,8 +609,8 @@ pub mod layout {
     pub const BLOOM: u32 = 9;
     /// Group 0 of the final pass that adds bloom: [`FINAL`]'s first two bindings, then bloom's
     /// uniform block, the texture of each of bloom's levels and their linear sampler, then
-    /// [`FINAL`]'s color grading table and its sampler at bindings 9 and 10, and its outline
-    /// textures at bindings 11 to 13.
+    /// [`FINAL`]'s color grading table and its sampler at bindings 9 and 10, and its outline mask
+    /// at binding 11.
     pub const FINAL_BLOOM: u32 = 10;
     /// Group 2 of render pipelines that skin in the vertex shader: the texture of every animated
     /// instance's skinning matrices, which vertex shaders read.
@@ -1198,9 +1198,6 @@ pub mod template {
     /// The final pass with bloom: [`FINAL`]'s pass, which adds bloom's levels to the scene color
     /// before the output transform.
     pub const FINAL_BLOOM: u32 = 14;
-    /// The outline effect's edge step: one triangle over its target that finds the edges of the
-    /// outline mask and colors them. It binds as a step of bloom's chain does.
-    pub const OUTLINE_EDGE: u32 = 15;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;
     /// Light clustering, first step: counts the lights of each cluster of the light grid.
@@ -1533,7 +1530,6 @@ pub fn typescript_constants() -> String {
                 ("DEBUG_VIEW", template::DEBUG_VIEW),
                 ("BLOOM", template::BLOOM),
                 ("FINAL_BLOOM", template::FINAL_BLOOM),
-                ("OUTLINE_EDGE", template::OUTLINE_EDGE),
                 ("CULL", template::CULL),
                 ("LIGHT_COUNT", template::LIGHT_COUNT),
                 ("LIGHT_PLACE", template::LIGHT_PLACE),

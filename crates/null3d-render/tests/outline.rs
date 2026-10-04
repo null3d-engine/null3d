@@ -1,7 +1,7 @@
 //! Outlines on both frame builders: the outlined objects' layout, the outline view's mask pass,
-//! which draws every outlined object twice with the scene's depth, the outline's steps, and the
-//! final pass that binds the mask and the edge levels. Checked through the mock backend and by
-//! decoding the lists the builders record.
+//! which draws every outlined object twice with the scene's depth, and the final pass that binds
+//! the mask and draws the line from it. Checked through the mock backend and by decoding the lists
+//! the builders record.
 
 mod common;
 
@@ -16,7 +16,7 @@ use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::outline::{MASK_FORMAT, Outline};
 use null3d_render::output::{Antialias, SceneColor};
 
-/// The binding of the outline mask in the final pass's group; the two edge levels follow it.
+/// The binding of the outline mask in the final pass's group.
 const MASK_BINDING: u32 = 11;
 
 /// The world drawn by each frame builder with HDR scene color and MSAA: WebGPU's, then WebGL2's
@@ -92,8 +92,8 @@ fn check_outlines<B: FrameBuilder>(mut world: World<B>, culls_on_gpu: bool) {
     let commands = world.step(&mut mock, true);
     assert_eq!(operands(&commands, Op::BeginRenderPass).len(), without);
 
-    // One outlined object: two mask pipelines, the mask pass with the scene's depth, five steps,
-    // and the final pass with the outline's textures.
+    // One outlined object: two mask pipelines, the mask pass with the scene's depth, and the final
+    // pass with the mask.
     outline(&mut world, 0, true);
     let commands = world.step(&mut mock, true);
     let pipelines = operands(&commands, Op::CreateRenderPipeline);
@@ -104,12 +104,12 @@ fn check_outlines<B: FrameBuilder>(mut world: World<B>, culls_on_gpu: bool) {
     assert_eq!(masks.len(), 2, "{pipelines:?}");
     assert_eq!(masks[0][2] & permutation::OUTLINE_VISIBLE, 0);
     assert_ne!(masks[1][2] & permutation::OUTLINE_VISIBLE, 0);
-    assert!(
-        pipelines.iter().any(|p| p[1] == template::OUTLINE_EDGE),
-        "the edge step's pipeline"
-    );
     let passes = operands(&commands, Op::BeginRenderPass);
-    assert_eq!(passes.len(), without + 1 + 5);
+    assert_eq!(
+        passes.len(),
+        without + 1,
+        "the mask pass is the only new pass"
+    );
     let at = mask_pass(&commands).expect("a render pass draws the mask");
     let begin = &commands[at].1;
     let scene = &passes[0];
@@ -136,14 +136,17 @@ fn check_outlines<B: FrameBuilder>(mut world: World<B>, culls_on_gpu: bool) {
     let group = operands(&commands, Op::CreateBindGroup)
         .into_iter()
         .find(|o| o[1] == layout::FINAL)
-        .expect("the final pass binds the outline's textures again");
+        .expect("the final pass binds the mask");
     let textures: Vec<u32> = group[3..]
         .chunks(5)
         .filter(|e| e[0] >= MASK_BINDING)
         .map(|e| e[2])
         .collect();
-    assert_eq!(textures, [begin[1], textures[1], textures[2]]);
-    assert_ne!(textures[1], textures[2]);
+    assert_eq!(
+        textures,
+        [begin[1]],
+        "the texture that the mask resolves into"
+    );
 
     // A steady frame makes nothing.
     let steady = world.step(&mut mock, false);
@@ -156,7 +159,7 @@ fn check_outlines<B: FrameBuilder>(mut world: World<B>, culls_on_gpu: bool) {
     }
     assert!(mask_pass(&commands).is_some());
 
-    // With nothing outlined, the mask pass and the steps are gone.
+    // With nothing outlined, the mask pass is gone.
     outline(&mut world, 0, false);
     let commands = world.step(&mut mock, true);
     assert_eq!(operands(&commands, Op::BeginRenderPass).len(), without);

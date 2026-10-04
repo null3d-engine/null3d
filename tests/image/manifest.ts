@@ -186,12 +186,12 @@ function gradingTests(): ImageTest[] {
 const OUTLINE_SKETCH = 'tests/pages/sketches/outline-sketch.ts';
 
 /**
- * Outlines on every tier: three.js's default outline, and a wide colored one with glow and a
- * bright hidden edge color, around a sphere half behind a wall and a box in the open. At half the
- * render scale, the steps draw into the corners of the same targets. Compatibility mode keeps the
- * 8-bit path with MSAA, where the final pass adds the edges after the tone mapping. The page's
- * switch that turns HDR off puts the other tiers on that path too. The parity test compares the
- * two outlines with three.js's OutlinePass.
+ * Outlines on every tier: the default white line around the parts that nothing hides, and a wider
+ * orange line with a blue line around hidden parts, around a sphere half behind a wall and a box
+ * in the open. At half the render scale, the mask draws into the corner of its target, and the
+ * line keeps its width on the canvas. Compatibility mode keeps the 8-bit path with MSAA. The
+ * page's switch that turns HDR off puts the other tiers on that path too. The parity test compares
+ * both outlines with the same line drawn from the mask of three.js's OutlinePass.
  */
 function outlineTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -202,10 +202,10 @@ function outlineTests(): ImageTest[] {
 	});
 	return [
 		test('outline-plain', '?outline=plain'),
-		test('outline-glow', '?outline=glow'),
-		test('outline-scale-50', '?outline=glow&scale=0.5'),
+		test('outline-hidden', '?outline=hidden'),
+		test('outline-scale-50', '?outline=hidden&scale=0.5'),
 		{
-			...test('outline-8-bit', '?outline=glow'),
+			...test('outline-8-bit', '?outline=hidden'),
 			tiers: ['webgpu', 'webgl2'],
 			switches: ['hdr=off'],
 			expect: { hdr: false },
@@ -772,7 +772,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	),
 	// The middle character outlined: the outline's mask skins it in its pose, from the skinning
 	// pass's vertices or in the vertex shader, and on WebGL2 always in the vertex shader. Each tier
-	// draws the outline's steps in its own way, so each has its own image.
+	// draws the scene in its own way, so each has its own image.
 	...(['', '-vertex'] as const).map(
 		(way): ImageTest => ({
 			name: `skinning-outline${way}`,

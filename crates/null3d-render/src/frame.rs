@@ -677,10 +677,13 @@ impl SceneSettings {
         self.vignette = vignette;
     }
 
-    /// The outline's settings while it is on, and `None` while it is off or a debug view draws,
-    /// whose colors reach the canvas as its shader writes them.
+    /// The outline's settings while it is on, with its width in pixels of the canvas, and `None`
+    /// while it is off or a debug view draws, whose colors reach the canvas as its shader writes
+    /// them.
     pub fn outline(&self) -> Option<Outline> {
-        self.outline.filter(|_| !self.debug_view.is_debug())
+        self.outline
+            .filter(|_| !self.debug_view.is_debug())
+            .map(|outline| outline.on_canvas(self.pixel_ratio))
     }
 
     /// Turns outlines on with their settings, or off with `None`, from the next recorded frame on.

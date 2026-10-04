@@ -132,7 +132,6 @@ use crate::graph::RenderGraph;
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
-use crate::outline::OutlineIds;
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PipelineCache, Prepass};
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
@@ -187,7 +186,6 @@ fn out_of_memory(_: std::collections::TryReserveError) -> RecordError {
 /// shadow cascades' views after the camera views.
 mod ids {
     use crate::bloom::STEPS;
-    use crate::outline;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
 
     pub const MATERIALS: u32 = 1;
@@ -245,12 +243,10 @@ mod ids {
     pub const SKINNED: u32 = BLOOM + 1;
     /// The skinning pass's table of formats and parts, one segment per mesh page.
     pub const SKIN_TABLE: u32 = SKINNED + 1;
-    /// The uniform buffer of the outline's steps.
-    pub const OUTLINE: u32 = SKIN_TABLE + 1;
     /// The outlined objects' bucket table and bucket records, which the outline view's culling
     /// reads.
-    pub const OUTLINE_BUCKETS: u32 = OUTLINE + 1;
-    pub const OUTLINE_RECORDS: u32 = OUTLINE + 2;
+    pub const OUTLINE_BUCKETS: u32 = SKIN_TABLE + 1;
+    pub const OUTLINE_RECORDS: u32 = OUTLINE_BUCKETS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = OUTLINE_RECORDS + 1;
 
@@ -274,10 +270,8 @@ mod ids {
     pub const BLOOM_SAMPLER: u32 = 2;
     /// The linear sampler of the final pass's color grading table.
     pub const LUT_SAMPLER: u32 = 3;
-    /// The linear sampler of the outline's steps.
-    pub const OUTLINE_SAMPLER: u32 = 4;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 5;
+    pub const SAMPLERS: u32 = 4;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -309,10 +303,8 @@ mod ids {
     pub const SKIN_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The joint texture's bind group, which pipelines that skin in the vertex shader read.
     pub const JOINTS_GROUP: u32 = SKIN_GROUPS + super::skin::MAX_PAGES;
-    /// The bind group of each step of the outline, after the joint texture's.
-    pub const OUTLINE_GROUPS: u32 = JOINTS_GROUP + 1;
-    /// The bind groups of materials' maps, after the outline's.
-    pub const TEXTURE_GROUPS: u32 = OUTLINE_GROUPS + outline::STEPS as u32;
+    /// The bind groups of materials' maps, after the joint texture's.
+    pub const TEXTURE_GROUPS: u32 = JOINTS_GROUP + 1;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -465,11 +457,6 @@ impl GpuDrivenRenderer {
                             buffer: ids::BLOOM,
                             sampler: ids::BLOOM_SAMPLER,
                             first_group: ids::BLOOM_GROUPS,
-                        },
-                        outline: OutlineIds {
-                            buffer: ids::OUTLINE,
-                            sampler: ids::OUTLINE_SAMPLER,
-                            first_group: ids::OUTLINE_GROUPS,
                         },
                     },
                 );

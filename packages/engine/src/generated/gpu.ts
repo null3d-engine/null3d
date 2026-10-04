@@ -177,7 +177,6 @@ export const TEMPLATE_BACKGROUND = 9;
 export const TEMPLATE_DEBUG_VIEW = 12;
 export const TEMPLATE_BLOOM = 13;
 export const TEMPLATE_FINAL_BLOOM = 14;
-export const TEMPLATE_OUTLINE_EDGE = 15;
 export const TEMPLATE_CULL = 16;
 export const TEMPLATE_LIGHT_COUNT = 17;
 export const TEMPLATE_LIGHT_PLACE = 18;

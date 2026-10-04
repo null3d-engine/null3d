@@ -27,7 +27,7 @@ function post(hdrEffects = true): {
 	const outlines: number[][] = [];
 	const block = Float32Array.of(
 		...[1, 1, 0.5, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
-		...[1, 1, 1, 0.1, 0.04, 0.02, 3, 1, 0],
+		...[1, 1, 1, 1, 1, 1, 0, 2],
 	);
 	expect(block.length).toBe(C.POST_VALUE_COUNT);
 	let views = 0;
@@ -65,7 +65,7 @@ function post(hdrEffects = true): {
 			},
 			setOutline(on: boolean) {
 				const first = C.POST_VALUE_OUTLINE_COLOR;
-				const values = [...block.subarray(first, C.POST_VALUE_OUTLINE_GLOW + 1)];
+				const values = [...block.subarray(first, C.POST_VALUE_OUTLINE_WIDTH + 1)];
 				outlines.push([on ? 1 : 0, ...values.map((v) => Math.round(v * 1e4) / 1e4)]);
 				return 0;
 			},
@@ -101,26 +101,26 @@ describe('post.set', () => {
 		]);
 	});
 
-	it('turns outlines on with three.js defaults, takes colors in linear, and keeps the values while off', () => {
+	it('turns outlines on with a white line of 2 pixels, takes colors in linear, and keeps the values while off', () => {
 		const { post: output, outlines } = post();
 		output.set({ outline: {} });
-		output.set({ outline: { color: '#ff0000', hiddenColor: false, strength: 5, thickness: 2 } });
+		output.set({ outline: { color: '#ff0000', hiddenColor: [0.2, 0.3, 0.4], width: 3 } });
 		output.set({ outline: false });
-		output.set({ outline: { glow: 1.5, hiddenColor: [0.2, 0.3, 0.4] } });
+		output.set({ outline: { hiddenColor: false } });
 		expect(outlines).toEqual([
-			[1, 1, 1, 1, 0.1, 0.04, 0.02, 3, 1, 0],
-			[1, 1, 0, 0, 0, 0, 0, 5, 2, 0],
-			[0, 1, 0, 0, 0, 0, 0, 5, 2, 0],
-			[1, 1, 0, 0, 0.2, 0.3, 0.4, 5, 2, 1.5],
+			[1, 1, 1, 1, 1, 1, 1, 0, 2],
+			[1, 1, 0, 0, 0.2, 0.3, 0.4, 1, 3],
+			[0, 1, 0, 0, 0.2, 0.3, 0.4, 1, 3],
+			[1, 1, 0, 0, 0.2, 0.3, 0.4, 0, 3],
 		]);
 	});
 
 	it('refuses outline settings it does not know and values out of range', () => {
 		const { post: output } = post();
 		const bad = (settings: unknown) => () => output.set(settings as PostSettings);
-		expect(bad({ outline: { width: 2 } })).toThrow('E1213');
-		expect(bad({ outline: { strength: -1 } })).toThrow('E1213');
-		expect(bad({ outline: { glow: Number.NaN } })).toThrow('E1203');
+		expect(bad({ outline: { glow: 1 } })).toThrow('E1213');
+		expect(bad({ outline: { width: -1 } })).toThrow('E1213');
+		expect(bad({ outline: { width: Number.NaN } })).toThrow('E1203');
 		expect(bad({ outline: { color: 'red' } })).toThrow('E1204');
 		expect(bad({ outline: { hiddenColor: [2, 0, 0] } })).toThrow('E1204');
 		expect(bad({ outline: 3 })).toThrow('E1213');

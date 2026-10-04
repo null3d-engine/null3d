@@ -42,7 +42,7 @@ const SETTINGS = [
 ] as const;
 const BLOOM_SETTINGS = ['strength', 'radius', 'threshold'] as const;
 const VIGNETTE_SETTINGS = ['offset', 'darkness'] as const;
-const OUTLINE_SETTINGS = ['color', 'hiddenColor', 'strength', 'thickness', 'glow'] as const;
+const OUTLINE_SETTINGS = ['color', 'hiddenColor', 'width'] as const;
 const TONE_MAPPINGS = "'aces', 'agx', 'neutral' or 'none'";
 
 /**
@@ -87,34 +87,27 @@ export interface VignetteSettings {
 }
 
 /**
- * The outline's settings, with the meanings of three.js's `OutlinePass`. Objects take the outline
- * with `setOutlined(true)`. A setting that a call leaves out keeps its value.
+ * The outline's settings: a sharp line of one width around the objects that `setOutlined(true)`
+ * marks. A setting that a call leaves out keeps its value.
  *
  * @category api/post
  */
 export interface OutlineSettings {
 	/**
-	 * The color of the edges around the parts that nothing hides, as `visibleEdgeColor`. It is
-	 * white by default.
+	 * The color of the line around the parts that nothing hides. The canvas shows this color
+	 * exactly: the exposure and the tone mapping do not change it. It is white by default.
 	 */
 	color?: ColorInput;
 	/**
-	 * The color of the edges around the parts that other objects hide, as `hiddenEdgeColor`, or
-	 * `false` for no edges there. It is three.js's dark brown, `[0.1, 0.04, 0.02]`, by default.
+	 * The color of the line around the parts that other objects hide, or `false` for no line
+	 * there. It is `false` by default.
 	 */
 	hiddenColor?: ColorInput | false;
-	/** How bright the edges are, as `edgeStrength`: 0 or more, and 3 by default. */
-	strength?: number;
 	/**
-	 * How far the edges spread, as `edgeThickness`: the radius of their blur in pixels at half the
-	 * render size. It is 0 or more, and 1 by default.
+	 * The line's width in CSS pixels: 0 or more, and 2 by default. Above about 4 pixels of the
+	 * canvas, parts thinner than the line can leave a gap between themselves and their line.
 	 */
-	thickness?: number;
-	/**
-	 * How much of a wide, soft glow joins the edges, as `edgeGlow`: 0 or more, and 0 by default.
-	 * Change it every frame for a pulse.
-	 */
-	glow?: number;
+	width?: number;
 }
 
 /**
@@ -155,9 +148,8 @@ export interface PostSettings {
 	 */
 	vignette?: VignetteSettings | false;
 	/**
-	 * Edges around the objects that `setOutlined(true)` marks, as three.js's `OutlinePass` draws
-	 * them. Settings turn outlines on, `{}` with the values they had, and `false` turns them off.
-	 * They are off by default.
+	 * A sharp line around the objects that `setOutlined(true)` marks. Settings turn outlines on,
+	 * `{}` with the values they had, and `false` turns them off. They are off by default.
 	 */
 	outline?: OutlineSettings | false;
 }
@@ -256,15 +248,14 @@ export class Post {
 		if (outline !== undefined) {
 			this.outline = outline !== false;
 			if (outline !== false) {
-				const { color, hiddenColor, strength, thickness, glow } = outline;
+				const { color, hiddenColor, width } = outline;
 				if (color !== undefined) writeColor(values, C.POST_VALUE_OUTLINE_COLOR, color, 'post.set');
-				if (hiddenColor === false)
-					values.fill(0, C.POST_VALUE_OUTLINE_HIDDEN_COLOR, C.POST_VALUE_OUTLINE_HIDDEN_COLOR + 3);
-				else if (hiddenColor !== undefined)
-					writeColor(values, C.POST_VALUE_OUTLINE_HIDDEN_COLOR, hiddenColor, 'post.set');
-				if (strength !== undefined) values[C.POST_VALUE_OUTLINE_STRENGTH] = strength;
-				if (thickness !== undefined) values[C.POST_VALUE_OUTLINE_THICKNESS] = thickness;
-				if (glow !== undefined) values[C.POST_VALUE_OUTLINE_GLOW] = glow;
+				if (hiddenColor !== undefined) {
+					values[C.POST_VALUE_OUTLINE_HIDDEN] = hiddenColor === false ? 0 : 1;
+					if (hiddenColor !== false)
+						writeColor(values, C.POST_VALUE_OUTLINE_HIDDEN_COLOR, hiddenColor, 'post.set');
+				}
+				if (width !== undefined) values[C.POST_VALUE_OUTLINE_WIDTH] = width;
 			}
 			core.check(glue.setOutline(this.outline), 'post.set', undefined, true);
 		}
@@ -331,17 +322,8 @@ function checkSettings(settings: PostSettings): void {
 		checkNumber('vignette.offset', vignette.offset);
 		checkNumber('vignette.darkness', vignette.darkness);
 	}
-	checkGroup(
-		'outline',
-		outline,
-		OUTLINE_SETTINGS,
-		'color, hiddenColor, strength, thickness and glow',
-	);
-	if (outline) {
-		checkNumber('outline.strength', outline.strength);
-		checkNumber('outline.thickness', outline.thickness);
-		checkNumber('outline.glow', outline.glow);
-	}
+	checkGroup('outline', outline, OUTLINE_SETTINGS, 'color, hiddenColor and width');
+	if (outline) checkNumber('outline.width', outline.width);
 	if (toneMapping !== undefined && !Object.hasOwn(CODES, toneMapping))
 		throw new EngineError(
 			'E1213',

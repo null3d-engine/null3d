@@ -1,7 +1,7 @@
-// The outline's scene (bench/scenes/outline.ts), which the parity test also draws with three.js's
-// OutlinePass: a sphere half behind a wall and a box in the open take the outline, beside a wall and
-// a box without one. ?outline=plain or ?outline=glow names its settings, and without it the outline
-// stays off. ?scale= draws at that render scale, with a range that reaches down to it.
+// The outline's scene (bench/scenes/outline.ts), which the parity test also draws from the mask of
+// three.js's OutlinePass: a sphere half behind a wall and a box in the open take the outline, beside
+// a wall and a box without one. ?outline=plain or ?outline=hidden names its settings, and without it
+// the outline stays off. ?scale= draws at that render scale, with a range that reaches down to it.
 //
 // The module uses no type annotations: an address whose last value holds a dot, such as scale=0.5,
 // makes the dev server read the module as JavaScript.
@@ -18,7 +18,11 @@ import {
 const params = new URL(import.meta.url).searchParams;
 const name = params.get('outline');
 const OUTLINE =
-	name === 'plain' ? OUTLINE_SETTINGS.plain : name === 'glow' ? OUTLINE_SETTINGS.glow : undefined;
+	name === 'plain'
+		? OUTLINE_SETTINGS.plain
+		: name === 'hidden'
+			? OUTLINE_SETTINGS.hidden
+			: undefined;
 const SCALE = params.get('scale');
 
 export default defineSketch(({ scene, materials, geometry, post, quality }) => {
