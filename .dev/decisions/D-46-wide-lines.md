@@ -26,11 +26,11 @@ Pixels that differ from three.js by its rule, Chrome on the Mac's GPU, 4 October
 | Scene | Core WebGPU | Compatibility mode | WebGL2 | three.js's two renderers |
 | --- | --- | --- | --- | --- |
 | `lines`: wide lines against `Line2` and `LineSegments2` | 4.391% | 0.974% | 0.000% | 4.681% |
-| `lines-basic`: one-pixel lines against `LineBasicMaterial` and `LineDashedMaterial` | 0.597% | 0.735% | 0.129% | 0.796% |
+| `lines-basic`: one-pixel lines against `LineBasicMaterial` and `LineDashedMaterial` | 0.111% | 0.313% | 0.129% | 0.319% |
 
 Against `WebGLRenderer` on every tier, the `lines` scene differs in 0.412% of the pixels on core WebGPU and 4.418% in compatibility mode.
 
-`bun run parity -- --scene lines,lines-basic --tier webgpu,compat,webgl2` compares the image tests with the twin `bench/pages/threejs/lines.html`. Both draw the scenes of `bench/scenes/lines.ts`. A zigzag 12 pixels wide shows the round joins at its sharp corners. A helix 5 pixels wide has a color at each point. Pairs of points make separate segments. Then come a dashed wave, a loop 0.12 world units wide, and a blended line 14 pixels wide over the others. The twin draws a loop as a strip that ends at its first point, because `Line2` has no loop.
+`bun run parity -- --scene lines,lines-basic --tier webgpu,compat,webgl2` compares the image tests with the twin `bench/pages/threejs/lines.html`. Both draw the scenes of `bench/scenes/lines.ts`. A zigzag 12 pixels wide shows the round joins at its sharp corners. A helix 5 pixels wide has a color at each point. Pairs of points make separate segments. Then come a dashed wave, a loop 0.12 world units wide, and a blended line 14 pixels wide over the others. The twin draws a loop as a strip that ends at its first point, because `Line2` has no loop and `WebGPURenderer` draws no `LineLoop`.
 
 - WebGL2 matches `Line2` exactly: the shader follows `LineMaterial`'s vertex and fragment steps one for one.
 - The blended line accounts for most of the WebGPU figures. The core WebGPU path blends linear colors in its HDR scene color. `WebGLRenderer` does the same into its sRGB target. The compatibility mode blends colors after it encodes them for the screen, and so does `WebGPURenderer`. So each path matches the three.js renderer that blends as it does. three.js's two renderers differ by more than null3D differs from either.
@@ -52,7 +52,7 @@ A page downloads one shader file, and every shader file holds both line template
 
 The `LINE` template's own vertex and fragment code is about 1.8 KB of it, against 0.7 KB for both sprite templates. A first version of the vertex stage changed variables in place, and the shader compiler wrote each change out as new temporaries. Written with constants and selects instead, it saves about 0.3 KB per file. The half precision files grow more for lit lines. Their lit template uses `null3d::half`'s lighting, so the full-precision lighting of lit lines shares no text with it. A pipelined page's start grows from 100.6 KB to about 103.6 KB of its 140 KB budget. The coordinator accepted this on 4 October 2026, and noted a later change: shader text of features that load on first use could load with them.
 
-The line code that loads on first use is one file of 0.9 KB after Brotli, which both threads load from one address.
+The line code that loads on first use is one file of 0.9 KB after Brotli, which both threads load from one address. Each WebAssembly file of the core grows by 2.0 to 2.1%, about 4.5 KB after Brotli, for the line rows of the batch update.
 
 ### Allocation
 

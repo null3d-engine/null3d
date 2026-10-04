@@ -2,7 +2,8 @@
 // By default it draws the wide lines: each line is a `Line2`, or a `LineSegments2` for pairs of
 // points, with a `LineMaterial` of its own on WebGLRenderer and a `Line2NodeMaterial` on
 // WebGPURenderer. A loop draws as a strip that ends at its first point. With `?basic`, it draws the
-// one-pixel lines: a `Line`, `LineSegments` or `LineLoop` with a `LineBasicMaterial`, or a
+// one-pixel lines: a `Line`, `LineSegments` or `LineLoop` (a closed `Line` on WebGPURenderer,
+// which draws no `LineLoop`) with a `LineBasicMaterial`, or a
 // `LineDashedMaterial` for the dashed line. It draws the scene once into an offscreen target of the
 // image's size, and publishes the pixels as the hold pages do. `?renderer=webgl` draws with
 // WebGLRenderer, and `?renderer=webgpu` with WebGPURenderer.
@@ -79,11 +80,21 @@ async function wideLine(
 	return object;
 }
 
-/** A one-pixel line, as three.js's line classes draw it. */
-function basicLine(three: Three, line: LineSpec): ThreeModule.Object3D {
+/**
+ * A one-pixel line, as three.js's line classes draw it. WebGPURenderer draws no `LineLoop`, so on it
+ * a loop is a `Line` that ends at its first point.
+ */
+function basicLine(
+	three: Three,
+	rendererName: (typeof RENDERERS)[number],
+	line: LineSpec,
+): ThreeModule.Object3D {
+	const closed = line.mode === 'loop' && rendererName === 'webgpu';
 	const geometry = new three.BufferGeometry();
-	geometry.setAttribute('position', new three.Float32BufferAttribute([...line.points], 3));
-	const colors = line.pointColors?.flatMap((hex) => new three.Color(hex).toArray());
+	const points = closed ? closedLoop(line.points) : [...line.points];
+	geometry.setAttribute('position', new three.Float32BufferAttribute(points, 3));
+	const pointColors = line.pointColors?.flatMap((hex) => new three.Color(hex).toArray());
+	const colors = pointColors && closed ? closedLoop(pointColors) : pointColors;
 	if (colors) geometry.setAttribute('color', new three.Float32BufferAttribute(colors, 3));
 	const color = colors ? '#ffffff' : line.color;
 	const material = line.dashes
@@ -95,7 +106,8 @@ function basicLine(three: Three, line: LineSpec): ThreeModule.Object3D {
 				scale: line.dashes.dashScale,
 			})
 		: new three.LineBasicMaterial({ color, vertexColors: colors !== undefined });
-	const kind = { segments: three.LineSegments, strip: three.Line, loop: three.LineLoop }[line.mode];
+	const loop = closed ? three.Line : three.LineLoop;
+	const kind = { segments: three.LineSegments, strip: three.Line, loop }[line.mode];
 	const object = new kind(geometry, material);
 	if (line.dashes) object.computeLineDistances();
 	return object;
@@ -122,7 +134,9 @@ run('hold', async () => {
 		scene.add(box);
 	}
 	for (const line of basic ? BASIC_LINES : WIDE_LINES)
-		scene.add(basic ? basicLine(three, line) : await wideLine(three, rendererName, line));
+		scene.add(
+			basic ? basicLine(three, rendererName, line) : await wideLine(three, rendererName, line),
+		);
 
 	const { fov, near, far, position, target } = LINE_CAMERA;
 	const camera = new three.PerspectiveCamera(fov, width / height, near, far);
