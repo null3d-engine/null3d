@@ -165,6 +165,12 @@ export type {
 	Vec3,
 } from './scene/scene';
 export type {
+	SpriteAtlas,
+	SpriteBatch,
+	SpriteOptions,
+	SpriteValues,
+} from './scene/sprites';
+export type {
 	CompressedTextureFormat,
 	Texture,
 	TextureColorSpace,
