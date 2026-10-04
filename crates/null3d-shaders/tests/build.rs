@@ -641,6 +641,70 @@ fn a_draw_index_variant_writes_the_multi_draw_extension_and_gl_draw_id() {
     assert!(!plain_wgsl.contains("draw_index"), "{plain_wgsl}");
 }
 
+/// A shader whose SKIN builds change only the vertex shader, with a helper function and a
+/// constant that only the vertex shader of those builds reads.
+const VERTEX_ONLY_BIT: &str = r"#import null3d::math
+
+struct VertexOut {
+    @builtin(position) position: vec4f,
+    @location(0) shade: f32,
+}
+
+#ifdef SKIN
+const BEND: f32 = 0.25;
+
+fn bent(position: vec3f) -> vec3f {
+    var moved = position;
+    for (var k = 0u; k < 2u; k++) {
+        moved.y += BEND * moved.x;
+    }
+    return moved;
+}
+#endif
+
+fn lit(shade: f32) -> f32 {
+    var total = 0.0;
+    for (var k = 0u; k < 2u; k++) {
+        total += shade * null3d::math::square(0.5);
+    }
+    return total;
+}
+
+@vertex
+fn vs_main(@location(0) position: vec3f) -> VertexOut {
+#ifdef SKIN
+    let placed = bent(position);
+#else
+    let placed = position;
+#endif
+    return VertexOut(vec4f(placed, 1.0), placed.z);
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4f {
+    return vec4f(lit(in.shade));
+}
+";
+
+#[test]
+fn a_bit_that_changes_only_the_vertex_shader_leaves_the_fragment_shader_as_it_is() {
+    let variants = [("v", "{ permutations = [\"SKIN\"], targets = [\"glsl\"] }")];
+    let output = build(&project(VERTEX_ONLY_BIT, &variants, &[])).unwrap();
+    let program =
+        |build: &str| output.shaders["shader"][build].glsl.as_ref().unwrap()["main"].clone();
+    let (plain, skinned) = (program("v"), program("v_skin"));
+    assert_eq!(plain.fragment.source, skinned.fragment.source);
+    assert_ne!(plain.vertex.source, skinned.vertex.source);
+    assert!(
+        skinned.vertex.source.contains("BEND"),
+        "{}",
+        skinned.vertex.source
+    );
+    for text in [&plain.fragment.source, &plain.vertex.source] {
+        assert!(!text.contains("BEND") && !text.contains("bent"), "{text}");
+    }
+}
+
 #[test]
 fn the_enable_line_reaches_naga_through_the_composer() {
     let variants = [(
