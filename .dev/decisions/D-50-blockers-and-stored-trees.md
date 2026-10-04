@@ -1,6 +1,6 @@
 # D-50: Blocker meshes and stored trees from the asset tool
 
-Status: decided for the blockers, the file format and the tool's default, 2026-10-04; S6's buildings ship without stored trees, by the owner's decision of 4 October 2026. Task: M2-B4.
+Status: decided by the owner, 2026-10-04: the blockers, the file format, the tool's default, and S6's buildings without stored trees. Task: M2-B4.
 
 ## Question
 
@@ -151,7 +151,7 @@ How the data was produced: `cargo test -p null3d-assets-wasm --test blocker`, `c
 
 The task asks that S6's buildings ship with blockers and trees. The buildings have 1,316 triangles each on average, so the default stores no tree for them. With `--bvh 1`, their files double after Brotli, from 846 KB to 1,787 KB. That saves a build of about 100,000 triangles on the job workers, about 25 ms on one thread of the Mac.
 
-The owner's decision of 4 October 2026: S6's buildings ship without stored trees. The engine builds each building's tree at its first raycast, on the job workers. S6 keeps the tool's default, which stores no tree for meshes as small as its buildings.
+The owner's decision of 4 October 2026: S6's buildings ship without stored trees. The engine builds each building's tree at its first raycast, on the job workers. The tool keeps its default of 20,000 triangles (`--bvh 20000`), which stores no tree for meshes as small as S6's buildings. S6 builds with that default, not with `--bvh 1`.
 
 three.js stores no trees: the `three-mesh-bvh` add-on builds one in JavaScript at load, and can serialize it for the page to save. three.js has no occlusion culling.
 
