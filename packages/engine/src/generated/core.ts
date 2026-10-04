@@ -22,6 +22,7 @@ export const FLAG_CAST_SHADOWS = 4;
 export const FLAG_RECEIVE_SHADOWS = 8;
 export const FLAG_UNCULLED = 16;
 export const FLAG_CUSTOM_BOUNDS = 32;
+export const FLAG_OUTLINED = 64;
 export const FLAG_OCCLUDER = 128;
 
 export const LAYERS_DEFAULT = 1;
@@ -203,7 +204,11 @@ export const POST_VALUE_AO_DISTANCE_FALLOFF = 16;
 export const POST_VALUE_AO_SCALE = 17;
 export const POST_VALUE_AO_SAMPLES = 18;
 export const POST_VALUE_AO_INTENSITY = 19;
-export const POST_VALUE_COUNT = 20;
+export const POST_VALUE_OUTLINE_COLOR = 20;
+export const POST_VALUE_OUTLINE_HIDDEN_COLOR = 23;
+export const POST_VALUE_OUTLINE_HIDDEN = 26;
+export const POST_VALUE_OUTLINE_WIDTH = 27;
+export const POST_VALUE_COUNT = 28;
 
 export const TEXTURE_STAT_MEMORY_BYTES = 0;
 export const TEXTURE_STAT_TEXTURE_BYTES = 1;

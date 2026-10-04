@@ -938,6 +938,16 @@ export class PrefabInstance extends Group {
 			if (object !== this && object.name === name && object.destroyedFrame === -1) return object;
 		return undefined;
 	}
+
+	/**
+	 * Outlines every mesh of the copy, or stops, as `Mesh.setOutlined` does for one mesh: the
+	 * whole model takes one outline, as three.js's `OutlinePass` outlines a selected group. The
+	 * copy's instance batches take none.
+	 */
+	setOutlined(outlined: boolean): void {
+		for (const object of this.objects)
+			if (object instanceof Mesh && object.destroyedFrame < 0) object.setOutlined(outlined);
+	}
 }
 
 /**
@@ -1077,6 +1087,16 @@ export class Mesh extends Object3D {
 	 */
 	setReceiveShadows(receive: boolean): void {
 		this.setFlag('setReceiveShadows', C.FLAG_RECEIVE_SHADOWS, receive);
+	}
+
+	/**
+	 * Draws an outline around the mesh, or stops, as adding it to three.js's
+	 * `OutlinePass.selectedObjects` does. The outline shows while `post.set({ outline })` turns
+	 * outlines on, and every outlined mesh takes its settings. The default is false. A change
+	 * rebuilds the engine's tables of what it draws, as a new material does.
+	 */
+	setOutlined(outlined: boolean): void {
+		this.setFlag('setOutlined', C.FLAG_OUTLINED, outlined);
 	}
 
 	/**

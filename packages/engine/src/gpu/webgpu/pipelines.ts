@@ -54,6 +54,7 @@ import {
 	TEMPLATE_LIGHT_WRITE,
 	TEMPLATE_LINE,
 	TEMPLATE_LINE_LIT,
+	TEMPLATE_OUTLINE_MASK,
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SKIN,
 	TEMPLATE_SPRITE,
@@ -408,7 +409,8 @@ export class Pipelines {
 			{ binding: 5, visibility: GPUShaderStage.COMPUTE, texture: computeData },
 		]);
 		// The final pass reads the scene color with textureLoad, which takes any float format, and
-		// its color grading table, a 3D texture, with a linear filter.
+		// its color grading table, a 3D texture, with a linear filter, which reads the outline mask
+		// too.
 		const finalEntries: GPUBindGroupLayoutEntry[] = [
 			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
 			{
@@ -418,6 +420,7 @@ export class Pipelines {
 			},
 			{ binding: 9, visibility: fragment, texture: { viewDimension: '3d' } },
 			{ binding: 10, visibility: fragment, sampler: {} },
+			{ binding: 11, visibility: fragment, texture: {} },
 		];
 		this.defineLayout(LAYOUT_FINAL, 'final', finalEntries);
 		// Bloom's levels, which the final pass's bloom build reads with a linear filter, after its
@@ -471,6 +474,7 @@ export class Pipelines {
 				[LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS],
 			],
 			[TEMPLATE_SHADOW_DEPTH, 'shadow depth', shaders.shadow_depth, [0, 1], [LAYOUT_DEPTH]],
+			[TEMPLATE_OUTLINE_MASK, 'outline mask', shaders.outline_mask, [0, 1], [LAYOUT_DEPTH]],
 			[TEMPLATE_SPRITE, 'sprite', shaders.sprite, [0, 2], [LAYOUT_FRAME]],
 			[TEMPLATE_LINE, 'line', shaders.line, [0], [LAYOUT_FRAME]],
 			[TEMPLATE_LINE_LIT, 'lit line', shaders.line_lit, [0], [LAYOUT_FRAME]],

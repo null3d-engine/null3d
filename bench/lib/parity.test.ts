@@ -25,6 +25,7 @@ import {
 	JOBS_PAGES,
 	LEFT_OUT_OF_PARITY,
 	MAX_DIFFERENT_PERCENT,
+	OUTLINE_MAX_DIFFERENT_PERCENT,
 	PAGE_KINDS,
 	PARITY_SCENE_NAMES,
 	PARITY_SCENES,
@@ -258,9 +259,10 @@ describe('feature scenes', () => {
 			expect(names).toContain(feature);
 	});
 
-	test('give the shadows, ambient occlusion, three glTF models and the wide morph scene a looser limit, and draw tone mapping without anti-aliasing', () => {
+	test('give the shadows, ambient occlusion, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
 		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		expect(SHADOW_MAX_DIFFERENT_PERCENT).toBeGreaterThan(MAX_DIFFERENT_PERCENT);
+		expect(featureScene('outline-hidden')?.limit).toBe(OUTLINE_MAX_DIFFERENT_PERCENT);
 		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);
 		expect(looser.map((scene) => scene.test)).toEqual([
 			'gltf-instancing',
@@ -270,6 +272,8 @@ describe('feature scenes', () => {
 			'morph',
 			'ao-default',
 			'ao-wide',
+			'outline-plain',
+			'outline-hidden',
 		]);
 		// The close-up of the morph scene shows the deltas' precision best, so it keeps three.js's rule.
 		expect(featureScene('morph-closeup')?.limit).toBeUndefined();

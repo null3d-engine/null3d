@@ -248,6 +248,18 @@ describe('the reference of a run', () => {
 		});
 	});
 
+	it('is the references of another device with the same GPU, for a device that shares them', () => {
+		const [shared] = imageRuns([
+			{ ...(TESTS[0] as ImageTest), tiers: ['webgl2'], devices: ['sm-s926b', 'sm-s921b'] },
+		]);
+		expect(
+			referenceOf(shared as ImageRun, { runner: 'sm-s921b-chrome', device: 'sm-s921b' }),
+		).toEqual({
+			file: 'sm-s926b/webgl2/boxes.png',
+			tolerance: TOLERANCE,
+		});
+	});
+
 	it('belongs to the test and the tier that make it', () => {
 		expect(referenceOf(run('boxes-copied-webgl2-pipelined'), REAL).fixed).toBe(
 			'boxes-copied must draw the image of boxes, which alone makes this reference',
@@ -311,6 +323,14 @@ describe('the files in the folder of references', () => {
 		expect(referenceFileProblems(phoneRuns, boxes)).toEqual([
 			'sm-s926b/webgl2/boxes.png is missing. Make it: run the checks plan on sm-s926b (.dev/devices.md), then bun run images:review --accept boxes',
 		]);
+		expect(referenceFileProblems(phoneRuns, [...boxes, 'sm-s926b/webgl2/boxes.png'])).toEqual([]);
+	});
+
+	it("need no references of its own for a device that shares another device's", () => {
+		const phoneRuns = imageRuns([
+			{ ...(TESTS[0] as ImageTest), devices: ['sm-s926b', 'sm-s921b'] },
+		]);
+		const boxes = NEEDED.filter((file) => file.endsWith('/boxes.png'));
 		expect(referenceFileProblems(phoneRuns, [...boxes, 'sm-s926b/webgl2/boxes.png'])).toEqual([]);
 	});
 
