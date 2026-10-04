@@ -52,6 +52,47 @@ export function createSwarm(
 }
 
 /**
+ * Makes S1's instances as one dynamic batch of dashed line segments: each runs through an instance's
+ * place, at a time by S1's own placement, along its rotation's axis. Its pose writes every point for
+ * time t and moves the dashes, and allocates nothing.
+ */
+export async function createLineSwarm(
+	{ scene }: SketchContext,
+	count: number,
+): Promise<(t: number) => void> {
+	const data = createS1(count);
+	const lines = await scene.createLines({
+		positions: new Float32Array(count * 6),
+		mode: 'segments',
+		color: S1_COLOR,
+		width: 3,
+		dashed: true,
+		dashSize: 0.2,
+		gapSize: 0.1,
+		dynamic: true,
+	});
+	const position = new Float64Array(3);
+	const rotation = new Float64Array(4);
+	// The dash offset moves in whole steps: a whole number in an object property makes no heap
+	// number in any browser.
+	const dashes = { dashOffset: 0 };
+	return (t) => {
+		const points = lines.positions;
+		for (let i = 0; i < count; i++) {
+			s1InstanceAt(data, i, t, position, rotation);
+			for (let k = 0; k < 3; k++) {
+				const middle = position[k] as number;
+				const axis = (rotation[k] as number) * S1_BOX_SIZE;
+				points[i * 6 + k] = middle - axis;
+				points[i * 6 + 3 + k] = middle + axis;
+			}
+		}
+		dashes.dashOffset = Math.floor(t * 10) % 10;
+		lines.material.set(dashes);
+	};
+}
+
+/**
  * Makes S1's instances as one dynamic batch of blended sprites, each placed at a time by S1's own
  * placement and turned by its rotation's first component. Each frame sorts every visible sprite
  * back to front. Its pose writes every sprite for time t, and allocates nothing.

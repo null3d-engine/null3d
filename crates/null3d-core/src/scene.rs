@@ -128,8 +128,11 @@ pub mod flags {
     /// The bits that choose where an object draws besides its views: the shadow maps it draws
     /// into, and the shaders that read them.
     pub const SHADOWS: u32 = CAST_SHADOWS | RECEIVE_SHADOWS;
+    /// Blocks the view on the WebGL2 path: software occlusion culling draws the object's mesh
+    /// into a small depth buffer, and hides what lies wholly behind it.
+    pub const OCCLUDER: u32 = 1 << 7;
     /// The bits that [`super::op::SET_FLAGS`] changes. The other bits have operations of their own.
-    pub const SETTABLE: u32 = SHADOWS | BOUNDS;
+    pub const SETTABLE: u32 = SHADOWS | BOUNDS | OCCLUDER;
 }
 
 /// Operation numbers of [`Command`] records (the low byte of [`Command::op`]).

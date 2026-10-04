@@ -81,6 +81,13 @@ export type {
 export type { ColorInput } from './scene/color';
 export type { Exp2FogOptions, FogOptions, LinearFogOptions } from './scene/fog';
 export type { Ray } from './scene/frame-cameras';
+export type {
+	LineBatch,
+	LineMaterial,
+	LineMode,
+	LineOptions,
+	LineValues,
+} from './scene/lines';
 export type { Lut, LutDomain } from './scene/lut';
 export type {
 	ObjectEventHandler,
