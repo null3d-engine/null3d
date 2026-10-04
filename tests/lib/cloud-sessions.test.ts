@@ -3,7 +3,7 @@ import {
 	ACCEPT_SSL_SCRIPT,
 	authHeaders,
 	capabilities,
-	needsAcceptSsl,
+	certificateScript,
 	redactor,
 } from './browserstack.ts';
 import { type CloudDevice, cloudDevice } from './browserstack-devices.ts';
@@ -107,8 +107,7 @@ function sessionsOn(
 	);
 	const account: CloudAccount = {
 		capabilities: (device, runner) => capabilities(device, { build: 'build-1', session: runner }),
-		needsAcceptSsl,
-		acceptSslScript: ACCEPT_SSL_SCRIPT,
+		certificateScript,
 		link: async (id) => `https://automate.example/sessions/${id}`,
 		mark: async (id, passed, reason) => {
 			marks.push({ id, passed, reason });
