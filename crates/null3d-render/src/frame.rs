@@ -1170,14 +1170,6 @@ impl SceneSettings {
         })
     }
 
-    /// Where the camera's view stands in the frame whose world output is `parity`'s: its cell, and
-    /// its position in the cell. `None` when the view has no camera.
-    pub fn camera_position(&self, scene: &SceneStorage, parity: usize) -> Option<CellPosition> {
-        let (camera, _) = self.views[ViewId::CAMERA.index()].camera()?;
-        let slot = scene.resolve(camera).ok()?;
-        Some(scene.cell_position(slot, parity))
-    }
-
     /// The pipeline that draws the depth of a shadow caster whose mesh and material draw with
     /// `pipeline`: only its back faces, as three.js draws them with its filtered shadow maps,
     /// moved toward the light by part of a texel, or both faces of a double-sided material, where

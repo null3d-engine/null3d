@@ -43,7 +43,8 @@ export interface Null3dPageOptions {
  * many morphed spheres whose weights change every frame, `grading` gives S1 a
  * color grading table and the vignette, `sprites` draws S1's swarm as sprites, `lines` draws it
  * as dashed line segments, `ao` turns ambient occlusion on in S1, `outline` adds outlined boxes
- * to S1, and `labels` adds that many labeled objects to S1, whose elements the page binds.
+ * to S1, `labels` adds that many labeled objects to S1, whose elements the page binds, and
+ * `tileShadows` adds spot and point lights that cast shadows to S1, with point light shadows on.
  */
 const SKETCH_SWITCHES = [
 	'blend',
@@ -55,6 +56,7 @@ const SKETCH_SWITCHES = [
 	'ao',
 	'outline',
 	'labels',
+	'tileShadows',
 ] as const;
 
 /**
@@ -108,6 +110,7 @@ export function runNull3dPage(
 			...(!filled && { maxPixelRatio: CANVAS.pixelRatio }),
 			shadowCascades: options.shadowCascades ?? undefined,
 			shadowMapSize: options.shadowMapSize ?? undefined,
+			...(params.has('tileShadows') && { pointLightShadows: true, shadowTiles: 24 }),
 			hold: options.hold ?? undefined,
 		});
 		bindLabels(engine, Number(params.get('labels') ?? 0));

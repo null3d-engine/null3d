@@ -24,7 +24,9 @@
 // on in S1, and changes its intensity every frame. The camera orbits, so each frame
 // places every label at a new point, and the thread that draws copies them for the page.
 // `--outline` adds 16 outlined boxes to S1, turns outlines on with a hidden line, and changes the
-// line's width every frame. `--prepass` turns the depth prepass on, in any scene. It samples the production build of the
+// line's width every frame. `--tile-shadows` adds two point lights and two spot lights that cast
+// shadows to S1, with casters that circle them, so tiles of the shadow atlas draw again every
+// frame. `--prepass` turns the depth prepass on, in any scene. It samples the production build of the
 // benchmark pages, as a developer ships the engine, and names
 // the build's functions through its source maps; `--dev` samples the dev server's pages, with the
 // engine's development checks. `--no-inline` turns the browser's inlining off, so each function's
@@ -139,6 +141,13 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 /** The most bytes per frame any other place may allocate: sampling noise, less than one object. */
 const OTHER_BUDGET = 4;
 
+/**
+ * What `--tile-shadows` adds to the WebGPU replay's budget: the browser's encoder of each tile's
+ * culling pass and render pass, about 17 bytes each, for the most tiles that draw again in a frame
+ * (`MAX_REDRAWS` in `shadow_tiles.rs`). Moving casters draw tiles in every frame of that page.
+ */
+const TILE_SHADOWS_REPLAY_BYTES = 2 * 17 * 12;
+
 /** Gives each node of a profile its function's name and file from the build's source maps. */
 function nameNodes(node: ProfileNode, names: BuildNames): void {
 	node.callFrame = names.name(node.callFrame);
@@ -225,7 +234,10 @@ async function main(): Promise<void> {
 		const labelCount = option('--labels', 0);
 		if (labelCount > 0 && scene !== 's1') throw new Error('--labels adds labels to S1 only');
 		const labels = labelCount > 0 ? `&labels=${labelCount}` : '';
-		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${outline}${prepass}${labels}`;
+		const tileShadows = args.includes('--tile-shadows') ? '&tileShadows' : '';
+		if (tileShadows && scene !== 's1')
+			throw new Error('--tile-shadows adds shadowed spot and point lights to S1 only');
+		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${outline}${prepass}${labels}${tileShadows}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
@@ -304,7 +316,7 @@ async function main(): Promise<void> {
 		await input;
 		devtools.close();
 		console.log(
-			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${tileShadows ? ' and shadowed spot and point lights' : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
 		);
 		console.log(
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',
@@ -314,7 +326,8 @@ async function main(): Promise<void> {
 			const budgets = BUDGETS[worker as (typeof WORKERS)[number]];
 			console.log(`${worker}: ${((bytes.get(worker) ?? 0) / frames).toFixed(1)} bytes per frame`);
 			for (const [name, { perFrame, most, callers }] of steadyPlaces(workerSamples)) {
-				const budget = budgets[name] ?? OTHER_BUDGET;
+				const tiles = tileShadows && name === 'replay webgpu/backend.ts';
+				const budget = (budgets[name] ?? OTHER_BUDGET) + (tiles ? TILE_SHADOWS_REPLAY_BYTES : 0);
 				if (perFrame > budget) over.push(`${worker}: ${name}`);
 				console.log(
 					`  ${perFrame.toFixed(1).padStart(6)} of ${String(budget).padStart(3)} (${most.toFixed(1).padStart(6)})  ${name}${callers ? ` < ${callers}` : ''}`,

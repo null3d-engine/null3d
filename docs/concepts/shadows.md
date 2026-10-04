@@ -62,7 +62,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 ```mermaid
 flowchart LR
     lights["Spot and point lights with castShadows,<br/>largest on screen first"] --> tiles["Spot light: one tile<br/>Point light: six tiles"]
-    tiles --> check{"Did the light or a caster<br/>in its range move?"}
+    tiles --> check{"Did the light, or a caster<br/>in the tile's view, move?"}
     check -- "yes" --> draw["The tile draws the casters'<br/>depth from the light"]
     check -- "no" --> keep["The tile keeps its depth"]
     draw --> receivers["Receivers in the light's cone<br/>compare their depth with the tile"]
@@ -71,7 +71,7 @@ flowchart LR
 
 A spot or point light casts shadows when you create it with `castShadows: true` or call `setCastShadows(true)`. Casters and receivers need `castShadows` and `receiveShadows`, as for the directional light.
 
-Spot and point lights share one shadow atlas: a depth texture of equal tiles. A spot light takes one tile, a view from the light that holds its cone. A cone wider than 85 degrees from its direction casts shadows over its middle part alone. A point light takes six tiles, one for each face of a cube around it. A surface reads the tile of the face that its direction from the light points through.
+Spot and point lights share one shadow atlas: a depth texture of equal tiles. A spot light takes one tile, a view from the light that holds its cone. A cone wider than 85 degrees from its direction casts shadows over its middle part alone. A point light takes six tiles, one for each face of a cube around it. A surface reads the tile of the face that its direction from the light points through. Each tile's view keeps 3 texels inside each edge, as far as the 5 x 5 filter reads. So the filter never reads past what the tile drew, and no seam shows where two faces meet.
 
 Point light shadows cost six times as much as a spot light's, so the quality preset's `pointLightShadows` setting turns them on for High and Ultra alone. The `pointLightShadows` option of `createEngine` turns them on or off on any preset. Where they are off, point lights still light surfaces.
 
@@ -110,7 +110,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 ### Which lights get tiles
 
-The quality preset's `shadowTiles` setting caps the tiles, and `shadowTileSize` sets the texels on each side of each tile. [Quality presets](quality-presets.md) lists their values. The atlas has only as many tiles as the lights that cast shadows can fill.
+The quality preset's `shadowTiles` setting caps the tiles, and `shadowTileSize` sets the texels on each side of each tile. [Quality presets](quality-presets.md) lists their values. The atlas grows to as many tiles as the lights that cast shadows can fill. It keeps them when a light stops casting, so a light whose shadows turn off and on again does not make the atlas again. It goes when no light casts shadows.
 
 Each frame, the spot and point lights in the camera's view compete for the tiles. A light's size on screen is its range over its distance from the camera, and the largest lights get tiles first. A point light needs six free tiles, so a smaller spot light can take the last tile that a point light cannot use. A light keeps its tile from frame to frame while it still gets one. The other lights cast no shadows in that frame, and they still light surfaces.
 
@@ -120,8 +120,15 @@ A tile keeps its depth from frame to frame. It draws again only when:
 
 - it goes to another light;
 - its light moves or turns, or its range, cone or layers change (a point light's tiles do not change when it turns);
-- a caster within the light's range moves, turns, scales, shows or hides, or leaves the range;
+- a caster in the tile's view moves, turns, scales, shows, hides or changes its layers, or leaves the view;
+- a skinned or morphed caster in the tile's view changes its pose or its weights, even where it stands still;
 - objects are created or destroyed, or their meshes, materials or shadow flags change.
+
+A caster marks only the tiles whose views it touches. A caster near a point light touches one to three of its six faces, so only those draw again.
+
+A tile whose view does not reach into the camera's view waits. No surface on screen reads it, so it draws when the camera turns toward it.
+
+A tile that holds no depth for its light yet draws at once. Other tiles that must draw again share a cap of 12 per frame. More must draw when many casters move near several point lights. Then the lights whose tiles waited longest draw first, then the largest on screen. The others keep their last depth for a frame or two, and their shadows lag for that time. So a burst of movement does not make one long frame.
 
 A scene whose casters and lights stand still draws no tile. Make static casters static, and keep moving objects out of the ranges of shadowed spot and point lights when you can.
 
@@ -250,7 +257,7 @@ Each cascade that draws in a frame has a render pass that draws its casters' dep
 
 Each layer of the shadow map takes 4 bytes per texel: 16 MB at 2,048 texels on each side. Surfaces that receive shadows read the map 4 or 9 times per pixel, as the filter's size says.
 
-A tile costs a render pass and its culling, but only in the frames in which it draws. A point light draws six tiles when a caster in its range moves. Its culling runs on the GPU on WebGPU, and on the job workers on WebGL2. Each tile takes 4 bytes per texel: 4 MB at 1,024 texels on each side. A receiving surface reads one tile for each shadowed light that reaches it, 4 or 9 times per pixel, as for the cascades.
+A tile costs a render pass and its culling, but only in the frames in which it draws. A point light draws the tiles of the faces that a moving caster touches, and at most 12 tiles draw again in a frame. Its culling runs on the GPU on WebGPU, and on the job workers on WebGL2. Each tile takes 4 bytes per texel: 4 MB at 1,024 texels on each side. A receiving surface reads one tile for each shadowed light that reaches it, 4 or 9 times per pixel, as for the cascades.
 
 To make shadows cheaper, use fewer cascades, a smaller map, a shorter distance, a higher `farCascadeInterval` or a `shadowFilter` of 3. Mark only the objects whose shadows matter as casters. For spot and point lights, give shadows only to the lights that need them, and keep their ranges short. Prefer a spot light to a point light where a cone covers the area.
 

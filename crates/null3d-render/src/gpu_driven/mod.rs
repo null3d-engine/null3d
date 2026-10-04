@@ -568,7 +568,13 @@ impl GpuDrivenRenderer {
     ) -> Result<bool, RecordError> {
         let parity = input.parity();
         let shadow = self.settings.shadow_frame(input);
-        let camera = self.settings.camera_position(input.scene, parity);
+        let camera = self.settings.view_frame(
+            ViewId::CAMERA,
+            input.scene,
+            parity,
+            input.canvas,
+            input.render_scale,
+        );
         let tile_settings = self.settings.tile_settings();
         let filter = self.settings.shadow_quality().filter;
         self.tiles
