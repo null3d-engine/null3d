@@ -86,7 +86,10 @@ export interface GltfContext {
 		call: string,
 	): Promise<ImageBitmap>;
 	/** Makes one of the engine's coded errors: the caller's `EngineError`. */
-	error(code: 'E1406' | 'E1411' | 'E1412' | 'E1416' | 'E1417', message: string): EngineError;
+	error(
+		code: 'E1406' | 'E1411' | 'E1412' | 'E1416' | 'E1417' | 'E1418',
+		message: string,
+	): EngineError;
 }
 
 /** A request that waits for the worker. */

@@ -56,18 +56,21 @@ import {
 	growthSummary,
 } from './lib/size-check';
 import {
+	type Budget,
 	type BuiltFile,
 	budgetProblems,
+	COLUMNS,
 	type CORE_BUILDS,
 	CORE_FILES,
+	type Column,
 	downloadSizes,
 	findEngineParts,
 	findTranscoderFiles,
-	LATER_BUDGET_BYTES,
+	LATER_BUDGET,
 	LATER_PARTS,
 	measure,
 	type SizeEntry,
-	START_BUDGET_BYTES,
+	START_BUDGET,
 	totalSize,
 } from './lib/size-report';
 
@@ -328,10 +331,6 @@ function buildVariant(variant: Variant, bindgen: string, keepNames: boolean): vo
 		'-o',
 		wasm,
 	]);
-	// The loader creates the shared memory itself, so it needs the module's declared sizes.
-	const limits = memoryImportLimits(readFileSync(join(root, wasm)));
-	if (limits)
-		writeFileSync(join(root, outDir, 'null3d_memory.json'), `${JSON.stringify(limits)}\n`);
 }
 
 /**
@@ -361,69 +360,6 @@ function buildToolModules(): void {
 		mkdirSync(dirname(path), { recursive: true });
 		copyFileSync(join(root, built), path);
 	}
-}
-
-export interface MemoryLimits {
-	/** Initial size in 64 KB pages. */
-	initial: number;
-	/** Declared maximum in 64 KB pages, or null when the module declares none. */
-	maximum: number | null;
-	shared: boolean;
-}
-
-/** Reads an unsigned LEB128 number at `offset`; returns the value and the offset after it. */
-function readLeb(bytes: Uint8Array, offset: number): [number, number] {
-	let value = 0;
-	let shift = 0;
-	let at = offset;
-	for (;;) {
-		const byte = bytes[at++] ?? 0;
-		value += (byte & 0x7f) * 2 ** shift;
-		if ((byte & 0x80) === 0) return [value, at];
-		shift += 7;
-	}
-}
-
-/** The limits of the memory a module imports, from its import section, or null when it imports none. */
-export function memoryImportLimits(bytes: Uint8Array): MemoryLimits | null {
-	let at = 8;
-	while (at < bytes.length) {
-		const id = bytes[at++];
-		const [size, contentStart] = readLeb(bytes, at);
-		at = contentStart;
-		if (id !== 2) {
-			at += size;
-			continue;
-		}
-		let [count, cursor] = readLeb(bytes, at);
-		for (; count > 0; count--) {
-			for (let name = 0; name < 2; name++) {
-				const [length, afterLength] = readLeb(bytes, cursor);
-				cursor = afterLength + length;
-			}
-			const kind = bytes[cursor++];
-			if (kind === 0) {
-				cursor = readLeb(bytes, cursor)[1];
-			} else if (kind === 1) {
-				cursor++;
-				const flags = bytes[cursor++] ?? 0;
-				cursor = readLeb(bytes, cursor)[1];
-				if (flags & 1) cursor = readLeb(bytes, cursor)[1];
-			} else if (kind === 2) {
-				const flags = bytes[cursor++] ?? 0;
-				const [initial, afterInitial] = readLeb(bytes, cursor);
-				const maximum = flags & 1 ? readLeb(bytes, afterInitial)[0] : null;
-				return { initial, maximum, shared: (flags & 2) !== 0 };
-			} else if (kind === 3) {
-				cursor += 2;
-			} else {
-				cursor++;
-				cursor = readLeb(bytes, cursor)[1];
-			}
-		}
-		return null;
-	}
-	return null;
 }
 
 /**
@@ -456,14 +392,26 @@ function buildEngineTestPage(): BuiltFile[] {
 
 const kb = (n: number) => `${(n / 1024).toFixed(1)} KB`;
 
-function printSize(name: string, size: SizeEntry, budgetBytes?: number): void {
-	const budget = budgetBytes
-		? `  ${((size.brotli / budgetBytes) * 100).toFixed(1)}% of budget`
-		: '';
-	console.log(
-		`  ${name.padEnd(28)} raw ${kb(size.raw).padStart(10)}   brotli ${kb(size.brotli).padStart(10)}${budget}`,
-	);
+/**
+ * One line of the report: the size in each column, and the share of each column's budget, where
+ * the column has one. The line ends with Brotli's share, which the gate's record reads.
+ */
+function printSize(name: string, size: SizeEntry, budget: Partial<Budget> = {}): void {
+	const share = (column: Column, limit: number) => ((size[column] / limit) * 100).toFixed(1);
+	const columns = COLUMNS.map((column) => {
+		const text = `${column} ${kb(size[column]).padStart(10)}`;
+		const limit = budget[column];
+		return limit && column !== 'brotli'
+			? `${text} ${`(${share(column, limit)}%)`.padStart(8)}`
+			: text;
+	});
+	const brotliShare = budget.brotli ? `  ${share('brotli', budget.brotli)}% of budget` : '';
+	console.log(`  ${name.padEnd(28)} ${columns.join('   ')}${brotliShare}`);
 }
+
+/** A section's heading's note of a budget, in each column. */
+const budgetNote = (budget: Budget) =>
+	`budget: ${kb(budget.brotli)} after Brotli, ${kb(budget.gzip)} after gzip, ${kb(budget.raw)} uncompressed`;
 
 interface Base {
 	sha: string;
@@ -539,7 +487,7 @@ function seedBuildFolders(tree: string): void {
  * commit in the base worktree with the commit's own build script, so the base has that commit's
  * flags, toolchain and list of parts.
  */
-function baseSizes(sha: string): Record<string, SizeEntry> {
+function baseSizes(sha: string): Record<string, Pick<SizeEntry, 'brotli'>> {
 	const kept = join(root, BASE_DIR, `${sha}.json`);
 	if (existsSync(kept)) {
 		console.log(`reusing the sizes of the base build of ${sha.slice(0, 8)}, kept in ${BASE_DIR}`);
@@ -630,16 +578,16 @@ async function main(): Promise<void> {
 	);
 	console.log('\nsize report (budget for each .wasm file of the core: 600 KB after Brotli)');
 	for (const [file, size] of Object.entries(sizes))
-		printSize(file, size, file.endsWith('.wasm') ? WASM_BUDGET_BYTES : undefined);
+		printSize(file, size, file.endsWith('.wasm') ? { brotli: WASM_BUDGET_BYTES } : undefined);
 	printSize('js total', totalSize(parts.values()));
 	console.log(
-		`\nthe engine's JavaScript that a page downloads at its start in each thread mode, besides the core's glue (budget: ${kb(START_BUDGET_BYTES)} after Brotli)`,
+		`\nthe engine's JavaScript that a page downloads at its start in each thread mode, besides the core's glue (${budgetNote(START_BUDGET)})`,
 	);
-	for (const { mode, size } of downloads) printSize(mode, size, START_BUDGET_BYTES);
+	for (const { mode, size } of downloads) printSize(mode, size, START_BUDGET);
 	console.log(
-		`\nthe engine's JavaScript that loads after the start, on a feature's first use or after the first frame (budget: ${kb(LATER_BUDGET_BYTES)} after Brotli for each file; no start counts them)`,
+		`\nthe engine's JavaScript that loads after the start, on a feature's first use or after the first frame (${budgetNote(LATER_BUDGET)} for each file; no start counts them)`,
 	);
-	for (const [part, size] of later) printSize(`js/${part}`, size, LATER_BUDGET_BYTES);
+	for (const [part, size] of later) printSize(`js/${part}`, size, LATER_BUDGET);
 	printSize('after the start, total', totalSize(later.values()));
 	console.log(
 		'\nthe KTX2 transcoder, which a page downloads when it loads its first KTX2 file (no budget)',

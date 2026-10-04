@@ -660,47 +660,69 @@ function startWorkers(
 	slots: Int32Array,
 	events: WorkerEvents,
 ): EngineWorkers {
-	const sketch = sketchWorker
-		? new EngineWorker(
-				new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
-					type: 'module',
-					name: 'null3d-sketch',
-				}),
-				'sketch',
+	/** Each worker as it starts, so that a refusal can stop the ones before it. */
+	const made: Worker[] = [];
+	const kept = (worker: Worker) => {
+		made.push(worker);
+		return worker;
+	};
+	try {
+		const sketch = sketchWorker
+			? new EngineWorker(
+					kept(
+						new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
+							type: 'module',
+							name: 'null3d-sketch',
+						}),
+					),
+					'sketch',
+					events,
+				)
+			: undefined;
+		const render = renderWorker
+			? new EngineWorker(
+					kept(
+						new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
+							type: 'module',
+							name: 'null3d-render',
+						}),
+					),
+					'render',
+					events,
+				)
+			: undefined;
+		const jobs = Array.from({ length: jobWorkers }, (_, index) => {
+			const job = new EngineWorker(
+				kept(
+					new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
+						type: 'module',
+						name: `null3d-job-${index}`,
+					}),
+				),
+				`job ${index}`,
 				events,
-			)
-		: undefined;
-	const render = renderWorker
-		? new EngineWorker(
-				new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
-					type: 'module',
-					name: 'null3d-render',
-				}),
-				'render',
-				events,
-			)
-		: undefined;
-	const jobs = Array.from({ length: jobWorkers }, (_, index) => {
-		const job = new EngineWorker(
-			new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
-				type: 'module',
-				name: `null3d-job-${index}`,
-			}),
-			`job ${index}`,
-			events,
-		);
-		// Job workers join the job system as each becomes ready: until then the sketch thread and the
-		// job workers already running take every chunk, so no frame waits for them.
-		job.ready().catch((error: unknown) => {
-			if (Atomics.load(slots, Slot.Running) !== 0)
-				events.failure(
-					error instanceof EngineError ? error : startError(`job ${index}`, String(error)),
-					false,
-				);
+			);
+			// Job workers join the job system as each becomes ready: until then the sketch thread and
+			// the job workers already running take every chunk, so no frame waits for them.
+			job.ready().catch((error: unknown) => {
+				if (Atomics.load(slots, Slot.Running) !== 0)
+					events.failure(
+						error instanceof EngineError ? error : startError(`job ${index}`, String(error)),
+						false,
+					);
+			});
+			return job;
 		});
-		return job;
-	});
-	return { sketch, render, jobs };
+		return { sketch, render, jobs };
+	} catch (thrown) {
+		// A browser refuses a dedicated worker whose script comes from another origin, such as a CDN.
+		for (const worker of made) worker.terminate();
+		const reason = thrown instanceof Error ? thrown.message : String(thrown);
+		throw new EngineError(
+			'E1405',
+			`the browser refused to start an engine worker: ${reason}. A worker's script must come from the page's own origin.`,
+		);
+	}
 }
 
 /**
@@ -943,6 +965,8 @@ async function startEngine(
 	 * yet, so they stop at once.
 	 */
 	const failEarly = (error: unknown) => {
+		// The engine no longer runs, so the job workers' start failures that the stop causes stay quiet.
+		Atomics.store(slots, Slot.Running, 0);
 		for (const worker of allWorkers(threads)) worker.terminate();
 		return error;
 	};

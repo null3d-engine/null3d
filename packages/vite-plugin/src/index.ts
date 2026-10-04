@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join, relative, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import MagicString from 'magic-string';
 import type { Connect, Plugin } from 'vite';
 import {
@@ -101,10 +101,40 @@ const WORKER_BEFORE = /new\s+(?:Shared)?Worker\(\s*$/;
 export const CORE_FILES = [
 	'threaded/null3d.js',
 	'threaded/null3d_bg.wasm',
-	'threaded/null3d_memory.json',
 	'single/null3d.js',
 	'single/null3d_bg.wasm',
 ];
+
+/** The file in which each null3D package lists the third-party code that it ships, with licences. */
+const PACKAGE_NOTICES = 'THIRD-PARTY-NOTICES.txt';
+
+/** The file that a production build writes beside the page, with every package's notices. */
+export const NOTICES_FILE = 'null3d-third-party-notices.txt';
+
+/**
+ * The third-party notices of the null3D packages that the project depends on: the engine's first,
+ * then each add-on's, by name. Null when none has notices, as in a project without the engine.
+ */
+export function thirdPartyNotices(root: string): string | null {
+	const manifest = resolve(root, 'package.json');
+	if (!existsSync(manifest)) return null;
+	const { dependencies = {}, devDependencies = {} } = JSON.parse(readFileSync(manifest, 'utf8'));
+	const require = createRequire(manifest);
+	const names = Object.keys({ ...dependencies, ...devDependencies })
+		.filter((name) => name.startsWith('@null3d/'))
+		.sort(
+			(a, b) => Number(b === '@null3d/engine') - Number(a === '@null3d/engine') || (a < b ? -1 : 1),
+		);
+	const texts = names.flatMap((name) => {
+		try {
+			const file = join(dirname(require.resolve(`${name}/package.json`)), PACKAGE_NOTICES);
+			return existsSync(file) ? [readFileSync(file, 'utf8').trimEnd()] : [];
+		} catch {
+			return [];
+		}
+	});
+	return texts.length > 0 ? `${texts.join('\n\n')}\n` : null;
+}
 
 /** True for a sketch module: a script that calls `defineSketch`. */
 function isSketchModule(path: string): boolean {

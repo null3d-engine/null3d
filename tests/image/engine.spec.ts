@@ -79,7 +79,8 @@ for (const mode of ENGINE_MODES) {
 		const files: Record<string, RegExp> = { 'the sketch module': /\/empty-sketch[^/]*\.[jt]s$/ };
 		// The loader is null3d.js, or null3d-<hash>.js once bundled, where the hash may hold any of
 		// the characters of URL-safe base64, the underscore among them.
-		if (mode.sketchThread === 'main') files["the core's loader"] = /\/null3d(-[\w-]+)?\.js$/;
+		if (mode.sketchThread === 'main')
+			files["the core's loader"] = /\/null3d(-[\w-]+)?\.js(\?no-inline)?$/;
 		if (mode.renderThread === 'main') files['the renderer'] = /\/draw(-[^/]*)?\.[jt]s$/;
 		for (const [what, file] of Object.entries(files)) {
 			const asked = result.downloads?.find(({ name }) => file.test(name))?.startTime;
