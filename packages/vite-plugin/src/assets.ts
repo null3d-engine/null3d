@@ -17,6 +17,16 @@ export interface AssetOptions {
 	textureQuality?: 'size' | 'high';
 	/** Compress the model's buffers with meshopt, which the engine decodes on load. Default: true. */
 	meshopt?: boolean;
+	/**
+	 * Give each mesh that encloses space a blocker for software occlusion culling
+	 * (`NULL3D_occluder`). The default is true.
+	 */
+	blockers?: boolean;
+	/**
+	 * Store the tree that raycasts walk for each mesh part of at least this many triangles
+	 * (`NULL3D_mesh_bvh`), or for none with 0. The default is 20,000.
+	 */
+	bvh?: number;
 }
 
 /** The query that asks for an optimized model. */

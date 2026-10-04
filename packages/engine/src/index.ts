@@ -95,6 +95,7 @@ export type {
 	ObjectPointerEvent,
 } from './scene/pointer-events';
 export type {
+	AoSettings,
 	BloomSettings,
 	Post,
 	PostSettings,

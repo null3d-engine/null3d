@@ -19,6 +19,7 @@ use null3d_core::animation::{
     AnimationError, Animations, Channel, Clip, Interpolation, MATRIX_FLOATS, MAX_JOINTS, Play,
     REST_FLOATS, Skeleton, SourceTrack, TrackProblem, resample,
 };
+use null3d_core::bvh::mesh::{IndexedTriangles, MeshBvh};
 use null3d_core::bvh::query::{QueryHit, QueryScene, SceneQueries};
 use null3d_core::bvh::scene::Source;
 use null3d_core::bvh::top::WorldRay;
@@ -28,12 +29,14 @@ use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, WorkerId};
 use null3d_core::lights::LightTable;
 use null3d_core::lines::{LineLook, LineMode};
+use null3d_core::occlusion::BlockerMesh;
 use null3d_core::scene::{CommandRing, SceneStorage};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_core::sprites::SpriteLook;
 use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::sizes;
 use null3d_gpu::drawlist::vertex::{self, Type};
+use null3d_render::ao::Ao;
 use null3d_render::arrays::{ArrayName, ArraysError, Data, MeshArrays, Values, from_arrays};
 use null3d_render::bloom::Bloom;
 use null3d_render::camera::{Lens, Orthographic, Perspective};
@@ -154,10 +157,12 @@ struct Engine {
 }
 
 /// The post-processing values before TypeScript writes any: an exposure of 1, `UnrealBloomPass`'s
-/// strength, radius and threshold, a table at its full intensity over colors from 0 to 1, and
-/// `VignetteShader`'s offset and darkness.
+/// strength, radius and threshold, a table at its full intensity over colors from 0 to 1,
+/// `VignetteShader`'s offset and darkness, and `GTAOPass`'s radius, thickness, distance exponent,
+/// distance falloff, scale, samples and blend intensity.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = [
-    1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
+    16.0, 1.0,
 ];
 
 impl Engine {
@@ -1139,6 +1144,71 @@ pub fn create_mesh_from_arrays(vertices: u32, indices: u32, layout: u32, types: 
     })
 }
 
+/// Gives mesh `mesh` the tree over its triangles that a model file stores, in the format of
+/// `MeshBvh::to_bytes`, from the first `bytes` bytes of the staging words. Raycasts then use it
+/// instead of building one. Returns 1 when the mesh takes the tree, and 0 when the tree does not
+/// fit the mesh's triangles, which then get a tree of their own on the first query.
+#[wasm_bindgen(js_name = setMeshBvh)]
+pub fn set_mesh_bvh(mesh: u32, bytes: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let data: &[u8] = bytemuck_bytes(&staging);
+        let tree = data.get(..bytes as usize).and_then(|data| {
+            let triangles = e
+                .renderer
+                .settings()
+                .meshes()
+                .triangles(mesh.checked_sub(1)?)?;
+            MeshBvh::from_bytes(data, &triangles).ok()
+        });
+        drop(staging);
+        match tree {
+            Some(tree) => e
+                .queries
+                .store_mesh_bvh(mesh, tree)
+                .map(|()| 1)
+                .map_err(core_failure),
+            None => Ok(0),
+        }
+    })
+}
+
+/// Gives mesh `mesh` a blocker of its own for software occlusion culling: `vertices` corners of
+/// three floats, then `indices` indices, three per triangle, in the staging words. Objects with
+/// the mesh draw it in place of the mesh. Returns 1 when the mesh takes it, and 0 when it holds
+/// no triangle, too many, or a corner that is not a number.
+#[wasm_bindgen(js_name = setMeshBlocker)]
+pub fn set_mesh_blocker(mesh: u32, vertices: u32, indices: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let (v, i) = (vertices as usize * 3, indices as usize);
+        let blocker = (staging.len() >= v + i && i % 3 == 0)
+            .then(|| {
+                let positions: Vec<f32> = staging[..v].iter().map(|&w| f32::from_bits(w)).collect();
+                BlockerMesh::build(&IndexedTriangles {
+                    positions: &positions,
+                    indices: &staging[v..v + i],
+                })
+            })
+            .flatten();
+        drop(staging);
+        match blocker {
+            Some(blocker) => e
+                .renderer
+                .set_mesh_blocker(mesh, blocker)
+                .map(|()| 1)
+                .map_err(|_| core_failure(CoreError::OutOfMemory { bytes: indices * 4 })),
+            None => Ok(0),
+        }
+    })
+}
+
+/// The bytes of 32-bit words, little-endian as WebAssembly keeps them.
+fn bytemuck_bytes(words: &[u32]) -> &[u8] {
+    // SAFETY: a u32 slice is a valid u8 slice four times as long, with the same lifetime.
+    unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<u8>(), words.len() * 4) }
+}
+
 /// The arrays in the staging words, or `None` when the words do not hold what `layout` and
 /// `types` describe. The arrays follow each other in the order of `MeshArrays`' codes, each from a
 /// whole word on, then the indices.
@@ -1804,6 +1874,39 @@ pub fn set_bloom(on: bool) -> u32 {
             threshold,
         });
         e.renderer.settings_mut().set_bloom(bloom);
+        0
+    })
+}
+
+/// Turns ambient occlusion on with its settings from the post-processing values, or off, from the
+/// next frame on. The TypeScript API checks the values.
+#[wasm_bindgen(js_name = setAo)]
+pub fn set_ao(on: bool) -> u32 {
+    with_engine(|e| {
+        let value = |place| e.post_value(place);
+        use constants::post_value as v;
+        let ao = on.then(|| Ao {
+            radius: value(v::AO_RADIUS),
+            thickness: value(v::AO_THICKNESS),
+            distance_exponent: value(v::AO_DISTANCE_EXPONENT),
+            distance_falloff: value(v::AO_DISTANCE_FALLOFF),
+            scale: value(v::AO_SCALE),
+            samples: value(v::AO_SAMPLES) as u32,
+            intensity: value(v::AO_INTENSITY),
+        });
+        e.renderer.settings_mut().set_ao(ao);
+        0
+    })
+}
+
+/// Sets the size of ambient occlusion's targets, in thousandths of the render size each way, from
+/// the next frame on: 0 draws none.
+#[wasm_bindgen(js_name = setAoScale)]
+pub fn set_ao_scale(thousandths: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .set_ao_scale(thousandths as f32 / 1000.0);
         0
     })
 }

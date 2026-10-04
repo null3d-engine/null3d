@@ -17,8 +17,20 @@
 //!   largest faces, the texel format (0 for `rgb9e5ufloat`, 1 for `rgba16float`) and the filter's
 //!   directions per texel (0 for the default). It returns 0 when the response holds the file, and 1
 //!   when it holds a message that says why the file could not be built.
+//! - `blocker()` makes a mesh's blocker for software occlusion culling and checks that it lies
+//!   inside the mesh (see [`blocker`]). The request is five little-endian 32-bit integers: the
+//!   vertex count, the index count, the flags (1 when the ground hides the model from below its
+//!   lowest point), the cells along the longest side and the most boxes, each 0 for its default.
+//!   Three 32-bit floats per
+//!   vertex follow, then three 32-bit indices per triangle. It returns 0 when the
+//!   response holds the blocker: its corner count, index count and box count as 32-bit
+//!   integers, the share of the mesh's box it fills as a 32-bit float, then three 32-bit floats
+//!   per corner and three 32-bit indices per triangle. It returns 1 when the request breaks its
+//!   layout and 2 when the mesh gets no blocker, and the response then holds a message that says
+//!   why.
 //! - `response()` and `response_length()` give the last call's response.
 
+pub mod blocker;
 pub mod environment;
 
 use std::cell::RefCell;
@@ -56,6 +68,19 @@ pub extern "C" fn environment() -> u32 {
     let failed = u32::from(result.is_err());
     RESPONSE.set(result.unwrap_or_else(String::into_bytes));
     failed
+}
+
+/// Makes the blocker of the mesh in the request.
+#[unsafe(no_mangle)]
+pub extern "C" fn blocker() -> u32 {
+    let result = REQUEST.with_borrow(|request| blocker_bytes(request));
+    let (status, bytes) = match result {
+        Ok(Ok(bytes)) => (0, bytes),
+        Err(message) => (1, message.into_bytes()),
+        Ok(Err(dropped)) => (2, dropped.to_string().into_bytes()),
+    };
+    RESPONSE.set(bytes);
+    status
 }
 
 /// Where the last response starts.
@@ -112,6 +137,65 @@ pub fn mesh_bvh_bytes(request: &[u8]) -> Result<Vec<u8>, String> {
     };
     let bvh = MeshBvh::build(&mesh).map_err(|e| format!("the tree could not be built: {e:?}"))?;
     Ok(bvh.to_bytes())
+}
+
+/// The blocker of a mesh in the request's layout, or why the mesh gets none, or why the request
+/// could not be read.
+///
+/// # Errors
+/// When the request's counts do not match its length, or an index lies past the vertices.
+pub fn blocker_bytes(request: &[u8]) -> Result<Result<Vec<u8>, blocker::Dropped>, String> {
+    let mut head =
+        words(request.get(..20).ok_or("the request has no counts")?).map(u32::from_le_bytes);
+    let mut next = || head.next().unwrap_or(0) as usize;
+    let (vertices, indices, flags, resolution, max_boxes) =
+        (next(), next(), next(), next(), next());
+    let expected = vertices
+        .checked_mul(12)
+        .and_then(|v| v.checked_add(indices.checked_mul(4)?))
+        .and_then(|b| b.checked_add(20));
+    if expected != Some(request.len()) || indices % 3 != 0 {
+        return Err(format!(
+            "the request of {} bytes does not hold {vertices} vertices and {indices} indices in whole triangles",
+            request.len()
+        ));
+    }
+    let body = &request[20..];
+    let positions: Vec<f32> = words(&body[..vertices * 12])
+        .map(f32::from_le_bytes)
+        .collect();
+    let corners: Vec<u32> = words(&body[vertices * 12..])
+        .map(u32::from_le_bytes)
+        .collect();
+    let shape = blocker::Shape {
+        positions: &positions,
+        indices: &corners,
+    };
+    let settings = blocker::Settings {
+        resolution: match resolution {
+            0 => blocker::DEFAULT_RESOLUTION,
+            n => n as u32,
+        },
+        max_boxes: match max_boxes {
+            0 => blocker::DEFAULT_MAX_BOXES,
+            n => n as u32,
+        },
+        ground: flags & 1 != 0,
+    };
+    Ok(blocker::make(&shape, &settings).map(|b| {
+        let mut out = Vec::with_capacity(16 + b.positions.len() * 4 + b.indices.len() * 4);
+        out.extend(((b.positions.len() / 3) as u32).to_le_bytes());
+        out.extend((b.indices.len() as u32).to_le_bytes());
+        out.extend(b.boxes.to_le_bytes());
+        out.extend((b.fill as f32).to_le_bytes());
+        for v in &b.positions {
+            out.extend(v.to_le_bytes());
+        }
+        for i in &b.indices {
+            out.extend(i.to_le_bytes());
+        }
+        out
+    }))
 }
 
 /// The KTX2 file of the environment map in the request's layout, or why it could not be built.

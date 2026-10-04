@@ -15,6 +15,7 @@ export const ASSET_FORMATS_URL = new URL('../../dist/assets.wasm', import.meta.u
  * @property {(length: number) => number} request
  * @property {() => number} mesh_bvh
  * @property {() => number} environment
+ * @property {() => number} blocker
  * @property {() => number} response
  * @property {() => number} response_length
  */
@@ -41,19 +42,54 @@ function module() {
 }
 
 /**
- * Runs an export on a request, and returns the response's bytes, or throws its message.
+ * Runs an export on a request, and returns its status and the response's bytes.
  *
  * @param {(m: FormatsModule) => number} call
  * @param {Uint8Array} request
  */
-function respond(call, request) {
+function call(call, request) {
 	const m = module();
 	const at = m.request(request.byteLength);
 	new Uint8Array(m.memory.buffer, at, request.byteLength).set(request);
-	const failed = call(m);
-	const out = new Uint8Array(m.memory.buffer, m.response(), m.response_length()).slice();
-	if (failed) throw new Error(new TextDecoder().decode(out));
-	return out;
+	const status = call(m);
+	return {
+		status,
+		bytes: new Uint8Array(m.memory.buffer, m.response(), m.response_length()).slice(),
+	};
+}
+
+/**
+ * Runs an export on a request, and returns the response's bytes, or throws its message.
+ *
+ * @param {(m: FormatsModule) => number} run
+ * @param {Uint8Array} request
+ */
+function respond(run, request) {
+	const { status, bytes } = call(run, request);
+	if (status) throw new Error(new TextDecoder().decode(bytes));
+	return bytes;
+}
+
+/**
+ * A request that starts with whole numbers, then a mesh's positions and indices.
+ *
+ * @param {number[]} head
+ * @param {Float32Array} positions Three floats per vertex.
+ * @param {Uint32Array} indices Three per triangle.
+ */
+function meshRequest(head, positions, indices) {
+	const start = head.length * 4;
+	const request = new Uint8Array(start + positions.byteLength + indices.byteLength);
+	const view = new DataView(request.buffer);
+	head.forEach((value, k) => {
+		view.setUint32(k * 4, value, true);
+	});
+	for (let i = 0; i < positions.length; i++)
+		view.setFloat32(start + i * 4, /** @type {number} */ (positions[i]), true);
+	const base = start + positions.byteLength;
+	for (let i = 0; i < indices.length; i++)
+		view.setUint32(base + i * 4, /** @type {number} */ (indices[i]), true);
+	return request;
 }
 
 /**
@@ -65,16 +101,53 @@ function respond(call, request) {
  * @returns {Uint8Array}
  */
 export function meshBvh(positions, indices) {
-	const request = new Uint8Array(8 + positions.byteLength + indices.byteLength);
-	const view = new DataView(request.buffer);
-	view.setUint32(0, positions.length / 3, true);
-	view.setUint32(4, indices.length, true);
-	for (let i = 0; i < positions.length; i++)
-		view.setFloat32(8 + i * 4, /** @type {number} */ (positions[i]), true);
-	const base = 8 + positions.byteLength;
-	for (let i = 0; i < indices.length; i++)
-		view.setUint32(base + i * 4, /** @type {number} */ (indices[i]), true);
-	return respond((m) => m.mesh_bvh(), request);
+	return respond(
+		(m) => m.mesh_bvh(),
+		meshRequest([positions.length / 3, indices.length], positions, indices),
+	);
+}
+
+/**
+ * @typedef {object} BlockerSettings
+ * @property {boolean} ground True when the ground hides the model from below its lowest point.
+ * @property {number} [resolution] The grid's cells along the longest side of the mesh's box; the
+ *   module's default when left out.
+ * @property {number} [maxBoxes] The most boxes in a blocker; the module's default when left out.
+ */
+
+/**
+ * @typedef {object} BlockerMesh
+ * @property {Float32Array} positions Three floats per corner, in the mesh's space.
+ * @property {Uint32Array} indices Three per triangle, counterclockwise from outside.
+ * @property {number} boxes The boxes that it joins.
+ * @property {number} fill The share of the mesh's box that it fills.
+ */
+
+/**
+ * A mesh's blocker for software occlusion culling: a few boxes inside the mesh, joined into one
+ * closed surface, which the engine draws in place of the mesh. The module checks that the blocker
+ * lies inside the mesh, since one that bulged out would hide objects that show. Its bytes are the
+ * same on every machine.
+ *
+ * @param {Float32Array} positions Three floats per vertex.
+ * @param {Uint32Array} indices Three per triangle, counterclockwise from outside.
+ * @param {BlockerSettings} settings
+ * @returns {BlockerMesh | { dropped: string }} The blocker, or why the mesh gets none.
+ */
+export function blockerMesh(positions, indices, { ground, resolution = 0, maxBoxes = 0 }) {
+	const head = [positions.length / 3, indices.length, ground ? 1 : 0, resolution, maxBoxes];
+	const { status, bytes } = call((m) => m.blocker(), meshRequest(head, positions, indices));
+	if (status === 1) throw new Error(new TextDecoder().decode(bytes));
+	if (status === 2) return { dropped: new TextDecoder().decode(bytes) };
+	const view = new DataView(bytes.buffer);
+	const corners = view.getUint32(0, true);
+	const count = view.getUint32(4, true);
+	return {
+		positions: new Float32Array(bytes.buffer, 16, corners * 3),
+		indices: new Uint32Array(bytes.buffer, 16 + corners * 12, count),
+		boxes: view.getUint32(8, true),
+		fill: view.getFloat32(12, true),
+	};
 }
 
 /** The texel formats of environment maps, in the module's numbering. */
