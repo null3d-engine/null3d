@@ -69,8 +69,8 @@ Controls read forwarded input inside the sketch worker, so the sketch adds no DO
 ```ts
 const heroPrefab = await assets.loadGltf('/models/hero.glb');  // parsed in a worker
 const hero = scene.instantiate(heroPrefab, { position: [0, 0, 0], dynamic: true, castShadows: true });
-const sword = hero.find('Sword');           // this copy's node named Sword
-const anim = hero.animator();
+const sword = hero.find('Sword');           // this copy's mesh named Sword, which follows its bone
+const anim = hero.animator();               // the copy's group plays the file's clips: heroPrefab.clips
 anim.play('idle', { loop: true });
 
 let moving = false;
@@ -82,11 +82,12 @@ return {
       moving = wantMove;
     }
     if (moving) hero.translate(0, 0, -4 * dt);
+    debug.skeleton(hero);                   // development builds draw the joints
   },
 };
 ```
 
-Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/ public/models/` (0.2): integer vertices and KTX2 textures in a `textures` folder beside each `.glb`. In a Vite project, `import heroUrl from './models/hero.glb?optimized'` (0.2) runs the same steps, cached, and gives the URL for `loadGltf`. Cross-fade on state changes only; calling `play` every frame restarts blending work. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
+The joints of a model's skins, and every node that its clips move, become the copy's skeleton, not objects. So `hero.find('Hips')` finds nothing, and a crowd costs one object per mesh. A mesh that the file puts under a bone, such as a sword in a hand, follows its joint; hide it with `sword.setVisible(false)`. The job workers resample every clip while `loadGltf` waits, so no frame stalls. Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/ public/models/` (0.2): integer vertices and KTX2 textures in a `textures` folder beside each `.glb`. In a Vite project, `import heroUrl from './models/hero.glb?optimized'` (0.2) runs the same steps, cached, and gives the URL for `loadGltf`. Cross-fade on state changes only; calling `play` every frame restarts blending work. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
 
 ## 4. Thousands of moving objects
 
@@ -216,15 +217,16 @@ page.post('hp', { id, value: 80 });           // only when the value changes
 ```
 
 ```ts
-// page.ts
+// page.ts: labelsLayer is a div over the canvas with position: absolute; inset: 0; pointer-events: none
 const el = document.createElement('div');
+el.id = `hp-${id}`;
 el.className = 'hp';
 labelsLayer.appendChild(el);
-engine.labels.bind(`hp-${id}`, el);
+const unbind = engine.labels.bind(`hp-${id}`, el);   // centers el over the label; unbind() stops it
 engine.onSketchMessage((type, d) => { if (type === 'hp') document.getElementById(`hp-${d.id}`)!.textContent = String(d.value); });
 ```
 
-The engine writes each label's screen position into shared memory every frame, and the page moves the element. Only value changes travel as messages. Hidden and off-screen labels are marked, so the page can hide them. Docs: `guides/ui-overlays`, `api/ui`.
+The sketch places each label with each frame's camera. The page moves the element over it in the frame on screen, so labels never run ahead of the image. Only value changes travel as messages. The engine sets `visibility: hidden` while the object is hidden, off the camera's layers, or outside its near and far planes. The offset turns and scales with the object, like a `CSS2DObject` child in three.js. The engine holds 4,096 labels by default (`createEngine({ maxLabels })`); more fail with E1219. Docs: `guides/ui-overlays`, `api/ui`.
 
 ## 8. Loading screen with progress and warm-up
 

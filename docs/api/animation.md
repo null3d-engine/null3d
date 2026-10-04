@@ -8,7 +8,7 @@ summary: "The animator; play, crossFade, layers, joint masks, additive clips, ev
 
 # Animation
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. The engine cannot load animated glTF models yet, so no object has an animator yet. Morph weights (`setMorphWeight`) and `debug.skeleton` are not built. Coding agents must not use these parts.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Morph targets load but do not draw, and morph weights (`setMorphWeight`) are not built. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR
@@ -21,6 +21,43 @@ flowchart LR
 ```
 
 Characters animate on the job workers, in the engine's WebAssembly core. Each frame, the job workers advance every animated object's clips, sample them, blend them, and compose the joints into skinning matrices. Your sketch's thread does none of this work, and a crowd spreads across every job worker. Your sketch has no update call to make.
+
+## Models from glTF files
+
+`assets.loadGltf` reads a model's skins, its clips and its morph targets. Each copy that `scene.instantiate` makes gets an animator on its group, which plays the model's clips. `prefab.clips` lists their names.
+
+```ts
+const knight = await assets.loadGltf('/models/knight.glb');
+const hero = scene.instantiate(knight, { position: [0, 0, 0] });
+hero.animator().play('Idle');
+```
+
+The engine builds one skeleton for the whole model. Its joints are every node that a skin names or a clip moves, every node below those, and every node above them. These nodes become joints, not objects, so `copy.find` does not find them. So each copy in a crowd costs one object per mesh, and its joints cost no objects.
+
+- A skinned mesh goes in the copy's group, and its joints move its vertices, as glTF asks.
+- A mesh without a skin on a node that a clip moves, or below a joint, moves with its node's joint. A sword in a hand, a helmet on a head and a box that a clip spins all follow their joints.
+- A node that no clip moves keeps its place. One below a joint goes in the copy's group, where the joints rest.
+- A light on a node that a clip moves is left out, and development builds warn about it.
+
+A clip without a name takes the name three.js gives it: `animation_0`, `animation_1` and on, in the file's order. When two clips share a name, the second becomes `Name 2`, the third `Name 3`, and so on.
+
+The loader hands every clip to the job workers, which resample them between frames. A model's clips are ready when `loadGltf` resolves. On the engine's test page, the KayKit Knight's 76 clips took 16 ms on two job workers. In the single-threaded mode, the sketch's thread resamples them a few milliseconds at a time.
+
+`scene.clone(copy)` gives the clone an animator of its own, with no clip playing. `scene.createInstances(prefab, count)` draws a model's meshes in their rest pose: instance batches do not animate.
+
+Morph targets load with their deltas, their default weights and the clips' weight tracks, for a later version to draw. Until then, each mesh keeps its shape at rest, and development builds say so.
+
+## Seeing the skeleton
+
+`debug.skeleton(object)` draws the joints of an animated object, such as a copy's group, in the frame's pose. It draws a line from each joint of a skin to its parent joint. As in three.js's `SkeletonHelper`, a line is blue at the joint and green at its parent. Pass a color to draw every line in that color. Call it in `onUpdate`, as every debug drawing call. Only development builds draw it.
+
+```ts
+return {
+  onUpdate() {
+    debug.skeleton(hero);
+  },
+};
+```
 
 ## Playing clips
 
@@ -109,6 +146,8 @@ When the engine loads a clip, it stores the keys at one fixed rate for the whole
 
 A track moves in a straight line from key to key. A step track jumps instead: it holds each key's value until the next key.
 
+A cubic spline track, as glTF stores one, keeps an in-tangent and an out-tangent with each key. The engine follows the curve through the keys, as three.js's `GLTFLoader` does, and stores it at 30 keys per second. When the file's keys lie on a coarser grid, the engine keeps them and adds keys between them on a finer grid. Keys every half second, for example, get 14 keys between each two.
+
 ## Blending
 
 An object blends up to eight clips in a frame, each at its own time and weight. Two layers that each cross-fade between two clips, with an additive clip on top, fit with room to spare. When all eight are busy, a new clip takes the place of the clip that counts least at that moment.
@@ -119,7 +158,9 @@ Within a layer, the engine blends clips as three.js's `AnimationMixer` does, joi
 - Each clip moves the blend so far by its share of the weights so far.
 - In layer 0, where the weights add up to less than 1, the joint's rest pose makes up the remainder.
 
-Rotations between keys use normalized linear interpolation. Rotations in a blend use a corrected form of it, which stays within 0.0001 radians of three.js's spherical interpolation. On the engine's test skeleton, poses match three.js's within 0.0001, and skinning matrices within 0.0004. Fades, masked layers and additive clips match three.js's results within 0.0002.
+Rotations between keys and rotations in a blend use a corrected form of normalized linear interpolation. It stays within 0.0001 radians of three.js's spherical interpolation for rotations up to 2 radians apart. On the engine's test skeleton, poses match three.js's within 0.00003, and skinning matrices within 0.0002. Fades, masked layers and additive clips match three.js's results within 0.0002.
+
+Seven glTF sample models play their clips as three.js plays them. Each joint's skinning matrix matches three.js's within 0.0004 in its rotation and scale, and within 0.0004 of the model's size in its position. Fox's run is the exception: its keys follow no single grid, so the engine stores it at 30 keys per second. The joints that turn fastest then cut corners by up to 0.005.
 
 ## Skinned meshes
 
@@ -143,11 +184,15 @@ A skinned mesh culls with a sphere that its pose moves. The engine keeps a spher
 | `AnimationUtils.makeClipAdditive(clip)` and an additive blend mode | `play('name', { additive: true })` |
 | Clips with tracks filtered out, for upper and lower body | Layers with `setLayerMask` |
 | `mixer.addEventListener('loop' or 'finished')` | `anim.onEvent('loop' or 'finished', handler)`, and events from the clip's data |
+| `gltf.animations` and `new AnimationMixer(gltf.scene)` | `prefab.clips` and `scene.instantiate(prefab).animator()` |
+| `SkeletonUtils.clone(gltf.scene)` | `scene.clone(copy)`, whose copy animates on its own |
+| `new SkeletonHelper(object)` | `debug.skeleton(object)` in `onUpdate` |
 | `SkinnedMesh` skinned in the vertex shader of each pass that draws it | WebGPU skins each skinned mesh once per frame, for every pass that draws it. WebGL2 skins in the vertex shader of each pass, as three.js does |
 
 Where three.js and null3D differ:
 
 - A three.js fade out starts from full weight. null3D fades a clip out from the weight it has, so a quick change of mind does not jump.
+- three.js makes a bone object for each joint of a glTF skin, which you can find and move. null3D's joints are not objects. To move a joint from code, play a clip on a masked layer.
 - A three.js action played backward starts at time 0 and wraps to the end. A null3D clip with a negative speed starts at its end.
 - three.js has no layers. null3D's layer 0 blends as three.js's mixer does, and each layer above replaces the pose below.
 
@@ -164,6 +209,7 @@ Where three.js and null3D differ:
 | --- | --- |
 | [E1218](../errors/E1218.md) | A clip, layer or joint that the object's animation does not have; an option out of range; `animator()` on an object with no clips |
 | [E1203](../errors/E1203.md) | A fade, speed, weight or time scale that is NaN or infinite |
+| [E1416](../errors/E1416.md) | A glTF file whose skins or clips break glTF's rules, such as key times that fall back or a skin that names a node twice, or whose skins and clips move more than 1,024 nodes |
 | [E1101](../errors/E1101.md) | An animator call after its object was destroyed |
 
 ## API reference

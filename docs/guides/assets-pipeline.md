@@ -8,7 +8,7 @@ summary: "optimize, env, convert; LODs; texture compression; budget reports."
 
 # The asset pipeline (the `assets` command)
 
-> Ships in null3D 0.2. The command is experimental, so it can still change between versions. `assets optimize` is built. Not built yet: `assets env`, `assets convert`, `assets pack-orm` and `assets normal-from-bump`, and blocker meshes and prebuilt BVHs in the files. The engine does not draw levels of detail yet, so it draws the full mesh of a model made with `--lod`. Coding agents must not use these parts.
+> Ships in null3D 0.2. The command is experimental, so it can still change between versions. `assets optimize` and `assets env` are built. Not built yet: `assets convert`, `assets pack-orm` and `assets normal-from-bump`, and blocker meshes and prebuilt BVHs in the files. The engine does not draw levels of detail yet, so it draws the full mesh of a model made with `--lod`. The engine does not light scenes with the environment maps of `assets env` yet. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR
@@ -137,6 +137,44 @@ export default defineConfig({
 ```
 
 For TypeScript, add `@null3d/vite-plugin/client` to the `types` of your `tsconfig.json`, so `?optimized` imports have the type `string`.
+
+## Environment maps
+
+The `assets env` command turns an HDR image of the light around a point into an environment map. Metal and glossy surfaces reflect it, and every surface takes its diffuse light. The image is an equirectangular Radiance (`.hdr`) or OpenEXR (`.exr`) file, such as those of [Poly Haven](https://polyhaven.com/hdris):
+
+```sh
+bunx @null3d/cli assets env hdri/venice_sunset_2k.hdr public/env/venice.ktx2
+```
+
+```text
+hdri/venice_sunset_2k.hdr to public/env/venice.ktx2, in 4.7 s
+  cube map: 256 x 256 faces, rgb9e5ufloat, 6 levels for roughness 0.00, 0.11, 0.23, 0.37, 0.55, 1.00
+  file: 2.0 MB; GPU memory: 2.0 MB
+  average light: 0.509, 0.480, 0.611 (red, green, blue)
+```
+
+The output is one KTX2 file:
+
+- A cube map. Level 0 holds the image. Each smaller level holds the light that a rougher surface reflects, filtered with the GGX distribution of the engine's materials. The smallest level has faces of 8 x 8 texels. More levels go to low roughness, where reflections change fastest.
+- Nine spherical harmonics coefficients of the light, for diffuse surfaces, in the file's key-value data.
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--size <texels>` | The width of the largest faces: a power of 2 from 32 to 2048 | 256 |
+| `--format <format>` | `rgba16float` stores half floats, at twice the memory | `rgb9e5ufloat` |
+| `--builtin room` | Writes the engine's built-in room instead of reading an image | An input file |
+
+| Size | GPU memory, `rgb9e5ufloat` | For |
+| --- | --- | --- |
+| 128 | 512 KB | Rough and diffuse surfaces only |
+| 256 | 2.0 MB | Most scenes |
+| 512 | 8.0 MB | Mirror reflections that fill the screen |
+
+Both formats filter on every GPU the engine supports. `rgb9e5ufloat` stores three 9-bit values with one shared exponent, in half the memory of `rgba16float`. In tests, the two formats differed by under a tenth of a step of 255 after tone mapping. Both hold light up to about 65,000, and the command clamps brighter texels, such as the middle of an unclipped sun.
+
+three.js prefilters an HDR file in the browser on every visit, with `PMREMGenerator`. The command does it once, before you publish. Your page then downloads the filtered file and does no work before it draws. The same file gives the same bytes on every computer.
+
+`--builtin room` writes the room that three.js's `RoomEnvironment` builds: a white room with six boxes, six glowing panels and one point light. The engine's package holds that file.
 
 ## Encode time
 

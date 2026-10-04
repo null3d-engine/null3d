@@ -8,7 +8,7 @@ summary: "glTF, KTX2, meshopt; prefabs and instantiate; upload budgets; memory."
 
 # Assets and prefabs
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Models, prefabs, meshopt compression, textures, KTX2 files, integer vertex types and the upload budget are built. Not built yet: Draco compression, the skins, animations and morph targets of glTF files, and the texture memory budget. Coding agents must not use them.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Models, prefabs, meshopt compression, textures, KTX2 files, integer vertex types and the upload budget are built. The skins and clips of glTF files load and animate. Not built yet: Draco compression, morph targets, and the texture memory budget. Coding agents must not use them.
 
 ```mermaid
 flowchart LR
