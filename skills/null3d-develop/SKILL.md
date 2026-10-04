@@ -155,7 +155,8 @@ Effects:
 | Tone mapping and exposure | `post.set({ toneMapping, exposure })` | `api/post` |
 | Bloom | `post.set({ bloom: { strength, radius, threshold } })` (0.2) | `api/post`, `concepts/post-processing` |
 | Color grading from a `.cube` or `.3dl` file, and a vignette | `post.set({ lut: await assets.loadLut(url), vignette: { offset, darkness } })` (0.2) | `api/post`, `api/assets` |
-| Ambient occlusion, outlines | `post.set({ ... })` (0.2) | `api/post` |
+| Ambient occlusion | `post.set({ ao: { radius, intensity } })` (0.2), with `quality.set({ aoScale: 0.5 })` on phones and tablets | `api/post`, `concepts/post-processing` |
+| Outlines | `post.set({ ... })` (0.2) | `api/post` |
 | A custom full-screen effect | `post.addEffect({ name, wgsl, uniforms })` (0.2) | `api/post` |
 | Render to a texture, or add a pass | `render.addPass({ ... })` (0.2) | `guides/custom-passes` |
 | Fog or sky | `scene.setFog` with the fog's color in `scene.setBackground`; `scene.setBackground({ sky })` (0.2) | `api/scene` |

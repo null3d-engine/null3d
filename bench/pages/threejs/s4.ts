@@ -38,8 +38,9 @@ import {
 	s4VehicleScale,
 	s4VehiclesAt,
 } from '../../scenes/spec';
-import { chosenPreset, type TwinSettings, twinSettings } from '../lib/preset';
-import { type BuildContext, runThreePage, type SceneSetup, type Three } from './harness';
+import { chosenPreset, twinSettings } from '../lib/preset';
+import { castCascadedShadows } from './cascades';
+import { runThreePage, type Three } from './harness';
 
 /** A mesh of the scene, made with three.js's geometry class of the generator's name. */
 function geometryOf(
@@ -82,58 +83,6 @@ function textureOf(three: Three, name: S4TextureName, maxAnisotropy: number): Th
 	return texture;
 }
 
-/** What the cascaded shadows need from the frame loop. */
-type Shadows = Required<Pick<SceneSetup, 'afterCamera' | 'onAspect'>>;
-
-/**
- * Casts the sun's shadows in cascades. On WebGL, CSM makes a light of its own for each cascade,
- * which replaces the harness's sun, and every material needs its setup.
- */
-async function castShadows(
-	three: Three,
-	scene: ThreeModule.Scene,
-	{ rendererName, renderer, camera, sun }: BuildContext,
-	settings: TwinSettings,
-	materials: readonly ThreeModule.Material[],
-): Promise<Shadows> {
-	renderer.shadowMap.enabled = true;
-	const { direction, color, intensity } = S4_VIEW_LIGHTS.sun;
-	if (rendererName === 'webgl') {
-		const { CSM } = await import('three/addons/csm/CSM.js');
-		const csm = new CSM({
-			camera,
-			parent: scene,
-			cascades: settings.shadowCascades,
-			maxFar: S4_SHADOW_DISTANCE,
-			mode: 'practical',
-			shadowMapSize: settings.shadowMapSize,
-			lightDirection: new three.Vector3(...direction).normalize(),
-			lightIntensity: intensity,
-		});
-		for (const light of csm.lights) light.color.set(color);
-		scene.remove(sun);
-		for (const material of materials) csm.setupMaterial(material);
-		return {
-			afterCamera() {
-				camera.updateMatrixWorld();
-				csm.update();
-			},
-			onAspect: () => csm.updateFrustums(),
-		};
-	}
-	const { CSMShadowNode } = await import('three/addons/csm/CSMShadowNode.js');
-	sun.castShadow = true;
-	sun.shadow.mapSize.set(settings.shadowMapSize, settings.shadowMapSize);
-	const csm = new CSMShadowNode(sun as never, {
-		cascades: settings.shadowCascades,
-		maxFar: S4_SHADOW_DISTANCE,
-		mode: 'practical',
-	});
-	(sun.shadow as { shadowNode?: unknown }).shadowNode = csm;
-	// The node finds the camera when it first draws; before then it has no frustums to update.
-	return { afterCamera() {}, onAspect: () => csm.camera && csm.updateFrustums() };
-}
-
 runThreePage(
 	's4',
 	async (three, scene, _options, context) => {
@@ -159,7 +108,15 @@ runThreePage(
 				geometryOf(three, S4_MESHES[name]),
 			]),
 		);
-		const shadows = await castShadows(three, scene, context, settings, [...materials.values()]);
+		const shadows = await castCascadedShadows(
+			three,
+			scene,
+			context,
+			settings,
+			[...materials.values()],
+			S4_VIEW_LIGHTS,
+			S4_SHADOW_DISTANCE,
+		);
 
 		const position = new three.Vector3();
 		const rotation = new three.Quaternion();

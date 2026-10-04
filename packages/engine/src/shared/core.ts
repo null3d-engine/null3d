@@ -377,7 +377,7 @@ export interface CoreGlue extends CoreErrors {
 	setBackground(r: number, g: number, b: number): number;
 	/**
 	 * The address of the block of post-processing values (`POST_VALUE_*`), 32-bit floats that
-	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`.
+	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setAo`, `setLut` or `setVignette`.
 	 */
 	postValues(): number;
 	/** The tone mapping, by code, and the exposure from the post-processing values, from the next frame on. */
@@ -386,6 +386,13 @@ export interface CoreGlue extends CoreErrors {
 	setBloom(on: boolean): number;
 	/** How many times fewer taps than three.js's bloom's blurs read, from the next frame on. */
 	setBloomSamples(divisor: number): number;
+	/** Turns ambient occlusion on with the post-processing values' settings, or off. */
+	setAo(on: boolean): number;
+	/**
+	 * The size of ambient occlusion's targets, in thousandths of the render size each way, from
+	 * the next frame on: 0 draws none.
+	 */
+	setAoScale(thousandths: number): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/**
@@ -586,6 +593,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOutput',
 	'setBloom',
 	'setBloomSamples',
+	'setAo',
+	'setAoScale',
 	'setSoftwareOcclusion',
 	'setLut',
 	'setVignette',

@@ -127,8 +127,17 @@ pub mod post_value {
     /// The vignette's offset and darkness.
     pub const VIGNETTE_OFFSET: u32 = 11;
     pub const VIGNETTE_DARKNESS: u32 = 12;
+    /// Ambient occlusion's radius, thickness, distance exponent, distance falloff, scale, samples
+    /// and intensity.
+    pub const AO_RADIUS: u32 = 13;
+    pub const AO_THICKNESS: u32 = 14;
+    pub const AO_DISTANCE_EXPONENT: u32 = 15;
+    pub const AO_DISTANCE_FALLOFF: u32 = 16;
+    pub const AO_SCALE: u32 = 17;
+    pub const AO_SAMPLES: u32 = 18;
+    pub const AO_INTENSITY: u32 = 19;
     /// The values in the block.
-    pub const COUNT: u32 = 13;
+    pub const COUNT: u32 = 20;
 }
 
 pub mod texture_stat {
@@ -646,6 +655,13 @@ pub fn typescript() -> String {
                 ("LUT_DOMAIN_MAX", post_value::LUT_DOMAIN_MAX),
                 ("VIGNETTE_OFFSET", post_value::VIGNETTE_OFFSET),
                 ("VIGNETTE_DARKNESS", post_value::VIGNETTE_DARKNESS),
+                ("AO_RADIUS", post_value::AO_RADIUS),
+                ("AO_THICKNESS", post_value::AO_THICKNESS),
+                ("AO_DISTANCE_EXPONENT", post_value::AO_DISTANCE_EXPONENT),
+                ("AO_DISTANCE_FALLOFF", post_value::AO_DISTANCE_FALLOFF),
+                ("AO_SCALE", post_value::AO_SCALE),
+                ("AO_SAMPLES", post_value::AO_SAMPLES),
+                ("AO_INTENSITY", post_value::AO_INTENSITY),
                 ("COUNT", post_value::COUNT),
             ],
         ),

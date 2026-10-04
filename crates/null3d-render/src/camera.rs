@@ -255,8 +255,88 @@ pub fn view_direction(world: &Affine) -> [f32; 3] {
     back_axis(world).map(|v| -v)
 }
 
+/// The inverse of a column-major matrix, or `None` for a matrix that has none. Shaders that
+/// rebuild view-space positions from depth read the inverse of a projection.
+pub fn invert(m: &Mat4) -> Option<Mat4> {
+    let a = |row: usize, column: usize| f64::from(m[column * 4 + row]);
+    // The 2 x 2 determinants of the upper two rows and of the lower two, as Laplace's expansion
+    // pairs them.
+    let s = [
+        a(0, 0) * a(1, 1) - a(1, 0) * a(0, 1),
+        a(0, 0) * a(1, 2) - a(1, 0) * a(0, 2),
+        a(0, 0) * a(1, 3) - a(1, 0) * a(0, 3),
+        a(0, 1) * a(1, 2) - a(1, 1) * a(0, 2),
+        a(0, 1) * a(1, 3) - a(1, 1) * a(0, 3),
+        a(0, 2) * a(1, 3) - a(1, 2) * a(0, 3),
+    ];
+    let c = [
+        a(2, 0) * a(3, 1) - a(3, 0) * a(2, 1),
+        a(2, 0) * a(3, 2) - a(3, 0) * a(2, 2),
+        a(2, 0) * a(3, 3) - a(3, 0) * a(2, 3),
+        a(2, 1) * a(3, 2) - a(3, 1) * a(2, 2),
+        a(2, 1) * a(3, 3) - a(3, 1) * a(2, 3),
+        a(2, 2) * a(3, 3) - a(3, 2) * a(2, 3),
+    ];
+    let det = s[0] * c[5] - s[1] * c[4] + s[2] * c[3] + s[3] * c[2] - s[4] * c[1] + s[5] * c[0];
+    if det == 0.0 || !det.is_finite() {
+        return None;
+    }
+    let inv = 1.0 / det;
+    // The inverse by rows, then stored by columns.
+    let rows = [
+        [
+            a(1, 1) * c[5] - a(1, 2) * c[4] + a(1, 3) * c[3],
+            -a(0, 1) * c[5] + a(0, 2) * c[4] - a(0, 3) * c[3],
+            a(3, 1) * s[5] - a(3, 2) * s[4] + a(3, 3) * s[3],
+            -a(2, 1) * s[5] + a(2, 2) * s[4] - a(2, 3) * s[3],
+        ],
+        [
+            -a(1, 0) * c[5] + a(1, 2) * c[2] - a(1, 3) * c[1],
+            a(0, 0) * c[5] - a(0, 2) * c[2] + a(0, 3) * c[1],
+            -a(3, 0) * s[5] + a(3, 2) * s[2] - a(3, 3) * s[1],
+            a(2, 0) * s[5] - a(2, 2) * s[2] + a(2, 3) * s[1],
+        ],
+        [
+            a(1, 0) * c[4] - a(1, 1) * c[2] + a(1, 3) * c[0],
+            -a(0, 0) * c[4] + a(0, 1) * c[2] - a(0, 3) * c[0],
+            a(3, 0) * s[4] - a(3, 1) * s[2] + a(3, 3) * s[0],
+            -a(2, 0) * s[4] + a(2, 1) * s[2] - a(2, 3) * s[0],
+        ],
+        [
+            -a(1, 0) * c[3] + a(1, 1) * c[1] - a(1, 2) * c[0],
+            a(0, 0) * c[3] - a(0, 1) * c[1] + a(0, 2) * c[0],
+            -a(3, 0) * s[3] + a(3, 1) * s[1] - a(3, 2) * s[0],
+            a(2, 0) * s[3] - a(2, 1) * s[1] + a(2, 2) * s[0],
+        ],
+    ];
+    let mut out = [0.0; 16];
+    for (row, values) in rows.iter().enumerate() {
+        for (column, value) in values.iter().enumerate() {
+            out[column * 4 + row] = (value * inv) as f32;
+        }
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_projection_times_its_inverse_is_the_identity() {
+        let lenses = [
+            perspective_reversed(1.0, 16.0 / 9.0, 0.1, 500.0),
+            orthographic_reversed(-4.0, 6.0, -2.0, 3.0, -5.0, 50.0),
+        ];
+        for projection in lenses {
+            let inverse = invert(&projection).unwrap();
+            let product = multiply(&projection, &inverse);
+            for (k, value) in product.iter().enumerate() {
+                let identity = if k % 5 == 0 { 1.0 } else { 0.0 };
+                assert!((value - identity).abs() < 1e-4, "{k}: {value}");
+            }
+        }
+        assert_eq!(invert(&[0.0; 16]), None);
+    }
+
     use null3d_core::culling::Frustum;
 
     use super::*;
