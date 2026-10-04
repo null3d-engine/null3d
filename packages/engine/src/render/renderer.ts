@@ -306,26 +306,36 @@ export async function createRenderer(
 		// A canvas keeps the settings of the first request for its context and ignores later ones,
 		// so the context is made here with the engine's settings, before anything else asks for it.
 		const gl = webgl2Context(canvas, options.powerPreference, device.transparent);
-		// After a loss, the context must come back before the engine can draw with it again. A
-		// scene's shaders download meanwhile.
-		const [, shaders] = await Promise.all([
-			contextRestored(gl),
-			scene && deviceShaders(device, loadGlslShaders),
-		]);
-		if (scene && shaders)
-			return new WebGL2SceneRenderer(
-				canvas,
-				options.glTiming
-					? (await import('../gpu/webgl2/call-timing')).timeGlCalls(gl, metrics, options.glTiming)
-					: gl,
-				scene.memory,
-				scene.control,
-				metrics,
-				device,
-				options.imageTable,
-				shaders,
-			);
-		return new WebGL2Renderer(canvas, gl, metrics);
+		// Until the renderer listens for a loss itself, this listener asks the browser to offer the
+		// context back after one. Without it, a loss while the shaders download would never end.
+		const starting = new AbortController();
+		void contextLoss(canvas, starting.signal);
+		try {
+			// After a loss, the context must come back before the engine can draw with it again. A
+			// scene's shaders download meanwhile.
+			const [, shaders, timing] = await Promise.all([
+				contextRestored(gl),
+				scene && deviceShaders(device, loadGlslShaders),
+				options.glTiming && import('../gpu/webgl2/call-timing'),
+			]);
+			// The context may have been lost again during the downloads. The renderer starts on a
+			// context that is back, in the same task, so its own listener hears the next loss.
+			while (gl.isContextLost()) await contextRestored(gl);
+			if (scene && shaders)
+				return new WebGL2SceneRenderer(
+					canvas,
+					timing && options.glTiming ? timing.timeGlCalls(gl, metrics, options.glTiming) : gl,
+					scene.memory,
+					scene.control,
+					metrics,
+					device,
+					options.imageTable,
+					shaders,
+				);
+			return new WebGL2Renderer(canvas, gl, metrics);
+		} finally {
+			starting.abort();
+		}
 	}
 	const [gpu, shaders] = await Promise.all([
 		requestDevice(options),

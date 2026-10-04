@@ -331,21 +331,46 @@ export class WebGL2SceneRenderer implements Renderer {
 	/** The frame's draw list resizes the canvas, in the frame built for the new size. */
 	resize(): void {}
 
-	prepare(frame: number): boolean {
-		return this.frames.prepare(frame);
+	/**
+	 * Ends a frame's work quietly when the browser took the context away during it. WebGL counts
+	 * the context as lost at once, so the GL calls after the loss fail, but the loss event comes
+	 * later, in a task of its own, and starts the recovery. Any other error goes on.
+	 */
+	private lostDuring(error: unknown): void {
+		if (!this.gl.isContextLost()) throw error;
 	}
 
+	prepare(frame: number): boolean {
+		try {
+			return this.frames.prepare(frame);
+		} catch (error) {
+			this.lostDuring(error);
+			return false;
+		}
+	}
+
+	/** True while a pipeline is building, and while the context is lost, which builds nothing. */
 	get building(): boolean {
-		return this.backend.building;
+		try {
+			return this.backend.building;
+		} catch (error) {
+			this.lostDuring(error);
+			return true;
+		}
 	}
 
 	/**
 	 * Draws a frame, and records what the backend did since the last draw: the frame's work, and
-	 * the pipelines that started to build for it.
+	 * the pipelines that started to build for it. A frame during which the context is lost draws
+	 * nothing more, and the loss's recovery follows.
 	 */
 	drawFrame(input: FrameInput, record: FrameRecorder): void {
 		const start = performance.now();
-		this.frames.replay(input.frame);
+		try {
+			this.frames.replay(input.frame);
+		} catch (error) {
+			this.lostDuring(error);
+		}
 		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
 		recordCounts(record, this.backend);
@@ -369,6 +394,9 @@ export class WebGL2SceneRenderer implements Renderer {
 		this.backend.canvasTarget = { framebuffer, width, height };
 		try {
 			this.frames.replay(frame);
+		} catch (error) {
+			this.lostDuring(error);
+			throw new Error('the browser took the WebGL2 context away during the capture');
 		} finally {
 			this.backend.canvasTarget = undefined;
 			this.backend.resetCounts();
