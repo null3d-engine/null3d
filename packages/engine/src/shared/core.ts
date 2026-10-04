@@ -142,6 +142,19 @@ export interface CoreGlue extends CoreErrors {
 		material: number,
 		part: Float32Array,
 	): number;
+	/**
+	 * Creates a sprite batch of a quad mesh and a sprite material, with an atlas of `columns` by
+	 * `rows` frames, sized in CSS pixels of the screen with `screenSize`.
+	 */
+	createSpriteBatch(
+		capacity: number,
+		dynamic: boolean,
+		mesh: number,
+		material: number,
+		columns: number,
+		rows: number,
+		screenSize: boolean,
+	): number;
 	destroyBatch(batch: number, frame: number): number;
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
@@ -357,6 +370,8 @@ export interface CoreGlue extends CoreErrors {
 	setCanvasOutput(sceneColor: number, antialias: number): number;
 	/** Whether the render scale can drop below the whole canvas, from the next frame on. */
 	setRenderScaling(scaling: boolean): number;
+	/** The device pixels per CSS pixel of the canvas, which size sprites given in screen pixels. */
+	setPixelRatio(ratio: number): number;
 	/**
 	 * The shadow filter's texels on each side, 3 or 5, and the frames between two draws of a far
 	 * shadow cascade, from 1 to 8, from the next frame on.
@@ -475,6 +490,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'drawDebugLines',
 	'createBatch',
 	'createBatchPart',
+	'createSpriteBatch',
 	'destroyBatch',
 	'batchArrays',
 	'setBatchActiveCount',
@@ -522,6 +538,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setVignette',
 	'setCanvasOutput',
 	'setRenderScaling',
+	'setPixelRatio',
 	'setShadowQuality',
 	'shadowCasters',
 	'setBackgroundTexture',
