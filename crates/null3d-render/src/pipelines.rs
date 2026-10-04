@@ -168,7 +168,7 @@ impl DrawKey {
     /// pair stays out of it. The depth template places the vertices of the engine's templates as
     /// they do, with the same faces and depth bias. It cannot follow a pair that blends, discards
     /// fragments by their alpha, skips the depth test or depth writes, or has a custom material,
-    /// whose vertices may move.
+    /// whose vertices may move, or a sprite material, whose quads turn to face the camera.
     pub const fn prepass(self) -> Option<DrawKey> {
         let unfit = state_flags::BLEND
             | state_flags::LINE_LIST
@@ -177,6 +177,8 @@ impl DrawKey {
         if self.state & unfit != 0
             || self.permutation & permutation::ALPHA_MASK != 0
             || self.template >= template::CUSTOM_FIRST
+            || self.template == template::SPRITE
+            || self.template == template::SPRITE_MAP
         {
             return None;
         }

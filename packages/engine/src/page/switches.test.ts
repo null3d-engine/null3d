@@ -38,6 +38,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?skinning=compute').vertexSkinning).toBe(false);
 	});
 
+	it('turns occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {
+		expect(parseSwitches('?occlusion=on').occlusion).toBe(true);
+		expect(parseSwitches('?occlusion=off').occlusion).toBe(false);
+		expect(parseSwitches('?occlusion=yes').occlusion).toBeUndefined();
+	});
+
 	it('turns the depth prepass on or off with ?prepass=, and leaves it to the page otherwise', () => {
 		expect(parseSwitches('?prepass=on').prepass).toBe(true);
 		expect(parseSwitches('?prepass=off').prepass).toBe(false);

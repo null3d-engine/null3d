@@ -51,11 +51,13 @@ Each object has a position, a rotation and a scale, all relative to its parent. 
 
 Setters write straight into the engine's memory and mark the object as changed. They send no message and allocate nothing, so `onUpdate` can call them for many objects in every frame. In development builds, a setter that gets `NaN` or an infinite number throws E1203.
 
+Positions are 32-bit floats by default, which move in steps of 6 cm at 1,000 km from the origin. An engine started with `largeWorld: true` keeps each position that you set exact at any distance. [Large worlds and precision](../concepts/large-worlds.md) explains both.
+
 ## Reading transforms
 
 Getters copy into an array you pass, so they allocate nothing. Make the array once, for example with `vec3.create()`, and reuse it.
 
-- `getPosition(out)` copies the position that you set, relative to the parent. `getRotation(out)` copies the rotation, as a quaternion (x, y, z, w).
+- `getPosition(out)` copies the position that you set, relative to the parent. In large-world mode it keeps its full precision, so pass a plain array or a `Float64Array`. `getRotation(out)` copies the rotation, as a quaternion (x, y, z, w).
 - `getWorldPosition(out)` copies the position in the world, and `getWorldQuaternion(out)` the rotation in the world.
 - `getWorldMatrix(out)` copies the world matrix: 16 numbers, column by column, as the [math helpers](math.md) and three.js's `matrixWorld` hold them.
 
@@ -110,6 +112,7 @@ A mesh has these calls besides the ones above. Like the structural calls, they t
 - `setRenderOrder(order)` sets the order in which blended objects draw, lower first, as three.js's `renderOrder` does. Objects of one order draw farthest first. The engine orders opaque and masked objects itself, for speed, as the depth test decides what shows. The order costs nothing: the engine sorts blended objects in every frame anyway. [Materials and pipelines](../concepts/materials.md#the-transparent-pass) explains the sort.
 - `setFrustumCulled(false)` makes the engine draw the mesh even when its bounds are out of view, as three.js's `frustumCulled = false` does.
 - `setBounds(center, radius)` gives the mesh a bounding sphere of its own, which culling tests instead of the mesh's sphere. The center is relative to the object's origin, and both values are before the object's scale. Use it when a shader moves vertices outside the mesh's sphere: bounds that cover the moved vertices keep culling at work, where `setFrustumCulled(false)` turns it off. A negative radius throws E1108 in development builds.
+- `setOccluder(true)` makes the mesh block the view: the objects wholly behind it skip the GPU, on WebGL2 and on WebGPU. The `occluder` option of `createMesh` and `instantiate` sets it at the start. It is false by default, and needs no rebuild. Mark large, solid meshes of up to 4,096 triangles, such as buildings. Meshes that blend, use an alpha mask or a custom material, or are skinned never block on WebGL2. [Culling](../concepts/culling.md#software-occlusion-culling-on-webgl2) explains both methods.
 
 `setMaterial`, `setMesh`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows` rebuild the draw tables, so call them at setup or behind a loading screen. The [performance guide](../guides/performance.md#objects-during-play) lists the cost of each call. [Culling](../concepts/culling.md#bounds-that-you-set) explains how the engine culls with your bounds.
 
@@ -152,6 +155,7 @@ A drawn object: a mesh and a material.
 | `setMesh(mesh: MeshGeometry): void` | Changes the shape from the next frame. The mesh's bounds replace the object's, so call `setBounds` again after this when the object needs bounds of its own. |
 | `setCastShadows(cast: boolean): void` | Makes the mesh cast the shadows of a directional light, or stop. The default is false. A change rebuilds the engine's tables of what it draws, as a new material does. |
 | `setReceiveShadows(receive: boolean): void` | Makes shadows fall on the mesh, or stop. The default is false. Unlit materials show no shadows. A change rebuilds the engine's tables of what it draws, as a new material does. |
+| `setOccluder(occluder: boolean): void` | Makes the mesh block the view, or stop. The default is false. On WebGL2, while the `softwareOcclusion` quality setting is on, the job workers draw each blocker into a small depth buffer every frame, and the engine skips every object that lies wholly behind the blockers. On WebGPU, while the `gpuOcclusion` setting is on, the GPU draws the depth of the blockers that showed in the last frame and skips every object wholly behind them. Mark large, solid meshes that hide much of the scene, such as buildings and walls, whose mesh has at most 4,096 triangles. A blocker's mesh must lie inside what the object draws, as the object's own mesh does. Objects that blend, cut holes with an alpha mask or use a custom material never block, whatever this says, nor do skinned ones on WebGL2. A change needs no rebuild of the engine's tables. |
 | `setRenderOrder(order: number): void` | Sets the order in which the mesh draws among blended objects, lower first, as three.js's `renderOrder`. Objects of one order draw farthest first. The default is 0. The engine orders opaque and masked objects itself. |
 | `setFrustumCulled(culled: boolean): void` | With false, the engine draws the mesh even where its bounds are out of view, as three.js's `frustumCulled = false` does. The default is true. For vertices that a shader moves, larger bounds from `setBounds` cost less. |
 | `setBounds(center: Vec3Like, radius: number): void` | Replaces the mesh's bounding sphere, which culling tests, with a sphere of your own: `center` relative to the object's origin, and `radius`, both before the object's scale. Use it when a shader moves vertices outside the mesh's sphere. `setMesh` gives the mesh's sphere back. |

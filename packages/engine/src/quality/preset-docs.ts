@@ -82,6 +82,7 @@ export const SETTING_DOCS: {
 	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	gpuOcclusion: { label: 'GPU occlusion culling (WebGPU)', print: yesNo },
+	softwareOcclusion: { label: 'Software occlusion culling (WebGL2)', print: yesNo },
 	maxAnisotropy: { label: 'Anisotropic filtering cap', print: (value) => `${value}x` },
 	uploadBytesPerFrame: {
 		label: 'Texture uploads per frame',

@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `bloom`, `occlusion`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak` and `warm-up-time`. `bun run devices` runs the checks on the phone and on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `bloom`, `occlusion`, `gpu-occlusion`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak` and `warm-up-time`. `bun run devices` runs the checks on the phone and on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-grey when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -26,6 +26,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 - Do not edit engine or benchmark page files, or `vite.config.ts`, during a run. The dev server reloads the pages being measured, and restarts when its config changes.
 - The dev server loads the Vite plugin, and the shader compiler that the plugin runs, once when it starts. It never loads a new copy of them while it runs.
 - After a pull that changes `packages/vite-plugin` or the Vite config, run `bun run build`, then restart the dev server before a run. Restart it before the browser tests too, because they use a dev server that already answers on their port. The build also brings the engine core that the server serves up to date. On 1 October 2026, a stale server rejected new custom material sketches with "the WGSL has no entry point".
+- The dev server watches no file under a `.claude/` folder, as `server.watch.ignored` in `vite.config.ts` says. So a dev server in a worktree under `.claude/worktrees/` sees no edits. It serves each file as it first served it. After a change in such a worktree, restart its dev server. A file with a new name loads fresh without a restart. On 4 October 2026, an edited probe page loaded as its old copy, on the S25 and on the Mac.
 - Do not add or move files in the tree that the dev server watches during a run. A new HTML file anywhere in it reloads every open page, and a page reloaded while it measures reports 0 frames.
 - The `smoke` plan is about a tenth of the checks plan, for a device in a cloud session of limited time. It keeps the capability, isolation, shader, upload, preset, warm-up and stats pages, the restarts of each build, and the main features' image tests. Each image test runs on every GPU tier in its first thread mode, so new tiers and modes join by the same rules.
 - The runner page detects the browser it runs in, from Brave's object on `navigator`, the client hints and the user agent. It records the browser, the GPU and the page's address in `device.json`. The summary names each runner's browser. When a runner's name names one browser and its page runs in another, the runner warns. A name that names no browser, such as `bspixel10`, suits a device whose browser is chosen in the session.
@@ -62,7 +63,7 @@ The runner watches each browser's results while a run goes on. Two guards keep a
 ### A display whose refresh rate changes
 
 - Frame rates mean little without the display's refresh rate. On 3 October 2026, the iPad reported refresh rates from 35 to 65 Hz between runs. A drop from 49 to 35 frames per second looked like a regression in the code. It followed the display's rate instead.
-- So in the plans that time pages, the runner page measures the refresh rate before each page. These plans are `bench`, `startup`, `governor`, `skinning`, `skinning-webgpu`, `bloom`, `occlusion`, `overload` and `soak`, and the scale search. The list is `TIMED_PLANS` in `tests/real-browsers.ts`.
+- So in the plans that time pages, the runner page measures the refresh rate before each page. These plans are `bench`, `startup`, `governor`, `skinning`, `skinning-webgpu`, `bloom`, `occlusion`, `gpu-occlusion`, `overload` and `soak`, and the scale search. The list is `TIMED_PLANS` in `tests/real-browsers.ts`.
 - The runner page measures with no test page loaded, from the middle interval of 60 animation frames. It adds the rate to the page's result as `runnerRefreshHz`. Each runner page also measures it once at its start, in `device.json`.
 - After the run, the runner marks a browser's timing figures as unreliable when a reading is below 55 Hz. It marks them too when the readings differ by more than a tenth of the highest one. The device checklist asks for 60 Hz.
 - The limits are `EXPECTED_REFRESH_HZ`, `LOWEST_REFRESH_HZ` and `REFRESH_SPREAD` in `tests/real-browsers.ts`. A display that holds 120 Hz all through the run passes, as on a Mac with a 120 Hz screen.
@@ -185,13 +186,21 @@ To collect the numbers, rest each device first and close its other tabs:
 - The plan runs the page on each GPU path at render scales of 1 and 0.5: 4 pages. The difference between the sides is bloom's cost at that scale.
 - Run it on the iPad and the phone: `bun tests/real-browsers.ts --plan bloom --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool. On a device that draws faster than its display, the GPU time tells the cost. The frame interval only shows whether the frames kept the display's rate.
 
-
 ## The occlusion plan
 
-- The `occlusion` plan measures what GPU occlusion culling saves and costs on WebGPU, for [D-22](decisions/D-22-occlusion-presets.md). Its page (`tests/pages/occlusion.html`) draws the occlusion scene: a room whose walls hide most of a field of detailed spheres.
+- The `occlusion` plan measures what software occlusion culling costs and saves on WebGL2, for [D-41](decisions/D-41-software-occlusion.md). Its page is `tests/pages/occlusion-cost.html`.
+- The page draws a city over the whole window. It has 64 buildings that block the view, and 3,000 spheres and 20,000 boxes along the streets. A camera flies down one street. The render scale is fixed at 1 and the governor is off.
+- After 2 seconds of play, the page measures 2 seconds with the culling off and 2 with it on, three times each. Heat then slows both sides alike.
+- It reports the medians of each side's figures. They are the busiest thread's CPU time per frame and all threads' together, and the sketch worker's time with its culling step. Then come the render worker's time, the job workers' time together and the GPU time where the browser has a timer. Last come the frame interval, and the entries that the frame drew and that the culling hid.
+- The culling saves when the render worker's time and the GPU's time fall by more than the job workers' and the sketch worker's time grows.
+- Run it on the phone and the iPad: `bun tests/real-browsers.ts --plan occlusion --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool. The page takes `?rounds=` and `?seconds=` to time one load by hand.
+
+## The GPU occlusion plan
+
+- The `gpu-occlusion` plan measures what GPU occlusion culling saves and costs on WebGPU, for [D-22](decisions/D-22-occlusion-presets.md). Its page (`tests/pages/gpu-occlusion.html`) draws the room scene: a room whose walls, its occluders, hide most of a field of detailed spheres.
 - First it turns the camera through six views, a quarter turn or more each, with culling off and then on. It counts the pixels where the frames differ. Every view must match.
 - Then the scene fills the window at the High preset, with the render scale fixed at 1 and the governor off. The page measures 4 seconds with culling off and 4 with it on, three times each, each in a new engine. It reports the medians of each side's GPU time, frame interval and CPU time per frame. It also reports the GPU time of each pass and the share of the spheres that the walls hide.
-- Run it on the iPad: `bun tests/real-browsers.ts --plan occlusion --lan ipad-safari`. Turn on Limit Frame Rate first, and start cool. The S24+ has no WebGPU, so it has no figure.
+- Run it on the iPad: `bun tests/real-browsers.ts --plan gpu-occlusion --lan ipad-safari`. Turn on Limit Frame Rate first, and start cool. The S24+ has no WebGPU, so it has no figure.
 
 ## The animation plan
 

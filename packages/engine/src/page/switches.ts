@@ -1,13 +1,12 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?shaders=fresh,
-// ?check=fresh, ?wake=message, ?hdr=off, ?half= and ?compression=. More set what the benchmarks
-// vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the shared
-// memory's maximum, ?queue= for the frames that may wait on the GPU, ?cells=off for culling
-// without grid cells, ?prepass=on or off for the depth prepass, ?occlusion=on or off for GPU
-// occlusion culling, and ?skinning=vertex for skinning in the vertex shader of each pass on
-// WebGPU. ?hold starts hold mode for image tests, ?preset= fixes the quality preset, ?bench
-// publishes the running engine for benchmark tools, and ?gl-timing times each WebGL call for
-// benchmark pages.
+// ?check=fresh, ?wake=message, ?hdr=off, ?half= and ?compression=. Eight more set what the
+// benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the
+// shared memory's maximum, ?queue= for the frames that may wait on the GPU, ?cells=off for culling
+// without grid cells, ?prepass=on or off for the depth prepass, ?occlusion=on or off for occlusion
+// culling, and ?skinning=vertex for skinning in the vertex shader of each pass on WebGPU. ?hold
+// starts hold mode for image tests, ?preset= fixes the quality preset, ?bench publishes the
+// running engine for benchmark tools, and ?gl-timing times each WebGL call for benchmark pages.
 
 import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
@@ -119,8 +118,9 @@ export interface Switches {
 	 */
 	prepass: boolean | undefined;
 	/**
-	 * True when ?occlusion=on turns GPU occlusion culling on, false when ?occlusion=off turns it
-	 * off, and undefined to leave it to the page's option and the quality preset.
+	 * True when ?occlusion=on turns occlusion culling on, false when ?occlusion=off turns it off,
+	 * and undefined to leave it to the page's options and the quality preset. It sets GPU occlusion
+	 * culling on WebGPU and software occlusion culling on WebGL2.
 	 */
 	occlusion: boolean | undefined;
 	/**

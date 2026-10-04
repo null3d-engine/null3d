@@ -41,6 +41,7 @@ export interface CoreGlue extends CoreErrors {
 		cellCulling: boolean,
 		depthPrepass: boolean,
 		vertexSkinning: boolean,
+		largeWorld: boolean,
 		gpuOcclusion: boolean,
 	): number;
 	jobWorkerLoop(index: number): void;
@@ -103,6 +104,11 @@ export interface CoreGlue extends CoreErrors {
 	 * `CORE_NOT_COUNTED` where the GPU culls.
 	 */
 	visibleEntries(frame: number): number;
+	/**
+	 * The sources inside the camera's frustum that software occlusion culling hid in a recorded
+	 * frame, where the path culls on the CPU, or `CORE_NOT_COUNTED` where the GPU culls.
+	 */
+	occludedEntries(frame: number): number;
 	/** True when the last recorded frame rebuilt its draw tables after a structure change. */
 	drawTablesRebuilt(): boolean;
 	resetGpu(): number;
@@ -138,7 +144,22 @@ export interface CoreGlue extends CoreErrors {
 		material: number,
 		part: Float32Array,
 	): number;
+	/**
+	 * Creates a sprite batch of a quad mesh and a sprite material, with an atlas of `columns` by
+	 * `rows` frames, sized in CSS pixels of the screen with `screenSize`.
+	 */
+	createSpriteBatch(
+		capacity: number,
+		dynamic: boolean,
+		mesh: number,
+		material: number,
+		columns: number,
+		rows: number,
+		screenSize: boolean,
+	): number;
 	destroyBatch(batch: number, frame: number): number;
+	/** Places a batch's origin, which its rows are relative to, and marks every row for update. */
+	setBatchOrigin(batch: number, x: number, y: number, z: number): number;
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
 	/** Sets the layer mask of every row of a batch, as an unsigned 32-bit number. */
@@ -337,6 +358,8 @@ export interface CoreGlue extends CoreErrors {
 	setBloom(on: boolean): number;
 	/** How many times fewer taps than three.js's bloom's blurs read, from the next frame on. */
 	setBloomSamples(divisor: number): number;
+	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
+	setSoftwareOcclusion(on: boolean): number;
 	/**
 	 * Grades the canvas color with the color grading table in a 3D texture, or with none for 0,
 	 * from the next frame on, with the post-processing values' intensity and domain.
@@ -351,6 +374,8 @@ export interface CoreGlue extends CoreErrors {
 	setCanvasOutput(sceneColor: number, antialias: number): number;
 	/** Whether the render scale can drop below the whole canvas, from the next frame on. */
 	setRenderScaling(scaling: boolean): number;
+	/** The device pixels per CSS pixel of the canvas, which size sprites given in screen pixels. */
+	setPixelRatio(ratio: number): number;
 	/**
 	 * The shadow filter's texels on each side, 3 or 5, and the frames between two draws of a far
 	 * shadow cascade, from 1 to 8, from the next frame on.
@@ -459,6 +484,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'cullFrame',
 	'recordFrame',
 	'visibleEntries',
+	'occludedEntries',
 	'drawTablesRebuilt',
 	'resetGpu',
 	'drawListAddress',
@@ -468,6 +494,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'drawDebugLines',
 	'createBatch',
 	'createBatchPart',
+	'createSpriteBatch',
 	'destroyBatch',
 	'batchArrays',
 	'setBatchActiveCount',
@@ -510,10 +537,12 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOutput',
 	'setBloom',
 	'setBloomSamples',
+	'setSoftwareOcclusion',
 	'setLut',
 	'setVignette',
 	'setCanvasOutput',
 	'setRenderScaling',
+	'setPixelRatio',
 	'setShadowQuality',
 	'shadowCasters',
 	'setBackgroundTexture',

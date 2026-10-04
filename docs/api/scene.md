@@ -151,7 +151,7 @@ The GPU draws each kind of object with a pipeline, which takes time to build. Th
 
 ## Instance batches
 
-An instance batch is one object that draws many copies of one mesh with one material. Its rows live in typed arrays that sketch code writes directly, with no call per row. A static batch, the default, uploads the rows you mark with `markDirty`. A batch created with `dynamic: true` uploads every row in every frame. Every row of a batch shares the batch's layers, which the `layers` option and `setLayers(mask)` set, as [Render layers](../concepts/render-layers.md) explains. [Instances and batching](../concepts/instances.md) explains batches in full.
+An instance batch is one object that draws many copies of one mesh with one material. Its rows live in typed arrays that sketch code writes directly, with no call per row. A static batch, the default, uploads the rows you mark with `markDirty`. A batch created with `dynamic: true` uploads every row in every frame. Every row of a batch shares the batch's layers, which the `layers` option and `setLayers(mask)` set, as [Render layers](../concepts/render-layers.md) explains. Rows are relative to the batch's `origin`, which keeps rows precise far from the world's origin: [Batch origins](../concepts/large-worlds.md#batch-origins). [Instances and batching](../concepts/instances.md) explains batches in full.
 
 ## Limits
 
@@ -222,6 +222,7 @@ Options for `scene.createInstances`.
 | `dynamic?: boolean` | Every row updates and uploads every frame; a static batch updates rows marked dirty only. |
 | `colors?: boolean` | Adds a color per row (RGBA, linear). This version stores the colors but does not draw them yet. |
 | `layers?: number` | The layers every row is on, as a 32-bit mask. The default, 1, is layer 0. |
+| `origin?: Vec3` | The point that every row's position is relative to. The default is (0, 0, 0). The engine keeps the origin at full precision, so rows near it keep the precision of 32-bit floats at any distance from the world's origin. Give a batch far from the origin, such as a forest on a planet, an origin among its rows. |
 
 ### `InstantiateOptions`
 
@@ -233,6 +234,7 @@ Options for `scene.instantiate`: where the copy's group goes, and settings for a
 | --- | --- |
 | `castShadows?: boolean` | True makes every mesh of the copy cast the shadows of a directional light. The default is false. |
 | `receiveShadows?: boolean` | True makes shadows fall on every mesh of the copy. The default is false. |
+| `occluder?: boolean` | True makes every mesh of the copy block the view for occlusion culling, on WebGL2 and on WebGPU, like `setOccluder(true)`. The default is false. |
 
 ### `LinearFogOptions`
 
@@ -259,6 +261,7 @@ Options for `scene.createMesh`.
 | `material: Material` | How the surface looks, from `ctx.materials`. |
 | `castShadows?: boolean` | True makes the mesh cast the shadows of a directional light, like `setCastShadows(true)`. The default is false. |
 | `receiveShadows?: boolean` | True makes shadows fall on the mesh, like `setReceiveShadows(true)`. The default is false. Unlit materials show no shadows. |
+| `occluder?: boolean` | True makes the mesh block the view for occlusion culling, on WebGL2 and on WebGPU, like `setOccluder(true)`. The default is false. |
 
 ### `NodeOptions`
 
@@ -302,6 +305,7 @@ The scene: every object, the active camera, the lights and the background.
 | `clone<T extends Object3D>(object: T): T` | Copies an object and every object below it, as three.js's `clone` does, with their meshes, materials, lights, cameras and settings, and returns the copy of the object. The copy has the same parent, so it starts in the same place. The copies are created with one batch of commands. Instance batches are not objects, so they are not copied. Throws E1102 when the scene has no room for the copies, before it creates any. |
 | `createInstances(mesh: MeshGeometry, count: number, options: InstanceOptions): InstanceBatch` | Many copies of one mesh and material, with typed arrays of rows. Or many copies of a model that `assets.loadGltf` loaded, without a material: one batch for each mesh of the model, which share one set of rows, so one row places a whole copy. The model's lights are left out. Throws E1417 for a model with no meshes, or with instancing of its own. |
 | `createInstances(prefab: Prefab, count: number, options?: Omit<InstanceOptions, 'material'>): InstanceBatch` | Many copies of one mesh and material, with typed arrays of rows. Or many copies of a model that `assets.loadGltf` loaded, without a material: one batch for each mesh of the model, which share one set of rows, so one row places a whole copy. The model's lights are left out. Throws E1417 for a model with no meshes, or with instancing of its own. |
+| `createSprites(options: SpriteOptions): Promise<SpriteBatch>` | Many sprites in one batch: quads that face the camera, like three.js's `Sprite` with a `SpriteMaterial`. Typed arrays give each sprite its position, size, rotation, color and atlas frame, as an instance batch's arrays give its rows. Sprites blend by default, and blended sprites draw back to front with the other blended objects. The first call downloads the sprite code. Throws E1108 for an atlas side that is not a whole number from 1 to 2048, E1203 for a center that is not two finite numbers, and E1406 when the sprite code does not download. |
 | `createPerspectiveCamera(options: PerspectiveCameraOptions = {}): PerspectiveCamera` | A perspective camera; `fov` is vertical, in degrees. Cameras are dynamic by default. |
 | `createOrthographicCamera(options: OrthographicCameraOptions = {}): OrthographicCamera` | An orthographic camera, whose view is a box: things keep their size at every distance. Give `height`, and the width follows the canvas, or give `left`, `right`, `top` and `bottom`. Cameras are dynamic by default. |
 | `setActiveCamera(camera: Camera): void` | Draws the scene from this camera. |

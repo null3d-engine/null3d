@@ -1,5 +1,5 @@
-// GPU occlusion culling against culling without it, in the occlusion scene (bench/scenes/
-// occlusion.ts): a room whose walls hide most of a field of detailed spheres. The page starts the
+// GPU occlusion culling against culling without it, in the room scene (bench/scenes/room.ts): a
+// room whose walls, its occluders, hide most of a field of detailed spheres. The page starts the
 // engine without occlusion culling, then with it, at the High preset, and turns the camera through
 // the scene's views in the same order on both. Each turn faces another wall, so the objects that
 // drew in the frame before are not the ones in view. After each turn it reads a frame back, and
@@ -11,7 +11,7 @@
 // where the device has a GPU timer, and of its frame interval and CPU time, beside the share of the
 // spheres that the walls hide. The device runner's occlusion plan runs it that way.
 import { createEngine, type Engine } from '@null3d/engine';
-import { hiddenShare, OCCLUSION_VIEWS } from '../../bench/scenes/occlusion';
+import { hiddenShare, ROOM_VIEWS } from '../../bench/scenes/room';
 import { run, toBase64 } from './lib/result';
 
 const params = new URLSearchParams(location.search);
@@ -45,7 +45,7 @@ async function start(gpuOcclusion: boolean): Promise<Engine> {
 	document.body.prepend(canvas);
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL('./sketches/occlusion-sketch.ts', import.meta.url),
+		sketch: new URL('./sketches/room-sketch.ts', import.meta.url),
 		preset: 'high',
 		maxPixelRatio: params.has('seconds') ? undefined : 1,
 		antialias: ANTIALIAS,
@@ -78,7 +78,7 @@ async function framesOf(gpuOcclusion: boolean, failures: string[]) {
 	engine.onFailure((error) => failures.push(error.code));
 	const frames: Uint8Array[] = [];
 	let occlusion = false;
-	for (let view = 0; view < OCCLUSION_VIEWS.length; view++) {
+	for (let view = 0; view < ROOM_VIEWS.length; view++) {
 		occlusion = await turn(engine, view);
 		frames.push((await engine.captureFrame()).pixels);
 	}
@@ -128,7 +128,7 @@ async function cost() {
 		cpuMs: median(sides[side].cpuMs),
 	});
 	return {
-		hiddenShare: hiddenShare(OCCLUSION_VIEWS[0] ?? 0, aspect),
+		hiddenShare: hiddenShare(ROOM_VIEWS[0] ?? 0, aspect),
 		window: [innerWidth, innerHeight],
 		devicePixelRatio,
 		off: summary('off'),
@@ -137,7 +137,7 @@ async function cost() {
 	};
 }
 
-run('occlusion', async () => {
+run('gpu-occlusion', async () => {
 	const failures: string[] = [];
 	const off = await framesOf(false, failures);
 	const on = await framesOf(true, failures);
@@ -150,7 +150,7 @@ run('occlusion', async () => {
 		tier: on.facts.tier,
 		occlusion: { off: off.facts.occlusion, on: on.facts.occlusion },
 		...(images && { images }),
-		views: OCCLUSION_VIEWS.length,
+		views: ROOM_VIEWS.length,
 		differingPixels,
 		...(SECONDS > 0 && { cost: await cost() }),
 		failures,

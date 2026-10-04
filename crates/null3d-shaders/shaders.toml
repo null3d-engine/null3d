@@ -105,6 +105,24 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { defs = ["JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN"], targets = ["glsl"] }
 
+# Sprites, like three.js's Sprite with a SpriteMaterial: quads of a sprite batch's rows that face
+# the camera, in the material's color times each sprite's color. ALPHA_MASK as for the standard
+# material.
+[shaders.sprite]
+file = "sprite.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP", "ALPHA_MASK"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "ALPHA_MASK"], targets = ["glsl"] }
+
+# Sprites times the material's map at each sprite's frame of the atlas, from the same file.
+[shaders.sprite_map]
+file = "sprite.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MAP"], permutations = ["TONE_MAP", "ALPHA_MASK"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAP"], permutations = ["DRAW_INDEX", "TONE_MAP", "ALPHA_MASK"], targets = ["glsl"] }
+
 # Colored by the first texture coordinates, for the engine's own tests of vertex formats.
 [shaders.texcoords]
 file = "texcoords.wgsl"

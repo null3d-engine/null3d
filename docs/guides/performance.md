@@ -119,6 +119,7 @@ The engine keeps each scene's draw tables and every object's matrix on the GPU, 
 | `setVisible` | The matrix and 4-byte draw entry of the object and of each object under it |
 | `setActiveCount` | The 4-byte draw entry of each row that starts or stops drawing |
 | `setLayers` | No rebuild: each view tests the new mask from the next frame |
+| `setOccluder` | No rebuild: the camera's blockers change from the next frame |
 | `setRenderOrder` | Nothing |
 | `material.set` | The material's row of 128 bytes, and a custom material's row of uniforms. Changes to several materials in one frame upload every row from the first to the last |
 | Creating or destroying an instance batch, or an object of any kind, lights included | A rebuild, and engine memory can grow in the next frame |
@@ -206,6 +207,10 @@ Each shadow cascade that draws in a frame costs a pass over its casters, and its
 
 The governor lowers the far cascades' rate and the shadow filter when frames run long, after the render scale ([The frame-budget governor](../concepts/quality-presets.md#the-frame-budget-governor)).
 
+## Blockers on WebGL2
+
+On WebGL2, objects marked with `setOccluder(true)` or the `occluder` option hide what lies wholly behind them, and the GPU skips it. The job workers draw the blockers into a small depth buffer each frame, so each blocker costs CPU time on them. Mark a few large, solid objects that hide many others, such as the buildings along a street. Then compare `occludedEntries` with `visibleEntries` in `measure`, and the job workers' time with the `softwareOcclusion` setting on and off. [Culling](../concepts/culling.md#software-occlusion-culling-on-webgl2) explains the method and its limits.
+
 ## The depth prepass
 
 With the `depthPrepass` option of `createEngine`, WebGPU draws the depth of the opaque objects first. The opaque pass then shades each pixel once, for its nearest surface. It saves GPU time where objects hide many others and their shading costs much. It always costs a second pass over the vertices, so every preset leaves it off.
@@ -234,6 +239,7 @@ For a quick look while the scene runs, call `debug.stats(true)` in the sketch. I
 | `mainThread` | Long tasks and input delay on the page's own thread, where the browser reports them (Chrome) |
 | `uploadBytes` and `drawCalls` | Bytes uploaded and draw calls made per frame |
 | `visibleEntries` | On WebGL2, the entries per frame in the list of visible objects. It is null on WebGPU, where the GPU culls |
+| `occludedEntries` | On WebGL2, the entries per frame that blockers hid after the frustum test. It is null on WebGPU |
 | `rebuilds` | Frames whose structure change rebuilt the draw tables |
 | `gpuObjects` | GPU buffers, textures, views, samplers and bind groups that the engine made. Steady play makes none, and neither does a new render scale |
 | `pipelines` | GPU pipelines built, which can stall the frame they happen in |

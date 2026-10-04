@@ -113,6 +113,14 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0.25, 0.5, 1],
 	},
+	// Software occlusion culling on WebGL2: the job workers draw the objects marked as blockers
+	// into a small depth buffer, and hide what lies wholly behind them. Its cost on phones is not
+	// measured yet, so these values follow the plan until device runs settle them (D-41).
+	softwareOcclusion: {
+		presets: [false, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
 	// The frame-budget governor (governor.ts), which lowers the live settings above when frames take
 	// too long and raises them again when they have time to spare.
 	governor: {
@@ -310,14 +318,20 @@ export interface QualitySettings {
 	 */
 	depthPrepass: boolean;
 	/**
-	 * True when the GPU skips the opaque objects that others hide. Each camera view first draws the
-	 * objects that it showed in the last frame, then tests every other object in view against the
-	 * depth they left, and draws those that show. It saves GPU time where walls and large objects
-	 * hide many others, and costs a little where little hides. The page's `gpuOcclusion` option of
-	 * `createEngine` sets it, and `set` does not take it. It is always false on WebGL2, and when
-	 * the depth prepass is on.
+	 * True when GPU occlusion culling runs on WebGPU: each camera view draws the depth of the
+	 * objects that `setOccluder(true)` marks and that it showed in the last frame, and skips every
+	 * object that lies wholly behind them. A frame without marked objects pays nothing for it. The
+	 * page's `gpuOcclusion` option of `createEngine` sets it, and `set` does not take it. It is
+	 * always false on WebGL2, and when the depth prepass is on.
 	 */
 	gpuOcclusion: boolean;
+	/**
+	 * True when software occlusion culling runs on WebGL2: each frame, the job workers draw the
+	 * objects that `setOccluder(true)` marks into a small depth buffer, and the engine skips every
+	 * object that lies wholly behind them. It costs the job workers time for each blocker, and
+	 * saves drawing what they hide. It changes during play. WebGPU ignores it.
+	 */
+	softwareOcclusion: boolean;
 }
 
 /** The names of the settings in the preset table that change as `changes` says. */

@@ -164,20 +164,38 @@ export interface EngineOptions {
 	 */
 	depthPrepass?: boolean;
 	/**
-	 * True to skip the opaque objects that others hide, on the GPU: each camera view draws what it
-	 * showed in the last frame, tests every other object against that depth, and draws those that
-	 * show. It saves GPU time where walls and large objects hide many others. Without it, the
-	 * quality preset decides: High and Ultra turn it on. It stays fixed while the engine runs, and
-	 * the `?occlusion=on` or `?occlusion=off` switch wins over this option. WebGL2 and the depth
-	 * prepass draw without it. Another value fails with E1213.
+	 * True to run GPU occlusion culling on WebGPU: objects that `setOccluder(true)` marks hide the
+	 * objects that lie wholly behind them, so the GPU skips those. Each camera view draws the depth
+	 * of the marked objects that it showed in the last frame and tests every object against it. It
+	 * saves GPU time where walls and large objects hide many detailed ones; a scene that marks no
+	 * object pays nothing. Without it, the quality preset decides: High and Ultra turn it on. It
+	 * stays fixed while the engine runs, and the `?occlusion=on` or `?occlusion=off` switch wins
+	 * over this option. WebGL2 and the depth prepass draw without it. Another value fails with E1213.
 	 */
 	gpuOcclusion?: boolean;
+	/**
+	 * True to run software occlusion culling on WebGL2: objects that `setOccluder(true)` marks hide
+	 * the objects that lie wholly behind them, so the GPU skips those. False turns it off. Without
+	 * it, the quality preset decides, and a sketch can change it during play with `quality.set`.
+	 * The `?occlusion=on` or `?occlusion=off` switch wins over this option. WebGPU ignores it.
+	 * Another value fails with E1213.
+	 */
+	softwareOcclusion?: boolean;
 	/**
 	 * True for a see-through canvas: the page shows through wherever no object draws, until the
 	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
 	 * it. The default is false, an opaque canvas.
 	 */
 	transparent?: boolean;
+	/**
+	 * True for scenes that reach far beyond a city, such as a planet. Object positions then keep the
+	 * precision of JavaScript's numbers at any distance from the origin: 0.03 mm or better. Without
+	 * it, positions are 32-bit floats, which move in steps of 6 cm at 1,000 km from the origin and
+	 * 0.5 m at the Earth's radius. It costs 12 bytes of memory per object and a little work in each
+	 * position setter. The default is false. Instance batches need no mode: give each one an
+	 * `origin` near its rows.
+	 */
+	largeWorld?: boolean;
 	/**
 	 * The thread that runs the sketch's code and the engine core: `worker`, the default, or `main`
 	 * for the page's main thread, where the sketch can reach the DOM. Use `main` for apps that work
@@ -787,6 +805,7 @@ async function startEngine(
 		pointLightShadows: options.pointLightShadows,
 		depthPrepass: switches.prepass ?? options.depthPrepass,
 		gpuOcclusion: switches.occlusion ?? options.gpuOcclusion,
+		softwareOcclusion: switches.occlusion ?? options.softwareOcclusion,
 	};
 	checkSettings('createEngine()', pageSettings);
 	const presetRequest: PresetRequest = {
@@ -1029,6 +1048,7 @@ async function startEngine(
 		antialias: quality.settings.antialias,
 		transparent: options.transparent === true,
 		depthPrepass: quality.settings.depthPrepass,
+		largeWorld: options.largeWorld === true,
 		gpuOcclusion: quality.settings.gpuOcclusion,
 	});
 	const capabilities: EngineCapabilities = {

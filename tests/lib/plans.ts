@@ -189,8 +189,10 @@ export type Check =
 	| { kind: 'skinning'; tier: SkinningGpu; characters: number; cascades: number }
 	/** The bloom cost page: bloom off and on in turns, at one render scale. */
 	| { kind: 'bloom'; tier: Tier; scale: number }
-	/** The occlusion page: frames culled against unculled, then GPU occlusion off and on in turns. */
+	/** The occlusion cost page: the city with software occlusion culling off and on in turns. */
 	| { kind: 'occlusion' }
+	/** The GPU occlusion page: frames culled against unculled, then the culling off and on in turns. */
+	| { kind: 'gpu-occlusion' }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
 	| { kind: 'animation'; characters: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
@@ -802,23 +804,41 @@ export function bloomPlan(): PlanItem<Check>[] {
 	);
 }
 
-/** How long the occlusion page may take: twelve frames read back, then six engines of 4 s each. */
-const OCCLUSION_TIMEOUT_SECONDS = 120;
+/** How long the occlusion cost page may take: the city's start, the warm-up and six measurements. */
+const OCCLUSION_TIMEOUT_SECONDS = 90;
 
 /**
- * What GPU occlusion culling saves and costs on WebGPU: the occlusion scene's frames with it and
- * without it must match, then the scene fills the window and the page times its frames with
- * occlusion culling off and on in turns. D-22 records the results.
+ * What software occlusion culling costs and saves on WebGL2: the occlusion city fills the window,
+ * and the page times its frames with the culling off and on in turns. D-41 records the results.
  */
 export function occlusionPlan(): PlanItem<Check>[] {
 	return [
 		pageItem(
-			'occlusion-webgpu',
-			'occlusion',
+			'occlusion-webgl2',
+			'occlusion-cost',
 			{ kind: 'occlusion' },
+			{ switches: ['gpu=webgl2'], timeoutSeconds: OCCLUSION_TIMEOUT_SECONDS },
+		),
+	];
+}
+
+/** How long the GPU occlusion page may take: twelve frames read back, then six engines of 4 s. */
+const GPU_OCCLUSION_TIMEOUT_SECONDS = 120;
+
+/**
+ * What GPU occlusion culling saves and costs on WebGPU: the room scene's frames with it and
+ * without it must match, then the scene fills the window and the page times its frames with the
+ * culling off and on in turns. D-22 records the results.
+ */
+export function gpuOcclusionPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(
+			'gpu-occlusion-webgpu',
+			'gpu-occlusion',
+			{ kind: 'gpu-occlusion' },
 			{
 				switches: ['gpu=webgpu', 'seconds=4', 'rounds=3'],
-				timeoutSeconds: OCCLUSION_TIMEOUT_SECONDS,
+				timeoutSeconds: GPU_OCCLUSION_TIMEOUT_SECONDS,
 			},
 		),
 	];
@@ -1141,6 +1161,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'skinning-webgpu': () => skinningPlan('webgpu'),
 	bloom: bloomPlan,
 	occlusion: occlusionPlan,
+	'gpu-occlusion': gpuOcclusionPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
 	soak: soakPlan,
@@ -1619,7 +1640,7 @@ export function judge(
 				...(bloom.on?.intervalMs ? [] : ['the page measured no frame with bloom on']),
 			];
 		}
-		case 'occlusion': {
+		case 'gpu-occlusion': {
 			const occlusion = result as ItemResult & {
 				failures?: string[];
 				differingPixels?: number[];
@@ -1631,6 +1652,17 @@ export function judge(
 					pixels > 0 ? [`view ${view} differs from culling off in ${pixels} pixels`] : [],
 				),
 				...(occlusion.cost?.on?.intervalMs ? [] : ['the page measured no frame with culling on']),
+			];
+		}
+		case 'occlusion': {
+			const occlusion = result as ItemResult & {
+				failures?: string[];
+				on?: { intervalMs?: number; occludedEntries?: number | null };
+			};
+			return [
+				...(occlusion.failures ?? []).map((code) => `the engine failed with ${code}`),
+				...(occlusion.on?.intervalMs ? [] : ['the page measured no frame with occlusion on']),
+				...(occlusion.on?.occludedEntries ? [] : ['occlusion culling hid nothing in the city']),
 			];
 		}
 		case 'animation':

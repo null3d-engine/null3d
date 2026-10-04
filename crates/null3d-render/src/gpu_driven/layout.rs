@@ -155,11 +155,11 @@ fn entry(bucket: u32, cell: u32, occluder: bool) -> u32 {
 
 /// A scene object's entry in the bucket table: its bucket, whether it is an occluder, and its
 /// cell, or `HIDDEN` while it is hidden, which its world radius says.
-fn scene_entry(home: u32, world_radius: f32, cell: u32, flags: u32) -> u32 {
+fn scene_entry(home: u32, world_radius: f32, cell: u32, object_flags: u32) -> u32 {
     if world_radius == f32::NEG_INFINITY {
         HIDDEN
     } else {
-        entry(home, cell, flags & scene_flags::OCCLUDER != 0)
+        entry(home, cell, object_flags & flags::OCCLUDER != 0)
     }
 }
 
@@ -171,12 +171,6 @@ fn row_entry(bucket: u32, batch: &InstanceBatch, row: u32, active: u32) -> u32 {
     } else {
         HIDDEN
     }
-}
-
-/// The flags of scene objects that the occlusion culling reads.
-mod scene_flags {
-    /// The sketch marks the object as an occluder.
-    pub const OCCLUDER: u32 = 1 << 7;
 }
 
 /// The occluders among entries.
@@ -532,9 +526,17 @@ impl Layout {
                 skinning.object(slot as u32).is_some(),
             )
         };
-        // Instance batches cast no shadows yet.
+        // Instance batches cast no shadows yet. Sprites sized in pixels of the screen have no
+        // bounds in the world, so culling keeps them.
         let batch_key = |batch: &InstanceBatch| match drawn {
-            Drawn::Scene => key_of(batch.mesh(), batch.material(), MESH_BOUNDS, 0, false),
+            Drawn::Scene => {
+                let bounds = if batch.unculled() {
+                    UNCULLED_BOUNDS
+                } else {
+                    MESH_BOUNDS
+                };
+                key_of(batch.mesh(), batch.material(), bounds, 0, false)
+            }
             Drawn::Casters => None,
         };
 

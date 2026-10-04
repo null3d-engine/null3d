@@ -38,6 +38,9 @@ function expectParity({ results }: RaycastPage, where: string): void {
 	expect(results.overlapChecks).toBe(results.closestHits);
 	expect([where, results.batchMismatches]).toEqual([where, 0]);
 	expect(results.batchHits).toBeGreaterThan(3_000);
+	// Hit points go to the screen and back as rays that pass within a tenth of a millimeter.
+	expect(results.projections).toBeGreaterThan(100);
+	expect(results.projectionError, where).toBeLessThan(1e-4);
 }
 
 const switchesOf = (mode: EngineMode, tier: string) =>
@@ -55,6 +58,23 @@ for (const tier of ['webgpu', 'webgl2'] as const)
 		// Each frame of the measurement cast 10,000 rays, which kept the job workers busy.
 		expect(result.jobBusyMs.every((ms) => ms > 0)).toBe(true);
 	});
+
+// The scene at the Earth's radius, off any cell's center. In large-world mode the engine finds
+// three.js's hits, which three.js computes in 64-bit numbers, and screen points come back to their
+// hits. Without the mode, root positions round to 32 bits, half a meter there, and hits differ.
+for (const tier of ['webgpu', 'webgl2'] as const)
+	test(`raycasts and screen points at the Earth's radius match three.js in large-world mode, on ${tier}`, async ({
+		page,
+	}) => {
+		expectParity(await open(page, `gpu=${tier}&far&largeWorld`), tier);
+	});
+
+test("without large-world mode, raycasts at the Earth's radius miss three.js's hits", async ({
+	page,
+}) => {
+	const { results } = await open(page, 'gpu=webgl2&far');
+	expect(results.mismatches).toBeGreaterThan(50);
+});
 
 for (const mode of ENGINE_MODES.slice(1))
 	test(`raycasts give three.js's hits in ${mode.name} mode`, async ({ page }) => {

@@ -50,3 +50,30 @@ export function createSwarm(
 	};
 	return { batch, pose };
 }
+
+/**
+ * Makes S1's instances as one dynamic batch of blended sprites, each placed at a time by S1's own
+ * placement and turned by its rotation's first component. Each frame sorts every visible sprite
+ * back to front. Its pose writes every sprite for time t, and allocates nothing.
+ */
+export async function createSpriteSwarm(
+	{ scene }: SketchContext,
+	count: number,
+): Promise<(t: number) => void> {
+	const data = createS1(count);
+	const sprites = await scene.createSprites({ count, color: S1_COLOR, dynamic: true });
+	sprites.sizes.fill(S1_BOX_SIZE);
+	const position = new Float64Array(3);
+	const rotation = new Float64Array(4);
+	return (t) => {
+		const positions = sprites.positions;
+		const rotations = sprites.rotations;
+		for (let i = 0; i < count; i++) {
+			s1InstanceAt(data, i, t, position, rotation);
+			positions[i * 3] = position[0] as number;
+			positions[i * 3 + 1] = position[1] as number;
+			positions[i * 3 + 2] = position[2] as number;
+			rotations[i] = (rotation[0] as number) * Math.PI;
+		}
+	};
+}

@@ -29,6 +29,7 @@ use null3d_core::jobs::{JobConfig, JobSystem};
 use null3d_core::lights::LightTable;
 use null3d_core::scene::{CommandRing, SceneStorage};
 use null3d_core::snapshot::FrameSnapshot;
+use null3d_core::sprites::SpriteLook;
 use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::sizes;
 use null3d_gpu::drawlist::vertex::{self, Type};
@@ -341,8 +342,10 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
 /// every object, with no grid cells skipped first. With `depth_prepass`, each camera view draws its
 /// opaque objects' depth before it shades them, on WebGPU. With `vertex_skinning`, WebGPU skins in
-/// the vertex shader of each pass, not in a compute pass. With `gpu_occlusion`, WebGPU culls each
-/// camera view in two phases against a depth pyramid. Every capacity is fixed from here on.
+/// the vertex shader of each pass, not in a compute pass. With `large_world`, each object's position
+/// holds whole cells besides its 32-bit part, so positions keep their precision at any distance.
+/// With `gpu_occlusion`, WebGPU culls each camera view in two phases against a depth pyramid.
+/// Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
 pub fn init_engine(
@@ -360,6 +363,7 @@ pub fn init_engine(
     cell_culling: bool,
     depth_prepass: bool,
     vertex_skinning: bool,
+    large_world: bool,
     gpu_occlusion: bool,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
@@ -390,7 +394,11 @@ pub fn init_engine(
     };
     let capabilities = Capabilities::from_bits(u64::from(capabilities));
     *cell = Some(Engine {
-        scene: SceneStorage::with_capacity(scene_capacity),
+        scene: if large_world {
+            SceneStorage::with_large_world(scene_capacity)
+        } else {
+            SceneStorage::with_capacity(scene_capacity)
+        },
         ring: CommandRing::with_capacity(commands),
         batches: BatchTable::with_capacity(max_batches),
         lights: LightTable::new(),
@@ -488,7 +496,8 @@ pub fn scene_capacity() -> u32 {
 
 /// The address of one of the per-slot arrays TypeScript writes (see `constants::scene_field`):
 /// positions (3 floats), rotations (4), scales (3), local bounding radii (1), local bounding
-/// sphere centres (3), or the dirty bitset's words, which TypeScript views as 32-bit words.
+/// sphere centres (3), the whole cells of each position (3 integers, or 0 without large-world
+/// mode), or the dirty bitset's words, which TypeScript views as 32-bit words.
 #[wasm_bindgen(js_name = sceneArrays)]
 pub fn scene_arrays(field: u32) -> u32 {
     value_with_engine(|e| {
@@ -498,6 +507,10 @@ pub fn scene_arrays(field: u32) -> u32 {
             scene_field::SCALES => address(e.scene.scales()),
             scene_field::LOCAL_RADII => address(e.scene.local_radii()),
             scene_field::LOCAL_CENTERS => address(e.scene.local_centers()),
+            scene_field::POSITION_CELLS if e.scene.is_large_world() => {
+                address(e.scene.position_cells())
+            }
+            scene_field::POSITION_CELLS => 0,
             _ => address(e.scene.dirty().words()),
         })
     })
@@ -679,6 +692,17 @@ pub fn visible_entries(frame: u32) -> u32 {
     })
 }
 
+/// The sources inside the camera's frustum that software occlusion culling hid in a recorded
+/// frame, where the frame builder culls on the CPU, or `NOT_COUNTED` where the GPU culls.
+#[wasm_bindgen(js_name = occludedEntries)]
+pub fn occluded_entries(frame: u32) -> u32 {
+    value_with_engine(|e| {
+        Ok(e.renderer
+            .occluded_entries(frame)
+            .unwrap_or(constants::NOT_COUNTED))
+    })
+}
+
 /// True when the last recorded frame rebuilt its draw tables after a structure change.
 #[wasm_bindgen(js_name = drawTablesRebuilt)]
 pub fn draw_tables_rebuilt() -> bool {
@@ -804,6 +828,28 @@ pub fn create_batch_part(
     })
 }
 
+/// Creates a sprite batch: `capacity` sprites drawn with `mesh`, a quad around their anchor, and
+/// `material`, a sprite material. Frames come from an atlas of `columns` by `rows`, and with
+/// `screen_size` the sizes are in CSS pixels of the screen rather than in world units. Returns
+/// its id.
+#[wasm_bindgen(js_name = createSpriteBatch)]
+pub fn create_sprite_batch(
+    capacity: u32,
+    dynamic: bool,
+    mesh: u32,
+    material: u32,
+    columns: u32,
+    rows: u32,
+    screen_size: bool,
+) -> u32 {
+    let look = SpriteLook::new(columns, rows, screen_size);
+    value_with_engine(|e| {
+        add_batch(e, capacity, mesh, |batches, radius| {
+            batches.create_sprites(capacity, dynamic, mesh, material, radius, look)
+        })
+    })
+}
+
 /// Adds a batch of `capacity` rows of `mesh`, made by `make` with the mesh's radius, once the
 /// renderer has room for its rows, and returns its id.
 fn add_batch(
@@ -861,7 +907,9 @@ pub fn destroy_batch(batch: u32, frame: u32) -> u32 {
 }
 
 /// The address of one of a batch's row arrays (see `constants::batch_field`): positions (3 floats
-/// a row), rotations (4), scales (3), or colors (4, or 0 for a batch without colors).
+/// a row), rotations (4), scales (3), or colors (4, or 0 for a batch without colors). A sprite
+/// batch has positions, sizes (2 floats a row), rotations in radians (1), colors (4) and frames
+/// (one 32-bit integer a row), and 0 for scales.
 #[wasm_bindgen(js_name = batchArrays)]
 pub fn batch_arrays(batch: u32, field: u32) -> u32 {
     value_with_engine(|e| {
@@ -869,11 +917,22 @@ pub fn batch_arrays(batch: u32, field: u32) -> u32 {
             .batches
             .get(Handle::from_raw(batch))
             .map_err(core_failure)?;
+        if batch.sprite_look().is_some() {
+            let (sizes, rotations, colors, frames) = batch.sprite_rows();
+            return Ok(match field {
+                batch_field::POSITIONS => address(batch.positions()),
+                batch_field::ROTATIONS => address(rotations),
+                batch_field::SIZES => address(sizes),
+                batch_field::COLORS => address(colors),
+                batch_field::FRAMES => address(frames),
+                _ => 0,
+            });
+        }
         Ok(match field {
             batch_field::POSITIONS => address(batch.positions()),
             batch_field::ROTATIONS => address(batch.rotations()),
             batch_field::SCALES => address(batch.scales()),
-            _ if batch.has_colors() => address(batch.colors()),
+            batch_field::COLORS if batch.has_colors() => address(batch.colors()),
             _ => 0,
         })
     })
@@ -900,6 +959,19 @@ pub fn set_batch_layers(batch: u32, mask: u32) -> u32 {
     with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
         Ok(batch) => {
             batch.set_layers(mask);
+            0
+        }
+        Err(error) => core_failure(error),
+    })
+}
+
+/// Places a batch's origin, which its rows' positions are relative to, in 64-bit floats, and marks
+/// every row for update.
+#[wasm_bindgen(js_name = setBatchOrigin)]
+pub fn set_batch_origin(batch: u32, x: f64, y: f64, z: f64) -> u32 {
+    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
+        Ok(batch) => {
+            batch.set_origin([x, y, z]);
             0
         }
         Err(error) => core_failure(error),
@@ -1142,6 +1214,7 @@ pub fn create_material(
         shading::UNLIT => Shading::Unlit,
         shading::TEXCOORDS => Shading::TexCoords,
         shading::UNLIT_MAP => Shading::UnlitMap,
+        shading::SPRITE => Shading::Sprite,
         custom if custom >= shading::CUSTOM_FIRST => Shading::Custom(CustomShading {
             template: custom & 0xffff,
             attributes: (custom >> shading::CUSTOM_ATTRIBUTE_SHIFT) & 0xff,
@@ -1574,6 +1647,16 @@ pub fn set_background(r: f32, g: f32, b: f32) -> u32 {
     })
 }
 
+/// The device pixels per CSS pixel that the canvas draws with, which sizes sprites given in pixels
+/// of the screen.
+#[wasm_bindgen(js_name = setPixelRatio)]
+pub fn set_pixel_ratio(ratio: f32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_pixel_ratio(ratio);
+        0
+    })
+}
+
 /// Says whether the render scale may drop below the whole canvas, as the quality settings allow.
 #[wasm_bindgen(js_name = setRenderScaling)]
 pub fn set_render_scaling(scaling: bool) -> u32 {
@@ -1708,6 +1791,16 @@ pub fn set_canvas_output(scene_color: u32, antialias: u32) -> u32 {
 pub fn set_bloom_samples(divisor: u32) -> u32 {
     with_engine(|e| {
         e.renderer.settings_mut().set_bloom_divisor(divisor);
+        0
+    })
+}
+
+/// Turns software occlusion culling on or off from the next frame on, where the frame builder
+/// culls on the CPU: objects with the occluder flag then hide what lies wholly behind them.
+#[wasm_bindgen(js_name = setSoftwareOcclusion)]
+pub fn set_software_occlusion(on: bool) -> u32 {
+    with_engine(|e| {
+        e.renderer.set_software_occlusion(on);
         0
     })
 }

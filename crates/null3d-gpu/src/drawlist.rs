@@ -1220,6 +1220,13 @@ pub mod template {
     /// The skinning compute shader, which skins the parts of skinned meshes into a buffer of
     /// skinned vertices.
     pub const SKIN: u32 = 20;
+    /// Sprites: quads of instance batch rows that face the camera, whose world matrices hold each
+    /// sprite's size, rotation, color and atlas frame packed (see `null3d_core::sprites`), in the
+    /// material's color.
+    pub const SPRITE: u32 = 22;
+    /// [`SPRITE`] times the material's map, at each sprite's frame of the atlas. The bind group of
+    /// index 1 is the map's, as for [`INSTANCED_UNLIT_MAP`].
+    pub const SPRITE_MAP: u32 = 23;
     /// The first phase of occlusion culling: the culling shader's `early` entry point, which
     /// keeps the instances in view that drew in the view's last frame.
     pub const OCCLUSION_EARLY: u32 = 24;
@@ -1548,6 +1555,8 @@ pub fn typescript_constants() -> String {
                 ("LIGHT_PLACE", template::LIGHT_PLACE),
                 ("LIGHT_WRITE", template::LIGHT_WRITE),
                 ("SKIN", template::SKIN),
+                ("SPRITE", template::SPRITE),
+                ("SPRITE_MAP", template::SPRITE_MAP),
                 ("OCCLUSION_EARLY", template::OCCLUSION_EARLY),
                 ("OCCLUSION_LATE", template::OCCLUSION_LATE),
                 ("DEPTH_PYRAMID", template::DEPTH_PYRAMID),
@@ -1742,6 +1751,10 @@ mod tests {
             (
                 "unlit_map",
                 include_str!("../../null3d-shaders/wgsl/unlit_map.wgsl"),
+            ),
+            (
+                "sprite",
+                include_str!("../../null3d-shaders/wgsl/sprite.wgsl"),
             ),
         ];
         for (name, source) in templates {

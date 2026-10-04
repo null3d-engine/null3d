@@ -21,8 +21,11 @@ export const FLAG_CAST_SHADOWS = 4;
 export const FLAG_RECEIVE_SHADOWS = 8;
 export const FLAG_UNCULLED = 16;
 export const FLAG_CUSTOM_BOUNDS = 32;
+export const FLAG_OCCLUDER = 128;
 
 export const LAYERS_DEFAULT = 1;
+
+export const CELL_SIZE = 1024;
 
 export const LIGHT_KIND_DIRECTIONAL = 1;
 export const LIGHT_KIND_POINT = 2;
@@ -50,11 +53,16 @@ export const SCENE_FIELD_SCALES = 2;
 export const SCENE_FIELD_LOCAL_RADII = 3;
 export const SCENE_FIELD_DIRTY_WORDS = 4;
 export const SCENE_FIELD_LOCAL_CENTERS = 5;
+export const SCENE_FIELD_POSITION_CELLS = 6;
 
 export const BATCH_FIELD_POSITIONS = 0;
 export const BATCH_FIELD_ROTATIONS = 1;
 export const BATCH_FIELD_SCALES = 2;
 export const BATCH_FIELD_COLORS = 3;
+export const BATCH_FIELD_SIZES = 4;
+export const BATCH_FIELD_FRAMES = 5;
+
+export const SPRITE_MAX_ATLAS_SIDE = 2048;
 
 export const QUERY_INPUT = 0;
 export const QUERY_HITS = 1;
@@ -123,6 +131,7 @@ export const SHADING_LIT = 0;
 export const SHADING_UNLIT = 1;
 export const SHADING_TEXCOORDS = 2;
 export const SHADING_UNLIT_MAP = 3;
+export const SHADING_SPRITE = 4;
 export const SHADING_CUSTOM_FIRST = 64;
 export const SHADING_CUSTOM_ATTRIBUTE_SHIFT = 16;
 export const SHADING_CUSTOM_BASE_COLOR = 16777216;

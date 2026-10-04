@@ -117,6 +117,11 @@ export interface CoreDevice {
 	 */
 	vertexSkinning: boolean;
 	/**
+	 * True when each object's position holds whole cells besides its 32-bit part, so positions keep
+	 * their precision at any distance from the origin.
+	 */
+	largeWorld: boolean;
+	/**
 	 * True when each camera view culls in two phases against a depth pyramid of what it drew.
 	 * Only the WebGPU path culls this way.
 	 */
@@ -176,6 +181,8 @@ export type DeviceOptions = Pick<
 	transparent: boolean;
 	/** True to draw the opaque objects' depth in a depth prepass. */
 	depthPrepass: boolean;
+	/** True for positions that keep their precision at any distance from the origin. */
+	largeWorld: boolean;
 	/** True to cull each camera view in two phases against a depth pyramid. */
 	gpuOcclusion: boolean;
 };
@@ -294,6 +301,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		cellCulling: options.cells,
 		depthPrepass: options.depthPrepass,
 		vertexSkinning: options.vertexSkinning,
+		largeWorld: options.largeWorld,
 		gpuOcclusion: options.gpuOcclusion,
 	};
 	if (tier !== 'webgl2') {

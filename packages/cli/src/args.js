@@ -25,9 +25,27 @@ const optionIn = (message) => /'(-[^' ]+)/.exec(message)?.[1] ?? 'an option';
  * @param {T} config
  */
 export function readOptions(args, config) {
+	return readArguments(args, config, false).values;
+}
+
+/**
+ * The options and the other arguments that `args` gives, as `config` describes the options.
+ * Throws a UsageError for an option the command does not have, an option without its value, and,
+ * unless `positionals` is true, an argument that is not an option.
+ *
+ * @template {ParseArgsOptionsConfig} T
+ * @param {readonly string[]} args
+ * @param {T} config
+ * @param {boolean} positionals True when the command takes arguments besides its options.
+ */
+export function readArguments(args, config, positionals) {
 	try {
-		return parseArgs({ args: [...args], options: config, strict: true, allowPositionals: false })
-			.values;
+		return parseArgs({
+			args: [...args],
+			options: config,
+			strict: true,
+			allowPositionals: positionals,
+		});
 	} catch (error) {
 		const { code = '', message = '' } = /** @type {{ code?: string, message?: string }} */ (error);
 		if (code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION')

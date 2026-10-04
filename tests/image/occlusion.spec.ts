@@ -1,34 +1,39 @@
-// GPU occlusion culling on the WebGPU tiers: in a room whose walls hide most of a field of spheres,
-// the engine with occlusion culling draws every view of a fast-turning camera as the engine without
-// it does, pixel for pixel. Each turn faces another wall, so the objects that drew in the frame
-// before are the wrong ones, and the second phase must draw the rest in the same frame. The image
-// tests check the culled scenes in hold mode, where every object draws in the second phase.
+// Software occlusion culling in a live engine: the occlusion cost page flies down a street of the
+// city with the culling off and on in turns. On WebGL2 the buildings hide part of the city, so the
+// frames with the culling on list fewer entries, and count the ones they hid; the frames with it
+// off hide none. WebGPU ignores the setting and counts nothing. The image tests check that both
+// sides draw the same image, in hold mode. Each run logs the page's figures.
 import { expect, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
+
+interface Side {
+	visibleEntries: number | null;
+	occludedEntries: number | null;
+	intervalMs: number | null;
+}
 
 interface OcclusionResult {
 	error?: string;
 	tier: string;
-	occlusion: { off: boolean; on: boolean };
-	views: number;
-	differingPixels: number[];
+	off: Side;
+	on: Side;
 	failures: string[];
 }
 
-const TIERS = [
-	{ tier: 'webgpu', query: 'gpu=webgpu' },
-	{ tier: 'webgpu-compat', query: 'gpu=compat' },
-] as const;
-
-for (const { tier, query } of TIERS)
-	test(`occlusion culling draws what culling without it draws on ${tier}`, async ({ page }) => {
-		test.setTimeout(150_000);
-		await page.goto(`occlusion.html?${query}`);
-		const result = await pageResult<OcclusionResult>(page, 120_000);
+for (const tier of ['webgl2', 'webgpu'] as const)
+	test(`software occlusion culling hides what the buildings block on ${tier}`, async ({ page }) => {
+		await page.goto(`occlusion-cost.html?gpu=${tier}&rounds=1&seconds=0.5`);
+		const result = await pageResult<OcclusionResult>(page, 60_000);
 		console.log(`occlusion on ${tier}: ${JSON.stringify(result)}`);
 		expect(result.error).toBeUndefined();
 		expect(result.tier).toBe(tier);
 		expect(result.failures).toEqual([]);
-		expect(result.occlusion).toEqual({ off: false, on: true });
-		expect(result.differingPixels).toEqual(new Array(result.views).fill(0));
+		const { off, on } = result;
+		if (tier === 'webgpu') {
+			expect([off.occludedEntries, on.occludedEntries]).toEqual([null, null]);
+			return;
+		}
+		expect(off.occludedEntries).toBe(0);
+		expect(on.occludedEntries).toBeGreaterThan(0);
+		expect(on.visibleEntries).toBeLessThan(off.visibleEntries as number);
 	});

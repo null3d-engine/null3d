@@ -86,7 +86,7 @@ return {
 };
 ```
 
-Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/hero.glb` (meshopt, KTX2). Cross-fade on state changes only; calling `play` every frame restarts blending work. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
+Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/ public/models/` (0.2): integer vertices and KTX2 textures in a `textures` folder beside each `.glb`. In a Vite project, `import heroUrl from './models/hero.glb?optimized'` (0.2) runs the same steps, cached, and gives the URL for `loadGltf`. Cross-fade on state changes only; calling `play` every frame restarts blending work. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
 
 ## 4. Thousands of moving objects
 
@@ -457,7 +457,7 @@ const trees = scene.createInstances(treeMesh, 5000, { material: bark, origin: ti
 // trees.positions rows are relative to the origin, so they stay small and precise
 ```
 
-The engine stores positions relative to cells about 1 km wide, and each frame it sends the GPU one camera-to-cell offset per visible cell. Objects millions of meters from the origin do not jitter, and static objects stay on the GPU without re-uploads. Vertex positions must be small offsets from their object's center, and batch rows small offsets from the batch origin. Docs: `concepts/large-worlds`.
+The engine stores positions relative to cells 1,024 m wide, and each frame it sends the GPU one camera-to-cell offset per cell in use. So objects millions of meters from the origin do not jitter, and static objects stay on the GPU without re-uploads. With `largeWorld: true`, setters keep each position exact: without it, a position you set moves in steps of 0.5 m at the Earth's radius. Batch origins work in both modes. Vertex positions must be small offsets from their object's center, and batch rows small offsets from the batch origin. At most 512 cells are in use at once: keep thinly spread content under a few parents, which share their root's cell. Docs: `concepts/large-worlds`.
 
 ## 17. Move a player with keys, a gamepad or touch
 

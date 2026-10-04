@@ -1,25 +1,26 @@
-// The occlusion scene, defined once for GPU occlusion culling's image tests, its behavior test and
-// its cost page. It is plain data with no engine imports: a square room whose four walls each have
-// a doorway, and a field of detailed spheres outside it. From the camera in the room the walls hide
-// almost every sphere; a few show through the doorway that the camera faces. The views turn the
-// camera by a quarter turn or more at a time, so each faces another wall than the view before it.
+// The room scene, defined once for GPU occlusion culling's image tests, its behavior test and its
+// cost page. It is plain data with no engine imports: a square room whose four walls each have a
+// doorway, and a field of detailed spheres outside it. The walls are occluders. From the camera
+// in the room they hide almost every sphere; a few show through the doorway that the camera
+// faces. The views turn the camera by a quarter turn or more at a time, so each faces another
+// wall than the view before it.
 import { PARITY_CANVAS } from './spec';
 
 type Vec3 = readonly [number, number, number];
 
 /** The image's size in pixels: the size of the benchmark scenes' parity images. */
-export const OCCLUSION_IMAGE = PARITY_CANVAS;
+export const ROOM_IMAGE = PARITY_CANVAS;
 
 /** The camera's eye height and lens. It stands in the middle of the room. */
-export const OCCLUSION_CAMERA = { height: 1.6, fov: 60, near: 0.1, far: 200 } as const;
+export const ROOM_CAMERA = { height: 1.6, fov: 60, near: 0.1, far: 200 } as const;
 
 /** The directions the camera faces in turn, as angles in degrees about the vertical axis. */
-export const OCCLUSION_VIEWS: readonly number[] = [0, 95, 180, 300, 30, 210];
+export const ROOM_VIEWS: readonly number[] = [0, 95, 180, 300, 30, 210];
 
 /** The point that the camera looks at in the view of `degrees`, 10 m away at eye height. */
 export function viewTarget(degrees: number): Vec3 {
 	const radians = (degrees * Math.PI) / 180;
-	return [Math.sin(radians) * -10, OCCLUSION_CAMERA.height, Math.cos(radians) * -10];
+	return [Math.sin(radians) * -10, ROOM_CAMERA.height, Math.cos(radians) * -10];
 }
 
 /** Half the room's width, from its middle to each wall's inner face, in meters. */
@@ -31,7 +32,7 @@ const DOOR_WIDTH = 3;
 const DOOR_HEIGHT = 3;
 
 /** A box of the scene: its size and the position of its center. */
-export interface OcclusionBox {
+export interface RoomBox {
 	size: Vec3;
 	position: Vec3;
 }
@@ -40,8 +41,8 @@ export interface OcclusionBox {
  * The walls: on each side of the room, the parts left and right of its doorway and the lintel
  * above it, along x for the walls in front and behind and along z for the walls at the sides.
  */
-export const OCCLUSION_WALLS: readonly OcclusionBox[] = (() => {
-	const walls: OcclusionBox[] = [];
+export const ROOM_WALLS: readonly RoomBox[] = (() => {
+	const walls: RoomBox[] = [];
 	const side = ROOM + WALL_THICKNESS;
 	const part = side - DOOR_WIDTH / 2;
 	const middle = DOOR_WIDTH / 2 + part / 2;
@@ -71,7 +72,7 @@ export const OCCLUSION_WALLS: readonly OcclusionBox[] = (() => {
 })();
 
 /** The ground under the room and the field: a flat box, its top at height 0. */
-export const OCCLUSION_GROUND: OcclusionBox = { size: [100, 0.2, 100], position: [0, -0.1, 0] };
+export const ROOM_GROUND: RoomBox = { size: [100, 0.2, 100], position: [0, -0.1, 0] };
 
 /** The spheres' radius, and the segments around and up each, which make them about 1,000 triangles. */
 export const SPHERE_RADIUS = 0.8;
@@ -87,7 +88,7 @@ const FIELD_INNER = 11;
  * float a little above the ground, so no sphere's surface meets another surface, where the order
  * in which the GPU appends objects would pick the pixel.
  */
-export const OCCLUSION_SPHERES: readonly Vec3[] = (() => {
+export const ROOM_SPHERES: readonly Vec3[] = (() => {
 	const spheres: Vec3[] = [];
 	const steps = Math.floor(FIELD / SPACING);
 	for (let i = -steps; i <= steps; i++) {
@@ -102,7 +103,7 @@ export const OCCLUSION_SPHERES: readonly Vec3[] = (() => {
 })();
 
 /** The sRGB colors of the walls, the ground and the spheres, each sphere's by its place. */
-export const OCCLUSION_COLORS = {
+export const ROOM_COLORS = {
 	wall: '#b8b0a4',
 	ground: '#4a5240',
 	spheres: ['#d0603c', '#3c80d0', '#d0b43c', '#58a868'],
@@ -118,10 +119,10 @@ export const OCCLUSION_COLORS = {
  */
 export function hiddenShare(degrees: number, aspect: number): number {
 	const turn = (degrees * Math.PI) / 180;
-	const halfAcross = Math.atan(Math.tan((OCCLUSION_CAMERA.fov * Math.PI) / 360) * aspect);
+	const halfAcross = Math.atan(Math.tan((ROOM_CAMERA.fov * Math.PI) / 360) * aspect);
 	const doorHalf = Math.atan(DOOR_WIDTH / 2 / ROOM);
 	let shown = 0;
-	for (const [x, , z] of OCCLUSION_SPHERES) {
+	for (const [x, , z] of ROOM_SPHERES) {
 		const distance = Math.hypot(x, z);
 		const angle = Math.atan2(-x, -z);
 		const half = Math.asin(Math.min(1, SPHERE_RADIUS / distance));
@@ -131,7 +132,7 @@ export function hiddenShare(degrees: number, aspect: number): number {
 		const offDoor = Math.abs(wrap(angle - axis)) - half > doorHalf;
 		if (!offView && !offDoor) shown++;
 	}
-	return 1 - shown / OCCLUSION_SPHERES.length;
+	return 1 - shown / ROOM_SPHERES.length;
 }
 
 /** An angle wrapped into the half turn each side of zero. */

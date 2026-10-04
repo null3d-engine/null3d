@@ -236,6 +236,7 @@ export class SketchRunner {
 			device.cellCulling,
 			device.depthPrepass,
 			device.vertexSkinning,
+			device.largeWorld,
 			device.gpuOcclusion,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
@@ -314,18 +315,19 @@ export class SketchRunner {
 				renderScaleThousandths: () => this.renderScale(),
 			},
 		};
+		const materials = new Materials(this.core, sketch.sendShader);
+		const geometry = new Geometry(this.core);
 		const scene = new Scene(
 			this.core,
 			this.recorded,
 			device.webgl2,
 			() => this.warmUp(),
 			new FrameCameras(this.core, sketch.control, this.input),
+			{ geometry, materials },
 		);
 		this.post = new Post(this.core, device.effectsSceneColor !== FORMAT_CANVAS);
 		this.debugDraw = DEV ? new DebugDraw(this.core, host, scene) : undefined;
 		const debug = this.debugDraw ?? new SketchDebug(host);
-		const materials = new Materials(this.core, sketch.sendShader);
-		const geometry = new Geometry(this.core);
 		this.context = {
 			time: this.time,
 			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
@@ -492,6 +494,7 @@ export class SketchRunner {
 		viewport.width = slotFloats[Slot.CanvasCssWidth] as number;
 		viewport.height = slotFloats[Slot.CanvasCssHeight] as number;
 		viewport.pixelRatio = slotFloats[Slot.PixelRatio] as number;
+		this.sketch.glue.setPixelRatio(viewport.pixelRatio);
 	}
 
 	/** Records the time since the previous phase ended as a phase of the frame. */
@@ -541,7 +544,8 @@ export class SketchRunner {
 		if (
 			glue.setRenderScaling((settings.governor ? low : high) < FULL_SCALE) !== 0 ||
 			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0 ||
-			glue.setBloomSamples(governor.bloomDivisor) !== 0
+			glue.setBloomSamples(governor.bloomDivisor) !== 0 ||
+			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
 		)
 			this.report(coreFailure(glue, 'quality.set'));
 	}
@@ -799,6 +803,7 @@ export class SketchRunner {
 		this.context.scene.keepFrameCamera(time.frame, width, height);
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
+		this.record.count(Counter.OccludedEntries, glue.occludedEntries(frame));
 		// A frame whose list needs more room than any before moves the list, so each frame gives
 		// the thread that draws its list's address.
 		const parity = frame & 1;
