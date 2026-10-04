@@ -1,7 +1,8 @@
 // A glTF sample model (bench/scenes/gltf-models.ts), which the parity test also draws with
 // three.js's GLTFLoader. `?model=` names the scene. The sketch loads the model with
-// assets.loadGltf, creates one copy of it, and frames the copy from the prefab's bounds. Each
-// engine draws without tone mapping, so the parity test compares the colors themselves.
+// assets.loadGltf, creates one copy of it, plays the scene's clip, and frames the copy from the
+// prefab's bounds or the scene's frame. Each engine draws without tone mapping, so the parity test
+// compares the colors themselves.
 import { defineSketch } from '@null3d/engine';
 import {
 	AMBIENT,
@@ -29,12 +30,10 @@ export default defineSketch(async ({ scene, assets, post }) => {
 		scene.createAmbientLight(AMBIENT);
 	}
 	const prefab = await assets.loadGltf(model.url);
-	scene.instantiate(prefab);
-	const { position, target, near, far } = modelCamera(
-		prefab.bounds.center,
-		prefab.bounds.radius,
-		model.view,
-	);
+	const copy = scene.instantiate(prefab);
+	if (model.clip) copy.animator().play(model.clip.name);
+	const { center, radius } = model.frame ?? prefab.bounds;
+	const { position, target, near, far } = modelCamera(center, radius, model.view);
 	scene.setActiveCamera(
 		scene.createPerspectiveCamera({ fov: MODELS_FOV, near, far, position, target }),
 	);

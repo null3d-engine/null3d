@@ -17,6 +17,9 @@ enable draw_index;
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
 #endif
+#ifdef MORPH
+#import null3d::mesh::{Morphed, morph_vertex}
+#endif
 
 // The maps' bind group comes after the frame's group, and on WebGL2 after the groups of the draw
 // records and the data textures.
@@ -44,6 +47,9 @@ struct VertexIn {
     @location(6) joints: vec4u,
     @location(7) weights: vec4f,
 #endif
+#ifdef MORPH
+    @location(8) morph: vec2f,
+#endif
 }
 
 struct VertexOut {
@@ -63,11 +69,17 @@ struct VertexOut {
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
+#ifdef MORPH
+    let rest = morph_vertex(found, v.morph, Morphed(mesh_position(v.position), vec3f(0.0), vec3f(0.0)));
+    let rest_position = rest.position;
+#else
+    let rest_position = mesh_position(v.position);
+#endif
 #ifdef SKIN
     let skin = skin_of(found, v.joints, v.weights);
-    let position = skinned_point(skin, mesh_position(v.position));
+    let position = skinned_point(skin, rest_position);
 #else
-    let position = mesh_position(v.position);
+    let position = rest_position;
 #endif
     out.relative = relative_position(found, position);
     out.clip = clip_of(found, out.relative);

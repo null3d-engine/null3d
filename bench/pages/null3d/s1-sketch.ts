@@ -1,7 +1,8 @@
 // The null3d version of S1, the swarm: every instance moves every frame, and the camera orbits.
 // The `blend` switch makes the boxes see through, for the allocation sample of the transparent pass.
 // The `animated` switch adds that many animated characters, for the allocation sample of the
-// animator. The `grading` switch loads a color grading table and turns the vignette on, then
+// animator. The `morphed` switch adds that many morphed spheres whose weights change every frame,
+// for the allocation sample of morph targets. The `grading` switch loads a color grading table and turns the vignette on, then
 // changes the table's intensity and the vignette every frame, for the allocation sample of
 // post.set and the final pass's grading. The `sprites` switch draws the swarm as blended sprites
 // instead of boxes, for the allocation sample of sprite batches, and the `lines` switch as dashed
@@ -13,6 +14,7 @@ import { defineSketch, type SketchContext } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { s1Camera } from '../../scenes/spec';
 import { createAnimatedCrowd, readAnimated } from './crowd';
+import { createMorphedRow, readMorphed } from './morphed';
 import { followPath, readCount, setUpView } from './sketch-common';
 import { createLineSwarm, createSpriteSwarm, createSwarm } from './swarm';
 
@@ -27,6 +29,7 @@ export default defineSketch(async (context) => {
 			? await createLineSwarm(context, count)
 			: createSwarm(context, count, true, undefined, switches.has('blend')).pose;
 	const animate = createAnimatedCrowd(context, readAnimated(import.meta.url));
+	const morph = createMorphedRow(context, readMorphed(import.meta.url));
 	createLabels(context, Number(switches.get('labels') ?? 0));
 	const grading = switches.has('grading');
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
@@ -41,6 +44,7 @@ export default defineSketch(async (context) => {
 		poseSwarm(t);
 		moveCamera(t);
 		animate(t);
+		morph(t);
 		if (ao) {
 			occlusion.ao.intensity = 0.75 + 0.25 * Math.sin(t);
 			context.post.set(occlusion);

@@ -5,6 +5,7 @@
 
 pub mod blended;
 pub mod graph;
+pub mod morphed;
 pub mod skinned;
 
 use std::f64::consts::{PI, TAU};
@@ -14,6 +15,7 @@ use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::JobSystem;
 use null3d_core::lights::{LightShadow, LightTable, VisibleLight, kind, value};
+use null3d_core::morph::MorphWeights;
 use null3d_core::scene::{Command, SceneStorage, flags};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::format;
@@ -67,6 +69,8 @@ pub struct World<B: FrameBuilder = GpuDrivenRenderer> {
     /// The animation table, whose step runs at the start of each frame's core work, as the
     /// engine's does, and the seconds that each step advances.
     pub animations: Option<Animations>,
+    /// The morph weights of morphed objects.
+    pub morphs: MorphWeights,
     pub animation_step: f32,
 }
 
@@ -181,6 +185,7 @@ impl<B: FrameBuilder> World<B> {
             render_scale: RenderScale::FULL,
             animations: None,
             animation_step: 0.0,
+            morphs: MorphWeights::new(),
         }
     }
 
@@ -264,9 +269,14 @@ impl<B: FrameBuilder> World<B> {
         }
         if let Some(animations) = self.animations.as_mut() {
             animations.update(&self.jobs, self.animation_step);
-            let meshes = self.renderer.settings().meshes();
-            skinning::update_bounds(&mut self.scene, animations, meshes);
         }
+        let meshes = self.renderer.settings().meshes();
+        skinning::update_bounds(
+            &mut self.scene,
+            self.animations.as_ref(),
+            &self.morphs,
+            meshes,
+        );
         self.scene.update_transforms(&self.jobs);
         self.batches
             .update(&self.jobs, frame, self.scene.cell_table_mut());
@@ -294,6 +304,7 @@ impl<B: FrameBuilder> World<B> {
             shadow_lights: &self.shadow_lights,
             pipelines_built: self.pipelines_built,
             animations: self.animations.as_ref(),
+            morphs: &self.morphs,
         };
         let recorded = self
             .renderer
