@@ -98,7 +98,7 @@ Materials follow three.js's `GLTFLoader`. A mesh with vertex colors turns them o
 
 ## Environments
 
-`loadEnvironment` reads the KTX2 file that `bunx @null3d/cli assets env` writes. It holds a cube map in `rgb9e5ufloat` or `rgba16float`, with one mip level for each step of roughness. It also holds the nine coefficients of its diffuse light. `builtinEnvironment('room')` loads the room that three.js's `RoomEnvironment` builds, from a file in the engine's package. Give either to [`scene.setEnvironment`](scene.md#the-environment).
+`loadEnvironment` reads the KTX2 file that `bunx @null3d/cli assets env` writes. It holds a cube map in `rgb9e5ufloat` or `rgba16float`, with one mip level for each step of roughness. It also holds the nine coefficients of its diffuse light. `builtinEnvironment('room')` makes the room that three.js's `RoomEnvironment` builds. The GPU draws it and filters it, so no file downloads. Give either to [`scene.setEnvironment`](scene.md#the-environment).
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -114,7 +114,7 @@ export default defineSketch(async ({ scene, assets }) => {
 ```
 
 - An `Environment` has its cube map's `size`, the width of the largest faces, its `levels`, its `format` and its GPU `bytes`.
-- The first environment loads the file reader, under 1 KB after Brotli. The built-in room's file, 2 MB, downloads only when a sketch asks for it. A server that compresses `.ktx2` files with Brotli sends about 390 KB.
+- The first environment file loads the file reader, under 1 KB after Brotli. The first built-in room loads the code and the shaders that make it on the GPU, about 7 KB after Brotli. [Lighting and environment](../concepts/lighting.md#cost) gives the GPU's time.
 - The cube map uploads in the frames after the load, and the scene draws without it until it is on the GPU.
 - `environment.destroy()` frees the cube map's GPU memory. The scene then draws without it.
 - Other KTX2 files, such as `loadTexture`'s, fail with E1412. So do supercompressed files.
@@ -181,7 +181,7 @@ Loads files, and textures from image files. Every call runs outside the sketch's
 | `loadImageBitmap(url: string \| URL, options: LoadImageOptions = {}): Promise<ImageBitmap>` | Downloads an image file and decodes it into an `ImageBitmap`, off the sketch's frames. By default it decodes as `loadTexture` does, so `textures.fromImageBitmap` makes the same texture. Throws E1411, E1412 or E1413 as `loadTexture` does. |
 | `loadLut(url: string \| URL): Promise<Lut>` | Downloads a color grading table in a `.cube` or a `.3dl` file and makes a `Lut` from it, for `post.set({ lut })`. It reads the forms that three.js's `LUTCubeLoader` and `LUT3dlLoader` read, with tables of 2 to 256 texels a side. A `.cube` file's domain and title come along; a `.3dl` file's values are whole numbers of the depth that its largest value or its `Mesh` line gives. The first table loads the readers. Throws E1411 or E1413 as `loadTexture` does, E1412 when the file holds no table that the engine reads, and E1406 when the readers do not load. |
 | `loadEnvironment(url: string \| URL): Promise<Environment>` | Downloads an environment map that `bunx |
-| `builtinEnvironment(name: BuiltinEnvironmentName): Promise<Environment>` | Loads a built-in environment: `room`, the room that three.js's `RoomEnvironment` builds, for soft, neutral light with no file of your own. Its file comes with the engine's package, and downloads the first time a page asks for it: 2 MB, or about 390 KB from a server that compresses it with Brotli. Throws E1213 for a name that no built-in environment has, and the errors of `loadEnvironment`. |
+| `builtinEnvironment(name: BuiltinEnvironmentName): Promise<Environment>` | Makes a built-in environment: `room`, the room that three.js's `RoomEnvironment` builds, for soft, neutral light with no file of your own. No file downloads: the GPU draws the room into its cube map and filters it for each roughness, in the frame after the call, as three.js's `PMREMGenerator.fromScene` does. The scene draws without the environment until the map is made. The first one loads the code that makes it, about 7 KB after Brotli. Throws E1213 for a name that no built-in environment has, and E1406 when its code does not download. |
 | `loadJson<T = unknown>(url: string \| URL): Promise<T>` | Downloads a JSON file and parses it. Throws E1411 or E1413 as `loadTexture` does, and E1412 when the file is not valid JSON. |
 | `loadBinary(url: string \| URL): Promise<ArrayBuffer>` | Downloads a file as bytes. Throws E1411 or E1413 as `loadTexture` does. |
 | `preload(urls: readonly (string \| URL)[]): Promise<void>` | Downloads files ahead of their loads, all at once, and resolves when every one has arrived. The next load of each address takes its file from memory. Pair it with `onProgress` for a loading screen. Throws the error of the first file that fails, as `loadBinary` does. |

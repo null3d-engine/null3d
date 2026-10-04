@@ -4,9 +4,10 @@
 
 import * as G from '../../generated/gpu';
 import type { DeviceShaders } from '../../generated/shaders';
-import { ImageTable } from '../../shared/images';
+import { type GeneratorName, ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
+import type { CubeGenerator } from './environment';
 import type { GpuTimer } from './gpu-timer';
 import { Pipelines, type RenderTemplate } from './pipelines';
 import { RenderPassSetup, submitOne, TexelCopySetup } from './reusable';
@@ -354,6 +355,17 @@ export class WebGPUBackend {
 		}
 	}
 
+	/**
+	 * Fills a cube texture with the texels of a generator that the table holds, on the GPU. The
+	 * generator submits its commands at once, ahead of the frame's, which never write the texture.
+	 */
+	private generateTexture(id: number, generator: number): void {
+		const texture = this.need(this.textures, id, 'texture');
+		const [name, generators] =
+			this.images.generator<Record<GeneratorName, CubeGenerator>>(generator);
+		generators[name](this.device, texture);
+	}
+
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {
 		const setup = this.samplerSetup;
 		setup.addressModeU = lookUp(ADDRESS_MODES, words[a + 1] as number, 'address mode');
@@ -653,6 +665,9 @@ export class WebGPUBackend {
 					break;
 				case G.OP_DESTROY_PIPELINE:
 					this.destroyPipeline(words[a] as number);
+					break;
+				case G.OP_GENERATE_TEXTURE:
+					this.generateTexture(words[a] as number, words[a + 1] as number);
 					break;
 				case G.OP_GENERATE_MIPMAPS:
 					this.generateMipmaps(words[a] as number, words[a + 1] as number);

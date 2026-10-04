@@ -22,7 +22,7 @@
 import * as G from '../../generated/gpu';
 import type { DeviceShaders } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
-import { ImageTable } from '../../shared/images';
+import { type GeneratorName, ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
 import {
@@ -33,6 +33,7 @@ import {
 	vertexStride,
 } from '../vertex-format';
 import { type DepthSetup, setDepthMode } from './depth';
+import type { CubeGenerator } from './environment';
 import {
 	buildPermutation,
 	createProgram,
@@ -41,7 +42,9 @@ import {
 	mipmapTemplate,
 	type Pipeline,
 	type Program,
+	type ProgramHost,
 	prepareProgram,
+	programHost,
 	slotOf,
 	UPLOAD_UNIT,
 } from './programs';
@@ -354,6 +357,8 @@ export class WebGL2Backend {
 	/** The framebuffer through which a mip level is drawn, and the sampler that reads the level before. */
 	private mipFramebuffer: WebGLFramebuffer | null = null;
 	private mipSampler: WebGLSampler | null = null;
+	/** How the texture generators draw with programs of their own, once one has run. */
+	private programHost: ProgramHost | undefined;
 	/**
 	 * The texture that each mip level, and each copied layer of an array, draws into before it
 	 * copies into its place, by format.
@@ -704,6 +709,9 @@ export class WebGL2Backend {
 					break;
 				case G.OP_DESTROY_PIPELINE:
 					this.destroyPipeline(words[a] as number);
+					break;
+				case G.OP_GENERATE_TEXTURE:
+					this.generateTexture(words[a] as number, words[a + 1] as number);
 					break;
 				case G.OP_GENERATE_MIPMAPS:
 					this.generateMipmaps(words[a] as number, words[a + 1] as number);
@@ -1343,6 +1351,38 @@ export class WebGL2Backend {
 			this.copyFromSpare(texture, level, 0, 0, layer, 0, 0, width, height);
 		}
 		this.endSpareDraws(texture);
+	}
+
+	/**
+	 * Fills a cube texture with the texels of a generator that the table holds, on the GPU. The
+	 * generator draws full-screen triangles with no depth test, culling, scissor or blending, and
+	 * writes every channel. It changes bindings that the state cache holds, so the cache forgets
+	 * them, and the next draws bind what they need again.
+	 */
+	private generateTexture(id: number, generator: number): void {
+		const texture = this.textureOf(id);
+		const [name, generators] =
+			this.images.generator<Record<GeneratorName, CubeGenerator>>(generator);
+		this.setScissorTest(false);
+		this.setDepthTest(false);
+		this.setCullFace(0);
+		this.setColorMask(true);
+		if (this.blend) this.setBlend(0);
+		this.useVertexArray(null);
+		for (let unit = 0; unit < this.unitSamplers.length; unit++) this.bindUnitSampler(unit, null);
+		this.programHost ??= programHost(this.gl, this.depth);
+		generators[name](
+			this.programHost,
+			texture.texture as WebGLTexture,
+			texture.width,
+			texture.mips,
+		);
+		this.program = null;
+		this.activeUnit = -1;
+		this.unitTextures.length = 0;
+		this.blockBuffers.length = 0;
+		this.viewport.fill(-1);
+		this.samplersChanged = true;
 	}
 
 	/**

@@ -4,7 +4,8 @@
 // (load-draw.ts). A page then downloads the GPU layer once, for the thread that draws.
 
 import { controlViews, Slot } from '../shared/control';
-import { ImageTable, receiveImages } from '../shared/images';
+import { type GeneratorName, ImageTable, receiveImages } from '../shared/images';
+import type { Tier } from '../shared/tier';
 import type { SketchRunner } from '../sketch/runner';
 import { runDirectLoop } from './direct-loop';
 import { emptySceneInput, HoldLoop, type LoopFault, runRenderLoop } from './loop';
@@ -58,6 +59,7 @@ export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Rendere
 	const { canvas, control, metrics, fps, queue, sketch, hold = false, fault, presented } = setup;
 	const { slots } = controlViews(control);
 	const imageTable = setup.imageTable ?? new ImageTable();
+	imageTable.loadGeneratorsWith(generatorLoader(setup.tier));
 	if (setup.imagePort) receiveImages(setup.imagePort, imageTable, slots);
 	const options = { ...setup, imageTable };
 	const create = () => createRenderer(canvas, options);
@@ -70,6 +72,30 @@ export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Rendere
 	return new Drawing(await create(), create, run, slots, setup.fail, !hold, () =>
 		imageTable.clear(),
 	);
+}
+
+/**
+ * Loads the texture generators' code and shaders for a GPU path, as the backend of that path runs
+ * them: a page downloads them with the first generator that its sketch asks for.
+ */
+function generatorLoader(tier: Tier): () => Promise<unknown> {
+	if (tier === 'webgl2')
+		return async () => {
+			const [code, shaders] = await Promise.all([
+				import('../gpu/environment'),
+				import('../generated/shaders-environment-glsl'),
+			]);
+			const room = code.webgl2RoomGenerator(shaders.ENVIRONMENT_SHADER.webgl2);
+			return { room } satisfies Record<GeneratorName, unknown>;
+		};
+	return async () => {
+		const [code, shaders] = await Promise.all([
+			import('../gpu/environment'),
+			import('../generated/shaders-environment-wgsl'),
+		]);
+		const room = code.webgpuRoomGenerator(shaders.ENVIRONMENT_SHADER.webgpu);
+		return { room } satisfies Record<GeneratorName, unknown>;
+	};
 }
 
 /**

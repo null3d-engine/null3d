@@ -165,5 +165,70 @@ fn a_cube_takes_only_its_float_formats_and_no_images() {
     assert!(textures.create_cube(16, 6, format::RGBA16_FLOAT).is_err());
     let cube = textures.create_cube(16, 5, format::RGBA16_FLOAT).unwrap();
     assert!(textures.set_image(cube, 16, 16, 0).is_err());
+    assert!(
+        textures.set_generated(cube).is_err(),
+        "generators fill rgb9e5ufloat cubes"
+    );
     assert_eq!(textures.ready_cube(cube), None);
+}
+
+#[test]
+fn a_generated_cube_fills_once_its_generator_arrived_and_again_on_a_new_device() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    world.step(&mut mock, true);
+    let textures = world.renderer.settings_mut().textures_mut();
+    let cube = textures
+        .create_cube(SIZE, LEVELS, format::RGB9E5_UFLOAT)
+        .unwrap();
+    let generator = textures.set_generated(cube).unwrap();
+    assert_eq!(generator, 1, "a generator takes the next image id");
+    world
+        .renderer
+        .settings_mut()
+        .set_environment(Some(environment(cube)));
+
+    // Until the thread that draws holds the generator, the cube waits and lights nothing.
+    let commands = world.step(&mut mock, false);
+    assert!(operands(&commands, Op::GenerateTexture).is_empty());
+    let textures = world.renderer.settings_mut().textures_mut();
+    assert_eq!(textures.ready_cube(cube), None);
+
+    // Then one command fills every level, with no texel writes, and the frame groups bind it.
+    mock.provide_generator(generator);
+    let taken = world.frame - 1;
+    textures.sync(generator, taken);
+    let commands = world.step(&mut mock, false);
+    let textures = world.renderer.settings_mut().textures_mut();
+    let (id, levels) = textures.ready_cube(cube).expect("the cube is ready");
+    assert_eq!(levels, LEVELS);
+    assert_eq!(
+        operands(&commands, Op::GenerateTexture),
+        [vec![id, generator]]
+    );
+    assert!(operands(&commands, Op::WriteTexture).is_empty());
+    assert!(operands(&commands, Op::ReleaseImage).is_empty());
+    let maps = bound_maps(&commands);
+    assert!(!maps.is_empty() && maps.iter().all(|&m| m == id));
+    assert!(
+        operands(&world.step(&mut mock, false), Op::GenerateTexture).is_empty(),
+        "a steady frame fills nothing"
+    );
+
+    // A new GPU device fills the cube again from the generator that the store kept.
+    world.renderer.reset_gpu();
+    let mut fresh = MockBackend::default();
+    fresh.provide_generator(generator);
+    let commands = world.step(&mut fresh, true);
+    assert_eq!(
+        operands(&commands, Op::GenerateTexture),
+        [vec![id, generator]]
+    );
+
+    // Destroying the cube releases its generator.
+    let frame = world.frame;
+    let textures = world.renderer.settings_mut().textures_mut();
+    textures.destroy(cube, frame).unwrap();
+    let commands = world.step(&mut fresh, true);
+    assert_eq!(operands(&commands, Op::ReleaseImage), [vec![generator]]);
 }

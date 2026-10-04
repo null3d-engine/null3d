@@ -5,6 +5,7 @@ import {
 	DOWNLOADS,
 	downloadSizes,
 	ENGINE_SOURCE,
+	FIRST_USE_SHADER_BUDGET_BYTES,
 	findEngineParts,
 	findTranscoderFiles,
 	LATER_BUDGET_BYTES,
@@ -125,7 +126,7 @@ describe('findEngineParts', () => {
 		]);
 		const skin = built('shaders-glsl-skin-W3.js', ['generated/shaders-glsl-skin.ts']);
 		expect(() => findEngineParts([...files, skin], parts, shaders)).toThrow(
-			"shaders-glsl-skin-W3.js holds the shader build's device module of shaders-glsl-skin.js, which the size report does not name",
+			"shaders-glsl-skin-W3.js holds the shader build's module of shaders-glsl-skin.js, which the size report does not name",
 		);
 	});
 
@@ -208,6 +209,17 @@ describe('budgetProblems', () => {
 		expect(budgetProblems(sizes(START_BUDGET_BYTES, LATER_BUDGET_BYTES), downloads, later)).toEqual(
 			[],
 		);
+	});
+
+	it('names a file of shaders that loads on first use over its own budget', () => {
+		const shaders = new Map([
+			['shaders-environment-wgsl.js', { raw: 0, brotli: FIRST_USE_SHADER_BUDGET_BYTES }],
+			['shaders-environment-glsl.js', { raw: 0, brotli: FIRST_USE_SHADER_BUDGET_BYTES + 1 }],
+		]);
+		expect(FIRST_USE_SHADER_BUDGET_BYTES).toBe(24 * 1024);
+		expect(budgetProblems(shaders, [], [])).toEqual([
+			'js/shaders-environment-glsl.js, shaders that load on first use, is 24,577 bytes after Brotli, over its 24 KB budget',
+		]);
 	});
 
 	it('names a start over its budget, and a later part over its own, which no start counts', () => {

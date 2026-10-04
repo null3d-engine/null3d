@@ -1,11 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { Assets } from './assets';
 import { Environment } from './environment';
-import { BUILTIN_ENVIRONMENTS } from './environment-file';
 import type { Texture, TextureOptions, Textures } from './textures';
 
 const PAGE = 'https://game.example/levels/one.html';
@@ -187,41 +184,68 @@ describe('assets', () => {
 });
 
 describe('environments', () => {
-	const room = new Uint8Array(readFileSync(join(import.meta.dir, '../../environments/room.ktx2')));
+	/**
+	 * The smallest environment map: a KTX2 cube of 8 x 8 shared-exponent texels with one level, and
+	 * its diffuse light in the key-value data. environment-file.test.ts checks every part of the file.
+	 */
+	function smallMap(): Uint8Array {
+		const kvd = new TextEncoder().encode(
+			`null3d.environment\0${JSON.stringify({ version: 1, sh: Array(27).fill(1) })}\0`,
+		);
+		const padded = kvd.length + ((4 - (kvd.length % 4)) % 4);
+		const texels = 80 + 24 + 4 + padded;
+		const bytes = new Uint8Array(texels + 6 * 8 * 8 * 4);
+		const view = new DataView(bytes.buffer);
+		bytes.set([0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
+		for (const [at, word] of [
+			[12, 123],
+			[16, 4],
+			[20, 8],
+			[24, 8],
+			[36, 6],
+			[40, 1],
+			[56, 104],
+			[60, 4 + padded],
+			[104, kvd.length],
+		])
+			view.setUint32(at as number, word as number, true);
+		bytes.set(kvd, 108);
+		view.setBigUint64(80, BigInt(texels), true);
+		view.setBigUint64(88, BigInt(6 * 8 * 8 * 4), true);
+		return bytes;
+	}
 
-	/** Textures that record the cube maps that `fromCube` got. */
+	/** Textures that record the cube maps that `fromCube` and `fromGenerator` got. */
 	function cubeTextures() {
-		const cubes: [number, number, string, number][] = [];
+		const cubes: [number, number, string, number | string][] = [];
 		const textures = {
 			fromCube(size: number, levels: number, format: string, texels: Uint8Array[]) {
 				cubes.push([size, levels, format, texels.length]);
+				return { bytes: 0 } as unknown as Texture;
+			},
+			fromGenerator(name: string, size: number, levels: number) {
+				cubes.push([size, levels, 'rgb9e5ufloat', name]);
 				return { bytes: 0 } as unknown as Texture;
 			},
 		} as unknown as Textures;
 		return { textures, cubes };
 	}
 
-	test("load the asset tool's files and the built-in room into cube maps", async () => {
-		serve({
-			'https://game.example/env/room-copy.ktx2': room,
-			[String(BUILTIN_ENVIRONMENTS.room)]: room,
-		});
+	test("load the asset tool's files into cube maps, and make the built-in room on the GPU", async () => {
+		serve({ 'https://game.example/env/room.ktx2': smallMap() });
 		const { textures, cubes } = cubeTextures();
 		const assets = new Assets(textures, PAGE);
-		const loaded = await assets.loadEnvironment('/env/room-copy.ktx2');
+		const loaded = await assets.loadEnvironment('/env/room.ktx2');
 		const builtin = await assets.builtinEnvironment('room');
+		expect(fetched).toEqual(['https://game.example/env/room.ktx2']);
 		for (const env of [loaded, builtin]) {
 			expect(env).toBeInstanceOf(Environment);
-			expect([env.size, env.levels, env.format, env.sh.length]).toEqual([
-				256,
-				6,
-				'rgb9e5ufloat',
-				27,
-			]);
+			expect([env.format, env.sh.length]).toEqual(['rgb9e5ufloat', 27]);
 		}
+		expect([loaded.size, loaded.levels, builtin.size, builtin.levels]).toEqual([8, 1, 256, 6]);
 		expect(cubes).toEqual([
-			[256, 6, 'rgb9e5ufloat', 6],
-			[256, 6, 'rgb9e5ufloat', 6],
+			[8, 1, 'rgb9e5ufloat', 1],
+			[256, 6, 'rgb9e5ufloat', 'room'],
 		]);
 	});
 

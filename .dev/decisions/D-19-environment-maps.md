@@ -1,12 +1,14 @@
 # D-19: Environment maps: format, size, levels and where they are prefiltered
 
-Status: decided, 2026-10-04: the file and the tool with M2-B2, then the lookup, the built-in environment's name and the lit scenes' parity with M2-E2. The lookup's cost on the iPad and the S24+ is pending. Date: 2026-10-04. Tasks: M2-B2, M2-E2.
+Status: decided, 2026-10-04: the file and the tool with M2-B2, then the lookup, the built-in environment's name and the lit scenes' parity with M2-E2. The same day, the owner moved the built-in room out of the engine's package: the GPU makes it at first use. That is now the rule for every built-in asset. The lookup's cost on the iPad and the S24+ is pending. Date: 2026-10-04. Tasks: M2-B2, M2-E2.
 
 ## Question
 
 Image-based light needs the environment's light filtered for each roughness of the engine's materials, and its diffuse light. Which texture format, face size and levels hold the filtered light? Where does the filtering run: in the asset tool before release, or in the browser at load? And how far may the result lie from three.js's `PMREMGenerator` for the same file?
 
 Then, for the shader (M2-E2): which level does a material of a given roughness read? What is the built-in environment called? And how does the lookup reach the lit template: as a build of its own, or as a value of each frame?
+
+Last: how does the built-in room reach a page? As a file in the engine's package, or made on the GPU when a sketch first asks for it?
 
 ## Rule
 
@@ -24,6 +26,7 @@ Then, for the shader (M2-E2): which level does a material of a given roughness r
 | Layout | A cube map with a mip chain, one roughness per level; or three.js's CubeUV atlas, a 2D texture of faces and extra blurred levels | A cube map. The GPU filters across face edges and between levels, so the lookup is one `textureSampleLevel` |
 | Face size | 128, 256 or 512, down to faces of 8 texels | 256 |
 | Diffuse light | Nine spherical harmonics coefficients, or the roughest level | Nine coefficients, as three.js's `LightProbe` holds them |
+| The built-in room | A file in the engine's package; or the GPU makes it at first use, as three.js's `PMREMGenerator.fromScene` does | The GPU, by the owner's rule that built-in assets are made at run time |
 
 ## Data
 
@@ -117,6 +120,65 @@ The room now shades as `RE_Direct_Physical` does, with three.js's table of split
 
 The light left over sits in the rough levels, as with the HDR files, and at the panels' edges. The panels are small and over 50 times as bright as the walls, so small differences between the two blurs show there. The blur leaves the file less compressible: 393 KB with Brotli, up from 331 KB, and 562 KB with gzip.
 
+### The built-in room on the GPU
+
+The first room was a file in the engine's package: `packages/engine/environments/room.ktx2`, 2.0 MB, 393 KB with Brotli. The engine found it with `new URL('../../environments/room.ktx2', import.meta.url)`. A bundler copies every such file into every game's build, so each game shipped 2 MB that most never load. An offline web app would download it ahead too. The owner decided on 4 October 2026 that built-in assets are made at run time, never shipped as binary files in the engine's package.
+
+The engine now makes the room on the GPU, in the thread that draws, with the tool's steps:
+
+1. Trace three.js's room from its center, 4 x 4 directions per texel, at faces of 256.
+2. Blur it by 0.04 radians into the map's level 0 and into a chain. The taps lie on the tool's grid, half a sigma apart, out to three sigmas.
+3. Halve the chain down to one texel: a linear filter reads four texels at their shared corner.
+4. Filter each level from 1 to 5 with the GGX distribution, from the chain, with the tool's Hammersley set, sample counts and levels of detail.
+
+No GPU path draws into `rgb9e5ufloat`. So each draw packs its texels into the four bytes of an `rgba8unorm` target, rounded as the tool rounds them. A buffer then carries the bytes into the face's level of a shared-exponent cube. WebGPU copies through a buffer, and WebGL2 through a pixel pack and unpack buffer. Every step reads shared-exponent texels with the GPU's own filtering. One path serves all three tiers. It needs no float render target, which some WebGL2 devices lack.
+
+The table compares each texel with the tool's map of the room, tone mapped as above. It gives mean / p99 steps of 1/255, then the total light of each level over the tool's:
+
+| Level (roughness) | Chrome on the Mac's GPU, every tier | SwiftShader, every tier |
+| --- | --- | --- |
+| 0 (0) | 0.003 / 0.12, 1.0000 | 0.002 / 0.11, 1.0000 |
+| 1 (0.11) | 0.015 / 0.15, 1.0004 | 0.014 / 0.15, 1.0003 |
+| 2 (0.23) | 0.046 / 0.20, 1.0011 | 0.036 / 0.20, 1.0009 |
+| 3 (0.37) | 0.062 / 0.22, 1.0013 | 0.050 / 0.21, 1.0011 |
+| 4 (0.55) | 0.073 / 0.21, 1.0014 | 0.058 / 0.21, 1.0011 |
+| 5 (1) | 0.083 / 0.21, 1.0016 | 0.063 / 0.21, 1.0012 |
+
+The lit spheres did not move. Against three.js, 0.008% of the pixels differ on WebGPU and on WebGL2, as with the file. In compatibility mode 0.268% differ, as before.
+
+Time on the Mac (Apple M5 Max) in Chrome, from the call until the GPU had finished, for the whole map:
+
+| Path | First room, empty shader cache | First room, shaders cached | Each room after |
+| --- | --- | --- | --- |
+| WebGPU | 382 ms | 41 to 49 ms | 31.5 ms |
+| Compatibility mode | | 42 to 48 ms | 31.5 ms |
+| WebGL2 | 195 to 394 ms | 45 ms | 46 to 63 ms of GPU time, by timer queries |
+
+The first room compiles four pipelines at once, which is most of its time. SwiftShader took 1.0 to 2.1 s. The work is about 66 million texel reads for the blur and 100 million for the filter. Most of it is the filter's smallest levels, which read up to 8,192 directions per texel.
+
+The code and the shaders load on first use:
+
+| File | After Brotli | Budget |
+| --- | --- | --- |
+| The generators of both paths, in the thread that draws | 2.1 KB | 16 KB |
+| The room's numbers, in the thread that runs the sketch | 0.2 KB | 16 KB |
+| The shaders, WGSL or GLSL, in the thread that draws | 4.2 KB or 4.4 KB | 24 KB |
+
+The engine's JavaScript at a page's start grew by 1.0 KB, to 107.1 KB in pipelined mode. The backends' new command, the image table's generators and the texture call make it.
+
+How the parts fit:
+
+- The sketch thread makes a cube texture and asks the core for a generator. The generator takes the next image id, and its name, `room`, goes to the thread that draws as an image does. That thread loads the generators' code and the shaders of its GPU path, then counts the generator among the images it received. The core waits for that count as it waits for an image. Then it records one command, `GenerateTexture`, which runs the generator at once, before the frame's passes. Held frames wait for every image to arrive, so they wait for the generator too.
+- The core keeps the generator after it ran. A new GPU device makes the room again from it, with no work from the sketch.
+- The WebGPU generator submits its own commands, then destroys its textures and buffers. The WebGL2 generator changes the context's bindings, so the backend's state cache forgets them afterwards.
+- The shader build writes a shader marked `first_use` into a module of its own for each target, `generated/shaders-environment-wgsl.ts` and `-glsl.ts`. The main shader module stays as it was. The size report gives such files a budget of 24 KB each after Brotli, by the owner's decision of 4 October 2026.
+
+The options rejected:
+
+- Templates and bind groups of the draw list, with the core recording each draw. A draw of a template whose pipeline still builds draws nothing, and a map made once cannot skip a draw. The shader text would also have to reach the backends by another way, since it loads on first use.
+- Float render targets for every step. WebGL2 renders into `rgba16float` only with an extension that some devices lack, and the map would still need packing for `rgb9e5ufloat`.
+- The nine coefficients of diffuse light on the GPU. The room never changes, so its coefficients never change. Reading them back would need a path from the thread that draws to the sketch's thread in every thread mode. In hold mode that thread draws only when a capture asks, so the sketch would wait for a frame that never comes. The engine keeps the tool's 27 numbers instead, nine for a gray room, in the file that loads on first use. A test of the tool checks that they are its own.
+
 ### The lookup as a value, not a build
 
 The engine builds a shader for each combination of its permutation bits. A bit for the environment would double the variants of the standard material and of its maps build. Every device module would then nearly double in size. Instead, the frame's group always binds a cube: the environment's, or a blank cube of one texel. The frame uniform says whether to read it. Without an environment, each pixel pays one branch on a uniform, which every pixel takes the same way. Color grading tables work the same way (D-33).
@@ -135,6 +197,8 @@ The lookup's code adds 0.7 to 2.2 KB after Brotli to each device module, 2.9% to
   - 4 / 14 for diffuse light;
   - the total light within 2% from roughness 0.1 up.
 - The built-in room repeats three.js's `RoomEnvironment` scene. The tool traces it from the center. It shades it as `MeshStandardMaterial` does with its defaults, with no shadows, as three.js draws it. It then blurs it by 0.04 radians, as three.js's examples prefilter it.
+- The engine makes the built-in room on the GPU when a sketch first asks for it, with the tool's steps, on every tier. Its package ships no file for it. Its map lies within 0.25 / 1 step of the tool's at every level, and its total light within 0.5% (`tests/image/environment-generator.spec.ts`). The tool's `--builtin room` stays: it is the reference of that test and of the parity test.
+- General rule, from the owner on 4 October 2026: built-in assets are made at run time, never shipped as binary files in the engine's package. A built-in asset's code and shaders load on first use, within the budgets for such files.
 - The built-in environment is named `room`, after three.js's `RoomEnvironment`, which porters know. A sketch calls `assets.builtinEnvironment('room')` for it. The tool, the docs, the skills and the mapping all use that name. The studio preset of drei is an HDR file of its own, which ports through the tool.
 - The lit template reads each material's roughness from the level of the table's GGX roughness, `THREE_PMREM_ROUGHNESS`, blended between its steps of 0.05: `lod = (n - 1) * g * (2 - g)`. The porting promise is the look of the three.js scene, and three.js's PMREM sets that look. The table brings the lit spheres within three.js's image rule on both environments and every tier, which the material's own roughness misses on the room. The table lives in `crates/null3d-shaders/wgsl/lib/ibl.wgsl`.
 - Diffuse light comes from the nine coefficients. Specular light comes from the cube map along the reflection, bent toward the normal by roughness to the fourth power, as three.js's `getIBLRadiance` bends it. Both go through three.js's `RE_IndirectSpecular_Physical`, and the occlusion map darkens the specular light by `computeSpecularOcclusion`.
@@ -144,12 +208,13 @@ The lookup's code adds 0.7 to 2.2 KB after Brotli to each device module, 2.9% to
 
 ## Consequences
 
-- `bunx @null3d/cli assets env <in.hdr|in.exr> <out.ktx2>` writes the file, and `--builtin room` writes the built-in room. `packages/engine/environments/room.ktx2` is the room's file in the engine's package. A unit test checks that it matches the tool's output byte for byte, and `NULL3D_WRITE_ENVIRONMENTS=1 bun test packages/cli/src/assets/env.test.ts` writes it again.
+- `bunx @null3d/cli assets env <in.hdr|in.exr> <out.ktx2>` writes the file, and `--builtin room` writes the built-in room. A unit test of the tool checks that the room's nine coefficients are those that the engine keeps (`packages/engine/src/scene/builtin-environments.ts`).
 - OpenEXR files read through the `exr` crate (BSD-3-Clause), which reads every compression but DWAA and DWAB. The tool's module grew from 16 KB to 115 KB after Brotli, most of it the reader.
-- `assets.loadEnvironment(url)` reads the tool's files, and `assets.builtinEnvironment('room')` the room's. The reader loads on first use, under 1 KB after Brotli, and the room's file downloads only when a sketch asks for it.
+- `assets.loadEnvironment(url)` reads the tool's files. Its reader loads on first use, under 1 KB after Brotli. `assets.builtinEnvironment('room')` makes the room on the GPU. Its code and shaders load on first use, about 6.6 KB after Brotli in all.
 - The image tests `environment-room`, `environment-venice` and `environment-venice-rotated` draw the grid on all three tiers, and the parity scenes of the same names compare it with three.js. The dev server builds the Venice map from the sample content's HDR file with the tool, on the first request (`tools/lib/sample-environments.ts`).
 - On WebGL2 the cube map takes one texture unit of the fragment stage. The standard material with all six maps reads 13 of the 16 that every device allows.
 - Open: the lookup's GPU cost on the iPad, and the frame time at a GPU-bound size on the S24+. The device runner's `environment` plan measures both (`tests/pages/environment-cost.html`). Its scene draws 8 planes of the standard material over the whole window, without and with the room in turns. The difference over the layers is the lookup's cost. A functional run in Chrome on the Mac (Apple M5 Max) drew 1280 x 800 pixels. It gave 0.46 ms of GPU time without the room and 0.52 ms with it.
 - Open: after the browser replaces the GPU, an environment whose texels the store freed draws as none until the sketch loads it again. Every texture from data does the same, as M2-R6 notes for #76.
 - Open for M2-E3: a blurred background reads the same levels. A sharp background may want `--size 512` or larger.
-- Open: KTX2 supercompression. The room's 2.0 MB file is 393 KB with Brotli and 562 KB with gzip, so a host that compresses `.ktx2` files saves most of it. Zstandard in the file would need a decoder in the engine.
+- Open: KTX2 supercompression. A map of 256 is 2.0 MB. The room's was 393 KB with Brotli and 562 KB with gzip, so a host that compresses `.ktx2` files saves most of a map's bytes. Zstandard in the file would need a decoder in the engine.
+- Open: the room's first use compiles four pipelines at once, up to 0.4 s on the Mac with an empty shader cache. A sketch that asks for the room in its setup pays it before the first frame. Pipelines that build in the background would need the generator to wait for them.

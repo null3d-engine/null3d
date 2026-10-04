@@ -301,3 +301,28 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: De
 	if (mapping) gl.uniform2f(mapping, depth.scale, depth.offset);
 	p.ready = true;
 }
+
+/**
+ * What code that loads on first use, such as the texture generators, needs to draw with programs of
+ * its own: the context, a program for a template of one build, linked, with its blocks and textures
+ * bound to their slots and its depth mapping set, and in use; and the slot of each binding. The
+ * code then imports nothing from the files that the start loads.
+ */
+export interface ProgramHost {
+	readonly gl: WebGL2RenderingContext;
+	program(template: GlslTemplate): WebGLProgram;
+	slot(group: number, binding: number): number;
+}
+
+/** The program host of a context that draws in a depth mode. */
+export function programHost(gl: WebGL2RenderingContext, depth: DepthSetup): ProgramHost {
+	return {
+		gl,
+		program(template) {
+			const p = createProgram(gl, template, 0);
+			prepareProgram(gl, p, depth);
+			return p.program;
+		},
+		slot: slotOf,
+	};
+}

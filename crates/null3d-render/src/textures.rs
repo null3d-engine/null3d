@@ -48,6 +48,12 @@
 //! 3D texture, it has no bind group of the store's: the frame's group binds it by its GPU id, which
 //! [`TextureStore::ready_cube`] gives once its texels are on the GPU.
 //!
+//! A cube texture's texels can also come from a generator, which the thread that draws runs on
+//! the GPU, such as the built-in room environment's. A generator takes the next image id and waits
+//! for the thread that draws as an image does: that thread counts it once the generator's code has
+//! loaded, so the generator runs as soon as the list names it. One command fills every level, and
+//! the store keeps the generator, so a new GPU device fills the texture again.
+//!
 //! Formats come by code, and every byte count goes through [`format::level_bytes`], so formats
 //! stored in blocks of texels can join the array keys and the uploads.
 //!
@@ -180,6 +186,10 @@ enum Source {
     Image { id: u32, flags: u32 },
     /// Tightly packed rows, layer after layer, in the store's data slot `slot`.
     Data { slot: u32 },
+    /// Generator `id`, which the thread that draws holds under an image id and runs on the GPU.
+    /// The store keeps it until the texture gets other texels or is destroyed, so a new GPU device
+    /// runs it again.
+    Generated { id: u32 },
 }
 
 /// Where a texture is on its way to the GPU.
@@ -777,6 +787,22 @@ impl TextureStore {
         Ok((id, moved))
     }
 
+    /// Gives a cube texture of `format::RGB9E5_UFLOAT` texels that a generator makes on the GPU,
+    /// and returns the generator's id, which it takes from the images' ids. The caller sends the
+    /// generator to the thread that draws under that id, in the order of the ids, as it sends
+    /// images. Texels that were waiting are released unused.
+    pub fn set_generated(&mut self, texture: Handle) -> Result<u32, TextureError> {
+        let slot = *self.slot(texture)?;
+        let key = self.arrays[slot.array as usize].key;
+        if key.kind != Kind::Cube || key.format != format::RGB9E5_UFLOAT {
+            return Err(TextureError::Unsupported);
+        }
+        self.last_image += 1;
+        let id = self.last_image;
+        self.queue_source(texture, Source::Generated { id })?;
+        Ok(id)
+    }
+
     /// Gives a texture new texels of `width` x `height` in each of its layers, and returns the
     /// words that the caller fills with them, with true when the texture moved to an array of that
     /// size. The texels are tightly packed rows, of blocks in a compressed format, layer after
@@ -845,7 +871,10 @@ impl TextureStore {
         slot.state = State::Queued { source, rows: 0 };
         match old {
             State::Queued { source, .. } => self.release_unused(source),
-            State::Uploaded { .. } => {
+            State::Uploaded { source, .. } => {
+                if let Source::Generated { .. } = source {
+                    self.release_unused(source);
+                }
                 self.layers_changed = true;
                 self.queue.push(texture);
             }
@@ -866,7 +895,12 @@ impl TextureStore {
                 self.release_unused(source);
                 self.queue.retain(|&queued| queued != texture);
             }
-            State::Uploaded { .. } => self.layers_changed = true,
+            State::Uploaded { source, .. } => {
+                if let Source::Generated { .. } = source {
+                    self.release_unused(source);
+                }
+                self.layers_changed = true;
+            }
             State::Empty => {}
         }
         self.arrays[slot.array as usize].mark(slot.layer, false);
@@ -879,7 +913,7 @@ impl TextureStore {
         self.releases.push(Release {
             source,
             after: match source {
-                Source::Image { .. } => 0,
+                Source::Image { .. } | Source::Generated { .. } => 0,
                 Source::Data { .. } => self.recorded,
             },
             texture: Handle::NONE,
@@ -1136,12 +1170,14 @@ impl TextureStore {
     fn record_releases(&mut self, list: &mut DrawList, frame: u32) -> Result<(), RecordError> {
         let (arrived, taken) = (self.arrived, self.frames_taken);
         let due = |r: &Release| match r.source {
-            Source::Image { id, .. } => id <= arrived && r.after < frame,
+            Source::Image { id, .. } | Source::Generated { id } => id <= arrived && r.after < frame,
             Source::Data { .. } => r.after < taken,
         };
         for release in self.releases.iter().filter(|r| due(r)) {
             match release.source {
-                Source::Image { id, .. } => list.push(Op::ReleaseImage, &[id])?,
+                Source::Image { id, .. } | Source::Generated { id } => {
+                    list.push(Op::ReleaseImage, &[id])?;
+                }
                 Source::Data { slot } => self.data[slot as usize] = Vec::new(),
             }
             if let Ok(slot) = self.handles.resolve(release.texture) {
@@ -1192,7 +1228,7 @@ impl TextureStore {
             let State::Queued { source, mut rows } = slot.state else {
                 continue;
             };
-            if let Source::Image { id, .. } = source
+            if let Source::Image { id, .. } | Source::Generated { id } = source
                 && id > self.arrived
             {
                 continue;
@@ -1202,6 +1238,11 @@ impl TextureStore {
             let levels = slot.source_levels(key);
             let total = key.rows(levels);
             let block = format::block_size(key.format);
+            // A generator fills every level of every face with one command.
+            if let Source::Generated { id: generator } = source {
+                list.push(Op::GenerateTexture, &[id, generator])?;
+                rows = total;
+            }
             while rows < total {
                 let band = key.band(rows, levels);
                 let left = budget.saturating_sub(spent);
@@ -1215,33 +1256,32 @@ impl TextureStore {
                 }
                 let layer = slot.layer + band.layer;
                 let y = band.row * block;
-                match source {
-                    Source::Image { id: image, flags } => list.push(
+                if let Source::Image { id: image, flags } = source {
+                    list.push(
                         Op::UploadImage,
                         &[id, 0, 0, y, layer, key.width, take, image, flags, 0, y],
-                    )?,
-                    Source::Data { slot: data } => {
-                        let bytes = words_as_bytes(&self.data[data as usize]);
-                        let length = u64::from(take) * band.row_bytes;
-                        let texels = &bytes[band.offset as usize..(band.offset + length) as usize];
-                        // The last row of blocks may reach past the level's edge.
-                        let level_height = format::level_size(key.height, band.level);
-                        list.push(
-                            Op::WriteTexture,
-                            &[
-                                id,
-                                band.level,
-                                0,
-                                y,
-                                layer,
-                                format::level_size(key.width, band.level),
-                                (take * block).min(level_height - y),
-                                1,
-                                memory_address(texels),
-                                length as u32,
-                            ],
-                        )?;
-                    }
+                    )?;
+                } else if let Source::Data { slot: data } = source {
+                    let bytes = words_as_bytes(&self.data[data as usize]);
+                    let length = u64::from(take) * band.row_bytes;
+                    let texels = &bytes[band.offset as usize..(band.offset + length) as usize];
+                    // The last row of blocks may reach past the level's edge.
+                    let level_height = format::level_size(key.height, band.level);
+                    list.push(
+                        Op::WriteTexture,
+                        &[
+                            id,
+                            band.level,
+                            0,
+                            y,
+                            layer,
+                            format::level_size(key.width, band.level),
+                            (take * block).min(level_height - y),
+                            1,
+                            memory_address(texels),
+                            length as u32,
+                        ],
+                    )?;
                 }
                 spent += u64::from(take) * band.row_bytes;
                 rows += take;
@@ -1252,11 +1292,14 @@ impl TextureStore {
                         self.finished.push((id, layer));
                     }
                 }
-                self.releases.push(Release {
-                    source,
-                    after: frame,
-                    texture: handle,
-                });
+                // A generator stays for a new GPU device, which runs it again.
+                if !matches!(source, Source::Generated { .. }) {
+                    self.releases.push(Release {
+                        source,
+                        after: frame,
+                        texture: handle,
+                    });
+                }
                 self.layers_changed = true;
                 State::Uploaded {
                     source,
@@ -1406,6 +1449,8 @@ impl TextureStore {
                 Source::Image { .. } => released_in == 0 || released_in > taken,
                 // The store frees data as it records the release.
                 Source::Data { .. } => released_in == 0,
+                // The store keeps a generator until the texture no longer uses it.
+                Source::Generated { .. } => true,
             };
             texture.state = match texture.state {
                 State::Queued { source, .. } => State::Queued { source, rows: 0 },

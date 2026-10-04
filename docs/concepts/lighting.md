@@ -134,6 +134,8 @@ The engine takes an environment as one KTX2 file, which `bunx @null3d/cli assets
 
 three.js builds the same data in the browser on every visit with `PMREMGenerator`. The engine reads the finished file, so a page does no prefiltering before it draws. [The asset pipeline](../guides/assets-pipeline.md#environment-maps) gives the command's options and the file's sizes.
 
+The built-in room needs no file. The GPU draws three.js's room into a cube map and filters it for each roughness when a sketch first asks for it, as three.js's `PMREMGenerator.fromScene` does. It follows the asset tool's steps, so it gives the same map as `bunx @null3d/cli assets env --builtin room`.
+
 ### How an environment lights a surface
 
 The standard material takes the environment's light as three.js's `MeshStandardMaterial` takes it from `scene.environment`:
@@ -150,14 +152,15 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 | Call | Gives |
 | --- | --- |
 | `assets.loadEnvironment(url)` | An environment from a file of `bunx @null3d/cli assets env` |
-| `assets.builtinEnvironment('room')` | The room that three.js's `RoomEnvironment` builds: a white room with six boxes and glowing panels. It is blurred as three.js's examples blur it, with `fromScene(room, 0.04)` |
+| `assets.builtinEnvironment('room')` | The room that three.js's `RoomEnvironment` builds: a white room with six boxes and glowing panels. It is blurred as three.js's examples blur it, with `fromScene(room, 0.04)`. The GPU makes it, so no file downloads |
 | `scene.setEnvironment(environment, options)` | Nothing: it lights the scene with the environment from the next frame |
 | `environment.destroy()` | Nothing: it frees the cube map's GPU memory |
 
 ### Cost
 
-- A page downloads the environment code, under 1 KB after Brotli, with its first environment. The built-in room's file, 2 MB, comes with the engine's package, and downloads only when a sketch asks for it. A server that compresses it with Brotli sends about 390 KB.
-- A map of the default size takes 2 MB of GPU memory. It uploads in the frames after the load, within the frame's upload budget, and the scene draws without it until it is on the GPU.
+- A page downloads the file reader, under 1 KB after Brotli, with its first environment file.
+- The built-in room downloads no file. Its first use loads the code and the shaders that make it, about 7 KB after Brotli. The GPU then makes the map in one frame. In the engine's test of the room, a MacBook Pro's GPU (Apple M5 Max) took about 32 ms on WebGPU. It took 50 to 60 ms on WebGL2. The first room also compiles its shaders, which took up to 0.4 s more with an empty shader cache. So ask for the room in the sketch's setup, before the first frame.
+- A map of the default size takes 2 MB of GPU memory. A file's map uploads in the frames after the load, within the frame's upload budget. The scene draws without an environment until its map is on the GPU.
 - The environment is a value of each frame, not a build of the shaders. So setting one builds no pipeline, and each pixel of a standard material pays one branch while the scene has none.
 - With an environment, each pixel of a standard material reads the cube map once and adds up the nine coefficients.
 - On WebGL2 the cube map takes one of the 16 texture units that a fragment shader may use. A standard material with all six maps uses 13 of them.

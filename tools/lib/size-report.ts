@@ -64,6 +64,8 @@ export interface EnginePart {
  * that runs the sketch at the first call of `debug.frameStats`. No download counts them either.
  * The loop that moves label elements loads on the page with the first `engine.labels.bind`.
  * The WebGL call timing of benchmark pages loads in the thread that draws, only with ?gl-timing.
+ * The built-in environments' numbers load in the thread that runs the sketch with the first one,
+ * and the texture generators that make their maps on the GPU load in the thread that draws.
  */
 export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page.js', module: 'page/engine.ts' },
@@ -73,6 +75,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		module: 'gpu/webgl2/call-timing.ts',
 		loadedBy: 'page-renderer.js',
 	},
+	{
+		name: 'page-environment-generator.js',
+		module: 'gpu/environment-steps.ts',
+		loadedBy: 'page-renderer.js',
+	},
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
@@ -80,6 +87,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'page-environment.js',
 		module: 'scene/environment-file.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
+	{
+		name: 'page-builtin-environments.js',
+		module: 'scene/builtin-environments.ts',
 		loadedBy: 'page-sketch-runner.js',
 	},
 	{ name: 'page-sprites.js', module: 'scene/sprites.ts', loadedBy: 'page-sketch-runner.js' },
@@ -99,6 +111,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		module: 'gpu/webgl2/call-timing.ts',
 		loadedBy: 'sketch-worker-renderer.js',
 	},
+	{
+		name: 'sketch-worker-environment-generator.js',
+		module: 'gpu/environment-steps.ts',
+		loadedBy: 'sketch-worker-renderer.js',
+	},
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-gltf.js', module: 'scene/gltf.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'gltf-worker.js', module: 'workers/gltf-worker.ts', loadedBy: 'sketch-worker-gltf.js' },
@@ -107,6 +124,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'sketch-worker-environment.js',
 		module: 'scene/environment-file.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'sketch-worker-builtin-environments.js',
+		module: 'scene/builtin-environments.ts',
 		loadedBy: 'sketch-worker.js',
 	},
 	{ name: 'sketch-worker-sprites.js', module: 'scene/sprites.ts', loadedBy: 'sketch-worker.js' },
@@ -121,6 +143,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'render-worker-call-timing.js',
 		module: 'gpu/webgl2/call-timing.ts',
+		loadedBy: 'render-worker.js',
+	},
+	{
+		name: 'render-worker-environment-generator.js',
+		module: 'gpu/environment-steps.ts',
 		loadedBy: 'render-worker.js',
 	},
 	{ name: 'job-worker.js', module: 'workers/job-worker.ts' },
@@ -149,6 +176,16 @@ export const SHADER_PARTS: readonly string[] = [
 ];
 
 /**
+ * The shader build's modules of shaders that load on a feature's first use, one file for each
+ * target, named after its module: the texture generators' shaders, which the thread that draws
+ * loads with the first generator. No start counts them, and each has a budget of its own.
+ */
+export const FIRST_USE_SHADER_PARTS: readonly string[] = [
+	'shaders-environment-wgsl.js',
+	'shaders-environment-glsl.js',
+];
+
+/**
  * The KTX2 transcoder's files, which a page downloads when it loads its first KTX2 file: the
  * engine's worker that runs the transcoder, and the official Basis Universal build's script and
  * WebAssembly module. A build copies each as it is, under its name with a hash.
@@ -164,6 +201,7 @@ export const REPORTED_FILES: readonly string[] = [
 	...CORE_BUILDS.flatMap((build) => CORE_FILES.map((file) => `${build}/${file}`)),
 	...ENGINE_PARTS.map(({ name }) => `js/${name}`),
 	...SHADER_PARTS.map((name) => `js/${name}`),
+	...FIRST_USE_SHADER_PARTS.map((name) => `js/${name}`),
 	...TRANSCODER_FILES.map((file) => `ktx2/${file}`),
 ];
 
@@ -272,7 +310,7 @@ function shaderPartOf(file: BuiltFile): string | undefined {
 export function findEngineParts(
 	files: readonly BuiltFile[],
 	parts: readonly EnginePart[] = ENGINE_PARTS,
-	shaderParts: readonly string[] = SHADER_PARTS,
+	shaderParts: readonly string[] = [...SHADER_PARTS, ...FIRST_USE_SHADER_PARTS],
 ): Map<string, BuiltFile> {
 	const found = new Map<string, BuiltFile>();
 	const holds = (file: BuiltFile, module: string) => file.sources.includes(ENGINE_SOURCE + module);
@@ -301,7 +339,7 @@ export function findEngineParts(
 		if (!part) continue;
 		if (!shaderParts.includes(part))
 			throw new Error(
-				`${file.file} holds the shader build's device module of ${part}, which the size report does not name: add it to SHADER_PARTS in tools/lib/size-report.ts`,
+				`${file.file} holds the shader build's module of ${part}, which the size report does not name: add it to SHADER_PARTS or FIRST_USE_SHADER_PARTS in tools/lib/size-report.ts`,
 			);
 		claimed.add(file);
 		const copy = shaders.get(part);
@@ -348,7 +386,7 @@ export function downloadSizes(
 ): { mode: string; size: SizeEntry }[] {
 	return downloads.map(({ mode, parts, shaders }) => {
 		const largest = [...sizes]
-			.filter(([part]) => part.startsWith(shaders))
+			.filter(([part]) => part.startsWith(shaders) && !FIRST_USE_SHADER_PARTS.includes(part))
 			.map(([, size]) => size)
 			.sort((a, b) => b.brotli - a.brotli)
 			.slice(0, 1);
@@ -368,14 +406,19 @@ export const START_BUDGET_BYTES = 140 * 1024;
 /** Brotli budget for each part that loads after the start. */
 export const LATER_BUDGET_BYTES = 16 * 1024;
 
+/** Brotli budget for each file of shaders that loads on a feature's first use. */
+export const FIRST_USE_SHADER_BUDGET_BYTES = 24 * 1024;
+
 /**
- * A problem for each thread mode whose start passes the start budget, and for each part that loads
- * after the start and passes its own budget.
+ * A problem for each thread mode whose start passes the start budget, for each part that loads
+ * after the start and passes its own budget, and for each file of shaders that loads on first use
+ * and passes its own.
  */
 export function budgetProblems(
 	sizes: ReadonlyMap<string, SizeEntry>,
 	downloads: readonly Download[] = DOWNLOADS,
 	later: readonly EnginePart[] = LATER_PARTS,
+	firstUseShaders: readonly string[] = FIRST_USE_SHADER_PARTS,
 ): string[] {
 	const kb = (bytes: number) => `${bytes / 1024} KB`;
 	return [
@@ -390,6 +433,14 @@ export function budgetProblems(
 			return brotli > LATER_BUDGET_BYTES
 				? [
 						`js/${name}, which loads after the start, is ${brotli.toLocaleString('en-US')} bytes after Brotli, over its ${kb(LATER_BUDGET_BYTES)} budget`,
+					]
+				: [];
+		}),
+		...firstUseShaders.flatMap((name) => {
+			const brotli = sizes.get(name)?.brotli ?? 0;
+			return brotli > FIRST_USE_SHADER_BUDGET_BYTES
+				? [
+						`js/${name}, shaders that load on first use, is ${brotli.toLocaleString('en-US')} bytes after Brotli, over its ${kb(FIRST_USE_SHADER_BUDGET_BYTES)} budget`,
 					]
 				: [];
 		}),

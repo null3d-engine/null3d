@@ -7,7 +7,6 @@
 // NULL3D_ENV_PARITY_FIT=1 also prints, for each roughness, the GGX roughness that matches three.js
 // best (the source of THREE_PMREM_ROUGHNESS), and the figures of other sizes and texel formats.
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { type EnvironmentFile, readEnvironment } from '../../packages/cli/src/assets/env.js';
 import { environmentMap } from '../../packages/cli/src/assets/formats.js';
@@ -26,13 +25,14 @@ type Tolerances = typeof TOLERANCE;
 
 /**
  * HDR files with and without a sun, each on disk for the tool and on the dev server for three.js,
- * and the engine's built-in room beside three.js's RoomEnvironment, prefiltered with the blur of
- * three.js's examples. The room's panels are small and far brighter than its walls, so the edges
- * of their reflections take looser limits than an HDR file's (D-19).
+ * and the tool's built-in room beside three.js's RoomEnvironment, prefiltered with the blur of
+ * three.js's examples. The engine makes the room on the GPU, and environment-generator.spec.ts
+ * holds that map to the tool's. The room's panels are small and far brighter than its walls, so the
+ * edges of their reflections take looser limits than an HDR file's (D-19).
  */
 const FILES: Record<
 	string,
-	{ path: string; url: string; builtin?: boolean; sigma?: number; tolerance?: Partial<Tolerances> }
+	{ path?: string; url: string; builtin?: boolean; sigma?: number; tolerance?: Partial<Tolerances> }
 > = {
 	'a sunset': {
 		path: samplePath('sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr'),
@@ -43,7 +43,6 @@ const FILES: Record<
 		url: '/samples/sources/hdri/polyhaven/potsdamer_platz/potsdamer_platz_2k.hdr',
 	},
 	'the built-in room': {
-		path: join(import.meta.dirname, '../../packages/engine/environments/room.ktx2'),
 		url: 'room',
 		builtin: true,
 		sigma: 0.04,
@@ -147,10 +146,11 @@ for (const [name, source] of Object.entries(FILES))
 		if (!three) throw new Error('the page offers no pmremLight');
 		const theirs = (k: number) => three.light.slice(k * 3 * count, (k + 1) * 3 * count);
 		const limits = { ...TOLERANCE, ...source.tolerance };
-		const hdr = new Uint8Array(readFileSync(source.path));
+		const settings = { size: 256, format: 'rgb9e5ufloat' } as const;
+		const hdr = source.path ? new Uint8Array(readFileSync(source.path)) : new Uint8Array();
 		const file = source.builtin
-			? hdr
-			: environmentMap({ file: hdr }, { size: 256, format: 'rgb9e5ufloat' });
+			? environmentMap({ builtin: 'room' }, settings)
+			: environmentMap({ file: hdr }, settings);
 		const env = readEnvironment(file);
 		const average = averageLight(env.sh);
 		const lines: string[] = [];

@@ -1,15 +1,8 @@
-// The reader of environment map files, which `assets.loadEnvironment` and
-// `assets.builtinEnvironment` import the first time, so a page without an environment never
-// downloads it. An environment map is a KTX2 file that `bunx @null3d/cli assets env` writes (D-19):
+// The reader of environment map files, which `assets.loadEnvironment` imports the first time, so
+// a page without an environment file never downloads it. An environment map is a KTX2 file that `bunx @null3d/cli assets env` writes (D-19):
 // a cube map of `rgb9e5ufloat` or `rgba16float` texels with no supercompression, one roughness per
 // mip level, and the nine coefficients of its diffuse light in the key-value data under
 // `null3d.environment`.
-
-/** The built-in environments, by name: the files in the engine's package, which load on first use. */
-export const BUILTIN_ENVIRONMENTS = {
-	/** The room that three.js's `RoomEnvironment` builds: a white room with boxes and lit panels. */
-	room: new URL('../../environments/room.ktx2?no-inline', import.meta.url),
-} as const;
 
 /** The texel formats of environment maps, by their Vulkan format number in the file. */
 const FORMATS = { 123: 'rgb9e5ufloat', 97: 'rgba16float' } as const;

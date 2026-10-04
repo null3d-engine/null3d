@@ -34,7 +34,7 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 | `emissiveMap` | `emissiveMap` | Must be sRGB |
 | `envMap`, `envMapIntensity` | `scene.setEnvironment(env)`, `envIntensity` (0.2) | Per-material environment maps are not supported; one scene environment lights everything. `envIntensity` multiplies the scene's `intensity`, where three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment |
 | `envMapRotation` | `scene.setEnvironment(env, { rotation })` (0.2) | The scene's rotation; materials share it |
-| `scene.environment` from `PMREMGenerator` | `scene.setEnvironment(await assets.loadEnvironment(url))` (0.2) | Prefilter HDR files offline with `bunx @null3d/cli assets env`. `RoomEnvironment` is `await assets.builtinEnvironment('room')`. Reflections match three.js's PMREM, roughness by roughness |
+| `scene.environment` from `PMREMGenerator` | `scene.setEnvironment(await assets.loadEnvironment(url))` (0.2) | Prefilter HDR files offline with `bunx @null3d/cli assets env`. `RoomEnvironment` is `await assets.builtinEnvironment('room')`, which the GPU makes with no file. Reflections match three.js's PMREM, roughness by roughness |
 | `bumpMap`, `bumpScale` | A normal map made offline: `bunx @null3d/cli assets normal-from-bump` (0.2) | |
 | `displacementMap`, `displacementScale`, `displacementBias` | A `vertexOffset` function: procedural now, from a height texture in 0.2 (section 8 of `references/shaders.md`) | Enlarge bounds with `setBounds` |
 | `alphaMap` | Alpha packed into `map`'s alpha offline, or a surface function that samples the alpha map (0.2) | three.js reads the alpha map's G channel (recipe in section 8) |

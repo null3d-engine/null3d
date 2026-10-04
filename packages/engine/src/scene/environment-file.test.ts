@@ -1,10 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { BUILTIN_ENVIRONMENTS, readEnvironmentFile } from './environment-file';
-
-/** The built-in room's file in the engine's package. */
-const ROOM = join(import.meta.dir, '../../environments/room.ktx2');
+import { readEnvironmentFile } from './environment-file';
 
 const IDENTIFIER = [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a];
 
@@ -73,22 +68,6 @@ function cubeFile({
 }
 
 describe('environment files', () => {
-	test("read the built-in room's cube map and diffuse light", () => {
-		const bytes = readFileSync(ROOM);
-		const room = readEnvironmentFile(
-			bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
-		);
-		expect([room.size, room.levels, room.format]).toEqual([256, 6, 'rgb9e5ufloat']);
-		expect(room.texels.map((level) => level.length)).toEqual(
-			[256, 128, 64, 32, 16, 8].map((side) => 6 * side * side * 4),
-		);
-		expect(room.sh.length).toBe(27);
-		expect(room.sh.every(Number.isFinite)).toBe(true);
-		// The room is white and lit from above, so its average light is gray and above 0.
-		expect(room.sh[0]).toBeGreaterThan(0);
-		expect(Math.abs((room.sh[0] as number) - (room.sh[2] as number))).toBeLessThan(0.05);
-	});
-
 	test('give each level its own faces, from the largest down', () => {
 		const file = readEnvironmentFile(cubeFile());
 		expect([file.size, file.levels, file.format]).toEqual([8, 2, 'rgba16float']);
@@ -97,10 +76,6 @@ describe('environment files', () => {
 			[6 * 16 * 8, 2],
 		]);
 		expect(file.sh[26]).toBeCloseTo(2.6);
-	});
-
-	test('name the built-in room by the file in the package', () => {
-		expect(BUILTIN_ENVIRONMENTS.room.pathname).toEndWith('/environments/room.ktx2');
 	});
 
 	test('refuse files that are not environment maps, and say why', () => {

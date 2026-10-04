@@ -41,7 +41,7 @@ import {
 	TEXTURE_WRAP_REPEAT,
 } from '../generated/core';
 import type { QualitySettingName, QualitySettings } from '../quality/presets';
-import type { ImageSender } from '../shared/images';
+import type { GeneratorName, ImageSender } from '../shared/images';
 import type { EnvironmentFormat } from './environment';
 import { toHalfFloats } from './half-float';
 import type { CoreMemory } from './memory';
@@ -439,6 +439,26 @@ export class Textures {
 				new Uint8Array(core.memory.buffer, address, level.length).set(level);
 				address += level.length;
 			}
+		} catch (error) {
+			texture.destroy();
+			throw error;
+		}
+		return texture;
+	}
+
+	/**
+	 * @internal A cube texture of shared-exponent floats with faces of `size` texels a side and
+	 * `levels` mip levels, read with linear filters within and between levels, whose texels a
+	 * generator makes on the GPU. The thread that draws loads the generator's code first, and the
+	 * texture draws as none until its texels are made.
+	 */
+	fromGenerator(name: GeneratorName, size: number, levels: number, call: string): Texture {
+		const { core } = this;
+		const format = TEXTURE_FORMAT_SHARED_EXPONENT;
+		const handle = core.checkGrowth(core.glue.createCubeTexture(size, levels, format), call);
+		const texture = new Texture(handle, size, size, 6, 'rgb9e5ufloat', 'linear', 0, this, true);
+		try {
+			this.send(core.checkGrowth(core.glue.generateTexture(handle), call, 'a texture'), name);
 		} catch (error) {
 			texture.destroy();
 			throw error;

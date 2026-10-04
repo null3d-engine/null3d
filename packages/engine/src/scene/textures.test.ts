@@ -6,6 +6,7 @@ import {
 	TEXTURE_FILTER_NEAREST,
 	TEXTURE_FORMAT_HALF_FLOAT,
 	TEXTURE_FORMAT_LINEAR,
+	TEXTURE_FORMAT_SHARED_EXPONENT,
 	TEXTURE_FORMAT_SRGB,
 	TEXTURE_PREMULTIPLIED_ALPHA,
 	TEXTURE_STAT_MAX_SIZE,
@@ -45,15 +46,23 @@ function fakeCore() {
 	const images: number[][] = [];
 	const data: number[][] = [];
 	const destroyed: number[] = [];
-	const sent: [number, ImageBitmap][] = [];
+	const sent: [number, ImageBitmap | string][] = [];
 	let nextImage = 0;
 	const glue = {
 		createTexture: (...args: (number | boolean)[]) => {
 			created.push(args.map(Number));
 			return 7;
 		},
+		createCubeTexture: (...args: number[]) => {
+			created.push(args);
+			return 9;
+		},
 		setTextureImage: (...args: number[]) => {
 			images.push(args);
+			return ++nextImage;
+		},
+		generateTexture: (texture: number) => {
+			images.push([texture]);
 			return ++nextImage;
 		},
 		setTextureData: (...args: number[]) => {
@@ -163,6 +172,17 @@ describe('textures.fromImageBitmap', () => {
 		const uvSet = 2 as unknown as 0;
 		fails(() => textures.fromImageBitmap(image(), { uvSet }), 'got the uvSet 2: give 0 or 1');
 		expect(created).toEqual([]);
+	});
+});
+
+describe('textures.fromGenerator', () => {
+	test('makes a shared-exponent cube and sends the generator under the id that the core gave it', () => {
+		const { textures, created, images, sent } = fakeCore();
+		const texture = textures.fromGenerator('room', 256, 6, 'assets.builtinEnvironment');
+		expect(created).toEqual([[256, 6, TEXTURE_FORMAT_SHARED_EXPONENT]]);
+		expect(images).toEqual([[9]]);
+		expect(sent).toEqual([[1, 'room']]);
+		expect([texture.width, texture.depth, texture.format]).toEqual([256, 6, 'rgb9e5ufloat']);
 	});
 });
 
