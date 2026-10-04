@@ -40,8 +40,8 @@ pub use pose::Pose;
 pub use resample::{Channel, DEFAULT_RATE, Interpolation, MAX_FRAMES, SourceTrack, resample};
 pub use skeleton::{MAX_JOINTS, NO_PARENT, REST_FLOATS, Skeleton};
 pub use system::{
-    Animations, EVENT_CAPACITY, EVENT_WORDS, INSTANCE_CHUNK, MAX_BLEND, MAX_LAYERS, Play,
-    SampleSlots,
+    Animations, Blend, EVENT_CAPACITY, EVENT_WORDS, INSTANCE_CHUNK, MAX_BLEND, MAX_LAYERS,
+    NO_SOURCE, Play, SampleSlots,
 };
 
 /// Floats per skinning matrix: a row-major 3 × 4 matrix of 48 bytes, as world matrices are.

@@ -3,7 +3,7 @@ id: api/animation
 title: Animation
 status: experimental
 since: "0.2"
-summary: "The animator; play, crossFade, layers, joint masks, additive clips, events; morph weights."
+summary: "The animator; play, crossFade, clip weights, start times, 1D blends, layers, joint masks, additive clips, events; morph weights."
 ---
 
 # Animation
@@ -12,7 +12,7 @@ summary: "The animator; play, crossFade, layers, joint masks, additive clips, ev
 
 ```mermaid
 flowchart LR
-    calls["Your sketch:<br/>play, crossFade, stop,<br/>layer weights"] --> state["Each object's clips:<br/>times and fades"]
+    calls["Your sketch:<br/>play, crossFade, stop,<br/>clip and layer weights,<br/>blend values"] --> state["Each object's clips:<br/>times, weights and fades"]
     file["A clip in a file:<br/>keys at any times"] -->|"once, at load,<br/>on a job worker"| clip["The engine's clip:<br/>keys at one fixed rate"]
     state --> step
     clip --> step["Each frame, on the job workers:<br/>advance, sample 4 joints at once,<br/>blend layers, compose"]
@@ -86,12 +86,76 @@ return {
 | `speed` | 1 | The rate of the clip's time. A negative speed plays the clip backward from its end. |
 | `layer` | 0 | The layer, from 0 to 3. |
 | `additive` | `false` | `true` adds the clip's change on top of the other layers. |
+| `time` | the first frame | Seconds into the clip at which it starts. A repeating clip wraps the time into its length. A clip that plays once holds the time within its length. |
+| `weight` | 1 | The clip's own weight, 0 or more. A play with a weight joins the other clips of its layer instead of fading them out, as [Clip weights](#clip-weights) shows. |
 
-`crossFade(name, duration)` is `play` with a fade of `duration` seconds. A clip that already plays on its layer keeps its time when you play it again, and fades back in from its current weight. So calling `play` with the same clip again does no harm. A clip that played once and reached its end starts again.
+`crossFade(name, duration)` is `play` with a fade of `duration` seconds. A cross-fade always takes over its layer, with a weight too. A clip that already plays on its layer keeps its time when you play it again, and fades back in from its current weight. So calling `play` with the same clip again does no harm. A clip that played once and reached its end starts again.
+
+A plain play fades out only the plain clips of its layer, and an additive play only the additive clips. So a walk keeps playing when a breath starts on its layer as an additive clip.
+
+A crowd whose characters all start a clip at once steps in time. Give each character a start time of its own:
+
+```ts
+for (const [k, knight] of knights.entries()) {
+  knight.animator().play('walk', { time: k * 0.37 });
+}
+```
 
 `stop(name, { fade })` fades a clip out on every layer. `stop()` with no name stops every clip. A clip that stops at once, or fades out fully, leaves the pose. With no clip playing, the object holds its rest pose.
 
 `setTimeScale(scale)` sets the rate of every clip of the object. Set it to 0 to pause the object's animation.
+
+## Clip weights
+
+Each clip has a weight of its own, as a three.js action has. A play with a `weight` joins the clips that already play on its layer, and the layer blends them by their weights. Where the weights add up to less than 1, the rest pose makes up the remainder, as three.js's mixer does.
+
+```ts
+const anim = knight.animator();
+anim.play('walk', { weight: 0.7 });
+anim.play('run', { weight: 0.3 });
+
+return {
+  onUpdate() {
+    const run = Math.min(speed / 4, 1);
+    anim.setWeight('walk', 1 - run);
+    anim.setWeight('run', run);
+  },
+};
+```
+
+`setWeight(name, weight)` sets the weight of a clip that plays, on every layer that plays it. It writes the weight into engine memory, so you can change it every frame at no cost. A clip at weight 0 leaves the pose. It keeps playing, and its time moves on, as in three.js. A fade multiplies the weight: a clip at weight 0.5 that fades in reaches 0.5. In development builds, `setWeight` on a clip that does not play throws E1218.
+
+Clips that blend by weight keep their own times. A walk and a run of different lengths then step at different moments, and the feet slide. A 1D blend keeps their steps together.
+
+## 1D blends
+
+A 1D blend mixes clips by one value, such as the character's speed. `playBlend(points, options)` gives each clip a point on a line. At a clip's point, that clip plays in full. Between two points, the two clips around the value share it. Past the first or the last point, that point's clip plays in full. `setBlend(value, layer)` moves the value. It writes engine memory, so you can call it every frame at no cost.
+
+```ts
+const anim = knight.animator();
+anim.playBlend({ idle: 0, walk: 1.4, run: 4 }, { fade: 0.2 });
+
+return {
+  onUpdate() {
+    anim.setBlend(speed);      // 2.7 m/s: walk and run share the pose half and half
+  },
+};
+```
+
+The clips of a blend share one phase, as PlayCanvas's blend trees and Godot's cyclic blend spaces keep them. Each clip's time moves at its length over the length of the blend's clips, averaged by their weights. At 2.7 m/s above, a walk of 1.07 s and a run of 0.73 s each take 0.9 s for a cycle. So both feet land together, whatever the value.
+
+`playBlend` takes these options:
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `value` | the layer's value | The blend value to start from. Each layer's value starts at 0. |
+| `fade` | 0 | Seconds over which the blend fades in, while the other clips of its layer fade out. |
+| `loop` | `true` | `false` plays the clips once and holds their last frames. |
+| `speed` | 1 | The rate of the blend: 1 moves it through one cycle in the averaged length. A negative speed plays it backward. |
+| `layer` | 0 | The layer, from 0 to 3. |
+| `phase` | the layer's phase | The share of the cycle, from 0 to 1, at which the clips start. |
+
+A blend holds 1 to 8 clips, each at a point of its own. Without a `phase`, a blend starts at the phase of the layer's blend. Failing that, it takes the phase of the first of its clips that the layer plays. So a switch from a walk to a blend with the walk keeps the step. `play` or `crossFade` on the layer ends the blend. Each of its clips then keeps the weight and the rate it had, and fades out. A call to `setWeight` on a clip of a blend multiplies its share of the blend.
 
 ## Layers and joint masks
 
@@ -150,7 +214,7 @@ A cubic spline track, as glTF stores one, keeps an in-tangent and an out-tangent
 
 ## Blending
 
-An object blends up to eight clips in a frame, each at its own time and weight. Two layers that each cross-fade between two clips, with an additive clip on top, fit with room to spare. When all eight are busy, a new clip takes the place of the clip that counts least at that moment.
+An object blends up to eight clips in a frame, each at its own time and weight. Two layers that each cross-fade between two clips, with an additive clip on top, fit with room to spare. So does a three-clip blend that cross-fades to another while a second layer cross-fades between two clips. When all eight are busy, a new clip takes the place of a clip that fades out, the one that counts least. Only when no clip fades out does it take the place of the clip that counts least at that moment.
 
 Within a layer, the engine blends clips as three.js's `AnimationMixer` does, joint by joint:
 
@@ -158,7 +222,7 @@ Within a layer, the engine blends clips as three.js's `AnimationMixer` does, joi
 - Each clip moves the blend so far by its share of the weights so far.
 - In layer 0, where the weights add up to less than 1, the joint's rest pose makes up the remainder.
 
-Rotations between keys and rotations in a blend use a corrected form of normalized linear interpolation. It stays within 0.0001 radians of three.js's spherical interpolation for rotations up to 2 radians apart. On the engine's test skeleton, poses match three.js's within 0.00003, and skinning matrices within 0.0002. Fades, masked layers and additive clips match three.js's results within 0.0002.
+Rotations between keys and rotations in a blend use a corrected form of normalized linear interpolation. It stays within 0.0001 radians of three.js's spherical interpolation for rotations up to 2 radians apart. On the engine's test skeleton, poses match three.js's within 0.00003, and skinning matrices within 0.0002. Fades, masked layers and additive clips match three.js's results within 0.0002. Start times, clip weights and blends match within 0.0004.
 
 Seven glTF sample models play their clips as three.js plays them. Each joint's skinning matrix matches three.js's within 0.0004 in its rotation and scale, and within 0.0004 of the model's size in its position. Fox's run is the exception: its keys follow no single grid, so the engine stores it at 30 keys per second. The joints that turn fastest then cut corners by up to 0.005.
 
@@ -197,6 +261,9 @@ A morphed object culls with a sphere that its weights grow: each target's longes
 | `a.crossFadeTo(b, 0.3)`, `fadeIn`, `fadeOut` | `anim.crossFade('b', 0.3)`, `play` with `fade`, `stop` with `fade` |
 | `action.setLoop(LoopOnce)` with `clampWhenFinished` | `play('name', { loop: false })`: it holds its last frame |
 | `action.timeScale`, `mixer.timeScale` | `play` with `speed`, `anim.setTimeScale` |
+| `action.time = t` before `play()` | `play('name', { time: t })` |
+| `action.setEffectiveWeight(w).play()` for clips that play together | `play('name', { weight: w })`, then `anim.setWeight('name', w)` |
+| A blend of actions whose weights and time scales your code works out from a speed | `anim.playBlend({ walk: 1.4, run: 4 })` and `anim.setBlend(speed)`, with the clips kept in step |
 | `AnimationUtils.makeClipAdditive(clip)` and an additive blend mode | `play('name', { additive: true })` |
 | Clips with tracks filtered out, for upper and lower body | Layers with `setLayerMask` |
 | `mixer.addEventListener('loop' or 'finished')` | `anim.onEvent('loop' or 'finished', handler)`, and events from the clip's data |
@@ -214,6 +281,10 @@ Where three.js and null3D differ:
 - three.js makes a bone object for each joint of a glTF skin, which you can find and move. null3D's joints are not objects. To move a joint from code, play a clip on a masked layer.
 - A three.js action played backward starts at time 0 and wraps to the end. A null3D clip with a negative speed starts at its end.
 - three.js has no layers. null3D's layer 0 blends as three.js's mixer does, and each layer above replaces the pose below.
+- A three.js `play()` never stops other actions. A null3D `play` without a weight fades out the other clips of its layer. Give each clip that plays beside others a `weight`.
+- three.js's `setEffectiveWeight` stops a fade. null3D's `setWeight` leaves a fade running, which multiplies the weight.
+- three.js has no blend by a value. A three.js blend of walk and run keeps each clip's own rate, so their steps drift apart. A null3D blend keeps them in step.
+- `action.startAt(time)`, which delays a start, has no counterpart. Call `play` at that time in `onUpdate`.
 
 | | three.js | null3D |
 | --- | --- | --- |
@@ -226,8 +297,8 @@ Where three.js and null3D differ:
 
 | Code | When |
 | --- | --- |
-| [E1218](../errors/E1218.md) | A clip, layer or joint that the object's animation does not have; an option out of range; `animator()` on an object with no clips; a morph target that the mesh does not have |
-| [E1203](../errors/E1203.md) | A fade, speed, weight, morph weight or time scale that is NaN or infinite |
+| [E1218](../errors/E1218.md) | A clip, layer or joint that the object's animation does not have; an option out of range, such as a negative weight; `setWeight` on a clip that does not play; a blend of no clips, of more than eight, or with two clips at one point; `animator()` on an object with no clips; a morph target that the mesh does not have |
+| [E1203](../errors/E1203.md) | A fade, speed, start time, weight, blend point, blend value, phase, morph weight or time scale that is NaN or infinite |
 | [E1416](../errors/E1416.md) | A glTF file whose skins or clips break glTF's rules, such as key times that fall back or a skin that names a node twice, or whose skins and clips move more than 1,024 nodes |
 | [E1101](../errors/E1101.md) | An animator call after its object was destroyed |
 
@@ -267,13 +338,31 @@ Plays an animated object's clips. It fades between them, blends them in layers w
 | `readonly clips: readonly string[]` | The names of the clips that the object can play. |
 | `readonly timeScale: number` | The rate of the object's animation time: 1 by default, 0 to pause every clip. |
 | `describe(): string` | The object, as error messages name it. |
-| `play(name: string, options?: PlayOptions): void` | Plays a clip. It fades in over `fade` seconds while the other clips of its layer fade out, or with no fade, takes over at once. A clip that already plays on the layer keeps its time and fades back in. A clip that played once and reached its end starts again. |
-| `crossFade(name: string, duration: number, options?: PlayOptions): void` | Fades to a clip over `duration` seconds: `play(name, { ...options, fade: duration })`, the three.js `crossFadeTo` of the layer's other clips. |
+| `play(name: string, options?: PlayOptions): void` | Plays a clip. It fades in over `fade` seconds while the other clips of its layer fade out, or with no fade, takes over at once. With a `weight`, it joins the layer's other clips instead. A clip that already plays on the layer keeps its time and fades back in. A clip that played once and reached its end starts again. |
+| `crossFade(name: string, duration: number, options?: PlayOptions): void` | Fades to a clip over `duration` seconds while the layer's other clips fade out, as three.js's `crossFadeTo` does. It is `play(name, { ...options, fade: duration })`, but a clip with a weight still takes over. |
+| `setWeight(name: string, weight: number): void` | Sets the weight of a clip that plays, 0 or more, on every layer that plays it, as three.js's `setEffectiveWeight` does. A clip at weight 0 leaves the pose but keeps playing, so its time moves on. A fade multiplies the weight. It writes engine memory, so calling it every frame costs nothing. |
+| `playBlend(points: Readonly<Record<string, number>>, options?: BlendOptions): void` | Plays a 1D blend of clips. Each clip counts in full at its point, such as `{ idle: 0, walk: 1.4, run: 4 }` for a blend by speed. Between two points, the two clips around the blend value share it, and `setBlend` moves the value. The clips keep one phase: each clip's time moves at its length over the length of the blend's clips, averaged by their weights. A walk and a run of different lengths then keep their steps together. The layer's other clips fade out over `fade` seconds, as with `play`. |
+| `setBlend(value: number, layer = 0): void` | Sets the blend value of a layer's blend: the clip at that point counts in full, and a value between two points mixes the two clips around it. A value past the first or the last point gives that point's clip. It writes engine memory, so calling it every frame costs nothing. |
 | `stop(name?: string, options?: StopOptions): void` | Stops a clip on every layer, or with no name, every clip, fading out over `fade` seconds. |
 | `setLayerWeight(layer: number, weight: number): void` | Sets a layer's weight, from 0 to 1. Layer 0 blends with the rest pose below it, and each layer above replaces the pose below by its weight. Weights start at 1. It writes engine memory, so calling it every frame costs nothing. |
 | `setLayerMask(layer: number, joints: string \| readonly string[] \| null): void` | Limits a layer to some joints: each named joint and every joint below it, such as 'Spine' for the upper body. `null` gives the layer every joint again. |
 | `setTimeScale(scale: number): void` | Sets the rate of the object's animation time: 1 plays clips as made, 0 pauses them all. |
 | `onEvent(name: string, handler: AnimationEventHandler): () => void` | Calls `handler` for each event named `name` that a playing clip reaches: an event in the clip's data, 'loop' when a repeating clip starts again, or 'finished' when a clip that plays once reaches its end. Handlers run on the sketch's thread at the start of the next frame's update, before `onFixedUpdate` and `onUpdate`. Returns a function that removes the handler. |
+
+### `BlendOptions`
+
+Interface `BlendOptions`.
+
+How `Animator.playBlend` plays a 1D blend.
+
+| Member | Description |
+| --- | --- |
+| `value?: number` | The blend value, which picks the mix, as `setBlend` sets it. Without it, the layer keeps its value, 0 at first. |
+| `fade?: number` | Seconds over which the blend fades in while the layer's other clips fade out. The default, 0, switches at once. |
+| `loop?: boolean` | True, the default, repeats the clips. False plays them once and holds their last frames. |
+| `speed?: number` | The rate of the blend. 1, the default, moves it through one cycle in the length of its clips, averaged by their weights. A negative rate plays it backward. |
+| `layer?: number` | The layer, a whole number from 0, the default, to 3. |
+| `phase?: number` | The share of their cycle, from 0 to 1, at which the clips start: 0.5 starts each clip halfway through. Without it, the blend takes the phase of the layer's blend, or of the first of its clips that the layer plays, so the switch keeps the step. Otherwise the clips start at their first frames. |
 
 ### `PlayOptions`
 
@@ -287,7 +376,9 @@ How `Animator.play` plays a clip.
 | `loop?: boolean` | True, the default, repeats the clip. False plays it once and holds its last frame. |
 | `speed?: number` | The rate of the clip's time. 1, the default, plays it as made, and 2 twice as fast. A negative rate plays it backward from its end. |
 | `layer?: number` | The layer, a whole number from 0, the default, to 3. Each layer above 0 replaces the pose of the layers below by its weight, on the joints of its mask. |
-| `additive?: boolean` | True adds the clip's change from its first frame to the pose of the layers, as three.js's additive clips do. A breathing or aiming clip then plays on top of a walk. |
+| `additive?: boolean` | True adds the clip's change from its first frame to the pose of the layers, as three.js's additive clips do. A breathing or aiming clip then plays on top of a walk. An additive play replaces only the additive clips of its layer, and a plain play only the plain ones. |
+| `time?: number` | Seconds into the clip at which it starts, as three.js's `action.time` sets it. A repeating clip wraps the time into its length, and a clip that plays once holds it within its length. Without it, a clip starts at its first frame, and a clip that already plays keeps its time. |
+| `weight?: number` | The clip's own weight, 0 or more, as three.js's `setEffectiveWeight` sets it. A play with a weight joins the other clips of its layer instead of fading them out, so a walk at 0.3 and a run at 0.7 blend. A fade multiplies the weight. Without it, a clip that starts takes 1, and a clip that already plays keeps its weight. |
 
 ### `StopOptions`
 

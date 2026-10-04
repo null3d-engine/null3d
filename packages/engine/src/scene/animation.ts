@@ -1,8 +1,9 @@
-// The animator: each animated object's calls to play, fade and stop its clips, its layers' weights
-// and joint masks, its time scale and its event handlers. The engine core keeps each object's
-// clips, times and fades, and its frame step advances and blends them on the job workers. Calls
-// here change that state in the core; the layer weights and the time scale are numbers in engine
-// memory, which these calls write directly, so a sketch can change them every frame for free.
+// The animator: each animated object's calls to play, fade, blend and stop its clips, its clips'
+// and layers' weights, its layers' joint masks, its time scale and its event handlers. The engine
+// core keeps each object's clips, times and fades, and its frame step advances and blends them on
+// the job workers. Calls here change that state in the core; the clip weights, the layer weights,
+// the blend values and the time scale are numbers in engine memory, which these calls write
+// directly, so a sketch can change them every frame for free.
 // After each frame step, the events that the clips passed reach the sketch's handlers. A rig
 // holds a skeleton and its named clips in the core, which every object that animates with it
 // shares. Only engine code creates rigs: the glTF loader, from the models it loads, and test
@@ -54,9 +55,57 @@ export interface PlayOptions {
 	layer?: number;
 	/**
 	 * True adds the clip's change from its first frame to the pose of the layers, as three.js's
-	 * additive clips do. A breathing or aiming clip then plays on top of a walk.
+	 * additive clips do. A breathing or aiming clip then plays on top of a walk. An additive play
+	 * replaces only the additive clips of its layer, and a plain play only the plain ones.
 	 */
 	additive?: boolean;
+	/**
+	 * Seconds into the clip at which it starts, as three.js's `action.time` sets it. A repeating
+	 * clip wraps the time into its length, and a clip that plays once holds it within its length.
+	 * Without it, a clip starts at its first frame, and a clip that already plays keeps its time.
+	 */
+	time?: number;
+	/**
+	 * The clip's own weight, 0 or more, as three.js's `setEffectiveWeight` sets it. A play with a
+	 * weight joins the other clips of its layer instead of fading them out, so a walk at 0.3 and a
+	 * run at 0.7 blend. A fade multiplies the weight. Without it, a clip that starts takes 1, and a
+	 * clip that already plays keeps its weight.
+	 */
+	weight?: number;
+}
+
+/**
+ * How `Animator.playBlend` plays a 1D blend.
+ *
+ * @category api/animation
+ */
+export interface BlendOptions {
+	/**
+	 * The blend value, which picks the mix, as `setBlend` sets it. Without it, the layer keeps its
+	 * value, 0 at first.
+	 */
+	value?: number;
+	/**
+	 * Seconds over which the blend fades in while the layer's other clips fade out. The default,
+	 * 0, switches at once.
+	 */
+	fade?: number;
+	/** True, the default, repeats the clips. False plays them once and holds their last frames. */
+	loop?: boolean;
+	/**
+	 * The rate of the blend. 1, the default, moves it through one cycle in the length of its
+	 * clips, averaged by their weights. A negative rate plays it backward.
+	 */
+	speed?: number;
+	/** The layer, a whole number from 0, the default, to 3. */
+	layer?: number;
+	/**
+	 * The share of their cycle, from 0 to 1, at which the clips start: 0.5 starts each clip
+	 * halfway through. Without it, the blend takes the phase of the layer's blend, or of the first
+	 * of its clips that the layer plays, so the switch keeps the step. Otherwise the clips start at
+	 * their first frames.
+	 */
+	phase?: number;
 }
 
 /**
@@ -187,6 +236,12 @@ export class SceneAnimations {
 	private generation = -1;
 	private scales!: Float32Array;
 	private weights!: Float32Array;
+	private sources!: Uint32Array;
+	private clipWeights!: Float32Array;
+	private blends!: Float32Array;
+	private words!: Uint32Array;
+	private floats!: Float32Array;
+	private args!: Float32Array;
 	private records!: Uint32Array;
 	private totals!: Uint32Array;
 	/** The animator of each object, by its instance id in the core. */
@@ -237,6 +292,16 @@ export class SceneAnimations {
 			at(C.ANIMATION_FIELD_LAYER_WEIGHTS),
 			ANIMATED_OBJECTS * C.ANIMATION_MAX_LAYERS,
 		);
+		this.blends = core.f32(
+			at(C.ANIMATION_FIELD_BLEND_VALUES),
+			ANIMATED_OBJECTS * C.ANIMATION_MAX_LAYERS,
+		);
+		const slots = ANIMATED_OBJECTS * C.ANIMATION_MAX_BLEND;
+		this.sources = core.u32(at(C.ANIMATION_FIELD_SLOT_SOURCES), slots);
+		this.clipWeights = core.f32(at(C.ANIMATION_FIELD_SLOT_WEIGHTS), slots);
+		this.words = new Uint32Array(core.memory.buffer);
+		this.floats = new Float32Array(core.memory.buffer);
+		this.args = core.f32(at(C.ANIMATION_FIELD_PLAY_ARGS), C.ANIMATION_ARGS);
 		this.records = core.u32(
 			at(C.ANIMATION_FIELD_EVENTS),
 			C.ANIMATION_EVENT_CAPACITY * C.ANIMATION_EVENT_WORDS,
@@ -267,6 +332,49 @@ export class SceneAnimations {
 	layerWeights(): Float32Array {
 		this.views();
 		return this.weights;
+	}
+
+	/**
+	 * The numbers of the next play, `ANIMATION_ARGS` of them at the `ANIMATION_ARG_*` places. They
+	 * reach the core through engine memory, as numbers passed to a call the browser does not
+	 * inline would each allocate.
+	 */
+	playArgs(): Float32Array {
+		this.views();
+		return this.args;
+	}
+
+	/** The whole engine memory as 32-bit words, for staging words without a view of their own. */
+	memoryWords(): Uint32Array {
+		this.views();
+		return this.words;
+	}
+
+	/** The whole engine memory as 32-bit floats. */
+	memoryFloats(): Float32Array {
+		this.views();
+		return this.floats;
+	}
+
+	/** The blend value of each layer of each instance, `ANIMATION_MAX_LAYERS` per instance. */
+	blendValues(): Float32Array {
+		this.views();
+		return this.blends;
+	}
+
+	/**
+	 * The clip that a play put in each sample slot, `ANIMATION_MAX_BLEND` per instance, or
+	 * `ANIMATION_NO_SOURCE`.
+	 */
+	slotSources(): Uint32Array {
+		this.views();
+		return this.sources;
+	}
+
+	/** The weight of each sample slot, `ANIMATION_MAX_BLEND` per instance. */
+	slotWeights(): Float32Array {
+		this.views();
+		return this.clipWeights;
 	}
 
 	/**
@@ -353,19 +461,125 @@ export class Animator implements Described {
 
 	/**
 	 * Plays a clip. It fades in over `fade` seconds while the other clips of its layer fade out,
-	 * or with no fade, takes over at once. A clip that already plays on the layer keeps its time
-	 * and fades back in. A clip that played once and reached its end starts again.
+	 * or with no fade, takes over at once. With a `weight`, it joins the layer's other clips
+	 * instead. A clip that already plays on the layer keeps its time and fades back in. A clip
+	 * that played once and reached its end starts again.
 	 */
 	play(name: string, options?: PlayOptions): void {
-		this.start('play', name, options?.fade ?? 0, options);
+		this.start('play', name, options, options?.weight !== undefined);
 	}
 
 	/**
-	 * Fades to a clip over `duration` seconds: `play(name, { ...options, fade: duration })`, the
-	 * three.js `crossFadeTo` of the layer's other clips.
+	 * Fades to a clip over `duration` seconds while the layer's other clips fade out, as
+	 * three.js's `crossFadeTo` does. It is `play(name, { ...options, fade: duration })`, but a
+	 * clip with a weight still takes over.
 	 */
 	crossFade(name: string, duration: number, options?: PlayOptions): void {
-		this.start('crossFade', name, duration, options);
+		this.start('crossFade', name, options, false, duration);
+	}
+
+	/**
+	 * Sets the weight of a clip that plays, 0 or more, on every layer that plays it, as three.js's
+	 * `setEffectiveWeight` does. A clip at weight 0 leaves the pose but keeps playing, so its time
+	 * moves on. A fade multiplies the weight. It writes engine memory, so calling it every frame
+	 * costs nothing.
+	 */
+	setWeight(name: string, weight: number): void {
+		const call = 'setWeight';
+		const clip = this.clip(call, name) - 1;
+		if (DEV) {
+			checks.checkLive(call, this.object);
+			this.checkWeight(call, weight);
+		}
+		const weights = this.system.slotWeights();
+		const sources = this.system.slotSources();
+		const first = (this.instance - 1) * C.ANIMATION_MAX_BLEND;
+		let set = 0;
+		for (let k = first; k < first + C.ANIMATION_MAX_BLEND; k++) {
+			if (sources[k] !== clip) continue;
+			weights[k] = weight;
+			set++;
+		}
+		if (DEV && set === 0)
+			refuse(
+				`${call}() got "${name}", which does not play on ${this.describe()}. Play it first, for example with play('${name}', { weight }).`,
+			);
+	}
+
+	/**
+	 * Plays a 1D blend of clips. Each clip counts in full at its point, such as
+	 * `{ idle: 0, walk: 1.4, run: 4 }` for a blend by speed. Between two points, the two clips
+	 * around the blend value share it, and `setBlend` moves the value. The clips keep one phase:
+	 * each clip's time moves at its length over the length of the blend's clips, averaged by
+	 * their weights. A walk and a run of different lengths then keep their steps together. The
+	 * layer's other clips fade out over `fade` seconds, as with `play`.
+	 */
+	playBlend(points: Readonly<Record<string, number>>, options?: BlendOptions): void {
+		const call = 'playBlend';
+		// The names are counted and read with `for...in`, which builds no array, so a game that
+		// switches back to a blend allocates nothing.
+		let count = 0;
+		for (const _ in points) count++;
+		const fade = options?.fade ?? 0;
+		const speed = options?.speed ?? 1;
+		const layer = options?.layer ?? 0;
+		const phase = options?.phase;
+		const value = options?.value;
+		if (DEV) {
+			checks.checkLive(call, this.object);
+			if (count === 0 || count > C.ANIMATION_MAX_BLEND)
+				refuse(
+					`${call}() got ${count} clips on ${this.describe()}; a blend takes 1 to ${C.ANIMATION_MAX_BLEND}.`,
+				);
+			const named = new Map<number, string>();
+			for (const name in points) {
+				const point = points[name] as number;
+				checks.checkNumber(call, `the point of "${name}"`, point, this);
+				const other = named.get(point);
+				if (other !== undefined)
+					refuse(
+						`${call}() got the point ${point} for "${other}" and "${name}" on ${this.describe()}; give each clip a point of its own.`,
+					);
+				named.set(point, name);
+			}
+			this.checkFade(call, fade);
+			checks.checkNumber(call, 'speed', speed, this);
+			this.checkLayer(call, layer);
+			if (value !== undefined) checks.checkNumber(call, 'value', value, this);
+			if (phase !== undefined) checks.checkNumber(call, 'phase', phase, this);
+		}
+		const { core } = this.system;
+		const at = core.checkGrowth(core.glue.animationStaging(count * 2), call) >>> 2;
+		const words = this.system.memoryWords();
+		const floats = this.system.memoryFloats();
+		let k = 0;
+		for (const name in points) {
+			words[at + k] = this.clip(call, name);
+			floats[at + count + k] = points[name] as number;
+			k++;
+		}
+		const flags =
+			(options?.loop === false ? 0 : C.ANIMATION_PLAY_LOOP) |
+			(phase === undefined ? 0 : C.ANIMATION_PLAY_TIME);
+		const args = this.system.playArgs();
+		args[C.ANIMATION_ARG_FADE] = fade;
+		args[C.ANIMATION_ARG_SPEED] = speed;
+		args[C.ANIMATION_ARG_TIME] = phase ?? 0;
+		this.done(core.glue.animatorPlayBlend(this.instance, count, layer, flags), call);
+		if (value !== undefined) this.system.blendValues()[this.layerAt(call, layer)] = value;
+	}
+
+	/**
+	 * Sets the blend value of a layer's blend: the clip at that point counts in full, and a value
+	 * between two points mixes the two clips around it. A value past the first or the last point
+	 * gives that point's clip. It writes engine memory, so calling it every frame costs nothing.
+	 */
+	setBlend(value: number, layer = 0): void {
+		if (DEV) {
+			checks.checkLive('setBlend', this.object);
+			checks.checkNumber('setBlend', 'value', value, this);
+		}
+		this.system.blendValues()[this.layerAt('setBlend', layer)] = value;
 	}
 
 	/** Stops a clip on every layer, or with no name, every clip, fading out over `fade` seconds. */
@@ -386,15 +600,14 @@ export class Animator implements Described {
 	 * memory, so calling it every frame costs nothing.
 	 */
 	setLayerWeight(layer: number, weight: number): void {
+		const call = 'setLayerWeight';
 		if (DEV) {
-			const call = 'setLayerWeight';
 			checks.checkLive(call, this.object);
-			this.checkLayer(call, layer);
 			checks.checkNumber(call, 'weight', weight, this);
 			if (weight < 0 || weight > 1)
 				refuse(`${call}() got the weight ${weight} on ${this.describe()}; it takes 0 to 1.`);
 		}
-		this.system.layerWeights()[(this.instance - 1) * C.ANIMATION_MAX_LAYERS + layer] = weight;
+		this.system.layerWeights()[this.layerAt(call, layer)] = weight;
 	}
 
 	/**
@@ -487,21 +700,45 @@ export class Animator implements Described {
 		this.instance = 0;
 	}
 
-	private start(call: string, name: string, fade: number, options: PlayOptions | undefined): void {
+	/**
+	 * Plays clip `name` with `options`, fading over `duration` seconds or else the options' fade.
+	 * The play's numbers stay in `options` until they reach engine memory: a fraction passed to a
+	 * call that the browser does not inline would allocate.
+	 */
+	private start(
+		call: string,
+		name: string,
+		options: PlayOptions | undefined,
+		join: boolean,
+		duration?: number,
+	): void {
 		const clip = this.clip(call, name);
+		const fade = duration ?? options?.fade ?? 0;
 		const speed = options?.speed ?? 1;
 		const layer = options?.layer ?? 0;
+		const time = options?.time;
+		const weight = options?.weight;
 		if (DEV) {
 			checks.checkLive(call, this.object);
 			this.checkFade(call, fade);
 			checks.checkNumber(call, 'speed', speed, this);
 			this.checkLayer(call, layer);
+			if (time !== undefined) checks.checkNumber(call, 'time', time, this);
+			if (weight !== undefined) this.checkWeight(call, weight);
 		}
 		const flags =
 			(options?.loop === false ? 0 : C.ANIMATION_PLAY_LOOP) |
-			(options?.additive ? C.ANIMATION_PLAY_ADDITIVE : 0);
+			(options?.additive ? C.ANIMATION_PLAY_ADDITIVE : 0) |
+			(time === undefined ? 0 : C.ANIMATION_PLAY_TIME) |
+			(weight === undefined ? 0 : C.ANIMATION_PLAY_WEIGHT) |
+			(join ? C.ANIMATION_PLAY_JOIN : 0);
 		const { core } = this.system;
-		const status = core.glue.animatorPlay(this.instance, clip, layer, fade, speed, flags);
+		const args = this.system.playArgs();
+		args[C.ANIMATION_ARG_FADE] = fade;
+		args[C.ANIMATION_ARG_SPEED] = speed;
+		args[C.ANIMATION_ARG_TIME] = time ?? 0;
+		args[C.ANIMATION_ARG_WEIGHT] = weight ?? 1;
+		const status = core.glue.animatorPlay(this.instance, clip, layer, flags);
 		// The first additive play of a clip stores its additive form, which can grow the memory.
 		core.refresh();
 		this.done(status, call);
@@ -531,11 +768,26 @@ export class Animator implements Described {
 			refuse(`${call}() got the fade ${fade} on ${this.describe()}; it takes 0 or more.`);
 	}
 
+	private checkWeight(call: string, weight: number): void {
+		checks.checkNumber(call, 'weight', weight, this);
+		if (weight < 0)
+			refuse(`${call}() got the weight ${weight} on ${this.describe()}; it takes 0 or more.`);
+	}
+
 	private checkLayer(call: string, layer: number): void {
 		if (Number.isInteger(layer) && layer >= 0 && layer < C.ANIMATION_MAX_LAYERS) return;
 		refuse(
 			`${call}() got the layer ${layer} on ${this.describe()}; it takes a whole number from 0 to ${C.ANIMATION_MAX_LAYERS - 1}.`,
 		);
+	}
+
+	/**
+	 * The place of layer `layer` of the object in the arrays of layers. It checks the layer in
+	 * every build, so a write never reaches another object's layers.
+	 */
+	private layerAt(call: string, layer: number): number {
+		if (layer >>> 0 !== layer || layer >= C.ANIMATION_MAX_LAYERS) this.checkLayer(call, layer);
+		return (this.instance - 1) * C.ANIMATION_MAX_LAYERS + layer;
 	}
 
 	/** The core's id, plus one, of the mask of `joints` and the joints below them. */

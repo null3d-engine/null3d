@@ -25,6 +25,10 @@ const AT = {
 	staging: 40_960,
 	sceneArrays: 131_072,
 	ring: 196_608,
+	slotSources: 262_144,
+	slotWeights: 294_912,
+	blendValues: 327_680,
+	playArgs: 344_064,
 };
 /** Object slots of the fake scene. */
 const CAPACITY = 7;
@@ -34,7 +38,7 @@ const CAPACITY = 7;
  * count up from 1, as the core's ids plus one do.
  */
 function fakeCore() {
-	const memory = new WebAssembly.Memory({ initial: 4 });
+	const memory = new WebAssembly.Memory({ initial: 8 });
 	const calls: [string, ...number[]][] = [];
 	const staged: number[][] = [];
 	let stagedWords = 0;
@@ -63,7 +67,13 @@ function fakeCore() {
 		[C.ANIMATION_FIELD_LAYER_WEIGHTS]: AT.layerWeights,
 		[C.ANIMATION_FIELD_EVENTS]: AT.events,
 		[C.ANIMATION_FIELD_EVENT_TOTALS]: AT.totals,
+		[C.ANIMATION_FIELD_SLOT_SOURCES]: AT.slotSources,
+		[C.ANIMATION_FIELD_SLOT_WEIGHTS]: AT.slotWeights,
+		[C.ANIMATION_FIELD_BLEND_VALUES]: AT.blendValues,
+		[C.ANIMATION_FIELD_PLAY_ARGS]: AT.playArgs,
 	};
+	/** The play numbers that a call reads, in the order of the `ANIMATION_ARG_*` places. */
+	const args = () => [...new Float32Array(memory.buffer, AT.playArgs, C.ANIMATION_ARGS)];
 	const glue = {
 		initAnimations: record('initAnimations'),
 		animationArrays: (field: number) => fields[field],
@@ -81,7 +91,15 @@ function fakeCore() {
 		},
 		createAnimatedInstance: created('createAnimatedInstance'),
 		removeAnimatedInstance: record('removeAnimatedInstance'),
-		animatorPlay: record('animatorPlay'),
+		animatorPlay: (...given: number[]) => {
+			calls.push(['animatorPlay', ...given, ...args()]);
+			return 0;
+		},
+		animatorPlayBlend: (...given: number[]) => {
+			words();
+			calls.push(['animatorPlayBlend', ...given, ...args().slice(0, 3)]);
+			return 0;
+		},
 		animatorStop: record('animatorStop'),
 		setLayerMask: record('setLayerMask'),
 		updateAnimations: record('updateAnimations'),
@@ -110,6 +128,13 @@ function fakeCore() {
 			new Uint32Array(memory.buffer, AT.totals, 2).set([records.length, dropped]);
 		},
 		f32: (at: number, length: number) => [...new Float32Array(memory.buffer, at, length)],
+		/** Puts clip ids, as the core's ids, into the sample slots of instance `instance`. */
+		slots(instance: number, clips: number[]) {
+			const at = AT.slotSources + instance * C.ANIMATION_MAX_BLEND * 4;
+			const sources = new Uint32Array(memory.buffer, at, C.ANIMATION_MAX_BLEND);
+			sources.fill(C.ANIMATION_NO_SOURCE);
+			sources.set(clips);
+		},
 	};
 }
 
@@ -243,13 +268,119 @@ describe('the animator', () => {
 		animator.stop();
 		const instance = 4;
 		expect(calls).toEqual([
-			['animatorPlay', instance, 2, 0, 0, 1, LOOP],
-			['animatorPlay', instance, 3, 1, 0.25, -2, 0],
-			['animatorPlay', instance, 2, 3, 0, 1, LOOP | ADD],
-			['animatorPlay', instance, 3, 0, 0.5, 1.5, LOOP],
+			// The instance, clip and layer, the flags, then the fade, speed, time and weight.
+			['animatorPlay', instance, 2, 0, LOOP, 0, 1, 0, 1],
+			['animatorPlay', instance, 3, 1, 0, 0.25, -2, 0, 1],
+			['animatorPlay', instance, 2, 3, LOOP | ADD, 0, 1, 0, 1],
+			['animatorPlay', instance, 3, 0, LOOP, 0.5, 1.5, 0, 1],
 			['animatorStop', instance, 2, 0.2],
 			['animatorStop', instance, 0, 0],
 		]);
+	});
+
+	test('plays clips from a start time and at a weight, beside the clips of their layer', () => {
+		const { calls, animator } = animated();
+		const { ANIMATION_PLAY_LOOP: LOOP, ANIMATION_PLAY_TIME: TIME } = C;
+		const WEIGHT = C.ANIMATION_PLAY_WEIGHT;
+		const JOIN = C.ANIMATION_PLAY_JOIN;
+		const f = Math.fround;
+		animator.play('walk', { time: 0.4 });
+		animator.play('walk', { time: 0.25, weight: 0.3 });
+		animator.play('run', { weight: 0 });
+		// A cross-fade takes over its layer, with a weight too.
+		animator.crossFade('run', 0.5, { weight: 0.5 });
+		const instance = 4;
+		expect(calls).toEqual([
+			['animatorPlay', instance, 2, 0, LOOP | TIME, 0, 1, f(0.4), 1],
+			['animatorPlay', instance, 2, 0, LOOP | TIME | WEIGHT | JOIN, 0, 1, 0.25, f(0.3)],
+			['animatorPlay', instance, 3, 0, LOOP | WEIGHT | JOIN, 0, 1, 0, 0],
+			['animatorPlay', instance, 3, 0, LOOP | WEIGHT, 0.5, 1, 0, 0.5],
+		]);
+	});
+
+	test('sets the weight of each slot that plays a clip, in engine memory', () => {
+		const { animator, f32, slots, calls } = animated();
+		// The object's instance is the core's instance 3. Walk is clip 1 in the core, run clip 2;
+		// walk plays on two layers.
+		slots(3, [1, 2, 1]);
+		animator.setWeight('walk', 0.25);
+		animator.setWeight('run', 0);
+		const at = AT.slotWeights + 3 * C.ANIMATION_MAX_BLEND * 4;
+		expect(f32(at, 4)).toEqual([0.25, 0, 0.25, 0]);
+		expect(f32(AT.slotWeights, C.ANIMATION_MAX_BLEND)).toEqual(
+			new Array(C.ANIMATION_MAX_BLEND).fill(0),
+		);
+		expect(calls).toEqual([]);
+	});
+
+	test('refuses weights it cannot set', () => {
+		const { animator, slots } = animated();
+		slots(3, [2]);
+		const idle = thrown(() => animator.setWeight('walk', 0.5));
+		expect(idle.code).toBe('E1218');
+		expect(idle.message).toContain(
+			`setWeight() got "walk", which does not play on "Hero" (slot 3). Play it first, for example with play('walk', { weight }).`,
+		);
+		expect(thrown(() => animator.setWeight('run', -0.5)).message).toContain(
+			'setWeight() got the weight -0.5 on "Hero" (slot 3); it takes 0 or more.',
+		);
+		expect(thrown(() => animator.setWeight('run', Number.NaN)).code).toBe('E1203');
+		expect(thrown(() => animator.setWeight('jog', 1)).code).toBe('E1218');
+		expect(thrown(() => animator.play('walk', { weight: -1 })).message).toContain(
+			'play() got the weight -1',
+		);
+		expect(thrown(() => animator.play('walk', { time: Infinity })).code).toBe('E1203');
+	});
+
+	test('plays a 1D blend, and writes its value into engine memory', () => {
+		const { calls, staged, animator, f32 } = animated();
+		const { ANIMATION_PLAY_LOOP: LOOP, ANIMATION_PLAY_TIME: TIME } = C;
+		animator.playBlend({ walk: 1.5, run: 4 }, { value: 2, fade: 0.3, layer: 1 });
+		animator.playBlend({ run: 0 }, { loop: false, speed: -1, phase: 0.25 });
+		animator.setBlend(3.25, 2);
+		const instance = 4;
+		expect(calls).toEqual([
+			// The instance, the clip count, the layer and the flags, then the fade, speed and phase.
+			['animatorPlayBlend', instance, 2, 1, LOOP, Math.fround(0.3), 1, 0],
+			['animatorPlayBlend', instance, 1, 0, TIME, 0, -1, 0.25],
+		]);
+		// The clips' ids plus one, then their points.
+		const [two, one] = staged.slice(-2) as number[][];
+		const floats = (words: number[]) => [...new Float32Array(new Uint32Array(words).buffer)];
+		expect(two?.slice(0, 2)).toEqual([2, 3]);
+		expect(floats(two as number[]).slice(2)).toEqual([1.5, 4]);
+		expect(one?.[0]).toBe(3);
+		const at = AT.blendValues + 3 * C.ANIMATION_MAX_LAYERS * 4;
+		expect(f32(at, C.ANIMATION_MAX_LAYERS)).toEqual([0, 2, 3.25, 0]);
+	});
+
+	test('refuses blends it cannot play', () => {
+		const { animator, calls } = animated();
+		expect(thrown(() => animator.playBlend({})).message).toContain(
+			'playBlend() got 0 clips on "Hero" (slot 3); a blend takes 1 to 8.',
+		);
+		expect(thrown(() => animator.playBlend({ walk: 1, run: 1 })).message).toContain(
+			'playBlend() got the point 1 for "walk" and "run" on "Hero" (slot 3); give each clip a point of its own.',
+		);
+		expect(thrown(() => animator.playBlend({ walk: 0, jog: 1 })).message).toContain(
+			'playBlend() got "jog", which names no clip',
+		);
+		expect(thrown(() => animator.playBlend({ walk: Number.NaN })).code).toBe('E1203');
+		expect(thrown(() => animator.playBlend({ walk: 0 }, { phase: Infinity })).code).toBe('E1203');
+		expect(thrown(() => animator.playBlend({ walk: 0 }, { layer: 5 })).code).toBe('E1218');
+		expect(thrown(() => animator.setBlend(Number.NaN)).code).toBe('E1203');
+		expect(calls).toEqual([]);
+	});
+
+	test('checks the layer of a write into engine memory in every build', () => {
+		const { animator, f32 } = animated();
+		for (const layer of [4, -1, 1.5, Number.NaN]) {
+			expect(thrown(() => animator.setBlend(1, layer)).code).toBe('E1218');
+			expect(thrown(() => animator.setLayerWeight(layer, 1)).code).toBe('E1218');
+		}
+		// The next object's layers stay as they were.
+		const next = AT.blendValues + 4 * C.ANIMATION_MAX_LAYERS * 4;
+		expect(f32(next, C.ANIMATION_MAX_LAYERS)).toEqual([0, 0, 0, 0]);
 	});
 
 	test('refuses names and options it cannot use', () => {

@@ -16,8 +16,8 @@ use std::cell::{Cell, UnsafeCell};
 use std::sync::{Arc, OnceLock};
 
 use null3d_core::animation::{
-    AnimationError, Animations, Channel, Clip, Interpolation, MATRIX_FLOATS, MAX_JOINTS, Play,
-    REST_FLOATS, Skeleton, SourceTrack, TrackProblem, resample,
+    AnimationError, Animations, Blend, Channel, Clip, Interpolation, MATRIX_FLOATS, MAX_BLEND,
+    MAX_JOINTS, Play, REST_FLOATS, Skeleton, SourceTrack, TrackProblem, resample,
 };
 use null3d_core::bvh::mesh::{IndexedTriangles, MeshBvh};
 use null3d_core::bvh::query::{QueryHit, QueryScene, SceneQueries};
@@ -69,8 +69,8 @@ pub mod constants;
 
 use constants::{
     CLIP_PENDING, TRACK_WORDS, animation_field, animation_problem, arrays_problem, batch_field,
-    camera_target, debug_line_field, mesh_arrays, morph_arrays, play_flag, query, ring_field,
-    scene_field, shading, texture_option, texture_stat,
+    camera_target, debug_line_field, mesh_arrays, morph_arrays, play_arg, play_flag, query,
+    ring_field, scene_field, shading, texture_option, texture_stat,
 };
 
 /// The engine version, as the loader reports it.
@@ -137,6 +137,9 @@ struct Engine {
     rebuilt: bool,
     /// The words that TypeScript writes a mesh's arrays into, for `createMeshFromArrays`.
     staging: Vec<u32>,
+    /// The numbers of the next play of a clip or a blend (`constants::play_arg`), which
+    /// TypeScript writes.
+    play_args: [f32; play_arg::COUNT],
     /// The debug lines of the next frame, which only development builds of the engine write.
     lines: LineStore,
     /// Skeletons, clips and animated instances, from the first `initAnimations` on.
@@ -445,6 +448,7 @@ pub fn init_engine(
         rebuilt: false,
         world_matrix: [0.0; 12],
         staging: Vec::new(),
+        play_args: [0.0; play_arg::COUNT],
         lines: LineStore::default(),
         animations: None,
         morphs: MorphWeights::new(),
@@ -2217,6 +2221,17 @@ fn with_animations(f: impl FnOnce(&mut Animations, &mut Vec<u32>) -> Result<u32,
     })
 }
 
+/// Runs `f` as `with_animations` does, with the engine's numbers for the next play
+/// (`PLAY_ARGS`).
+fn with_play_args(
+    f: impl FnOnce(&mut Animations, &mut Vec<u32>, &[f32; play_arg::COUNT]) -> Result<u32, u32>,
+) -> u32 {
+    value_with_engine(|e| match e.animations.as_mut() {
+        Some(animations) => f(animations, &mut e.staging, &e.play_args),
+        None => Err(fail(codes::NOT_READY, [2, 0])),
+    })
+}
+
 /// Creates the animation table for `instances` animated objects with `joints` joints in all.
 #[wasm_bindgen(js_name = initAnimations)]
 pub fn init_animations(instances: u32, joints: u32) -> u32 {
@@ -2492,8 +2507,9 @@ pub fn animated_instance_joints(instance: u32) -> u32 {
 /// The address of an animation table array (`constants::animation_field`).
 #[wasm_bindgen(js_name = animationArrays)]
 pub fn animation_arrays(field: u32) -> u32 {
-    with_animations(|animations, _| {
+    with_play_args(|animations, _, args| {
         Ok(match field {
+            animation_field::PLAY_ARGS => address(&args[..]),
             animation_field::SLOT_CLIPS => address(&animations.slots().clip),
             animation_field::SLOT_TIMES => address(&animations.slots().time),
             animation_field::SLOT_WEIGHTS => address(&animations.slots().weight),
@@ -2501,32 +2517,64 @@ pub fn animation_arrays(field: u32) -> u32 {
             animation_field::LAYER_WEIGHTS => address(animations.layer_weights()),
             animation_field::EVENTS => address(animations.event_buffer()),
             animation_field::EVENT_TOTALS => address(animations.event_totals()),
+            animation_field::SLOT_SOURCES => address(&animations.slots().source),
+            animation_field::BLEND_VALUES => address(animations.blend_values()),
             _ => address(animations.matrices()),
         })
     })
 }
 
-/// Plays clip `clip` on instance `instance`, on layer `layer`, fading over `fade` seconds at
-/// `speed`, with `flags` (`constants::play_flag`): `Animations::play`.
+/// Plays clip `clip` on instance `instance`, on layer `layer`, with `flags`
+/// (`constants::play_flag`) and the numbers in `PLAY_ARGS`: `Animations::play`.
 #[wasm_bindgen(js_name = animatorPlay)]
-pub fn animator_play(
-    instance: u32,
-    clip: u32,
-    layer: u32,
-    fade: f32,
-    speed: f32,
-    flags: u32,
-) -> u32 {
-    with_animations(|animations, _| {
+pub fn animator_play(instance: u32, clip: u32, layer: u32, flags: u32) -> u32 {
+    with_play_args(|animations, _, args| {
         let play = Play {
             layer,
-            fade,
-            speed,
+            fade: args[play_arg::FADE],
+            speed: args[play_arg::SPEED],
             looping: flags & play_flag::LOOP != 0,
             additive: flags & play_flag::ADDITIVE != 0,
+            time: (flags & play_flag::TIME != 0).then_some(args[play_arg::TIME]),
+            weight: (flags & play_flag::WEIGHT != 0).then_some(args[play_arg::WEIGHT]),
+            join: flags & play_flag::JOIN != 0,
         };
         animations
             .play(instance.wrapping_sub(1), clip.wrapping_sub(1), play)
+            .map_err(animation_failure)?;
+        Ok(0)
+    })
+}
+
+// The staging words hold `count` clip ids plus one, then `count` blend points as floats.
+/// Plays a 1D blend of the staged clips on instance `instance`, on layer `layer`, with `flags`
+/// and the numbers in `PLAY_ARGS`: `Animations::play_blend`.
+#[wasm_bindgen(js_name = animatorPlayBlend)]
+pub fn animator_play_blend(instance: u32, count: u32, layer: u32, flags: u32) -> u32 {
+    with_play_args(|animations, staging, args| {
+        let staged = std::mem::take(staging);
+        let n = (count as usize).min(staged.len() / 2);
+        let mut clips = [0u32; MAX_BLEND];
+        let named = n.min(MAX_BLEND);
+        for (to, from) in clips.iter_mut().zip(&staged[..named]) {
+            *to = from.wrapping_sub(1);
+        }
+        let points = &as_floats(&staged[n..])[..n];
+        let blend = Blend {
+            layer,
+            fade: args[play_arg::FADE],
+            speed: args[play_arg::SPEED],
+            looping: flags & play_flag::LOOP != 0,
+            phase: (flags & play_flag::TIME != 0).then_some(args[play_arg::TIME]),
+        };
+        // More clips than slots reach the core's check through the point count.
+        let clips = if n > MAX_BLEND {
+            &clips[..]
+        } else {
+            &clips[..n]
+        };
+        animations
+            .play_blend(instance.wrapping_sub(1), clips, points, blend)
             .map_err(animation_failure)?;
         Ok(0)
     })
