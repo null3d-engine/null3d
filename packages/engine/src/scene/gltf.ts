@@ -463,7 +463,7 @@ function makeMeshes(
 				`${call}() could not read ${address}: primitive ${k} of mesh "${mesh.name}" makes no mesh: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
-		if (p.bvh && !storeTree(context.core, made.id, p.bvh, call) && DEV_NOTES)
+		if (p.bvh && !storeTree(context.core, made.id, p.bvh, call) && DEV)
 			console.warn(
 				`${call}() found a stored tree in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so raycasts build their own. Optimize the file again.`,
 			);
