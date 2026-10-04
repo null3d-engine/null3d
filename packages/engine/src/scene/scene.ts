@@ -62,6 +62,7 @@ import {
 	orthographicView,
 	setViewHeight,
 } from './lens';
+import type { LineBatch, LineChecks, LineMode, LineOptions, LineValues } from './lines';
 import type { CoreMemory } from './memory';
 import type { InstancingTemplate, PartTemplate, Prefab, TemplateNode } from './prefab';
 import {
@@ -1698,6 +1699,87 @@ async function loadSprites(call: string): Promise<typeof import('./sprites')> {
 	}
 }
 
+/** Imports the line code, which a page downloads with its first line batch, or throws E1406. */
+async function loadLines(call: string): Promise<typeof import('./lines')> {
+	try {
+		return await import('./lines');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the line code did not download for ${call}(): ${reasonOf(error)}.`,
+		);
+	}
+}
+
+/** The segments that each line mode makes of a number of points. */
+const LINE_SEGMENTS: Readonly<Record<LineMode, (points: number) => number>> = {
+	segments: (points) => Math.floor(points / 2),
+	strip: (points) => Math.max(points - 1, 0),
+	loop: (points) => (points >= 2 ? points : 0),
+};
+
+/**
+ * The number of points of `scene.createLines`, after checking that they make a line: whole points,
+ * at least one segment, and one color for each point. Throws E1217 for an unknown mode and E1206
+ * for points or colors that make no line, and in development builds, for numbers that are not
+ * finite.
+ */
+function linePoints(
+	call: string,
+	mode: LineMode,
+	positions: ArrayLike<number>,
+	colors: ArrayLike<number> | undefined,
+): number {
+	if (!Object.hasOwn(LINE_SEGMENTS, mode))
+		throw new EngineError(
+			'E1217',
+			`${call}() got the mode ${JSON.stringify(mode)}; it takes 'segments', 'strip' or 'loop'.`,
+		);
+	const points = positions.length / 3;
+	const bad = (problem: string) => new EngineError('E1206', `${call}() got ${problem}.`);
+	if (!Number.isInteger(points) || LINE_SEGMENTS[mode](points) < 1)
+		throw bad(
+			`${positions.length} numbers in positions; a ${mode} line takes 3 numbers per point, and at least 2 points`,
+		);
+	if (mode === 'segments' && points % 2 !== 0)
+		throw bad(`${points} points for segments, which join points in pairs`);
+	if (colors && colors.length !== positions.length)
+		throw bad(`${colors.length} numbers in colors for ${points} points, not ${positions.length}`);
+	if (DEV)
+		for (const [name, values] of [
+			['positions', positions],
+			['colors', colors ?? []],
+		] as const)
+			for (let k = 0; k < values.length; k++)
+				if (!Number.isFinite(values[k])) throw bad(`${values[k]} at index ${k} of ${name}`);
+	return points;
+}
+
+/** The checks of line batches' calls, which the line code takes from the scene. */
+const LINE_CHECKS: LineChecks = {
+	width(width: number, call: string): void {
+		if (!DEV) return;
+		if (!Number.isFinite(width))
+			throw new EngineError('E1203', `${call}() got ${width} for width.`);
+		if (!(width > 0))
+			throw new EngineError(
+				'E1108',
+				`${call}() got the width ${width}; it takes a number above 0.`,
+			);
+	},
+	values(values: LineValues, call: string): void {
+		if (!DEV) return;
+		for (const key of ['dashSize', 'gapSize', 'dashScale', 'dashOffset'] as const) {
+			const value = values[key];
+			if (value === undefined) continue;
+			if (!Number.isFinite(value))
+				throw new EngineError('E1203', `${call}() got ${value} for ${key}.`);
+			if (key !== 'dashOffset' && value < 0)
+				throw new EngineError('E1108', `${call}() got the ${key} ${value}; it takes 0 or more.`);
+		}
+	},
+};
+
 /**
  * The transform of a model's copy: the position, rotation and scale of `options`, with the position
  * at full precision.
@@ -1762,6 +1844,8 @@ export class Scene {
 	private readonly batchSlots: (InstanceBatch | undefined)[] = [];
 	/** The quad meshes of sprite batches, by their center, which batches with one center share. */
 	private readonly spriteQuads = new Map<string, MeshGeometry>();
+	/** The segment mesh of line batches, which every line batch shares, made with the first. */
+	private lineMesh: MeshGeometry | undefined;
 	/** Raycasts and overlap queries, made on the first query. */
 	private sceneQueries: SceneQueries | undefined;
 	/** Rows of the live instance batches, which development builds count. */
@@ -1787,8 +1871,11 @@ export class Scene {
 		private readonly warmUpScene: () => Promise<void> = () => Promise.resolve(),
 		/** The cameras of the last frames, which the sketch runner gives; tests get a stand-in. */
 		private cameras?: FrameCameras,
-		/** What sprite batches make their quads and materials with, which the sketch runner gives. */
-		private readonly spriteMakers?: SpriteMakers,
+		/**
+		 * What sprite and line batches make their meshes and materials with, which the sketch runner
+		 * gives.
+		 */
+		private readonly makers?: SpriteMakers,
 	) {
 		if (DEV) this.unmarkedWrites = new UnmarkedWrites(this);
 	}
@@ -2439,7 +2526,7 @@ export class Scene {
 	 */
 	async createSprites(options: SpriteOptions): Promise<SpriteBatch> {
 		const call = 'createSprites';
-		const { core, spriteMakers } = this;
+		const { core, makers } = this;
 		const { count, layers } = options;
 		if (DEV && layers !== undefined) checkLayers(call, layers);
 		const { columns = 1, rows = 1 } = options.atlas ?? {};
@@ -2455,15 +2542,9 @@ export class Scene {
 		const { center } = options;
 		if (DEV && center && !(Number.isFinite(center[0]) && Number.isFinite(center[1])))
 			throw new EngineError('E1203', `${call}() got [${center}] for center.`);
-		if (!spriteMakers) throw new Error(`${call}() needs a scene that the engine made`);
+		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
 		const sprites = await loadSprites(call);
-		const parts = sprites.spriteParts(
-			spriteMakers,
-			this.spriteQuads,
-			options,
-			[columns, rows],
-			call,
-		);
+		const parts = sprites.spriteParts(makers, this.spriteQuads, options, [columns, rows], call);
 		const id = core.checkGrowth(
 			core.glue.createSpriteBatch(
 				count,
@@ -2481,6 +2562,53 @@ export class Scene {
 		this.rememberBatch(instances);
 		if (options.origin) instances.setOrigin(options.origin, call);
 		const batch = new sprites.SpriteBatch(core, id, count, parts.material, instances);
+		if (layers !== undefined) batch.setLayers(layers);
+		return batch;
+	}
+
+	/**
+	 * Lines of any width in one batch, like three.js's `Line2` and `LineSegments2` with a
+	 * `LineMaterial`, and its `Line`, `LineSegments` and `LineLoop`. Each segment between two points
+	 * draws as a quad with round ends that faces the camera, `width` CSS pixels wide, or world units
+	 * wide with `worldUnits`. A typed array gives each point its position and color, as an instance
+	 * batch's arrays give its rows. The first call downloads the line code. Throws E1206 for points
+	 * or colors that make no line, E1217 for an unknown mode, E1108 for a width that is not positive
+	 * or a dash or gap below 0, E1203 for a value that is not finite, and E1406 when the line code
+	 * does not download.
+	 */
+	async createLines(options: LineOptions): Promise<LineBatch> {
+		const call = 'createLines';
+		const { core, makers } = this;
+		const { positions, colors, layers, mode = 'strip', width = 1 } = options;
+		if (DEV && layers !== undefined) checkLayers(call, layers);
+		const points = linePoints(call, mode, positions, colors);
+		LINE_CHECKS.width(width, call);
+		LINE_CHECKS.values(options, call);
+		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		const lines = await loadLines(call);
+		const parts = lines.lineParts(makers, core, this.lineMesh, options, LINE_CHECKS, call);
+		this.lineMesh = parts.mesh;
+		const id = core.checkGrowth(
+			core.glue.createLineBatch(
+				points,
+				options.dynamic ?? false,
+				parts.mesh.id,
+				parts.material.id,
+				lines.modeCode(mode),
+				width,
+				options.worldUnits ?? false,
+				options.dashed ?? false,
+			),
+			call,
+		);
+		const rows = LINE_SEGMENTS[mode](points);
+		if (DEV) this.countBatchRows(rows);
+		const instances = new InstanceBatch(this, id, rows, false);
+		this.rememberBatch(instances);
+		if (options.origin) instances.setOrigin(options.origin, call);
+		const batch = new lines.LineBatch(core, id, points, parts.material, instances, LINE_CHECKS);
+		batch.positions.set(positions);
+		if (colors) batch.colors.set(colors);
 		if (layers !== undefined) batch.setLayers(layers);
 		return batch;
 	}
