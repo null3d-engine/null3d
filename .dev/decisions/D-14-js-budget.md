@@ -304,5 +304,59 @@ The owner approved the budgets of points 1 and 2 in writing on 2026-10-04. Point
 
 ### Consequences
 
-- `tools/lib/size-report.ts` holds the budgets (`START_BUDGET_BYTES` and `LATER_BUDGET_BYTES`) and the parts that load later (`LATER_PARTS`). `budgetProblems` judges both budgets. The size report prints the parts that load later in a section of their own.
+- `tools/lib/size-report.ts` holds the budgets (`START_BUDGET` and `LATER_BUDGET`) and the parts that load later (`LATER_PARTS`). Each budget has a size for every column of the report, as [the section below](#m2-gzip-and-uncompressed-budgets) gives them. `budgetProblems` judges both budgets in every column. The size report prints the parts that load later in a section of their own.
 - AGENTS.md, the README and [Benchmarks](../benchmarks.md#download-size) give the new figures. A further raise of either budget needs the owner's approval in writing, recorded here.
+
+## M2: gzip and uncompressed budgets
+
+Status: accepted. The owner approved every budget below in writing on 2026-10-04. Task: M2-R14, from review R8 (R8-02).
+
+### Question
+
+The budgets above count each file after Brotli at quality 11. Not every host sends Brotli. GitHub Pages sends gzip, nginx with its gzip module alone sends gzip, and a plain static server sends files as they are. The shader file of a page's start is about 25 KB after Brotli but 1.7 to 2.7 MB before compression. With its window of 32 KB, gzip finds little of the file's repeated text. The [D-13 addendum](D-13-shader-variants.md#addendum-2026-10-04-the-files-grew-eightfold-and-gzip-hosts-pay-for-it) gives the figures. So a page on a gzip host downloads about four times what the Brotli budget shows. Nothing stopped that figure from growing. What budgets hold the start and the files that load later on such hosts?
+
+### Rule
+
+- Each budget has a size for each way a host can send a file: as it is, after gzip and after Brotli. A file over its budget in any column fails the build.
+- gzip is measured at level 9. A host that compresses its files once, when it deploys them, sends them so. Hosts that compress on the fly at a lower level send more: the start's shader file is about a third larger with gzip 6.
+- The start's gzip and uncompressed budgets hold today's largest start with about a tenth to spare. Per-feature shader files (M2-R11) move code out of the start, so these figures are expected to fall. Brotli's budgets stay as the section above decided them.
+
+### Data
+
+On 2026-10-04, main at dc178379 with this task's branch, from `bun run build`. Sizes are KB (1,024 bytes).
+
+What a page downloads at its start, in each thread mode:
+
+| Thread mode | Raw | gzip 9 | Brotli 11 |
+| --- | --- | --- | --- |
+| pipelined | 3,040.6 | 402.7 | 106.9 |
+| low latency | 3,034.5 | 400.5 | 105.1 |
+| drawing on the main thread | 3,033.7 | 400.5 | 105.1 |
+| single-threaded | 3,018.3 | 395.1 | 100.4 |
+| sketch on the main thread | 3,027.0 | 398.1 | 102.9 |
+
+The shader file is 2,654.4 KB raw and 299.0 KB with gzip 9 of the pipelined start. The rest of the start is 386.2 KB raw and 103.7 KB with gzip 9.
+
+The largest JavaScript file that loads later is `gltf-worker.js`: 27.5 KB raw, 10.4 KB with gzip 9 and 9.4 KB with Brotli 11. The next are `gltf-meshopt.js` (25.7, 7.0 and 6.2 KB) and the glTF loader's files (16.4, 6.7 and 6.0 KB).
+
+### Decision
+
+| Budget | Raw | gzip 9 | Brotli 11 | Largest today |
+| --- | --- | --- | --- | --- |
+| The start, in the thread mode that downloads the most | 3,328 KB | 448 KB | 140 KB | 3,040.6 / 402.7 / 106.9 KB (pipelined) |
+| Each JavaScript file that loads later | 64 KB | 24 KB | 16 KB | 27.5 / 10.4 / 9.4 KB (`gltf-worker.js`) |
+| Each shader file that loads on a feature's first use (M2-R11) | 1,536 KB | 224 KB | 24 KB | about 1,325 / 200 / 16.1 KB (skinning's GLSL file for the draw index, the 8-bit output and half precision) |
+
+The start's gzip and uncompressed budgets are about 10% above today's largest start. Per-feature shader files bring both down. The budgets of the files that load later are 1.5 times their Brotli budget with gzip and 4 times it uncompressed. The largest such file uses 43% of each.
+
+Shader text compresses far better than code, so the JavaScript files' proportions do not fit the shader files. An earlier proposal of 80 KB with gzip and 576 KB uncompressed was too small for skinning's file. Record D-56 gives the reasons and M2-R11's figures.
+
+The owner approved the three rows in writing on 2026-10-04. A raise of any budget in any column needs the owner's approval in writing, recorded here.
+
+The same day, the owner decided which bundlers the budgets hold for. Vite with the null3D plugin is the supported and tested build. Without the plugin, Vite builds each engine worker as one classic script with every shader file in it. Each worker is then about 34 MB, which no budget can hold (review R8, R8-07). The plugin builds workers as ES modules and warns when another setting replaces that. Test builds with webpack and Rspack move to M2-R18, which reworks how the engine starts its workers.
+
+### Consequences
+
+- `tools/lib/size-report.ts` measures each file in three columns (`COLUMNS`, `measure`). Each budget is a `Budget` with a size for each column. `budgetProblems` gives one problem for each column over its budget. The size report prints every column with its share of the budget.
+- The hosting guide tells developers to serve the engine's files with Brotli, and gives the gzip and uncompressed sizes of the start.
+- AGENTS.md, the README and [Benchmarks](../benchmarks.md#download-size) give the budgets in all three columns.

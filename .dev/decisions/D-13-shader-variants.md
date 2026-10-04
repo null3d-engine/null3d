@@ -145,3 +145,45 @@ null3D does the same work at build time. A page downloads one file with only the
 - The warm-up time plan watches the target: S4's pipeline wait with fresh shaders stays under 250 ms on the S24+. A new material bit, or a pass that adds pipelines to S4, reruns it on the S24+.
 - T-26's times give the device figures in the loading screens guide.
 - The record is in the table in README.md.
+
+## Addendum, 2026-10-04: the files grew eightfold, and gzip hosts pay for it
+
+Task: M2-R14, from review R8 (R8-02) and R6 (R6-03).
+
+The decision chose (b3) for the smallest start and the least shader text to parse. Both reasons rested on a 414 KB GLSL file. Through M2 every feature added its variants to every file, and the figures no longer hold.
+
+### Sizes
+
+On 2026-10-04, main at dc178379 with this task's branch. Sizes are KB (1,024 bytes), measured on the production build that `bun run build` makes. The device modules without half precision:
+
+| File | Raw | Brotli 11 | Brotli 5 | Brotli 4 | gzip 9 | gzip 6 | gzip 1 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `shaders-glsl-draw-index-tone-map` | 2,659.8 | 25.0 | 29.5 | 33.4 | 299.7 | 394.3 | 635.2 |
+| `shaders-glsl` | 2,336.9 | 24.6 | 28.9 | 32.9 | 231.9 | 319.2 | 527.0 |
+| `shaders-wgsl-tone-map` | 1,911.7 | 25.3 | 28.6 | 32.8 | 264.8 | 316.0 | 509.8 |
+| `shaders-wgsl` | 1,703.1 | 25.8 | 28.3 | 32.4 | 202.9 | 257.9 | 420.0 |
+
+The half-precision twins are 1,711 to 2,776 KB raw. Brotli finds the repeated text across its window of several MB. gzip's window is 32 KB, so it finds only repeats that sit close together. At the decision, a WebGL2 page was 64.0 KB with gzip 9. Today the shader file alone is 231.9 to 299.7 KB with gzip 9. Hosts that compress on the fly often use gzip 6, which gives up to 394.3 KB. A pipelined page's start, the largest, is 106.9 KB with Brotli 11, 402.7 KB with gzip 9 and 3,040.6 KB uncompressed. Before the duplicate sources went, review R8 measured that start at 589 KB with gzip 6.
+
+### Duplicate stage sources
+
+35 of the 164 GLSL stage sources in a device module were exact copies of another: a vertex stage that several variants share, for example. The shader build now writes each source once per module and points each program at it. A GLSL device module went from 2.96 to 2.42 MB raw, and the main module from 1.77 to 1.28 MB. The WGSL modules had no copies. Brotli 11 sizes hardly changed, since Brotli already found the copies.
+
+### Parse time
+
+V8 compiles and runs a shader module when a page imports it. Measured in Node 24 on the M5 Max, each module minified and imported 7 times, each time in a fresh process. The table gives the median, less the 1.6 ms that an empty module takes.
+
+| Module | Before the copies went | After |
+| --- | --- | --- |
+| `shaders-glsl` | 10.6 ms | 9.0 ms |
+| `shaders-glsl-draw-index-tone-map`, the largest GLSL | 12.1 ms | 9.9 ms |
+| `shaders-wgsl` | about 6 ms | about 6 ms |
+
+At the decision the 414 KB file took 2.2 ms. A phone takes several times as long as the Mac, and the time falls on the thread that draws, before its first frame.
+
+### What changes
+
+- (b3)'s split stays: one shader file for each value of the bits that a device fixes, and a page downloads exactly one at its start.
+- That file no longer holds every feature. Each feature's templates move into files that load on the feature's first use, as M2-R11 builds them (record D-56). The start's file keeps only what every page draws with.
+- The size report measures each file raw, with gzip 9 and with Brotli 11. It budgets all three for the start and for the files that load later ([D-14](D-14-js-budget.md#m2-gzip-and-uncompressed-budgets)). A start that grows on a gzip host, or on a host that sends files as they are, now fails the build.
+- The hosting guide tells developers to serve the engine's files with Brotli, and gives the gzip and uncompressed sizes.
