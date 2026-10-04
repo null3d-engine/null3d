@@ -34,7 +34,8 @@ function repository(): string {
 describe('the shader modules', () => {
 	it('are the main module and the device modules beside it', () => {
 		expect(isShaderModule('shaders.ts')).toBe(true);
-		expect(isShaderModule('shaders-glsl-draw-index.ts')).toBe(true);
+		expect(isShaderModule('shaders-glsl-draw-index.js')).toBe(true);
+		expect(isShaderModule('shaders-glsl-draw-index.ts')).toBe(false);
 		expect(isShaderModule('gpu.ts')).toBe(false);
 		expect(isShaderModule('shaders.ts.map')).toBe(false);
 	});
@@ -63,7 +64,7 @@ describe('the shader modules', () => {
 		const root = repository();
 		const one = moduleHash(root);
 		expect(one).not.toBeNull();
-		writeFileSync(join(root, MODULE_DIR, 'shaders-wgsl.ts'), 'export {};\n');
+		writeFileSync(join(root, MODULE_DIR, 'shaders-wgsl.js'), 'export {};\n');
 		const two = moduleHash(root);
 		expect(two).not.toBe(one);
 		writeFileSync(join(root, MODULE_DIR, 'gpu.ts'), 'export const A = 1;\n');

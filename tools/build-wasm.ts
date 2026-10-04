@@ -64,6 +64,7 @@ import {
 	CORE_FILES,
 	type Column,
 	downloadSizes,
+	ENGINE_SOURCE,
 	FIRST_USE_SHADER_BUDGET,
 	findEngineParts,
 	findTranscoderFiles,
@@ -366,10 +367,11 @@ function buildToolModules(): void {
 
 /**
  * Builds the engine test page for production with hidden source maps, which leave the JavaScript
- * as it ships, and reads each JavaScript file with the source files it holds. The core's glue is
- * copied as it is and has no map. Vite writes a worker's source paths from the build folder and
- * the page's from its assets folder, both inside the repository, so a path without its leading
- * steps up is the path from the repository's root.
+ * as it ships, and reads each JavaScript file with the source files it holds. The core's glue and
+ * the shader build's device modules are copied as they are and have no map: a device module's
+ * file holds its module alone, which its name gives. Vite writes a worker's source paths from the
+ * build folder and the page's from its assets folder, both inside the repository, so a path
+ * without its leading steps up is the path from the repository's root.
  */
 function buildEngineTestPage(): BuiltFile[] {
 	console.log('\nbuilding the engine test page for production');
@@ -378,18 +380,18 @@ function buildEngineTestPage(): BuiltFile[] {
 	if (build.status !== 0)
 		throw new Error(`the production build failed:\n${build.stdout}\n${build.stderr}`);
 	const assets = join(root, JS_BUILD_DIR, 'assets');
-	return readdirSync(assets)
-		.filter((file) => file.endsWith('.js') && existsSync(join(assets, `${file}.map`)))
-		.map((file) => {
-			const map = JSON.parse(readFileSync(join(assets, `${file}.map`), 'utf8')) as {
-				sources: string[];
-			};
-			return {
-				file,
-				text: readFileSync(join(assets, file), 'utf8'),
-				sources: map.sources.map((source) => source.replace(/^(\.\.?\/)+/, '')),
-			};
-		});
+	return readdirSync(assets).flatMap((file) => {
+		if (!file.endsWith('.js')) return [];
+		const text = readFileSync(join(assets, file), 'utf8');
+		const mapped = join(assets, `${file}.map`);
+		if (existsSync(mapped)) {
+			const map = JSON.parse(readFileSync(mapped, 'utf8')) as { sources: string[] };
+			const sources = map.sources.map((source) => source.replace(/^(\.\.?\/)+/, ''));
+			return [{ file, text, sources }];
+		}
+		const shaders = /^(shaders-[a-z0-9-]+)-[\w-]{8}\.js$/.exec(file)?.[1];
+		return shaders ? [{ file, text, sources: [`${ENGINE_SOURCE}generated/${shaders}.js`] }] : [];
+	});
 }
 
 const kb = (n: number) => `${(n / 1024).toFixed(1)} KB`;

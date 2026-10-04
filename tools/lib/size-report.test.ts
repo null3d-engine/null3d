@@ -135,16 +135,16 @@ describe('findEngineParts', () => {
 
 	it("names each file of the shader build's device modules after its module, by its largest copy", () => {
 		const shaders = ['shaders-wgsl.js', 'shaders-glsl.js'];
-		const wgsl = built('shaders-wgsl-P1.js', ['generated/shaders-wgsl.ts'], 'wgsl');
-		const wgslCopy = built('shaders-wgsl-W1.js', ['generated/shaders-wgsl.ts'], 'wgsl, longer');
-		const glsl = built('shaders-glsl-W2.js', ['generated/shaders-glsl.ts'], 'glsl');
+		const wgsl = built('shaders-wgsl-P1.js', ['generated/shaders-wgsl.js'], 'wgsl');
+		const wgslCopy = built('shaders-wgsl-W1.js', ['generated/shaders-wgsl.js'], 'wgsl, longer');
+		const glsl = built('shaders-glsl-W2.js', ['generated/shaders-glsl.js'], 'glsl');
 		const files = [page, pageRenderer, worker, workerRenderer, wgsl, glsl, wgslCopy];
 		const found = findEngineParts(files, parts, shaders);
 		expect([...found].slice(4).map(([name, file]) => [name, file.file])).toEqual([
 			['shaders-wgsl.js', 'shaders-wgsl-W1.js'],
 			['shaders-glsl.js', 'shaders-glsl-W2.js'],
 		]);
-		const skin = built('shaders-glsl-skin-W3.js', ['generated/shaders-glsl-skin.ts']);
+		const skin = built('shaders-glsl-skin-W3.js', ['generated/shaders-glsl-skin.js']);
 		expect(() => findEngineParts([...files, skin], parts, shaders)).toThrow(
 			"shaders-glsl-skin-W3.js holds the shader build's device module of shaders-glsl-skin.js, which the size report does not name",
 		);
@@ -152,11 +152,11 @@ describe('findEngineParts', () => {
 
 	it("names the files of each feature's shader modules after their modules, after the start's", () => {
 		const shaders = ['shaders-wgsl.js'];
-		const wgsl = built('shaders-wgsl-P1.js', ['generated/shaders-wgsl.ts'], 'wgsl');
-		const bloom = built('shaders-bloom-wgsl-P2.js', ['generated/shaders-bloom-wgsl.ts'], 'b');
+		const wgsl = built('shaders-wgsl-P1.js', ['generated/shaders-wgsl.js'], 'wgsl');
+		const bloom = built('shaders-bloom-wgsl-P2.js', ['generated/shaders-bloom-wgsl.js'], 'b');
 		const sprites = built(
 			'shaders-sprites-glsl-draw-index-P3.js',
-			['generated/shaders-sprites-glsl-draw-index.ts'],
+			['generated/shaders-sprites-glsl-draw-index.js'],
 			's',
 		);
 		const files = [page, pageRenderer, worker, workerRenderer, sprites, wgsl, bloom];

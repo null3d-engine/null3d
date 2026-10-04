@@ -468,7 +468,7 @@ fn finish_source(source: &str) -> String {
 pub fn typescript(output: &Output) -> BTreeMap<String, String> {
     typescript::modules(output)
         .into_iter()
-        .map(|(stem, text)| (format!("{OUTPUT_DIR}/{stem}.ts"), text))
+        .map(|(name, text)| (format!("{OUTPUT_DIR}/{name}"), text))
         .collect()
 }
 
@@ -495,7 +495,10 @@ fn stale_modules(root: &Path, modules: &BTreeMap<String, String>) -> Vec<String>
     let mut stale: Vec<String> = entries
         .filter_map(Result::ok)
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .filter(|name| name.starts_with(typescript::DEVICE_MODULE_PREFIX) && name.ends_with(".ts"))
+        .filter(|name| {
+            name.starts_with(typescript::DEVICE_MODULE_PREFIX)
+                && (name.ends_with(".ts") || name.ends_with(".js"))
+        })
         .map(|name| format!("{OUTPUT_DIR}/{name}"))
         .filter(|path| !modules.contains_key(path))
         .collect();

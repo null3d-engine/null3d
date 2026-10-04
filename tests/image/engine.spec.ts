@@ -130,7 +130,7 @@ const FIRST_USE_FILES: readonly RegExp[] = [
  */
 function isFirstUseShaderFile(path: string): boolean {
 	const name = path.split('/').at(-1) as string;
-	const stem = /^(shaders-[a-z0-9-]+)(\.ts|-[\w-]{8}\.js)$/.exec(name)?.[1];
+	const stem = /^(shaders-[a-z0-9-]+)(-[\w-]{8})?\.js$/.exec(name)?.[1];
 	return stem !== undefined && isFirstUseShaderPart(`${stem}.js`);
 }
 

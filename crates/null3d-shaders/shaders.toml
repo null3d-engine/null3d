@@ -7,7 +7,7 @@
 #
 #   file       The WGSL file, relative to wgsl/. Every .wgsl file there needs a table.
 #   by_device  true for a shader that the engine loads by device. Its builds go into the device
-#              modules, generated/shaders-<target>[-<bit>...].ts, one for each target and each
+#              modules, generated/shaders-<target>[-<bit>...].js, one for each target and each
 #              value of the permutation bits that a device fixes (DEVICE in the `permutation`
 #              module): the draw index, tone mapping in the shader and half precision. A page
 #              loads one of them, so it downloads only the builds that its device draws with. Each
@@ -59,7 +59,7 @@
 #
 # Each [first_use.<feature>] table names a feature whose builds load on first use: a page that
 # never uses the feature downloads none of them. The feature's builds go into device modules of
-# their own, generated/shaders-<feature>-<target>[-<bit>...].ts, one for each target and each value
+# their own, generated/shaders-<feature>-<target>[-<bit>...].js, one for each target and each value
 # of the device's bits that those builds vary in. The engine loads one the first time a pipeline
 # asks for one of its builds, and the pipeline waits for it as for a custom material's shader.
 #
@@ -72,8 +72,12 @@
 # names. The template of custom materials stays at the start. The size check holds each module of
 # a feature to the start shader file's own limit after Brotli.
 #
-# A new feature that adds templates or bits adds its table here. Its passes must not draw until
-# their pipelines are built, as bloom's do, since a pipeline that waits for its file draws nothing.
+# Device modules are plain JavaScript, which the main module imports by address, so a production
+# build holds one copy of each for the page and every worker.
+#
+# A new feature that adds templates or bits adds its table here. A full-screen pass, or a pass whose
+# output other passes read, must not draw until its pipelines are built, as bloom's and skinning's
+# do, since a pipeline that waits for its file draws nothing (decision record D-56).
 
 # The templates of meshes drawn by instance, one file each. Each builds for WebGPU, and for WebGL2
 # with and without the draw index of WEBGL_multi_draw: WebGL2 reads instances from data textures,

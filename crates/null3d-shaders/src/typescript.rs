@@ -32,6 +32,10 @@ const TAB_WIDTH: usize = 2;
 /// The file name of the main module, without its extension.
 pub(crate) const MAIN_MODULE: &str = "shaders";
 
+/// The extension of each device module's file: plain JavaScript, which the main module imports by
+/// address, so that a bundler copies it as it is.
+pub(crate) const DEVICE_MODULE_EXTENSION: &str = "js";
+
 /// The start of each device module's file name.
 pub(crate) const DEVICE_MODULE_PREFIX: &str = "shaders-";
 
@@ -133,6 +137,16 @@ type DeviceModules = Readonly<Record<number, () => Promise<{ SHADERS: DeviceShad
 interface FirstUseFiles {
 	readonly bits: number;
 	readonly modules: Readonly<Record<number, () => Promise<{ SHADERS: FirstUseShaders }>>>;
+}
+
+/**
+ * Imports a device module by its address. A bundler copies the file that an address names once,
+ * however many bundles name it, so the page's bundle and each worker's share one copy of each
+ * module. `no-inline` keeps Vite from turning a small module into a data: address, which a strict
+ * Content Security Policy blocks.
+ */
+function importShaders<Shaders>(url: URL): Promise<{ SHADERS: Shaders }> {
+	return import(/* @vite-ignore */ url.href);
 }
 ";
 
@@ -357,13 +371,17 @@ fn device_builds(output: &Output) -> BTreeMap<DeviceModule<'_>, Builds<'_>> {
     modules
 }
 
-/// Renders every module, by file name without its extension: the main module and each device
-/// module.
+/// Renders every module, by file name: the main module, TypeScript, and each device module, plain
+/// JavaScript.
 pub(crate) fn modules(output: &Output) -> BTreeMap<String, String> {
     let devices = device_builds(output);
-    let mut modules = BTreeMap::from([(MAIN_MODULE.to_owned(), main_module(output, &devices))]);
+    let mut modules =
+        BTreeMap::from([(format!("{MAIN_MODULE}.ts"), main_module(output, &devices))]);
     for (module, builds) in &devices {
-        modules.insert(module.stem(), device_module(*module, builds));
+        modules.insert(
+            format!("{}.{DEVICE_MODULE_EXTENSION}", module.stem()),
+            device_module(*module, builds),
+        );
     }
     modules
 }
@@ -465,17 +483,22 @@ fn main_module(output: &Output, devices: &BTreeMap<DeviceModule<'_>, Builds<'_>>
         }
         ts.open(&format!("const {name}_MODULES: DeviceModules = {{"));
         for module in modules {
-            ts.line(&format!(
-                "{}: () => import('./{}'),",
-                module.bits,
-                module.stem()
-            ));
+            ts.line(&loader_entry(module));
         }
         ts.close("};");
     }
     first_use_tables(&mut ts, &output.first_use, devices);
     ts.out.push_str(LOADERS);
     ts.out
+}
+
+/// A loader table's entry for a device module: its bits, and the import of its file by address.
+fn loader_entry(module: DeviceModule) -> String {
+    format!(
+        "{}: () => importShaders(new URL('./{}.{DEVICE_MODULE_EXTENSION}?no-inline', import.meta.url)),",
+        module.bits,
+        module.stem()
+    )
 }
 
 /// The tables of the features that load on first use: each target's modules of each feature, the
@@ -510,11 +533,7 @@ fn first_use_tables(
             ts.line(&format!("bits: {bits},"));
             ts.open("modules: {");
             for module in modules {
-                ts.line(&format!(
-                    "{}: () => import('./{}'),",
-                    module.bits,
-                    module.stem()
-                ));
+                ts.line(&loader_entry(*module));
             }
             ts.close("},");
             ts.close("},");
@@ -550,17 +569,11 @@ fn first_use_tables(
 }
 
 /// A device module: `SHADERS`, the builds of every shader that loads by device for the module's
-/// target and bits, of the module's feature that loads on first use or of the start.
+/// target and bits, of the module's feature that loads on first use or of the start. It is plain
+/// JavaScript that imports nothing; the main module's types describe it.
 fn device_module(module: DeviceModule, builds: &Builds<'_>) -> String {
     let mut ts = Writer::default();
     ts.out.push_str(HEADER);
-    ts.line("");
-    let kind = if module.feature.is_some() {
-        "FirstUseShaders"
-    } else {
-        "DeviceShaders"
-    };
-    ts.line(&format!("import type {{ {kind} }} from './{MAIN_MODULE}';"));
     ts.shared_sources(
         builds
             .values()
@@ -582,7 +595,7 @@ fn device_module(module: DeviceModule, builds: &Builds<'_>) -> String {
             "/** The {target} builds of `{feature}`, which load on its first use, {with}. */"
         )),
     }
-    ts.open(&format!("export const SHADERS: {kind} = {{"));
+    ts.open("export const SHADERS = {");
     for (shader, variants) in builds {
         if variants.is_empty() {
             ts.line(&format!("{shader}: {{}},"));
@@ -913,14 +926,14 @@ mod tests {
     fn the_main_module_loads_each_device_module_and_holds_none_of_their_shaders() {
         let modules = modules(&output());
         assert_eq!(modules.len(), 7);
-        let main = &modules[MAIN_MODULE];
+        let main = &modules["shaders.ts"];
         assert!(main.contains("\treadonly cull: ShaderVariants<never>;\n"));
-        assert!(main.contains("\t3: () => import('./shaders-glsl-draw-index-tone-map'),\n"));
-        let wgsl = "const WGSL_MODULES: DeviceModules = {\n\t0: () => import('./shaders-wgsl'),\n\t2: () => import('./shaders-wgsl-tone-map'),\n};";
+        assert!(main.contains("\t3: () => importShaders(new URL('./shaders-glsl-draw-index-tone-map.js?no-inline', import.meta.url)),\n"));
+        let wgsl = "const WGSL_MODULES: DeviceModules = {\n\t0: () => importShaders(new URL('./shaders-wgsl.js?no-inline', import.meta.url)),\n\t2: () => importShaders(new URL('./shaders-wgsl-tone-map.js?no-inline', import.meta.url)),\n};";
         assert!(main.contains(wgsl), "{main}");
         assert!(main.contains("export const SHADERS = {} as const;"));
         assert!(!main.contains("webgpu_tone_map"));
-        let glsl = &modules["shaders-glsl-draw-index-tone-map"];
+        let glsl = &modules["shaders-glsl-draw-index-tone-map.js"];
         assert!(glsl.contains("with DRAW_INDEX and TONE_MAP. */"));
         assert!(glsl.contains("\tcull: {},\n\tlit: {\n\t\twebgl2_draw_index_tone_map: {\n"));
     }
@@ -999,18 +1012,18 @@ mod tests {
     fn the_main_module_finds_and_loads_the_modules_of_each_feature() {
         let modules = modules(&output_with_features());
         assert_eq!(modules.len(), 13);
-        let main = &modules[MAIN_MODULE];
+        let main = &modules["shaders.ts"];
         let sprites = "	sprites: {
 		bits: 2,
 		modules: {
-			0: () => import('./shaders-sprites-wgsl'),
-			2: () => import('./shaders-sprites-wgsl-tone-map'),
+			0: () => importShaders(new URL('./shaders-sprites-wgsl.js?no-inline', import.meta.url)),
+			2: () => importShaders(new URL('./shaders-sprites-wgsl-tone-map.js?no-inline', import.meta.url)),
 		},
 	},
 ";
         assert!(main.contains(sprites), "{main}");
         assert!(main.contains(
-            "			1: () => import('./shaders-bloom-glsl-draw-index'),
+            "			1: () => importShaders(new URL('./shaders-bloom-glsl-draw-index.js?no-inline', import.meta.url)),
 "
         ));
         assert!(main.contains(
@@ -1022,18 +1035,18 @@ mod tests {
             permutation::BLOOM
         )));
         let start = "const WGSL_MODULES: DeviceModules = {
-	0: () => import('./shaders-wgsl'),
-	2: () => import('./shaders-wgsl-tone-map'),
+	0: () => importShaders(new URL('./shaders-wgsl.js?no-inline', import.meta.url)),
+	2: () => importShaders(new URL('./shaders-wgsl-tone-map.js?no-inline', import.meta.url)),
 };";
         assert!(main.contains(start), "{main}");
-        let sprites = &modules["shaders-sprites-wgsl-tone-map"];
-        assert!(sprites.contains("import type { FirstUseShaders } from './shaders';"));
+        let sprites = &modules["shaders-sprites-wgsl-tone-map.js"];
+        assert!(!sprites.contains("import"));
         assert!(sprites.contains(
-            "export const SHADERS: FirstUseShaders = {
+            "export const SHADERS = {
 	sprite: {
 "
         ));
-        assert!(modules["shaders-wgsl"].contains(
+        assert!(modules["shaders-wgsl.js"].contains(
             "	sprite: {},
 "
         ));
@@ -1066,7 +1079,7 @@ mod tests {
         output.shaders.insert("lit".to_owned(), lit);
         output.by_device = ["lit".to_owned()].into();
         let modules = modules(&output);
-        let glsl = &modules["shaders-glsl"];
+        let glsl = &modules["shaders-glsl.js"];
         assert_eq!(glsl.matches("vert shared").count(), 1, "{glsl}");
         assert!(
             glsl.contains("\nconst SOURCE_0 = `vert shared`;\n"),
