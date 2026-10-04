@@ -126,7 +126,7 @@ use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
 use crate::output::{Antialias, SceneColor};
-use crate::pipelines::PipelineCache;
+use crate::pipelines::{PipelineCache, Prepass};
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
 use crate::shadows::{self, MAX_CASCADES, ShadowUniform};
 use crate::sorted::SortedLayout;
@@ -553,7 +553,7 @@ impl GpuDrivenRenderer {
                 parity,
                 limit,
                 shadows,
-                self.graph.depth_prepass(),
+                Prepass::DepthTemplate.if_on(self.graph.depth_prepass()),
                 &self.skinning,
             )?;
             let skinning = &self.skinning;
@@ -584,7 +584,7 @@ impl GpuDrivenRenderer {
                     parity,
                     limit,
                     shadows,
-                    false,
+                    Prepass::Off,
                     &self.skinning,
                 )?;
             } else {

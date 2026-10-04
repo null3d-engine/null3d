@@ -316,11 +316,11 @@ fn webgl2_skins_in_the_vertex_shader_of_every_pass_that_draws_a_skinned_object()
         );
         assert_eq!(count(&first, Op::CreateComputePipeline), 0);
 
-        // Every instance group binds the joint texture and the texture of first joints after
-        // the instance textures.
+        // Every instance group binds the joint texture, the texture of first joints and the morph
+        // texture after the instance textures.
         let groups = instance_groups(&first);
         assert!(!groups.is_empty());
-        assert!(groups.iter().all(|g| g[2] == 6));
+        assert!(groups.iter().all(|g| g[2] == 7));
         let (joints, firsts) = (bound(&groups[0], 4), bound(&groups[0], 5));
         let textures = operands(&first, Op::CreateTexture);
         let created = |id: u32| textures.iter().find(|t| t[0] == id).unwrap().clone();
@@ -335,7 +335,8 @@ fn webgl2_skins_in_the_vertex_shader_of_every_pass_that_draws_a_skinned_object()
         );
         assert_eq!(created(firsts)[4], format::R32_UINT);
         assert_eq!(writes(&first, joints).len(), 1);
-        assert_eq!(writes(&first, firsts).len(), 1);
+        // One write for the first joints, one for the first weights, which nothing morphs here.
+        assert_eq!(writes(&first, firsts).len(), 2);
 
         // Later frames write the new pose's matrices, and make nothing.
         let second = world.step(&mut mock, false);
@@ -371,10 +372,10 @@ fn skinned_objects_of_one_mesh_share_an_instanced_draw_on_webgl2() {
     assert_eq!(bucket_of(slots[0]), bucket_of(slots[1]));
 
     // Each column finds its own instance's joints: the first joints of the slots from the first
-    // column's to the second's go up in one write.
+    // column's to the second's go up in one write, and their first weights in a second.
     let firsts = bound(&instance_groups(&first)[0], 5);
     let written = writes(&first, firsts);
-    assert_eq!(written.len(), 1);
+    assert_eq!(written.len(), 2);
     let width = slots[1] - slots[0] + 1;
     assert_eq!(written[0][2..6], [slots[0], 0, 0, width]);
     assert_eq!(written[0][9], width * 4);
