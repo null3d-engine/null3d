@@ -99,15 +99,25 @@ export interface CompiledUniform<
 	readonly offset: number;
 }
 
+/** A texture of a custom material, and where the engine writes its layer. */
+export interface CompiledTexture<Name extends string = string> {
+	/** The variable's name, which the `textures` option takes. */
+	readonly name: Name;
+	/** The float of the material's row of custom values that holds the texture's layer. */
+	readonly offset: number;
+}
+
 /**
  * A custom material from a project's modules, which `materials.shader` draws with: functions such
  * as `fn surface`, built into every variant of the engine's standard material, or a full shader,
  * whose `@vertex` entry point takes an `InstanceIn` from `null3d::mesh`. `Uniforms` gives each
- * uniform's type by name, as the declaration that the plugin writes beside a `.wgsl` file does, so
- * that `materials.shader` checks the names and values of its `uniforms` option and of `set()`.
+ * uniform's type by name, and `Textures` the names of its textures, as the declaration that the
+ * plugin writes beside a `.wgsl` file does, so that `materials.shader` checks the names and values
+ * of its `uniforms` and `textures` options and of `set()`.
  */
 export interface CompiledMaterial<
 	Uniforms extends Readonly<Record<string, UniformType>> = Readonly<Record<string, UniformType>>,
+	Textures extends string = string,
 > {
 	/** Marks the WGSL of a custom material. */
 	readonly kind: 'material';
@@ -117,6 +127,8 @@ export interface CompiledMaterial<
 	readonly uniforms: readonly {
 		readonly [Name in keyof Uniforms & string]: CompiledUniform<Name, Uniforms[Name]>;
 	}[keyof Uniforms & string][];
+	/** The textures that the WGSL declares as `var name: texture_2d<f32>;`, in order. */
+	readonly textures: readonly CompiledTexture<Textures>[];
 	/** The standard material's variants with the WGSL's functions, or a full shader's, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
 	/** The vertex shader locations that the vertex stage reads from a mesh's vertices. */

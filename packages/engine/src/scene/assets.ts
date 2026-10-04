@@ -7,11 +7,12 @@
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
-import { messageOf } from '../errors/message';
+import { reasonOf } from '../errors/message';
 import { Lut } from './lut';
 import type { CoreMemory } from './memory';
 import type { Prefab } from './prefab';
 import type { Geometry, Materials } from './resources';
+import type { Scene } from './scene';
 import type { Texture, TextureColorSpace, TextureOptions, Textures } from './textures';
 
 /**
@@ -54,11 +55,12 @@ export interface LoadImageOptions {
 	premultipliedAlpha?: boolean;
 }
 
-/** @internal What `loadGltf` makes a model's meshes and materials with. */
+/** @internal What `loadGltf` makes a model's meshes, materials and skeleton with. */
 export interface ModelMakers {
 	core: CoreMemory;
 	geometry: Geometry;
 	materials: Materials;
+	scene: Scene;
 }
 
 /**
@@ -177,7 +179,7 @@ export class Assets {
 		} catch (error) {
 			throw new EngineError(
 				'E1406',
-				`the color grading table reader did not download for ${call}() of ${address}: ${reason(error)}.`,
+				`the color grading table reader did not download for ${call}() of ${address}: ${reasonOf(error)}.`,
 			);
 		}
 		let table: import('./lut-files').LutTable;
@@ -186,7 +188,7 @@ export class Assets {
 		} catch (error) {
 			throw new EngineError(
 				'E1412',
-				`${call}() could not read ${address} as a color grading table: ${reason(error)}.`,
+				`${call}() could not read ${address} as a color grading table: ${reasonOf(error)}.`,
 			);
 		}
 		const { size, title, domainMin, domainMax, texels } = table;
@@ -207,7 +209,7 @@ export class Assets {
 		} catch (error) {
 			throw new EngineError(
 				'E1412',
-				`${call}() could not read ${address} as JSON: ${reason(error)}.`,
+				`${call}() could not read ${address} as JSON: ${reasonOf(error)}.`,
 			);
 		}
 	}
@@ -291,11 +293,11 @@ export class Assets {
 				if (address.origin !== new URL(this.base).origin)
 					throw new EngineError(
 						'E1413',
-						`${call}() could not read ${address}: its server did not allow this page to read it, or could not be reached (${reason(error)}).`,
+						`${call}() could not read ${address}: its server did not allow this page to read it, or could not be reached (${reasonOf(error)}).`,
 					);
 				throw new EngineError(
 					'E1411',
-					`${call}() could not download ${address}: ${reason(error)}.`,
+					`${call}() could not download ${address}: ${reasonOf(error)}.`,
 				);
 			}
 			if (!response.ok)
@@ -308,7 +310,7 @@ export class Assets {
 			} catch (error) {
 				throw new EngineError(
 					'E1411',
-					`${call}() could not download ${address}: ${reason(error)}.`,
+					`${call}() could not download ${address}: ${reasonOf(error)}.`,
 				);
 			}
 		} finally {
@@ -325,11 +327,6 @@ export class Assets {
 				console.error(error);
 			}
 	}
-}
-
-/** A failure's message without its closing period. */
-function reason(error: unknown): string {
-	return messageOf(error).replace(/\.$/, '');
 }
 
 /** The identifier that starts every KTX2 file. */
@@ -374,7 +371,7 @@ async function loadKtx2(
 	} catch (error) {
 		throw new EngineError(
 			'E1406',
-			`the KTX2 loader did not download for ${call}() of ${address}: ${reason(error)}.`,
+			`the KTX2 loader did not download for ${call}() of ${address}: ${reasonOf(error)}.`,
 		);
 	}
 	return ktx2.loadKtx2(
@@ -394,7 +391,7 @@ async function loadModule(address: URL, call: string): Promise<typeof import('./
 	} catch (error) {
 		throw new EngineError(
 			'E1406',
-			`the glTF loader did not download for ${call}() of ${address}: ${reason(error)}.`,
+			`the glTF loader did not download for ${call}() of ${address}: ${reasonOf(error)}.`,
 		);
 	}
 }
@@ -418,7 +415,7 @@ async function decode(
 	} catch (error) {
 		throw new EngineError(
 			'E1412',
-			`${call}() could not decode ${address} as an image: ${reason(error)}.`,
+			`${call}() could not decode ${address} as an image: ${reasonOf(error)}.`,
 		);
 	}
 }

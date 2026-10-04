@@ -37,7 +37,7 @@ use crate::materials::{
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
-use crate::pipelines::{DepthBias, DrawKey};
+use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
     CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings, fit_cascades,
@@ -488,8 +488,11 @@ pub struct SceneSettings {
     materials: MaterialTable,
     textures: TextureStore,
     /// The bind group of each material's maps, by material id, for the standard materials with a
-    /// live map, and 0 for the others.
+    /// live map and the custom materials with textures, and 0 for the others.
     map_groups: Vec<u32>,
+    /// Scratch marks of the material ids that objects and batches use, for the release of
+    /// destroyed materials' ids.
+    used_materials: Vec<bool>,
     /// The texture that the camera's view draws behind every object, or `Handle::NONE`.
     background_texture: Handle,
     /// The views, the camera's first.
@@ -515,6 +518,8 @@ pub struct SceneSettings {
     clock: [f32; 4],
     /// True when the render scale may drop below the whole canvas.
     render_scaling: bool,
+    /// Device pixels per CSS pixel, which size sprites given in pixels of the screen.
+    pixel_ratio: f32,
     /// How the point and spot lights' shadow atlas is set up.
     tiles: TileSettings,
     /// The materials' shading, or a debug view in its place.
@@ -536,6 +541,7 @@ impl SceneSettings {
             materials: MaterialTable::with_capacity(max_materials),
             textures,
             map_groups: Vec::new(),
+            used_materials: Vec::new(),
             background_texture: Handle::NONE,
             views: vec![View::default()],
             lighting: Lighting {
@@ -557,6 +563,7 @@ impl SceneSettings {
             vignette: None,
             clock: [0.0; 4],
             render_scaling: false,
+            pixel_ratio: 1.0,
             tiles: TileSettings::default(),
             debug_view: DebugView::Lit,
             shadow_camera: None,
@@ -702,6 +709,16 @@ impl SceneSettings {
         self.render_scaling = scaling;
     }
 
+    /// Sets the device pixels per CSS pixel that the canvas draws with. A ratio that is not a
+    /// positive number counts as 1.
+    pub fn set_pixel_ratio(&mut self, ratio: f32) {
+        self.pixel_ratio = if ratio > 0.0 && ratio.is_finite() {
+            ratio
+        } else {
+            1.0
+        };
+    }
+
     /// How the point and spot lights' shadow atlas is set up.
     pub fn tile_settings(&self) -> TileSettings {
         self.tiles
@@ -804,15 +821,16 @@ impl SceneSettings {
     /// [`SceneSettings::pipeline_of`] chose it, or 0 when that pipeline reads no map.
     pub fn texture_group(&self, material: u32, pipeline: DrawKey) -> u32 {
         match pipeline.template {
-            template::INSTANCED_UNLIT_MAP => {
+            template::INSTANCED_UNLIT_MAP | template::SPRITE_MAP => {
                 let map = self.materials.map(material - 1, MapSlot::BaseColor);
                 self.textures.group_id(map).unwrap_or(0)
             }
-            template::INSTANCED_STANDARD_MAPS => self
-                .map_groups
-                .get(material as usize - 1)
-                .copied()
-                .unwrap_or(0),
+            maps if maps == template::INSTANCED_STANDARD_MAPS || maps >= template::CUSTOM_FIRST => {
+                self.map_groups
+                    .get(material as usize - 1)
+                    .copied()
+                    .unwrap_or(0)
+            }
             _ => 0,
         }
     }
@@ -825,15 +843,49 @@ impl SceneSettings {
             .any(|&map| self.textures.is_live(map))
     }
 
-    /// Finds the bind group of each standard material's maps, before the draw tables are built
-    /// again. A texture that moves to another array changes its material's group, and such a move
-    /// comes with a rebuild.
-    pub(crate) fn update_map_groups(&mut self) {
+    /// Gets the materials ready for a rebuild of the draw tables. Destroyed materials that no
+    /// object or batch names give their ids back, and the pipelines of custom templates that no
+    /// live material draws with are released. Then each material that samples maps finds its bind
+    /// group: a standard material with a live map, and a custom material with textures, whose
+    /// slots without a texture bind a white texel. A texture that moves to another array changes
+    /// its material's group, and such a move comes with a rebuild.
+    pub(crate) fn prepare_rebuild(
+        &mut self,
+        scene: &SceneStorage,
+        batches: &BatchTable,
+        pipelines: &mut PipelineCache,
+    ) {
         let count = self.materials.len();
+        if self.materials.has_destroyed() {
+            let used = &mut self.used_materials;
+            used.clear();
+            used.resize(count as usize, false);
+            let named = scene
+                .materials()
+                .iter()
+                .copied()
+                .chain(batches.iter().map(|(_, batch)| batch.material()));
+            for material in named {
+                if let Some(mark) = material
+                    .checked_sub(1)
+                    .and_then(|id| used.get_mut(id as usize))
+                {
+                    *mark = true;
+                }
+            }
+            self.materials
+                .release_unused(|id| used.get(id as usize).copied().unwrap_or(false));
+            let materials = &self.materials;
+            pipelines.release(|template| materials.custom_template_unused(template));
+        }
         self.map_groups.resize(count as usize, 0);
         for id in 0..count {
-            let standard = self.materials.shading(id) == Ok(Shading::Lit);
-            self.map_groups[id as usize] = if standard && self.has_live_map(id) {
+            let samples = match self.materials.shading(id) {
+                Ok(Shading::Lit) => self.has_live_map(id),
+                Ok(Shading::Custom(custom)) => custom.textures > 0,
+                _ => false,
+            };
+            self.map_groups[id as usize] = if samples {
                 let maps = self.materials.maps(id);
                 self.textures.map_set_group(&maps).unwrap_or(0)
             } else {
@@ -1095,6 +1147,9 @@ impl SceneSettings {
         if shading == Shading::UnlitMap && !(uv0 && live(MapSlot::BaseColor)) {
             shading = Shading::Unlit;
         }
+        if shading == Shading::Sprite && live(MapSlot::BaseColor) {
+            shading = Shading::SpriteMap;
+        }
         if shading == Shading::Lit && uv0 && self.has_live_map(id) {
             shading = Shading::StandardMaps;
         }
@@ -1153,7 +1208,12 @@ impl SceneSettings {
             clock: self.clock,
             camera_world: [x, y, z, 0.0],
             target_size: [width, height, 1.0 / width, 1.0 / height],
-            camera_range: [camera.depth.near, camera.depth.far, 0.0, 0.0],
+            camera_range: [
+                camera.depth.near,
+                camera.depth.far,
+                2.0 * self.pixel_ratio / canvas.0.max(1) as f32,
+                2.0 * self.pixel_ratio / canvas.1.max(1) as f32,
+            ],
             ..FrameUniform::default()
         };
         Some(ViewFrame::new(

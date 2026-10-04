@@ -7,3 +7,15 @@ declare module '*.wgsl' {
 	const shader: import('./shader-types').CompiledWgsl;
 	export default shader;
 }
+
+declare module '*.glb?optimized' {
+	/** The address of the model after the asset tool optimized it, for `assets.loadGltf`. */
+	const url: string;
+	export default url;
+}
+
+declare module '*.gltf?optimized' {
+	/** The address of the model after the asset tool optimized it, as one `.glb` file. */
+	const url: string;
+	export default url;
+}

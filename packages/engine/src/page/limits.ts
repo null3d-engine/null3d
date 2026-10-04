@@ -107,8 +107,7 @@ export interface CoreDevice {
 	/** False when the core culls every object and instance row, with no grid cells skipped first. */
 	cellCulling: boolean;
 	/**
-	 * True when each camera view draws its opaque objects' depth before it shades them. Only the
-	 * WebGPU path draws the prepass.
+	 * True when each camera view draws its opaque objects' depth before it shades them.
 	 */
 	depthPrepass: boolean;
 	/**
@@ -116,6 +115,11 @@ export interface CoreDevice {
 	 * each once per frame in a compute pass.
 	 */
 	vertexSkinning: boolean;
+	/**
+	 * True when each object's position holds whole cells besides its 32-bit part, so positions keep
+	 * their precision at any distance from the origin.
+	 */
+	largeWorld: boolean;
 }
 
 /**
@@ -171,6 +175,8 @@ export type DeviceOptions = Pick<
 	transparent: boolean;
 	/** True to draw the opaque objects' depth in a depth prepass. */
 	depthPrepass: boolean;
+	/** True for positions that keep their precision at any distance from the origin. */
+	largeWorld: boolean;
 };
 
 /** The depth mode of a WebGL2 device without `EXT_clip_control`. */
@@ -287,6 +293,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		cellCulling: options.cells,
 		depthPrepass: options.depthPrepass,
 		vertexSkinning: options.vertexSkinning,
+		largeWorld: options.largeWorld,
 	};
 	if (tier !== 'webgl2') {
 		return {

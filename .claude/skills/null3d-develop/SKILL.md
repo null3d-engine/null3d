@@ -103,7 +103,7 @@ Each rule comes with its reason, because the reason covers cases the rule does n
 7. Keep the DOM on the page, and keep messages rare: send events, not per-frame state. Labels that follow objects use `ui.trackLabel` (0.2), which needs no messages. (`guides/ui-overlays`)
 8. Use layer masks to limit work. A camera with a mask draws fewer objects, and a raycast (0.2) with a mask tests fewer. (`concepts/render-layers`)
 9. Respect the quality preset. Do not force a heavier preset on phones. When frames run long, the engine's governor lowers the render scale, then the shadow settings, by itself. Keep your own values per preset, such as particle counts or AI update rates, in one table keyed by `quality.preset`. Never check the device type yourself, and listen to `quality.onChange` to apply the values. (`concepts/quality-presets`)
-10. Ship optimized assets: KTX2 textures, which stay compressed on the GPU, and glTF models with meshopt compression (0.2). Encode KTX2 files with `basisu`. From 0.2, `bunx @null3d/cli assets optimize` makes both. Large PNG files and uncompressed meshes cost download time and GPU memory. (`api/textures`, `guides/assets-pipeline`)
+10. Ship optimized assets: KTX2 textures, which stay compressed on the GPU, and glTF models with integer vertices (0.2). Encode KTX2 files with `basisu`. From 0.2, `bunx @null3d/cli assets optimize <in> <out>` makes both, or a `?optimized` import of a `.glb` file through the Vite plugin. It compresses the models with meshopt, which the engine decodes on load. Large PNG files and float meshes cost download time and GPU memory. (`api/textures`, `guides/assets-pipeline`)
 11. Keep custom WGSL portable. Use only the three language features every browser shares, and write flat interpolation as `@interpolate(flat, either)`. The build rejects other features, `enable` lines and `f16`, but it cannot check the portable limits or `textureSample` in branches. Test those on each GPU path. (`shaders/wgsl-rules`)
 12. Never branch on GPU names or user agents; read `engine.capabilities` on the page. Several browsers hide GPU names, and a name does not tell you what the engine enabled.
 
@@ -178,7 +178,7 @@ const rings = materials.shader({
 rings.set({ roughness: 0.2 }); // the standard values, which defaultSurface reads
 ```
 
-`references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, uniforms (`struct Uniforms` in the WGSL, read from `material`), the names to avoid, and the WGSL rules. Vertex offsets (`fn vertexOffset` in the same WGSL) and the built-in values (`frame.time`, `camera.position`, `object.position`) are built too. So are full shaders (`guides/custom-shaders`). Textures in custom materials come in 0.2.
+`references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, uniforms (`struct Uniforms` in the WGSL, read from `material`), the names to avoid, and the WGSL rules. Vertex offsets (`fn vertexOffset` in the same WGSL) and the built-in values (`frame.time`, `camera.position`, `object.position`) are built too. So are full shaders (`guides/custom-shaders`), and textures (0.2): `var name: texture_2d<f32>;` in the WGSL and the `textures` option.
 
 ## 7. When something goes wrong
 

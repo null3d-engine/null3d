@@ -15,11 +15,13 @@
 //! Translations and scales stay 32-bit floats.
 //!
 //! Groups of step tracks follow the groups of linear tracks of their kind. They take the key at
-//! or before the time, with no interpolation.
+//! or before the time, with no interpolation. Among the linear rotation groups, those with a track
+//! that turns far between two frames come first, because only they may need the correction toward
+//! the arc that sampling applies.
 
 use std::simd::prelude::*;
 
-use super::pose::normalized;
+use super::pose::{arc_weight, normalized};
 use super::resample::QUANTIZED_ONE;
 use super::{AnimationError, POSE_FIELDS, Pose, field, filled};
 
@@ -33,6 +35,9 @@ pub(crate) const VECTOR_KEY: usize = 12;
 pub(crate) struct Groups<T> {
     /// The joint that each lane of each group writes.
     pub joints: Box<[[u32; 4]]>,
+    /// The first group whose rotations turn by at most [`SMALL_TURN_DOT`] between frames, which
+    /// interpolate without correction toward the arc.
+    pub first_small_turn: usize,
     /// The first group of step tracks; every group from here on takes keys without interpolation.
     pub first_step: usize,
     /// The keys, frame by frame (see the module documentation).
@@ -327,6 +332,9 @@ fn scatter<const N: usize>(
     }
 }
 
+/// The dot product of two rotation keys that lie about 0.2 radians apart: cos(0.1).
+pub(crate) const SMALL_TURN_DOT: f32 = 0.995;
+
 fn sample_rotations(
     groups: &Groups<i16>,
     frame: usize,
@@ -338,15 +346,32 @@ fn sample_rotations(
         return;
     }
     let (a, b) = frame_pair(groups, frame, ROTATION_KEY);
+    // The keys' dot product, scaled from quantized units to 1.
+    let unit = f32x4::splat((1.0 / (QUANTIZED_ONE * QUANTIZED_ONE)) as f32);
     for (g, joints) in groups.joints.iter().enumerate() {
-        let t = weight_of(groups, g, fraction);
         let at = g * ROTATION_KEY;
-        let lerp = |c: usize| {
+        let key = |keys: &[i16], c: usize| -> f32x4 {
             let o = at + 4 * c;
-            let ka: f32x4 = i16x4::from_slice(&a[o..o + 4]).cast();
-            let kb: f32x4 = i16x4::from_slice(&b[o..o + 4]).cast();
-            ka + (kb - ka) * t
+            i16x4::from_slice(&keys[o..o + 4]).cast()
         };
+        let ka: [f32x4; 4] = std::array::from_fn(|c| key(a, c));
+        let kb: [f32x4; 4] = std::array::from_fn(|c| key(b, c));
+        // Resampling keeps each key in the hemisphere of the key before, so the dot product is
+        // positive, and the correction makes the blend follow the arc as `slerp` does. Files
+        // whose joints turn fast between keys, such as Fox's run at 24 keys per second, turn a
+        // joint up to 1.5 radians from one key to the next.
+        // Below about 0.2 radians between keys, plain interpolation already stays within 3.2e-5
+        // radians of `slerp`. Groups whose tracks never turn further skip the test, and the
+        // others skip the correction at frames where they turn no further.
+        let mut t = weight_of(groups, g, fraction);
+        if g < groups.first_small_turn {
+            let dot = (ka[0] * kb[0] + ka[1] * kb[1] + ka[2] * kb[2] + ka[3] * kb[3]) * unit;
+            let dot = dot.abs().simd_min(f32x4::splat(1.0));
+            if dot.simd_lt(f32x4::splat(SMALL_TURN_DOT)).any() {
+                t = arc_weight(t, dot);
+            }
+        }
+        let lerp = |c: usize| ka[c] + (kb[c] - ka[c]) * t;
         let (x, y, z, w) = normalized(lerp(0), lerp(1), lerp(2), lerp(3));
         scatter(pose, lanes, field::ROTATION, joints, [x, y, z, w]);
     }

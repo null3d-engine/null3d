@@ -26,7 +26,7 @@ use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
 };
-use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
+use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 
 /// Words of one bucket record in the culling shader: base, material, radius, first draw, draw
 /// count, the centre of the local sphere that culls the bucket's sources, and the first joint of
@@ -419,7 +419,7 @@ impl Layout {
     /// Assigns every source to a bucket and lays the buckets out, from the frame's world state,
     /// with each bucket's pipeline id from `pipelines`, for a pass that draws into `targets`. With
     /// `shadows`, the scene's receivers draw with pipelines that read the shadow maps. With
-    /// `prepass`, the buckets that the depth prepass draws get its pipelines too. Skinned objects
+    /// a `prepass`, the buckets that the depth prepass draws get its pipelines too. Skinned objects
     /// draw the skinned vertices that `skinning` lays out. It reuses
     /// the layout's tables and scratch space, which grow only with the scene. A scene of more than
     /// `limit` sources fails.
@@ -434,7 +434,7 @@ impl Layout {
         parity: usize,
         limit: u32,
         shadows: bool,
-        prepass: bool,
+        prepass: Prepass,
         skinning: &Skinning,
     ) -> Result<(), RecordError> {
         let scene_rows = scene.capacity() + 1;
@@ -500,9 +500,17 @@ impl Layout {
                 skinning.object(slot as u32).is_some(),
             )
         };
-        // Instance batches cast no shadows yet.
+        // Instance batches cast no shadows yet. Sprites sized in pixels of the screen have no
+        // bounds in the world, so culling keeps them.
         let batch_key = |batch: &InstanceBatch| match drawn {
-            Drawn::Scene => key_of(batch.mesh(), batch.material(), MESH_BOUNDS, 0, false),
+            Drawn::Scene => {
+                let bounds = if batch.unculled() {
+                    UNCULLED_BOUNDS
+                } else {
+                    MESH_BOUNDS
+                };
+                key_of(batch.mesh(), batch.material(), bounds, 0, false)
+            }
             Drawn::Casters => None,
         };
 
@@ -901,7 +909,7 @@ mod tests {
                 parity,
                 u32::MAX,
                 false,
-                false,
+                Prepass::Off,
                 &Skinning::default(),
             )
             .unwrap();

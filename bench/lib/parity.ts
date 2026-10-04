@@ -95,7 +95,7 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
  * Each kind of benchmark page: its folder, the switches that pick its GPU path and, for the null3D
  * pages that end in -low, the low-latency mode, for those that end in -cells-off, culling with no
  * grid cells skipped, for those that end in -half, color math at half precision, for those that
- * end in -timed, the time of each WebGL call, and for those that end in -synced, that time with a
+ * end in -prepass, the depth prepass, for those that end in -timed, the time of each WebGL call, and for those that end in -synced, that time with a
  * wait for the browser's GPU process after each call, and the GPU interface it draws with.
  */
 const PAGES = {
@@ -110,6 +110,8 @@ const PAGES = {
 	'null3d-webgl2-cells-off': { folder: 'null3d', switches: 'gpu=webgl2&cells=off', api: 'webgl2' },
 	'null3d-webgpu-half': { folder: 'null3d', switches: 'gpu=webgpu&half=on', api: 'webgpu' },
 	'null3d-webgl2-half': { folder: 'null3d', switches: 'gpu=webgl2&half=on', api: 'webgl2' },
+	'null3d-webgpu-prepass': { folder: 'null3d', switches: 'gpu=webgpu&prepass=on', api: 'webgpu' },
+	'null3d-webgl2-prepass': { folder: 'null3d', switches: 'gpu=webgl2&prepass=on', api: 'webgl2' },
 	'null3d-webgl2-timed': { folder: 'null3d', switches: 'gpu=webgl2&gl-timing', api: 'webgl2' },
 	'null3d-webgl2-synced': {
 		folder: 'null3d',
@@ -241,6 +243,7 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html` },
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
 	{ test: 'transparency', twin: `${TWINS}/transparency.html` },
+	{ test: 'sprites', twin: `${TWINS}/sprites.html` },
 	{ test: 'texture-background', twin: `${TWINS}/texture-background.html` },
 	{ test: 'lights-16', twin: `${TWINS}/lights.html?lights=16`, sketchSwitches: NO_TONE },
 	{ test: 'lights-spot', twin: `${TWINS}/lights.html?scene=spot`, sketchSwitches: NO_TONE },

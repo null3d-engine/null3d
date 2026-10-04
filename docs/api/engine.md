@@ -48,7 +48,7 @@ An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` st
 | --- | --- |
 | [E1407](../errors/E1407.md) | The `hold` option or the `?hold=` switch gives a time that is not a number of seconds from 0 to 600. |
 | [E1415](../errors/E1415.md) | The sketch would run on the page's main thread, where another engine still runs its sketch. |
-| [E1213](../errors/E1213.md) | An option of the quality settings is out of its range: `preset`, `maxPixelRatio`, `antialias`, the shadow options or `depthPrepass`. The options table gives each range. |
+| [E1213](../errors/E1213.md) | An option is out of its range: `preset`, `maxPixelRatio`, `antialias`, the shadow options, `depthPrepass` or `maxLabels`. The options table gives each range. |
 | [E1409](../errors/E1409.md) | The `memory` option asks for a maximum that is not a whole number of MiB from 256 to 4096. |
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
 | [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
@@ -80,13 +80,15 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `maxPixelRatio` | The preset's cap | Caps the screen's pixel ratio that the engine draws at, in place of the preset's cap |
 | `antialias` | The preset's mode | `'msaa'`, `'fxaa'` or `'none'`, in place of the preset's anti-aliasing mode: [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) |
 | `shadowTiles`, `shadowTileSize`, `pointLightShadows` | The preset's values | The shadows of spot and point lights, in place of the preset's settings: [Shadows](../concepts/shadows.md#settings). Each is fixed while the engine runs. |
-| `depthPrepass` | `false` on every preset | `true` draws the depth of the opaque objects before they are shaded, on WebGPU: [The depth prepass](../concepts/quality-presets.md#the-depth-prepass). The `?prepass=` switch wins over it. |
+| `depthPrepass` | `false` on every preset | `true` draws the depth of the opaque objects before they are shaded: [The depth prepass](../concepts/quality-presets.md#the-depth-prepass). The `?prepass=` switch wins over it. |
 | `gpu` | `'auto'` | Forces a GPU path, for tests only. The `?gpu=` switch in the page's address wins over it, and also takes `compat` for WebGPU's compatibility mode. |
 | `powerPreference` | `'high-performance'` | Picks the GPU on a device that has two. `'low-power'` saves battery. |
 | `latency` | `'pipelined'` | The latency mode, `'pipelined'` or `'low'`: [Architecture](../concepts/architecture.md#latency-modes). The `?latency=` switch wins over it, and the single-threaded build ignores it. Where no worker can draw, the engine runs pipelined. |
 | `transparent` | false | Makes a see-through canvas: [A transparent canvas](#a-transparent-canvas) |
+| `largeWorld` | false | Keeps the positions of objects exact at any distance from the origin, for scenes the size of a planet: [Large worlds and precision](../concepts/large-worlds.md#large-world-mode) |
 | `sketchThread` | `'worker'` | The thread that runs the sketch. `'main'` runs it on the page's main thread, where it can reach the DOM: [Where the sketch runs](../concepts/architecture.md#where-the-sketch-runs). The `?sketch-thread=` switch wins over it, and the single-threaded build always runs the sketch on the main thread. |
 | `memory` | `{ maximumMiB: 1024 }` | The most memory that the engine's threads share: [Memory](#memory) |
+| `maxLabels` | `4096` | The most labels that the sketch tracks at once, from 1 to 65,536: [UI overlays and labels](ui.md). Another value fails with [E1213](../errors/E1213.md). |
 | `onProgress` | None | Reports each stage of the start |
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
 | `signal` | None | Cancels the start |
@@ -136,10 +138,11 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 - `capture()` resolves with a PNG image of the next frame that the engine draws: [Screenshots](#screenshots).
 - `captureFrame()` draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. In hold mode it returns the held frame and draws nothing. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
 - `postToSketch` and `onSketchMessage` send and receive [messages](page.md).
+- `labels.bind(id, element)` moves an HTML element over the label that the sketch tracks under `id`: [UI overlays and labels](ui.md).
 - `destroy()` stops the engine and its threads, and the engine cannot start again. Wait for its promise before you start another engine on the same page, because the browser frees the engine's memory only then.
 - A page that goes away without `destroy()`, such as a page in a frame that your app removes, still gives back the engine's memory. When the page hides, the engine wakes its job workers and ends their loops. Safari never frees the memory of a worker that it stops while the worker waits for work. Without this, an iPad would run out of room after a few such pages. A page that the browser brings back from its back-forward cache runs on, with the job workers' share of the work on the sketch thread.
 
-Each `on...` call returns a function that removes its handler. `engine.labels` and `engine.requestPointerLock` come in null3D 0.2.
+Each `on...` call returns a function that removes its handler. `engine.requestPointerLock` comes in null3D 0.2.
 
 ## Screenshots
 
@@ -221,6 +224,7 @@ A running engine, as `createEngine` returns it.
 | `readonly report: CapabilityReport` | The full capability report, as plain JSON. |
 | `readonly mode: EngineMode` | How the engine runs on this device. |
 | `readonly firstFrame: Promise<void>` | Resolves once the GPU has finished the first frame, so it is on screen: the moment to remove a loading screen. It never resolves when the engine is destroyed first. |
+| `readonly labels: EngineLabels` | The HTML elements that follow the labels the sketch tracks with `ui.trackLabel`. |
 | `postToSketch(name: string, data?: unknown, transfer?: Transferable[]): void` | Sends a message to the sketch, which receives it through `ctx.page.onMessage`. |
 | `onSketchMessage(handler: (name: string, data: unknown) => void): () => void` | Receives the messages the sketch sends with `ctx.page.post`. When no handler listened from the start, the first handler also receives the messages sent before it was registered. Returns a function that removes the handler. |
 | `onFailure(handler: (error: EngineError) => void): () => void` | Receives a failure after the engine started: the browser took the GPU away and the engine could not carry on with a new device (E1302), or an engine thread failed (E1404). The engine reports each failure once. Without a handler, it logs the failure to the console. Returns a function that removes the handler. |
@@ -302,10 +306,12 @@ Options for `createEngine`.
 | `shadowTiles?: number` | The most tiles of the shadow atlas that spot and point lights cast their shadows into, a whole number from 0 to 24. Without it, the quality preset sets it. 0 turns the shadows of spot and point lights off. Another value fails with E1213. |
 | `shadowTileSize?: number` | Texels on each side of each tile of the shadow atlas: 256, 512, 1,024 or 2,048. Without it, the quality preset sets it. Another value fails with E1213. |
 | `pointLightShadows?: boolean` | True makes point lights cast shadows, false keeps them from it. Without it, the quality preset decides: High and Ultra turn them on. Another value fails with E1213. |
-| `depthPrepass?: boolean` | True to draw the depth of the opaque objects before the engine shades them, so each pixel is shaded once, for its nearest surface. It saves GPU time in scenes where objects hide many others and shading costs much, and costs a second pass over the objects' vertices. Without it, the quality preset decides. The prepass stays fixed while the engine runs, and the `?prepass=on` or `?prepass=off` switch wins over this option. WebGL2 draws without it. Another value fails with E1213. |
+| `depthPrepass?: boolean` | True to draw the depth of the opaque objects before the engine shades them, so each pixel is shaded once, for its nearest surface. It saves GPU time in scenes where objects hide many others and shading costs much, and costs a second pass over the objects' vertices. Without it, the quality preset decides. The prepass stays fixed while the engine runs, and the `?prepass=on` or `?prepass=off` switch wins over this option. Another value fails with E1213. |
 | `transparent?: boolean` | True for a see-through canvas: the page shows through wherever no object draws, until the sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites it. The default is false, an opaque canvas. |
+| `largeWorld?: boolean` | True for scenes that reach far beyond a city, such as a planet. Object positions then keep the precision of JavaScript's numbers at any distance from the origin: 0.03 mm or better. Without it, positions are 32-bit floats, which move in steps of 6 cm at 1,000 km from the origin and 0.5 m at the Earth's radius. It costs 12 bytes of memory per object and a little work in each position setter. The default is false. Instance batches need no mode: give each one an `origin` near its rows. |
 | `sketchThread?: SketchThread` | The thread that runs the sketch's code and the engine core: `worker`, the default, or `main` for the page's main thread, where the sketch can reach the DOM. Use `main` for apps that work mostly with the DOM, and for debugging. The render worker still draws in pipelined mode, and the page draws in low-latency mode. The sketch's frames then share the page's thread with the page's own work, so each can slow the other. The single-threaded build always runs the sketch on the page's thread. The `?sketch-thread=` switch wins over this option. |
 | `memory?: { maximumMiB: number; }` | The engine's memory. `maximumMiB` sets the most memory that the engine's threads share, in MiB: a whole number from 256 to 4096, 1024 by default. Another value fails with E1409. The browser reserves address space for the whole maximum when the engine starts. So a larger maximum leaves less room for other engines and WebAssembly modules on the page. Ask for more only when a scene needs it. The single-threaded build's memory is not shared, so this option does not change it. The `?memory=<MiB>` switch wins over it. |
+| `maxLabels?: number` | The most HTML labels that the sketch can track at once with `ui.trackLabel`: a whole number from 1 to 65,536, 4,096 by default. Another value fails with E1213. The engine keeps three tables of 16 bytes per label in memory that its threads share, so 4,096 labels take 192 KB. |
 | `onProgress?: (stage: StartupStage) => void` | Called as the start reaches each stage, in this order: `core` once the engine core is compiled and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the GPU has finished the first frame. |
 | `onSketchMessage?: (name: string, data: unknown) => void` | Receives the messages the sketch sends with `ctx.page.post`, from the start of the sketch's setup. Use it for progress that the sketch reports while it loads. `engine.onSketchMessage` adds more handlers once the engine has started. |
 | `signal?: AbortSignal` | Cancels a start in progress, for example when the user leaves the page. `createEngine` then stops the engine's threads and rejects with the signal's reason. |
@@ -337,6 +343,7 @@ type ErrorCode =
 	| 'E1216'
 	| 'E1217'
 	| 'E1218'
+	| 'E1219'
 	| 'E1301'
 	| 'E1302'
 	| 'E1303'

@@ -38,6 +38,7 @@ export const OP_END_COMPUTE_PASS = 44;
 export const OP_COPY_BUFFER_TO_BUFFER = 48;
 export const OP_COPY_TEXTURE_TO_TEXTURE = 49;
 export const OP_RELEASE_IMAGE = 51;
+export const OP_DESTROY_PIPELINE = 52;
 export const OP_SUBMIT = 63;
 
 export const NO_TARGET = 4294967295;
@@ -180,6 +181,8 @@ export const TEMPLATE_LIGHT_COUNT = 17;
 export const TEMPLATE_LIGHT_PLACE = 18;
 export const TEMPLATE_LIGHT_WRITE = 19;
 export const TEMPLATE_SKIN = 20;
+export const TEMPLATE_SPRITE = 22;
+export const TEMPLATE_SPRITE_MAP = 23;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;

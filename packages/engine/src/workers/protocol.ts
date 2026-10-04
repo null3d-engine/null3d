@@ -143,6 +143,8 @@ export type WorkerReply =
 	| { type: 'quality'; update: QualityUpdate }
 	/** The sketch asked to show or hide the stats overlay, which the page draws. */
 	| { type: 'stats'; show: boolean }
+	/** The slot in the label table of a label's id and its generation, or -1 once it has none. */
+	| { type: 'label'; id: string; slot: number; generation: number }
 	| ({ type: 'captured' } & CapturedFrame)
 	| { type: 'captured-image'; image: Blob }
 	| { type: 'capture-failed'; message: string };

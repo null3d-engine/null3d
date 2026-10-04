@@ -57,11 +57,12 @@ export interface EnginePart {
  * The glTF loader loads there too with the sketch's first glTF file, and starts the glTF worker,
  * which parses files. The glTF worker loads the meshopt decoder with the first file that holds
  * meshopt data. The readers of color grading tables load in the thread that runs the sketch with
- * the first table.
+ * the first table, and the sprite code with the first sprite batch.
  * The preset check loads after the first frame, in the thread that runs the sketch, so no download
  * before the first frame counts it. The stats overlay loads on the page when the sketch first asks
  * for it, and the frame figures that it and `debug.frameStats` read load with it, or in the thread
  * that runs the sketch at the first call of `debug.frameStats`. No download counts them either.
+ * The loop that moves label elements loads on the page with the first `engine.labels.bind`.
  * The WebGL call timing of benchmark pages loads in the thread that draws, only with ?gl-timing.
  */
 export const ENGINE_PARTS: readonly EnginePart[] = [
@@ -76,6 +77,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-lut.js', module: 'scene/lut-files.ts', loadedBy: 'page-sketch-runner.js' },
+	{ name: 'page-sprites.js', module: 'scene/sprites.ts', loadedBy: 'page-sketch-runner.js' },
 	{
 		name: 'page-preset-check.js',
 		module: 'sketch/preset-check.ts',
@@ -84,6 +86,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	},
 	{ name: 'page-stats-overlay.js', module: 'debug/overlay.ts', loadedBy: 'page.js' },
 	{ name: 'page-frame-stats.js', module: 'debug/stats.ts', loadedBy: 'page-stats-overlay.js' },
+	{ name: 'page-label-loop.js', module: 'page/label-loop.ts', loadedBy: 'page.js' },
 	{ name: 'sketch-worker.js', module: 'workers/sketch-worker.ts' },
 	{ name: 'sketch-worker-renderer.js', module: 'render/draw.ts', loadedBy: 'sketch-worker.js' },
 	{
@@ -96,6 +99,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'gltf-worker.js', module: 'workers/gltf-worker.ts', loadedBy: 'sketch-worker-gltf.js' },
 	{ name: 'gltf-meshopt.js', module: 'scene/gltf-meshopt.ts', loadedBy: 'gltf-worker.js' },
 	{ name: 'sketch-worker-lut.js', module: 'scene/lut-files.ts', loadedBy: 'sketch-worker.js' },
+	{ name: 'sketch-worker-sprites.js', module: 'scene/sprites.ts', loadedBy: 'sketch-worker.js' },
 	{
 		name: 'sketch-worker-preset-check.js',
 		module: 'sketch/preset-check.ts',

@@ -144,12 +144,16 @@ pub enum Op {
     /// [image id]: closes an image that the backend holds, once no later command uploads it. A
     /// backend that holds no such image does nothing, as when a capture replays a list again.
     ReleaseImage = 51,
+    /// [pipeline id]: releases a render pipeline that no later command uses, such as the pipelines
+    /// of a custom material whose last material was destroyed. A backend that holds no such
+    /// pipeline does nothing, as when a capture replays a list again.
+    DestroyPipeline = 52,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,
 }
 
 impl Op {
-    pub const ALL: [Op; 38] = [
+    pub const ALL: [Op; 39] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -187,6 +191,7 @@ impl Op {
         Op::CopyBufferToBuffer,
         Op::CopyTextureToTexture,
         Op::ReleaseImage,
+        Op::DestroyPipeline,
         Op::Submit,
     ];
 
@@ -233,6 +238,7 @@ impl Op {
             Op::CopyBufferToBuffer => "COPY_BUFFER_TO_BUFFER",
             Op::CopyTextureToTexture => "COPY_TEXTURE_TO_TEXTURE",
             Op::ReleaseImage => "RELEASE_IMAGE",
+            Op::DestroyPipeline => "DESTROY_PIPELINE",
             Op::Submit => "SUBMIT",
         }
     }
@@ -246,19 +252,11 @@ pub mod reserved {
     pub const DISPATCH_INDIRECT: u8 = 43;
     /// Copies texels into a buffer, to read a frame or computed values back.
     pub const COPY_TEXTURE_TO_BUFFER: u8 = 50;
-    /// Releases a render or compute pipeline: a destroyed custom material's, or one that a
-    /// reloaded shader replaced.
-    pub const DESTROY_PIPELINE: u8 = 52;
     /// Reads part of a buffer back into engine memory once the GPU has run the commands before it,
     /// a frame or more later: the object ids that GPU picking draws under the pointer.
     pub const READ_BUFFER: u8 = 53;
 
-    pub const ALL: [u8; 4] = [
-        DISPATCH_INDIRECT,
-        COPY_TEXTURE_TO_BUFFER,
-        DESTROY_PIPELINE,
-        READ_BUFFER,
-    ];
+    pub const ALL: [u8; 3] = [DISPATCH_INDIRECT, COPY_TEXTURE_TO_BUFFER, READ_BUFFER];
 }
 
 /// A target slot left empty in `BeginRenderPass`.
@@ -654,9 +652,11 @@ pub mod permutation {
     pub const DEBUG_VIEW_LOW: u32 = 1024;
     /// The high bit of the debug view's number.
     pub const DEBUG_VIEW_HIGH: u32 = 2048;
-    /// The depth template draws the camera's depth prepass: it clips what lies in front of the
-    /// near plane, as the templates that shade do. Without it, the shadow passes flatten casters
-    /// there onto the near face.
+    /// The pipeline draws the camera's depth prepass. On WebGPU it is a build of the depth
+    /// template, which clips what lies in front of the near plane, as the templates that shade
+    /// do; without the bit, the shadow passes flatten casters there onto the near face. On WebGL2
+    /// it marks a mesh template's pipeline, which the backend draws with the vertex shader of the
+    /// template's build without the bit and a fragment shader that writes nothing.
     pub const PREPASS: u32 = 4096;
     /// The fragment shader does its color math at half precision: lighting, tone mapping and
     /// sRGB encoding. WebGPU builds use 16-bit floats, which need the device feature
@@ -1203,6 +1203,13 @@ pub mod template {
     /// The skinning compute shader, which skins the parts of skinned meshes into a buffer of
     /// skinned vertices.
     pub const SKIN: u32 = 20;
+    /// Sprites: quads of instance batch rows that face the camera, whose world matrices hold each
+    /// sprite's size, rotation, color and atlas frame packed (see `null3d_core::sprites`), in the
+    /// material's color.
+    pub const SPRITE: u32 = 22;
+    /// [`SPRITE`] times the material's map, at each sprite's frame of the atlas. The bind group of
+    /// index 1 is the map's, as for [`INSTANCED_UNLIT_MAP`].
+    pub const SPRITE_MAP: u32 = 23;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1518,6 +1525,8 @@ pub fn typescript_constants() -> String {
                 ("LIGHT_PLACE", template::LIGHT_PLACE),
                 ("LIGHT_WRITE", template::LIGHT_WRITE),
                 ("SKIN", template::SKIN),
+                ("SPRITE", template::SPRITE),
+                ("SPRITE_MAP", template::SPRITE_MAP),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),
@@ -1708,6 +1717,10 @@ mod tests {
             (
                 "unlit_map",
                 include_str!("../../null3d-shaders/wgsl/unlit_map.wgsl"),
+            ),
+            (
+                "sprite",
+                include_str!("../../null3d-shaders/wgsl/sprite.wgsl"),
             ),
         ];
         for (name, source) in templates {

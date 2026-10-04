@@ -8,7 +8,7 @@ summary: "create, test, bench, shot, assets, docs, port, skills, mcp, doctor."
 
 # The `null3d` command
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The commands `create`, `assets`, `docs`, `port`, `skills`, `mcp` and `doctor` are not built yet, so coding agents must not use them. `test` runs image tests, but no behavior tests yet.
+> Ships in null3D 0.1, with `assets optimize` and `assets env` from 0.2. The API is experimental, so it can still change between versions. The commands `create`, `docs`, `port`, `skills`, `mcp` and `doctor` are not built yet. Of `assets`, only `optimize` and `env` are built. Coding agents must not use the others. `test` runs image tests, but no behavior tests yet.
 
 The `@null3d/cli` package holds the `null3d` command. You need no command to build or run a sketch: Vite and the null3D Vite plugin do that. The command does jobs that a bundler does not do, such as drawing a frame of your scene with no person watching.
 
@@ -252,6 +252,39 @@ When a run fails, `bench` says why after the figures of its path, and exits with
 - Compare runs on one computer, one after another.
 - Vite builds `index.html` alone, unless `build.rolldownOptions.input` in your Vite config lists more pages. For a page outside the build, `bench` says so.
 - The page must start the engine as it loads. A page that waits for a click never starts the engine, so `bench` gives up after `--timeout` seconds.
+
+## assets
+
+`assets optimize` makes glTF models smaller and faster to load and draw. It stores each mesh's vertices as 8-bit and 16-bit integers, in the order that the GPU reads them fastest. It encodes each texture as a KTX2 file with every mip level. Each model becomes one `.glb` file in the output folder, with its textures in a `textures` folder beside it. It prints a budget report for each model.
+
+```sh
+bunx @null3d/cli assets optimize models/ public/models/ --lod --max-texture-size 1024
+```
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--lod` | Adds levels of detail to each mesh of 256 triangles or more | No levels |
+| `--max-texture-size <pixels>` | The largest side of a texture: a power of two up to 2048 | 2048 |
+| `--texture-quality <size\|high>` | `high` encodes color and data maps in UASTC instead of ETC1S | `size` |
+| `--compression <none\|meshopt>` | `none` leaves the buffers uncompressed, without `EXT_meshopt_compression` | `meshopt` |
+| `--jobs <count>` | The worker threads that encode textures | One per CPU core |
+| `--report <file.json>` | Also writes the budget report as a JSON file | No file |
+
+It exits with 1 when a model fails, after it writes the others. [The asset pipeline](../guides/assets-pipeline.md) says what each step does, and how the Vite plugin runs the same steps when a module imports a model with `?optimized`.
+
+`assets env` makes an environment map from an equirectangular HDR image, a Radiance (`.hdr`) or OpenEXR (`.exr`) file. The output is one KTX2 file. It holds a cube map with a level for each roughness, filtered as the engine's materials reflect light. It also holds nine spherical harmonics coefficients of the diffuse light.
+
+```sh
+bunx @null3d/cli assets env hdri/venice_sunset_2k.hdr public/env/venice.ktx2 --size 512
+```
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--size <texels>` | The width of the cube map's largest faces: a power of 2 from 32 to 2048 | 256 |
+| `--format <rgb9e5ufloat\|rgba16float>` | The texel format: 4 or 8 bytes per texel | `rgb9e5ufloat` |
+| `--builtin room` | Writes the engine's built-in room instead of reading an image, and takes only the output file | An input file |
+
+It exits with 1 when the input cannot be read. [The asset pipeline](../guides/assets-pipeline.md#environment-maps) says what the file holds. The other asset commands, `convert`, `pack-orm` and `normal-from-bump`, are not built yet.
 
 ## Where the commands draw
 

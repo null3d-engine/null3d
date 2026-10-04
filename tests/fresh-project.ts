@@ -4,14 +4,25 @@
 // the tarballs there with Bun. In that project it runs the command-line tool's test command twice:
 // once to keep the images of the first run as the references, then once to match them. The test
 // command type checks the project against the packages' declarations, and draws the project's
-// sketch on every GPU tier. Last, it builds the project for production. Run `bun run build` first,
-// for the WebAssembly files. Run from the repository root:
+// sketch on every GPU tier. Then the tool optimizes a model, and last, it builds the project for
+// production. Run `bun run build` first, for the WebAssembly files. Run from the repository root:
 //   bun run test:packages [--keep]    --keep leaves the project's folder in place after a pass
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	copyFileSync,
+	cpSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_PACK_DIR, type PackedPackage, packPackages } from '../tools/lib/packages.ts';
+import { ASSET_SCENE } from './lib/asset-scene.ts';
 
 const ROOT = join(import.meta.dirname, '..');
 /** The project's files besides its package manifest. */
@@ -83,6 +94,13 @@ function main(): void {
 		const cli = join(project, 'node_modules/.bin/null3d');
 		step('Keep the first images as references', project, cli, ['test', '--update-references']);
 		step('Match the references', project, cli, ['test']);
+		// The asset tool from the tarball: its encoder, its worker and its dependencies.
+		mkdirSync(join(project, 'models'));
+		copyFileSync(join(ROOT, ASSET_SCENE.source), join(project, 'models/scene.glb'));
+		step('Optimize a model', project, cli, ['assets', 'optimize', 'models', 'public/models']);
+		const textures = readdirSync(join(project, 'public/models/textures'));
+		if (!existsSync(join(project, 'public/models/scene.glb')) || textures.length !== 3)
+			throw new Error(`the asset tool wrote ${textures.length} textures, not 3, or no model`);
 		step('Production build', project, join(project, 'node_modules/.bin/vite'), ['build']);
 		// The threaded core and the single-threaded one.
 		const cores = readdirSync(join(project, 'dist/assets')).filter((file) =>

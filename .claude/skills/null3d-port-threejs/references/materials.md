@@ -2,7 +2,7 @@
 
 Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `concepts/color-management`, `shaders/surface-functions`.
 
-Versions: every `materials.standard` option in section 1 is built, unless its row gives a version, and the material shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity`, `map` and `uvTransform`. Both take `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest` and `depthBias`, and the standard material also takes `flatShading`. Custom materials (`materials.shader`) are built: surface functions, vertex offsets, uniforms and full shaders. They take every standard option but the texture maps. Texture maps and textures in custom materials come in 0.2, so the recipes that sample a texture wait for them.
+Versions: every `materials.standard` option in section 1 is built, unless its row gives a version, and the material shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity`, `map` and `uvTransform`. Both take `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest` and `depthBias`, and the standard material also takes `flatShading`. Custom materials (`materials.shader`) are built: surface functions, vertex offsets, uniforms and full shaders. They take every standard option but the texture maps. Textures in custom materials (0.2) are built, so the alpha map recipe works. The matcap recipe also needs `camera.view`, which comes later in 0.2.
 
 ## Contents
 
@@ -84,7 +84,7 @@ Both become `materials.standard` with `metalness: 0`. The standard material adds
 
 ## 5. MeshToonMaterial and MeshMatcapMaterial
 
-Both become surface-function recipes (section 8). Toon shading needs light-band steps. Surface functions cannot read the scene's lights yet, so the recipe takes the light's direction as a uniform. Matcap looks up a texture by view-space normal and ignores scene lights, as three.js's matcap does. It needs textures in custom materials and the camera's view matrix, both in 0.2.
+Both become surface-function recipes (section 8). Toon shading needs light-band steps. Surface functions cannot read the scene's lights yet, so the recipe takes the light's direction as a uniform. Matcap looks up a texture by view-space normal and ignores scene lights, as three.js's matcap does. It needs textures in custom materials (0.2, built) and the camera's view matrix, which comes later in 0.2.
 
 ## 6. Other three.js materials
 
@@ -95,7 +95,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 | `ShadowMaterial` | `materials.shadowCatcher({ opacity })` (0.2) |
 | `PointsMaterial` | Options of `scene.createPoints`: `size`, `sizeAttenuation`, `texture`, `colors` (0.2) |
 | `LineBasicMaterial`, `LineDashedMaterial`, `LineMaterial` | Options of `scene.createLines`: `width`, `widthUnits`, `dashed`, `colors` (0.2) |
-| `SpriteMaterial` | Options of `scene.createSprites`: `texture` or `atlas`, `sizeMode`, `rotation` (0.2) |
+| `SpriteMaterial` | Options of `scene.createSprites`: `map`, `atlas`, `color`, `opacity`, `sizeAttenuation` (sizes in CSS pixels when false), `alphaMode` (`'blend'` by default), `blending`; `rotation` is the batch's `rotations` array, one per sprite (0.2) |
 | `ShaderMaterial`, `RawShaderMaterial` | `materials.shader` in WGSL: a surface function, or a full shader (`references/shaders.md`) |
 | `NodeMaterial` and TSL materials | `materials.shader` with a surface function (`references/shaders.md`) |
 
@@ -120,7 +120,7 @@ Texture formats: `loadTexture` decodes PNG, JPEG and WebP files, and AVIF files 
 
 ## 8. Recipes
 
-The toon and clipping recipes work now. The matcap and alpha map recipes sample a texture, so they wait for textures in custom materials (0.2).
+The toon, clipping and alpha map recipes work now. The matcap recipe waits for `camera.view` (later in 0.2).
 
 Toon shading with three bands:
 
@@ -142,12 +142,14 @@ const toon = materials.shader({
 });
 ```
 
-Matcap (0.2), which needs textures in custom materials and `camera.view`:
+Matcap, which waits for `camera.view` (later in 0.2):
 
 ```ts
 const matcap = materials.shader({
   textures: { matcap: await assets.loadTexture('/tex/matcap-clay.ktx2', { colorSpace: 'srgb' }) },
   wgsl: /* wgsl */ `
+    var matcap: texture_2d<f32>;
+
     fn surface(input: SurfaceInput) -> Surface {
       var s = defaultSurface(input);
       let n = normalize((camera.view * vec4f(input.normal, 0.0)).xyz);
@@ -177,13 +179,15 @@ const clipped = materials.shader({
 });
 ```
 
-Alpha map (0.2), which needs textures in custom materials. three.js reads the G channel:
+Alpha map (0.2). three.js reads the G channel:
 
 ```ts
 const leaf = materials.shader({
   alphaMode: 'mask', alphaCutoff: 0.5,
   textures: { alphaTex: await assets.loadTexture('/tex/leaf-alpha.ktx2', { colorSpace: 'linear' }) },
   wgsl: /* wgsl */ `
+    var alphaTex: texture_2d<f32>;
+
     fn surface(input: SurfaceInput) -> Surface {
       var s = defaultSurface(input);
       s.alpha = s.alpha * textureSample(alphaTex, alphaTexSampler, input.uv).g;
