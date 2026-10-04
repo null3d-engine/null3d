@@ -904,6 +904,10 @@ impl MockBackend {
             Op::ReleaseImage => {
                 self.images.remove(&o[0]);
             }
+            Op::DestroyPipeline => {
+                self.outside_passes(op)?;
+                self.render_pipelines.remove(&o[0]);
+            }
             Op::CopyTextureToTexture => self.copy_texture(op, o)?,
             Op::CreateSampler => self.create_sampler(op, o)?,
             Op::ResizeCanvas => {

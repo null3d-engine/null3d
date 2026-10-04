@@ -38,7 +38,7 @@ use crate::materials::{
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
-use crate::pipelines::{DepthBias, DrawKey};
+use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
     CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings, fit_cascades,
@@ -489,8 +489,11 @@ pub struct SceneSettings {
     materials: MaterialTable,
     textures: TextureStore,
     /// The bind group of each material's maps, by material id, for the standard materials with a
-    /// live map, and 0 for the others.
+    /// live map and the custom materials with textures, and 0 for the others.
     map_groups: Vec<u32>,
+    /// Scratch marks of the material ids that objects and batches use, for the release of
+    /// destroyed materials' ids.
+    used_materials: Vec<bool>,
     /// The texture that the camera's view draws behind every object, or `Handle::NONE`.
     background_texture: Handle,
     /// The views, the camera's first.
@@ -544,6 +547,7 @@ impl SceneSettings {
             materials: MaterialTable::with_capacity(max_materials),
             textures,
             map_groups: Vec::new(),
+            used_materials: Vec::new(),
             background_texture: Handle::NONE,
             views: vec![View::default()],
             lighting: Lighting {
@@ -863,11 +867,12 @@ impl SceneSettings {
                 let map = self.materials.map(material - 1, MapSlot::BaseColor);
                 self.textures.group_id(map).unwrap_or(0)
             }
-            template::INSTANCED_STANDARD_MAPS => self
-                .map_groups
-                .get(material as usize - 1)
-                .copied()
-                .unwrap_or(0),
+            maps if maps == template::INSTANCED_STANDARD_MAPS || maps >= template::CUSTOM_FIRST => {
+                self.map_groups
+                    .get(material as usize - 1)
+                    .copied()
+                    .unwrap_or(0)
+            }
             _ => 0,
         }
     }
@@ -880,15 +885,49 @@ impl SceneSettings {
             .any(|&map| self.textures.is_live(map))
     }
 
-    /// Finds the bind group of each standard material's maps, before the draw tables are built
-    /// again. A texture that moves to another array changes its material's group, and such a move
-    /// comes with a rebuild.
-    pub(crate) fn update_map_groups(&mut self) {
+    /// Gets the materials ready for a rebuild of the draw tables. Destroyed materials that no
+    /// object or batch names give their ids back, and the pipelines of custom templates that no
+    /// live material draws with are released. Then each material that samples maps finds its bind
+    /// group: a standard material with a live map, and a custom material with textures, whose
+    /// slots without a texture bind a white texel. A texture that moves to another array changes
+    /// its material's group, and such a move comes with a rebuild.
+    pub(crate) fn prepare_rebuild(
+        &mut self,
+        scene: &SceneStorage,
+        batches: &BatchTable,
+        pipelines: &mut PipelineCache,
+    ) {
         let count = self.materials.len();
+        if self.materials.has_destroyed() {
+            let used = &mut self.used_materials;
+            used.clear();
+            used.resize(count as usize, false);
+            let named = scene
+                .materials()
+                .iter()
+                .copied()
+                .chain(batches.iter().map(|(_, batch)| batch.material()));
+            for material in named {
+                if let Some(mark) = material
+                    .checked_sub(1)
+                    .and_then(|id| used.get_mut(id as usize))
+                {
+                    *mark = true;
+                }
+            }
+            self.materials
+                .release_unused(|id| used.get(id as usize).copied().unwrap_or(false));
+            let materials = &self.materials;
+            pipelines.release(|template| materials.custom_template_unused(template));
+        }
         self.map_groups.resize(count as usize, 0);
         for id in 0..count {
-            let standard = self.materials.shading(id) == Ok(Shading::Lit);
-            self.map_groups[id as usize] = if standard && self.has_live_map(id) {
+            let samples = match self.materials.shading(id) {
+                Ok(Shading::Lit) => self.has_live_map(id),
+                Ok(Shading::Custom(custom)) => custom.textures > 0,
+                _ => false,
+            };
+            self.map_groups[id as usize] = if samples {
                 let maps = self.materials.maps(id);
                 self.textures.map_set_group(&maps).unwrap_or(0)
             } else {

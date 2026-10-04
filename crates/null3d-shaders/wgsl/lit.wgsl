@@ -31,8 +31,10 @@ enable draw_index;
 // `object` of null3d::builtins, which each stage fills under CUSTOM; the frame's uniform block is
 // `engine_frame` here. When their WGSL declares `struct Uniforms`, the build adds
 // `load_material_uniforms` after it, and CUSTOM_UNIFORMS makes each stage fill `material` with the
-// uniforms. Their WGSL shares this file's names, so the template imports library items by name and
-// keeps its own names few. It never imports a module whole, which would reserve the module's name
+// uniforms. When their WGSL declares textures, the build binds them in the maps' bind group and
+// adds `load_custom_texture_layers`, which CUSTOM_TEXTURES makes each stage call. Their WGSL
+// shares this file's names, so the template imports library items by name and keeps its own names
+// few. It never imports a module whole, which would reserve the module's name
 // in their WGSL too. Names that only the MAPS builds declare stay free for custom materials, which
 // build without maps.
 #import null3d::lighting::{PbrMaterial, dfg_lut, multiscatter_compensation, pbr_material}
@@ -365,6 +367,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #ifdef CUSTOM_UNIFORMS
     material = load_material_uniforms(found.material);
 #endif
+#ifdef CUSTOM_TEXTURES
+    load_custom_texture_layers(found.material);
+#endif
     var out: VertexOut;
 #ifdef SKIN
     let skin = skin_of(found, v.joints, v.weights);
@@ -486,6 +491,9 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #ifdef CUSTOM_UNIFORMS
     material = load_material_uniforms(in.material);
+#endif
+#ifdef CUSTOM_TEXTURES
+    load_custom_texture_layers(in.material);
 #endif
     var input: SurfaceInput;
     input.relativePosition = in.relative;

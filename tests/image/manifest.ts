@@ -717,6 +717,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			sameOnEveryTier: true,
 		}),
 	),
+	// The characters with a custom material that samples a texture, which WebGPU skins in the
+	// skinning pass and WebGL2 in the vertex shader of the material's own skinned builds.
+	{
+		name: 'skinning-custom-textures',
+		sketch: 'tests/pages/sketches/skinning-sketch.ts?textured',
+		hold: SKINNING_HOLD,
+		size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+		sameOnEveryTier: true,
+	},
 	// The same characters from a quantized mesh, whose joints, weights and normals both paths
 	// read in their own types: it draws the image of floats, within the steps of 8-bit normals.
 	{
@@ -932,6 +941,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/custom-dissolve-sketch.ts',
 		hold: 0,
 		size: [480, 270],
+	},
+	// Custom materials with textures: two textures that a surface function samples, the same WGSL
+	// without them, which samples white, a vertex offset that reads a height in the vertex stage,
+	// and a texture with a nearest filter. The thread modes send textures and shaders apart.
+	{
+		name: 'custom-textures',
+		sketch: 'tests/pages/sketches/custom-textures-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
 	},
 	// Each texture map of the standard material, made in code: base color, metal-rough, normal maps
 	// on quads with and without tangents, occlusion, emissive, a light map on the second texture

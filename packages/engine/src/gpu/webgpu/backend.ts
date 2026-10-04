@@ -521,8 +521,23 @@ export class WebGPUBackend {
 	}
 
 	private built<T>(table: (T | null | undefined)[], id: number, pipeline: T): void {
-		table[id] = pipeline;
+		// A pipeline destroyed while it built stays gone.
+		if (table[id] === null) table[id] = pipeline;
 		this.builds--;
+	}
+
+	/**
+	 * Forgets a render pipeline, which the browser frees once nothing holds it. One that waits for
+	 * its custom material's shader stops waiting. A pipeline that is gone already, as when a
+	 * capture replays a list again, changes nothing.
+	 */
+	private destroyPipeline(id: number): void {
+		const parked = this.parked.findIndex((operands) => operands[0] === id);
+		if (parked >= 0) {
+			this.parked.splice(parked, 1);
+			this.builds--;
+		}
+		this.renderPipelines[id] = undefined;
 	}
 
 	private failed(error: unknown): void {
@@ -636,6 +651,9 @@ export class WebGPUBackend {
 				}
 				case G.OP_RELEASE_IMAGE:
 					this.images.release(words[a] as number);
+					break;
+				case G.OP_DESTROY_PIPELINE:
+					this.destroyPipeline(words[a] as number);
 					break;
 				case G.OP_GENERATE_MIPMAPS:
 					this.generateMipmaps(words[a] as number, words[a + 1] as number);

@@ -185,10 +185,12 @@ export type {
 	TextureWrap,
 } from './scene/textures';
 export type {
+	TextureValues,
 	UniformType,
 	UniformValue,
 	UniformValueByType,
 	UniformValues,
+	WgslTextures,
 	WgslUniforms,
 } from './scene/wgsl-uniforms';
 export type { PhaseName } from './shared/metrics';

@@ -1,7 +1,7 @@
 // Type tests of how TypeScript reads `struct Uniforms` from WGSL text: `bun run typecheck` checks
 // this file. Each line asserts the uniforms that one piece of WGSL gives, as the shader build reads
 // them, and the build stops at WGSL that it cannot read, so such WGSL takes any name.
-import type { UniformType, WgslUniforms } from '@null3d/engine';
+import type { UniformType, WgslTextures, WgslUniforms } from '@null3d/engine';
 
 /** True when two types are the same type. */
 type Same<A, B> =
@@ -75,3 +75,16 @@ check<
 >();
 check<Same<WgslUniforms<{ kind: 'material'; uniforms: readonly never[] }>, None>>();
 check<Same<WgslUniforms<{ kind: 'material' }>, Any>>();
+
+// Textures: each `var name: texture_2d<f32>;`, with any spacing, and no other variable.
+check<
+	Same<
+		WgslTextures<'var a: texture_2d<f32>;\nvar  b :texture_2d< f32 > ;\nfn f() { var c = 1.0; }'>,
+		'a' | 'b'
+	>
+>();
+check<Same<WgslTextures<'var a: texture_3d<f32>;\nvar<private> b: texture_2d<f32>;'>, never>>();
+check<
+	Same<WgslTextures<'fn f() { var x = g(); let y: f32 = 1.0; }\nvar t: texture_2d<f32>;'>, 't'>
+>();
+check<Same<WgslTextures<string>, string>>();

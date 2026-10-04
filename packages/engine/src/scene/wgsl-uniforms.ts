@@ -1,5 +1,6 @@
-// The types of the uniforms that custom WGSL declares in `struct Uniforms`, so that the type check
-// catches a wrong uniform name or a value of the wrong kind. Types only: nothing here runs.
+// The types of the uniforms that custom WGSL declares in `struct Uniforms`, and the names of its
+// textures, so that the type check catches a wrong name or a value of the wrong kind. Types only:
+// nothing here runs.
 //
 // WGSL reaches the engine in two forms, and the types come from each in its own way:
 // - A `.wgsl` file that a module imports. TypeScript cannot read the file, so the null3D Vite plugin
@@ -10,6 +11,7 @@
 // the engine's run-time check stays the only check.
 
 import type { ColorInput } from './color';
+import type { Texture } from './textures';
 
 /**
  * A type that a uniform of custom WGSL can have, as a field of its `struct Uniforms`.
@@ -217,3 +219,53 @@ export type UniformValues<Wgsl> =
 			? { readonly [name: string]: UniformValue | undefined }
 			: { readonly [Name in keyof Uniforms]?: UniformValueByType[Uniforms[Name]] }
 		: never;
+
+/**
+ * The names of the texture declarations in WGSL text, `var name: texture_2d<f32>;`, as one union.
+ * It reads each `var ` in turn, so a commented-out declaration adds a name. That costs no false
+ * error: the engine still checks the names when it runs.
+ */
+type TextTextures<Wgsl extends string, Found extends string = never> = string extends Wgsl
+	? string
+	: Wgsl extends `${string}var ${infer Rest}`
+		? Rest extends `${infer Name}:${infer Type};${infer After}`
+			? Trim<Name> extends `${string}${Space | ';' | '=' | '(' | '<' | '{'}${string}`
+				? TextTextures<Rest, Found>
+				: Squeeze<Type> extends 'texture_2d<f32>'
+					? TextTextures<After, Found | Trim<Name>>
+					: TextTextures<Rest, Found>
+			: Found
+		: Found;
+
+/** The names of the textures that compiled WGSL lists. */
+type CompiledTextures<Wgsl> = Wgsl extends {
+	readonly textures: readonly (infer Texture extends { name: string })[];
+}
+	? Texture['name']
+	: string;
+
+/**
+ * The names of the textures that WGSL declares as `var name: texture_2d<f32>;`, as one union, such
+ * as `'detail' | 'noise'`. TypeScript sees them in a template literal that a `wgsl` block comment
+ * tags. It sees them in a `.wgsl` file once the null3D Vite plugin has written the file's
+ * declaration. WGSL whose textures TypeScript cannot see gives `string`, which takes any name.
+ *
+ * @category api/materials
+ */
+export type WgslTextures<Wgsl> = [Wgsl] extends [string]
+	? TextTextures<Wgsl>
+	: CompiledTextures<Wgsl>;
+
+/**
+ * The textures of a custom material by name, each optional, which the `textures` option takes. A
+ * name that the WGSL does not declare fails the type check. WGSL whose textures TypeScript cannot
+ * see takes any name, and the engine checks the names when it runs.
+ *
+ * @category api/materials
+ */
+export type TextureValues<Wgsl> =
+	string extends WgslTextures<Wgsl>
+		? { readonly [name: string]: Texture | undefined }
+		: [WgslTextures<Wgsl>] extends [never]
+			? { readonly [name: string]: never }
+			: { readonly [Name in WgslTextures<Wgsl>]?: Texture };
