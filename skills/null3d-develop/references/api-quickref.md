@@ -410,7 +410,7 @@ scene.overlapSphere(center, radius, opts, out);        // objects with a triangl
 scene.overlapBox(min, max, opts, out);                 // returns the count, as overlapSphere
 ```
 
-Hit objects are the same wrappers you created; `hit.instance` is the row of a batch, and `hit.triangle` is three.js's `faceIndex`. Queries test triangles, front faces only unless the material is `doubleSided`, and never hit hidden objects. They see the positions of the last frame's update, or this frame's in `onLateUpdate`. Create `ray`, `hit`, `opts` and the `hits` and `out` arrays once and reuse them: queries then allocate nothing.
+Hit objects are the same wrappers you created; `hit.instance` is the row of a batch, and `hit.triangle` is three.js's `faceIndex`. Queries test triangles, front faces only unless the material is `doubleSided`, and never hit hidden objects. They see the positions of the last frame's update, or this frame's in `onLateUpdate`. Create `ray`, `hit`, `opts` and the `hits` and `out` arrays once and reuse them: queries then allocate nothing. The first query after a mesh appears builds its tree, about 0.25 µs per triangle on the job workers. The asset tool's `--bvh <triangles>` stores the trees of large meshes in the file instead (default 20,000).
 
 ## 14. Input (`api/input`) and controls (`api/controls`)
 
@@ -440,14 +440,14 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping`, `exposure`, `bloom`, `lut` and `vignette` are built; the other effects come later in 0.2. The default tone mapping is ACES, while three.js defaults to none.
+`toneMapping`, `exposure`, `bloom`, `ao`, `lut` and `vignette` are built; the other effects come later in 0.2. The default tone mapping is ACES, while three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets.
 
 ```ts
 post.set({
   toneMapping: 'aces',      // 'aces' | 'agx' | 'neutral' | 'none'
   exposure: 1,
   bloom: { strength: 0.8, radius: 0.4, threshold: 0.9 },  // (0.2) UnrealBloomPass's meanings; false turns it off
-  ao: { radius: 0.5, intensity: 1 },     // (0.2) High and Ultra presets only
+  ao: { radius: 0.5, intensity: 1 },     // (0.2) GTAOPass's meanings; darkens only ambient light; false turns it off
   lut, lutIntensity: 0.8,                // (0.2) a table from assets.loadLut, or false; LUTPass's meanings
   vignette: { offset: 1, darkness: 1 },  // (0.2) VignetteShader's meanings; false turns it off
   outline: { color: '#ffcc00', thickness: 2 },  // (0.2) objects opt in with setOutlined(true)

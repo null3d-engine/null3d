@@ -17,6 +17,7 @@ import {
 	GPU_DELAY_US,
 	GRACE_MS,
 	LONGEST_RAISE_AFTER_MS,
+	LOWEST_AO_SCALE,
 	RAISE_AFTER_MS,
 	SCALE_STEP,
 	SETTLE_MS,
@@ -364,6 +365,30 @@ describe('the bloom steps', () => {
 		controller.setBloom(false, 1);
 		expect([controller.steps, controller.bloomDivisor]).toEqual([1, 1]);
 		expect(controller.stepChanges).toBe(before + 1);
+	});
+
+	it("halve ambient occlusion's scale last, while it draws at half the render size", () => {
+		const { controller, untilStep } = controlled(950);
+		controller.setBloom(true, 2);
+		controller.setAo(true, 500);
+		expect(controller.aoScale).toBe(500);
+		const seen: string[] = [];
+		for (let k = 0; k < 3; k++) {
+			untilStep(SLOW);
+			seen.push(`${controller.scale} ${controller.bloomDivisor} ${controller.aoScale}`);
+		}
+		// The scale drops to its lowest, then bloom reads a quarter, then ambient occlusion draws at
+		// a quarter.
+		expect(seen).toEqual(['950 2 500', '950 4 500', '950 4 250']);
+		expect(controller.maxSteps).toBe(2);
+		// Turned off, it takes its step back at once.
+		controller.setAo(false, 500);
+		expect([controller.steps, controller.aoScale]).toEqual([1, 500]);
+		// A quarter has no step, and a scale of 0 draws nothing to step.
+		controller.setAo(true, 250);
+		controller.setAo(true, 0);
+		expect(controller.maxSteps).toBe(1);
+		expect(LOWEST_AO_SCALE).toBe(250);
 	});
 
 	it('take no step from a setting that reads a quarter already', () => {

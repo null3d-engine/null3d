@@ -100,6 +100,9 @@ pub(super) struct Bucket {
     /// The id of the render pipeline that draws its depth in the depth prepass, or 0 for a bucket
     /// that the prepass leaves out.
     pub(super) prepass: u32,
+    /// True when that pipeline is the bucket's own template's, which reads the frame group and the
+    /// maps' group as the shading does, and false for the depth template's.
+    pub(super) prepass_own: bool,
     /// The bind group of its material's map, or 0 for a pipeline that reads none.
     pub(super) group: u32,
     pub(super) material: u32,
@@ -532,10 +535,12 @@ impl Layout {
                 self.skinned.push((self.buckets.len() as u32, object));
             }
             let regions = object.and_then(|object| skinning.parts_of(object));
+            let prepass_own = pipeline.places_own_vertices();
             let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
             self.buckets.push(Bucket {
                 pipeline,
                 prepass,
+                prepass_own,
                 group,
                 material,
                 base,

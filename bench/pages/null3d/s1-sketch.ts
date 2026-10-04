@@ -8,7 +8,8 @@
 // instead of boxes, for the allocation sample of sprite batches, and the `lines` switch as dashed
 // line segments, for the allocation sample of line batches. The `labels` switch adds that many
 // objects, each with an HTML label that moves on the canvas as the camera orbits, for the
-// allocation sample of the labels.
+// allocation sample of the labels. The `ao` switch turns ambient occlusion on at half size, and
+// changes its intensity every frame, for the allocation sample of its passes.
 import { defineSketch, type SketchContext } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { s1Camera } from '../../scenes/spec';
@@ -36,11 +37,18 @@ export default defineSketch(async (context) => {
 	const settings = { lutIntensity: 1, vignette };
 	if (grading)
 		void context.assets.loadLut(GRADING_LUTS.warm).then((lut) => context.post.set({ lut }));
+	const ao = switches.has('ao');
+	const occlusion = { ao: { intensity: 1 } };
+	if (ao) context.quality.set({ aoScale: 0.5 });
 	const pose = (t: number) => {
 		poseSwarm(t);
 		moveCamera(t);
 		animate(t);
 		morph(t);
+		if (ao) {
+			occlusion.ao.intensity = 0.75 + 0.25 * Math.sin(t);
+			context.post.set(occlusion);
+		}
 		if (!grading) return;
 		settings.lutIntensity = 0.5 + 0.5 * Math.sin(t);
 		vignette.offset = 1 + 0.25 * Math.cos(t);

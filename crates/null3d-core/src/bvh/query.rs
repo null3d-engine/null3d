@@ -22,7 +22,8 @@
 //!
 //! A sync builds the tree of each mesh that has none yet, on the job workers, so the first query
 //! after a mesh is created pays for its tree. Meshes are never destroyed, so each tree is built
-//! once.
+//! once. A mesh from a model file can bring the tree that the asset tool stored
+//! ([`SceneQueries::store_mesh_bvh`]), which the sync then uses instead of building one.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -119,6 +120,8 @@ pub struct SceneQueries {
     bvh: SceneBvh,
     /// Each mesh's tree, by mesh id less one.
     trees: Vec<MeshBvh>,
+    /// Stored trees of meshes that have no tree in `trees` yet, by mesh id.
+    stored: Vec<(u32, MeshBvh)>,
     raw: Vec<RawHit>,
     hits: Vec<QueryHit>,
     batch: Vec<Option<QueryHit>>,
@@ -297,6 +300,30 @@ impl SceneQueries {
         self.trees.get(id.checked_sub(1)? as usize)
     }
 
+    /// Gives mesh `id` a tree that was built before, such as one that a model file stores, which
+    /// a sync then uses instead of building one. The caller has checked it against the mesh's
+    /// triangles with [`MeshBvh::from_bytes`]. A mesh that has a tree already keeps it: both give
+    /// the same hits.
+    ///
+    /// # Errors
+    /// [`CoreError::OutOfMemory`] when the list of stored trees cannot grow.
+    pub fn store_mesh_bvh(&mut self, id: u32, tree: MeshBvh) -> Result<(), CoreError> {
+        let Some(index) = id.checked_sub(1) else {
+            return Ok(());
+        };
+        if (index as usize) < self.trees.len() {
+            return Ok(());
+        }
+        self.stored
+            .try_reserve(1)
+            .map_err(|_| CoreError::OutOfMemory {
+                bytes: std::mem::size_of::<(u32, MeshBvh)>() as u32,
+            })?;
+        self.stored.retain(|(m, _)| *m != id);
+        self.stored.push((id, tree));
+        Ok(())
+    }
+
     /// Builds the trees of the meshes that have none, on the job workers, and brings the
     /// scene's trees up to date (see [`SceneBvh::sync`]). Call it before the queries of a frame.
     ///
@@ -334,10 +361,28 @@ impl SceneQueries {
                 bytes: u32::try_from(more * std::mem::size_of::<MeshBvh>()).unwrap_or(u32::MAX),
             })?;
         self.trees.resize_with(count as usize, MeshBvh::default);
+        // Stored trees take their places, and the jobs build the others.
+        let mut built = vec![false; more];
+        for (id, tree) in self.stored.drain(..) {
+            let Some(k) = (id - 1).checked_sub(first) else {
+                continue;
+            };
+            if let (Some(slot), Some(done)) = (
+                self.trees.get_mut((first + k) as usize),
+                built.get_mut(k as usize),
+            ) {
+                *slot = tree;
+                *done = true;
+            }
+        }
         let failed = AtomicBool::new(false);
         let out = SharedMut::new(&mut self.trees[first as usize..]);
+        let built = &built;
         jobs.parallel_for(count - first, 1, &|range, _| {
             for k in range {
+                if built[k as usize] {
+                    continue;
+                }
                 let tree = meshes
                     .mesh(first + k + 1)
                     .map_or(Ok(MeshBvh::default()), |mesh| MeshBvh::build(&mesh));

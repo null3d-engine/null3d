@@ -195,7 +195,14 @@ export const POST_VALUE_LUT_DOMAIN_MIN = 5;
 export const POST_VALUE_LUT_DOMAIN_MAX = 8;
 export const POST_VALUE_VIGNETTE_OFFSET = 11;
 export const POST_VALUE_VIGNETTE_DARKNESS = 12;
-export const POST_VALUE_COUNT = 13;
+export const POST_VALUE_AO_RADIUS = 13;
+export const POST_VALUE_AO_THICKNESS = 14;
+export const POST_VALUE_AO_DISTANCE_EXPONENT = 15;
+export const POST_VALUE_AO_DISTANCE_FALLOFF = 16;
+export const POST_VALUE_AO_SCALE = 17;
+export const POST_VALUE_AO_SAMPLES = 18;
+export const POST_VALUE_AO_INTENSITY = 19;
+export const POST_VALUE_COUNT = 20;
 
 export const TEXTURE_STAT_MEMORY_BYTES = 0;
 export const TEXTURE_STAT_TEXTURE_BYTES = 1;

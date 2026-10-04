@@ -17,6 +17,7 @@
 
 import type { EngineError } from '../errors/engine-error';
 import {
+	FLAG_OCCLUDER,
 	FLAG_VISIBLE,
 	LAYERS_DEFAULT,
 	LIGHT_KIND_DIRECTIONAL,
@@ -32,6 +33,7 @@ import type { GltfAnswer, GltfRequest } from '../workers/gltf-worker';
 import { type AnimationRig, loadAnimationRig } from './animation';
 import { affineOf, multiplyAffine } from './gltf-math';
 import type {
+	BlockerData,
 	GltfData,
 	LightData,
 	MaterialData,
@@ -240,6 +242,8 @@ export async function loadGltf(
 			mesh: made[k] as MeshGeometry,
 			material: materials.of(p),
 			...morphOf(mesh as MeshData, p, n),
+			// The asset tool marks the primitives that block the view, as `setOccluder` does.
+			...(p.occluder && { flags: FLAG_VISIBLE | FLAG_OCCLUDER }),
 		}));
 		const light = n.light < 0 ? undefined : lights[n.light];
 		if (n.skinned) {
@@ -419,7 +423,10 @@ function isKtx2(bytes: Uint8Array): boolean {
 	return KTX2_IDENTIFIER.every((byte, k) => bytes[k] === byte);
 }
 
-/** The engine's meshes of a glTF mesh, one for each primitive. */
+/**
+ * The engine's meshes of a glTF mesh, one for each primitive, with the stored tree and the blocker
+ * that the asset tool gave each primitive.
+ */
 function makeMeshes(
 	context: GltfContext,
 	mesh: MeshData,
@@ -445,15 +452,42 @@ function makeMeshes(
 				},
 			}),
 		};
+		let made: MeshGeometry;
 		try {
-			return context.geometry.fromArrays(arrays);
+			made = context.geometry.fromArrays(arrays);
 		} catch (error) {
 			throw context.error(
 				'E1416',
 				`${call}() could not read ${address}: primitive ${k} of mesh "${mesh.name}" makes no mesh: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
+		if (p.bvh && !storeTree(context.core, made.id, p.bvh, call) && DEV_NOTES)
+			console.warn(
+				`${call}() found a stored tree in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so raycasts build their own. Optimize the file again.`,
+			);
+		if (typeof p.occluder === 'object') storeBlocker(context.core, made.id, p.occluder, call);
+		return made;
 	});
+}
+
+/**
+ * Gives a mesh the tree over its triangles that the file stores. Returns false when the tree does
+ * not fit the mesh, which then gets a tree of its own on the first raycast.
+ */
+function storeTree(core: CoreMemory, mesh: number, bytes: Uint8Array, call: string): boolean {
+	const words = Math.ceil(bytes.byteLength / 4);
+	const at = core.checkGrowth(core.glue.meshArrays(words), call);
+	new Uint8Array(core.u32(at, words).buffer, at, bytes.byteLength).set(bytes);
+	return core.glue.setMeshBvh(mesh, bytes.byteLength) === 1;
+}
+
+/** Gives a mesh the blocker that the file stores, which objects with the mesh draw in its place. */
+function storeBlocker(core: CoreMemory, mesh: number, blocker: BlockerData, call: string): void {
+	const { positions, indices } = blocker;
+	const at = core.checkGrowth(core.glue.meshArrays(positions.length + indices.length), call);
+	core.f32(at, positions.length).set(positions);
+	core.u32(at + positions.byteLength, indices.length).set(indices);
+	core.glue.setMeshBlocker(mesh, positions.length / 3, indices.length);
 }
 
 /**

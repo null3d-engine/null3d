@@ -183,7 +183,28 @@ export interface PrimitiveData {
 	max: [number, number, number];
 	/** The deltas of the primitive's morph targets, when it has any. */
 	morph?: MorphTargetsData;
+	/**
+	 * The stored tree over the primitive's triangles (`NULL3D_mesh_bvh`), which raycasts load
+	 * instead of building one.
+	 */
+	bvh?: Uint8Array;
+	/**
+	 * True when the primitive blocks the view for software occlusion culling (`NULL3D_occluder`),
+	 * with the blocker to draw in its place when the file holds one.
+	 */
+	occluder?: true | BlockerData;
 }
+
+/** A blocker mesh: three floats per corner, and three indices per triangle. */
+export interface BlockerData {
+	positions: Float32Array;
+	indices: Uint32Array;
+}
+
+/** The extension that holds a primitive's stored tree over its triangles. */
+export const MESH_BVH = 'NULL3D_mesh_bvh';
+/** The extension that makes a primitive block the view, with a blocker mesh or with its own. */
+export const OCCLUDER = 'NULL3D_occluder';
 
 export interface MeshData {
 	name: string;
@@ -825,7 +846,7 @@ function compressedView(
  */
 const ATTRIBUTES: readonly [
 	name: string,
-	field: Exclude<keyof PrimitiveData, 'indices' | 'material' | 'min' | 'max'>,
+	field: Exclude<keyof PrimitiveData, 'indices' | 'material' | 'min' | 'max' | 'bvh' | 'occluder'>,
 	components: readonly number[],
 	types: Readonly<Record<number, boolean | undefined>>,
 ][] = [
@@ -935,7 +956,46 @@ function parsePrimitive(
 	if (morph) out.morph = morph;
 	const material =
 		primitive.material === undefined ? -1 : count(primitive.material, `${what}'s material`);
-	return { ...(out as PrimitiveData), indices, material };
+	const data: PrimitiveData = { ...(out as PrimitiveData), indices, material };
+	const extensions = primitive.extensions as Entry | undefined;
+	if (extensions?.[MESH_BVH] !== undefined)
+		data.bvh = storedTree(entry(extensions[MESH_BVH], `${what}'s ${MESH_BVH}`), what, read);
+	if (extensions?.[OCCLUDER] !== undefined)
+		data.occluder = blockerOf(entry(extensions[OCCLUDER], `${what}'s ${OCCLUDER}`), what, read);
+	return data;
+}
+
+/** The bytes of a primitive's stored tree: an accessor of unsigned 32-bit integers. */
+function storedTree(extension: Entry, what: string, read: Reader): Uint8Array {
+	const data = read(Number(extension.tree), `${what}'s stored tree`);
+	if (data.componentType !== UNSIGNED_INT || data.components !== 1)
+		broken(`${what}'s stored tree is not an accessor of unsigned 32-bit integers`);
+	const { buffer, byteOffset, byteLength } = data.array;
+	return new Uint8Array(buffer, byteOffset, byteLength);
+}
+
+/** A primitive's blocker, or true when the primitive blocks with its own mesh. */
+function blockerOf(extension: Entry, what: string, read: Reader): true | BlockerData {
+	if (extension.positions === undefined && extension.indices === undefined) return true;
+	const positions = read(Number(extension.positions), `${what}'s blocker positions`);
+	const indices = read(Number(extension.indices), `${what}'s blocker indices`);
+	if (positions.componentType !== FLOAT || positions.components !== 3)
+		broken(`${what}'s blocker positions are not three floats per corner`);
+	if (
+		indices.components !== 1 ||
+		!(
+			indices.array instanceof Uint8Array ||
+			indices.array instanceof Uint16Array ||
+			indices.array instanceof Uint32Array
+		) ||
+		indices.count % 3 !== 0
+	)
+		broken(`${what}'s blocker indices are not unsigned integers in whole triangles`);
+	const corners = Uint32Array.from(indices.array);
+	for (const i of corners)
+		if (i >= positions.count)
+			broken(`${what}'s blocker has the index ${i}, past its ${positions.count} corners`);
+	return { positions: positions.array as Float32Array, indices: corners };
 }
 
 /** Triangle lists from a strip or a fan, as three.js's `toTrianglesDrawMode` makes them. */

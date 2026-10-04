@@ -810,3 +810,66 @@ describe('morph targets', () => {
 		expect(refusal(d.glb())[1]).toContain("node 0's weights is not 2 numbers");
 	});
 });
+
+describe('stored trees and blockers', () => {
+	/** A box whose primitive carries the extensions that `extensions` makes. */
+	const boxWith = (extensions: (b: GltfBuilder) => GltfJson) => {
+		const b = new GltfBuilder();
+		b.node({ mesh: b.mesh([{ ...boxPrimitive(b), extensions: extensions(b) }]) });
+		return b;
+	};
+
+	test('a primitive keeps the bytes of its stored tree and its blocker', () => {
+		const tree = new Uint32Array([0x5642_334e, 1, 12, 0]);
+		const corners = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
+		const b = boxWith((b) => ({
+			NULL3D_mesh_bvh: { tree: b.accessor(tree, 1) },
+			NULL3D_occluder: {
+				positions: b.accessor(corners, 3),
+				indices: b.accessor(new Uint8Array([0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3]), 1),
+			},
+		}));
+		const [p] = parse(b.glb()).meshes[0]?.primitives ?? [];
+		expect(new Uint32Array(p?.bvh?.slice().buffer ?? new ArrayBuffer(0))).toEqual(tree);
+		expect(p?.occluder).toEqual({
+			positions: corners,
+			indices: new Uint32Array([0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3]),
+		});
+	});
+
+	test('an occluder with no blocker blocks with its own mesh, and a plain primitive does not block', () => {
+		const own = boxWith(() => ({ NULL3D_occluder: {} }));
+		expect(parse(own.glb()).meshes[0]?.primitives[0]?.occluder).toBe(true);
+		const plain = parse(shipBuilder().glb()).meshes[0]?.primitives[0];
+		expect(plain?.occluder).toBeUndefined();
+		expect(plain?.bvh).toBeUndefined();
+	});
+
+	test('a tree or a blocker that breaks the rules gives E1416', () => {
+		const tree = boxWith((b) => ({ NULL3D_mesh_bvh: { tree: b.accessor(new Uint16Array(4), 1) } }));
+		expect(refusal(tree.glb())[1]).toContain(
+			'stored tree is not an accessor of unsigned 32-bit integers',
+		);
+		const flat = boxWith((b) => ({
+			NULL3D_occluder: {
+				positions: b.accessor(new Float32Array(6), 2),
+				indices: b.accessor(new Uint8Array([0, 1, 2]), 1),
+			},
+		}));
+		expect(refusal(flat.glb())[1]).toContain('blocker positions are not three floats per corner');
+		const partial = boxWith((b) => ({
+			NULL3D_occluder: {
+				positions: b.accessor(new Float32Array(9), 3),
+				indices: b.accessor(new Uint8Array([0, 1, 2, 0]), 1),
+			},
+		}));
+		expect(refusal(partial.glb())[1]).toContain('blocker indices are not unsigned integers');
+		const past = boxWith((b) => ({
+			NULL3D_occluder: {
+				positions: b.accessor(new Float32Array(9), 3),
+				indices: b.accessor(new Uint8Array([0, 1, 3]), 1),
+			},
+		}));
+		expect(refusal(past.glb())[1]).toContain('blocker has the index 3, past its 3 corners');
+	});
+});

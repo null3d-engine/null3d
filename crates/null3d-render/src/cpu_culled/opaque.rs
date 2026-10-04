@@ -82,6 +82,15 @@ pub(super) enum Shading {
     Depth,
 }
 
+/// The textures that a camera view's frame groups bind beside its own: the shadow map, the shadow
+/// atlas, and the texture of ambient occlusion.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct LitTextures {
+    pub(super) shadow_map: u32,
+    pub(super) atlas: u32,
+    pub(super) occlusion: u32,
+}
+
 /// Each view's rings, and how the device draws many buckets. The views are of one kind, in order
 /// from the first: the views of cameras, or the shadow cascades.
 #[derive(Debug)]
@@ -232,15 +241,15 @@ impl Opaque {
     /// Records the creation of a view's frame groups, which bind its uniform block, its cell
     /// offsets and the material table's texture. A camera's view has one group for each slot of
     /// the light textures' ring. Each also binds three.js's table of the split-sum terms of
-    /// specular light, the shadow map of `shadow_maps` with the comparison sampler and the
-    /// cascades' uniform block that read it, the slot's light grid and light records, and the
-    /// shadow atlas of `shadow_maps` with the tiles' uniform block. A shadow cascade's or a shadow
-    /// tile's view has one group, which binds no shadow map, so no pass reads the texture it draws
-    /// into.
+    /// specular light, the shadow map of `lit` with the comparison sampler and the cascades'
+    /// uniform block that read it, the slot's light grid and light records, the shadow atlas of
+    /// `lit` with the tiles' uniform block, and the texture of ambient occlusion. A shadow
+    /// cascade's or a shadow tile's view has one group, which binds no shadow map, so no pass
+    /// reads the texture it draws into.
     pub(super) fn bind_frame(
         list: &mut DrawList,
         view: ViewId,
-        shadow_maps: Option<(u32, u32)>,
+        lit: Option<LitTextures>,
     ) -> Result<(), RecordError> {
         // The frame's slot offset moves the uniform block and the cell offsets together, and
         // the backend gives dynamic offsets to a group's buffers in their order here.
@@ -263,14 +272,19 @@ impl Opaque {
             0,
         ];
         let group = ids::frame_group(view);
-        let Some((map, atlas)) = shadow_maps else {
+        let Some(LitTextures {
+            shadow_map: map,
+            atlas,
+            occlusion,
+        }) = lit
+        else {
             let mut words = [0; 18];
             words[..3].copy_from_slice(&[group, bind_layout::DEPTH, 3]);
             words[3..].copy_from_slice(&common);
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
         };
-        let mut words = [0; 58];
+        let mut words = [0; 63];
         words[3..18].copy_from_slice(&common);
         words[18..48].copy_from_slice(&[
             3,
@@ -305,8 +319,9 @@ impl Opaque {
             sizes::SHADOW_TILES_UNIFORM_BYTES,
         ]);
         for slot in 0..RING {
-            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 11]);
-            words[48..].copy_from_slice(&[
+            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 12]);
+            words[58..].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
+            words[48..58].copy_from_slice(&[
                 7,
                 resource_kind::TEXTURE,
                 ids::LIGHT_GRID + slot,
@@ -569,8 +584,9 @@ impl Opaque {
                     list.push(Op::SetPipeline, &[id])?;
                     pipeline = Some(id);
                 }
-                // The prepass's programs sample no maps.
-                if !prepass && first.textures != 0 && first.textures != textures {
+                // The prepass draws with each pipeline's own vertex shader, which can read the
+                // material's textures, as a custom material's vertex offset may.
+                if first.textures != 0 && first.textures != textures {
                     list.push(Op::SetBindGroup, &[TEXTURES_GROUP, first.textures, 0])?;
                     textures = first.textures;
                 }

@@ -109,6 +109,10 @@ async function finish(
 		for (const mesh of data.meshes)
 			for (const p of mesh.primitives) {
 				if (p.indices) transfer.add(p.indices.buffer as ArrayBuffer);
+				if (p.bvh) transfer.add(p.bvh.buffer as ArrayBuffer);
+				if (typeof p.occluder === 'object')
+					for (const array of [p.occluder.positions, p.occluder.indices])
+						transfer.add(array.buffer as ArrayBuffer);
 				const morph = p.morph;
 				for (const deltas of [morph?.positions, morph?.normals, morph?.tangents])
 					for (const array of deltas ?? []) transfer.add(array.buffer as ArrayBuffer);
