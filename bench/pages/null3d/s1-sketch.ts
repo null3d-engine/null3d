@@ -7,7 +7,9 @@
 // instead of boxes, for the allocation sample of sprite batches, and the `lines` switch as dashed
 // line segments, for the allocation sample of line batches. The `labels` switch adds that many
 // objects, each with an HTML label that moves on the canvas as the camera orbits, for the
-// allocation sample of the labels.
+// allocation sample of the labels. The `outline` switch adds outlined boxes, turns outlines on with
+// a hidden line, and changes the line's width every frame, for the allocation sample of the
+// outline's mask pass, the final pass's line and post.set.
 import { defineSketch, type SketchContext } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { s1Camera } from '../../scenes/spec';
@@ -28,15 +30,23 @@ export default defineSketch(async (context) => {
 	const animate = createAnimatedCrowd(context, readAnimated(import.meta.url));
 	createLabels(context, Number(switches.get('labels') ?? 0));
 	const grading = switches.has('grading');
+	const outlined = switches.has('outline');
+	if (outlined) createOutlined(context);
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
 	const vignette = { offset: 1, darkness: 1 };
 	const settings = { lutIntensity: 1, vignette };
+	const line = { width: 2 };
+	const outlineSettings = { outline: line };
 	if (grading)
 		void context.assets.loadLut(GRADING_LUTS.warm).then((lut) => context.post.set({ lut }));
 	const pose = (t: number) => {
 		poseSwarm(t);
 		moveCamera(t);
 		animate(t);
+		if (outlined) {
+			line.width = 2 + Math.sin(t);
+			context.post.set(outlineSettings);
+		}
 		if (!grading) return;
 		settings.lutIntensity = 0.5 + 0.5 * Math.sin(t);
 		vignette.offset = 1 + 0.25 * Math.cos(t);
@@ -49,6 +59,25 @@ export default defineSketch(async (context) => {
 		},
 	};
 });
+
+/** The number of outlined boxes that the `outline` switch adds. */
+const OUTLINED_BOXES = 16;
+
+/**
+ * Adds outlined boxes on a ring around the swarm's center, half of them behind the swarm from the
+ * camera's path, and turns outlines on with a hidden line. Its colors are set once, so a frame's
+ * call changes only the width.
+ */
+function createOutlined({ scene, geometry, materials, post }: SketchContext): void {
+	const mesh = geometry.box();
+	const material = materials.standard({ color: '#c05050' });
+	for (let k = 0; k < OUTLINED_BOXES; k++) {
+		const angle = (k / OUTLINED_BOXES) * Math.PI * 2;
+		const position: [number, number, number] = [Math.cos(angle) * 12, 2, Math.sin(angle) * 12];
+		scene.createMesh({ mesh, material, position, name: `outlined${k}` }).setOutlined(true);
+	}
+	post.set({ outline: { color: '#ffaa00', hiddenColor: '#3070ff', width: 2 } });
+}
 
 /**
  * Adds `count` objects on a ring, each with a label `label-0` onward. The camera orbits, so every
