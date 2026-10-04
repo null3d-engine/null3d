@@ -343,9 +343,15 @@ impl Layout {
                 continue;
             }
             if let Some((pipeline, ..)) = any_key(slot) {
-                let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
-                self.waiting
-                    .extend([pipeline, prepass].into_iter().filter(|&id| id != 0));
+                let (first, prepass) = pipelines.opaque(pipeline, targets, prepass);
+                // The outlined layout's buckets draw with both pipelines of the outline mask.
+                let second = (drawn == Drawn::Outlined)
+                    .then(|| pipelines.id(mask_keys(pipeline).1.in_pass(targets)));
+                self.waiting.extend(
+                    [first, prepass, second.unwrap_or(0)]
+                        .into_iter()
+                        .filter(|&id| id != 0),
+                );
             }
         }
 

@@ -564,9 +564,18 @@ impl Layout {
                 continue;
             }
             if let Some((pipeline, ..)) = any_key(slot as usize) {
-                let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
+                // The outlined layout's buckets draw with both pipelines of the outline mask.
+                let (pipeline, second) = if drawn == Drawn::Outlined {
+                    let (every, visible) = mask_keys(pipeline);
+                    (
+                        pipelines.id(every.in_pass(targets)),
+                        pipelines.id(visible.in_pass(targets)),
+                    )
+                } else {
+                    pipelines.opaque(pipeline, targets, prepass)
+                };
                 self.waiting
-                    .extend([pipeline, prepass].into_iter().filter(|&id| id != 0));
+                    .extend([pipeline, second].into_iter().filter(|&id| id != 0));
             }
         }
 
