@@ -201,7 +201,7 @@ impl Transparent {
                 pipeline = Some(bucket.pipeline);
             }
             let skinned = bucket.skinned_slot();
-            let skins = skinned.is_some() && skinning.in_vertex_shader();
+            let skins = skinned.is_some_and(|slot| skinning.skins_in_vertex_shader(slot));
             groups.set(list, bucket.textures, skins)?;
             let regions = skinned.and_then(|slot| skinning.parts_of(slot));
             list.push(

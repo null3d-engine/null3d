@@ -18,6 +18,7 @@ use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
 use null3d_core::lights::{LightShadow, LightTable, LightView, SunShadow, VisibleLight};
+use null3d_core::morph::MorphWeights;
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{
@@ -227,6 +228,8 @@ pub struct FrameInput<'a> {
     /// Skeletons, clips and animated instances, with the skinning matrices of the frame's
     /// animation step, once the scene has any.
     pub animations: Option<&'a Animations>,
+    /// The morph weights of morphed objects, which the sketch writes.
+    pub morphs: &'a MorphWeights,
 }
 
 impl FrameInput<'_> {
@@ -425,6 +428,12 @@ impl UploadArena {
         Ok((address(&self.bytes[start..]), padded as u32))
     }
 
+    /// The bytes that the frame copied so far.
+    #[cfg(test)]
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
     /// Adds `len` zero bytes, padded to four bytes, for the caller to fill in place, and returns
     /// their address and the bytes. Like [`UploadArena::push`], it never grows the arena.
     pub(crate) fn push_zeroed(&mut self, len: usize) -> Result<(u32, &mut [u8]), RecordError> {
@@ -600,6 +609,8 @@ pub struct SceneSettings {
     /// How many times fewer taps than three.js's each of bloom's blurs reads, which the quality
     /// settings raise.
     bloom_divisor: u32,
+    /// The most morph weights of each object that a builder whose vertex shaders morph keeps.
+    morph_cap: u32,
     /// Ambient occlusion's settings while the sketch turns it on.
     ao: Option<Ao>,
     /// The size of ambient occlusion's targets, as a share of the render size each way, which the
@@ -655,6 +666,7 @@ impl SceneSettings {
             output: Output::default(),
             bloom: None,
             bloom_divisor: 1,
+            morph_cap: u32::MAX,
             ao: None,
             ao_scale: ao::MAX_SCALE,
             lut: None,
@@ -756,6 +768,17 @@ impl SceneSettings {
     /// the same kernel more coarsely, so the glow keeps its size.
     pub fn set_bloom_divisor(&mut self, divisor: u32) {
         self.bloom_divisor = divisor.clamp(1, bloom::MAX_SAMPLE_DIVISOR);
+    }
+
+    /// The most morph weights of each object that a builder whose vertex shaders morph keeps.
+    pub fn morph_cap(&self) -> u32 {
+        self.morph_cap
+    }
+
+    /// Keeps the `cap` largest morph weights of each object where vertex shaders morph, from the
+    /// next recorded frame on, and drops the others' targets (see [`crate::morph::cap_weights`]).
+    pub fn set_morph_cap(&mut self, cap: u32) {
+        self.morph_cap = cap;
     }
 
     /// Ambient occlusion's settings while it draws: while the sketch turns it on, its scale is
@@ -1504,12 +1527,10 @@ impl MeshBuffers {
                     ..PageBuffers::default()
                 };
                 let copied = buffer_usage::COPY_DST;
-                // The skinning pass reads skinned meshes' vertices as storage.
-                let read = if crate::skinning::has_joints(page.format) {
-                    buffer_usage::STORAGE
-                } else {
-                    0
-                };
+                // The skinning pass reads skinned and morphed meshes' vertices as storage.
+                let posed = crate::skinning::has_joints(page.format)
+                    || crate::morph::has_targets(page.format);
+                let read = if posed { buffer_usage::STORAGE } else { 0 };
                 list.push(
                     Op::CreateBuffer,
                     &[

@@ -29,6 +29,7 @@ use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, WorkerId};
 use null3d_core::lights::LightTable;
 use null3d_core::lines::{LineLook, LineMode};
+use null3d_core::morph::MorphWeights;
 use null3d_core::occlusion::BlockerMesh;
 use null3d_core::scene::{CommandRing, SceneStorage};
 use null3d_core::snapshot::FrameSnapshot;
@@ -52,6 +53,8 @@ use null3d_render::gpu_driven::{
 use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::RenderScale;
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
+use null3d_render::meshes::MeshError;
+use null3d_render::morph::{MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
 use null3d_render::shadow_tiles::TileSettings;
@@ -65,8 +68,8 @@ pub mod constants;
 
 use constants::{
     CLIP_PENDING, TRACK_WORDS, animation_field, animation_problem, arrays_problem, batch_field,
-    camera_target, debug_line_field, mesh_arrays, play_flag, query, ring_field, scene_field,
-    shading, texture_option, texture_stat,
+    camera_target, debug_line_field, mesh_arrays, morph_arrays, play_flag, query, ring_field,
+    scene_field, shading, texture_option, texture_stat,
 };
 
 /// The engine version, as the loader reports it.
@@ -143,6 +146,8 @@ struct Engine {
     lines: LineStore,
     /// Skeletons, clips and animated instances, from the first `initAnimations` on.
     animations: Option<Animations>,
+    /// The morph weights of morphed objects, which TypeScript writes.
+    morphs: MorphWeights,
     /// The clips that job workers resample in the background, by `createClipLater` ticket, each
     /// with its skeleton's id.
     clip_jobs: Vec<Option<(u32, Arc<ClipJob>)>>,
@@ -218,6 +223,7 @@ impl Engine {
             shadow_lights: self.lights.shadows(),
             pipelines_built,
             animations: self.animations.as_ref(),
+            morphs: &self.morphs,
         };
         (self.renderer.as_mut(), input)
     }
@@ -449,6 +455,7 @@ pub fn init_engine(
         staging: Vec::new(),
         lines: LineStore::default(),
         animations: None,
+        morphs: MorphWeights::new(),
         clip_jobs: Vec::new(),
         queries: SceneQueries::new(),
         query_input: [0.0; query::INPUT_FLOATS as usize],
@@ -1137,20 +1144,136 @@ pub fn mesh_arrays(words: u32) -> u32 {
 /// A mesh from the arrays in the staging words, as `layout` (`constants::mesh_arrays` bits)
 /// describes them, for `vertices` vertices and `indices` indices. `types` gives each array's type
 /// in its attribute's type field of a vertex format. Normals and tangents that `layout` asks for
-/// are computed on the job workers. Returns the mesh id.
+/// are computed on the job workers. With `targets` morph targets, the arrays that `morph`
+/// (`constants::morph_arrays` bits) names follow the indices. Returns the mesh id.
 #[wasm_bindgen(js_name = createMeshFromArrays)]
-pub fn create_mesh_from_arrays(vertices: u32, indices: u32, layout: u32, types: u32) -> u32 {
+pub fn create_mesh_from_arrays(
+    vertices: u32,
+    indices: u32,
+    layout: u32,
+    types: u32,
+    targets: u32,
+    morph: u32,
+) -> u32 {
     value_with_engine(|e| {
         let jobs = JOBS.get().ok_or_else(|| fail(codes::NOT_READY, [0, 0]))?;
         let staging = std::mem::take(&mut e.staging);
+        let per_array = (targets as usize).saturating_mul(vertices as usize * 3);
+        let morph_words = per_array.saturating_mul(morph.count_ones() as usize);
+        let base = staging.len().checked_sub(morph_words);
+        let short = || arrays_failure(ArraysError::Length(ArrayName::Positions));
         let geometry = {
-            let arrays =
-                staged_arrays(&staging, vertices as usize, indices as usize, layout, types)
-                    .ok_or_else(|| arrays_failure(ArraysError::Length(ArrayName::Positions)))?;
+            let words = &staging[..base.ok_or_else(short)?];
+            let arrays = staged_arrays(words, vertices as usize, indices as usize, layout, types)
+                .ok_or_else(short)?;
             from_arrays(&arrays, jobs).map_err(arrays_failure)?
         };
+        let mut at = base.unwrap_or(0);
+        let mut array = |bit: u32| {
+            (morph & bit != 0).then(|| {
+                let words = &staging[at..at + per_array];
+                at += per_array;
+                // SAFETY: the words are initialized and aligned, and every bit pattern is a float.
+                unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<f32>(), words.len()) }
+            })
+        };
+        let targets = MorphTargets {
+            targets,
+            positions: array(morph_arrays::POSITIONS),
+            normals: array(morph_arrays::NORMALS),
+            tangents: array(morph_arrays::TANGENTS),
+        };
+        let added = if morph == 0 {
+            add_mesh(e, &geometry)
+        } else {
+            let meshes = e.renderer.settings_mut().meshes_mut();
+            meshes
+                .add_morphed(&geometry, &targets)
+                .map(|id| id + 1)
+                .map_err(mesh_failure)
+        };
         drop(staging);
-        add_mesh(e, &geometry)
+        added
+    })
+}
+
+/// The failure of a mesh that the storage refused.
+fn mesh_failure(error: MeshError) -> u32 {
+    let morph = |problem: u32, value: u32| fail(codes::BAD_ARRAYS, [problem, value]);
+    match error {
+        MeshError::Morph(MorphError::TooLarge) => {
+            morph(arrays_problem::MORPH_TOO_LARGE, MAX_DELTA_TEXELS)
+        }
+        MeshError::Morph(MorphError::Length) => morph(arrays_problem::MORPH_LENGTH, 0),
+        MeshError::Morph(MorphError::NotFinite { array, at }) => {
+            morph(arrays_problem::MORPH_NOT_FINITE, at | array << 28)
+        }
+        _ => render_failure(render_detail::BAD_MESH, 0),
+    }
+}
+
+// --- Morph weights ---
+//
+// Each morphed object owns a block of the morph weight table, which TypeScript writes in place at
+// the address that `morphWeightsAddress` gives. The table never moves once it exists.
+
+/// Makes a block of `count` morph weights, all 0, and returns its id plus one.
+#[wasm_bindgen(js_name = createMorphWeights)]
+pub fn create_morph_weights(count: u32) -> u32 {
+    value_with_engine(|e| {
+        e.morphs
+            .create(count)
+            .map(|id| id + 1)
+            .map_err(core_failure)
+    })
+}
+
+/// Frees block `id` of the morph weight table.
+#[wasm_bindgen(js_name = destroyMorphWeights)]
+pub fn destroy_morph_weights(id: u32) -> u32 {
+    with_engine(|e| e.morphs.destroy(id).map_or_else(core_failure, |()| 0))
+}
+
+/// Links block `id` of the morph weight table to the animated instance with id `instance` minus
+/// one, whose skeleton's joints from `joint` on animate its weights, or with 0, unlinks it.
+#[wasm_bindgen(js_name = linkMorphWeights)]
+pub fn link_morph_weights(id: u32, instance: u32, joint: u32) -> u32 {
+    with_engine(|e| {
+        let link = instance.checked_sub(1).map(|instance| (instance, joint));
+        e.morphs.link(id, link).map_or_else(core_failure, |()| 0)
+    })
+}
+
+/// The address of the morph weight table, or 0 before its first block.
+#[wasm_bindgen(js_name = morphWeightsAddress)]
+pub fn morph_weights_address() -> u32 {
+    value_with_engine(|e| {
+        Ok(match e.morphs.values() {
+            [] => 0,
+            values => address(values),
+        })
+    })
+}
+
+/// The first weight of block `id` in the morph weight table.
+#[wasm_bindgen(js_name = morphWeightsFirst)]
+pub fn morph_weights_first(id: u32) -> u32 {
+    value_with_engine(|e| match e.morphs.block(id) {
+        Some(block) => Ok(block.first),
+        None => Err(core_failure(CoreError::OutOfRange {
+            value: id,
+            limit: 0,
+        })),
+    })
+}
+
+/// The most morph weights of each object that vertex shaders that morph keep, the largest, from
+/// the next frame on.
+#[wasm_bindgen(js_name = setMorphTargets)]
+pub fn set_morph_targets(cap: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_morph_cap(cap);
+        0
     })
 }
 
@@ -2457,8 +2580,9 @@ pub fn set_clip_events(clip: u32, count: u32) -> u32 {
 }
 
 /// Advances every played clip by `step_us` microseconds, then writes every animated instance's
-/// skinning matrices, on the job workers. The microseconds cross from TypeScript as a whole
-/// number, so no number object is made for them.
+/// skinning matrices, on the job workers. Then the bounds of skinned and morphed objects follow
+/// their poses and weights, which marks the objects before the transform update. The microseconds
+/// cross from TypeScript as a whole number, so no number object is made for them.
 #[wasm_bindgen(js_name = updateAnimations)]
 pub fn update_animations(step_us: u32) -> u32 {
     let Some(jobs) = JOBS.get() else {
@@ -2467,9 +2591,9 @@ pub fn update_animations(step_us: u32) -> u32 {
     with_engine(|e| {
         if let Some(animations) = e.animations.as_mut() {
             animations.update(jobs, step_us as f32 * 1e-6);
-            let meshes = e.renderer.settings().meshes();
-            skinning::update_bounds(&mut e.scene, animations, meshes);
         }
+        let meshes = e.renderer.settings().meshes();
+        skinning::update_bounds(&mut e.scene, e.animations.as_ref(), &e.morphs, meshes);
         0
     })
 }

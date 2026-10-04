@@ -151,9 +151,13 @@ export function gpuApiOfPage(kind: BenchPageKind): 'webgpu' | 'webgl2' {
 	return kind === SCENE_CODE ? 'webgl2' : PAGES[kind].api;
 }
 
-/** True for a null3D page, whose engine takes switches such as `?jobs=`. */
+/**
+ * True for a null3D page, whose engine takes switches such as `?jobs=`. A kind that the table no
+ * longer lists, from the record of an older run, counts by its name.
+ */
 export function isNull3dPage(kind: BenchPageKind): boolean {
-	return kind !== SCENE_CODE && PAGES[kind].folder === 'null3d';
+	if (kind === SCENE_CODE) return false;
+	return (PAGES[kind]?.folder ?? kind.split('-')[0]) === 'null3d';
 }
 
 /** The pages that a sweep of job worker counts runs: both null3D GPU paths, pipelined. */
@@ -290,6 +294,22 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	{
 		test: 'skinning',
 		twin: `${TWINS}/skinning.html`,
+		sketchSwitches: NO_TONE,
+	},
+	// Morph targets against three.js's morphTargetInfluences. Compatibility mode's 8-bit path
+	// averages the three spheres' edge samples after it encodes them, so 0.102% of the wide scene's
+	// pixels differ there, all on outlines: 53 of the 234 on the red sphere, whose weights are all
+	// 0. That scene takes a limit of its own. The close-up checks the deltas' half floats by three.js's
+	// own rule on every tier.
+	{
+		test: 'morph',
+		twin: `${TWINS}/morph.html`,
+		sketchSwitches: NO_TONE,
+		limit: 0.2,
+	},
+	{
+		test: 'morph-closeup',
+		twin: `${TWINS}/morph.html?closeup`,
 		sketchSwitches: NO_TONE,
 	},
 	// Bloom at two settings against three.js's UnrealBloomPass. The composer's targets have no MSAA,

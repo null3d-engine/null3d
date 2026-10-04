@@ -166,6 +166,12 @@ export interface EngineOptions {
 	 */
 	depthPrepass?: boolean;
 	/**
+	 * The most morph target weights of each object that a WebGL2 device draws, a whole number from
+	 * 1 to 256. Each object keeps the weights farthest from 0. Without it, the quality preset sets
+	 * it. WebGPU draws every weight. Another value fails with E1213.
+	 */
+	morphTargets?: number;
+	/**
 	 * True to run software occlusion culling on WebGL2: objects that `setOccluder(true)` marks hide
 	 * the objects that lie wholly behind them, so the GPU skips those. False turns it off. Without
 	 * it, the quality preset decides, and a sketch can change it during play with `quality.set`.
@@ -810,6 +816,7 @@ async function startEngine(
 		shadowTileSize: options.shadowTileSize,
 		pointLightShadows: options.pointLightShadows,
 		depthPrepass: switches.prepass ?? options.depthPrepass,
+		morphTargets: options.morphTargets,
 		softwareOcclusion: switches.occlusion ?? options.softwareOcclusion,
 	};
 	checkSettings('createEngine()', pageSettings);

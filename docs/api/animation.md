@@ -8,7 +8,7 @@ summary: "The animator; play, crossFade, layers, joint masks, additive clips, ev
 
 # Animation
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Morph targets load but do not draw, and morph weights (`setMorphWeight`) are not built. Coding agents must not use these parts.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -45,7 +45,7 @@ The loader hands every clip to the job workers, which resample them between fram
 
 `scene.clone(copy)` gives the clone an animator of its own, with no clip playing. `scene.createInstances(prefab, count)` draws a model's meshes in their rest pose: instance batches do not animate.
 
-Morph targets load with their deltas, their default weights and the clips' weight tracks, for a later version to draw. Until then, each mesh keeps its shape at rest, and development builds say so.
+A model's morph targets load with their default weights, and its clips animate the weights, as [Morph targets](#morph-targets) says. A node's own `weights` replace its mesh's, as three.js reads them.
 
 ## Seeing the skeleton
 
@@ -174,12 +174,28 @@ A skinned mesh culls with a sphere that its pose moves. The engine keeps a spher
 
 ### Limits of skinning
 
-- On WebGPU, each skinned copy keeps its skinned vertices in GPU memory, even when copies share a mesh. Positions, normals and tangents take 32-bit floats, and the other attributes keep their types. A knight of the S5 benchmark takes about 28 bytes per vertex, so its 500 knights of about 5,000 vertices take about 69 MB.
+- On WebGPU, each skinned copy keeps its skinned vertices in GPU memory, even when copies share a mesh. Positions, normals and tangents take 32-bit floats, and the other attributes keep their types. A knight of the S5 benchmark takes about 28 bytes per vertex, so its 500 knights of about 5,000 vertices take about 69 MB. A morphed mesh takes the same room, as the skinning pass morphs it there.
 - Those vertices fill at most 8 GPU buffers, each as large as the device lets a shader read. That is 1 GiB in all at WebGPU's default limit of 128 MiB per buffer.
 - Skinned meshes fill at most 32 mesh buffers. Each mesh buffer holds meshes with one set of vertex attributes, up to that same size.
 - A scene past either limit draws nothing in its frames, and gives [E1501](../errors/E1501.md), which names the limit. The canvas keeps the last whole frame, and the scene draws again once it fits.
 - WebGL2 skins in the vertex shader, so it has neither limit.
 - The engine's animation table holds 65,536 joints in all, for every animated object.
+
+## Morph targets
+
+A morph target is another shape of a mesh, such as a smile or a blink. Each object of a mesh with targets blends them in by its own weights. A weight of 0 leaves a target out, 1 adds all of it, and other numbers scale it. The call `setMorphWeight` sets a weight by the target's number or name, as three.js's `morphTargetInfluences[k]` does. The call `getMorphWeight` reads it back. A mesh from a glTF file has the file's targets and default weights. A mesh that you build takes its targets from `morphTargets` in [geometry.fromArrays](geometry.md#morph-targets).
+
+```ts
+const head = scene.instantiate(face).find('Head') as Mesh;
+head.setMorphWeight('Smile', 0.6);
+head.setMorphWeight(1, Math.sin(time.now) * 0.5 + 0.5);
+```
+
+A clip of a glTF file can animate a mesh's weights. While it plays, it blends its weights with the object's own, as three.js's mixer blends a property with its value from before the clips. A clip at full weight sets the weights, and a fade blends the two. The object's own weights hold when no clip animates them. The call `setMorphWeight` sets the object's own weight, so a weight that you set shows in full only where no clip animates it. Layers and joint masks work on weights too: a layer masked to a node's name takes that node's weights.
+
+On WebGPU, the skinning pass morphs each morphed mesh once per frame, before its joints skin it. On WebGL2, the vertex shader of each pass morphs it, as three.js does. Each object then keeps only its largest weights, by the `morphTargets` quality setting: 8 on Low, 16 on Medium, 32 on High and 64 on Ultra. WebGPU keeps every weight. The first morphed mesh that a WebGL2 page draws loads the morph shaders, about 20 KB after compression. Frames wait for them, as they wait for a custom material's shader.
+
+A morphed object culls with a sphere that its weights grow: each target's longest move times the size of its weight. On WebGL2, a custom material draws a morphed mesh in its shape at rest.
 
 ## How it compares with three.js
 
@@ -196,6 +212,9 @@ A skinned mesh culls with a sphere that its pose moves. The engine keeps a spher
 | `gltf.animations` and `new AnimationMixer(gltf.scene)` | `prefab.clips` and `scene.instantiate(prefab).animator()` |
 | `SkeletonUtils.clone(gltf.scene)` | `scene.clone(copy)`, whose copy animates on its own |
 | `new SkeletonHelper(object)` | `debug.skeleton(object)` in `onUpdate` |
+| `mesh.morphTargetInfluences[k] = w` | `mesh.setMorphWeight(k, w)`, or with the target's name |
+| `mesh.morphTargetDictionary['Smile']` | `mesh.setMorphWeight('Smile', w)`; `mesh.mesh.morphTargetNames` lists the names in order |
+| `geometry.morphAttributes.position`, with `morphTargetsRelative = true` | `geometry.fromArrays({ ..., morphTargets: { positions } })` |
 | `SkinnedMesh` skinned in the vertex shader of each pass that draws it | WebGPU skins each skinned mesh once per frame, for every pass that draws it. WebGL2 skins in the vertex shader of each pass, as three.js does |
 
 Where three.js and null3D differ:
@@ -216,8 +235,8 @@ Where three.js and null3D differ:
 
 | Code | When |
 | --- | --- |
-| [E1218](../errors/E1218.md) | A clip, layer or joint that the object's animation does not have; an option out of range; `animator()` on an object with no clips |
-| [E1203](../errors/E1203.md) | A fade, speed, weight or time scale that is NaN or infinite |
+| [E1218](../errors/E1218.md) | A clip, layer or joint that the object's animation does not have; an option out of range; `animator()` on an object with no clips; a morph target that the mesh does not have |
+| [E1203](../errors/E1203.md) | A fade, speed, weight, morph weight or time scale that is NaN or infinite |
 | [E1416](../errors/E1416.md) | A glTF file whose skins or clips break glTF's rules, such as key times that fall back or a skin that names a node twice, or whose skins and clips move more than 1,024 nodes |
 | [E1101](../errors/E1101.md) | An animator call after its object was destroyed |
 | [E1501](../errors/E1501.md) | A crowd of skinned meshes past WebGPU skinning's limits (see [Limits of skinning](#limits-of-skinning)) |
