@@ -63,6 +63,7 @@ import type { TextureValues, UniformType, UniformValue, UniformValues } from './
  * @category api/geometry
  */
 export class MeshGeometry {
+	/** @internal */
 	constructor(
 		/** @internal */ readonly id: number,
 		/** The distance from the mesh's origin to its farthest vertex. */
@@ -1132,6 +1133,7 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	/** The engine core's id, or 0 once the material is destroyed. */
 	private liveId: number;
 
+	/** @internal */
 	constructor(
 		id: number,
 		/** @internal */ readonly core: CoreMemory,

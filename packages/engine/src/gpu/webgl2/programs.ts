@@ -40,7 +40,7 @@ import {
 	type GlslStage,
 	type ShaderVariants,
 } from '../../generated/shaders';
-import { DEV } from '../dev';
+import { DEV } from '../../shared/dev';
 import { LINE_VERTICES } from '../line-vertices';
 import { variantFor } from '../variants';
 import type { DepthSetup } from './depth';

@@ -137,3 +137,23 @@ describe('the worker format', () => {
 		]);
 	});
 });
+
+describe('the test switches in the address', () => {
+	const define = (options: Parameters<typeof null3d>[0], mode: string) =>
+		(null3d(options).config as (c: object, e: object) => UserConfig)(
+			{ root: fixture({ 'package.json': '{}' }) },
+			{ mode, command: 'build' },
+		).define;
+
+	it('leaves the choice to the engine without the option: development builds read them', () => {
+		expect(define({}, 'production')).toEqual({ __NULL3D_DEV__: 'false' });
+		expect(define({}, 'development')).toEqual({ __NULL3D_DEV__: 'true' });
+	});
+
+	it('lets a production build read them when the option asks', () => {
+		expect(define({ urlSwitches: true }, 'production')).toEqual({
+			__NULL3D_DEV__: 'false',
+			__NULL3D_URL_SWITCHES__: 'true',
+		});
+	});
+});

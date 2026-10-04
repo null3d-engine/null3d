@@ -206,6 +206,20 @@ M2-E1 reserved the opcode numbers that other M2 tasks need, so lanes that work a
 - An upload of a band of rows reads the image from a row inside it: `copyExternalImageToTexture` takes an origin, and WebGL2 applies `UNPACK_SKIP_PIXELS` and `UNPACK_SKIP_ROWS` to image bitmaps.
 - The sketch thread reads the texture constants from the core's generated module, not the GPU layer's. A value import of the GPU layer's constants would put them in a file of their own, which the size report refuses.
 
+## Switches in the page's address
+
+- The engine reads its test switches, such as `?gpu=`, `?hold=` and `?bench`, only in development builds. A production build reads them only when its Vite plugin has `urlSwitches: true` (`URL_SWITCHES` in `shared/dev.ts`). A shipped game ignores them. Otherwise a link could start 255 job workers on a phone or freeze the game in hold mode. It could also put the engine on `window` for any script (review R3, R3-14).
+- The repository's Vite configs turn the option on, because the production build tests and the benchmarks set the switches in the address. The `null3d` command defines the same constant for its production runs, so it works with a project's own config.
+- Without the option, the plugin leaves the constant undefined, and the engine follows its development flag. A build that defines the constant itself, as the `null3d` command does, keeps its value.
+- `?jobs=` starts at most one job worker for each logical core, and `?memory=` counts only from 256 to 4096 MiB, the range of the `memory` option. A value outside counts as no switch, as other bad switch values do.
+- The development flag and this one live in one module. It holds constants only, so the bundler folds them into each file that reads them. The files that load on first use still share no module with the start's files (review R8, R8-11).
+
+## Public type declarations
+
+- The package build strips members marked `@internal` from the type declarations (`--stripInternal`). Users then do not see the engine's own methods, such as the label projection of `ctx.ui` (review R3, R3-13). The build fails if a declaration still holds an `@internal` tag.
+- A class that only the engine makes marks its constructor `@internal`. Stripping it would leave the class constructible with no arguments, so the build writes `protected constructor();` in its place. Protected, not private, so that the engine's own subclasses still type check.
+- The internal entry point that tests import (`src/internal.ts`) leaves the package. The tarball check fails if it returns (review R8, R8-10).
+
 ## Loading WebAssembly under a strict policy
 
 A game may send a strict Content-Security-Policy, such as `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'`. The engine starts under it in every thread mode. The production build tests (`tests/image/content-security-policy.spec.ts`) and the fresh-project test (`tests/fresh-project.ts`) check that.

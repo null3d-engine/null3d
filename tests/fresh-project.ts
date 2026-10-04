@@ -6,7 +6,8 @@
 // command type checks the project against the packages' declarations, and draws the project's
 // sketch on every GPU tier. Then the tool optimizes a model, and last, it builds the project for
 // production. The build must hold the engine's third-party notices, and its page must start the
-// threaded engine in a browser under a strict Content-Security-Policy. Run `bun run build` first,
+// threaded engine in a browser under a strict Content-Security-Policy, whatever test switches the
+// address holds. Run `bun run build` first,
 // for the WebAssembly files. Run from the repository root:
 //   bun run test:packages [--keep]    --keep leaves the project's folder in place after a pass
 import { spawnSync } from 'node:child_process';
@@ -82,6 +83,7 @@ function step(title: string, cwd: string, command: string, args: readonly string
  * Serves a production build with the isolation headers and the strict policy on every file, as a
  * strict host does, and fails unless its page starts the engine with threads and no file breaks
  * the policy. A worker takes the policy of its own script's response, so every file carries it.
+ * The address asks for the single-threaded build, which a shipped game must ignore.
  */
 async function startsUnderStrictPolicy(dist: string): Promise<void> {
 	console.log('\nStart under a strict Content-Security-Policy');
@@ -103,14 +105,14 @@ async function startsUnderStrictPolicy(dist: string): Promise<void> {
 		page.on('console', (message) => {
 			if (/Content.Security.Policy/i.test(message.text())) violations.push(message.text());
 		});
-		await page.goto(server.url.href);
+		await page.goto(`${server.url.href}?threads=off`);
 		const start = await page
 			.waitForFunction('document.documentElement.dataset.start', undefined, { timeout: 30_000 })
 			.then((handle) => handle.jsonValue());
 		const isolated = await page.evaluate('crossOriginIsolated');
-		if (start !== 'started' || !isolated || violations.length > 0)
+		if (start !== 'threaded' || !isolated || violations.length > 0)
 			throw new Error(
-				`under a strict policy the page did not start the threaded engine: start ${start}, isolated ${isolated}, policy reports ${JSON.stringify(violations)}`,
+				`under a strict policy, with ?threads=off in the address, the page did not start the threaded engine: start ${start}, isolated ${isolated}, policy reports ${JSON.stringify(violations)}`,
 			);
 	} finally {
 		await browser.close();

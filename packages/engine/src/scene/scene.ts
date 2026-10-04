@@ -559,6 +559,7 @@ export class Object3D implements Described {
 	/** @internal The object's animator, when a model with animations created the object. */
 	animation: Animator | undefined;
 
+	/** @internal */
 	constructor(
 		/** @internal */ readonly scene: Scene,
 		/** @internal */ readonly handle: number,
@@ -1578,6 +1579,7 @@ export class InstanceBatch {
 	/** @internal */
 	destroyedFrame = -1;
 
+	/** @internal */
 	constructor(
 		private readonly scene: Scene,
 		/** @internal */ readonly id: number,
@@ -1863,6 +1865,7 @@ export class Scene {
 	/** @internal The scene's animated objects, from the first model with animations on. */
 	animations: SceneAnimations | undefined;
 
+	/** @internal */
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
 		private readonly time: { readonly frame: number },

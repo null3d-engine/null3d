@@ -58,7 +58,7 @@ const config: UserConfig = {
 	// The HTTP and HTTPS servers can run at once, so each keeps its own prebundled dependencies.
 	cacheDir: https ? 'node_modules/.vite-https' : 'node_modules/.vite',
 	plugins: [
-		null3d({ https, certDir: 'target/dev-cert' }),
+		null3d({ https, certDir: 'target/dev-cert', urlSwitches: true }),
 		reportCollector(),
 		loadServer(),
 		samplesServer(import.meta.dirname),

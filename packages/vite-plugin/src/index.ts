@@ -47,6 +47,12 @@ export interface Null3dPluginOptions {
 	 * which `assets.loadGltf` takes. The tool comes from `@null3d/cli`, which the project installs.
 	 */
 	assets?: AssetOptions;
+	/**
+	 * Let the page's address set the engine's test switches, such as `?gpu=` and `?hold=`, in
+	 * production builds too. Development builds always read them. The default is false, so a link
+	 * cannot change how a shipped game runs. Turn it on for builds of test and benchmark pages.
+	 */
+	urlSwitches?: boolean;
 }
 
 /** Sets the isolation headers on every response, including `.wasm` files and worker scripts. */
@@ -207,7 +213,13 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				: undefined;
 			return {
 				// Development checks stay in dev builds; release builds drop them as dead code.
-				define: { __NULL3D_DEV__: JSON.stringify(mode !== 'production') },
+				define: {
+					__NULL3D_DEV__: JSON.stringify(mode !== 'production'),
+					// Without the option, a build that defines the constant itself keeps its value.
+					...(options.urlSwitches === undefined
+						? {}
+						: { __NULL3D_URL_SWITCHES__: JSON.stringify(options.urlSwitches) }),
+				},
 				server: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				preview: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				worker: { format: 'es' },

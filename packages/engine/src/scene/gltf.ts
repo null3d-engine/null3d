@@ -28,6 +28,7 @@ import {
 	LIGHT_VALUE_PENUMBRA,
 	LIGHT_VALUE_RANGE,
 } from '../generated/core';
+import { DEV } from '../shared/dev';
 import type { GltfAnswer, GltfRequest } from '../workers/gltf-worker';
 import { type AnimationRig, loadAnimationRig } from './animation';
 import { affineOf, multiplyAffine } from './gltf-math';
@@ -299,7 +300,7 @@ export async function loadGltf(
 		data.notes.push(
 			'its morph targets keep their shapes at rest, as the engine does not draw them yet',
 		);
-	if (DEV_NOTES && data.notes.length > 0)
+	if (DEV && data.notes.length > 0)
 		console.warn(`${call}() left out parts of ${address}: ${data.notes.join('; ')}.`);
 	return new Prefab(
 		context.core,
@@ -314,14 +315,6 @@ export async function loadGltf(
 		morphClips,
 	);
 }
-
-declare const __NULL3D_DEV__: boolean | undefined;
-
-/**
- * True in development builds, which warn about what a file holds that the engine leaves out. The
- * loader reads the constant itself, as errors/checks.ts does, to import no engine module.
- */
-const DEV_NOTES: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV__;
 
 const IDENTITY = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
 const IDENTITY_PART = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
