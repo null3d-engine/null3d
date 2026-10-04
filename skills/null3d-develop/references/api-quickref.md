@@ -407,7 +407,7 @@ scene.overlapSphere(center, radius, opts, out);        // objects with a triangl
 scene.overlapBox(min, max, opts, out);                 // returns the count, as overlapSphere
 ```
 
-Hit objects are the same wrappers you created; `hit.instance` is the row of a batch, and `hit.triangle` is three.js's `faceIndex`. Queries test triangles, front faces only unless the material is `doubleSided`, and never hit hidden objects. They see the positions of the last frame's update, or this frame's in `onLateUpdate`. Create `ray`, `hit`, `opts` and the `hits` and `out` arrays once and reuse them: queries then allocate nothing. The first query after a mesh appears builds its tree, about 0.25 µs per triangle on the job workers. The asset tool's `--bvh <triangles>` stores the trees of large meshes in the file instead (default 20,000).
+Hit objects are the same wrappers you created; `hit.instance` is the row of a batch, and `hit.triangle` is three.js's `faceIndex`. Queries test triangles, front faces only unless the material is `doubleSided`, and never hit hidden objects. They see the positions of the last frame's update, or this frame's in `onLateUpdate`. A skinned character is tested in its bind pose. A NaN, an infinite number or a direction of length 0 throws in every build (E1203, E1108), so guard computed rays. Create `ray`, `hit`, `opts` and the `hits` and `out` arrays once and reuse them: queries then allocate nothing. The first query after a mesh appears builds its tree, about 0.25 µs per triangle on the job workers. The asset tool's `--bvh <triangles>` stores the trees of large meshes in the file instead (default 20,000).
 
 ## 14. Input (`api/input`) and controls (`api/controls`)
 

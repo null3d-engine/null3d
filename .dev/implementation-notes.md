@@ -303,6 +303,13 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - WebGPU's first frame builds the pass's three pipelines whether or not the scene has lights, so play builds none.
 - The render crate's tests write a fixture of light grids for the `light-clusters` page. Linux's math library rounds tangents, logarithms and powers in its own way. So the fixture's parameters may differ from the Mac's by a millionth of their size. The counts, lights and grids must match exactly.
 
+## Raycasts and overlap queries
+
+- Every query checks its input in every build, in `packages/engine/src/scene/queries.ts`. Most API checks run in development builds only. Bad query input once aborted the engine in production builds, so these checks stay. [D-30](decisions/D-30-scene-queries.md#addendum-2026-10-04-input-checks-in-every-build-and-late-moves) gives their cost.
+- A ray with NaN parts passes every four-box test, empty boxes too. So does a ray whose origin is infinite in 32 bits, and a box that reaches infinity. The walk then took the empty child word, `u32::MAX`, as a node index, and the panic aborted the engine. So the walks in `crates/null3d-core/src/bvh/mod.rs` skip empty child words, whatever the box test gives. They stay safe for any input, and for a stored tree whose empty slots hold damaged boxes. Rows of sprites, points and lines take the same walks.
+- `WorldRay::toward` makes a ray's unit direction in 64-bit floats. When the squared parts would round the length to 0 or to infinity, it scales the direction by its largest part first. A direction of the usual sizes gives the same bits as before, so hits stay those of three.js.
+- The static tree's sync looks again at the objects stamped in the frame of the last sync. A late update can move a static object right after a query in the same frame. The next frame copies that object's row without a new stamp, so a sync that looked only at newer stamps kept its old box. Only a box or cell that changed refits the tree.
+
 ## Threads and shared memory
 
 - Firefox before 145 has no `Atomics.waitAsync`. Before the wake messages, the sketch thread's first wait threw there, so the engine started but drew no frame. There the sketch thread's waits end at wake messages (`shared/wake.ts`). The page sends them to the sketch worker, and the thread that draws sends them back through the port that brings it texture images. Any wake ends every wait, so each wait checks its slot again. Job workers block with `Atomics.wait` until the job system exists. `?wake=message` takes this path in any browser, and the browser tests also remove `Atomics.waitAsync` from every thread.

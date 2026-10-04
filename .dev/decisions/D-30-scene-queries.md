@@ -108,3 +108,41 @@ The call `raycastBatch` splits the rays into chunks of 64 across the job workers
 - The WebAssembly entry point adds `queryArrays`, `reserveRays`, `raycast`, `raycastBatch` and `overlap`, and the generated constants add `QUERY_*`.
 - `packages/engine/src/scene/queries.ts` holds the calls behind `scene.raycast`, `raycastAny`, `raycastAll`, `raycastBatch`, `overlapSphere` and `overlapBox`, and the types `RaycastHit`, `OverlapHit`, `RaycastOptions`, `QueryOptions` and `RaycastBatchHits`.
 - `docs/api/raycast` is experimental. Pointer events on objects (M2-D4), `camera.screenToRay` (M2-D3) and GPU picking (M2-D6) are not built yet. Skinned characters get their capsules with the skinning tasks.
+
+## Addendum, 2026-10-04: input checks in every build, and late moves
+
+The code review of 4 October 2026 found three ways for a query to go wrong in a production build. This addendum records the fixes and what they cost.
+
+### Input that aborted the engine
+
+The checks of query input ran in development builds only. A production build passed a ray with a direction of length 0, or with NaN in it, straight to the core. The core divided by the length, and the direction became NaN on every axis. A NaN ray passes every four-box test, the boxes of empty children too. So does a ray whose origin rounds to infinity in 32 bits, such as 1e39, and a box that reaches infinity. The walk then took the empty child word, `u32::MAX`, as a node index. The index panicked, and the panic aborted the WebAssembly module and the engine with it. A direction such as `[1e-200, 0, 0]` did the same, because its squared length rounds to 0 in 64 bits. A `rays` array whose length was not a multiple of 6 could write past the core's ray array. A radius past the range of 32-bit floats made the sphere's box NaN, so the query found nothing.
+
+Three changes close these paths:
+
+- Every query checks its input in every build. A number that is not finite throws E1203. A direction of length 0, a point or radius past ±3.4 × 10^38, and a `rays` array of the wrong length throw E1108. The other checks, of `maxDistance`, layers, box corners and output lengths, run in every build too.
+- The tree walks never follow an empty child, whatever its box test gives. A query that bypasses the checks is still safe, and so is a stored tree whose empty slots hold damaged boxes.
+- The core makes each ray's unit direction with `WorldRay::toward`, which scales a direction too small or too large to square in 64 bits. It returns no ray for a direction of length 0 or a part that is not finite, and such a ray hits nothing. A direction of the usual sizes gives the same bits as before, so the hits of the parity test stay those of three.js.
+
+The rule "A query fails only with an error code that says how to fix the call" now holds in production builds as well.
+
+### Late moves
+
+A sketch could raycast in `onLateUpdate` and then move a static object, such as a door. The static tree then kept the door at its old place. The sync after a late update looked again at the objects stamped in that frame. The next frame copies the door's row without a new stamp. So the next sync, which looked only at newer stamps, never saw the move. The sync now always looks again at the stamps of the last sync's frame. Only a box or a cell that changed refits the tree. A static object that moved once costs one box comparison more, in one later sync.
+
+### Skinned characters
+
+Queries test a skinned character's mesh in its bind pose, moved by its object's matrix. three.js's `Raycaster` tests the posed vertices of a `SkinnedMesh`. The capsules per bone of the decision above stay planned, and `api/raycast` and the three.js mapping state the difference until they land.
+
+### Cost
+
+A quick check on the MacBook Pro, on 4 October 2026, while other helpers built and tested (load averages of 27 to 71). The query loop page's production build ran in Chrome on the Mac's GPU, with the sketch on the page's thread. A timing loop was added for the run only. Each page load timed 100,000 calls of each kind 9 times. Loads of the build before the fixes and after them took turns, 16 times each.
+
+| 100,000 calls | Before: median, best | After: median, best |
+| --- | --- | --- |
+| `raycast` | 74.4 ms, 50.9 ms | 84.9 ms, 54.0 ms |
+| `overlapBox` | 119.6 ms, 80.3 ms | 132.8 ms, 87.2 ms |
+| `raycastBatch`, 1,000 rays a call | 66.2 ms, 45.1 ms | 76.1 ms, 48.9 ms |
+
+The ratio of each pair of loads ran from 0.86 to 1.19, with a median of 1.05. All three kinds moved together in each pair. A third build had the checks in TypeScript but the core from before the fixes. It was no slower than the build before them: its best `raycast` took 57.1 ms against 65.3 ms in the same 6 rounds. The core's own benchmark ran 6 times each in turns, as `bench_scene_queries` in a native release build. Its median `raycast` took 1.92 µs before and 1.82 µs after, and `overlapBox` 23.4 µs and 23.8 µs. So the guards cost no time that this Mac could measure, at most a few hundredths of a microsecond per call. A sketch that casts 1,000 rays in a frame would spend under 0.05 ms more.
+
+How the data was produced: `bun run build` at the branch's base commit and with the fixes, then `NULL3D_BUILD_PAGE=query-loop bunx vite build`. `vite preview` served each build's pages. A Playwright script timed `scene.raycast`, `scene.overlapBox` and `scene.raycastBatch` through a hook in the query loop sketch. The native runs used `cargo test -p null3d-core --release --test bench -- --ignored --nocapture --test-threads=1 bench_scene_queries` at both commits.

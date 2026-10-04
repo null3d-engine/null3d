@@ -25,6 +25,8 @@ interface ErrorsResult {
 	missingSketch: string;
 	failedStarts: Raised[];
 	inSketch: Raised[];
+	/** The errors of queries with input that is not finite in 32 bits, then two hits. */
+	queries: { errors: Raised[]; tiny: number; huge: boolean };
 	/** A start beside a running engine: an error, or a note that it started. */
 	beside: Raised;
 	framesAfterRestart: number;
@@ -74,6 +76,31 @@ for (const mode of ENGINE_MODES) {
 			engineError('E1206', 'geometry.fromArrays() got NaN at uvs[4].'),
 			engineError('E1108', 'the sketch asked for row 11 of 10.'),
 		]);
+		// Every build refuses query input that is not finite in 32 bits, which the core's trees
+		// could not stand on, and the engine answers the queries after them.
+		const F32 = 'pass a number from -3.4e38 to 3.4e38, the range of 32-bit floats.';
+		expect(result.queries).toEqual({
+			errors: [
+				engineError(
+					'E1108',
+					'raycast() got a direction of length 0: pass a direction of any length above 0.',
+				),
+				engineError('E1203', 'raycastAny() got NaN for y of the origin.'),
+				engineError('E1108', `raycastAll() got 1e+39 for z of the origin: ${F32}`),
+				engineError('E1203', 'overlapBox() got -Infinity for z of the lowest corner.'),
+				engineError('E1108', `overlapBox() got -1e+39 for x of the lowest corner: ${F32}`),
+				engineError(
+					'E1108',
+					'overlapSphere() got 1e+39 for radius: pass a number from 0 to 3.4e38.',
+				),
+				engineError(
+					'E1108',
+					'raycastBatch() got 7 numbers for its rays: pass six numbers per ray, its origin and then its direction.',
+				),
+			],
+			tiny: 9.5,
+			huge: true,
+		});
 		// The page's thread runs one engine's sketch at a time; workers run any number.
 		expect(result.beside).toEqual(
 			mode.sketchThread === 'main'

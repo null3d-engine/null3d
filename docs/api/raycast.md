@@ -8,7 +8,7 @@ summary: "raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointe
 
 # Raycasting and spatial queries
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Pointer events on objects (`object.on`), `camera.screenToRay` and pixel-exact GPU picking are not built yet, so coding agents must not use them.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Pointer events on objects (`object.on`), `camera.screenToRay` and pixel-exact GPU picking are not built yet, so coding agents must not use them. Queries test a skinned character in its bind pose, not in its animated pose.
 
 ```mermaid
 flowchart LR
@@ -139,7 +139,22 @@ An overlap query tests triangles. A long wall counts only where its surface reac
 - Shown objects only. A hidden object is never hit.
 - The positions of the last frame's update. A move, a new object or a destroy in your `onUpdate` counts from the next frame. In `onLateUpdate`, queries see this frame's positions, but rows of instance batches still have the last frame's positions.
 
-A custom material's vertex offset moves vertices on the GPU only, so queries test the mesh's own positions.
+A custom material's vertex offset moves vertices on the GPU only, so queries test the mesh's own positions. In the same way, a skinned character is tested in its bind pose, the pose of its mesh before animation, moved by its object's matrix. A ray through its animated arm can miss, and a ray through the place where the arm rests in the bind pose can hit.
+
+## Input that queries refuse
+
+Every query checks its input before the engine runs it, in development and production builds alike. A check that passes costs a few comparisons. A query that gets input it cannot use throws an error that names the call and the value:
+
+| Input | Error |
+| --- | --- |
+| A number that is NaN or infinite, in a point, a direction, a radius or the rays of a batch | [E1203](../errors/E1203.md) |
+| A direction of length 0 | [E1108](../errors/E1108.md) |
+| An origin, a center, a box corner or a radius past ±3.4 × 10^38, the range of 32-bit floats | [E1108](../errors/E1108.md) |
+| A negative `maxDistance` or radius, or a box whose lowest corner lies above its highest | [E1108](../errors/E1108.md) |
+| A `rays` array whose length is not a multiple of 6, or an `out` array too short for the rays | [E1108](../errors/E1108.md) |
+| A layer mask that does not fit 32 bits | [E1207](../errors/E1207.md) |
+
+A direction can have any length above 0, from 10^-300 to 10^300. The engine makes it a unit vector in 64-bit numbers before the ray runs.
 
 ## How queries find objects
 
@@ -165,7 +180,7 @@ The trees give the same hits as testing every triangle of every object in turn. 
 | `intersection.faceIndex` | `hit.triangle` |
 | `three-mesh-bvh` | Built in: delete its setup |
 
-three.js tests hidden objects unless you filter them out; null3D never hits them. three.js returns a new array of new objects for each raycast; null3D writes into the objects you pass. three.js tests each object's bounding sphere in turn, so a ray costs more as the scene grows. null3D walks its trees, so a ray costs about the same in a large scene.
+three.js tests hidden objects unless you filter them out; null3D never hits them. three.js tests a skinned mesh's animated vertices; null3D tests its bind pose. three.js returns a new array of new objects for each raycast; null3D writes into the objects you pass. three.js tests each object's bounding sphere in turn, so a ray costs more as the scene grows. null3D walks its trees, so a ray costs about the same in a large scene.
 
 <!-- null3d:api:start -->
 
