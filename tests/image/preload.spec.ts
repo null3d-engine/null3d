@@ -62,9 +62,12 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		const after = events.slice(first + 1);
 		expect(after).toContain('mark:added');
 		expect(after.filter((event) => !event.startsWith('mark:'))).toEqual([]);
-		// The line batch draws once its pipeline is built, as every new object does, so a frame may
-		// skip its draw. The skinned characters and bloom skip none: their tests check that.
+		// On WebGL2 the preloaded features' programs compiled before the first frame, so the line
+		// batch draws at once. On WebGPU its pipeline needs the scene's targets and the material's
+		// state, so it builds when the batch comes, and a frame may skip its draw. The skinned
+		// characters and bloom skip none on either path: their tests check that.
 		console.log(`skipped draws across the change on ${gpu}: ${result.acrossSkippedDraws}`);
+		if (gpu === 'webgl2') expect(result.acrossSkippedDraws).toBe(0);
 	});
 
 	test(`a glTF file with skins fetches the skinning file before its model is added on ${gpu}`, async ({

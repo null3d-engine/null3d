@@ -107,4 +107,18 @@ describe('DeviceShaderSet', () => {
 			`bloom ${half}`,
 		]);
 	});
+
+	it('hands each preloaded module to its listener once it arrives, and those that arrived before', async () => {
+		const { load, settle } = loader();
+		const set = new DeviceShaderSet(start(), 0, load);
+		const heard: string[] = [];
+		set.onPreloaded((feature) => heard.push(`early ${feature}`));
+		const preloaded = set.preload(['sprites']);
+		expect(set.ready(set.shaders.final, PERMUTATION_BLOOM, 'wgsl')).toBe(false);
+		await settle();
+		await preloaded;
+		expect(heard).toEqual(['early sprites']);
+		set.onPreloaded((feature) => heard.push(`late ${feature}`));
+		expect(heard).toEqual(['early sprites', 'late sprites']);
+	});
 });

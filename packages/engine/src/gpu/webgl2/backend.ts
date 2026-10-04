@@ -20,7 +20,7 @@
 // turns clear values and viewport depth ranges around for standard depth.
 
 import * as G from '../../generated/gpu';
-import type { DeviceShaders } from '../../generated/shaders';
+import type { DeviceShaders, FirstUseShaders, ShaderVariants } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
 import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
@@ -572,6 +572,27 @@ export class WebGL2Backend {
 		}
 		const build = buildPermutation(defined, permutation);
 		return this.moreShaders?.ready(defined.shader, build, 'glsl') ?? true;
+	}
+
+	/**
+	 * Starts to compile the programs of the builds of `module`, a feature's module that the page or
+	 * the sketch preloaded, so that the feature's first objects draw at once. They compile in the
+	 * background where the browser can, and the first frame waits for them. Skinning's builds vary in
+	 * every material bit, and a scene's materials draw with a few of them, so `scene.warmUp()` builds
+	 * those, as for any material.
+	 */
+	precompile(feature: string, module: FirstUseShaders): void {
+		if (feature === 'skinning') return;
+		const held = this.moreShaders?.shaders as Readonly<Record<string, ShaderVariants>> | undefined;
+		for (const [name, builds] of Object.entries(module)) {
+			const variants = held?.[name];
+			if (!variants) continue;
+			this.templates.forEach((template, id) => {
+				if (template?.shader !== variants) return;
+				for (const build of Object.values(builds as ShaderVariants))
+					if (build.glsl?.[template.pipeline]) this.programOf(id, build.permutation, true);
+			});
+		}
 	}
 
 	/** Creates each parked pipeline whose custom material's shader has arrived. */

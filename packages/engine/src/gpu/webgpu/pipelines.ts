@@ -610,6 +610,11 @@ export class Pipelines {
 		return layout;
 	}
 
+	/** Creates the shader module of `shader` ahead of the pipelines that will share it. */
+	prepareModule(label: string, shader: WgslShader): void {
+		this.module(label, shader);
+	}
+
 	private module(label: string, shader: WgslShader): GPUShaderModule {
 		let module = this.modules.get(shader);
 		if (!module) {

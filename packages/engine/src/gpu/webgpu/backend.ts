@@ -3,7 +3,7 @@
 // engine memory and allocates nothing per command, except when a command creates a GPU object.
 
 import * as G from '../../generated/gpu';
-import type { DeviceShaders } from '../../generated/shaders';
+import type { DeviceShaders, FirstUseShaders } from '../../generated/shaders';
 import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
@@ -457,6 +457,26 @@ export class WebGPUBackend {
 			this.pipelines.defineCustom(template, shader);
 		}
 		return this.moreShaders?.ready(this.pipelines.variants(template), permutation, 'wgsl') ?? true;
+	}
+
+	/**
+	 * Prepares the shaders of `module`, a feature's module that the page or the sketch preloaded:
+	 * it creates each build's shader module, which the feature's pipelines then share, and builds
+	 * the skinning pass's pipeline, whose layout is fixed. A render pipeline also needs the targets,
+	 * the vertex format and the state of the objects that draw with it, which the scene gives, so
+	 * `scene.warmUp()` builds those. Skinning's builds for the vertex shader serve only the
+	 * `?skinning=vertex` switch, and are left out.
+	 */
+	precompile(feature: string, module: FirstUseShaders): void {
+		if (feature === 'skinning') {
+			this.device
+				.createComputePipelineAsync(this.pipelines.compute(G.TEMPLATE_SKIN))
+				.catch(() => undefined);
+			return;
+		}
+		for (const [name, builds] of Object.entries(module))
+			for (const build of Object.values(builds))
+				if (build.wgsl) this.pipelines.prepareModule(name, build.wgsl);
 	}
 
 	/** True when a compute template's shader is loaded: one that loads on first use, once its file arrives. */

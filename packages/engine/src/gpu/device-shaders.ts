@@ -39,8 +39,17 @@ export type DeviceModuleLoader = (
 
 /** The device shaders that a backend reads, which grow by another module when a pipeline needs it. */
 export class DeviceShaderSet {
-	/** Each module that this set loaded or is loading, by its key: its feature and fixed bits. */
-	private readonly modules = new Map<string, Promise<void>>();
+	/**
+	 * Each module that this set loaded or is loading, by its key: its feature and fixed bits. Each
+	 * resolves to the module's builds, or to nothing when it failed to load.
+	 */
+	private readonly modules = new Map<string, Promise<FirstUseShaders | undefined>>();
+	/** The key of each module that a preload asked for, with its feature. */
+	private readonly preloaded = new Map<string, string>();
+	/** The modules that a preload asked for and that arrived, with their features. */
+	private readonly arrived: [string, FirstUseShaders][] = [];
+	/** Hears each module that a preload asked for, once it arrives. */
+	private listener: ((feature: string, module: FirstUseShaders) => void) | undefined;
 	/** The key of each module whose builds the set holds, or that failed to load. */
 	private readonly settled = new Set<string>();
 	/** The name of each shader whose variants the backends hold, by those variants. */
@@ -56,7 +65,7 @@ export class DeviceShaderSet {
 		private readonly load: DeviceModuleLoader,
 	) {
 		const key = moduleKey(undefined, bits);
-		this.modules.set(key, Promise.resolve());
+		this.modules.set(key, Promise.resolve(undefined));
 		this.settled.add(key);
 		for (const [name, variants] of Object.entries(shaders)) this.names.set(variants, name);
 	}
@@ -83,29 +92,55 @@ export class DeviceShaderSet {
 	preload(features: Iterable<string>): Promise<void> {
 		const bits = this.bits & (PIPELINE_DEVICE_BITS | PERMUTATION_HALF);
 		const keys: string[] = [];
+		const ask = (feature: string, at: number) => {
+			const key = this.loadModule(feature, at);
+			keys.push(key);
+			if (this.preloaded.has(key)) return;
+			this.preloaded.set(key, feature);
+			void this.modules.get(key)?.then((module) => {
+				if (!module) return;
+				this.arrived.push([feature, module]);
+				this.listener?.(feature, module);
+			});
+		};
 		for (const feature of features) {
-			keys.push(this.loadModule(feature, bits));
+			ask(feature, bits);
 			if (HDR_FEATURES.has(feature) && bits & PERMUTATION_TONE_MAP) {
 				const hdr = bits & ~PERMUTATION_TONE_MAP;
-				keys.push(this.loadModule(undefined, hdr), this.loadModule(feature, hdr));
+				keys.push(this.loadModule(undefined, hdr));
+				ask(feature, hdr);
 			}
 		}
 		return Promise.all(keys.map((key) => this.modules.get(key))).then(() => undefined);
+	}
+
+	/**
+	 * Hands each module that a preload asked for to `listener` once it arrives: those that arrived
+	 * already, at once. A backend starts to build their shaders, so the feature's first objects
+	 * wait less.
+	 */
+	onPreloaded(listener: (feature: string, module: FirstUseShaders) => void): void {
+		this.listener = listener;
+		for (const [feature, module] of this.arrived) listener(feature, module);
 	}
 
 	/** Starts to load the module of `feature` and `bits`, once, and returns its key. */
 	private loadModule(feature: string | undefined, bits: number): string {
 		const key = moduleKey(feature, bits);
 		if (this.modules.has(key)) return key;
-		const settle = () => {
-			this.settled.add(key);
-		};
 		this.modules.set(
 			key,
-			this.load(bits, feature).then((more) => {
-				this.add(more);
-				settle();
-			}, settle),
+			this.load(bits, feature).then(
+				(more) => {
+					this.add(more);
+					this.settled.add(key);
+					return more;
+				},
+				() => {
+					this.settled.add(key);
+					return undefined;
+				},
+			),
 		);
 		return key;
 	}

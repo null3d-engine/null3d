@@ -153,7 +153,7 @@ const engine = await createEngine({
 });
 ```
 
-The listed files download beside the engine's own shaders, so the start waits only for the largest file. They are in memory before the first frame. When the sketch turns a listed feature on during play, the engine downloads nothing, and only builds the new pipelines. To build those too before the loading screen goes, create the objects in the setup and `await scene.warmUp()`, as "A later loading stage" shows. The `createEngine` call throws E1421 for a name it does not know.
+The listed files download beside the engine's own shaders, so the start waits only for the largest file. Their shaders compile before the first frame, as far as the files alone allow. On the Mac, a list of three features added about 70 ms to the start. When the sketch turns a listed feature on during play, the engine downloads nothing. On WebGL2 the feature's first objects then draw at once. On WebGPU a new object's pipeline still needs the scene's targets and its material's state, so it can take a frame to build. Skinned meshes wait for their pipelines in the same way: which ones they need depends on their materials. To build those too before the loading screen goes, create the objects in the setup and `await scene.warmUp()`, as "A later loading stage" shows. The `createEngine` call throws E1421 for a name it does not know.
 
 The engine does not put every feature into the start's file. That file would then grow for every page, also for the pages that never use a feature. A list keeps the cost on the games that ask for it.
 
