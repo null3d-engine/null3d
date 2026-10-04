@@ -21,7 +21,13 @@ import type { GlTimingMode } from '../page/switches';
 import type { ImageTable } from '../shared/images';
 import { type FrameRecorder, Phase } from '../shared/metrics';
 import type { Tier } from '../shared/tier';
-import { contextLoss, contextRestored, deviceLoss } from './loss';
+import {
+	contextLoss,
+	contextRestored,
+	deviceLoss,
+	type GpuErrorReport,
+	GpuErrorWatch,
+} from './loss';
 import { WebGL2SceneRenderer, WebGPUSceneRenderer } from './scene-renderer';
 import { freshSalt, saltShaders } from './shader-salt';
 
@@ -103,7 +109,7 @@ export interface RendererOptions {
 	 * an object, else it rejected a command. `message` is the GPU path's own text. The thread that
 	 * draws reports each kind once per device, as E1304 or E1305.
 	 */
-	gpuError?: (outOfMemory: boolean, message: string) => void;
+	gpuError?: GpuErrorReport;
 }
 
 /** WebGPU's default `maxBufferSize`, which every device offers. */
@@ -125,14 +131,17 @@ class WebGPURenderer implements Renderer {
 	readonly completions: QueueCompletion | undefined;
 	private simulated = false;
 	readonly lost: Promise<string>;
+	readonly errors: GpuErrorWatch;
 
 	constructor(
 		readonly tier: Tier,
 		private readonly device: GPUDevice,
 		readonly canvas: RenderCanvas,
 		metrics: ArrayBufferLike | undefined,
+		gpuError?: GpuErrorReport,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
+		this.errors = new GpuErrorWatch(device, gpuError);
 		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
 		if (!context) throw new Error('the canvas has no WebGPU context');
 		this.context = context;
@@ -306,26 +315,36 @@ export async function createRenderer(
 		// A canvas keeps the settings of the first request for its context and ignores later ones,
 		// so the context is made here with the engine's settings, before anything else asks for it.
 		const gl = webgl2Context(canvas, options.powerPreference, device.transparent);
-		// After a loss, the context must come back before the engine can draw with it again. A
-		// scene's shaders download meanwhile.
-		const [, shaders] = await Promise.all([
-			contextRestored(gl),
-			scene && deviceShaders(device, loadGlslShaders),
-		]);
-		if (scene && shaders)
-			return new WebGL2SceneRenderer(
-				canvas,
-				options.glTiming
-					? (await import('../gpu/webgl2/call-timing')).timeGlCalls(gl, metrics, options.glTiming)
-					: gl,
-				scene.memory,
-				scene.control,
-				metrics,
-				device,
-				options.imageTable,
-				shaders,
-			);
-		return new WebGL2Renderer(canvas, gl, metrics);
+		// Until the renderer listens for a loss itself, this listener asks the browser to offer the
+		// context back after one. Without it, a loss while the shaders download would never end.
+		const starting = new AbortController();
+		void contextLoss(canvas, starting.signal);
+		try {
+			// After a loss, the context must come back before the engine can draw with it again. A
+			// scene's shaders download meanwhile.
+			const [, shaders, timing] = await Promise.all([
+				contextRestored(gl),
+				scene && deviceShaders(device, loadGlslShaders),
+				options.glTiming && import('../gpu/webgl2/call-timing'),
+			]);
+			// The context may have been lost again during the downloads. The renderer starts on a
+			// context that is back, in the same task, so its own listener hears the next loss.
+			while (gl.isContextLost()) await contextRestored(gl);
+			if (scene && shaders)
+				return new WebGL2SceneRenderer(
+					canvas,
+					timing && options.glTiming ? timing.timeGlCalls(gl, metrics, options.glTiming) : gl,
+					scene.memory,
+					scene.control,
+					metrics,
+					device,
+					options.imageTable,
+					shaders,
+				);
+			return new WebGL2Renderer(canvas, gl, metrics);
+		} finally {
+			starting.abort();
+		}
 	}
 	const [gpu, shaders] = await Promise.all([
 		requestDevice(options),
@@ -342,8 +361,21 @@ export async function createRenderer(
 			options.imageTable,
 			shaders,
 			device.transparent,
+			options.gpuError,
 		);
-	return new WebGPURenderer(gpu.tier, gpu.device, canvas, metrics);
+	return new WebGPURenderer(gpu.tier, gpu.device, canvas, metrics, options.gpuError);
+}
+
+/**
+ * A feature that the engine chose to draw with, which the adapter must offer. `use` says what the
+ * engine draws with it.
+ */
+function adapterFeature(adapter: GPUAdapter, feature: GPUFeatureName, use: string): GPUFeatureName {
+	if (!adapter.features.has(feature))
+		throw new Error(
+			`the GPU adapter lacks the WebGPU feature ${feature}, which the engine chose for ${use} on the GPU it started with`,
+		);
+	return feature;
 }
 
 /** Requests a WebGPU device with the features and limits that the engine uses, and its tier. */
@@ -362,12 +394,15 @@ async function requestDevice(options: RendererOptions): Promise<{ tier: Tier; de
 	for (const [flag, feature] of TEXTURE_COMPRESSION)
 		if (options.device.capabilities & flag && adapter.features.has(feature))
 			requiredFeatures.push(feature);
-	// The scene color at the start, or after an effect that needs HDR color switches to it.
+	// The scene color at the start, or after an effect that needs HDR color switches to it. The
+	// engine chose these from the page's adapter, and a new adapter, as after a GPU loss on a
+	// machine with two GPUs, can lack them.
 	const { sceneColor, effectsSceneColor } = options.device;
 	if (sceneColor === FORMAT_RG11B10_UFLOAT || effectsSceneColor === FORMAT_RG11B10_UFLOAT)
-		requiredFeatures.push('rg11b10ufloat-renderable');
+		requiredFeatures.push(adapterFeature(adapter, 'rg11b10ufloat-renderable', 'its HDR color'));
 	// The device chose half precision only where the adapter offers 16-bit floats.
-	if (options.device.shaderBits & PERMUTATION_HALF) requiredFeatures.push('shader-f16');
+	if (options.device.shaderBits & PERMUTATION_HALF)
+		requiredFeatures.push(adapterFeature(adapter, 'shader-f16', 'its half precision shaders'));
 	const binding = options.device.storageBindingBytes;
 	const device = await adapter.requestDevice({
 		requiredFeatures,
