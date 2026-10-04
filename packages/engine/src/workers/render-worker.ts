@@ -2,7 +2,7 @@
 // its own requestAnimationFrame callback.
 
 import { messageOf } from '../errors/message';
-import { captureFrame, captureImage, startDrawing } from '../render/draw';
+import { captureFrame, captureImage, preloadDeviceShaders, startDrawing } from '../render/draw';
 import { controlViews } from '../shared/control';
 import { setWakeByMessage } from '../shared/wake';
 import { DrawingHost } from './drawing-host';
@@ -11,6 +11,7 @@ import {
 	type RenderWorkerInit,
 	replyToPage,
 	replyWithCapture,
+	type ShaderPreload,
 	startSteps,
 	startWorker,
 	startWorkerCore,
@@ -21,42 +22,48 @@ let controlSlots: Int32Array | undefined;
 
 const step = startSteps('render');
 
-startWorker('render', step, async (event: MessageEvent<RenderWorkerInit | RendererRequest>) => {
-	const message = event.data;
-	if (message.type === 'init') {
-		try {
-			controlSlots = controlViews(message.control).slots;
-			setWakeByMessage(message.wakeByMessage);
-			const { glue: core } = await startWorkerCore(message, step);
-			const drawing = await host.start(
-				startDrawing({
-					...message,
-					scene: message.memory && { memory: message.memory, control: message.control },
-					fail: (reason) => replyToPage({ type: 'lost', role: 'render', reason }),
-				}),
-			);
-			if (!drawing) return;
-			replyToPage({
-				type: 'ready',
-				role: 'render',
-				threaded: core.isThreadedBuild(),
-				version: core.engineVersion(),
-				tier: drawing.renderer.tier,
-			});
-		} catch (e) {
-			await host.release();
-			replyToPage({
-				type: 'error',
-				role: 'render',
-				message: messageOf(e),
-			});
+startWorker(
+	'render',
+	step,
+	async (event: MessageEvent<RenderWorkerInit | ShaderPreload | RendererRequest>) => {
+		const message = event.data;
+		if (message.type === 'load-shaders') {
+			preloadDeviceShaders(message.tier, message.bits);
+		} else if (message.type === 'init') {
+			try {
+				controlSlots = controlViews(message.control).slots;
+				setWakeByMessage(message.wakeByMessage);
+				const { glue: core } = await startWorkerCore(message, step);
+				const drawing = await host.start(
+					startDrawing({
+						...message,
+						scene: message.memory && { memory: message.memory, control: message.control },
+						fail: (reason) => replyToPage({ type: 'lost', role: 'render', reason }),
+					}),
+				);
+				if (!drawing) return;
+				replyToPage({
+					type: 'ready',
+					role: 'render',
+					threaded: core.isThreadedBuild(),
+					version: core.engineVersion(),
+					tier: drawing.renderer.tier,
+				});
+			} catch (e) {
+				await host.release();
+				replyToPage({
+					type: 'error',
+					role: 'render',
+					message: messageOf(e),
+				});
+			}
+		} else if (message.type === 'capture' && host.drawing && controlSlots) {
+			const capture = message.image ? captureImage : captureFrame;
+			await replyWithCapture(capture(host.drawing, controlSlots));
+		} else if (message.type === 'lose-gpu') {
+			host.drawing?.simulateLoss();
+		} else if (message.type === 'stop-drawing') {
+			await host.stop('render');
 		}
-	} else if (message.type === 'capture' && host.drawing && controlSlots) {
-		const capture = message.image ? captureImage : captureFrame;
-		await replyWithCapture(capture(host.drawing, controlSlots));
-	} else if (message.type === 'lose-gpu') {
-		host.drawing?.simulateLoss();
-	} else if (message.type === 'stop-drawing') {
-		await host.stop('render');
-	}
-});
+	},
+);
