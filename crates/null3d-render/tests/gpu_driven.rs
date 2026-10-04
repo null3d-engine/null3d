@@ -131,7 +131,7 @@ fn two_views_cull_into_buffers_of_their_own_and_draw_their_own_bundles() {
     // the environment's blank cube, and the blank texture that stands in for ambient occlusion.
     assert_eq!(camera.pass[1], 0);
     assert_eq!(other.pass[1], NO_TARGET);
-    assert_eq!(count(&commands, Op::CreateTexture), 7);
+    assert_eq!(count(&commands, Op::CreateTexture), 8);
 
     // Each view's culling tests its own frustum: the side view's leaves out the object at
     // x = -3, which the camera sees. A frustum is relative to its view's camera, so each sphere
@@ -246,7 +246,7 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
     // The color and depth targets, the shadow map and the shadow atlas, one texel each while no
     // light casts shadows, the table of specular terms, the materials' custom values, the
     // environment's blank cube, and the blank texture that stands in for ambient occlusion.
-    assert_eq!(count(&commands, Op::CreateTexture), 7);
+    assert_eq!(count(&commands, Op::CreateTexture), 8);
     // Buckets: box lit (one object and the batch), box unlit, ball lit; the hidden ball draws
     // nowhere.
     assert_eq!(count(&commands, Op::DrawIndexedIndirect), 3);
