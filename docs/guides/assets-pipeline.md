@@ -8,7 +8,7 @@ summary: "optimize, env, convert; LODs; texture compression; budget reports."
 
 # The asset pipeline (the `assets` command)
 
-> Ships in null3D 0.2. The command is experimental, so it can still change between versions. `assets optimize` and `assets env` are built. Not built yet: `assets convert`, `assets pack-orm` and `assets normal-from-bump`, and blocker meshes and prebuilt BVHs in the files. The engine does not draw levels of detail yet, so it draws the full mesh of a model made with `--lod`. The engine does not light scenes with the environment maps of `assets env` yet. Coding agents must not use these parts.
+> Ships in null3D 0.2. The command is experimental, so it can still change between versions. `assets optimize` and `assets env` are built. Not built yet: `assets convert`, `assets pack-orm` and `assets normal-from-bump`, and blocker meshes and prebuilt BVHs in the files. The engine does not draw levels of detail yet, so it draws the full mesh of a model made with `--lod`. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR
@@ -174,7 +174,20 @@ Both formats filter on every GPU the engine supports. `rgb9e5ufloat` stores thre
 
 three.js prefilters an HDR file in the browser on every visit, with `PMREMGenerator`. The command does it once, before you publish. Your page then downloads the filtered file and does no work before it draws. The same file gives the same bytes on every computer.
 
-`--builtin room` writes the room that three.js's `RoomEnvironment` builds: a white room with six boxes, six glowing panels and one point light. The engine's package holds that file.
+`--builtin room` writes the room that three.js's `RoomEnvironment` builds: a white room with six boxes, six glowing panels and one point light. The engine's package holds that file, which `assets.builtinEnvironment('room')` loads.
+
+A sketch loads the file with `assets.loadEnvironment`, and lights the scene with it through `scene.setEnvironment`:
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets }) => {
+  scene.setEnvironment(await assets.loadEnvironment('/env/venice.ktx2'));
+  return {};
+});
+```
+
+[Lighting and environment](../concepts/lighting.md#environment-maps) says how the environment lights each surface.
 
 ## Encode time
 

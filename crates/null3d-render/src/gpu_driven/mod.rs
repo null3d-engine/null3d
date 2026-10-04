@@ -115,6 +115,7 @@ use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
+use crate::environment;
 use crate::final_pass::FinalIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
@@ -244,8 +245,10 @@ mod ids {
     pub const CUSTOM_VALUES: u32 = DFG + 1;
     /// The final pass's blank color grading table, which it binds while the sketch sets none.
     pub const BLANK_LUT: u32 = CUSTOM_VALUES + 1;
+    /// The blank cube that the frame's groups bind while the scene has no environment.
+    pub const BLANK_ENVIRONMENT: u32 = BLANK_LUT + 1;
     /// Every animated instance's skinning matrices (see [`crate::skinning`]).
-    pub const JOINTS: u32 = BLANK_LUT + 1;
+    pub const JOINTS: u32 = BLANK_ENVIRONMENT + 1;
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = JOINTS + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
@@ -256,8 +259,10 @@ mod ids {
     pub const BLOOM_SAMPLER: u32 = 2;
     /// The linear sampler of the final pass's color grading table.
     pub const LUT_SAMPLER: u32 = 3;
+    /// The sampler of the environment's cube texture.
+    pub const ENVIRONMENT_SAMPLER: u32 = 4;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 4;
+    pub const SAMPLERS: u32 = 5;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -389,6 +394,9 @@ pub struct GpuDrivenRenderer {
     created: bool,
     /// True from the creation of three.js's table of specular terms until a frame uploads it.
     dfg_pending: bool,
+    /// The cube texture that the camera views' frame groups bind: the environment's, or the
+    /// blank one.
+    bound_environment: u32,
 }
 
 /// The builder's scene settings: meshes in shared buffers, `max_materials` materials, textures
@@ -464,6 +472,7 @@ impl GpuDrivenRenderer {
             cascades_held: false,
             created: false,
             dfg_pending: false,
+            bound_environment: ids::BLANK_ENVIRONMENT,
         }
     }
 
@@ -661,7 +670,7 @@ impl GpuDrivenRenderer {
                 }
             }
             if index >= first_new || self.graph.textures_made() {
-                opaque::bind_frame(list, view, shadow_map, atlas)?;
+                opaque::bind_frame(list, view, shadow_map, atlas, self.bound_environment)?;
             }
         }
         self.views_made = self.views_made.max(views);
@@ -723,6 +732,19 @@ impl GpuDrivenRenderer {
         let groups_remade = self
             .settings
             .record_materials(list, arena, table, input.frame)?;
+        // The environment's map may have finished its upload, or gone, with this frame's texture
+        // work, so the views read it from here on.
+        let (environment, lit) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);
+        if environment != self.bound_environment {
+            self.bound_environment = environment;
+            for index in 0..views {
+                let view = ViewId::from_index(index);
+                opaque::bind_frame(list, view, shadow_map, atlas, environment)?;
+            }
+        }
+        for frame in self.frames.iter_mut().flatten() {
+            frame.uniform.environment = lit;
+        }
         self.graph.upload(
             list,
             arena,
@@ -966,6 +988,7 @@ impl GpuDrivenRenderer {
             ],
         )?;
         dfg::create(list, ids::DFG)?;
+        environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         lights::create(list, &self.lights)?;
         self.dfg_pending = true;
         self.created = true;
@@ -1044,6 +1067,7 @@ impl FrameBuilder for GpuDrivenRenderer {
 
     fn reset_gpu(&mut self) {
         self.created = false;
+        self.bound_environment = ids::BLANK_ENVIRONMENT;
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
         self.layout.forget_gpu();

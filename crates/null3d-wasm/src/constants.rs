@@ -10,7 +10,7 @@ use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{color as light_color, kind as light_kind, value as light_value};
 use null3d_core::scene::{NO_PARENT, flags, op};
 use null3d_core::world::MATRIX_FLOATS;
-use null3d_gpu::caps::Capabilities;
+use null3d_gpu::caps::{CUBE_TEXTURE_SIZE, Capabilities};
 use null3d_gpu::drawlist::{address, filter, format, sizes, upload_flags};
 use null3d_render::arrays::ArrayName;
 use null3d_render::cpu_culled::{CpuCulledConfig, MAX_SOURCE_BITS};
@@ -118,6 +118,20 @@ pub mod post_value {
     pub const VIGNETTE_DARKNESS: u32 = 12;
     /// The values in the block.
     pub const COUNT: u32 = 13;
+}
+
+/// The places of the environment's values in the block that `environmentValues` gives: 32-bit
+/// floats that TypeScript writes before it calls `setEnvironment`, as the post-processing values
+/// come.
+pub mod environment_value {
+    /// The factor of the environment's light.
+    pub const INTENSITY: u32 = 0;
+    /// The environment's turn as Euler angles in radians, in the order X, Y, Z.
+    pub const ROTATION: u32 = 1;
+    /// The nine coefficients of its diffuse light: red, green and blue for each.
+    pub const SH: u32 = 4;
+    /// The values in the block.
+    pub const COUNT: u32 = 31;
 }
 
 pub mod texture_stat {
@@ -602,6 +616,7 @@ pub fn typescript() -> String {
                 ("NORMAL_SCALE", param::NORMAL_SCALE as u32),
                 ("OCCLUSION_STRENGTH", param::OCCLUSION_STRENGTH as u32),
                 ("LIGHT_MAP_INTENSITY", param::LIGHT_MAP_INTENSITY as u32),
+                ("ENV_INTENSITY", param::ENV_INTENSITY as u32),
                 ("UV_U", param::UV_U as u32),
                 ("UV_V", param::UV_V as u32),
             ],
@@ -619,6 +634,15 @@ pub fn typescript() -> String {
                 ("VIGNETTE_OFFSET", post_value::VIGNETTE_OFFSET),
                 ("VIGNETTE_DARKNESS", post_value::VIGNETTE_DARKNESS),
                 ("COUNT", post_value::COUNT),
+            ],
+        ),
+        (
+            "ENVIRONMENT_VALUE",
+            &[
+                ("INTENSITY", environment_value::INTENSITY),
+                ("ROTATION", environment_value::ROTATION),
+                ("SH", environment_value::SH),
+                ("COUNT", environment_value::COUNT),
             ],
         ),
         (
@@ -657,6 +681,8 @@ pub fn typescript() -> String {
                 ("FORMAT_SRGB", format::RGBA8_UNORM_SRGB),
                 ("FORMAT_LINEAR", format::RGBA8_UNORM),
                 ("FORMAT_HALF_FLOAT", format::RGBA16_FLOAT),
+                ("FORMAT_SHARED_EXPONENT", format::RGB9E5_UFLOAT),
+                ("CUBE_MAX_SIZE", CUBE_TEXTURE_SIZE),
                 ("FORMAT_ASTC", format::ASTC_4X4_UNORM),
                 ("FORMAT_ASTC_SRGB", format::ASTC_4X4_UNORM_SRGB),
                 ("FORMAT_BC7", format::BC7_RGBA_UNORM),

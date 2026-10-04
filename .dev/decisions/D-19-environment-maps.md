@@ -1,10 +1,12 @@
 # D-19: Environment maps: format, size, levels and where they are prefiltered
 
-Status: decided for the file and the tool, 2026-10-04; the shader's lookup and the parity of lit scenes come with M2-E2. Date: 2026-10-04. Tasks: M2-B2, M2-E2.
+Status: decided, 2026-10-04: the file and the tool with M2-B2, then the lookup, the built-in environment's name and the lit scenes' parity with M2-E2. The lookup's cost on the iPad and the S24+ is pending. Date: 2026-10-04. Tasks: M2-B2, M2-E2.
 
 ## Question
 
 Image-based light needs the environment's light filtered for each roughness of the engine's materials, and its diffuse light. Which texture format, face size and levels hold the filtered light? Where does the filtering run: in the asset tool before release, or in the browser at load? And how far may the result lie from three.js's `PMREMGenerator` for the same file?
+
+Then, for the shader (M2-E2): which level does a material of a given roughness read? What is the built-in environment called? And how does the lookup reach the lit template: as a build of its own, or as a value of each frame?
 
 ## Rule
 
@@ -77,6 +79,34 @@ Where three.js and the tool differ on purpose:
 
 How the data was produced: `NULL3D_ENV_PARITY_FIT=1 NULL3D_PORT=<port> bun run --cwd tests test environment-parity.spec.ts --project chrome-real-gpu` prints the best match at each roughness and the size and format figures. The sample-count figures came from a script that built Venice at each count with `environmentMap` and compared the levels texel by texel.
 
+### The lookup in lit scenes
+
+Two lookups were built and drawn against three.js's `scene.environment`, through `PMREMGenerator`, on the standard material's grid of 15 spheres (`tests/pages/sketches/standard-sketch.ts?scene=grid&env=...`, `bench/pages/threejs/environment.ts`). One reads each material's own roughness from the levels. The other reads the GGX roughness of the table above, `THREE_PMREM_ROUGHNESS`, blended between its steps. The scenes light the grid with the environment alone, with no tone mapping, on the Mac's GPU in Chrome. The figures are steps of 1/255 between the two engines' pixels, mean / p99, over the pixels that either image covers with a sphere. "Rule" is the share of pixels that three.js's image rule counts as different. It allows under 0.1%, or under the share by which three.js's own two renderers differ.
+
+| Scene and tier | Own roughness | Table | Rule, own / table | three.js's renderers differ by |
+| --- | --- | --- | --- | --- |
+| Venice, WebGPU | 2.45 / 8.3 | 1.97 / 7.3 | 0.000% / 0.000% | 0.133% |
+| Venice, WebGL2 | 2.47 / 8.7 | 1.96 / 7.0 | 0.000% / 0.000% | |
+| Venice, compatibility mode | 2.96 / 16.3 | 2.48 / 16.3 | 0.046% / 0.044% | |
+| Venice turned a quarter about +Y, WebGPU | 2.52 / 10.7 | 2.13 / 10.7 | 0.002% / 0.002% | 0.201% |
+| Room, WebGPU | 5.01 / 24.0 | 4.01 / 13.3 | 0.183% / 0.064% | 0.316% |
+| Room, WebGL2 | 5.21 / 24.3 | 4.21 / 14.3 | 0.191% / 0.060% | |
+| Room, compatibility mode | 6.02 / 28.3 | 5.07 / 26.3 | 0.428% / 0.301% | |
+
+Take the columns of roughness 0, 0.25, 0.5, 0.75 and 1, on Venice and WebGPU. With the material's roughness, their mean steps were 1.70, 2.28, 3.08, 2.89 and 2.30. With the table, they were 1.57, 1.65, 1.67, 2.67 and 2.27. The room's went from 4.03, 6.42, 5.96, 4.39 and 4.27 to 4.04, 4.37, 3.43, 4.09 and 4.14. The table helps most at roughness 0.25 to 0.5, where three.js's PMREM is sharpest against its own materials. Compatibility mode differs more on both lookups, at the spheres' edges. With MSAA it takes the 8-bit path, which encodes each sample's color before it averages them.
+
+The turned scene sets `scene.environmentRotation` in three.js and `rotation` in the engine. It matches as closely as the scene that is not turned, so both engines turn the map the same way.
+
+### The built-in room
+
+The built-in room is three.js's `RoomEnvironment`, which the tool traces from the room's center. three.js's examples prefilter it with `fromScene(room, 0.04)`: a blur of 0.04 radians before the levels. The room's file has no such blur. On the CPU, against three.js's PMREM with no blur, its level 0 lay 1.53 / 3.0 steps away. Its total light lay 0.7% above three.js's. With the blur, level 0 lay 5.49 / 108 steps away, all of it at the panels' sharp edges. From roughness 0.1 up, the room lay 2.6 to 5.3 steps from three.js at the table's roughness, with p99 up to 34. Its light lay 1.2% to 2.4% above three.js's. The diffuse light lay 3.20 / 7.9 steps away. The panels are small and over 50 times as bright as the walls. So small differences in a filter's shape show at their edges, as a sun's edge shows in an HDR file. The lit spheres meet three.js's rule all the same (0.064% and 0.060% of pixels, above).
+
+### The lookup as a value, not a build
+
+The engine builds a shader for each combination of its permutation bits. A bit for the environment would double the variants of the standard material and of its maps build. Every device module would then nearly double in size. Instead, the frame's group always binds a cube: the environment's, or a blank cube of one texel. The frame uniform says whether to read it. Without an environment, each pixel pays one branch on a uniform, which every pixel takes the same way. Color grading tables work the same way (D-33).
+
+The lookup's code adds 1.0 to 1.7 KB after Brotli to each device module, 3.9% to 7.1%. It holds the table, the nine coefficients and the split-sum terms of image light. The frame uniform grows from 288 to 496 bytes per view. It gains the nine coefficients, the turn's three rows, and the map's last level, intensity and switch.
+
 ## Decision
 
 - The asset tool prefilters, once, in its WebAssembly module (`crates/null3d-assets-wasm/src/environment/`). The module is single-threaded and uses no host math, so every machine writes the same bytes, in Node and in Bun.
@@ -89,14 +119,22 @@ How the data was produced: `NULL3D_ENV_PARITY_FIT=1 NULL3D_PORT=<port> bun run -
   - 4 / 14 for diffuse light;
   - the total light within 2% from roughness 0.1 up.
 - The built-in room repeats three.js's `RoomEnvironment` scene. The tool traces it from the center. It shades it as `MeshStandardMaterial` does with its defaults, with no shadows, as three.js draws it.
+- The built-in environment is named `room`, after three.js's `RoomEnvironment`, which porters know. A sketch calls `assets.builtinEnvironment('room')` for it. The tool, the docs, the skills and the mapping all use that name. The studio preset of drei is an HDR file of its own, which ports through the tool.
+- The lit template reads each material's roughness from the level of the table's GGX roughness, `THREE_PMREM_ROUGHNESS`, blended between its steps of 0.05: `lod = (n - 1) * g * (2 - g)`. The porting promise is the look of the three.js scene, and three.js's PMREM sets that look. The table brings the lit spheres within three.js's image rule on both environments and every tier, which the material's own roughness misses on the room. The table lives in `crates/null3d-shaders/wgsl/lib/ibl.wgsl`.
+- Diffuse light comes from the nine coefficients. Specular light comes from the cube map along the reflection, bent toward the normal by roughness to the fourth power, as three.js's `getIBLRadiance` bends it. Both go through three.js's `RE_IndirectSpecular_Physical`, and the occlusion map darkens the specular light by `computeSpecularOcclusion`.
+- `scene.setEnvironment(env, { intensity, rotation })` sets the scene's environment from the next frame, with three.js's `environmentIntensity` and `environmentRotation` (Euler angles in the order X, Y, Z). A material's `envIntensity` multiplies the intensity. three.js uses `environmentIntensity` in place of a material's `envMapIntensity` under a scene environment. The engine multiplies them, so the material's value keeps its meaning.
+- The environment is a value of each frame, not a permutation bit. The frame's group binds the environment's cube, or a blank one, at bindings 11 and 12. A frame builder reads the environment after the frame's texture uploads, so a held frame, which uploads everything, draws with it.
+- Tolerances for lit scenes: three.js's image rule, as for every feature scene (`FEATURE_SCENES` in `bench/lib/parity.ts`). The CPU test of the room's file compares it with three.js's room with no blur. Its own limits are 9 / 50 at the material's roughness, 6 / 40 at the table's, and 3% of total light. The panels' edges set them.
 
 ## Consequences
 
 - `bunx @null3d/cli assets env <in.hdr|in.exr> <out.ktx2>` writes the file, and `--builtin room` writes the built-in room. `packages/engine/environments/room.ktx2` is the room's file in the engine's package. A unit test checks that it matches the tool's output byte for byte, and `NULL3D_WRITE_ENVIRONMENTS=1 bun test packages/cli/src/assets/env.test.ts` writes it again.
 - OpenEXR files read through the `exr` crate (BSD-3-Clause), which reads every compression but DWAA and DWAB. The tool's module grew from 16 KB to 115 KB after Brotli, most of it the reader.
-- Open for M2-E2:
-  - whether the lookup reads the material's roughness, or the matching roughness of the table, which keeps a three.js port's look;
-  - image tests of lit spheres on all three tiers, which must also show that the diffuse figures above hold on screen;
-  - the lookup's GPU cost on the iPad and the S24+.
+- `assets.loadEnvironment(url)` reads the tool's files, and `assets.builtinEnvironment('room')` the room's. The reader loads on first use, under 1 KB after Brotli, and the room's file downloads only when a sketch asks for it.
+- The image tests `environment-room`, `environment-venice` and `environment-venice-rotated` draw the grid on all three tiers, and the parity scenes of the same names compare it with three.js. The dev server builds the Venice map from the sample content's HDR file with the tool, on the first request (`tools/lib/sample-environments.ts`).
+- On WebGL2 the cube map takes one texture unit of the fragment stage. The standard material with all six maps reads 13 of the 16 that every device allows.
+- Open: the lookup's GPU cost on the iPad, and the frame time at a GPU-bound size on the S24+. The device runner's `environment` plan measures both (`tests/pages/environment-cost.html`). Its scene draws 8 planes of the standard material over the whole window, without and with the room in turns. The difference over the layers is the lookup's cost. A functional run in Chrome on the Mac (Apple M5 Max) drew 1280 x 800 pixels. It gave 0.46 ms of GPU time without the room and 0.52 ms with it.
+- Open: blur the room's level 0 by three.js's 0.04 radians in the tool, if ports of mirror-like surfaces need it.
+- Open: after the browser replaces the GPU, an environment whose texels the store freed draws as none until the sketch loads it again. Every texture from data does the same, as M2-R6 notes for #76.
 - Open for M2-E3: a blurred background reads the same levels. A sharp background may want `--size 512` or larger.
 - Open: KTX2 supercompression. The room's 2.0 MB file is 331 KB with Brotli and 497 KB with gzip, so a host that compresses `.ktx2` files saves most of it. Zstandard in the file would need a decoder in the engine.

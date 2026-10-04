@@ -3,6 +3,7 @@
 use null3d_gpu::drawlist::sizes::FRAME_UNIFORM_BYTES;
 
 use crate::camera::Mat4;
+use crate::environment::EnvironmentUniform;
 use crate::fog::FogUniform;
 use crate::output::OutputUniform;
 
@@ -43,6 +44,8 @@ pub struct FrameUniform {
     /// The distances of the camera's near and far planes, then the change in normalized device
     /// coordinates across one CSS pixel of the canvas, along x and along y.
     pub camera_range: [f32; 4],
+    /// The scene's environment: see [`crate::environment`].
+    pub environment: EnvironmentUniform,
 }
 
 const _: () = assert!(std::mem::size_of::<FrameUniform>() == FRAME_UNIFORM_BYTES as usize);

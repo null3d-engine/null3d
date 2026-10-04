@@ -8,12 +8,13 @@ summary: "Light types and units; clustered lighting; fog; environment maps and s
 
 # Lighting and environment
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. The quality presets do not set the light limits yet. `bunx @null3d/cli assets env` makes environment maps, but the engine does not light scenes with them yet. That comes in null3D 0.2. Coding agents must not rely on these parts.
+> Ships in null3D 0.1, with environment maps from 0.2. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
     sketch["Sketch code<br/>createPointLight, setIntensity"] --> object["Light object<br/>position, rotation, parent"]
     sketch --> table["Light table<br/>kind, color, range, cone"]
+    sketch --> env["Environment<br/>cube map and diffuse light"]
     object --> frame{"Each frame:<br/>visible, and on the<br/>camera's layers?"}
     table --> frame
     frame --> main["The first directional light,<br/>and the ambient lights"]
@@ -21,6 +22,7 @@ flowchart LR
     list --> grid["Light grid<br/>the lights of each cluster,<br/>on the GPU or the job workers"]
     main --> shading["Standard material shading"]
     grid --> shading
+    env --> shading
 ```
 
 Every light is a scene object with a row in the engine's light table. The object holds what every object holds: where the light is, which way it faces, its parent, whether it is visible, and its layers. The light table holds the rest: the light's kind, its colors, its intensity, and for point and spot lights their range, decay and cone.
@@ -28,7 +30,7 @@ Every light is a scene object with a row in the engine's light table. The object
 Setters change the engine's memory at once, and they allocate nothing except those that convert a color. Each frame, after the engine updates transforms, it reads every light:
 
 1. It skips a light that is hidden by itself or a parent, or whose layer mask shares no bit with the camera's.
-2. The first directional light created that remains, and the sum of the ambient lights, become the light that standard materials reflect.
+2. The first directional light created that remains, the sum of the ambient lights, and the scene's environment become the light that standard materials reflect.
 3. It tests the sphere of each point and spot light's range against the camera's view, and lists the lights whose spheres reach into it.
 4. Each listed light goes into the clusters of the view that its sphere reaches. On WebGPU the GPU does this work, and on WebGL2 the job workers do it, as [Clustered forward shading](#clustered-forward-shading) explains.
 
@@ -109,14 +111,62 @@ The engine mixes the fog into each pixel's color as it shades the pixel, after l
 
 ## Environment maps
 
-An environment map holds the light that reaches a point from every direction, such as a sky, a street or a studio. Metal and glossy surfaces reflect it, and every surface takes some of it as diffuse light. Metals need it most, since they have almost no diffuse color and show only what they reflect.
+An environment map holds the light that reaches a point from every direction, such as a sky, a street or a room. Metal and glossy surfaces reflect it, and every surface takes some of it as diffuse light. Metals need it most, since they have almost no diffuse color and show only what they reflect.
 
-The engine takes an environment as one file, which `bunx @null3d/cli assets env` makes from an HDR image before you publish:
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets, materials, geometry }) => {
+  // The room of three.js's RoomEnvironment: soft, neutral light, with no file of your own.
+  scene.setEnvironment(await assets.builtinEnvironment('room'));
+  // Or a file that `bunx @null3d/cli assets env` made from an HDR image, turned and dimmed:
+  // scene.setEnvironment(await assets.loadEnvironment('/env/sunset.ktx2'), { intensity: 0.8, rotation: [0, Math.PI / 2, 0] });
+  const chrome = materials.standard({ color: '#d8d8d8', metalness: 1, roughness: 0.1 });
+  scene.createMesh({ mesh: geometry.sphere(), material: chrome });
+  return {};
+});
+```
+
+The engine takes an environment as one KTX2 file, which `bunx @null3d/cli assets env` makes from an HDR image before you publish:
 
 - A cube map with one level for each step of roughness. Level 0 holds the light itself, for mirrors. Each smaller level holds the light blurred as a rougher surface reflects it, with the GGX distribution of the standard material.
 - Nine spherical harmonics coefficients, the diffuse light from each direction in a few numbers, as three.js's `LightProbe` holds it.
 
-three.js builds the same data in the browser on every visit with `PMREMGenerator`. The engine reads the finished file. [The asset pipeline](../guides/assets-pipeline.md#environment-maps) gives the command's options and the file's sizes.
+three.js builds the same data in the browser on every visit with `PMREMGenerator`. The engine reads the finished file, so a page does no prefiltering before it draws. [The asset pipeline](../guides/assets-pipeline.md#environment-maps) gives the command's options and the file's sizes.
+
+### How an environment lights a surface
+
+The standard material takes the environment's light as three.js's `MeshStandardMaterial` takes it from `scene.environment`:
+
+- Specular light comes from the cube map, along the view's reflection about the surface's normal. A rough surface reads a smaller, blurrier level.
+- Diffuse light comes from the nine coefficients, along the surface's normal.
+- The split-sum terms of three.js's table weigh the two by the view's angle, the roughness and the metalness, with three.js's energy compensation.
+- The occlusion map darkens the diffuse light, and darkens the specular light as three.js's `computeSpecularOcclusion` does.
+
+three.js's PMREM blurs its levels a little less than the GGX distribution of its own materials. The engine therefore reads each roughness from the level that matches three.js's light best, from a table that compares the two. A port keeps its look: the spheres of the engine's parity scenes match three.js under three.js's own image rule.
+
+`scene.setEnvironment(environment, { intensity, rotation })` sets the scene's environment, and `scene.setEnvironment(null)` removes it. `intensity` scales the light, as three.js's `scene.environmentIntensity` does. `rotation` turns the environment by Euler angles in radians, as `scene.environmentRotation` does. The call allocates nothing, so a sketch can turn the environment in every frame. A material's `envIntensity` scales the environment's light on that material alone.
+
+| Call | Gives |
+| --- | --- |
+| `assets.loadEnvironment(url)` | An environment from a file of `bunx @null3d/cli assets env` |
+| `assets.builtinEnvironment('room')` | The room that three.js's `RoomEnvironment` builds: a white room with six boxes and glowing panels |
+| `scene.setEnvironment(environment, options)` | Nothing: it lights the scene with the environment from the next frame |
+| `environment.destroy()` | Nothing: it frees the cube map's GPU memory |
+
+### Cost
+
+- A page downloads the environment code, under 1 KB after Brotli, with its first environment. The built-in room's file, 2 MB, comes with the engine's package, and downloads only when a sketch asks for it. A server that compresses it with Brotli sends about 330 KB.
+- A map of the default size takes 2 MB of GPU memory. It uploads in the frames after the load, within the frame's upload budget, and the scene draws without it until it is on the GPU.
+- The environment is a value of each frame, not a build of the shaders. So setting one builds no pipeline, and each pixel of a standard material pays one branch while the scene has none.
+- With an environment, each pixel of a standard material reads the cube map once and adds up the nine coefficients.
+- On WebGL2 the cube map takes one of the 16 texture units that a fragment shader may use. A standard material with all six maps uses 13 of them.
+
+### Differences from three.js
+
+- three.js takes `scene.environmentIntensity` in place of a material's `envMapIntensity` when the material has no map of its own. The engine multiplies the two, so `envIntensity` keeps its meaning with a scene environment.
+- three.js's examples prefilter `RoomEnvironment` with `fromScene(room, 0.04)`, which blurs mirror reflections a little. The built-in room has no such blur. Mirror-like surfaces therefore show its panels with sharper edges.
+- Each material can have its own `envMap` in three.js. The engine has one environment per scene.
 
 ## Related pages
 
@@ -126,3 +176,4 @@ three.js builds the same data in the browser on every visit with `PMREMGenerator
 - [Render layers](render-layers.md): which cameras a light lights.
 - [Materials](../api/materials.md): the standard material, which lights shade.
 - [The asset pipeline](../guides/assets-pipeline.md#environment-maps): the command that makes environment maps.
+- [Assets](../api/assets.md#environments): the calls that load environments.

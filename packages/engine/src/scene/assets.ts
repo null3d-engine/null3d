@@ -1,6 +1,7 @@
 // The sketch's loading calls, `ctx.assets`: files downloaded with fetch and decoded by the browser,
-// by the KTX2 transcoder (ktx2.ts) or by the color grading table readers (lut-files.ts), outside
-// the sketch's frames, and a count of the downloads
+// by the KTX2 transcoder (ktx2.ts), by the color grading table readers (lut-files.ts) or by the
+// environment map reader (environment-file.ts), outside the sketch's frames, and a count of the
+// downloads
 // for loading screens. Relative addresses resolve against the page's address, in every thread
 // mode. Files that `preload` downloaded wait in memory until a load takes them, and loads of one
 // address at the same time share one download; the HTTP cache keeps everything else.
@@ -8,6 +9,7 @@
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import { reasonOf } from '../errors/message';
+import { type BuiltinEnvironmentName, Environment } from './environment';
 import { Lut } from './lut';
 import type { CoreMemory } from './memory';
 import type { Prefab } from './prefab';
@@ -192,6 +194,61 @@ export class Assets {
 		const { size, title, domainMin, domainMax, texels } = table;
 		const texture = this.textures.fromVolume(size, texels, call);
 		return new Lut(texture, size, title, domainMin, domainMax);
+	}
+
+	/**
+	 * Downloads an environment map that `bunx @null3d/cli assets env` made, a KTX2 file, and makes
+	 * an `Environment` from it, for `scene.setEnvironment`. The map's cube texture uploads in the
+	 * frames after the call, and the scene draws without the environment until it is on the GPU.
+	 * The first environment loads the file reader. Throws E1411 or E1413 as `loadTexture` does,
+	 * E1412 when the file is not an environment map that the engine reads, and E1406 when the
+	 * reader does not load.
+	 */
+	async loadEnvironment(url: string | URL): Promise<Environment> {
+		const call = 'assets.loadEnvironment';
+		return this.environment(this.resolve(url), call);
+	}
+
+	/**
+	 * Loads a built-in environment: `room`, the room that three.js's `RoomEnvironment` builds, for
+	 * soft, neutral light with no file of your own. Its file comes with the engine's package, and
+	 * downloads the first time a page asks for it: 2 MB, or about 330 KB from a server that
+	 * compresses it with Brotli. Throws E1213 for a name that no built-in environment has, and the
+	 * errors of `loadEnvironment`.
+	 */
+	async builtinEnvironment(name: BuiltinEnvironmentName): Promise<Environment> {
+		const call = 'assets.builtinEnvironment';
+		const reader = await environmentReader(call, `the built-in ${String(name)}`);
+		if (!Object.hasOwn(reader.BUILTIN_ENVIRONMENTS, name))
+			throw new EngineError(
+				'E1213',
+				`${call}() got ${JSON.stringify(name)}, which names no built-in environment. Use 'room'.`,
+			);
+		return this.environment(reader.BUILTIN_ENVIRONMENTS[name], call, reader);
+	}
+
+	/** Downloads and reads an environment map's file, and makes its cube texture. */
+	private async environment(
+		address: URL,
+		call: string,
+		known?: EnvironmentReader,
+	): Promise<Environment> {
+		const [file, reader] = await Promise.all([
+			this.file(address, call),
+			known ?? environmentReader(call, String(address)),
+		]);
+		let map: import('./environment-file').EnvironmentFile;
+		try {
+			map = reader.readEnvironmentFile(await file.arrayBuffer());
+		} catch (error) {
+			throw new EngineError(
+				'E1412',
+				`${call}() could not read ${address} as an environment map: ${reasonOf(error)}.`,
+			);
+		}
+		const { size, levels, format, texels, sh } = map;
+		const texture = this.textures.fromCube(size, levels, format, texels, call);
+		return new Environment(texture, size, levels, format, sh);
 	}
 
 	/**
@@ -380,6 +437,23 @@ async function loadKtx2(
 		call,
 		(code, message) => new EngineError(code, message),
 	);
+}
+
+type EnvironmentReader = typeof import('./environment-file');
+
+/**
+ * Imports the environment map reader, which a page downloads with its first environment, or
+ * throws E1406 that names what `call` was loading.
+ */
+async function environmentReader(call: string, what: string): Promise<EnvironmentReader> {
+	try {
+		return await import('./environment-file');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the environment map reader did not download for ${call}() of ${what}: ${reasonOf(error)}.`,
+		);
+	}
 }
 
 /** Imports the glTF loader, which a page downloads with its first glTF file, or throws E1406. */

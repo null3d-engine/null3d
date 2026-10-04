@@ -295,7 +295,8 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_DEPTH, 'depth', frameEntries);
 		// The materials' custom values, the table of specular terms, then the shadow map, the
 		// sampler that compares depths in it, its cascades, the camera's light grid and light list,
-		// and the shadow atlas of point and spot lights with its tiles.
+		// the shadow atlas of point and spot lights with its tiles, and the environment's cube map
+		// with its filtering sampler.
 		this.defineLayout(LAYOUT_FRAME, 'frame', [
 			...frameEntries,
 			{
@@ -320,6 +321,8 @@ export class Pipelines {
 				texture: { sampleType: 'depth', viewDimension: '2d-array' },
 			},
 			{ binding: 10, visibility: fragment, buffer: { type: 'uniform' } },
+			{ binding: 11, visibility: fragment, texture: { viewDimension: 'cube' } },
+			{ binding: 12, visibility: fragment, sampler: {} },
 		]);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
