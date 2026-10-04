@@ -6,7 +6,9 @@
 // `lib/` file for file, so each worker entry point and each file that the engine loads by address
 // keeps its place beside the others. The source imports its own modules without an extension or
 // with `.ts`, and passes worker scripts as `.ts` addresses; the build rewrites each to the `.js`
-// file it wrote, so the package works with any bundler and under Node's own module rules.
+// file it wrote, so each address resolves under Node's own module rules. That does not make every
+// bundler build a working game: a Vite build needs the null3D plugin, which builds the workers as
+// ES modules, so that they share the shader files instead of each taking in all of them.
 import { spawnSync } from 'node:child_process';
 import {
 	copyFileSync,
@@ -67,6 +69,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'lib/workers/transcoder-worker.js',
 			'vendor/basis/basis_transcoder.js',
 			'vendor/basis/basis_transcoder.wasm',
+			'THIRD-PARTY-NOTICES.txt',
 			'environments/room.ktx2',
 			'docs/index.md',
 		],

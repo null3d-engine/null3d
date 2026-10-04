@@ -5,7 +5,9 @@
 // once to keep the images of the first run as the references, then once to match them. The test
 // command type checks the project against the packages' declarations, and draws the project's
 // sketch on every GPU tier. Then the tool optimizes a model, and last, it builds the project for
-// production. Run `bun run build` first, for the WebAssembly files. Run from the repository root:
+// production. The build must hold the engine's third-party notices, and its page must start the
+// threaded engine in a browser under a strict Content-Security-Policy. Run `bun run build` first,
+// for the WebAssembly files. Run from the repository root:
 //   bun run test:packages [--keep]    --keep leaves the project's folder in place after a pass
 import { spawnSync } from 'node:child_process';
 import {
@@ -21,8 +23,11 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { defaultEnvironment, launchBrowser } from '../packages/cli/src/browser.js';
+import { ISOLATION_HEADERS, NOTICES_FILE } from '../packages/vite-plugin/src/index.ts';
 import { DEFAULT_PACK_DIR, type PackedPackage, packPackages } from '../tools/lib/packages.ts';
 import { ASSET_SCENE } from './lib/asset-scene.ts';
+import { STRICT_POLICY } from './lib/content-security-policy.ts';
 
 const ROOT = join(import.meta.dirname, '..');
 /** The project's files besides its package manifest. */
@@ -73,7 +78,47 @@ function step(title: string, cwd: string, command: string, args: readonly string
 		throw new Error(`${title} failed with ${result.error?.message ?? `status ${result.status}`}`);
 }
 
-function main(): void {
+/**
+ * Serves a production build with the isolation headers and the strict policy on every file, as a
+ * strict host does, and fails unless its page starts the engine with threads and no file breaks
+ * the policy. A worker takes the policy of its own script's response, so every file carries it.
+ */
+async function startsUnderStrictPolicy(dist: string): Promise<void> {
+	console.log('\nStart under a strict Content-Security-Policy');
+	const headers = { ...ISOLATION_HEADERS, 'Content-Security-Policy': STRICT_POLICY };
+	const server = Bun.serve({
+		port: 0,
+		async fetch(request) {
+			const path = new URL(request.url).pathname;
+			const file = Bun.file(join(dist, path === '/' ? 'index.html' : path));
+			return (await file.exists())
+				? new Response(file, { headers: { ...headers, 'Content-Type': file.type } })
+				: new Response('not found', { status: 404, headers });
+		},
+	});
+	const browser = await launchBrowser(defaultEnvironment());
+	try {
+		const page = await browser.newPage();
+		const violations: string[] = [];
+		page.on('console', (message) => {
+			if (/Content.Security.Policy/i.test(message.text())) violations.push(message.text());
+		});
+		await page.goto(server.url.href);
+		const start = await page
+			.waitForFunction('document.documentElement.dataset.start', undefined, { timeout: 30_000 })
+			.then((handle) => handle.jsonValue());
+		const isolated = await page.evaluate('crossOriginIsolated');
+		if (start !== 'started' || !isolated || violations.length > 0)
+			throw new Error(
+				`under a strict policy the page did not start the threaded engine: start ${start}, isolated ${isolated}, policy reports ${JSON.stringify(violations)}`,
+			);
+	} finally {
+		await browser.close();
+		server.stop(true);
+	}
+}
+
+async function main(): Promise<void> {
 	const keep = process.argv.includes('--keep');
 	console.log('Packing the public packages');
 	const packed = packPackages(ROOT, join(ROOT, DEFAULT_PACK_DIR));
@@ -108,6 +153,14 @@ function main(): void {
 		);
 		if (cores.length !== 2)
 			throw new Error(`the production build holds ${cores.length} engine cores, not 2`);
+		const notices = join(project, 'dist', NOTICES_FILE);
+		const engineNotices = readFileSync(
+			join(ROOT, 'packages/engine/THIRD-PARTY-NOTICES.txt'),
+			'utf8',
+		);
+		if (!existsSync(notices) || readFileSync(notices, 'utf8') !== engineNotices)
+			throw new Error(`the production build lacks the engine's notices in ${NOTICES_FILE}`);
+		await startsUnderStrictPolicy(join(project, 'dist'));
 		passed = true;
 		console.log(`\nThe packed packages pass in a fresh project (${packed.length} packages).`);
 	} finally {
@@ -118,7 +171,7 @@ function main(): void {
 
 if (import.meta.main) {
 	try {
-		main();
+		await main();
 	} catch (e) {
 		console.error(`error: ${(e as Error).message}`);
 		process.exit(1);

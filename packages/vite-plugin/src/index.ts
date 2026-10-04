@@ -191,6 +191,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	let root = process.cwd();
 	let base = '/';
 	let assetsDir = 'assets';
+	/** The third-party notices that a client build writes beside the page; null in other builds. */
+	let notices: string | null = null;
 	/** The optimized files that this build has written, so each texture goes in once. */
 	const emitted = new Map<string, string>();
 	return {
@@ -220,6 +222,12 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			root = config.root;
 			base = config.base;
 			assetsDir = config.build.assetsDir;
+			if (config.worker.format !== 'es') {
+				config.logger.warn(
+					`null3D: workers build as ${config.worker.format}, not as ES modules, so each engine worker takes in every shader file and grows to tens of MB. Set worker.format to 'es', or leave it unset for the null3D plugin to set.`,
+				);
+			}
+			notices = building && !config.build.ssr ? thirdPartyNotices(root) : null;
 		},
 		buildStart() {
 			emitted.clear();
@@ -321,6 +329,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					? { code: out.toString(), map: out.generateMap({ hires: 'boundary' }) }
 					: undefined;
 			},
+		},
+		generateBundle() {
+			if (notices) this.emitFile({ type: 'asset', fileName: NOTICES_FILE, source: notices });
 		},
 		configureServer(server) {
 			server.middlewares.use(isolationMiddleware);
