@@ -484,7 +484,7 @@ const LIGHT_UNITS: Readonly<Record<number, 'lumen' | 'lux'>> = {
  * The factor that turns an intensity in `unit` into three.js's unit for a light of `kind`: candela
  * for point and spot lights, and lux for the others. Without a unit, or in lux, the factor is 1.
  */
-export function intensityScale(kind: number, unit: 'lumen' | 'lux' | undefined): number {
+function intensityScale(kind: number, unit: 'lumen' | 'lux' | undefined): number {
 	return unit === 'lumen' ? (CANDELA_PER_LUMEN[kind] ?? 1) : 1;
 }
 
