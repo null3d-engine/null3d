@@ -97,7 +97,7 @@ fn store(values: &mut [f32], at: usize, v: f32x4) {
 /// that drift (Arseny Kapoulkine, "Approximating slerp", 2015) cuts the error from 3.4e-2 to
 /// 7.7e-5 radians for rotations up to 2 radians apart.
 #[inline(always)]
-fn arc_weight(t: f32x4, d: f32x4) -> f32x4 {
+pub(crate) fn arc_weight(t: f32x4, d: f32x4) -> f32x4 {
     let c = f32x4::splat;
     let a = c(1.0904) + d * (c(-3.2452) + d * (c(3.55645) - d * c(1.43519)));
     let b = c(0.848013) + d * (c(-1.06021) + d * c(0.215638));

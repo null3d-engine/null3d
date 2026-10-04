@@ -40,9 +40,10 @@ export interface Null3dPageOptions {
 /**
  * The page's switches that reach the sketch module's address as they are: `blend` makes S1's
  * boxes see through, `animated` adds that many animated characters to S1, `grading` gives S1 a
- * color grading table and the vignette, and `sprites` draws S1's swarm as sprites.
+ * color grading table and the vignette, `sprites` draws S1's swarm as sprites, and `labels` adds
+ * that many labeled objects to S1, whose elements the page binds.
  */
-const SKETCH_SWITCHES = ['blend', 'animated', 'grading', 'sprites'] as const;
+const SKETCH_SWITCHES = ['blend', 'animated', 'grading', 'sprites', 'labels'] as const;
 
 /**
  * Runs `sketch`, a sketch module next to the page, as the scene `sceneName` with `defaultCount`
@@ -95,6 +96,7 @@ export function runNull3dPage(
 			shadowMapSize: options.shadowMapSize ?? undefined,
 			hold: options.hold ?? undefined,
 		});
+		bindLabels(engine, Number(params.get('labels') ?? 0));
 		const log = pageOptions.trace ? new QualityLog() : undefined;
 		if (log) engine.onSketchMessage((name, data) => name === QUALITY_MESSAGE && log.add(data));
 		if (!filled) fitToWindow(canvas, size.width, size.height);
@@ -157,6 +159,24 @@ export function runNull3dPage(
 			await engine.destroy();
 		}
 	});
+}
+
+/**
+ * Binds `count` small elements, in a layer over the canvas, to the labels `label-0` onward that S1
+ * tracks with the `labels` switch.
+ */
+function bindLabels(engine: Engine, count: number): void {
+	if (count <= 0) return;
+	const layer = document.createElement('div');
+	layer.style.cssText = 'position: absolute; inset: 0; overflow: hidden; pointer-events: none';
+	document.body.style.position = 'relative';
+	document.body.append(layer);
+	for (let k = 0; k < count; k++) {
+		const element = document.createElement('div');
+		element.style.cssText = 'width: 6px; height: 6px; background: #fff';
+		layer.append(element);
+		engine.labels.bind(`label-${k}`, element);
+	}
 }
 
 /** Resolves once the GPU has finished the engine's first frame; rejects when a thread fails first. */
