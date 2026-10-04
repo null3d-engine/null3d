@@ -235,7 +235,8 @@ jobs:
     # tests differ too much in length for that: it gave one shard 221 tests and over 13 minutes,
     # and the other 4 tests and 3 minutes. Shard 1 runs the page tests of the scenes that
     # BENCH_SHARD_1 names, and shard 2 every other test, so each test runs in exactly one shard.
-    # S4's and S5's pages run in order in one worker each, so they go to different shards.
+    # S4's and S5's pages run in order in one worker each, and both sit in shard 1: beside the
+    # parity tests' setup in shard 2, S4 on WebGL2 twice measured no frame on SwiftShader.
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: build
     runs-on: ubuntu-latest
@@ -250,7 +251,7 @@ jobs:
             select: --grep-invert
     env:
       HUSKY: "0"
-      BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s3|s2|s1|s1-static|s1-cells)\b'
+      BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b'
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
