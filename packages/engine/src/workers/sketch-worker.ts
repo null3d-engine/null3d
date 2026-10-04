@@ -1,13 +1,17 @@
 // The sketch worker: runs the sketch's code and the engine core. In pipelined mode it computes frame
 // N+1 while the render worker draws frame N, and waits for the render worker's signal without
 // blocking, so its event loop stays alive for promises and messages. In low-latency mode it
-// also owns the canvas and draws each frame itself; only then does it load the renderer.
+// also owns the canvas and draws each frame itself; only then does it load the renderer. When the
+// engine stops, the sketch's onDestroy runs here. A worker that drew keeps the canvas, which cannot
+// go back to the page: it frees its GPU device and lets go of the engine's core, and the next
+// engine on the same canvas starts it again.
 
 import { messageOf } from '../errors/message';
 import { type DrawModule, loadDrawModule } from '../render/load-draw';
 import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews } from '../shared/control';
+import type { CoreGlue } from '../shared/core';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { setWakeByMessage, wakeWaiters } from '../shared/wake';
 import { loadSketch } from '../sketch/define-sketch';
@@ -26,8 +30,11 @@ let runner: SketchRunner | undefined;
 /** The renderer, which this worker loads only in low-latency mode, where it draws. */
 let drawLoad: Promise<DrawModule> | undefined;
 let draw: DrawModule | undefined;
-const host = new DrawingHost();
+let host = new DrawingHost();
 let controlSlots: Int32Array | undefined;
+/** The canvas that the first engine moved here in low-latency mode, which later engines draw on. */
+let canvas: OffscreenCanvas | undefined;
+let core: CoreGlue | undefined;
 
 const step = startSteps('sketch');
 
@@ -41,11 +48,14 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			// sooner.
 			if (message.renderer) drawLoad ??= loadDrawModule();
 			const drawModule = message.renderer && drawLoad;
+			canvas = message.renderer?.canvas ?? canvas;
+			if (message.renderer && !canvas) throw new Error('the page gave the sketch worker no canvas');
+			host = new DrawingHost();
 			const control = controlViews(message.control);
 			controlSlots = control.slots;
 			setWakeByMessage(message.wakeByMessage);
 			const started = await startWorkerCore(message, step);
-			const core = started.glue;
+			core = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
 			// Texture images and custom materials' shaders go to the thread that draws: another
 			// through a port, or this one.
@@ -86,6 +96,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 				const drawing = await host.start(
 					draw.startDrawing({
 						...message.renderer,
+						canvas: canvas as OffscreenCanvas,
 						metrics: message.metrics,
 						device: message.device,
 						scene: { memory, control: message.control },
@@ -93,6 +104,9 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 						sketch: runner,
 						imageTable,
 						fail: (reason) => replyToPage({ type: 'lost', role: 'sketch', reason }),
+						fault,
+						gpuError: (outOfMemory, text) =>
+							replyToPage({ type: 'gpu-error', role: 'sketch', outOfMemory, message: text }),
 					}),
 				);
 				if (!drawing) return;
@@ -100,7 +114,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			}
 			await runner.setup(await sketch);
 			step(message.hold === undefined ? 'sketch loaded' : 'sketch loaded and held');
-			if (!tier && message.hold === undefined) void runPipelined(runner, message.control);
+			if (!tier && message.hold === undefined) void runPipelined(runner, message.control, fault);
 			replyToPage({
 				type: 'ready',
 				role: 'sketch',
@@ -126,6 +140,17 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 	} else if (message.type === 'lose-gpu') {
 		host.drawing?.simulateLoss();
 	} else if (message.type === 'stop-drawing') {
+		runner?.dispose();
+		runner = undefined;
 		await host.stop('sketch');
+	} else if (message.type === 'park') {
+		controlSlots = undefined;
+		core?.releaseInstance?.();
+		core = undefined;
 	}
 });
+
+/** Tells the page that the sketch's frame loop, or the drawing in low-latency mode, failed. */
+function fault(error: unknown): void {
+	replyToPage({ type: 'fault', role: 'sketch', message: messageOf(error) });
+}

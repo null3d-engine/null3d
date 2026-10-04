@@ -213,6 +213,7 @@ class WebGPURenderer implements Renderer {
 	}
 
 	destroy(): void {
+		this.errors.stop();
 		this.timer?.destroy();
 		this.context.unconfigure();
 		this.device.destroy();

@@ -2320,7 +2320,7 @@ export class Scene {
 		}
 		let write = this.reserveCommands(records, call);
 		const { core } = this;
-		const at = core.check(core.glue.reserveObjects(count), call);
+		const at = core.checkGrowth(core.glue.reserveObjects(count), call);
 		const handles = core.u32(at, count).slice();
 		const v = this.views;
 		const objects: Object3D[] = [];

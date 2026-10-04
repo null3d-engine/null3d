@@ -209,7 +209,7 @@ const DOCS = {
 	E1304: {
 		title: 'GPU out of memory',
 		cause:
-			'The GPU had no room for a buffer or texture that the engine made after the start, so the objects that use it draw wrong or not at all. The engine reports the first time this happens on each GPU device, and draws on.',
+			'The GPU had no room for a buffer or texture that the engine made after the start. The objects that use it draw wrong or not at all. The engine reports the first time this happens on each GPU device, and draws on.',
 		example: "E1304: the render worker's GPU ran out of memory: Not enough memory left.",
 		since: '0.2',
 	},
@@ -245,7 +245,7 @@ const DOCS = {
 	E1404: {
 		title: 'Engine thread failed',
 		cause:
-			'An engine thread, or the drawing on the page, hit an error it could not handle. After the start the engine may have stopped. During the start, createEngine() stops the engine and rejects with this error.',
+			'An engine thread, or the drawing on the page, hit an error it could not handle, such as a trap in the engine core. After the start, the thread stops its loop: the engine draws no new frames, and engine.onFailure receives this error. During the start, createEngine() stops the engine and rejects with this error.',
 		example: 'E1404: the render worker failed: out of memory.',
 		since: '0.1',
 	},
@@ -361,7 +361,7 @@ const DOCS = {
 		title: 'Engine stopped',
 		cause:
 			'Sketch code called the engine after the engine stopped, from a timer, a promise or an event handler that outlived destroy(). The call did nothing.',
-		example: 'E1420: scene.createMesh() ran after the engine stopped.',
+		example: 'E1420: a call reached the engine after it stopped.',
 		since: '0.2',
 	},
 	E1501: {

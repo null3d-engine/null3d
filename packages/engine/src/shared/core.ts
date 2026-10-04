@@ -44,6 +44,11 @@ export interface CoreGlue extends CoreErrors {
 		largeWorld: boolean,
 	): number;
 	jobWorkerLoop(index: number): void;
+	/**
+	 * Counts the frame chunk that job worker `index` held when its loop failed as done and as
+	 * failed, so the sketch thread's wait for it ends. The worker's own thread calls it.
+	 */
+	jobWorkerFailed(index: number): void;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
 	takeJobBusyMs(index: number): number;
 	/** The address of the job system's wake word, or 0 before it exists. */
@@ -509,6 +514,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'lastErrorDetail',
 	'initEngine',
 	'jobWorkerLoop',
+	'jobWorkerFailed',
 	'takeJobBusyMs',
 	'jobsWakeAddress',
 	'jobsStopAddress',

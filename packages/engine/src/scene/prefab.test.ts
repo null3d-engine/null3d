@@ -18,8 +18,12 @@ const RING = 8192;
 const SLOT_MASK = (1 << C.HANDLE_SLOT_BITS) - 1;
 
 /** A core with the scene's arrays and command ring, which counts the calls a test watches. */
-/** A core with the scene's arrays in a memory of its own. With `largeWorld`, positions hold cells. */
-function fakeCore(largeWorld = false) {
+/**
+ * A core with the scene's arrays in a memory of its own. With `largeWorld`, positions hold cells.
+ * With `growOnReserve`, the memory grows in each reserve of many objects, as the single-threaded
+ * build's can, which detaches every view made before it.
+ */
+function fakeCore(largeWorld = false, growOnReserve = false) {
 	const rows = CAPACITY + 1;
 	const sizes = { positions: rows * 12, rotations: rows * 16, scales: rows * 12, radii: rows * 4 };
 	type Field =
@@ -81,6 +85,7 @@ function fakeCore(largeWorld = false) {
 		},
 		reserveObjects: (count: number) => {
 			calls.reserveObjects++;
+			if (growOnReserve) memory.grow(1);
 			const handles = new Uint32Array(memory.buffer, at.handles, count);
 			for (let k = 0; k < count; k++) handles[k] = slot++;
 			return at.handles;
@@ -200,6 +205,14 @@ function chainPrefab(core: CoreMemory, count: number, extra: TemplateNode[] = []
 		[],
 	);
 }
+
+test('a copy whose reserve grows the memory places its objects', () => {
+	const { core, scene, positionOf, take } = fakeCore(false, true);
+	const prefab = chainPrefab(core, 2);
+	const copy = scene.instantiate(prefab, { position: [5, 0, 0] });
+	expect(positionOf(copy)).toEqual([5, 0, 0]);
+	expect(take()).toHaveLength(1 + 2 * 2);
+});
 
 describe('scene.instantiate', () => {
 	test('a prefab of 1,000 objects costs one slot call and one batch of commands', () => {
