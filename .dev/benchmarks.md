@@ -4,6 +4,8 @@ This guide covers how to run the benchmarks and read their numbers. [AGENTS.md](
 
 The benchmarks compare null3D with three.js in the same browser. These points come from the first checkpoint's measurements.
 
+A comparison measures equal work: the same scene content and comparable quality settings ([D-52](decisions/D-52-intent-parity.md)). Each engine may draw an effect with its own technique. Where the two images differ by design, the report gives a quality note beside the timings.
+
 ## Production builds
 
 The benchmarks measure the engine as developers ship it. A production build leaves out the engine's development checks, such as the handle and argument checks, so the benchmarks leave them out too.
