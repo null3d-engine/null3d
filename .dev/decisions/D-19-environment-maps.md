@@ -131,6 +131,8 @@ The engine now makes the room on the GPU, in the thread that draws, with the too
 3. Halve the chain down to one texel: a linear filter reads four texels at their shared corner.
 4. Filter each level from 1 to 5 with the GGX distribution, from the chain, with the tool's Hammersley set, sample counts and levels of detail.
 
+Each draw fills rows of one level, with the level's six faces side by side in its target. So the texels of every face run at once.
+
 No GPU path draws into `rgb9e5ufloat`. So each draw packs its texels into the four bytes of an `rgba8unorm` target, rounded as the tool rounds them. A buffer then carries the bytes into the face's level of a shared-exponent cube. WebGPU copies through a buffer, and WebGL2 through a pixel pack and unpack buffer. Every step reads shared-exponent texels with the GPU's own filtering. One path serves all three tiers. It needs no float render target, which some WebGL2 devices lack.
 
 The table compares each texel with the tool's map of the room, tone mapped as above. It gives mean / p99 steps of 1/255, then the total light of each level over the tool's:
@@ -146,15 +148,21 @@ The table compares each texel with the tool's map of the room, tone mapped as ab
 
 The lit spheres did not move. Against three.js, 0.008% of the pixels differ on WebGPU and on WebGL2, as with the file. In compatibility mode 0.268% differ, as before.
 
-Time on the Mac (Apple M5 Max) in Chrome, from the call until the GPU had finished, for the whole map:
+The work splits into 32 slices of about the same cost, and the core records one slice in each frame. So the room takes 32 frames, about half a second at 60 frames per second, and no frame carries all of it. A held frame records every slice at once. The cost of a slice comes from a model of each step's texel reads (`sliceBands` in `packages/engine/src/gpu/environment-steps.ts`), fitted to these measurements. The scene draws without the environment until the last slice has run, as it does while a file's map uploads.
 
-| Path | First room, empty shader cache | First room, shaders cached | Each room after |
+The generator builds its pipelines in the background, after its code loads and before it counts as arrived. So no frame waits for a compile. A new GPU device builds them at its first slice.
+
+Time on the Mac (Apple M5 Max) in Chrome, each slice from its call until the GPU had finished it:
+
+| Path | The whole room, slices back to back | A slice, median / most | Pipelines, in the background |
 | --- | --- | --- | --- |
-| WebGPU | 382 ms | 41 to 49 ms | 31.5 ms |
-| Compatibility mode | | 42 to 48 ms | 31.5 ms |
-| WebGL2 | 195 to 394 ms | 45 ms | 46 to 63 ms of GPU time, by timer queries |
+| WebGPU | 21 ms, the first one 23 to 31 ms | 0.9 / 2.5 ms | 5 ms |
+| Compatibility mode | 21 ms | 0.9 / 2.3 ms | 7 ms |
+| WebGL2 | 19 ms (24 ms by timer queries) | 1.4 / 2.2 ms (0.5 / 1.8 ms by timer queries) | 10 ms |
 
-The first room compiles four pipelines at once, which is most of its time. SwiftShader took 1.0 to 2.1 s. The work is about 66 million texel reads for the blur and 100 million for the filter. Most of it is the filter's smallest levels, which read up to 8,192 directions per texel.
+SwiftShader took 0.7 to 1.0 s for the room, and 24 / 47 ms for a slice.
+
+The work is about 66 million texel reads for the blur and 100 million for the filter, and the trace's rays. Before the faces drew side by side, each face of each level drew alone. The room then took 31.5 ms on WebGPU, and its slices up to 9.3 ms. The filter's smallest levels read up to 8,192 directions per texel over 64 texels a face. A draw of one face kept few of the GPU's lanes busy and waited on each texel's long loop. The first room also compiled its pipelines in its first slice. With an empty shader cache that took 382 ms on WebGPU and 195 to 394 ms on WebGL2.
 
 The code and the shaders load on first use:
 
@@ -168,16 +176,16 @@ The engine's JavaScript at a page's start grew by 1.0 KB, to 107.1 KB in pipelin
 
 How the parts fit:
 
-- The sketch thread makes a cube texture and asks the core for a generator. The generator takes the next image id, and its name, `room`, goes to the thread that draws as an image does. That thread loads the generators' code and the shaders of its GPU path, then counts the generator among the images it received. The core waits for that count as it waits for an image. Then it records one command, `GenerateTexture`, which runs the generator at once, before the frame's passes. Held frames wait for every image to arrive, so they wait for the generator too.
+- The sketch thread makes a cube texture and asks the core for a generator. The generator takes the next image id, and its name, `room`, goes to the thread that draws as an image does. That thread loads the generators' code and the shaders of its GPU path, and builds the pipelines. Then it counts the generator among the images it received. The core waits for that count as it waits for an image. Then it records one command, `GenerateTexture`, in each of 32 frames, each with the next slice. A slice runs at once, before the frame's passes. Held frames wait for every image to arrive, so they wait for the generator too.
 - The core keeps the generator after it ran. A new GPU device makes the room again from it, with no work from the sketch.
-- The WebGPU generator submits its own commands, then destroys its textures and buffers. The WebGL2 generator changes the context's bindings, so the backend's state cache forgets them afterwards.
+- The generator keeps its own textures and buffers from the first slice to the last. A slice of a map that is done, as when a capture replays a list again, does nothing. The WebGPU generator submits each slice's commands on their own. The WebGL2 generator changes the context's bindings, so the backend's state cache forgets them afterwards.
 - The shader build writes a shader marked `first_use` into a module of its own for each target, `generated/shaders-environment-wgsl.ts` and `-glsl.ts`. The main shader module stays as it was. The size report gives such files a budget of 24 KB each after Brotli, by the owner's decision of 4 October 2026.
 
 The options rejected:
 
 - Templates and bind groups of the draw list, with the core recording each draw. A draw of a template whose pipeline still builds draws nothing, and a map made once cannot skip a draw. The shader text would also have to reach the backends by another way, since it loads on first use.
 - Float render targets for every step. WebGL2 renders into `rgba16float` only with an extension that some devices lack, and the map would still need packing for `rgb9e5ufloat`.
-- The nine coefficients of diffuse light on the GPU. The room never changes, so its coefficients never change. Reading them back would need a path from the thread that draws to the sketch's thread in every thread mode. In hold mode that thread draws only when a capture asks, so the sketch would wait for a frame that never comes. The engine keeps the tool's 27 numbers instead, nine for a gray room, in the file that loads on first use. A test of the tool checks that they are its own.
+- The nine coefficients of diffuse light on the GPU. The room never changes, so its coefficients never change. Reading them back would need a path from the thread that draws to the sketch's thread in every thread mode. In hold mode that thread draws only when a capture asks, so the sketch would wait for a frame that never comes. The engine keeps the tool's 27 numbers instead, nine for a gray room, in the file that loads on first use. They are derived data, not a shipped file, so they fit the owner's rule (agreed on 4 October 2026). A test of the tool checks that they are its own.
 
 ### The lookup as a value, not a build
 
@@ -217,4 +225,4 @@ The lookup's code adds 0.7 to 2.2 KB after Brotli to each device module, 2.9% to
 - Open: after the browser replaces the GPU, an environment whose texels the store freed draws as none until the sketch loads it again. Every texture from data does the same, as M2-R6 notes for #76.
 - Open for M2-E3: a blurred background reads the same levels. A sharp background may want `--size 512` or larger.
 - Open: KTX2 supercompression. A map of 256 is 2.0 MB. The room's was 393 KB with Brotli and 562 KB with gzip, so a host that compresses `.ktx2` files saves most of a map's bytes. Zstandard in the file would need a decoder in the engine.
-- Open: the room's first use compiles four pipelines at once, up to 0.4 s on the Mac with an empty shader cache. A sketch that asks for the room in its setup pays it before the first frame. Pipelines that build in the background would need the generator to wait for them.
+- Open: three.js r187 shares the tool's GGX lobe, its 256 cube with 6 levels and its roughness of each level. It filters another way, though. Its levels 1 and 2 take 256 samples of the visible normals with a bias of half a level. Its levels 3 to 5 weigh every texel of a 16 x 16 copy of the source. Its blur takes two passes of a 20-tap golden-angle spiral. Whether parity moves to r187 is the owner's choice. Then the tool and the generator change together. The generator's counts, biases and blur live in `packages/engine/src/gpu/environment-steps.ts` and `crates/null3d-shaders/wgsl/environment.wgsl`.

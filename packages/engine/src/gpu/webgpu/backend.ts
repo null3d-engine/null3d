@@ -160,6 +160,11 @@ export class WebGPUBackend {
 		this.staging = new StagingRing(device);
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
+		this.images.warmGeneratorsWith((code) =>
+			Promise.all(
+				Object.values(code as Record<GeneratorName, CubeGenerator>).map((g) => g.prepare(device)),
+			),
+		);
 	}
 
 	private format(code: number): GPUTextureFormat | undefined {
@@ -356,14 +361,16 @@ export class WebGPUBackend {
 	}
 
 	/**
-	 * Fills a cube texture with the texels of a generator that the table holds, on the GPU. The
-	 * generator submits its commands at once, ahead of the frame's, which never write the texture.
+	 * Runs a slice of the work of a generator that the table holds, which fills a cube texture on
+	 * the GPU. The generator submits its commands at once, ahead of the frame's, which never write
+	 * the texture.
 	 */
-	private generateTexture(id: number, generator: number): void {
-		const texture = this.need(this.textures, id, 'texture');
+	private generateTexture(words: Uint32Array, a: number): void {
+		const texture = this.need(this.textures, words[a] as number, 'texture');
+		const generator = words[a + 1] as number;
 		const [name, generators] =
 			this.images.generator<Record<GeneratorName, CubeGenerator>>(generator);
-		generators[name](this.device, texture);
+		generators[name].run(this.device, texture, words[a + 2] as number, words[a + 3] as number);
 	}
 
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {
@@ -667,7 +674,7 @@ export class WebGPUBackend {
 					this.destroyPipeline(words[a] as number);
 					break;
 				case G.OP_GENERATE_TEXTURE:
-					this.generateTexture(words[a] as number, words[a + 1] as number);
+					this.generateTexture(words, a);
 					break;
 				case G.OP_GENERATE_MIPMAPS:
 					this.generateMipmaps(words[a] as number, words[a + 1] as number);

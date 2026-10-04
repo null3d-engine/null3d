@@ -49,6 +49,8 @@ export class ImageTable {
 	private setLoader: (load: () => Promise<unknown>) => void = () => {};
 	/** The load of the generators' code, from the first generator on. */
 	private loading: Promise<void> | undefined;
+	/** How the backend of the thread's GPU device builds the generators' pipelines ahead. */
+	private warm: ((code: unknown) => Promise<unknown>) | undefined;
 
 	constructor() {
 		this.loader = new Promise((resolve) => {
@@ -65,8 +67,26 @@ export class ImageTable {
 	}
 
 	/**
-	 * Keeps a generator under its id once the generators' code has loaded, or once it failed to,
-	 * which the command that runs the generator then reports.
+	 * Says how the backend of the thread's GPU device builds the generators' pipelines ahead, so
+	 * that a generator's first slice waits for no build. Each new device says it again. It builds
+	 * them at once when the code has loaded already.
+	 */
+	warmGeneratorsWith(warm: (code: unknown) => Promise<unknown>): void {
+		this.warm = warm;
+		if (this.generatorCode !== undefined) void this.warmGenerators();
+	}
+
+	/** Builds the generators' pipelines ahead, where a backend said how. A failure waits for the slice. */
+	private warmGenerators(): Promise<unknown> {
+		const { warm, generatorCode } = this;
+		if (!warm || generatorCode === undefined) return Promise.resolve();
+		return warm(generatorCode).catch(() => undefined);
+	}
+
+	/**
+	 * Keeps a generator under its id once the generators' code has loaded and the backend has built
+	 * their pipelines, or once either failed, which the command that runs the generator then
+	 * reports.
 	 */
 	async addGenerator(id: number, name: GeneratorName): Promise<void> {
 		this.loading ??= this.loader
@@ -80,6 +100,7 @@ export class ImageTable {
 				},
 			);
 		await this.loading;
+		await this.warmGenerators();
 		this.generators.set(id, name);
 	}
 

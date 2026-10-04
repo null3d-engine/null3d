@@ -148,11 +148,14 @@ pub enum Op {
     /// of a custom material whose last material was destroyed. A backend that holds no such
     /// pipeline does nothing, as when a capture replays a list again.
     DestroyPipeline = 52,
-    /// [texture id, image id]: fills every mip level of every face of a cube texture on the GPU,
-    /// with the generator that the backend holds under the image id. The thread that draws counts
-    /// a generator among the images it received once its code has loaded, so the generator runs
-    /// at once. The texture is a cube of `RGB9E5_UFLOAT` with `COPY_DST` usage. The generator
-    /// keeps the entry, so a new GPU device can fill the texture again, until `ReleaseImage`.
+    /// [texture id, image id, slice, slices]: runs one of `slices` parts of the work of the
+    /// generator that the backend holds under the image id, which fill every mip level of every
+    /// face of a cube texture on the GPU. Slice 0 starts the work, and each slice needs the slices
+    /// before it, in that order. The thread that draws counts a generator among the images it
+    /// received once its code has loaded, so the generator runs at once. The texture is a cube of
+    /// `RGB9E5_UFLOAT` with `COPY_DST` usage. The backend keeps the entry until `ReleaseImage`, so
+    /// a new GPU device can fill the texture again. A slice of a texture that the generator
+    /// filled already, as when a capture replays a list again, does nothing.
     GenerateTexture = 54,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,

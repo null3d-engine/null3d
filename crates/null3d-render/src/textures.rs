@@ -186,10 +186,10 @@ enum Source {
     Image { id: u32, flags: u32 },
     /// Tightly packed rows, layer after layer, in the store's data slot `slot`.
     Data { slot: u32 },
-    /// Generator `id`, which the thread that draws holds under an image id and runs on the GPU.
-    /// The store keeps it until the texture gets other texels or is destroyed, so a new GPU device
-    /// runs it again.
-    Generated { id: u32 },
+    /// Generator `id`, which the thread that draws holds under an image id and runs on the GPU in
+    /// `slices` parts of its work, one a frame. The store keeps it until the texture gets other
+    /// texels or is destroyed, so a new GPU device runs it again.
+    Generated { id: u32, slices: u32 },
 }
 
 /// Where a texture is on its way to the GPU.
@@ -787,19 +787,20 @@ impl TextureStore {
         Ok((id, moved))
     }
 
-    /// Gives a cube texture of `format::RGB9E5_UFLOAT` texels that a generator makes on the GPU,
-    /// and returns the generator's id, which it takes from the images' ids. The caller sends the
-    /// generator to the thread that draws under that id, in the order of the ids, as it sends
-    /// images. Texels that were waiting are released unused.
-    pub fn set_generated(&mut self, texture: Handle) -> Result<u32, TextureError> {
+    /// Gives a cube texture of `format::RGB9E5_UFLOAT` texels that a generator makes on the GPU
+    /// in `slices` parts of its work, one a frame, and returns the generator's id, which it takes
+    /// from the images' ids. The caller sends the generator to the thread that draws under that
+    /// id, in the order of the ids, as it sends images. Texels that were waiting are released
+    /// unused.
+    pub fn set_generated(&mut self, texture: Handle, slices: u32) -> Result<u32, TextureError> {
         let slot = *self.slot(texture)?;
         let key = self.arrays[slot.array as usize].key;
-        if key.kind != Kind::Cube || key.format != format::RGB9E5_UFLOAT {
+        if key.kind != Kind::Cube || key.format != format::RGB9E5_UFLOAT || slices == 0 {
             return Err(TextureError::Unsupported);
         }
         self.last_image += 1;
         let id = self.last_image;
-        self.queue_source(texture, Source::Generated { id })?;
+        self.queue_source(texture, Source::Generated { id, slices })?;
         Ok(id)
     }
 
@@ -1170,12 +1171,14 @@ impl TextureStore {
     fn record_releases(&mut self, list: &mut DrawList, frame: u32) -> Result<(), RecordError> {
         let (arrived, taken) = (self.arrived, self.frames_taken);
         let due = |r: &Release| match r.source {
-            Source::Image { id, .. } | Source::Generated { id } => id <= arrived && r.after < frame,
+            Source::Image { id, .. } | Source::Generated { id, .. } => {
+                id <= arrived && r.after < frame
+            }
             Source::Data { .. } => r.after < taken,
         };
         for release in self.releases.iter().filter(|r| due(r)) {
             match release.source {
-                Source::Image { id, .. } | Source::Generated { id } => {
+                Source::Image { id, .. } | Source::Generated { id, .. } => {
                     list.push(Op::ReleaseImage, &[id])?;
                 }
                 Source::Data { slot } => self.data[slot as usize] = Vec::new(),
@@ -1228,7 +1231,7 @@ impl TextureStore {
             let State::Queued { source, mut rows } = slot.state else {
                 continue;
             };
-            if let Source::Image { id, .. } | Source::Generated { id } = source
+            if let Source::Image { id, .. } | Source::Generated { id, .. } = source
                 && id > self.arrived
             {
                 continue;
@@ -1236,14 +1239,25 @@ impl TextureStore {
             let key = self.arrays[slot.array as usize].key;
             let id = self.array_id(slot.array);
             let levels = slot.source_levels(key);
-            let total = key.rows(levels);
             let block = format::block_size(key.format);
-            // A generator fills every level of every face with one command.
-            if let Source::Generated { id: generator } = source {
-                list.push(Op::GenerateTexture, &[id, generator])?;
-                rows = total;
+            let total = match source {
+                Source::Generated { slices, .. } => slices,
+                _ => key.rows(levels),
+            };
+            if let Source::Generated {
+                id: generator,
+                slices,
+            } = source
+            {
+                // One slice of the generator's work a frame, or every slice that is left in a frame
+                // with no budget, as a held frame is.
+                let last = if budget == u64::MAX { slices } else { rows + 1 };
+                for slice in rows..last {
+                    list.push(Op::GenerateTexture, &[id, generator, slice, slices])?;
+                }
+                rows = last;
             }
-            while rows < total {
+            while rows < total && !matches!(source, Source::Generated { .. }) {
                 let band = key.band(rows, levels);
                 let left = budget.saturating_sub(spent);
                 let mut take = u64::from(band.rows_left).min(left / band.row_bytes) as u32;

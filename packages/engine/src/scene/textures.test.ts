@@ -61,8 +61,8 @@ function fakeCore() {
 			images.push(args);
 			return ++nextImage;
 		},
-		generateTexture: (texture: number) => {
-			images.push([texture]);
+		generateTexture: (...args: number[]) => {
+			images.push(args);
 			return ++nextImage;
 		},
 		setTextureData: (...args: number[]) => {
@@ -178,9 +178,9 @@ describe('textures.fromImageBitmap', () => {
 describe('textures.fromGenerator', () => {
 	test('makes a shared-exponent cube and sends the generator under the id that the core gave it', () => {
 		const { textures, created, images, sent } = fakeCore();
-		const texture = textures.fromGenerator('room', 256, 6, 'assets.builtinEnvironment');
+		const texture = textures.fromGenerator('room', 256, 6, 32, 'assets.builtinEnvironment');
 		expect(created).toEqual([[256, 6, TEXTURE_FORMAT_SHARED_EXPONENT]]);
-		expect(images).toEqual([[9]]);
+		expect(images).toEqual([[9, 32]]);
 		expect(sent).toEqual([[1, 'room']]);
 		expect([texture.width, texture.depth, texture.format]).toEqual([256, 6, 'rgb9e5ufloat']);
 	});

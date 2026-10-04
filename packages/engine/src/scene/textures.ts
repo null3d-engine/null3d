@@ -449,16 +449,25 @@ export class Textures {
 	/**
 	 * @internal A cube texture of shared-exponent floats with faces of `size` texels a side and
 	 * `levels` mip levels, read with linear filters within and between levels, whose texels a
-	 * generator makes on the GPU. The thread that draws loads the generator's code first, and the
-	 * texture draws as none until its texels are made.
+	 * generator makes on the GPU in `slices` parts of its work, one a frame. The thread that draws
+	 * loads the generator's code first, and the texture draws as none until its texels are made.
 	 */
-	fromGenerator(name: GeneratorName, size: number, levels: number, call: string): Texture {
+	fromGenerator(
+		name: GeneratorName,
+		size: number,
+		levels: number,
+		slices: number,
+		call: string,
+	): Texture {
 		const { core } = this;
 		const format = TEXTURE_FORMAT_SHARED_EXPONENT;
 		const handle = core.checkGrowth(core.glue.createCubeTexture(size, levels, format), call);
 		const texture = new Texture(handle, size, size, 6, 'rgb9e5ufloat', 'linear', 0, this, true);
 		try {
-			this.send(core.checkGrowth(core.glue.generateTexture(handle), call, 'a texture'), name);
+			this.send(
+				core.checkGrowth(core.glue.generateTexture(handle, slices), call, 'a texture'),
+				name,
+			);
 		} catch (error) {
 			texture.destroy();
 			throw error;

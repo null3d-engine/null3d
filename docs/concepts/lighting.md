@@ -159,7 +159,7 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 ### Cost
 
 - A page downloads the file reader, under 1 KB after Brotli, with its first environment file.
-- The built-in room downloads no file. Its first use loads the code and the shaders that make it, about 7 KB after Brotli. The GPU then makes the map in one frame. In the engine's test of the room, a MacBook Pro's GPU (Apple M5 Max) took about 32 ms on WebGPU. It took 50 to 60 ms on WebGL2. The first room also compiles its shaders, which took up to 0.4 s more with an empty shader cache. So ask for the room in the sketch's setup, before the first frame.
+- The built-in room downloads no file. Its first use loads the code and the shaders that make it, about 7 KB after Brotli. The GPU then makes the map in parts over 32 frames, so no frame carries all of the work. That takes about half a second at 60 frames per second. In the engine's test of the room, a MacBook Pro's GPU (Apple M5 Max) took about 1 ms for a part. The longest took 2.5 ms. The shaders compile in the background before the first part. A still frame makes the whole room before it draws.
 - A map of the default size takes 2 MB of GPU memory. A file's map uploads in the frames after the load, within the frame's upload budget. The scene draws without an environment until its map is on the GPU.
 - The environment is a value of each frame, not a build of the shaders. So setting one builds no pipeline, and each pixel of a standard material pays one branch while the scene has none.
 - With an environment, each pixel of a standard material reads the cube map once and adds up the nine coefficients.

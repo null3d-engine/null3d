@@ -1422,17 +1422,17 @@ pub fn set_texture_image(texture: u32, width: u32, height: u32, flags: u32) -> u
     })
 }
 
-// Gives a cube texture of shared-exponent floats texels that a generator makes on the GPU, and
-// returns the generator's id, which it takes from the images' ids. TypeScript sends the generator's
-// name to the thread that draws under that id, in id order, and the cube fills once the thread has
-// loaded the generator's code.
+// Gives a cube texture of shared-exponent floats texels that a generator makes on the GPU in
+// `slices` parts of its work, one a frame, and returns the generator's id, which it takes from the
+// images' ids. TypeScript sends the generator's name to the thread that draws under that id, in id
+// order, and the cube fills once the thread has loaded the generator's code.
 /// Gives a cube texture texels from a generator and returns the generator's id.
 #[wasm_bindgen(js_name = generateTexture)]
-pub fn generate_texture(texture: u32) -> u32 {
+pub fn generate_texture(texture: u32, slices: u32) -> u32 {
     value_with_engine(|e| {
         let textures = e.renderer.settings_mut().textures_mut();
         textures
-            .set_generated(Handle::from_raw(texture))
+            .set_generated(Handle::from_raw(texture), slices)
             .map_err(texture_failure)
     })
 }

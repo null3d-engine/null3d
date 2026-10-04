@@ -2,7 +2,9 @@
 // roughness, as the asset tool makes it on the CPU (crates/null3d-assets-wasm/src/environment).
 // Every constant and formula here follows the tool's, so the two maps match.
 //
-// Each draw fills one level of one face with one triangle, from the fragment's place on the face:
+// Each draw fills rows of one level with one triangle. The level's six faces lie side by side in
+// the target, from +X to -Z, so one draw runs the texels of every face at once. The fragment's
+// place gives its face and its texel:
 //
 // - `trace` traces three.js's RoomEnvironment scene from the room's center, 4 x 4 directions per
 //   texel.
@@ -16,14 +18,13 @@
 // filter.
 
 struct Step {
-    /// The face that the draw fills: 0 to 5 for +X, -X, +Y, -Y, +Z and -Z.
-    face: u32,
-    /// The texels across a side of the face at the level that the draw fills.
+    /// The texels across a side of each face at the level that the draw fills.
     size: u32,
     /// The directions of the prefilter.
     samples: u32,
     /// The texels across a side of the source's largest level.
     source_size: u32,
+    spare: u32,
     /// The blur's sigma in radians, the source level that `half` reads, or the prefilter's
     /// perceptual roughness.
     value: f32,
@@ -71,11 +72,25 @@ fn face_direction(face: u32, sc: f32, tc: f32) -> vec3f {
     }
 }
 
-/// The unit direction through the center of the texel under the fragment. Rows count from the
-/// first row of the target on both paths, as the copy into the face stores them.
+/// The face of the texel under the fragment, from 0 to 5, and the texel's column and row on it.
+/// Rows count from the first row of the target on both paths, as the copy into the face stores
+/// them.
+struct FaceTexel {
+    face: u32,
+    texel: vec2f,
+}
+
+fn face_texel(position: vec2f) -> FaceTexel {
+    let column = floor(position);
+    let face = min(u32(column.x) / params.size, 5u);
+    return FaceTexel(face, vec2f(column.x - f32(face * params.size), column.y));
+}
+
+/// The unit direction through the center of the texel under the fragment.
 fn texel_direction(position: vec2f) -> vec3f {
-    let center = (2.0 * floor(position) + 1.0) / f32(params.size) - 1.0;
-    return normalize(face_direction(params.face, center.x, center.y));
+    let at = face_texel(position);
+    let center = (2.0 * at.texel + 1.0) / f32(params.size) - 1.0;
+    return normalize(face_direction(at.face, center.x, center.y));
 }
 
 /// Two unit vectors that make a right-handed frame with the unit vector `n` (Duff et al., 2017).
@@ -344,14 +359,15 @@ fn room_light(d: vec3f) -> f32 {
 /// The room's light averaged over 4 x 4 directions spread evenly over the texel.
 @fragment
 fn fs_trace(@builtin(position) position: vec4f) -> @location(0) vec4f {
-    let texel = floor(position.xy);
+    let at = face_texel(position.xy);
+    let texel = at.texel;
     let spacing = 2.0 / (f32(params.size) * 4.0);
     var sum = 0.0;
     for (var j = 0; j < 4; j++) {
         let tc = (texel.y * 4.0 + f32(j) + 0.5) * spacing - 1.0;
         for (var i = 0; i < 4; i++) {
             let sc = (texel.x * 4.0 + f32(i) + 0.5) * spacing - 1.0;
-            sum += room_light(normalize(face_direction(params.face, sc, tc)));
+            sum += room_light(normalize(face_direction(at.face, sc, tc)));
         }
     }
     return pack(vec3f(sum * (1.0 / 16.0)));

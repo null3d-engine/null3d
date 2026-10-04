@@ -304,23 +304,45 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: De
 
 /**
  * What code that loads on first use, such as the texture generators, needs to draw with programs of
- * its own: the context, a program for a template of one build, linked, with its blocks and textures
- * bound to their slots and its depth mapping set, and in use; and the slot of each binding. The
- * code then imports nothing from the files that the start loads.
+ * its own: the context, and a program for a template of one build, linked, with its blocks and
+ * textures bound to their slots and its depth mapping set. `program` leaves the program in use.
+ * `programLater` compiles in the background where the context can, and leaves the program in use
+ * that was. `slot` gives the slot of each binding. The code then imports nothing from the files
+ * that the start loads.
  */
 export interface ProgramHost {
 	readonly gl: WebGL2RenderingContext;
 	program(template: GlslTemplate): WebGLProgram;
+	programLater(template: GlslTemplate): Promise<WebGLProgram>;
 	slot(group: number, binding: number): number;
 }
 
-/** The program host of a context that draws in a depth mode. */
-export function programHost(gl: WebGL2RenderingContext, depth: DepthSetup): ProgramHost {
+/** How often `programLater` asks whether a program that compiles in the background is done. */
+const COMPILE_POLL_MS = 4;
+
+/**
+ * The program host of a context that draws in a depth mode, with `KHR_parallel_shader_compile`
+ * where the context has it and the device uses it.
+ */
+export function programHost(
+	gl: WebGL2RenderingContext,
+	depth: DepthSetup,
+	parallel: KHR_parallel_shader_compile | null = null,
+): ProgramHost {
 	return {
 		gl,
 		program(template) {
 			const p = createProgram(gl, template, 0);
 			prepareProgram(gl, p, depth);
+			return p.program;
+		},
+		async programLater(template) {
+			const p = createProgram(gl, template, 0);
+			while (parallel && !gl.getProgramParameter(p.program, parallel.COMPLETION_STATUS_KHR))
+				await new Promise((resolve) => setTimeout(resolve, COMPILE_POLL_MS));
+			const inUse = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+			prepareProgram(gl, p, depth);
+			gl.useProgram(inUse);
 			return p.program;
 		},
 		slot: slotOf,
