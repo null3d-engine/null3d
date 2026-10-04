@@ -1066,7 +1066,7 @@
       "three": "RGBELoader / EXRLoader / HDRLoader / UltraHDRLoader + PMREMGenerator",
       "status": "changed",
       "since": "0.2",
-      "target": "`bunx @null3d/cli assets env studio.hdr` offline, then assets.loadEnvironment",
+      "target": "`bunx @null3d/cli assets env studio.hdr studio.ktx2` offline, then assets.loadEnvironment",
       "notes": "Prefiltering happens once at build time instead of on every visit.",
       "docs": "guides/assets-pipeline",
       "detect": "\\b(RGBE|EXR|HDR|UltraHDR)Loader\\b|\\bPMREMGenerator\\b"

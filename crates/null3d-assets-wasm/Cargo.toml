@@ -11,6 +11,8 @@ publish.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+exr = { version = "1.74.2", default-features = false }
+half = { version = "2.7", default-features = false }
 null3d-core = { path = "../null3d-core" }
 
 [lints]
