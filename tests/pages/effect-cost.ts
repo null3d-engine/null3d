@@ -1,8 +1,9 @@
-// Measures what bloom costs on this device: the bloom scene fills the window at the render scale
-// that ?scale= fixes, 1 by default, with the governor off. After a warm-up, the page measures play
-// with bloom off and on in turns, ROUNDS times each, and reports the medians of each side's GPU time
-// per frame, where the device has a GPU timer, and of its frame interval and CPU time. The device
-// runner's bloom plan runs it on each GPU path at the scales of 1 and 0.5.
+// Measures what an effect costs on this device: ?effect=bloom (the default) or ?effect=ao names
+// it. The effect's scene fills the window at the render scale that ?scale= fixes, 1 by default,
+// with the governor off. After a warm-up, the page measures play with the effect off and on in
+// turns, ROUNDS times each, and reports the medians of each side's GPU time per frame, where the
+// device has a GPU timer, and of its frame interval and CPU time. The device runner's bloom and ao
+// plans run it on each GPU path at the scales of 1 and 0.5.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 
@@ -12,8 +13,22 @@ const WARM_UP_SECONDS = 2;
 const SECONDS = 2;
 const ROUNDS = 3;
 
+/**
+ * Each effect's sketch, which turns the effect on at the message of the effect's name, posts
+ * 'settled' once its pipelines are built, and turns it off at the name followed by '-off'.
+ */
+const SKETCHES = {
+	bloom: './sketches/bloom-sketch.ts',
+	ao: './sketches/ao-sketch.ts',
+} as const;
+
+type Effect = keyof typeof SKETCHES;
+
 const params = new URLSearchParams(location.search);
 const scale = Number(params.get('scale') ?? '1');
+const asked = params.get('effect') ?? 'bloom';
+if (!Object.hasOwn(SKETCHES, asked)) throw new Error(`the page measures no effect ${asked}`);
+const effect = asked as Effect;
 
 /** The middle of some numbers, or null without any. */
 function median(values: number[]): number | null {
@@ -25,10 +40,10 @@ function median(values: number[]): number | null {
 		: ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
 }
 
-run('bloom-cost', async () => {
+run('effect-cost', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
-	const sketch = new URL('./sketches/bloom-sketch.ts', import.meta.url);
+	const sketch = new URL(SKETCHES[effect], import.meta.url);
 	sketch.search = `?scale=${scale}&fixed`;
 	const engine = await createEngine({ canvas, sketch });
 	const failures: string[] = [];
@@ -51,9 +66,9 @@ run('bloom-cost', async () => {
 		for (const side of ['off', 'on'] as const) {
 			if (side === 'on') {
 				const built = settled();
-				engine.postToSketch('bloom', null);
+				engine.postToSketch(effect, null);
 				await built;
-			} else engine.postToSketch('bloom-off', null);
+			} else engine.postToSketch(`${effect}-off`, null);
 			const stats = await engine.measure(SECONDS);
 			if (stats.gpuMs) sides[side].gpuMs.push(stats.gpuMs.median);
 			sides[side].intervalMs.push(stats.intervalMs.median);
@@ -67,6 +82,7 @@ run('bloom-cost', async () => {
 		cpuMs: median(sides[side].cpuMs),
 	});
 	return {
+		effect,
 		tier: engine.capabilities.tier,
 		hdr: engine.capabilities.hdr,
 		scale,
