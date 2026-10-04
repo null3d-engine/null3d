@@ -63,7 +63,7 @@ What is known:
 - The culling does its job: the opaque pass is 0.53 ms shorter, and the passes that culling adds take 0.30 ms.
 - The extra time falls outside every pass: about 1 ms more before the first pass, and about 2.2 ms more between passes. A pipeline switch happens inside a pass, so it would count in the pass's own time. The time lies between command encoders instead.
 - It is not the timer's rounding: its steps are 0.066 ms, and the gap is 3 ms.
-- So the likely cause is a resource barrier. The frame with culling on has two more passes, and two more hand-overs between a render pass and a compute pass. A compute pass reads the occluders' depth, which a render pass wrote. The opaque pass reads the second set of indirect draws, which a compute pass wrote. At each hand-over the browser's Metal backend can make the next pass wait until the one before ends. That fits the gap, but it is not measured. A Metal frame capture of the room scene would show which hand-over waits.
+- So the likely cause is a resource barrier. The frame with culling on has two more passes, and two more hand-overs between a render pass and a compute pass. A compute pass reads the occluders' depth, which a render pass wrote. The opaque pass reads the second set of indirect draws, which a compute pass wrote. At each hand-over the browser's Metal backend can make the next pass wait until the one before ends. That fits the gap, but it is not measured. A Metal frame capture of the room scene would show which hand-over waits. A later run on a quiet GPU points to another cause: see the addendum below.
 - The time before the first pass also grows, from 0.26 to 1.31 ms. That part holds the frame's uploads, and with culling on also the previous frame's tail, if its passes are still running.
 
 ## Data
@@ -92,3 +92,19 @@ Option (a3). Marked occluders that look large draw their depth at one sample per
 - Safari 26 encodes a render bundle with indirect draws again at every `executeBundles` (5.9). The occluders' pass adds one bundle per camera view, so Safari before 27.2 pays that cost twice for the camera. The iPad run measures it.
 - FXAA images vary by a few dozen pixels from run to run, with or without culling. The cause is not known.
 - Later options: find and remove the stall between passes. Test shadow casters against a light's own pyramid. Build every level in one dispatch, as AMD's single-pass downsampler does.
+
+## Addendum, 2026-10-04: culling saves time on a quiet GPU
+
+The tables above and D-22's room figures come from a Mac that other helpers' browser tests shared. A later run measured the room scene again, with 96-segment spheres, MSAA and 1280 x 720, in Chrome 154 on the same Mac, with precise timestamps.
+
+| Run | Culling off | Culling on |
+| --- | --- | --- |
+| Nothing else heavy on the GPU (3 runs, 3 rounds each) | 1.64 ms | 1.04 ms (37% less) |
+| A second Chrome drawing a heavy shader, 4 passes per frame (3 rounds) | 1.25 ms | 1.49 ms (19% more) |
+| The same load, 1 round of 8 s | 1.49 ms | 2.09 ms (40% more) |
+
+- On the quiet GPU no gap shows between passes, and culling pays: the opaque pass falls from 1.48 to 0.65 ms.
+- Under load each pass runs faster, as the GPU's clock rises, but the frame with culling grows between passes. That is the pattern of the table above.
+- Images match pixel for pixel in all six views in every run.
+
+So the stall is probably not a barrier in the engine's frame. Other programs' GPU work runs in the gaps between its passes. Culling makes a chain of 5 dependent passes in place of 3, so a frame has more points where it waits behind other work. The GPU timestamps count that wait. A Metal trace under load, which would show whose work fills the gaps, is not read yet. Safari's WebGPU on a quiet Mac is not measured yet.

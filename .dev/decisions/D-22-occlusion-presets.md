@@ -51,3 +51,7 @@ WebGPU: off on every preset. On the Mac it cost more GPU time than it saved in e
 - The docs say to compare a scene's GPU time with `?occlusion=on` and `?occlusion=off` before keeping it on.
 - The stall between passes is open for the owner (D-40). If a later change removes it, run the room scene and S1 again, and revisit these rows.
 - The iPad run of the `gpu-occlusion` plan fills the pending row. M2-I3 adds the WebGL2 rows.
+
+## Addendum, 2026-10-04: a quiet GPU
+
+The figures above come from a Mac that other helpers' browser tests shared. On a quiet GPU, GPU occlusion culling took the room scene's frame (96 segments, MSAA) from 1.64 to 1.04 ms, 37% less ([D-40](D-40-gpu-occlusion.md#addendum-2026-10-04-culling-saves-time-on-a-quiet-gpu)). Under another program's GPU load it cost 19% to 40% more. So the decision's reason, that culling cost more than it saved in every scene, holds only on a busy GPU. High and Ultra may turn it on. The rows stay off until S1 and the room run again on a quiet Mac, and the iPad's run is in.
