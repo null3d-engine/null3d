@@ -1,0 +1,477 @@
+{
+	"tier": "webgpu",
+	"entries": [
+		{
+			"group": "unreal",
+			"name": "three-unreal-soft",
+			"note": "three.js UnrealBloomPass, soft",
+			"file": "three-unreal-soft.png",
+			"glowFile": "three-unreal-soft-glow.png",
+			"measures": {
+				"total": 0.20678710001556436,
+				"share": [0.9999793836805555, 0.882783203125, 0.6882367621527777],
+				"meanDistance": 0.339209559365976
+			}
+		},
+		{
+			"group": "unreal",
+			"name": "null3d-unreal-soft",
+			"note": "null3D today: UnrealBloomPass's steps",
+			"file": "null3d-unreal-soft.png",
+			"glowFile": "null3d-unreal-soft-glow.png",
+			"measures": {
+				"total": 0.1998144231959991,
+				"share": [0.9812131076388889, 0.8715397135416667, 0.6690451388888888],
+				"meanDistance": 0.336851327404925
+			},
+			"againstThree": {
+				"pixelsDiffering": 0,
+				"glowGap": 0.03452839189151626,
+				"glowRatio": 0.966280890737186
+			}
+		},
+		{
+			"group": "unreal",
+			"name": "null3d-mip-soft",
+			"note": "null3D mip chain, mapped: intensity 4.40, base 360 rows, mixes 0.92 0.83 0.78 0.74 0.69 0.61 0.42, Karis on",
+			"file": "null3d-mip-soft.png",
+			"glowFile": "null3d-mip-soft-glow.png",
+			"measures": {
+				"total": 0.2102626055595743,
+				"share": [1, 0.9404937065972222, 0.7515288628472222],
+				"meanDistance": 0.3568058536354541
+			},
+			"againstThree": {
+				"pixelsDiffering": 0,
+				"glowGap": 0.07908277412605812,
+				"glowRatio": 1.0168071680668105
+			},
+			"againstNull3dUnreal": {
+				"pixelsDiffering": 0,
+				"glowGap": 0.08227247721736963
+			}
+		},
+		{
+			"group": "unreal",
+			"name": "null3d-mip-soft-no-karis",
+			"note": "null3D mip chain, mapped: intensity 4.40, base 360 rows, mixes 0.92 0.83 0.78 0.74 0.69 0.61 0.42, Karis off",
+			"file": "null3d-mip-soft-no-karis.png",
+			"glowFile": "null3d-mip-soft-no-karis-glow.png",
+			"measures": {
+				"total": 0.21253120041430673,
+				"share": [1, 0.943642578125, 0.7532801649305556],
+				"meanDistance": 0.35785730040419345
+			},
+			"againstThree": {
+				"pixelsDiffering": 0,
+				"glowGap": 0.07761400624573171,
+				"glowRatio": 1.027777846869123
+			},
+			"againstNull3dUnreal": {
+				"pixelsDiffering": 0,
+				"glowGap": 0.08403286213625032
+			}
+		},
+		{
+			"group": "unreal",
+			"name": "null3d-mip-soft-base-512",
+			"note": "null3D mip chain, mapped on the default 512-row base: mixes 0.95 0.88 0.81 0.76 0.71 0.63 0.64",
+			"file": "null3d-mip-soft-base-512.png",
+			"glowFile": "null3d-mip-soft-base-512-glow.png",
+			"measures": {
+				"total": 0.20829863661648632,
+				"share": [0.9246050347222222, 0.8287673611111112, 0.6625444878472222],
+				"meanDistance": 0.33916706862113866
+			},
+			"againstThree": {
+				"pixelsDiffering": 0.012515190972222222,
+				"glowGap": 0.09405338669454312,
+				"glowRatio": 1.00730962715183
+			},
+			"againstNull3dUnreal": {
+				"pixelsDiffering": 0.018198784722222222,
+				"glowGap": 0.09054922553862486
+			}
+		},
+		{
+			"group": "unreal",
+			"name": "three-unreal-strong",
+			"note": "three.js UnrealBloomPass, strong",
+			"file": "three-unreal-strong.png",
+			"glowFile": "three-unreal-strong-glow.png",
+			"measures": {
+				"total": 0.4144244626270524,
+				"share": [1, 0.9881640625, 0.8984375],
+				"meanDistance": 0.41541216048896634
+			}
+		},
+		{
+			"group": "unreal",
+			"name": "null3d-unreal-strong",
+			"note": "null3D today: UnrealBloomPass's steps",
+			"file": "null3d-unreal-strong.png",
+			"glowFile": "null3d-unreal-strong-glow.png",
+			"measures": {
+				"total": 0.4032827515846106,
+				"share": [1, 0.9855316840277778, 0.8909233940972222],
+				"meanDistance": 0.4127368183679116
+			},
+			"againstThree": {
+				"pixelsDiffering": 0,
+				"glowGap": 0.027321180664875377,
+				"glowRatio": 0.9731152187015842
+			}
+		},
+		{
+			"group": "unreal",
+			"name": "null3d-mip-strong",
+			"note": "null3D mip chain, mapped: intensity 8.74, base 360 rows, mixes 0.97 0.93 0.89 0.85 0.80 0.71 0.48, Karis on",
+			"file": "null3d-mip-strong.png",
+			"glowFile": "null3d-mip-strong-glow.png",
+			"measures": {
+				"total": 0.439401484361032,
+				"share": [1, 0.9950379774305556, 0.9839637586805555],
+				"meanDistance": 0.4367788146108431
+			},
+			"againstThree": {
+				"pixelsDiffering": 0.037255859375,
+				"glowGap": 0.07884761272497962,
+				"glowRatio": 1.0602691780684212
+			},
+			"againstNull3dUnreal": {
+				"pixelsDiffering": 0.06988932291666666,
+				"glowGap": 0.09261248872346889
+			}
+		},
+		{
+			"group": "unreal",
+			"name": "null3d-mip-strong-no-karis",
+			"note": "null3D mip chain, mapped: intensity 8.74, base 360 rows, mixes 0.97 0.93 0.89 0.85 0.80 0.71 0.48, Karis off",
+			"file": "null3d-mip-strong-no-karis.png",
+			"glowFile": "null3d-mip-strong-no-karis-glow.png",
+			"measures": {
+				"total": 0.44307679014226325,
+				"share": [1, 0.9950726996527778, 0.9851128472222223],
+				"meanDistance": 0.4371525246338041
+			},
+			"againstThree": {
+				"pixelsDiffering": 0.044690755208333335,
+				"glowGap": 0.08201290586141274,
+				"glowRatio": 1.0691376356829485
+			},
+			"againstNull3dUnreal": {
+				"pixelsDiffering": 0.07999891493055555,
+				"glowGap": 0.09830961453608383
+			}
+		},
+		{
+			"group": "unreal",
+			"name": "null3d-mip-strong-base-512",
+			"note": "null3D mip chain, mapped on the default 512-row base: mixes 0.98 0.95 0.92 0.88 0.81 0.73 0.78",
+			"file": "null3d-mip-strong-base-512.png",
+			"glowFile": "null3d-mip-strong-base-512-glow.png",
+			"measures": {
+				"total": 0.41654210761375127,
+				"share": [0.9957779947916666, 0.9327918836805555, 0.8378233506944445],
+				"meanDistance": 0.4058790551705517
+			},
+			"againstThree": {
+				"pixelsDiffering": 0.0772580295138889,
+				"glowGap": 0.09459860424423881,
+				"glowRatio": 1.0051098455271559
+			},
+			"againstNull3dUnreal": {
+				"pixelsDiffering": 0.105009765625,
+				"glowGap": 0.09613225323179321
+			}
+		},
+		{
+			"group": "pmndrs",
+			"name": "three-pmndrs-default",
+			"note": "pmndrs BloomEffect, defaults (mipmapBlur)",
+			"file": "three-pmndrs-default.png",
+			"glowFile": "three-pmndrs-default-glow.png",
+			"measures": {
+				"total": 0.12052632716400782,
+				"share": [0.9891861979166666, 0.973095703125, 0.7114301215277777],
+				"meanDistance": 0.3962965370182011
+			}
+		},
+		{
+			"group": "pmndrs",
+			"name": "null3d-mip-pmndrs",
+			"note": "null3D mip chain, mapped: intensity 1.01, base 360, mixes 0.86 0.85 0.85 0.85 0.83 0.86 0.96, Karis on",
+			"file": "null3d-mip-pmndrs.png",
+			"glowFile": "null3d-mip-pmndrs-glow.png",
+			"measures": {
+				"total": 0.11283980373080492,
+				"share": [0.9900716145833334, 0.9453765190972222, 0.70599609375],
+				"meanDistance": 0.39985857113888595
+			},
+			"againstThree": {
+				"pixelsDiffering": 0,
+				"glowGap": 0.06710316910851731,
+				"glowRatio": 0.9362253574462335
+			}
+		},
+		{
+			"group": "pmndrs",
+			"name": "null3d-mip-pmndrs-no-karis",
+			"note": "null3D mip chain, mapped: intensity 1.01, base 360, mixes 0.86 0.85 0.85 0.85 0.83 0.86 0.96, Karis off",
+			"file": "null3d-mip-pmndrs-no-karis.png",
+			"glowFile": "null3d-mip-pmndrs-no-karis-glow.png",
+			"measures": {
+				"total": 0.11450539552718933,
+				"share": [0.9901508246527778, 0.9478070746527778, 0.7082476128472223],
+				"meanDistance": 0.39890357472509697
+			},
+			"againstThree": {
+				"pixelsDiffering": 0,
+				"glowGap": 0.05463050605893435,
+				"glowRatio": 0.9500446767234064
+			}
+		},
+		{
+			"group": "pmndrs",
+			"name": "null3d-mip-pmndrs-direct",
+			"note": "null3D mip chain with pmndrs's own numbers: radius 0.85 as every mix, base at half the canvas",
+			"file": "null3d-mip-pmndrs-direct.png",
+			"glowFile": "null3d-mip-pmndrs-direct-glow.png",
+			"measures": {
+				"total": 0.11185402946503441,
+				"share": [0.9902571614583333, 0.9186848958333333, 0.6902408854166666],
+				"meanDistance": 0.3877145959260671
+			},
+			"againstThree": {
+				"pixelsDiffering": 0,
+				"glowGap": 0.07478244689053778,
+				"glowRatio": 0.9280464450959958
+			}
+		},
+		{
+			"group": "default",
+			"name": "null3d-mip-default",
+			"note": "M2-F7's candidate default: threshold 0, energy-conserving mix at 0.15, Bevy NATURAL's level blend, Karis on",
+			"file": "null3d-mip-default.png",
+			"glowFile": "null3d-mip-default-glow.png",
+			"measures": {
+				"total": 0.010547764610388855,
+				"share": [0.49779622395833334, 0.12810980902777777, 0.03425672743055556],
+				"meanDistance": 0.24193112833498726
+			}
+		},
+		{
+			"group": "s4",
+			"name": "s4-three-unreal-soft",
+			"note": "S4: three.js UnrealBloomPass, soft",
+			"file": "s4-three-unreal-soft.png",
+			"glowFile": "s4-three-unreal-soft-glow.png",
+			"measures": {
+				"total": 0.21694914060369935,
+				"share": [1, 0.9912890625, 0.8831380208333334],
+				"meanDistance": 0.5302108406571984
+			}
+		},
+		{
+			"group": "s4",
+			"name": "s4-null3d-unreal-soft",
+			"note": "S4: null3D today, UnrealBloomPass's steps",
+			"file": "s4-null3d-unreal-soft.png",
+			"glowFile": "s4-null3d-unreal-soft-glow.png",
+			"measures": {
+				"total": 0.2018493555153974,
+				"share": [1, 0.9886458333333333, 0.8688802083333333],
+				"meanDistance": 0.5276902812007406
+			},
+			"againstThree": {
+				"pixelsDiffering": 0.004965277777777778,
+				"glowGap": 0.08064764436602913,
+				"glowRatio": 0.9303994242785008
+			}
+		},
+		{
+			"group": "s4",
+			"name": "s4-null3d-mip-soft",
+			"note": "S4: null3D mip chain, mapped at 360 rows: base 180",
+			"file": "s4-null3d-mip-soft.png",
+			"glowFile": "s4-null3d-mip-soft-glow.png",
+			"measures": {
+				"total": 0.2015895370777313,
+				"share": [1, 0.9999956597222223, 0.8935850694444445],
+				"meanDistance": 0.5343163029321694
+			},
+			"againstThree": {
+				"pixelsDiffering": 0.005164930555555555,
+				"glowGap": 0.0929566855968931,
+				"glowRatio": 0.92920182360148
+			},
+			"againstNull3dUnreal": {
+				"pixelsDiffering": 0.000013020833333333334,
+				"glowGap": 0.04291315618088193
+			}
+		},
+		{
+			"group": "s4",
+			"name": "s4-three-unreal-strong",
+			"note": "S4: three.js UnrealBloomPass, strong",
+			"file": "s4-three-unreal-strong.png",
+			"glowFile": "s4-three-unreal-strong-glow.png",
+			"measures": {
+				"total": 0.3566882100898106,
+				"share": [1, 1, 0.985078125],
+				"meanDistance": 0.5683005623645789
+			}
+		},
+		{
+			"group": "s4",
+			"name": "s4-null3d-unreal-strong",
+			"note": "S4: null3D today, UnrealBloomPass's steps",
+			"file": "s4-null3d-unreal-strong.png",
+			"glowFile": "s4-null3d-unreal-strong-glow.png",
+			"measures": {
+				"total": 0.3394785064868726,
+				"share": [1, 1, 0.9825868055555556],
+				"meanDistance": 0.5662320470439165
+			},
+			"againstThree": {
+				"pixelsDiffering": 0.0006987847222222222,
+				"glowGap": 0.05717459378914812,
+				"glowRatio": 0.9517514088884385
+			}
+		},
+		{
+			"group": "s4",
+			"name": "s4-null3d-mip-strong",
+			"note": "S4: null3D mip chain, mapped at 360 rows: base 180",
+			"file": "s4-null3d-mip-strong.png",
+			"glowFile": "s4-null3d-mip-strong-glow.png",
+			"measures": {
+				"total": 0.34662271336917505,
+				"share": [1, 1, 0.9966145833333333],
+				"meanDistance": 0.575149643746617
+			},
+			"againstThree": {
+				"pixelsDiffering": 0.0011805555555555556,
+				"glowGap": 0.055428033562463494,
+				"glowRatio": 0.9717806856635346
+			},
+			"againstNull3dUnreal": {
+				"pixelsDiffering": 0.00021701388888888888,
+				"glowGap": 0.035614017742314
+			}
+		},
+		{
+			"group": "s4",
+			"name": "s4-three-pmndrs",
+			"note": "S4: pmndrs BloomEffect, defaults",
+			"file": "s4-three-pmndrs.png",
+			"glowFile": "s4-three-pmndrs-glow.png",
+			"measures": {
+				"total": 0.059646961486239235,
+				"share": [0.9104036458333333, 0.7122612847222223, 0.3240625],
+				"meanDistance": 0.7985699812001736
+			}
+		},
+		{
+			"group": "s4",
+			"name": "s4-null3d-mip-pmndrs",
+			"note": "S4: null3D mip chain, pmndrs mapped at 360 rows: base 180",
+			"file": "s4-null3d-mip-pmndrs.png",
+			"glowFile": "s4-null3d-mip-pmndrs-glow.png",
+			"measures": {
+				"total": 0.07111976953520399,
+				"share": [0.9131423611111111, 0.7800737847222222, 0.4565798611111111],
+				"meanDistance": 0.5483891498539607
+			},
+			"againstThree": {
+				"pixelsDiffering": 0.022157118055555557,
+				"glowGap": 0.2737067879909078,
+				"glowRatio": 1.1923452220045034
+			}
+		},
+		{
+			"group": "s4",
+			"name": "s4-null3d-mip-default",
+			"note": "S4: M2-F7's candidate default (threshold 0, mix 0.15, Bevy NATURAL levels)",
+			"file": "s4-null3d-mip-default.png",
+			"glowFile": "s4-null3d-mip-default-glow.png",
+			"measures": {
+				"total": 0.013853866125284822,
+				"share": [0.4963454861111111, 0.3177994791666667, 0.03627170138888889],
+				"meanDistance": 0.5317225788466063
+			}
+		},
+		{
+			"group": "size",
+			"name": "size-unreal-640",
+			"note": "unreal, 640 x 360",
+			"file": "size-unreal-640.png",
+			"glowFile": "size-unreal-640-glow.png",
+			"measures": {
+				"total": 0.4856028381332645,
+				"share": [1, 0.9936501736111111, 0.9886762152777778],
+				"meanDistance": 0.46671056659099425
+			}
+		},
+		{
+			"group": "size",
+			"name": "size-unreal-1280",
+			"note": "unreal, 1280 x 720",
+			"file": "size-unreal-1280.png",
+			"glowFile": "size-unreal-1280-glow.png",
+			"measures": {
+				"total": 0.4032827515846106,
+				"share": [1, 0.9855316840277778, 0.8909233940972222],
+				"meanDistance": 0.4127368183679116
+			}
+		},
+		{
+			"group": "size",
+			"name": "size-unreal-1280-scale-50",
+			"note": "unreal, 1280 x 720, render scale 0.5",
+			"file": "size-unreal-1280-scale-50.png",
+			"glowFile": "size-unreal-1280-scale-50-glow.png",
+			"measures": {
+				"total": 0.48559500690424656,
+				"share": [1, 0.9943294270833334, 0.9897330729166667],
+				"meanDistance": 0.4664636335717248
+			}
+		},
+		{
+			"group": "size",
+			"name": "size-mip-640",
+			"note": "mip, 640 x 360",
+			"file": "size-mip-640.png",
+			"glowFile": "size-mip-640-glow.png",
+			"measures": {
+				"total": 0.4387844371976563,
+				"share": [1, 0.9950520833333333, 0.9835980902777778],
+				"meanDistance": 0.4366904513631394
+			}
+		},
+		{
+			"group": "size",
+			"name": "size-mip-1280",
+			"note": "mip, 1280 x 720",
+			"file": "size-mip-1280.png",
+			"glowFile": "size-mip-1280-glow.png",
+			"measures": {
+				"total": 0.439401484361032,
+				"share": [1, 0.9950379774305556, 0.9839637586805555],
+				"meanDistance": 0.4367788146108431
+			}
+		},
+		{
+			"group": "size",
+			"name": "size-mip-1280-scale-50",
+			"note": "mip, 1280 x 720, render scale 0.5",
+			"file": "size-mip-1280-scale-50.png",
+			"glowFile": "size-mip-1280-scale-50-glow.png",
+			"measures": {
+				"total": 0.43879179351149206,
+				"share": [1, 0.9954437934027778, 0.9846733940972222],
+				"meanDistance": 0.4366450951503398
+			}
+		}
+	]
+}

@@ -772,6 +772,18 @@ export const S4_MATERIALS = {
 } as const satisfies Record<string, S4MaterialSpec>;
 export type S4MaterialName = keyof typeof S4_MATERIALS;
 
+/**
+ * Prototype P2: the emissive light that S4's ?emissive switch gives some materials, so bloom has
+ * something to spread: the red props and cars glow like signs and tail lights, and the glass of
+ * the towers and vans like lit windows.
+ */
+export const S4_EMISSIVES: Partial<
+	Record<S4MaterialName, { emissive: string; intensity: number }>
+> = {
+	red: { emissive: '#ff3018', intensity: 5 },
+	glass: { emissive: '#ffcf80', intensity: 1.6 },
+};
+
 /** A kind of object: its mesh, its material and, for the kinds of fixed size, its size in meters. */
 export interface S4Kind {
 	mesh: S4MeshName;

@@ -44,7 +44,16 @@ export interface Null3dPageOptions {
  * as dashed line segments, and `labels` adds that many labeled objects to S1, whose elements the
  * page binds.
  */
-const SKETCH_SWITCHES = ['blend', 'animated', 'grading', 'sprites', 'lines', 'labels'] as const;
+const SKETCH_SWITCHES = [
+	'blend',
+	'animated',
+	'grading',
+	'sprites',
+	'lines',
+	'labels',
+	'emissive',
+	'bloomp2',
+] as const;
 
 /**
  * Runs `sketch`, a sketch module next to the page, as the scene `sceneName` with `defaultCount`

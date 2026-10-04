@@ -201,7 +201,15 @@ export const POST_VALUE_AO_DISTANCE_FALLOFF = 16;
 export const POST_VALUE_AO_SCALE = 17;
 export const POST_VALUE_AO_SAMPLES = 18;
 export const POST_VALUE_AO_INTENSITY = 19;
-export const POST_VALUE_COUNT = 20;
+export const POST_VALUE_BLOOM_METHOD = 20;
+export const POST_VALUE_BLOOM_INTENSITY = 21;
+export const POST_VALUE_BLOOM_KNEE = 22;
+export const POST_VALUE_BLOOM_LEVELS = 23;
+export const POST_VALUE_BLOOM_BASE_ROWS = 24;
+export const POST_VALUE_BLOOM_KARIS = 25;
+export const POST_VALUE_BLOOM_COMPOSITE = 26;
+export const POST_VALUE_BLOOM_MIXES = 27;
+export const POST_VALUE_COUNT = 35;
 
 export const TEXTURE_STAT_MEMORY_BYTES = 0;
 export const TEXTURE_STAT_TEXTURE_BYTES = 1;

@@ -865,6 +865,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'skinning',
 	'skinning-webgpu',
 	'bloom',
+	'bloom-p2',
 	'ao',
 	'occlusion',
 	'overload',

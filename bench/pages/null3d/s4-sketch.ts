@@ -9,6 +9,7 @@ import { defineSketch, type Material, type MeshGeometry, type Texture } from '@n
 import {
 	createS4,
 	S4_ANISOTROPY,
+	S4_EMISSIVES,
 	S4_FOG,
 	S4_MATERIALS,
 	S4_MESHES,
@@ -35,6 +36,13 @@ import {
 	setUpView,
 	watchQuality,
 } from './sketch-common';
+
+const SWITCHES = new URL(import.meta.url).searchParams;
+const EMISSIVE = SWITCHES.has('emissive');
+const BLOOM_TEXT = SWITCHES.get('bloomp2');
+const BLOOM_P2 = BLOOM_TEXT
+	? JSON.parse(atob(BLOOM_TEXT.replaceAll('-', '+').replaceAll('_', '/')))
+	: undefined;
 
 export default defineSketch((context) => {
 	const { scene, materials, geometry, textures, time } = context;
@@ -94,8 +102,23 @@ export default defineSketch((context) => {
 		S4MaterialName,
 		(typeof S4_MATERIALS)[S4MaterialName],
 	][]) {
-		looks.set(name, materials.standard({ color, roughness, metalness, map: maps.get(texture) }));
+		// Prototype P2: ?emissive gives some materials emissive light.
+		const glow = EMISSIVE ? S4_EMISSIVES[name] : undefined;
+		looks.set(
+			name,
+			materials.standard({
+				color,
+				roughness,
+				metalness,
+				map: maps.get(texture),
+				...(glow && { emissive: glow.emissive, emissiveIntensity: glow.intensity }),
+			}),
+		);
 	}
+	// Prototype P2: ?bloomp2=<base64url JSON> turns bloom on with those settings, with ACES, as
+	// the twin's composer draws; ?emissive alone draws ACES without bloom.
+	if (BLOOM_P2) context.post.set({ toneMapping: 'aces', bloom: BLOOM_P2 });
+	else if (EMISSIVE) context.post.set({ toneMapping: 'aces' });
 
 	const data = createS4();
 	const position = new Float64Array(3);

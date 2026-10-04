@@ -44,7 +44,10 @@ run('effect-cost', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL(SKETCHES[effect], import.meta.url);
-	sketch.search = `?scale=${scale}&fixed`;
+	// Prototype P2: the bloom method and the mip chain's base rows reach the sketch.
+	const method =
+		params.get('method') === 'mip' ? `&method=mip&base=${params.get('base') ?? 512}` : '';
+	sketch.search = `?scale=${scale}${method}&fixed`;
 	const engine = await createEngine({ canvas, sketch });
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
@@ -83,6 +86,8 @@ run('effect-cost', async () => {
 	});
 	return {
 		effect,
+		method: params.get('method') ?? 'unreal',
+		base: params.get('base'),
 		tier: engine.capabilities.tier,
 		hdr: engine.capabilities.hdr,
 		scale,

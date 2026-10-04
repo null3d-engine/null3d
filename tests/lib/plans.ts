@@ -829,6 +829,35 @@ export function effectPlan(effect: 'bloom' | 'ao'): PlanItem<Check>[] {
 	return [...pages, ...twin];
 }
 
+/**
+ * Prototype P2: bloom's cost with `UnrealBloomPass`'s steps and with the mip chain, on WebGPU and
+ * WebGL2, at render scales 1 and 0.5, and the mip chain with the base of Low (384 rows) and of the
+ * governor's step (256 rows) at scale 1.
+ */
+export function bloomP2Plan(): PlanItem<Check>[] {
+	const runs = [
+		['unreal', [], EFFECT_SCALES],
+		['mip512', ['method=mip', 'base=512'], EFFECT_SCALES],
+		['mip384', ['method=mip', 'base=384'], [1]],
+		['mip256', ['method=mip', 'base=256'], [1]],
+	] as const;
+	return (['webgpu', 'webgl2'] as const).flatMap((tier) =>
+		runs.flatMap(([name, switches, scales]) =>
+			scales.map((scale) =>
+				pageItem(
+					`bloom-p2-${name}-${tier}-${scale * 100}`,
+					'effect-cost',
+					{ kind: 'effect', effect: 'bloom', tier, scale },
+					{
+						switches: [`gpu=${tier}`, `scale=${scale}`, 'effect=bloom', ...switches],
+						timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+					},
+				),
+			),
+		),
+	);
+}
+
 /** How long the occlusion cost page may take: the city's start, the warm-up and six measurements. */
 const OCCLUSION_TIMEOUT_SECONDS = 90;
 
@@ -1163,6 +1192,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	skinning: () => skinningPlan('webgl2'),
 	'skinning-webgpu': () => skinningPlan('webgpu'),
 	bloom: () => effectPlan('bloom'),
+	'bloom-p2': bloomP2Plan,
 	ao: () => effectPlan('ao'),
 	occlusion: occlusionPlan,
 	animation: animationPlan,

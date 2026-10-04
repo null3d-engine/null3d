@@ -81,3 +81,19 @@ export const BLOOM_SETTINGS = {
 } as const;
 
 export type BloomName = keyof typeof BLOOM_SETTINGS;
+
+/** Prototype P2: today's steps with the strong settings, for timing against the mip chain. */
+export const BLOOM_P2_UNREAL = { ...BLOOM_SETTINGS.strong, method: 'unreal' } as const;
+
+/** Prototype P2: the mip chain that M2-F7 plans, for timing: a 512-row base and threshold 0. */
+export const BLOOM_P2_MIP = {
+	method: 'mip',
+	intensity: 0.15,
+	threshold: 0,
+	knee: 0,
+	levels: 8,
+	baseRows: 512,
+	karis: true,
+	composite: 'mix',
+	mixes: [0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85],
+} as const;

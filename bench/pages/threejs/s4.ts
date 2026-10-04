@@ -18,6 +18,7 @@ import type * as ThreeModule from 'three';
 import {
 	createS4,
 	S4_ANISOTROPY,
+	S4_EMISSIVES,
 	S4_FOG,
 	S4_MATERIALS,
 	S4_MESHES,
@@ -99,7 +100,18 @@ runThreePage(
 			(Object.keys(S4_MATERIALS) as S4MaterialName[]).map((name) => {
 				const { color, texture, roughness, metalness } = S4_MATERIALS[name];
 				const map = textures.get(texture) ?? null;
-				return [name, new three.MeshStandardMaterial({ color, roughness, metalness, map })];
+				// Prototype P2: ?emissive gives some materials emissive light.
+				const glow = context.params.has('emissive') ? S4_EMISSIVES[name] : undefined;
+				return [
+					name,
+					new three.MeshStandardMaterial({
+						color,
+						roughness,
+						metalness,
+						map,
+						...(glow && { emissive: glow.emissive, emissiveIntensity: glow.intensity }),
+					}),
+				];
 			}),
 		);
 		const geometries = new Map(

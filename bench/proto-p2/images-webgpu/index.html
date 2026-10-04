@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototype P2 bloom</title>
+<style>
+:root { --bg: #f6f6f4; --fg: #1d1f22; --muted: #5d6268; }
+@media (prefers-color-scheme: dark) { :root { --bg: #15171a; --fg: #e4e6e8; --muted: #9aa0a6; } }
+body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, sans-serif; }
+h1 { font-size: 20px; } h2 { font-size: 16px; margin-top: 28px; }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+figure { margin: 0; } img { width: 100%; display: block; margin-bottom: 4px; }
+figcaption { color: var(--muted); font-size: 12px; } figcaption b { color: var(--fg); }
+</style></head><body>
+<h1>Prototype P2: mip-chain bloom against UnrealBloomPass and pmndrs BloomEffect</h1>
+<p>Each figure shows the image, then the light that bloom adds (four times brighter). Drawn on the Mac in Chrome; the numbers come from bench/proto-p2.ts.</p>
+<h2>unreal</h2><div class="row"><figure>
+<img src="three-unreal-soft.png" alt="three-unreal-soft"><img src="three-unreal-soft-glow.png" alt="three-unreal-soft glow">
+<figcaption><b>three-unreal-soft</b><br>three.js UnrealBloomPass, soft<br>glow: 100.00% of the image over 1/255, 68.82% over 16/255, mean distance 0.339 of the height</figcaption>
+</figure>
+<figure>
+<img src="null3d-unreal-soft.png" alt="null3d-unreal-soft"><img src="null3d-unreal-soft-glow.png" alt="null3d-unreal-soft glow">
+<figcaption><b>null3d-unreal-soft</b><br>null3D today: UnrealBloomPass's steps<br>glow: 98.12% of the image over 1/255, 66.90% over 16/255, mean distance 0.337 of the height<br>against three.js: 0.00% of pixels differ by its rule, glow gap 3.45%, glow ratio 0.97</figcaption>
+</figure>
+<figure>
+<img src="null3d-mip-soft.png" alt="null3d-mip-soft"><img src="null3d-mip-soft-glow.png" alt="null3d-mip-soft glow">
+<figcaption><b>null3d-mip-soft</b><br>null3D mip chain, mapped: intensity 4.40, base 360 rows, mixes 0.92 0.83 0.78 0.74 0.69 0.61 0.42, Karis on<br>glow: 100.00% of the image over 1/255, 75.15% over 16/255, mean distance 0.357 of the height<br>against three.js: 0.00% of pixels differ by its rule, glow gap 7.91%, glow ratio 1.02<br>against null3D's UnrealBloomPass steps: 0.00% of pixels</figcaption>
+</figure>
+<figure>
+<img src="null3d-mip-soft-no-karis.png" alt="null3d-mip-soft-no-karis"><img src="null3d-mip-soft-no-karis-glow.png" alt="null3d-mip-soft-no-karis glow">
+<figcaption><b>null3d-mip-soft-no-karis</b><br>null3D mip chain, mapped: intensity 4.40, base 360 rows, mixes 0.92 0.83 0.78 0.74 0.69 0.61 0.42, Karis off<br>glow: 100.00% of the image over 1/255, 75.33% over 16/255, mean distance 0.358 of the height<br>against three.js: 0.00% of pixels differ by its rule, glow gap 7.76%, glow ratio 1.03<br>against null3D's UnrealBloomPass steps: 0.00% of pixels</figcaption>
+</figure>
+<figure>
+<img src="null3d-mip-soft-base-512.png" alt="null3d-mip-soft-base-512"><img src="null3d-mip-soft-base-512-glow.png" alt="null3d-mip-soft-base-512 glow">
+<figcaption><b>null3d-mip-soft-base-512</b><br>null3D mip chain, mapped on the default 512-row base: mixes 0.95 0.88 0.81 0.76 0.71 0.63 0.64<br>glow: 92.46% of the image over 1/255, 66.25% over 16/255, mean distance 0.339 of the height<br>against three.js: 1.25% of pixels differ by its rule, glow gap 9.41%, glow ratio 1.01<br>against null3D's UnrealBloomPass steps: 1.82% of pixels</figcaption>
+</figure>
+<figure>
+<img src="three-unreal-strong.png" alt="three-unreal-strong"><img src="three-unreal-strong-glow.png" alt="three-unreal-strong glow">
+<figcaption><b>three-unreal-strong</b><br>three.js UnrealBloomPass, strong<br>glow: 100.00% of the image over 1/255, 89.84% over 16/255, mean distance 0.415 of the height</figcaption>
+</figure>
+<figure>
+<img src="null3d-unreal-strong.png" alt="null3d-unreal-strong"><img src="null3d-unreal-strong-glow.png" alt="null3d-unreal-strong glow">
+<figcaption><b>null3d-unreal-strong</b><br>null3D today: UnrealBloomPass's steps<br>glow: 100.00% of the image over 1/255, 89.09% over 16/255, mean distance 0.413 of the height<br>against three.js: 0.00% of pixels differ by its rule, glow gap 2.73%, glow ratio 0.97</figcaption>
+</figure>
+<figure>
+<img src="null3d-mip-strong.png" alt="null3d-mip-strong"><img src="null3d-mip-strong-glow.png" alt="null3d-mip-strong glow">
+<figcaption><b>null3d-mip-strong</b><br>null3D mip chain, mapped: intensity 8.74, base 360 rows, mixes 0.97 0.93 0.89 0.85 0.80 0.71 0.48, Karis on<br>glow: 100.00% of the image over 1/255, 98.40% over 16/255, mean distance 0.437 of the height<br>against three.js: 3.73% of pixels differ by its rule, glow gap 7.88%, glow ratio 1.06<br>against null3D's UnrealBloomPass steps: 6.99% of pixels</figcaption>
+</figure>
+<figure>
+<img src="null3d-mip-strong-no-karis.png" alt="null3d-mip-strong-no-karis"><img src="null3d-mip-strong-no-karis-glow.png" alt="null3d-mip-strong-no-karis glow">
+<figcaption><b>null3d-mip-strong-no-karis</b><br>null3D mip chain, mapped: intensity 8.74, base 360 rows, mixes 0.97 0.93 0.89 0.85 0.80 0.71 0.48, Karis off<br>glow: 100.00% of the image over 1/255, 98.51% over 16/255, mean distance 0.437 of the height<br>against three.js: 4.47% of pixels differ by its rule, glow gap 8.20%, glow ratio 1.07<br>against null3D's UnrealBloomPass steps: 8.00% of pixels</figcaption>
+</figure>
+<figure>
+<img src="null3d-mip-strong-base-512.png" alt="null3d-mip-strong-base-512"><img src="null3d-mip-strong-base-512-glow.png" alt="null3d-mip-strong-base-512 glow">
+<figcaption><b>null3d-mip-strong-base-512</b><br>null3D mip chain, mapped on the default 512-row base: mixes 0.98 0.95 0.92 0.88 0.81 0.73 0.78<br>glow: 99.58% of the image over 1/255, 83.78% over 16/255, mean distance 0.406 of the height<br>against three.js: 7.73% of pixels differ by its rule, glow gap 9.46%, glow ratio 1.01<br>against null3D's UnrealBloomPass steps: 10.50% of pixels</figcaption>
+</figure></div>
+<h2>pmndrs</h2><div class="row"><figure>
+<img src="three-pmndrs-default.png" alt="three-pmndrs-default"><img src="three-pmndrs-default-glow.png" alt="three-pmndrs-default glow">
+<figcaption><b>three-pmndrs-default</b><br>pmndrs BloomEffect, defaults (mipmapBlur)<br>glow: 98.92% of the image over 1/255, 71.14% over 16/255, mean distance 0.396 of the height</figcaption>
+</figure>
+<figure>
+<img src="null3d-mip-pmndrs.png" alt="null3d-mip-pmndrs"><img src="null3d-mip-pmndrs-glow.png" alt="null3d-mip-pmndrs glow">
+<figcaption><b>null3d-mip-pmndrs</b><br>null3D mip chain, mapped: intensity 1.01, base 360, mixes 0.86 0.85 0.85 0.85 0.83 0.86 0.96, Karis on<br>glow: 99.01% of the image over 1/255, 70.60% over 16/255, mean distance 0.400 of the height<br>against three.js: 0.00% of pixels differ by its rule, glow gap 6.71%, glow ratio 0.94</figcaption>
+</figure>
+<figure>
+<img src="null3d-mip-pmndrs-no-karis.png" alt="null3d-mip-pmndrs-no-karis"><img src="null3d-mip-pmndrs-no-karis-glow.png" alt="null3d-mip-pmndrs-no-karis glow">
+<figcaption><b>null3d-mip-pmndrs-no-karis</b><br>null3D mip chain, mapped: intensity 1.01, base 360, mixes 0.86 0.85 0.85 0.85 0.83 0.86 0.96, Karis off<br>glow: 99.02% of the image over 1/255, 70.82% over 16/255, mean distance 0.399 of the height<br>against three.js: 0.00% of pixels differ by its rule, glow gap 5.46%, glow ratio 0.95</figcaption>
+</figure>
+<figure>
+<img src="null3d-mip-pmndrs-direct.png" alt="null3d-mip-pmndrs-direct"><img src="null3d-mip-pmndrs-direct-glow.png" alt="null3d-mip-pmndrs-direct glow">
+<figcaption><b>null3d-mip-pmndrs-direct</b><br>null3D mip chain with pmndrs's own numbers: radius 0.85 as every mix, base at half the canvas<br>glow: 99.03% of the image over 1/255, 69.02% over 16/255, mean distance 0.388 of the height<br>against three.js: 0.00% of pixels differ by its rule, glow gap 7.48%, glow ratio 0.93</figcaption>
+</figure></div>
+<h2>default</h2><div class="row"><figure>
+<img src="null3d-mip-default.png" alt="null3d-mip-default"><img src="null3d-mip-default-glow.png" alt="null3d-mip-default glow">
+<figcaption><b>null3d-mip-default</b><br>M2-F7's candidate default: threshold 0, energy-conserving mix at 0.15, Bevy NATURAL's level blend, Karis on<br>glow: 49.78% of the image over 1/255, 3.43% over 16/255, mean distance 0.242 of the height</figcaption>
+</figure></div>
+<h2>s4</h2><div class="row"><figure>
+<img src="s4-three-unreal-soft.png" alt="s4-three-unreal-soft"><img src="s4-three-unreal-soft-glow.png" alt="s4-three-unreal-soft glow">
+<figcaption><b>s4-three-unreal-soft</b><br>S4: three.js UnrealBloomPass, soft<br>glow: 100.00% of the image over 1/255, 88.31% over 16/255, mean distance 0.530 of the height</figcaption>
+</figure>
+<figure>
+<img src="s4-null3d-unreal-soft.png" alt="s4-null3d-unreal-soft"><img src="s4-null3d-unreal-soft-glow.png" alt="s4-null3d-unreal-soft glow">
+<figcaption><b>s4-null3d-unreal-soft</b><br>S4: null3D today, UnrealBloomPass's steps<br>glow: 100.00% of the image over 1/255, 86.89% over 16/255, mean distance 0.528 of the height<br>against three.js: 0.50% of pixels differ by its rule, glow gap 8.06%, glow ratio 0.93</figcaption>
+</figure>
+<figure>
+<img src="s4-null3d-mip-soft.png" alt="s4-null3d-mip-soft"><img src="s4-null3d-mip-soft-glow.png" alt="s4-null3d-mip-soft glow">
+<figcaption><b>s4-null3d-mip-soft</b><br>S4: null3D mip chain, mapped at 360 rows: base 180<br>glow: 100.00% of the image over 1/255, 89.36% over 16/255, mean distance 0.534 of the height<br>against three.js: 0.52% of pixels differ by its rule, glow gap 9.30%, glow ratio 0.93<br>against null3D's UnrealBloomPass steps: 0.00% of pixels</figcaption>
+</figure>
+<figure>
+<img src="s4-three-unreal-strong.png" alt="s4-three-unreal-strong"><img src="s4-three-unreal-strong-glow.png" alt="s4-three-unreal-strong glow">
+<figcaption><b>s4-three-unreal-strong</b><br>S4: three.js UnrealBloomPass, strong<br>glow: 100.00% of the image over 1/255, 98.51% over 16/255, mean distance 0.568 of the height</figcaption>
+</figure>
+<figure>
+<img src="s4-null3d-unreal-strong.png" alt="s4-null3d-unreal-strong"><img src="s4-null3d-unreal-strong-glow.png" alt="s4-null3d-unreal-strong glow">
+<figcaption><b>s4-null3d-unreal-strong</b><br>S4: null3D today, UnrealBloomPass's steps<br>glow: 100.00% of the image over 1/255, 98.26% over 16/255, mean distance 0.566 of the height<br>against three.js: 0.07% of pixels differ by its rule, glow gap 5.72%, glow ratio 0.95</figcaption>
+</figure>
+<figure>
+<img src="s4-null3d-mip-strong.png" alt="s4-null3d-mip-strong"><img src="s4-null3d-mip-strong-glow.png" alt="s4-null3d-mip-strong glow">
+<figcaption><b>s4-null3d-mip-strong</b><br>S4: null3D mip chain, mapped at 360 rows: base 180<br>glow: 100.00% of the image over 1/255, 99.66% over 16/255, mean distance 0.575 of the height<br>against three.js: 0.12% of pixels differ by its rule, glow gap 5.54%, glow ratio 0.97<br>against null3D's UnrealBloomPass steps: 0.02% of pixels</figcaption>
+</figure>
+<figure>
+<img src="s4-three-pmndrs.png" alt="s4-three-pmndrs"><img src="s4-three-pmndrs-glow.png" alt="s4-three-pmndrs glow">
+<figcaption><b>s4-three-pmndrs</b><br>S4: pmndrs BloomEffect, defaults<br>glow: 91.04% of the image over 1/255, 32.41% over 16/255, mean distance 0.799 of the height</figcaption>
+</figure>
+<figure>
+<img src="s4-null3d-mip-pmndrs.png" alt="s4-null3d-mip-pmndrs"><img src="s4-null3d-mip-pmndrs-glow.png" alt="s4-null3d-mip-pmndrs glow">
+<figcaption><b>s4-null3d-mip-pmndrs</b><br>S4: null3D mip chain, pmndrs mapped at 360 rows: base 180<br>glow: 91.31% of the image over 1/255, 45.66% over 16/255, mean distance 0.548 of the height<br>against three.js: 2.22% of pixels differ by its rule, glow gap 27.37%, glow ratio 1.19</figcaption>
+</figure>
+<figure>
+<img src="s4-null3d-mip-default.png" alt="s4-null3d-mip-default"><img src="s4-null3d-mip-default-glow.png" alt="s4-null3d-mip-default glow">
+<figcaption><b>s4-null3d-mip-default</b><br>S4: M2-F7's candidate default (threshold 0, mix 0.15, Bevy NATURAL levels)<br>glow: 49.63% of the image over 1/255, 3.63% over 16/255, mean distance 0.532 of the height</figcaption>
+</figure></div>
+<h2>size</h2><div class="row"><figure>
+<img src="size-unreal-640.png" alt="size-unreal-640"><img src="size-unreal-640-glow.png" alt="size-unreal-640 glow">
+<figcaption><b>size-unreal-640</b><br>unreal, 640 x 360<br>glow: 100.00% of the image over 1/255, 98.87% over 16/255, mean distance 0.467 of the height</figcaption>
+</figure>
+<figure>
+<img src="size-unreal-1280.png" alt="size-unreal-1280"><img src="size-unreal-1280-glow.png" alt="size-unreal-1280 glow">
+<figcaption><b>size-unreal-1280</b><br>unreal, 1280 x 720<br>glow: 100.00% of the image over 1/255, 89.09% over 16/255, mean distance 0.413 of the height</figcaption>
+</figure>
+<figure>
+<img src="size-unreal-1280-scale-50.png" alt="size-unreal-1280-scale-50"><img src="size-unreal-1280-scale-50-glow.png" alt="size-unreal-1280-scale-50 glow">
+<figcaption><b>size-unreal-1280-scale-50</b><br>unreal, 1280 x 720, render scale 0.5<br>glow: 100.00% of the image over 1/255, 98.97% over 16/255, mean distance 0.466 of the height</figcaption>
+</figure>
+<figure>
+<img src="size-mip-640.png" alt="size-mip-640"><img src="size-mip-640-glow.png" alt="size-mip-640 glow">
+<figcaption><b>size-mip-640</b><br>mip, 640 x 360<br>glow: 100.00% of the image over 1/255, 98.36% over 16/255, mean distance 0.437 of the height</figcaption>
+</figure>
+<figure>
+<img src="size-mip-1280.png" alt="size-mip-1280"><img src="size-mip-1280-glow.png" alt="size-mip-1280 glow">
+<figcaption><b>size-mip-1280</b><br>mip, 1280 x 720<br>glow: 100.00% of the image over 1/255, 98.40% over 16/255, mean distance 0.437 of the height</figcaption>
+</figure>
+<figure>
+<img src="size-mip-1280-scale-50.png" alt="size-mip-1280-scale-50"><img src="size-mip-1280-scale-50-glow.png" alt="size-mip-1280-scale-50 glow">
+<figcaption><b>size-mip-1280-scale-50</b><br>mip, 1280 x 720, render scale 0.5<br>glow: 100.00% of the image over 1/255, 98.47% over 16/255, mean distance 0.437 of the height</figcaption>
+</figure></div>
+</body></html>

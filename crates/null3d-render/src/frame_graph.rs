@@ -92,7 +92,9 @@ use std::borrow::Cow;
 use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_usage, view};
 
 use crate::ao::{self, Ao, AoIds, AoPass, StepSources};
-use crate::bloom::{self, Bloom, BloomIds, BloomPass, LEVELS, STEPS};
+use crate::bloom::{
+    self, Bloom, BloomIds, BloomPass, LEVELS, MIP_LEVELS, STEPS, Shape, UNREAL_STEPS,
+};
 use crate::camera::Mat4;
 use crate::final_pass::{BloomInputs, FinalIds, FinalPass};
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
@@ -158,7 +160,7 @@ const SHADOW_CASCADES: [&str; MAX_CASCADES] = [
 /// Each step of bloom's chain, and the target it creates: the bright pass, then each level's blur
 /// across and its blur down. Each step reads the target of the step before it, and the bright pass
 /// the scene color.
-const BLOOM_PASSES: [&str; STEPS] = [
+const BLOOM_PASSES: [&str; UNREAL_STEPS] = [
     "BloomBright",
     "BloomBlurX0",
     "BloomBlurY0",
@@ -171,7 +173,7 @@ const BLOOM_PASSES: [&str; STEPS] = [
     "BloomBlurX4",
     "BloomBlurY4",
 ];
-const BLOOM_TARGETS: [&str; STEPS] = [
+const BLOOM_TARGETS: [&str; UNREAL_STEPS] = [
     "bloomBright",
     "bloomX0",
     "bloomY0",
@@ -183,6 +185,31 @@ const BLOOM_TARGETS: [&str; STEPS] = [
     "bloomY3",
     "bloomX4",
     "bloomY4",
+];
+/// The mip chain's steps down, each creating its level's target, and its steps up, each blending
+/// the level below into its level's target.
+const MIP_DOWN_PASSES: [&str; MIP_LEVELS] = [
+    "BloomDown0",
+    "BloomDown1",
+    "BloomDown2",
+    "BloomDown3",
+    "BloomDown4",
+    "BloomDown5",
+    "BloomDown6",
+    "BloomDown7",
+];
+const MIP_UP_PASSES: [&str; MIP_LEVELS] = [
+    "BloomUp0", "BloomUp1", "BloomUp2", "BloomUp3", "BloomUp4", "BloomUp5", "BloomUp6", "BloomUp7",
+];
+const MIP_TARGETS: [&str; MIP_LEVELS] = [
+    "bloomMip0",
+    "bloomMip1",
+    "bloomMip2",
+    "bloomMip3",
+    "bloomMip4",
+    "bloomMip5",
+    "bloomMip6",
+    "bloomMip7",
 ];
 /// The step whose target holds one of bloom's levels, which the final pass reads: its blur down.
 const fn bloom_level(level: usize) -> usize {
@@ -349,6 +376,11 @@ pub(crate) struct FrameGraph {
     bloom_passes: Vec<PassId>,
     /// Bloom's settings while the sketch turns it on.
     bloom: Option<Bloom>,
+    /// The shape of bloom's declared passes.
+    bloom_shape: Shape,
+    /// The target that each declared step of bloom reads, and the targets the final pass reads.
+    bloom_sources: [&'static str; STEPS],
+    bloom_levels: [&'static str; LEVELS],
     /// The sample divisor of bloom's blurs.
     bloom_divisor: u32,
     /// Ambient occlusion's steps and their GPU objects, once ambient occlusion first draws.
@@ -434,6 +466,9 @@ impl FrameGraph {
             bloom_passes: Vec::new(),
             bloom_ids: ids.bloom,
             bloom: None,
+            bloom_shape: Shape::Unreal,
+            bloom_sources: [SCENE_COLOR; STEPS],
+            bloom_levels: [SCENE_COLOR; LEVELS],
             bloom_divisor: 1,
             ao_pass: None,
             ao_ids: ids.ao,
@@ -642,6 +677,12 @@ impl FrameGraph {
     /// bloom turns on or off. The 8-bit path draws no bloom.
     pub(crate) fn set_bloom(&mut self, bloom: Option<Bloom>, divisor: u32) {
         let was = self.bloom_draws();
+        if let Some(settings) = &bloom
+            && Shape::of(settings) != self.bloom_shape
+        {
+            self.bloom_shape = Shape::of(settings);
+            self.declared = false;
+        }
         self.bloom = bloom;
         self.bloom_divisor = divisor.clamp(1, bloom::MAX_SAMPLE_DIVISOR);
         if self.bloom_draws() != was {
@@ -860,20 +901,63 @@ impl FrameGraph {
     /// with bloom, which reads every level, and returns that final pass.
     fn declare_bloom(&mut self) -> PassId {
         let target = Target::color(self.scene_color.format());
-        for step in 0..STEPS {
-            let pass = Pass::new(BLOOM_PASSES[step], PassKind::Fullscreen)
-                .size(bloom::step_size(step))
-                .reads(bloom_source(step))
-                .creates(BLOOM_TARGETS[step], target);
-            let pass = self.add(pass, Role::Bloom(step as u8));
-            self.bloom_passes.push(pass);
+        match self.bloom_shape {
+            Shape::Unreal => {
+                for step in 0..UNREAL_STEPS {
+                    let pass = Pass::new(BLOOM_PASSES[step], PassKind::Fullscreen)
+                        .size(bloom::step_size(step))
+                        .reads(bloom_source(step))
+                        .creates(BLOOM_TARGETS[step], target);
+                    self.bloom_sources[step] = bloom_source(step);
+                    let pass = self.add(pass, Role::Bloom(step as u8));
+                    self.bloom_passes.push(pass);
+                }
+                self.bloom_levels = std::array::from_fn(|level| BLOOM_TARGETS[bloom_level(level)]);
+            }
+            Shape::Mip { levels, rows } => {
+                let size = |halvings: usize| Size::Rows {
+                    rows,
+                    halvings: halvings as u8,
+                };
+                // Each step down reads the level above as the steps before it leave it, before the
+                // step up into that level blends over it.
+                for level in 0..levels {
+                    let mut pass = Pass::new(MIP_DOWN_PASSES[level], PassKind::Fullscreen)
+                        .size(size(level))
+                        .creates(MIP_TARGETS[level], target);
+                    pass = if level == 0 {
+                        self.bloom_sources[level] = SCENE_COLOR;
+                        pass.reads(SCENE_COLOR)
+                    } else {
+                        self.bloom_sources[level] = MIP_TARGETS[level - 1];
+                        pass.reads_so_far(MIP_TARGETS[level - 1])
+                    };
+                    let pass = self.add(pass, Role::Bloom(level as u8));
+                    self.bloom_passes.push(pass);
+                }
+                for level in (0..levels - 1).rev() {
+                    let step = 2 * levels - 2 - level;
+                    let pass = Pass::new(MIP_UP_PASSES[level], PassKind::Fullscreen)
+                        .size(size(level))
+                        .reads(MIP_TARGETS[level + 1])
+                        .writes(MIP_TARGETS[level]);
+                    self.bloom_sources[step] = MIP_TARGETS[level + 1];
+                    let pass = self.add(pass, Role::Bloom(step as u8));
+                    self.bloom_passes.push(pass);
+                }
+                self.bloom_levels = [MIP_TARGETS[0]; LEVELS];
+            }
         }
         let mut final_bloom = Pass::new("FinalBloom", PassKind::Fullscreen)
             .size(Size::Canvas)
             .reads(SCENE_COLOR)
             .writes(CANVAS);
-        for level in 0..LEVELS {
-            final_bloom = final_bloom.reads(BLOOM_TARGETS[bloom_level(level)]);
+        let levels = match self.bloom_shape {
+            Shape::Unreal => LEVELS,
+            Shape::Mip { .. } => 1,
+        };
+        for &level in &self.bloom_levels[..levels] {
+            final_bloom = final_bloom.reads(level);
         }
         self.add(final_bloom, Role::FinalBloom)
     }
@@ -968,7 +1052,7 @@ impl FrameGraph {
             self.ao_steps().request_pipelines(pipelines);
         }
         if let (true, Some(bloom)) = (blooms, self.bloom_pass.as_mut()) {
-            bloom.request_pipeline(pipelines);
+            bloom.request_pipeline(pipelines, self.bloom_shape);
         }
     }
 
@@ -993,12 +1077,17 @@ impl FrameGraph {
             .expect("the final pass samples the scene color");
         let render_size = Size::Full.viewport(self.canvas, self.scale);
         let bloom = if self.bloom_draws() {
+            let steps = self.bloom_shape.steps();
             let sources: [u32; STEPS] = std::array::from_fn(|step| {
-                self.sampled_id(bloom_source(step))
-                    .expect("each step of bloom reads a planned texture")
+                if step < steps {
+                    self.sampled_id(self.bloom_sources[step])
+                        .expect("each step of bloom reads a planned texture")
+                } else {
+                    0
+                }
             });
             let levels = std::array::from_fn(|level| {
-                self.sampled_id(BLOOM_TARGETS[bloom_level(level)])
+                self.sampled_id(self.bloom_levels[level])
                     .expect("the final pass reads each of bloom's levels")
             });
             let (canvas, scale, divisor, made) = (
@@ -1819,6 +1908,55 @@ mod tests {
     }
 
     #[test]
+    fn the_mip_chain_steps_down_then_blends_up_into_the_same_levels() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        let mip = bloom::MipChain {
+            levels: 4,
+            ..bloom::MipChain::default()
+        };
+        frames.set_bloom(
+            Some(Bloom {
+                mip: Some(mip),
+                ..Bloom::default()
+            }),
+            1,
+        );
+        frames.sync_views(&[View::default()]);
+        frames.request_pipelines(&mut PipelineCache::default());
+        let mut list = DrawList::with_capacity(4096);
+        frames
+            .prepare(&mut list, (1920, 1080), RenderScale::from_thousandths(500))
+            .unwrap();
+        let names = steps(&frames);
+        let expected: Vec<Vec<String>> = [
+            "BloomDown0",
+            "BloomDown1",
+            "BloomDown2",
+            "BloomDown3",
+            "BloomUp2",
+            "BloomUp1",
+            "BloomUp0",
+            "FinalBloom",
+        ]
+        .iter()
+        .map(|name| vec![name.to_string()])
+        .collect();
+        assert_eq!(names[names.len() - expected.len()..], expected[..]);
+        let plan = frames.graph().plan().unwrap();
+        let texture = |name: &str| {
+            let Some(Surface::Texture(index)) =
+                plan.texture_of(frames.graph().find_resource(name).unwrap())
+            else {
+                panic!("bloom draws into textures")
+            };
+            plan.textures()[usize::from(index)].size
+        };
+        // The base level keeps 512 rows of the canvas's shape at half the render scale.
+        assert_eq!(texture("bloomMip0").extent((1920, 1080)), (910, 512));
+        assert_eq!(texture("bloomMip3").extent((1920, 1080)), (114, 64));
+    }
+
+    #[test]
     fn bloom_runs_its_steps_between_the_scene_and_the_final_pass_only_while_it_is_on() {
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
         frames.sync_views(&[View::default()]);
@@ -1845,10 +1983,10 @@ mod tests {
         // down share one texture, as their steps do not overlap, and every other target has one.
         let plan = frames.graph().plan().unwrap();
         let textures = plan.textures();
-        assert_eq!(textures.len(), without + STEPS - 1);
+        assert_eq!(textures.len(), without + UNREAL_STEPS - 1);
         let texture = |name: &str| plan.texture_of(frames.graph().find_resource(name).unwrap());
         assert_eq!(texture("bloomBright"), texture("bloomY0"));
-        for step in 1..STEPS {
+        for step in 1..UNREAL_STEPS {
             let surface = texture(BLOOM_TARGETS[step]).unwrap();
             let Surface::Texture(index) = surface else {
                 panic!("bloom draws into textures")

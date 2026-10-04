@@ -37,7 +37,23 @@ const SETTINGS = [
 	'lutIntensity',
 	'vignette',
 ] as const;
-const BLOOM_SETTINGS = ['strength', 'radius', 'threshold'] as const;
+const BLOOM_SETTINGS = [
+	'strength',
+	'radius',
+	'threshold',
+	'method',
+	'intensity',
+	'knee',
+	'levels',
+	'baseRows',
+	'karis',
+	'composite',
+	'mixes',
+] as const;
+/** The mip chain's composites, by their codes in the core. */
+const COMPOSITES = { add: 0, mix: 1, screen: 2 } as const;
+/** The mip chain's most levels. */
+const MIP_LEVELS = 8;
 const AO_SETTINGS = [
 	'radius',
 	'thickness',
@@ -71,6 +87,25 @@ export interface BloomSettings {
 	 * by default. At 1, only colors brighter than white glow, such as strong emissive light.
 	 */
 	threshold?: number;
+	/**
+	 * Prototype P2: `'mip'` draws the mip chain, with the settings below, and `'unreal'`, the
+	 * default, draws `UnrealBloomPass`'s steps. The mip chain uses `threshold` too.
+	 */
+	method?: 'unreal' | 'mip';
+	/** Prototype P2: the mip chain's weight in the composite. */
+	intensity?: number;
+	/** Prototype P2: the width of the threshold's soft edge, in luminance. */
+	knee?: number;
+	/** Prototype P2: the mip chain's levels, from 2 to 8. */
+	levels?: number;
+	/** Prototype P2: the rows of the mip chain's base level. */
+	baseRows?: number;
+	/** Prototype P2: whether the first step down takes a Karis average. */
+	karis?: boolean;
+	/** Prototype P2: how the glow meets the scene color. */
+	composite?: 'add' | 'mix' | 'screen';
+	/** Prototype P2: each level's mix, the share of the levels below that its step up keeps. */
+	mixes?: readonly number[];
 }
 
 /**
@@ -260,6 +295,18 @@ export class Post {
 			if (bloom.strength !== undefined) values[C.POST_VALUE_BLOOM_STRENGTH] = bloom.strength;
 			if (bloom.radius !== undefined) values[C.POST_VALUE_BLOOM_RADIUS] = bloom.radius;
 			if (bloom.threshold !== undefined) values[C.POST_VALUE_BLOOM_THRESHOLD] = bloom.threshold;
+			if (bloom.method !== undefined)
+				values[C.POST_VALUE_BLOOM_METHOD] = bloom.method === 'mip' ? 1 : 0;
+			if (bloom.intensity !== undefined) values[C.POST_VALUE_BLOOM_INTENSITY] = bloom.intensity;
+			if (bloom.knee !== undefined) values[C.POST_VALUE_BLOOM_KNEE] = bloom.knee;
+			if (bloom.levels !== undefined) values[C.POST_VALUE_BLOOM_LEVELS] = bloom.levels;
+			if (bloom.baseRows !== undefined) values[C.POST_VALUE_BLOOM_BASE_ROWS] = bloom.baseRows;
+			if (bloom.karis !== undefined) values[C.POST_VALUE_BLOOM_KARIS] = bloom.karis ? 1 : 0;
+			if (bloom.composite !== undefined)
+				values[C.POST_VALUE_BLOOM_COMPOSITE] = COMPOSITES[bloom.composite];
+			if (bloom.mixes !== undefined)
+				for (let level = 0; level < MIP_LEVELS; level++)
+					values[C.POST_VALUE_BLOOM_MIXES + level] = bloom.mixes[level] ?? 0;
 		}
 		if (DEV && this.bloom && !this.hdrEffects && !this.warnedNoBloom) {
 			this.warnedNoBloom = true;
@@ -374,7 +421,12 @@ function checkSettings(settings: PostSettings): void {
 			`post.set() got the tone mapping ${JSON.stringify(toneMapping)}, which is not ${TONE_MAPPINGS}.`,
 		);
 	checkNumber('exposure', exposure);
-	checkGroup('bloom', bloom, BLOOM_SETTINGS, 'strength, radius and threshold');
+	checkGroup(
+		'bloom',
+		bloom,
+		BLOOM_SETTINGS,
+		'strength, radius, threshold and the prototype settings',
+	);
 	if (!bloom) return;
 	checkNumber('bloom.strength', bloom.strength);
 	checkNumber('bloom.radius', bloom.radius, 1);

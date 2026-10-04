@@ -38,7 +38,7 @@ use null3d_gpu::drawlist::sizes;
 use null3d_gpu::drawlist::vertex::{self, Type};
 use null3d_render::ao::Ao;
 use null3d_render::arrays::{ArrayName, ArraysError, Data, MeshArrays, Values, from_arrays};
-use null3d_render::bloom::Bloom;
+use null3d_render::bloom::{Bloom, Composite, MipChain};
 use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
@@ -162,7 +162,8 @@ struct Engine {
 /// distance falloff, scale, samples and blend intensity.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = [
     1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
-    16.0, 1.0,
+    16.0, 1.0, 0.0, 0.15, 0.0, 8.0, 512.0, 1.0, 1.0, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85,
+    0.85,
 ];
 
 impl Engine {
@@ -1868,10 +1869,24 @@ pub fn set_output(tone_mapping: u32) -> u32 {
 pub fn set_bloom(on: bool) -> u32 {
     with_engine(|e| {
         let [strength, radius, threshold] = e.post_values3(constants::post_value::BLOOM_STRENGTH);
+        use constants::post_value as v;
+        let value = |place| e.post_value(place);
+        let mip = (value(v::BLOOM_METHOD) == 1.0).then(|| MipChain {
+            intensity: value(v::BLOOM_INTENSITY),
+            threshold,
+            knee: value(v::BLOOM_KNEE),
+            levels: value(v::BLOOM_LEVELS) as u32,
+            base_rows: value(v::BLOOM_BASE_ROWS) as u32,
+            karis: value(v::BLOOM_KARIS) != 0.0,
+            composite: Composite::from_code(value(v::BLOOM_COMPOSITE) as u32)
+                .unwrap_or(Composite::Mix),
+            mixes: std::array::from_fn(|level| value(v::BLOOM_MIXES + level as u32)),
+        });
         let bloom = on.then_some(Bloom {
             strength,
             radius,
             threshold,
+            mip,
         });
         e.renderer.settings_mut().set_bloom(bloom);
         0

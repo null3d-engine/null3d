@@ -136,8 +136,19 @@ pub mod post_value {
     pub const AO_SCALE: u32 = 17;
     pub const AO_SAMPLES: u32 = 18;
     pub const AO_INTENSITY: u32 = 19;
+    /// Prototype P2's mip-chain bloom: the method (0 for `UnrealBloomPass`'s steps, 1 for the mip
+    /// chain), the intensity, the threshold's soft edge, the levels, the base rows, the Karis
+    /// average (0 or 1), the composite (0 adds, 1 mixes, 2 screens), then each level's mix.
+    pub const BLOOM_METHOD: u32 = 20;
+    pub const BLOOM_INTENSITY: u32 = 21;
+    pub const BLOOM_KNEE: u32 = 22;
+    pub const BLOOM_LEVELS: u32 = 23;
+    pub const BLOOM_BASE_ROWS: u32 = 24;
+    pub const BLOOM_KARIS: u32 = 25;
+    pub const BLOOM_COMPOSITE: u32 = 26;
+    pub const BLOOM_MIXES: u32 = 27;
     /// The values in the block.
-    pub const COUNT: u32 = 20;
+    pub const COUNT: u32 = 35;
 }
 
 pub mod texture_stat {
@@ -662,6 +673,14 @@ pub fn typescript() -> String {
                 ("AO_SCALE", post_value::AO_SCALE),
                 ("AO_SAMPLES", post_value::AO_SAMPLES),
                 ("AO_INTENSITY", post_value::AO_INTENSITY),
+                ("BLOOM_METHOD", post_value::BLOOM_METHOD),
+                ("BLOOM_INTENSITY", post_value::BLOOM_INTENSITY),
+                ("BLOOM_KNEE", post_value::BLOOM_KNEE),
+                ("BLOOM_LEVELS", post_value::BLOOM_LEVELS),
+                ("BLOOM_BASE_ROWS", post_value::BLOOM_BASE_ROWS),
+                ("BLOOM_KARIS", post_value::BLOOM_KARIS),
+                ("BLOOM_COMPOSITE", post_value::BLOOM_COMPOSITE),
+                ("BLOOM_MIXES", post_value::BLOOM_MIXES),
                 ("COUNT", post_value::COUNT),
             ],
         ),

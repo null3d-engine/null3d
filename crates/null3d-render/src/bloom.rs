@@ -22,6 +22,13 @@
 //!
 //! WebGPU draws a corner into the first rows of its target. WebGL2 counts rows from the bottom and
 //! draws a corner into the last ones, at the top, so its blocks place each corner there.
+//!
+//! Prototype P2 adds a second method, the mip chain of Call of Duty, Bevy and Filament
+//! ([`MipChain`]). Its base level has a fixed number of rows with the canvas's shape, whatever the
+//! render scale and the pixel ratio. A 13-tap step down fills each level from the one above it, with
+//! the threshold and a Karis average on the first step. A 3x3 tent step up then blends each level's
+//! glow into the level above it, by the level's mix, through premultiplied blending into the same
+//! target. The final pass reads the base level once.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, address, buffer_usage as usage, compare, filter, layout as bind_layout,
@@ -35,8 +42,36 @@ use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 /// Bloom's levels: blurred copies of the bright pass, each at half the size of the one before.
 pub const LEVELS: usize = 5;
 
-/// The steps of the chain before the final pass: the bright pass, then two blurs per level.
-pub(crate) const STEPS: usize = 1 + 2 * LEVELS;
+/// The steps of `UnrealBloomPass`'s chain before the final pass: the bright pass, then two blurs
+/// per level.
+pub(crate) const UNREAL_STEPS: usize = 1 + 2 * LEVELS;
+
+/// The most levels of the mip chain.
+pub const MIP_LEVELS: usize = 8;
+
+/// The fewest levels of the mip chain.
+pub const MIN_MIP_LEVELS: u32 = 2;
+
+/// The mip chain's steps at its most levels: a step down into each level, then a step up into each
+/// level but the last.
+pub(crate) const MIP_STEPS: usize = 2 * MIP_LEVELS - 1;
+
+/// The most steps of either method, which sets the bind groups that bloom keeps.
+pub(crate) const STEPS: usize = if MIP_STEPS > UNREAL_STEPS {
+    MIP_STEPS
+} else {
+    UNREAL_STEPS
+};
+
+/// The kinds of step that `bloom.wgsl` draws: a Gaussian blur of `UnrealBloomPass` (or its bright
+/// pass), the mip chain's first step down, a later step down, and a step up.
+const MODE_FIRST_DOWN: u32 = 1;
+const MODE_DOWN: u32 = 2;
+const MODE_UP: u32 = 3;
+
+/// The final pass's code for `UnrealBloomPass`'s five levels. The mip chain's composites have
+/// codes of their own ([`Composite`]).
+const FINAL_UNREAL: f32 = 0.0;
 
 /// Each level's kernel, as three.js's UnrealBloomPass sizes it: the taps on one side of the
 /// center, the center included. The Gaussian's sigma is a third of it.
@@ -64,7 +99,7 @@ pub(crate) const FINAL_OFFSET: u32 = (STEPS * BLOCK) as u32;
 /// Bytes of the uniform buffer: every step's block, then the final pass's.
 const BUFFER_BYTES: usize = STEPS * BLOCK + std::mem::size_of::<FinalBlock>();
 
-/// How bloom looks, with three.js's UnrealBloomPass's meanings.
+/// How bloom looks, with three.js's UnrealBloomPass's meanings, or the mip chain's settings.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bloom {
     /// How bright the glow is: the sum of the levels' weights scales with it.
@@ -73,6 +108,8 @@ pub struct Bloom {
     pub radius: f32,
     /// The luminance from which a pixel glows, in linear color before the exposure.
     pub threshold: f32,
+    /// The mip chain's settings, which replace the three above while set.
+    pub mip: Option<MipChain>,
 }
 
 impl Default for Bloom {
@@ -81,6 +118,151 @@ impl Default for Bloom {
             strength: 1.0,
             radius: 0.5,
             threshold: 1.0,
+            mip: None,
+        }
+    }
+}
+
+/// How the mip chain's glow meets the scene color in the final pass.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Composite {
+    /// The glow, times the intensity, adds to the scene color, as three.js's bloom adds.
+    Add,
+    /// The scene color moves toward the glow by the intensity, which keeps the image's energy, as
+    /// Bevy's default does.
+    Mix,
+    /// pmndrs's SCREEN blend of the glow, times the intensity: `a + b - min(a * b, 1)`.
+    Screen,
+}
+
+impl Composite {
+    /// The composite of its code: 0 adds, 1 mixes, 2 screens.
+    pub fn from_code(code: u32) -> Option<Self> {
+        match code {
+            0 => Some(Self::Add),
+            1 => Some(Self::Mix),
+            2 => Some(Self::Screen),
+            _ => None,
+        }
+    }
+
+    /// The final pass's code for the composite.
+    fn final_code(self) -> f32 {
+        match self {
+            Self::Add => 1.0,
+            Self::Mix => 2.0,
+            Self::Screen => 3.0,
+        }
+    }
+}
+
+/// The mip chain's settings.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MipChain {
+    /// The glow's weight in the final pass's composite.
+    pub intensity: f32,
+    /// The luminance from which a pixel glows, in linear color before the exposure. At 0 every
+    /// pixel glows.
+    pub threshold: f32,
+    /// The width of the threshold's soft edge, in luminance.
+    pub knee: f32,
+    /// The levels, from [`MIN_MIP_LEVELS`] to [`MIP_LEVELS`].
+    pub levels: u32,
+    /// The rows of the base level, the first and largest.
+    pub base_rows: u32,
+    /// Whether the first step down weighs its groups of taps by a Karis average, which keeps single
+    /// bright pixels from flickering.
+    pub karis: bool,
+    /// How the glow meets the scene color.
+    pub composite: Composite,
+    /// Each level's mix: the share of the glow from the levels below it that the step up into
+    /// level `k` blends over level `k`'s own light. The last level has none.
+    pub mixes: [f32; MIP_LEVELS],
+}
+
+impl Default for MipChain {
+    fn default() -> Self {
+        Self {
+            intensity: 0.15,
+            threshold: 0.0,
+            knee: 0.0,
+            levels: MIP_LEVELS as u32,
+            base_rows: 512,
+            karis: true,
+            composite: Composite::Mix,
+            mixes: [0.85; MIP_LEVELS],
+        }
+    }
+}
+
+impl MipChain {
+    /// The levels, within the chain's range.
+    pub fn level_count(&self) -> usize {
+        self.levels.clamp(MIN_MIP_LEVELS, MIP_LEVELS as u32) as usize
+    }
+
+    /// The base level's rows, at least 8 and at most 4096.
+    pub fn rows(&self) -> u16 {
+        self.base_rows.clamp(8, 4096) as u16
+    }
+
+    /// The size of level `level`.
+    pub fn level_size(&self, level: usize) -> Size {
+        Size::Rows {
+            rows: self.rows(),
+            halvings: level as u8,
+        }
+    }
+
+    /// The steps of the chain: a step down into each level, then a step up into each but the last.
+    pub fn steps(&self) -> usize {
+        2 * self.level_count() - 1
+    }
+
+    /// Each level's share of the glow that reaches the base level, which the mixes give: level
+    /// `k` keeps `1 - mix[k]` of what reaches it, and passes the rest on from the levels below.
+    pub fn level_shares(&self) -> [f32; MIP_LEVELS] {
+        let levels = self.level_count();
+        let mut shares = [0.0; MIP_LEVELS];
+        let mut rest = 1.0;
+        for (level, share) in shares.iter_mut().enumerate().take(levels) {
+            if level + 1 == levels {
+                *share = rest;
+            } else {
+                let mix = self.mixes[level].clamp(0.0, 1.0);
+                *share = rest * (1.0 - mix);
+                rest *= mix;
+            }
+        }
+        shares
+    }
+}
+
+/// What a declaration of bloom's passes depends on: the method, and for the mip chain, its levels
+/// and base rows. Other settings change without a new declaration.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Shape {
+    Unreal,
+    Mip { levels: usize, rows: u16 },
+}
+
+impl Shape {
+    /// The shape that `bloom` declares.
+    pub(crate) fn of(bloom: &Bloom) -> Self {
+        match bloom.mip {
+            None => Self::Unreal,
+            Some(mip) => Self::Mip {
+                levels: mip.level_count(),
+                rows: mip.rows(),
+            },
+        }
+    }
+
+    /// The steps before the final pass.
+    pub(crate) fn steps(self) -> usize {
+        match self {
+            Self::Unreal => UNREAL_STEPS,
+            Self::Mip { levels, .. } => 2 * levels - 1,
         }
     }
 }
@@ -109,7 +291,15 @@ struct StepBlock {
     knee: f32,
     offsets: [f32; 12],
     weights: [f32; 12],
+    mode: u32,
+    mix: f32,
+    karis: u32,
+    limit: f32,
 }
+
+/// The brightest value that bloom's input keeps, as URP limits it: the largest half float below
+/// infinity's rounding, so no step reads infinity.
+const COLOR_LIMIT: f32 = 65_472.0;
 
 const _: () = assert!(std::mem::size_of::<StepBlock>() <= BLOCK);
 const _: () = assert!(MAX_PAIRS as usize <= 12);
@@ -154,7 +344,7 @@ pub(crate) fn kernel(kernel: u32, divisor: u32) -> (f32, u32, [f32; 12], [f32; 1
     (coefficient(0), pairs as u32, offsets, weights)
 }
 
-/// The size of the target that step `step` draws into.
+/// The size of the target that step `step` of `UnrealBloomPass`'s chain draws into.
 pub(crate) fn step_size(step: usize) -> Size {
     if step == 0 {
         Size::HALF
@@ -227,6 +417,7 @@ fn step_block(
             pairs: 0,
             threshold: bloom.threshold,
             knee: KNEE,
+            limit: COLOR_LIMIT,
             ..StepBlock::default()
         },
         Some(level) => {
@@ -248,7 +439,119 @@ fn step_block(
                 knee: 1.0,
                 offsets,
                 weights,
+                limit: COLOR_LIMIT,
+                ..StepBlock::default()
             }
+        }
+    }
+}
+
+/// The level that step `step` of a mip chain of `levels` levels draws into, the level it reads (or
+/// `None` for the scene color), and whether it steps up.
+fn mip_step(step: usize, levels: usize) -> (usize, Option<usize>, bool) {
+    if step < levels {
+        (step, step.checked_sub(1), false)
+    } else {
+        let level = 2 * levels - 2 - step;
+        (level, Some(level + 1), true)
+    }
+}
+
+/// The block of step `step` of the mip chain `mip`, for a canvas of `canvas` pixels at render scale
+/// `scale`, with rows counted from the bottom on WebGL2 (`rows_from_bottom`). Only the first step
+/// reads a drawn corner, the scene color's: every level is drawn whole.
+fn mip_block(
+    step: usize,
+    mip: &MipChain,
+    canvas: (u32, u32),
+    scale: RenderScale,
+    rows_from_bottom: bool,
+) -> StepBlock {
+    let (level, source_level, up) = mip_step(step, mip.level_count());
+    let source = source_level.map_or(Size::Full, |l| mip.level_size(l));
+    let target = mip.level_size(level);
+    let corner = source.viewport(canvas, scale);
+    let extent = source.extent(canvas);
+    let drawn = target.viewport(canvas, scale);
+    let per_pixel = [
+        corner.0 as f32 / (drawn.0 as f32 * extent.0 as f32),
+        corner.1 as f32 / (drawn.1 as f32 * extent.1 as f32),
+    ];
+    let source_rows = rows_before(extent.1, corner.1, rows_from_bottom) as f32;
+    let origin = [0.0, source_rows / extent.1 as f32, 0.0, 0.0];
+    let bounds = [
+        0.5 / extent.0 as f32,
+        (source_rows + 0.5) / extent.1 as f32,
+        (corner.0 as f32 - 0.5) / extent.0 as f32,
+        (source_rows + corner.1 as f32 - 0.5) / extent.1 as f32,
+    ];
+    // A step down spaces its taps by half a pixel of its target, a source texel where the source
+    // has twice the target's size. A step up spaces its tent by a texel of its source.
+    let spacing = if up {
+        [1.0 / extent.0 as f32, 1.0 / extent.1 as f32]
+    } else {
+        [0.5 * per_pixel[0], 0.5 * per_pixel[1]]
+    };
+    let first = source_level.is_none();
+    StepBlock {
+        scale: [per_pixel[0], per_pixel[1], spacing[0], spacing[1]],
+        origin,
+        bounds,
+        center: 1.0,
+        pairs: 0,
+        threshold: if first { mip.threshold } else { 0.0 },
+        knee: mip.knee,
+        mode: if up {
+            MODE_UP
+        } else if first {
+            MODE_FIRST_DOWN
+        } else {
+            MODE_DOWN
+        },
+        mix: if up {
+            mip.mixes[level].clamp(0.0, 1.0)
+        } else {
+            0.0
+        },
+        karis: u32::from(first && mip.karis),
+        limit: COLOR_LIMIT,
+        ..StepBlock::default()
+    }
+}
+
+/// Texture reads per pixel of the canvas, counted over every pass of bloom, for a canvas of
+/// `canvas` pixels at render scale `scale`: the measure that D-21 and D-52 compare the methods by.
+/// The mip chain's steps up blend over their target, which reads it once more per pixel: the
+/// second number counts those reads.
+pub fn texels_per_pixel(bloom: &Bloom, canvas: (u32, u32), scale: RenderScale) -> (f64, f64) {
+    let canvas_pixels = f64::from(canvas.0) * f64::from(canvas.1);
+    let pixels = |size: Size| {
+        let (w, h) = size.viewport(canvas, scale);
+        f64::from(w) * f64::from(h)
+    };
+    match bloom.mip {
+        None => {
+            let mut reads = pixels(step_size(0));
+            for step in 1..UNREAL_STEPS {
+                let level = (step - 1) / 2;
+                let (_, pairs, _, _) = kernel(KERNELS[level], 1);
+                reads += pixels(step_size(step)) * f64::from(1 + 2 * pairs);
+            }
+            (reads / canvas_pixels + LEVELS as f64, 0.0)
+        }
+        Some(mip) => {
+            let levels = mip.level_count();
+            let mut reads = 0.0;
+            let mut blends = 0.0;
+            for level in 0..levels {
+                let level_pixels = pixels(mip.level_size(level));
+                reads += 13.0 * level_pixels;
+                if level + 1 < levels {
+                    reads += 9.0 * level_pixels;
+                    blends += level_pixels;
+                }
+            }
+            (reads / canvas_pixels + 1.0, blends / canvas_pixels)
         }
     }
 }
@@ -264,8 +567,9 @@ pub(crate) struct BloomIds {
     pub(crate) first_group: u32,
 }
 
-/// The pipeline of the steps: one triangle into a target of bloom's format.
-const fn pipeline(format: u32) -> PipelineKey {
+/// The pipeline of the steps: one triangle into a target of bloom's format. The mip chain's steps
+/// up blend over their target, premultiplied by the step's mix.
+const fn pipeline(format: u32, blend: bool) -> PipelineKey {
     PipelineKey {
         template: template::BLOOM,
         permutation: 0,
@@ -273,7 +577,11 @@ const fn pipeline(format: u32) -> PipelineKey {
         color_format: format,
         depth_format: null3d_gpu::drawlist::format::NONE,
         samples: 1,
-        state: state_flags::CULL_NONE,
+        state: if blend {
+            state_flags::CULL_NONE | state_flags::BLEND_NORMAL
+        } else {
+            state_flags::CULL_NONE
+        },
         bias: DepthBias::NONE,
     }
 }
@@ -287,6 +595,10 @@ pub(crate) struct BloomPass {
     /// True on WebGL2, which counts rows from the bottom.
     rows_from_bottom: bool,
     pipeline: Option<u32>,
+    /// The pipeline of the mip chain's steps up, once a frame with the mip chain asked for it.
+    blend_pipeline: Option<u32>,
+    /// The shape of the chain that the last frame prepared.
+    shape: Shape,
     created: bool,
     /// The uniform buffer's contents for this frame, and what the GPU holds.
     staged: [u8; BUFFER_BYTES],
@@ -304,6 +616,8 @@ impl BloomPass {
             format,
             rows_from_bottom,
             pipeline: None,
+            blend_pipeline: None,
+            shape: Shape::Unreal,
             created: false,
             staged: [0; BUFFER_BYTES],
             uploaded: None,
@@ -314,10 +628,14 @@ impl BloomPass {
     /// Bytes a frame may copy into its arena: the whole uniform buffer.
     pub(crate) const UPLOAD_BYTES: usize = BUFFER_BYTES;
 
-    /// Asks `pipelines` for the steps' pipeline, once.
-    pub(crate) fn request_pipeline(&mut self, pipelines: &mut PipelineCache) {
+    /// Asks `pipelines` for the steps' pipeline, once, and for the steps up's once `shape` is a
+    /// mip chain.
+    pub(crate) fn request_pipeline(&mut self, pipelines: &mut PipelineCache, shape: Shape) {
         if self.pipeline.is_none() {
-            self.pipeline = Some(pipelines.id(pipeline(self.format)));
+            self.pipeline = Some(pipelines.id(pipeline(self.format, false)));
+        }
+        if shape != Shape::Unreal && self.blend_pipeline.is_none() {
+            self.blend_pipeline = Some(pipelines.id(pipeline(self.format, true)));
         }
     }
 
@@ -337,6 +655,9 @@ impl BloomPass {
         textures_made: bool,
     ) -> Result<(), RecordError> {
         let ids = self.ids;
+        let shape = Shape::of(&bloom);
+        let reshaped = shape != self.shape;
+        self.shape = shape;
         if !self.created {
             list.push(
                 Op::CreateBuffer,
@@ -370,8 +691,8 @@ impl BloomPass {
             list.push(Op::WriteBuffer, &[ids.buffer, 0, at, bytes])?;
             self.uploaded = Some(self.staged);
         }
-        for (step, &source) in sources.iter().enumerate() {
-            if textures_made || self.bound[step] != source {
+        for (step, &source) in sources.iter().enumerate().take(shape.steps()) {
+            if textures_made || reshaped || self.bound[step] != source {
                 list.push(
                     Op::CreateBindGroup,
                     &[
@@ -403,22 +724,43 @@ impl BloomPass {
 
     /// Writes every block of the uniform buffer into the staging copy.
     fn stage(&mut self, canvas: (u32, u32), scale: RenderScale, bloom: Bloom, divisor: u32) {
-        for step in 0..STEPS {
-            let block = step_block(step, canvas, scale, bloom, divisor, self.rows_from_bottom);
-            self.staged[step * BLOCK..][..std::mem::size_of::<StepBlock>()]
-                .copy_from_slice(bytes_of(&block));
-        }
-        let weights = bloom.level_weights();
         let mut block = FinalBlock::default();
-        block.weights[..LEVELS].copy_from_slice(&weights);
+        match bloom.mip {
+            None => {
+                for step in 0..UNREAL_STEPS {
+                    let block =
+                        step_block(step, canvas, scale, bloom, divisor, self.rows_from_bottom);
+                    self.staged[step * BLOCK..][..std::mem::size_of::<StepBlock>()]
+                        .copy_from_slice(bytes_of(&block));
+                }
+                block.weights[..LEVELS].copy_from_slice(&bloom.level_weights());
+                block.weights[LEVELS] = FINAL_UNREAL;
+            }
+            Some(mip) => {
+                for step in 0..mip.steps() {
+                    let block = mip_block(step, &mip, canvas, scale, self.rows_from_bottom);
+                    self.staged[step * BLOCK..][..std::mem::size_of::<StepBlock>()]
+                        .copy_from_slice(bytes_of(&block));
+                }
+                block.weights[LEVELS] = mip.composite.final_code();
+                block.weights[LEVELS + 1] = mip.intensity;
+            }
+        }
         self.staged[FINAL_OFFSET as usize..].copy_from_slice(bytes_of(&block));
     }
 
     /// Records step `step` inside the render pass that the render graph began into its target.
     pub(crate) fn record(&self, list: &mut DrawList, step: usize) -> Result<(), RecordError> {
-        let pipeline = self
-            .pipeline
-            .expect("bloom asks for its pipeline before it records");
+        let up = match self.shape {
+            Shape::Unreal => false,
+            Shape::Mip { levels, .. } => mip_step(step, levels).2,
+        };
+        let pipeline = if up {
+            self.blend_pipeline
+        } else {
+            self.pipeline
+        }
+        .expect("bloom asks for its pipelines before it records");
         list.push(Op::SetPipeline, &[pipeline])?;
         list.push(
             Op::SetBindGroup,
@@ -539,6 +881,7 @@ mod tests {
             strength: 1.5,
             radius: 0.4,
             threshold: 0.85,
+            mip: None,
         };
         let weights = bloom.level_weights();
         let three = [1.0f32, 0.8, 0.6, 0.4, 0.2].map(|f| 3.0 * 1.5 * (f + ((1.2 - f) - f) * 0.4));
@@ -601,7 +944,7 @@ mod tests {
         };
         let mut pass = BloomPass::new(ids, null3d_gpu::drawlist::format::RGBA16_FLOAT, false);
         let mut pipelines = PipelineCache::default();
-        pass.request_pipeline(&mut pipelines);
+        pass.request_pipeline(&mut pipelines, Shape::Unreal);
         let mut list = DrawList::with_capacity(4096);
         let mut arena = UploadArena::default();
         let sources = [7; STEPS];
@@ -626,7 +969,7 @@ mod tests {
             .collect();
         assert_eq!(
             ops.iter().filter(|&&op| op == Op::CreateBindGroup).count(),
-            STEPS
+            UNREAL_STEPS
         );
         frame(&mut pass, &mut list, RenderScale::FULL);
         assert!(list.is_empty(), "nothing changed, so nothing records");
@@ -638,6 +981,68 @@ mod tests {
             ops,
             [Op::WriteBuffer],
             "a new scale only uploads the settings"
+        );
+    }
+
+    #[test]
+    fn the_mixes_split_the_glow_between_the_levels() {
+        let mip = MipChain {
+            levels: 4,
+            mixes: [0.5; MIP_LEVELS],
+            ..MipChain::default()
+        };
+        let shares = mip.level_shares();
+        assert_eq!(&shares[..4], &[0.5, 0.25, 0.125, 0.125]);
+        assert!((shares.iter().sum::<f32>() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_mip_chain_steps_down_then_up_and_ignores_the_render_scale() {
+        assert_eq!(mip_step(0, 3), (0, None, false));
+        assert_eq!(mip_step(2, 3), (2, Some(1), false));
+        assert_eq!(mip_step(3, 3), (1, Some(2), true));
+        assert_eq!(mip_step(4, 3), (0, Some(1), true));
+        let mip = MipChain {
+            levels: 3,
+            base_rows: 512,
+            ..MipChain::default()
+        };
+        let canvas = (1920, 1080);
+        assert_eq!(mip.level_size(0).extent(canvas), (910, 512));
+        assert_eq!(
+            mip.level_size(0)
+                .viewport(canvas, RenderScale::from_thousandths(500)),
+            (910, 512)
+        );
+        let full = mip_block(0, &mip, canvas, RenderScale::FULL, false);
+        let half = mip_block(0, &mip, canvas, RenderScale::from_thousandths(500), false);
+        // At half scale the first step reads half as far into the scene color per pixel.
+        assert!((half.scale[1] * 2.0 - full.scale[1]).abs() < 1e-7);
+        assert_eq!((full.mode, full.karis), (MODE_FIRST_DOWN, 1));
+        let up = mip_block(4, &mip, canvas, RenderScale::FULL, false);
+        assert_eq!((up.mode, up.mix), (MODE_UP, 0.85));
+        assert_eq!(up.scale[3], 1.0 / 256.0);
+        // The later steps read the same at any render scale.
+        assert_eq!(
+            mip_block(2, &mip, canvas, RenderScale::FULL, true),
+            mip_block(2, &mip, canvas, RenderScale::from_thousandths(500), true)
+        );
+    }
+
+    #[test]
+    fn the_mip_chain_reads_fewer_texels_at_full_scale() {
+        let canvas = (1920, 1080);
+        let unreal = texels_per_pixel(&Bloom::default(), canvas, RenderScale::FULL);
+        assert!((unreal.0 - 10.79).abs() < 0.05, "{unreal:?}");
+        let mip = Bloom {
+            mip: Some(MipChain::default()),
+            ..Bloom::default()
+        };
+        let reads = texels_per_pixel(&mip, canvas, RenderScale::FULL);
+        assert!(reads.0 < 8.0 && reads.0 > 7.0, "{reads:?}");
+        assert_eq!(
+            texels_per_pixel(&mip, canvas, RenderScale::from_thousandths(500)),
+            reads
         );
     }
 
@@ -654,10 +1059,14 @@ mod tests {
             "knee: f32,",
             "offsets: array<vec4f, 3>,",
             "weights: array<vec4f, 3>,",
+            "mode: u32,",
+            "mix: f32,",
+            "karis: u32,",
+            "limit: f32,",
         ] {
             assert!(bloom.contains(field), "bloom.wgsl lacks {field}");
         }
-        assert_eq!(std::mem::size_of::<StepBlock>(), 160);
+        assert_eq!(std::mem::size_of::<StepBlock>(), 176);
         let final_pass = include_str!("../../null3d-shaders/wgsl/final.wgsl");
         assert!(final_pass.contains("    weights: vec4f,\n    last: vec4f,\n"));
         assert_eq!(std::mem::size_of::<FinalBlock>(), 32);

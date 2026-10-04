@@ -7,6 +7,10 @@
 // it turns the strong bloom on, waits until its pipelines are built, and posts the frames and
 // milliseconds that took as 'settled'. The 'bloom-off' message turns bloom off.
 //
+// Prototype P2: ?settings=<base64url JSON> gives the whole bloom setting instead, such as a mapped
+// mip chain, and ?method=mip makes the 'bloom' message turn on the mip chain's defaults, with the
+// base rows that ?base= gives, for timing.
+//
 // The module uses no type annotations: an address whose last value holds a dot, such as scale=0.5,
 // makes the dev server read the module as JavaScript.
 import { defineSketch } from '@null3d/engine';
@@ -14,6 +18,8 @@ import {
 	BLOOM_AMBIENT,
 	BLOOM_BACKGROUND,
 	BLOOM_CAMERA,
+	BLOOM_P2_MIP,
+	BLOOM_P2_UNREAL,
 	BLOOM_SETTINGS,
 	BLOOM_SHAPES,
 	BLOOM_SUN,
@@ -21,8 +27,19 @@ import {
 
 const params = new URL(import.meta.url).searchParams;
 const name = params.get('bloom');
-const BLOOM =
-	name === 'soft' ? BLOOM_SETTINGS.soft : name === 'strong' ? BLOOM_SETTINGS.strong : undefined;
+const SETTINGS = params.get('settings');
+const BLOOM = SETTINGS
+	? JSON.parse(atob(SETTINGS.replaceAll('-', '+').replaceAll('_', '/')))
+	: name === 'soft'
+		? BLOOM_SETTINGS.soft
+		: name === 'strong'
+			? BLOOM_SETTINGS.strong
+			: undefined;
+// The mip chain's defaults for timing, with the base rows of ?base=, or today's steps.
+const TIMED =
+	params.get('method') === 'mip'
+		? { ...BLOOM_P2_MIP, baseRows: Number(params.get('base') ?? 512) }
+		: BLOOM_P2_UNREAL;
 const LATER = params.has('later');
 const SCALE = params.get('scale');
 const FIXED = params.has('fixed');
@@ -72,7 +89,7 @@ export default defineSketch(({ scene, materials, geometry, post, quality, time, 
 		if (message !== 'bloom') return;
 		const frame = time.frame;
 		const start = performance.now();
-		post.set({ bloom: BLOOM_SETTINGS.strong });
+		post.set({ bloom: TIMED });
 		void scene
 			.warmUp()
 			.then(() =>

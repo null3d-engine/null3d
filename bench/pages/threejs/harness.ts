@@ -395,6 +395,26 @@ export function runThreePage(
 		};
 
 		const hold = options.hold;
+		// Prototype P2: ?bloomp2= draws the hold frame through a bloom composer, on WebGLRenderer.
+		const bloomP2 = params.get('bloomp2');
+		if (hold !== null && bloomP2 !== null && rendererName === 'webgl') {
+			const { width, height } = PARITY_CANVAS;
+			camera.aspect = width / height;
+			camera.updateProjectionMatrix();
+			setup.onAspect?.();
+			pose(hold);
+			const { drawWithBloom } = await import('./bloom-p2-composer');
+			const pixels = await drawWithBloom(
+				three as unknown as typeof ThreeModule,
+				renderer as unknown as ThreeModule.WebGLRenderer,
+				scene as unknown as ThreeModule.Scene,
+				camera,
+				width,
+				height,
+				bloomP2,
+			);
+			return { ...report, width, height, pixels: toBase64(pixels) };
+		}
 		if (hold !== null) {
 			const { width, height } = PARITY_CANVAS;
 			camera.aspect = width / height;

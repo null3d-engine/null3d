@@ -49,7 +49,10 @@ struct Settings {
 @group(0) @binding(10) var lut_sampler: sampler;
 
 #ifdef BLOOM
-/// Each level's weight, with the strength in it: levels 0 to 3, then level 4 in `last.x`.
+/// Each level's weight, with the strength in it: levels 0 to 3, then level 4 in `last.x`. `last.y`
+/// says how bloom meets the scene color: 0 adds `UnrealBloomPass`'s five levels; 1, 2 and 3 add,
+/// mix in or screen the mip chain's base level, which `bloom_level0` binds, by the intensity in
+/// `last.z`.
 struct Bloom {
     weights: vec4f,
     last: vec4f,
@@ -80,6 +83,13 @@ fn level_uv(size: vec2u, halvings: u32, uv: vec2f, render: vec2f) -> vec2f {
 
 /// Bloom at `uv` on the drawn corner, with its coverage.
 fn glow(uv: vec2f, render: vec2f) -> vec4f {
+    if bloom.last.y > 0.5 {
+        // The mip chain's base level is drawn whole, whatever the render scale.
+        let extent = vec2f(textureDimensions(bloom_level0));
+        let at = clamp(uv * extent, vec2f(0.5), extent - 0.5) / extent;
+        let light = bloom.last.z * textureSampleLevel(bloom_level0, bloom_sampler, at, 0.0).rgb;
+        return vec4f(light, max(light.r, max(light.g, light.b)));
+    }
     let at0 = level_uv(textureDimensions(bloom_level0), 1u, uv, render);
     let at1 = level_uv(textureDimensions(bloom_level1), 2u, uv, render);
     let at2 = level_uv(textureDimensions(bloom_level2), 3u, uv, render);
@@ -92,9 +102,27 @@ fn glow(uv: vec2f, render: vec2f) -> vec4f {
         + bloom.last.x * textureSampleLevel(bloom_level4, bloom_sampler, at4, 0.0).rgb;
     return vec4f(light, max(light.r, max(light.g, light.b)));
 }
+
+/// Scene color `texel` with bloom's `light`: added, mixed in by the mip chain's intensity, or
+/// screened, as pmndrs's SCREEN blend does.
+fn compose(texel: vec4f, light: vec4f) -> vec4f {
+    let mode = bloom.last.y;
+    if mode > 2.5 {
+        let c = texel.rgb + light.rgb - min(texel.rgb * light.rgb, vec3f(1.0));
+        return vec4f(c, max(texel.a, light.a));
+    }
+    if mode > 1.5 {
+        return vec4f(texel.rgb * (1.0 - bloom.last.z) + light.rgb, max(texel.a, light.a));
+    }
+    return texel + light;
+}
 #else
 fn glow(uv: vec2f, render: vec2f) -> vec4f {
     return vec4f(0.0);
+}
+
+fn compose(texel: vec4f, light: vec4f) -> vec4f {
+    return texel;
 }
 #endif
 
@@ -265,7 +293,7 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let light = glow(position.xy / size, render);
     var color = vec4f(0.0);
     if whole {
-        color = display(pixel_color(position.xy) + light, position.xy);
+        color = display(compose(pixel_color(position.xy), light), position.xy);
     }
 #ifdef WEBGL2
     let from_top = vec2f(position.x, size.y - position.y);
@@ -285,7 +313,7 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
         let corner = vec2f(f32(tap & 1u), f32(tap >> 1u));
         let weights = mix(1.0 - share, share, corner);
         let texel = corner_texel(min(first + corner, render - 1.0), size);
-        let texel_color = textureLoad(scene_color, texel, 0) + light;
+        let texel_color = compose(textureLoad(scene_color, texel, 0), light);
         color += weights.x * weights.y * display(texel_color, position.xy);
     }
     return grade(color, position.xy, size);

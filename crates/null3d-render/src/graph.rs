@@ -176,6 +176,14 @@ pub enum Size {
         /// Height in pixels.
         height: u32,
     },
+    /// A fixed number of rows with the canvas's shape, halved `halvings` times, rounding up, as
+    /// the levels of a mip-chain bloom are. The render scale leaves it whole.
+    Rows {
+        /// Rows before the halvings.
+        rows: u16,
+        /// Halvings each way.
+        halvings: u8,
+    },
 }
 
 impl Size {
@@ -193,6 +201,12 @@ impl Size {
             Self::Full | Self::Canvas => canvas,
             Self::Halved(times) => Self::halve(canvas, times),
             Self::Fixed { width, height } => (width.max(1), height.max(1)),
+            Self::Rows { rows, halvings } => {
+                let rows = u32::from(rows.max(1));
+                let width = (u64::from(rows) * u64::from(canvas.0) + u64::from(canvas.1) / 2)
+                    / u64::from(canvas.1);
+                Self::halve(((width as u32).max(1), rows), halvings)
+            }
         }
     }
 
@@ -204,7 +218,7 @@ impl Size {
         match self {
             Self::Full => render,
             Self::Halved(times) => Self::halve(render, times),
-            Self::Canvas | Self::Fixed { .. } => self.extent(canvas),
+            Self::Canvas | Self::Fixed { .. } | Self::Rows { .. } => self.extent(canvas),
         }
     }
 
@@ -224,6 +238,7 @@ impl Size {
             Self::Halved(times) => format!("1/{} size", 1u64 << times.min(63)),
             Self::Canvas => "canvas size".into(),
             Self::Fixed { width, height } => format!("{width} x {height}"),
+            Self::Rows { rows, halvings } => format!("{rows} rows / {}", 1u64 << halvings),
         }
     }
 }

@@ -1,0 +1,650 @@
+[
+	{
+		"round": 0,
+		"tier": "webgpu",
+		"scale": 1,
+		"run": "unreal",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgpu&scale=1&effect=bloom",
+		"ok": true,
+		"effect": "bloom",
+		"method": "unreal",
+		"base": null,
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": 0.5242879986763,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.11500000953674316
+		},
+		"on": {
+			"gpuMs": 1.1141120195388794,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.12999987602233887
+		},
+		"failures": []
+	},
+	{
+		"round": 0,
+		"tier": "webgpu",
+		"scale": 1,
+		"run": "mip512",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgpu&scale=1&effect=bloom&method=mip&base=512",
+		"ok": true,
+		"effect": "bloom",
+		"method": "mip",
+		"base": "512",
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": 0.5242879986763,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.1100001335144043
+		},
+		"on": {
+			"gpuMs": 0.9830399751663208,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.13499999046325684
+		},
+		"failures": []
+	},
+	{
+		"round": 0,
+		"tier": "webgpu",
+		"scale": 1,
+		"run": "mip384",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgpu&scale=1&effect=bloom&method=mip&base=384",
+		"ok": true,
+		"effect": "bloom",
+		"method": "mip",
+		"base": "384",
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": 0.39321601390838623,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.11999988555908203
+		},
+		"on": {
+			"gpuMs": 0.9175040125846863,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.14499998092651367
+		},
+		"failures": []
+	},
+	{
+		"round": 0,
+		"tier": "webgpu",
+		"scale": 1,
+		"run": "mip256",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgpu&scale=1&effect=bloom&method=mip&base=256",
+		"ok": true,
+		"effect": "bloom",
+		"method": "mip",
+		"base": "256",
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": 0.39321601390838623,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.1100001335144043
+		},
+		"on": {
+			"gpuMs": 0.9830399751663208,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.13000011444091797
+		},
+		"failures": []
+	},
+	{
+		"round": 0,
+		"tier": "webgpu",
+		"scale": 0.5,
+		"run": "unreal",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgpu&scale=0.5&effect=bloom",
+		"ok": true,
+		"effect": "bloom",
+		"method": "unreal",
+		"base": null,
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": 0.7208960056304932,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.11500000953674316
+		},
+		"on": {
+			"gpuMs": 1.1796480417251587,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.13499999046325684
+		},
+		"failures": []
+	},
+	{
+		"round": 0,
+		"tier": "webgpu",
+		"scale": 0.5,
+		"run": "mip512",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgpu&scale=0.5&effect=bloom&method=mip&base=512",
+		"ok": true,
+		"effect": "bloom",
+		"method": "mip",
+		"base": "512",
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": 0.9175040125846863,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.1100001335144043
+		},
+		"on": {
+			"gpuMs": 1.3107199668884277,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.13499999046325684
+		},
+		"failures": []
+	},
+	{
+		"round": 0,
+		"tier": "webgl2",
+		"scale": 1,
+		"run": "unreal",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgl2&scale=1&effect=bloom",
+		"ok": true,
+		"effect": "bloom",
+		"method": "unreal",
+		"base": null,
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.09500002861022949
+		},
+		"on": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.09749996662139893
+		},
+		"failures": []
+	},
+	{
+		"round": 0,
+		"tier": "webgl2",
+		"scale": 1,
+		"run": "mip512",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgl2&scale=1&effect=bloom&method=mip&base=512",
+		"ok": true,
+		"effect": "bloom",
+		"method": "mip",
+		"base": "512",
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.08999991416931152
+		},
+		"on": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.09999990463256836
+		},
+		"failures": []
+	},
+	{
+		"round": 0,
+		"tier": "webgl2",
+		"scale": 1,
+		"run": "mip384",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgl2&scale=1&effect=bloom&method=mip&base=384",
+		"ok": true,
+		"effect": "bloom",
+		"method": "mip",
+		"base": "384",
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.08999991416931152
+		},
+		"on": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.11000001430511475
+		},
+		"failures": []
+	},
+	{
+		"round": 0,
+		"tier": "webgl2",
+		"scale": 1,
+		"run": "mip256",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgl2&scale=1&effect=bloom&method=mip&base=256",
+		"ok": true,
+		"effect": "bloom",
+		"method": "mip",
+		"base": "256",
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.09000015258789062
+		},
+		"on": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.09999990463256836
+		},
+		"failures": []
+	},
+	{
+		"round": 0,
+		"tier": "webgl2",
+		"scale": 0.5,
+		"run": "unreal",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgl2&scale=0.5&effect=bloom",
+		"ok": true,
+		"effect": "bloom",
+		"method": "unreal",
+		"base": null,
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.09500002861022949
+		},
+		"on": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.10499978065490723
+		},
+		"failures": []
+	},
+	{
+		"round": 0,
+		"tier": "webgl2",
+		"scale": 0.5,
+		"run": "mip512",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgl2&scale=0.5&effect=bloom&method=mip&base=512",
+		"ok": true,
+		"effect": "bloom",
+		"method": "mip",
+		"base": "512",
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.09000015258789062
+		},
+		"on": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.09999990463256836
+		},
+		"failures": []
+	},
+	{
+		"round": 1,
+		"tier": "webgpu",
+		"scale": 1,
+		"run": "unreal",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgpu&scale=1&effect=bloom",
+		"ok": true,
+		"effect": "bloom",
+		"method": "unreal",
+		"base": null,
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": 0.39321601390838623,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.1099998950958252
+		},
+		"on": {
+			"gpuMs": 1.1141120195388794,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.125
+		},
+		"failures": []
+	},
+	{
+		"round": 1,
+		"tier": "webgpu",
+		"scale": 1,
+		"run": "mip512",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgpu&scale=1&effect=bloom&method=mip&base=512",
+		"ok": true,
+		"effect": "bloom",
+		"method": "mip",
+		"base": "512",
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": 0.39321601390838623,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.1100001335144043
+		},
+		"on": {
+			"gpuMs": 0.9830399751663208,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.13499999046325684
+		},
+		"failures": []
+	},
+	{
+		"round": 1,
+		"tier": "webgpu",
+		"scale": 1,
+		"run": "mip384",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgpu&scale=1&effect=bloom&method=mip&base=384",
+		"ok": true,
+		"effect": "bloom",
+		"method": "mip",
+		"base": "384",
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": 0.45875200629234314,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.11500000953674316
+		},
+		"on": {
+			"gpuMs": 0.9175040125846863,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.14999985694885254
+		},
+		"failures": []
+	},
+	{
+		"round": 1,
+		"tier": "webgpu",
+		"scale": 1,
+		"run": "mip256",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgpu&scale=1&effect=bloom&method=mip&base=256",
+		"ok": true,
+		"effect": "bloom",
+		"method": "mip",
+		"base": "256",
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": 0.39321601390838623,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.11999988555908203
+		},
+		"on": {
+			"gpuMs": 0.9830399751663208,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.1400001049041748
+		},
+		"failures": []
+	},
+	{
+		"round": 1,
+		"tier": "webgpu",
+		"scale": 0.5,
+		"run": "unreal",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgpu&scale=0.5&effect=bloom",
+		"ok": true,
+		"effect": "bloom",
+		"method": "unreal",
+		"base": null,
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": 0.851967990398407,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.11999988555908203
+		},
+		"on": {
+			"gpuMs": 1.2451839447021484,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.1399998664855957
+		},
+		"failures": []
+	},
+	{
+		"round": 1,
+		"tier": "webgpu",
+		"scale": 0.5,
+		"run": "mip512",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgpu&scale=0.5&effect=bloom&method=mip&base=512",
+		"ok": true,
+		"effect": "bloom",
+		"method": "mip",
+		"base": "512",
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": 0.851967990398407,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.11500000953674316
+		},
+		"on": {
+			"gpuMs": 1.3107199668884277,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.14499998092651367
+		},
+		"failures": []
+	},
+	{
+		"round": 1,
+		"tier": "webgl2",
+		"scale": 1,
+		"run": "unreal",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgl2&scale=1&effect=bloom",
+		"ok": true,
+		"effect": "bloom",
+		"method": "unreal",
+		"base": null,
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.08500003814697266
+		},
+		"on": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.09500002861022949
+		},
+		"failures": []
+	},
+	{
+		"round": 1,
+		"tier": "webgl2",
+		"scale": 1,
+		"run": "mip512",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgl2&scale=1&effect=bloom&method=mip&base=512",
+		"ok": true,
+		"effect": "bloom",
+		"method": "mip",
+		"base": "512",
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.09500002861022949
+		},
+		"on": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.10500001907348633
+		},
+		"failures": []
+	},
+	{
+		"round": 1,
+		"tier": "webgl2",
+		"scale": 1,
+		"run": "mip384",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgl2&scale=1&effect=bloom&method=mip&base=384",
+		"ok": true,
+		"effect": "bloom",
+		"method": "mip",
+		"base": "384",
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.08999991416931152
+		},
+		"on": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.10000014305114746
+		},
+		"failures": []
+	},
+	{
+		"round": 1,
+		"tier": "webgl2",
+		"scale": 1,
+		"run": "mip256",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgl2&scale=1&effect=bloom&method=mip&base=256",
+		"ok": true,
+		"effect": "bloom",
+		"method": "mip",
+		"base": "256",
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.08999991416931152
+		},
+		"on": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.10500001907348633
+		},
+		"failures": []
+	},
+	{
+		"round": 1,
+		"tier": "webgl2",
+		"scale": 0.5,
+		"run": "unreal",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgl2&scale=0.5&effect=bloom",
+		"ok": true,
+		"effect": "bloom",
+		"method": "unreal",
+		"base": null,
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.09000015258789062
+		},
+		"on": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.09500002861022949
+		},
+		"failures": []
+	},
+	{
+		"round": 1,
+		"tier": "webgl2",
+		"scale": 0.5,
+		"run": "mip512",
+		"page": "effect-cost",
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+		"url": "http://localhost:12973/tests/pages/effect-cost.html?gpu=webgl2&scale=0.5&effect=bloom&method=mip&base=512",
+		"ok": true,
+		"effect": "bloom",
+		"method": "mip",
+		"base": "512",
+		"hdr": true,
+		"window": [1920, 1080],
+		"devicePixelRatio": 1,
+		"off": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.10000014305114746
+		},
+		"on": {
+			"gpuMs": null,
+			"intervalMs": 16.665000915527344,
+			"cpuMs": 0.1099998950958252
+		},
+		"failures": []
+	}
+]
