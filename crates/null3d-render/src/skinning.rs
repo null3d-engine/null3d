@@ -45,8 +45,9 @@ use crate::frame::{RecordError, address, floats_as_bytes};
 use crate::meshes::{MeshSlot, MeshStorage};
 use crate::pipelines::DrawKey;
 
-/// Joints per row of the joint texture.
-pub const JOINTS_PER_ROW: u32 = 1024;
+/// Joints per row of the joint texture. A row's texels fit the narrowest texture that WebGL2
+/// allows, as the other data textures' rows do.
+pub const JOINTS_PER_ROW: u32 = 512;
 /// Texels per joint: one per row of its 3 × 4 matrix.
 pub const TEXELS_PER_JOINT: u32 = 3;
 /// Bytes of one row of the joint texture: a row of joints' matrices, as the matrix buffer holds
@@ -364,6 +365,25 @@ mod tests {
         assert!(gate.drawn());
         gate.forget_gpu();
         assert!(!gate.drawn(), "a new GPU builds every pipeline again");
+    }
+
+    #[test]
+    fn the_shaders_read_the_joint_texture_as_it_is_written_and_it_fits_every_device() {
+        let line = format!("const JOINTS_PER_ROW: u32 = {JOINTS_PER_ROW}u;");
+        for (name, shader) in [
+            (
+                "skin.wgsl",
+                include_str!("../../null3d-shaders/wgsl/skin.wgsl"),
+            ),
+            (
+                "lib/mesh.wgsl",
+                include_str!("../../null3d-shaders/wgsl/lib/mesh.wgsl"),
+            ),
+        ] {
+            assert!(shader.contains(&line), "{name} lacks {line}");
+        }
+        let narrowest = crate::cpu_culled::CpuCulledConfig::default().max_texture_size;
+        assert!(JOINTS_PER_ROW * TEXELS_PER_JOINT <= narrowest);
     }
 
     /// A chain of `joints` joints up the y axis, one unit apart, with no turn at rest.

@@ -45,12 +45,13 @@ enable draw_index;
 #endif
 #import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::globals::{Material}
+#import null3d::gtao::{screen_occlusion}
 #import null3d::lights::{clustered_light}
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
 #endif
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
-#import null3d::mesh::{custom_value, frame as engine_frame, material_of}
+#import null3d::mesh::{BLEND_FLAG, custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
 #ifdef MAPS
@@ -449,8 +450,9 @@ fn light_surface(
 
 /// The color of a pixel that shows the surface: the light it reflects and the light it gives off,
 /// in the scene's fog, finished for the screen at the pixel's position, and premultiplied by its
-/// alpha when the material blends.
-fn shade(s: Surface, input: SurfaceInput, pixel: vec2f) -> vec4f {
+/// alpha when the material blends. `pixel` is the fragment's position, whose depth places it in
+/// the frame's ambient occlusion, which darkens the ambient light with the surface's own occlusion.
+fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let normal = normalize(s.normal);
     // Where the mesh's normal changes fast between pixels, highlights soften, as three.js softens
     // them. As in three.js, the normal is the mesh's own, before a map or a surface function bends
@@ -460,6 +462,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec2f) -> vec4f {
     let pbr = pbr_material(s.baseColor, s.metalness, s.roughness, geometry_roughness);
     let n_dot_v = saturate(dot(normal, input.viewDirection));
     let dfg = dfg_lut(n_dot_v, pbr.roughness);
+    let blended = (u32(material_row.strengths.z) & BLEND_FLAG) != 0u;
     let reflected = light_surface(
         pbr,
         input.relativePosition,
@@ -467,7 +470,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec2f) -> vec4f {
         input.viewDirection,
         dfg,
         s.irradiance,
-        s.occlusion,
+        s.occlusion * screen_occlusion(pixel.xyz, blended),
     );
     let outgoing = reflected + s.emissive;
     // The test comes last, after every derivative, which a discarded fragment still helps compute.
@@ -476,7 +479,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec2f) -> vec4f {
         discard;
     }
 #endif
-    let finished = finish(fogged(outgoing, input.relativePosition, material_row), pixel);
+    let finished = finish(fogged(outgoing, input.relativePosition, material_row), pixel.xy);
     return fragment_color(material_row, finished.rgb, s.alpha);
 }
 
@@ -530,5 +533,5 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #else
     let s = defaultSurface(input);
 #endif
-    return shade(s, input, in.clip.xy);
+    return shade(s, input, in.clip);
 }

@@ -18,7 +18,8 @@
 // gives S1 a color grading table and the vignette, and changes both every frame. `--sprites` draws
 // S1's swarm as one dynamic batch of blended sprites instead of boxes, and `--lines` as one dynamic
 // batch of dashed line segments, whose dashes move every frame. `--labels 256` adds 256
-// objects to S1, each with an HTML label that the page binds. The camera orbits, so each frame
+// objects to S1, each with an HTML label that the page binds. `--ao` turns ambient occlusion
+// on in S1, and changes its intensity every frame. The camera orbits, so each frame
 // places every label at a new point, and the thread that draws copies them for the page.
 // `--prepass` turns the depth prepass on, in any scene. It samples the production build of the
 // benchmark pages, as a developer ships the engine, and names
@@ -37,6 +38,7 @@
 //   bun run bench:allocation --grading --gpu webgl2
 //   bun run bench:allocation --sprites --gpu webgl2
 //   bun run bench:allocation --lines --gpu webgl2
+//   bun run bench:allocation --ao --gpu webgl2
 //   bun run bench:allocation --scene s4 --prepass --gpu webgl2
 //   bun run bench:allocation --labels 256 --gpu webgl2
 //   bun run bench:allocation --labels 256 --no-inline
@@ -206,11 +208,13 @@ async function main(): Promise<void> {
 		if (sprites && scene !== 's1') throw new Error('--sprites draws S1 as sprites only');
 		const lines = args.includes('--lines') ? '&lines' : '';
 		if (lines && scene !== 's1') throw new Error('--lines draws S1 as lines only');
+		const ao = args.includes('--ao') ? '&ao' : '';
+		if (ao && scene !== 's1') throw new Error('--ao turns ambient occlusion on in S1 only');
 		const prepass = args.includes('--prepass') ? '&prepass=on' : '';
 		const labelCount = option('--labels', 0);
 		if (labelCount > 0 && scene !== 's1') throw new Error('--labels adds labels to S1 only');
 		const labels = labelCount > 0 ? `&labels=${labelCount}` : '';
-		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${grading}${sprites}${lines}${prepass}${labels}`;
+		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${grading}${sprites}${lines}${ao}${prepass}${labels}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.

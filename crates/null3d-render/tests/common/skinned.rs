@@ -5,6 +5,7 @@ use null3d_core::animation::{
     Animations, Channel, Interpolation, NO_PARENT, Play, Skeleton, SourceTrack, resample,
 };
 use null3d_core::handle::Handle;
+use null3d_core::jobs::JobSystem;
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::drawlist::vertex;
 use null3d_render::frame::FrameBuilder;
@@ -69,28 +70,41 @@ pub fn column() -> Geometry {
     g
 }
 
+/// The animation table of the skinned columns, with room for `instances` animated instances and
+/// `joints` joints in all: the chain's skeleton, and a clip that bends it back and forth.
+fn animation_table(jobs: &JobSystem, instances: u32, joints: u32) -> Animations {
+    let mut animations = Animations::new(jobs, instances, joints).unwrap();
+    animations.add_skeleton(chain(RINGS)).unwrap();
+    let bend = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.38, 0.92, 0.0, 0.0, 0.0, 1.0];
+    let tracks: Vec<SourceTrack> = (1..RINGS)
+        .map(|joint| SourceTrack {
+            joint,
+            channel: Channel::Rotation,
+            interpolation: Interpolation::Linear,
+            times: &[0.0, 0.5, 1.0],
+            values: &bend,
+        })
+        .collect();
+    let clip = resample(animations.skeleton(0).unwrap(), &tracks, 30.0).unwrap();
+    animations.add_clip(0, clip).unwrap();
+    animations
+}
+
 impl<B: FrameBuilder> World<B> {
+    /// Gives the world an animation table with room for a crowd of `instances` skinned columns.
+    /// Call it before the first `add_skinned`.
+    pub fn make_room_for_crowd(&mut self, instances: u32) {
+        self.animations = Some(animation_table(&self.jobs, instances, instances * RINGS));
+    }
+
     /// Adds a skinned column at `position`, in the current frame, which casts shadows and plays a
     /// clip that bends its chain back and forth, from an animated instance of its own. The first
     /// call makes the world's animation table, which the frames then step by 1/60 s.
     pub fn add_skinned(&mut self, position: [f32; 3]) -> Handle {
-        let animations = self.animations.get_or_insert_with(|| {
-            let mut animations = Animations::new(&self.jobs, 64, 1024).unwrap();
-            animations.add_skeleton(chain(RINGS)).unwrap();
-            let bend = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.38, 0.92, 0.0, 0.0, 0.0, 1.0];
-            let tracks: Vec<SourceTrack> = (1..RINGS)
-                .map(|joint| SourceTrack {
-                    joint,
-                    channel: Channel::Rotation,
-                    interpolation: Interpolation::Linear,
-                    times: &[0.0, 0.5, 1.0],
-                    values: &bend,
-                })
-                .collect();
-            let clip = resample(animations.skeleton(0).unwrap(), &tracks, 30.0).unwrap();
-            animations.add_clip(0, clip).unwrap();
-            animations
-        });
+        let jobs = &self.jobs;
+        let animations = self
+            .animations
+            .get_or_insert_with(|| animation_table(jobs, 64, 1024));
         self.animation_step = 1.0 / 60.0;
         let instance = animations.add_instance(0).unwrap();
         let play = Play {
