@@ -243,6 +243,9 @@ fn an_outlined_skinned_object_draws_its_mask_in_its_pose_both_ways_of_skinning()
             vertex_skinning,
             ..RendererConfig::default()
         });
+        // No frame has drawn yet, so the first frame waits for every pipeline and draws the skinned
+        // objects at once.
+        world.pipelines_built = 0;
         let object = world.add_skinned([0.0, 0.0, 0.0]);
         world
             .renderer
@@ -288,6 +291,37 @@ fn an_outlined_skinned_object_draws_its_mask_in_its_pose_both_ways_of_skinning()
             .filter(|v| v[0] == 0 && v[1] == pool[0])
             .count();
         assert!(draws_pool >= 2, "the camera's and the outline's bundles");
+    }
+}
+
+#[test]
+fn an_outlined_skinned_object_added_during_play_asks_for_both_mask_pipelines_while_it_waits() {
+    for vertex_skinning in [false, true] {
+        let mut world = World::with_config(RendererConfig {
+            vertex_skinning,
+            ..RendererConfig::default()
+        });
+        let object = world.add_skinned([0.0, 0.0, 0.0]);
+        world
+            .renderer
+            .settings_mut()
+            .set_outline(Some(Outline::default()));
+        world
+            .scene
+            .apply_commands(
+                &[Command::set_flags(object, flags::OUTLINED, flags::OUTLINED)],
+                world.frame,
+            )
+            .unwrap();
+        let mut mock = MockBackend::default();
+        // Frames have drawn, so the skinned object waits for its pipelines, the outline mask's
+        // two among them, which the layouts ask for in the same frame.
+        let first = world.step(&mut mock, true);
+        let masks = operands(&first, Op::CreateRenderPipeline)
+            .into_iter()
+            .filter(|p| p[1] == template::OUTLINE_MASK)
+            .count();
+        assert_eq!(masks, 2, "both mask pipelines");
     }
 }
 
