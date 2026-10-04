@@ -187,6 +187,7 @@ The gate commit is 5309dba5 (#271), and main's CI passed on it. Each device run 
 | Item | Device and browser | Check | Figure | Result |
 | --- | --- | --- | --- | --- |
 | 1 | iPad Pro 11-inch, Safari 26.6.2 | The full checks plan on WebGPU, compatibility mode and WebGL2 (run 20261004-035655-checks) | 656 passed, 0 skipped, 0 failed | Pass |
+| 3 | iPad Pro 11-inch, Safari 26.6.2 | S1 at phone scale, 256,000 boxes, against three.js, 5 runs of each page at 60 Hz (run 20261004-125547-bench) | CPU time per frame: null3D on WebGPU 16.44 ms, 52% of three.js's faster renderer (WebGPU, 31.32 ms). null3D with WebGL2 forced 17.18 ms, 55% of three.js on WebGPU and of three.js on WebGL (31.40 ms). Own work on the busiest thread 14% and 23 to 24%. Frames per second: null3D 28.0 on WebGPU, where 28 ms of GPU time per frame limits it, and 27.3 with WebGL2. three.js 28.3 on WebGPU and 14.1 on WebGL. Target: at most 100% of the CPU time | Pass |
 
 ### What the gate still needs
 
