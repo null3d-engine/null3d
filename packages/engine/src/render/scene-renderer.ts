@@ -14,6 +14,7 @@ import { WebGPUBackend } from '../gpu/webgpu/backend';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import type { CoreDevice } from '../page/limits';
 import { controlViews, Slot } from '../shared/control';
+import { frameAfter, frameReached } from '../shared/frame-numbers';
 import type { ImageTable } from '../shared/images';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
 import { contextLoss, deviceLoss, type GpuErrorReport, GpuErrorWatch } from './loss';
@@ -99,7 +100,7 @@ export class FrameReplay {
 	prepare(frame: number): boolean {
 		this.restOf(frame);
 		const hold = Atomics.load(this.slots, Slot.PipelineHold);
-		if (hold > this.held && frame >= hold) {
+		if (frameAfter(hold, this.held) && frameReached(frame, hold)) {
 			this.held = hold;
 			this.complete = false;
 		}
@@ -157,7 +158,7 @@ export class FrameReplay {
 		const parity = frame & 1;
 		const start = Atomics.load(this.slots, Slot.DrawListAddress0 + parity) / 4;
 		this.end = start + Atomics.load(this.slots, Slot.DrawListWords0 + parity);
-		if (frame > this.prepared) {
+		if (frameAfter(frame, this.prepared)) {
 			this.rests[parity] = this.backend.prepare(this.words, start, this.end);
 			this.prepared = frame;
 		}

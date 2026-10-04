@@ -44,6 +44,7 @@ import { Scene } from '../scene/scene';
 import { Textures } from '../scene/textures';
 import { type ControlViews, controlLabels, controlViews, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
+import { frameAfter, frameReached, nextFrame } from '../shared/frame-numbers';
 import { stopHelperWorkers } from '../shared/helper-workers';
 import { type ImageSender, imagesArrived, type ShaderSender } from '../shared/images';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
@@ -98,7 +99,7 @@ export interface SketchCore {
 const SLOT_POLL_MS = 4;
 
 /**
- * Resolves once a control slot holds `target` or more, or once the engine stops. It waits without
+ * Resolves once a control slot holds frame `target` or a later one, or once the engine stops. It waits without
  * blocking the thread, and checks the slot on a timer where the control block is not shared memory.
  * A start's steps wait this way, so each wait also checks the slot again after a short time, in case
  * the browser missed the wake.
@@ -108,7 +109,7 @@ async function reached(slots: Int32Array, slot: number, target: number): Promise
 		typeof SharedArrayBuffer !== 'undefined' && slots.buffer instanceof SharedArrayBuffer;
 	for (;;) {
 		const value = Atomics.load(slots, slot);
-		if (value >= target || Atomics.load(slots, Slot.Running) === 0) return;
+		if (frameReached(value, target) || Atomics.load(slots, Slot.Running) === 0) return;
 		if (shared) {
 			const change = slotChangeOrRecheck(slots, slot, value);
 			if (change) await change;
@@ -140,7 +141,7 @@ export async function runPipelined(
 				continue;
 			}
 			const taken = Atomics.load(slots, Slot.FramesTaken);
-			if (taken < Atomics.load(slots, Slot.FramesPublished)) {
+			if (frameAfter(Atomics.load(slots, Slot.FramesPublished), taken)) {
 				const change = slotChange(slots, Slot.FramesTaken, taken);
 				if (change) await change;
 				continue;
@@ -483,7 +484,7 @@ export class SketchRunner {
 	private async settle(drawn: boolean): Promise<void> {
 		if (this.holdSeconds !== undefined) return;
 		const { slots } = this.sketch.control;
-		const target = this.setUp ? this.recorded.frame + 1 : await this.queueSetupFrame();
+		const target = this.setUp ? nextFrame(this.recorded.frame) : await this.queueSetupFrame();
 		await reached(slots, Slot.PipelinesBuilt, target);
 		if (drawn) await reached(slots, Slot.FramesTaken, target);
 	}
@@ -514,7 +515,7 @@ export class SketchRunner {
 	private async publishSetupFrame(): Promise<number> {
 		const { slots } = this.sketch.control;
 		while (
-			Atomics.load(slots, Slot.FramesTaken) < this.recorded.frame &&
+			frameAfter(this.recorded.frame, Atomics.load(slots, Slot.FramesTaken)) &&
 			Atomics.load(slots, Slot.Running) !== 0
 		)
 			await reached(slots, Slot.FramesTaken, this.recorded.frame);
@@ -790,7 +791,8 @@ export class SketchRunner {
 		const dt = this.clock.dt;
 		time.now = this.clock.now;
 		time.dt = dt;
-		const frame = ++this.recorded.frame;
+		const frame = nextFrame(this.recorded.frame);
+		this.recorded.frame = frame;
 		if (play) time.frame++;
 		this.record.begin(frame);
 		this.phaseStart = start;
@@ -810,7 +812,7 @@ export class SketchRunner {
 		// call that passed the step on would allocate a number for it in every frame.
 		if (play) {
 			if (this.holdSeconds === undefined) {
-				this.input.beginFrame(frame, frame - time.frame);
+				this.input.beginFrame(frame, (frame - time.frame) | 0);
 				this.context.scene.dispatchPointerEvents(this.reportError);
 			}
 			const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);

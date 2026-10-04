@@ -50,6 +50,7 @@
 //! whose texels are gone keeps its layer and draws as without a map until it gets new texels.
 
 use null3d_core::error::CoreError;
+use null3d_core::frames::frame_after;
 use null3d_core::handle::{Handle, SlotAllocator};
 use null3d_gpu::caps::TEXTURE_3D_SIZE;
 use null3d_gpu::drawlist::{
@@ -1068,8 +1069,8 @@ impl TextureStore {
     fn record_releases(&mut self, list: &mut DrawList, frame: u32) -> Result<(), RecordError> {
         let (arrived, taken) = (self.arrived, self.frames_taken);
         let due = |r: &Release| match r.source {
-            Source::Image { id, .. } => id <= arrived && r.after < frame,
-            Source::Data { .. } => r.after < taken,
+            Source::Image { id, .. } => id <= arrived && (r.after == 0 || frame_after(frame, r.after)),
+            Source::Data { .. } => frame_after(taken, r.after),
         };
         for release in self.releases.iter().filter(|r| due(r)) {
             match release.source {
@@ -1446,9 +1447,11 @@ mod tests {
         /// Records one frame and replays it twice, and returns its commands and whether it made
         /// bind groups again.
         fn frame(&mut self) -> (Vec<(Op, Vec<u32>)>, bool) {
-            self.frame += 1;
+            // The thread that draws took the frame recorded before this one, if any.
+            let taken = self.frame;
+            self.frame = null3d_core::frames::next_frame(self.frame);
             self.list.clear();
-            self.store.sync(self.arrived, self.frame - 1);
+            self.store.sync(self.arrived, taken);
             let groups = self.store.record(&mut self.list, self.frame).unwrap();
             self.list.push(Op::Submit, &[]).unwrap();
             for _ in 0..2 {
@@ -1460,6 +1463,27 @@ mod tests {
                 .collect();
             (commands, groups)
         }
+    }
+
+    #[test]
+    fn images_and_data_are_released_across_the_wrap_of_the_frame_count() {
+        let mut h = Harness::new();
+        h.frame = u32::MAX - 3;
+        let texture = h.texture(4, 4);
+        h.image(texture, 4, 4);
+        h.arrive(1);
+        let data = h.texture(4, 4);
+        let (_, _) = h.store.set_data(data, 4, 4).unwrap();
+        let mut released = Vec::new();
+        for _ in 0..6 {
+            let (commands, _) = h.frame();
+            released.extend(ops(&commands, Op::ReleaseImage));
+        }
+        assert_eq!(h.frame, 3, "the frames went round past the last of the count");
+        assert_eq!(released, [vec![1]]);
+        assert_eq!(h.store.ready_layer(texture), Some(0));
+        // The data's texels are freed once a frame after the list that read them was taken.
+        assert!(h.store.data.iter().all(Vec::is_empty));
     }
 
     fn ops(commands: &[(Op, Vec<u32>)], op: Op) -> Vec<Vec<u32>> {

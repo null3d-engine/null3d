@@ -794,7 +794,7 @@ export class Object3D implements Described {
 	/** @internal The live parent, or null for a root. */
 	get liveParent(): Object3D | null {
 		const parent = this.parentObject;
-		return parent && parent.destroyedFrame < 0 ? parent : null;
+		return parent && parent.destroyedFrame === -1 ? parent : null;
 	}
 
 	/**
@@ -929,7 +929,7 @@ export class PrefabInstance extends Group {
 	 */
 	find(name: string): Object3D | undefined {
 		for (const object of this.objects)
-			if (object !== this && object.name === name && object.destroyedFrame < 0) return object;
+			if (object !== this && object.name === name && object.destroyedFrame === -1) return object;
 		return undefined;
 	}
 }
@@ -2046,7 +2046,7 @@ export class Scene {
 	 */
 	private pick(frame: number, numbers: Float64Array, ray: Ray): PointerTarget | null {
 		const camera = this.activeCamera;
-		const live = camera !== undefined && camera.destroyedFrame < 0 ? camera : undefined;
+		const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
 		const layers = this.frameCameras.frameRay(frame, numbers, ray, live);
 		return layers < 0 ? null : this.queries.pick(ray, layers, numbers);
 	}

@@ -953,7 +953,7 @@ impl SceneStorage {
         if frame == self.frame {
             return;
         }
-        let gap = frame != self.frame.wrapping_add(1);
+        let gap = frame != crate::frames::next_frame(self.frame);
         if gap {
             // The other buffer may have missed changes, so rebuild both from scratch.
             for (d, c) in self.dirty.words_mut().iter_mut().zip(self.created.words()) {
@@ -1831,6 +1831,34 @@ mod tests {
         assert_eq!(translation(&scene, h), [50.0, 0.0, 0.0]);
         assert!(!scene.changed().get(slot as u32));
         assert_eq!(scene.world(0).matrix(slot), scene.world(1).matrix(slot));
+    }
+
+    #[test]
+    fn frames_go_round_the_32_bit_count_without_a_gap() {
+        use crate::frames::next_frame;
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (still, c1) = object(&mut scene, [1.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        let (mover, c2) = object(&mut scene, [0.0; 3], Handle::NONE, MOVING);
+        let mut frame = u32::MAX - 3;
+        scene.apply_commands(&[c1, c2], frame).unwrap();
+        scene.update_transforms(&jobs);
+        frame = next_frame(frame);
+        scene.begin_frame(frame);
+        scene.update_transforms(&jobs);
+        let still_slot = scene.resolve(still).unwrap();
+        let mover_slot = scene.resolve(mover).unwrap() as usize;
+        // Past the last frame of the count, frames go on from 1: no frame is 0, and the static
+        // object is never recomputed, as after a gap.
+        for step in 0..4 {
+            frame = next_frame(frame);
+            scene.positions_mut()[mover_slot * 3] = step as f32;
+            scene.begin_frame(frame);
+            scene.update_transforms(&jobs);
+            assert_eq!(translation(&scene, mover), [step as f32, 0.0, 0.0], "frame {frame}");
+            assert!(!scene.changed().get(still_slot), "frame {frame}");
+        }
+        assert_eq!(frame, 3);
     }
 
     #[test]
