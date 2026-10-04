@@ -61,8 +61,6 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 
 A file that grows more than 2% after Brotli against main's build needs a reason: a `Size-Growth:` trailer, as "Commit gates" says. A file over its budget fails every build. Each budget is after Brotli. Each WebAssembly file may take 600 KB. The engine's JavaScript that a page downloads at its start may take 140 KB. Each file of engine code that loads on a feature's first use, or after the first frame, may take 16 KB. Each file of shaders that loads on first use may take 24 KB. A feature that a page does not use loads its code on first use, so it adds nothing to the start. Only the owner raises a budget, in writing. The owner approved these figures for M2 on 2026-10-04, as [D-14](.dev/decisions/D-14-js-budget.md) records. [Benchmarks](.dev/benchmarks.md#download-size) says how the check builds main.
 
-The engine's package ships no binary asset files. A built-in asset, such as the built-in room environment, is made at run time. Its code and shaders load on first use (the owner, 2026-10-04, [D-19](.dev/decisions/D-19-environment-maps.md#the-built-in-room-on-the-gpu)). Engine code never names a data file with `new URL(..., import.meta.url)`: bundlers copy such a file into every game's build, whether the game uses it or not.
-
 ## Design principles
 
 These ten principles decide design conflicts, and a higher one wins over a lower one. Speed comes first because it is the reason the engine exists. Ease of use comes last, but it still binds.
