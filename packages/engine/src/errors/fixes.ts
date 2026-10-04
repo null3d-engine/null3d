@@ -60,6 +60,10 @@ export const ERROR_FIXES = {
 		'Listen with engine.onFailure. Destroy the engine, put a new canvas element in place of the old one, and start the engine again on it. If losses keep coming, lower the quality preset.',
 	E1303:
 		'Update the browser. Chrome 91, Firefox 89, Safari 16.4 and later versions run the engine.',
+	E1304:
+		'Lower the quality preset, use smaller or compressed textures, and share meshes and textures between objects. Destroy objects and textures that the scene no longer shows.',
+	E1305:
+		'Read the message: it quotes the GPU path. A buffer or texture past the device\'s limits names the limit: make the scene smaller there. Otherwise this is an engine bug: report it with the message and the browser.',
 	E1401:
 		'End the sketch module with export default defineSketch(...), and pass that module to createEngine.',
 	E1402:
@@ -94,6 +98,10 @@ export const ERROR_FIXES = {
 		'Check that the file is a glTF 2.0 model, as a .glb file or a .gltf file with its buffers and images beside it. Open it in the Khronos glTF Validator, which names the broken part, and export it again from your modelling tool. For a model whose skeleton is too large, export each character to a file of its own.',
 	E1417:
 		'Export the model again without the extension that the message names. Call createInstances with a model that has meshes and no instancing of its own, or with one of its meshes and a material.',
+	E1419:
+		"Wait for the other engine's destroy() promise before you start a new engine on its canvas. In React, call destroy() in the effect's cleanup. When the message says the canvas's drawing thread failed, put a new canvas element in its place.",
+	E1420:
+		"Remove the sketch's timers, event listeners and message handlers in its onDestroy callback, which runs when the engine stops.",
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses.',
 	E1502: RENDER_GRAPH_FIX,
