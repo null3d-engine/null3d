@@ -5,8 +5,15 @@
 // it is first drawn with, so the driver can compile a frame's programs in parallel. Only
 // development builds define the templates of the debug lines and the debug views, so release
 // builds hold none of them.
+//
+// A mesh template draws the depth prepass with the vertex shader of the build that shades, and a
+// fragment shader that writes nothing. The prepass then computes each position with the shader
+// that the opaque pass computes it with, so its test for equal depth passes on the nearest
+// surface. A separate depth-only program gave other depths in Chrome on a Mac, although both
+// programs mark the position invariant.
 
 import {
+	PERMUTATION_PREPASS,
 	TEMPLATE_BACKGROUND,
 	TEMPLATE_BLOOM,
 	TEMPLATE_DEBUG_LINES,
@@ -76,6 +83,27 @@ export interface GlslTemplate {
 	 * buffer in slot 0, as WebGPU describes it.
 	 */
 	readonly vertices?: GPUVertexBufferLayout;
+	/**
+	 * True for a template that draws meshes, whose pipelines with the `PREPASS` bit draw the depth
+	 * prepass: with the vertex shader of the template's build without that bit, and a fragment
+	 * shader that writes nothing.
+	 */
+	readonly meshPrepass?: boolean;
+}
+
+/** The fragment shader of the depth prepass, which writes no color. */
+const PREPASS_FRAGMENT: GlslStage = {
+	source: '#version 300 es\nvoid main() {}\n',
+	uniformBlocks: [],
+	textures: [],
+};
+
+/**
+ * The permutation of the build that a pipeline of a template draws with: a mesh template's prepass
+ * takes the vertex shader of its build without the `PREPASS` bit.
+ */
+export function buildPermutation(template: GlslTemplate, permutation: number): number {
+	return template.meshPrepass ? permutation & ~PERMUTATION_PREPASS : permutation;
 }
 
 /** A linked, or linking, program, which every pipeline of its template and permutation shares. */
@@ -132,11 +160,16 @@ export interface Pipeline {
 /** The engine's render pipeline templates, by template id, from the shaders the device loaded. */
 export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefined)[] {
 	const templates: (GlslTemplate | undefined)[] = [];
-	templates[TEMPLATE_INSTANCED_LIT] = { shader: shaders.lit, pipeline: 'main' };
-	templates[TEMPLATE_INSTANCED_UNLIT] = { shader: shaders.unlit, pipeline: 'main' };
-	templates[TEMPLATE_INSTANCED_TEXCOORDS] = { shader: shaders.texcoords, pipeline: 'main' };
-	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = { shader: shaders.unlit_map, pipeline: 'main' };
-	templates[TEMPLATE_INSTANCED_STANDARD_MAPS] = { shader: shaders.standard_maps, pipeline: 'main' };
+	const mesh = (shader: ShaderVariants): GlslTemplate => ({
+		shader,
+		pipeline: 'main',
+		meshPrepass: true,
+	});
+	templates[TEMPLATE_INSTANCED_LIT] = mesh(shaders.lit);
+	templates[TEMPLATE_INSTANCED_UNLIT] = mesh(shaders.unlit);
+	templates[TEMPLATE_INSTANCED_TEXCOORDS] = mesh(shaders.texcoords);
+	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = mesh(shaders.unlit_map);
+	templates[TEMPLATE_INSTANCED_STANDARD_MAPS] = mesh(shaders.standard_maps);
 	templates[TEMPLATE_FINAL] = { shader: shaders.final, pipeline: 'main' };
 	templates[TEMPLATE_FINAL_BLOOM] = { shader: shaders.final, pipeline: 'main' };
 	templates[TEMPLATE_BLOOM] = { shader: shaders.bloom, pipeline: 'main' };
@@ -150,7 +183,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 			pipeline: 'main',
 			vertices: LINE_VERTICES,
 		};
-		templates[TEMPLATE_DEBUG_VIEW] = { shader: DEBUG_VIEW_SHADER, pipeline: 'main' };
+		// The debug views draw meshes in place of every material, so they draw the prepass too.
+		templates[TEMPLATE_DEBUG_VIEW] = mesh(DEBUG_VIEW_SHADER);
 	}
 	return templates;
 }
@@ -173,14 +207,18 @@ function compile(gl: WebGL2RenderingContext, type: number, stage: GlslStage): We
 
 /**
  * Starts compiling and linking a template's program, in the shader variant that the permutation
- * bits pick, without waiting for the result.
+ * bits pick, without waiting for the result. A mesh template's prepass program pairs the vertex
+ * shader of its build with the prepass's fragment shader.
  */
 export function createProgram(
 	gl: WebGL2RenderingContext,
 	template: GlslTemplate,
 	permutation: number,
 ): Program {
-	const source = variantFor(template.shader, permutation, 'glsl')?.glsl?.[template.pipeline];
+	const build = buildPermutation(template, permutation);
+	const shading = variantFor(template.shader, build, 'glsl')?.glsl?.[template.pipeline];
+	const source =
+		shading && build !== permutation ? { ...shading, fragment: PREPASS_FRAGMENT } : shading;
 	if (!source)
 		throw new Error(`this render pipeline template has no variant for permutation ${permutation}`);
 	const program = gl.createProgram();

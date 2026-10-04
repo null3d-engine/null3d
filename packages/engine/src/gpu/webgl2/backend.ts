@@ -34,6 +34,7 @@ import {
 } from '../vertex-format';
 import { type DepthSetup, setDepthMode } from './depth';
 import {
+	buildPermutation,
 	createProgram,
 	engineTemplates,
 	type GlslTemplate,
@@ -560,7 +561,8 @@ export class WebGL2Backend {
 			defined = { shader: shader.variants, pipeline: 'main' };
 			this.templates[template] = defined;
 		}
-		return this.moreShaders?.ready(defined.shader, permutation, 'glsl') ?? true;
+		const build = buildPermutation(defined, permutation);
+		return this.moreShaders?.ready(defined.shader, build, 'glsl') ?? true;
 	}
 
 	/** Creates each parked pipeline whose custom material's shader has arrived. */
@@ -1943,11 +1945,13 @@ export class WebGL2Backend {
 
 	/**
 	 * The vertex array of a draw without indices: the current vertex buffer in the layout of the
-	 * pipeline's template, or none where the template's vertex shader makes its vertices.
+	 * pipeline's template, or none where the template's vertex shader makes its vertices. Such a
+	 * draw ignores a vertex buffer that earlier draws of the pass bound, as WebGPU does: the
+	 * background draws after the depth prepass's meshes in one pass.
 	 */
 	private drawVertexArray(): WebGLVertexArrayObject {
 		const layout = this.current?.vertices;
-		return layout ? this.layoutVertexArray(layout) : this.shaderVertexArray();
+		return layout ? this.layoutVertexArray(layout) : this.emptyVertexArray();
 	}
 
 	/** The vertex array of the current vertex buffer in a template's own layout. */
@@ -1988,14 +1992,10 @@ export class WebGL2Backend {
 		return vao;
 	}
 
-	/** The vertex array of draws that read no vertex buffer: their vertex shaders make vertices. */
-	private shaderVertexArray(): WebGLVertexArrayObject {
-		if (this.vertexBuffer !== 0)
-			throw new Error('a WebGL2 draw without indices reads no vertex buffer');
-		return this.emptyVertexArray();
-	}
-
-	/** A vertex array with no attributes. */
+	/**
+	 * A vertex array with no attributes, for draws that read no vertex buffer: their vertex shaders
+	 * make vertices.
+	 */
 	private emptyVertexArray(): WebGLVertexArrayObject {
 		if (!this.shaderVertices) {
 			this.shaderVertices = this.gl.createVertexArray();
