@@ -592,7 +592,8 @@ pub mod layout {
     /// Group 2 of render pipelines that read instances from data textures: the textures.
     pub const INSTANCES: u32 = 3;
     /// Group 0 of the final pass: its settings and the scene color it reads, then at bindings 9
-    /// and 10 the color grading table, a 3D texture, and its linear sampler.
+    /// and 10 the color grading table, a 3D texture, and its linear sampler, and at binding 11 the
+    /// outline effect's mask, which the table's sampler reads.
     pub const FINAL: u32 = 4;
     /// The maps of render pipelines that sample them: a 2D array texture, then its sampler. It is
     /// group 1 on WebGPU, and group 3 on WebGL2, after the groups of the data textures.
@@ -613,13 +614,15 @@ pub mod layout {
     pub const BLOOM: u32 = 9;
     /// Group 0 of the final pass that adds bloom: [`FINAL`]'s first two bindings, then bloom's
     /// uniform block, the texture of each of bloom's levels and their linear sampler, then
-    /// [`FINAL`]'s color grading table and its sampler at bindings 9 and 10.
+    /// [`FINAL`]'s color grading table and its sampler at bindings 9 and 10, and its outline mask
+    /// at binding 11.
     pub const FINAL_BLOOM: u32 = 10;
     /// Group 2 of render pipelines that skin in the vertex shader: the texture of every animated
     /// instance's skinning matrices, which vertex shaders read.
     pub const JOINTS: u32 = 11;
     /// Group 0 of the skinning compute pipeline: its table of formats and parts, a mesh page's
-    /// vertices, the skinned vertices that it writes, and the texture of skinning matrices.
+    /// vertices, the skinned vertices that it writes, the texture of skinning matrices, and the
+    /// morph textures of deltas and of weights.
     pub const SKIN: u32 = 12;
     /// Group 0 of ambient occlusion's depth step on a depth target of one sample: the steps'
     /// uniform block, then the depth target, which the step reads as unfilterable floats with
@@ -686,9 +689,12 @@ pub mod permutation {
     pub const CASTER_OFFSET: u32 = 16384;
     /// The final pass adds bloom's levels to the scene color before the output transform.
     pub const BLOOM: u32 = 32768;
+    /// The outline mask template marks the parts of outlined objects that nothing hides. Without
+    /// it, the template marks every part, hidden or not.
+    pub const OUTLINE_VISIBLE: u32 = 65536;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 16] = [
+    pub const NAMES: [(&str, u32); 17] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -705,6 +711,7 @@ pub mod permutation {
         ("HALF", HALF),
         ("CASTER_OFFSET", CASTER_OFFSET),
         ("BLOOM", BLOOM),
+        ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -794,11 +801,14 @@ pub mod vertex {
     pub const JOINTS: u32 = 16;
     /// How much each of the four joints moves a skinned vertex.
     pub const WEIGHTS: u32 = 32;
+    /// Where a morphed vertex's morph target deltas start, and how many there are: two whole
+    /// numbers as floats.
+    pub const MORPH: u32 = 1 << 27;
     /// Every optional attribute's bit.
-    pub const ALL: u32 = UV0 | UV1 | TANGENT | COLOR | JOINTS | WEIGHTS;
+    pub const ALL: u32 = UV0 | UV1 | TANGENT | COLOR | JOINTS | WEIGHTS | MORPH;
     /// The first vertex shader location of the per-instance attributes, after every location
     /// that a vertex attribute can take.
-    pub const INSTANCE_LOCATION: u32 = 8;
+    pub const INSTANCE_LOCATION: u32 = 9;
     /// The location of the position.
     pub const POSITION: usize = 0;
     /// The location of the normal.
@@ -893,6 +903,8 @@ pub mod vertex {
     const FRACTION: &[Type] = &[Type::F32, Type::Unorm8, Type::Unorm16];
     /// The types of joint indices: plain unsigned integers.
     const INDEX: &[Type] = &[Type::Uint8, Type::Uint16];
+    /// The type of the morph attribute: floats alone.
+    const FLOAT: &[Type] = &[Type::F32];
 
     /// One vertex attribute.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -944,7 +956,7 @@ pub mod vertex {
     /// Every attribute, in the order they sit in a vertex: the position, the normal, then the
     /// optional attributes in bit order. The type fields follow the attribute bits in the same
     /// order.
-    pub const ATTRIBUTES: [Attribute; 8] = [
+    pub const ATTRIBUTES: [Attribute; 9] = [
         Attribute {
             bit: 0,
             components: 3,
@@ -1007,6 +1019,14 @@ pub mod vertex {
             location: 7,
             shift: 25,
             types: FRACTION,
+            integer: false,
+        },
+        Attribute {
+            bit: MORPH,
+            components: 2,
+            location: 8,
+            shift: 27,
+            types: FLOAT,
             integer: false,
         },
     ];
@@ -1219,6 +1239,10 @@ pub mod template {
     /// The skinning compute shader, which skins the parts of skinned meshes into a buffer of
     /// skinned vertices.
     pub const SKIN: u32 = 20;
+    /// The outline mask of instanced meshes: each outlined object's coverage, and with
+    /// [`OUTLINE_VISIBLE`](super::permutation::OUTLINE_VISIBLE) the parts of it that nothing
+    /// hides. It binds as the depth template does.
+    pub const OUTLINE_MASK: u32 = 21;
     /// Sprites: quads of instance batch rows that face the camera, whose world matrices hold each
     /// sprite's size, rotation, color and atlas frame packed (see `null3d_core::sprites`), in the
     /// material's color.
@@ -1385,7 +1409,7 @@ pub fn typescript_constants() -> String {
         out.push_str(&format!("export const OP_{} = {};\n", op.name(), op as u8));
     }
     out.push_str(&format!("\nexport const NO_TARGET = {NO_TARGET};\n\n"));
-    let groups: [(&str, &[(&str, u32)]); 18] = [
+    let groups: &[(&str, &[(&str, u32)])] = &[
         (
             "FORMAT",
             &[
@@ -1510,6 +1534,7 @@ pub fn typescript_constants() -> String {
                 ("COLOR", vertex::COLOR),
                 ("JOINTS", vertex::JOINTS),
                 ("WEIGHTS", vertex::WEIGHTS),
+                ("MORPH", vertex::MORPH),
                 ("ALL", vertex::ALL),
                 ("INSTANCE_LOCATION", vertex::INSTANCE_LOCATION),
             ],
@@ -1564,6 +1589,7 @@ pub fn typescript_constants() -> String {
                 ("LIGHT_PLACE", template::LIGHT_PLACE),
                 ("LIGHT_WRITE", template::LIGHT_WRITE),
                 ("SKIN", template::SKIN),
+                ("OUTLINE_MASK", template::OUTLINE_MASK),
                 ("SPRITE", template::SPRITE),
                 ("SPRITE_MAP", template::SPRITE_MAP),
                 ("LINE", template::LINE),
@@ -1629,7 +1655,7 @@ pub fn typescript_constants() -> String {
             ],
         ),
     ];
-    for (prefix, entries) in groups {
+    for &(prefix, entries) in groups {
         for (name, value) in entries {
             out.push_str(&format!("export const {prefix}_{name} = {value};\n"));
         }
@@ -1802,7 +1828,7 @@ mod tests {
     fn vertex_formats_place_each_attribute_after_the_ones_before_it() {
         use vertex::ATTRIBUTES;
         assert_eq!(vertex::stride(0), 24);
-        assert_eq!(vertex::stride(vertex::ALL), 92);
+        assert_eq!(vertex::stride(vertex::ALL), 100);
         assert_eq!(vertex::offset(vertex::UV0, 2), Some(24));
         assert_eq!(vertex::offset(vertex::UV1, 3), Some(24));
         assert_eq!(vertex::offset(vertex::UV0 | vertex::TANGENT, 4), Some(32));
@@ -1810,7 +1836,16 @@ mod tests {
         assert_eq!(vertex::offset(vertex::UV1, 2), None);
         assert_eq!(vertex::offset(0, 0), Some(0));
         assert_eq!(vertex::offset(0, 1), Some(12));
-        for bits in 0..=vertex::ALL {
+        // Every combination of the optional attributes' bits.
+        let optional: Vec<u32> = ATTRIBUTES
+            .iter()
+            .map(|a| a.bit)
+            .filter(|&b| b != 0)
+            .collect();
+        for combination in 0..1u32 << optional.len() {
+            let bits = (0..optional.len())
+                .filter(|k| combination & (1 << k) != 0)
+                .fold(0, |bits, k| bits | optional[k]);
             // Each attribute of a format of floats starts where the ones before it end, and the
             // last ends at the stride.
             let mut end = 0;

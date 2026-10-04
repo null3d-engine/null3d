@@ -57,6 +57,7 @@ pub mod layers;
 pub mod lights;
 pub mod lines;
 pub mod math;
+pub mod morph;
 pub mod occlusion;
 pub mod scene;
 pub mod shared;

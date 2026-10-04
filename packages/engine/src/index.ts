@@ -98,6 +98,7 @@ export type {
 export type {
 	AoSettings,
 	BloomSettings,
+	OutlineSettings,
 	Post,
 	PostSettings,
 	ToneMapping,
@@ -129,6 +130,7 @@ export type {
 	Materials,
 	MeshArrays,
 	MeshGeometry,
+	MorphTargets,
 	PlaneOptions,
 	RingOptions,
 	ShaderOptions,

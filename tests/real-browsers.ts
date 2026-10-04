@@ -73,7 +73,8 @@
 //   --minutes <n>       the soak plan's minutes on each GPU path, 30 by default
 //   --shard <i>/<n>     run only the i-th of n shards of a fixed plan, as CI does on each of its
 //                       machines: the plan's items split evenly, and an item stays with the items
-//                       whose results its check compares with
+//                       whose results its check compares with. Each shard loads the capabilities
+//                       page first, to skip the pages of the GPU paths that the device lacks
 //   --only <ids>        run only these items of a fixed plan, such as the pages that failed in an
 //                       earlier run, with the items whose results their checks compare with
 //   --rounds <n>        run the items n times over, one round after another, to catch a fault
@@ -93,7 +94,8 @@
 //   --parallel <n>      at most n runners at once, as a device cloud plan's parallel sessions
 //                       allow; 1 by default with --cloud, and no limit without it
 //   --cloud-build <name> the build that groups the run's sessions on the cloud's dashboard
-//   --attended          someone is at the devices of --lan, so a plan whose pages end their tab,
+//   --network-logs      the cloud keeps each session's network log, which the dashboard shows
+//   --attended         someone is at the devices of --lan, so a plan whose pages end their tab,
 //                       such as tab-memory, may run there: Safari stops reloading a tab that
 //                       crashes again soon after the last crash, and only a person can reopen it
 // Before a run on a phone or tablet, the runner prints a checklist of the device settings that
@@ -251,6 +253,8 @@ export interface Options {
 	parallel?: number;
 	/** The build that groups a cloud run's sessions on the cloud's dashboard, when given. */
 	cloudBuild?: string;
+	/** The cloud keeps each session's network log, which slows the session's loads a little. */
+	networkLogs?: boolean;
 	/** macOS app names, such as Safari. */
 	mac: string[];
 	android: string[];
@@ -260,7 +264,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--attended] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [<macOS app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -321,6 +325,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--cloud') options.cloud = list(args[++i]);
 		else if (arg === '--parallel') options.parallel = wholeNumber(arg, args[++i]);
 		else if (arg === '--cloud-build') options.cloudBuild = args[++i];
+		else if (arg === '--network-logs') options.networkLogs = true;
 		else if (arg === '--attended') options.attended = true;
 		else if (arg.startsWith('--')) throw new Error(`unknown option ${arg}\n${USAGE}`);
 		else options.mac.push(arg);
@@ -516,6 +521,10 @@ function runnersOf(options: Options): LaunchedRunner[] {
 		runners.push({ name, device: name, launch: { kind: 'cloud', device: cloudDevice(name)! } });
 	return runners;
 }
+
+/** The device whose image references a runner compares with: a cloud device's model, when it has one. */
+const imageDevice = (runner: LaunchedRunner) =>
+	(runner.launch.kind === 'cloud' && runner.launch.device.model) || runner.device;
 
 /** Time a macOS app may take to open the runner page before its turn counts as failed. */
 const OPEN_TIMEOUT_MS = 60_000;
@@ -1092,7 +1101,10 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 		throw new Error(
 			`shard ${shard.index} of ${shard.count} has no items: the ${options.plan} plan has too few items for ${shard.count} shards`,
 		);
-	return repeatItems(part, rounds);
+	// Every shard loads the capabilities page first, so its runner page can skip the pages of the GPU
+	// paths that the device lacks.
+	const report = items.find((item) => item.check.kind === 'capabilities');
+	return repeatItems(report && !part.includes(report) ? [report, ...part] : part, rounds);
 }
 
 /**
@@ -1221,15 +1233,16 @@ async function runPlan(
 		counts.browser = browserText(browser);
 		const mismatch = browserMismatch(name, browser);
 		if (mismatch) console.log(`WARN  ${mismatch}`);
+		const imagesOf = imageDevice(runner);
 		const context = {
 			resultOf: (id: string) => readResult(run, name, id),
 			imageDir: join(RUNS_DIR, run, name),
 			storedBaselines,
-			runner: { name, device: runner.device },
+			runner: { name, device: imagesOf },
 			braveShields,
 		};
 		// The images this runner saved for review in an earlier run are stale once this run is judged.
-		clearCandidates({ runner: name, device: runner.device });
+		clearCandidates({ runner: name, device: imagesOf });
 		for (const item of plan.items) {
 			const result = readResult(run, name, item.id);
 			// The pages after a turn that the guard ended are listed once, in its message.
@@ -1476,7 +1489,11 @@ function cloudSessions(options: Options): CloudSessions | undefined {
 	return browserStackSessions(
 		options.cloud.map((name) => cloudDevice(name)!),
 		readCredentials(),
-		{ build, ...(localIdentifier && { localIdentifier }) },
+		{
+			build,
+			...(localIdentifier && { localIdentifier }),
+			...(options.networkLogs && { networkLogs: true }),
+		},
 	);
 }
 

@@ -30,6 +30,7 @@ import {
 	TEMPLATE_INSTANCED_UNLIT_MAP,
 	TEMPLATE_LINE,
 	TEMPLATE_LINE_LIT,
+	TEMPLATE_OUTLINE_MASK,
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
@@ -52,12 +53,12 @@ import type { DepthSetup } from './depth';
  * The first slot of each bind group. A slot is a texture unit, a uniform block binding point and a
  * sampler's place, and each binding of a group takes its group's first slot plus its binding
  * number. The per-frame group, which holds the most bindings, comes first. Group 1 has three
- * slots, group 2 six (the instance textures, then the two textures that skinned meshes read) and
- * group 3 the last twelve, whose samplers take the last places. The groups' uniform blocks stay
- * below the fewest binding points that WebGL2 allows, and their textures below the texture upload
- * unit.
+ * slots, group 2 eight (the instance textures, then the two textures that skinned meshes read and
+ * the two that morphed meshes read) and group 3 the last twelve, whose samplers take the last
+ * places. The groups' uniform blocks stay below the fewest binding points that WebGL2 allows, and
+ * their textures below the texture upload unit.
  */
-const GROUP_BASES = Uint8Array.of(0, 12, 15, 21);
+const GROUP_BASES = Uint8Array.of(0, 12, 15, 23);
 
 /** The fewest uniform block binding points that a WebGL2 context has. */
 export const MIN_UNIFORM_BLOCK_SLOTS = 24;
@@ -179,6 +180,7 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_FINAL_BLOOM] = { shader: shaders.final, pipeline: 'main' };
 	templates[TEMPLATE_BLOOM] = { shader: shaders.bloom, pipeline: 'main' };
 	templates[TEMPLATE_SHADOW_DEPTH] = { shader: shaders.shadow_depth, pipeline: 'main' };
+	templates[TEMPLATE_OUTLINE_MASK] = { shader: shaders.outline_mask, pipeline: 'main' };
 	// Sprites turn their quads to face the camera, so their prepass draws with their own vertex
 	// shader too.
 	templates[TEMPLATE_SPRITE] = mesh(shaders.sprite);

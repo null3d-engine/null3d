@@ -70,9 +70,18 @@ export const DEVICE_TOLERANCE: Tolerance = { threshold: 0.1, maxDiffRatio: 0.005
  */
 const DEVICE_TIERS: Readonly<Record<string, readonly Tier[]>> = { 'sm-s926b': ['webgl2'] };
 
+/**
+ * Devices whose GPU draws as another device's does, so they compare with that device's references
+ * and keep none of their own. The Galaxy S24 has the S24+'s Xclipse 940.
+ */
+const SHARED_REFERENCES: Readonly<Record<string, string>> = { 'sm-s921b': 'sm-s926b' };
+
+/** The device whose references a device keeps or shares. */
+const referenceDevice = (device: string) => SHARED_REFERENCES[device] ?? device;
+
 /** True when a device draws on a tier: on each tier, unless the table of device tiers lists fewer. */
 export const drawsTier = (device: string, tier: Tier) =>
-	DEVICE_TIERS[device]?.includes(tier) ?? true;
+	DEVICE_TIERS[referenceDevice(device)]?.includes(tier) ?? true;
 
 /** The size of a sketch test's image, unless its entry gives another. */
 export const SKETCH_SIZE = [320, 180] as const;
@@ -320,7 +329,8 @@ export interface Reference {
  */
 export function referenceOf(run: ImageRun, place: Place): Reference {
 	const own = 'environment' in place || run.reference.devices.includes(place.device);
-	const set = 'environment' in place ? place.environment : own ? place.device : REAL_GPU;
+	const set =
+		'environment' in place ? place.environment : own ? referenceDevice(place.device) : REAL_GPU;
 	const file = `${set}/${run.reference.tier}/${run.reference.test}.png`;
 	const reference = { file, tolerance: own ? run.tolerance : run.deviceTolerance };
 	if (!own && 'device' in place)
