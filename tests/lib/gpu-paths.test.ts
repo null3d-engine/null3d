@@ -112,6 +112,15 @@ describe("the plan's GPU paths", () => {
 		expect(items.find((item) => item.id === 'capabilities')?.gpu).toBeUndefined();
 	});
 
+	it('lets the runner page skip in every shard of the plan', () => {
+		for (const shard of ['1/2', '2/2']) {
+			const items = planItems(parseArgs(['--plan', 'checks', '--shard', shard, 'Safari']));
+			expect(withGpuPaths(items as PlanItem<Check>[], ALLOW_NO_WEBGPU).flags).toEqual({
+				skipMissing: { report: 'capabilities', allowed: ALLOW_NO_WEBGPU },
+			});
+		}
+	});
+
 	it('skips nothing in a run that lets no path be missing, or without a capabilities page', () => {
 		expect(withGpuPaths(checksPlan(), NONE_MISSING).flags).toEqual({});
 		const withoutReport = checksPlan().filter((item) => item.check.kind !== 'capabilities');

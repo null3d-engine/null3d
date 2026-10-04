@@ -125,6 +125,7 @@ The engine keeps each scene's draw tables and every object's matrix on the GPU, 
 | Creating or destroying an instance batch, or an object of any kind, lights included | A rebuild, and engine memory can grow in the next frame |
 | `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled` | A rebuild |
 | `setCastShadows` and `setReceiveShadows`, on meshes and on lights | A rebuild |
+| `setOutlined`, and `post.set` with `outline` turned on or off | A rebuild |
 | `texture.update()` with an image of another size, and `texture.destroy()` | A rebuild |
 
 These habits keep play free of rebuilds:

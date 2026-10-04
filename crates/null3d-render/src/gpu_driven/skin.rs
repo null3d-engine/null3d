@@ -66,12 +66,13 @@ use crate::skinning::{JointTexture, skin_of, skinned_format, skinned_in_vertex_s
 use crate::view::ViewFrame;
 
 /// The templates with SKIN builds, which skin in the vertex shader.
-const SKIN_TEMPLATES: [u32; 5] = [
+const SKIN_TEMPLATES: [u32; 6] = [
     template::INSTANCED_LIT,
     template::INSTANCED_STANDARD_MAPS,
     template::INSTANCED_UNLIT,
     template::INSTANCED_UNLIT_MAP,
     template::SHADOW_DEPTH,
+    template::OUTLINE_MASK,
 ];
 /// The most mesh pages that hold skinned meshes. Each page holds meshes of one vertex format up
 /// to a storage binding, so it takes skinned meshes of more than this many vertex formats, or more

@@ -8,6 +8,10 @@
 //! the view's bundle in the same render pass. It draws the same buckets from the same compacted
 //! instances and indirect draws, with each bucket's depth pipeline, and leaves out the buckets that
 //! have none. It binds the view's frame uniform through a group of the depth template's layout.
+//!
+//! The outline view's bundle draws the outlined layout's buckets into the outline mask, twice: once
+//! to mark every part of each object, then again to mark the parts that nothing hides. It binds
+//! the outline view's frame uniform through a group of the depth template's layout too.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, index_format, layout as bind_layout, resource_kind, sizes,
@@ -15,7 +19,7 @@ use null3d_gpu::drawlist::{
 
 use super::cull::INDIRECT_BYTES;
 use super::ids;
-use super::layout::Layout;
+use super::layout::{Bucket, Layout};
 use super::skin::DrawGroups;
 use crate::frame::{MeshBuffers, RecordError, UploadArena};
 use crate::pipelines::PassTargets;
@@ -81,19 +85,31 @@ pub(super) fn upload(
     Ok(())
 }
 
-/// Records a view's bundle: each draw of every bucket of the layout, with the bucket's slice of
-/// the view's compacted instances and the bind group of its material's map, from its mesh page's
-/// buffers in `meshes`, into `targets`. With `prepass`, it records the view's bundle of the depth
-/// prepass instead.
+/// What a view's bundle draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Bundle {
+    /// The view's objects, each bucket with its pipeline and its material's maps.
+    Opaque,
+    /// The depth of the camera view's opaque objects, for the depth prepass.
+    Prepass,
+    /// The outline view's objects into the outline mask: every bucket with the pipeline that marks
+    /// every part, then every bucket again with the pipeline that marks the parts nothing hides.
+    Outline,
+}
+
+/// Records a view's bundle of `kind`: each draw of every bucket of the layout, with the bucket's
+/// slice of the view's compacted instances and, where the bucket shades or its prepass draws with
+/// its own vertex shader, the bind group of its material's map, from its mesh page's buffers in
+/// `meshes`, into `targets`.
 pub(super) fn record_bundle(
     list: &mut DrawList,
     view: ViewId,
     layout: &Layout,
     meshes: &MeshBuffers,
     targets: PassTargets,
-    prepass: bool,
+    kind: Bundle,
 ) -> Result<(), RecordError> {
-    let (bundle, frame_group) = if prepass {
+    let (bundle, frame_group) = if kind == Bundle::Prepass {
         (ids::prepass_bundle(view), ids::prepass_group(view))
     } else {
         (ids::bundle(view), ids::frame_group(view))
@@ -107,21 +123,72 @@ pub(super) fn record_bundle(
             targets.samples,
         ],
     )?;
+    match kind {
+        Bundle::Opaque => {
+            draw_buckets(
+                list,
+                view,
+                layout,
+                meshes,
+                frame_group,
+                |b| b.pipeline,
+                |_| true,
+            )?;
+        }
+        Bundle::Prepass => {
+            let pipeline = |b: &Bucket| b.prepass;
+            draw_buckets(list, view, layout, meshes, frame_group, pipeline, |b| {
+                b.prepass_own
+            })?;
+        }
+        Bundle::Outline => {
+            draw_buckets(
+                list,
+                view,
+                layout,
+                meshes,
+                frame_group,
+                |b| b.pipeline,
+                |_| false,
+            )?;
+            draw_buckets(
+                list,
+                view,
+                layout,
+                meshes,
+                frame_group,
+                |b| b.prepass,
+                |_| false,
+            )?;
+        }
+    }
+    list.push(Op::EndBundle, &[])?;
+    Ok(())
+}
+
+/// Records the draws of every bucket of the layout with the pipeline that `pipeline_of` picks,
+/// leaving out the buckets for which it gives 0. A bucket for which `own_of` is true draws with its
+/// own template's vertex shader: it reads the view's frame group and its maps' group as its
+/// shading does. The others read `frame_group` alone, as the depth and mask templates do.
+#[allow(clippy::too_many_arguments)]
+fn draw_buckets(
+    list: &mut DrawList,
+    view: ViewId,
+    layout: &Layout,
+    meshes: &MeshBuffers,
+    frame_group: u32,
+    pipeline_of: impl Fn(&Bucket) -> u32,
+    own_of: impl Fn(&Bucket) -> bool,
+) -> Result<(), RecordError> {
     let (mut pipeline, mut vertices, mut indices) = (None, None, None);
     let mut groups = DrawGroups::default();
     let mut bound = None;
     for bucket in &layout.buckets {
-        let id = if prepass {
-            bucket.prepass
-        } else {
-            bucket.pipeline
-        };
+        let id = pipeline_of(bucket);
         if id == 0 {
             continue;
         }
-        // In the prepass, a pair that draws with its own vertex shader reads the frame group and
-        // its maps' group as its shading does, and the depth template reads the depth group.
-        let own = !prepass || bucket.prepass_own;
+        let own = own_of(bucket);
         let group = if own {
             ids::frame_group(view)
         } else {
@@ -168,7 +235,6 @@ pub(super) fn record_bundle(
             )?;
         }
     }
-    list.push(Op::EndBundle, &[])?;
     Ok(())
 }
 

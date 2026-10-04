@@ -175,6 +175,17 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
+# The outline effect's mask: outlined objects drawn as instanced meshes, which mark every part of
+# them, and with OUTLINE_VISIBLE the parts that nothing hides. It reads each instance as the mesh
+# templates do, and loads by device with them. SKIN skins in the vertex shader, as the mesh
+# templates' SKIN builds do.
+[shaders.outline_mask]
+file = "outline_mask.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["SKIN", "OUTLINE_VISIBLE"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "OUTLINE_VISIBLE", "SKIN"], targets = ["glsl"] }
+
 # Ambient occlusion's steps at a fraction of the render size, three.js's GTAOPass: `depth` copies
 # one texel of the depth prepass's depth per pixel, `horizon` finds how open each surface is, and
 # `denoise` blurs it along each surface. The opaque pass then reads the result (null3d::gtao). The
