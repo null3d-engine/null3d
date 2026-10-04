@@ -26,6 +26,7 @@ import { GRADING_IMAGE } from '../../bench/scenes/grading.ts';
 import { LIGHTS_IMAGE } from '../../bench/scenes/lights.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
+import { OUTLINE_IMAGE } from '../../bench/scenes/outline.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { SKINNING_HOLD, SKINNING_IMAGE } from '../../bench/scenes/skinning.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
@@ -185,6 +186,37 @@ function gradingTests(): ImageTest[] {
 			deviceTolerance: EIGHT_BIT_TOLERANCE,
 		},
 		test('lut-vignette-scale-50', '?lut=warm&mix&vignette&scale=0.5'),
+	];
+}
+
+/** The sketch of the outline tests: a sphere half behind a wall and a box (bench/scenes/outline.ts). */
+const OUTLINE_SKETCH = 'tests/pages/sketches/outline-sketch.ts';
+
+/**
+ * Outlines on every tier: three.js's default outline, and a wide colored one with glow and a
+ * bright hidden edge color, around a sphere half behind a wall and a box in the open. At half the
+ * render scale, the steps draw into the corners of the same targets. Compatibility mode keeps the
+ * 8-bit path with MSAA, where the final pass adds the edges after the tone mapping. The page's
+ * switch that turns HDR off puts the other tiers on that path too. The parity test compares the
+ * two outlines with three.js's OutlinePass.
+ */
+function outlineTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${OUTLINE_SKETCH}${query}`,
+		hold: 0,
+		size: [OUTLINE_IMAGE.width, OUTLINE_IMAGE.height],
+	});
+	return [
+		test('outline-plain', '?outline=plain'),
+		test('outline-glow', '?outline=glow'),
+		test('outline-scale-50', '?outline=glow&scale=0.5'),
+		{
+			...test('outline-8-bit', '?outline=glow'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			expect: { hdr: false },
+		},
 	];
 }
 
@@ -520,6 +552,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...toneMappingTests(),
 	...antialiasTests(),
 	...bloomTests(),
+	...outlineTests(),
 	...gradingTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
 	// alpha: the output spec checks the alpha of the captured pixels.
@@ -742,6 +775,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			tiers: ['webgpu', 'compat'],
 			switches: ['skinning=vertex'],
 			reference: variant ? `skinning-${variant}` : 'skinning',
+		}),
+	),
+	// The middle character outlined: the outline's mask skins it in its pose, from the skinning
+	// pass's vertices or in the vertex shader, and on WebGL2 always in the vertex shader. Each tier
+	// draws the outline's steps in its own way, so each has its own image.
+	...(['', '-vertex'] as const).map(
+		(way): ImageTest => ({
+			name: `skinning-outline${way}`,
+			sketch: 'tests/pages/sketches/skinning-sketch.ts?outline',
+			hold: SKINNING_HOLD,
+			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+			...(way
+				? {
+						tiers: ['webgpu', 'compat'],
+						switches: ['skinning=vertex'],
+						reference: 'skinning-outline',
+					}
+				: {}),
 		}),
 	),
 	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the

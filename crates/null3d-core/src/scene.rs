@@ -123,13 +123,18 @@ pub mod flags {
     /// Culled with a bounding sphere of its own, whose centre the local centre array holds,
     /// instead of its mesh's sphere.
     pub const CUSTOM_BOUNDS: u32 = 1 << 5;
+    /// Outlined: the object draws into the outline effect's mask, so the final pass draws an
+    /// outline around it while the sketch turns the effect on.
+    pub const OUTLINED: u32 = 1 << 6;
     /// The bits that change an object's world bounding sphere.
     pub const BOUNDS: u32 = UNCULLED | CUSTOM_BOUNDS;
     /// The bits that choose where an object draws besides its views: the shadow maps it draws
     /// into, and the shaders that read them.
     pub const SHADOWS: u32 = CAST_SHADOWS | RECEIVE_SHADOWS;
+    /// The bits that choose the draw tables an object joins, so a change rebuilds them.
+    pub const TABLES: u32 = SHADOWS | OUTLINED;
     /// The bits that [`super::op::SET_FLAGS`] changes. The other bits have operations of their own.
-    pub const SETTABLE: u32 = SHADOWS | BOUNDS;
+    pub const SETTABLE: u32 = TABLES | BOUNDS;
 }
 
 /// Operation numbers of [`Command`] records (the low byte of [`Command::op`]).
@@ -330,11 +335,11 @@ impl Command {
 
     /// True for a change that keeps the scene's structure, so the renderer updates what it draws
     /// without rebuilding its tables: showing or hiding an object, its layers, a render order, and
-    /// flags that leave the object's bounds and shadows alone.
+    /// flags that leave the object's bounds and the draw tables it joins alone.
     pub const fn keeps_structure(&self) -> bool {
         match self.opcode() {
             op::SET_VISIBLE | op::SET_LAYERS | op::SET_RENDER_ORDER => true,
-            op::SET_FLAGS => self.a & (flags::BOUNDS | flags::SHADOWS) == 0,
+            op::SET_FLAGS => self.a & (flags::BOUNDS | flags::TABLES) == 0,
             _ => false,
         }
     }
@@ -2691,6 +2696,13 @@ mod tests {
         scene
             .apply_commands(&[Command::set_flags(h, flags::UNCULLED, 0)], 5)
             .unwrap();
+        assert!(scene.take_structure_changed());
+        // Outlining an object moves it into the outline's draw tables.
+        let outlined = flags::OUTLINED;
+        scene
+            .apply_commands(&[Command::set_flags(h, outlined, outlined)], 6)
+            .unwrap();
+        assert_eq!(scene.flags()[slot] & outlined, outlined);
         assert!(scene.take_structure_changed());
     }
 

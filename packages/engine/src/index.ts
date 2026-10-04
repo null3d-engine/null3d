@@ -84,6 +84,7 @@ export type { Ray } from './scene/frame-cameras';
 export type { Lut, LutDomain } from './scene/lut';
 export type {
 	BloomSettings,
+	OutlineSettings,
 	Post,
 	PostSettings,
 	ToneMapping,

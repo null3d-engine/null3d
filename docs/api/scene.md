@@ -287,6 +287,7 @@ The group that holds a copy of a model, which `scene.instantiate` returns. Its c
 | --- | --- |
 | `batches: readonly InstanceBatch[]` | The instance batches of the nodes with instancing of their own, as the file gives them. Their rows are placed in the world when the copy is created, and they do not move with the group. |
 | `find(name: string): Object3D \| undefined` | The copy's first object with `name`, in the file's order, which is not destroyed, or undefined. It searches the copy's objects, so call it at setup. |
+| `setOutlined(outlined: boolean): void` | Outlines every mesh of the copy, or stops, as `Mesh.setOutlined` does for one mesh: the whole model takes one outline, as three.js's `OutlinePass` outlines a selected group. The copy's instance batches take none. |
 
 ### `Scene`
 

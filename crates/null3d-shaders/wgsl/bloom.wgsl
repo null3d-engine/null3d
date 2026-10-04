@@ -4,6 +4,9 @@
 // and then down, at half the size of that level. The weights and the steps follow three.js's
 // UnrealBloomPass: pairs of taps merge into one filtered read each.
 //
+// A step filters all four channels, alpha too. Bloom reads only the color, and the outline effect's
+// blurs, which draw with the same steps, read the alpha too.
+//
 // Each target holds its drawn corner, as the render scale leaves it, so a read clamps inside the
 // source's drawn corner, as a smaller texture would clamp at its edge. WebGPU draws a corner into a
 // target's first rows, and WebGL2, which counts rows from the bottom, into its last, so the
@@ -49,9 +52,9 @@ fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
     return vec4f(x, y, 0.5, 1.0);
 }
 
-/// The source's filtered color at `uv`, clamped inside its drawn corner.
-fn tap(uv: vec2f) -> vec3f {
-    return textureSampleLevel(source, source_sampler, clamp(uv, settings.bounds.xy, settings.bounds.zw), 0.0).rgb;
+/// The source's filtered texel at `uv`, clamped inside its drawn corner.
+fn tap(uv: vec2f) -> vec4f {
+    return textureSampleLevel(source, source_sampler, clamp(uv, settings.bounds.xy, settings.bounds.zw), 0.0);
 }
 
 @fragment
@@ -63,6 +66,6 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
         sum += (tap(uv + along) + tap(uv - along)) * settings.weights[pair >> 2u][pair & 3u];
     }
     // three.js's bright pass: a soft step from the threshold up.
-    let keep = smoothstep(settings.threshold, settings.threshold + settings.knee, dot(sum, LUMINANCE));
-    return vec4f(sum * keep, 1.0);
+    let keep = smoothstep(settings.threshold, settings.threshold + settings.knee, dot(sum.rgb, LUMINANCE));
+    return sum * keep;
 }

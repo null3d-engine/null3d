@@ -8,6 +8,10 @@
 //! the view's bundle in the same render pass. It draws the same buckets from the same compacted
 //! instances and indirect draws, with each bucket's depth pipeline, and leaves out the buckets that
 //! have none. It binds the view's frame uniform through a group of the depth template's layout.
+//!
+//! The outline view's bundle draws the outlined layout's buckets into the outline mask, twice: once
+//! to mark every part of each object, then again to mark the parts that nothing hides. It binds
+//! the outline view's frame uniform through a group of the depth template's layout too.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, index_format, layout as bind_layout, resource_kind, sizes,
@@ -15,7 +19,7 @@ use null3d_gpu::drawlist::{
 
 use super::cull::INDIRECT_BYTES;
 use super::ids;
-use super::layout::Layout;
+use super::layout::{Bucket, Layout};
 use super::skin::DrawGroups;
 use crate::frame::{MeshBuffers, RecordError, UploadArena};
 use crate::pipelines::PassTargets;
@@ -78,19 +82,30 @@ pub(super) fn upload(
     Ok(())
 }
 
-/// Records a view's bundle: each draw of every bucket of the layout, with the bucket's slice of
-/// the view's compacted instances and the bind group of its material's map, from its mesh page's
-/// buffers in `meshes`, into `targets`. With `prepass`, it records the view's bundle of the depth
-/// prepass instead.
+/// What a view's bundle draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Bundle {
+    /// The view's objects, each bucket with its pipeline and its material's maps.
+    Opaque,
+    /// The depth of the camera view's opaque objects, for the depth prepass.
+    Prepass,
+    /// The outline view's objects into the outline mask: every bucket with the pipeline that marks
+    /// every part, then every bucket again with the pipeline that marks the parts nothing hides.
+    Outline,
+}
+
+/// Records a view's bundle of `kind`: each draw of every bucket of the layout, with the bucket's
+/// slice of the view's compacted instances and, for the opaque objects, the bind group of its
+/// material's map, from its mesh page's buffers in `meshes`, into `targets`.
 pub(super) fn record_bundle(
     list: &mut DrawList,
     view: ViewId,
     layout: &Layout,
     meshes: &MeshBuffers,
     targets: PassTargets,
-    prepass: bool,
+    kind: Bundle,
 ) -> Result<(), RecordError> {
-    let (bundle, frame_group) = if prepass {
+    let (bundle, frame_group) = if kind == Bundle::Prepass {
         (ids::prepass_bundle(view), ids::prepass_group(view))
     } else {
         (ids::bundle(view), ids::frame_group(view))
@@ -105,14 +120,32 @@ pub(super) fn record_bundle(
         ],
     )?;
     list.push(Op::SetBindGroup, &[0, frame_group, 0])?;
+    match kind {
+        Bundle::Opaque => draw_buckets(list, view, layout, meshes, |b| b.pipeline, true)?,
+        Bundle::Prepass => draw_buckets(list, view, layout, meshes, |b| b.prepass, false)?,
+        Bundle::Outline => {
+            draw_buckets(list, view, layout, meshes, |b| b.pipeline, false)?;
+            draw_buckets(list, view, layout, meshes, |b| b.prepass, false)?;
+        }
+    }
+    list.push(Op::EndBundle, &[])?;
+    Ok(())
+}
+
+/// Records the draws of every bucket of the layout with the pipeline that `pipeline_of` picks,
+/// leaving out the buckets for which it gives 0, with the maps' bind groups when `maps`.
+fn draw_buckets(
+    list: &mut DrawList,
+    view: ViewId,
+    layout: &Layout,
+    meshes: &MeshBuffers,
+    pipeline_of: impl Fn(&Bucket) -> u32,
+    maps: bool,
+) -> Result<(), RecordError> {
     let (mut pipeline, mut vertices, mut indices) = (None, None, None);
     let mut groups = DrawGroups::default();
     for bucket in &layout.buckets {
-        let id = if prepass {
-            bucket.prepass
-        } else {
-            bucket.pipeline
-        };
+        let id = pipeline_of(bucket);
         if id == 0 {
             continue;
         }
@@ -120,8 +153,7 @@ pub(super) fn record_bundle(
             list.push(Op::SetPipeline, &[id])?;
             pipeline = Some(id);
         }
-        let maps = if prepass { 0 } else { bucket.group };
-        groups.set(list, maps, bucket.skins)?;
+        groups.set(list, if maps { bucket.group } else { 0 }, bucket.skins)?;
         list.push(
             Op::SetVertexBuffer,
             &[
@@ -153,7 +185,6 @@ pub(super) fn record_bundle(
             )?;
         }
     }
-    list.push(Op::EndBundle, &[])?;
     Ok(())
 }
 

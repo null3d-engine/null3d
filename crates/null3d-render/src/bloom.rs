@@ -56,7 +56,7 @@ const KNEE: f32 = 0.01;
 
 /// Bytes between two steps' blocks in the uniform buffer: the offset alignment that bind groups
 /// need for a buffer range.
-const BLOCK: usize = 256;
+pub(crate) const BLOCK: usize = 256;
 
 /// Where the final pass's block starts in the uniform buffer.
 pub(crate) const FINAL_OFFSET: u32 = (STEPS * BLOCK) as u32;
@@ -99,10 +99,10 @@ impl Bloom {
 /// One step's block, as `bloom.wgsl` lays out its `Step` struct.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct StepBlock {
-    scale: [f32; 4],
-    origin: [f32; 4],
-    bounds: [f32; 4],
+pub(crate) struct StepBlock {
+    pub(crate) scale: [f32; 4],
+    pub(crate) origin: [f32; 4],
+    pub(crate) bounds: [f32; 4],
     center: f32,
     pairs: u32,
     threshold: f32,
@@ -127,7 +127,7 @@ struct FinalBlock {
 /// of the texels it merges and carries their sum, so a linear filter reads two neighbors in one tap
 /// exactly. Fewer reads merge more texels each. Returns the center's weight, the number of reads
 /// per side, and each read's offset and weight.
-pub(crate) fn kernel(kernel: u32, divisor: u32) -> (f32, u32, [f32; 12], [f32; 12]) {
+pub(crate) fn kernel(kernel: u32, divisor: u32) -> Taps {
     let sigma = kernel as f32 / 3.0;
     let coefficient = |i: u32| {
         let i = i as f32;
@@ -185,17 +185,18 @@ const fn rows_before(extent: u32, corner: u32, rows_from_bottom: bool) -> u32 {
     if rows_from_bottom { extent - corner } else { 0 }
 }
 
-/// The block of step `step` for a canvas of `canvas` pixels at render scale `scale`, with rows
-/// counted from the bottom on WebGL2 (`rows_from_bottom`).
-fn step_block(
-    step: usize,
+/// The block of a step that draws a target of `target` size from a texture of `source` size, for a
+/// canvas of `canvas` pixels at render scale `scale`, with rows counted from the bottom on WebGL2
+/// (`rows_from_bottom`): each pixel of the target's drawn corner maps onto the source's drawn
+/// corner, and reads clamp inside it. The block copies the source with a linear filter, and keeps
+/// every pixel, until a step sets its threshold or its blur.
+pub(crate) fn corner_block(
+    source: Size,
+    target: Size,
     canvas: (u32, u32),
     scale: RenderScale,
-    bloom: Bloom,
-    divisor: u32,
     rows_from_bottom: bool,
 ) -> StepBlock {
-    let (source, target) = (source_size(step), step_size(step));
     let corner = source.viewport(canvas, scale);
     let extent = source.extent(canvas);
     let drawn = target.viewport(canvas, scale);
@@ -206,50 +207,76 @@ fn step_block(
     // A pixel's place in the target's corner maps onto the source's corner.
     let source_rows = rows_before(extent.1, corner.1, rows_from_bottom) as f32;
     let target_rows = rows_before(target.extent(canvas).1, drawn.1, rows_from_bottom) as f32;
-    let origin = [
-        0.0,
-        source_rows / extent.1 as f32 - target_rows * per_pixel[1],
-        0.0,
-        0.0,
-    ];
-    let bounds = [
-        0.5 / extent.0 as f32,
-        (source_rows + 0.5) / extent.1 as f32,
-        (corner.0 as f32 - 0.5) / extent.0 as f32,
-        (source_rows + corner.1 as f32 - 0.5) / extent.1 as f32,
-    ];
+    StepBlock {
+        scale: [per_pixel[0], per_pixel[1], 0.0, 0.0],
+        origin: [
+            0.0,
+            source_rows / extent.1 as f32 - target_rows * per_pixel[1],
+            0.0,
+            0.0,
+        ],
+        bounds: [
+            0.5 / extent.0 as f32,
+            (source_rows + 0.5) / extent.1 as f32,
+            (corner.0 as f32 - 0.5) / extent.0 as f32,
+            (source_rows + corner.1 as f32 - 0.5) / extent.1 as f32,
+        ],
+        center: 1.0,
+        pairs: 0,
+        // Every pixel passes: luminance is never below 0.
+        threshold: -1.0,
+        knee: 1.0,
+        ..StepBlock::default()
+    }
+}
+
+/// A separable blur's taps on each side of its center: the center tap's weight, the number of
+/// reads per side, and each read's offset in pixels of the target and its weight.
+pub(crate) type Taps = (f32, u32, [f32; 12], [f32; 12]);
+
+impl StepBlock {
+    /// The same step as a separable blur across, or down with `across` false, with `taps`.
+    pub(crate) fn blur(self, across: bool, (center, pairs, offsets, weights): Taps) -> Self {
+        let direction = if across {
+            [self.scale[0], 0.0]
+        } else {
+            [0.0, self.scale[1]]
+        };
+        StepBlock {
+            scale: [self.scale[0], self.scale[1], direction[0], direction[1]],
+            center,
+            pairs,
+            offsets,
+            weights,
+            ..self
+        }
+    }
+}
+
+/// The block of step `step` for a canvas of `canvas` pixels at render scale `scale`, with rows
+/// counted from the bottom on WebGL2 (`rows_from_bottom`).
+fn step_block(
+    step: usize,
+    canvas: (u32, u32),
+    scale: RenderScale,
+    bloom: Bloom,
+    divisor: u32,
+    rows_from_bottom: bool,
+) -> StepBlock {
+    let block = corner_block(
+        source_size(step),
+        step_size(step),
+        canvas,
+        scale,
+        rows_from_bottom,
+    );
     match level_of(step) {
         None => StepBlock {
-            scale: [per_pixel[0], per_pixel[1], 0.0, 0.0],
-            origin,
-            bounds,
-            center: 1.0,
-            pairs: 0,
             threshold: bloom.threshold,
             knee: KNEE,
-            ..StepBlock::default()
+            ..block
         },
-        Some(level) => {
-            let (center, pairs, offsets, weights) = kernel(KERNELS[level], divisor);
-            let across = step % 2 == 1;
-            let direction = if across {
-                [per_pixel[0], 0.0]
-            } else {
-                [0.0, per_pixel[1]]
-            };
-            StepBlock {
-                scale: [per_pixel[0], per_pixel[1], direction[0], direction[1]],
-                origin,
-                bounds,
-                center,
-                pairs,
-                // Every pixel passes: luminance is never below 0.
-                threshold: -1.0,
-                knee: 1.0,
-                offsets,
-                weights,
-            }
-        }
+        Some(level) => block.blur(step % 2 == 1, kernel(KERNELS[level], divisor)),
     }
 }
 
@@ -265,7 +292,7 @@ pub(crate) struct BloomIds {
 }
 
 /// The pipeline of the steps: one triangle into a target of bloom's format.
-const fn pipeline(format: u32) -> PipelineKey {
+pub(crate) const fn pipeline(format: u32) -> PipelineKey {
     PipelineKey {
         template: template::BLOOM,
         permutation: 0,
@@ -443,7 +470,7 @@ impl BloomPass {
 }
 
 /// A block's bytes: blocks are `repr(C)` and made of 4-byte fields only.
-fn bytes_of<T: Copy>(block: &T) -> &[u8] {
+pub(crate) fn bytes_of<T: Copy>(block: &T) -> &[u8] {
     // SAFETY: callers pass `repr(C)` blocks of 4-byte fields, which have no padding, so every
     // byte is initialized.
     unsafe {

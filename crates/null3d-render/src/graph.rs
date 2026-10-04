@@ -400,6 +400,12 @@ impl Pass {
         }
     }
 
+    /// The same declaration under another name, as a second build of one pass needs.
+    pub fn named(mut self, name: impl Into<Cow<'static, str>>) -> Self {
+        self.name = name.into();
+        self
+    }
+
     /// The size the pass draws at, and that the targets it creates take.
     pub fn size(mut self, size: Size) -> Self {
         self.size = size;

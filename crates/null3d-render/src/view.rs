@@ -29,8 +29,8 @@ pub const MAX_VIEWS: usize = 32;
 
 /// The most views of every kind: the views of cameras, then the cascades of the directional
 /// light's shadows, then the tiles of the point and spot lights' shadow atlas, which cull and draw
-/// as views do.
-pub const MAX_VIEW_IDS: usize = MAX_VIEWS + MAX_CASCADES + MAX_TILES;
+/// as views do, then the view of the outline effect's mask.
+pub const MAX_VIEW_IDS: usize = MAX_VIEWS + MAX_CASCADES + MAX_TILES + 1;
 
 /// The first id of the shadow atlas's tiles.
 const FIRST_TILE: usize = MAX_VIEWS + MAX_CASCADES;
@@ -42,6 +42,10 @@ pub struct ViewId(u16);
 impl ViewId {
     /// The camera's view, which draws what the canvas shows.
     pub const CAMERA: ViewId = ViewId(0);
+
+    /// The view of the outline effect's mask: the camera's view, which culls and draws only the
+    /// outlined objects, after every other view.
+    pub const OUTLINE: ViewId = ViewId((FIRST_TILE + MAX_TILES) as u16);
 
     /// The view's place in the list, from 0.
     pub const fn index(self) -> usize {
@@ -75,7 +79,7 @@ impl ViewId {
     /// The tile of a shadow atlas tile's view, or `None` for another view.
     pub const fn tile_index(self) -> Option<usize> {
         let index = self.0 as usize;
-        if index >= FIRST_TILE {
+        if index >= FIRST_TILE && index < FIRST_TILE + MAX_TILES {
             Some(index - FIRST_TILE)
         } else {
             None

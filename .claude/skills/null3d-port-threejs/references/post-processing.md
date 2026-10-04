@@ -34,7 +34,7 @@ Versions: the HDR scene buffer, the final pass, `post.set({ toneMapping, exposur
 | `FXAAPass`, `ShaderPass(FXAAShader)` | `createEngine({ antialias: 'fxaa' })` on the page | FXAA runs inside the final pass; the Low preset uses it |
 | `SMAAPass`, `SSAARenderPass` | MSAA, which the presets from Medium use, or `createEngine({ antialias: 'fxaa' })` | No SMAA or SSAA |
 | `TAARenderPass` | Not in 1.0 | MSAA meanwhile |
-| `OutlinePass` (`edgeStrength`, `edgeThickness`, `visibleEdgeColor`, `hiddenEdgeColor`, `pulsePeriod`, `selectedObjects`) | `outline: { color, thickness }` and `obj.setOutlined(true)` (0.2) | Hidden-edge color and pulsing: custom effect or after 1.0 |
+| `OutlinePass` (`visibleEdgeColor`, `hiddenEdgeColor`, `edgeStrength`, `edgeThickness`, `edgeGlow`, `selectedObjects`) | `outline: { color, hiddenColor, strength, thickness, glow }` and `mesh.setOutlined(true)` (0.2) | Same meanings, so keep the numbers. Select a model with `setOutlined` on its copy from `scene.instantiate`. One style covers every outlined mesh. `pulsePeriod`: change `glow` every frame. No pattern texture |
 | `LUTPass` with `LUTCubeLoader` or `LUT3dlLoader` | `lut: await assets.loadLut(url)`, `lutIntensity` (0.2) | `intensity` becomes `lutIntensity`. The table grades after the tone mapping, as after `OutputPass`. `LUTImageLoader` strips: export a `.cube` file |
 | `ShaderPass(VignetteShader)` (`offset`, `darkness`) | `vignette: { offset, darkness }` (0.2) | Same meanings, so keep the two numbers |
 | `BokehPass` (depth of field) | Not in 1.0 | Custom `hdr` effect with `sampleDepth` (0.2), or skip |
@@ -56,7 +56,7 @@ Versions: the HDR scene buffer, the final pass, `post.set({ toneMapping, exposur
 | `LUT3DEffect` | `lut: await assets.loadLut(url)` (0.2) |
 | `ChromaticAberrationEffect`, `NoiseEffect`, `ScanlineEffect`, `PixelationEffect` | `post.addEffect` (0.2; per-pixel, so they merge into the final pass) |
 | `DepthOfFieldEffect`, `GodRaysEffect`, `SSREffect` | Not in 1.0; custom `hdr` effects (0.2) where essential |
-| `OutlineEffect`, `SelectiveBloomEffect` | `outline` (0.2); selective bloom through emissive strength and the bloom threshold (0.2) |
+| `OutlineEffect`, `SelectiveBloomEffect` | `outline` (0.2) with `OutlinePass`'s meanings, so tune `edgeStrength` and the width again; selective bloom through emissive strength and the bloom threshold (0.2) |
 
 ## 4. three.js WebGPU post nodes (TSL)
 

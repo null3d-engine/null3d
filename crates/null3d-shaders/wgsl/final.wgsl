@@ -20,6 +20,12 @@
 // smooth, so a pixel reads it once at its own place, also where it blends four texels of the
 // corner. Bloom adds coverage as its brightest channel, so it glows over a transparent canvas.
 //
+// While objects are outlined, the pass adds the outline effect's edges and glow outside them, as
+// three.js's OutlinePass adds its overlay: the mask and both edge levels, read with a linear filter
+// at the pixel's place, as bloom's levels are. The edges join the scene color before the output
+// transform. On the 8-bit path the scene color holds display color already, so the pass maps the
+// edges alone through the output transform and adds them after it.
+//
 // Last, the pass grades each pixel's display color, as three.js's LUTPass and VignetteShader do
 // after its OutputPass: a color grading table, then the vignette, each while its flag is set. The
 // table is a 3D texture that maps a display color to its graded color, read with a linear filter.
@@ -32,21 +38,57 @@ const DISPLAY_COLOR: u32 = 1u;
 const VIGNETTE: u32 = 2u;
 /// The settings flag that turns the color grading table on.
 const LUT: u32 = 4u;
+/// The settings flag that adds the outline effect's edges.
+const OUTLINE: u32 = 8u;
 
 /// The pass's settings: the output settings, then the vignette's offset and darkness, then the
 /// scale and the offset that place a display color in the table, with the table's intensity in
-/// the scale's last value.
+/// the scale's last value, then the outline's strength and glow.
 struct Settings {
     output: null3d::tonemap::Output,
     vignette: vec4f,
     lut_scale: vec4f,
     lut_offset: vec4f,
+    outline: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> settings: Settings;
 @group(0) @binding(1) var scene_color: texture_2d<f32>;
 @group(0) @binding(9) var lut: texture_3d<f32>;
 @group(0) @binding(10) var lut_sampler: sampler;
+@group(0) @binding(11) var outline_mask: texture_2d<f32>;
+@group(0) @binding(12) var outline_edges: texture_2d<f32>;
+@group(0) @binding(13) var outline_glow: texture_2d<f32>;
+
+/// Where a texture of `size` texels that a pass drew at the render size halved `halvings` times
+/// holds `uv`, a place on the drawn corner from 0 to 1. The place stays within that corner's texel
+/// centers.
+fn level_uv(size: vec2u, halvings: u32, uv: vec2f, render: vec2f) -> vec2f {
+    let extent = vec2f(size);
+    let corner = ceil(render / f32(1u << halvings));
+#ifdef WEBGL2
+    // WebGL2 counts rows from the bottom, and draws a corner into its target's top rows.
+    let origin = vec2f(0.0, extent.y - corner.y);
+#else
+    let origin = vec2f(0.0);
+#endif
+    return (origin + clamp(uv * corner, vec2f(0.5), corner - 0.5)) / extent;
+}
+
+/// The outline's light at `uv` on the drawn corner, with its coverage: three.js's overlay, the
+/// strength times the edges plus the glow outside the outlined objects, added with its own alpha
+/// as the weight, as three.js's additive blend adds it.
+fn outline_light(uv: vec2f, render: vec2f) -> vec4f {
+    if (settings.output.flags & OUTLINE) == 0u {
+        return vec4f(0.0);
+    }
+    let mask = textureSampleLevel(outline_mask, lut_sampler, level_uv(textureDimensions(outline_mask), 0u, uv, render), 0.0);
+    let edges = textureSampleLevel(outline_edges, lut_sampler, level_uv(textureDimensions(outline_edges), 1u, uv, render), 0.0);
+    let glow = textureSampleLevel(outline_glow, lut_sampler, level_uv(textureDimensions(outline_glow), 2u, uv, render), 0.0);
+    let overlay = settings.outline.x * (1.0 - mask.r) * (edges + glow * settings.outline.y);
+    let light = overlay.rgb * overlay.a;
+    return vec4f(light, max(light.r, max(light.g, light.b)));
+}
 
 #ifdef BLOOM
 /// Each level's weight, with the strength in it: levels 0 to 3, then level 4 in `last.x`.
@@ -62,21 +104,6 @@ struct Bloom {
 @group(0) @binding(6) var bloom_level3: texture_2d<f32>;
 @group(0) @binding(7) var bloom_level4: texture_2d<f32>;
 @group(0) @binding(8) var bloom_sampler: sampler;
-
-/// Where level `halvings - 1` holds `uv`, a place on the drawn corner from 0 to 1, in a texture of
-/// `size` texels. The level drew into the corner of its texture that the render size halved
-/// `halvings` times gives, and the place stays within that corner's texel centers.
-fn level_uv(size: vec2u, halvings: u32, uv: vec2f, render: vec2f) -> vec2f {
-    let extent = vec2f(size);
-    let corner = ceil(render / f32(1u << halvings));
-#ifdef WEBGL2
-    // WebGL2 counts rows from the bottom, and draws a corner into its target's top rows.
-    let origin = vec2f(0.0, extent.y - corner.y);
-#else
-    let origin = vec2f(0.0);
-#endif
-    return (origin + clamp(uv * corner, vec2f(0.5), corner - 0.5)) / extent;
-}
 
 /// Bloom at `uv` on the drawn corner, with its coverage.
 fn glow(uv: vec2f, render: vec2f) -> vec4f {
@@ -262,7 +289,10 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let whole = all(render == size);
     // The pixel's place on the drawn corner, from 0 to 1 in the rows' own order, which every
     // target of the frame shares.
-    let light = glow(position.xy / size, render);
+    let uv = position.xy / size;
+    let edges = outline_light(uv, render);
+    let display_color = (settings.output.flags & DISPLAY_COLOR) != 0u;
+    let light = glow(uv, render) + select(edges, vec4f(0.0), display_color);
     var color = vec4f(0.0);
     if whole {
         color = display(pixel_color(position.xy) + light, position.xy);
@@ -287,6 +317,11 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
         let texel = corner_texel(min(first + corner, render - 1.0), size);
         let texel_color = textureLoad(scene_color, texel, 0) + light;
         color += weights.x * weights.y * display(texel_color, position.xy);
+    }
+    if display_color && edges.a > 0.0 {
+        let mapped = null3d::tonemap::tone_map(edges.rgb, settings.output);
+        let shown = saturate(null3d::tonemap::encode(mapped, position.xy));
+        color = min(color + vec4f(shown, edges.a), vec4f(1.0));
     }
     return grade(color, position.xy, size);
 }

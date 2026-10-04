@@ -26,6 +26,7 @@ use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::RenderScale;
 use null3d_render::light_grid::{ClusterParams, DEFAULT_GRID, GridView, LightGrid, LightLimits};
 use null3d_render::materials::Shading;
+use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::parallel_record::ParallelRecorder;
 use null3d_render::shadow_tiles::TileSettings;
@@ -295,6 +296,58 @@ fn render_scale_changes_allocate_nothing() {
             ..CpuCulledConfig::default()
         }));
         assert_eq!(scale_change_allocations(webgl2), 0, "WebGL2, {scene_color}");
+    }
+}
+
+/// Records warm-up frames of a world with two outlined objects, then frames whose outline glow and
+/// render scale change every frame, while the camera moves, and returns what those allocated.
+fn outline_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    let settings = world.renderer.settings_mut();
+    settings.set_render_scaling(true);
+    settings.set_outline(Some(Outline::default()));
+    let outlined = flags::OUTLINED;
+    let commands: Vec<_> = world.objects[..2]
+        .iter()
+        .map(|&object| Command::set_flags(object, outlined, outlined))
+        .collect();
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    world.record(true);
+    record_until(&mut world, 6, false);
+    CountingAllocator::arm();
+    for frame in 7..=200 {
+        world.frame = frame;
+        world.renderer.settings_mut().set_outline(Some(Outline {
+            glow: (frame % 7) as f32 * 0.25,
+            ..Outline::default()
+        }));
+        world.render_scale = RenderScale::from_thousandths(500 + (frame * 37) % 501);
+        world.aim([0.0, 1.0, 20.0], frame as f32 * 0.002, 0.0);
+        world.record(false);
+    }
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn frames_with_outlines_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    for scene_color in [format::RGBA16_FLOAT, format::CANVAS] {
+        let canvas = CanvasOutput {
+            scene_color: SceneColor::from_format(scene_color),
+            antialias: Antialias::Msaa,
+            transparent: false,
+        };
+        let webgpu = World::with_config(RendererConfig {
+            canvas,
+            ..RendererConfig::default()
+        });
+        assert_eq!(outline_allocations(webgpu), 0, "WebGPU, {scene_color}");
+        let webgl2 = World::build(CpuCulledRenderer::new(CpuCulledConfig {
+            canvas,
+            multi_draw: true,
+            ..CpuCulledConfig::default()
+        }));
+        assert_eq!(outline_allocations(webgl2), 0, "WebGL2, {scene_color}");
     }
 }
 
