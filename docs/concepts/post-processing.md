@@ -3,12 +3,12 @@ id: concepts/post-processing
 title: The post-processing chain
 status: experimental
 since: "0.2"
-summary: "HDR scene color, ambient occlusion at half size, bloom at half size and below, and one final pass for exposure, tone mapping, FXAA, dithering, color grading and the vignette."
+summary: "HDR scene color, ambient occlusion at half size, bloom at half size and below, an outline mask, and one final pass for exposure, tone mapping, FXAA, dithering, outlines, color grading and the vignette."
 ---
 
 # The post-processing chain
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. In this version the chain has HDR scene color, ambient occlusion, bloom, and the final pass with color grading and the vignette. Outlines and custom effects are not built yet. Coding agents must not use them.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. In this version the chain has HDR scene color, ambient occlusion, bloom, outlines, and the final pass with color grading and the vignette. Custom effects are not built yet. Coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -18,13 +18,15 @@ flowchart LR
     bright --> levels["Five blurred levels:<br/>each half the size<br/>of the one before"]
     scene --> final["Final pass: adds bloom,<br/>then exposure, tone mapping,<br/>FXAA and dithering"]
     levels --> final
-    final --> grade["In the same pass:<br/>color grading table,<br/>then the vignette"]
+    mask["Outline mask:<br/>outlined objects"] --> line
+    final --> line["In the same pass:<br/>the outline's line"]
+    line --> grade["In the same pass:<br/>color grading table,<br/>then the vignette"]
     grade --> canvas["Canvas"]
 ```
 
 Ambient occlusion runs before the scene's opaque objects shade. It reads the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the result. The scene passes draw linear color with no upper limit into a float target, the scene color. Effects that need that range, such as bloom, read it before the final pass. The final pass then does all of its work for each pixel in one pass. It adds the effects' results and applies the exposure and the tone mapping. Then it smooths edges with FXAA, encodes sRGB and dithers. Last, it grades the display color with a color grading table and the vignette, when the sketch sets them.
 
-Every full-screen pass reads and writes the whole screen once more. On a phone at its full resolution that is tens of megabytes per frame, so the engine keeps such passes few. Bloom's passes draw at half the render size and below, and the final pass reads their results without a pass of its own.
+Every full-screen pass reads and writes the whole screen once more. On a phone at its full resolution that is tens of megabytes per frame, so the engine keeps such passes few. Bloom's passes draw at half the render size and below. The outline draws only a mask of the outlined meshes. The final pass reads their results without a pass of its own.
 
 Turn effects on with `post.set` in the sketch:
 
@@ -117,6 +119,26 @@ Ambient occlusion adds the depth prepass and three small passes at half the rend
 - `aoScale: 0.25` draws at a quarter of the render size each way, with softer occlusion. Its steps then find a quarter as many texels. When frames take too long, the frame-budget governor takes that step last.
 - Turning ambient occlusion on or off adds or removes passes. The last image stays on screen while the new pipelines build, which takes a few frames.
 
+## Outlines
+
+Outlines draw a crisp line around the meshes that `setOutlined(true)` marks:
+
+1. The mask pass draws the outlined meshes from the camera into a mask of the render size. Its depth test reads the depth that the scene passes drew, so it knows which parts other objects hide. Each mesh draws twice: once to mark all of it, and once to mark the parts that nothing hides.
+2. The final pass reads the mask at each pixel and at 8 places on a circle of the line's width around it. Outside the outlined meshes, a pixel near a marked part is on the line. The line takes `color` beside a part that nothing hides, and `hiddenColor` where every part beside it is hidden.
+3. The final pass paints the line after the tone mapping and before the color grading, so the line shows its colors exactly.
+
+[The post-processing API](../api/post.md#outlines) lists the settings.
+
+- The line has no blur, so it ends as sharply as the meshes' own edges. Its width counts pixels of the canvas, so it stays sharp at every pixel ratio and render scale.
+- The mask pass culls the outlined meshes with the camera's view on its own, so outlined meshes out of view cost nothing.
+- three.js draws every other object's depth again for its hidden parts. The mask pass reads the depth that the scene passes drew instead.
+- The 8-bit path draws the same line as the HDR path.
+- While nothing is outlined, the mask pass and the mask are off, so turning outlines on costs nothing until a mesh is outlined.
+
+### Cost
+
+Outlines draw the outlined meshes twice into the mask, which takes 4 bytes per pixel of the render size. The final pass then reads the mask once at each pixel, and 8 more times outside the outlined meshes. No other pass runs. The scene's depth stays in memory after the scene's render pass, where it could be thrown away before. On a phone's GPU, which keeps the depth on chip, that costs a write of the depth to memory.
+
 ## Color grading and the vignette
 
 A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut`, maps each display color to a graded color. The vignette darkens the picture toward its edges. Both follow three.js: `LUTPass` and `VignetteShader`, placed after its `OutputPass`. [The post-processing API](../api/post.md#color-grading) lists their settings.
@@ -141,6 +163,8 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 - `new UnrealBloomPass(resolution, strength, radius, threshold)` becomes `post.set({ bloom: { strength, radius, threshold } })`. The resolution is the canvas's, so it needs no setting.
 - `new GTAOPass(scene, camera, width, height)` becomes `post.set({ ao: {} })`. Its `updateGtaoMaterial({ radius, thickness, distanceExponent, distanceFallOff, scale, samples })` settings keep their names, with `distanceFalloff` spelled so, and `blendIntensity` becomes `intensity`. Set `quality.set({ aoScale: 0.5 })` too where phones and tablets should draw it.
 - `SSAOPass`, `SAOPass` and the N8AO library also become `post.set({ ao })`. Their settings have other meanings, so start from the defaults and tune `radius` and `scale` by eye.
+- `new OutlinePass(resolution, scene, camera, selectedObjects)` becomes `post.set({ outline: { color, hiddenColor, width } })`, from `visibleEdgeColor` and `hiddenEdgeColor`. `OutlinePass` draws its edge at half size, so a `width` of twice its `edgeThickness` gives about the same line. three.js draws a dark brown line around hidden parts by default, and null3D draws none until `hiddenColor` is set. Each selected mesh calls `setOutlined(true)`. A selected model's copy from `scene.instantiate` calls it once for all of its meshes.
+- `OutlinePass` blurs its edge, and `edgeStrength`, `edgeGlow` and `pulsePeriod` set how bright it is, how far it glows and how fast it pulses. null3D's line is crisp and opaque, so it has none of these settings. To pulse the line, change its color or width every frame.
 - `renderer.toneMapping` and `toneMappingExposure` become `post.set({ toneMapping, exposure })`. three.js applies no tone mapping by default, and null3D applies ACES.
 - `new LUTPass({ lut: result.texture3D, intensity })` after a `LUTCubeLoader` or `LUT3dlLoader` becomes `post.set({ lut: await assets.loadLut(url), lutIntensity: intensity })`.
 - A `ShaderPass(VignetteShader)` with its `offset` and `darkness` uniforms becomes `post.set({ vignette: { offset, darkness } })`.
@@ -148,6 +172,7 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 ## Related pages
 
 - [Post-processing API](../api/post.md): `post.set` and its settings.
+- [Objects and transforms](../api/objects.md#mesh-calls): `setOutlined`.
 - [Color management](color-management.md): HDR color, the final pass and the 8-bit path.
 - [The render graph](render-graph.md): how the passes of a frame are declared and ordered.
 - [Quality presets](quality-presets.md): `bloomSamples`, `aoScale`, the depth prepass and the frame-budget governor.

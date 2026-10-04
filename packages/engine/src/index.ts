@@ -97,6 +97,7 @@ export type {
 export type {
 	AoSettings,
 	BloomSettings,
+	OutlineSettings,
 	Post,
 	PostSettings,
 	ToneMapping,

@@ -29,6 +29,7 @@ import { LINE_IMAGE } from '../../bench/scenes/lines.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { MORPH_IMAGE } from '../../bench/scenes/morph.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
+import { OUTLINE_IMAGE } from '../../bench/scenes/outline.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { SKINNING_HOLD, SKINNING_IMAGE } from '../../bench/scenes/skinning.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
@@ -236,6 +237,37 @@ function gradingTests(): ImageTest[] {
 			deviceTolerance: EIGHT_BIT_TOLERANCE,
 		},
 		test('lut-vignette-scale-50', '?lut=warm&mix&vignette&scale=0.5'),
+	];
+}
+
+/** The sketch of the outline tests: a sphere half behind a wall and a box (bench/scenes/outline.ts). */
+const OUTLINE_SKETCH = 'tests/pages/sketches/outline-sketch.ts';
+
+/**
+ * Outlines on every tier: the default white line around the parts that nothing hides, and a wider
+ * orange line with a blue line around hidden parts, around a sphere half behind a wall and a box
+ * in the open. At half the render scale, the mask draws into the corner of its target, and the
+ * line keeps its width on the canvas. Compatibility mode keeps the 8-bit path with MSAA. The
+ * page's switch that turns HDR off puts the other tiers on that path too. The parity test compares
+ * both outlines with the same line drawn from the mask of three.js's OutlinePass.
+ */
+function outlineTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${OUTLINE_SKETCH}${query}`,
+		hold: 0,
+		size: [OUTLINE_IMAGE.width, OUTLINE_IMAGE.height],
+	});
+	return [
+		test('outline-plain', '?outline=plain'),
+		test('outline-hidden', '?outline=hidden'),
+		test('outline-scale-50', '?outline=hidden&scale=0.5'),
+		{
+			...test('outline-8-bit', '?outline=hidden'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			expect: { hdr: false },
+		},
 	];
 }
 
@@ -573,6 +605,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...antialiasTests(),
 	...bloomTests(),
 	...aoTests(),
+	...outlineTests(),
 	...occlusionTests(),
 	...gradingTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
@@ -796,6 +829,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			tiers: ['webgpu', 'compat'],
 			switches: ['skinning=vertex'],
 			reference: variant ? `skinning-${variant}` : 'skinning',
+		}),
+	),
+	// The middle character outlined: the outline's mask skins it in its pose, from the skinning
+	// pass's vertices or in the vertex shader, and on WebGL2 always in the vertex shader. Each tier
+	// draws the scene in its own way, so each has its own image.
+	...(['', '-vertex'] as const).map(
+		(way): ImageTest => ({
+			name: `skinning-outline${way}`,
+			sketch: 'tests/pages/sketches/skinning-sketch.ts?outline',
+			hold: SKINNING_HOLD,
+			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+			...(way
+				? {
+						tiers: ['webgpu', 'compat'],
+						switches: ['skinning=vertex'],
+						reference: 'skinning-outline',
+					}
+				: {}),
 		}),
 	),
 	// Morph targets: three spheres of one mesh, each at its own weights of three targets, one of

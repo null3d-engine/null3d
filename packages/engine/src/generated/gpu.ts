@@ -136,6 +136,7 @@ export const PERMUTATION_PREPASS = 4096;
 export const PERMUTATION_HALF = 8192;
 export const PERMUTATION_CASTER_OFFSET = 16384;
 export const PERMUTATION_BLOOM = 32768;
+export const PERMUTATION_OUTLINE_VISIBLE = 65536;
 
 export const PERMUTATION_ON_DEMAND = 128;
 
@@ -188,6 +189,7 @@ export const TEMPLATE_LIGHT_COUNT = 17;
 export const TEMPLATE_LIGHT_PLACE = 18;
 export const TEMPLATE_LIGHT_WRITE = 19;
 export const TEMPLATE_SKIN = 20;
+export const TEMPLATE_OUTLINE_MASK = 21;
 export const TEMPLATE_SPRITE = 22;
 export const TEMPLATE_SPRITE_MAP = 23;
 export const TEMPLATE_LINE = 29;
