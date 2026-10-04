@@ -54,8 +54,8 @@ The blockers use the frame's own camera and world matrices. So an object shows i
 
 ### Which objects block
 
-- `setOccluder(true)`, or the `occluder` option of `createMesh` and `instantiate`, sets the object flag `OCCLUDER` (1 << 7). It is not structural, so a change needs no rebuild of the draw tables. The asset tool will set it for meshes that get blocker meshes (M2-B4), and `setOccluder` overrides that.
-- A blocker draws its own mesh, welded where corners share a position, up to 4,096 triangles. The mesh is built once, the first time an object with that mesh blocks. The asset tool's simplified blocker meshes will replace it for large models (M2-B4).
+- `setOccluder(true)`, or the `occluder` option of `createMesh` and `instantiate`, sets the object flag `OCCLUDER` (1 << 7). It is not structural, so a change needs no rebuild of the draw tables. A model file sets it for the meshes that the asset tool gave blockers ([D-50](D-50-blockers-and-stored-trees.md)), and `setOccluder` overrides that.
+- A blocker draws its own mesh, welded where corners share a position, up to 4,096 triangles. The mesh is built once, the first time an object with that mesh blocks. A blocker that the asset tool stored in a model file takes its place ([D-50](D-50-blockers-and-stored-trees.md)).
 - Objects that blend, cut holes with an alpha mask, skip the depth buffer, use a custom material or are skinned never block. Their drawn shape can have gaps that their mesh does not show.
 - Only the active camera's view uses blockers. Shadow cascades, shadow tiles and other views cull as before, so a hidden object still casts its shadow. Blended objects of the transparent pass are tested too.
 
