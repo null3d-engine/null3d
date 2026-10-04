@@ -1498,7 +1498,18 @@ async function startEngine(
 					drawOnPage(memory, { imageTable }, localRunner),
 					start.signal,
 				);
-			const setup = sketchLoad.then((sketch) => localRunner?.setup(sketch));
+			// A setup that fails without an engine code fails the start with E1405, as a sketch worker's
+			// does: a setup function that throws, or a trap in the core during a warm-up.
+			const setup = sketchLoad
+				.then((sketch) => localRunner?.setup(sketch))
+				.catch((error: unknown) => {
+					throw error instanceof EngineError
+						? error
+						: new EngineError(
+								'E1405',
+								`the sketch on the page did not start: ${messageOf(error)}.`,
+							);
+				});
 			await abortable(setup, start.signal);
 			if (render) {
 				await abortable(render.ready(), start.signal);

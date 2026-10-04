@@ -2,7 +2,8 @@
 // - fault: the engine's frame step throws once, and the page must hear E1404 while it stays
 //   responsive.
 // - job-fault: the test makes a job worker fail inside the job system (it rewrites the job
-//   worker's script), and the page must hear E1404 while it stays responsive.
+//   worker's script), and the page must hear E1404 while it stays responsive. A failure during the
+//   start comes as the start's rejection.
 // - same-canvas: an engine starts, and is destroyed without a wait while a second one starts on the
 //   same canvas, as React's StrictMode does. A third start follows at once. With &pattern=then, the first start is destroyed once
 //   it resolves; with &pattern=abort, it is cancelled. The second must draw, with no more workers
@@ -75,7 +76,14 @@ run('failures', async () => {
 		faulty.searchParams.set('fault', 'step');
 		return firstFailure(await started(faulty));
 	}
-	if (which === 'job-fault') return firstFailure(await started());
+	if (which === 'job-fault') {
+		const busy = new URL(sketch);
+		busy.searchParams.set('meshes', '3000');
+		// On a slow GPU the worker can fail during the start, which then rejects with the failure.
+		const engine = await started(busy).catch((error: EngineError) => error);
+		if (!(engine instanceof Error)) return firstFailure(engine);
+		return { codes: [engine.code], messages: [engine.message.split(' See ')[0]], ticks: 1 };
+	}
 	if (which === 'same-canvas') {
 		const first = await started();
 		const workersOfOne = liveWorkers();

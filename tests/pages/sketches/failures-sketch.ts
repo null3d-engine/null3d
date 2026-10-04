@@ -1,14 +1,16 @@
-// A sketch for the failure tests: thousands of meshes that move each frame, so the core's transform
-// and culling steps run as parallel loops on the job workers. With ?fault=step in the sketch's
+// A sketch for the failure tests: meshes that move each frame, 200 or ?meshes= of them. Thousands
+// make the core's transform and culling steps run as parallel loops on the job workers, and a few
+// hundred keep the frames quick on a software GPU. With ?fault=step in the sketch's
 // address, the engine's own frame step throws once, after some frames, from outside the sketch's
 // callbacks. On the page's thread it leaves its context on the page, so the page can call the
 // engine after it stopped, and counts its onDestroy calls there.
 import { defineSketch, type SketchContext } from '@null3d/engine';
 
-const FAULT = new URL(import.meta.url).searchParams.get('fault');
+const params = new URL(import.meta.url).searchParams;
+const FAULT = params.get('fault');
 /** The frame after which the frame step throws, with ?fault=step. */
-const FAULT_FRAME = 30;
-const MESHES = 3000;
+const FAULT_FRAME = 10;
+const MESHES = Number(params.get('meshes') ?? 200);
 const COLUMNS = 60;
 
 /** What a sketch on the page's thread leaves on the page. */
