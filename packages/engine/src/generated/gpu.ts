@@ -185,6 +185,8 @@ export const TEMPLATE_SKIN = 20;
 export const TEMPLATE_OUTLINE_MASK = 21;
 export const TEMPLATE_SPRITE = 22;
 export const TEMPLATE_SPRITE_MAP = 23;
+export const TEMPLATE_LINE = 29;
+export const TEMPLATE_LINE_LIT = 30;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;

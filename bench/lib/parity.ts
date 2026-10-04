@@ -252,6 +252,8 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
 	{ test: 'transparency', twin: `${TWINS}/transparency.html` },
 	{ test: 'sprites', twin: `${TWINS}/sprites.html` },
+	{ test: 'lines', twin: `${TWINS}/lines.html` },
+	{ test: 'lines-basic', twin: `${TWINS}/lines.html?basic` },
 	{ test: 'texture-background', twin: `${TWINS}/texture-background.html` },
 	{ test: 'lights-16', twin: `${TWINS}/lights.html?lights=16`, sketchSwitches: NO_TONE },
 	{ test: 'lights-spot', twin: `${TWINS}/lights.html?scene=spot`, sketchSwitches: NO_TONE },

@@ -26,6 +26,7 @@
 //! - `light_grid`: the clusters of a view, and the point and spot lights that reach each one
 //! - `materials`: the material table
 //! - `meshes`: mesh storage for both GPU paths
+//! - `occlusion`: the camera's blockers for software occlusion culling on the WebGL2 path
 //! - `outline`: a crisp line around the objects that the sketch outlines: a mask of the outlined
 //!   objects, from which the final pass draws the line
 //! - `output`: the output transform: the scene color's target, exposure and tone mapping
@@ -60,6 +61,7 @@ pub mod graph;
 pub mod light_grid;
 pub mod materials;
 pub mod meshes;
+pub mod occlusion;
 pub mod outline;
 pub mod output;
 pub mod parallel_record;
