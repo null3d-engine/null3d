@@ -1069,7 +1069,9 @@ impl TextureStore {
     fn record_releases(&mut self, list: &mut DrawList, frame: u32) -> Result<(), RecordError> {
         let (arrived, taken) = (self.arrived, self.frames_taken);
         let due = |r: &Release| match r.source {
-            Source::Image { id, .. } => id <= arrived && (r.after == 0 || frame_after(frame, r.after)),
+            Source::Image { id, .. } => {
+                id <= arrived && (r.after == 0 || frame_after(frame, r.after))
+            }
             Source::Data { .. } => frame_after(taken, r.after),
         };
         for release in self.releases.iter().filter(|r| due(r)) {
@@ -1479,7 +1481,10 @@ mod tests {
             let (commands, _) = h.frame();
             released.extend(ops(&commands, Op::ReleaseImage));
         }
-        assert_eq!(h.frame, 3, "the frames went round past the last of the count");
+        assert_eq!(
+            h.frame, 4,
+            "the frames went round past the last of the count"
+        );
         assert_eq!(released, [vec![1]]);
         assert_eq!(h.store.ready_layer(texture), Some(0));
         // The data's texels are freed once a frame after the list that read them was taken.

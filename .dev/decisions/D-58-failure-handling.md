@@ -52,6 +52,16 @@ The canvas:
   - A parked worker with a time limit. A page could not know how long it has.
 - Sketch code that outlives its engine fails with E1420. The sketch's `onDestroy` runs first, on its own thread. Then the runner swaps the core for a stand-in whose every function throws, and views on engine memory cannot be made again. The swap costs nothing per call. The loaders' helper workers stop at the same time.
 
+Long runs:
+
+- Frame numbers go round the 32-bit count of the control slots, after about 4 billion frames: 2 years at 60 frames a second, 207 days at 240. Before, the core aborted at the wrap, and every comparison of frames in the threads failed past 2^31. Now a frame number skips 0 ("no frame yet") and -1 ("none"). Frames compare by their distance around the circle (`shared/control.ts`, `null3d_core::frames`). Skipping the two values keeps each frame's parity alternating, which the two draw lists and the two world buffers need.
+- The quality governor kept the page's clock in 32-bit integers. So it stopped raising quality after 24.8 days. Its times are now 64-bit floats.
+- A slot's 10-bit generation comes round after 1,023 reuses. Once a scene has used every slot, a freed slot comes back at once, so a stale handle could match a new object within minutes. The highest generation is now never given out, and a destroyed object's wrapper takes a handle with it. A later call on the wrapper then fails as stale however often the slot is reused. Options rejected: a longer wait before a slot comes back, which would cost capacity in a full scene. Wider generations, which would change the handle's layout on both sides.
+
+## Open question for the owner
+
+The worker that kept a canvas stays alive, idle, for as long as the canvas is in the document: one thread per such canvas. It costs no GPU memory and no engine memory, only the thread and its loaded code. The coordinator accepted it on 5 October 2026, and puts it to the owner. The alternative is to refuse a canvas that moved to a worker, with E1419. Apps would then make a new canvas element for each engine. React components that render `<canvas ref>` would then fail under StrictMode.
+
 ## Consequences
 
 - The engine package's page, worker, runner and render code changed; the error table gained E1304, E1305, E1419 and E1420. `api/engine`, `api/sketch` and `guides/debugging` describe the paths.

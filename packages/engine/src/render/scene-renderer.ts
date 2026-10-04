@@ -13,8 +13,7 @@ import { contextFinished, releaseContext, simulateContextLoss } from '../gpu/web
 import { WebGPUBackend } from '../gpu/webgpu/backend';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import type { CoreDevice } from '../page/limits';
-import { controlViews, Slot } from '../shared/control';
-import { frameAfter, frameReached } from '../shared/frame-numbers';
+import { controlViews, frameAfter, frameReached, Slot } from '../shared/control';
 import type { ImageTable } from '../shared/images';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
 import { contextLoss, deviceLoss, type GpuErrorReport, GpuErrorWatch } from './loss';

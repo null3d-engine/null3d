@@ -101,6 +101,7 @@ export const RING_FIELD_READ_INDEX = 3;
 
 export const HANDLE_SLOT_BITS = 20;
 export const HANDLE_GENERATION_BITS = 10;
+export const HANDLE_DEAD_GENERATION = 1023;
 
 export const CORE_NO_PARENT = 4294967295;
 export const CORE_NO_MESH = 0;

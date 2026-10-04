@@ -5,7 +5,14 @@ import { FORMAT_RGBA16_FLOAT } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
 import { presetSettings } from '../quality/presets';
 import type { Material, MeshGeometry } from '../scene/resources';
-import { controlViews, createControlBuffer, Slot } from '../shared/control';
+import {
+	controlViews,
+	createControlBuffer,
+	frameAfter,
+	frameReached,
+	nextFrame,
+	Slot,
+} from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { onEngineStop } from '../shared/helper-workers';
 import { createMetricsBuffer, FrameRecorder, Role } from '../shared/metrics';
@@ -125,13 +132,13 @@ function drawFrames(
 	const timer = setInterval(() => {
 		if (replaying !== 0) {
 			// The frame two after shares the list.
-			if (Atomics.load(slots, Slot.FramesPublished) >= replaying + 2)
+			if (frameReached(Atomics.load(slots, Slot.FramesPublished), nextFrame(nextFrame(replaying))))
 				drawing.overwritten?.push(replaying);
 			else if (performance.now() < replayEnd) return;
 			replaying = 0;
 		}
 		const published = Atomics.load(slots, Slot.FramesPublished);
-		if (published <= Atomics.load(slots, Slot.FramesTaken)) return;
+		if (!frameAfter(published, Atomics.load(slots, Slot.FramesTaken))) return;
 		Atomics.store(slots, Slot.PipelinesBuilt, published);
 		Atomics.store(slots, Slot.FramesTaken, published);
 		if (slots.buffer instanceof SharedArrayBuffer) Atomics.notify(slots, Slot.FramesTaken);
@@ -557,6 +564,30 @@ describe('SketchRunner', () => {
 		await loop;
 		stopDrawing();
 		expect(faults).toEqual([]);
+		expect(drawing.overwritten).toEqual([]);
+	});
+
+	it('counts frames on past the last of the 32-bit count, with no frame 0 or -1', async () => {
+		const drawing = { presentedMs: 16, completedMs: 16, replayMs: 2, overwritten: [] as number[] };
+		const { runner, control, calls, stopDrawing } = await start(() => ({}), undefined, {
+			drawing,
+			shared: true,
+		});
+		// The engine's count stands four frames before the end of the circle.
+		(runner as unknown as { recorded: { frame: number } }).recorded.frame = -5;
+		Atomics.store(control.slots, Slot.FramesPublished, -5);
+		Atomics.store(control.slots, Slot.FramesTaken, -5);
+		calls.length = 0;
+		const loop = runPipelined(runner, control.slots.buffer, () => {});
+		await new Promise((resolve) => setTimeout(resolve, 150));
+		Atomics.store(control.slots, Slot.Running, 0);
+		await loop;
+		stopDrawing();
+		const frames = calls.filter(([name]) => name === 'recordFrame').map(([, frame]) => frame);
+		expect(frames.slice(0, 6)).toEqual([-4, -3, -2, 1, 2, 3]);
+		expect(frames).not.toContain(0);
+		expect(frames).not.toContain(-1);
+		expect(Atomics.load(control.slots, Slot.FramesTaken)).toBeGreaterThan(3);
 		expect(drawing.overwritten).toEqual([]);
 	});
 

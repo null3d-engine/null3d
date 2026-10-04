@@ -8,8 +8,7 @@
 // and the preset check, at the same pace as play. In a worker, each callback also sets a timer that
 // wakes the thread shortly before the next is due.
 
-import { controlViews, Slot } from '../shared/control';
-import { frameAfter } from '../shared/frame-numbers';
+import { controlViews, frameAfter, Slot } from '../shared/control';
 import type { SketchRunner } from '../sketch/runner';
 import { guardFrame, type LoopFault, Presenter, type RenderLoop } from './loop';
 import type { Renderer } from './renderer';

@@ -12,8 +12,7 @@
 // made once, so neither call nor the per-frame record allocates.
 
 import type { Vec3Like } from '../math/types';
-import { type ControlViews, Slot } from '../shared/control';
-import { frameAfter, previousFrame } from '../shared/frame-numbers';
+import { type ControlViews, frameAfter, previousFrame, Slot } from '../shared/control';
 import type { CoreMemory } from './memory';
 
 /**

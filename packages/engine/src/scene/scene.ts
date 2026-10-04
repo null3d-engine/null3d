@@ -572,7 +572,11 @@ export class Object3D implements Described {
 
 	constructor(
 		/** @internal */ readonly scene: Scene,
-		/** @internal */ readonly handle: number,
+		/**
+		 * @internal The object's handle. Once the object is destroyed, it holds a generation that the
+		 * core never gives a live object, so a later call never reaches another object in its slot.
+		 */
+		public handle: number,
 		/** The name from the create options, or an empty string. */
 		readonly name: string,
 	) {
@@ -864,11 +868,13 @@ export class Object3D implements Described {
 		}
 		this.animation?.release();
 		this.scene.forgetListeners(this);
-		// The core checks the handle's generation, so a second destroy frees no other object.
+		// The core checks the handle's generation, so a second destroy frees no other object, even
+		// once the slot's generations have come round.
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
 		this.row = 0;
 		this.scene.forget(this);
+		this.handle |= C.HANDLE_DEAD_GENERATION << C.HANDLE_SLOT_BITS;
 	}
 
 	/**

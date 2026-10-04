@@ -6,8 +6,7 @@
 // display's rate, draws nothing. In a worker, each callback also sets a timer that wakes the thread
 // shortly before the next callback is due.
 
-import { controlLabels, controlViews, Slot } from '../shared/control';
-import { frameAfter } from '../shared/frame-numbers';
+import { controlLabels, controlViews, frameAfter, Slot } from '../shared/control';
 import { type LabelRegion, presentLabels } from '../shared/labels';
 import { FrameRecorder, Role } from '../shared/metrics';
 import { notifySlot, type WakeTarget } from '../shared/wake';

@@ -1855,7 +1855,11 @@ mod tests {
             scene.positions_mut()[mover_slot * 3] = step as f32;
             scene.begin_frame(frame);
             scene.update_transforms(&jobs);
-            assert_eq!(translation(&scene, mover), [step as f32, 0.0, 0.0], "frame {frame}");
+            assert_eq!(
+                translation(&scene, mover),
+                [step as f32, 0.0, 0.0],
+                "frame {frame}"
+            );
             assert!(!scene.changed().get(still_slot), "frame {frame}");
         }
         assert_eq!(frame, 3);
