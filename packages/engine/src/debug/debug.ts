@@ -135,4 +135,12 @@ export interface Debug {
 	 * light travels. The light takes its place and direction in the frame it draws in.
 	 */
 	light(light: DirectionalLight, options?: DebugLightOptions): void;
+	/**
+	 * Draws the skeleton that animates an object, such as the copy of a model that
+	 * `scene.instantiate` made: a line from each joint of the model's skins to its parent joint, in
+	 * the pose of the frame it draws in. As in three.js's `SkeletonHelper`, each line is blue at the
+	 * joint and green at its parent, unless `color` gives one color. An object without an animator
+	 * draws nothing.
+	 */
+	skeleton(object: Object3D, color?: ColorInput): void;
 }
