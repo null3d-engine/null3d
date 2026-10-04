@@ -4,7 +4,9 @@
 // with a sketch module that does not load. A fifth start runs a sketch that catches four errors
 // from the engine's API and one that it makes itself, and posts them. While it runs, a sixth start
 // runs beside it: it fails where the mode runs the sketch on the page's thread, which serves one
-// engine at a time. The page then stops both and starts the engine again, which must draw.
+// engine at a time. After the first frame, the fifth start's sketch also reports the errors of
+// queries whose input is not finite in 32 bits, and the hits of the queries after them. The page
+// then stops both and starts the engine again, which must draw.
 // Each start takes a fresh canvas, as a canvas passes to the engine only once.
 import { createEngine, type EngineOptions } from '@null3d/engine';
 import { type ErrorFields, errorFields, noError } from './lib/error-fields';
@@ -50,6 +52,13 @@ run('errors', async () => {
 		});
 		engine.postToSketch('raise');
 	});
+	await engine.firstFrame;
+	const queries = await new Promise<unknown>((resolve) => {
+		engine.onSketchMessage((name, data) => {
+			if (name === 'queried') resolve(data);
+		});
+		engine.postToSketch('query');
+	});
 	const beside = await failedStart(errorSketch);
 	await engine.destroy();
 	const again = await createEngine({ canvas: freshCanvas(), sketch: errorSketch });
@@ -62,6 +71,7 @@ run('errors', async () => {
 		missingSketch: missingSketch.href,
 		failedStarts,
 		inSketch,
+		queries,
 		beside,
 		framesAfterRestart: stats.frames,
 	};
