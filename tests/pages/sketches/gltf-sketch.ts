@@ -15,6 +15,7 @@ import {
 	modelCamera,
 	SUN,
 } from '../../../bench/scenes/gltf-models';
+import { modelAddress } from '../lib/gltf-files';
 
 const params = new URL(import.meta.url).searchParams;
 
@@ -29,7 +30,7 @@ export default defineSketch(async ({ scene, assets, post }) => {
 		scene.createDirectionalLight(SUN);
 		scene.createAmbientLight(AMBIENT);
 	}
-	const prefab = await assets.loadGltf(model.url);
+	const prefab = await assets.loadGltf(modelAddress(model));
 	const copy = scene.instantiate(prefab);
 	if (model.clip) copy.animator().play(model.clip.name);
 	const { center, radius } = model.frame ?? prefab.bounds;

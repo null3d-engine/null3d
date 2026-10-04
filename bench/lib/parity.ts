@@ -245,9 +245,14 @@ const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 /**
  * The glTF model scenes that three.js's WebGPURenderer draws wrong, so its WebGLRenderer's frame is
  * the reference on every tier. In the Khronos meshopt test, it draws the column of cubes with 16-bit
- * attributes black, and its WebGLRenderer draws them as null3D does.
+ * attributes black, and its WebGLRenderer draws them as null3D does. It also leaves out color morph
+ * targets: r186 packs them into its morph texture, but its vertex stage adds only the positions'
+ * and the normals' deltas.
  */
-const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set(['meshopt-khr']);
+const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set([
+	'meshopt-khr',
+	'morph-colors',
+]);
 
 /**
  * Each feature scene that the exit gate's parity covers: standard materials, the light types

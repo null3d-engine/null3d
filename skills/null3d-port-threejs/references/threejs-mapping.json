@@ -725,8 +725,8 @@
       "three": "morphAttributes / morphTargetInfluences / morphTargetDictionary",
       "status": "changed",
       "since": "0.2",
-      "target": "mesh.setMorphWeight(indexOrName, weight) and mesh.getMorphWeight(indexOrName); geometry.fromArrays({ ..., morphTargets: { positions, normals, names } })",
-      "notes": "glTF morph targets and their default weights load with the model, and its clips animate the weights. Targets are deltas, as with morphTargetsRelative = true. mesh.mesh.morphTargetNames lists the names in target order, in place of morphTargetDictionary. A clip blends its weights with the object's own, as AnimationMixer does. On WebGL2 each object draws only its largest weights, by the morphTargets quality setting: 8 on Low up to 64 on Ultra.",
+      "target": "mesh.setMorphWeight(indexOrName, weight) and mesh.getMorphWeight(indexOrName); geometry.fromArrays({ ..., morphTargets: { positions, normals, colors, names } })",
+      "notes": "glTF morph targets and their default weights load with the model, and its clips animate the weights. Targets are deltas, as with morphTargetsRelative = true. Color targets (morphAttributes.color, glTF's COLOR_0 targets) change vertex colors, which stay between 0 and 1 as glTF asks; three.js does not clamp them. mesh.mesh.morphTargetNames lists the names in target order, in place of morphTargetDictionary. A clip blends its weights with the object's own, as AnimationMixer does. On WebGL2 each object draws only its largest weights, by the morphTargets quality setting: 8 on Low up to 64 on Ultra.",
       "docs": "api/animation",
       "detect": "morphAttributes|morphTargetInfluences|morphTargetDictionary"
     },

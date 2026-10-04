@@ -594,3 +594,145 @@ export function blenderMorphBuilder(): GltfBuilder {
 	];
 	return b;
 }
+
+/** The quads per side of each panel of `colorMorphBuilder`. */
+const PANEL_SIDE = 6;
+
+/**
+ * A flat panel of `PANEL_SIDE` × `PANEL_SIDE` quads, one unit wide, centered on `x` and facing +Z,
+ * with each vertex's place across it from 0 to 1.
+ */
+function panel(x: number) {
+	const positions: number[] = [];
+	const places: [number, number][] = [];
+	const indices: number[] = [];
+	const n = PANEL_SIDE + 1;
+	for (let row = 0; row < n; row++)
+		for (let column = 0; column < n; column++) {
+			const [u, v] = [column / PANEL_SIDE, row / PANEL_SIDE];
+			positions.push(x + u - 0.5, v - 0.5, 0);
+			places.push([u, v]);
+			if (row > 0 && column > 0) {
+				const at = row * n + column;
+				indices.push(at - n - 1, at - n, at, at - n - 1, at, at - 1);
+			}
+		}
+	const normals = new Float32Array(positions.length).map((_, k) => (k % 3 === 2 ? 1 : 0));
+	return {
+		positions: new Float32Array(positions),
+		normals,
+		places,
+		indices: new Uint16Array(indices),
+	};
+}
+
+/** For each vertex at `places`, the first `components` values that `channels` gives. */
+function perVertex(
+	places: readonly [number, number][],
+	components: number,
+	channels: (u: number, v: number) => readonly number[],
+): Float32Array {
+	return Float32Array.from(places.flatMap(([u, v]) => channels(u, v).slice(0, components)));
+}
+
+/** The weights of `colorMorphBuilder`'s two targets. */
+export const COLOR_MORPH_WEIGHTS = [0.75, 0.4] as const;
+
+/**
+ * Three panels side by side: one mesh of three primitives with two morph targets, which move
+ * vertex colors as glTF's COLOR_0 targets do, at the mesh's weights `COLOR_MORPH_WEIGHTS`. The
+ * left panel has 8-bit colors, and targets of three values, without alpha. Its first target
+ * bulges the panel toward the camera and warms its colors, and its second, a sparse accessor as
+ * Blender writes one, blues its right half. The middle panel blends, with float colors and alpha: its first target's deltas are
+ * normalized 16-bit integers that fade the alpha upward, and its second target's are floats that
+ * fade it to the right. The right panel's 16-bit colors stay as they are, as its targets move only
+ * its positions. Every morphed color stays between 0 and 1, where three.js, which does not clamp,
+ * draws what the glTF specification asks. Every target that moves a panel's colors gives their
+ * deltas, as three.js reads a left-out color delta as the base color. Every panel's colors have
+ * alpha, as three.js r186's WebGLRenderer cannot compile color targets of colors without it.
+ */
+export function colorMorphBuilder(): GltfBuilder {
+	const b = new GltfBuilder();
+	const matte = (fields: GltfJson = {}) =>
+		b.material({
+			pbrMetallicRoughness: {
+				baseColorFactor: [1, 1, 1, 1],
+				metallicFactor: 0,
+				roughnessFactor: 0.8,
+			},
+			...fields,
+		});
+	const bulge = (places: readonly [number, number][]) =>
+		perVertex(places, 3, (u, v) => [
+			0,
+			0,
+			0.35 * Math.max(0, 1 - 2 * Math.hypot(u - 0.5, v - 0.5)),
+		]);
+	const lift = (places: readonly [number, number][]) =>
+		perVertex(places, 3, (u) => [0, 0.15 * u, 0]);
+	const primitive = (x: number, material: number, color: number, targets: GltfJson[]) => {
+		const shape = panel(x);
+		return {
+			attributes: {
+				POSITION: b.positions(shape.positions),
+				NORMAL: b.accessor(shape.normals, 3),
+				COLOR_0: color,
+			},
+			indices: b.accessor(shape.indices, 1),
+			material,
+			targets: targets.map((target, k) => ({
+				...target,
+				POSITION: b.positions((k === 0 ? bulge : lift)(shape.places)),
+			})),
+		};
+	};
+
+	const left = panel(-1.1).places;
+	const leftColors = perVertex(left, 4, (u, v) => [0.15 + 0.2 * u, 0.6 - 0.2 * v, 0.2, 1]);
+	const warm = perVertex(left, 3, (u, v) => [0.8 * v, -0.5 * u, 0]);
+	const blue = perVertex(left, 3, (u) => (u > 0.5 ? [-0.2, 0, 1.6 * (u - 0.5)] : [0, 0, 0]));
+	const bytes = Uint8Array.from(leftColors, (c) => Math.round(c * 255));
+	const leftPanel = primitive(-1.1, matte(), b.accessor(bytes, 4, { normalized: true }), [
+		{ COLOR_0: b.accessor(warm, 3) },
+		{ COLOR_0: b.sparse(blue, 3) },
+	]);
+
+	const middle = panel(0).places;
+	const middleColors = perVertex(middle, 4, (u, v) => [0.8, 0.2 + 0.3 * u, 0.2 + 0.3 * v, 1]);
+	const fadeUp = perVertex(middle, 4, (u, v) => [-0.8 * u, 0.6, 0, -0.5 * v]);
+	const fadeRight = perVertex(middle, 4, (u) => [0, 0, 0.9 * u, -0.3 * u]);
+	const shorts = Int16Array.from(fadeUp, (d) => Math.round(d * 32767));
+	const middlePanel = primitive(0, matte({ alphaMode: 'BLEND' }), b.accessor(middleColors, 4), [
+		{ COLOR_0: b.accessor(shorts, 4, { normalized: true }) },
+		{ COLOR_0: b.accessor(fadeRight, 4) },
+	]);
+
+	const right = panel(1.1).places;
+	const rightColors = perVertex(right, 4, (u, v) => [0.2 + 0.5 * v, 0.5, 0.7 - 0.4 * u, 1]);
+	const wide = Uint16Array.from(rightColors, (c) => Math.round(c * 65535));
+	const rightPanel = primitive(1.1, matte(), b.accessor(wide, 4, { normalized: true }), [{}, {}]);
+
+	const mesh = b.mesh([leftPanel, middlePanel, rightPanel], 'Swatches');
+	b.json.meshes[mesh].weights = [...COLOR_MORPH_WEIGHTS];
+	b.json.meshes[mesh].extras = { targetNames: ['Warm', 'Cool'] };
+	b.node({ name: 'Swatches', mesh });
+	return b;
+}
+
+/** The glTF files made in code that model scenes draw, by name. */
+export const MADE_MODELS = { 'color-morph': colorMorphBuilder } as const;
+
+export type MadeModel = keyof typeof MADE_MODELS;
+
+/**
+ * The address that a page loads a model scene's file from: the file's own, or for a file made in
+ * code, an address of its bytes in the page.
+ */
+export function modelAddress(model: { url?: string; made?: MadeModel }): string {
+	if (model.made) {
+		const bytes = MADE_MODELS[model.made]().glb() as Uint8Array<ArrayBuffer>;
+		return URL.createObjectURL(new Blob([bytes], { type: 'model/gltf-binary' }));
+	}
+	if (!model.url) throw new Error('a model scene names no file');
+	return model.url;
+}

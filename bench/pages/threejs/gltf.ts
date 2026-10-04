@@ -8,6 +8,7 @@
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+import { modelAddress } from '../../../tests/pages/lib/gltf-files';
 import { run, toBase64 } from '../../../tests/pages/lib/result';
 import {
 	AMBIENT,
@@ -44,7 +45,7 @@ run('hold', async () => {
 	if (rendererName === 'webgpu') await ktx2.detectSupportAsync(renderer as never);
 	else ktx2.detectSupport(renderer as never);
 	const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
-	const gltf = await loader.loadAsync(model.url);
+	const gltf = await loader.loadAsync(modelAddress(model));
 	scene.add(gltf.scene);
 	if (model.clip) {
 		const clip = three.AnimationClip.findByName(gltf.animations, model.clip.name);

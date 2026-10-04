@@ -420,6 +420,7 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
   - A loop that counts down to 0 also passed every S25 probe, at the old loop's cost. Nothing explains why the driver handles it, so the next shader around it could break it again.
   - A signed counter, or a loop that tests its count at the bottom, also passed. They were rejected for the same reason.
   - `exp2` of the octave number, which WGSL lets differ from the exact value by a few units, and `ldexp`, which GLSL ES 3.00 does not have.
+- naga writes WGSL's `countOneBits` as GLSL's `bitCount`, which GLSL ES 3.00 lacks: GLSL ES 3.10 added it with the other integer bit functions and `packUnorm4x8`. On 5 October 2026, color morph targets (M2-C11) first counted bits with it. Every WebGL2 MORPH program then failed to link in Chrome on the Mac, with "Vertex shader is not compiled". WGSL's `firstLeadingBit`, `extractBits` and their kin turn into such functions too. So shaders that WebGL2 builds count bits with shifts and masks. A test in the shader crate fails on any GLSL ES 3.10 built-in in a GLSL file. It names the shader, the variant and the line.
 - Work around a browser's fault with an order or a call that is valid everywhere, as the staging ring does. Where browsers differ in speed, time the choices on the device, as the upload routes do. When neither works, detect the fault with a feature test, never from the user agent (hard rule 14).
 
 ## Safari's frame path

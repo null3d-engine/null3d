@@ -53,7 +53,9 @@ use crate::frame::{
 use crate::meshes::MeshStorage;
 use crate::morph::{MORPH_LOCATION, MorphTexture, morph_of};
 use crate::pipelines::DrawKey;
-use crate::skinning::{JointTexture, skin_of, skinned_format, skinned_in_vertex_shader};
+use crate::skinning::{
+    COLOR_LOCATION, JointTexture, skin_of, skinned_format, skinned_in_vertex_shader,
+};
 use crate::view::ViewFrame;
 
 /// The templates with SKIN builds, which skin in the vertex shader.
@@ -81,8 +83,9 @@ const SEGMENT_ALIGN: u32 = 256 / (ENTRY_WORDS * 4);
 const NONE: u32 = u32::MAX;
 /// The vertex location of tangents.
 const TANGENT: usize = 4;
-/// The vertex locations of the attributes that the pass copies unchanged, in vertex order.
-const COPIED: [usize; 3] = [2, 3, 5];
+/// The vertex locations of the attributes that the pass copies unchanged, in vertex order: the
+/// texture coordinates, then the color of a mesh that no target morphs.
+const COPIED: [usize; 3] = [2, 3, COLOR_LOCATION];
 
 /// The joint base of an object that no animated instance skins.
 const NOT_SKINNED: u32 = NONE;
@@ -256,13 +259,18 @@ fn copied_run(format: u32, skinned: u32, locations: &[usize]) -> u32 {
 }
 
 /// The table entries of a source vertex format: the strides, where each attribute sits, and the
-/// runs that the pass copies (see `skin.wgsl`).
+/// runs that the pass copies (see `skin.wgsl`). A morphed mesh's color is no run: the pass morphs
+/// it and writes it as floats, where its field says.
 fn format_entries(format: u32) -> [[u32; 4]; 3] {
     let skinned = skinned_format(format);
-    let tangent = match vertex::offset(skinned, TANGENT) {
-        Some(out) => field(format, TANGENT) | ((out / 4) << 16),
+    // A field of the source format with its offset in the skinned vertex in the third byte.
+    let moved = |location: usize| match vertex::offset(skinned, location) {
+        Some(out) => field(format, location) | ((out / 4) << 16),
         None => NONE,
     };
+    let morphed = format & vertex::MORPH != 0;
+    let color = if morphed { moved(COLOR_LOCATION) } else { NONE };
+    let copied = if morphed { &COPIED[2..2] } else { &COPIED[2..] };
     [
         [
             vertex::stride(format) / 4,
@@ -271,15 +279,15 @@ fn format_entries(format: u32) -> [[u32; 4]; 3] {
             field(format, vertex::NORMAL),
         ],
         [
-            tangent,
+            moved(TANGENT),
             field(format, 6),
             field(format, 7),
             field(format, MORPH_LOCATION),
         ],
         [
             copied_run(format, skinned, &COPIED[..2]),
-            copied_run(format, skinned, &COPIED[2..]),
-            0,
+            copied_run(format, skinned, copied),
+            color,
             0,
         ],
     ]
@@ -685,11 +693,24 @@ mod tests {
         assert_eq!(more, [tangent, joints, weights, NONE]);
         assert_eq!(
             runs,
-            [5 | (6 << 8) | (2 << 16), 11 | (12 << 8) | (1 << 16), 0, 0]
+            [
+                5 | (6 << 8) | (2 << 16),
+                11 | (12 << 8) | (1 << 16),
+                NONE,
+                0
+            ]
         );
+        // A morphed mesh's color is morphed into four floats, not copied. Source: the morph
+        // attribute after the weights, at 60 bytes. Skinned: the color at 48, 64 bytes in all.
+        let morphed = format | vertex::MORPH;
+        let [strides, more, runs] = format_entries(morphed);
+        assert_eq!(strides[..2], [17, 16]);
+        assert_eq!(more[3], 15);
+        let color = 11 | (Type::Unorm8 as u32) << 8 | (12 << 16);
+        assert_eq!(runs, [5 | (6 << 8) | (2 << 16), 0, color, 0]);
         // Floats with no tangent, coordinates or color: nothing to copy.
         let plain = format_entries(vertex::JOINTS | vertex::WEIGHTS);
         assert_eq!(plain[1][0], NONE);
-        assert_eq!(plain[2], [0; 4]);
+        assert_eq!(plain[2], [0, 0, NONE, 0]);
     }
 }

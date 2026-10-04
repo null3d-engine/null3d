@@ -174,7 +174,7 @@ A skinned mesh culls with a sphere that its pose moves. The engine keeps a spher
 
 ## Morph targets
 
-A morph target is another shape of a mesh, such as a smile or a blink. Each object of a mesh with targets blends them in by its own weights. A weight of 0 leaves a target out, 1 adds all of it, and other numbers scale it. The call `setMorphWeight` sets a weight by the target's number or name, as three.js's `morphTargetInfluences[k]` does. The call `getMorphWeight` reads it back. A mesh from a glTF file has the file's targets and default weights. A mesh that you build takes its targets from `morphTargets` in [geometry.fromArrays](geometry.md#morph-targets).
+A morph target is another shape of a mesh, such as a smile or a blink. Each object of a mesh with targets blends them in by its own weights. A weight of 0 leaves a target out, 1 adds all of it, and other numbers scale it. The call `setMorphWeight` sets a weight by the target's number or name, as three.js's `morphTargetInfluences[k]` does. The call `getMorphWeight` reads it back. A target can move positions, normals and tangents, and change vertex colors, as a glTF file's `COLOR_0` targets do. A mesh from a glTF file has the file's targets and default weights. A mesh that you build takes its targets from `morphTargets` in [geometry.fromArrays](geometry.md#morph-targets).
 
 ```ts
 const head = scene.instantiate(face).find('Head') as Mesh;
@@ -206,6 +206,7 @@ A morphed object culls with a sphere that its weights grow: each target's longes
 | `mesh.morphTargetInfluences[k] = w` | `mesh.setMorphWeight(k, w)`, or with the target's name |
 | `mesh.morphTargetDictionary['Smile']` | `mesh.setMorphWeight('Smile', w)`; `mesh.mesh.morphTargetNames` lists the names in order |
 | `geometry.morphAttributes.position`, with `morphTargetsRelative = true` | `geometry.fromArrays({ ..., morphTargets: { positions } })` |
+| `geometry.morphAttributes.color` | `geometry.fromArrays({ ..., colors, morphTargets: { colors } })` |
 | `SkinnedMesh` skinned in the vertex shader of each pass that draws it | WebGPU skins each skinned mesh once per frame, for every pass that draws it. WebGL2 skins in the vertex shader of each pass, as three.js does |
 
 Where three.js and null3D differ:
@@ -214,6 +215,7 @@ Where three.js and null3D differ:
 - three.js makes a bone object for each joint of a glTF skin, which you can find and move. null3D's joints are not objects. To move a joint from code, play a clip on a masked layer.
 - A three.js action played backward starts at time 0 and wraps to the end. A null3D clip with a negative speed starts at its end.
 - three.js has no layers. null3D's layer 0 blends as three.js's mixer does, and each layer above replaces the pose below.
+- A morphed vertex color stays between 0 and 1, as the glTF specification asks. three.js does not clamp it. A glTF target that leaves out `COLOR_0` while another target has it changes no color in null3D, as the specification says. three.js r186 adds the base color there instead. Its WebGPURenderer draws no color targets, and its WebGLRenderer cannot draw them on colors without alpha.
 
 | | three.js | null3D |
 | --- | --- | --- |

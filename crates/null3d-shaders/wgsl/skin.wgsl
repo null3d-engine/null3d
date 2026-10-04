@@ -11,27 +11,31 @@
 // - entries 1 to 3: the format: the strides of a source and a skinned vertex in 32-bit words, and
 //   where each attribute sits, each a word offset in the low byte and the type code above it, or
 //   every bit set for an attribute that the format lacks; the tangent's skinned offset in the
-//   third byte; then the joints, the weights and the morph attribute; and two runs
-//   of words that the pass copies unchanged (the texture coordinates, then the color), each its
-//   source offset, its skinned offset and its length in words, a byte each;
+//   third byte; then the joints, the weights and the morph attribute; two runs of words that the
+//   pass copies unchanged (the texture coordinates, then the color of a mesh without morph
+//   targets), each its source offset, its skinned offset and its length in words, a byte each;
+//   then the color of a morphed mesh, with its skinned offset in the third byte;
 // - two entries per part: its first workgroup, its vertex count, its first vertex in the page and
 //   its first word in the skinned vertex buffer; then the first joint of its animated instance in
 //   the joint texture, or every bit set for a mesh that no joint skins, the first texel of its
 //   object's morph weights in the morph texture, and padding.
 //
 // A skinned vertex has its position, then its normal, as 32-bit floats, then the source's other
-// attributes in their order, with a tangent as 32-bit floats. Each attribute takes whole words, so
-// the skinned vertex is the mesh's vertex format without joints and weights.
+// attributes in their order, with a tangent, and a morphed mesh's color, as 32-bit floats. Each
+// attribute takes whole words, so the skinned vertex is the mesh's vertex format without joints
+// and weights.
 //
-// Morphing and skinning follow three.js's: each morph target moves the position, the normal and
-// the tangent by its deltas times its weight, before skinning. The joint weights are used as they
+// Morphing and skinning follow three.js's: each morph target moves the position, the normal, the
+// tangent and the color by its deltas times its weight, before skinning. A morphed color is
+// clamped to the range 0 to 1, as the glTF specification asks. The joint weights are used as they
 // are, and the normal and the tangent's direction turn by each joint's matrix without its
 // translation.
 //
 // The morph attribute names the vertex's entries in the morph texture (see the renderer's morph
-// module): its first entry's texel, then its entry count times four plus 1 when entries hold a
-// normal's delta and 2 when they hold a tangent's. An entry is the position's delta with the
-// target's number, then the normal's and the tangent's deltas, in half floats. The weights sit in
+// module): its first entry's texel, then its entry count times eight plus 1 when entries hold a
+// normal's delta, 2 when they hold a tangent's and 4 when they hold a color's. An entry is the
+// position's delta with the target's number, then the normal's, the tangent's and the color's
+// deltas, in half floats. The weights sit in
 // a texture of their own, four to a texel.
 //
 // Each workgroup finds its part with a binary search of the parts' first workgroups. The joint
@@ -101,11 +105,12 @@ fn morph_weight_texel(k: u32) -> vec4f {
     return textureLoad(morph_weights, vec2u(k % MORPH_TEXELS_PER_ROW, k / MORPH_TEXELS_PER_ROW), 0);
 }
 
-/// A vertex's position, normal and tangent direction.
+/// A vertex's position, normal, tangent direction and color.
 struct Morphed {
     position: vec3f,
     normal: vec3f,
     tangent: vec3f,
+    color: vec4f,
 }
 
 /// `rest` moved by the entries that `range` names, each by its target's weight among the texels
@@ -114,8 +119,8 @@ fn morphed(rest: Morphed, range: vec2f, weights: u32) -> Morphed {
     var out = rest;
     let first = u32(range.x);
     let word = u32(range.y);
-    let stride = 1u + (word & 1u) + ((word >> 1u) & 1u);
-    let count = word >> 2u;
+    let stride = 1u + (word & 1u) + ((word >> 1u) & 1u) + ((word >> 2u) & 1u);
+    let count = word >> 3u;
     for (var k = 0u; k < count; k++) {
         let at = first + k * stride;
         let entry = morph_texel(at);
@@ -132,7 +137,14 @@ fn morphed(rest: Morphed, range: vec2f, weights: u32) -> Morphed {
         }
         if (word & 2u) != 0u {
             out.tangent += w * morph_texel(next).xyz;
+            next += 1u;
         }
+        if (word & 4u) != 0u {
+            out.color += w * morph_texel(next);
+        }
+    }
+    if (word & 4u) != 0u {
+        out.color = saturate(out.color);
     }
     return out;
 }
@@ -183,9 +195,12 @@ fn main(
     let vertex = (part.z + v) * strides.x;
     let out = part.w + v * strides.y;
 
-    var rest = Morphed(vector(vertex, strides.z), vector(vertex, strides.w), vec3f(0.0));
+    var rest = Morphed(vector(vertex, strides.z), vector(vertex, strides.w), vec3f(0.0), vec4f(1.0));
     if more.x != NONE {
         rest.tangent = vector(vertex, more.x);
+    }
+    if runs.z != NONE {
+        rest.color = vec4f(vector(vertex, runs.z), component(vertex, runs.z, 3u));
     }
     if more.w != NONE && object.y != NONE {
         let range = vec2f(component(vertex, more.w, 0u), component(vertex, more.w, 1u));
@@ -218,6 +233,11 @@ fn main(
         let at = out + ((more.x >> 16u) & 0xffu);
         store(at, vec3f(dot(row_x.xyz, t), dot(row_y.xyz, t), dot(row_z.xyz, t)));
         skinned[at + 3u] = bitcast<u32>(component(vertex, more.x, 3u));
+    }
+    if runs.z != NONE {
+        let at = out + ((runs.z >> 16u) & 0xffu);
+        store(at, rest.color.xyz);
+        skinned[at + 3u] = bitcast<u32>(rest.color.w);
     }
     copy_run(vertex, out, runs.x);
     copy_run(vertex, out, runs.y);

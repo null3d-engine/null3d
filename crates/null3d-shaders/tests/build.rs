@@ -1108,6 +1108,63 @@ fn precision_breaks(source: &str, fragment: bool) -> Vec<String> {
     breaks
 }
 
+/// The built-in functions that GLSL ES 3.10 added, which WebGL2's GLSL ES 3.00 lacks. naga writes
+/// some of them for WGSL built-ins: `bitCount` for `countOneBits`, `findMSB` for
+/// `firstLeadingBit`, `bitfieldExtract` for `extractBits`.
+const GLSL_ES_310_BUILT_INS: [&str; 16] = [
+    "bitCount",
+    "findLSB",
+    "findMSB",
+    "bitfieldExtract",
+    "bitfieldInsert",
+    "bitfieldReverse",
+    "uaddCarry",
+    "usubBorrow",
+    "umulExtended",
+    "imulExtended",
+    "frexp",
+    "ldexp",
+    "packUnorm4x8",
+    "packSnorm4x8",
+    "unpackUnorm4x8",
+    "unpackSnorm4x8",
+];
+
+/// The calls of a GLSL shader to built-in functions that WebGL2 lacks, as messages. A program
+/// that calls one does not compile in any WebGL2 browser.
+fn newer_built_in_calls(source: &str) -> Vec<String> {
+    let mut calls = Vec::new();
+    for (index, line) in source.lines().enumerate() {
+        for name in GLSL_ES_310_BUILT_INS {
+            let called = line.match_indices(name).any(|(at, _)| {
+                let before = line[..at].bytes().next_back();
+                let named_alone = !before.is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_');
+                named_alone && line[at + name.len()..].starts_with('(')
+            });
+            if called {
+                calls.push(format!(
+                    "line {}: `{name}` is GLSL ES 3.10, which WebGL2 lacks: {}",
+                    index + 1,
+                    line.trim()
+                ));
+            }
+        }
+    }
+    calls
+}
+
+#[test]
+fn the_built_in_check_finds_calls_that_webgl2_lacks() {
+    let source = "uint s = (1u + uint(bitCount((word & 7u))));
+float x = myldexp(a);
+int b = findMSB(c);
+";
+    let found = newer_built_in_calls(source);
+    assert_eq!(found.len(), 2, "{found:#?}");
+    assert!(found[0].starts_with("line 1: `bitCount`"));
+    assert!(found[1].starts_with("line 3: `findMSB`"));
+}
+
 /// True when a line of GLSL names an array type with its size, as `T[N](` or `T[N] name`.
 fn sized_array_type(text: &str) -> bool {
     let bytes = text.as_bytes();
@@ -1130,7 +1187,7 @@ fn sized_array_type(text: &str) -> bool {
 }
 
 #[test]
-fn every_glsl_shader_keeps_the_precision_rules_of_strict_drivers() {
+fn every_glsl_shader_keeps_the_rules_of_strict_drivers_and_webgl2() {
     let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let output = build(&Inputs::read(root).unwrap()).unwrap();
     let mut breaks = Vec::new();
@@ -1141,12 +1198,12 @@ fn every_glsl_shader_keeps_the_precision_rules_of_strict_drivers() {
                 for (stage, fragment) in [(&program.vertex, false), (&program.fragment, true)] {
                     stages += 1;
                     let kind = if fragment { "fragment" } else { "vertex" };
+                    let mut found = precision_breaks(&stage.source, fragment);
+                    found.extend(newer_built_in_calls(&stage.source));
                     breaks.extend(
-                        precision_breaks(&stage.source, fragment)
-                            .into_iter()
-                            .map(|b| {
-                                format!("{shader}.{variant} ({pipeline}, {kind} shader), {b}")
-                            }),
+                        found.into_iter().map(|b| {
+                            format!("{shader}.{variant} ({pipeline}, {kind} shader), {b}")
+                        }),
                     );
                 }
             }
@@ -1155,7 +1212,7 @@ fn every_glsl_shader_keeps_the_precision_rules_of_strict_drivers() {
     assert!(stages > 100, "only {stages} GLSL shaders were built");
     assert!(
         breaks.is_empty(),
-        "GLSL that Mali GPUs reject:\n{}",
+        "GLSL that Mali GPUs or WebGL2 reject:\n{}",
         breaks.join("\n")
     );
 }
