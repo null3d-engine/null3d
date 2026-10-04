@@ -58,8 +58,18 @@ use crate::cells::{CellCulling, CellMask, MOVING};
 use crate::frame::{
     CellOffsets, FrameInput, RecordError, RunCells, address, push_runs, words_as_bytes,
 };
+use crate::materials::MaterialTable;
+use crate::meshes::MeshStorage;
+use crate::occlusion::Occluders;
 use crate::sorted::{SortedLayout, SortedView};
 use crate::view::{ViewFrame, ViewId};
+
+/// The scene's blockers and what they need, for the view that draws them.
+pub(super) struct Occlusion<'a> {
+    pub(super) occluders: &'a mut Occluders,
+    pub(super) meshes: &'a MeshStorage,
+    pub(super) materials: &'a MaterialTable,
+}
 
 /// The culling sets: the scene's slots in place, the still scene objects through the scene's cell
 /// order, the moving scene objects through it, then each batch's rows, then each batch's
@@ -84,6 +94,9 @@ struct ViewCull {
     rows: u32,
     /// The objects, rows and clusters that the view's runs covered in the frame that culled last.
     tested: u32,
+    /// The objects, rows and clusters inside the view's frustum that its blockers hid, in the
+    /// frame that culled last.
+    occluded: u32,
     /// The view's blended rows, sorted back to front, in the frame that culled last.
     sorted: SortedView,
     /// Each frame parity's index list entries of the sorted rows, in their order.
@@ -239,6 +252,19 @@ impl Culling {
         &self.views[self.slot(view)].culls[(frame & 1) as usize]
     }
 
+    /// The sources inside the views' frustums that blockers hid in a frame, or 0 for a frame that
+    /// did not cull.
+    pub(super) fn occluded_entries(&self, frame: u32) -> u32 {
+        if self.culled != frame {
+            return 0;
+        }
+        self.views
+            .iter()
+            .filter(|view| view.frame.is_some())
+            .map(|view| view.occluded)
+            .sum()
+    }
+
     /// The index list entries that a frame draws over all its views, or 0 for a frame that did
     /// not cull, whose parity's output is still an older frame's.
     pub(super) fn visible_entries(&self, frame: u32) -> u32 {
@@ -321,9 +347,13 @@ impl Culling {
 
     /// Finds each view's visible sources of `layout` for the frame, on the calling thread and the
     /// job workers. `frame_of` gives each view's values, or `None` for a view that the frame does
-    /// not draw. With `sorted`, each view also sorts the blended rows back to front. The clusters that come to rest are the same for every view, so they are built
-    /// once; each view then culls runs of its own, which skip the cells it cannot see. Fails only
-    /// when memory cannot grow for a view that sees more cells than any view did before.
+    /// not draw. With `sorted`, each view also sorts the blended rows back to front. With
+    /// `occlusion`, the first view draws the scene's blockers and hides what lies behind them.
+    /// The clusters that come to rest are the same for every view, so they are built once; each
+    /// view then culls runs of its own, which skip the cells it cannot see. Fails only when memory
+    /// cannot grow for a view that sees more cells than any view did before, or for more blockers
+    /// than any frame drew before.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn cull(
         &mut self,
         input: &FrameInput<'_>,
@@ -332,6 +362,7 @@ impl Culling {
         cells: &CellCulling,
         frame_of: &dyn Fn(ViewId) -> Option<ViewFrame>,
         sorted: Option<&SortedLayout>,
+        mut occlusion: Option<Occlusion<'_>>,
     ) -> Result<(), TryReserveError> {
         let (parity, scene, batches) = (input.parity(), input.scene, input.batches);
         self.culled = input.frame;
@@ -339,15 +370,36 @@ impl Culling {
         let first = self.first.index();
         for (k, view) in self.views.iter_mut().enumerate() {
             view.frame = frame_of(ViewId::from_index(first + k));
+            view.occluded = 0;
             if let Some(frame) = &view.frame {
                 view.offsets.update(scene, &frame.camera);
                 any = true;
             }
+            // Only the first view has blockers; the buffer they drew serves its culling below.
+            let buffer = match (&mut occlusion, &view.frame) {
+                (Some(o), Some(frame)) if k == 0 => o
+                    .occluders
+                    .draw(input, frame, view.offsets.as_slice(), o.meshes, o.materials)?
+                    .is_some(),
+                _ => false,
+            };
+            let buffer = occlusion
+                .as_ref()
+                .filter(|_| buffer)
+                .map(|o| o.occluders.buffer());
             let entries = &mut view.sorted_entries[parity];
             entries.clear();
             if let Some(sorted) = sorted {
                 let frame = view.frame.as_ref();
-                sorted.sort(input.jobs, frame, scene, batches, parity, &mut view.sorted);
+                sorted.sort(
+                    input.jobs,
+                    frame,
+                    buffer,
+                    scene,
+                    batches,
+                    parity,
+                    &mut view.sorted,
+                );
                 for &item in view.sorted.items() {
                     entries.push(sorted.row(item, batches).entry);
                 }
@@ -400,10 +452,14 @@ impl Culling {
                 layers: scene_layers,
             }
         };
-        for view in &mut self.views {
+        for (k, view) in self.views.iter_mut().enumerate() {
             let Some(frame) = &view.frame else {
                 continue;
             };
+            let buffer = occlusion
+                .as_ref()
+                .filter(|o| k == 0 && o.occluders.buffer().is_active())
+                .map(|o| o.occluders.buffer());
             let visible = if cells.active() {
                 cells.visible(&frame.frustum, view.offsets.as_slice())
             } else {
@@ -434,6 +490,7 @@ impl Culling {
                 frustum: &frame.frustum,
                 offsets: view.offsets.as_slice(),
                 layers: frame.layers,
+                occlusion: buffer,
             };
             null3d_core::culling::cull_into_buckets(
                 input.jobs,
@@ -444,6 +501,7 @@ impl Culling {
                 layout.buckets.len() as u32,
                 &mut view.culls[parity],
             );
+            view.occluded = view.culls[parity].hidden() as u32;
         }
         Ok(())
     }

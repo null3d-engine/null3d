@@ -103,6 +103,11 @@ export interface CoreGlue extends CoreErrors {
 	 * `CORE_NOT_COUNTED` where the GPU culls.
 	 */
 	visibleEntries(frame: number): number;
+	/**
+	 * The sources inside the camera's frustum that software occlusion culling hid in a recorded
+	 * frame, where the path culls on the CPU, or `CORE_NOT_COUNTED` where the GPU culls.
+	 */
+	occludedEntries(frame: number): number;
 	/** True when the last recorded frame rebuilt its draw tables after a structure change. */
 	drawTablesRebuilt(): boolean;
 	resetGpu(): number;
@@ -354,6 +359,8 @@ export interface CoreGlue extends CoreErrors {
 	setBloom(on: boolean): number;
 	/** How many times fewer taps than three.js's bloom's blurs read, from the next frame on. */
 	setBloomSamples(divisor: number): number;
+	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
+	setSoftwareOcclusion(on: boolean): number;
 	/**
 	 * Grades the canvas color with the color grading table in a 3D texture, or with none for 0,
 	 * from the next frame on, with the post-processing values' intensity and domain.
@@ -494,6 +501,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'cullFrame',
 	'recordFrame',
 	'visibleEntries',
+	'occludedEntries',
 	'drawTablesRebuilt',
 	'resetGpu',
 	'drawListAddress',
@@ -547,6 +555,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOutput',
 	'setBloom',
 	'setBloomSamples',
+	'setSoftwareOcclusion',
 	'setLut',
 	'setVignette',
 	'setCanvasOutput',

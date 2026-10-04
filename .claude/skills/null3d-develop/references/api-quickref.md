@@ -160,6 +160,7 @@ mesh.setMaterial(material);          mesh.setMesh(geometry);       // setMesh br
 mesh.setCastShadows(true);           mesh.setReceiveShadows(true); // false by default, as in three.js
 mesh.setRenderOrder(n);                                             // blended objects, lower first
 mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center relative to the origin, before scale
+mesh.setOccluder(true);              // (0.2) WebGL2: large solid meshes, such as buildings, hide what lies behind them
 ```
 
 - Getters write into the `out` array you pass, so they allocate nothing. The world getters read the last frame the engine processed. Pass them a plain array or `Float64Array` to keep 64-bit positions.

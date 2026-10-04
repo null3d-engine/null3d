@@ -141,6 +141,11 @@ export interface MeshOptions extends NodeOptions {
 	 * Unlit materials show no shadows.
 	 */
 	receiveShadows?: boolean;
+	/**
+	 * True makes the mesh block the view for software occlusion culling on WebGL2, like
+	 * `setOccluder(true)`. The default is false.
+	 */
+	occluder?: boolean;
 }
 
 /**
@@ -248,6 +253,11 @@ export interface InstantiateOptions extends NodeOptions {
 	castShadows?: boolean;
 	/** True makes shadows fall on every mesh of the copy. The default is false. */
 	receiveShadows?: boolean;
+	/**
+	 * True makes every mesh of the copy block the view for software occlusion culling on WebGL2,
+	 * like `setOccluder(true)`. The default is false.
+	 */
+	occluder?: boolean;
 }
 
 /**
@@ -951,6 +961,20 @@ export class Mesh extends Object3D {
 	 */
 	setReceiveShadows(receive: boolean): void {
 		this.setFlag('setReceiveShadows', C.FLAG_RECEIVE_SHADOWS, receive);
+	}
+
+	/**
+	 * Makes the mesh block the view, or stop. The default is false. On WebGL2, while the
+	 * `softwareOcclusion` quality setting is on, the job workers draw each blocker into a small
+	 * depth buffer every frame, and the engine skips every object that lies wholly behind the
+	 * blockers. Mark large, solid meshes that hide much of the scene, such as buildings and walls,
+	 * whose mesh has at most 4,096 triangles. A blocker's mesh must lie inside what the object
+	 * draws, as the object's own mesh does. Objects that blend, cut holes with an alpha mask, use
+	 * a custom material or are skinned never block, whatever this says. WebGPU culls hidden
+	 * objects on the GPU, and ignores it. A change needs no rebuild of the engine's tables.
+	 */
+	setOccluder(occluder: boolean): void {
+		this.setFlag('setOccluder', C.FLAG_OCCLUDER, occluder);
 	}
 
 	/**
@@ -2065,7 +2089,8 @@ export class Scene {
 		}
 		const flags =
 			(options.castShadows ? C.FLAG_CAST_SHADOWS : 0) |
-			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0);
+			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0) |
+			(options.occluder ? C.FLAG_OCCLUDER : 0);
 		const object = this.create(Mesh, options, mesh.id, mesh.radius, flags, 'createMesh');
 		this.command(C.COMMAND_SET_MATERIAL, object.handle, material.id, 0, 'createMesh');
 		object.mesh = mesh;
@@ -2091,7 +2116,8 @@ export class Scene {
 		}
 		const extra =
 			(options.castShadows ? C.FLAG_CAST_SHADOWS : 0) |
-			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0);
+			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0) |
+			(options.occluder ? C.FLAG_OCCLUDER : 0);
 		const root: TemplateNode = {
 			...(template[0] as TemplateNode),
 			name: options.name ?? template[0]?.name ?? '',

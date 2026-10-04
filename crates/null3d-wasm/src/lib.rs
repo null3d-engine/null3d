@@ -694,6 +694,17 @@ pub fn visible_entries(frame: u32) -> u32 {
     })
 }
 
+/// The sources inside the camera's frustum that software occlusion culling hid in a recorded
+/// frame, where the frame builder culls on the CPU, or `NOT_COUNTED` where the GPU culls.
+#[wasm_bindgen(js_name = occludedEntries)]
+pub fn occluded_entries(frame: u32) -> u32 {
+    value_with_engine(|e| {
+        Ok(e.renderer
+            .occluded_entries(frame)
+            .unwrap_or(constants::NOT_COUNTED))
+    })
+}
+
 /// True when the last recorded frame rebuilt its draw tables after a structure change.
 #[wasm_bindgen(js_name = drawTablesRebuilt)]
 pub fn draw_tables_rebuilt() -> bool {
@@ -1801,6 +1812,16 @@ pub fn set_canvas_output(scene_color: u32, antialias: u32) -> u32 {
 pub fn set_bloom_samples(divisor: u32) -> u32 {
     with_engine(|e| {
         e.renderer.settings_mut().set_bloom_divisor(divisor);
+        0
+    })
+}
+
+/// Turns software occlusion culling on or off from the next frame on, where the frame builder
+/// culls on the CPU: objects with the occluder flag then hide what lies wholly behind them.
+#[wasm_bindgen(js_name = setSoftwareOcclusion)]
+pub fn set_software_occlusion(on: bool) -> u32 {
+    with_engine(|e| {
+        e.renderer.set_software_occlusion(on);
         0
     })
 }

@@ -145,6 +145,33 @@ function bloomTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the occlusion tests: a city whose buildings block the view from its streets. */
+const OCCLUSION_SKETCH = 'tests/pages/sketches/occlusion-sketch.ts';
+
+/**
+ * The city with software occlusion culling off, and on, which must match the same references: the
+ * culling skips only what the buildings hide. WebGPU ignores the setting, so the second test runs
+ * on WebGL2 alone. The references allow the usual tolerance, since a software GPU on another kind
+ * of processor can round a pixel otherwise. The occlusion spec checks that the culling hid objects
+ * and draws the same image to the pixel as without it, both drawn on one machine.
+ */
+function occlusionTests(): ImageTest[] {
+	const test = (name: string, side: 'on' | 'off'): ImageTest => ({
+		name,
+		sketch: `${OCCLUSION_SKETCH}?light`,
+		hold: 2.5,
+		switches: [`occlusion=${side}`],
+	});
+	return [
+		test('occlusion-off', 'off'),
+		{
+			...test('occlusion-on', 'on'),
+			tiers: ['webgl2'],
+			reference: 'occlusion-off',
+		},
+	];
+}
+
 /** The sketch of the color grading tests: hues and grays on a light ground (bench/scenes/grading.ts). */
 const GRADING_SKETCH = 'tests/pages/sketches/grading-sketch.ts';
 
@@ -513,6 +540,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...toneMappingTests(),
 	...antialiasTests(),
 	...bloomTests(),
+	...occlusionTests(),
 	...gradingTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
 	// alpha: the output spec checks the alpha of the captured pixels.

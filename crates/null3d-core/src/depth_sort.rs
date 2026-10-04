@@ -24,7 +24,7 @@ use std::collections::TryReserveError;
 
 use crate::culling::{
     CULL_CHUNK, CullRun, CullSet, CullView, ROW_CELLS, SetLayers, SetOrder, cull_in_parallel,
-    cull_spheres, cull_spheres_in_cells, keep_layers,
+    cull_spheres, cull_spheres_in_cells, keep_layers, keep_unoccluded,
 };
 use crate::jobs::JobSystem;
 use crate::layers::shares_layer;
@@ -296,7 +296,8 @@ pub fn cull_and_sort<'a>(
     total
 }
 
-/// Culls one run's rows into `dst`, and keeps those on the view's layers. Returns their count.
+/// Culls one run's rows into `dst`, and keeps those on the view's layers that its blockers do not
+/// hide. Returns their count.
 fn cull_run(view: CullView<'_>, set: CullSet<'_>, run: CullRun, dst: &mut [u32]) -> usize {
     debug_assert!(
         matches!(set.order, SetOrder::Rows),
@@ -325,6 +326,17 @@ fn cull_run(view: CullView<'_>, set: CullSet<'_>, run: CullRun, dst: &mut [u32])
                 dst,
             )
         }
+    };
+    let visible = match view.occlusion {
+        Some(buffer) => keep_unoccluded(buffer, &mut dst[..visible], set.spheres, &|row| {
+            let cell = if run.cell == ROW_CELLS {
+                set.cells[row as usize]
+            } else {
+                run.cell
+            };
+            view.offsets[cell as usize]
+        }),
+        None => visible,
     };
     match set.layers {
         SetLayers::Rows(masks) => keep_layers(&mut dst[..visible], masks, view.layers),
@@ -480,6 +492,7 @@ mod tests {
             frustum: &frustum,
             offsets: &offsets,
             layers: ALL_LAYERS,
+            occlusion: None,
         };
         let runs = [run(0, 0, 3), run(0, 3, 5)];
         let mut out = DepthSorted::default();
@@ -504,6 +517,7 @@ mod tests {
             frustum: &frustum,
             offsets: &offsets,
             layers: ALL_LAYERS,
+            occlusion: None,
         };
         let runs = [run(0, 0, 4)];
         let mut out = DepthSorted::default();
@@ -534,6 +548,7 @@ mod tests {
             frustum: &slab,
             offsets: &offsets,
             layers: 1,
+            occlusion: None,
         };
         let runs = [run(0, 0, 4)];
         let mut out = DepthSorted::default();
@@ -561,6 +576,7 @@ mod tests {
             frustum: &frustum,
             offsets: &offsets,
             layers: ALL_LAYERS,
+            occlusion: None,
         };
         let runs = [CullRun {
             cell: ROW_CELLS,

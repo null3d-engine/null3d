@@ -516,7 +516,7 @@ function imageOf(
 }
 
 /** How many pixels of two images of one size differ at all. */
-function differentPixels(a: Uint8Array, b: Uint8Array): number {
+export function differentPixels(a: Uint8Array, b: Uint8Array): number {
 	let count = 0;
 	for (let i = 0; i < a.length; i += 4)
 		if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2] || a[i + 3] !== b[i + 3])
