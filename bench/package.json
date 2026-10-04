@@ -7,6 +7,8 @@
 	},
 	"devDependencies": {
 		"@playwright/test": "1.63.0",
+		"@null3d/cli": "workspace:*",
+		"@null3d/controls": "workspace:*",
 		"@null3d/engine": "workspace:*",
 		"@null3d/vite-plugin": "workspace:*",
 		"@types/three": "0.186.0",

@@ -112,3 +112,11 @@ null3D keeps positions, light distances, shadow lookups and fog depth at full pr
 - The shader build lets library modules use 16-bit floats. Entry shaders and custom materials still may not, as `shaders/wgsl-rules` says.
 - If half precision ships on a path, `guides/performance` describes it, and the image references of that path are drawn with it.
 - The record is in the table in README.md.
+
+## Addendum, 2026-10-04: the iPad runs half precision at twice the rate
+
+The web search of 4 October 2026 corrected a fact behind this record. Apple GPUs before the A15, the iPad's A12X among them, run 16-bit floats at twice the rate of 32-bit floats. From the A15 and the M1 on, the rates are equal ([metal-benchmarks](https://github.com/philipturner/metal-benchmarks/blob/main/README.md)). So the iPad's WebGPU run measured a double-rate GPU, and half precision saved only 1.5% there.
+
+- The Mali-G715 of the Pixel 9 also runs 16-bit floats at twice the rate, but only in vector math ([Arm GPU Best Practices](https://documentation-service.arm.com/static/67a62b17091bfc3e0a947695)). The S25's Adreno 830 rate is a vendor family claim, not a measurement. The S24+'s Xclipse 940 gains only from packed math.
+- A re-measure is low priority (prototype L5 of the [technique review](../technique-review-2026-10.md#prototypes)). It runs on BrowserStack's Pixel 9, with the half math written as vectors. It repeats the shadow image test that failed at 0.508% on the S24+.
+- If the roughness floor drops to 0.045, the HALF builds need a floor of their own, 0.089. 0.045⁴ is below the smallest normal 16-bit float. M2-R12 added that floor ("What half precision covers").

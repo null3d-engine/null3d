@@ -77,6 +77,20 @@ Each frame, the job workers draw the blockers in the camera's view, nearest firs
 - Only the active camera's view uses blockers. Shadow cascades, shadow tiles and other views cull as before, so a hidden object still casts its shadow.
 - A blocker must lie inside what its object draws. An object's own mesh does.
 
+### Blockers from the asset tool
+
+`assets optimize` gives a blocker to each mesh of a model that encloses space. The blocker is one or two boxes inside the mesh, joined into one closed surface of a few dozen triangles at most. The tool checks each blocker against the mesh, and drops one that would show outside it. A copy of the model then blocks with those meshes. Each draws its blocker in place of its mesh, so a building of thousands of triangles blocks for the cost of a few dozen:
+
+```ts
+// city.glb came from assets optimize, so its buildings block on WebGL2.
+const city = await assets.loadGltf('/models/city.glb');
+scene.instantiate(city);
+// Or keep a copy's meshes from blocking.
+scene.instantiate(city, { occluder: false });
+```
+
+`setOccluder` changes an object afterwards. [The asset pipeline](../guides/assets-pipeline.md#blockers-and-stored-trees) says which meshes get blockers.
+
 The `softwareOcclusion` quality setting turns it on and off during play. It is on from the Medium preset up, and off on Low. The `?occlusion=off` switch turns it off for a page. `engine.measure` reports the entries that it hid as `occludedEntries`, beside `visibleEntries`.
 
 WebGPU ignores `setOccluder` and the setting.

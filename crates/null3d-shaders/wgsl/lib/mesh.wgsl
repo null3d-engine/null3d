@@ -331,7 +331,7 @@ fn world_direction(found: Instance, direction: vec3f) -> vec3f {
 
 #ifdef SKIN
 /// Joints per row of the joint texture.
-const JOINTS_PER_ROW: u32 = 1024u;
+const JOINTS_PER_ROW: u32 = 512u;
 
 #ifdef WEBGL2
 @group(2) @binding(4) var joint_matrices: texture_2d<f32>;

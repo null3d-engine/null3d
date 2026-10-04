@@ -1,7 +1,8 @@
 // The post-processing settings that a sketch sets through `ctx.post`: the exposure and the tone
-// mapping, which the engine applies to the scene's color on its way to the canvas, bloom, and the
-// color grading table and the vignette, which the final pass applies after the tone mapping. The
-// core takes one exposure: the sketch's exposure times the camera exposure of its EV100.
+// mapping, which the engine applies to the scene's color on its way to the canvas, bloom, ambient
+// occlusion, which darkens the ambient light of the camera's opaque objects, and the color grading
+// table and the vignette, which the final pass applies after the tone mapping. The core takes one
+// exposure: the sketch's exposure times the camera exposure of its EV100.
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
@@ -33,11 +34,23 @@ const SETTINGS = [
 	'exposure',
 	'ev100',
 	'bloom',
+	'ao',
 	'lut',
 	'lutIntensity',
 	'vignette',
 ] as const;
 const BLOOM_SETTINGS = ['strength', 'radius', 'threshold'] as const;
+const AO_SETTINGS = [
+	'radius',
+	'thickness',
+	'distanceExponent',
+	'distanceFalloff',
+	'scale',
+	'samples',
+	'intensity',
+] as const;
+/** The most samples of ambient occlusion's horizon search. */
+const MAX_AO_SAMPLES = 64;
 const VIGNETTE_SETTINGS = ['offset', 'darkness'] as const;
 const TONE_MAPPINGS = "'aces', 'agx', 'neutral' or 'none'";
 
@@ -73,6 +86,48 @@ export interface BloomSettings {
 	 * by default. At 1, only colors brighter than white glow, such as strong emissive light.
 	 */
 	threshold?: number;
+}
+
+/**
+ * Ambient occlusion's settings, with the meanings of three.js's `GTAOPass`. A setting that a call
+ * leaves out keeps its value.
+ *
+ * @category api/post
+ */
+export interface AoSettings {
+	/**
+	 * How far from a surface the search for what hides it reaches, in world units: 0 or more, and
+	 * 0.25 by default, as `GTAOPass`'s `radius`.
+	 */
+	radius?: number;
+	/**
+	 * How far in front of a surface, along the view, an object still hides it, in world units: 0
+	 * or more, and 1 by default. Objects farther in front cast no occlusion, so a thin pole does
+	 * not darken the wall far behind it.
+	 */
+	thickness?: number;
+	/**
+	 * How the search's steps spread over the radius: 1 spreads them evenly, the default, and
+	 * higher values gather them near the surface. It is above 0.
+	 */
+	distanceExponent?: number;
+	/**
+	 * From 0 to 1: how much less the farther steps of the search count. It is 1 by default, as
+	 * `GTAOPass`'s `distanceFallOff`.
+	 */
+	distanceFalloff?: number;
+	/** The power that the occlusion is raised to: 0 or more, and 1 by default. Above 1 it darkens. */
+	scale?: number;
+	/**
+	 * The depth samples that each pixel's search reads: a whole number from 1 to 64, and 16 by
+	 * default. Below 30 they spread over 3 directions, and from 30 over 5.
+	 */
+	samples?: number;
+	/**
+	 * From 0 to 1: how much of the occlusion reaches the ambient light. It is 1 by default, as
+	 * `GTAOPass`'s `blendIntensity`.
+	 */
+	intensity?: number;
 }
 
 /**
@@ -127,6 +182,14 @@ export interface PostSettings {
 	 */
 	bloom?: BloomSettings | false;
 	/**
+	 * Ambient occlusion: darkens the ambient light where nearby surfaces hide a surface from the
+	 * sky, as three.js's `GTAOPass` finds it. It darkens only the light that comes from all around,
+	 * where `GTAOPass` darkens the whole image. Settings turn it on, `{}` with the values it had,
+	 * and `false` turns it off. It is off by default, and draws only where the quality setting
+	 * `aoScale` is above 0.
+	 */
+	ao?: AoSettings | false;
+	/**
 	 * A color grading table from `assets.loadLut`, which maps each pixel's color after the tone
 	 * mapping, as three.js's `LUTPass` does. `false` turns it off. It is off by default.
 	 */
@@ -156,6 +219,8 @@ export class Post {
 	private ev100: number | false = false;
 	private bloom = false;
 	private warnedNoBloom = false;
+	private ao = false;
+	private warnedNoAo = false;
 	private lut: Lut | false = false;
 	private vignette = false;
 	/**
@@ -169,11 +234,13 @@ export class Post {
 
 	/**
 	 * `hdrEffects` is false on a device that has no HDR target, where effects that need HDR color
-	 * stay off.
+	 * stay off. `occlusionTargets` is false on a device that does not draw into the float targets of
+	 * ambient occlusion, where it stays off.
 	 */
 	constructor(
 		private readonly core: CoreMemory,
 		private readonly hdrEffects = true,
+		private readonly occlusionTargets = true,
 	) {}
 
 	/**
@@ -184,7 +251,7 @@ export class Post {
 	 */
 	set(settings: PostSettings): void {
 		if (DEV) checkSettings(settings);
-		const { toneMapping, exposure, ev100, bloom, lut, lutIntensity, vignette } = settings;
+		const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette } = settings;
 		const { core } = this;
 		const { glue } = core;
 		const values = this.block();
@@ -220,6 +287,7 @@ export class Post {
 			}
 			core.check(glue.setVignette(this.vignette), 'post.set', undefined, true);
 		}
+		if (ao !== undefined) this.setAo(ao, values);
 		if (bloom === undefined) return;
 		this.bloom = bloom !== false;
 		if (bloom !== false) {
@@ -236,6 +304,30 @@ export class Post {
 		core.check(glue.setBloom(this.bloom), 'post.set', undefined, true);
 	}
 
+	/** Turns ambient occlusion on with the settings that `ao` gives, or off with `false`. */
+	private setAo(ao: AoSettings | false, values: Float32Array): void {
+		this.ao = ao !== false;
+		if (ao !== false) {
+			if (ao.radius !== undefined) values[C.POST_VALUE_AO_RADIUS] = ao.radius;
+			if (ao.thickness !== undefined) values[C.POST_VALUE_AO_THICKNESS] = ao.thickness;
+			if (ao.distanceExponent !== undefined)
+				values[C.POST_VALUE_AO_DISTANCE_EXPONENT] = ao.distanceExponent;
+			if (ao.distanceFalloff !== undefined)
+				values[C.POST_VALUE_AO_DISTANCE_FALLOFF] = ao.distanceFalloff;
+			if (ao.scale !== undefined) values[C.POST_VALUE_AO_SCALE] = ao.scale;
+			if (ao.samples !== undefined) values[C.POST_VALUE_AO_SAMPLES] = ao.samples;
+			if (ao.intensity !== undefined) values[C.POST_VALUE_AO_INTENSITY] = ao.intensity;
+		}
+		const on = this.ao && this.occlusionTargets;
+		if (DEV && this.ao && !this.occlusionTargets && !this.warnedNoAo) {
+			this.warnedNoAo = true;
+			console.warn(
+				'null3D: ambient occlusion stays off on this device: it needs float render targets, and the device has none. See the post-processing concepts page.',
+			);
+		}
+		this.core.check(this.core.glue.setAo(on), 'post.set', undefined, true);
+	}
+
 	/** The core's block of post-processing values, through a view made again after the memory grew. */
 	private block(): Float32Array {
 		const { core } = this;
@@ -249,6 +341,11 @@ export class Post {
 	/** @internal True while the sketch has bloom on. */
 	get bloomOn(): boolean {
 		return this.bloom;
+	}
+
+	/** @internal True while the sketch has ambient occlusion on, on a device that draws it. */
+	get aoOn(): boolean {
+		return this.ao && this.occlusionTargets;
 	}
 }
 
@@ -278,9 +375,31 @@ function checkSettings(settings: PostSettings): void {
 		if (!(SETTINGS as readonly string[]).includes(key))
 			throw new EngineError(
 				'E1213',
-				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, lut, lutIntensity and vignette.`,
+				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity and vignette.`,
 			);
-	const { toneMapping, exposure, ev100, bloom, lut, lutIntensity, vignette } = settings;
+	const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette } = settings;
+	checkGroup(
+		'ao',
+		ao,
+		AO_SETTINGS,
+		'radius, thickness, distanceExponent, distanceFalloff, scale, samples and intensity',
+	);
+	if (ao) {
+		checkNumber('ao.radius', ao.radius);
+		checkNumber('ao.thickness', ao.thickness);
+		checkNumber('ao.distanceExponent', ao.distanceExponent);
+		if (ao.distanceExponent === 0)
+			throw new EngineError('E1213', 'post.set() got 0 for ao.distanceExponent, which is above 0.');
+		checkNumber('ao.distanceFalloff', ao.distanceFalloff, 1);
+		checkNumber('ao.scale', ao.scale);
+		checkNumber('ao.intensity', ao.intensity, 1);
+		checkNumber('ao.samples', ao.samples, MAX_AO_SAMPLES);
+		if (ao.samples !== undefined && (ao.samples < 1 || !Number.isInteger(ao.samples)))
+			throw new EngineError(
+				'E1213',
+				`post.set() got ${ao.samples} for ao.samples, which takes a whole number from 1 to ${MAX_AO_SAMPLES}.`,
+			);
+	}
 	if (lut !== undefined && lut !== false && !(lut instanceof Lut))
 		throw new EngineError(
 			'E1213',

@@ -455,8 +455,9 @@ impl BloomPass {
     }
 }
 
-/// A block's bytes: blocks are `repr(C)` and made of 4-byte fields only.
-fn bytes_of<T: Copy>(block: &T) -> &[u8] {
+/// A block's bytes: blocks are `repr(C)` and made of 4-byte fields only. Ambient occlusion's
+/// block reads the same way.
+pub(crate) fn bytes_of<T: Copy>(block: &T) -> &[u8] {
     // SAFETY: callers pass `repr(C)` blocks of 4-byte fields, which have no padding, so every
     // byte is initialized.
     unsafe {

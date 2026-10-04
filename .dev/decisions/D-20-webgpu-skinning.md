@@ -15,7 +15,7 @@ Keep the compute pass if it saves at least 10% of the frame time with two or mor
 The engine builds both, so the data can pick either. The compute pass is the default, and the `?skinning=vertex` switch picks the vertex shader on WebGPU. What both share:
 
 - A loader links a mesh object to an animated instance with the scene command `SET_SKIN`. A skinned object draws from a bucket of its own, as any object with bounds of its own does.
-- Each frame's skinning matrices reach the GPU in one RGBA32F texture: 1,024 joints per row, three texels per joint. The animation step writes one of two matrix buffers in turn. So each frame uploads straight from the buffer of its own step, with no copy. The WebGL2 path (M2-C4) can read the same texture.
+- Each frame's skinning matrices reach the GPU in one RGBA32F texture: 512 joints per row, three texels per joint. A row is then 1,536 texels wide, as the WebGL2 data textures' rows are, so it fits the 2,048 texels that every WebGL2 device allows. Until 4 October 2026 a row held 1,024 joints, 3,072 texels, which a device at that floor could not create. The animation step writes one of two matrix buffers in turn. So each frame uploads straight from the buffer of its own step, with no copy. The WebGL2 path (M2-C4) can read the same texture.
 - A skinned object culls with a sphere that its pose moves. Each mesh keeps a sphere per joint around the vertices that the joint moves. After each animation step the core moves those spheres by the pose and writes the sphere around them all. A skinned vertex is a weighted average of its joints' matrices applied to it, so it lies inside that sphere, whatever the pose. A Rust test checks every vertex of a column against 200 random poses. Each joint turns up to half a turn, scales by 0.5 to 2 and moves up to 3 m.
 
 The compute pass (`gpu_driven/skin.rs`, `skin.wgsl`):
@@ -69,3 +69,12 @@ three.js's WebGPU renderer (0.186) skins in the vertex shader, as its WebGL rend
 - Whichever way loses leaves the engine. For the compute pass, that is `skin.wgsl`, `gpu_driven/skin.rs`'s pass and the skinned vertex buffer. For the vertex shader, that is the WGSL modules' SKIN builds, the joint texture's bind group on WebGPU and the bucket's first joint. That frees 2.3 to 3.5 KB per WebGPU page. The `?skinning=` switch then goes too.
 - WebGL2 (M2-C4) skins in the vertex shader, by D-10, with the same joint texture and the GLSL builds of the same SKIN code.
 - The record is in the table in [README.md](README.md).
+
+## Addendum, 2026-10-04: what decides this record
+
+The technique review and the owner's rulings of 4 October 2026 ([D-53](D-53-technique-defaults.md)) change how this record is decided:
+
+- Decide it in S5 as well as on the timing page, and on an Android phone with WebGPU. The Galaxy S24+ has no WebGPU adapter, so BrowserStack's Galaxy S25 (Adreno 830) and Pixel 9 (Mali-G715) run it (ruling 10). Prototype A1 runs S5 with the compute pass, with `?skinning=vertex`, and with the lean changes below.
+- Mali compiles each vertex shader into a position shader and a varying shader, and Adreno's binning pass runs a position-only vertex shader. So a joint blend that feeds both the position and the normal can run twice there ([Arm's Mali Offline Compiler guide](https://documentation-service.arm.com/static/648aeb7f153eb247a5450a90), [Qualcomm's best practices](https://docs.qualcomm.com/bundle/publicresource/topics/80-78185-2/mobile_best_practices.html)). Compute skinning blends once. That favors the compute pass on Android, but no vendor advises either way, and Qualcomm advises keeping graphics submits apart from compute dispatches.
+- The timing page writes 24 bytes per skinned vertex; the engine writes 28 to 48. So the page's figures understate the compute pass's cost.
+- If the compute pass stays, it gets lean (proposed M2-C8). It skips objects whose pose did not change, and writes normals and tangents in 8 bits. The Knight's skinned vertex falls from 28 to 20 bytes, and S5's skinned memory from 69 MB to about 49 MB. It carries the fixes of R5-02: a dispatch split by GPU limits, and an error past them.

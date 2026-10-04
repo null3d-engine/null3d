@@ -14,7 +14,9 @@ export const ASSET_SCENE = {
 	optimized: 'tests/pages/assets/models/optimized/asset-scene.glb',
 	/** The tool's output with levels of detail and meshopt compression. */
 	lodMeshopt: 'tests/pages/assets/models/optimized/asset-scene-lod-meshopt.glb',
-	/** The texture files of both outputs. */
+	/** The tool's output with a stored tree for every part (`--bvh 1`). */
+	trees: 'tests/pages/assets/models/optimized/asset-scene-trees.glb',
+	/** The texture files of the outputs. */
 	textures: 'tests/pages/assets/models/optimized/textures',
 } as const;
 

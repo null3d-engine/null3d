@@ -6,13 +6,24 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, extname, resolve } from 'node:path';
 import { BufferUtils, Format, NodeIO } from '@gltf-transform/core';
-import { ALL_EXTENSIONS, EXTMeshoptCompression } from '@gltf-transform/extensions';
+import {
+	ALL_EXTENSIONS,
+	EXTMeshoptCompression,
+	KHRTextureBasisu,
+} from '@gltf-transform/extensions';
 import { MeshoptDecoder, MeshoptEncoder } from 'meshoptimizer';
 import { VERSION } from '../version.js';
 import { planLevels, quantizeMeshes, reorderMeshes, storeLevels } from './geometry.js';
 import { MAX_TEXTURE_SIDE } from './images.js';
 import { MSFTLod } from './lod-extension.js';
 import { modelReport } from './report.js';
+import { addSpatialData, BVH_MIN_TRIANGLES } from './spatial.js';
+import {
+	NULL3D_MESH_BVH,
+	NULL3D_OCCLUDER,
+	Null3dMeshBvh,
+	Null3dOccluder,
+} from './spatial-extensions.js';
 import { encodeTextures, TEXTURE_FOLDER } from './textures.js';
 
 /** @import { Document } from '@gltf-transform/core' */
@@ -27,6 +38,10 @@ import { encodeTextures, TEXTURE_FOLDER } from './textures.js';
  * @property {TextureQuality} textureQuality
  * @property {boolean} meshopt Compress the model's buffers with meshopt, which the engine decodes
  *   losslessly on load. The default is true.
+ * @property {boolean} blockers Give each mesh that encloses space a blocker mesh for software
+ *   occlusion culling. The default is true.
+ * @property {number} bvh The fewest triangles of a mesh part whose tree for raycasts the file
+ *   stores, or 0 for none.
  * @property {string} textureFolder The address of the texture files' folder from the model.
  */
 
@@ -36,6 +51,8 @@ export const DEFAULT_OPTIONS = /** @type {const} */ ({
 	maxTextureSize: MAX_TEXTURE_SIDE,
 	textureQuality: 'size',
 	meshopt: true,
+	blockers: true,
+	bvh: BVH_MIN_TRIANGLES,
 	textureFolder: TEXTURE_FOLDER,
 });
 
@@ -50,11 +67,14 @@ export const DEFAULT_OPTIONS = /** @type {const} */ ({
 /** The `generator` that optimized files name. */
 export const GENERATOR = `null3D asset tool ${VERSION}`;
 
-/** A reader and writer of glTF files with every extension that glTF-Transform knows, and MSFT_lod. */
+/**
+ * A reader and writer of glTF files with every extension that glTF-Transform knows, MSFT_lod and
+ * the engine's own.
+ */
 async function glTFIO() {
 	await Promise.all([MeshoptDecoder.ready, MeshoptEncoder.ready]);
 	return new NodeIO()
-		.registerExtensions([...ALL_EXTENSIONS, MSFTLod])
+		.registerExtensions([...ALL_EXTENSIONS, MSFTLod, Null3dOccluder, Null3dMeshBvh])
 		.registerDependencies({ 'meshopt.decoder': MeshoptDecoder, 'meshopt.encoder': MeshoptEncoder });
 }
 
@@ -201,19 +221,32 @@ export async function optimizeModel(path, options, encode) {
 		0,
 	);
 	doc.getRoot().getAsset().generator = GENERATOR;
-	// Compression of the input stays out of the output: the steps below choose their own.
+	// Compression, blockers and trees of the input stay out of the output: the steps below make
+	// their own.
 	for (const extension of doc.getRoot().listExtensionsUsed())
-		if (['EXT_meshopt_compression', DRACO].includes(extension.extensionName)) extension.dispose();
+		if (
+			['EXT_meshopt_compression', DRACO, NULL3D_OCCLUDER, NULL3D_MESH_BVH].includes(
+				extension.extensionName,
+			)
+		)
+			extension.dispose();
 	await reorderMeshes(doc);
 	const levels = options.lod ? await planLevels(doc) : new Map();
 	quantizeMeshes(doc);
 	storeLevels(doc, levels);
+	const spatial = addSpatialData(doc, {
+		blockers: options.blockers,
+		bvhMinTriangles: options.bvh > 0 ? options.bvh : Number.POSITIVE_INFINITY,
+	});
 	const { files, records, uris } = await encodeTextures(doc, {
 		encode,
 		maxSide: options.maxTextureSize,
 		quality: options.textureQuality,
 		folder: options.textureFolder,
 	});
+	// glTF names a KTX2 image only through KHR_texture_basisu. Readers that follow the rules, such
+	// as three.js's GLTFLoader, refuse a KTX2 image that a texture names directly.
+	if (uris.size > 0) doc.createExtension(KHRTextureBasisu).setRequired(true);
 	tidyBuffers(doc);
 	if (options.meshopt)
 		doc
@@ -228,6 +261,7 @@ export async function optimizeModel(path, options, encode) {
 		textures: records,
 		files,
 		lodMeshes: levels.size,
+		spatial,
 		ms: performance.now() - start,
 	});
 	return { glb, files, report };

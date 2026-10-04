@@ -6,15 +6,16 @@ import {
 	NEW_SEARCH,
 	nextCount,
 	roundCount,
+	type ScaleScene,
 	type ScaleSearch,
 	scaleItem,
 } from './scale.ts';
 
 /** Runs the search against a device that holds the rate up to `scale` objects; returns the counts tried. */
-function search(scale: number): { tried: number[]; result: ScaleSearch } {
+function search(scale: number, scene: ScaleScene = 's1'): { tried: number[]; result: ScaleSearch } {
 	const tried: number[] = [];
 	let state = NEW_SEARCH;
-	for (let count = nextCount(state); count !== null; count = nextCount(state)) {
+	for (let count = nextCount(state, scene); count !== null; count = nextCount(state, scene)) {
 		tried.push(count);
 		state = afterCount(state, count, count <= scale);
 	}
@@ -46,6 +47,32 @@ describe('the phone-scale search', () => {
 		const { tried, result } = search(Number.POSITIVE_INFINITY);
 		expect(tried.at(-1)).toBe(2_048_000);
 		expect(result).toEqual({ held: 2_048_000, dropped: null });
+	});
+
+	it("searches S5's characters from 25 up to 3,200", () => {
+		const { tried, result } = search(400, 's5');
+		expect(tried.slice(0, 6)).toEqual([25, 50, 100, 200, 400, 800]);
+		expect(result.held).toBe(400);
+		expect((result.dropped as number) / result.held).toBeLessThanOrEqual(1.05);
+		expect(search(Number.POSITIVE_INFINITY, 's5').result).toEqual({ held: 3_200, dropped: null });
+	});
+
+	it('halves S5 down to a single character on a device that holds none of its counts', () => {
+		const { tried, result } = search(0, 's5');
+		expect(tried).toEqual([25, 13, 7, 4, 2, 1]);
+		expect(result).toEqual({ held: 0, dropped: 1 });
+	});
+
+	it("times S5's characters on the scene's own page", () => {
+		const item = scaleItem('threejs-webgpu', 400, 's5');
+		expect(item.id).toBe('scale-s5-threejs-webgpu-400');
+		expect(item.path).toContain('/bench/pages/threejs/s5.html?renderer=webgpu&seconds=5&n=400');
+		expect(item.check).toEqual({
+			kind: 'bench',
+			tier: 'webgpu',
+			scene: 's5',
+			page: 'threejs-webgpu',
+		});
 	});
 
 	it('times three.js at each count with a short run', () => {

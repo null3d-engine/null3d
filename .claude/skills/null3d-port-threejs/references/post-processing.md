@@ -1,8 +1,8 @@
 # Porting post-processing
 
-three.js chains full-screen passes, each reading and writing the whole screen. null3D has a built-in chain: an HDR scene buffer and bloom at half size and below. One final pass then merges bloom, exposure, tone mapping, FXAA, dithering, color grading and the vignette. Ambient occlusion and per-pixel custom effects join the chain later in 0.2. You port settings, not passes. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`, `concepts/backends`.
+three.js chains full-screen passes, each reading and writing the whole screen. null3D has a built-in chain: an HDR scene buffer, ambient occlusion at half size before the opaque pass, and bloom at half size and below. One final pass then merges bloom, exposure, tone mapping, FXAA, dithering, color grading and the vignette. Per-pixel custom effects join the chain later in 0.2. You port settings, not passes. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`, `concepts/backends`.
 
-Versions: the HDR scene buffer, the final pass, `post.set({ toneMapping, exposure })`, `bloom`, `lut` and `vignette` (0.2) are built. Every other setting in this file, `post.addEffect` and custom passes come later in 0.2. Until then, a port keeps the tone mapping, the exposure, bloom, color grading and the vignette of the three.js chain. The report lists each effect it dropped.
+Versions: the HDR scene buffer, the final pass, `post.set({ toneMapping, exposure })`, `bloom`, `ao`, `lut` and `vignette` (0.2) are built. Every other setting in this file, `post.addEffect` and custom passes come later in 0.2. Until then, a port keeps the tone mapping, the exposure, bloom, ambient occlusion, color grading and the vignette of the three.js chain. The report lists each effect it dropped.
 
 ## Contents
 
@@ -29,8 +29,9 @@ Versions: the HDR scene buffer, the final pass, `post.set({ toneMapping, exposur
 | `OutputPass` | Nothing | The engine's final pass tone maps and converts to sRGB for the display once |
 | `GammaCorrectionShader`, `SRGBShader` in a `ShaderPass` | Delete | Keeping it applies gamma twice |
 | `UnrealBloomPass(resolution, strength, radius, threshold)` | `bloom: { strength, radius, threshold }` (0.2) | The pass's own steps, kernels and weights, so keep the three numbers. `resolution` is not needed: bloom takes the canvas's size |
-| `SSAOPass` (`kernelRadius`, `minDistance`, `maxDistance`) | `ao: { radius, intensity }` (0.2) | GTAO on High and Ultra presets; start with radius in world units about the original kernel radius |
-| `SAOPass`, `GTAOPass`, N8AO | `ao: { radius, intensity }` (0.2) | Same |
+| `GTAOPass` with `updateGtaoMaterial({ radius, thickness, distanceExponent, distanceFallOff, scale, samples })` | `ao: { radius, thickness, distanceExponent, distanceFalloff, scale, samples }` (0.2) | `GTAOPass`'s own search and denoise at half size, so keep the numbers; `blendIntensity` becomes `intensity`. Add `quality.set({ aoScale: 0.5 })` where phones and tablets should draw it |
+| `SSAOPass` (`kernelRadius`, `minDistance`, `maxDistance`) | `ao: { radius, intensity }` (0.2) | Start with radius in world units about the original kernel radius |
+| `SAOPass`, N8AO | `ao: { radius, intensity }` (0.2) | Same |
 | `FXAAPass`, `ShaderPass(FXAAShader)` | `createEngine({ antialias: 'fxaa' })` on the page | FXAA runs inside the final pass; the Low preset uses it |
 | `SMAAPass`, `SSAARenderPass` | MSAA, which the presets from Medium use, or `createEngine({ antialias: 'fxaa' })` | No SMAA or SSAA |
 | `TAARenderPass` | Not in 1.0 | MSAA meanwhile |
@@ -102,4 +103,5 @@ This example is symmetric, so the UV flip does not matter here.
 - Order: three.js lets you tone-map before bloom. null3D always blooms in HDR before tone mapping, as `UnrealBloomPass` before `OutputPass` does. An original that tone-mapped first looks weaker; raise `strength` to match.
 - Threshold: null3D's default threshold is 1, so only light brighter than white glows. An original with a threshold near 0 makes the whole scene glow; copy its value. The threshold is in color before the exposure, as in three.js, at any exposure.
 - Compatibility mode: in WebGPU's compatibility mode with MSAA, bloom moves the engine to HDR color with FXAA, so edges there look as with FXAA (`concepts/post-processing`).
+- Ambient occlusion: `GTAOPass` darkens the whole image, and null3D only the ambient light. A sunlit corner keeps its sunlight, so the port looks lighter where direct light falls. On the Low and Medium presets `aoScale` is 0, so it draws nothing there until the sketch sets the scale.
 - Pixel ratio: many three.js composers render at the full device pixel ratio. Compare at a fixed pixel ratio.
