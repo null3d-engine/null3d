@@ -37,9 +37,9 @@ The question has four parts:
 
 ### The ring of frame cameras
 
-After each frame of the sketch records, the sketch thread keeps the camera it drew from in a ring of the last four frames (`scene/frame-cameras.ts`). An entry holds:
+After each frame records, the sketch thread keeps the camera it drew from in a ring of the last four views (`scene/frame-cameras.ts`). Frames that follow each other with the same view share one entry. An entry holds:
 
-- the sketch frame's number and the camera's handle;
+- the first and the last frame of its view, in the engine's count, and the camera's handle;
 - the camera's world matrix, 12 numbers with the translation in 64 bits, so rays stay precise far from the origin;
 - the lens as the frame's canvas shaped it: two scales from device coordinates to the view, the orthographic center and the near distance;
 - the canvas's size in CSS pixels, which input positions count in.
@@ -48,13 +48,17 @@ The lens takes its aspect ratio from the canvas's size in device pixels, as the 
 
 The ring lives in TypeScript, on the thread that runs the sketch. The calls run there and need no core call to read it. The frame's camera is the active camera after `onLateUpdate`, which is the camera the core recorded the frame from. A ring in the core would also serve GPU picking (M2-D6). But picking can take the view-projection from this ring when it records its pass, so the core needs no second copy.
 
-Four frames cover the engine's frames in flight. The thread that draws takes no new frame while two are unfinished on the GPU ([D-11](D-11-frames-in-flight.md)). The sketch runs at most one frame ahead of the frame being drawn. A frame older than the ring, or one drawn from another camera, falls back to the camera as it stands.
+Four views cover the engine's frames in flight. The thread that draws takes no new frame while two are unfinished on the GPU ([D-11](D-11-frames-in-flight.md)). The sketch runs at most one frame ahead of the frame being drawn. A frame older than the ring, or one drawn from another camera, falls back to the camera as it stands.
+
+A run of frames with the same view shares an entry because the frames that run no sketch code can be many. The preset check draws frames for about a second after the setup, and the camera stays where the setup left it. With one entry per frame, those frames would push the setup's earlier frames out of the ring before the sketch reads a click on one. A camera at rest during play shares entries in the same way, and its rays are the same whichever frame they come from. Keeping a frame compares about 30 numbers with the newest entry and copies them, with no allocation.
 
 ### Which frame a point names
 
 The page writes the presented frame's number with each pointer event into the input ring. The sketch's input reader keeps it for the pointer and for each finger. `screenToRay` compares its `x` and `y` with the pointer's and each finger's position. When one matches exactly, the call uses that event's frame. Any other point uses the camera of the frame that last ran, with its lens as it is now.
 
-Input names frames in the sketch's count, which `time.frame` gives. The setup's frames run no sketch code, so that count leaves them out: each of them is frame 0. A click can still come while one is on screen. The sketch's first frames record while the thread that draws still shows the setup's last frame, and a slow GPU makes that window longer. So the ring keeps the camera of each setup frame as frame 0, and `frameAt` answers -1, not 0, when no event is at the point. An empty entry of the ring holds frame -1 for the same reason.
+Input names frames in the engine's own count, the number that the thread that draws presents. That count includes the frames that run no sketch code: the setup's warm-ups and the preset check. A click can come while one of them is on screen. The sketch's first frames record while the thread that draws still shows the setup's last frame, and a slow GPU makes that window longer. A setup can also turn its camera between two of its frames, so each of them keeps its own camera. Frame 0 means that no frame was on screen yet, and `frameAt` answers -1 when no event is at the point.
+
+The rejected option was the sketch's count, which `time.frame` gives. It leaves out the frames that run no sketch code, so each of them is frame 0. The ring then keeps only the last of them. A click on an earlier frame of a setup that turned its camera took the later camera. The browser test of pointer events showed this on 4 October 2026. In all five thread modes, a click on the setup's first frame hit nothing, through pointer events and `screenToRay` alike.
 
 The rejected option was a fourth argument that names a frame, or a call that takes the pointer object. Both need a public frame number. And a sketch that passes `input.pointer.x` would still get the current camera, the mistake this call exists to prevent. Matching the position needs no new API, and a point at the pointer's position is the pointer's point whichever variable holds it. The positions come from the same 32-bit floats of the input ring, so the comparison is exact.
 
@@ -77,11 +81,12 @@ The first version used 0 both for "no event at this point" and for a click on a 
 | The merge queue's runs of #263, #264 and #266; main after #262; the pull request runs of #263 and #267 | Pipelined, drawing on the main thread, or sketch on the main thread | A click's ray was one frame's turn (0.05 radians) off the frame on screen | The engine: the click came in sketch frame 2 while a setup frame was on screen. Its frame 0 read as "no event", so the ray took the camera as it stood |
 | Main, twice | Single-threaded | One click of eight named the frame two before the one that read it | The test: it required the frame just before. A frame that records and then waits for its pipelines leaves the frame before it on screen. A click then names that older frame, and the frame after the waiting one reads it. The ray matched that frame, so the engine was right |
 
-SwiftShader builds pipelines slowly and draws the first frames late, so it opens both windows far more often than a GPU does. The fix keeps the setup's camera as frame 0, as "Which frame a point names" says. The test now lets a click in the modes that draw each frame as they record it name either of the two frames before. In pipelined modes it still allows the four frames that the ring keeps. Each click's ray must still match the turn of the frame that the click names, so a ray from the wrong frame still fails.
+SwiftShader builds pipelines slowly and draws the first frames late, so it opens both windows far more often than a GPU does. The fix kept the setup's camera as frame 0. Pointer events on objects later moved the count to the engine's own, as "Which frame a point names" says. The test now lets a click in the modes that draw each frame as they record it name either of the two frames before. In pipelined modes it still allows the four frames that the ring keeps. Each click's ray must still match the turn of the frame that the click names, so a ray from the wrong frame still fails.
 
 ## Consequences
 
 - `camera.screenToRay`, `camera.worldToScreen` and the `Ray` type are public, on `api/cameras`, with the develop skill's section 6 and a mapping entry for `Vector3.project` and `unproject`.
 - The input reader keeps each finger's frame, and gives `frameAt(x, y)`.
-- The browser test `tests/image/screen-rays.spec.ts` clicks during a pan of 0.05 radians a frame, in every thread mode. On a slow machine, its first click can come while a setup frame is still on screen.
+- The browser test `tests/image/screen-rays.spec.ts` clicks during a pan of 0.05 radians a frame, in every thread mode. On a slow machine, its first click can come while a setup frame is still on screen. The test turns the engine's frame numbers into the sketch's count to compare turns.
+- `tests/image/object-events.spec.ts` clicks a box on the setup's first frame, while the setup then turns its camera away and draws more frames. The click must reach the box through pointer events and through `screenToRay`, in every thread mode.
 - Raycasts (M2-D2) take `ray.origin` and `ray.direction`. Pointer events on objects (M2-D4) and GPU picking (M2-D6) take the frame camera from this ring.
