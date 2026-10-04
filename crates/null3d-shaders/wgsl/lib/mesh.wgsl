@@ -165,8 +165,8 @@ fn custom_value(id: u32, k: u32) -> vec4f {
 /// The bit of a material's flags that keeps the scene's fog off its color.
 const NO_FOG: u32 = 4u;
 
-/// Linear color `c` of a fragment at `relative`, its position relative to the camera, seen through
-/// the scene's fog. A material with fog off keeps its color.
+/// Exposed linear color `c` of a fragment at `relative`, its position relative to the camera, seen
+/// through the scene's fog, whose color the core exposes. A material with fog off keeps its color.
 fn fogged(c: vec3f, relative: vec3f, m: Material) -> vec3f {
     let fog_on = (u32(m.strengths.z) & NO_FOG) == 0u;
     return apply_fog(c, frame.fog.color.xyz, select(0.0, fog_factor(frame.fog, relative), fog_on));
@@ -305,9 +305,22 @@ fn world_normal(found: Instance, normal: vec3f) -> vec3f {
     return transform_normal(transform_of(found), normal);
 }
 
-/// The color a fragment writes for linear color `c` at framebuffer position `pixel`: `c` itself for
-/// the final pass, or on the 8-bit path, `c` tone mapped and encoded for the canvas.
+/// Linear color in the scene's units, such as an unlit material's color or its emissive light,
+/// times the frame's exposure: the exposed color that the frame's lights give already.
+fn exposed(c: vec3f) -> vec3f {
+    return c * frame.output.exposure;
+}
+
+/// The color a fragment writes for linear color `c` in the scene's units at framebuffer position
+/// `pixel`: `c` times the exposure, itself for the final pass, or on the 8-bit path, tone mapped
+/// and encoded for the canvas.
 fn finish(c: vec3f, pixel: vec2f) -> vec4f {
+    return finish_exposed(exposed(c), pixel);
+}
+
+/// The color a fragment writes for exposed linear color `c`, such as light from the frame's lights,
+/// at framebuffer position `pixel`, as `finish` writes it.
+fn finish_exposed(c: vec3f, pixel: vec2f) -> vec4f {
     return null3d::tonemap::finish(c, pixel, frame.output);
 }
 

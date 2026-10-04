@@ -306,7 +306,9 @@ fn frame(world: &mut World, jobs: &JobSystem, frame: u32, rng: &mut Rng) {
         frustum,
         layers: 0x5555_5555,
     };
-    world.lights.gather(&world.scene, parity, Some(&light_view));
+    world
+        .lights
+        .gather(&world.scene, parity, Some(&light_view), 0.5);
     assert!(!world.lights.visible().is_empty());
     let (scene, clusters, order) = (&world.scene, &world.clusters, &world.order);
     // The moving rows are reached through the order list, and the still rows through it with

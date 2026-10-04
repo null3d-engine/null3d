@@ -65,7 +65,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Quality presets, dynamic resolution and frame budgets](concepts/quality-presets.md) | Low to Ultra; pixel-ratio caps; the preset check; switching presets; the frame-budget governor; quality events for sketch code. | experimental | 0.1 |
 | [Color management](concepts/color-management.md) | Linear working space; sRGB hex colors and linear arrays; texture color spaces; HDR color; exposure and tone mapping; transparent canvases; parity with three.js. | experimental | 0.1 |
 | [Materials and pipelines](concepts/materials.md) | Built-in materials; permutations; pipeline warm-up; why changing shader features can stall a frame. | experimental | 0.1 |
-| [Lighting and environment](concepts/lighting.md) | Light types and units; clustered lighting; fog; environment maps and spherical harmonics. | experimental | 0.1 |
+| [Lighting and environment](concepts/lighting.md) | Light types, units and exposure; clustered lighting; fog; environment maps and spherical harmonics. | experimental | 0.1 |
 | [Shadows](concepts/shadows.md) | Cascades that stay still as the camera turns; the shadow atlas of spot and point lights; update rates and filtering per preset; bias settings. | experimental | 0.1 |
 | [Render layers](concepts/render-layers.md) | 32-bit layer masks that choose which cameras draw which objects and instance batches. | experimental | 0.1 |
 | [The render graph](concepts/render-graph.md) | Declared reads and writes; automatic order; transient memory; validation errors; the text dump. | experimental | 0.1 |
@@ -73,7 +73,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Culling](concepts/culling.md) | Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells, whole cells out of view skipped first, positions relative to the camera, and software occlusion culling behind blockers on WebGL2. | experimental | 0.1 |
 | [Levels of detail](concepts/lod.md) | LOD groups; generated LODs; per-instance selection. | planned | 0.2 |
 | [Assets and prefabs](concepts/assets.md) | glTF, KTX2, meshopt; prefabs and instantiate; upload budgets; memory. | experimental | 0.2 |
-| [The post-processing chain](concepts/post-processing.md) | HDR scene color, bloom at half size and below, and one final pass for exposure, tone mapping, FXAA, dithering, color grading and the vignette. | experimental | 0.2 |
+| [The post-processing chain](concepts/post-processing.md) | HDR scene color, bloom at half size and below, and one final pass for tone mapping, FXAA, dithering, color grading and the vignette. | experimental | 0.2 |
 
 ### API reference
 
@@ -93,7 +93,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Raycasting and spatial queries](api/raycast.md) | raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects. | experimental | 0.2 |
 | [Input](api/input.md) | Pointer, keyboard, touch and gamepad; action maps. | experimental | 0.1 |
 | [Camera controls (@null3d/controls)](api/controls.md) | Orbit and map controls (0.1); fly and first-person controls (0.2). | experimental | 0.1 |
-| [Post-processing API](api/post.md) | post.set for tone mapping, exposure, bloom, color grading tables and the vignette; the other effects and post.addEffect of 0.2. | experimental | 0.1 |
+| [Post-processing API](api/post.md) | post.set for tone mapping, exposure and a camera's EV100, bloom, color grading tables and the vignette; the other effects and post.addEffect of 0.2. | experimental | 0.1 |
 | [Render graph API](api/render.md) | render.addPass declarations; enabling and disabling passes; dumpGraph. | planned | 0.2 |
 | [Quality API](api/quality.md) | quality.preset, quality.set, quality.setPreset, the preset check, frame budgets, quality events. | experimental | 0.1 |
 | [Debug drawing and stats](api/debug.md) | debug.line, box, sphere, arrow, axes, grid, frustum, light and skeleton; debug.stats and frameStats; engine.measure and its figures; debug.view and debug.shadowCamera. | experimental | 0.1 |

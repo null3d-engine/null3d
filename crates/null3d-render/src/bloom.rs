@@ -3,7 +3,10 @@
 //! each a full-screen step at a fraction of the render size (see [`crate::frame_graph`]):
 //!
 //! 1. The bright pass reads the scene color at half size, with a linear filter, and keeps the
-//!    pixels whose luminance reaches the threshold.
+//!    pixels whose luminance reaches the threshold. The scene color holds exposed color (see
+//!    [`crate::output`]), so the threshold and its soft edge take the exposure too: a threshold
+//!    keeps its meaning in color before the exposure, as three.js's has it, and the glow is the
+//!    exposed glow of three.js's.
 //! 2. Each of five levels blurs the level before it, the first the bright pass, with a Gaussian:
 //!    across into one target, then down into another. Each level has half the size of the level
 //!    before it, and a wider kernel, so the levels spread the light ever further.
@@ -86,6 +89,12 @@ impl Default for Bloom {
 }
 
 impl Bloom {
+    /// The bright pass's threshold and the width of its soft edge, in exposed color, for a frame
+    /// whose exposure is `exposure`.
+    pub fn bright_pass(self, exposure: f32) -> (f32, f32) {
+        (self.threshold * exposure, KNEE * exposure)
+    }
+
     /// Each level's weight in the final pass: three.js's factor, moved toward its mirror by the
     /// radius, times three times the strength.
     pub fn level_weights(self) -> [f32; LEVELS] {
@@ -185,13 +194,13 @@ const fn rows_before(extent: u32, corner: u32, rows_from_bottom: bool) -> u32 {
     if rows_from_bottom { extent - corner } else { 0 }
 }
 
-/// The block of step `step` for a canvas of `canvas` pixels at render scale `scale`, with rows
-/// counted from the bottom on WebGL2 (`rows_from_bottom`).
+/// The block of step `step` for a canvas of `canvas` pixels at render scale `scale`, in a frame
+/// whose exposure is `exposure`, with rows counted from the bottom on WebGL2 (`rows_from_bottom`).
 fn step_block(
     step: usize,
     canvas: (u32, u32),
     scale: RenderScale,
-    bloom: Bloom,
+    (bloom, exposure): (Bloom, f32),
     divisor: u32,
     rows_from_bottom: bool,
 ) -> StepBlock {
@@ -219,16 +228,19 @@ fn step_block(
         (source_rows + corner.1 as f32 - 0.5) / extent.1 as f32,
     ];
     match level_of(step) {
-        None => StepBlock {
-            scale: [per_pixel[0], per_pixel[1], 0.0, 0.0],
-            origin,
-            bounds,
-            center: 1.0,
-            pairs: 0,
-            threshold: bloom.threshold,
-            knee: KNEE,
-            ..StepBlock::default()
-        },
+        None => {
+            let (threshold, knee) = bloom.bright_pass(exposure);
+            StepBlock {
+                scale: [per_pixel[0], per_pixel[1], 0.0, 0.0],
+                origin,
+                bounds,
+                center: 1.0,
+                pairs: 0,
+                threshold,
+                knee,
+                ..StepBlock::default()
+            }
+        }
         Some(level) => {
             let (center, pairs, offsets, weights) = kernel(KERNELS[level], divisor);
             let across = step % 2 == 1;
@@ -331,7 +343,7 @@ impl BloomPass {
         arena: &mut UploadArena,
         canvas: (u32, u32),
         scale: RenderScale,
-        bloom: Bloom,
+        bloom: (Bloom, f32),
         divisor: u32,
         sources: &[u32; STEPS],
         textures_made: bool,
@@ -401,14 +413,15 @@ impl BloomPass {
         Ok(())
     }
 
-    /// Writes every block of the uniform buffer into the staging copy.
-    fn stage(&mut self, canvas: (u32, u32), scale: RenderScale, bloom: Bloom, divisor: u32) {
+    /// Writes every block of the uniform buffer into the staging copy, for `bloom` in a frame of
+    /// the exposure that comes with it.
+    fn stage(&mut self, canvas: (u32, u32), scale: RenderScale, bloom: (Bloom, f32), divisor: u32) {
         for step in 0..STEPS {
             let block = step_block(step, canvas, scale, bloom, divisor, self.rows_from_bottom);
             self.staged[step * BLOCK..][..std::mem::size_of::<StepBlock>()]
                 .copy_from_slice(bytes_of(&block));
         }
-        let weights = bloom.level_weights();
+        let weights = bloom.0.level_weights();
         let mut block = FinalBlock::default();
         block.weights[..LEVELS].copy_from_slice(&weights);
         self.staged[FINAL_OFFSET as usize..].copy_from_slice(bytes_of(&block));
@@ -561,16 +574,19 @@ mod tests {
         let canvas = (320, 180);
         let bloom = Bloom::default();
         // At the whole canvas, the bright pass reads two scene texels per pixel each way.
-        let bright = step_block(0, canvas, RenderScale::FULL, bloom, 1, false);
+        let bright = step_block(0, canvas, RenderScale::FULL, (bloom, 1.0), 1, false);
         assert_eq!(bright.scale, [1.0 / 160.0, 1.0 / 90.0, 0.0, 0.0]);
         assert_eq!(
             bright.bounds,
             [0.5 / 320.0, 0.5 / 180.0, 319.5 / 320.0, 179.5 / 180.0]
         );
         assert_eq!((bright.threshold, bright.pairs), (1.0, 0));
+        // The threshold and its soft edge take the exposure, as the scene color does.
+        let exposed = step_block(0, canvas, RenderScale::FULL, (bloom, 0.25), 1, false);
+        assert_eq!((exposed.threshold, exposed.knee), (0.25, KNEE * 0.25));
         // At half scale, level 1's blur down reads only the drawn quarter of its source.
         let half = RenderScale::from_thousandths(500);
-        let down = step_block(4, canvas, half, bloom, 1, false);
+        let down = step_block(4, canvas, half, (bloom, 1.0), 1, false);
         assert_eq!(source_size(4), Size::QUARTER);
         // The source's corner is 40 x 23 of 80 x 45 texels, drawn into 40 x 23 pixels.
         assert_eq!(down.bounds[2], 39.5 / 80.0);
@@ -581,7 +597,7 @@ mod tests {
         assert_eq!(down.origin, [0.0; 4]);
         // WebGL2 draws the same corners into the top rows: 22 rows lie below the source's corner,
         // and the target's corner of 23 of 45 rows starts at row 22.
-        let gl = step_block(4, canvas, half, bloom, 1, true);
+        let gl = step_block(4, canvas, half, (bloom, 1.0), 1, true);
         assert_eq!(gl.bounds[1], 22.5 / 45.0);
         assert_eq!(gl.bounds[3], 44.5 / 45.0);
         let gl_place = |row: f32| row * gl.scale[1] + gl.origin[1];
@@ -612,7 +628,7 @@ mod tests {
                 &mut arena,
                 (320, 180),
                 scale,
-                Bloom::default(),
+                (Bloom::default(), 1.0),
                 1,
                 &sources,
                 false,

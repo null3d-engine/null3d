@@ -3,7 +3,7 @@ id: concepts/post-processing
 title: The post-processing chain
 status: experimental
 since: "0.2"
-summary: "HDR scene color, bloom at half size and below, and one final pass for exposure, tone mapping, FXAA, dithering, color grading and the vignette."
+summary: "HDR scene color, bloom at half size and below, and one final pass for tone mapping, FXAA, dithering, color grading and the vignette."
 ---
 
 # The post-processing chain
@@ -14,13 +14,13 @@ summary: "HDR scene color, bloom at half size and below, and one final pass for 
 flowchart LR
     scene["Scene passes:<br/>linear HDR color"] --> bright["Bright pass:<br/>half size, threshold"]
     bright --> levels["Five blurred levels:<br/>each half the size<br/>of the one before"]
-    scene --> final["Final pass: adds bloom,<br/>then exposure, tone mapping,<br/>FXAA and dithering"]
+    scene --> final["Final pass: adds bloom,<br/>then tone mapping,<br/>FXAA and dithering"]
     levels --> final
     final --> grade["In the same pass:<br/>color grading table,<br/>then the vignette"]
     grade --> canvas["Canvas"]
 ```
 
-The scene passes draw linear color with no upper limit into a float target, the scene color. Effects that need that range, such as bloom, read it before the final pass. The final pass then does all of its work for each pixel in one pass. It adds the effects' results and applies the exposure and the tone mapping. Then it smooths edges with FXAA, encodes sRGB and dithers. Last, it grades the display color with a color grading table and the vignette, when the sketch sets them.
+The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as bloom, read it before the final pass. The final pass then does all of its work for each pixel in one pass. It adds the effects' results and applies the tone mapping. Then it smooths edges with FXAA, encodes sRGB and dithers. Last, it grades the display color with a color grading table and the vignette, when the sketch sets them.
 
 Every full-screen pass reads and writes the whole screen once more. On a phone at its full resolution that is tens of megabytes per frame, so the engine keeps such passes few. Bloom's passes draw at half the render size and below, and the final pass reads their results without a pass of its own.
 
@@ -53,7 +53,7 @@ Bloom spreads light from the brightest parts of the scene into their surrounding
 | --- | --- | --- |
 | `strength` | A number from 0 up. | 1 |
 | `radius` | A number from 0 to 1. | 0.5 |
-| `threshold` | A luminance from 0 up, in linear color before the exposure. | 1 |
+| `threshold` | A luminance from 0 up, in linear color before the exposure. The bright pass reads exposed color, so it scales the threshold by the exposure, and a threshold keeps its meaning at any exposure. | 1 |
 
 - The settings mean what `UnrealBloomPass`'s settings mean, with the same kernels and weights. In the engine's parity tests, null3D's bloom matches three.js's in all but under 0.1% of the pixels on every GPU path.
 - At a threshold of 1, only light brighter than white glows. An emissive material with an `emissiveIntensity` above 1 gives such light, and so does a strong light on a bright surface. At a threshold of 0, every pixel glows a little.
@@ -88,7 +88,7 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 
 - Delete `EffectComposer`, `RenderPass` and `OutputPass`. The scene pass and the final pass are built in.
 - `new UnrealBloomPass(resolution, strength, radius, threshold)` becomes `post.set({ bloom: { strength, radius, threshold } })`. The resolution is the canvas's, so it needs no setting.
-- `renderer.toneMapping` and `toneMappingExposure` become `post.set({ toneMapping, exposure })`. three.js applies no tone mapping by default, and null3D applies ACES.
+- `renderer.toneMapping` and `toneMappingExposure` become `post.set({ toneMapping, exposure })`. three.js applies no tone mapping by default, and null3D applies ACES. The exposure gives the same picture: null3D applies it to each light rather than at the end, and bloom's threshold keeps its meaning.
 - `new LUTPass({ lut: result.texture3D, intensity })` after a `LUTCubeLoader` or `LUT3dlLoader` becomes `post.set({ lut: await assets.loadLut(url), lutIntensity: intensity })`.
 - A `ShaderPass(VignetteShader)` with its `offset` and `darkness` uniforms becomes `post.set({ vignette: { offset, darkness } })`.
 

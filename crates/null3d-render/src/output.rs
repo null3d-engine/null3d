@@ -1,18 +1,30 @@
 //! The output transform: how the scene's linear color reaches the canvas.
 //!
 //! Where the device can, scene passes draw linear HDR color into a float target, the scene color.
-//! The final pass then applies the exposure and the tone mapping, encodes sRGB and dithers. Scene
-//! shaders do that themselves into an 8-bit target of the canvas's format, the 8-bit path, where
+//! The final pass then applies the tone mapping, encodes sRGB and dithers. Scene shaders do that
+//! themselves into an 8-bit target of the canvas's format, the 8-bit path, where
 //! the anti-aliasing mode needs what the float target cannot do: MSAA in WebGPU's compatibility
 //! mode, and on WebGL2 devices whose float targets fail the engine's test for that mode. The page
 //! can force the 8-bit path too. With MSAA, while the render scale cannot drop below 1, the 8-bit
 //! target resolves straight into the canvas and the frame has no final pass. Otherwise the final
 //! pass copies it into the canvas (see [`crate::frame_graph`]).
 //!
+//! # Exposure
+//!
+//! The scene color holds exposed color: the exposure scales every light at its source, not the
+//! scene color at the end, as Filament and Godot do. The core multiplies it into the lights, the
+//! background color and the fog color on the CPU, and the scene shaders multiply it into the
+//! colors that come from materials and textures: emissive light, light maps, unlit colors and the
+//! background texture. Everything before the tone mapping is linear, so the picture is the same as
+//! with the exposure at the end. Values stay near 1 even in scenes in real units, such as a sun of
+//! 100,000 lux at the exposure of EV100 15, which would pass the largest 16-bit float otherwise.
+//! The final pass applies an exposure of 1, and bloom's threshold takes the exposure, so a
+//! threshold keeps its meaning before the exposure, as three.js's `UnrealBloomPass` has it.
+//!
 //! The background is part of the scene: exposure and tone mapping change it as they change the
-//! objects, as in three.js's WebGPURenderer. The HDR path clears the scene color to the linear
-//! background. The 8-bit path clears its target to the background after the output transform,
-//! which this module computes on the CPU with the shaders' formulas.
+//! objects, as in three.js's WebGPURenderer. The HDR path clears the scene color to the exposed
+//! linear background. The 8-bit path clears its target to the background after the output
+//! transform, which this module computes on the CPU with the shaders' formulas.
 //!
 //! The tone mapping operators follow three.js's formulas, as `null3d::color` in the shader library
 //! writes them. Their codes are the same in the core, `null3d::tonemap` and the TypeScript API.
@@ -80,7 +92,8 @@ impl ToneMapping {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Output {
     pub tone_mapping: ToneMapping,
-    /// Scales linear scene color before the tone mapping.
+    /// Scales linear scene color before the tone mapping, at each light's source (see the module
+    /// documentation).
     pub exposure: f32,
 }
 
@@ -94,12 +107,13 @@ impl Default for Output {
 }
 
 impl Output {
-    /// Linear scene color after the exposure and the tone mapping, from 0 to 1.
-    pub fn tone_map(self, c: [f32; 3]) -> [f32; 3] {
-        self.tone_mapping.apply(c.map(|v| v * self.exposure))
+    /// Linear color in the scene's units, such as a background color, times the exposure: the
+    /// exposed color that the scene color holds.
+    pub fn expose(self, c: [f32; 3]) -> [f32; 3] {
+        c.map(|v| v * self.exposure)
     }
 
-    /// The block the shaders read, with no flags and no render size.
+    /// The block that the scene shaders read, with no flags and no render size.
     pub fn uniform(self) -> OutputUniform {
         OutputUniform {
             exposure: self.exposure,
@@ -111,7 +125,8 @@ impl Output {
 }
 
 /// The output settings as the shaders' `Output` block lays them out. Scene shaders read the
-/// exposure and the tone mapping. Only the final pass reads the flags and the render size.
+/// exposure, which they multiply into the colors of materials and textures, and the tone mapping.
+/// Only the final pass reads the flags and the render size, and its exposure is 1.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct OutputUniform {
@@ -231,9 +246,9 @@ impl SceneColor {
         }
     }
 
-    /// The color that clears the scene color: the linear background for HDR color, and the
-    /// background after the output transform, encoded as sRGB, on the 8-bit path. `None` for no
-    /// background clears to transparent black on a transparent canvas, and to opaque black
+    /// The color that clears the scene color: the exposed linear background for HDR color, and
+    /// the background after the output transform, encoded as sRGB, on the 8-bit path. `None` for
+    /// no background clears to transparent black on a transparent canvas, and to opaque black
     /// elsewhere.
     pub fn clear_color(
         self,
@@ -244,10 +259,11 @@ impl SceneColor {
         let Some(background) = background else {
             return [0.0, 0.0, 0.0, if transparent { 0.0 } else { 1.0 }];
         };
+        let exposed = output.expose(background);
         let [r, g, b] = if self.is_hdr() {
-            background
+            exposed
         } else {
-            output.tone_map(background).map(linear_to_srgb)
+            output.tone_mapping.apply(exposed).map(linear_to_srgb)
         };
         [r, g, b, 1.0]
     }
@@ -425,10 +441,14 @@ mod tests {
             tone_mapping: ToneMapping::Aces,
             exposure: 2.0,
         };
-        assert_eq!(
-            brighter.tone_map([0.5, 0.25, 0.1]),
-            ToneMapping::Aces.apply([1.0, 0.5, 0.2])
-        );
+        assert_eq!(brighter.expose([0.5, 0.25, 0.1]), [1.0, 0.5, 0.2]);
+        let [r, g, b, _] =
+            SceneColor::EIGHT_BIT.clear_color(Some([0.5, 0.25, 0.1]), false, brighter);
+        let expected = ToneMapping::Aces.apply([1.0, 0.5, 0.2]).map(linear_to_srgb);
+        assert_eq!([r, g, b], expected);
+        let hdr = SceneColor::from_format(format::RGBA16_FLOAT);
+        let [r, g, b, _] = hdr.clear_color(Some([0.5, 0.25, 0.1]), false, brighter);
+        assert_eq!([r, g, b], [1.0, 0.5, 0.2]);
         let uniform = brighter.uniform();
         assert_eq!((uniform.exposure, uniform.tone_mapping), (2.0, 0));
         assert_eq!((uniform.flags, uniform.render_size), (0, 0));
@@ -482,7 +502,10 @@ mod tests {
             [0.5, 0.2, 0.1, 1.0]
         );
         let [r, g, b, a] = eight_bit.clear_color(background, false, output);
-        let expected = output.tone_map([0.5, 0.2, 0.1]).map(linear_to_srgb);
+        let expected = output
+            .tone_mapping
+            .apply([0.5, 0.2, 0.1])
+            .map(linear_to_srgb);
         assert_eq!([r, g, b], expected);
         assert_eq!(a, 1.0);
         // Without a background the canvas shows black, or nothing when it is transparent. Every

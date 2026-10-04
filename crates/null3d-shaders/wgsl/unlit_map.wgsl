@@ -11,7 +11,8 @@ enable draw_index;
 // alpha of the color, the map and the vertex colors falls below the material's cutoff. A material
 // that blends writes premultiplied color.
 // null3d::mesh finds each instance on both GPU paths.
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
+#import null3d::mesh::{InstanceIn, clip_of, exposed, find_instance, finish_exposed, fogged}
+#import null3d::mesh::{fragment_color}
 #import null3d::mesh::{map_layer, map_ready, material_of, relative_position, straight_texel}
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
 #ifdef SKIN
@@ -102,6 +103,6 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
         discard;
     }
 #endif
-    let finished = finish(fogged(base, in.relative, m), in.clip.xy);
+    let finished = finish_exposed(fogged(exposed(base), in.relative, m), in.clip.xy);
     return fragment_color(m, finished.rgb, alpha);
 }

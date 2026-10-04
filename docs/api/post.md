@@ -3,7 +3,7 @@ id: api/post
 title: Post-processing API
 status: experimental
 since: "0.1"
-summary: "post.set for tone mapping, exposure, bloom, color grading tables and the vignette; the other effects and post.addEffect of 0.2."
+summary: "post.set for tone mapping, exposure and a camera's EV100, bloom, color grading tables and the vignette; the other effects and post.addEffect of 0.2."
 ---
 
 # Post-processing API
@@ -27,11 +27,29 @@ export default defineSketch(({ post }) => {
 | --- | --- | --- |
 | `toneMapping` | `'aces'`, `'agx'`, `'neutral'` or `'none'` | `'aces'` |
 | `exposure` | A number from 0 up. 2 is one stop brighter, and 0.5 one stop darker. | 1 |
+| `ev100` | The camera's exposure value at ISO 100, for lights in real units: a number from -20 to 30, or `false` for none | `false` |
 
 - The curves use three.js's formulas: `'aces'` for `ACESFilmicToneMapping`, `'agx'` for `AgXToneMapping` and `'neutral'` for `NeutralToneMapping`.
 - `'none'` scales the color by the exposure and clips it at white, as three.js's `LinearToneMapping` does.
 - three.js uses no tone mapping by default. A port of a three.js scene without tone mapping sets `toneMapping: 'none'`.
 - The settings apply to the whole scene, the background included, from the next frame on. A setting that a call leaves out keeps its value.
+
+## Lights in real units
+
+Most scenes and ports keep three.js's units, which need no camera setting. Lights in real units, such as a sun of 100,000 lux, need `ev100`: the exposure value of a camera at ISO 100. The units are on the [Lights](lights.md#color-intensity-and-units) page. Typical values are 15 for a sunny day, 12 for an overcast day and 7 for a lit room. Each step up is one stop darker. The engine scales the scene by 1 / (1.2 × 2^ev100), the formula of Filament, Bevy and Unity's HDRP. The `exposure` setting then scales that, as exposure compensation does. Setting `ev100: false` turns the camera off again.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, post }) => {
+  // A sunny day, half a stop brighter than the camera's own exposure.
+  post.set({ ev100: 15, exposure: 1.41 });
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 100_000, intensityUnit: 'lux' });
+  return {};
+});
+```
+
+The engine multiplies the exposure into each light, the background color and the fog color. The shaders multiply it into emissive light and unlit colors. The tone mapping then works on values near 1, even with a sun of 100,000 lux. Otherwise its highlights would pass the largest value of the 16-bit float scene color. The picture is the one that an exposure at the end gives. Background and unlit colors take the exposure too. At EV100 15 they draw black unless their own values are in real units, as in three.js at the same exposure.
 
 ## Changing the exposure during play
 
@@ -71,6 +89,7 @@ export default defineSketch(({ post }) => {
 
 - A setting that a call leaves out keeps its value, also while bloom is off. `post.set({ bloom: {} })` turns bloom on with the values it had.
 - At a threshold of 1, only light brighter than white glows, such as an emissive material with an `emissiveIntensity` above 1.
+- The threshold keeps its meaning at any exposure: the engine scales it with the exposure, as it scales the scene's light. In a scene in real units, give it in the scene's units, such as 40,000 for about white at EV100 15.
 - In WebGPU's compatibility mode with MSAA, turning bloom on moves the engine to HDR color with FXAA. On a WebGL2 device with no float target, bloom stays off. [The post-processing chain](../concepts/post-processing.md#effects-on-devices-without-hdr-color) explains both.
 - `post.set` allocates nothing, so a sketch can change bloom's settings every frame.
 
@@ -121,7 +140,7 @@ Grading and the vignette work on display color, so they draw on every GPU path, 
 
 | Code | Cause |
 | --- | --- |
-| [E1213](../errors/E1213.md) | A setting that this version does not have, a tone mapping that the engine does not know, a bloom or vignette value other than settings or `false`, a `lut` that is not a table from `assets.loadLut`, or a value out of its range: an exposure, strength, threshold, offset or darkness below 0, or a radius or `lutIntensity` outside 0 to 1. |
+| [E1213](../errors/E1213.md) | A setting that this version does not have, a tone mapping that the engine does not know, a bloom or vignette value other than settings or `false`, a `lut` that is not a table from `assets.loadLut`, or a value out of its range: an exposure, strength, threshold, offset or darkness below 0, a radius or `lutIntensity` outside 0 to 1, or an `ev100` outside -20 to 30. |
 | [E1203](../errors/E1203.md) | A value that is not a finite number, such as NaN. |
 | [E1101](../errors/E1101.md) | A table whose `destroy()` was called. |
 
@@ -167,7 +186,8 @@ Settings for `post.set`. A setting that the call leaves out keeps its value.
 | Member | Description |
 | --- | --- |
 | `toneMapping?: ToneMapping` | How the engine maps high dynamic range color to the screen. The default is `'aces'`. three.js uses no tone mapping by default, so a port of a three.js scene without it sets `'none'`. |
-| `exposure?: number` | Scales the scene's color before the tone mapping, as three.js's `toneMappingExposure` does: 2 is one stop brighter, and 0.5 one stop darker. It is 0 or more, and 1 by default. |
+| `exposure?: number` | Scales the scene's color before the tone mapping, as three.js's `toneMappingExposure` does: 2 is one stop brighter, and 0.5 one stop darker. It is 0 or more, and 1 by default. With `ev100`, it scales the camera's exposure, as exposure compensation does. |
+| `ev100?: number \| false` | The camera's exposure value at ISO 100, for lights in real units: 15 suits a sunny day lit by a sun of 100,000 lux, 12 an overcast day, and 7 a lit room. It scales the scene's color by 1 / (1.2 × 2^ev100), as Filament and Bevy do, so each step up is one stop darker. It is a number from -20 to 30, and `false`, the default, turns it off, which leaves three.js's units. |
 | `bloom?: BloomSettings \| false` | Light that spreads from the brightest parts of the scene, as three.js's `UnrealBloomPass` spreads it. Settings turn bloom on, `{}` with the values it had, and `false` turns it off. It is off by default. |
 | `lut?: Lut \| false` | A color grading table from `assets.loadLut`, which maps each pixel's color after the tone mapping, as three.js's `LUTPass` does. `false` turns it off. It is off by default. |
 | `lutIntensity?: number` | The share of the table's color in each pixel, from 0 for none to 1 for all of it, as `LUTPass`'s `intensity`. It is 1 by default. |

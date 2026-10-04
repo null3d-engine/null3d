@@ -3,7 +3,7 @@ id: concepts/lighting
 title: Lighting and environment
 status: experimental
 since: "0.1"
-summary: "Light types and units; clustered lighting; fog; environment maps and spherical harmonics."
+summary: "Light types, units and exposure; clustered lighting; fog; environment maps and spherical harmonics."
 ---
 
 # Lighting and environment
@@ -36,13 +36,13 @@ Setters change the engine's memory at once, and they allocate nothing except tho
 
 Units follow three.js since r155, which dropped its legacy light mode. A scene tuned for three.js's current units needs the same intensities in null3D.
 
-| Light | What it models | Intensity |
-| --- | --- | --- |
-| Directional | The sun or the moon: parallel light from one direction | The light that reaches a surface facing it |
-| Point | A bulb: light from a point in every direction | Candela |
-| Spot | A torch or a stage light: light from a point in a cone | Candela |
-| Hemisphere | Sky and ground: light that fades from one color to the other with the way a surface faces | A factor on both colors |
-| Ambient | Light that bounces everywhere, from no direction | A factor on its color |
+| Light | What it models | Intensity | `intensityUnit` |
+| --- | --- | --- | --- |
+| Directional | The sun or the moon: parallel light from one direction | Lux: the light that reaches a surface facing it | `'lux'` |
+| Point | A bulb: light from a point in every direction | Candela | `'lumen'`: divided by 4π |
+| Spot | A torch or a stage light: light from a point in a cone | Candela | `'lumen'`: divided by π at any cone angle |
+| Hemisphere | Sky and ground: light that fades from one color to the other with the way a surface faces | Lux, on both colors | `'lux'` |
+| Ambient | Light that bounces everywhere, from no direction | Lux | `'lux'` |
 
 A standard material reflects light with the formulas of three.js's `MeshStandardMaterial`. A rough surface that is not a metal reflects close to its color divided by π, times the light that reaches it. A white directional light with an intensity of π therefore shows a white, rough surface that faces it as nearly white.
 
@@ -58,6 +58,38 @@ export default defineSketch(({ scene }) => {
   scene.createPointLight({ position: [2, 1.5, 0], color: '#ffb46b', intensity: 12, range: 6 });
 });
 ```
+
+## Units and exposure
+
+```mermaid
+flowchart LR
+    units["Intensity in lumens,<br/>candela or lux"] --> light["Light in three.js's units"]
+    camera["exposure, and ev100:<br/>1 / (1.2 × 2^ev100)"] --> factor["The frame's exposure"]
+    light --> times["Light times the exposure,<br/>on the CPU"]
+    factor --> times
+    factor --> shaders["Emissive light and unlit colors<br/>times the exposure, in the shaders"]
+    times --> scene["Scene color near 1"]
+    shaders --> scene
+    scene --> tone["Tone mapping"]
+```
+
+A scene can keep three.js's units, as most scenes and ports do, or use real units. A real sun gives about 100,000 lux, an 800-lumen bulb lights a room, and a camera's exposure brings that light to the screen. In null3D, `intensityUnit` gives a light its real unit, and `post.set({ ev100 })` sets the camera's exposure value at ISO 100, as in Filament and Bevy. The exposure is 1 / (1.2 × 2^ev100): about 1 / 39,000 at 15, a sunny day.
+
+The engine multiplies the exposure into each light at its source, as Filament does, not into the finished picture. On the CPU it scales each light, the background color and the fog color. In the shaders it scales emissive light, light maps, unlit colors and background textures. Everything before the tone mapping is linear, so the picture is the same as with the exposure at the end. But the scene's colors stay near 1, so a 16-bit float holds them. With the exposure at the end, a sun of 100,000 lux gives a smooth metal a highlight above 65,504. That is the largest 16-bit float, so the highlight loses its color.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, post }) => {
+  // A sunny day in real units: the sun in lux, a lamp in lumens, and a camera at EV100 15.
+  post.set({ ev100: 15 });
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 100_000, intensityUnit: 'lux' });
+  scene.createAmbientLight({ intensity: 20_000, intensityUnit: 'lux' });
+  scene.createPointLight({ position: [0, 1, 0], range: 10, intensity: 1_000_000, intensityUnit: 'lumen' });
+});
+```
+
+Colors that you set in the scene's units take the exposure too: a background color, an unlit material's color and an emissive color. At EV100 15 a background color of white draws black, as it does in three.js at the same exposure. Give emissive light in nits instead, through `emissiveIntensity`, such as 40,000 for about white at EV100 15. [Post-processing API](../api/post.md#lights-in-real-units) gives the settings.
 
 ## Clustered forward shading
 

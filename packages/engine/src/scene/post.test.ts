@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import * as C from '../generated/core';
 import { Lut } from './lut';
 import type { CoreMemory } from './memory';
-import { Post, type PostSettings } from './post';
+import { exposureOfEv100, Post, type PostSettings } from './post';
 import type { Texture } from './textures';
 
 /**
@@ -149,6 +149,30 @@ describe('post.set', () => {
 		]);
 	});
 
+	it("gives a camera's exposure for its EV100 with Filament's formula", () => {
+		// Filament's Exposure.cpp: 1 / (1.2 × 2^EV100). Its default camera, f/16 at 1/125 s and
+		// ISO 100, is about EV100 15, where a sun of 100,000 lux lights white paper near 1.
+		expect(exposureOfEv100(0)).toBeCloseTo(1 / 1.2, 12);
+		expect(exposureOfEv100(15)).toBeCloseTo(1 / 39_321.6, 15);
+		expect(exposureOfEv100(-2)).toBeCloseTo(4 / 1.2, 12);
+		const ev100 = Math.log2((16 * 16) / (1 / 125)) - Math.log2(100 / 100);
+		expect(ev100).toBeCloseTo(14.97, 2);
+		expect((100_000 / Math.PI) * exposureOfEv100(ev100)).toBeCloseTo(0.83, 2);
+	});
+
+	it('sends the exposure times the camera exposure of ev100, until ev100 is false', () => {
+		const { post: output, calls } = post();
+		output.set({ ev100: 15 });
+		output.set({ exposure: 2 });
+		output.set({ ev100: 12 });
+		output.set({ ev100: false });
+		const sent = calls.map(([, exposure]) => exposure);
+		expect(sent[0]).toBeCloseTo(exposureOfEv100(15), 10);
+		expect(sent[1]).toBeCloseTo(2 * exposureOfEv100(15), 10);
+		expect(sent[2]).toBeCloseTo(2 * exposureOfEv100(12), 10);
+		expect(sent[3]).toBe(2);
+	});
+
 	it('makes its view of the values once, and again only after the memory grew', () => {
 		const { post: output, reads } = post();
 		output.set({ exposure: 1.25 });
@@ -164,6 +188,8 @@ describe('post.set', () => {
 			{ toneMapping: 'toString' },
 			{ exposure: -1 },
 			{ exposure: 1e39 },
+			{ ev100: -21 },
+			{ ev100: 31 },
 			{ bloom: true },
 			{ bloom: { intensity: 1 } },
 			{ bloom: { strength: -1 } },
@@ -182,11 +208,23 @@ describe('post.set', () => {
 		expect(blooms).toEqual([]);
 	});
 
+	it('refuses an exposure that the camera exposure takes past the largest 32-bit float', () => {
+		const { post: output, calls } = post();
+		output.set({ exposure: 3e38 });
+		expect(() => output.set({ ev100: -20 })).toThrow('E1213');
+		expect(calls.length).toBe(1);
+		// The refused EV100 is not kept.
+		output.set({ exposure: 1 });
+		expect(calls[1]).toEqual([C.TONE_MAPPING_ACES, 1]);
+	});
+
 	it('refuses a value that is not a finite number with E1203', () => {
 		const { post: output } = post();
 		for (const exposure of [Number.NaN, Number.POSITIVE_INFINITY])
 			expect(() => output.set({ exposure })).toThrow('E1203');
 		expect(() => output.set({ bloom: { strength: Number.NaN } })).toThrow('E1203');
+		for (const ev100 of [Number.NaN, Number.NEGATIVE_INFINITY, true, '15'])
+			expect(() => output.set({ ev100 } as PostSettings)).toThrow('E1203');
 		expect(() => output.set({ lutIntensity: Number.NaN })).toThrow('E1203');
 		expect(() => output.set({ vignette: { offset: Number.POSITIVE_INFINITY } })).toThrow('E1203');
 	});
