@@ -183,9 +183,11 @@ export async function webgpuGenerator(
 		timestamps: device.features.has('timestamp-query'),
 		rg11b10Renderable: device.features.has('rg11b10ufloat-renderable'),
 	};
+	// A browser that lists no core feature runs every device as core WebGPU, and one that gives only
+	// compatibility mode gives no core device. The facts say which device each page ran on.
 	if (compat && device.features.has(core))
-		throw new Error('asked for compatibility mode, got core');
-	if (!compat && !device.features.has(core)) throw new Error('the adapter offers no core WebGPU');
+		throw new Error(`${UNSUPPORTED} the adapter gives core WebGPU only`);
+	facts.adapterListsCore = adapter.features.has(core);
 	if (write === 'pack') format = 'rgb9e5ufloat';
 	else if (format === 'rgb9e5ufloat') throw new Error('rgb9e5ufloat is drawn only by packing');
 	if (format === 'rg11b10ufloat' && write !== 'pack' && !facts.rg11b10Renderable)

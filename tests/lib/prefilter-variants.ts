@@ -1,9 +1,9 @@
-// Prototype L1's variants of the room's generator, as page switches: for each GPU path, the
-// engine's packed path and the float paths in both formats, all sized by each kind of draw's first
-// step; the packed path again with the engine's fixed split, with the first step's rate alone, with
-// the first step's rate corrected by pipeline, and sized from step times without the GPU's timer;
-// and on WebGL2, a context without float color targets. The device plan and the Mac's driver share
-// them.
+// Prototype L1's variants of the room's generator, as page switches. For each GPU path: the engine's
+// packed path, half floats through a spare texture and straight into each face, and the 11-11-10
+// format through a spare texture, all sized by each kind of draw's first step. Then the packed path
+// with the engine's fixed split, with the first step's rate alone, with that rate corrected by
+// pipeline, and sized from step times without the GPU's timer. On WebGL2 also a context without
+// float color targets. The device plan and the Mac's driver share them.
 
 export interface PrefilterVariant {
 	id: string;
@@ -19,12 +19,9 @@ export function prefilterVariants(): PrefilterVariant[] {
 		const add = (name: string, switches: string[]) =>
 			out.push({ id: `prefilter-${gpu}-${name}`, gpu, switches: [`gpu=${gpu}`, ...switches] });
 		add('pack', ['write=pack']);
-		for (const write of ['spare', 'direct'])
-			for (const [short, format] of [
-				['half', 'rgba16float'],
-				['r11', 'rg11b10ufloat'],
-			] as const)
-				add(`${write}-${short}`, [`write=${write}`, `format=${format}`]);
+		add('spare-half', ['write=spare', 'format=rgba16float']);
+		add('spare-r11', ['write=spare', 'format=rg11b10ufloat']);
+		add('direct-half', ['write=direct', 'format=rgba16float']);
 		if (gpu === 'webgl2') add('nofloat', ['write=spare', 'format=rgba16float', 'nofloat=1']);
 		add('pack-fixed', ['write=pack', 'sizing=fixed']);
 		add('pack-first', ['write=pack', 'sizing=first']);
