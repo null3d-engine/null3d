@@ -4,6 +4,7 @@
 // frame before it shows the background alone. Once they draw, they stand in the pose that the same
 // scene shows when its characters stand from the first frame.
 import { expect, type Page, test } from '@playwright/test';
+import { differentShare } from '../lib/images.ts';
 import { pageResult } from '../lib/page-result.ts';
 
 interface SkinningLateResult {
@@ -27,18 +28,6 @@ const TIERS = [
 const CHANNEL = 8;
 /** The share of pixels that may differ between the two frames after the change. */
 const MAX_DIFFERENT = 0.002;
-
-/** The share of pixels of `a` and `b` that differ in a channel by more than the tolerance. */
-function differentShare(a: Uint8Array, b: Uint8Array): number {
-	let different = 0;
-	for (let i = 0; i < a.length; i += 4)
-		for (let c = 0; c < 3; c++)
-			if (Math.abs((a[i + c] as number) - (b[i + c] as number)) > CHANNEL) {
-				different++;
-				break;
-			}
-	return different / (a.length / 4);
-}
 
 /** Loads the page with `query`, and returns its result and the skinning shader files it asked for. */
 async function load(page: Page, query: string) {
@@ -66,11 +55,11 @@ for (const { tier, query } of TIERS)
 		const background = Uint8Array.from(before.subarray(0, 4));
 		const empty = new Uint8Array(before.length);
 		for (let i = 0; i < empty.length; i += 4) empty.set(background, i);
-		expect(differentShare(before, empty)).toBe(0);
+		expect(differentShare(before, empty, CHANNEL)).toBe(0);
 
 		const reference = await load(page, query);
 		const after = Buffer.from(late.result.after, 'base64');
 		const expected = Buffer.from(reference.result.after, 'base64');
-		expect(differentShare(after, empty)).toBeGreaterThan(0.01);
-		expect(differentShare(after, expected)).toBeLessThanOrEqual(MAX_DIFFERENT);
+		expect(differentShare(after, empty, CHANNEL)).toBeGreaterThan(0.01);
+		expect(differentShare(after, expected, CHANNEL)).toBeLessThanOrEqual(MAX_DIFFERENT);
 	});

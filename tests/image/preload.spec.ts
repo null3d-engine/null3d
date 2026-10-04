@@ -4,6 +4,7 @@
 // file's download while the file is read, before the sketch adds the model, and the first frame
 // shows the model in its pose. An unknown name fails the start with E1421.
 import { expect, type Page, test } from '@playwright/test';
+import { differentShare } from '../lib/images.ts';
 import { pageResult } from '../lib/page-result.ts';
 
 interface PreloadResult {
@@ -20,18 +21,6 @@ const FEATURE_FILE = /\/shaders-(ao|background|bloom|lines|skinning|sprites|texc
 
 /** The most a channel may differ for two pixels to count as the same. */
 const CHANNEL = 8;
-
-/** The share of pixels of `a` and `b` that differ in a channel by more than the tolerance. */
-function differentShare(a: Uint8Array, b: Uint8Array): number {
-	let different = 0;
-	for (let i = 0; i < a.length; i += 4)
-		for (let c = 0; c < 3; c++)
-			if (Math.abs((a[i + c] as number) - (b[i + c] as number)) > CHANNEL) {
-				different++;
-				break;
-			}
-	return different / (a.length / 4);
-}
 
 /**
  * Loads the page in `mode` on `gpu`, and returns its result with the page's events in order: the
@@ -84,8 +73,8 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		const later = Buffer.from(result.later, 'base64');
 		const background = new Uint8Array(first.length);
 		for (let i = 0; i < background.length; i += 4) background.set(first.subarray(0, 4), i);
-		expect(differentShare(first, background)).toBeGreaterThan(0.02);
-		expect(differentShare(first, later)).toBeLessThanOrEqual(0.002);
+		expect(differentShare(first, background, CHANNEL)).toBeGreaterThan(0.02);
+		expect(differentShare(first, later, CHANNEL)).toBeLessThanOrEqual(0.002);
 	});
 }
 
