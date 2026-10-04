@@ -110,6 +110,7 @@ use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, format, sizes, texture_usage, view,
 };
 
+use crate::ao::{self, AoIds};
 use crate::background::BackgroundPass;
 use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
@@ -178,6 +179,7 @@ fn out_of_memory(_: std::collections::TryReserveError) -> RecordError {
 /// The builder's GPU objects. It owns every id it uses; each view has a range of its own, the
 /// shadow cascades' views after the camera views.
 mod ids {
+    use crate::ao::STEPS as AO_STEPS;
     use crate::bloom::STEPS;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
 
@@ -236,8 +238,10 @@ mod ids {
     pub const SKINNED: u32 = BLOOM + 1;
     /// The skinning pass's table of formats and parts, one segment per mesh page.
     pub const SKIN_TABLE: u32 = SKINNED + 1;
+    /// The uniform buffer of ambient occlusion's steps.
+    pub const AO: u32 = SKIN_TABLE + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = SKIN_TABLE + 1;
+    pub const PAGES: u32 = AO + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -249,8 +253,10 @@ mod ids {
     pub const BLANK_ENVIRONMENT: u32 = BLANK_LUT + 1;
     /// Every animated instance's skinning matrices (see [`crate::skinning`]).
     pub const JOINTS: u32 = BLANK_ENVIRONMENT + 1;
+    /// The texture that frame groups bind in place of ambient occlusion's while it draws none.
+    pub const BLANK_AO: u32 = JOINTS + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = JOINTS + 1;
+    pub const TARGETS: u32 = BLANK_AO + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow map.
@@ -294,8 +300,10 @@ mod ids {
     pub const SKIN_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The joint texture's bind group, which pipelines that skin in the vertex shader read.
     pub const JOINTS_GROUP: u32 = SKIN_GROUPS + super::skin::MAX_PAGES;
-    /// The bind groups of materials' maps, after the skinning pass's.
-    pub const TEXTURE_GROUPS: u32 = JOINTS_GROUP + 1;
+    /// The bind group of each step of ambient occlusion, after the joint texture's.
+    pub const AO_GROUPS: u32 = JOINTS_GROUP + 1;
+    /// The bind groups of materials' maps, after ambient occlusion's.
+    pub const TEXTURE_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -364,6 +372,10 @@ pub struct GpuDrivenRenderer {
     casters: Layout,
     /// True when the layouts were built for a frame with shadows.
     layouts_shadowed: bool,
+    /// True when the scene's layout was built with the depth prepass's pipelines.
+    layout_prepass: bool,
+    /// The views whose depth prepass has its bind group.
+    prepass_views: usize,
     /// Grid-cell culling: the scene's still objects in cell order, and each cell's box.
     cells: CellCulling,
     culling: Culling,
@@ -445,6 +457,10 @@ impl GpuDrivenRenderer {
                             sampler: ids::BLOOM_SAMPLER,
                             first_group: ids::BLOOM_GROUPS,
                         },
+                        ao: AoIds {
+                            buffer: ids::AO,
+                            first_group: ids::AO_GROUPS,
+                        },
                     },
                 );
                 graph.bind_shadow_map();
@@ -454,6 +470,8 @@ impl GpuDrivenRenderer {
             layout: Layout::new(Drawn::Scene),
             casters: Layout::new(Drawn::Casters),
             layouts_shadowed: false,
+            layout_prepass: false,
+            prepass_views: 0,
             cells: CellCulling::new(config.cell_culling, false),
             culling: Culling::default(),
             lines: LinesPass::new(ids::LINES),
@@ -538,8 +556,17 @@ impl GpuDrivenRenderer {
             .plan(input, tile_settings, filter, camera.as_ref());
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows.
         let shadows = shadow.is_some() || self.tiles.shape().is_some();
-        let upload_everything =
-            input.structure_changed || !self.layout.built || shadows != self.layouts_shadowed;
+        // Ambient occlusion reads the depth prepass's depth, so turning it on or off can switch
+        // the prepass, whose pipelines the layout holds.
+        let ao = self
+            .settings
+            .ao()
+            .zip(self.settings.camera_projection(input.canvas));
+        self.graph.set_ao(ao, self.settings.ao_scale());
+        let upload_everything = input.structure_changed
+            || !self.layout.built
+            || shadows != self.layouts_shadowed
+            || self.graph.depth_prepass() != self.layout_prepass;
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
             self.settings
@@ -559,6 +586,7 @@ impl GpuDrivenRenderer {
                 Prepass::DepthTemplate.if_on(self.graph.depth_prepass()),
                 &self.skinning,
             )?;
+            self.layout_prepass = self.graph.depth_prepass();
             let skinning = &self.skinning;
             self.sorted
                 .rebuild(
@@ -611,7 +639,9 @@ impl GpuDrivenRenderer {
             .reserve(&self.sorted, views)
             .map_err(out_of_memory)?;
         list.reserve_words(
-            self.config.draw_list_words + Transparent::words_bound(&self.sorted, views),
+            self.config.draw_list_words
+                + Transparent::words_bound(&self.sorted, views)
+                + self.bundles_bound(),
         );
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
@@ -661,20 +691,32 @@ impl GpuDrivenRenderer {
             .expect("the builder's graph binds a shadow atlas");
         let first_new = self.views_made;
         let prepass = self.graph.depth_prepass();
+        let occlusion = self.graph.ao_texture().unwrap_or(ids::BLANK_AO);
         for index in 0..views {
             let view = ViewId::from_index(index);
             if index >= first_new {
                 opaque::create_frame_buffer(list, view)?;
                 self.culling.add_view(list, view)?;
-                if prepass {
-                    shadow::bind_depth(list, ids::prepass_group(view), view)?;
-                }
+            }
+            // Ambient occlusion can switch the prepass on after a view first drew.
+            if prepass && index >= self.prepass_views {
+                shadow::bind_depth(list, ids::prepass_group(view), view)?;
             }
             if index >= first_new || self.graph.textures_made() {
-                opaque::bind_frame(list, view, shadow_map, atlas, self.bound_environment)?;
+                opaque::bind_frame(
+                    list,
+                    view,
+                    shadow_map,
+                    atlas,
+                    occlusion,
+                    self.bound_environment,
+                )?;
             }
         }
         self.views_made = self.views_made.max(views);
+        if prepass {
+            self.prepass_views = self.prepass_views.max(views);
+        }
         let cascades = shadow.as_ref().map_or(0, |s| s.cascades.count);
         let first_new_cascade = self.cascades_made;
         for cascade in first_new_cascade..cascades {
@@ -740,7 +782,7 @@ impl GpuDrivenRenderer {
             self.bound_environment = environment;
             for index in 0..views {
                 let view = ViewId::from_index(index);
-                opaque::bind_frame(list, view, shadow_map, atlas, environment)?;
+                opaque::bind_frame(list, view, shadow_map, atlas, occlusion, environment)?;
             }
         }
         for frame in self.frames.iter_mut().flatten() {
@@ -990,10 +1032,22 @@ impl GpuDrivenRenderer {
         )?;
         dfg::create(list, ids::DFG)?;
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
+        ao::create_blank(list, ids::BLANK_AO)?;
         lights::create(list, &self.lights)?;
         self.dfg_pending = true;
         self.created = true;
         Ok(())
+    }
+
+    /// The most words that one frame's bundles take for the scene as it stands, when the frame
+    /// records them all: each camera view's, and its depth prepass's, and each cascade's and shadow
+    /// tile's. The list grows only when the layouts do, so steady frames allocate nothing.
+    fn bundles_bound(&self) -> usize {
+        let cameras = 2 * self.settings.views().len();
+        let tiles = self.settings.tile_settings().tiles as usize;
+        let shadow_views = MAX_CASCADES + tiles.min(MAX_TILES);
+        cameras * opaque::bundle_words(&self.layout)
+            + shadow_views * opaque::bundle_words(&self.casters)
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
@@ -1075,6 +1129,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.casters.forget_gpu();
         self.culling.forget_gpu();
         self.views_made = 0;
+        self.prepass_views = 0;
         self.cascades_made = 0;
         self.tiles_made = 0;
         self.cascades_held = false;

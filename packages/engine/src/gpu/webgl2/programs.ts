@@ -14,6 +14,9 @@
 
 import {
 	PERMUTATION_PREPASS,
+	TEMPLATE_AO,
+	TEMPLATE_AO_DENOISE,
+	TEMPLATE_AO_DEPTH,
 	TEMPLATE_BACKGROUND,
 	TEMPLATE_BLOOM,
 	TEMPLATE_DEBUG_LINES,
@@ -176,11 +179,18 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_FINAL_BLOOM] = { shader: shaders.final, pipeline: 'main' };
 	templates[TEMPLATE_BLOOM] = { shader: shaders.bloom, pipeline: 'main' };
 	templates[TEMPLATE_SHADOW_DEPTH] = { shader: shaders.shadow_depth, pipeline: 'main' };
-	templates[TEMPLATE_SPRITE] = { shader: shaders.sprite, pipeline: 'main' };
-	templates[TEMPLATE_SPRITE_MAP] = { shader: shaders.sprite_map, pipeline: 'main' };
+	// Sprites turn their quads to face the camera, so their prepass draws with their own vertex
+	// shader too.
+	templates[TEMPLATE_SPRITE] = mesh(shaders.sprite);
+	templates[TEMPLATE_SPRITE_MAP] = mesh(shaders.sprite_map);
 	templates[TEMPLATE_LINE] = { shader: shaders.line, pipeline: 'main' };
 	templates[TEMPLATE_LINE_LIT] = { shader: shaders.line_lit, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND] = { shader: shaders.background, pipeline: 'main' };
+	// WebGL2's depth step always reads one sample: the backend keeps a copy of one sample of a
+	// multisampled depth target that a shader reads.
+	templates[TEMPLATE_AO_DEPTH] = { shader: shaders.ao, pipeline: 'depth' };
+	templates[TEMPLATE_AO] = { shader: shaders.ao, pipeline: 'horizon' };
+	templates[TEMPLATE_AO_DENOISE] = { shader: shaders.ao, pipeline: 'denoise' };
 	if (DEV) {
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,

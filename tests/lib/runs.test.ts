@@ -997,7 +997,7 @@ describe('the parity plan', () => {
 	it('opens every hold page once and pairs each null3d page with three.js on its tier', () => {
 		expect(PLANS.parity).toBe(parityPlan);
 		// Per scene: two three.js pages and three null3D pages, one per GPU tier.
-		expect(items).toHaveLength(20);
+		expect(items).toHaveLength(25);
 		expect(new Set(items.map(({ id }) => id)).size).toBe(items.length);
 		// Compatibility mode needs WebGPU, and it is compared with three.js's WebGPU page.
 		expect(item('parity-s1-null3d-compat').check).toEqual({
@@ -1013,7 +1013,7 @@ describe('the parity plan', () => {
 			check.kind === 'parity' ? [`${id} ${check.pair.reference}`] : [],
 		);
 		expect(pairs).toEqual(
-			['s1', 's1-static', 's1-cells', 's2'].flatMap((scene) => [
+			['s1', 's1-static', 's1-cells', 's2', 's5'].flatMap((scene) => [
 				`parity-${scene}-null3d-webgpu threejs-webgpu`,
 				`parity-${scene}-null3d-compat threejs-webgpu`,
 				`parity-${scene}-null3d-webgl2 threejs-webgl`,
@@ -1034,7 +1034,7 @@ describe('the parity plan', () => {
 			'parity-s1-static-threejs-webgpu',
 			'parity-s1-static-threejs-webgl',
 		]);
-		// Each scene is one group of five pages, so two shards split the four scenes 10 to 10.
+		// Each scene is one group of five pages, so two shards split the five scenes 15 to 10.
 		const scenes = (index: number) => [
 			...new Set(
 				(planItems(parseArgs(['--plan', 'parity', '--shard', `${index}/2`, 'Safari'])) ?? []).map(
@@ -1042,7 +1042,7 @@ describe('the parity plan', () => {
 				),
 			),
 		];
-		expect(scenes(1)).toEqual(['s1', 's1-cells']);
+		expect(scenes(1)).toEqual(['s1', 's1-cells', 's5']);
 		expect(scenes(2)).toEqual(['s1-static', 's2']);
 	});
 
@@ -1647,7 +1647,7 @@ describe('parseArgs', () => {
 		);
 		expect(() => parseArgs(['--plan', 'bench', '--scenes', ''])).toThrow('--scenes: use some of');
 		expect(() => parseArgs(['--plan', 'parity', '--scenes', 's2'])).toThrow(
-			'--scenes works with --plan bench only',
+			'--scenes works with --plan bench or --plan scale only',
 		);
 		expect(() =>
 			parseArgs(['--plan', 'bench', '--jobs', '2', '--pages', 'null3d-webgl2,threejs-webgl']),
@@ -1655,6 +1655,10 @@ describe('parseArgs', () => {
 		expect(parseArgs(['--shard', '2/3', 'Safari']).shard).toEqual({ index: 2, count: 3 });
 		for (const shard of ['0/2', '3/2', '1', '1/2/3', 'one/two'])
 			expect(() => parseArgs(['--shard', shard])).toThrow('--shard: use <i>/<n>');
+		expect(parseArgs(['--plan', 'scale', '--scenes', 's5']).scenes).toEqual(['s5']);
+		expect(() => parseArgs(['--plan', 'scale', '--scenes', 's1,s4'])).toThrow(
+			'the scale plan searches s1 and s5 only; leave out s4',
+		);
 		expect(() => parseArgs(['--plan', 'scale', '--shard', '1/2'])).toThrow(
 			'--shard picks items of a fixed plan, so it does not work with --plan scale',
 		);

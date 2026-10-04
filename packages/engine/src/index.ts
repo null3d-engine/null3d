@@ -96,6 +96,7 @@ export type {
 } from './scene/lines';
 export type { Lut, LutDomain } from './scene/lut';
 export type {
+	AoSettings,
 	BloomSettings,
 	Post,
 	PostSettings,

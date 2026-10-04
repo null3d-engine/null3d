@@ -1,6 +1,6 @@
 // What a feature costs on this device: a page's engine plays a scene with the feature off and on in
 // turns, and the page measures each side over the same seconds, so heat slows both sides alike.
-// The bloom and environment cost pages share it.
+// The effect and environment cost pages share it.
 import type { Engine } from '@null3d/engine';
 
 /** Seconds of play before the first measurement. */

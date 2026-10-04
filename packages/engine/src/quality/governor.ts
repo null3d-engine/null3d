@@ -1,13 +1,14 @@
 // The frame-budget governor. When frames take too long, it lowers the live settings one step at a
 // time, in a fixed order: the render scale first, then how often far shadow cascades draw, then the
-// shadow filter, then bloom's samples. When the frames have time to spare again, it raises them in
-// the reverse order. It never changes a setting that is fixed while a preset runs.
+// shadow filter, then bloom's samples, then ambient occlusion's scale. When the frames have time to
+// spare again, it raises them in the reverse order. It never changes a setting that is fixed while
+// a preset runs.
 //
 // The render scale is a part of the canvas's width and height, in whole thousandths, which the core
 // turns into an exact size in pixels. Scene passes draw into that corner of targets the size of the
 // canvas, and the final pass scales it up to the canvas, so a new scale makes no GPU object. The
-// shadow steps are numbers in a uniform and a schedule, and bloom's samples numbers in a uniform,
-// so they make none either.
+// shadow steps are numbers in a uniform and a schedule, bloom's samples numbers in a uniform, and
+// ambient occlusion's scale a corner of the same targets, so they make none either.
 //
 // The governor judges the frames in windows of a quarter second. It takes a step down when the
 // frames of the last second, on average, missed the line at which the benchmark reports count a
@@ -20,7 +21,8 @@
 // quick. A shadow step happens only where the scene has a light that casts shadows, and only where
 // the step changes what the frame draws: the far cascades need a directional light with two
 // cascades or more, and the filter any light that casts shadows. A bloom step happens only while
-// the sketch has bloom on: each halves the taps of bloom's blurs.
+// the sketch has bloom on: each halves the taps of bloom's blurs. The ambient occlusion step happens
+// only while it draws at half the render size: it draws at a quarter.
 //
 // The frame loop calls it once per frame, and it allocates nothing. The governor judges only a few
 // times a second, so the browser may never optimize it, and unoptimized code makes a number object
@@ -55,6 +57,9 @@ export const LONGEST_FAR_INTERVAL = QUALITY_SETTINGS.farCascadeInterval.values.m
 export const LIGHTEST_FILTER = QUALITY_SETTINGS.shadowFilter.values[0];
 /** The fewest of three.js's taps that bloom's blurs read: one in this many. */
 export const LONGEST_BLOOM_DIVISOR = 1 / QUALITY_SETTINGS.bloomSamples.values[0];
+
+/** The smallest scale of ambient occlusion's targets above none, in thousandths of the render size. */
+export const LOWEST_AO_SCALE = thousandths(QUALITY_SETTINGS.aoScale.values[1]);
 
 /**
  * The divisor of bloom's taps for a share of them from the `bloomSamples` setting: 1 for all of
@@ -142,7 +147,7 @@ const STATE_SIZE = 6;
  * step down. They cover every scale of the widest range and every step past the scale.
  */
 const LEVELS =
-	FULL_SCALE / SCALE_STEP + 1 + farIntervalSteps(1) + 1 + Math.log2(LONGEST_BLOOM_DIVISOR);
+	FULL_SCALE / SCALE_STEP + 1 + farIntervalSteps(1) + 1 + Math.log2(LONGEST_BLOOM_DIVISOR) + 1;
 
 /**
  * The governor's rules, over windows of frame figures. The frame loop, or a test, fills `window`
@@ -163,7 +168,15 @@ export class Governor {
 	filter: number = LIGHTEST_FILTER;
 	/** How many times fewer taps than three.js's bloom's blurs read: the setting's, or more after a step. */
 	bloomDivisor = 1;
-	/** Counts each change of `farInterval`, `filter` or `bloomDivisor`, so the frame loop applies them. */
+	/**
+	 * The scale of ambient occlusion's targets in thousandths of the render size: the setting's, or
+	 * the lowest above none after a step.
+	 */
+	aoScale = 0;
+	/**
+	 * Counts each change of `farInterval`, `filter`, `bloomDivisor` or `aoScale`, so the frame loop
+	 * applies them.
+	 */
 	stepChanges = 0;
 	/** False while the governor is off: the scale stays at the highest and the settings as set. */
 	on = true;
@@ -186,6 +199,9 @@ export class Governor {
 	/** The divisor of bloom's taps that the bloom steps start from, and whether bloom is on. */
 	private bloomSetting = 1;
 	private bloom = false;
+	/** The scale of ambient occlusion that its step starts from, and whether it is on. */
+	private aoSetting = 0;
+	private ao = false;
 
 	constructor() {
 		this.restart(0);
@@ -234,6 +250,17 @@ export class Governor {
 		this.applySteps();
 	}
 
+	/**
+	 * Sets the scale of ambient occlusion's targets that its step starts from, in thousandths, and
+	 * whether the sketch has it on, which the step needs.
+	 */
+	setAo(on: boolean, scale: number): void {
+		if (on === this.ao && scale === this.aoSetting) return;
+		this.ao = on;
+		this.aoSetting = scale;
+		this.applySteps();
+	}
+
 	/** Turns the governor on or off. Off, the scale goes to the highest and the settings apply as set. */
 	setOn(on: boolean): void {
 		this.on = on;
@@ -243,9 +270,12 @@ export class Governor {
 		this.applySteps();
 	}
 
-	/** The steps past the render scale that the scene's shadows, bloom and the settings allow. */
+	/**
+	 * The steps past the render scale that the scene's shadows, bloom, ambient occlusion and the
+	 * settings allow.
+	 */
 	get maxSteps(): number {
-		return this.intervalSteps() + this.filterSteps() + this.bloomSteps();
+		return this.intervalSteps() + this.filterSteps() + this.bloomSteps() + this.aoSteps();
 	}
 
 	/**
@@ -359,7 +389,7 @@ export class Governor {
 		this.settle(moved, now);
 	}
 
-	/** One step up: the bloom and shadow steps back first, then the render scale. */
+	/** One step up: the ambient occlusion, bloom and shadow steps back first, then the render scale. */
 	private raise(now: number): void {
 		let moved = true;
 		if (this.steps > 0) this.moveSteps(-1);
@@ -417,28 +447,39 @@ export class Governor {
 		return steps;
 	}
 
+	/** Ambient occlusion's step while it draws above the lowest scale: to the lowest. */
+	private aoSteps(): number {
+		return this.ao && this.aoSetting > LOWEST_AO_SCALE ? 1 : 0;
+	}
+
 	/**
 	 * Brings the steps within what the settings and the scene allow, and works out the settings
 	 * that frames draw with: the far cascades' interval doubles with each of its steps, the filter
-	 * takes the lightest after them, and then bloom's divisor doubles with each of its steps.
+	 * takes the lightest after them, then bloom's divisor doubles with each of its steps, and last
+	 * ambient occlusion takes its lowest scale.
 	 */
 	private applySteps(): void {
 		const intervalSteps = this.intervalSteps();
 		const shadowSteps = intervalSteps + this.filterSteps();
-		this.steps = Math.min(this.steps, shadowSteps + this.bloomSteps());
+		const bloomSteps = this.bloomSteps();
+		this.steps = Math.min(this.steps, shadowSteps + bloomSteps + this.aoSteps());
 		const doublings = Math.min(this.steps, intervalSteps);
 		const farInterval = Math.min(LONGEST_FAR_INTERVAL, this.intervalSetting * 2 ** doublings);
 		const filter = this.steps > intervalSteps ? LIGHTEST_FILTER : this.filterSetting;
-		const bloomDivisor = this.bloomSetting * 2 ** Math.max(0, this.steps - shadowSteps);
+		const bloomHalvings = Math.min(bloomSteps, Math.max(0, this.steps - shadowSteps));
+		const bloomDivisor = this.bloomSetting * 2 ** bloomHalvings;
+		const aoScale = this.steps > shadowSteps + bloomSteps ? LOWEST_AO_SCALE : this.aoSetting;
 		if (
 			farInterval === this.farInterval &&
 			filter === this.filter &&
-			bloomDivisor === this.bloomDivisor
+			bloomDivisor === this.bloomDivisor &&
+			aoScale === this.aoScale
 		)
 			return;
 		this.farInterval = farInterval;
 		this.filter = filter;
 		this.bloomDivisor = bloomDivisor;
+		this.aoScale = aoScale;
 		this.stepChanges++;
 	}
 }

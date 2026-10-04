@@ -52,6 +52,14 @@
 //! of their targets. The 8-bit path has no bloom: its scene color holds display color, which no
 //! longer knows how bright a pixel was.
 //!
+//! While the sketch turns ambient occlusion on, the camera's view has three ambient occlusion
+//! passes between its depth prepass and its opaque pass (see [`crate::ao`]), and the prepass runs
+//! for every view even where the builder started without it. The first reads the scene depth as
+//! the prepass leaves it, before the opaque pass draws into it again, so the prepass and the
+//! opaque pass draw in two render passes. Each step draws into a target of its own at half the
+//! render size, and the camera's opaque pass reads the last one. They are declared only while
+//! ambient occlusion is on, on either path, since it needs no HDR color.
+//!
 //! The final pass also grades the canvas color with a color grading table and the vignette (see
 //! [`crate::grading`]). Both work on display color, so they draw on the 8-bit path too: while the
 //! sketch sets either, the final pass runs there in place of the resolve pass, as it does while
@@ -83,7 +91,9 @@ use std::borrow::Cow;
 
 use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_usage, view};
 
+use crate::ao::{self, Ao, AoIds, AoPass, StepSources};
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, LEVELS, STEPS};
+use crate::camera::Mat4;
 use crate::final_pass::{BloomInputs, FinalIds, FinalPass};
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
 use crate::grading::Grading;
@@ -106,6 +116,7 @@ pub(crate) struct GraphIds {
     pub(crate) first_texture: u32,
     pub(crate) final_pass: FinalIds,
     pub(crate) bloom: BloomIds,
+    pub(crate) ao: AoIds,
 }
 
 /// The buffers that the culling passes read: the world matrices and the bucket tables, which the
@@ -186,6 +197,15 @@ const fn bloom_source(step: usize) -> &'static str {
         BLOOM_TARGETS[step - 1]
     }
 }
+/// Each step of ambient occlusion and the target it creates: the depth copy, the horizon search and
+/// the denoise, whose target the camera's opaque pass reads.
+const AO_PASSES: [&str; ao::STEPS] = ["AoDepth", "AoHorizon", "AoDenoise"];
+const AO_TARGETS: [&str; ao::STEPS] = ["aoDepth", "aoHorizon", "aoResult"];
+/// The color target of the camera's depth prepass while ambient occlusion splits it from the
+/// opaque pass. No pass reads it: it gives the prepass's render pass the formats that its
+/// pipelines draw into, so each render pass ends without storing it, and it can share a texture
+/// with the scene color, whose life starts after it.
+const PREPASS_COLOR: &str = "prepassColor";
 /// The shadow atlas of point and spot lights: a depth texture array with one layer per tile,
 /// kept between frames.
 const SHADOW_ATLAS: &str = "shadowAtlas";
@@ -247,6 +267,8 @@ pub(crate) enum Role {
     Resolve,
     /// A step of bloom's chain, by its place in the chain. The graph records it itself.
     Bloom(u8),
+    /// A step of ambient occlusion, by its place. The graph records it itself.
+    Ao(u8),
     /// Tone maps the HDR scene color into the canvas. The graph records it itself.
     Final,
     /// Tone maps the HDR scene color into the canvas, with bloom's levels added. The graph records
@@ -329,6 +351,16 @@ pub(crate) struct FrameGraph {
     bloom: Option<Bloom>,
     /// The sample divisor of bloom's blurs.
     bloom_divisor: u32,
+    /// Ambient occlusion's steps and their GPU objects, once ambient occlusion first draws.
+    ao_pass: Option<AoPass>,
+    /// The GPU objects that ambient occlusion's steps take.
+    ao_ids: AoIds,
+    /// Ambient occlusion's settings while it draws.
+    ao: Option<Ao>,
+    /// The size of ambient occlusion's targets as a share of the render size.
+    ao_scale: f32,
+    /// The camera's projection and its inverse, while ambient occlusion draws.
+    projection: (Mat4, Mat4),
     /// The number of views the declarations cover.
     views: usize,
     /// The debug lines pass, once the passes are declared.
@@ -403,6 +435,11 @@ impl FrameGraph {
             bloom_ids: ids.bloom,
             bloom: None,
             bloom_divisor: 1,
+            ao_pass: None,
+            ao_ids: ids.ao,
+            ao: None,
+            ao_scale: ao::MAX_SCALE,
+            projection: ([0.0; 16], [0.0; 16]),
             views: 0,
             debug_lines: None,
             transparent: Vec::new(),
@@ -440,6 +477,8 @@ impl FrameGraph {
         self.bloom_pass = scene_color
             .is_hdr()
             .then(|| BloomPass::new(self.bloom_ids, scene_color.format(), rows_from_bottom));
+        // The depth step reads the depth's samples, which the new mode may change.
+        self.ao_pass = None;
         self.declared = false;
     }
 
@@ -465,9 +504,32 @@ impl FrameGraph {
         }
     }
 
-    /// True when each view has a depth prepass.
+    /// True when each view has a depth prepass: from the builder's start, or while ambient
+    /// occlusion draws, as it reads the prepass's depth.
     pub(crate) fn depth_prepass(&self) -> bool {
-        self.prepass
+        self.prepass || self.ao.is_some()
+    }
+
+    /// Turns ambient occlusion on with its settings, the camera's projection and its inverse, and
+    /// the size of its targets as a share of the render size, or off with `None`, for the next
+    /// frames. The passes are declared again only when it turns on or off.
+    pub(crate) fn set_ao(&mut self, ao: Option<(Ao, (Mat4, Mat4))>, scale: f32) {
+        if ao.is_some() != self.ao.is_some() {
+            self.declared = false;
+        }
+        self.ao = ao.map(|(settings, _)| settings);
+        if let Some((_, projection)) = ao {
+            self.projection = projection;
+        }
+        self.ao_scale = scale;
+    }
+
+    /// The draw list's id of the texture that the camera's opaque pass reads ambient occlusion
+    /// from, or `None` while ambient occlusion draws no frame. Valid once the frame's
+    /// [`FrameGraph::prepare`] made the plan's textures.
+    pub(crate) fn ao_texture(&self) -> Option<u32> {
+        self.ao
+            .and_then(|_| self.sampled_id(AO_TARGETS[ao::STEPS - 1]))
     }
 
     /// Sets the directional light's shadow passes for the next frames, or none. A new cascade count
@@ -526,7 +588,12 @@ impl FrameGraph {
         } else {
             0
         };
-        FinalPass::UPLOAD_BYTES + bloom
+        let ao = if self.ao.is_some() {
+            AoPass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        FinalPass::UPLOAD_BYTES + bloom + ao
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -640,6 +707,7 @@ impl FrameGraph {
         self.transparent.clear();
         self.shadow_passes.clear();
         self.bloom_passes.clear();
+        let prepass = self.depth_prepass();
         let color = Target::color(self.scene_color.format()).samples(self.samples);
         let depth = Target::depth(DEPTH_FORMAT).samples(self.samples);
         if self.shadow_map {
@@ -687,7 +755,7 @@ impl FrameGraph {
             let mut pass = Pass::new(view_name(index, "Opaque", "Opaque"), PassKind::Scene)
                 .layers(view.layers())
                 .creates(view_name(index, SCENE_COLOR, "color"), color);
-            if self.prepass {
+            if prepass {
                 let mut prepass = Pass::new(
                     view_name(index, "DepthPrepass", "DepthPrepass"),
                     PassKind::Scene,
@@ -700,8 +768,16 @@ impl FrameGraph {
                 if self.skins() {
                     prepass = prepass.reads(SKINNED);
                 }
+                let occludes = index == ViewId::CAMERA.index() && self.ao.is_some();
+                if occludes {
+                    prepass = prepass.creates(PREPASS_COLOR, color);
+                }
                 let prepass = self.add(prepass, Role::Prepass(ViewId::from_index(index)));
                 self.prepasses.push(prepass);
+                if occludes {
+                    self.declare_ao();
+                    pass = pass.reads(AO_TARGETS[ao::STEPS - 1]);
+                }
                 pass = pass.writes(depth_name);
             } else {
                 pass = pass.creates(depth_name, depth);
@@ -752,6 +828,32 @@ impl FrameGraph {
         self.enable_outputs();
         self.views = views.len();
         self.declared = true;
+    }
+
+    /// Declares ambient occlusion's steps: the depth copy reads the scene depth as the prepass
+    /// leaves it, the horizon search reads the copy, and the denoise reads both.
+    fn declare_ao(&mut self) {
+        self.ao_steps();
+        for step in 0..ao::STEPS {
+            let mut pass = Pass::new(AO_PASSES[step], PassKind::Fullscreen)
+                .size(ao::SIZE)
+                .creates(AO_TARGETS[step], Target::color(ao::FORMATS[step]));
+            pass = match step {
+                0 => pass.reads_so_far(SCENE_DEPTH),
+                1 => pass.reads(AO_TARGETS[0]),
+                _ => pass.reads(AO_TARGETS[0]).reads(AO_TARGETS[1]),
+            };
+            self.add(pass, Role::Ao(step as u8));
+        }
+    }
+
+    /// Ambient occlusion's steps, made for the scene depth's samples when first asked for.
+    fn ao_steps(&mut self) -> &mut AoPass {
+        // WebGL2 has no multisampled textures: its backend gives the depth step a copy of one
+        // sample.
+        let samples = if self.gpu_culling { self.samples } else { 1 };
+        self.ao_pass
+            .get_or_insert_with(|| AoPass::new(self.ao_ids, samples))
     }
 
     /// Declares bloom's steps, each reading the target of the step before it, and the final pass
@@ -862,6 +964,9 @@ impl FrameGraph {
     pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) {
         let blooms = self.bloom_draws();
         self.final_pass.request_pipeline(pipelines, blooms);
+        if self.ao.is_some() {
+            self.ao_steps().request_pipelines(pipelines);
+        }
         if let (true, Some(bloom)) = (blooms, self.bloom_pass.as_mut()) {
             bloom.request_pipeline(pipelines);
         }
@@ -879,6 +984,7 @@ impl FrameGraph {
         output: Output,
         grading: Grading,
     ) -> Result<(), RecordError> {
+        self.upload_ao(list, arena)?;
         if !self.final_runs() {
             return Ok(());
         }
@@ -922,6 +1028,34 @@ impl FrameGraph {
             bloom,
             grading,
             self.textures_made,
+        )
+    }
+
+    /// Records ambient occlusion's objects and settings while it draws, and binds each step to the
+    /// textures it reads.
+    fn upload_ao(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        let Some(settings) = self.ao else {
+            return Ok(());
+        };
+        let id = |name: &str| {
+            self.sampled_id(name)
+                .expect("each step of ambient occlusion reads a planned texture")
+        };
+        let [depth, horizon] = [id(AO_TARGETS[0]), id(AO_TARGETS[1])];
+        let sources: StepSources = [[id(SCENE_DEPTH); 2], [depth, depth], [depth, horizon]];
+        let (canvas, scale, ao_scale, made) =
+            (self.canvas, self.scale, self.ao_scale, self.textures_made);
+        let projection = self.projection;
+        let pass = self
+            .ao_pass
+            .as_mut()
+            .expect("ambient occlusion's steps exist once it is declared");
+        pass.prepare(
+            list, arena, settings, projection, canvas, scale, ao_scale, &sources, made,
         )
     }
 
@@ -1033,6 +1167,15 @@ impl FrameGraph {
                                 .as_ref()
                                 .expect("bloom's passes run only on the HDR path")
                                 .record(list, usize::from(step))?,
+                            Role::Ao(step) => self
+                                .ao_pass
+                                .as_ref()
+                                .expect("ambient occlusion's passes run once it is declared")
+                                .record(
+                                    list,
+                                    usize::from(step),
+                                    ao::corner(self.canvas, self.scale, self.ao_scale),
+                                )?,
                             role => record(list, role)?,
                         }
                     }
@@ -1182,6 +1325,9 @@ impl FrameGraph {
         if let Some(bloom) = self.bloom_pass.as_mut() {
             bloom.reset_gpu();
         }
+        if let Some(ao) = self.ao_pass.as_mut() {
+            ao.reset_gpu();
+        }
     }
 }
 
@@ -1239,6 +1385,10 @@ mod tests {
             buffer: 10,
             sampler: 10,
             first_group: 10,
+        },
+        ao: AoIds {
+            buffer: 11,
+            first_group: 20,
         },
     };
 
@@ -1746,6 +1896,119 @@ mod tests {
             .prepare(&mut list, (320, 180), RenderScale::FULL)
             .unwrap();
         assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
+    }
+
+    #[test]
+    fn ambient_occlusion_runs_between_the_camera_prepass_and_its_opaque_pass_on_every_path() {
+        let lens = ([1.0; 16], [1.0; 16]);
+        for (format, antialias, gpu_culling) in [
+            (format::RGBA16_FLOAT, Antialias::Msaa, true),
+            (format::CANVAS, Antialias::Msaa, true),
+            (format::CANVAS, Antialias::Msaa, false),
+            (format::RGBA16_FLOAT, Antialias::Fxaa, false),
+        ] {
+            let mut frames = frame_graph(format, antialias, gpu_culling, true);
+            frames.sync_views(&[View::default(), View::default()]);
+            let mut list = DrawList::with_capacity(4096);
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            let without = frames.graph().plan().unwrap().textures().len();
+            assert!(!frames.depth_prepass());
+
+            frames.set_ao(Some((Ao::default(), lens)), 0.5);
+            assert!(
+                frames.depth_prepass(),
+                "ambient occlusion needs the prepass's depth"
+            );
+            frames.sync_views(&[View::default(), View::default()]);
+            frames.request_pipelines(&mut PipelineCache::default());
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            let names = steps(&frames);
+            let at = |name: &str| names.iter().position(|step| step.iter().any(|p| p == name));
+            let (prepass, opaque) = (at("DepthPrepass").unwrap(), at("Opaque").unwrap());
+            assert_eq!(names[prepass], ["DepthPrepass"], "the prepass draws alone");
+            assert_eq!(
+                [at("AoDepth"), at("AoHorizon"), at("AoDenoise")],
+                [Some(prepass + 1), Some(prepass + 2), Some(prepass + 3)]
+            );
+            assert_eq!(opaque, prepass + 4);
+            // The other view keeps one render pass for its prepass and its opaque pass.
+            assert!(
+                names
+                    .iter()
+                    .any(|step| step[..] == ["DepthPrepass1", "Opaque1"])
+            );
+            // The prepass stores the depth that the depth step reads and the opaque pass loads,
+            // and drops its stand-in color.
+            let plan = frames.graph().plan().unwrap();
+            let attachments = plan.attachments(&plan.steps()[prepass]);
+            for attachment in attachments {
+                let store = if attachment.depth {
+                    StoreOp::Store
+                } else {
+                    StoreOp::Discard
+                };
+                assert_eq!(attachment.store, store);
+                assert_eq!(attachment.load, LoadOp::Clear);
+            }
+            let attachments = plan.attachments(&plan.steps()[opaque]);
+            let depth = attachments.iter().find(|a| a.depth).unwrap();
+            assert_eq!(depth.load, LoadOp::Load);
+            // Three targets of half the size, and the camera's depth readable, which no longer
+            // shares a texture with the side view's depth, whose usage differs.
+            assert_eq!(plan.textures().len(), without + 4);
+            let texture = |name: &str| plan.texture_of(frames.graph().find_resource(name).unwrap());
+            let depth = texture(SCENE_DEPTH).unwrap();
+            let Surface::Texture(index) = depth else {
+                panic!("the depth is a texture")
+            };
+            assert_ne!(
+                plan.textures()[usize::from(index)].usage & texture_usage::TEXTURE_BINDING,
+                0
+            );
+            for (step, name) in AO_TARGETS.iter().enumerate() {
+                let Surface::Texture(index) = texture(name).unwrap() else {
+                    panic!("the steps draw into textures")
+                };
+                let made = plan.textures()[usize::from(index)];
+                assert_eq!(made.size, ao::SIZE);
+                assert_eq!(made.target, Target::color(ao::FORMATS[step]));
+            }
+            assert!(frames.ao_texture().is_some());
+
+            // A lower scale draws a smaller corner of the same targets.
+            let mut arena = UploadArena::default();
+            arena.reset(frames.upload_bound());
+            frames
+                .upload(&mut list, &mut arena, Output::default(), Grading::default())
+                .unwrap();
+            list.clear();
+            frames.set_ao(Some((Ao::default(), lens)), 0.25);
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            assert!(list.is_empty(), "a new scale makes no texture");
+            list.clear();
+            frames
+                .record(&mut list, [0.0; 4], |_| false, |_, _| Ok(()))
+                .unwrap();
+            let viewports = operands(&list, Op::SetViewport);
+            assert!(viewports.iter().any(|v| v[2..4] == [80, 45]));
+
+            // Off again, the steps and their targets are gone, and the prepass with them.
+            frames.set_ao(None, 0.5);
+            assert!(!frames.depth_prepass());
+            frames.sync_views(&[View::default(), View::default()]);
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
+            assert!(frames.graph().find_pass("AoDepth").is_none());
+            assert_eq!(frames.ao_texture(), None);
+        }
     }
 
     #[test]

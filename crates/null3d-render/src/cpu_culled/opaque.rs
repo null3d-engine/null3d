@@ -47,12 +47,13 @@ const FRAME_SLOT_BYTES: u32 = OFFSETS_AT + OFFSETS_BYTES;
 const TEXTURES_GROUP: u32 = 3;
 
 /// The textures that a camera view's frame groups bind for the surfaces they light: the shadow
-/// map of the main directional light, the shadow atlas of point and spot lights, and the
-/// environment's cube texture, or the blank one.
+/// map of the main directional light, the shadow atlas of point and spot lights, the texture of
+/// ambient occlusion, and the environment's cube texture, or the blank one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct LitTextures {
     pub(super) shadow_map: u32,
     pub(super) atlas: u32,
+    pub(super) occlusion: u32,
     pub(super) environment: u32,
 }
 
@@ -245,9 +246,9 @@ impl Opaque {
     /// the light textures' ring. Each also binds three.js's table of the split-sum terms of
     /// specular light, the shadow map of `lit` with the comparison sampler and the cascades'
     /// uniform block that read it, the slot's light grid and light records, the shadow atlas of
-    /// `lit` with the tiles' uniform block, and the environment's cube texture of `lit` with its
-    /// sampler. A shadow cascade's or a shadow tile's view has one group, which binds no shadow
-    /// map, so no pass reads the texture it draws into.
+    /// `lit` with the tiles' uniform block, the texture of ambient occlusion, and the
+    /// environment's cube texture of `lit` with its sampler. A shadow cascade's or a shadow tile's
+    /// view has one group, which binds no shadow map, so no pass reads the texture it draws into.
     pub(super) fn bind_frame(
         list: &mut DrawList,
         view: ViewId,
@@ -277,6 +278,7 @@ impl Opaque {
         let Some(LitTextures {
             shadow_map: map,
             atlas,
+            occlusion,
             environment,
         }) = lit
         else {
@@ -286,7 +288,7 @@ impl Opaque {
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
         };
-        let mut words = [0; 58 + environment::ENTRY_WORDS];
+        let mut words = [0; 63 + environment::ENTRY_WORDS];
         words[3..18].copy_from_slice(&common);
         words[18..48].copy_from_slice(&[
             3,
@@ -321,8 +323,9 @@ impl Opaque {
             sizes::SHADOW_TILES_UNIFORM_BYTES,
         ]);
         for slot in 0..RING {
-            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 13]);
-            words[58..]
+            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 14]);
+            words[58..63].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
+            words[63..]
                 .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
             words[48..58].copy_from_slice(&[
                 7,
@@ -576,8 +579,9 @@ impl Opaque {
                     list.push(Op::SetPipeline, &[id])?;
                     pipeline = Some(id);
                 }
-                // The prepass's programs sample no maps.
-                if !prepass && first.textures != 0 && first.textures != textures {
+                // The prepass draws with each pipeline's own vertex shader, which can read the
+                // material's textures, as a custom material's vertex offset may.
+                if first.textures != 0 && first.textures != textures {
                     list.push(Op::SetBindGroup, &[TEXTURES_GROUP, first.textures, 0])?;
                     textures = first.textures;
                 }
