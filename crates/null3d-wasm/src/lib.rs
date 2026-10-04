@@ -19,6 +19,7 @@ use null3d_core::animation::{
     AnimationError, Animations, Channel, Clip, Interpolation, MATRIX_FLOATS, MAX_JOINTS, Play,
     REST_FLOATS, Skeleton, SourceTrack, TrackProblem, resample,
 };
+use null3d_core::bvh::mesh::{IndexedTriangles, MeshBvh};
 use null3d_core::bvh::query::{QueryHit, QueryScene, SceneQueries};
 use null3d_core::bvh::scene::Source;
 use null3d_core::bvh::top::WorldRay;
@@ -28,6 +29,7 @@ use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, WorkerId};
 use null3d_core::lights::LightTable;
 use null3d_core::lines::{LineLook, LineMode};
+use null3d_core::occlusion::BlockerMesh;
 use null3d_core::scene::{CommandRing, SceneStorage};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_core::sprites::SpriteLook;
@@ -1140,6 +1142,71 @@ pub fn create_mesh_from_arrays(vertices: u32, indices: u32, layout: u32, types: 
         drop(staging);
         add_mesh(e, &geometry)
     })
+}
+
+/// Gives mesh `mesh` the tree over its triangles that a model file stores, in the format of
+/// `MeshBvh::to_bytes`, from the first `bytes` bytes of the staging words. Raycasts then use it
+/// instead of building one. Returns 1 when the mesh takes the tree, and 0 when the tree does not
+/// fit the mesh's triangles, which then get a tree of their own on the first query.
+#[wasm_bindgen(js_name = setMeshBvh)]
+pub fn set_mesh_bvh(mesh: u32, bytes: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let data: &[u8] = bytemuck_bytes(&staging);
+        let tree = data.get(..bytes as usize).and_then(|data| {
+            let triangles = e
+                .renderer
+                .settings()
+                .meshes()
+                .triangles(mesh.checked_sub(1)?)?;
+            MeshBvh::from_bytes(data, &triangles).ok()
+        });
+        drop(staging);
+        match tree {
+            Some(tree) => e
+                .queries
+                .store_mesh_bvh(mesh, tree)
+                .map(|()| 1)
+                .map_err(core_failure),
+            None => Ok(0),
+        }
+    })
+}
+
+/// Gives mesh `mesh` a blocker of its own for software occlusion culling: `vertices` corners of
+/// three floats, then `indices` indices, three per triangle, in the staging words. Objects with
+/// the mesh draw it in place of the mesh. Returns 1 when the mesh takes it, and 0 when it holds
+/// no triangle, too many, or a corner that is not a number.
+#[wasm_bindgen(js_name = setMeshBlocker)]
+pub fn set_mesh_blocker(mesh: u32, vertices: u32, indices: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let (v, i) = (vertices as usize * 3, indices as usize);
+        let blocker = (staging.len() >= v + i && i % 3 == 0)
+            .then(|| {
+                let positions: Vec<f32> = staging[..v].iter().map(|&w| f32::from_bits(w)).collect();
+                BlockerMesh::build(&IndexedTriangles {
+                    positions: &positions,
+                    indices: &staging[v..v + i],
+                })
+            })
+            .flatten();
+        drop(staging);
+        match blocker {
+            Some(blocker) => e
+                .renderer
+                .set_mesh_blocker(mesh, blocker)
+                .map(|()| 1)
+                .map_err(|_| core_failure(CoreError::OutOfMemory { bytes: indices * 4 })),
+            None => Ok(0),
+        }
+    })
+}
+
+/// The bytes of 32-bit words, little-endian as WebAssembly keeps them.
+fn bytemuck_bytes(words: &[u32]) -> &[u8] {
+    // SAFETY: a u32 slice is a valid u8 slice four times as long, with the same lifetime.
+    unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<u8>(), words.len() * 4) }
 }
 
 /// The arrays in the staging words, or `None` when the words do not hold what `layout` and

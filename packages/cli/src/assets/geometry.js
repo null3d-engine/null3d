@@ -79,7 +79,7 @@ const usesOf = (doc, accessor) =>
  * @param {Primitive} prim
  * @param {number} vertices
  */
-function triangleIndices(prim, vertices) {
+export function triangleIndices(prim, vertices) {
 	const indices = prim.getIndices();
 	return indices
 		? Uint32Array.from(/** @type {ArrayLike<number>} */ (indices.getArray()))
@@ -91,7 +91,7 @@ function triangleIndices(prim, vertices) {
  *
  * @param {Mesh} mesh
  */
-const triangleLists = (mesh) =>
+export const triangleLists = (mesh) =>
 	mesh
 		.listPrimitives()
 		.filter(
