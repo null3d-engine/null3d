@@ -552,6 +552,55 @@ fn fixture_table(jobs: &JobSystem) -> (Animations, u32) {
     (animations, instance)
 }
 
+/// A clip whose keys lie a subnormal time apart keeps one frame, so its rate stays finite and its
+/// poses hold numbers.
+#[test]
+fn a_clip_shorter_than_a_microsecond_keeps_one_frame() {
+    let skeleton = Skeleton::new(
+        &[NO_PARENT],
+        &[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        &null3d_core::math::IDENTITY,
+    )
+    .unwrap();
+    let s = std::f32::consts::FRAC_1_SQRT_2;
+    let track = SourceTrack {
+        joint: 0,
+        channel: Channel::Translation,
+        interpolation: Interpolation::Linear,
+        times: &[0.0, 1e-40],
+        values: &[1.0, 2.0, 3.0, s, s, s],
+    };
+    let clip = resample(&skeleton, &[track], DEFAULT_RATE).unwrap();
+    assert_eq!((clip.frames(), clip.rate()), (1, 0.0));
+    let mut pose = vec![0.0f32; clip.pose_len()];
+    clip.sample(0.0, &mut pose);
+    assert!(pose.iter().all(|v| v.is_finite()));
+    let additive = clip.additive().unwrap();
+    let mut pose = vec![0.0f32; additive.pose_len()];
+    additive.sample(0.0, &mut pose);
+    assert!(pose.iter().all(|v| v.is_finite()));
+}
+
+/// A played slot whose clip id a direct write changed to one that names no clip is skipped, and
+/// the frame step goes on.
+#[test]
+fn a_played_slot_whose_clip_id_names_no_clip_is_skipped() {
+    let jobs = JobSystem::new(0);
+    let (mut animations, instance) = fixture_table(&jobs);
+    animations.play(instance, GRID24, Play::default()).unwrap();
+    animations.update(&jobs, 0.1);
+    let slot = instance as usize * MAX_BLEND;
+    animations.slots_mut().clip[slot] = 999;
+    animations.update(&jobs, 0.1);
+    animations.update(&jobs, 0.1);
+    assert!(
+        animations
+            .instance_matrices(instance)
+            .iter()
+            .all(|v| v.is_finite())
+    );
+}
+
 /// A mask of the fixture's skeleton: 1 for the joints that `keep` names, 0 for the others.
 fn mask(animations: &mut Animations, keep: impl Fn(usize) -> bool) -> u32 {
     let weights: Vec<f32> = (0..three::PARENTS.len())

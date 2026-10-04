@@ -133,6 +133,20 @@ Each call rejects with an engine error that says how to fix the problem:
 
 `preload` rejects with the error of the first file that fails. The files that arrived stay in memory, and a later load of the failed file tries again.
 
+## Models that users upload
+
+A model file can name any address for its buffers and images, and the page downloads them with its cookies. A file from a user could name an address of your own API. So a page that loads such models should check each address with the `rewriteUrl` option of `loadGltf`. It gets each address that the file names, resolved, and returns the address to download, or null to refuse the file with E1416.
+
+```ts
+// sketch.ts: models from users may name only files beside them
+const allowed = new URL('/uploads/', location.href);
+const model = await assets.loadGltf(upload, {
+  rewriteUrl: (address) => (address.href.startsWith(allowed.href) ? address : null),
+});
+```
+
+Every loader also checks each file's limits before it allocates, as [Assets and prefabs](../concepts/assets.md#limits-on-each-file) lists. So a broken or hostile file fails with its code, and does not fill the tab's memory.
+
 ## Files from other origins
 
 The browser reads a file from another origin, such as a CDN, only when its server allows the page's origin with an `Access-Control-Allow-Origin` header. The engine downloads with `fetch`, so the file needs that header on every page, threaded or not. [Hosting](../getting-started/hosting.md) covers the headers.
@@ -150,13 +164,23 @@ Loads files, and textures from image files. Every call runs outside the sketch's
 | Member | Description |
 | --- | --- |
 | `loadTexture(url: string \| URL, options: LoadTextureOptions = {}): Promise<Texture>` | Downloads an image file or a KTX2 file, decodes it off the sketch's frames, and makes a texture from it. The browser decodes PNG, JPEG and WebP files, and AVIF files where it supports them. A KTX2 file of ETC1S or UASTC data becomes the compressed format that the device supports, with the file's mip levels, and the first KTX2 file loads the transcoder. Throws E1411 when the file does not download, E1413 when a server of another origin does not allow the page to read it, E1412 when the file does not decode or passes a limit of the engine's (a KTX2 file larger than the device's textures, before it transcodes), E1406 when the transcoder does not load, and E1208 for options the engine does not know. |
-| `loadGltf(url: string \| URL): Promise<Prefab>` | Downloads a glTF 2.0 model, a `.glb` file or a `.gltf` file with the files it names, and makes a prefab of it: its meshes, materials, textures, lights and nodes, made once, which `scene.instantiate` copies. A worker parses the file off the sketch's frames, and the first call downloads the loader and its worker. The first file with meshopt compression also downloads the meshopt decoder. The loads count for `onProgress`, the files the model names too, and they take files that `preload` downloaded. Throws E1411 when a file does not download, E1413 when a server of another origin does not allow the page to read it, E1416 for a file that is not a glTF model the engine reads or that passes a limit on what one file may decode to, E1417 for a file that requires an extension the engine does not read, E1412 when an image does not decode, E1109 when a mesh does not fit engine memory, and E1406 when the loader or the meshopt decoder does not download. |
+| `loadGltf(url: string \| URL, options: LoadGltfOptions = {}): Promise<Prefab>` | Downloads a glTF 2.0 model, a `.glb` file or a `.gltf` file with the files it names, and makes a prefab of it: its meshes, materials, textures, lights and nodes, made once, which `scene.instantiate` copies. A worker parses the file off the sketch's frames, and the first call downloads the loader and its worker. The first file with meshopt compression also downloads the meshopt decoder. The loads count for `onProgress`, the files the model names too, and they take files that `preload` downloaded. Throws E1411 when a file does not download, E1413 when a server of another origin does not allow the page to read it, E1416 for a file that is not a glTF model the engine reads or that passes a limit on what one file may decode to, E1417 for a file that requires an extension the engine does not read, E1412 when an image does not decode, E1109 when a mesh does not fit engine memory, and E1406 when the loader or the meshopt decoder does not download. `options.rewriteUrl` checks the addresses that the file names. |
 | `loadImageBitmap(url: string \| URL, options: LoadImageOptions = {}): Promise<ImageBitmap>` | Downloads an image file and decodes it into an `ImageBitmap`, off the sketch's frames. By default it decodes as `loadTexture` does, so `textures.fromImageBitmap` makes the same texture. Throws E1411, E1412 or E1413 as `loadTexture` does. |
 | `loadLut(url: string \| URL): Promise<Lut>` | Downloads a color grading table in a `.cube` or a `.3dl` file and makes a `Lut` from it, for `post.set({ lut })`. It reads the forms that three.js's `LUTCubeLoader` and `LUT3dlLoader` read, with tables of 2 to 256 texels a side. A `.cube` file's domain and title come along; a `.3dl` file's values are whole numbers of the depth that its largest value or its `Mesh` line gives. The first table loads the readers. Throws E1411 or E1413 as `loadTexture` does, E1412 when the file holds no table that the engine reads, and E1406 when the readers do not load. |
 | `loadJson<T = unknown>(url: string \| URL): Promise<T>` | Downloads a JSON file and parses it. Throws E1411 or E1413 as `loadTexture` does, and E1412 when the file is not valid JSON. |
 | `loadBinary(url: string \| URL): Promise<ArrayBuffer>` | Downloads a file as bytes. Throws E1411 or E1413 as `loadTexture` does. |
 | `preload(urls: readonly (string \| URL)[]): Promise<void>` | Downloads files ahead of their loads, all at once, and resolves when every one has arrived. The next load of each address takes its file from memory. Pair it with `onProgress` for a loading screen. Throws the error of the first file that fails, as `loadBinary` does. |
 | `onProgress(handler: ProgressHandler): () => void` | Calls `handler` each time a download finishes or fails, with the files downloaded so far and the files asked for so far. Loads that take a file that `preload` downloaded count no further. Returns a function that removes the handler. |
+
+### `LoadGltfOptions`
+
+Interface `LoadGltfOptions`.
+
+The options of `assets.loadGltf`.
+
+| Member | Description |
+| --- | --- |
+| `rewriteUrl?: (address: URL) => URL \| string \| null` | Checks or changes each address that the file names, for a buffer or an image, before it downloads. It gets the address resolved against the file's own, and returns the address to download, or null to refuse the file with E1416. A model that a user uploads can name any address, which the page then requests with its cookies, so a page that loads such models should allow only the addresses it expects. three.js's `LoadingManager.setURLModifier` does the same for its loaders. |
 
 ### `LoadImageOptions`
 

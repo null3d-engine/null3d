@@ -1127,6 +1127,17 @@
       "detect": "\\bGLTFLoader\\b"
     },
     {
+      "id": "url-modifier",
+      "category": "Loaders",
+      "three": "LoadingManager.setURLModifier",
+      "status": "changed",
+      "since": "0.2",
+      "target": "assets.loadGltf(url, { rewriteUrl: (address) => address })",
+      "notes": "Checks or changes each address that a glTF file names, for its buffers and images. Return null to refuse the file with E1416. It covers glTF files only.",
+      "docs": "api/assets",
+      "detect": "\\bsetURLModifier\\b"
+    },
+    {
       "id": "draco",
       "category": "Loaders",
       "three": "DRACOLoader + setDecoderPath",

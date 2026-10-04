@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { jpegHeader, pngHeader } from '../../../../tests/pages/lib/image-headers';
 import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { Assets } from './assets';
@@ -7,7 +8,7 @@ import type { Texture, TextureOptions, Textures } from './textures';
 const PAGE = 'https://game.example/levels/one.html';
 
 /** What the fake server answers for each address: a body, an HTTP status, or a network failure. */
-type Answer = string | number | 'network';
+type Answer = string | Uint8Array<ArrayBuffer> | number | 'network';
 
 const realFetch = globalThis.fetch;
 const realDecode = globalThis.createImageBitmap;
@@ -147,6 +148,27 @@ describe('assets', () => {
 		stop();
 		await assets.loadBinary('/b.bin');
 		expect(events.length).toBe(5);
+	});
+
+	test('an image whose header claims more pixels than its use takes fails with E1412 before it decodes', async () => {
+		serve({
+			'https://game.example/huge.png': pngHeader(65536, 65536) as Uint8Array<ArrayBuffer>,
+			'https://game.example/wide.jpg': jpegHeader(20000, 10) as Uint8Array<ArrayBuffer>,
+			'https://game.example/ok.png': pngHeader(4096, 2) as Uint8Array<ArrayBuffer>,
+		});
+		const { textures } = fakeTextures();
+		Object.defineProperty(textures, 'maxSize', { value: 4096 });
+		const assets = new Assets(textures, PAGE);
+		expect(await codeOf(assets.loadTexture('/huge.png'))).toBe(
+			'E1412: assets.loadTexture() could not decode https://game.example/huge.png as an image: its header gives 65536 x 65536 pixels, larger than the 4096 a side that it may have.',
+		);
+		// A bitmap for other uses may reach the largest canvas, 16,384 a side.
+		expect(await codeOf(assets.loadImageBitmap('/wide.jpg'))).toContain(
+			'its header gives 20000 x 10 pixels, larger than the 16384 a side',
+		);
+		expect(decoded).toEqual([]);
+		await assets.loadTexture('/ok.png');
+		expect(decoded).toHaveLength(1);
 	});
 
 	test('a missing file gives E1411, a blocked file of another origin E1413, and a broken image E1412', async () => {

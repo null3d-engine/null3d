@@ -290,7 +290,7 @@ const DOCS = {
 	E1412: {
 		title: 'Asset not decoded',
 		cause:
-			'A loading call downloaded its file but could not read it. The browser could not decode the image, as with a format it does not support. Or the file was a KTX2 file that the engine does not load, or not valid JSON. Or it was a color grading table that the engine does not read, such as a 1D table or one with a texel missing. The message says what in the table the engine could not read, with its line where it has one. A KTX2 file also fails before it transcodes when it passes a limit. It may be wider or taller than textures.maxSize, or hold more than 256 layers. It may hold more mip levels than its size has, or texels of more than 256 MiB.',
+			'A loading call downloaded its file but could not read it. The browser could not decode the image, as with a format it does not support. Or the file was a KTX2 file that the engine does not load, or not valid JSON. Or it was a color grading table that the engine does not read, such as a 1D table or one with a texel missing. The message says what in the table the engine could not read, with its line where it has one. A KTX2 file also fails before it transcodes when it passes a limit. It may be wider or taller than textures.maxSize, or hold more than 256 layers. It may hold more mip levels than its size has, or texels of more than 256 MiB. A PNG or JPEG file fails before it decodes when its header gives a side longer than textures.maxSize, or 16,384 for loadImageBitmap.',
 		example:
 			'E1412: assets.loadTexture() could not decode https://example.com/tex/brick.tga as an image: The source image could not be decoded.',
 		since: '0.1',
@@ -321,7 +321,7 @@ const DOCS = {
 	E1416: {
 		title: 'glTF file not read',
 		cause:
-			"assets.loadGltf() downloaded a file that is not a glTF 2.0 model it can read. Its JSON or binary chunk may be broken, or an offset or a count may point past the data. A buffer or an image may be missing, or its nodes may form a loop. A skin or a clip may break glTF's rules, such as key times that fall back. Or its skins and clips may move more than 1,024 nodes, which is more than one skeleton holds. Or the file would decode to more than the engine allows one file. That is 64 MiB, plus 32 bytes for each byte of the file and its buffers, up to 1 GiB. One array may hold at most 256 MiB. Or a clip would hold more than 4,194,304 keys, its frames times its tracks.",
+			"assets.loadGltf() downloaded a file that is not a glTF 2.0 model it can read. Its JSON or binary chunk may be broken, or an offset or a count may point past the data. A buffer or an image may be missing, or its nodes may form a loop. A skin or a clip may break glTF's rules, such as key times that fall back. Or its skins and clips may move more than 1,024 nodes, which is more than one skeleton holds. Or the file would decode to more than the engine allows one file. That is 64 MiB, plus 32 bytes for each byte of the file and its buffers, up to 1 GiB. One array may hold at most 256 MiB. Or a clip would hold more than 4,194,304 keys, its frames times its tracks. A PNG or JPEG image inside the file may claim sides past 4,096, or its images may decode to more than 1 GiB. Or the rewriteUrl option refused an address that the file names.",
 		example:
 			'E1416: assets.loadGltf() could not read https://example.com/ship.glb: accessor 3 reads 4800 bytes from bufferView 1, which holds 2400.',
 		since: '0.2',

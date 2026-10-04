@@ -21,6 +21,10 @@ pub const DEFAULT_RATE: f32 = 30.0;
 /// keys hours apart.
 pub const MAX_CLIP_KEYS: u64 = 1 << 22;
 
+/// The shortest clip, in seconds, that keeps more than one frame. A shorter one holds its first
+/// values: its rate would pass the range of a 32-bit float, and its poses would be NaN.
+pub const MIN_CLIP_SECONDS: f64 = 1e-6;
+
 /// How far past a whole number of frames a clip's end may lie and still end on that frame, in
 /// frames, as far as a key may lie from the source grid.
 const FRAME_TOLERANCE: f64 = 1e-3;
@@ -444,7 +448,7 @@ pub fn resample(
         .iter()
         .map(|t| f64::from(t.times[t.times.len() - 1]))
         .fold(0.0, f64::max);
-    let frames = if duration > 0.0 {
+    let frames = if duration >= MIN_CLIP_SECONDS {
         let keys_per_second = keys_per_second(tracks, rate);
         // The clip's end is a 32-bit float, which can round past its last frame by a few
         // millionths of a frame: a key within a thousandth of a frame counts as on it, as the

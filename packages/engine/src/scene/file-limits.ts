@@ -23,6 +23,13 @@ export interface FileLimits {
 	readonly modelCapBytes: number;
 	/** The most layers that one texture file may hold: WebGPU's default limit on array layers. */
 	readonly textureLayers: number;
+	/**
+	 * The longest side of an image that becomes a texture: the engine's largest texture, which
+	 * WebGPU's compatibility mode sets. A device's `textures.maxSize` can be smaller.
+	 */
+	readonly textureSide: number;
+	/** The longest side of an image that decodes for any other use: browsers' largest canvas. */
+	readonly imageSide: number;
 }
 
 const MIB = 1024 * 1024;
@@ -34,6 +41,8 @@ export const FILE_LIMITS: FileLimits = {
 	modelRatio: 32,
 	modelCapBytes: 1024 * MIB,
 	textureLayers: 256,
+	textureSide: 4096,
+	imageSide: 16384,
 };
 
 /**
@@ -86,4 +95,66 @@ function describe(bytes: number): string {
 	return bytes >= MIB
 		? `${(bytes / MIB).toLocaleString('en-US', { maximumFractionDigits: 1 })} MiB`
 		: `${bytes.toLocaleString('en-US')} bytes`;
+}
+
+/**
+ * The width and height that a PNG or JPEG file's header gives, or undefined for another format or
+ * a header that is cut short. A PNG gives them in its IHDR chunk, and a JPEG in its frame header
+ * (SOF), after any segments before it. A decoder reads them before it decodes, so a small file
+ * that claims a huge image fails before the browser allocates its pixels.
+ */
+export function imageSize(bytes: Uint8Array): [width: number, height: number] | undefined {
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	const word = (at: number) => (at + 4 <= bytes.length ? view.getUint32(at) : -1);
+	const half = (at: number) => (at + 2 <= bytes.length ? view.getUint16(at) : -1);
+	if (word(0) === PNG_SIGNATURE[0] && word(4) === PNG_SIGNATURE[1]) {
+		if (word(12) !== IHDR) return undefined;
+		const [width, height] = [word(16), word(20)];
+		return width < 0 || height < 0 ? undefined : [width, height];
+	}
+	if (half(0) !== JPEG_START) return undefined;
+	// Each segment after the start: a marker of 0xFF and its kind, then its length, which counts
+	// the two length bytes and not the marker.
+	for (let at = 2; at + 4 <= bytes.length; ) {
+		if (bytes[at] !== 0xff) return undefined;
+		const kind = bytes[at + 1] as number;
+		if (kind === 0xff) {
+			at++;
+			continue;
+		}
+		if (JPEG_FRAMES.has(kind)) {
+			const [height, width] = [half(at + 5), half(at + 7)];
+			return width < 0 || height < 0 ? undefined : [width, height];
+		}
+		const length = half(at + 2);
+		if (length < 2) return undefined;
+		at += 2 + length;
+	}
+	return undefined;
+}
+
+/** The eight bytes that start every PNG file, as two big-endian words. */
+const PNG_SIGNATURE = [0x89504e47, 0x0d0a1a0a] as const;
+/** The type of a PNG's first chunk, which holds its size. */
+const IHDR = 0x49484452;
+/** The marker that starts every JPEG file. */
+const JPEG_START = 0xffd8;
+/** The JPEG markers of a frame header (SOF0 to SOF15, less DHT, JPG and DAC), which give the size. */
+const JPEG_FRAMES: ReadonlySet<number> = new Set([
+	0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf,
+]);
+
+/**
+ * Why an image whose header gives `size` is refused before it decodes, or undefined: a side
+ * longer than `maxSide`.
+ */
+export function imageTooLarge(
+	size: readonly [number, number] | undefined,
+	maxSide: number,
+): string | undefined {
+	if (!size) return undefined;
+	const [width, height] = size;
+	if (width > maxSide || height > maxSide)
+		return `its header gives ${width} x ${height} pixels, larger than the ${maxSide} a side that it may have`;
+	return undefined;
 }

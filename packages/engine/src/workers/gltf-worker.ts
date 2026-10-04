@@ -164,7 +164,7 @@ async function decode(
 		});
 	} catch (error) {
 		throw new GltfError(
-			'E1416',
+			'E1412',
 			`image ${k} (${image.mimeType ?? 'no media type'}) does not decode: ${error instanceof Error ? error.message : String(error)}`,
 		);
 	}

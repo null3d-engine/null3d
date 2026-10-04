@@ -7,9 +7,10 @@ import type { FileBudget } from './file-limits';
 
 /**
  * The engine's codes for a file the parser refuses: broken data, or an extension it does not read.
- * The worker adds E1406 for a decoder that did not download.
+ * The worker adds E1406 for a decoder that did not download, and E1412 for an image that does not
+ * decode.
  */
-export type GltfErrorCode = 'E1406' | 'E1416' | 'E1417';
+export type GltfErrorCode = 'E1406' | 'E1412' | 'E1416' | 'E1417';
 
 /** A file the parser refuses, with the engine's code and the reason in words. */
 export class GltfError extends Error {
@@ -69,16 +70,22 @@ export function toFloats(
 	budget.take(array.length * 4, what);
 	const out = Float32Array.from(array);
 	if (!normalized) return out;
-	const scale =
-		array instanceof Int8Array
-			? 127
-			: array instanceof Uint8Array
-				? 255
-				: array instanceof Int16Array
-					? 32767
-					: 65535;
+	const scale = normalizedScale(array);
 	for (let i = 0; i < out.length; i++) out[i] = Math.max((out[i] as number) / scale, -1);
 	return out;
+}
+
+/** The integer that reads as 1 in a normalized array of this type: its largest value. */
+export function normalizedScale(array: AccessorArray): number {
+	return array instanceof Int8Array
+		? 127
+		: array instanceof Uint8Array
+			? 255
+			: array instanceof Int16Array
+				? 32767
+				: array instanceof Uint16Array
+					? 65535
+					: 1;
 }
 
 // Checks of the JSON's values. Each throws E1416 that names what it checked.

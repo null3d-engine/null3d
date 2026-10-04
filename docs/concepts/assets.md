@@ -96,6 +96,10 @@ A model or texture file can come from a user, or be broken. So the loaders check
 | A mesh that the engine builds from a file or from arrays | What engine memory holds. The call fails, and the engine runs on | E1109 |
 | The sides of a KTX2 texture | `textures.maxSize`, checked before the transcoder runs | E1412 |
 | The layers of a KTX2 texture, and its texels | 256 layers, and 256 MiB of texels in the format that the device gets | E1412 |
+| The sides of a PNG or JPEG image inside a model, from its header before it decodes | 4,096, the largest texture of the engine | E1416 |
+| The pixels of every image that a model's materials decode | 1 GiB in all, 4 bytes per pixel | E1416 |
+| The sides of an image that `loadTexture` decodes, or that a model names by address | `textures.maxSize`, from the header before it decodes | E1412 |
+| The sides of an image that `loadImageBitmap` decodes | 16,384, the largest canvas of browsers | E1412 |
 
 The model limit grows with the file, because compressed data decodes to several times its size. The sample models decode to at most 3 times their bytes, so a real model stays far below the limit. A model that does pass it is broken, or holds more than a scene can draw. Split it into several files.
 

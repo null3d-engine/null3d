@@ -4,7 +4,8 @@
 import { describe, expect, test } from 'bun:test';
 import { MeshoptEncoder } from 'meshoptimizer/encoder';
 import { armBuilder, GltfBuilder, type GltfJson } from '../../../../tests/pages/lib/gltf-files';
-import { FILE_LIMITS, FileBudget, modelAllowance } from './file-limits';
+import { jpegHeader, pngHeader } from '../../../../tests/pages/lib/image-headers';
+import { modelAllowance } from './file-limits';
 import { meshoptDecoder } from './gltf-meshopt';
 import { type GltfData, GltfError, parseGltf, readContainer } from './gltf-parse';
 
@@ -189,28 +190,60 @@ describe('the parent loop check', () => {
 	});
 });
 
-describe('the shared limits', () => {
-	test("a model file's allowance grows with its bytes, between the floor and the cap", () => {
-		expect(modelAllowance(0)).toBe(FILE_LIMITS.modelFloorBytes);
-		expect(modelAllowance(1 << 20)).toBe(
-			FILE_LIMITS.modelFloorBytes + FILE_LIMITS.modelRatio * (1 << 20),
+describe('bounds of normalized positions', () => {
+	test('min and max of normalized integers scale as the shaders read them, as three.js does', () => {
+		const b = new GltfBuilder().uses('KHR_mesh_quantization', true);
+		const signed = b.positions(new Int16Array([0, 0, 0, 32767, 0, 0, 0, -32767, 16384]), {
+			normalized: true,
+		});
+		const bytes = b.positions(new Uint8Array([0, 0, 0, 255, 51, 0, 0, 0, 255]), {
+			normalized: true,
+		});
+		b.node({
+			mesh: b.mesh([{ attributes: { POSITION: signed } }, { attributes: { POSITION: bytes } }]),
+		});
+		const [first, second] = parse(b.glb()).meshes[0]?.primitives ?? [];
+		expect(first?.min).toEqual([0, -1, 0]);
+		expect(first?.max[0]).toBe(1);
+		expect(first?.max[2]).toBeCloseTo(0.5, 4);
+		expect(second?.min).toEqual([0, 0, 0]);
+		expect(second?.max).toEqual([1, 0.2, 1]);
+	});
+});
+
+describe('images that claim more pixels than a texture holds', () => {
+	/** A box whose materials each map one of `images`, embedded in the file. */
+	function textured(images: Uint8Array[], mimeType = 'image/png'): Uint8Array {
+		const b = new GltfBuilder();
+		const positions = b.positions(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]));
+		b.json.images = images.map((bytes) => ({ bufferView: b.view(bytes), mimeType }));
+		b.json.textures = images.map((_, k) => ({ source: k }));
+		const primitives = images.map((_, k) => ({
+			attributes: { POSITION: positions },
+			material: b.material({ pbrMetallicRoughness: { baseColorTexture: { index: k } } }),
+		}));
+		b.node({ mesh: b.mesh(primitives) });
+		return b.glb();
+	}
+
+	test('a 33-byte PNG that claims 65,536 x 65,536 pixels fails before the worker decodes it', () => {
+		const [code, message] = refusal(textured([pngHeader(65536, 65536)]));
+		expect(code).toBe('E1416');
+		expect(message).toBe(
+			'image 0 cannot become a texture: its header gives 65536 x 65536 pixels, larger than the 4096 a side that it may have',
 		);
-		expect(modelAllowance(1 << 30)).toBe(FILE_LIMITS.modelCapBytes);
+		expect(refusal(textured([jpegHeader(8192, 64)], 'image/jpeg'))[1]).toContain('8192 x 64');
 	});
 
-	test('a budget refuses one item past the item limit, and items that together pass the allowance', () => {
-		const fail = (reason: string): never => {
-			throw new Error(reason);
-		};
-		const budget = new FileBudget(0, fail);
-		expect(() => budget.take(FILE_LIMITS.itemBytes + 1, 'the array')).toThrow(
-			'the array decodes to 256 MiB, more than the 256 MiB that one array or texture may hold',
+	test("images within a texture's size still stop at the file's cap on decoded pixels", () => {
+		// Each claims 4,096 x 4,096 pixels, 64 MiB to decode: 17 of them pass 1 GiB.
+		expect(() =>
+			parse(textured(Array.from({ length: 16 }, () => pngHeader(4096, 4096)))),
+		).not.toThrow();
+		const [code, message] = refusal(
+			textured(Array.from({ length: 17 }, () => pngHeader(4096, 4096))),
 		);
-		expect(() => budget.take(Number.NaN, 'the array')).toThrow('more bytes than a number holds');
-		budget.take(FILE_LIMITS.modelFloorBytes - 10, 'the first array');
-		expect(() => budget.take(11, 'the second array')).toThrow(
-			'the second array would bring what the file decodes to 64 MiB, more than the 64 MiB that a file of its size may decode to',
-		);
-		expect(budget.used).toBe(FILE_LIMITS.modelFloorBytes - 10);
+		expect(code).toBe('E1416');
+		expect(message).toContain("image 16's pixels would bring what the file decodes to 1,088 MiB");
 	});
 });

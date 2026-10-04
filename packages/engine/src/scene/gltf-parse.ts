@@ -14,7 +14,7 @@
 // The module imports only its sibling modules of the glTF worker, so the worker's bundle holds no
 // engine code.
 
-import { FILE_LIMITS, FileBudget } from './file-limits';
+import { FILE_LIMITS, FileBudget, imageSize, imageTooLarge } from './file-limits';
 import {
 	type AnimationData,
 	type MorphTargetsData,
@@ -32,6 +32,7 @@ import {
 	GltfError,
 	index,
 	list,
+	normalizedScale,
 	numbers,
 	type Reader,
 	text,
@@ -764,6 +765,7 @@ export function parseGltf(
 		budget.take(bytes.length, `image ${k}`);
 		return { bytes: bytes.slice(), mimeType };
 	});
+	checkImages(images, textureUses);
 
 	const lightDefs = list(json.extensions?.KHR_lights_punctual?.lights, 'lights');
 	const lights = lightDefs.map((value, k): LightData => {
@@ -795,6 +797,25 @@ export function parseGltf(
 	const data: GltfData = { nodes, meshes, materials, textures: textureUses, images, lights, notes };
 	if (animation) data.animation = animation;
 	return data;
+}
+
+/**
+ * Checks the size that each PNG and JPEG image of the file gives in its header, before the worker
+ * decodes it: each side within the engine's largest texture, and the pixels of every decode, one
+ * for each way a material uses the image, within the cap on what one file may decode to. Images
+ * take a budget of their own: a photo compresses far more than a mesh, so a ratio to the file's
+ * bytes would refuse real models.
+ */
+function checkImages(images: readonly ImageData[], uses: readonly TextureUse[]): void {
+	const pixels = new FileBudget(Number.POSITIVE_INFINITY, broken);
+	for (const use of uses) {
+		const bytes = images[use.image]?.bytes;
+		if (!bytes) continue;
+		const size = imageSize(bytes);
+		const refused = imageTooLarge(size, FILE_LIMITS.textureSide);
+		if (refused) broken(`image ${use.image} cannot become a texture: ${refused}`);
+		if (size) pixels.take(size[0] * size[1] * 4, `image ${use.image}'s pixels`);
+	}
 }
 
 /** A buffer view: its bytes, or the meshopt data that its bytes decode from on first use. */
@@ -947,8 +968,12 @@ function parsePrimitive(
 			broken(`${what}'s ${name} has ${data.count} values, and its POSITION has ${vertices}`);
 		out[field] = { array: data.array as VertexData['array'], normalized: data.normalized };
 		if (field === 'positions') {
-			const min = numbers(data.accessor.min, 3, undefined, `${what}'s POSITION min`);
-			const max = numbers(data.accessor.max, 3, undefined, `${what}'s POSITION max`);
+			// glTF stores the integers in min and max, and normalized has no effect on them. The
+			// shaders read normalized positions as fractions, so the bounds scale the same way.
+			const scale = data.normalized ? normalizedScale(data.array) : 1;
+			const bound = (value: number) => (scale === 1 ? value : Math.max(value / scale, -1));
+			const min = numbers(data.accessor.min, 3, undefined, `${what}'s POSITION min`).map(bound);
+			const max = numbers(data.accessor.max, 3, undefined, `${what}'s POSITION max`).map(bound);
 			out.min = [min[0] as number, min[1] as number, min[2] as number];
 			out.max = [max[0] as number, max[1] as number, max[2] as number];
 		}

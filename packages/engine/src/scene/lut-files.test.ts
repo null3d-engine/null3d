@@ -102,4 +102,10 @@ describe('.3dl tables', () => {
 		];
 		for (const lines of bad) expect(() => parse3dl(lines.join('\n'))).toThrow(LutFileError);
 	});
+
+	it('stops at the numbers that the largest table holds, before it keeps more', () => {
+		const text = threeDl(3, () => [0, 0, 0]).join('\n');
+		expect(() => parse3dl(text, 80)).toThrow('more numbers than a table of 256 a side holds');
+		expect(parse3dl(text, 81).size).toBe(3);
+	});
 });

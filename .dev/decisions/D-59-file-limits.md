@@ -115,8 +115,36 @@ A KTX2 texture whose sides are not whole 4 x 4 blocks still loads as RGBA8, at 4
 M2-A6 (Draco) and M2-A7 (WebP, AVIF and UASTC HDR) take their limits from `FILE_LIMITS`:
 
 - Draco runs in the job workers through M2-R18's loader. Before it decodes a mesh, it takes the decoded attribute and index bytes from the file's `FileBudget`, as meshopt views do, and each array stays within `itemBytes`.
-- WebP and AVIF images in a glTF file read their width and height from the image header before `createImageBitmap`. A side past `textures.maxSize` fails with E1412. The decoded bytes, 4 per texel, count against the file's budget. PNG and JPEG images should join this check: today the browser decodes them at any size the file claims.
+- WebP and AVIF images in a glTF file read their width and height from the image header with `imageSize`, as PNG and JPEG images do now. Each side must stay within `textureSide`, and each decode counts 4 bytes per pixel against the file's image budget.
 - UASTC HDR textures pass `ktx2TooLarge` with their own format's bytes per block, as ETC1S and UASTC files do.
+
+### Images
+
+A PNG or JPEG file of a few dozen bytes can claim 65,536 x 65,536 pixels. The browser then tries to allocate 16 GiB to decode it. So the readers take the size from the header first, with `imageSize`. A PNG gives it in its IHDR chunk, and a JPEG in its frame header after the segments before it. A format it does not read, or a header cut short, goes on to the browser, which refuses what it cannot decode.
+
+| Where the image is | Limit on each side | Other limit | Code |
+| --- | --- | --- | --- |
+| Inside a glTF file, checked in the glTF worker | `textureSide`, 4,096: the engine's largest texture, which WebGPU's compatibility mode sets | Every decode, one per way a material uses the image, takes 4 bytes per pixel from a budget of 1 GiB per file | E1416 |
+| A file that `loadTexture` loads, or that a glTF file names by address | The device's `textures.maxSize` | None: one image per call | E1412 |
+| A file that `loadImageBitmap` loads | `imageSide`, 16,384: the largest canvas that browsers take | None | E1412 |
+
+Images take a budget of their own rather than the model's ratio. A 1 MB JPEG photo can decode to 64 MiB, so a ratio to the file's bytes would refuse real models. A file of 17 images that each claim 4,096 x 4,096 pixels passes 1 GiB and fails; 16 load. The loader reads at most the first MiB of an image file for its header, since a JPEG's other segments rarely pass that.
+
+### Other review findings in these files
+
+The review's low findings on the same files land with this record:
+
+- R1-05: the parser scales the bounds of normalized integer positions by 1/127, 1/255, 1/32,767 or 1/65,535. The shaders read them so, and three.js's loader scales them too. glTF stores the integers there, so `prefab.bounds` was up to 32,767 times too large.
+- R1-07: a load that fails destroys the textures and materials that it made, and closes the decoded images that no texture took. Meshes and skeletons have no destroy call yet, so they stay; `prefab.destroy()` waits for mesh `destroy`.
+- R1-09: before it reserves an object's slot, the scene checks that the command ring has room for each record of the object. Those are its create, layers and material, which it publishes at once. A light whose row the light table refuses is destroyed before the error reaches the sketch. So is a copy or clone that the animation or batch table refuses, whole. The 1,024 animated objects are in `api/scene`'s limits.
+- R1-11: an embedded image that does not decode gives E1412, as an image that the file names by address does and as the docs said.
+- R1-13: `loadGltf(url, { rewriteUrl })` checks or changes each address that a file names, as three.js's `LoadingManager.setURLModifier` does. The default stays as three.js's: every address downloads. A page that loads users' models should allow only the addresses it expects; `api/assets` shows how.
+- R1-16: `instantiate`'s `layers` reaches every object of the copy and its instance batches, where it set the group alone, which draws nothing.
+- R1-17: `destroy()` on a copy's group removes every object of the copy that is still live, and its batches. Objects that the sketch put under the copy later become roots, as children of any destroyed object do.
+- R1-18: each object keeps the set of its children, so `clone` walks only the tree it copies. It made a map of the whole scene on each call.
+- R1-19: the `.3dl` reader stops with E1412 once it has read more numbers than the largest table holds, before it keeps them all.
+- R4-09: the frame step skips a played slot whose clip id names no clip, as sampling does, where it stopped the engine.
+- R4-10: a clip shorter than a microsecond keeps one frame. Its rate was infinite, so its poses were NaN.
 
 ## Consequences
 
@@ -125,5 +153,7 @@ M2-A6 (Draco) and M2-A7 (WebP, AVIF and UASTC HDR) take their limits from `FILE_
 - The core: `MAX_CLIP_KEYS` replaces `MAX_FRAMES`, and E1218's problem 5 is now `KEYS`, whose detail is the keys the clip would hold. The stored-tree reader adds `FormatError::EmptySlot`. `ArraysError` and `MeshError` add `OutOfMemory`, which the WebAssembly entry point reports as E1109.
 - The glTF loader passes E1109 from a mesh through, instead of wrapping it in E1416.
 - The asset tool's `textureSize` keeps each side at 4 texels or more.
+- `file-limits.ts` adds `textureSide`, `imageSide`, `imageSize` and `imageTooLarge`; the parser checks embedded images, and `assets` checks each image it decodes.
+- `assets.loadGltf` takes `LoadGltfOptions` with `rewriteUrl`, which the three.js mapping lists for `LoadingManager.setURLModifier`.
 - `concepts/assets` lists the limits; `api/assets`, `api/textures` and the pages of E1109, E1218, E1412 and E1416 name them.
 - The record is in the table in [README.md](README.md).
