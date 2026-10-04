@@ -268,9 +268,9 @@ describe('meshes from arrays in engine memory', () => {
 		expect(refuse(badDelta.core, { ...QUAD, morphTargets }).message).toStartWith(
 			'E1206: geometry.fromArrays() got Infinity at morphTargets.positions[1][4].',
 		);
-		const full = fakeCore({ code: 1206, details: [ARRAYS_PROBLEM_MORPH_TOO_LARGE, 4_000_000] });
+		const full = fakeCore({ code: 1206, details: [ARRAYS_PROBLEM_MORPH_TOO_LARGE, 4_194_304] });
 		expect(refuse(full.core, { ...QUAD, morphTargets }).message).toContain(
-			'move a vertex more than 255 times, or that would pass the 4,000,000 delta texels',
+			'move a vertex more than 255 times, or that would pass the 4,194,304 delta texels (32 MiB)',
 		);
 		const memoryFull = fakeCore({ code: 1109, details: [64 * 1024 * 1024, 0] });
 		expect(refuse(memoryFull.core, QUAD).code).toBe('E1109');

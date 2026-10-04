@@ -53,7 +53,7 @@ const MAX_WEIGHT_ROWS: u32 = MAX_WEIGHTS.div_ceil(4 * TEXTURE_WIDTH);
 /// [`TEXTURE_WIDTH`] rows.
 pub const MAX_DELTA_TEXELS: u32 = TEXTURE_WIDTH * TEXTURE_WIDTH;
 /// Bytes of a delta texel: four half floats.
-const DELTA_BYTES: u32 = 8;
+pub const DELTA_BYTES: u32 = 8;
 /// Bytes of a weight texel: four floats.
 const WEIGHT_BYTES: u32 = 16;
 /// The most entries of one vertex: what its attribute's count holds.

@@ -31,6 +31,7 @@ import {
 	MESH_ARRAYS_UVS,
 	MESH_ARRAYS_UVS1,
 	MESH_ARRAYS_WEIGHTS,
+	MORPH_DELTA_BYTES,
 	MORPH_MAX_TARGETS,
 	MORPH_NORMALS,
 	MORPH_POSITIONS,
@@ -409,11 +410,15 @@ function arraysFailure(core: CoreMemory, arrays: MeshArrays, call: string): Engi
 	if (glue.lastErrorCode() !== BAD_ARRAYS) return coreFailure(glue, call);
 	const problem = glue.lastErrorDetail(0);
 	const at = glue.lastErrorDetail(1);
-	if (problem === ARRAYS_PROBLEM_MORPH_TOO_LARGE)
+	if (problem === ARRAYS_PROBLEM_MORPH_TOO_LARGE) {
+		const mib = ((at * MORPH_DELTA_BYTES) / 2 ** 20).toLocaleString('en-US', {
+			maximumFractionDigits: 1,
+		});
 		return new EngineError(
 			'E1206',
-			`${call}() got morph targets that move a vertex more than 255 times, or that would pass the ${at.toLocaleString('en-US')} delta texels that the engine holds for every mesh's targets together.`,
+			`${call}() got morph targets that move a vertex more than 255 times, or that would pass the ${at.toLocaleString('en-US')} delta texels (${mib} MiB) that the engine holds for every mesh's targets together.`,
 		);
+	}
 	if (problem === ARRAYS_PROBLEM_MORPH_NOT_FINITE) {
 		const [name] = MORPH_LISTS[at >>> 28] ?? MORPH_LISTS[0];
 		const place = at & 0xfffffff;

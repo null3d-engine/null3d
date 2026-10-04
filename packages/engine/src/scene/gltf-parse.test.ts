@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
 	armBuilder,
+	blenderMorphBuilder,
+	boxArrays,
 	boxPrimitive,
+	faceTargets,
 	GltfBuilder,
 	type GltfJson,
 	morphBuilder,
@@ -38,6 +41,13 @@ function refusal(file: Uint8Array): [string, string] {
 
 /** A .gltf file of a JSON object, with no buffer. */
 const jsonFile = (json: GltfJson) => new TextEncoder().encode(JSON.stringify(json));
+
+/** The component types that glTF allows for sparse indices, with their sizes in bits. */
+const SPARSE_INDEX_TYPES = [
+	[5121, 8],
+	[5123, 16],
+	[5125, 32],
+] as const;
 
 describe('the container', () => {
 	test('a .glb file and its .gltf twin give the same data', () => {
@@ -167,6 +177,20 @@ describe('meshes', () => {
 		expect(p?.indices).toEqual(new Uint16Array([0, 1, 2]));
 		expect(Array.from(p?.colors?.array ?? [])).toEqual([0, 0, 0, 0, 0, 0, 5, 6, 7]);
 	});
+
+	for (const [indexType, bits] of SPARSE_INDEX_TYPES)
+		test(`sparse values over a buffer view, with ${bits}-bit indices, replace their elements`, () => {
+			const b = new GltfBuilder();
+			const base = new Float32Array([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]);
+			// Lifts every vertex but the second, so the sparse list holds three of the four.
+			const lifted = base.map((v, k) => (k % 3 === 2 && k !== 5 ? 0.5 : v));
+			const positions = b.sparse(lifted, 3, { base, indexType });
+			expect(b.json.accessors[positions].sparse.count).toBe(3);
+			const indices = b.accessor(new Uint8Array([0, 1, 2, 0, 2, 3]), 1);
+			b.node({ mesh: b.mesh([{ attributes: { POSITION: positions }, indices }]) });
+			const [p] = parse(b.glb()).meshes[0]?.primitives ?? [];
+			expect(Array.from(p?.positions.array ?? [])).toEqual(Array.from(lifted));
+		});
 
 	test('strips and fans become triangle lists, and points and lines are noted and left out', () => {
 		const b = new GltfBuilder();
@@ -740,6 +764,35 @@ describe('morph targets', () => {
 			[0, 'cubic', [1, 2, 3, 5, 6, 7, 9, 10, 11]],
 			[1, 'cubic', [4, 0, 0, 8, 0, 0, 12, 0, 0]],
 		]);
+	});
+
+	for (const [indexType, bits] of SPARSE_INDEX_TYPES)
+		test(`a target in a sparse accessor with ${bits}-bit indices keeps its deltas`, () => {
+			const b = morphBuilder();
+			const up = boxArrays(1).positions.map((p, i) => (i % 3 === 1 && p > 0 ? 0.5 : 0));
+			const target = b.sparse(up, 3, { indexType });
+			expect(b.json.accessors[target].sparse.count).toBeGreaterThan(1);
+			b.json.meshes[0].primitives[0].targets[0].POSITION = target;
+			const morph = parse(b.glb()).meshes[0]?.primitives[0]?.morph;
+			expect(Array.from(morph?.positions?.[0] ?? [])).toEqual(Array.from(up));
+		});
+
+	test('a face with shape keys loads as Blender writes it, in sparse accessors', () => {
+		const b = blenderMorphBuilder();
+		const types = b.json.meshes[0].primitives[0].targets.map(
+			(t: GltfJson) => b.json.accessors[t.POSITION].sparse?.indices.componentType,
+		);
+		expect(types).toEqual([5123, 5121, undefined]);
+		const data = parse(b.glb());
+		const mesh = data.meshes[0];
+		const expected = faceTargets();
+		expect(mesh?.targetNames).toEqual(expected.names);
+		expect(mesh?.weights).toEqual([0.5, 0, 0]);
+		const morph = mesh?.primitives[0]?.morph;
+		const plain = (deltas: Float32Array[] | undefined) => deltas?.map((d) => Array.from(d));
+		expect(plain(morph?.positions)).toEqual(plain(expected.positions));
+		expect(plain(morph?.normals)).toEqual(plain(expected.normals));
+		expect(data.animation?.clips.map((c) => c.name)).toEqual(['Talk']);
 	});
 
 	test('broken morph targets are refused with E1416', () => {

@@ -265,6 +265,7 @@ export const MORPH_TANGENTS = 4;
 export const MORPH_MAX_WEIGHTS = 65536;
 export const MORPH_MAX_TARGETS = 256;
 export const MORPH_WEIGHTS_PER_JOINT = 3;
+export const MORPH_DELTA_BYTES = 8;
 
 export const ARRAY_POSITIONS = 0;
 export const ARRAY_NORMALS = 1;

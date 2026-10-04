@@ -556,19 +556,17 @@ export function parseGltf(
 			indexType[1] === Float32Array
 		)
 			broken(`${name}'s sparse indices have the component type ${String(at.componentType)}`);
+		/** Copies the `m` elements of `bytes` bytes each that `part` reads, after its checks. */
 		const slice = (part: Entry, bytes: number, what: string) => {
 			const v = index(part.bufferView, views.length, `${what}'s bufferView`);
 			const source = viewOf(v).bytes;
 			const offset = count(part.byteOffset ?? 0, `${what}'s byteOffset`);
-			if (offset + m * bytes > source.length)
-				broken(
-					`${what} read ${offset + m * bytes} bytes from bufferView ${v}, which holds ${source.length}`,
-				);
-			return source.slice(offset, offset + m * bytes);
+			const end = offset + m * bytes;
+			if (end > source.length)
+				broken(`${what} read ${end} bytes from bufferView ${v}, which holds ${source.length}`);
+			return source.slice(offset, end);
 		};
-		const indices = new indexType[1](
-			slice(at, m * indexType[0], `${name}'s sparse indices`).buffer,
-		);
+		const indices = new indexType[1](slice(at, indexType[0], `${name}'s sparse indices`).buffer);
 		const bytes = array.BYTES_PER_ELEMENT * components;
 		const Type = array.constructor as TypedArrayClass;
 		const replacement = new Type(slice(values, bytes, `${name}'s sparse values`).buffer);

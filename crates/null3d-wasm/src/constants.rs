@@ -760,7 +760,8 @@ pub fn typescript() -> String {
                 ("WEIGHTS", mesh_arrays::WEIGHTS),
             ],
         ),
-        // The morph target arrays of `createMeshFromArrays`, and the morph weight table.
+        // The morph target arrays of `createMeshFromArrays`, the morph weight table, and the bytes of
+        // each delta texel on the GPU.
         (
             "MORPH",
             &[
@@ -770,6 +771,7 @@ pub fn typescript() -> String {
                 ("MAX_WEIGHTS", null3d_core::morph::MAX_WEIGHTS),
                 ("MAX_TARGETS", null3d_core::morph::MAX_TARGETS),
                 ("WEIGHTS_PER_JOINT", null3d_core::morph::WEIGHTS_PER_JOINT),
+                ("DELTA_BYTES", null3d_render::morph::DELTA_BYTES),
             ],
         ),
         (

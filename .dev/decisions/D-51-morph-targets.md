@@ -65,6 +65,12 @@ A morphed object's bounding sphere grows by each target's reach times the size o
 
 A clip animates weights through joints of the model's skeleton that move no vertex, three weights to a joint, as [D-35](D-35-gltf-animation.md#morph-targets) records. The core reads weight `k` as `t + (1 - s) * own`. Here `t` is the joint's blended translation along axis `k mod 3`, and `s` its blended scale. The own weight `own` comes from the file or `setMorphWeight`. A clip at full weight sets the weight, and a fade blends it with the object's own. The own weight holds when no clip animates it.
 
+### Files from Blender
+
+Blender's glTF exporter writes shape keys as sparse accessors by default. Such an accessor has no buffer view of its own. It holds a list of the vertices that the key moves, with a delta for each. The list takes the smallest unsigned index type that holds its largest vertex number. That is 8-bit up to 255, 16-bit up to 65,535, and 32-bit above. So one file can mix all three types.
+
+The loader reads each index at its own size. The code review of 4 October 2026 (R1-01) found that it asked for the list's length squared times the index size. It refused every file whose list held two or more values, which covers most real shape keys. The unit tests now cover each index type, on positions and on a target. They also load a face with three shape keys, written as Blender writes them. The glTF page test loads the same face in a live engine.
+
 ### The shader download
 
 The MORPH bit doubles the WebGL2 mesh builds. In each start shader file they would have taken it past the file's size. So the MORPH builds go into eight shader files of their own, one for each value of the bits that a device fixes. A page loads the one it needs when its first pipeline with the MORPH bit asks for it. Until it arrives, that pipeline waits, as a custom material's pipeline waits for its shader.
