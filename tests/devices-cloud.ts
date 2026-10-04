@@ -10,10 +10,13 @@
 //   bun run devices:cloud --only bsiphone17-safari,bspixel10-chrome
 //   bun run devices:cloud --only bspixel10-chrome -- --only capabilities,restarts-pipelined
 //   bun run devices:cloud --tier B --check
+//   bun run devices:cloud --tier A --part 2/3
 // Options:
 //   --tier <list>     the tiers to run, A, B or A,B; A by default
 //   --only <names>    only these runners of the list, from any tier
 //   --parallel <n>    at most n sessions at once; by default, as many as the plan has free
+//   --part <i>/<n>    only the i-th of n parts of the picked devices, each a run of its own, so a
+//                     long tier runs as several shorter commands
 //   --plan <name>     the device runner's plan, smoke by default
 //   --check           check the credentials, the plan and the devices, print the runs, and stop
 //   -- <options>      options after -- go to the device runner as they are
@@ -28,16 +31,18 @@ import {
 } from './lib/browserstack.ts';
 import { CLOUD_DEVICES, type CloudDevice, type CloudTier } from './lib/browserstack-devices.ts';
 import { deviceText } from './lib/cloud-sessions.ts';
-import { runName } from './lib/runs.ts';
+import { readShard, runName, SHARD_FORMAT, type Shard } from './lib/runs.ts';
 
 const USAGE =
-	'usage: bun run devices:cloud [--tier A|B|A,B] [--only <runners>] [--parallel <n>] [--plan <name>] [--check] [-- <device runner options>]';
+	'usage: bun run devices:cloud [--tier A|B|A,B] [--only <runners>] [--part <i>/<n>] [--parallel <n>] [--plan <name>] [--check] [-- <device runner options>]';
 
 const TIERS: readonly CloudTier[] = ['A', 'B'];
 
 export interface CloudOptions {
 	tiers: CloudTier[];
 	only?: string[];
+	/** The one part of the picked devices to run, when given. */
+	part?: Shard;
 	parallel?: number;
 	plan: string;
 	check: boolean;
@@ -60,7 +65,11 @@ export function parseCloudArgs(args: readonly string[]): CloudOptions {
 				throw new Error(`--tier: use ${TIERS.join(', ')} or both, as A,B\n${USAGE}`);
 			options.tiers = tiers as CloudTier[];
 		} else if (arg === '--only') options.only = list(args[++i]);
-		else if (arg === '--parallel') {
+		else if (arg === '--part') {
+			const part = readShard(args[++i]);
+			if (!part) throw new Error(`--part: use ${SHARD_FORMAT}\n${USAGE}`);
+			options.part = part;
+		} else if (arg === '--parallel') {
 			const n = Number(args[++i]);
 			if (!(Number.isSafeInteger(n) && n >= 1))
 				throw new Error(`--parallel: use a whole number of at least 1\n${USAGE}`);
@@ -75,18 +84,27 @@ export function parseCloudArgs(args: readonly string[]): CloudOptions {
 	return options;
 }
 
-/** The devices that the options pick, in the list's order: those --only names, or the tiers'. */
+/**
+ * The devices that the options pick, in the list's order: those --only names, or the tiers'. With
+ * --part, only that part of them: the parts follow the list's order, and their sizes differ by at
+ * most one device.
+ */
 export function pickDevices(
-	options: Pick<CloudOptions, 'tiers' | 'only'>,
+	options: Pick<CloudOptions, 'tiers' | 'only' | 'part'>,
 	devices: readonly CloudDevice[] = CLOUD_DEVICES,
 ): CloudDevice[] {
-	if (!options.only) return devices.filter((device) => options.tiers.includes(device.tier));
-	const unknown = options.only.filter((name) => !devices.some((d) => d.runner === name));
+	const unknown = (options.only ?? []).filter((name) => !devices.some((d) => d.runner === name));
 	if (unknown.length > 0)
 		throw new Error(
 			`the device cloud list (tests/lib/browserstack-devices.ts) has no runner ${unknown.join(', ')}`,
 		);
-	return devices.filter((device) => options.only?.includes(device.runner));
+	const picked = devices.filter((device) =>
+		options.only ? options.only.includes(device.runner) : options.tiers.includes(device.tier),
+	);
+	if (!options.part) return picked;
+	const { index, count } = options.part;
+	const edge = (i: number) => Math.floor((i * picked.length) / count);
+	return picked.slice(edge(index - 1), edge(index));
 }
 
 /** One run of the device runner: devices that share the --allow-no-webgpu setting. */

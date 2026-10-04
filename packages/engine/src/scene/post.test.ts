@@ -6,9 +6,9 @@ import { Post, type PostSettings } from './post';
 import type { Texture } from './textures';
 
 /**
- * A post object whose core records each setOutput, setBloom, setAo, setLut and setVignette call,
- * with its arguments and the values that it reads from the block of post-processing values. The
- * block starts with the core's defaults.
+ * A post object whose core records each setOutput, setBloom, setAo, setLut, setVignette and
+ * setOutline call, with its arguments and the values that it reads from the block of
+ * post-processing values. The block starts with the core's defaults.
  */
 function post(
 	hdrEffects = true,
@@ -20,6 +20,7 @@ function post(
 	aos: [boolean, ...number[]][];
 	luts: number[][];
 	vignettes: [boolean, number, number][];
+	outlines: number[][];
 	reads: () => number;
 } {
 	const calls: [number, number][] = [];
@@ -27,9 +28,11 @@ function post(
 	const aos: [boolean, ...number[]][] = [];
 	const luts: number[][] = [];
 	const vignettes: [boolean, number, number][] = [];
+	const outlines: number[][] = [];
 	const block = Float32Array.of(
 		...[1, 1, 0.5, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
 		...[0.25, 1, 1, 1, 1, 16, 1],
+		...[1, 1, 1, 1, 1, 1, 0, 2],
 	);
 	expect(block.length).toBe(C.POST_VALUE_COUNT);
 	let views = 0;
@@ -70,6 +73,12 @@ function post(
 				vignettes.push([on, at(C.POST_VALUE_VIGNETTE_OFFSET), at(C.POST_VALUE_VIGNETTE_DARKNESS)]);
 				return 0;
 			},
+			setOutline(on: boolean) {
+				const first = C.POST_VALUE_OUTLINE_COLOR;
+				const values = [...block.subarray(first, C.POST_VALUE_OUTLINE_WIDTH + 1)];
+				outlines.push([on ? 1 : 0, ...values.map((v) => Math.round(v * 1e4) / 1e4)]);
+				return 0;
+			},
 		},
 		check: (result: number) => result,
 	} as unknown as CoreMemory;
@@ -80,6 +89,7 @@ function post(
 		aos,
 		luts,
 		vignettes,
+		outlines,
 		reads: () => views,
 	};
 }
@@ -100,6 +110,31 @@ describe('post.set', () => {
 			[C.TONE_MAPPING_NONE, 0.5],
 			[C.TONE_MAPPING_NONE, 0.5],
 		]);
+	});
+
+	it('turns outlines on with a white line of 2 pixels, takes colors in linear, and keeps the values while off', () => {
+		const { post: output, outlines } = post();
+		output.set({ outline: {} });
+		output.set({ outline: { color: '#ff0000', hiddenColor: [0.2, 0.3, 0.4], width: 3 } });
+		output.set({ outline: false });
+		output.set({ outline: { hiddenColor: false } });
+		expect(outlines).toEqual([
+			[1, 1, 1, 1, 1, 1, 1, 0, 2],
+			[1, 1, 0, 0, 0.2, 0.3, 0.4, 1, 3],
+			[0, 1, 0, 0, 0.2, 0.3, 0.4, 1, 3],
+			[1, 1, 0, 0, 0.2, 0.3, 0.4, 0, 3],
+		]);
+	});
+
+	it('refuses outline settings it does not know and values out of range', () => {
+		const { post: output } = post();
+		const bad = (settings: unknown) => () => output.set(settings as PostSettings);
+		expect(bad({ outline: { glow: 1 } })).toThrow('E1213');
+		expect(bad({ outline: { width: -1 } })).toThrow('E1213');
+		expect(bad({ outline: { width: Number.NaN } })).toThrow('E1203');
+		expect(bad({ outline: { color: 'red' } })).toThrow('E1204');
+		expect(bad({ outline: { hiddenColor: [2, 0, 0] } })).toThrow('E1204');
+		expect(bad({ outline: 3 })).toThrow('E1213');
 	});
 
 	it('starts from ACES at an exposure of 1', () => {

@@ -20,6 +20,11 @@
 // smooth, so a pixel reads it once at its own place, also where it blends four texels of the
 // corner. Bloom adds coverage as its brightest channel, so it glows over a transparent canvas.
 //
+// While objects are outlined, the pass draws a crisp line around them from the outline mask, after
+// the output transform: outside the objects, the highest coverage of the mask at 8 places on a
+// circle of the line's width is the line's coverage, so the line has no blur and shows its colors
+// exactly. The 8-bit path draws it the same way, because both paths hold display color there.
+//
 // Last, the pass grades each pixel's display color, as three.js's LUTPass and VignetteShader do
 // after its OutputPass: a color grading table, then the vignette, each while its flag is set. The
 // table is a 3D texture that maps a display color to its graded color, read with a linear filter.
@@ -33,21 +38,79 @@ const DISPLAY_COLOR: u32 = 1u;
 const VIGNETTE: u32 = 2u;
 /// The settings flag that turns the color grading table on.
 const LUT: u32 = 4u;
+/// The settings flag that draws the outline's line.
+const OUTLINE: u32 = 8u;
 
 /// The pass's settings: the output settings, then the vignette's offset and darkness, then the
 /// scale and the offset that place a display color in the table, with the table's intensity in
-/// the scale's last value.
+/// the scale's last value, then the outline's display colors: the visible one with the line's width
+/// in pixels of the canvas, then the hidden one with 1 where the line draws around hidden parts.
 struct Settings {
     output: null3d::tonemap::Output,
     vignette: vec4f,
     lut_scale: vec4f,
     lut_offset: vec4f,
+    outline: vec4f,
+    outline_hidden: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> settings: Settings;
 @group(0) @binding(1) var scene_color: texture_2d<f32>;
 @group(0) @binding(9) var lut: texture_3d<f32>;
 @group(0) @binding(10) var lut_sampler: sampler;
+@group(0) @binding(11) var outline_mask: texture_2d<f32>;
+
+/// Where a texture of `size` texels that a pass drew at the render size halved `halvings` times
+/// holds `uv`, a place on the drawn corner from 0 to 1. The place stays within that corner's texel
+/// centers.
+fn level_uv(size: vec2u, halvings: u32, uv: vec2f, render: vec2f) -> vec2f {
+    let extent = vec2f(size);
+    let corner = ceil(render / f32(1u << halvings));
+#ifdef WEBGL2
+    // WebGL2 counts rows from the bottom, and draws a corner into its target's top rows.
+    let origin = vec2f(0.0, extent.y - corner.y);
+#else
+    let origin = vec2f(0.0);
+#endif
+    return (origin + clamp(uv * corner, vec2f(0.5), corner - 0.5)) / extent;
+}
+
+/// The outline mask at `uv` on the drawn corner, read with a linear filter: coverage in red, and
+/// in green the parts that nothing hides.
+fn mask_at(uv: vec2f, render: vec2f) -> vec2f {
+    let at = level_uv(textureDimensions(outline_mask), 0u, uv, render);
+    return textureSampleLevel(outline_mask, lut_sampler, at, 0.0).rg;
+}
+
+/// Canvas color `color`, multiplied by its coverage, with the outline's line painted over it at
+/// `uv`, the pixel's place on the drawn corner, on a canvas of `size` pixels. The reads keep the
+/// highest coverage and the highest visible coverage that they find. While the flag is clear, or
+/// inside an object, the color stays as it is.
+fn outlined(color: vec4f, uv: vec2f, size: vec2f, render: vec2f) -> vec4f {
+    if (settings.output.flags & OUTLINE) == 0u {
+        return color;
+    }
+    let inside = mask_at(uv, render).r;
+    if inside >= 1.0 {
+        return color;
+    }
+    let across = vec2f(settings.outline.w / size.x, 0.0);
+    let down = vec2f(0.0, settings.outline.w / size.y);
+    let diagonal = (across + down) * 0.70710678;
+    let slant = (across - down) * 0.70710678;
+    var found = max(mask_at(uv + across, render), mask_at(uv - across, render));
+    found = max(found, max(mask_at(uv + down, render), mask_at(uv - down, render)));
+    found = max(found, max(mask_at(uv + diagonal, render), mask_at(uv - diagonal, render)));
+    found = max(found, max(mask_at(uv + slant, render), mask_at(uv - slant, render)));
+    let line = max(found.g, found.r * settings.outline_hidden.w) * (1.0 - inside);
+    if line <= 0.0 {
+        return color;
+    }
+    // Green never exceeds red in the mask, so the share of visible coverage runs from 0 to 1.
+    let shown = found.g / max(found.r, 0.0001);
+    let line_color = mix(settings.outline_hidden.rgb, settings.outline.rgb, shown);
+    return color * (1.0 - line) + vec4f(line_color, 1.0) * line;
+}
 
 #ifdef BLOOM
 /// Each level's weight, with the strength in it: levels 0 to 3, then level 4 in `last.x`.
@@ -63,21 +126,6 @@ struct Bloom {
 @group(0) @binding(6) var bloom_level3: texture_2d<f32>;
 @group(0) @binding(7) var bloom_level4: texture_2d<f32>;
 @group(0) @binding(8) var bloom_sampler: sampler;
-
-/// Where level `halvings - 1` holds `uv`, a place on the drawn corner from 0 to 1, in a texture of
-/// `size` texels. The level drew into the corner of its texture that the render size halved
-/// `halvings` times gives, and the place stays within that corner's texel centers.
-fn level_uv(size: vec2u, halvings: u32, uv: vec2f, render: vec2f) -> vec2f {
-    let extent = vec2f(size);
-    let corner = ceil(render / f32(1u << halvings));
-#ifdef WEBGL2
-    // WebGL2 counts rows from the bottom, and draws a corner into its target's top rows.
-    let origin = vec2f(0.0, extent.y - corner.y);
-#else
-    let origin = vec2f(0.0);
-#endif
-    return (origin + clamp(uv * corner, vec2f(0.5), corner - 0.5)) / extent;
-}
 
 /// Bloom at `uv` on the drawn corner, with its coverage.
 fn glow(uv: vec2f, render: vec2f) -> vec4f {
@@ -271,7 +319,8 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let whole = all(render == size);
     // The pixel's place on the drawn corner, from 0 to 1 in the rows' own order, which every
     // target of the frame shares.
-    let light = glow(position.xy / size, render);
+    let uv = position.xy / size;
+    let light = glow(uv, render);
     var color = vec4f(0.0);
     if whole {
         color = display(pixel_color(position.xy) + light, position.xy);
@@ -297,5 +346,5 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
         let texel_color = scene_texel(texel) + light;
         color += weights.x * weights.y * display(texel_color, position.xy);
     }
-    return grade(color, position.xy, size);
+    return grade(outlined(color, uv, size, render), position.xy, size);
 }
