@@ -398,6 +398,16 @@ describe('assets optimize on the test scene', () => {
 		]);
 	});
 
+	it('names each KTX2 file through KHR_texture_basisu, as glTF asks', async () => {
+		const json = glbJson((await optimized).glb);
+		expect(json.extensionsRequired).toContain('KHR_texture_basisu');
+		expect(json.textures.length).toBeGreaterThan(0);
+		for (const texture of json.textures) {
+			expect(texture.source).toBeUndefined();
+			expect(json.images[texture.extensions.KHR_texture_basisu.source].uri).toMatch(/\.ktx2$/);
+		}
+	});
+
 	it('reports what the scene draws and what its textures take', async () => {
 		const { report } = await optimized;
 		expect(report).toMatchObject({
