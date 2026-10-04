@@ -161,7 +161,7 @@ export interface EngineOptions {
 	 * shaded once, for its nearest surface. It saves GPU time in scenes where objects hide many
 	 * others and shading costs much, and costs a second pass over the objects' vertices. Without
 	 * it, the quality preset decides. The prepass stays fixed while the engine runs, and the
-	 * `?prepass=on` or `?prepass=off` switch wins over this option. WebGL2 draws without it.
+	 * `?prepass=on` or `?prepass=off` switch wins over this option.
 	 * Another value fails with E1213.
 	 */
 	depthPrepass?: boolean;
@@ -1007,13 +1007,10 @@ async function startEngine(
 	}
 	const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
 	const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
-	// WebGL2 draws without the depth prepass, whatever the page asks: two of its shader programs
-	// can compute different depths for one triangle that the near plane cuts.
-	const tierSettings = tier === 'webgl2' ? { ...pageSettings, depthPrepass: false } : pageSettings;
 	const quality: QualityStart = {
 		preset,
-		settings: checkedSettings(chosen, preset, tierSettings),
-		options: tierSettings,
+		settings: checkedSettings(chosen, preset, pageSettings),
+		options: pageSettings,
 		highest: withinTier('ultra', tier),
 		check: checks && !storedCheck ? { fps: switches.fps } : undefined,
 	};

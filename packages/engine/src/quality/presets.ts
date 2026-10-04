@@ -305,8 +305,7 @@ export interface QualitySettings {
 	/**
 	 * True when the engine draws the depth of the opaque objects before it shades them, so it
 	 * shades each pixel once, for its nearest surface. The setting is fixed when the engine starts:
-	 * the page's `depthPrepass` option of `createEngine` sets it, and `set` does not take it. It is
-	 * always false on WebGL2, which draws without the prepass.
+	 * the page's `depthPrepass` option of `createEngine` sets it, and `set` does not take it.
 	 */
 	depthPrepass: boolean;
 	/**

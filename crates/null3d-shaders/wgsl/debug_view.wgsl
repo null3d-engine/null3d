@@ -44,7 +44,8 @@ struct VertexIn {
 }
 
 struct VertexOut {
-    @builtin(position) clip: vec4f,
+    /// Invariant, so the depth prepass finds the same depth for each vertex as this template.
+    @invariant @builtin(position) clip: vec4f,
     @location(0) normal: vec3f,
     /// The clip position's z and w, before any depth mode maps them.
     @location(1) depth: vec2f,
