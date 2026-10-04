@@ -77,6 +77,35 @@ Cold loads of the engine test page's production build, pipelined, in Chrome 154 
 
 In the same run, the separate file's first frame came 30 ms later on WebGPU and 59 ms later on WebGL2, at the median. Loads of one build vary by about 400 ms, so these runs cannot tell the extra request from no cost. The file arrived within about 0.1 s of the end of the sketch's setup.
 
+### The download after the core (T-28, 5 October 2026)
+
+The decision says that the thread that draws starts the file's download as soon as it knows its GPU path and its fixed bits. Until 5 October 2026 it learned them only from its start message, which the page sends after the core has arrived. So the file's request waited for the core. Every cold start then waited one more round trip after the core, plus the file's own download. On Slow 4G a round trip takes at least 562 ms. In the M1 gate's run on the Galaxy S24+, Chrome on Slow 4G finished a cold start's first frame after 4.90 s. The target of [D-06](D-06-success-targets.md) is 4.5 s.
+
+The page knows both facts as soon as its GPU probe ends. The GPU path comes from the probe. The fixed bits come from the probe's report, the chosen preset and the page's options, never from the core. So the page now works out the core device right after the probe, and starts the file's download at once:
+
+- Where the render worker or the sketch worker draws, the page sends it `load-shaders` with the GPU path and the bits. The worker starts the import.
+- Where the page draws, it starts the import itself once the renderer's module has loaded.
+- Where the probe finds that a worker cannot draw, the page loads the renderer and the file right after the probe too.
+
+The renderer imports the same module again once the core has started. The browser keeps one module for each address, so the file downloads once, and the page downloads the same files as before. A failed early download stays quiet: the renderer's own import then reports the failure. A browser test holds the core's download back until a thread asks for the shader file, in every thread mode and on both GPU paths. The old start order fails it: the request came only after the core.
+
+These are cold and warm loads of the engine test page's production build, WebGL2, Slow 4G. They ran in Chrome 154 on the MacBook Pro (M5 Max) on 5 October 2026, with other work on the Mac. The old and the new start code ran in turns, two runs of five loads each. So each value is the median of 10 loads. The core was 249.4 KB after Brotli, and the WebGL2 shader file about 28.6 KB. The first frame was done at:
+
+| Thread mode | Cold, old | Cold, new | Change | Warm, old | Warm, new |
+| --- | --- | --- | --- | --- | --- |
+| Pipelined | 4,832 ms | 4,258 ms | -574 ms | 696 ms | 706 ms |
+| Low latency | 4,826 ms | 4,248 ms | -578 ms | 716 ms | 704 ms |
+| Single-threaded | 4,764 ms | 4,196 ms | -568 ms | 682 ms | 678 ms |
+| Drawing on the main thread | 4,804 ms | 4,244 ms | -560 ms | 697 ms | 690 ms |
+| Sketch on the main thread | 4,809 ms | 4,228 ms | -580 ms | 766 ms | 700 ms |
+
+- Every cold load got faster, by 0.56 to 0.58 s at the median. The slowest new cold load (4,413 ms) was faster than the fastest old one (4,749 ms).
+- The shader file now shares the link with the core. So the core was ready about 0.19 s later: about 4.21 s against 4.02 s, pipelined. The first frame then followed the core by about 50 ms, against about 0.8 s before.
+- Each mode made the same requests and downloaded the same bytes as before. Single-threaded loads made 11 requests for 363 KB, and the other modes 12 requests for 367 to 371 KB.
+- Warm loads make one request, and the files come from the cache, so the order cannot change them. Their medians stayed within the spread between loads.
+
+`bun run bench:startup --runs 5 --gpu webgl2 --modes all --loads cold,warm --network slow-4g`, twice for each version. The S24+'s own figures come from `bun run bench:startup --android`.
+
 ### Warm-up (T-12, T-26)
 
 `KHR_parallel_shader_compile`, which lets WebGL2 compile programs in the background, in the device runs recorded before this task:
@@ -122,7 +151,7 @@ How the data was produced: on 2026-10-02, `bun tests/real-browsers.ts --plan war
 
 ## Decision
 
-(b3): the shaders of each GPU path load as files of their own. There is one file for each value of the bits that a device fixes when the engine starts, and a page loads exactly one. The device fixes the draw index (WebGL2 with multi-draw or without) and TONE_MAP (the 8-bit output path or HDR). Each file holds every template's variants for every combination of the material bits. The thread that draws starts the download as soon as it knows its GPU path and its fixed bits. The first frame waits for its pipelines anyway.
+(b3): the shaders of each GPU path load as files of their own. There is one file for each value of the bits that a device fixes when the engine starts, and a page loads exactly one. The device fixes the draw index (WebGL2 with multi-draw or without) and TONE_MAP (the 8-bit output path or HDR). Each file holds every template's variants for every combination of the material bits. The thread that draws starts the download as soon as the page knows its GPU path and its fixed bits. That is right after the GPU probe, while the core downloads. The first frame waits for its pipelines anyway.
 
 (b3) gives the smallest page on both paths at every bit count, and the least JavaScript to parse. At five bits, a WebGL2 page is 52.0 KB and parses 414 KB of shader text. With every variant in the file that draws, it is 57.6 KB and parses 1,644 KB. (b3) keeps 8 KB of the budget with M1's five bits, and each more material bit costs about 1 KB. (c) saves 0.6 KB more on a WebGPU page and nothing on WebGL2, but each template needs a second way to write it. So (c) waits until WebGPU warm-up time asks for fewer shader modules. T-26 gives no such reason: on the iPad, no scene's WebGPU pipelines took more than 32 ms.
 
@@ -139,7 +168,7 @@ null3D does the same work at build time. A page downloads one file with only the
 ## Consequences
 
 - The shader manifest marks the engine's shaders (`lit`, `unlit`, `unlit_map`, `texcoords`, `final`, `mipmap` and `cull`) with `by_device = true`. The shader build writes their builds into `generated/shaders-<target>[-<bit>...].ts`. These are `shaders-wgsl.ts`, `shaders-glsl.ts` and `shaders-glsl-draw-index.ts` for HDR devices, and the same three with `-tone-map` for the 8-bit path. Half precision ([D-09](D-09-half-precision.md)) is a third bit that a device fixes, so each of the six has a `-half` twin: twelve modules in all. A module holds the builds of each shader that a device with its bits asks for. So a shader without device bits, such as `cull`, `mipmap` or the final pass's `final`, is in every module of its target. The main module, `generated/shaders.ts`, keeps the types, the test shaders and the GPU timer's mark shader. It also keeps the debug lines shader, which only development builds import. It also has the loaders `loadWgslShaders(bits)` and `loadGlslShaders(bits)`. Each loader imports only its own target's modules.
-- The core device carries the bits that the device fixes (`shaderBits`). The thread that draws starts the download while it waits for its WebGPU device or its WebGL2 context. It then gives the loaded shaders to the backend.
+- The core device carries the bits that the device fixes (`shaderBits`). The page works the core device out right after the GPU probe, and tells the thread that draws to start the file's download then (`load-shaders`). The renderer loads the same module again once the core has started, and the browser gives it the module that is already on its way. The renderer then gives the loaded shaders to the backend.
 - The size report names each shader file (`SHADER_PARTS` in `tools/lib/size-report.ts`) and counts the largest in each thread mode's download. A new value of the device's bits adds a module, which the report must name.
 - A new material bit doubles each file: check the size report when one is added.
 - The warm-up time plan watches the target: S4's pipeline wait with fresh shaders stays under 250 ms on the S24+. A new material bit, or a pass that adds pipelines to S4, reruns it on the S24+.
