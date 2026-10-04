@@ -71,7 +71,8 @@
 //   --minutes <n>       the soak plan's minutes on each GPU path, 30 by default
 //   --shard <i>/<n>     run only the i-th of n shards of a fixed plan, as CI does on each of its
 //                       machines: the plan's items split evenly, and an item stays with the items
-//                       whose results its check compares with
+//                       whose results its check compares with. Each shard loads the capabilities
+//                       page first, to skip the pages of the GPU paths that the device lacks
 //   --only <ids>        run only these items of a fixed plan, such as the pages that failed in an
 //                       earlier run, with the items whose results their checks compare with
 //   --rounds <n>        run the items n times over, one round after another, to catch a fault
@@ -507,6 +508,10 @@ function runnersOf(options: Options): LaunchedRunner[] {
 		runners.push({ name, device: name, launch: { kind: 'cloud', device: cloudDevice(name)! } });
 	return runners;
 }
+
+/** The device whose image references a runner compares with: a cloud device's model, when it has one. */
+const imageDevice = (runner: LaunchedRunner) =>
+	(runner.launch.kind === 'cloud' && runner.launch.device.model) || runner.device;
 
 /** Time a macOS app may take to open the runner page before its turn counts as failed. */
 const OPEN_TIMEOUT_MS = 60_000;
@@ -1082,7 +1087,10 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 		throw new Error(
 			`shard ${shard.index} of ${shard.count} has no items: the ${options.plan} plan has too few items for ${shard.count} shards`,
 		);
-	return repeatItems(part, rounds);
+	// Every shard loads the capabilities page first, so its runner page can skip the pages of the GPU
+	// paths that the device lacks.
+	const report = items.find((item) => item.check.kind === 'capabilities');
+	return repeatItems(report && !part.includes(report) ? [report, ...part] : part, rounds);
 }
 
 /**
@@ -1211,15 +1219,16 @@ async function runPlan(
 		counts.browser = browserText(browser);
 		const mismatch = browserMismatch(name, browser);
 		if (mismatch) console.log(`WARN  ${mismatch}`);
+		const imagesOf = imageDevice(runner);
 		const context = {
 			resultOf: (id: string) => readResult(run, name, id),
 			imageDir: join(RUNS_DIR, run, name),
 			storedBaselines,
-			runner: { name, device: runner.device },
+			runner: { name, device: imagesOf },
 			braveShields,
 		};
 		// The images this runner saved for review in an earlier run are stale once this run is judged.
-		clearCandidates({ runner: name, device: runner.device });
+		clearCandidates({ runner: name, device: imagesOf });
 		for (const item of plan.items) {
 			const result = readResult(run, name, item.id);
 			// The pages after a turn that the guard ended are listed once, in its message.

@@ -65,7 +65,7 @@ describe('redactor', () => {
 describe('capabilities', () => {
 	const names = { build: 'null3D 20261003-120000-smoke', session: 'bsiphone17-safari' };
 
-	it('asks for a real phone with its system, through BrowserStack Local, with the longest idle time', () => {
+	it('asks for a real phone with its system, through BrowserStack Local, with the longest idle time and interactive debugging', () => {
 		expect(capabilities(device('bsiphone17-safari'), names)).toEqual({
 			browserName: 'safari',
 			acceptInsecureCerts: true,
@@ -78,6 +78,7 @@ describe('capabilities', () => {
 				buildName: 'null3D 20261003-120000-smoke',
 				sessionName: 'bsiphone17-safari',
 				idleTimeout: IDLE_TIMEOUT_SECONDS,
+				interactiveDebugging: 'true',
 				video: 'true',
 				consoleLogs: 'info',
 				acceptInsecureCerts: 'true',

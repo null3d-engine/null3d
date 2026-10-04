@@ -100,6 +100,7 @@ export function capabilities(device: CloudDevice, names: SessionNames): Record<s
 			buildName: names.build,
 			sessionName: names.session,
 			idleTimeout: IDLE_TIMEOUT_SECONDS,
+			interactiveDebugging: 'true',
 			video: 'true',
 			consoleLogs: 'info',
 			...(names.networkLogs && { networkLogs: 'true' }),
