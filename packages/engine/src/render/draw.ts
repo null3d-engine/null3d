@@ -38,6 +38,11 @@ export interface DrawingSetup extends RendererOptions {
 	 */
 	fault?: LoopFault;
 	/**
+	 * Runs after each frame that this thread presents, once the frame's labels are in place: the
+	 * page moves its label elements there when it draws.
+	 */
+	presented?: () => void;
+	/**
 	 * The port through which the sketch thread sends texture images, when another thread runs it.
 	 * Wake messages go back to the sketch thread through it.
 	 */
@@ -50,7 +55,7 @@ export interface DrawingSetup extends RendererOptions {
  * runs, and every renderer reads them.
  */
 export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Renderer>> {
-	const { canvas, control, metrics, fps, queue, sketch, hold = false, fault } = setup;
+	const { canvas, control, metrics, fps, queue, sketch, hold = false, fault, presented } = setup;
 	const { slots } = controlViews(control);
 	const imageTable = setup.imageTable ?? new ImageTable();
 	if (setup.imagePort) receiveImages(setup.imagePort, imageTable, slots);
@@ -58,10 +63,10 @@ export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Rendere
 	const create = () => createRenderer(canvas, options);
 	const run = (renderer: Renderer) =>
 		hold
-			? new HoldLoop(slots, renderer, metrics)
+			? new HoldLoop(slots, renderer, metrics, presented)
 			: sketch
-				? runDirectLoop(sketch, renderer, control, metrics, fps, queue, fault)
-				: runRenderLoop(renderer, control, metrics, fps, queue, setup.imagePort, fault);
+				? runDirectLoop(sketch, renderer, control, metrics, fps, queue, fault, presented)
+				: runRenderLoop(renderer, control, metrics, fps, queue, setup.imagePort, fault, presented);
 	return new Drawing(await create(), create, run, slots, setup.fail, !hold, () =>
 		imageTable.clear(),
 	);

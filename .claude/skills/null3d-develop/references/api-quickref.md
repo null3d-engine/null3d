@@ -42,6 +42,7 @@ const engine = await createEngine({
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
   memory: { maximumMiB: 1024 },          // the default; up to 4096 for scenes that need more (E1409 outside 256 to 4096)
+  maxLabels: 4096,                       // (0.2) the default; labels that ui.trackLabel holds at once, 1 to 65,536
   onProgress: (stage) => {},             // 'core', then 'sketch' after the setup and any preset check, then 'first-frame'
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
@@ -68,7 +69,7 @@ engine.simulateGpuLoss();                         // acts out a driver reset; th
 await engine.destroy();                 // workers stop; wait before this page starts another engine
 
 const image = await engine.capture();             // PNG Blob of the next frame; E1414 after destroy()
-engine.labels.bind('hp-12', element);             // (0.2) HTML label that follows an object
+const unbind = engine.labels.bind('hp-12', element);   // (0.2) element follows the sketch's label 'hp-12'
 await engine.requestPointerLock();                // (0.2) for first-person controls
 // engine.registerVideo and textures.fromVideo come after 1.0; recipe 14 shows the workaround
 ```
@@ -351,7 +352,7 @@ const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
 ship.find('Turret');       // (0.2) a node: { name, position, rotation, scale, mesh, material }
 ship.bounds;               // (0.2) { center, radius, min, max } of the whole model
 ship.materials;            // (0.2) the file's materials; set() changes every copy
-ship.animations;           // (0.2) clip names
+ship.clips;                // (0.2) clip names, which a copy's animator plays
 const env = await assets.loadEnvironment('/env/sunset.ktx2');  // (0.2) from `bunx @null3d/cli assets env`
 const room = await assets.builtinEnvironment('room');          // (0.2) three.js's RoomEnvironment; downloads on first use
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2)
@@ -364,8 +365,8 @@ Every load runs outside the sketch's frames, so a frame never waits for a downlo
 ## 12. Animation (0.2) (`api/animation`)
 
 ```ts
-const hero = scene.instantiate(await assets.loadGltf('/hero.glb')); // loading animated models: later in 0.2
-const anim = hero.animator();           // throws E1218 on an object without clips
+const hero = scene.instantiate(await assets.loadGltf('/hero.glb')); // skins and clips load with the model
+const anim = hero.animator();           // the copy's group animates; throws E1218 on an object without clips
 anim.clips;                             // the clip names
 anim.play('run', { fade: 0.2, loop: true, speed: 1 });  // loop: false holds the last frame
 anim.crossFade('walk', 0.3);            // = play('walk', { fade: 0.3 }); the layer's other clips fade out
@@ -378,6 +379,8 @@ const off = anim.onEvent('footstep', (e) => page.post('sfx', e.clip));  // also 
 anim.stop('walk', { fade: 0.3 });
 anim.stop();                            // every clip; the object holds its rest pose
 anim.setJointOverride('Head', rotation); // later in 0.2: procedural aiming
+const twin = scene.clone(hero);         // the clone gets an animator of its own
+// Joints are not objects. Meshes under bones (a sword in a hand) follow their joints.
 
 // after 1.0: scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true });
 ```
@@ -518,7 +521,7 @@ debug.axes(objectOrPosition, size);             // an object's axes follow it in
 debug.grid(size, divisions, { center, color, centerColor });  // GridHelper's defaults, 10 and 10
 debug.frustum(camera, color);                   // in the canvas's shape
 debug.light(sun, { position, size, color });    // a directional light's direction
-debug.skeleton(obj);                            // (0.2)
+debug.skeleton(hero, color);                    // (0.2) skin joints: blue at the joint, green at its parent
 
 debug.stats(true);                       // overlay on the canvas: fps, CPU ms per thread and phase, tier, preset, render scale
 const s = debug.frameStats();            // the same figures: s.presentedFps, s.completedFps, s.cpuMs, s.threads, s.drawCalls

@@ -14,6 +14,7 @@ import { Lut } from './lut';
 import type { CoreMemory } from './memory';
 import type { Prefab } from './prefab';
 import type { Geometry, Materials } from './resources';
+import type { Scene } from './scene';
 import type { Texture, TextureColorSpace, TextureOptions, Textures } from './textures';
 
 /**
@@ -56,11 +57,12 @@ export interface LoadImageOptions {
 	premultipliedAlpha?: boolean;
 }
 
-/** @internal What `loadGltf` makes a model's meshes and materials with. */
+/** @internal What `loadGltf` makes a model's meshes, materials and skeleton with. */
 export interface ModelMakers {
 	core: CoreMemory;
 	geometry: Geometry;
 	materials: Materials;
+	scene: Scene;
 }
 
 /**

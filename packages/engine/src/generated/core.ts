@@ -288,12 +288,14 @@ export const ANIMATION_EVENT_LOOP = 1;
 export const ANIMATION_EVENT_FINISHED = 2;
 export const ANIMATION_REST_FLOATS = 10;
 export const ANIMATION_TRACK_WORDS = 4;
+export const ANIMATION_CLIP_PENDING = 4294967295;
 export const ANIMATION_DEFAULT_RATE = 30;
 export const ANIMATION_TRANSLATION = 0;
 export const ANIMATION_ROTATION = 1;
 export const ANIMATION_SCALE = 2;
 export const ANIMATION_LINEAR = 0;
 export const ANIMATION_STEP = 1;
+export const ANIMATION_CUBIC_SPLINE = 2;
 
 export const ANIMATION_PROBLEM_JOINTS = 1;
 export const ANIMATION_PROBLEM_PARENT = 2;

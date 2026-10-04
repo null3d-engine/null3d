@@ -29,6 +29,8 @@ import {
 	LIGHT_VALUE_RANGE,
 } from '../generated/core';
 import type { GltfAnswer, GltfRequest } from '../workers/gltf-worker';
+import { type AnimationRig, loadAnimationRig } from './animation';
+import { affineOf, multiplyAffine } from './gltf-math';
 import type {
 	GltfData,
 	LightData,
@@ -42,6 +44,7 @@ import {
 	boundsOf,
 	type InstancingTemplate,
 	type LightTemplate,
+	type MorphTemplate,
 	type PartTemplate,
 	Prefab,
 	type TemplateNode,
@@ -55,6 +58,7 @@ import type {
 	StandardOptions,
 	UnlitOptions,
 } from './resources';
+import type { Scene } from './scene';
 import type { Texture, Textures } from './textures';
 
 /**
@@ -70,6 +74,8 @@ export interface GltfContext {
 	textures: Textures;
 	geometry: Geometry;
 	materials: Materials;
+	/** The scene, whose animation table holds the skeletons and clips of models. */
+	scene: Scene;
 	/** Downloads a file through `assets`, which counts it and gives failures their codes. */
 	download(address: URL, call: string): Promise<Blob>;
 	/** Decodes an image file, as `assets.loadImageBitmap` does. */
@@ -198,8 +204,14 @@ export async function loadGltf(
 	const { data, bitmaps } = await parse(context, await file.arrayBuffer(), address, call);
 	const textures = await makeTextures(context, data, bitmaps, address, call);
 	const materials = new FileMaterials(context, data, textures);
-	const meshes = data.meshes.map((mesh) => makeMeshes(context, mesh, address, call));
+	// Only the meshes that nodes draw: joints move copies of some of the file's meshes.
+	const meshes: (MeshGeometry[] | undefined)[] = [];
+	const meshOf = (k: number) => {
+		meshes[k] ??= makeMeshes(context, data.meshes[k] as MeshData, address, call);
+		return meshes[k];
+	};
 	const lights = data.lights.map(lightTemplate);
+	const rig = await makeRig(context, data, address, call);
 	const template: TemplateNode[] = [
 		{
 			name: '',
@@ -212,22 +224,45 @@ export async function loadGltf(
 		},
 	];
 	const instancing: InstancingTemplate[] = [];
-	/** Each file node's template node, which its children go under. */
+	/** Each file node's template node, which its children go under, or -1 for a joint. */
 	const placed: number[] = [];
+	/** Each file node's template nodes of its mesh's parts. */
+	const partNodes: number[][] = [];
+	const parents = new Set(data.nodes.map((n) => n.parent));
 	const node = (
 		fields: Partial<TemplateNode> & Pick<TemplateNode, 'name' | 'parent' | 'transform'>,
 	) =>
 		template.push({ flags: FLAG_VISIBLE, layers: LAYERS_DEFAULT, renderOrder: 0, ...fields }) - 1;
-	for (const n of data.nodes) {
+	for (const [index, n] of data.nodes.entries()) {
 		const parent = n.parent < 0 ? 0 : (placed[n.parent] as number);
-		const primitives = n.mesh < 0 ? [] : (data.meshes[n.mesh] as MeshData).primitives;
-		const made = n.mesh < 0 ? [] : (meshes[n.mesh] as MeshGeometry[]);
-		const parts = primitives.map((p, k) => ({
+		const mesh = n.mesh < 0 ? undefined : (data.meshes[n.mesh] as MeshData);
+		const made = n.mesh < 0 ? [] : meshOf(n.mesh);
+		const parts = (mesh?.primitives ?? []).map((p, k) => ({
 			mesh: made[k] as MeshGeometry,
 			material: materials.of(p),
+			...morphOf(mesh as MeshData, p),
 		}));
 		const light = n.light < 0 ? undefined : lights[n.light];
+		const first = template.length + (parts.length > 1 || light ? 1 : 0);
+		partNodes.push(parts.map((_, k) => first + k));
+		if (n.skinned) {
+			// Joints move the mesh in the space of the copy's group. A mesh that one joint moves
+			// rests where that joint does.
+			const rest = n.skin >= 0 ? IDENTITY : n.transform;
+			partNodes[index] = parts.map((part) =>
+				node({ name: n.name, parent: 0, transform: IDENTITY, ...part, skinned: true, rest }),
+			);
+			const isObject = (n.joint ?? -1) < 0 && parents.has(index);
+			placed.push(isObject ? node({ name: n.name, parent, transform: n.transform }) : -1);
+			continue;
+		}
+		if ((n.joint ?? -1) >= 0 && parts.length === 0 && !light) {
+			// A joint is no object, and its children went under the copy's group.
+			placed.push(-1);
+			continue;
+		}
 		if (n.instancing) {
+			partNodes[index] = [];
 			const at = node({ name: n.name, parent, transform: n.transform });
 			placed.push(at);
 			instancing.push({
@@ -253,6 +288,14 @@ export async function loadGltf(
 		if (light) node({ name: n.name, parent: at, transform: IDENTITY, light });
 	}
 	const { parts, bounds } = partsOf(template, data, meshes, instancing);
+	const morphClips = (data.animation?.clips ?? []).map((clip) => ({
+		name: clip.name,
+		tracks: clip.weights.map(({ node: k, ...track }) => ({ nodes: partNodes[k] ?? [], ...track })),
+	}));
+	if (template.some((t) => t.morph))
+		data.notes.push(
+			'its morph targets keep their shapes at rest, as the engine does not draw them yet',
+		);
 	if (DEV_NOTES && data.notes.length > 0)
 		console.warn(`${call}() left out parts of ${address}: ${data.notes.join('; ')}.`);
 	return new Prefab(
@@ -264,6 +307,8 @@ export async function loadGltf(
 		bounds,
 		materials.list(),
 		textures.filter((t): t is Texture => t !== undefined),
+		rig,
+		morphClips,
 	);
 }
 
@@ -277,6 +322,36 @@ const DEV_NOTES: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL
 
 const IDENTITY = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
 const IDENTITY_PART = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
+
+/** A primitive's morph targets as a template node keeps them, or nothing for a primitive without. */
+function morphOf(mesh: MeshData, p: PrimitiveData): { morph?: MorphTemplate } {
+	if (!p.morph) return {};
+	return {
+		morph: { targets: p.morph, weights: mesh.weights ?? [], names: mesh.targetNames ?? [] },
+	};
+}
+
+/**
+ * The model's skeleton and clips in the engine core, which the job workers resample, or none for a
+ * model whose skins and clips move no node. Throws E1416 for a clip that the core refuses.
+ */
+async function makeRig(
+	context: GltfContext,
+	data: GltfData,
+	address: URL,
+	call: string,
+): Promise<AnimationRig | undefined> {
+	const animation = data.animation;
+	if (!animation || animation.joints.length === 0) return undefined;
+	try {
+		return await loadAnimationRig(context.scene, animation);
+	} catch (error) {
+		throw context.error(
+			'E1416',
+			`${call}() could not read the animation of ${address}: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
+}
 
 /** One texture for each texture use: from a bitmap the worker decoded, an image file, or KTX2 data. */
 async function makeTextures(
@@ -489,14 +564,16 @@ function lightTemplate(light: LightData): LightTemplate {
 function partsOf(
 	template: readonly TemplateNode[],
 	data: GltfData,
-	meshes: readonly MeshGeometry[][],
+	meshes: readonly (MeshGeometry[] | undefined)[],
 	instancing: readonly InstancingTemplate[],
 ): { parts: PartTemplate[]; bounds: ReturnType<typeof boundsOf> } {
 	const worlds: Float64Array[] = [];
 	const boxes = new Map<MeshGeometry, readonly [number[], number[]]>();
 	data.meshes.forEach((mesh, k) => {
+		const made = meshes[k];
+		if (!made) return;
 		mesh.primitives.forEach((p, j) => {
-			boxes.set((meshes[k] as MeshGeometry[])[j] as MeshGeometry, [p.min, p.max]);
+			boxes.set(made[j] as MeshGeometry, [p.min, p.max]);
 		});
 	});
 	const min = [Infinity, Infinity, Infinity];
@@ -520,7 +597,8 @@ function partsOf(
 	};
 	const parts: PartTemplate[] = [];
 	template.forEach((node, k) => {
-		const local = affineOf(node.transform);
+		// A mesh that a joint moves counts where the joint rests.
+		const local = affineOf(node.rest ?? node.transform);
 		worlds[k] =
 			node.parent < 0 ? local : multiplyAffine(worlds[node.parent] as Float64Array, local);
 		const world = worlds[k] as Float64Array;
@@ -543,40 +621,4 @@ function partsOf(
 	}
 	const empty = min[0] === Infinity;
 	return { parts, bounds: empty ? boundsOf([0, 0, 0], [0, 0, 0]) : boundsOf(min, max) };
-}
-
-/** A 3 × 4 matrix by rows from a position, a rotation and a scale. */
-function affineOf(t: ArrayLike<number>): Float64Array {
-	const [px, py, pz, x, y, z, w, sx, sy, sz] = Array.from(t) as number[];
-	const [x2, y2, z2] = [(x as number) * 2, (y as number) * 2, (z as number) * 2];
-	const [xx, xy, xz] = [(x as number) * x2, (x as number) * y2, (x as number) * z2];
-	const [yy, yz, zz] = [(y as number) * y2, (y as number) * z2, (z as number) * z2];
-	const [wx, wy, wz] = [(w as number) * x2, (w as number) * y2, (w as number) * z2];
-	return new Float64Array([
-		(1 - (yy + zz)) * (sx as number),
-		(xy - wz) * (sy as number),
-		(xz + wy) * (sz as number),
-		px as number,
-		(xy + wz) * (sx as number),
-		(1 - (xx + zz)) * (sy as number),
-		(yz - wx) * (sz as number),
-		py as number,
-		(xz - wy) * (sx as number),
-		(yz + wx) * (sy as number),
-		(1 - (xx + yy)) * (sz as number),
-		pz as number,
-	]);
-}
-
-/** The product `a × b` of two 3 × 4 matrices by rows: `b` applies first. */
-function multiplyAffine(a: Float64Array, b: Float64Array): Float64Array {
-	const out = new Float64Array(12);
-	for (let r = 0; r < 3; r++)
-		for (let c = 0; c < 4; c++)
-			out[r * 4 + c] =
-				(a[r * 4] as number) * (b[c] as number) +
-				(a[r * 4 + 1] as number) * (b[4 + c] as number) +
-				(a[r * 4 + 2] as number) * (b[8 + c] as number) +
-				(c === 3 ? (a[r * 4 + 3] as number) : 0);
-	return out;
 }
