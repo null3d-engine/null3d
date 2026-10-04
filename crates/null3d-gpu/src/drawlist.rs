@@ -144,12 +144,16 @@ pub enum Op {
     /// [image id]: closes an image that the backend holds, once no later command uploads it. A
     /// backend that holds no such image does nothing, as when a capture replays a list again.
     ReleaseImage = 51,
+    /// [pipeline id]: releases a render pipeline that no later command uses, such as the pipelines
+    /// of a custom material whose last material was destroyed. A backend that holds no such
+    /// pipeline does nothing, as when a capture replays a list again.
+    DestroyPipeline = 52,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,
 }
 
 impl Op {
-    pub const ALL: [Op; 38] = [
+    pub const ALL: [Op; 39] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -187,6 +191,7 @@ impl Op {
         Op::CopyBufferToBuffer,
         Op::CopyTextureToTexture,
         Op::ReleaseImage,
+        Op::DestroyPipeline,
         Op::Submit,
     ];
 
@@ -233,6 +238,7 @@ impl Op {
             Op::CopyBufferToBuffer => "COPY_BUFFER_TO_BUFFER",
             Op::CopyTextureToTexture => "COPY_TEXTURE_TO_TEXTURE",
             Op::ReleaseImage => "RELEASE_IMAGE",
+            Op::DestroyPipeline => "DESTROY_PIPELINE",
             Op::Submit => "SUBMIT",
         }
     }
@@ -246,19 +252,11 @@ pub mod reserved {
     pub const DISPATCH_INDIRECT: u8 = 43;
     /// Copies texels into a buffer, to read a frame or computed values back.
     pub const COPY_TEXTURE_TO_BUFFER: u8 = 50;
-    /// Releases a render or compute pipeline: a destroyed custom material's, or one that a
-    /// reloaded shader replaced.
-    pub const DESTROY_PIPELINE: u8 = 52;
     /// Reads part of a buffer back into engine memory once the GPU has run the commands before it,
     /// a frame or more later: the object ids that GPU picking draws under the pointer.
     pub const READ_BUFFER: u8 = 53;
 
-    pub const ALL: [u8; 4] = [
-        DISPATCH_INDIRECT,
-        COPY_TEXTURE_TO_BUFFER,
-        DESTROY_PIPELINE,
-        READ_BUFFER,
-    ];
+    pub const ALL: [u8; 3] = [DISPATCH_INDIRECT, COPY_TEXTURE_TO_BUFFER, READ_BUFFER];
 }
 
 /// A target slot left empty in `BeginRenderPass`.

@@ -702,6 +702,9 @@ export class WebGL2Backend {
 				case G.OP_RELEASE_IMAGE:
 					this.images.release(words[a] as number);
 					break;
+				case G.OP_DESTROY_PIPELINE:
+					this.destroyPipeline(words[a] as number);
+					break;
 				case G.OP_GENERATE_MIPMAPS:
 					this.generateMipmaps(words[a] as number, words[a + 1] as number);
 					break;
@@ -858,6 +861,22 @@ export class WebGL2Backend {
 	 * The program of a template and permutation, which starts compiling the first time, in the
 	 * background when `background` is set and the context can.
 	 */
+	/**
+	 * Forgets a render pipeline, and deletes its program once no other pipeline uses it. A pipeline
+	 * that is gone already, as when a capture replays a list again, changes nothing.
+	 */
+	private destroyPipeline(id: number): void {
+		this.parked.delete(id);
+		const program = this.pipelines[id]?.program;
+		this.pipelines[id] = undefined;
+		if (!program || this.pipelines.some((p) => p?.program === program)) return;
+		for (const [key, held] of this.programs) if (held === program) this.programs.delete(key);
+		const compiling = this.compiling.indexOf(program);
+		if (compiling >= 0) this.compiling.splice(compiling, 1);
+		for (const shader of program.shaders) this.gl.deleteShader(shader);
+		this.gl.deleteProgram(program.program);
+	}
+
 	private programOf(template: number, permutation: number, background: boolean): Program {
 		const key = `${template} ${permutation}`;
 		let program = this.programs.get(key);

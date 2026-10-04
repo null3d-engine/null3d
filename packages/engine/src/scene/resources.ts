@@ -35,6 +35,7 @@ import {
 	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
 	SHADING_CUSTOM_BASE_COLOR,
 	SHADING_CUSTOM_FIRST,
+	SHADING_CUSTOM_TEXTURE_SHIFT,
 	SHADING_LIT,
 	SHADING_TEXCOORDS,
 	SHADING_UNLIT,
@@ -53,8 +54,8 @@ import type { ShaderSender } from '../shared/images';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import { arraysProblem, meshFromArrays } from './mesh-arrays';
-import type { Texture } from './textures';
-import type { UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
+import { Texture } from './textures';
+import type { TextureValues, UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
 
 /**
  * A mesh the engine can draw: its id in the engine core, and its bounding radius.
@@ -773,10 +774,11 @@ export type ShaderValues<Wgsl = string | CompiledWgsl> = [Wgsl] extends [unknown
 	: never;
 
 /**
- * Options of `materials.shader`: the material's WGSL, the first values of its uniforms, and every
- * option of `materials.standard` but its texture maps, which `defaultSurface` applies. Custom
- * materials take no texture maps in this version, so the values of maps have no effect on them.
- * `Wgsl` is the type of the material's WGSL, which gives the uniforms' names and types.
+ * Options of `materials.shader`: the material's WGSL, the first values of its uniforms, and the
+ * textures that its WGSL samples. It also takes every option of `materials.standard` but the
+ * texture maps. `defaultSurface` applies the standard values. Custom materials take no standard
+ * maps, so the values of maps have no effect on them. `Wgsl` is the type of the material's WGSL. It
+ * gives the names and types of the uniforms, and the names of the textures.
  *
  * @category api/materials
  */
@@ -802,6 +804,15 @@ export interface ShaderOptions<Wgsl extends string | CompiledWgsl = string | Com
 			? { readonly [name: string]: never }
 			: UniformValues<Wgsl>
 	>;
+	/**
+	 * The texture of each `var name: texture_2d<f32>;` that the WGSL declares, by name. The WGSL
+	 * samples it as `textureSample(name, nameSampler, uv)`, with the sampler of the texture's
+	 * `wrap` and `filter` options. A texture samples as white until its image is on the GPU, and a
+	 * declared texture without one stays white. The textures are fixed when the material is
+	 * created. When TypeScript can see the WGSL, a name that it does not declare fails the type
+	 * check.
+	 */
+	textures?: NoInfer<TextureValues<Wgsl>>;
 }
 
 /** A uniform of a custom material: its type, and the float of the row of custom values it starts at. */
@@ -824,6 +835,8 @@ interface CompiledMaterial extends CompiledWgsl {
 	/** True when the shader reads the material's base color and opacity, as the template does. */
 	readonly baseColor: boolean;
 	readonly uniforms: readonly CompiledUniform[];
+	/** The textures that the WGSL declares, in the order of their map slots. */
+	readonly textures: readonly { readonly name: string }[];
 }
 
 /** Every value of either material, which `set` writes. */
@@ -1078,30 +1091,94 @@ function uniformWrites(
 }
 
 /**
+ * The texture of each slot that a custom material's WGSL declares, from its `textures` option, with
+ * none where the option gives none. Throws E1216 for a name that the WGSL does not declare, and for
+ * a value that is not a texture of one layer.
+ */
+function textureSlots(
+	declared: readonly { readonly name: string }[],
+	given: Readonly<Record<string, unknown>>,
+	call: string,
+): (Texture | undefined)[] {
+	const slots: (Texture | undefined)[] = declared.map(() => undefined);
+	for (const name in given) {
+		const value = given[name];
+		if (value === undefined) continue;
+		const slot = declared.findIndex((texture) => texture.name === name);
+		if (slot < 0) {
+			const names = declared.map((texture) => texture.name).join(', ') || 'none';
+			throw new EngineError(
+				'E1216',
+				`${call}() got the texture ${name}, which the material's WGSL does not declare. Its textures: ${names}.`,
+			);
+		}
+		if (!(value instanceof Texture) || value.depth !== 1)
+			throw new EngineError(
+				'E1216',
+				`${call}() got ${value instanceof Texture ? `a texture of ${value.depth} layers` : String(value)} for the texture ${name}; it takes a texture of one layer, from textures or assets.`,
+			);
+		slots[slot] = value;
+	}
+	return slots;
+}
+
+/**
  * A material: how the surfaces of the objects that use it look. `Values` are the options that
  * `set` changes.
  *
  * @category api/materials
  */
 export class Material<Values extends MaterialOptions = MaterialOptions> {
+	/** The engine core's id, or 0 once the material is destroyed. */
+	private liveId: number;
+
 	constructor(
-		/** @internal */ readonly id: number,
+		id: number,
 		/** @internal */ readonly core: CoreMemory,
 		/** The name that errors from `set` give the call, such as 'materials.standard.set'. */
 		protected readonly call: string,
-	) {}
+	) {
+		this.liveId = id;
+	}
+
+	/** @internal The engine core's id. Throws E1101 once the material is destroyed. */
+	get id(): number {
+		if (this.liveId === 0)
+			throw new EngineError(
+				'E1101',
+				`a call used a material of ${this.call.replace(/\.set$/, '')}() after its destroy().`,
+			);
+		return this.liveId;
+	}
 
 	/**
 	 * Changes the values that it gets and keeps the others. Every object that uses the material
-	 * changes with it. Converting a new color allocates.
+	 * changes with it. Converting a new color allocates. Throws E1101 once the material is
+	 * destroyed.
 	 */
 	set(options: Values): void {
 		const { core, call } = this;
 		const values = options as AnyValues;
+		const id = this.id;
 		if (DEV) checkValues(values, call);
 		const color = linearOrNone(values.color, call);
 		const emissive = linearOrNone(values.emissive, call);
-		writeValues(core, this.id, call, values, color, emissive);
+		writeValues(core, id, call, values, color, emissive);
+	}
+
+	/**
+	 * Destroys the material, like three.js's `material.dispose()`. Objects and instance batches that
+	 * still use it draw nothing until `setMaterial` gives them another material. Once no object uses
+	 * it, its place in the engine's table of materials goes to the next material. When the last
+	 * material of a custom material's WGSL goes, the engine frees that WGSL's pipelines. The
+	 * material's textures stay, so destroy them apart. Later calls on the material, and calls that
+	 * pass it, throw E1101.
+	 */
+	destroy(): void {
+		const { core } = this;
+		const call = `${this.call.replace(/\.set$/, '')}.destroy`;
+		core.check(core.glue.destroyMaterial(this.id), call, undefined, true);
+		this.liveId = 0;
 	}
 }
 
@@ -1221,14 +1298,15 @@ export class Materials {
 	/**
 	 * A custom material: the standard material with a surface function in WGSL, which changes how
 	 * each pixel of the surface looks before the engine lights it, or a full shader of your own. It
-	 * takes every option of `materials.standard` but the texture maps, and the first values of the
-	 * uniforms that its WGSL declares. `set` changes the standard values and the uniforms. Meshes need
-	 * texture coordinates to draw with a surface function, and the attributes that a full shader
-	 * reads. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole
-	 * shader whose `@vertex` entry point takes no `InstanceIn`. Throws E1216 for a uniform that the
-	 * WGSL does not declare, for a value of the wrong kind, and for a uniform named as a standard
-	 * value, such as `color`. When TypeScript can see the WGSL's `struct Uniforms`, a wrong name or
-	 * a value of the wrong kind also fails the type check.
+	 * takes every option of `materials.standard` but the texture maps, the first values of the
+	 * uniforms that its WGSL declares, and the textures that its WGSL samples. `set` changes the
+	 * standard values and the uniforms. Meshes need texture coordinates to draw with a surface
+	 * function, and the attributes that a full shader reads. Throws E1215 for WGSL that the null3D
+	 * Vite plugin did not compile, and for a whole shader whose `@vertex` entry point takes no
+	 * `InstanceIn`. Throws E1216 for a uniform or a texture that the WGSL does not declare, for a
+	 * value of the wrong kind, and for a uniform named as a standard value, such as `color`. When
+	 * TypeScript can see the WGSL, a wrong name or a value of the wrong kind also fails the type
+	 * check.
 	 */
 	shader<const Wgsl extends string | CompiledWgsl>(
 		options: ShaderOptions<Wgsl>,
@@ -1243,13 +1321,26 @@ export class Materials {
 					`${call}() got WGSL whose uniform ${name} has the name of a standard value. Rename the field of struct Uniforms.`,
 				);
 		const writes = uniformWrites(uniforms, options.uniforms ?? {}, call);
+		const declared = compiled.textures;
+		const textures = textureSlots(declared, options.textures ?? {}, call);
 		const shading =
 			this.templateOf(compiled) |
 			(compiled.attributes << SHADING_CUSTOM_ATTRIBUTE_SHIFT) |
-			(compiled.baseColor ? SHADING_CUSTOM_BASE_COLOR : 0);
+			(compiled.baseColor ? SHADING_CUSTOM_BASE_COLOR : 0) |
+			(declared.length << SHADING_CUSTOM_TEXTURE_SHIFT);
 		const id = this.createId(shading, options, call);
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms);
 		material.write(writes);
+		const { core } = this;
+		textures.forEach((texture, slot) => {
+			if (!texture) return;
+			core.checkGrowth(
+				core.glue.setMaterialMap(id, slot, texture.handle, 0),
+				call,
+				undefined,
+				true,
+			);
+		});
 		return material;
 	}
 
@@ -1275,7 +1366,11 @@ export class Materials {
 		if (template === undefined) {
 			template = this.nextTemplate++;
 			this.templates.set(compiled, template);
-			this.sendShader(template, { variants: compiled.variants, locations: compiled.locations });
+			this.sendShader(template, {
+				variants: compiled.variants,
+				locations: compiled.locations,
+				textures: compiled.textures.length,
+			});
 		}
 		return template;
 	}
