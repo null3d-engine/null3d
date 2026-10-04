@@ -107,7 +107,6 @@ use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
 use crate::shadows::{self, MAX_CASCADES, ShadowFrame, ShadowUniform};
-use crate::skinning::skinned_in_vertex_shader;
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
@@ -177,10 +176,15 @@ mod ids {
     pub const BLANK_LUT: u32 = LIGHTS + RING;
     /// Every animated instance's skinning matrices (see [`crate::skinning`]).
     pub const JOINTS: u32 = BLANK_LUT + 1;
-    /// The first joint of the instance that skins each source row.
+    /// The first joint of the instance that skins each source row, then the first texel of the
+    /// morph weights of each source row.
     pub const FIRST_JOINTS: u32 = JOINTS + 1;
+    /// Every morphed mesh's deltas, in half floats (see [`crate::morph`]).
+    pub const MORPHS: u32 = FIRST_JOINTS + 1;
+    /// Every morphed object's weights (see [`crate::morph`]).
+    pub const MORPH_WEIGHTS: u32 = MORPHS + 1;
     /// The texture that frame groups bind in place of ambient occlusion's while it draws none.
-    pub const BLANK_AO: u32 = FIRST_JOINTS + 1;
+    pub const BLANK_AO: u32 = MORPH_WEIGHTS + 1;
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = BLANK_AO + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
@@ -500,7 +504,12 @@ impl CpuCulledRenderer {
             .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
         let rows = input.scene.capacity().saturating_add(1);
         self.skins
-            .rebuild(input.scene, input.animations, self.settings.meshes())
+            .rebuild(
+                input.scene,
+                input.animations,
+                input.morphs,
+                self.settings.meshes(),
+            )
             .map_err(|_| RecordError::OutOfMemory {
                 bytes: rows.saturating_mul(4),
             })?;
@@ -552,7 +561,7 @@ impl CpuCulledRenderer {
                 place,
                 RESIDENT,
                 shadows,
-                |slot, key| skins.skinned(slot).then(|| skinned_in_vertex_shader(key)),
+                |slot, key| skins.key(slot, key),
             )
             .map_err(out_of_memory)?;
         let records = Transparent::records_bound(&self.sorted, self.config.multi_draw);
@@ -664,7 +673,7 @@ impl CpuCulledRenderer {
             + Transparent::upload_bound(&self.sorted, views, self.config.multi_draw)
             + cascades
             + shadows
-            + self.skins.upload_bound()
+            + self.skins.upload_bound(self.settings.meshes())
             + self.graph.upload_bound()
     }
 
@@ -710,7 +719,8 @@ impl CpuCulledRenderer {
         let limit = self.config.max_texture_size;
         let remade = if rebuilt {
             let mut remade = self.textures.size(list, &self.layout, limit)?;
-            remade.any |= self.skins.size(list, input.animations, limit)?;
+            let meshes = self.settings.meshes();
+            remade.any |= self.skins.size(list, input.animations, meshes, limit)?;
             remade
         } else {
             Default::default()
@@ -975,7 +985,10 @@ impl CpuCulledRenderer {
             false
         };
         self.upload_resident(list, input, rebuilt || new_texture)?;
-        self.skins.upload(list, arena, input.animations)?;
+        self.skins.set_morph_cap(self.settings.morph_cap());
+        let meshes = self.settings.meshes();
+        self.skins
+            .upload(list, arena, input.animations, input.morphs, meshes)?;
         self.clusters.upload(list, arena, &self.layout)?;
         self.light_textures
             .upload(list, arena, &mut self.lights, input.frame)?;

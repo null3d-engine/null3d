@@ -308,6 +308,13 @@ export interface NodeData {
 	 * its own.
 	 */
 	skinned?: boolean;
+	/**
+	 * The first joint of the model's skeleton that animates the morph weights of the node's mesh,
+	 * three weights to a joint, or -1 when no clip animates them.
+	 */
+	morphJoint?: number;
+	/** The morph weights of the node's mesh, when the node gives its own in place of the mesh's. */
+	weights?: number[];
 }
 
 /** An image: its bytes when the file holds it, or its address when the file names it. */
@@ -570,19 +577,17 @@ export function parseGltf(
 			indexType[1] === Float32Array
 		)
 			broken(`${name}'s sparse indices have the component type ${String(at.componentType)}`);
+		/** Copies the `m` elements of `bytes` bytes each that `part` reads, after its checks. */
 		const slice = (part: Entry, bytes: number, what: string) => {
 			const v = index(part.bufferView, views.length, `${what}'s bufferView`);
 			const source = viewOf(v).bytes;
 			const offset = count(part.byteOffset ?? 0, `${what}'s byteOffset`);
-			if (offset + m * bytes > source.length)
-				broken(
-					`${what} read ${offset + m * bytes} bytes from bufferView ${v}, which holds ${source.length}`,
-				);
-			return source.slice(offset, offset + m * bytes);
+			const end = offset + m * bytes;
+			if (end > source.length)
+				broken(`${what} read ${end} bytes from bufferView ${v}, which holds ${source.length}`);
+			return source.slice(offset, end);
 		};
-		const indices = new indexType[1](
-			slice(at, m * indexType[0], `${name}'s sparse indices`).buffer,
-		);
+		const indices = new indexType[1](slice(at, indexType[0], `${name}'s sparse indices`).buffer);
 		const bytes = array.BYTES_PER_ELEMENT * components;
 		const Type = array.constructor as TypedArrayClass;
 		const replacement = new Type(slice(values, bytes, `${name}'s sparse values`).buffer);
@@ -765,7 +770,7 @@ export function parseGltf(
 		};
 	});
 
-	const { nodes, place } = parseNodes(json, meshes.length, lights.length, read);
+	const { nodes, place } = parseNodes(json, meshes, lights.length, read);
 	const animation = parseAnimation(json, nodes, meshes, place, read, notes);
 	const data: GltfData = { nodes, meshes, materials, textures: textureUses, images, lights, notes };
 	if (animation) data.animation = animation;
@@ -947,7 +952,7 @@ function parsePrimitive(
 	const corners = indices ? indices.length : vertices;
 	if (corners % 3 !== 0) broken(`${what} has ${corners} corners, which make no whole triangles`);
 	if (vertices === 0) return undefined;
-	const morph = parseMorphTargets(primitive, vertices, what, read);
+	const morph = parseMorphTargets(primitive, vertices, what, read, notes);
 	if (morph) out.morph = morph;
 	const material =
 		primitive.material === undefined ? -1 : count(primitive.material, `${what}'s material`);
@@ -1017,7 +1022,7 @@ function toTriangles(
  */
 function parseNodes(
 	json: Json,
-	meshes: number,
+	meshes: readonly MeshData[],
 	lights: number,
 	read: Reader,
 ): { nodes: NodeData[]; place: Int32Array } {
@@ -1071,12 +1076,16 @@ function parseNodes(
 			name: text(node.name),
 			parent: parents[k] === -1 ? -1 : (place[parents[k] as number] as number),
 			transform: transformOf(node, what),
-			mesh: node.mesh === undefined ? -1 : index(node.mesh, meshes, `${what}'s mesh`),
+			mesh: node.mesh === undefined ? -1 : index(node.mesh, meshes.length, `${what}'s mesh`),
 			light: lightRef === undefined ? -1 : index(lightRef, lights, `${what}'s light`),
 			skin: node.skin === undefined ? -1 : index(node.skin, skins, `${what}'s skin`),
 		};
 		const instancing = extensions.EXT_mesh_gpu_instancing as Entry | undefined;
 		if (instancing && data.mesh >= 0) data.instancing = parseInstancing(instancing, what, read);
+		if (node.weights !== undefined && data.mesh >= 0) {
+			const targets = (meshes[data.mesh] as MeshData).weights?.length ?? 0;
+			data.weights = numbers(node.weights, targets, undefined, `${what}'s weights`);
+		}
 		return data;
 	});
 	return { nodes, place };

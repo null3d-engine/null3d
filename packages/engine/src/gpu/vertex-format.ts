@@ -44,7 +44,9 @@ export function typeOf(format: number, location: number): number | undefined {
 	const [bit, , shift, types] = VERTEX_ATTRIBUTES[location] ?? [];
 	if (bit === undefined || shift === undefined || !types) return undefined;
 	if ((format & bit) !== bit) return undefined;
-	const width = Math.max(1, Math.ceil(Math.log2(types.length)));
+	// The field holds the bits that the attribute's last type needs, as the core's `width` gives
+	// them: none for an attribute of one type, such as the morph attribute.
+	const width = 32 - Math.clz32(types.length - 1);
 	return types[(format >>> shift) & ((1 << width) - 1)];
 }
 
