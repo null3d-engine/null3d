@@ -105,7 +105,7 @@ The built-in room is three.js's `RoomEnvironment`, which the tool traces from th
 
 The engine builds a shader for each combination of its permutation bits. A bit for the environment would double the variants of the standard material and of its maps build. Every device module would then nearly double in size. Instead, the frame's group always binds a cube: the environment's, or a blank cube of one texel. The frame uniform says whether to read it. Without an environment, each pixel pays one branch on a uniform, which every pixel takes the same way. Color grading tables work the same way (D-33).
 
-The lookup's code adds 1.0 to 1.7 KB after Brotli to each device module, 3.9% to 7.1%. It holds the table, the nine coefficients and the split-sum terms of image light. The frame uniform grows from 288 to 512 bytes per view. Bytes 304 to 511 hold the nine coefficients, the turn's three rows, and the map's last level, intensity and switch. Bytes 288 to 303 and binding 11 belong to ambient occlusion (M2-F2).
+The lookup's code adds 0.7 to 2.2 KB after Brotli to each device module, 2.9% to 9.2%. It holds the table, the nine coefficients and the split-sum terms of image light. The frame uniform grows from 288 to 512 bytes per view. Bytes 304 to 511 hold the nine coefficients, the turn's three rows, and the map's last level, intensity and switch. Bytes 288 to 303 and binding 11 belong to ambient occlusion (M2-F2).
 
 ## Decision
 
