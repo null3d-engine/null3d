@@ -12,6 +12,7 @@ import {
 	type Described,
 } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
+import { reasonOf } from '../errors/message';
 import * as C from '../generated/core';
 import {
 	compose as composeMatrix,
@@ -72,6 +73,7 @@ import {
 } from './queries';
 import type { Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
+import type { SpriteBatch, SpriteMakers, SpriteOptions } from './sprites';
 import { Texture } from './textures';
 import { UnmarkedWrites } from './unmarked-writes';
 
@@ -1632,6 +1634,18 @@ const LIGHT_CLASSES: Readonly<Record<number, ObjectClass<Light>>> = {
 	[C.LIGHT_KIND_SPOT]: SpotLight,
 };
 
+/** Imports the sprite code, which a page downloads with its first sprite batch, or throws E1406. */
+async function loadSprites(call: string): Promise<typeof import('./sprites')> {
+	try {
+		return await import('./sprites');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the sprite code did not download for ${call}(): ${reasonOf(error)}.`,
+		);
+	}
+}
+
 /** The transform of a model's copy: the position, rotation and scale of `options`. */
 function rootTransform(options: NodeOptions): Float32Array {
 	const transform = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
@@ -1674,6 +1688,8 @@ export class Scene {
 	private readonly objectSlots: (Object3D | undefined)[] = [];
 	/** The batch that each batch slot holds, or last held, which queries name by id. */
 	private readonly batchSlots: (InstanceBatch | undefined)[] = [];
+	/** The quad meshes of sprite batches, by their center, which batches with one center share. */
+	private readonly spriteQuads = new Map<string, MeshGeometry>();
 	/** Raycasts and overlap queries, made on the first query. */
 	private sceneQueries: SceneQueries | undefined;
 	/** Rows of the live instance batches, which development builds count. */
@@ -1699,6 +1715,8 @@ export class Scene {
 		private readonly warmUpScene: () => Promise<void> = () => Promise.resolve(),
 		/** The cameras of the last frames, which the sketch runner gives; tests get a stand-in. */
 		private cameras?: FrameCameras,
+		/** What sprite batches make their quads and materials with, which the sketch runner gives. */
+		private readonly spriteMakers?: SpriteMakers,
 	) {
 		if (DEV) this.unmarkedWrites = new UnmarkedWrites(this);
 	}
@@ -2290,6 +2308,61 @@ export class Scene {
 		const batch = new InstanceBatch(this, id, count, options.colors ?? false);
 		this.rememberBatch(batch);
 		batch.setActiveCount(count);
+		if (layers !== undefined) batch.setLayers(layers);
+		return batch;
+	}
+
+	/**
+	 * Many sprites in one batch: quads that face the camera, like three.js's `Sprite` with a
+	 * `SpriteMaterial`. Typed arrays give each sprite its position, size, rotation, color and atlas
+	 * frame, as an instance batch's arrays give its rows. Sprites blend by default, and blended
+	 * sprites draw back to front with the other blended objects. The first call downloads the
+	 * sprite code. Throws E1108 for an atlas side that is not a whole number from 1 to 2048, E1203
+	 * for a center that is not two finite numbers, and E1406 when the sprite code does not download.
+	 */
+	async createSprites(options: SpriteOptions): Promise<SpriteBatch> {
+		const call = 'createSprites';
+		const { core, spriteMakers } = this;
+		const { count, layers } = options;
+		if (DEV && layers !== undefined) checkLayers(call, layers);
+		const { columns = 1, rows = 1 } = options.atlas ?? {};
+		for (const [name, side] of [
+			['columns', columns],
+			['rows', rows],
+		] as const)
+			if (!Number.isInteger(side) || side < 1 || side > C.SPRITE_MAX_ATLAS_SIDE)
+				throw new EngineError(
+					'E1108',
+					`${call}() got ${side} atlas ${name}. An atlas has from 1 to ${C.SPRITE_MAX_ATLAS_SIDE} whole ${name}.`,
+				);
+		const { center } = options;
+		if (DEV && center && !(Number.isFinite(center[0]) && Number.isFinite(center[1])))
+			throw new EngineError('E1203', `${call}() got [${center}] for center.`);
+		if (!spriteMakers) throw new Error(`${call}() needs a scene that the engine made`);
+		const sprites = await loadSprites(call);
+		const parts = sprites.spriteParts(
+			spriteMakers,
+			this.spriteQuads,
+			options,
+			[columns, rows],
+			call,
+		);
+		const id = core.checkGrowth(
+			core.glue.createSpriteBatch(
+				count,
+				options.dynamic ?? false,
+				parts.mesh.id,
+				parts.material.id,
+				columns,
+				rows,
+				options.sizeAttenuation === false,
+			),
+			call,
+		);
+		if (DEV) this.countBatchRows(count);
+		const instances = new InstanceBatch(this, id, count, false);
+		this.rememberBatch(instances);
+		const batch = new sprites.SpriteBatch(core, id, count, parts.material, instances);
 		if (layers !== undefined) batch.setLayers(layers);
 		return batch;
 	}

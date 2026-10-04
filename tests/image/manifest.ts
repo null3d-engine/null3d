@@ -29,6 +29,7 @@ import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { SKINNING_HOLD, SKINNING_IMAGE } from '../../bench/scenes/skinning.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
+import { SPRITE_IMAGE } from '../../bench/scenes/sprites.ts';
 import { GRID_IMAGE } from '../../bench/scenes/standard-grid.ts';
 import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
 import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
@@ -103,6 +104,14 @@ function toneMappingTests(): ImageTest[] {
 		},
 	]);
 }
+
+/**
+ * How far the asset tool's output may stray from its source's image. On the Mac's GPU and on
+ * SwiftShader, 1.07% to 1.08% of the pixels differ on each tier, all at the edges of the floor's
+ * stripes, where the color map is resized and encoded in ETC1S, and in the ball's highlight. Moved
+ * or missing geometry changes far more.
+ */
+const OPTIMIZED_TOLERANCE = { threshold: 0.1, maxDiffRatio: 0.02 };
 
 /** The sketch of the bloom tests: glowing shapes on a dark ground (bench/scenes/bloom.ts). */
 const BLOOM_SKETCH = 'tests/pages/sketches/bloom-sketch.ts';
@@ -378,6 +387,26 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(uncompressed ? { reference: `gltf-${uncompressed}` } : {}),
 		};
 	}),
+	// The asset tool's test scene, then the tool's output, which must draw the source's image: its
+	// positions and coordinates in 16-bit integers, normals in bytes, a mesh moved to a child node,
+	// instances that carry the dequantizing transform, meshopt compression and KTX2 textures.
+	// Compressed textures and 8-bit normals change some pixels a little, so the output takes a
+	// tolerance of its own.
+	{
+		name: 'asset-scene',
+		sketch: 'tests/pages/sketches/asset-scene-sketch.ts',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+	},
+	{
+		name: 'asset-scene-optimized',
+		sketch: 'tests/pages/sketches/asset-scene-sketch.ts?file=optimized',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+		reference: 'asset-scene',
+		tolerance: OPTIMIZED_TOLERANCE,
+		deviceTolerance: OPTIMIZED_TOLERANCE,
+	},
 	// Copies of a glTF model made in code: scene.instantiate, scene.clone, a model with 16-bit
 	// positions, and an instance batch from scene.createInstances whose rows move every part of the
 	// model. Each tier must place every part the same way.
@@ -869,6 +898,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/alpha-mask-sketch.ts',
 		hold: 0,
 		size: [MASK_IMAGE.width, MASK_IMAGE.height],
+	},
+	// Sprites: blended ones that show frames of an atlas at several sizes, rotations, colors and
+	// depths, sorted back to front, and opaque ones that keep their size in pixels and stand on their
+	// positions. The parity test compares it with three.js's Sprite and SpriteMaterial.
+	{
+		name: 'sprites',
+		sketch: 'tests/pages/sketches/sprites-sketch.ts',
+		hold: 0,
+		size: [SPRITE_IMAGE.width, SPRITE_IMAGE.height],
+	},
+	// 100,000 sprites of a dynamic batch in one draw: a field of them seen from above, and a row of
+	// sprites sized in pixels whose centers lie outside the view. It holds its first frame, and takes
+	// S1's limit: SwiftShader draws 100,000 rows on WebGPU in tens of seconds.
+	{
+		name: 'sprites-100k',
+		sketch: 'tests/pages/sketches/sprites-many-sketch.ts',
+		hold: 0,
+		timeoutSeconds: 90,
 	},
 	// Decals on a wall and on the floor, whose depth bias makes them win the depth test everywhere.
 	// WebGL2's other depth modes store depth another way round, and must draw the same image.

@@ -3,30 +3,35 @@
 // The `animated` switch adds that many animated characters, for the allocation sample of the
 // animator. The `grading` switch loads a color grading table and turns the vignette on, then
 // changes the table's intensity and the vignette every frame, for the allocation sample of
-// post.set and the final pass's grading. The `labels` switch adds that many objects, each with an
-// HTML label that moves on the canvas as the camera orbits, for the allocation sample of the labels.
+// post.set and the final pass's grading. The `sprites` switch draws the swarm as blended sprites
+// instead of boxes, for the allocation sample of sprite batches. The `labels` switch adds that many
+// objects, each with an HTML label that moves on the canvas as the camera orbits, for the
+// allocation sample of the labels.
 import { defineSketch, type SketchContext } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { s1Camera } from '../../scenes/spec';
 import { createAnimatedCrowd, readAnimated } from './crowd';
 import { followPath, readCount, setUpView } from './sketch-common';
-import { createSwarm } from './swarm';
+import { createSpriteSwarm, createSwarm } from './swarm';
 
-export default defineSketch((context) => {
+export default defineSketch(async (context) => {
 	const { time } = context;
 	const moveCamera = followPath(setUpView(context), s1Camera);
-	const blend = new URL(import.meta.url).searchParams.has('blend');
-	const swarm = createSwarm(context, readCount(import.meta.url), true, undefined, blend);
+	const switches = new URL(import.meta.url).searchParams;
+	const count = readCount(import.meta.url);
+	const poseSwarm = switches.has('sprites')
+		? await createSpriteSwarm(context, count)
+		: createSwarm(context, count, true, undefined, switches.has('blend')).pose;
 	const animate = createAnimatedCrowd(context, readAnimated(import.meta.url));
-	createLabels(context, Number(new URL(import.meta.url).searchParams.get('labels') ?? 0));
-	const grading = new URL(import.meta.url).searchParams.has('grading');
+	createLabels(context, Number(switches.get('labels') ?? 0));
+	const grading = switches.has('grading');
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
 	const vignette = { offset: 1, darkness: 1 };
 	const settings = { lutIntensity: 1, vignette };
 	if (grading)
 		void context.assets.loadLut(GRADING_LUTS.warm).then((lut) => context.post.set({ lut }));
 	const pose = (t: number) => {
-		swarm.pose(t);
+		poseSwarm(t);
 		moveCamera(t);
 		animate(t);
 		if (!grading) return;
