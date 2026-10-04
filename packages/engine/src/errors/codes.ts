@@ -209,7 +209,7 @@ const DOCS = {
 	E1304: {
 		title: 'GPU out of memory',
 		cause:
-			'The GPU had no room for a buffer or texture that the engine made after the start, so the objects that use it draw wrong or not at all. The engine reports the first time this happens on each GPU device, and draws on.',
+			'The GPU had no room for a buffer or texture that the engine made after the start. The objects that use it draw wrong or not at all. The engine reports the first time this happens on each GPU device, and draws on.',
 		example: "E1304: the render worker's GPU ran out of memory: Not enough memory left.",
 		since: '0.2',
 	},

@@ -66,6 +66,8 @@ for (const mode of ENGINE_MODES)
 				workersOfOne: number;
 				workersOfSecond: number;
 				workersAfter: number;
+				workersAfterRemoval: number;
+				reuse: string;
 				frames: number;
 				error?: string;
 			}>(page, 60_000);
@@ -73,7 +75,10 @@ for (const mode of ENGINE_MODES)
 			expect(result.frames).toBeGreaterThan(0);
 			// Every worker of the engines that stopped has stopped, but the one that keeps the canvas.
 			expect(result.workersOfSecond).toBe(result.workersOfOne);
-			expect(result.workersAfter).toBe(mode.renderThread === 'main' ? 0 : 1);
+			const workerDraws = mode.renderThread !== 'main';
+			expect(result.workersAfter).toBe(workerDraws ? 1 : 0);
+			expect(result.workersAfterRemoval).toBe(0);
+			expect(result.reuse).toBe(workerDraws ? 'E1419' : 'started');
 		});
 
 test('a second engine on the canvas of a running one fails with E1419', async ({ page }) => {

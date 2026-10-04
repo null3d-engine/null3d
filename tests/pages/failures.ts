@@ -6,7 +6,8 @@
 // - same-canvas: an engine starts, and is destroyed without a wait while a second one starts on the
 //   same canvas, as React's StrictMode does. A third start follows at once. With &pattern=then, the first start is destroyed once
 //   it resolves; with &pattern=abort, it is cancelled. The second must draw, with no more workers
-//   than one engine has.
+//   than one engine has. Once the canvas leaves the page, no worker stays, and in the modes where a
+//   worker drew, a later engine on the canvas fails with E1419.
 // - two-live: a second engine on the canvas of a running one fails with E1419.
 // - after-destroy: a sketch on the page's thread calls the engine after destroy(), and again once
 //   a second engine runs: both calls fail with E1420.
@@ -95,7 +96,17 @@ run('failures', async () => {
 		const frames = await framesOf(second);
 		const workersOfSecond = liveWorkers();
 		await second.destroy();
-		return { workersOfOne, workersOfSecond, frames, workersAfter: liveWorkers() };
+		const workersAfter = liveWorkers();
+		// A canvas that leaves the page takes the worker that kept it along.
+		canvas.remove();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const workersAfterRemoval = liveWorkers();
+		document.body.prepend(canvas);
+		const reuse = await createEngine({ canvas, sketch }).then(
+			(engine) => engine.destroy().then(() => 'started'),
+			(error: EngineError) => error.code,
+		);
+		return { workersOfOne, workersOfSecond, frames, workersAfter, workersAfterRemoval, reuse };
 	}
 	if (which === 'two-live') {
 		const first = await started();

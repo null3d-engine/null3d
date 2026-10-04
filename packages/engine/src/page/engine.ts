@@ -100,7 +100,9 @@ import {
 export interface EngineOptions {
 	/**
 	 * The canvas to draw into, sized by CSS. On a canvas that no CSS sizes, the engine sets the CSS
-	 * width and height that it shows when the engine starts.
+	 * width and height that it shows when the engine starts. One engine draws on a canvas at a time:
+	 * a start on the canvas of an engine that is stopping, or still starting and then destroyed,
+	 * waits for that engine to stop. A canvas whose engine runs on fails with E1419.
 	 */
 	canvas: HTMLCanvasElement;
 	/** The sketch module, which runs in the sketch worker; `new URL('./sketch.ts', import.meta.url)`. */
@@ -386,9 +388,11 @@ export interface Engine {
 	onSketchMessage(handler: (name: string, data: unknown) => void): () => void;
 	/**
 	 * Receives a failure after the engine started: the browser took the GPU away and the engine could
-	 * not carry on with a new device (E1302), or an engine thread failed (E1404). The engine reports
-	 * each failure once. Without a handler, it logs the failure to the console. Returns a function
-	 * that removes the handler.
+	 * not carry on with a new device (E1302), or an engine thread failed (E1404). After E1404 the
+	 * engine draws no new frames: destroy it and start a new one. On WebGPU, the GPU can also run out
+	 * of memory (E1304) or reject the engine's work (E1305), and the engine draws on without the
+	 * objects that failed. The engine reports each failure once. Without a handler, it logs the
+	 * failure to the console. Returns a function that removes the handler.
 	 */
 	onFailure(handler: (error: EngineError) => void): () => void;
 	/**
@@ -432,12 +436,14 @@ export interface Engine {
 	 */
 	simulateGpuLoss(): void;
 	/**
-	 * Stops the engine and its workers. The engine cannot start again. The thread that draws first
-	 * destroys the engine's GPU textures and buffers and its GPU device, so the GPU's memory comes
-	 * back at once. It also leaves the canvas blank, at its size, because Safari keeps the GPU
-	 * memory of a canvas's last frame until the canvas shows another. The promise resolves once
-	 * every worker has stopped, when the browser can free the engine's memory. Wait for it before
-	 * you start another engine on the same page: an iPad has room for only a few engines' memory.
+	 * Stops the engine and its workers. The engine cannot start again. The sketch's `onDestroy` runs
+	 * first, and later calls from the sketch's code fail with E1420. The thread that draws destroys
+	 * the engine's GPU textures and buffers and its GPU device, so the GPU's memory comes back at
+	 * once. It also leaves the canvas blank, at its size, because Safari keeps the GPU memory of a
+	 * canvas's last frame until the canvas shows another. The promise resolves once every worker has
+	 * stopped, when the browser can free the engine's memory. Wait for it before you start another
+	 * engine on the same page: an iPad has room for only a few engines' memory. A new engine can
+	 * start on the same canvas, with the same thread options; `createEngine` waits for this stop.
 	 */
 	destroy(): Promise<void>;
 }
@@ -1085,7 +1091,7 @@ async function startEngine(
 	// worker cannot draw here, the page loads it later, once it knows.
 	const drawModule = renderThread === 'main' ? loadDrawModule() : undefined;
 	/** The worker that keeps the canvas from an engine before, which draws for this one. */
-	const keptWorker = movedTo ? takeParkedWorker(canvasHold) : undefined;
+	const keptWorker = movedTo ? takeParkedWorker(options.canvas, canvasHold) : undefined;
 	// With worker threads the page starts the workers now. A sketch worker gets the sketch module
 	// into the browser's cache, and still runs the module only after it has started the core.
 	const threads = threaded

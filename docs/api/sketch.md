@@ -186,6 +186,7 @@ Callbacks a sketch returns from its setup function. In each frame the engine cal
 | `onFixedUpdate(step: number): void` | Runs at a fixed rate, 60 times per second of sketch time unless `defineSketch`'s options set another, with the step's length in seconds. A frame runs it once for each step that falls due since the previous frame, so 0 or more times, before `onUpdate`. After a slow frame, a frame runs at most 8 steps unless the options set another number, and drops the rest. Use it for simulation, such as physics, that must step the same at every frame rate. |
 | `onUpdate(dt: number): void` | Runs once per frame, before transforms, with the frame's step in seconds. The first frame, and the first after a pause or a hidden page, gets 0. No step is longer than a quarter second, so a very slow frame slows the sketch instead of jumping it. In hold mode, each frame after the first gets a fixed step of 1/60 second. |
 | `onLateUpdate(dt: number): void` | Runs once per frame after the engine updates transforms, and before it culls and draws, with the frame's step in seconds. World positions already hold the frame's changes, and the engine updates the objects that it moves before it draws the frame. A camera that follows an object here does not lag a frame behind it. |
+| `onDestroy(): void` | Runs once when the engine stops, on the sketch's thread, before its workers stop. Remove the timers, event listeners and message handlers that the sketch added outside the engine here. After it, every call to the engine fails with E1420. |
 
 ### `SketchContext`
 

@@ -4,8 +4,9 @@
 // destroys and starts again an effect's engine on one canvas. It fails at once only when the holder
 // runs on. A canvas that an engine moved to a worker can never come back to the page, so when that
 // engine stops, its drawing worker stays with the canvas, without the engine's core or GPU device,
-// and the next engine on the canvas draws through it. The browser stops such a worker when it
-// collects the canvas.
+// and the next engine on the canvas draws through it. The worker stays only while the canvas is in
+// the document: one that leaves it, or that the browser collects, takes the worker with it, so a
+// page that drops its canvases keeps no idle workers.
 
 /** An engine's hold on a canvas or on the page's core, from its start until it has stopped. */
 export class Holder {
@@ -120,7 +121,36 @@ export function canvasHold(canvas: HTMLCanvasElement): CanvasHold {
 	return hold;
 }
 
-/** Keeps a drawing worker with its canvas until the next engine takes it, or the canvas goes. */
+/** The canvases whose parked workers stay while each canvas is in the document. */
+const parkedCanvases = new Set<HTMLCanvasElement>();
+/** Watches the document for parked canvases that leave it, while any is parked. */
+let removals: MutationObserver | undefined;
+
+/** Stops a parked worker for good: no engine draws on its canvas again. */
+function endParked(canvas: HTMLCanvasElement, hold: CanvasHold): void {
+	const parked = hold.parked;
+	if (!parked) return;
+	hold.parked = undefined;
+	parkedWorkers.unregister(hold);
+	parkedCanvases.delete(canvas);
+	parked.worker.terminate();
+	hold.dead = `its ${parked.role} worker stopped when the canvas left the page`;
+}
+
+/** Ends the parked workers whose canvases left the document. */
+function checkRemovals(): void {
+	for (const canvas of [...parkedCanvases])
+		if (!canvas.isConnected) endParked(canvas, canvasHold(canvas));
+	if (parkedCanvases.size === 0) {
+		removals?.disconnect();
+		removals = undefined;
+	}
+}
+
+/**
+ * Keeps a drawing worker with its canvas until the next engine takes it, the canvas leaves the
+ * document, or the browser collects the canvas.
+ */
 export function parkWorker(
 	canvas: HTMLCanvasElement,
 	hold: CanvasHold,
@@ -129,13 +159,23 @@ export function parkWorker(
 ): void {
 	hold.parked = { worker, role };
 	parkedWorkers.register(canvas, worker, hold);
+	parkedCanvases.add(canvas);
+	if (!canvas.isConnected) {
+		endParked(canvas, hold);
+		return;
+	}
+	if (!removals && typeof MutationObserver === 'function') {
+		removals = new MutationObserver(checkRemovals);
+		removals.observe(document, { childList: true, subtree: true });
+	}
 }
 
 /** Takes the parked drawing worker of a canvas for a new engine, if one waits. */
-export function takeParkedWorker(hold: CanvasHold): Worker | undefined {
+export function takeParkedWorker(canvas: HTMLCanvasElement, hold: CanvasHold): Worker | undefined {
 	const parked = hold.parked;
 	if (!parked) return undefined;
 	hold.parked = undefined;
 	parkedWorkers.unregister(hold);
+	parkedCanvases.delete(canvas);
 	return parked.worker;
 }

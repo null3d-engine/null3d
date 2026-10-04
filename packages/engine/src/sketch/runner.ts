@@ -44,6 +44,7 @@ import { Scene } from '../scene/scene';
 import { Textures } from '../scene/textures';
 import { type ControlViews, controlLabels, controlViews, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
+import { stopHelperWorkers } from '../shared/helper-workers';
 import { type ImageSender, imagesArrived, type ShaderSender } from '../shared/images';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
@@ -515,6 +516,7 @@ export class SketchRunner {
 			console.error(error);
 		}
 		this.core.stop();
+		stopHelperWorkers();
 		this.restoreRandom?.();
 		this.restoreRandom = undefined;
 	}

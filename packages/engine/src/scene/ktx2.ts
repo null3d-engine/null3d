@@ -22,6 +22,7 @@ import {
 	CAPABILITY_TEXTURE_BC,
 	CAPABILITY_TEXTURE_ETC2,
 } from '../generated/core';
+import { onEngineStop } from '../shared/helper-workers';
 import type { LoadTextureOptions } from './assets';
 import type {
 	CompressedTextureFormat,
@@ -216,7 +217,7 @@ export function transcodedBytes(
 }
 
 /** Makes one of the engine's coded errors: the caller's `EngineError`. */
-export type Ktx2Error = (code: 'E1406' | 'E1412', message: string) => EngineError;
+export type Ktx2Error = (code: 'E1406' | 'E1412' | 'E1420', message: string) => EngineError;
 
 /** Downloads and compiles the transcoder's module, or fails with E1406. */
 async function compileTranscoder(error: Ktx2Error): Promise<WebAssembly.Module> {
@@ -263,6 +264,7 @@ class Transcoder {
 	private readonly worker: Worker;
 	private readonly waiting = new Map<number, Waiting>();
 	private next = 0;
+	private failed = false;
 
 	constructor(
 		private readonly error: Ktx2Error,
@@ -316,8 +318,10 @@ class Transcoder {
 		}
 	}
 
-	/** Fails every waiting request with E1406, and stops the worker. */
-	private fail(reason: string | EngineError): void {
+	/** Fails every waiting request with E1406, or with `reason`'s error, and stops the worker, once. */
+	fail(reason: string | EngineError): void {
+		if (this.failed) return;
+		this.failed = true;
 		this.worker.terminate();
 		this.stopped();
 		for (const { reject, call } of this.waiting.values())
@@ -337,9 +341,16 @@ class Transcoder {
 let transcoder: Transcoder | undefined;
 
 function transcoderOfThisThread(error: Ktx2Error): Transcoder {
-	transcoder ??= new Transcoder(error, () => {
-		transcoder = undefined;
-	});
+	if (!transcoder) {
+		const made: Transcoder = new Transcoder(error, () => {
+			forget();
+			if (transcoder === made) transcoder = undefined;
+		});
+		const forget = onEngineStop(() =>
+			made.fail(error('E1420', 'a KTX2 texture was still loading when the engine stopped.')),
+		);
+		transcoder = made;
+	}
 	return transcoder;
 }
 

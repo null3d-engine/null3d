@@ -7,6 +7,7 @@ import { presetSettings } from '../quality/presets';
 import type { Material, MeshGeometry } from '../scene/resources';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
+import { onEngineStop } from '../shared/helper-workers';
 import { createMetricsBuffer, FrameRecorder, Role } from '../shared/metrics';
 import { defineSketch, type SketchContext, type SketchOptions } from './define-sketch';
 import type { QualityStart, QualityUpdate } from './quality';
@@ -584,6 +585,23 @@ describe('SketchRunner', () => {
 		stopDrawing();
 		expect(faults.map(messageOf)).toEqual(['the core trapped']);
 		expect(frames).toBe(4);
+	});
+
+	it('runs onDestroy once when the engine stops, then refuses every call with E1420', async () => {
+		let destroyed = 0;
+		const { runner, context } = await start(() => ({
+			onDestroy() {
+				destroyed++;
+			},
+		}));
+		let helperStopped = 0;
+		onEngineStop(() => helperStopped++);
+		runner.dispose();
+		runner.dispose();
+		expect(destroyed).toBe(1);
+		expect(helperStopped).toBe(1);
+		expect(() => context.geometry.box()).toThrow('E1420');
+		expect(() => context.scene.createGroup()).toThrow('E1420');
 	});
 
 	it('refuses options out of range with E1214, before the setup function runs', async () => {
