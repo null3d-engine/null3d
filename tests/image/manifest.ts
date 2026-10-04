@@ -24,6 +24,7 @@ import {
 } from '../../bench/scenes/gltf-models.ts';
 import { GRADING_IMAGE } from '../../bench/scenes/grading.ts';
 import { LIGHTS_IMAGE } from '../../bench/scenes/lights.ts';
+import { LINE_IMAGE } from '../../bench/scenes/lines.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
@@ -141,6 +142,33 @@ function bloomTests(): ImageTest[] {
 			expect: { hdr: false },
 			tolerance: EIGHT_BIT_TOLERANCE,
 			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
+/** The sketch of the occlusion tests: a city whose buildings block the view from its streets. */
+const OCCLUSION_SKETCH = 'tests/pages/sketches/occlusion-sketch.ts';
+
+/**
+ * The city with software occlusion culling off, and on, which must match the same references: the
+ * culling skips only what the buildings hide. WebGPU ignores the setting, so the second test runs
+ * on WebGL2 alone. The references allow the usual tolerance, since a software GPU on another kind
+ * of processor can round a pixel otherwise. The occlusion spec checks that the culling hid objects
+ * and draws the same image to the pixel as without it, both drawn on one machine.
+ */
+function occlusionTests(): ImageTest[] {
+	const test = (name: string, side: 'on' | 'off'): ImageTest => ({
+		name,
+		sketch: `${OCCLUSION_SKETCH}?light`,
+		hold: 2.5,
+		switches: [`occlusion=${side}`],
+	});
+	return [
+		test('occlusion-off', 'off'),
+		{
+			...test('occlusion-on', 'on'),
+			tiers: ['webgl2'],
+			reference: 'occlusion-off',
 		},
 	];
 }
@@ -513,6 +541,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...toneMappingTests(),
 	...antialiasTests(),
 	...bloomTests(),
+	...occlusionTests(),
 	...gradingTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
 	// alpha: the output spec checks the alpha of the captured pixels.
@@ -955,6 +984,30 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/alpha-mask-sketch.ts',
 		hold: 0,
 		size: [MASK_IMAGE.width, MASK_IMAGE.height],
+	},
+	// Wide lines: widths in pixels and in world units, round joins, colors at each point, dashes, a
+	// loop and a blended line, over a floor and in front of a wall. The parity test compares it with
+	// three.js's Line2 and LineSegments2 with a LineMaterial.
+	{
+		name: 'lines',
+		sketch: 'tests/pages/sketches/lines-sketch.ts',
+		hold: 0,
+		size: [LINE_IMAGE.width, LINE_IMAGE.height],
+	},
+	// Lit lines: helixes that the sun, a point light and the ambient light shade, a line that gives
+	// off light, and a dashed line whose width is in world units, in fog beside an unlit line.
+	{
+		name: 'lines-lit',
+		sketch: 'tests/pages/sketches/lines-lit-sketch.ts',
+		hold: 0,
+	},
+	// The same kinds of line one pixel wide, which the parity test compares with three.js's Line,
+	// LineSegments and LineLoop with a LineBasicMaterial, and its LineDashedMaterial.
+	{
+		name: 'lines-basic',
+		sketch: 'tests/pages/sketches/lines-basic-sketch.ts',
+		hold: 0,
+		size: [LINE_IMAGE.width, LINE_IMAGE.height],
 	},
 	// Sprites: blended ones that show frames of an atlas at several sizes, rotations, colors and
 	// depths, sorted back to front, and opaque ones that keep their size in pixels and stand on their

@@ -260,6 +260,7 @@ fn bucketed_culling_matches_the_reference_for_0_to_8_workers() {
                 frustum,
                 offsets: &OFFSETS,
                 layers,
+                occlusion: None,
             })
         })
         .collect();
@@ -373,6 +374,7 @@ fn runs_through_a_list_of_rows_list_the_rows_that_culling_each_row_keeps() {
                 frustum: &frustum,
                 offsets: &OFFSETS,
                 layers: 0b1,
+                occlusion: None,
             };
             let n = cull_into_buckets(&jobs, view, &sets, &[run(set, cell)], &[], 1, &mut out);
             // The reference tests each listed row on the view's layer where it lies, in the list's
@@ -427,6 +429,7 @@ fn a_run_of_copied_spheres_in_several_cells_panics() {
         frustum: &frustum,
         offsets: &OFFSETS,
         layers: ALL_LAYERS,
+        occlusion: None,
     };
     cull_into_buckets(
         &null3d_core::jobs::JobSystem::new(0),
@@ -487,6 +490,7 @@ fn a_bucketed_output_without_room_for_the_runs_panics() {
         frustum: &frustum,
         offsets: &OFFSETS,
         layers: ALL_LAYERS,
+        occlusion: None,
     };
     cull_into_buckets(
         &null3d_core::jobs::JobSystem::new(0),

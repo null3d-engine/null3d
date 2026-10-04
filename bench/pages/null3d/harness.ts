@@ -40,15 +40,16 @@ export interface Null3dPageOptions {
 /**
  * The page's switches that reach the sketch module's address as they are: `blend` makes S1's
  * boxes see through, `animated` adds that many animated characters to S1, `grading` gives S1 a
- * color grading table and the vignette, `sprites` draws S1's swarm as sprites, `labels` adds that
- * many labeled objects to S1, whose elements the page binds, and `environment` lights S1 with the
- * built-in room, which turns every frame.
+ * color grading table and the vignette, `sprites` draws S1's swarm as sprites, `lines` draws it
+ * as dashed line segments, `labels` adds that many labeled objects to S1, whose elements the page
+ * binds, and `environment` lights S1 with the built-in room, which turns every frame.
  */
 const SKETCH_SWITCHES = [
 	'blend',
 	'animated',
 	'grading',
 	'sprites',
+	'lines',
 	'labels',
 	'environment',
 ] as const;

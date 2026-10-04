@@ -3,7 +3,7 @@ id: concepts/culling
 title: Culling
 status: experimental
 since: "0.1"
-summary: "Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells, whole cells out of view skipped first, and positions relative to the camera."
+summary: "Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells, whole cells out of view skipped first, positions relative to the camera, and software occlusion culling behind blockers on WebGL2."
 ---
 
 # Culling
@@ -25,10 +25,11 @@ flowchart LR
     offsets --> skip
     boxes --> skip
     skip --> cull
-    cull --> draw["Draw the visible<br/>objects and rows"]
+    cull --> occlude["WebGL2: skip what lies<br/>behind the blockers"]
+    occlude --> draw["Draw the visible<br/>objects and rows"]
 ```
 
-Culling finds the objects and instance rows in the camera's view, so the GPU draws only those. The engine tests each bounding sphere against the six planes of the view. Every position in the test is relative to the camera, so a scene far from the origin culls and draws as it does near it. When a scene spreads over several grid cells, the engine first skips every still object of the cells out of view. The engine culls each [view](render-graph.md) separately, against that view's camera.
+Culling finds the objects and instance rows in the camera's view, so the GPU draws only those. The engine tests each bounding sphere against the six planes of the view. Every position in the test is relative to the camera, so a scene far from the origin culls and draws as it does near it. When a scene spreads over several grid cells, the engine first skips every still object of the cells out of view. On WebGL2, objects that you mark as blockers then hide what lies behind them. The engine culls each [view](render-graph.md) separately, against that view's camera.
 
 ## How each path culls
 
@@ -52,6 +53,33 @@ water.setBounds([0, 1, 0], waterMesh.radius + 1);
 ```
 
 Both calls rebuild the draw tables, so make them at setup. On WebGPU, each object with a sphere of its own draws from a group of its own, as the GPU tests one sphere per group. On WebGL2, the job workers test each object's own sphere and the cost stays the same.
+
+## Software occlusion culling on WebGL2
+
+Frustum culling keeps everything in the view, even what a building hides. On WebGL2, objects that you mark as blockers hide the objects behind them, so the GPU skips those too:
+
+```ts
+// Buildings block the view from the street; the props behind them skip the GPU.
+for (const lot of lots) {
+  scene.createMesh({ mesh: building, material: walls, position: lot.position, occluder: true });
+}
+// Or mark an object later.
+tower.setOccluder(true);
+```
+
+Each frame, the job workers draw the blockers in the camera's view, nearest first, into a small depth buffer of about 256 x 144 pixels. Then each object that passed the frustum test is tested against it. An object whose bounding sphere lies wholly behind the blockers is not drawn. The job workers test four spheres at a time, with SIMD.
+
+- The buffer never hides an object that a finer depth buffer would show. A pixel counts as covered only when the blocker covers its whole square, and its depth is the blocker's farthest depth there. An object that shows through a gap, beside an edge or above a roof still draws.
+- It uses the frame's own camera and positions, so a hidden object shows in the same frame that it comes into view.
+- A blocker draws its own mesh, up to 4,096 triangles. The frame draws up to 16,384 blocker triangles, nearest first. The frame skips a blocker whose radius is under 2 pixels of the buffer.
+- Mark large, solid objects that hide much of the scene: buildings, walls and hills. A blocker that hides little costs time and saves none.
+- Objects that blend, cut holes with an alpha mask, skip the depth buffer, use a custom material or are skinned never block. Their drawn shape can have gaps that the mesh does not show.
+- Only the active camera's view uses blockers. Shadow cascades, shadow tiles and other views cull as before, so a hidden object still casts its shadow.
+- A blocker must lie inside what its object draws. An object's own mesh does.
+
+The `softwareOcclusion` quality setting turns it on and off during play. It is on from the Medium preset up, and off on Low. The `?occlusion=off` switch turns it off for a page. `engine.measure` reports the entries that it hid as `occludedEntries`, beside `visibleEntries`.
+
+WebGPU ignores `setOccluder` and the setting.
 
 ## Grid cells
 
