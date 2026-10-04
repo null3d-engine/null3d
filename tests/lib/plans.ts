@@ -109,6 +109,7 @@ import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './i
 import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts';
 import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
 import { type MipLevelsResult, mipLevelsNote, mipLevelsProblems } from './mip-levels-checks.ts';
+import { prefilterLine, prefilterVariants } from './prefilter-variants.ts';
 import {
 	HEAVY_SPHERES,
 	heavyCheckProblems,
@@ -191,6 +192,8 @@ export type Check =
 	| { kind: 'effect'; effect: 'bloom' | 'ao'; tier: Tier; scale: number }
 	/** The environment cost page: the built-in room off and on in turns, over layers of planes. */
 	| { kind: 'environment'; tier: Tier }
+	/** Prototype L1: one variant of the room's generator in steps, against the tool's map. */
+	| { kind: 'prefilter'; tier: Tier }
 	/** The occlusion cost page: the city with software occlusion culling off and on in turns. */
 	| { kind: 'occlusion' }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
@@ -847,6 +850,25 @@ export function environmentPlan(): PlanItem<Check>[] {
 	);
 }
 
+/** How long a variant of the room's generator may take on a slow phone. */
+const PREFILTER_TIMEOUT_SECONDS = 120;
+
+/**
+ * Prototype L1: each variant of the room's generator on each GPU path, sized into steps, timed,
+ * and compared with the asset tool's map of the room (tests/lib/prefilter-variants.ts). The
+ * research note proto-l1-2026-10 holds the results.
+ */
+export function prefilterPlan(): PlanItem<Check>[] {
+	return prefilterVariants().map(({ id, gpu, switches }) =>
+		pageItem(
+			id,
+			'prefilter-cost',
+			{ kind: 'prefilter', tier: gpu === 'webgl2' ? 'webgl2' : 'webgpu' },
+			{ switches, timeoutSeconds: PREFILTER_TIMEOUT_SECONDS },
+		),
+	);
+}
+
 /** How long the occlusion cost page may take: the city's start, the warm-up and six measurements. */
 const OCCLUSION_TIMEOUT_SECONDS = 90;
 
@@ -1183,6 +1205,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	bloom: () => effectPlan('bloom'),
 	ao: () => effectPlan('ao'),
 	environment: environmentPlan,
+	prefilter: prefilterPlan,
 	occlusion: occlusionPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
@@ -1662,6 +1685,22 @@ export function judge(
 			return [
 				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
 				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${feature} on`]),
+			];
+		}
+		case 'prefilter': {
+			const room = result as ItemResult & {
+				unsupported?: string;
+				errors?: string[];
+				pass?: { match: boolean };
+			};
+			if (room.unsupported) {
+				context?.note?.(room.unsupported);
+				return [];
+			}
+			context?.note?.(prefilterLine(room));
+			return [
+				...(room.errors ?? []).map((e) => `the GPU reported: ${e}`),
+				...(room.pass?.match ? [] : ["the map lies outside D-19's tolerance of the tool's"]),
 			];
 		}
 		case 'occlusion': {

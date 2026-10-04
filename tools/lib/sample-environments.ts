@@ -32,8 +32,15 @@ function moduleHash(): string {
  * prefix, built on the first request, or null when the address names no pinned `.hdr` or `.exr`
  * file.
  */
+let builtinRoom: Uint8Array | undefined;
+
 export function sampleEnvironmentFile(root: string, url: string): Uint8Array | null {
 	if (!url.startsWith(SAMPLE_ENVIRONMENTS_URL)) return null;
+	// The asset tool's map of the built-in room, the reference of the room's generator on devices.
+	if (url === `${SAMPLE_ENVIRONMENTS_URL}builtin/room.ktx2`) {
+		builtinRoom ??= environmentMap({ builtin: 'room' }, { size: 256, format: 'rgb9e5ufloat' });
+		return builtinRoom;
+	}
 	const source = sampleFileFor(root, SAMPLES_URL + url.slice(SAMPLE_ENVIRONMENTS_URL.length));
 	if (!source || !/\.(hdr|exr)$/i.test(source.path)) return null;
 	const key = createHash('sha256').update(`${source.sha256}:${moduleHash()}`).digest('hex');

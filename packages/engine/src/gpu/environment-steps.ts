@@ -124,12 +124,16 @@ function texelCost(step: Step): number {
 	return step.pipeline === 'prefilter' ? 1.2 * step.samples : TEXEL_COST[step.pipeline];
 }
 
+/** The modelled work of one row of a step's six faces, in units of about one texture read. */
+export function rowCost(step: Step): number {
+	return Math.max(6 * step.size, ROW_TEXELS) * texelCost(step);
+}
+
 /**
  * The bands of rows that each of `slices` slices draws, in order, so that each slice holds about
  * the same work. A slice may hold no band when the steps have fewer rows than slices.
  */
 export function sliceBands(steps: readonly Step[], slices: number): Band[][] {
-	const rowCost = (step: Step) => Math.max(6 * step.size, ROW_TEXELS) * texelCost(step);
 	const total = steps.reduce((sum, step) => sum + step.size * rowCost(step), 0);
 	const plan: Band[][] = Array.from({ length: slices }, () => []);
 	let done = 0;

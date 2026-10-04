@@ -24,7 +24,10 @@ struct Step {
     samples: u32,
     /// The texels across a side of the source's largest level.
     source_size: u32,
-    spare: u32,
+    /// Bit 0 asks for the light as plain floats, for a float target, in place of packed bytes.
+    /// Bits 1 to 3 hold a face's number plus 1 when the draw fills that one face alone, or 0 when
+    /// the six faces lie side by side.
+    flags: u32,
     /// The blur's sigma in radians, the source level that `half` reads, or the prefilter's
     /// perceptual roughness.
     value: f32,
@@ -82,6 +85,10 @@ struct FaceTexel {
 
 fn face_texel(position: vec2f) -> FaceTexel {
     let column = floor(position);
+    let alone = (params.flags >> 1u) & 7u;
+    if alone != 0u {
+        return FaceTexel(alone - 1u, column);
+    }
     let face = min(u32(column.x) / params.size, 5u);
     return FaceTexel(face, vec2f(column.x - f32(face * params.size), column.y));
 }
@@ -129,6 +136,15 @@ fn pack(light: vec3f) -> vec4f {
     let word = m.r | (m.g << 9u) | (m.b << 18u) | (u32(exponent) << 27u);
     let bytes = vec4u(word & 255u, (word >> 8u) & 255u, (word >> 16u) & 255u, word >> 24u);
     return (vec4f(bytes) + 0.25) / 255.0;
+}
+
+/// The texel's light as the draw's target takes it: packed shared-exponent bytes, or plain
+/// floats below the largest half float.
+fn finish(light: vec3f) -> vec4f {
+    if (params.flags & 1u) != 0u {
+        return vec4f(clamp(light, vec3f(0.0), vec3f(65504.0)), 1.0);
+    }
+    return pack(light);
 }
 
 // The room of three.js's RoomEnvironment: a large white room with six white boxes and six glowing
@@ -401,7 +417,7 @@ fn fs_trace(@builtin(position) position: vec4f) -> @location(0) vec4f {
             sum += room_light(normalize(face_direction(at.face, sc, tc)));
         }
     }
-    return pack(vec3f(sum * (1.0 / 16.0)));
+    return finish(vec3f(sum * (1.0 / 16.0)));
 }
 
 /// The source blurred by a Gaussian of `value` radians over the sphere, as three.js's
@@ -426,7 +442,7 @@ fn fs_blur(@builtin(position) position: vec4f) -> @location(0) vec4f {
             total += weight;
         }
     }
-    return pack(sum * (1.0 / total));
+    return finish(sum * (1.0 / total));
 }
 
 /// The average of the four texels of the level before that this texel covers: a linear filter
@@ -434,7 +450,7 @@ fn fs_blur(@builtin(position) position: vec4f) -> @location(0) vec4f {
 @fragment
 fn fs_half(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let d = texel_direction(position.xy);
-    return pack(textureSampleLevel(source, source_sampler, d, params.value).rgb);
+    return finish(textureSampleLevel(source, source_sampler, d, params.value).rgb);
 }
 
 /// Van der Corput's radical inverse in base 2.
@@ -486,5 +502,5 @@ fn fs_prefilter(@builtin(position) position: vec4f) -> @location(0) vec4f {
         sum += textureSampleLevel(source, source_sampler, d, lod).rgb * light.z;
         total += light.z;
     }
-    return pack(sum * (1.0 / total));
+    return finish(sum * (1.0 / total));
 }
