@@ -4,6 +4,7 @@ import { counted } from '../text.js';
 
 /** @import { Document, Mesh, Node } from '@gltf-transform/core' */
 /** @import { TextureRecord } from './textures.js' */
+/** @import { SpatialReport } from './spatial.js' */
 
 /**
  * @typedef {object} TextureGroup Textures of one size, format and color space. The engine keeps
@@ -24,6 +25,7 @@ import { counted } from '../text.js';
  * @property {number} triangles The triangles that the scene draws at full detail.
  * @property {number} vertices The vertices that the file stores.
  * @property {number} lodMeshes Meshes with levels of detail.
+ * @property {SpatialReport} spatial Blockers and stored trees.
  * @property {{ min: number[], max: number[] }} bounds The scene's box in its own space.
  * @property {TextureRecord[]} textures
  * @property {TextureGroup[]} textureGroups
@@ -291,10 +293,13 @@ function drawn(doc) {
  * The report's figures for a model, from its document after every step.
  *
  * @param {Document} doc
- * @param {{ name: string, inputBytes: number, modelBytes: number, textures: TextureRecord[], files: Map<string, Uint8Array>, lodMeshes: number, ms: number }} facts
+ * @param {{ name: string, inputBytes: number, modelBytes: number, textures: TextureRecord[], files: Map<string, Uint8Array>, lodMeshes: number, spatial: SpatialReport, ms: number }} facts
  * @returns {ModelReport}
  */
-export function modelReport(doc, { name, inputBytes, modelBytes, textures, files, lodMeshes, ms }) {
+export function modelReport(
+	doc,
+	{ name, inputBytes, modelBytes, textures, files, lodMeshes, spatial, ms },
+) {
 	const root = doc.getRoot();
 	const positions = new Set(
 		root
@@ -312,6 +317,7 @@ export function modelReport(doc, { name, inputBytes, modelBytes, textures, files
 		...drawn(doc),
 		vertices: [...positions].reduce((sum, a) => sum + /** @type {any} */ (a).getCount(), 0),
 		lodMeshes,
+		spatial,
 		textures,
 		textureGroups: textureGroups(textures),
 		textureMemory: textureMemory(textures),
@@ -332,6 +338,42 @@ export function shownBytes(bytes) {
 }
 
 /**
+ * A count of meshes in words.
+ *
+ * @param {number} count
+ */
+const meshes = (count) => `${count} ${count === 1 ? 'mesh' : 'meshes'}`;
+
+/** The most meshes without a blocker whose reasons the terminal lists. */
+const LISTED_REASONS = 5;
+
+/**
+ * The report's lines for blockers and stored trees.
+ *
+ * @param {SpatialReport} spatial
+ * @returns {string[]}
+ */
+function spatialLines({ blockers, blockerTriangles, ownBlockers, noBlocker, trees, treeBytes }) {
+	const lines = [];
+	if (blockers > 0)
+		lines.push(`  blockers for ${meshes(blockers)}: ${counted(blockerTriangles, 'triangle')}`);
+	if (ownBlockers > 0)
+		lines.push(`  ${meshes(ownBlockers)} block with their own triangles, as their settings ask`);
+	if (noBlocker.length > 0) {
+		lines.push(`  no blocker for ${meshes(noBlocker.length)}:`);
+		for (const { mesh, reason } of noBlocker.slice(0, LISTED_REASONS))
+			lines.push(`    ${mesh || 'a mesh with no name'}: ${reason}`);
+		if (noBlocker.length > LISTED_REASONS)
+			lines.push(`    and ${noBlocker.length - LISTED_REASONS} more`);
+	}
+	if (trees > 0)
+		lines.push(
+			`  stored trees for raycasts in ${counted(trees, 'part')}: ${shownBytes(treeBytes)} before compression`,
+		);
+	return lines;
+}
+
+/**
  * A model's report as lines for the terminal.
  *
  * @param {ModelReport} report
@@ -341,13 +383,11 @@ export function reportLines(report) {
 	const size = report.bounds.max.map((v, k) => v - /** @type {number} */ (report.bounds.min[k]));
 	const lines = [
 		`${report.name}: ${shownBytes(report.inputBytes)} to ${shownBytes(report.outputBytes)} (the model ${shownBytes(report.modelBytes)}), in ${(report.ms / 1000).toFixed(1)} s`,
-		`  draws ${counted(report.objects, 'object')} of ${counted(report.parts, 'part')} in ${report.meshes} ${report.meshes === 1 ? 'mesh' : 'meshes'}: ${report.triangles.toLocaleString('en-US')} triangles, ${report.vertices.toLocaleString('en-US')} stored vertices`,
+		`  draws ${counted(report.objects, 'object')} of ${counted(report.parts, 'part')} in ${meshes(report.meshes)}: ${report.triangles.toLocaleString('en-US')} triangles, ${report.vertices.toLocaleString('en-US')} stored vertices`,
 		`  size ${size.map((v) => Number(v.toPrecision(3))).join(' x ')}`,
 	];
-	if (report.lodMeshes > 0)
-		lines.push(
-			`  levels of detail for ${report.lodMeshes} ${report.lodMeshes === 1 ? 'mesh' : 'meshes'}`,
-		);
+	if (report.lodMeshes > 0) lines.push(`  levels of detail for ${meshes(report.lodMeshes)}`);
+	lines.push(...spatialLines(report.spatial));
 	if (report.textures.length > 0) {
 		const m = report.textureMemory;
 		lines.push(
