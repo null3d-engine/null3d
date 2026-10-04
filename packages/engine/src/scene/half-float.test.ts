@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { toHalfFloat, toHalfFloats } from './half-float';
 
-test('rounds floats to the nearest half float, with ties to even', () => {
+test('rounds floats to the nearest half float, with ties to even, up to the largest one', () => {
 	const cases: [number, number][] = [
 		[0, 0x0000],
 		[-0, 0x8000],
@@ -9,10 +9,12 @@ test('rounds floats to the nearest half float, with ties to even', () => {
 		[-2, 0xc000],
 		[0.5, 0x3800],
 		[65504, 0x7bff],
-		[65520, 0x7c00],
-		[1e6, 0x7c00],
-		[Number.POSITIVE_INFINITY, 0x7c00],
-		[Number.NEGATIVE_INFINITY, 0xfc00],
+		// 65,520 lies halfway to the next power of 2, and would round to infinity.
+		[65520, 0x7bff],
+		[1e6, 0x7bff],
+		[-1e6, 0xfbff],
+		[Number.POSITIVE_INFINITY, 0x7bff],
+		[Number.NEGATIVE_INFINITY, 0xfbff],
 		[2 ** -14, 0x0400],
 		[2 ** -24, 0x0001],
 		[2 ** -26, 0x0000],
