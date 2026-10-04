@@ -637,7 +637,7 @@ pub(crate) fn keep_unoccluded(
     buffer: &OcclusionBuffer,
     entries: &mut [u32],
     spheres: SphereArrays<'_>,
-    offset: impl Fn(u32) -> [f32; 4],
+    offset: &dyn Fn(u32) -> [f32; 4],
 ) -> usize {
     let (n, mut kept, mut i) = (entries.len(), 0, 0);
     while i < n {

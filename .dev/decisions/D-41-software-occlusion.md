@@ -92,17 +92,36 @@ Three changes made the drawing about 2.6 times faster than the first version, wh
 
 ### Cost and saving in the browser
 
-The occlusion cost page (`tests/pages/occlusion-cost.html`) draws a city of 64 buildings, 3,000 spheres and 20,000 boxes in a static batch, at 1280 x 720 on WebGL2. One short run in headless Chrome on the Mac's GPU, one round of 0.5 s per side:
+The occlusion cost page (`tests/pages/occlusion-cost.html`) draws a city of 64 buildings, 3,000 spheres and 20,000 boxes in a static batch, at 1280 x 720 on WebGL2. Chrome 154 on the Mac's GPU, headless, four rounds of 2 s per side in turns. The figures are medians per frame:
 
 | Measure | Culling off | Culling on |
 | --- | --- | --- |
-| Index list entries drawn | 1,932 | 623 |
-| Entries hidden | 0 | 1,309 |
-| Sketch worker's culling step | 0.04 ms | 0.20 ms |
-| Job workers, together | 0 ms | 0.10 ms |
-| Render worker | 0.06 ms | 0.07 ms |
+| Index list entries drawn | 1,176 | 344 |
+| Entries hidden | 0 | 627 |
+| Busiest thread, the sketch worker | 0.22 ms | 0.33 ms |
+| Its culling step | 0.03 ms | 0.17 ms |
+| Job workers, together | 0 ms | 0.07 ms |
+| Render worker | 0.07 ms | 0.07 ms |
+| Every thread, together | 0.31 ms | 0.65 ms |
 
-How the data was produced: `cargo test -p null3d-core --release --test occlusion -- --nocapture`, `cargo test -p null3d-core --release --test bench -- --ignored --nocapture --test-threads=1 bench_software_occlusion`, and `NULL3D_PORT=10273 bun run test occlusion.spec.ts` in `tests/`, on 4 October 2026.
+The culling hides about two thirds of what the frustum test keeps, for about 0.35 ms more CPU time per frame on the Mac. WebGL2 has no GPU timer in this browser, so the GPU time that the hidden objects save is not measured here. The Mac's GPU draws the city in far less than a frame either way. The saving matters on phones, where T-36 measures it.
+
+Where nothing blocks, the culling costs one pass over the scene's flags per frame. The command below ran main (a8bf5ed) and this branch in turns, at the Medium preset, where the culling is on. It was `bun run bench:run --compare <main>,. --scenes s1,s1-cells,s3 --pages null3d-webgl2 --runs 3 --seconds 10`:
+
+| Scene | Busiest thread, main | This branch | Change |
+| --- | --- | --- | --- |
+| S1 | 4.340 ms | 4.355 ms | -0.9%, same |
+| S1-cells | 0.100 ms | 0.095 ms | -5.0%, same |
+| S3 | 0.250 ms | 0.255 ms | +2.0%, same |
+
+### Size
+
+The core's WebAssembly grows by about 15 KB after Brotli, from 221 KB to 236 KB of its 600 KB budget (+6.9%). Most of it is the band drawing, the blockers' setup and the sphere test. Two changes kept it from growing 30 KB:
+
+- The blockers' sort and the edges' sort reuse the 32-bit radix sort of the cluster code, instead of two sorts of their own. Building a blocker mesh welds its corners with a small hash table of its own, instead of the standard library's.
+- The 64-bit `clamp` of the standard library carries a panic message that prints floats, which linked about 20 KB of float printing. The band code bounds its values with `max` and `min` instead.
+
+How the data was produced: `cargo test -p null3d-core --release --test occlusion -- --nocapture`, `cargo test -p null3d-core --release --test bench -- --ignored --nocapture --test-threads=1 bench_software_occlusion`, and `NULL3D_PORT=10273 bun run test occlusion.spec.ts` in `tests/`, on 4 October 2026, with `bun run build:check-size` for the sizes.
 
 ### Images
 

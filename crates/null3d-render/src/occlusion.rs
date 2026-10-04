@@ -14,6 +14,7 @@
 
 use std::collections::TryReserveError;
 
+use null3d_core::clusters::sort_pairs;
 use null3d_core::occlusion::{Blocker, BlockerMesh, OcclusionBuffer, clip_matrix};
 use null3d_core::scene::flags;
 
@@ -43,8 +44,11 @@ pub struct Occluders {
     meshes: Vec<BlockerMesh>,
     /// By mesh id: [`UNBUILT`], [`NOT_BLOCKER`], or the index of the mesh's blocker plus one.
     by_mesh: Vec<u32>,
-    /// The frame's candidates: the nearest distance of each, and its slot.
-    candidates: Vec<(f32, u32)>,
+    /// The frame's candidates: the nearest distance of each as the bits of a float, which sort as
+    /// whole numbers since none is negative, and its slot. Then scratch space for their sort.
+    distances: Vec<u32>,
+    candidates: Vec<u32>,
+    scratch: [Vec<u32>; 2],
     blockers: Vec<Blocker>,
     buffer: OcclusionBuffer,
 }
@@ -91,8 +95,20 @@ impl Occluders {
             return Ok(None);
         }
         // Nearest first: blockers near the camera hide the most, and fill subtiles first.
-        self.candidates
-            .sort_unstable_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let n = self.candidates.len();
+        for scratch in &mut self.scratch {
+            if scratch.len() < n {
+                scratch.try_reserve(n - scratch.len())?;
+                scratch.resize(n, 0);
+            }
+        }
+        let [keys, slots] = &mut self.scratch;
+        sort_pairs(
+            &mut self.distances,
+            &mut self.candidates,
+            &mut keys[..n],
+            &mut slots[..n],
+        );
         self.blockers.clear();
         if self.blockers.capacity() < self.candidates.len() {
             self.blockers
@@ -103,7 +119,7 @@ impl Occluders {
         let view_proj = &frame.uniform.view_proj;
         let mut triangles = 0;
         for k in 0..self.candidates.len() {
-            let s = self.candidates[k].1 as usize;
+            let s = self.candidates[k] as usize;
             let Some(index) = self.blocker_of(scene.meshes()[s], meshes)? else {
                 continue;
             };
@@ -136,6 +152,7 @@ impl Occluders {
     ) -> Result<(), TryReserveError> {
         let (scene, parity) = (input.scene, input.parity());
         self.candidates.clear();
+        self.distances.clear();
         let slots = scene.slots().high_water() as usize;
         let object_flags = &scene.flags()[..slots];
         let world = scene.world(parity);
@@ -175,9 +192,12 @@ impl Occluders {
                 continue;
             }
             if self.candidates.len() == self.candidates.capacity() {
-                self.candidates.try_reserve(self.candidates.len().max(16))?;
+                let more = self.candidates.len().max(16);
+                self.candidates.try_reserve(more)?;
+                self.distances.try_reserve(more)?;
             }
-            self.candidates.push((along - radius, s as u32));
+            self.distances.push((along - radius).max(0.0).to_bits());
+            self.candidates.push(s as u32);
         }
         Ok(())
     }

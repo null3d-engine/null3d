@@ -51,10 +51,11 @@
 //! draws more blocker corners, triangles or edges than any frame before. Frames otherwise
 //! allocate nothing.
 
-use std::collections::{HashMap, TryReserveError};
+use std::collections::TryReserveError;
 use std::simd::prelude::*;
 
 use crate::bvh::mesh::Triangles;
+use crate::clusters::sort_pairs;
 use crate::culling::shuffle_bytes;
 use crate::jobs::JobSystem;
 use crate::shared::SharedMut;
@@ -74,6 +75,9 @@ const WORD_PIXELS: u32 = 32;
 pub const TARGET_PIXELS: u32 = 256 * 144;
 /// The most triangles that one blocker mesh may have. A larger mesh blocks nothing.
 pub const MAX_BLOCKER_TRIANGLES: u32 = 4096;
+/// Bits of a corner id in an edge's sort key: a blocker has at most three corners per triangle.
+const CORNER_BITS: u32 = 14;
+const _: () = assert!(3 * MAX_BLOCKER_TRIANGLES <= 1 << CORNER_BITS);
 /// A coverage mask whose every pixel is covered.
 const FULL: u32 = u32::MAX;
 /// The depth of a subtile that nothing covers: farther than anything.
@@ -124,7 +128,9 @@ impl BlockerMesh {
         if count == 0 || count > MAX_BLOCKER_TRIANGLES {
             return None;
         }
-        let mut welded: HashMap<[u32; 3], u32> = HashMap::new();
+        // An open-addressing table of corner ids by position, at most half full.
+        let mut welded = vec![u32::MAX; (count as usize * 6).next_power_of_two()];
+        let mask = welded.len() - 1;
         let (mut xs, mut ys, mut zs) = (Vec::new(), Vec::new(), Vec::new());
         let mut triangles = Vec::with_capacity(count as usize);
         for t in 0..count {
@@ -134,13 +140,26 @@ impl BlockerMesh {
                     return None;
                 }
                 // -0 and 0 are one position.
-                let key = corner.map(|v| (v + 0.0).to_bits());
-                *id = *welded.entry(key).or_insert_with(|| {
-                    xs.push(corner[0]);
-                    ys.push(corner[1]);
-                    zs.push(corner[2]);
-                    xs.len() as u32 - 1
-                });
+                let corner = corner.map(|v| v + 0.0);
+                let [kx, ky, kz] = corner.map(f32::to_bits);
+                let hash = kx.wrapping_mul(0x9e37_79b1)
+                    ^ ky.wrapping_mul(0x85eb_ca77)
+                    ^ kz.wrapping_mul(0xc2b2_ae3d);
+                let mut at = (hash ^ (hash >> 15)) as usize & mask;
+                *id = loop {
+                    let k = welded[at] as usize;
+                    if welded[at] == u32::MAX {
+                        welded[at] = xs.len() as u32;
+                        xs.push(corner[0]);
+                        ys.push(corner[1]);
+                        zs.push(corner[2]);
+                        break welded[at];
+                    }
+                    if [xs[k], ys[k], zs[k]] == corner {
+                        break k as u32;
+                    }
+                    at = (at + 1) & mask;
+                };
             }
             if ids[0] != ids[1] && ids[1] != ids[2] && ids[2] != ids[0] {
                 triangles.push(ids);
@@ -190,43 +209,47 @@ impl BlockerMesh {
 
 /// The edges of welded triangles, and whether they close the mesh.
 fn edges_of(triangles: &[[u32; 3]]) -> (Vec<Edge>, bool) {
-    // Each triangle's three edges as (lower corner, higher corner, triangle, runs upward).
-    let mut sides: Vec<(u32, u32, u32, bool)> = Vec::with_capacity(triangles.len() * 3);
+    // Each triangle's three edges, keyed by their lower corner, then their higher one, each in
+    // CORNER_BITS, with the triangle and whether the edge runs upward in the value.
+    let n = triangles.len() * 3;
+    let (mut keys, mut sides) = (Vec::with_capacity(n), Vec::with_capacity(n));
     for (t, tri) in triangles.iter().enumerate() {
         for k in 0..3 {
             let (a, b) = (tri[k], tri[(k + 1) % 3]);
-            sides.push((a.min(b), a.max(b), t as u32, a < b));
+            keys.push(a.min(b) << CORNER_BITS | a.max(b));
+            sides.push((t as u32) << 1 | u32::from(a < b));
         }
     }
-    sides.sort_unstable();
-    let mut edges = Vec::with_capacity(sides.len() / 2 + 1);
+    sort_pairs(&mut keys, &mut sides, &mut vec![0; n], &mut vec![0; n]);
+    let corners = |key: u32| (key >> CORNER_BITS, key & ((1 << CORNER_BITS) - 1));
+    let mut edges = Vec::with_capacity(n / 2 + 1);
     let mut closed = true;
     let mut i = 0;
-    while i < sides.len() {
-        let (a, b) = (sides[i].0, sides[i].1);
+    while i < n {
+        let (a, b) = corners(keys[i]);
         let mut end = i + 1;
-        while end < sides.len() && sides[end].0 == a && sides[end].1 == b {
+        while end < n && keys[end] == keys[i] {
             end += 1;
         }
         if end - i == 2 {
-            let opposite = sides[i].3 != sides[i + 1].3;
+            let opposite = (sides[i] ^ sides[i + 1]) & 1 == 1;
             closed &= opposite;
             edges.push(Edge {
                 a,
                 b,
-                t0: sides[i].2,
-                t1: sides[i + 1].2,
+                t0: sides[i] >> 1,
+                t1: sides[i + 1] >> 1,
                 opposite,
             });
         } else {
             // An open edge, or one that more than two triangles share: each triangle's side
             // stands alone, and is part of the outline wherever its triangle draws.
             closed = false;
-            for side in &sides[i..end] {
+            for &side in &sides[i..end] {
                 edges.push(Edge {
                     a,
                     b,
-                    t0: side.2,
+                    t0: side >> 1,
                     t1: NO_TRIANGLE,
                     opposite: true,
                 });
@@ -397,6 +420,13 @@ fn grow<T: Clone + Default>(v: &mut Vec<T>, len: usize) -> Result<(), TryReserve
         v.resize(len, T::default());
     }
     Ok(())
+}
+
+/// `v` held between `lo` and `hi`. The standard `clamp` would link the code that prints 64-bit
+/// floats, for the message of a panic that these bounds never raise.
+#[inline(always)]
+fn within(v: f64, lo: f64, hi: f64) -> f64 {
+    v.max(lo).min(hi)
 }
 
 /// The nearest `f32` at or below `v`: rounding that never makes a depth nearer.
@@ -967,7 +997,7 @@ fn set_up(points: &[[f64; 3]], screen: Screen) -> Option<Polygon> {
         (lx, hx) = (lx.min(p[0]), hx.max(p[0]));
         (ly, hy) = (ly.min(p[1]), hy.max(p[1]));
     }
-    let clamp = |v: f64, size: f64| v.floor().clamp(0.0, size) as u32;
+    let clamp = |v: f64, size: f64| within(v.floor(), 0.0, size) as u32;
     polygon.x0 = clamp(lx - PIXEL_EPS, screen.width);
     polygon.x1 = clamp(hx + PIXEL_EPS + 1.0, screen.width);
     polygon.y0 = clamp(ly - PIXEL_EPS, screen.height);
@@ -1168,15 +1198,15 @@ fn bound_depths(
                 continue;
             }
             for y in [ya.max(ylo), yb.min(yhi)] {
-                let x = (p[0] + (y - p[1]) * slope).clamp(xlo, xhi);
+                let x = within(p[0] + (y - p[1]) * slope, xlo, xhi);
                 (lo, hi) = (lo.min(x), hi.max(x));
             }
         }
         if lo > hi || hi < -PIXEL_EPS || lo > (last + 1.0) * width + PIXEL_EPS {
             continue;
         }
-        let first = ((lo - PIXEL_EPS) / width).floor().clamp(0.0, last) as usize;
-        let end = ((hi + PIXEL_EPS) / width).floor().clamp(0.0, last) as usize;
+        let first = within(((lo - PIXEL_EPS) / width).floor(), 0.0, last) as usize;
+        let end = within(((hi + PIXEL_EPS) / width).floor(), 0.0, last) as usize;
         let row = if py > 0.0 {
             ya + PIXEL_EPS
         } else {
@@ -1228,8 +1258,8 @@ fn uncover(segment: &[f64; 4], r0: u32, r1: u32, top: u32, width: u32, scratch: 
     };
     for r in first..=last {
         let (lo, hi) = match (
-            x_at(f64::from(r).clamp(ylo, yhi)),
-            x_at(f64::from(r + 1).clamp(ylo, yhi)),
+            x_at(within(f64::from(r), ylo, yhi)),
+            x_at(within(f64::from(r + 1), ylo, yhi)),
         ) {
             (Some(a), Some(b)) => (a.min(b), a.max(b)),
             _ => (x0.min(x1), x0.max(x1)),

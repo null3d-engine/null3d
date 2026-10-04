@@ -328,7 +328,7 @@ fn cull_run(view: CullView<'_>, set: CullSet<'_>, run: CullRun, dst: &mut [u32])
         }
     };
     let visible = match view.occlusion {
-        Some(buffer) => keep_unoccluded(buffer, &mut dst[..visible], set.spheres, |row| {
+        Some(buffer) => keep_unoccluded(buffer, &mut dst[..visible], set.spheres, &|row| {
             let cell = if run.cell == ROW_CELLS {
                 set.cells[row as usize]
             } else {
