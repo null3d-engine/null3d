@@ -170,6 +170,15 @@ export interface EngineOptions {
 	 */
 	transparent?: boolean;
 	/**
+	 * True for scenes that reach far beyond a city, such as a planet. Object positions then keep the
+	 * precision of JavaScript's numbers at any distance from the origin: 0.03 mm or better. Without
+	 * it, positions are 32-bit floats, which move in steps of 6 cm at 1,000 km from the origin and
+	 * 0.5 m at the Earth's radius. It costs 12 bytes of memory per object and a little work in each
+	 * position setter. The default is false. Instance batches need no mode: give each one an
+	 * `origin` near its rows.
+	 */
+	largeWorld?: boolean;
+	/**
 	 * The thread that runs the sketch's code and the engine core: `worker`, the default, or `main`
 	 * for the page's main thread, where the sketch can reach the DOM. Use `main` for apps that work
 	 * mostly with the DOM, and for debugging. The render worker still draws in pipelined mode, and
@@ -1009,6 +1018,7 @@ async function startEngine(
 		antialias: quality.settings.antialias,
 		transparent: options.transparent === true,
 		depthPrepass: quality.settings.depthPrepass,
+		largeWorld: options.largeWorld === true,
 	});
 	const capabilities: EngineCapabilities = {
 		tier,

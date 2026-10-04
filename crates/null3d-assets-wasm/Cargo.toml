@@ -1,0 +1,17 @@
+[package]
+name = "null3d-assets-wasm"
+description = "The formats that the asset tool writes and the engine reads, as a WebAssembly module for the tool."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+null3d-core = { path = "../null3d-core" }
+
+[lints]
+workspace = true

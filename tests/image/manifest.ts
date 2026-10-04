@@ -98,6 +98,14 @@ function toneMappingTests(): ImageTest[] {
 	]);
 }
 
+/**
+ * How far the asset tool's output may stray from its source's image. On the Mac's GPU and on
+ * SwiftShader, 1.07% to 1.08% of the pixels differ on each tier, all at the edges of the floor's
+ * stripes, where the color map is resized and encoded in ETC1S, and in the ball's highlight. Moved
+ * or missing geometry changes far more.
+ */
+const OPTIMIZED_TOLERANCE = { threshold: 0.1, maxDiffRatio: 0.02 };
+
 /** The sketch of the bloom tests: glowing shapes on a dark ground (bench/scenes/bloom.ts). */
 const BLOOM_SKETCH = 'tests/pages/sketches/bloom-sketch.ts';
 
@@ -372,6 +380,26 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(uncompressed ? { reference: `gltf-${uncompressed}` } : {}),
 		};
 	}),
+	// The asset tool's test scene, then the tool's output, which must draw the source's image: its
+	// positions and coordinates in 16-bit integers, normals in bytes, a mesh moved to a child node,
+	// instances that carry the dequantizing transform, meshopt compression and KTX2 textures.
+	// Compressed textures and 8-bit normals change some pixels a little, so the output takes a
+	// tolerance of its own.
+	{
+		name: 'asset-scene',
+		sketch: 'tests/pages/sketches/asset-scene-sketch.ts',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+	},
+	{
+		name: 'asset-scene-optimized',
+		sketch: 'tests/pages/sketches/asset-scene-sketch.ts?file=optimized',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+		reference: 'asset-scene',
+		tolerance: OPTIMIZED_TOLERANCE,
+		deviceTolerance: OPTIMIZED_TOLERANCE,
+	},
 	// Copies of a glTF model made in code: scene.instantiate, scene.clone, a model with 16-bit
 	// positions, and an instance batch from scene.createInstances whose rows move every part of the
 	// model. Each tier must place every part the same way.
@@ -503,6 +531,18 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'cells',
 		switches: [FULL_PRECISION],
 		tolerance: FAR_OUT_TOLERANCE,
+	},
+	// The same scene at the Earth's radius, 0.3 m past a whole meter, in large-world mode: root
+	// positions keep 64-bit precision through the setters, and each batch's rows sit around its
+	// origin. 32-bit positions there move in steps of 0.5 m. The scene's own sums stay off any
+	// cell's center, as 100 km out, and keep the same tolerance.
+	{
+		name: 'cells-6378km',
+		sketch: 'tests/pages/sketches/cells-sketch.ts?x=6378137.3&origin',
+		hold: 1,
+		reference: 'cells',
+		switches: [FULL_PRECISION, 'largeWorld'],
+		tolerance: { threshold: 0, maxDiffRatio: 0.0003 },
 	},
 	// Debug drawing: every shape of ctx.debug over a small scene, the axes of a spinning box and the
 	// frustum of a second camera. The single-threaded mode runs the sketch on the page, which draws

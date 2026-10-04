@@ -234,6 +234,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "null3d-assets-wasm"
+version = "0.0.0"
+dependencies = [
+ "null3d-core",
+]
+
+[[package]]
 name = "null3d-core"
 version = "0.0.0"
 dependencies = [
