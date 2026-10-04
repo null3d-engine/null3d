@@ -4,6 +4,8 @@ import { ERROR_FIXES } from '../errors/fixes';
 import {
 	ARRAY_UVS,
 	ARRAYS_PROBLEM_INDEX_OUT_OF_RANGE,
+	ARRAYS_PROBLEM_MORPH_NOT_FINITE,
+	ARRAYS_PROBLEM_MORPH_TOO_LARGE,
 	ARRAYS_PROBLEM_NOT_FINITE,
 	MESH_ARRAYS_COLORS,
 	MESH_ARRAYS_COLORS_ALPHA,
@@ -13,6 +15,8 @@ import {
 	MESH_ARRAYS_NORMALS,
 	MESH_ARRAYS_UVS,
 	MESH_ARRAYS_WEIGHTS,
+	MORPH_NORMALS,
+	MORPH_POSITIONS,
 } from '../generated/core';
 import { VERTEX_TYPE_SNORM8, VERTEX_TYPE_UINT16, VERTEX_TYPE_UNORM8 } from '../generated/gpu';
 import type { CoreGlue } from '../shared/core';
@@ -93,6 +97,30 @@ describe('the shape checks of geometry.fromArrays', () => {
 		];
 		for (const [arrays, problem] of cases) expect(arraysProblem(arrays)).toBe(problem);
 	});
+
+	test('check the morph targets against the vertices', () => {
+		const lift = new Float32Array(12);
+		expect(arraysProblem({ ...QUAD, morphTargets: { positions: [lift, lift] } })).toBeUndefined();
+		const cases: [MeshArrays['morphTargets'], string][] = [
+			[{}, 'got morphTargets without any target.'],
+			[{ positions: [] }, 'got morphTargets without any target.'],
+			[
+				{ positions: Array.from({ length: 257 }, () => lift) },
+				'got 257 morph targets; a mesh takes up to 256.',
+			],
+			[
+				{ positions: [lift, lift], normals: [lift] },
+				'got 1 morph targets in normals and 2 in another list; every list needs one array per target.',
+			],
+			[
+				{ positions: [lift, new Float32Array(9)] },
+				'got 9 numbers in morphTargets.positions[1] for 4 vertices, not 12.',
+			],
+			[{ positions: [lift], names: ['Smile', 'Blink'] }, 'got 2 morph target names for 1 targets.'],
+		];
+		for (const [morphTargets, message] of cases)
+			expect(arraysProblem({ ...QUAD, morphTargets })).toBe(message);
+	});
 });
 
 /** A core whose memory the arrays go into, and which records the mesh it is asked for. */
@@ -104,14 +132,24 @@ function fakeCore(failure?: { code: number; details: [number, number] }) {
 		indices: number;
 		layout: number;
 		types: number;
+		targets?: number;
+		morph?: number;
 	}[] = [];
 	const glue = {
 		meshArrays: (words: number) => {
 			asked.push({ words, vertices: 0, indices: 0, layout: 0, types: 0 });
 			return 256;
 		},
-		createMeshFromArrays: (vertices: number, indices: number, layout: number, types: number) => {
-			Object.assign(asked[asked.length - 1] as object, { vertices, indices, layout, types });
+		createMeshFromArrays: (
+			vertices: number,
+			indices: number,
+			layout: number,
+			types: number,
+			targets: number,
+			morph: number,
+		) => {
+			const fields = { vertices, indices, layout, types, ...(targets ? { targets, morph } : {}) };
+			Object.assign(asked[asked.length - 1] as object, fields);
 			return failure ? 0 : 7;
 		},
 		lastErrorCode: () => failure?.code ?? 0,
@@ -184,6 +222,22 @@ describe('meshes from arrays in engine memory', () => {
 		expect(new Float32Array(memory.buffer, 256 + 88, 1)[0]).toBe(0.25);
 	});
 
+	test('put the morph targets after the indices, positions first, then normals', () => {
+		const { core, memory, asked } = fakeCore();
+		const up = new Float32Array(12).fill(1);
+		const turn = new Float32Array(12).fill(2);
+		const morphTargets = { normals: [turn, turn], positions: [up, up.map((v) => v * 3)] };
+		expect(meshFromArrays(core, { ...QUAD, morphTargets }, 'geometry.fromArrays')).toBe(7);
+		expect(asked[0]).toMatchObject({
+			words: 12 + 12 + 6 + 2 * 12 * 2,
+			targets: 2,
+			morph: MORPH_POSITIONS | MORPH_NORMALS,
+		});
+		const at = 256 + (12 + 12 + 6) * 4;
+		const deltas = new Float32Array(memory.buffer, at, 48);
+		expect([deltas[0], deltas[12], deltas[24], deltas[47]]).toEqual([1, 3, 2, 2]);
+	});
+
 	test('that the core refuses name the value it found wrong', () => {
 		const outside = fakeCore({ code: 1206, details: [ARRAYS_PROBLEM_INDEX_OUT_OF_RANGE, 4] });
 		const indices = new Uint16Array([0, 1, 2, 0, 7, 3]);
@@ -207,6 +261,16 @@ describe('meshes from arrays in engine memory', () => {
 		const uvs = [0, 0, 1, Number.NaN, 1, 1, 0, 1];
 		expect(refuse(notFinite.core, { ...QUAD, uvs }).message).toStartWith(
 			'E1206: geometry.fromArrays() got NaN at uvs[3].',
+		);
+		const lift = [0, 0, 0, 0, Number.POSITIVE_INFINITY, 0, 0, 0, 0, 0, 0, 0];
+		const badDelta = fakeCore({ code: 1206, details: [ARRAYS_PROBLEM_MORPH_NOT_FINITE, 12 + 4] });
+		const morphTargets = { positions: [new Float32Array(12), lift] };
+		expect(refuse(badDelta.core, { ...QUAD, morphTargets }).message).toStartWith(
+			'E1206: geometry.fromArrays() got Infinity at morphTargets.positions[1][4].',
+		);
+		const full = fakeCore({ code: 1206, details: [ARRAYS_PROBLEM_MORPH_TOO_LARGE, 4_000_000] });
+		expect(refuse(full.core, { ...QUAD, morphTargets }).message).toContain(
+			'move a vertex more than 255 times, or that would pass the 4,000,000 delta texels',
 		);
 		const memoryFull = fakeCore({ code: 1109, details: [64 * 1024 * 1024, 0] });
 		expect(refuse(memoryFull.core, QUAD).code).toBe('E1109');

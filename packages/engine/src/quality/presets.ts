@@ -169,6 +169,15 @@ export const QUALITY_SETTINGS = {
 		changes: 'start',
 		values: 'flag',
 	},
+	// The most morph weights of each object that WebGL2 draws. Its vertex shaders morph in every
+	// pass that draws a mesh, shadow passes too, and skip a target whose weight is 0, so the cap
+	// bounds the reads of each pass. WebGPU morphs once per frame in its skinning pass and draws
+	// every weight. Low keeps three.js's old limit of 8 active targets.
+	morphTargets: {
+		presets: [8, 16, 32, 64],
+		changes: 'start',
+		values: { min: 1, max: 256, whole: true },
+	},
 	// The shared memory's maximum, from 256 MiB to the 4 GiB that the threaded core declares. Every
 	// preset keeps the loader's default (D-04). A phone filled the whole 4 GiB in one tab; the
 	// tablet's limit is not measured yet, and may lower the lighter presets' values (D-12).
@@ -300,6 +309,13 @@ export interface QualitySettings {
 	 * the page's `depthPrepass` option of `createEngine` sets it, and `set` does not take it.
 	 */
 	depthPrepass: boolean;
+	/**
+	 * The most morph target weights of each object that a WebGL2 device draws, a whole number from
+	 * 1 to 256. Each object keeps the weights farthest from 0, and draws the others as 0. WebGPU
+	 * draws every weight. The `morphTargets` option of `createEngine` sets it, and `set` does not
+	 * take it.
+	 */
+	morphTargets: number;
 }
 
 /** The names of the settings in the preset table that change as `changes` says. */

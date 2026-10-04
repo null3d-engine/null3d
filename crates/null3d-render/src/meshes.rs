@@ -757,6 +757,44 @@ mod tests {
     }
 
     #[test]
+    fn a_morphed_mesh_past_65535_vertices_keeps_each_vertexs_entries_in_every_part() {
+        use crate::morph::{MorphTargets, has_targets, with_ranges};
+
+        // 300 x 300 quads, whose one target lifts the first and the last vertex.
+        let big = grid(300, 300, 0);
+        let vertices = big.vertex_count();
+        let mut positions = vec![0.0; vertices * 3];
+        positions[1] = 1.0;
+        positions[vertices * 3 - 2] = 2.0;
+        let targets = MorphTargets {
+            targets: 1,
+            positions: Some(&positions),
+            normals: None,
+            tangents: None,
+        };
+        let sparse = targets.sparse(vertices, 0).unwrap();
+        for packing in [Packing::SharedBuffers, Packing::Pages] {
+            let mut storage = MeshStorage::new(packing);
+            let id = storage.add_morphed(&big, &targets).unwrap();
+            let slot = *storage.mesh(id).unwrap();
+            assert!(has_targets(slot.format));
+            assert_eq!(storage.parts(&slot).len(), 2, "{packing:?}");
+            // Each vertex keeps the attribute that names its own entries, in whichever part.
+            assert_eq!(
+                resolved_vertices(&storage, id),
+                original_vertices(&with_ranges(&big, &sparse.ranges))
+            );
+            assert_eq!(storage.morph_texels().len(), 2);
+            assert_eq!(storage.reach(&slot), [2.0]);
+            // A second mesh's entries follow the first's.
+            let second = storage.add_morphed(&big, &targets).unwrap();
+            let second = *storage.mesh(second).unwrap();
+            assert_eq!(storage.morph_texels().len(), 4);
+            assert_eq!(second.targets, 1);
+        }
+    }
+
+    #[test]
     fn no_index_reaches_the_webgl2_restart_index() {
         // A strip of triangles over `vertices` vertices, the last of which uses the last vertex.
         let strip = |vertices: u32| {

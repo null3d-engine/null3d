@@ -692,11 +692,53 @@ describe('morph targets', () => {
 		expect(morph?.positions).toHaveLength(2);
 		expect(morph?.positions?.[0]?.length).toBe(72);
 		expect(morph?.normals).toBeUndefined();
-		// The weights clip names no joint, so the model has no skeleton.
-		expect(data.animation?.joints).toEqual([]);
+		// The clip animates both weights through one joint that moves no vertex: a root at rest at
+		// the origin with scale 0, which no skin names.
+		const joints = data.animation?.joints ?? [];
+		expect(joints.map((j) => [j.name, j.parent, j.translation, j.scale, j.bone])).toEqual([
+			['Blob', -1, [0, 0, 0], [0, 0, 0], undefined],
+		]);
+		expect(data.nodes[0]?.morphJoint).toBe(0);
+		// The weights move the joint along x and y, and one key of scale 1 marks them as the clip's.
 		const [pulse] = data.animation?.clips ?? [];
-		expect(pulse?.weights.map((w) => [w.node, w.interpolation, [...w.values]])).toEqual([
-			[0, 'linear', [0, 0, 1, 1]],
+		expect(
+			pulse?.tracks.map((t) => [
+				t.joint,
+				t.channel,
+				t.interpolation,
+				Array.from(t.times),
+				Array.from(t.values),
+			]),
+		).toEqual([
+			[0, 'translation', 'linear', [0, 1], [0, 0, 0, 1, 1, 0]],
+			[0, 'scale', undefined, [0], [1, 1, 1]],
+		]);
+	});
+
+	test('weights tracks give three weights to a joint, with cubic keys kept in order', () => {
+		const b = morphBuilder();
+		const primitive = b.json.meshes[0].primitives[0];
+		const [up] = primitive.targets;
+		primitive.targets = [up, up, up, up];
+		b.json.meshes[0].weights = [0, 0, 0, 0];
+		delete b.json.meshes[0].extras;
+		b.json.nodes[0].weights = [0.1, 0.2, 0.3, 0.4];
+		// One key of four in-tangents, four weights and four out-tangents.
+		const keys = new Float32Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+		b.json.animations[0].samplers[0] = {
+			input: b.accessor(new Float32Array([0]), 1, { min: [0], max: [0] }),
+			output: b.accessor(keys, 1),
+			interpolation: 'CUBICSPLINE',
+		};
+		const data = parse(b.glb());
+		expect(data.nodes[0]?.weights).toEqual([0.1, 0.2, 0.3, 0.4]);
+		expect(data.animation?.joints).toHaveLength(2);
+		const moves = (data.animation?.clips[0]?.tracks ?? []).filter(
+			(t) => t.channel === 'translation',
+		);
+		expect(moves.map((t) => [t.joint, t.interpolation, Array.from(t.values)])).toEqual([
+			[0, 'cubic', [1, 2, 3, 5, 6, 7, 9, 10, 11]],
+			[1, 'cubic', [4, 0, 0, 8, 0, 0, 12, 0, 0]],
 		]);
 	});
 
@@ -707,5 +749,8 @@ describe('morph targets', () => {
 		const c = morphBuilder();
 		c.json.animations[0].samplers[0].output = c.accessor(new Float32Array([0, 1, 1]), 1);
 		expect(refusal(c.glb())[1]).toContain('3 values for 2 keys of 2');
+		const d = morphBuilder();
+		d.json.nodes[0].weights = [1, 2, 3];
+		expect(refusal(d.glb())[1]).toContain("node 0's weights is not 2 numbers");
 	});
 });

@@ -2836,6 +2836,45 @@ mod tests {
     }
 
     #[test]
+    fn a_morphed_object_keeps_its_weights_and_a_sphere_of_its_own_while_skinned_or_morphed() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (h, c) = object(&mut scene, [0.0; 3], Handle::NONE, SHOWN);
+        scene.apply_commands(&[c], 1).unwrap();
+        scene.update_transforms(&jobs);
+        assert!(scene.take_structure_changed());
+        let s = scene.resolve(h).unwrap() as usize;
+
+        // A block of weights changes the structure, as a skin does, and the object's sphere
+        // comes from the frame's weights from then on.
+        scene
+            .apply_commands(&[Command::set_morph(h, Some(2))], 2)
+            .unwrap();
+        assert!(scene.take_structure_changed());
+        assert_eq!(scene.morphs()[s], 3);
+        assert_ne!(scene.flags()[s] & flags::CUSTOM_BOUNDS, 0);
+        // A skin as well, then none: the weights still shape the object.
+        scene
+            .apply_commands(
+                &[Command::set_skin(h, Some(0)), Command::set_skin(h, None)],
+                3,
+            )
+            .unwrap();
+        assert_ne!(scene.flags()[s] & flags::CUSTOM_BOUNDS, 0);
+        scene
+            .apply_commands(&[Command::set_morph(h, None)], 4)
+            .unwrap();
+        assert!(scene.take_structure_changed());
+        assert_eq!(scene.morphs()[s], 0);
+        assert_eq!(scene.flags()[s] & flags::CUSTOM_BOUNDS, 0);
+        // A destroyed object's slot forgets its block.
+        scene
+            .apply_commands(&[Command::set_morph(h, Some(0)), Command::destroy(h)], 5)
+            .unwrap();
+        assert_eq!(scene.morphs()[s], 0);
+    }
+
+    #[test]
     fn render_orders_are_kept_without_a_structure_change() {
         let jobs = JobSystem::new(0);
         let mut scene = SceneStorage::with_capacity(8);

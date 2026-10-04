@@ -244,5 +244,6 @@ The quality settings that a sketch reads and changes through `ctx.quality`. Each
 | `shadowTileSize: number` | Texels on each side of each tile of the shadow atlas: 256, 512, 1,024 or 2,048. Larger tiles give sharper shadows and take more memory, 4 bytes per texel. The `shadowTileSize` option of `createEngine` sets it, and `set` does not take it. |
 | `pointLightShadows: boolean` | True when point lights cast shadows. Each point light that casts them takes six tiles of the shadow atlas, one for each face of a cube around it, within `shadowTiles`. The `pointLightShadows` option of `createEngine` sets it, and `set` does not take it. |
 | `depthPrepass: boolean` | True when the engine draws the depth of the opaque objects before it shades them, so it shades each pixel once, for its nearest surface. The setting is fixed when the engine starts: the page's `depthPrepass` option of `createEngine` sets it, and `set` does not take it. |
+| `morphTargets: number` | The most morph target weights of each object that a WebGL2 device draws, a whole number from 1 to 256. Each object keeps the weights farthest from 0, and draws the others as 0. WebGPU draws every weight. The `morphTargets` option of `createEngine` sets it, and `set` does not take it. |
 
 <!-- null3d:api:end -->

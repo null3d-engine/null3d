@@ -244,9 +244,16 @@ export class SketchRunner {
 			device.largeWorld,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
-		const { shadowTiles, shadowTileSize, pointLightShadows, shadowCascades, shadowMapSize } =
-			sketch.quality.settings;
+		const {
+			shadowTiles,
+			shadowTileSize,
+			pointLightShadows,
+			shadowCascades,
+			shadowMapSize,
+			morphTargets,
+		} = sketch.quality.settings;
 		glue.setShadowTiles(shadowTiles, shadowTileSize, pointLightShadows);
+		glue.setMorphTargets(morphTargets);
 		// Directional lights that name no cascades or map size take the preset's.
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES, shadowCascades);
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE, shadowMapSize);

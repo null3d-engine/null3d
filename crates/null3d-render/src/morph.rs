@@ -30,7 +30,9 @@
 //! The WebGPU skinning pass and the WebGL2 vertex shaders read it with `textureLoad`.
 
 use null3d_core::animation::Animations;
-use null3d_core::morph::{Block, MAX_WEIGHTS, MorphWeights, WEIGHTS_PER_JOINT, posed_weight};
+use null3d_core::morph::{
+    Block, MAX_TARGETS, MAX_WEIGHTS, MorphWeights, WEIGHTS_PER_JOINT, posed_weight,
+};
 use null3d_core::scene::SceneStorage;
 use null3d_gpu::drawlist::{DrawList, Op, format, texture_usage, vertex, view};
 
@@ -225,20 +227,36 @@ pub fn posed_weights(
 
 /// Keeps the `cap` weights farthest from 0 and sets the others to 0. Of weights equally far, the
 /// target that comes first stays. three.js's WebGL renderer of WebGL1 kept its 8 largest
-/// influences in the same way.
+/// influences in the same way. One selection over a copy of the magnitudes finds the smallest
+/// magnitude that stays, so the cost grows with the weights, not with the weights times the cap.
+/// A block holds at most [`MAX_TARGETS`] weights; the copy lives on the stack.
 pub fn cap_weights(weights: &mut [f32], cap: usize) {
-    let mut kept = weights.iter().filter(|w| **w != 0.0).count();
-    while kept > cap {
-        let mut smallest = None;
-        for (k, w) in weights.iter().enumerate() {
-            if *w != 0.0 && smallest.is_none_or(|(_, s): (usize, f32)| w.abs() <= s) {
-                smallest = Some((k, w.abs()));
-            }
+    let kept = weights.iter().filter(|w| **w != 0.0).count();
+    if kept <= cap {
+        return;
+    }
+    if cap == 0 {
+        weights.fill(0.0);
+        return;
+    }
+    let mut magnitudes = [0.0f32; MAX_TARGETS as usize];
+    let magnitudes = &mut magnitudes[..weights.len()];
+    for (m, w) in magnitudes.iter_mut().zip(weights.iter()) {
+        *m = w.abs();
+    }
+    // More weights than the cap are not 0, so the smallest magnitude that stays is not 0 either.
+    let (_, &mut least, _) = magnitudes.select_nth_unstable_by(cap - 1, |a, b| b.total_cmp(a));
+    let mut ties = cap - weights.iter().filter(|w| w.abs() > least).count();
+    for w in weights.iter_mut() {
+        let magnitude = w.abs();
+        if magnitude > least {
+            continue;
         }
-        if let Some((k, _)) = smallest {
-            weights[k] = 0.0;
+        if magnitude == least && ties > 0 {
+            ties -= 1;
+            continue;
         }
-        kept -= 1;
+        *w = 0.0;
     }
 }
 
@@ -430,7 +448,7 @@ impl MorphTexture {
             return Ok(());
         }
         let (at, bytes) = arena.push_zeroed(self.weight_texels as usize * 16)?;
-        let mut weights = [0.0f32; 256];
+        let mut weights = [0.0f32; MAX_TARGETS as usize];
         for object in &self.objects {
             let Some(block) = morphs.block(object.block) else {
                 continue;
@@ -553,6 +571,80 @@ mod tests {
         assert_eq!(equal, [0.2, 0.2, 0.0]);
         cap_weights(&mut equal, 0);
         assert_eq!(equal, [0.0; 3]);
+        // A face's 256 weights keep their 8 largest, ties to the first, as the slow search did.
+        let mut face: Vec<f32> = (0..256).map(|k| ((k * 37) % 101) as f32 / 100.0).collect();
+        let mut slow = face.clone();
+        cap_weights(&mut face, 8);
+        while slow.iter().filter(|w| **w != 0.0).count() > 8 {
+            let (k, _) = slow
+                .iter()
+                .enumerate()
+                .filter(|(_, w)| **w != 0.0)
+                .fold(None, |s: Option<(usize, f32)>, (k, w)| match s {
+                    Some((_, m)) if w.abs() > m => s,
+                    _ => Some((k, w.abs())),
+                })
+                .unwrap();
+            slow[k] = 0.0;
+        }
+        assert_eq!(face, slow);
+    }
+
+    #[test]
+    fn the_texture_uploads_each_objects_weights_within_the_cap() {
+        use null3d_core::handle::Handle;
+        use null3d_core::scene::{Command, flags};
+
+        use crate::meshes::Packing;
+
+        // One vertex, which three targets move.
+        let geometry = Geometry::from_floats(0, &[0.0; 6], vec![0, 0, 0]);
+        let positions = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        let targets = MorphTargets {
+            targets: 3,
+            positions: Some(&positions),
+            normals: None,
+            tangents: None,
+        };
+        let mut meshes = MeshStorage::new(Packing::Pages);
+        let mesh = meshes.add_morphed(&geometry, &targets).unwrap() + 1;
+        let mut morphs = MorphWeights::new();
+        let block = morphs.create(3).unwrap();
+        morphs.values_mut()[..3].copy_from_slice(&[0.2, -0.7, 0.4]);
+        let mut scene = SceneStorage::with_capacity(4);
+        let object = scene.reserve().unwrap();
+        let commands = [
+            Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+            Command::set_morph(object, Some(block)),
+        ];
+        scene.apply_commands(&commands, 1).unwrap();
+
+        let mut texture = MorphTexture::new(1);
+        texture.rebuild(&scene, &morphs, &meshes);
+        let mut list = DrawList::with_capacity(256);
+        assert!(texture.size(&mut list, &meshes, true).unwrap());
+        let weights = |texture: &mut MorphTexture| {
+            let mut arena = UploadArena::default();
+            arena.reset(texture.upload_bound(&meshes));
+            let mut list = DrawList::with_capacity(256);
+            texture
+                .upload(&mut list, &mut arena, &morphs, None, &meshes)
+                .unwrap();
+            // The weights follow the deltas that the frame uploads.
+            let bytes = arena.bytes();
+            let at = bytes.len() - 16;
+            let floats: Vec<f32> = bytes[at..at + 12]
+                .chunks(4)
+                .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+                .collect();
+            floats
+        };
+        // WebGPU keeps every weight; WebGL2 at a cap of 2 drops the smallest.
+        assert_eq!(weights(&mut texture), [0.2, -0.7, 0.4]);
+        texture.set_cap(2);
+        assert_eq!(weights(&mut texture), [0.0, -0.7, 0.4]);
+        // The object's weights sit after the deltas' rows.
+        assert_eq!(texture.base(1), TEXTURE_WIDTH);
     }
 
     #[test]

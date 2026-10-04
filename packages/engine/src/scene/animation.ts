@@ -781,10 +781,12 @@ export function morphObject(mesh: Mesh, animator: Animator): void {
 	if (DEV) checks.checkLive('morphObject', mesh);
 	if (mesh.morphBlock === 0 || mesh.morphJoint < 0) return;
 	const { core } = mesh.scene;
-	core.check(
-		core.glue.linkMorphWeights(mesh.morphBlock - 1, animator.instance, mesh.morphJoint),
-		'morphObject',
+	const linked = core.glue.linkMorphWeights(
+		mesh.morphBlock - 1,
+		animator.instance,
+		mesh.morphJoint,
 	);
+	core.check(linked, 'morphObject', mesh.describe(), true);
 	animator.morphed.push(mesh);
 }
 

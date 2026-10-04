@@ -1,6 +1,6 @@
 # D-14: The engine's JavaScript budget
 
-Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). Date: 2026-09-30.
+Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The limit of shader files that load on first use decided by the owner on 2026-10-04, in [Shader files that load on first use](#shader-files-that-load-on-first-use). Date: 2026-09-30.
 
 ## Question
 
@@ -306,3 +306,20 @@ The owner approved the budgets of points 1 and 2 in writing on 2026-10-04. Point
 
 - `tools/lib/size-report.ts` holds the budgets (`START_BUDGET_BYTES` and `LATER_BUDGET_BYTES`) and the parts that load later (`LATER_PARTS`). `budgetProblems` judges both budgets. The size report prints the parts that load later in a section of their own.
 - AGENTS.md, the README and [Benchmarks](../benchmarks.md#download-size) give the new figures. A further raise of either budget needs the owner's approval in writing, recorded here.
+
+## Shader files that load on first use
+
+Status: decided by the owner on 2026-10-04. Task: M2-C5.
+
+### Question
+
+WebGL2's MORPH builds double the mesh builds of the shader files. In each start shader file, which every WebGL2 page downloads, they would have taken the file past its size. So they go into eight shader files of their own, which a page loads when it first draws a morphed mesh ([D-51](D-51-morph-targets.md)). Each such file holds every MORPH build for one value of the bits that a device fixes. It takes 18.6 to 20.5 KB after Brotli, more than the 16 KB budget of the other files that load later. Which budget holds them?
+
+### Decision
+
+The owner decided on 2026-10-04 that shader files that load on a feature's first use have a limit of their own. It is the size of the start shader file, about 24 KB after Brotli per file. A page that draws the feature downloads one such file, of the same size as the shader file of its start. The start shader files took 23.2 to 24.4 KB after Brotli on 4 October 2026.
+
+### Consequences
+
+- `ON_DEMAND_SHADER_PARTS` in `tools/lib/size-report.ts` names the files, and `ON_DEMAND_SHADER_BUDGET_BYTES` holds the budget of 24 KB. `budgetProblems` judges each file against it. The size report prints them in a section of their own, which no start counts.
+- AGENTS.md and [Benchmarks](../benchmarks.md#download-size) give the figure.

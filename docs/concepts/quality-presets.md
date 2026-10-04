@@ -178,6 +178,7 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Bloom samples (`bloomSamples`) | 100% of three.js's | 100% of three.js's | 100% of three.js's | 100% of three.js's | during play | built |
 | Frame-budget governor (`governor`) | on | on | on | on | during play | built |
 | Depth prepass (`depthPrepass`) | no | no | no | no | at the start | built |
+| Morph targets per object on WebGL2 (`morphTargets`) | 8 | 16 | 32 | 64 | at the start | built |
 | Anisotropic filtering cap (`maxAnisotropy`) | 2x | 4x | 8x | 16x | during play | built |
 | Texture uploads per frame (`uploadBytesPerFrame`) | 2 MiB | 4 MiB | 8 MiB | 16 MiB | during play | built |
 | Point and spot lights per frame (`maxLights`) | 256 | 256 | 512 | 1024 | at the start | planned |

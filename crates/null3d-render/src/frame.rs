@@ -371,6 +371,12 @@ impl UploadArena {
         Ok((address(&self.bytes[start..]), padded as u32))
     }
 
+    /// The bytes that the frame copied so far.
+    #[cfg(test)]
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
     /// Adds `len` zero bytes, padded to four bytes, for the caller to fill in place, and returns
     /// their address and the bytes. Like [`UploadArena::push`], it never grows the arena.
     pub(crate) fn push_zeroed(&mut self, len: usize) -> Result<(u32, &mut [u8]), RecordError> {

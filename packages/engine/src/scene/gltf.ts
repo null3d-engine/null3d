@@ -227,8 +227,6 @@ export async function loadGltf(
 	const instancing: InstancingTemplate[] = [];
 	/** Each file node's template node, which its children go under, or -1 for a joint. */
 	const placed: number[] = [];
-	/** Each file node's template nodes of its mesh's parts. */
-	const partNodes: number[][] = [];
 	const parents = new Set(data.nodes.map((n) => n.parent));
 	const node = (
 		fields: Partial<TemplateNode> & Pick<TemplateNode, 'name' | 'parent' | 'transform'>,
@@ -244,15 +242,12 @@ export async function loadGltf(
 			...morphOf(mesh as MeshData, p, n),
 		}));
 		const light = n.light < 0 ? undefined : lights[n.light];
-		const first = template.length + (parts.length > 1 || light ? 1 : 0);
-		partNodes.push(parts.map((_, k) => first + k));
 		if (n.skinned) {
 			// Joints move the mesh in the space of the copy's group. A mesh that one joint moves
 			// rests where that joint does.
 			const rest = n.skin >= 0 ? IDENTITY : n.transform;
-			partNodes[index] = parts.map((part) =>
-				node({ name: n.name, parent: 0, transform: IDENTITY, ...part, skinned: true, rest }),
-			);
+			for (const part of parts)
+				node({ name: n.name, parent: 0, transform: IDENTITY, ...part, skinned: true, rest });
 			const isObject = (n.joint ?? -1) < 0 && parents.has(index);
 			placed.push(isObject ? node({ name: n.name, parent, transform: n.transform }) : -1);
 			continue;
@@ -263,7 +258,6 @@ export async function loadGltf(
 			continue;
 		}
 		if (n.instancing) {
-			partNodes[index] = [];
 			const at = node({ name: n.name, parent, transform: n.transform });
 			placed.push(at);
 			instancing.push({
@@ -316,12 +310,13 @@ const IDENTITY = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
 const IDENTITY_PART = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
 
 /**
- * The morph weights of a node's primitive as a template node keeps them: the mesh's default
- * weights, and the first joint that animates them, or nothing for a primitive without targets.
+ * The morph weights of a node's primitive as a template node keeps them: the node's default
+ * weights, else the mesh's, and the first joint that animates them, or nothing for a primitive
+ * without targets.
  */
 function morphOf(mesh: MeshData, p: PrimitiveData, n: NodeData): { morph?: MorphTemplate } {
 	if (!p.morph) return {};
-	return { morph: { weights: mesh.weights ?? [], joint: n.morphJoint ?? -1 } };
+	return { morph: { weights: n.weights ?? mesh.weights ?? [], joint: n.morphJoint ?? -1 } };
 }
 
 /**

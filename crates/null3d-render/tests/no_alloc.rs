@@ -202,6 +202,45 @@ fn skinning_frames_allocate_nothing() {
     assert_eq!(allocated, 0, "WebGL2");
 }
 
+/// Records warm-up frames of `world` with two morphed boxes whose weights change every frame:
+/// one that the camera sees, and one that moves in and out of its view. Then it records steady
+/// frames and frames whose structure changes, and returns what those allocated.
+fn morph_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    world.renderer.settings_mut().set_morph_cap(1);
+    let (_, still) = world.add_morphed([0.0, 0.0, 0.0], [0.5, 0.25]);
+    let (mover, moving) = world.add_morphed([3.0, 0.0, 0.0], [0.0, 1.0]);
+    world.record(true);
+    let step = |world: &mut World<B>, frame: u32, rebuild: bool| {
+        let z = if frame % 6 < 3 { 0.0 } else { 40.0 };
+        world.scene.set_position(mover, [3.0, 0.0, z]).unwrap();
+        // Fractions that change every frame, so weights and bounds move.
+        let t = (frame % 10) as f32 * 0.1;
+        world.set_weight(still, 0, t);
+        world.set_weight(moving, 1, 1.0 - t);
+        world.frame = frame;
+        world.record(rebuild);
+    };
+    for frame in 2..=8 {
+        step(&mut world, frame, frame > 6);
+    }
+    CountingAllocator::arm();
+    for frame in 9..=100 {
+        step(&mut world, frame, frame.is_multiple_of(25));
+    }
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn morph_frames_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(morph_allocations(World::new()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        let allocated = morph_allocations(webgl2_world(multi_draw));
+        assert_eq!(allocated, 0, "WebGL2, multi-draw {multi_draw}");
+    }
+}
+
 /// Records warm-up frames of a world with a second view, then steady frames and frames whose
 /// structure changes, and returns what those allocated.
 fn two_view_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {

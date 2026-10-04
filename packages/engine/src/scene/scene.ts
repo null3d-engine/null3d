@@ -2018,7 +2018,7 @@ export class Scene {
 		call: string,
 	): number {
 		const count = geometry.morphTargets;
-		if (count === 0) return 0;
+		if (!count) return 0;
 		const { core } = this;
 		const block = core.checkGrowth(core.glue.createMorphWeights(count), call, mesh.label);
 		mesh.morphBlock = block;

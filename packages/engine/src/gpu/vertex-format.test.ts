@@ -152,13 +152,15 @@ describe('vertex formats', () => {
 	});
 
 	test('in every format of floats, the last attribute ends at the stride', () => {
-		for (let format = 0; format <= VERTEX_ALL; format++) {
+		// Every set of the optional attributes' bits, from all of them down to none.
+		for (let format = VERTEX_ALL; ; format = (format - 1) & VERTEX_ALL) {
 			let end = 0;
 			forEachVertexAttribute(format, ({ offset, size, type }) => {
 				expect(offset).toBe(end);
 				end = offset + size * (type === VERTEX_TYPE_F32 ? 4 : 1);
 			});
 			expect(end).toBe(vertexStride(format));
+			if (format === 0) break;
 		}
 	});
 });

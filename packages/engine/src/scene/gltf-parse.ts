@@ -292,6 +292,8 @@ export interface NodeData {
 	 * three weights to a joint, or -1 when no clip animates them.
 	 */
 	morphJoint?: number;
+	/** The morph weights of the node's mesh, when the node gives its own in place of the mesh's. */
+	weights?: number[];
 }
 
 /** An image: its bytes when the file holds it, or its address when the file names it. */
@@ -749,7 +751,7 @@ export function parseGltf(
 		};
 	});
 
-	const { nodes, place } = parseNodes(json, meshes.length, lights.length, read);
+	const { nodes, place } = parseNodes(json, meshes, lights.length, read);
 	const animation = parseAnimation(json, nodes, meshes, place, read, notes);
 	const data: GltfData = { nodes, meshes, materials, textures: textureUses, images, lights, notes };
 	if (animation) data.animation = animation;
@@ -962,7 +964,7 @@ function toTriangles(
  */
 function parseNodes(
 	json: Json,
-	meshes: number,
+	meshes: readonly MeshData[],
 	lights: number,
 	read: Reader,
 ): { nodes: NodeData[]; place: Int32Array } {
@@ -1016,12 +1018,16 @@ function parseNodes(
 			name: text(node.name),
 			parent: parents[k] === -1 ? -1 : (place[parents[k] as number] as number),
 			transform: transformOf(node, what),
-			mesh: node.mesh === undefined ? -1 : index(node.mesh, meshes, `${what}'s mesh`),
+			mesh: node.mesh === undefined ? -1 : index(node.mesh, meshes.length, `${what}'s mesh`),
 			light: lightRef === undefined ? -1 : index(lightRef, lights, `${what}'s light`),
 			skin: node.skin === undefined ? -1 : index(node.skin, skins, `${what}'s skin`),
 		};
 		const instancing = extensions.EXT_mesh_gpu_instancing as Entry | undefined;
 		if (instancing && data.mesh >= 0) data.instancing = parseInstancing(instancing, what, read);
+		if (node.weights !== undefined && data.mesh >= 0) {
+			const targets = (meshes[data.mesh] as MeshData).weights?.length ?? 0;
+			data.weights = numbers(node.weights, targets, undefined, `${what}'s weights`);
+		}
 		return data;
 	});
 	return { nodes, place };

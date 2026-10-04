@@ -81,6 +81,7 @@ export const SETTING_DOCS: {
 	},
 	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
+	morphTargets: { label: 'Morph targets per object on WebGL2' },
 	maxAnisotropy: { label: 'Anisotropic filtering cap', print: (value) => `${value}x` },
 	uploadBytesPerFrame: {
 		label: 'Texture uploads per frame',
