@@ -34,6 +34,7 @@ import {
 } from '../vertex-format';
 import { type DepthSetup, setDepthMode } from './depth';
 import {
+	buildPermutation,
 	createProgram,
 	engineTemplates,
 	type GlslTemplate,
@@ -560,7 +561,8 @@ export class WebGL2Backend {
 			defined = { shader: shader.variants, pipeline: 'main' };
 			this.templates[template] = defined;
 		}
-		return this.moreShaders?.ready(defined.shader, permutation, 'glsl') ?? true;
+		const build = buildPermutation(defined, permutation);
+		return this.moreShaders?.ready(defined.shader, build, 'glsl') ?? true;
 	}
 
 	/** Creates each parked pipeline whose custom material's shader has arrived. */

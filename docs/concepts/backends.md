@@ -43,7 +43,7 @@ Every feature works on both paths, or its page describes its WebGL2 fallback. Th
 | Lists of the lights of each cluster | A compute pass on the GPU | The job workers |
 | Culling for shadow cascades and shadow tiles | A compute pass for each, on the GPU | The job workers |
 | Sorting see-through objects back to front | The job workers | The job workers |
-| The [depth prepass](quality-presets.md#the-depth-prepass) | Drawn when `depthPrepass` is on | Never drawn |
+| The [depth prepass](quality-presets.md#the-depth-prepass) | Drawn when `depthPrepass` is on, with a shader that computes positions only | Drawn when `depthPrepass` is on, with each material's own vertex shader |
 | GPU time in `engine.measure` | Where the device has timestamp queries | Not measured |
 
 Shadows, debug views and custom materials draw the same on both paths. A debug view's wireframe draws an edge list of each mesh, because neither API fills triangles as lines.

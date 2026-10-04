@@ -995,11 +995,11 @@ function copyWithSwitch(name: string, suffix: string, extra: string): ImageTest 
 }
 
 /**
- * The scenes that the depth prepass draws again on the WebGPU tiers, which must match their images
+ * The scenes that the depth prepass draws again on every tier, which must match their images
  * without it: shadows, masked cards that stay out of the prepass, decals whose depth bias the
  * prepass keeps, see-through objects that draw after it, an orthographic camera whose near plane
- * cuts a slab, and S2. WebGL2 draws without the prepass: in Chrome on the Mac, two of its programs
- * gave the shadows test's ground, which the near plane cuts, different depths.
+ * cuts a slab, and S2. The shadows test's ground, which the near plane cuts, caught WebGL2's
+ * prepass when it drew with a program of its own (D-43).
  */
 const PREPASS_SCENES = [
 	'shadows',
@@ -1015,7 +1015,6 @@ function withPrepass(name: string): ImageTest {
 	const test = copyWithSwitch(name, 'prepass', 'prepass=on');
 	return {
 		...test,
-		tiers: tiersOf(test).filter((tier) => tier !== 'webgl2'),
 		...(test.modes && { modes: test.modes.slice(0, 1) }),
 	};
 }
