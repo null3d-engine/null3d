@@ -50,20 +50,30 @@ for (const mode of ENGINE_MODES)
 		expect(checked).toBeGreaterThan(30);
 	});
 
-test('a label sits over the center of its object in the drawn frame', async ({ page }) => {
-	await page.goto('labels.html?hold=0.5');
-	const result = await pageResult<{
-		ok: boolean;
-		error?: string;
-		label: [number, number] | null;
-		pixels: number;
-		center: [number, number] | null;
-	}>(page, 30_000);
-	expect(result.error).toBeUndefined();
-	expect(result.pixels).toBeGreaterThan(50);
-	const { label, center } = result;
-	expect(label).not.toBeNull();
-	expect(center).not.toBeNull();
-	expect(Math.abs((label?.[0] as number) - (center?.[0] as number))).toBeLessThanOrEqual(TOLERANCE);
-	expect(Math.abs((label?.[1] as number) - (center?.[1] as number))).toBeLessThanOrEqual(TOLERANCE);
-});
+// In large-world mode, at the Earth's radius, a 32-bit float would move the label in steps of half
+// a meter, so the label must still sit over the box's pixels.
+for (const { name, query } of [
+	{ name: '', query: '' },
+	{ name: ', far from the origin in large-world mode', query: '&far' },
+])
+	test(`a label sits over the center of its object in the drawn frame${name}`, async ({ page }) => {
+		await page.goto(`labels.html?hold=0.5${query}`);
+		const result = await pageResult<{
+			ok: boolean;
+			error?: string;
+			label: [number, number] | null;
+			pixels: number;
+			center: [number, number] | null;
+		}>(page, 30_000);
+		expect(result.error).toBeUndefined();
+		expect(result.pixels).toBeGreaterThan(50);
+		const { label, center } = result;
+		expect(label).not.toBeNull();
+		expect(center).not.toBeNull();
+		expect(Math.abs((label?.[0] as number) - (center?.[0] as number))).toBeLessThanOrEqual(
+			TOLERANCE,
+		);
+		expect(Math.abs((label?.[1] as number) - (center?.[1] as number))).toBeLessThanOrEqual(
+			TOLERANCE,
+		);
+	});

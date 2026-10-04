@@ -2,7 +2,8 @@
 // sits in each frame on screen, with the number of the frame whose labels it shows. `labels()` on
 // the window gives those samples and the sketch's place of the box in each frame. In hold mode the
 // camera stays still, and the page gives the element's place and the center of the box's red pixels
-// in the held frame instead.
+// in the held frame instead. `far` starts the engine in large-world mode, with the camera and the box
+// at the Earth's radius.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 
@@ -33,10 +34,13 @@ run('labels', async () => {
 	const canvas = document.querySelector('canvas');
 	const layer = document.querySelector<HTMLElement>('#labels');
 	if (!canvas || !layer) throw new Error('the page has no canvas or label layer');
-	const hold = new URLSearchParams(location.search).has('hold');
+	const params = new URLSearchParams(location.search);
+	const hold = params.has('hold');
+	const far = params.has('far');
 	const sketch = new URL('./sketches/labels-sketch.ts', import.meta.url);
 	if (hold) sketch.searchParams.set('still', '');
-	const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1 });
+	if (far) sketch.searchParams.set('far', '');
+	const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1, largeWorld: far });
 	const element = document.createElement('div');
 	element.className = 'label';
 	layer.append(element);
