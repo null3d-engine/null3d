@@ -326,6 +326,8 @@ export class Animator implements Described {
 	private readonly handlers = new Map<string, AnimationEventHandler[]>();
 	/** @internal The meshes that the object's joints skin. */
 	readonly skinned: Mesh[] = [];
+	/** @internal The meshes whose morph weights the object's clips animate. */
+	readonly morphed: Mesh[] = [];
 
 	/** @internal */
 	constructor(
@@ -469,6 +471,9 @@ export class Animator implements Described {
 		for (const mesh of this.skinned)
 			if (mesh.destroyedFrame < 0)
 				skinObject((copies.get(mesh) as Mesh | undefined) ?? mesh, animator);
+		for (const mesh of this.morphed)
+			if (mesh.destroyedFrame < 0)
+				morphObject((copies.get(mesh) as Mesh | undefined) ?? mesh, animator);
 		return animator;
 	}
 
@@ -481,6 +486,10 @@ export class Animator implements Described {
 		for (const mesh of this.skinned)
 			if (mesh.row !== 0) mesh.scene.command(C.COMMAND_SET_SKIN, mesh.handle, 0, 0, 'destroy');
 		this.skinned.length = 0;
+		const { glue } = this.system.core;
+		for (const mesh of this.morphed)
+			if (mesh.morphBlock !== 0) glue.linkMorphWeights(mesh.morphBlock - 1, 0, 0);
+		this.morphed.length = 0;
 		this.done(this.system.core.glue.removeAnimatedInstance(this.instance), 'destroy');
 		this.system.animators[this.instance - 1] = undefined;
 		this.instance = 0;
@@ -760,6 +769,23 @@ export function skinObject(mesh: Mesh, animator: Animator): void {
 		refuse(`skinObject() got the animator of ${animator.describe()}, which is destroyed.`);
 	mesh.scene.command(C.COMMAND_SET_SKIN, mesh.handle, animator.instance, 0, 'skinObject');
 	animator.skinned.push(mesh);
+}
+
+/**
+ * Animates the morph weights of `mesh` with the clips of the object that `animator` moves, from
+ * the next frame: the joints of its skeleton from `mesh.morphJoint` on hold the weights that the
+ * clips give, three to a joint, which blend with the mesh's own as `setMorphWeight` says. A mesh
+ * without morph weights stays as it is. Loaders call it.
+ */
+export function morphObject(mesh: Mesh, animator: Animator): void {
+	if (DEV) checks.checkLive('morphObject', mesh);
+	if (mesh.morphBlock === 0 || mesh.morphJoint < 0) return;
+	const { core } = mesh.scene;
+	core.check(
+		core.glue.linkMorphWeights(mesh.morphBlock - 1, animator.instance, mesh.morphJoint),
+		'morphObject',
+	);
+	animator.morphed.push(mesh);
 }
 
 /** Animates `object` with `rig`: gives it an animator, which `object.animator()` returns. */

@@ -202,9 +202,17 @@ export interface CoreGlue extends CoreErrors {
 	/**
 	 * A mesh from the arrays at `meshArrays`'s address, as `layout` (the `MESH_ARRAYS_*` bits)
 	 * describes them. `types` gives each array's type in its attribute's field of a vertex format.
-	 * Returns the mesh id.
+	 * With `targets` morph targets, the arrays that `morph` (the `MORPH_*` bits) names follow the
+	 * indices. Returns the mesh id.
 	 */
-	createMeshFromArrays(vertices: number, indices: number, layout: number, types: number): number;
+	createMeshFromArrays(
+		vertices: number,
+		indices: number,
+		layout: number,
+		types: number,
+		targets: number,
+		morph: number,
+	): number;
 	meshRadius(mesh: number): number;
 	/**
 	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
@@ -433,6 +441,21 @@ export interface CoreGlue extends CoreErrors {
 	createAnimatedInstance(skeleton: number): number;
 	/** Removes an animated instance; later instances take its id and joints. */
 	removeAnimatedInstance(instance: number): number;
+	/** Makes a block of `count` morph weights, all 0, and returns its id plus one. */
+	createMorphWeights(count: number): number;
+	/** Frees a block of morph weights. */
+	destroyMorphWeights(id: number): number;
+	/**
+	 * Links a block of morph weights to an animated instance (its id plus one, or 0 to unlink),
+	 * whose skeleton's joints from `joint` on animate them.
+	 */
+	linkMorphWeights(id: number, instance: number, joint: number): number;
+	/** The address of the morph weight table, or 0 before its first block. */
+	morphWeightsAddress(): number;
+	/** The first weight of a block of morph weights in the table. */
+	morphWeightsFirst(id: number): number;
+	/** The most morph weights of each object that vertex shaders that morph keep, the largest. */
+	setMorphTargets(cap: number): number;
 	/** The address of an animation table array (`ANIMATION_FIELD_*`). */
 	animationArrays(field: number): number;
 	/**
@@ -566,6 +589,12 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'animatedInstanceJoints',
 	'createAnimatedInstance',
 	'removeAnimatedInstance',
+	'createMorphWeights',
+	'destroyMorphWeights',
+	'linkMorphWeights',
+	'morphWeightsAddress',
+	'morphWeightsFirst',
+	'setMorphTargets',
 	'animationArrays',
 	'animatorPlay',
 	'animatorStop',

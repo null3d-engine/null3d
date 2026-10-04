@@ -150,6 +150,9 @@ A drawn object: a mesh and a material.
 
 | Member | Description |
 | --- | --- |
+| `setMorphWeight(target: number \| string, weight: number): void` | Sets how far the mesh moves toward one of its morph targets, from the next frame: 0 keeps the target's shape out, 1 adds all of it, and other numbers scale it. Like setting three.js's `morphTargetInfluences[target]`. `target` is the target's number, from 0, or its name. A clip that animates the weight blends its own value with this one while it plays, as three.js's mixer does, and this one holds when no clip moves it. A WebGL2 device draws a preset's count of each mesh's largest weights (the `morphTargets` quality setting). Throws E1218 for a target that the mesh does not have, and E1203 for a weight that is not a finite number. |
+| `getMorphWeight(target: number \| string): number` | The weight of one of the mesh's morph targets, as `setMorphWeight` or the model's file set it, without what a playing clip adds. Throws E1218 for a target that the mesh does not have. |
+| `destroy(): void` | Removes the object at the next frame, and frees its morph weights. Its children become roots. |
 | `setMaterial(material: Material): void` | Changes the material from the next frame. |
 | `setMesh(mesh: MeshGeometry): void` | Changes the shape from the next frame. The mesh's bounds replace the object's, so call `setBounds` again after this when the object needs bounds of its own. |
 | `setCastShadows(cast: boolean): void` | Makes the mesh cast the shadows of a directional light, or stop. The default is false. A change rebuilds the engine's tables of what it draws, as a new material does. |

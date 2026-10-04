@@ -20,7 +20,7 @@ use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use super::ids;
-use super::skin::Skinning;
+use super::skin::{SkinnedObject, Skinning};
 use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
 use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
@@ -458,19 +458,15 @@ impl Layout {
 
         let meshes = settings.meshes();
         let drawn = self.drawn;
-        let vertex_skinning = skinning.in_vertex_shader();
-        let skin = |key: DrawKey| skinning.skinned_key(key);
-        let key_of = |mesh: u32, material: u32, bounds: u32, object: u32, skinned: bool| {
-            let mut pipeline = settings.pipeline_of(mesh, material)?;
-            if skinned {
-                pipeline = skin(pipeline);
-            }
+        let skin = |key: DrawKey, skinned: Option<SkinnedObject>| match skinned {
+            Some(object) => skinning.skinned_key(&object, key),
+            None => key,
+        };
+        let key_of = |mesh: u32, material: u32, bounds: u32, object: u32, skinned| {
+            let pipeline = skin(settings.pipeline_of(mesh, material)?, skinned);
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             if drawn == Drawn::Casters {
-                let mut caster = settings.caster_of(pipeline);
-                if skinned {
-                    caster = skin(caster);
-                }
+                let caster = skin(settings.caster_of(pipeline), skinned);
                 return Some((caster, 0, page, mesh, CASTER_MATERIAL, bounds));
             }
             // Blended pairs draw in the transparent pass, which sorts them on the job workers.
@@ -497,7 +493,7 @@ impl Layout {
                 scene.materials()[slot],
                 bounds,
                 object,
-                skinning.object(slot as u32).is_some(),
+                skinning.object(slot as u32),
             )
         };
         // Instance batches cast no shadows yet. Sprites sized in pixels of the screen have no
@@ -509,7 +505,7 @@ impl Layout {
                 } else {
                     MESH_BOUNDS
                 };
-                key_of(batch.mesh(), batch.material(), bounds, 0, false)
+                key_of(batch.mesh(), batch.material(), bounds, 0, None)
             }
             Drawn::Casters => None,
         };
@@ -548,7 +544,7 @@ impl Layout {
                 draws: parts.len() as u32,
                 center,
                 radius,
-                skins: skin.is_some() && vertex_skinning,
+                skins: object.is_some_and(|object| skinning.skins_in_vertex_shader(object)),
                 first_joint: skin.map_or(0, |skin| skin.joint_base),
             });
             self.draws.extend(parts.iter().enumerate().map(|(k, part)| {

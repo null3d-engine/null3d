@@ -18,6 +18,7 @@ use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
 use null3d_core::lights::{LightShadow, LightTable, LightView, SunShadow, VisibleLight};
+use null3d_core::morph::MorphWeights;
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{
@@ -188,6 +189,8 @@ pub struct FrameInput<'a> {
     /// Skeletons, clips and animated instances, with the skinning matrices of the frame's
     /// animation step, once the scene has any.
     pub animations: Option<&'a Animations>,
+    /// The morph weights of morphed objects, which the sketch writes.
+    pub morphs: &'a MorphWeights,
 }
 
 impl FrameInput<'_> {
@@ -509,6 +512,8 @@ pub struct SceneSettings {
     /// How many times fewer taps than three.js's each of bloom's blurs reads, which the quality
     /// settings raise.
     bloom_divisor: u32,
+    /// The most morph weights of each object that a builder whose vertex shaders morph keeps.
+    morph_cap: u32,
     /// The color grading table while the sketch sets one.
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
@@ -559,6 +564,7 @@ impl SceneSettings {
             output: Output::default(),
             bloom: None,
             bloom_divisor: 1,
+            morph_cap: u32::MAX,
             lut: None,
             vignette: None,
             clock: [0.0; 4],
@@ -658,6 +664,17 @@ impl SceneSettings {
     /// the same kernel more coarsely, so the glow keeps its size.
     pub fn set_bloom_divisor(&mut self, divisor: u32) {
         self.bloom_divisor = divisor.clamp(1, bloom::MAX_SAMPLE_DIVISOR);
+    }
+
+    /// The most morph weights of each object that a builder whose vertex shaders morph keeps.
+    pub fn morph_cap(&self) -> u32 {
+        self.morph_cap
+    }
+
+    /// Keeps the `cap` largest morph weights of each object where vertex shaders morph, from the
+    /// next recorded frame on, and drops the others' targets (see [`crate::morph::cap_weights`]).
+    pub fn set_morph_cap(&mut self, cap: u32) {
+        self.morph_cap = cap;
     }
 
     /// Grades the canvas color with a color grading table, or with none with `None`, from the next

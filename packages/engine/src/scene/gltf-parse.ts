@@ -287,6 +287,11 @@ export interface NodeData {
 	 * its own.
 	 */
 	skinned?: boolean;
+	/**
+	 * The first joint of the model's skeleton that animates the morph weights of the node's mesh,
+	 * three weights to a joint, or -1 when no clip animates them.
+	 */
+	morphJoint?: number;
 }
 
 /** An image: its bytes when the file holds it, or its address when the file names it. */

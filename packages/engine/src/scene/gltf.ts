@@ -36,6 +36,7 @@ import type {
 	LightData,
 	MaterialData,
 	MeshData,
+	NodeData,
 	PrimitiveData,
 	TextureUse,
 } from './gltf-parse';
@@ -240,7 +241,7 @@ export async function loadGltf(
 		const parts = (mesh?.primitives ?? []).map((p, k) => ({
 			mesh: made[k] as MeshGeometry,
 			material: materials.of(p),
-			...morphOf(mesh as MeshData, p),
+			...morphOf(mesh as MeshData, p, n),
 		}));
 		const light = n.light < 0 ? undefined : lights[n.light];
 		const first = template.length + (parts.length > 1 || light ? 1 : 0);
@@ -288,14 +289,6 @@ export async function loadGltf(
 		if (light) node({ name: n.name, parent: at, transform: IDENTITY, light });
 	}
 	const { parts, bounds } = partsOf(template, data, meshes, instancing);
-	const morphClips = (data.animation?.clips ?? []).map((clip) => ({
-		name: clip.name,
-		tracks: clip.weights.map(({ node: k, ...track }) => ({ nodes: partNodes[k] ?? [], ...track })),
-	}));
-	if (template.some((t) => t.morph))
-		data.notes.push(
-			'its morph targets keep their shapes at rest, as the engine does not draw them yet',
-		);
 	if (DEV_NOTES && data.notes.length > 0)
 		console.warn(`${call}() left out parts of ${address}: ${data.notes.join('; ')}.`);
 	return new Prefab(
@@ -308,7 +301,6 @@ export async function loadGltf(
 		materials.list(),
 		textures.filter((t): t is Texture => t !== undefined),
 		rig,
-		morphClips,
 	);
 }
 
@@ -323,12 +315,13 @@ const DEV_NOTES: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL
 const IDENTITY = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
 const IDENTITY_PART = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
 
-/** A primitive's morph targets as a template node keeps them, or nothing for a primitive without. */
-function morphOf(mesh: MeshData, p: PrimitiveData): { morph?: MorphTemplate } {
+/**
+ * The morph weights of a node's primitive as a template node keeps them: the mesh's default
+ * weights, and the first joint that animates them, or nothing for a primitive without targets.
+ */
+function morphOf(mesh: MeshData, p: PrimitiveData, n: NodeData): { morph?: MorphTemplate } {
 	if (!p.morph) return {};
-	return {
-		morph: { targets: p.morph, weights: mesh.weights ?? [], names: mesh.targetNames ?? [] },
-	};
+	return { morph: { weights: mesh.weights ?? [], joint: n.morphJoint ?? -1 } };
 }
 
 /**
@@ -450,6 +443,12 @@ function makeMeshes(
 			weights: p.weights,
 			indices: p.indices,
 			computeNormals: !p.normals,
+			...(p.morph && {
+				morphTargets: {
+					...p.morph,
+					...(mesh.targetNames?.length ? { names: mesh.targetNames } : {}),
+				},
+			}),
 		};
 		try {
 			return context.geometry.fromArrays(arrays);

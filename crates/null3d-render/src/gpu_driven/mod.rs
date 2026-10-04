@@ -246,8 +246,10 @@ mod ids {
     pub const BLANK_LUT: u32 = CUSTOM_VALUES + 1;
     /// Every animated instance's skinning matrices (see [`crate::skinning`]).
     pub const JOINTS: u32 = BLANK_LUT + 1;
+    /// Every morphed mesh's deltas and every morphed object's weights (see [`crate::morph`]).
+    pub const MORPHS: u32 = JOINTS + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = JOINTS + 1;
+    pub const TARGETS: u32 = MORPHS + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow map.
@@ -535,8 +537,12 @@ impl GpuDrivenRenderer {
             let limit = max_sources(self.config.storage_binding_bytes);
             self.settings
                 .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
-            self.skinning
-                .rebuild(input.scene, input.animations, self.settings.meshes());
+            self.skinning.rebuild(
+                input.scene,
+                input.animations,
+                input.morphs,
+                self.settings.meshes(),
+            );
             let targets = self.graph.scene_targets();
             self.layout.rebuild(
                 &self.settings,
@@ -562,8 +568,8 @@ impl GpuDrivenRenderer {
                     0,
                     shadows,
                     |slot, key| {
-                        let skinned = skinning.object(slot as u32).is_some();
-                        skinned.then(|| skinning.skinned_key(key))
+                        let object = skinning.object(slot as u32)?;
+                        Some(skinning.skinned_key(&object, key))
                     },
                 )
                 .map_err(out_of_memory)?;
@@ -712,6 +718,7 @@ impl GpuDrivenRenderer {
         let skinned_remade = self.skinning.apply(
             list,
             input.animations,
+            self.settings.meshes(),
             &self.meshes,
             pages_remade,
             self.config.storage_binding_bytes,
@@ -864,7 +871,9 @@ impl GpuDrivenRenderer {
                 self.cascade_frames[cascade] = Some(frame);
             }
         }
-        self.skinning.upload(list, arena, input.animations)?;
+        let storage = self.settings.meshes();
+        self.skinning
+            .upload(list, arena, input.animations, input.morphs, storage)?;
         let (scene, batches) = (input.scene, input.batches);
         self.sorted
             .gather(scene, batches, parity)
@@ -994,7 +1003,7 @@ impl GpuDrivenRenderer {
         let lights = self.lights.upload_room();
         let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
         let sorted = Transparent::upload_bound(&self.sorted, camera_views);
-        let skinning = self.skinning.upload_bound();
+        let skinning = self.skinning.upload_bound(self.settings.meshes());
         meshes
             + skinning
             + materials

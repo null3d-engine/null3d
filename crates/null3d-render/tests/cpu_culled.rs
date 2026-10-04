@@ -235,6 +235,7 @@ fn a_view_added_after_the_frame_culled_draws_from_the_next_frame() {
         shadow_lights: &[],
         pipelines_built: u32::MAX,
         animations: None,
+        morphs: &world.morphs,
     };
     world.renderer.cull(&input).unwrap();
     let late = world

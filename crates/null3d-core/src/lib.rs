@@ -54,6 +54,7 @@ pub mod jobs;
 pub mod layers;
 pub mod lights;
 pub mod math;
+pub mod morph;
 pub mod scene;
 pub mod shared;
 pub mod snapshot;
