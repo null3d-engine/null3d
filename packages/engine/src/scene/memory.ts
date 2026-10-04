@@ -55,6 +55,10 @@ export class CoreMemory {
 		return this.view(Uint32Array, address, length);
 	}
 
+	i32(address: number, length: number): Int32Array {
+		return this.view(Int32Array, address, length);
+	}
+
 	/**
 	 * Copies an object's world matrix of the frame that last ran into `out`: 12 numbers, row by row,
 	 * with the translation from the origin in 64 bits. Returns the core's status, 0 for success. The

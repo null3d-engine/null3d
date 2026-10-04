@@ -92,6 +92,24 @@ pub fn split(position: [f32; 3]) -> (CellCoords, [f32; 3]) {
     )
 }
 
+/// Splits a 64-bit position into its cell and its position relative to the cell's center, rounded
+/// once to 32 bits. The cell is the nearest whole number of cells, so the relative position is
+/// about half a cell long at most, and keeps a 32-bit float's precision near the cell's center:
+/// 0.03 mm or better. Coordinates saturate, and one that is not a number gives the origin cell.
+#[inline(always)]
+pub fn split64(position: [f64; 3]) -> (CellCoords, [f32; 3]) {
+    let size = f64::from(CELL_SIZE);
+    let cell = position.map(|v| (v / size + 0.5).floor() as i32);
+    let local = std::array::from_fn(|k| (position[k] - f64::from(cell[k]) * size) as f32);
+    (cell, local)
+}
+
+/// The cell `by` cells along each axis from `cell`. Coordinates saturate, as [`cell_of`]'s do.
+#[inline(always)]
+pub fn offset_cell(cell: CellCoords, by: CellCoords) -> CellCoords {
+    std::array::from_fn(|k| cell[k].saturating_add(by[k]))
+}
+
 /// [`split`] for four positions at once, one per lane, with the same operations in the same order,
 /// so each lane matches [`split`] bit for bit.
 #[inline(always)]
@@ -339,7 +357,7 @@ impl CellTable {
     }
 }
 
-/// Moves the source in `row` of `world` out of cell `old` and into the cell that holds its
+/// Moves the source in `row` of `world` out of cell `old` and into `cell`, the cell that holds its
 /// position, and returns that cell's index. The row's matrix is already relative to that cell.
 /// When the table has no room for a new cell, the source goes into the origin cell instead, and
 /// its row moves there, with the precision of a 32-bit translation.
@@ -347,10 +365,9 @@ pub(crate) fn enter_cell(
     table: &mut CellTable,
     world: &mut WorldArrays,
     row: usize,
-    position: [f32; 3],
+    cell: CellCoords,
     old: u32,
 ) -> u32 {
-    let (cell, _) = split(position);
     let index = table.acquire(cell).unwrap_or_else(|| {
         world.shift_row(row, cell_center(cell));
         ORIGIN_CELL
@@ -398,6 +415,34 @@ mod tests {
                 assert_eq!(back, f64::from(position[k]), "{position:?}, axis {k}");
             }
         }
+    }
+
+    #[test]
+    fn a_64_bit_split_keeps_a_tenth_of_a_millimeter_at_the_earths_radius() {
+        for position in [
+            [6_378_137.000_1, -0.000_05, 1_000_000.333_3],
+            [-6_378_137.75, 511.999_9, -512.000_1],
+            [4.0e9, 1_536.0, -1_535.999_9],
+        ] {
+            let (cell, local) = split64(position);
+            for k in 0..3 {
+                assert!(local[k].abs() <= HALF_CELL, "{position:?}: {local:?}");
+                let back = f64::from(cell[k]) * f64::from(CELL_SIZE) + f64::from(local[k]);
+                assert!((back - position[k]).abs() < 3e-5, "{position:?}, axis {k}");
+            }
+        }
+        // A 32-bit position there is off by up to 0.25 m.
+        let rounded = f64::from(6_378_137.3f64 as f32);
+        assert!((rounded - 6_378_137.3).abs() > 0.1);
+        // The cell of a 32-bit position is the one that `cell_of` gives it.
+        for v in [6_378_137.0f32, -512.0, 512.0, 1_535.999_9, -1.0e9] {
+            assert_eq!(split64([f64::from(v); 3]).0, cell_of([v; 3]), "{v}");
+        }
+        assert_eq!(
+            split64([f64::NAN, f64::INFINITY, f64::NEG_INFINITY]).0,
+            [0, i32::MAX, i32::MIN]
+        );
+        assert_eq!(offset_cell([i32::MAX, -3, 4], [1, 5, -4]), [i32::MAX, 2, 0]);
     }
 
     #[test]

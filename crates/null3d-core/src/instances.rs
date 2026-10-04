@@ -38,6 +38,14 @@
 //! the batch's common cell, the update only checks that each row stays inside it, four rows at a
 //! time. A row that leaves its cell is marked in the loop, and moved in the cell table after it,
 //! on one thread. [`InstanceBatch::cell_changes`] then covers the rows whose cell changed.
+//!
+//! # Origins
+//!
+//! Row positions are relative to the batch's origin ([`InstanceBatch::set_origin`]), the world's
+//! origin by default. The batch keeps the origin as its cell and a 32-bit position in that cell.
+//! The update adds that position to each row's and works in the origin's cell from there, so a
+//! row near its batch's origin keeps a 32-bit float's precision at any distance from the world's
+//! origin.
 
 use std::collections::TryReserveError;
 use std::ops::Range;
@@ -46,7 +54,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use crate::alloc::filled;
 use crate::bitset::Bitset;
-use crate::cells::{self, CellCoords, CellTable, HALF_CELL, ORIGIN_CELL};
+use crate::cells::{self, CellCoords, CellPosition, CellTable, HALF_CELL, ORIGIN_CELL};
 use crate::error::{CoreError, Resource};
 use crate::handle::{Handle, SlotAllocator};
 use crate::jobs::JobSystem;
@@ -133,6 +141,10 @@ pub struct InstanceBatch {
     moved: Bitset,
     moved_any: AtomicBool,
     cell_changes: RowRange,
+    /// The cell of the origin that rows are relative to.
+    origin_cell: CellCoords,
+    /// The origin relative to its cell's center.
+    origin_local: [f32; 3],
     /// Counts the updates that wrote rows of the world output.
     version: u32,
 }
@@ -296,6 +308,8 @@ impl InstanceBatch {
             moved: Bitset::try_new(capacity)?,
             moved_any: AtomicBool::new(false),
             cell_changes: RowRange::default(),
+            origin_cell: [0; 3],
+            origin_local: [0.0; 3],
             version: 0,
         })
     }
@@ -523,6 +537,25 @@ impl InstanceBatch {
         &self.cells
     }
 
+    /// Places the batch's origin, which every row's position is relative to, and marks every row
+    /// dirty. The origin keeps its 64-bit precision: the batch stores its cell and its 32-bit
+    /// position in the cell, so rows near the origin keep theirs at any distance from the world's
+    /// origin.
+    pub fn set_origin(&mut self, origin: [f64; 3]) {
+        (self.origin_cell, self.origin_local) = cells::split64(origin);
+        self.dirty.set_range(0, self.capacity);
+        self.dirty_any = true;
+    }
+
+    /// The batch's origin, which every row's position is relative to.
+    pub fn origin(&self) -> [f64; 3] {
+        CellPosition {
+            cell: self.origin_cell,
+            local: self.origin_local,
+        }
+        .absolute()
+    }
+
     /// The cell every active row lies in, or `None` when they may lie in different cells.
     pub fn common_cell(&self) -> Option<u32> {
         (!self.mixed).then_some(self.common)
@@ -609,11 +642,14 @@ impl InstanceBatch {
             (a[0].words().as_ptr(), b[0].words_mut().as_mut_ptr())
         };
         let common = cells.coords(self.common);
+        let from_origin = std::array::from_fn(|k| common[k].wrapping_sub(self.origin_cell[k]));
         Some(RowKernel {
             cells: self.cells.as_ptr(),
             cell_coords: cells.all_coords().as_ptr(),
             common,
-            common_center: cells::cell_center(common),
+            common_center: cells::cell_center(from_origin),
+            origin_cell: self.origin_cell,
+            origin_local: self.origin_local,
             mixed: self.mixed,
             moved: self.moved.words_mut().as_mut_ptr(),
             moved_any: &self.moved_any,
@@ -685,9 +721,11 @@ impl InstanceBatch {
             let (mut first, mut end) = (u32::MAX, 0);
             for row in self.moved.iter_ones() {
                 let r = row as usize;
-                let position = [positions[r * 3], positions[r * 3 + 1], positions[r * 3 + 2]];
+                let o = self.origin_local;
+                let position = std::array::from_fn(|k| positions[r * 3 + k] + o[k]);
+                let cell = cells::offset_cell(cells::cell_of(position), self.origin_cell);
                 let world = &mut self.world[parity];
-                self.cells[r] = cells::enter_cell(cells, world, r, position, self.cells[r]);
+                self.cells[r] = cells::enter_cell(cells, world, r, cell, self.cells[r]);
                 (first, end) = (first.min(row), end.max(row + 1));
             }
             self.moved.clear_all();
@@ -803,7 +841,11 @@ struct RowKernel {
     cells: *const u32,
     cell_coords: *const CellCoords,
     common: CellCoords,
+    /// The common cell's center relative to the origin's cell.
     common_center: [f32; 3],
+    /// The batch's origin: rows are relative to it.
+    origin_cell: CellCoords,
+    origin_local: [f32; 3],
     mixed: bool,
     moved: *mut u64,
     moved_any: *const AtomicBool,
@@ -922,8 +964,10 @@ impl RowKernel {
         // only this chunk writes the rows.
         unsafe {
             let p = self.positions.add(row * 3);
-            let position =
-                self.localize4(row, deinterleave3(load(p), load(p.add(4)), load(p.add(8))));
+            let rows = deinterleave3(load(p), load(p.add(4)), load(p.add(8)));
+            let o = self.origin_local;
+            let rows = [0, 1, 2].map(|k| rows[k] + f32x4::splat(o[k]));
+            let position = self.localize4(row, rows);
             let s = self.scales.add(row * 3);
             let scale = deinterleave3(load(s), load(s.add(4)), load(s.add(8)));
             let q = self.rotations.add(row * 4);
@@ -954,13 +998,13 @@ impl RowKernel {
         // SAFETY: the row is below the active count, so every input read is in bounds, and only
         // this chunk writes the row.
         unsafe {
-            let p = self.localize(
-                row,
-                self.positions
-                    .add(row * 3)
-                    .cast::<[f32; 3]>()
-                    .read_unaligned(),
-            );
+            let p = self
+                .positions
+                .add(row * 3)
+                .cast::<[f32; 3]>()
+                .read_unaligned();
+            let o = self.origin_local;
+            let p = self.localize(row, [p[0] + o[0], p[1] + o[1], p[2] + o[2]]);
             let q = self
                 .rotations
                 .add(row * 4)
@@ -989,12 +1033,13 @@ impl RowKernel {
         // SAFETY: the row is below the active count, so every input read is in bounds, and only
         // this chunk writes the row.
         unsafe {
-            let position = self
+            let p = self
                 .positions
                 .add(row * 3)
                 .cast::<[f32; 3]>()
                 .read_unaligned();
-            let local = self.localize(row, position);
+            let o = self.origin_local;
+            let local = self.localize(row, [p[0] + o[0], p[1] + o[1], p[2] + o[2]]);
             let size = sprite
                 .sizes
                 .add(row * 2)
@@ -1067,11 +1112,12 @@ impl RowKernel {
         let (cells, local) = cells::split4(position);
         let mut moved = 0;
         for lane in 0..4 {
-            let cell = [
+            let from_origin = [
                 cells[0].to_array()[lane],
                 cells[1].to_array()[lane],
                 cells[2].to_array()[lane],
             ];
+            let cell = cells::offset_cell(from_origin, self.origin_cell);
             // SAFETY: the row is active, as the caller guarantees.
             if !kept.test(lane) && cell != unsafe { self.current_cell(row + lane) } {
                 moved |= 1 << lane;
@@ -1107,7 +1153,8 @@ impl RowKernel {
     /// As for [`RowKernel::compute`].
     #[inline(never)]
     unsafe fn relocate(&self, row: usize, position: [f32; 3]) -> [f32; 3] {
-        let (cell, local) = cells::split(position);
+        let (from_origin, local) = cells::split(position);
+        let cell = cells::offset_cell(from_origin, self.origin_cell);
         // SAFETY: as the caller guarantees.
         unsafe {
             if cell != self.current_cell(row) {
@@ -1699,6 +1746,75 @@ mod tests {
             assert_eq!(x_of(&batch, 0, 0), -351.5);
             batch.release_cells(&mut cells);
             assert!(cells.origin_only());
+        }
+    }
+
+    #[test]
+    fn rows_are_relative_to_their_batch_origin() {
+        let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
+        let origin = [3_000.25, 6_378_137.3, -1_000_000.125];
+        for dynamic in [false, true] {
+            // Nine rows, a millimeter apart around the origin: two blocks of four, which update
+            // four at a time, and one more, which goes 700 m out, into the next cell.
+            let mut batch = InstanceBatch::new(9, dynamic, false, 0, 0, 1.0);
+            batch.set_origin(origin);
+            assert!((0..3).all(|k| (batch.origin()[k] - origin[k]).abs() < 3e-5));
+            let mut offsets: [f32; 9] = std::array::from_fn(|row| row as f32 * 1e-3 - 2.0);
+            offsets[8] = 700.0;
+            for (row, &x) in offsets.iter().enumerate() {
+                write_row(&mut batch, row, x);
+            }
+            batch.update(&jobs, 1, &mut cells);
+            let place = |batch: &InstanceBatch, row: usize| -> [f64; 3] {
+                let cell = cells.coords(batch.cells()[row]);
+                let m = batch.current_world().matrix(row);
+                CellPosition {
+                    cell,
+                    local: [m[3], m[7], m[11]],
+                }
+                .absolute()
+            };
+            for (row, &x) in offsets.iter().enumerate() {
+                let want = [origin[0] + f64::from(x), origin[1], origin[2]];
+                let got = place(&batch, row);
+                assert!(
+                    (0..3).all(|k| (got[k] - want[k]).abs() < 1e-4),
+                    "row {row}: {got:?}"
+                );
+            }
+            assert_eq!(cells.coords(batch.cells()[0]), [3, 6229, -977]);
+            assert_eq!(cells.coords(batch.cells()[8]), [4, 6229, -977]);
+            assert_eq!(batch.common_cell(), None);
+            if !dynamic {
+                // One row alone takes the one-row path, which gives the four-lane path's matrix.
+                let before = *batch.current_world().matrix(1);
+                batch.mark_dirty(1, 1).unwrap();
+                batch.update(&jobs, 2, &mut cells);
+                let after = batch.current_world().matrix(1);
+                assert_eq!(after.map(f32::to_bits), before.map(f32::to_bits));
+            }
+            batch.release_cells(&mut cells);
+            assert!(cells.origin_only());
+        }
+        // Sprite rows are relative to their batch's origin too.
+        let look = SpriteLook::new(1, 1, false);
+        let mut sprites = InstanceBatch::try_new_sprites(2, false, 3, 4, 0.75, look).unwrap();
+        sprites.set_origin(origin);
+        write_row(&mut sprites, 1, 0.001);
+        sprites.update(&jobs, 1, &mut cells);
+        for (row, x) in [(0, 0.0), (1, 0.001)] {
+            let m = sprites.current_world().matrix(row);
+            let got = CellPosition {
+                cell: cells.coords(sprites.cells()[row]),
+                local: [m[3], m[7], m[11]],
+            }
+            .absolute();
+            let want = [origin[0] + x, origin[1], origin[2]];
+            assert!(
+                (0..3).all(|k| (got[k] - want[k]).abs() < 1e-4),
+                "sprite {row}: {got:?}"
+            );
         }
     }
 
