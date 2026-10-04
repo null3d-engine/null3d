@@ -1,6 +1,6 @@
 # D-18: How the asset tool is built
 
-Status: decided by the owner, 2026-10-03, from the research of that day; measured on S6's content with the built tool, 2026-10-04. Date: 2026-10-03. Task: M2-B1.
+Status: decided by the owner, 2026-10-03, from the research of that day. Measured on S6's content with the built tool, 2026-10-04. The clip step measured and added, 2026-10-05. Date: 2026-10-03. Tasks: M2-B1, M2-B7.
 
 ## Question
 
@@ -75,6 +75,37 @@ How the data was produced:
 - The native runs: a script that ran `basisu` on the same 144 images, with and without `-no_multithreading`.
 - The unit test `optimize.test.ts` checks the bytes of the test scene's outputs against the files in the repository. So each CI run on Linux checks that its bytes match the Mac's.
 
+### The clip step, 5 October 2026
+
+Prototype A2 measured the clip step on the sample content's animated models. The KayKit Knight has 76 clips and 8,712 channels. Its keys made about nine tenths of the binary part of the output without the step. Sizes are of the binary part of each `.glb` after Brotli at quality 11. Textures are separate files and not counted.
+
+| Model | Without the step | With the step |
+| --- | --- | --- |
+| KayKit Knight | 838,350 B | 455,487 B (-46%) |
+| Fox | 45,737 B | 26,805 B (-41%) |
+| RiggedSimple | 1,948 B | 1,443 B |
+| RecursiveSkeletons | 2,186 B | 1,364 B |
+| BoxAnimated, InterpolationTest, MorphStressTest | 1,490; 585; 13,309 B | 1,888; 1,091; 14,196 B |
+
+The last three grow by under 1 KB each, because their widely spaced or cubic keys become a key per frame. With `-c`, gltfpack 1.3 gives the Knight 434,451 bytes. It drops 4,532 constant tracks and keeps 16 bits of each translation's mantissa. The step does neither.
+
+The Knight's changing rotation keys, after the step, by how they are stored:
+
+| Form | After Brotli |
+| --- | --- |
+| 16-bit integers, uncompressed | 267,347 B |
+| 16-bit integers, meshopt's attribute codec | 216,310 B |
+| meshopt's quaternion filter at 16 bits | 172,750 B |
+| The filter at 12 bits | 115,068 B |
+
+Writing the one-key tracks after all changing keys, not between them, saved the Knight 25 KB more.
+
+Poses: the `gltf-poses` test plays each sample model's clips after the tool on the source's skeleton, against three.js r186 on the source file. The Knight differs by 6.65e-5 in a skinning matrix's rotation and scale, against 6.80e-5 for the source file. RiggedFigure moves from 4.14e-5 to 6.44e-5 and InterpolationTest from 2.43e-4 to 2.68e-4. The others do not change. The limit is 1e-3 ([D-35](D-35-gltf-animation.md)).
+
+Load: every model's output loads with no clip resampled. In the same test, the Knight's clips were ready in 7.9 ms on two job workers. From the source file they took 16.5 ms, and the core resampled 69 of the 76 clips. Parse time did not change measurably.
+
+How the data was produced: `node packages/cli/bin/null3d.js assets optimize` on main and on the branch, and `bunx gltfpack@1.3.0 -c`. A script split each binary part by buffer view and compressed each part. The poses and load times came from `cd tests && NULL3D_PORT=14273 bunx playwright test gltf-poses.spec.ts`, in Chrome on the Mac.
+
 ## Decision
 
 The owner chose option A with D on 3 October 2026, for three reasons:
@@ -121,9 +152,34 @@ The dequantizing transform goes where it moves nothing else:
 
 The simplifier keeps the seams where vertices at one place differ in normals or coordinates. In a mesh of flat faces, such as Kenney's buildings, every edge is a seam, and nothing simplifies. A level that saves too little tries again with the seams free to move. Before that change, 2 of the 213 Kenney models got levels, and after it 91 did.
 
+### Clips
+
+The engine keeps each clip at one fixed rate of keys ([D-26](D-26-animation-clips.md)). Its loader resamples a file's clips to that rate on the job workers ([D-35](D-35-gltf-animation.md)). The tool's clip step does that work once, before the files ship:
+
+- The engine core's own `bake` puts each clip's tracks on the clip's frames. The tool calls it through the formats module (`clip()`), so the tool and the loader pick the same rate and evaluate curves the same way. All tracks of a clip share one input of frame times.
+- A rotation that changes keeps a key per frame as 16-bit normalized integers, the form the core stores. They take meshopt's quaternion filter at 16 bits. Translations, scales and morph weights stay 32-bit floats, which meshopt compresses with no loss.
+- A track whose value never changes keeps one key, at the clip's last time, so the clip keeps its length in every reader.
+- Step tracks stay step tracks. Cubic spline tracks become linear keys on the curve, the keys the core would store from it.
+- Keys that change come first in the buffer, each path's together, then the one-key tracks.
+
+The loader needs no marker. The core copies a track that holds one key, or one linear or step key at each frame's time. A key within a thousandth of a frame counts. The core resamples only the other tracks. So a file from another tool whose keys lie on frames also loads with copies. Other files still resample, within M2-R17's bound on frames times tracks. `Clip::resampled_tracks` counts the tracks that a clip resampled. The WebAssembly call `resampledClips` counts the clips.
+
+Options left out:
+
+| Option | Why not |
+| --- | --- |
+| Plain 16-bit rotations, no filter | 43 KB more for the Knight |
+| The quaternion filter at 12 bits | Steps of 3.4e-4, past D-26's 2e-4 for a pose component |
+| glTF-Transform's filter method for all accessors | Its exponential filter keeps 12 bits of each translation and scale |
+| Dropping constant tracks, as gltfpack does | A clip blends only where it has tracks ([D-26](D-26-animation-clips.md)), so a dropped track changes how it blends |
+| Fewer keys where the curve allows | The track's keys become uneven, so the loader would resample again |
+| A track that changes by under a millionth as constant | 404,598 B for the Knight, but values move by up to 1e-6 and differ from what the core builds from the source. It would belong in the core's constant rule, for every file. Not decided |
+
+Version 4.5.1 of glTF-Transform gives meshopt's filters to every accessor or to none. So the class `MeshoptWithRotationFilter` in `clips.js` extends its meshopt extension. After glTF-Transform groups the accessors, it switches only the buffer views of rotation keys to the quaternion filter. It reads three fields that glTF-Transform keeps for that step. The tests in `clips.test.ts` fail when a version changes them. They check that the quaternion filter is the file's only filter.
+
 ### How three.js handles it
 
-three.js has no asset tool of its own. Its users run other tools, such as gltfpack or the command-line tool of glTF-Transform. For textures, glTF-Transform starts the native `ktx` command of KTX-Software. The npm build of gltfpack has no texture compression. So KTX2 textures need a native install either way. null3D ships one tool on npm with the encoders inside. A project needs no other install.
+three.js has no asset tool of its own. Its users run other tools, such as gltfpack or the command-line tool of glTF-Transform. Its `GLTFLoader` keeps a clip's keys as the file holds them, and searches for the keys around each time. So a resampled clip saves it nothing at load. It reads the step's files, with 16-bit rotations and the quaternion filter, and plays them as the engine does. For textures, glTF-Transform starts the native `ktx` command of KTX-Software. The npm build of gltfpack has no texture compression. So KTX2 textures need a native install either way. null3D ships one tool on npm with the encoders inside. A project needs no other install.
 
 ## Consequences
 
@@ -135,3 +191,5 @@ three.js has no asset tool of its own. Its users run other tools, such as gltfpa
 - Open: layered KTX2 files that group textures of one size. Today the engine gives each compressed texture an array of its own, since compatibility mode copies no compressed texels. So the tool keeps one file per texture and reports the groups.
 - Open: a 64-bit encoder for 4096 x 4096 textures, if a scene needs them.
 - M2-B3 reads FBX with ufbx built to WebAssembly, by the owner's answer. M2-B4 writes blocker meshes and BVHs through the formats module.
+- The file `packages/cli/src/assets/clips.js` holds the clip step and `MeshoptWithRotationFilter`. The core's `bake` and the formats module's `clip()` give it the keys. Its tests check the keys against the source curves, the one-key tracks, the 16-bit rotations and the same bytes on two runs.
+- The `gltf-poses` test loads each sample model after the tool too, and requires that no clip resamples.

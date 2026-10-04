@@ -58,6 +58,7 @@ pub struct Clip {
     rate: f32,
     frames: u32,
     tracks: u32,
+    resampled_tracks: u32,
     /// The skeleton's rest pose, with each constant track's value in place.
     base: Pose,
     /// 1 where the clip has a track and 0 elsewhere: a row of lanes for translations, one for
@@ -76,6 +77,8 @@ pub(crate) struct ClipParts {
     pub rate: f32,
     pub frames: u32,
     pub tracks: u32,
+    /// The tracks that were evaluated at each frame, not copied.
+    pub resampled_tracks: u32,
     pub base: Pose,
     pub channels: Box<[f32]>,
     pub rotations: Groups<i16>,
@@ -92,6 +95,7 @@ impl Clip {
             rate,
             frames,
             tracks,
+            resampled_tracks,
             base,
             channels,
             rotations,
@@ -104,6 +108,7 @@ impl Clip {
             rate,
             frames,
             tracks,
+            resampled_tracks,
             base,
             channels,
             rotations,
@@ -142,6 +147,12 @@ impl Clip {
     /// The number of tracks the clip was built from, constant ones included.
     pub fn tracks(&self) -> u32 {
         self.tracks
+    }
+
+    /// The number of tracks that [`super::resample`] evaluated at each frame. The others held one
+    /// key, or a key at each frame's time, and were copied.
+    pub fn resampled_tracks(&self) -> u32 {
+        self.resampled_tracks
     }
 
     /// The number of tracks that change over time, and so store a key per frame.

@@ -10,9 +10,9 @@ mod three;
 
 use common::{Workers, axis_angle, character};
 use null3d_core::animation::{
-    AnimationError, Animations, Channel, Clip, DEFAULT_RATE, EVENT_WORDS, Interpolation,
+    AnimationError, Animations, BakedKeys, Channel, Clip, DEFAULT_RATE, EVENT_WORDS, Interpolation,
     MATRIX_FLOATS, MAX_BLEND, MAX_FRAMES, MAX_LAYERS, NO_PARENT, POSE_FIELDS, Play, Skeleton,
-    SourceTrack, TrackProblem, event_kind, flag, resample,
+    SourceTrack, TrackProblem, bake, event_kind, flag, resample,
 };
 use null3d_core::error::{CoreError, Resource};
 use null3d_core::jobs::JobSystem;
@@ -169,6 +169,112 @@ fn clips_keep_a_source_grid_up_to_the_rate_and_resample_others() {
     let mut pose = vec![0.0; clip.pose_len()];
     clip.sample(0.5, &mut pose);
     assert_eq!(clip.base().joint(0).0, [1.0, 2.0, 3.0]);
+}
+
+/// A baked track as a file of the asset tool holds it: keys at the frames, or one key at the end,
+/// with rotations as 16-bit integers that a reader turns into floats.
+fn baked_track(keys: &BakedKeys) -> Vec<f32> {
+    match keys {
+        BakedKeys::Rotations(keys) => keys.iter().map(|&k| f32::from(k) / 32767.0).collect(),
+        BakedKeys::Floats(values) => values.clone(),
+    }
+}
+
+#[test]
+fn baked_clips_load_with_copies_into_the_same_clips() {
+    let skeleton = skeleton();
+    for (c, source) in three::CLIPS.iter().enumerate() {
+        let tracks = tracks(source);
+        let resampled = resample(&skeleton, &tracks, DEFAULT_RATE).unwrap();
+        let baked = bake(&tracks, skeleton.joints(), DEFAULT_RATE).unwrap();
+        assert_eq!(baked.times.len() as u32, resampled.frames(), "clip {c}");
+        let end = [*baked.times.last().unwrap()];
+        let values: Vec<Vec<f32>> = baked.tracks.iter().map(baked_track).collect();
+        let stored: Vec<SourceTrack<'_>> = tracks
+            .iter()
+            .zip(&values)
+            .map(|(track, values)| {
+                let constant = values.len() == track.channel.components();
+                SourceTrack {
+                    // Cubic spline tracks are stored as linear keys on the curve.
+                    interpolation: match track.interpolation {
+                        Interpolation::Step => Interpolation::Step,
+                        _ => Interpolation::Linear,
+                    },
+                    times: if constant { &end } else { &baked.times },
+                    values,
+                    ..*track
+                }
+            })
+            .collect();
+        let copied = resample(&skeleton, &stored, DEFAULT_RATE).unwrap();
+        assert_eq!(copied.resampled_tracks(), 0, "clip {c}");
+        assert_eq!(
+            (copied.frames(), copied.rate(), copied.duration()),
+            (resampled.frames(), resampled.rate(), resampled.duration()),
+            "clip {c}"
+        );
+        assert_eq!(
+            copied.animated_tracks(),
+            resampled.animated_tracks(),
+            "clip {c}"
+        );
+        // The copies hold the resampled clip's keys exactly, so every pose is the same.
+        let (mut a, mut b) = (
+            vec![0.0; resampled.pose_len()],
+            vec![0.0; copied.pose_len()],
+        );
+        for step in 0..=200 {
+            let time = resampled.duration() * step as f32 / 200.0;
+            resampled.sample(time, &mut a);
+            copied.sample(time, &mut b);
+            assert_eq!(a, b, "clip {c} at {time}");
+        }
+    }
+}
+
+#[test]
+fn tracks_on_the_frames_are_copied_and_others_resampled() {
+    let skeleton = skeleton();
+    let grid: Vec<f32> = (0..=30).map(|k| k as f32 / 30.0).collect();
+    let moving: Vec<f32> = grid.iter().flat_map(|t| [*t, 0.0, 0.0]).collect();
+    let uneven = [0.0, 0.4, 1.0];
+    let few = [0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 0.0, 0.0];
+    let on_frames = SourceTrack {
+        joint: 0,
+        channel: Channel::Translation,
+        interpolation: Interpolation::Linear,
+        times: &grid,
+        values: &moving,
+    };
+    let one_key = SourceTrack {
+        joint: 1,
+        times: &[1.0],
+        values: &[1.0, 2.0, 3.0],
+        ..on_frames
+    };
+    let off_frames = SourceTrack {
+        joint: 2,
+        times: &uneven,
+        values: &few,
+        ..on_frames
+    };
+    let clip = resample(&skeleton, &[on_frames, one_key], DEFAULT_RATE).unwrap();
+    assert_eq!((clip.frames(), clip.resampled_tracks()), (31, 0));
+    let clip = resample(&skeleton, &[on_frames, one_key, off_frames], DEFAULT_RATE).unwrap();
+    assert_eq!((clip.frames(), clip.resampled_tracks()), (31, 1));
+    // A cubic spline track on the frames still follows its curve between them.
+    let cubic: Vec<f32> = grid
+        .iter()
+        .flat_map(|t| [0.0; 3].into_iter().chain([*t, 0.0, 0.0]).chain([0.0; 3]))
+        .collect();
+    let curve = SourceTrack {
+        interpolation: Interpolation::CubicSpline,
+        values: &cubic,
+        ..on_frames
+    };
+    let clip = resample(&skeleton, &[curve], DEFAULT_RATE).unwrap();
+    assert_eq!(clip.resampled_tracks(), 1);
 }
 
 #[test]

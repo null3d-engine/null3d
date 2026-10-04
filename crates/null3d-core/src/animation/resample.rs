@@ -6,6 +6,10 @@
 //! `slerp` for rotations and `lerp` for the rest, step tracks with the key at or before the time,
 //! and cubic spline tracks with the Hermite curve of glTF, as three.js's `GLTFLoader` evaluates
 //! them. Before the first key a track holds its first value, and after the last its last value.
+//!
+//! A track of one key, or of one key at each frame's time, needs no evaluation: its keys are
+//! copied. [`bake`] gives every track of a clip that form, which the asset tool writes, so its
+//! files load with copies only.
 
 use super::clip::{ClipParts, Groups, ROTATION_KEY, SMALL_TURN_DOT, VECTOR_KEY};
 use super::{AnimationError, Clip, Skeleton, TrackProblem, field, filled, out_of_memory};
@@ -28,6 +32,14 @@ const KEY_TIME_TOLERANCE: f64 = 1e-6;
 
 /// The scale of a quantized rotation component: the largest 16-bit value.
 pub(super) const QUANTIZED_ONE: f64 = 32767.0;
+
+/// How far a rotation key's length may lie from 1 and still be quantized as it is: a few steps of
+/// a 16-bit component. A key stored as 16-bit integers then keeps its integers exactly.
+const UNIT_TOLERANCE: f64 = 4.0 / QUANTIZED_ONE;
+
+/// The words of each track's header in a clip's staging words: joint, channel, interpolation and
+/// key count.
+pub const TRACK_WORDS: u32 = 4;
 
 /// What a track animates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -112,8 +124,74 @@ impl SourceTrack<'_> {
     }
 }
 
+/// The tracks that a clip's staging words hold: `tracks` headers of [`TRACK_WORDS`] words (joint,
+/// channel, interpolation, key count), then each track's key times and values as 32-bit floats,
+/// track after track.
+///
+/// # Errors
+/// When a header names no channel or interpolation, or the words end before a track's keys.
+pub fn staged_tracks(words: &[u32], tracks: usize) -> Result<Vec<SourceTrack<'_>>, AnimationError> {
+    let header = TRACK_WORDS as usize;
+    if tracks.saturating_mul(header) > words.len() {
+        return Err(AnimationError::Track {
+            track: (words.len() / header) as u32,
+            problem: TrackProblem::Keys,
+        });
+    }
+    let floats = as_floats(words);
+    let mut at = tracks * header;
+    let mut out = Vec::new();
+    out.try_reserve_exact(tracks)
+        .map_err(|_| out_of_memory(tracks.saturating_mul(size_of::<SourceTrack<'_>>())))?;
+    for track in 0..tracks {
+        let problem = |problem| AnimationError::Track {
+            track: track as u32,
+            problem,
+        };
+        let head = &words[track * header..track * header + header];
+        let channel = Channel::from_u32(head[1]).ok_or(problem(TrackProblem::Kind))?;
+        let interpolation = Interpolation::from_u32(head[2]).ok_or(problem(TrackProblem::Kind))?;
+        let keys = head[3] as usize;
+        let per_key = match interpolation {
+            Interpolation::CubicSpline => 3 * channel.components(),
+            Interpolation::Linear | Interpolation::Step => channel.components(),
+        };
+        let end = keys
+            .checked_mul(1 + per_key)
+            .and_then(|n| n.checked_add(at))
+            .filter(|&end| end <= floats.len());
+        let Some(end) = end else {
+            return Err(problem(TrackProblem::Keys));
+        };
+        out.push(SourceTrack {
+            joint: head[0],
+            channel,
+            interpolation,
+            times: &floats[at..at + keys],
+            values: &floats[at + keys..end],
+        });
+        at = end;
+    }
+    Ok(out)
+}
+
+/// Staging words as 32-bit floats, which have the same size and alignment.
+pub fn as_floats(words: &[u32]) -> &[f32] {
+    // SAFETY: `u32` and `f32` have the same size and alignment, and every bit pattern is a float.
+    unsafe { std::slice::from_raw_parts(words.as_ptr().cast(), words.len()) }
+}
+
+/// Checks every track of a clip for a skeleton of `joints` joints.
+fn check_tracks(joints: u32, tracks: &[SourceTrack<'_>]) -> Result<(), AnimationError> {
+    let mut seen = filled(joints as usize, 0u8)?;
+    for (index, track) in tracks.iter().enumerate() {
+        check_track(joints, index, track, &mut seen)?;
+    }
+    Ok(())
+}
+
 fn check_track(
-    skeleton: &Skeleton,
+    joints: u32,
     index: usize,
     track: &SourceTrack<'_>,
     seen: &mut [u8],
@@ -122,7 +200,7 @@ fn check_track(
         track: index as u32,
         problem,
     };
-    if track.joint >= skeleton.joints() {
+    if track.joint >= joints {
         return Err(problem(TrackProblem::Joint));
     }
     let bit = 1u8 << track.channel as u32;
@@ -293,6 +371,34 @@ struct Resampled {
     constant: bool,
     /// A rotation track that turns further than [`SMALL_TURN_DOT`] allows between two frames.
     turns_far: bool,
+    /// The track was evaluated at each frame, not copied.
+    resampled: bool,
+}
+
+/// The time of frame `frame` of a clip of `frames` frames that lasts `duration` seconds.
+fn frame_time(frame: usize, frames: u32, duration: f64) -> f64 {
+    if frames > 1 {
+        duration * frame as f64 / f64::from(frames - 1)
+    } else {
+        0.0
+    }
+}
+
+/// True when a track holds one linear or step key at each frame's time, within a thousandth of a
+/// frame: its keys are then the clip's keys.
+fn on_frames(track: &SourceTrack<'_>, frames: u32, duration: f64) -> bool {
+    if frames < 2
+        || track.times.len() != frames as usize
+        || track.interpolation == Interpolation::CubicSpline
+    {
+        return false;
+    }
+    let tolerance = FRAME_TOLERANCE * duration / f64::from(frames - 1);
+    track
+        .times
+        .iter()
+        .enumerate()
+        .all(|(k, &t)| (f64::from(t) - frame_time(k, frames, duration)).abs() <= tolerance)
 }
 
 fn resample_track(
@@ -301,22 +407,42 @@ fn resample_track(
     duration: f64,
 ) -> Result<Resampled, AnimationError> {
     let n = track.channel.components();
-    let mut values = filled(frames as usize * n, 0i32)?;
+    // A track of one key holds it throughout, and one with a key at each frame's time holds the
+    // clip's keys: both are copied. Only the others are evaluated at each frame.
+    let keys = if track.times.len() == 1 {
+        1
+    } else {
+        frames as usize
+    };
+    let copied = keys == 1 || on_frames(track, frames, duration);
+    let stride = track.key_values();
+    // A cubic key's value sits after its in-tangent.
+    let value_at = if track.interpolation == Interpolation::CubicSpline {
+        n
+    } else {
+        0
+    };
+    let mut values = filled(keys * n, 0i32)?;
     let mut cursor = 0;
     let mut current = [0.0f64; 4];
     let mut previous = [0.0f64; 4];
     let mut first = [0.0f32; 4];
-    for frame in 0..frames as usize {
-        let time = if frames > 1 {
-            duration * frame as f64 / f64::from(frames - 1)
+    for frame in 0..keys {
+        if copied {
+            let key = &track.values[frame * stride + value_at..][..n];
+            for (c, v) in current.iter_mut().zip(key) {
+                *c = f64::from(*v);
+            }
         } else {
-            0.0
-        };
-        evaluate(track, time, &mut cursor, &mut current[..n]);
+            let time = frame_time(frame, frames, duration);
+            evaluate(track, time, &mut cursor, &mut current[..n]);
+        }
         let out = &mut values[frame * n..frame * n + n];
         if track.channel == Channel::Rotation {
             let length = current.iter().map(|v| v * v).sum::<f64>().sqrt();
-            let mut q = if length > 0.0 {
+            let mut q = if (length - 1.0).abs() <= UNIT_TOLERANCE {
+                current
+            } else if length > 0.0 {
                 current.map(|v| v / length)
             } else {
                 [0.0, 0.0, 0.0, 1.0]
@@ -344,7 +470,7 @@ fn resample_track(
     let first_key = &values[..n];
     let constant = values.chunks_exact(n).all(|key| key == first_key);
     let turns_far = track.channel == Channel::Rotation
-        && (1..frames as usize).any(|frame| {
+        && (1..keys).any(|frame| {
             let (a, b) = (
                 &values[(frame - 1) * n..frame * n],
                 &values[frame * n..][..n],
@@ -360,6 +486,7 @@ fn resample_track(
         first,
         constant,
         turns_far,
+        resampled: !copied,
     })
 }
 
@@ -428,44 +555,8 @@ pub fn resample(
     tracks: &[SourceTrack<'_>],
     rate: f32,
 ) -> Result<Clip, AnimationError> {
-    let mut seen = filled(skeleton.joints() as usize, 0u8)?;
-    for (index, track) in tracks.iter().enumerate() {
-        check_track(skeleton, index, track, &mut seen)?;
-    }
-    let rate = if rate.is_finite() && rate > 0.0 {
-        f64::from(rate)
-    } else {
-        f64::from(DEFAULT_RATE)
-    };
-    let duration = tracks
-        .iter()
-        .map(|t| f64::from(t.times[t.times.len() - 1]))
-        .fold(0.0, f64::max);
-    let frames = if duration > 0.0 {
-        let keys_per_second = keys_per_second(tracks, rate);
-        // The clip's end is a 32-bit float, which can round past its last frame by a few
-        // millionths of a frame: a key within a thousandth of a frame counts as on it, as the
-        // grid's keys do (`source_grid`).
-        let intervals = (duration * keys_per_second - FRAME_TOLERANCE)
-            .ceil()
-            .max(1.0);
-        if intervals >= f64::from(MAX_FRAMES) {
-            return Err(AnimationError::Frames {
-                frames: intervals.min(f64::from(u32::MAX)) as u32,
-            });
-        }
-        intervals as u32 + 1
-    } else {
-        1
-    };
-
-    let mut resampled = Vec::new();
-    resampled
-        .try_reserve_exact(tracks.len())
-        .map_err(|_| out_of_memory(tracks.len() * size_of::<Resampled>()))?;
-    for track in tracks {
-        resampled.push(resample_track(track, frames, duration)?);
-    }
+    let (frames, duration, resampled) = resample_tracks(skeleton.joints(), tracks, rate)?;
+    let resampled_tracks = resampled.iter().filter(|t| t.resampled).count() as u32;
 
     let mut base = skeleton.rest().clone();
     let lanes = base.lanes() as usize;
@@ -497,6 +588,7 @@ pub fn resample(
         },
         frames,
         tracks: tracks.len() as u32,
+        resampled_tracks,
         base,
         channels: channels.into_boxed_slice(),
         rotations: groups(&resampled, Channel::Rotation, frames, ROTATION_KEY, |v| {
@@ -511,4 +603,112 @@ pub fn resample(
         )?,
         scales: groups(&resampled, Channel::Scale, frames, VECTOR_KEY, as_float)?,
     }))
+}
+
+/// Checks a clip's tracks for a skeleton of `joints` joints, and puts each on the clip's frames:
+/// returns the frame count, the clip's length in seconds and the tracks' keys.
+fn resample_tracks(
+    joints: u32,
+    tracks: &[SourceTrack<'_>],
+    rate: f32,
+) -> Result<(u32, f64, Vec<Resampled>), AnimationError> {
+    check_tracks(joints, tracks)?;
+    let rate = if rate.is_finite() && rate > 0.0 {
+        f64::from(rate)
+    } else {
+        f64::from(DEFAULT_RATE)
+    };
+    let duration = tracks
+        .iter()
+        .map(|t| f64::from(t.times[t.times.len() - 1]))
+        .fold(0.0, f64::max);
+    let frames = if duration > 0.0 {
+        let keys_per_second = keys_per_second(tracks, rate);
+        // The clip's end is a 32-bit float, which can round past its last frame by a few
+        // millionths of a frame: a key within a thousandth of a frame counts as on it, as the
+        // grid's keys do (`source_grid`).
+        let intervals = (duration * keys_per_second - FRAME_TOLERANCE)
+            .ceil()
+            .max(1.0);
+        if intervals >= f64::from(MAX_FRAMES) {
+            return Err(AnimationError::Frames {
+                frames: intervals.min(f64::from(u32::MAX)) as u32,
+            });
+        }
+        intervals as u32 + 1
+    } else {
+        1
+    };
+    let mut resampled = Vec::new();
+    resampled
+        .try_reserve_exact(tracks.len())
+        .map_err(|_| out_of_memory(tracks.len() * size_of::<Resampled>()))?;
+    for track in tracks {
+        resampled.push(resample_track(track, frames, duration)?);
+    }
+    Ok((frames, duration, resampled))
+}
+
+/// The keys of one track that [`bake`] put on its clip's frames.
+#[derive(Clone, Debug, PartialEq)]
+pub enum BakedKeys {
+    /// A rotation that changes: one key per frame, four 16-bit integers each, the unit quaternion
+    /// times 32767, as a clip stores it. Each key lies in the hemisphere of the key before.
+    Rotations(Vec<i16>),
+    /// A translation or scale that changes: one key per frame, three floats each. Or a track
+    /// whose value never changes: one key, with a rotation as a unit quaternion of four floats.
+    Floats(Vec<f32>),
+}
+
+/// A clip's tracks put on the frames that [`resample`] gives the clip, in the form that
+/// [`resample`] copies without evaluation: each track that changes holds one key at each frame's
+/// time, and each track that does not holds one key.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BakedClip {
+    /// The time of each frame in seconds, from 0 to the clip's length. The one key of a track
+    /// that does not change goes at the last time, so the clip keeps its length.
+    pub times: Vec<f32>,
+    /// Each track's keys, in the order of the tracks given.
+    pub tracks: Vec<BakedKeys>,
+}
+
+/// Puts a clip's tracks on its frames, as [`resample`] would for a skeleton of `joints` joints,
+/// and gives their keys in the form that [`resample`] copies: the asset tool stores clips so.
+/// Step tracks keep their steps at the frames, and cubic spline tracks become linear keys on the
+/// curve. The keys are the clip's keys, so a clip built from the baked tracks equals one built
+/// from the source tracks. The tool runs it once per clip; it allocates.
+pub fn bake(
+    tracks: &[SourceTrack<'_>],
+    joints: u32,
+    rate: f32,
+) -> Result<BakedClip, AnimationError> {
+    let (frames, duration, resampled) = resample_tracks(joints, tracks, rate)?;
+    let mut times = filled(frames as usize, 0.0f32)?;
+    for (frame, time) in times.iter_mut().enumerate() {
+        *time = frame_time(frame, frames, duration) as f32;
+    }
+    let mut baked = Vec::new();
+    baked
+        .try_reserve_exact(resampled.len())
+        .map_err(|_| out_of_memory(resampled.len() * size_of::<BakedKeys>()))?;
+    for track in &resampled {
+        let n = track.channel.components();
+        baked.push(if track.constant {
+            BakedKeys::Floats(track.first[..n].to_vec())
+        } else if track.channel == Channel::Rotation {
+            BakedKeys::Rotations(track.values.iter().map(|&v| v as i16).collect())
+        } else {
+            BakedKeys::Floats(
+                track
+                    .values
+                    .iter()
+                    .map(|&v| f32::from_bits(v as u32))
+                    .collect(),
+            )
+        });
+    }
+    Ok(BakedClip {
+        times,
+        tracks: baked,
+    })
 }

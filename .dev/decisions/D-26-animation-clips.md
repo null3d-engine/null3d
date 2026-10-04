@@ -96,7 +96,7 @@ A three.js clip keeps each track's key times and values as 32-bit floats. Each f
 ## Consequences
 
 - `crates/null3d-core/src/animation/` holds skeletons, clips, resampling and the frame step. The WebAssembly entry point exposes them to the animation test page. The animator (M2-C2) builds its API on the sample slots, as [D-28](D-28-animator.md) records.
-- The glTF loader (M2-C7) calls `resample` on a job worker when it reads a file, and converts cubic spline input there.
+- The glTF loader (M2-C7) calls `resample` on a job worker when it reads a file, and converts cubic spline input there. A track whose keys already lie on the clip's frames is copied, not evaluated, as the asset tool writes every track ([D-18](D-18-asset-tool.md#clips)). The copy keeps a key's 16-bit integers when the key's length lies within a few steps of 1.
 - The skinning passes (M2-C3, M2-C4) read the 48-byte matrices.
 - The phone timings come from the animation plan. Add them to this record when it runs on the S24+.
 - The record is in the table in [README.md](README.md).

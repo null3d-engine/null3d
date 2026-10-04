@@ -37,7 +37,10 @@ mod system;
 pub use actions::{Action, event_kind, flag};
 pub use clip::Clip;
 pub use pose::Pose;
-pub use resample::{Channel, DEFAULT_RATE, Interpolation, MAX_FRAMES, SourceTrack, resample};
+pub use resample::{
+    BakedClip, BakedKeys, Channel, DEFAULT_RATE, Interpolation, MAX_FRAMES, SourceTrack,
+    TRACK_WORDS, as_floats, bake, resample, staged_tracks,
+};
 pub use skeleton::{MAX_JOINTS, NO_PARENT, REST_FLOATS, Skeleton};
 pub use system::{
     Animations, EVENT_CAPACITY, EVENT_WORDS, INSTANCE_CHUNK, MAX_BLEND, MAX_LAYERS, Play,

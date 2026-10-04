@@ -41,11 +41,15 @@ The engine builds one skeleton for the whole model. Its joints are every node th
 
 A clip without a name takes the name three.js gives it: `animation_0`, `animation_1` and on, in the file's order. When two clips share a name, the second becomes `Name 2`, the third `Name 3`, and so on.
 
-The loader hands every clip to the job workers, which resample them between frames. A model's clips are ready when `loadGltf` resolves. On the engine's test page, the KayKit Knight's 76 clips took 16 ms on two job workers. In the single-threaded mode, the sketch's thread resamples them a few milliseconds at a time.
-
 `scene.clone(copy)` gives the clone an animator of its own, with no clip playing. `scene.createInstances(prefab, count)` draws a model's meshes in their rest pose: instance batches do not animate.
 
 A model's morph targets load with their default weights, and its clips animate the weights, as [Morph targets](#morph-targets) says. A node's own `weights` replace its mesh's, as three.js reads them.
+
+### Load cost
+
+The engine keeps each clip at one fixed rate of keys. The loader hands every clip to the job workers, which put it at that rate between frames. A track whose keys already sit at the rate is copied, and the job workers resample the others. A model's clips are ready when `loadGltf` resolves. In the single-threaded mode, the sketch's thread does this work a few milliseconds at a time.
+
+Files from `bunx @null3d/cli assets optimize` store every clip at the engine's rate, so they load with copies alone. [The asset pipeline](../guides/assets-pipeline.md#what-it-does-to-clips) says how. On the engine's test page, the KayKit Knight's 76 clips took 16.5 ms on two job workers from its source file. From the command's output they took 8 ms, and the output's binary part is 46% smaller.
 
 ## Seeing the skeleton
 
