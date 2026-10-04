@@ -83,6 +83,8 @@ Option (c) gives identical images on every GPU that ran it, and it relies on no 
 
 The same rule covers skinned meshes on WebGL2. Their skinning lives in the vertex shader, so the prepass skins them exactly as the opaque pass does.
 
+Custom materials stay out of the prepass on both paths, as their vertex offsets may move vertices. So the rule of the shared vertex shader does not reach them, and they draw as they would without the prepass. The custom textures test joined the prepass copies when custom materials got textures. Its plane reads a height from a texture in the vertex stage. On 4 October 2026 its copy passed on every tier and both GPU sets, with the nine other prepass copies.
+
 ## Consequences
 
 - `Prepass` in `crates/null3d-render/src/pipelines.rs` names the two ways, and each frame builder picks its own. The WebGL2 builder's prepass replays the opaque pass's calls first, from the same index list, draw records and frame group. It leaves out the draws without a prepass pipeline.
