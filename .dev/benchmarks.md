@@ -4,6 +4,8 @@ This guide covers how to run the benchmarks and read their numbers. [AGENTS.md](
 
 The benchmarks compare null3D with three.js in the same browser. These points come from the first checkpoint's measurements.
 
+A comparison measures equal work: the same scene content and comparable quality settings ([D-52](decisions/D-52-intent-parity.md)). Each engine may draw an effect with its own technique. Where the two images differ by design, the report gives a quality note beside the timings.
+
 ## Production builds
 
 The benchmarks measure the engine as developers ship it. A production build leaves out the engine's development checks, such as the handle and argument checks, so the benchmarks leave them out too.
@@ -179,9 +181,11 @@ A change can make a scene faster and make it look worse, such as a smaller shado
 
 ## The depth prepass
 
-- The page switch `?prepass=on` or `?prepass=off` turns the depth prepass on or off, whatever the preset says. Only the WebGPU path draws it, for the reason that [Depth on WebGL2](implementation-notes.md#depth-on-webgl2) gives. `?prepass=on` on a benchmark page, with `measure`'s `gpuPassMs`, gives the prepass's GPU cost in the scene's render pass.
+- The page switch `?prepass=on` or `?prepass=off` turns the depth prepass on or off, whatever the preset says. Both GPU paths draw it ([Depth on WebGL2](implementation-notes.md#depth-on-webgl2)). `?prepass=on` on a benchmark page, with `measure`'s `gpuPassMs`, gives the prepass's GPU cost in the scene's render pass.
+- The page kinds that end in `-prepass` start null3D with `?prepass=on`, so a bench run takes turns between a page and its prepass twin: `bun run bench:run --scenes s2 --pages null3d-webgl2,null3d-webgl2-prepass,null3d-webgpu,null3d-webgpu-prepass`.
 - On 2 October 2026 (M1-A7), S2 ran on WebGPU in Chrome on the MacBook Pro, 3 runs of 10 seconds each way. Its GPU time per frame was 0.28 ms without the prepass and 0.41 ms with it. The scene's render pass grew from 0.13 ms to 0.26 ms. S2's trees hide few others, and its shading is cheap, so a second pass over its vertices costs more than it saves.
-- Every preset leaves the prepass off on that result. The iPad's figure, from S2's page with each switch, is still to come.
+- On 4 October 2026 (M2-R2), S2 ran again with the `-prepass` pages, 5 runs of 5 seconds each, in turns. WebGPU's GPU time per frame went from 0.28 ms to 0.40 ms. On WebGL2 the draw calls went from 101 to 201, and the render worker's time per frame from 0.075 ms to 0.080 ms. Chrome on the Mac has no GPU timer on WebGL2, so the WebGL2 GPU cost needs a device.
+- Every preset leaves the prepass off on those results. The iPad's and the phones' figures, from the bench plan with the `-prepass` pages, are still to come.
 
 ## Sweeps for the open defaults
 

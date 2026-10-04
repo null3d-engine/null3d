@@ -138,7 +138,7 @@ use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
 use crate::output::{Antialias, SceneColor};
-use crate::pipelines::{DepthPass, PipelineCache};
+use crate::pipelines::{PipelineCache, Prepass};
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
 use crate::shadows::{self, MAX_CASCADES, ShadowUniform};
 use crate::sorted::SortedLayout;
@@ -591,7 +591,7 @@ impl GpuDrivenRenderer {
                 parity,
                 limit,
                 shadows,
-                self.graph.depth_pass(),
+                self.graph.depth_pass(Prepass::DepthTemplate),
                 &self.skinning,
             )?;
             let skinning = &self.skinning;
@@ -622,7 +622,7 @@ impl GpuDrivenRenderer {
                     parity,
                     limit,
                     shadows,
-                    DepthPass::None,
+                    Prepass::Off,
                     &self.skinning,
                 )?;
             } else {
@@ -699,13 +699,13 @@ impl GpuDrivenRenderer {
             .shadow_atlas()
             .expect("the builder's graph binds a shadow atlas");
         let first_new = self.views_made;
-        let depth_pass = self.graph.depth_pass();
+        let depth_pass = self.graph.depth_pass(Prepass::DepthTemplate);
         for index in 0..views {
             let view = ViewId::from_index(index);
             if index >= first_new {
                 opaque::create_frame_buffer(list, view)?;
                 self.culling.add_view(list, view)?;
-                if depth_pass != DepthPass::None {
+                if depth_pass != Prepass::Off {
                     shadow::bind_depth(list, ids::prepass_group(view), view)?;
                 }
             }
@@ -837,7 +837,7 @@ impl GpuDrivenRenderer {
             };
             let main = Bundle::Main;
             opaque::record_bundle(list, view, layout, meshes, scene_targets, main, first_draw)?;
-            if depth_pass != DepthPass::None {
+            if depth_pass != Prepass::Off {
                 let depth = Bundle::Depth;
                 opaque::record_bundle(list, view, layout, meshes, depth_targets, depth, 0)?;
             }

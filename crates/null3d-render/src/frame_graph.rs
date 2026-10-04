@@ -102,7 +102,7 @@ use crate::graph::{
     ResourceId, Size, Step, StepKind, StoreOp, Surface, Target,
 };
 use crate::output::{Antialias, Output, SceneColor};
-use crate::pipelines::{DepthPass, PassTargets, PipelineCache};
+use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadows::{MAX_CASCADES, ShadowFrame};
 use crate::view::{View, ViewId};
 
@@ -500,14 +500,14 @@ impl FrameGraph {
         }
     }
 
-    /// The pass that draws the opaque objects' depth before the pass that shades them, if any.
-    pub(crate) fn depth_pass(&self) -> DepthPass {
+    /// How the opaque objects' depth draws before the pass that shades them: in the depth prepass,
+    /// the way that the builder's `prepass` names, in the occluders' pass of occlusion culling, or
+    /// not at all.
+    pub(crate) fn depth_pass(&self, prepass: Prepass) -> Prepass {
         if self.prepass {
-            DepthPass::Prepass
-        } else if self.occlusion() {
-            DepthPass::Occluders
+            prepass
         } else {
-            DepthPass::None
+            Prepass::Occluders.if_on(self.occlusion())
         }
     }
 

@@ -107,8 +107,7 @@ export interface CoreDevice {
 	/** False when the core culls every object and instance row, with no grid cells skipped first. */
 	cellCulling: boolean;
 	/**
-	 * True when each camera view draws its opaque objects' depth before it shades them. Only the
-	 * WebGPU path draws the prepass.
+	 * True when each camera view draws its opaque objects' depth before it shades them.
 	 */
 	depthPrepass: boolean;
 	/**

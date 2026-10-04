@@ -28,7 +28,7 @@ use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, bucket_of, collect_bucket_keys,
     put_u32,
 };
-use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
+use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 use crate::skinning::skinned_in_vertex_shader;
 
 /// The data texture of a bucket's instances, as its draw record names it.
@@ -75,6 +75,9 @@ pub(super) struct Bucket {
 pub(super) struct Draw {
     /// The id of its render pipeline.
     pub(super) pipeline: u32,
+    /// The id of the render pipeline that draws its depth in the depth prepass, or 0 for a draw
+    /// that the prepass leaves out.
+    pub(super) prepass: u32,
     /// The bind group of its material's map, or 0 for a pipeline that reads none.
     pub(super) textures: u32,
     pub(super) page: u32,
@@ -181,7 +184,8 @@ impl Layout {
     /// fails. With `multi_draw`, one block of draw records serves each multi-draw call; else each
     /// draw has an aligned record of its own. With `shadows`, the scene's receivers draw with
     /// pipelines that read the shadow maps, and the casters' layout holds the casters. The objects
-    /// that `skins` skins draw with pipelines that skin in the vertex shader. The caller marks the
+    /// that `skins` skins draw with pipelines that skin in the vertex shader. With a `prepass`, the
+    /// scene's draws that the depth prepass draws get its pipelines too. The caller marks the
     /// layout built once the room it needs is made.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn rebuild(
@@ -194,6 +198,7 @@ impl Layout {
         limit: u32,
         multi_draw: bool,
         shadows: bool,
+        prepass: Prepass,
     ) -> Result<(), RecordError> {
         let (scene, batches) = (input.scene, input.batches);
         self.scene_rows = scene.capacity() + 1;
@@ -300,7 +305,7 @@ impl Layout {
         self.draws.clear();
         for &((pipeline, textures, _, mesh, material, group), _) in &self.key_counts {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
-            let pipeline = pipelines.id(pipeline.in_pass(targets));
+            let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
             for shift in [0, CLUSTER_SHIFT] {
                 let bucket = self.buckets.len() as u32;
                 self.buckets.push(Bucket {
@@ -311,6 +316,7 @@ impl Layout {
                 self.draws
                     .extend(meshes.parts(slot).iter().map(|part| Draw {
                         pipeline,
+                        prepass,
                         textures,
                         page: part.page,
                         bucket,

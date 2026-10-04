@@ -13,6 +13,8 @@ Image-based light needs the environment's light filtered for each roughness of t
 - At most 4 MiB of GPU memory for an environment at the default size.
 - The tool's output has the same bytes on every machine, as [D-18](D-18-asset-tool.md) requires.
 
+Note, 2026-10-04: the owner's decision of that day ([D-52](D-52-intent-parity.md)) changes two points of this record. First, a material's roughness means one GGX distribution. three.js's PMREM blurs less than that distribution, as a trait of its technique. So keeping a three.js port's look is no longer a reason to read the matching roughness of the table. Second, built-in assets are made at run time and never ship as files in the engine's package. That rule replaces the room's file in the consequences below.
+
 ## The options
 
 | Choice | Options | Taken |

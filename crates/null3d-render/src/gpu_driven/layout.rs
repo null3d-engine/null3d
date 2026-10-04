@@ -26,7 +26,7 @@ use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
 };
-use crate::pipelines::{DepthPass, DrawKey, PassTargets, PipelineCache};
+use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 
 /// Words of one bucket record in the culling shader: base, material, radius, first draw, draw
 /// count, the centre of the local sphere that culls the bucket's sources, and the first joint of
@@ -445,7 +445,7 @@ impl Layout {
     /// Assigns every source to a bucket and lays the buckets out, from the frame's world state,
     /// with each bucket's pipeline id from `pipelines`, for a pass that draws into `targets`. With
     /// `shadows`, the scene's receivers draw with pipelines that read the shadow maps. With a
-    /// `depth` pass, the buckets that it draws get its pipelines too. Skinned objects
+    /// `prepass`, the buckets that it draws get its pipelines too. Skinned objects
     /// draw the skinned vertices that `skinning` lays out. It reuses
     /// the layout's tables and scratch space, which grow only with the scene. A scene of more than
     /// `limit` sources fails.
@@ -460,7 +460,7 @@ impl Layout {
         parity: usize,
         limit: u32,
         shadows: bool,
-        depth: DepthPass,
+        prepass: Prepass,
         skinning: &Skinning,
     ) -> Result<(), RecordError> {
         let scene_rows = scene.capacity() + 1;
@@ -565,7 +565,7 @@ impl Layout {
                 self.skinned.push((self.buckets.len() as u32, object));
             }
             let regions = object.and_then(|object| skinning.parts_of(object));
-            let (pipeline, prepass) = pipelines.opaque(pipeline, targets, depth);
+            let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
             self.buckets.push(Bucket {
                 pipeline,
                 prepass,
@@ -948,7 +948,7 @@ mod tests {
                 parity,
                 u32::MAX,
                 false,
-                DepthPass::None,
+                Prepass::Off,
                 &Skinning::default(),
             )
             .unwrap();
