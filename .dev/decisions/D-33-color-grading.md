@@ -72,3 +72,15 @@ The sample content's tables (`sources/luts/`): warm, cool and identity, each as 
 ## Addendum, 2026-10-04: the table and the vignette under intent parity
 
 The owner's decision of 4 October 2026 ([D-52](D-52-intent-parity.md)) splits this record's second rule. A grading table is the author's own data, so applying it is intent parity: `LUTPass`'s table and intensity keep their strict parity test. The vignette is a look. Its default follows the best technique, and three.js's vignette is a candidate for the opt-in `three-compat` add-on module. The `lut-vignette` parity scene keeps its strict limit until the vignette's default changes.
+
+## Addendum, 2026-10-04: the vignette moves into HDR, and the dither runs last
+
+The owner settled the vignette's default that evening, as ruling 3 of [D-53](D-53-technique-defaults.md):
+
+- The vignette multiplies HDR color before the tone curve, as Filament, URP, Bevy and Babylon.js do. Darkening before the curve keeps highlights from turning gray in the corners.
+- three.js's formula leaves the core. The porting skill maps `VignetteShader`'s `offset` to the size and `darkness` to the intensity. The difference is small. Corners darken a little more in highlights. three.js's lift of dark corners at `darkness` below 1 is lost, and it is rarely intended. So three.js's vignette does not go to the `three-compat` add-on either.
+- The dither becomes static triangle noise of one step, run last, after the table and the vignette, as Filament and URP do. Today white noise of half a step runs before the vignette, which shrinks the noise in the corners, where bands show first. Prototype P5 checks it with a dark vignette over a flat color.
+- Tables stay after the tone curve: grading tools author them for display color. No grading controls come in M2 (ruling 25). When they come, a job worker bakes them with the tone curve into one 32³ table on each change, as Filament does.
+- The `lut-vignette` parity scene keeps its strict limit until the vignette moves. Then the vignette gets null3D's own references and a sanity comparison, and the table keeps its strict test in a scene without a vignette.
+
+The work is the proposed task M2-F9, with `R11F_G11F_B10F` scene color on WebGL2 after prototype P3.

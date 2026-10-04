@@ -189,6 +189,8 @@ export type Check =
 	| { kind: 'skinning'; tier: SkinningGpu; characters: number; cascades: number }
 	/** The bloom cost page: bloom off and on in turns, at one render scale. */
 	| { kind: 'bloom'; tier: Tier; scale: number }
+	/** The occlusion cost page: the city with software occlusion culling off and on in turns. */
+	| { kind: 'occlusion' }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
 	| { kind: 'animation'; characters: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
@@ -800,6 +802,24 @@ export function bloomPlan(): PlanItem<Check>[] {
 	);
 }
 
+/** How long the occlusion cost page may take: the city's start, the warm-up and six measurements. */
+const OCCLUSION_TIMEOUT_SECONDS = 90;
+
+/**
+ * What software occlusion culling costs and saves on WebGL2: the occlusion city fills the window,
+ * and the page times its frames with the culling off and on in turns. D-41 records the results.
+ */
+export function occlusionPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(
+			'occlusion-webgl2',
+			'occlusion-cost',
+			{ kind: 'occlusion' },
+			{ switches: ['gpu=webgl2'], timeoutSeconds: OCCLUSION_TIMEOUT_SECONDS },
+		),
+	];
+}
+
 /** The crowds that the animation plan times: a first draft of S5's crowd, then the full crowd. */
 export const ANIMATION_CHARACTERS = [100, 500] as const;
 
@@ -1116,6 +1136,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	skinning: () => skinningPlan('webgl2'),
 	'skinning-webgpu': () => skinningPlan('webgpu'),
 	bloom: bloomPlan,
+	occlusion: occlusionPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
 	soak: soakPlan,
@@ -1592,6 +1613,17 @@ export function judge(
 			return [
 				...(bloom.failures ?? []).map((code) => `the engine failed with ${code}`),
 				...(bloom.on?.intervalMs ? [] : ['the page measured no frame with bloom on']),
+			];
+		}
+		case 'occlusion': {
+			const occlusion = result as ItemResult & {
+				failures?: string[];
+				on?: { intervalMs?: number; occludedEntries?: number | null };
+			};
+			return [
+				...(occlusion.failures ?? []).map((code) => `the engine failed with ${code}`),
+				...(occlusion.on?.intervalMs ? [] : ['the page measured no frame with occlusion on']),
+				...(occlusion.on?.occludedEntries ? [] : ['occlusion culling hid nothing in the city']),
 			];
 		}
 		case 'animation':

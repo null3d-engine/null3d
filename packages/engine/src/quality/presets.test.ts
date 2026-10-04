@@ -106,6 +106,7 @@ describe('the preset table', () => {
 			'bloomSamples',
 			'governor',
 			'depthPrepass',
+			'softwareOcclusion',
 			'maxAnisotropy',
 			'uploadBytesPerFrame',
 			'memoryMaximumMiB',
@@ -133,6 +134,7 @@ describe('the preset table', () => {
 			'shadowFilter',
 			'farCascadeInterval',
 			'bloomSamples',
+			'softwareOcclusion',
 			'governor',
 			'antialias',
 			'shadowCascades',
@@ -151,6 +153,7 @@ describe('the preset table', () => {
 			'shadowFilter',
 			'farCascadeInterval',
 			'bloomSamples',
+			'softwareOcclusion',
 			'governor',
 		]);
 	});
@@ -184,6 +187,7 @@ describe('presetSettings', () => {
 			maxPixelRatio: 1.5,
 			minRenderScale: 0.5,
 			...full,
+			softwareOcclusion: false,
 			shadowFilter: 3,
 			farCascadeInterval: 4,
 			maxAnisotropy: 2,
@@ -199,6 +203,7 @@ describe('presetSettings', () => {
 			maxPixelRatio: 2,
 			minRenderScale: 0.6,
 			...full,
+			softwareOcclusion: true,
 			shadowFilter: 5,
 			farCascadeInterval: 3,
 			maxAnisotropy: 4,
@@ -214,6 +219,7 @@ describe('presetSettings', () => {
 			maxPixelRatio: 2,
 			minRenderScale: 0.75,
 			...full,
+			softwareOcclusion: true,
 			shadowFilter: 5,
 			farCascadeInterval: 2,
 			maxAnisotropy: 8,
@@ -229,6 +235,7 @@ describe('presetSettings', () => {
 			maxPixelRatio: Number.POSITIVE_INFINITY,
 			minRenderScale: 1,
 			...full,
+			softwareOcclusion: true,
 			shadowFilter: 5,
 			farCascadeInterval: 2,
 			maxAnisotropy: 16,
@@ -298,7 +305,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval, bloomSamples or governor.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval, bloomSamples, softwareOcclusion or governor.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(
