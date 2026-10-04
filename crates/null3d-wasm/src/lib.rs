@@ -29,6 +29,7 @@ use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, WorkerId};
 use null3d_core::lights::LightTable;
 use null3d_core::scene::{CommandRing, SceneStorage};
 use null3d_core::snapshot::FrameSnapshot;
+use null3d_core::sprites::SpriteLook;
 use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::sizes;
 use null3d_gpu::drawlist::vertex::{self, Type};
@@ -805,6 +806,28 @@ pub fn create_batch_part(
     })
 }
 
+/// Creates a sprite batch: `capacity` sprites drawn with `mesh`, a quad around their anchor, and
+/// `material`, a sprite material. Frames come from an atlas of `columns` by `rows`, and with
+/// `screen_size` the sizes are in CSS pixels of the screen rather than in world units. Returns
+/// its id.
+#[wasm_bindgen(js_name = createSpriteBatch)]
+pub fn create_sprite_batch(
+    capacity: u32,
+    dynamic: bool,
+    mesh: u32,
+    material: u32,
+    columns: u32,
+    rows: u32,
+    screen_size: bool,
+) -> u32 {
+    let look = SpriteLook::new(columns, rows, screen_size);
+    value_with_engine(|e| {
+        add_batch(e, capacity, mesh, |batches, radius| {
+            batches.create_sprites(capacity, dynamic, mesh, material, radius, look)
+        })
+    })
+}
+
 /// Adds a batch of `capacity` rows of `mesh`, made by `make` with the mesh's radius, once the
 /// renderer has room for its rows, and returns its id.
 fn add_batch(
@@ -862,7 +885,9 @@ pub fn destroy_batch(batch: u32, frame: u32) -> u32 {
 }
 
 /// The address of one of a batch's row arrays (see `constants::batch_field`): positions (3 floats
-/// a row), rotations (4), scales (3), or colors (4, or 0 for a batch without colors).
+/// a row), rotations (4), scales (3), or colors (4, or 0 for a batch without colors). A sprite
+/// batch has positions, sizes (2 floats a row), rotations in radians (1), colors (4) and frames
+/// (one 32-bit integer a row), and 0 for scales.
 #[wasm_bindgen(js_name = batchArrays)]
 pub fn batch_arrays(batch: u32, field: u32) -> u32 {
     value_with_engine(|e| {
@@ -870,11 +895,22 @@ pub fn batch_arrays(batch: u32, field: u32) -> u32 {
             .batches
             .get(Handle::from_raw(batch))
             .map_err(core_failure)?;
+        if batch.sprite_look().is_some() {
+            let (sizes, rotations, colors, frames) = batch.sprite_rows();
+            return Ok(match field {
+                batch_field::POSITIONS => address(batch.positions()),
+                batch_field::ROTATIONS => address(rotations),
+                batch_field::SIZES => address(sizes),
+                batch_field::COLORS => address(colors),
+                batch_field::FRAMES => address(frames),
+                _ => 0,
+            });
+        }
         Ok(match field {
             batch_field::POSITIONS => address(batch.positions()),
             batch_field::ROTATIONS => address(batch.rotations()),
             batch_field::SCALES => address(batch.scales()),
-            _ if batch.has_colors() => address(batch.colors()),
+            batch_field::COLORS if batch.has_colors() => address(batch.colors()),
             _ => 0,
         })
     })
@@ -1143,6 +1179,7 @@ pub fn create_material(
         shading::UNLIT => Shading::Unlit,
         shading::TEXCOORDS => Shading::TexCoords,
         shading::UNLIT_MAP => Shading::UnlitMap,
+        shading::SPRITE => Shading::Sprite,
         custom if custom >= shading::CUSTOM_FIRST => Shading::Custom(CustomShading {
             template: custom & 0xffff,
             attributes: (custom >> shading::CUSTOM_ATTRIBUTE_SHIFT) & 0xff,
@@ -1571,6 +1608,16 @@ pub fn set_light_default(which: u32, value: f32) -> u32 {
 pub fn set_background(r: f32, g: f32, b: f32) -> u32 {
     with_engine(|e| {
         e.renderer.settings_mut().set_background([r, g, b]);
+        0
+    })
+}
+
+/// The device pixels per CSS pixel that the canvas draws with, which sizes sprites given in pixels
+/// of the screen.
+#[wasm_bindgen(js_name = setPixelRatio)]
+pub fn set_pixel_ratio(ratio: f32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_pixel_ratio(ratio);
         0
     })
 }

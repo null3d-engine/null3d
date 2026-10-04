@@ -101,8 +101,8 @@ jobs:
 
   build:
     # The files that the other jobs need, built once on Linux: the engine's two WebAssembly files,
-    # the shader compiler that the dev server runs on the WGSL in the test sketches, and the shader
-    # modules, which git does not keep, with the record of the inputs they were built from. The
+    # the shader compiler that the dev server runs on the WGSL in the test sketches, the asset
+    # tool's formats that the unit tests load, and the shader modules, which git does not keep, with the record of the inputs they were built from. The
     # files are the same on every platform, so each job below downloads them instead of spending
     # about 2 minutes to build them again.
     runs-on: ubuntu-latest
@@ -131,6 +131,7 @@ jobs:
           path: |
             packages/engine/dist/
             packages/vite-plugin/dist/
+            packages/cli/dist/
             packages/engine/src/generated/shaders*.ts
             target/shader-modules.json
           if-no-files-found: error

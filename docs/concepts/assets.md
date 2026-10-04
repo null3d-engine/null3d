@@ -38,6 +38,8 @@ const many = scene.createInstances(ship, 200); // one row places a whole ship
 
 For hundreds or thousands of copies, `scene.createInstances(prefab, count)` draws them with instance batches instead of objects, one batch for each mesh of the model. The batches share their rows, so one write to a row moves every part of that copy. [Scene](../api/scene.md#models-and-copies) covers the three ways to copy, and [Assets](../api/assets.md#gltf-models) lists what each part of a file becomes.
 
+Before you publish a model, run it through `bunx @null3d/cli assets optimize`. The command stores its meshes as integers compressed with meshopt, and its textures as KTX2 files. The model then downloads less and takes less GPU memory. [The asset pipeline](../guides/assets-pipeline.md) covers it.
+
 The loader reads `.glb` files, and `.gltf` files with the files they name. It reads these extensions: `KHR_mesh_quantization`, `KHR_meshopt_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu`, `KHR_texture_transform`, `KHR_materials_unlit`, `KHR_materials_emissive_strength`, `KHR_lights_punctual` and `EXT_mesh_gpu_instancing`. A file that requires another extension fails with E1417. The loader leaves out other extensions that a file only uses, and the model draws without them.
 
 ### Compressed meshes

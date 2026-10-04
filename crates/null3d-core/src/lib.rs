@@ -16,6 +16,7 @@
 //! | [`world`] | Per-frame world output: matrices and bounding spheres, double-buffered |
 //! | [`scene`] | Scene objects by slot, 16-byte commands, the hierarchy and the transform update |
 //! | [`instances`] | Instance batches: per-row arrays, dirty ranges, the batch table, memory epoch |
+//! | [`sprites`] | Sprites: how a sprite batch packs each sprite into its row's world matrix |
 //! | [`layers`] | Render layers: the masks that choose which views draw which sources |
 //! | [`lights`] | The light table, and the lights each frame finds for a view |
 //! | [`culling`] | Frustum planes and SIMD sphere culling, serial and parallel |
@@ -56,6 +57,7 @@ pub mod math;
 pub mod scene;
 pub mod shared;
 pub mod snapshot;
+pub mod sprites;
 #[cfg(feature = "testing")]
 pub mod testing;
 mod wait;

@@ -38,6 +38,10 @@ pub mod batch_field {
     pub const ROTATIONS: u32 = 1;
     pub const SCALES: u32 = 2;
     pub const COLORS: u32 = 3;
+    /// A sprite batch's sizes, 2 floats a row.
+    pub const SIZES: u32 = 4;
+    /// A sprite batch's atlas frames, one 32-bit integer a row.
+    pub const FRAMES: u32 = 5;
 }
 
 /// Fields of `debugLineArrays`.
@@ -67,6 +71,8 @@ pub mod shading {
     pub const TEXCOORDS: u32 = 2;
     /// The base color times the material's map, as three.js's `MeshBasicMaterial` with a `map`.
     pub const UNLIT_MAP: u32 = 3;
+    /// Sprites, as three.js's `SpriteMaterial` draws them, for the rows of a sprite batch only.
+    pub const SPRITE: u32 = 4;
     /// The first custom material: a shading from here up is a custom material's. Its low 16 bits
     /// are the render pipeline template of the material's compiled WGSL.
     pub const CUSTOM_FIRST: u32 = null3d_gpu::drawlist::template::CUSTOM_FIRST;
@@ -408,7 +414,13 @@ pub fn typescript() -> String {
                 ("ROTATIONS", batch_field::ROTATIONS),
                 ("SCALES", batch_field::SCALES),
                 ("COLORS", batch_field::COLORS),
+                ("SIZES", batch_field::SIZES),
+                ("FRAMES", batch_field::FRAMES),
             ],
+        ),
+        (
+            "SPRITE",
+            &[("MAX_ATLAS_SIDE", null3d_core::sprites::MAX_ATLAS_SIDE)],
         ),
         (
             "QUERY",
@@ -525,6 +537,7 @@ pub fn typescript() -> String {
                 ("UNLIT", shading::UNLIT),
                 ("TEXCOORDS", shading::TEXCOORDS),
                 ("UNLIT_MAP", shading::UNLIT_MAP),
+                ("SPRITE", shading::SPRITE),
                 ("CUSTOM_FIRST", shading::CUSTOM_FIRST),
                 ("CUSTOM_ATTRIBUTE_SHIFT", shading::CUSTOM_ATTRIBUTE_SHIFT),
                 ("CUSTOM_BASE_COLOR", shading::CUSTOM_BASE_COLOR),

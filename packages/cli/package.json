@@ -1,7 +1,7 @@
 {
 	"name": "@null3d/cli",
 	"version": "0.0.0",
-	"description": "The command-line tool for null3D, a browser 3D engine for games and heavy 3D apps. It draws frames of a project's scenes in headless Chrome, tests them against reference images, and measures the engine on a project's page.",
+	"description": "The command-line tool for null3D, a browser 3D engine for games and heavy 3D apps. It optimizes glTF models and their textures for the engine, draws frames of a project's scenes in headless Chrome, tests them against reference images, and measures the engine on a project's page.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",
 	"homepage": "https://github.com/null3d-engine/null3d#readme",
@@ -26,10 +26,16 @@
 	"bin": {
 		"null3d": "bin/null3d.js"
 	},
+	"exports": {
+		"./assets": "./src/assets/index.js",
+		"./package.json": "./package.json"
+	},
 	"files": [
 		"bin",
 		"src",
 		"!src/**/*.test.ts",
+		"vendor",
+		"dist/assets.wasm",
 		"LICENSE-MIT",
 		"LICENSE-APACHE"
 	],
@@ -44,7 +50,12 @@
 		"prepack": "bun ../../tools/build-package.ts cli"
 	},
 	"dependencies": {
+		"@gltf-transform/core": "4.5.1",
+		"@gltf-transform/extensions": "4.5.1",
+		"draco3d": "1.5.7",
 		"fast-png": "8.0.0",
+		"jpeg-js": "0.4.4",
+		"meshoptimizer": "1.3.0",
 		"pixelmatch": "7.2.0",
 		"playwright-core": "1.63.0"
 	},
