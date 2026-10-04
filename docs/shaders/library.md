@@ -326,13 +326,21 @@ fn worley2(p: vec2f) -> f32
 
 Cellular noise in 2D: the distance from `p` to the nearest random point.
 
+### `MAX_OCTAVES`
+
+```wgsl
+const MAX_OCTAVES: u32 = 24u;
+```
+
+The most octaves that fractal noise sums. An octave past it would add an amplitude below a 32-bit float's precision next to the first octave's, so a larger count gives the same result within that precision.
+
 ### `fbm3`
 
 ```wgsl
 fn fbm3(p: vec3f, octaves: u32) -> f32
 ```
 
-Fractal noise in 3D: `octaves` layers of simplex noise, each at twice the frequency and half the amplitude of the one before. The sum is divided by the total amplitude, so it stays from about -1 to 1. With no octaves it is 0.
+Fractal noise in 3D: `octaves` layers of simplex noise, each at twice the frequency and half the amplitude of the one before. The sum is divided by the total amplitude, so it stays from about -1 to 1. With no octaves it is 0. It sums at most `MAX_OCTAVES` octaves.
 
 ### `fbm2`
 

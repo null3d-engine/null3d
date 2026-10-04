@@ -176,6 +176,11 @@ const uniform = (count: number, low: number, high: number) =>
  */
 const MANY_OCTAVES = 8;
 const MANY_OCTAVES_POINT = [0.37, -0.81, 0.52];
+/**
+ * An octave count past the most that the library sums. The octaves it leaves out are too faint to
+ * change a 32-bit result, so the reference, which sums them all, still holds.
+ */
+const TOO_MANY_OCTAVES = 40;
 
 // References for null3d::noise, in 32-bit whole numbers.
 
@@ -733,6 +738,7 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 				new Inputs().setF(0, values(random, 3, -20, 20)).setU(1, [octaves]),
 			),
 			new Inputs().setF(0, MANY_OCTAVES_POINT).setU(1, [MANY_OCTAVES]),
+			new Inputs().setF(0, MANY_OCTAVES_POINT).setU(1, [TOO_MANY_OCTAVES]),
 		],
 		expected: (i) => scalar(fbm(simplex3, xyz(i.f(0)), i.u(1)[0])),
 	},
@@ -743,6 +749,7 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 				new Inputs().setF(0, values(random, 2, -20, 20)).setU(1, [octaves]),
 			),
 			new Inputs().setF(0, MANY_OCTAVES_POINT).setU(1, [MANY_OCTAVES]),
+			new Inputs().setF(0, MANY_OCTAVES_POINT).setU(1, [TOO_MANY_OCTAVES]),
 		],
 		expected: (i) => scalar(fbm((p) => simplex2(xy([...p, 0])), [...xy(i.f(0)), 0], i.u(1)[0])),
 	},
