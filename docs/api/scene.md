@@ -234,6 +234,7 @@ Options for `scene.instantiate`: where the copy's group goes, and settings for a
 | --- | --- |
 | `castShadows?: boolean` | True makes every mesh of the copy cast the shadows of a directional light. The default is false. |
 | `receiveShadows?: boolean` | True makes shadows fall on every mesh of the copy. The default is false. |
+| `occluder?: boolean` | True makes every mesh of the copy block the view for software occlusion culling on WebGL2, like `setOccluder(true)`. The default is false. |
 
 ### `LinearFogOptions`
 
@@ -260,6 +261,7 @@ Options for `scene.createMesh`.
 | `material: Material` | How the surface looks, from `ctx.materials`. |
 | `castShadows?: boolean` | True makes the mesh cast the shadows of a directional light, like `setCastShadows(true)`. The default is false. |
 | `receiveShadows?: boolean` | True makes shadows fall on the mesh, like `setReceiveShadows(true)`. The default is false. Unlit materials show no shadows. |
+| `occluder?: boolean` | True makes the mesh block the view for software occlusion culling on WebGL2, like `setOccluder(true)`. The default is false. |
 
 ### `NodeOptions`
 

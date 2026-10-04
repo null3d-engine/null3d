@@ -21,6 +21,7 @@ export const FLAG_CAST_SHADOWS = 4;
 export const FLAG_RECEIVE_SHADOWS = 8;
 export const FLAG_UNCULLED = 16;
 export const FLAG_CUSTOM_BOUNDS = 32;
+export const FLAG_OCCLUDER = 128;
 
 export const LAYERS_DEFAULT = 1;
 
