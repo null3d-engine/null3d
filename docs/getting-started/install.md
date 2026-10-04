@@ -52,7 +52,7 @@ Every Vite build of a null3D project needs the plugin, for the dev server and fo
 - Builds the engine's workers as ES modules, so that they share the shader files. Without the plugin, Vite builds each worker as one classic script that holds every shader file. Each worker is then about 34 MB, and the page downloads them all at its start. The plugin warns if another setting builds workers in another format.
 - Writes the notices of the third-party code that the engine ships beside the page in each production build. [Hosting](hosting.md#publish-the-third-party-notices) says what to do with them.
 
-Supported bundlers: Vite, with this plugin. null3D's tests build with each supported bundler, and other bundlers are not tested.
+null3D requires Vite with this plugin. Other bundlers are not supported or tested.
 
 ## Run the sketch
 

@@ -401,7 +401,7 @@ Shader text compresses far better than code, so the JavaScript files' proportion
 
 The owner approved the three rows in writing on 2026-10-04. A raise of any budget in any column needs the owner's approval in writing, recorded here.
 
-The same day, the owner decided which bundlers the budgets hold for. Vite with the null3D plugin is the supported and tested build. Without the plugin, Vite builds each engine worker as one classic script with every shader file in it. Each worker is then about 34 MB, which no budget can hold (review R8, R8-07). The plugin builds workers as ES modules and warns when another setting replaces that. Test builds with webpack and Rspack move to M2-R18, which reworks how the engine starts its workers.
+The same day, the owner made Vite with the null3D plugin the one supported build ([D-54](D-54-addon-modules.md#bundlers)). The budgets hold for that build. Without the plugin, Vite builds each engine worker as one classic script with every shader file in it. Each worker is then about 34 MB, which no budget can hold (review R8, R8-07). The plugin builds workers as ES modules and warns when another setting replaces that.
 
 ### Consequences
 

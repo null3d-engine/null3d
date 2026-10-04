@@ -6,9 +6,9 @@
 // `lib/` file for file, so each worker entry point and each file that the engine loads by address
 // keeps its place beside the others. The source imports its own modules without an extension or
 // with `.ts`, and passes worker scripts as `.ts` addresses; the build rewrites each to the `.js`
-// file it wrote, so each address resolves under Node's own module rules. That does not make every
-// bundler build a working game: a Vite build needs the null3D plugin, which builds the workers as
-// ES modules, so that they share the shader files instead of each taking in all of them.
+// file it wrote, so each address resolves under Node's own module rules. null3D supports one
+// bundler, Vite with the null3D plugin (D-54). The plugin builds the workers as ES modules, so that
+// they share the shader files instead of each taking in all of them.
 import { spawnSync } from 'node:child_process';
 import {
 	copyFileSync,
