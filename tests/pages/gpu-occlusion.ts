@@ -23,8 +23,6 @@ const SEGMENTS = Number(params.get('segments') ?? '32');
 const ANTIALIAS = (['msaa', 'fxaa', 'none'] as const).find(
 	(mode) => mode === params.get('antialias'),
 );
-/** Milliseconds to wait after a turn before reading a frame back. */
-const TURN_SETTLE_MS = 250;
 /** Seconds of play before the first measurement of each engine. */
 const WARM_UP_SECONDS = 1;
 
@@ -60,17 +58,16 @@ async function start(gpuOcclusion: boolean): Promise<Engine> {
 }
 
 /**
- * Turns the camera to a view, and resolves once the sketch has turned it and a frame drew it, with
- * whether the engine culls occluded objects on the GPU.
+ * Turns the camera to a view, and resolves once the thread that draws has taken a frame with the
+ * turn, with whether the engine culls occluded objects on the GPU. A frame read back draws the
+ * newest frame that thread took.
  */
 function turn(engine: Engine, view: number): Promise<boolean> {
 	return new Promise((resolve) => {
 		const off = engine.onSketchMessage((name, occlusion) => {
 			if (name !== 'turned') return;
 			off();
-			// The frame that draws the turn reaches the thread that draws a frame or two later, and a
-			// frame read back draws the newest frame that thread took.
-			setTimeout(() => resolve(occlusion === true), TURN_SETTLE_MS);
+			resolve(occlusion === true);
 		});
 		engine.postToSketch('view', view);
 	});

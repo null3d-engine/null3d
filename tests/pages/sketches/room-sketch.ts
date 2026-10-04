@@ -3,8 +3,9 @@
 // occluders. ?view= names the view to start in, by its place in the scene's list, 0 by default.
 // The render scale stays at 1 with the governor off, so frames compare from engine to engine and
 // time alike. ?segments= sets the segments around each sphere, to make hidden objects cost more.
-// On the page's 'view' message, with a view's place, the sketch turns the camera to
-// that view and posts 'turned' with whether the engine culls occluded objects on the GPU.
+// On the page's 'view' message, with a view's place, the sketch turns the camera to that view. A few
+// frames later, once the thread that draws has taken a frame with the turn, it posts 'turned' with
+// whether the engine culls occluded objects on the GPU.
 import { defineSketch } from '@null3d/engine';
 import {
 	ROOM_CAMERA,
@@ -20,6 +21,9 @@ import {
 
 const params = new URL(import.meta.url).searchParams;
 const START = Number(params.get('view') ?? '0');
+/** Frames that the sketch runs after a turn before it posts 'turned'. A pipelined engine draws a
+ * frame or two behind the sketch, so after these the newest frame drawn holds the turn. */
+const TURN_FRAMES = 3;
 /** Segments around each sphere, from ?segments=; the scene's own count without it. */
 const SEGMENTS = Number(params.get('segments') ?? SPHERE_SEGMENTS[0]);
 
@@ -60,10 +64,18 @@ export default defineSketch(({ scene, materials, geometry, quality, page }) => {
 		const material = colors[k % colors.length] ?? colors[0];
 		if (material) scene.createMesh({ mesh: sphere, material, position: [...position] });
 	});
+	let framesToTurned = 0;
 	page.onMessage((message, data) => {
 		if (message !== 'view' || typeof data !== 'number') return;
 		const [x, y, z] = viewTarget(ROOM_VIEWS[data] ?? 0);
 		camera.lookAt(x, y, z);
-		page.post('turned', quality.settings.gpuOcclusion);
+		framesToTurned = TURN_FRAMES;
 	});
+	return {
+		onUpdate() {
+			if (framesToTurned === 0) return;
+			framesToTurned -= 1;
+			if (framesToTurned === 0) page.post('turned', quality.settings.gpuOcclusion);
+		},
+	};
 });

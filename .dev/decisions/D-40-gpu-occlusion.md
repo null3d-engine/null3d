@@ -72,7 +72,7 @@ The tests on 2026-10-04, Chrome 154 on the Mac (Apple M5 Max) and SwiftShader:
 
 | Check | Result |
 | --- | --- |
-| The GPU occlusion page: six views of the room, each turned 65° to 180° from the one before, culled against unculled, at 320 x 180 and at 1280 x 720, with MSAA | 0 differing pixels in each view, on core WebGPU and in compatibility mode |
+| The GPU occlusion page: six views of the room, each turned 65° to 180° from the one before, culled against unculled, at 320 x 180 and at 1280 x 720, with MSAA | 0 differing pixels in each view, on core WebGPU and in compatibility mode. At 320 x 180 SwiftShader gives the same |
 | The same with FXAA | 4 to 38 differing pixels per view at 320 x 180. Two runs of FXAA without culling also differ by up to 37 pixels, so this is not from culling |
 | The room's hold images, culled against unculled | Equal on SwiftShader; equal on the Mac with MSAA, and within 91 pixels of 230,400 with FXAA |
 | Copies with `?occlusion=on` of the room (MSAA and FXAA), shadows, transparency, the orthographic camera and S2 | Each matched its test's references, on core WebGPU and in compatibility mode |
