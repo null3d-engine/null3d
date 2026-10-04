@@ -16,7 +16,7 @@ Every M2 feature adds templates or permutation bits to the shader files that a p
 
 ## Data
 
-All sizes are after Brotli at quality 11, after gzip at level 9, and uncompressed. `bun run build` prints them for the engine test page's production build. The feature files' sizes are from main at dc178379.
+All sizes are after Brotli at quality 11, after gzip at level 9, and uncompressed. They are from the engine test page's production build. `bun run build` prints them in units of 1,024 bytes. The feature files' sizes are from the merge of main at 62add54f, which brought morph targets. Each WebGL2 stage there is written from its own entry point ("Builds that differ in one stage" below).
 
 ### The start
 
@@ -39,17 +39,59 @@ Each feature has one file for each GPU path and each value of the device's fixed
 
 | Feature | Files | Brotli | gzip | Uncompressed | What it holds |
 | --- | --- | --- | --- | --- | --- |
-| `skinning` | 12 | 13.2 to 16.1 KB | 106.0 to 199.4 KB | 822 to 1,325 KB | The skinning pass, and every SKIN build of the mesh templates and the shadow pass |
-| `lines` | 6 | 5.6 to 7.6 KB | 6.4 to 10.6 KB | 32 to 73 KB | The `line` and `line_lit` templates ([D-46](D-46-wide-lines.md)) |
-| `sprites` | 6 | 2.9 to 4.7 KB | 3.5 to 6.0 KB | 33 to 68 KB | The `sprite` and `sprite_map` templates ([D-37](D-37-sprites.md)) |
-| `bloom` | 4 | 4.1 to 4.5 KB | 4.8 to 5.3 KB | 26 to 42 KB | Bloom's steps, and the final pass's BLOOM builds ([D-21](D-21-effect-chain.md)) |
-| `ao` | 2 | 2.9 to 3.2 KB | 3.4 to 3.7 KB | 23 KB | Ambient occlusion's depth, horizon and denoise steps |
-| `background` | 4 | 1.0 to 2.0 KB | 1.1 to 2.3 KB | 3 to 10 KB | The texture background |
-| `texcoords` | 6 | 1.3 to 3.7 KB | 1.5 to 4.3 KB | 5 to 36 KB | The engine's own test template, which only test pages use |
+| `skinning` | 12 | 14.6 to 18.2 KB | 129.1 to 207.3 KB | 896 to 1,271 KB | The skinning pass, and every SKIN build of the mesh templates and the shadow pass, with MORPH or without |
+| `morph` | 8 | 14.4 to 16.3 KB | 115.9 to 171.4 KB | 910 to 1,042 KB | The WebGL2 MORPH builds without SKIN ([D-51](D-51-morph-targets.md)). WebGPU morphs in the skinning pass and has none |
+| `lines` | 6 | 5.8 to 7.8 KB | 6.7 to 9.0 KB | 33 to 44 KB | The `line` and `line_lit` templates ([D-46](D-46-wide-lines.md)) |
+| `sprites` | 6 | 3.1 to 4.9 KB | 3.7 to 5.8 KB | 33 to 48 KB | The `sprite` and `sprite_map` templates ([D-37](D-37-sprites.md)) |
+| `bloom` | 4 | 4.7 to 5.1 KB | 5.5 to 6.0 KB | 31 to 35 KB | Bloom's steps, and the final pass's BLOOM builds ([D-21](D-21-effect-chain.md)) |
+| `ao` | 2 | 2.9 to 3.2 KB | 3.4 to 3.6 KB | 17 to 23 KB | Ambient occlusion's depth, horizon and denoise steps |
+| `background` | 4 | 1.0 to 2.2 KB | 1.1 to 2.5 KB | 3 to 7 KB | The texture background |
+| `texcoords` | 6 | 1.5 to 3.9 KB | 1.8 to 4.4 KB | 5 to 21 KB | The engine's own test template, which only test pages use |
 
-The largest is the skinning file for WebGL2 with the draw index, the 8-bit path and half precision. It takes 67% of the Brotli limit, 89% of the gzip limit and 86% of the uncompressed one.
+The largest after Brotli and uncompressed is the skinning file for WebGL2 with the draw index, the 8-bit path and half precision. It takes 76% of the Brotli limit, 80% of the gzip limit and 83% of the uncompressed one. The largest after gzip is the skinning file for WebGPU with the 8-bit path and half precision, at 93% of that limit.
 
 The first limits that this record proposed kept the start budget's proportions: 80 KB after gzip and 576 KB uncompressed. The skinning files took more than twice that, though they take two thirds of the Brotli limit. Shader text compresses far better than code. A start shader file is about 70 times smaller after Brotli, and the engine's code 3 to 4 times. So the owner gave each first-use file the limits of one start shader file.
+
+### Builds that differ in one stage
+
+Morph targets (M2-C5) came after this record, with the MORPH bit on the WebGL2 mesh templates and the shadow pass. A build belongs to the feature of its lowest bit that a table names, and SKIN is below MORPH. So the skinning file of each WebGL2 device took the builds with both bits, and the morph file the MORPH builds without SKIN. The skinning file then went past two of the limits:
+
+| Largest WebGL2 skinning file | Brotli | gzip | Uncompressed |
+| --- | --- | --- | --- |
+| Before morph targets | 16.1 KB | 199.4 KB | 1,325 KB |
+| After the merge of morph targets | 20.0 KB | 428.2 KB | 2,865 KB |
+| With each stage from its own entry point | 18.2 KB | 179.0 KB | 1,271 KB |
+| The limit | 24 KB | 224 KB | 1,536 KB |
+
+Each WebGL2 skinning file holds 70 builds. The draw index, the 8-bit path and half precision are fixed for each file, and no build varies in the count of morph targets. The material bits multiply the rest:
+
+| Template | Bits that vary in the file | SKIN builds | SKIN and MORPH builds |
+| --- | --- | --- | --- |
+| `lit` | VERTEX_COLOR, ALPHA_MASK, RECEIVE_SHADOWS | 8 | 8 |
+| `standard_maps` | the same and VERTEX_TANGENT | 16 | 16 |
+| `unlit` and `unlit_map` | VERTEX_COLOR, ALPHA_MASK | 4 each | 4 each |
+| `shadow_depth` | CASTER_OFFSET | 2 | 2 |
+| `outline_mask` | OUTLINE_VISIBLE | 2 | none |
+
+The MORPH bit changes only the vertex shader, and ALPHA_MASK and RECEIVE_SHADOWS change only the fragment shader. A module writes a stage's text once when builds share it. But the 70 builds took 107 texts, and no fragment shader of a SKIN build matched its SKIN and MORPH twin's. The translator, naga, writes every function and named constant of the module into each stage. That includes those that only the other stage calls. It also numbers local names across the whole module. So a function that only the vertex shader of a MORPH build calls renamed the fragment shader's locals, as `k_1` became `k_4`.
+
+The build now writes each GLSL stage from a copy of the module that holds only that stage's entry point and what it uses. It also drops the constants that the text no longer names. A bit that changes only one stage then leaves the other stage's text as it is. The 70 builds take 60 texts: 25 vertex shaders and 35 fragment shaders. The builds, the programs that WebGL2 links and the GPU's work stay the same. The test "a bit that changes only the vertex shader leaves the fragment shader as it is" checks it on a small shader.
+
+Every file of WebGL2 shrank, the start's too:
+
+| Largest WebGL2 file, after the merge of morph targets | Brotli | gzip | Uncompressed |
+| --- | --- | --- | --- |
+| Start file, before and after | 19.2 to 18.1 KB | 216.1 to 160.6 KB | 1,390 to 1,034 KB |
+| Morph file, before and after | 17.0 to 16.3 KB | 217.5 to 171.4 KB | 1,399 to 1,042 KB |
+| A pipelined page's start, before and after | 106.7 KB, the same | 314.8 to 270.5 KB | 1,680 to 1,324 KB |
+
+The page parses a WebGL2 start of 1,324 KB, from 1,680 KB.
+
+Three other ways were weighed:
+
+- Fewer builds, with the bits as uniforms or loop bounds. The morph loop already runs to each vertex's count of entries. So a SKIN build could morph a mesh without targets in zero steps. But every skinned vertex would read a morph attribute and branch, and every skinned draw would bind two more textures. The SKIN builds without MORPH are the ones that every skinned character draws with. The same holds for skinning in the MORPH builds. Joining them would give each vertex work that the separate builds do not. And the file would still hold every material bit.
+- A file of its own for the builds with both bits. It would hold 34 builds, at about 1,610 KB uncompressed and 240 KB after gzip, over both limits. It would need a split by a material bit too, and a skinned and morphed mesh would download two or three files.
+- Fragment shaders shared with the start file. Every fragment shader of the skinning and morph files is now also in the start file of the same device. So a feature's file could name it there. That would take each of those files to about 250 KB uncompressed. But the loader would need to resolve such names. The files fit without it, so it is not done.
 
 ### Copies in a production build
 
@@ -133,11 +175,11 @@ The owner decided on 4 October 2026 that a game can have every shader it needs b
 
 - `createEngine({ preload: ['skinning', 'bloom', 'lines'] })` names features by their tables' names. The page checks each name against the generated `shader-features.ts`, which holds no shader text, and throws E1421 for one it does not know. The thread that draws starts each listed file's download beside the start's file, and the renderer starts once all have arrived. So the first frame comes after them, and no listed file downloads during play.
 - On the 8-bit path, bloom moves the scene to HDR color, and its pipelines ask for builds without the tone mapping bit. Preloading bloom there also loads the start's builds and bloom's builds without that bit.
-- Loaders and calls that know a feature is coming ask for its file at once, through `ShaderPreloads` (`scene/shader-preloads.ts`). A glTF file with skins asks for skinning as soon as it is parsed, while its textures decode. The first sprite or line batch, a texture background, and `post.set` with bloom or ambient occlusion ask for theirs. The request travels to the thread that draws with the images and custom materials' shaders, and that thread loads the file at once. A model that the setup adds is then in the first frame, which waits for its pipelines. One that comes during play appears once its pipelines are built.
+- Loaders and calls that know a feature is coming ask for its file at once, through `ShaderPreloads` (`scene/shader-preloads.ts`). A glTF file with skins asks for skinning as soon as it is parsed, while its textures decode. One with morph targets on meshes without skins asks for morph. WebGPU morphs in the skinning pass and has no morph file. So there the thread that draws loads skinning's file for morph, from the preload list or from the scene. The first sprite or line batch, a texture background, and `post.set` with bloom or ambient occlusion ask for theirs. The request travels to the thread that draws with the images and custom materials' shaders, and that thread loads the file at once. A model that the setup adds is then in the first frame, which waits for its pipelines. One that comes during play appears once its pipelines are built.
 - A preloaded file's shaders start to build as soon as it arrives, so the feature's first objects need not wait for a compile during play. Before the first frame, that frame waits for them.
   - WebGL2 compiles a program for each build of the file, in the background where the browser can. A program depends only on its template and its build, so the feature's first objects draw with it at once. The file holds only the builds for the device's fixed bits: 1 to 4 programs for each feature.
   - WebGPU creates each build's shader module, which the feature's pipelines then share, and builds the skinning pass's pipeline. A render pipeline also needs the targets, the vertex format and the state of the objects that draw with it. Only the scene gives those, so `scene.warmUp()` builds them, as for any material.
-  - Skinning's builds vary in every material bit: 34 to 37 builds for each device. A scene's materials draw with a few of them, so the preload compiles none of them, and `scene.warmUp()` builds the ones the scene uses.
+  - Skinning's and morph targets' builds vary in every material bit. Each device's WebGPU skinning file holds 34 to 39 builds, its WebGL2 one 70, and its morph file 34. A scene's materials draw with a few of them, so the preload compiles none of them, and `scene.warmUp()` builds the ones the scene uses.
 - The cost was measured on the Mac in Chrome, with the preload test's scene. It started 5 times with the list of skinning, bloom and lines, and 5 times without, on the dev server. With the list, the first frame came at a median of 1,247 ms on WebGL2, against 1,176 ms without. On WebGPU it came at 1,207 ms, against 1,149 ms. So the list adds about 60 to 70 ms to the start. When the sketch then turned the three features on, WebGL2 skipped no draw in 5 runs of 5. WebGPU skipped 1 draw in each run, the line batch's first frame while its pipeline built.
 - `ShaderPreloads.needAll` takes a list of features. M2-B5's list of what each asset needs, which the asset tool will record, can feed it.
 - Bundling every feature into the start's file is not the default: it would grow every page's start, also the pages that never use a feature. A preload list puts the cost on the games that ask for it.
@@ -151,9 +193,10 @@ The owner decided on 4 October 2026 that a game can have every shader it needs b
 
 ## Consequences
 
-- The shader manifest holds a `[first_use.<feature>]` table for `skinning`, `lines`, `sprites`, `bloom`, `ao`, `background` and `texcoords`. The manifest's header says how to add one.
+- The shader manifest holds a `[first_use.<feature>]` table for `skinning`, `morph`, `lines`, `sprites`, `bloom`, `ao`, `background` and `texcoords`. The manifest's header says how to add one.
 - The test "a preload list fetches every feature's shader file before the first frame" turns skinning, bloom and lines on during play. No shader file may download after the first frame. The line batch may skip draws until its pipeline is built, as any new object does.
 - The test "a glTF file with skins fetches the skinning file before its model is added" checks the order of the request and the instantiation. It also checks that the first frame shows the model in its pose.
+- Two tests check morph's file on WebGL2 and skinning's on WebGPU. The first is "a glTF file with morph targets fetches their shader file before its model is added". The second is "a preload list with morph targets fetches their shader file before the first frame". No shader file may download after the first frame.
 - A third test checks E1421.
 - [Loading screens](../../docs/guides/loading-screens.md#loading-everything-up-front) tells developers how to load everything up front, and the develop skill gives the option.
 - The engine test "a page that uses no feature that loads on first use downloads none of their files" checks every feature's shader files too.
