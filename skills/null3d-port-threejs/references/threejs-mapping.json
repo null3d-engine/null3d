@@ -703,8 +703,8 @@
       "three": "EdgesGeometry / WireframeGeometry",
       "status": "changed",
       "since": "0.2",
-      "target": "scene.createLines({ fromEdges: meshAsset, thresholdAngle }); debug.view('wireframe') for debugging",
-      "notes": "",
+      "target": "scene.createLines({ positions, mode: 'segments' }) with two points per edge; debug.view('wireframe') for debugging",
+      "notes": "null3D does not find a mesh's edges for you. Build the list of edge points from the mesh's arrays, or with EdgesGeometry or WireframeGeometry at build time, and draw it as pairs of points.",
       "docs": "api/lines",
       "detect": "\\b(Edges|Wireframe)Geometry\\b"
     },
@@ -846,7 +846,7 @@
       "three": "material.wireframe = true",
       "status": "changed",
       "since": "0.2",
-      "target": "debug.view('wireframe') for debugging; scene.createLines({ fromEdges }) for production wireframes",
+      "target": "debug.view('wireframe') for debugging; scene.createLines({ positions, mode: 'segments' }) with two points per edge for production wireframes",
       "notes": "WebGPU has no line-polygon mode, so wireframe is not a material flag.",
       "docs": "api/lines",
       "detect": "\\bwireframe\\s*[:=]"
@@ -1583,8 +1583,8 @@
       "three": "Line / LineSegments / LineLoop / LineBasicMaterial / LineDashedMaterial / Line2 / LineMaterial",
       "status": "changed",
       "since": "0.2",
-      "target": "scene.createLines({ positions, colors, width, widthUnits: 'pixels' | 'world', dashed })",
-      "notes": "Widths above one pixel work on every backend, so Line2 and LineMaterial need no special handling.",
+      "target": "await scene.createLines({ positions, colors, mode, width, worldUnits, dashed })",
+      "notes": "Segments between points drawn in one batch as quads with round ends, as Line2 draws them, at any width on every backend. mode 'strip', 'loop' or 'segments' replaces Line, LineLoop and LineSegments, and width replaces linewidth, in CSS pixels or with worldUnits. A one-pixel Line ports as width 1. Point colors are linear RGB, stored at 8 bits per channel. dashed and the dash values replace LineDashedMaterial and computeLineDistances. The call is async, because the first one downloads the line code. lit: true shades lines with the scene's lights. Raycasts do not find lines yet.",
       "docs": "api/lines",
       "detect": "new\\s+(THREE\\.)?(Line|LineSegments|LineLoop|Line2|LineSegments2)\\s*\\(|\\bLine(Basic|Dashed)?Material\\b|\\bLineGeometry\\b"
     },

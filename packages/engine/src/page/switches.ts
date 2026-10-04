@@ -1,12 +1,12 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?shaders=fresh,
-// ?check=fresh, ?wake=message, ?hdr=off, ?half= and ?compression=. Six more set what the
+// ?check=fresh, ?wake=message, ?hdr=off, ?half= and ?compression=. Eight more set what the
 // benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the
 // shared memory's maximum, ?queue= for the frames that may wait on the GPU, ?cells=off for culling
-// without grid cells, ?prepass=on or off for the depth prepass, and ?skinning=vertex for skinning
-// in the vertex shader of each pass on WebGPU. ?hold starts hold mode for
-// image tests, ?preset= fixes the quality preset, ?bench publishes the running engine for benchmark
-// tools, and ?gl-timing times each WebGL call for benchmark pages.
+// without grid cells, ?prepass=on or off for the depth prepass, ?occlusion=on or off for occlusion
+// culling, and ?skinning=vertex for skinning in the vertex shader of each pass on WebGPU. ?hold
+// starts hold mode for image tests, ?preset= fixes the quality preset, ?bench publishes the
+// running engine for benchmark tools, and ?gl-timing times each WebGL call for benchmark pages.
 
 import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
@@ -118,6 +118,12 @@ export interface Switches {
 	 */
 	prepass: boolean | undefined;
 	/**
+	 * True when ?occlusion=on turns occlusion culling on, false when ?occlusion=off turns it off,
+	 * and undefined to leave it to the page's options and the quality preset. It sets software
+	 * occlusion culling on WebGL2.
+	 */
+	occlusion: boolean | undefined;
+	/**
 	 * True when ?skinning=vertex makes WebGPU skin skinned meshes in the vertex shader of each pass
 	 * that draws them, as WebGL2 does, instead of once per frame in a compute pass, to measure the
 	 * two against each other.
@@ -208,6 +214,7 @@ export function parseSwitches(search: string): Switches {
 		half: onOff(params.get('half')),
 		cells: params.get('cells') !== 'off',
 		prepass: onOff(params.get('prepass')),
+		occlusion: onOff(params.get('occlusion')),
 		vertexSkinning: params.get('skinning') === 'vertex',
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),

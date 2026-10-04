@@ -33,6 +33,7 @@ use null3d_core::depth_sort::{DepthSorted, SortSet, cull_and_sort, split_item};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
+use null3d_core::occlusion::OcclusionBuffer;
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::world::SphereArrays;
 
@@ -401,11 +402,14 @@ impl SortedLayout {
     }
 
     /// Culls and sorts the frame's rows for a view on the calling thread and the job workers, and
-    /// groups the sorted rows into draws. A view with no camera draws none.
+    /// groups the sorted rows into draws. A view with no camera draws none. Rows that `occlusion`
+    /// hides behind the view's blockers draw neither.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn sort(
         &self,
         jobs: &JobSystem,
         frame: Option<&ViewFrame>,
+        occlusion: Option<&OcclusionBuffer>,
         scene: &SceneStorage,
         batches: &BatchTable,
         parity: usize,
@@ -457,6 +461,7 @@ impl SortedLayout {
             frustum: &frame.frustum,
             offsets: out.offsets.as_slice(),
             layers: frame.layers,
+            occlusion,
         };
         // Reversed depth swaps the frustum's near and far planes, so the near plane comes last.
         // Its normal points into the view, and it never degenerates, as an infinite far plane

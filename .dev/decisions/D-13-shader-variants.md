@@ -145,3 +145,19 @@ null3D does the same work at build time. A page downloads one file with only the
 - The warm-up time plan watches the target: S4's pipeline wait with fresh shaders stays under 250 ms on the S24+. A new material bit, or a pass that adds pipelines to S4, reruns it on the S24+.
 - T-26's times give the device figures in the loading screens guide.
 - The record is in the table in README.md.
+
+## Addendum, 2026-10-04: the figures are out of date, and features move to first-use files
+
+The library code review of 4 October 2026 measured the shader files again (R6-03, R8-02 in [Code review, October 2026](../code-review-2026-10.md)):
+
+- Each file is now 1.7 to 3.4 MB uncompressed and about 24 KB after Brotli. That is 7 to 8 times the 414 KB that this record measured.
+- V8 compiles the largest file in 11.5 ms on the Mac (Apple M5 Max). Parsing takes 15 to 20 ms for GLSL and 7.5 to 11 ms for WGSL. This record measured 2.2 ms. Phones take several times longer, on the thread that draws, before the first frame.
+- 35 of the 164 GLSL stage sources are exact copies, 543 KB in all.
+- With gzip, a WebGL2 page downloads 496 KB at its start ([D-14](D-14-js-budget.md#hosts-that-compress-with-gzip)).
+- Every feature grows every start file. GPU occlusion culling adds 8.7 to 8.9%, although it is off by default. AO adds 9 to 15%, wide lines 2.0 to 2.9 KB, and sprites and outlines 0.7 KB each.
+
+The owner's decisions of 4 October 2026 change the layout:
+
+- A feature's shaders may load on first use, in a file of their own, of up to about 24 KB after Brotli ([D-14](D-14-js-budget.md#first-use-shader-files)). The morph builds and the room's generator do so first.
+- The size is fixed at its cause ([D-53](D-53-technique-defaults.md) ruling 23). M2-R11, whose own record is D-56, comes before any new feature that adds shader code; branches already built move their shaders in a follow-up. It stores each unique stage source once per file, with variants as indexes into it, and moves each feature's templates into a first-use file. It then measures `bench:startup` on BrowserStack's Galaxy S25 and Pixel 9, and decides whether the `standard_maps` builds (1.72 MB, 32 builds) split by a second fixed bit. Its figures replace this record's.
+- Add-on modules need first-use shader files too ([D-54](D-54-addon-modules.md)).

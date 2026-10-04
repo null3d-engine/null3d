@@ -89,6 +89,8 @@ Added with ambient occlusion (M2-F2), 4 October 2026. The depth template places 
 
 Both now draw their prepass depth with their own vertex shader on both paths, as option (c) does on WebGL2. WebGPU builds the pipeline from the template's build without the `PREPASS` bit, with a fragment shader that writes nothing (`ownPrepass` in `gpu/webgpu/pipelines.ts`). Its prepass bundle binds the frame group and the material's maps' group for these pairs, as the shading does. WebGL2's prepass now binds the material's textures too, since a vertex offset can read them: the `custom-textures` test lifts a plane by a texture's heights. With `NULL3D_SWITCHES=prepass=on`, every custom material and sprite image test matched its references on every tier, on the Mac's GPU: 36 tests. Before the WebGL2 binding, `custom-textures` differed in 1.85% of its pixels there. The custom textures test is among the prepass copies of the image tests, so every image run checks this case.
 
+Line batches stay out of the prepass on both paths. Their fragment shader cuts out the round caps and the dashes. The prepass's fragment shader cuts nothing out, so it would write depth where the line draws nothing ([D-46](D-46-wide-lines.md)).
+
 ## Consequences
 
 - `Prepass` in `crates/null3d-render/src/pipelines.rs` names the two ways, and each frame builder picks its own. The WebGL2 builder's prepass replays the opaque pass's calls first, from the same index list, draw records and frame group. It leaves out the draws without a prepass pipeline.

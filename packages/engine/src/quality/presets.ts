@@ -122,6 +122,14 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0, 0.25, 0.5],
 	},
+	// Software occlusion culling on WebGL2: the job workers draw the objects marked as blockers
+	// into a small depth buffer, and hide what lies wholly behind them. Its cost on phones is not
+	// measured yet, so these values follow the plan until device runs settle them (D-41).
+	softwareOcclusion: {
+		presets: [false, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
 	// The frame-budget governor (governor.ts), which lowers the live settings above when frames take
 	// too long and raises them again when they have time to spare.
 	governor: {
@@ -316,6 +324,13 @@ export interface QualitySettings {
 	 * the page's `depthPrepass` option of `createEngine` sets it, and `set` does not take it.
 	 */
 	depthPrepass: boolean;
+	/**
+	 * True when software occlusion culling runs on WebGL2: each frame, the job workers draw the
+	 * objects that `setOccluder(true)` marks into a small depth buffer, and the engine skips every
+	 * object that lies wholly behind them. It costs the job workers time for each blocker, and
+	 * saves drawing what they hide. It changes during play. WebGPU ignores it.
+	 */
+	softwareOcclusion: boolean;
 }
 
 /** The names of the settings in the preset table that change as `changes` says. */

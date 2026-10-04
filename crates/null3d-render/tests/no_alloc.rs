@@ -14,6 +14,7 @@ mod common;
 use common::blended::add_scene;
 use common::graph::{CASCADES, engine_passes};
 use common::{World, base_sphere, grid};
+use null3d_core::handle::Handle;
 use null3d_core::jobs::JobSystem;
 use null3d_core::lights::{POINT_CONE, SunShadow, VisibleLight, kind};
 use null3d_core::scene::{Command, flags};
@@ -903,4 +904,46 @@ fn assigning_moving_lights_to_the_light_grid_allocates_nothing() {
         0,
         "prepared for the GPU"
     );
+}
+
+#[test]
+fn recording_webgl2_frames_with_software_occlusion_allocates_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    let mut world = webgl2_world(true);
+    // Walls of the world's box mesh that block the view, in rows the camera flies through, so
+    // some cross its near plane.
+    let mut commands = Vec::new();
+    for k in 0..12 {
+        let wall = world.scene.reserve().unwrap();
+        let at = [(k % 4) as f32 * 8.0 - 12.0, 0.0, 8.0 - (k / 4) as f32 * 8.0];
+        world.scene.set_position(wall, at).unwrap();
+        world.scene.set_scale(wall, [6.0, 8.0, 1.0]).unwrap();
+        world.scene.set_local_radius(wall, 0.9).unwrap();
+        let shown = flags::VISIBLE | flags::OCCLUDER;
+        commands.push(Command::create(wall, Handle::NONE, 1, shown));
+        commands.push(Command::set_material(wall, 1));
+    }
+    world.scene.apply_commands(&commands, 1).unwrap();
+    world.renderer.set_software_occlusion(true);
+    let camera = world.camera;
+    let fly = |world: &mut World<CpuCulledRenderer>, frame: u32| {
+        let t = frame as f32 * 0.37;
+        let at = [t.sin() * 5.0, 1.0, 20.0 - (frame % 40) as f32];
+        world.scene.set_position(camera, at).unwrap();
+        world.frame = frame;
+    };
+    for frame in 1..=4 {
+        fly(&mut world, frame);
+        world.record(frame == 1);
+    }
+    CountingAllocator::arm();
+    let mut occluded = 0;
+    for frame in 5..=200 {
+        fly(&mut world, frame);
+        world.record(false);
+        occluded += world.renderer.occluded_entries(frame).unwrap();
+    }
+    assert_eq!(CountingAllocator::disarm(), 0);
+    assert!(occluded > 0, "the walls hid nothing");
 }

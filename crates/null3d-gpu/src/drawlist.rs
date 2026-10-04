@@ -1226,6 +1226,13 @@ pub mod template {
     /// [`SPRITE`] times the material's map, at each sprite's frame of the atlas. The bind group of
     /// index 1 is the map's, as for [`INSTANCED_UNLIT_MAP`].
     pub const SPRITE_MAP: u32 = 23;
+    /// Wide lines: a quad with round ends for each instance batch row, whose world matrix holds a
+    /// segment's middle, its half, its end colors and its distance along the line packed (see
+    /// `null3d_core::lines`), in the material's color times the segment's colors.
+    pub const LINE: u32 = 29;
+    /// [`LINE`] lit as a standard material that faces the camera: the sun, the point and spot
+    /// lights and the ambient light shade each line.
+    pub const LINE_LIT: u32 = 30;
     /// Ambient occlusion's first step: one triangle over a target at a fraction of the render
     /// size, which copies one texel of the depth target of one sample per pixel, as unfilterable
     /// floats.
@@ -1559,6 +1566,8 @@ pub fn typescript_constants() -> String {
                 ("SKIN", template::SKIN),
                 ("SPRITE", template::SPRITE),
                 ("SPRITE_MAP", template::SPRITE_MAP),
+                ("LINE", template::LINE),
+                ("LINE_LIT", template::LINE_LIT),
                 ("AO_DEPTH", template::AO_DEPTH),
                 ("AO_DEPTH_MS", template::AO_DEPTH_MS),
                 ("AO", template::AO),
@@ -1758,6 +1767,7 @@ mod tests {
                 "sprite",
                 include_str!("../../null3d-shaders/wgsl/sprite.wgsl"),
             ),
+            ("line", include_str!("../../null3d-shaders/wgsl/line.wgsl")),
         ];
         for (name, source) in templates {
             let line = format!("@location({}) position: vec3f", position.location);
@@ -1769,7 +1779,7 @@ mod tests {
             "lit.wgsl lacks {normal_line}"
         );
         let uv0_line = format!("@location({}) uv0: vec2f", uv0.location);
-        for (name, source) in &templates[2..] {
+        for (name, source) in &templates[2..5] {
             assert!(source.contains(&uv0_line), "{name}.wgsl lacks {uv0_line}");
         }
         assert_eq!(uv0.bit, vertex::UV0);

@@ -28,6 +28,8 @@ import {
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
+	TEMPLATE_LINE,
+	TEMPLATE_LINE_LIT,
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
@@ -181,6 +183,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	// shader too.
 	templates[TEMPLATE_SPRITE] = mesh(shaders.sprite);
 	templates[TEMPLATE_SPRITE_MAP] = mesh(shaders.sprite_map);
+	templates[TEMPLATE_LINE] = { shader: shaders.line, pipeline: 'main' };
+	templates[TEMPLATE_LINE_LIT] = { shader: shaders.line_lit, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND] = { shader: shaders.background, pipeline: 'main' };
 	// WebGL2's depth step always reads one sample: the backend keeps a copy of one sample of a
 	// multisampled depth target that a shader reads.
