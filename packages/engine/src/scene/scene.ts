@@ -933,10 +933,7 @@ export class Mesh extends Object3D {
 	 * target that the mesh does not have, and E1203 for a weight that is not a finite number.
 	 */
 	setMorphWeight(target: number | string, weight: number): void {
-		const k =
-			typeof target === 'number' && target >>> 0 === target && target < this.morphCount
-				? target
-				: this.morphTarget('setMorphWeight', target);
+		const k = this.morphIndex('setMorphWeight', target);
 		if (DEV) checkNumber('setMorphWeight', 'weight', weight, this);
 		this.scene.morphWeights()[this.morphFirst + k] = weight;
 	}
@@ -946,11 +943,19 @@ export class Mesh extends Object3D {
 	 * it, without what a playing clip adds. Throws E1218 for a target that the mesh does not have.
 	 */
 	getMorphWeight(target: number | string): number {
-		const k =
-			typeof target === 'number' && target >>> 0 === target && target < this.morphCount
-				? target
-				: this.morphTarget('getMorphWeight', target);
-		return this.scene.morphWeights()[this.morphFirst + k] as number;
+		return this.scene.morphWeights()[
+			this.morphFirst + this.morphIndex('getMorphWeight', target)
+		] as number;
+	}
+
+	/**
+	 * The number of the morph target that `target` names. A whole number below the target count
+	 * takes the short path, which the browser can inline into a sketch's frame code.
+	 */
+	private morphIndex(call: string, target: number | string): number {
+		return typeof target === 'number' && target >>> 0 === target && target < this.morphCount
+			? target
+			: this.morphTarget(call, target);
 	}
 
 	/** The number of a morph target that `target` names, or E1218 when the mesh lacks it. */
