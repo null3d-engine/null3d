@@ -16,7 +16,7 @@ flowchart LR
     visible --> opaque
     visible -.-> prepass
     subgraph scene["One render pass"]
-        prepass["Depth prepass<br/>WebGPU, when on"]
+        prepass["Depth prepass<br/>when on"]
         opaque["Opaque"]
         transparent["Transparent"]
         resolve["Resolve<br/>8-bit path with MSAA"]
@@ -43,7 +43,7 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 | Light clustering | Compute, on WebGPU only | The camera's point and spot lights | The list of lights of each cluster |
 | Culling | Compute, one pass per view (the camera's, and each shadow cascade's and tile's), on WebGPU only | The world matrix and bounds of every object and instance | The view's visible instances and draw counts |
 | Shadow | Scene, one pass per shadow cascade and per tile of the shadow atlas, in the frames in which it draws | The visible casters of its view | Its layer of the shadow map or of the shadow atlas |
-| Depth prepass | Scene, one pass per view, on WebGPU with the `depthPrepass` setting | The view's visible instances | The scene depth |
+| Depth prepass | Scene, one pass per view, with the `depthPrepass` setting | The view's visible instances | The scene depth |
 | Opaque | Scene, one pass per view | The view's visible instances (on WebGPU), the lights of each cluster, and the shadow map and atlas | The scene color and depth |
 | Debug lines | Scene, in development builds, in frames with debug drawing | The frame's lines | The scene color and depth |
 | Transparent | Scene, one pass per view, on while some object blends | The view's blended objects, sorted back to front on the job workers | The scene color and depth |
@@ -52,7 +52,7 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 
 On WebGL2 the job workers cull the objects and list the lights of each cluster before the frame draws. So the graph has no compute passes there. A shadow pass draws its casters' depth from the light. The opaque pass reads that depth, so every shadow pass runs before it. [Shadows](shadows.md) says when each cascade and each tile draws.
 
-With the depth prepass on, each view draws the depth of its opaque objects first, in the render pass that then shades them. Only WebGPU draws it. The opaque pass then shades only the nearest surface at each pixel. [Quality presets](quality-presets.md#the-depth-prepass) says when the prepass saves time.
+With the depth prepass on, each view draws the depth of its opaque objects first, in the render pass that then shades them. The opaque pass then shades only the nearest surface at each pixel. [Quality presets](quality-presets.md#the-depth-prepass) says when the prepass saves time.
 
 A view is the scene seen from one camera, culled on its own. On WebGPU each view has a culling pass, and on WebGL2 the job workers list the visible objects of each view. The engine draws one view: the camera's. Its opaque pass draws the scene color and depth, and the scene color reaches the canvas.
 
