@@ -4,6 +4,7 @@
 // which comes from the camera as it stands. The sketch answers the page's 'clicks' message with
 // each click's frame, the frame on screen at its event, and the turns of both rays.
 import { defineSketch } from '@null3d/engine';
+import { shownFrame } from '../lib/shown-frame';
 
 /** The camera's turn per frame, in radians. */
 const STEP = 0.05;
@@ -39,8 +40,7 @@ export default defineSketch(({ scene, geometry, materials, input, page, time }) 
 				camera.screenToRay(x + 0.5, y, beside);
 				clicks.push({
 					frame: time.frame,
-					// The frame on screen at the pointer's event, which the public API leaves out.
-					shown: (input.pointer as unknown as { frame: number }).frame,
+					shown: shownFrame(input),
 					turn: turnOf(ray.direction),
 					besideTurn: turnOf(beside.direction),
 				});

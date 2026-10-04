@@ -1,5 +1,7 @@
 //! The render graph, passes, materials and the post-processing chain.
 //!
+//! - `ao`: ambient occlusion, as three.js's GTAOPass finds it, which darkens the ambient light of
+//!   the camera's opaque pass
 //! - `arrays`: meshes from arrays, with normals and tangents computed as three.js computes them
 //! - `background`: a texture that the camera's view draws behind every object
 //! - `bloom`: light that spreads from the scene's brightest parts, as three.js's UnrealBloomPass
@@ -26,6 +28,7 @@
 //! - `light_grid`: the clusters of a view, and the point and spot lights that reach each one
 //! - `materials`: the material table
 //! - `meshes`: mesh storage for both GPU paths
+//! - `occlusion`: the camera's blockers for software occlusion culling on the WebGL2 path
 //! - `output`: the output transform: the scene color's target, exposure and tone mapping
 //! - `parallel_record`: draw lists recorded in chunks on the job workers, joined in chunk order
 //! - `pipelines`: the render pipeline cache, by the key of everything that sets a pipeline apart
@@ -37,6 +40,7 @@
 //! - `textures`: texture arrays, their samplers and bind groups, and uploads under a byte budget
 //! - `view`: views, each a camera, a layer mask and a target, culled on its own
 
+pub mod ao;
 pub mod arrays;
 mod background;
 pub mod bloom;
@@ -58,6 +62,7 @@ pub mod graph;
 pub mod light_grid;
 pub mod materials;
 pub mod meshes;
+pub mod occlusion;
 pub mod output;
 pub mod parallel_record;
 pub mod pipelines;

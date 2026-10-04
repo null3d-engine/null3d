@@ -4,15 +4,17 @@
 // animator. The `grading` switch loads a color grading table and turns the vignette on, then
 // changes the table's intensity and the vignette every frame, for the allocation sample of
 // post.set and the final pass's grading. The `sprites` switch draws the swarm as blended sprites
-// instead of boxes, for the allocation sample of sprite batches. The `labels` switch adds that many
+// instead of boxes, for the allocation sample of sprite batches, and the `lines` switch as dashed
+// line segments, for the allocation sample of line batches. The `labels` switch adds that many
 // objects, each with an HTML label that moves on the canvas as the camera orbits, for the
-// allocation sample of the labels.
+// allocation sample of the labels. The `ao` switch turns ambient occlusion on at half size, and
+// changes its intensity every frame, for the allocation sample of its passes.
 import { defineSketch, type SketchContext } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { s1Camera } from '../../scenes/spec';
 import { createAnimatedCrowd, readAnimated } from './crowd';
 import { followPath, readCount, setUpView } from './sketch-common';
-import { createSpriteSwarm, createSwarm } from './swarm';
+import { createLineSwarm, createSpriteSwarm, createSwarm } from './swarm';
 
 export default defineSketch(async (context) => {
 	const { time } = context;
@@ -21,7 +23,9 @@ export default defineSketch(async (context) => {
 	const count = readCount(import.meta.url);
 	const poseSwarm = switches.has('sprites')
 		? await createSpriteSwarm(context, count)
-		: createSwarm(context, count, true, undefined, switches.has('blend')).pose;
+		: switches.has('lines')
+			? await createLineSwarm(context, count)
+			: createSwarm(context, count, true, undefined, switches.has('blend')).pose;
 	const animate = createAnimatedCrowd(context, readAnimated(import.meta.url));
 	createLabels(context, Number(switches.get('labels') ?? 0));
 	const grading = switches.has('grading');
@@ -30,10 +34,17 @@ export default defineSketch(async (context) => {
 	const settings = { lutIntensity: 1, vignette };
 	if (grading)
 		void context.assets.loadLut(GRADING_LUTS.warm).then((lut) => context.post.set({ lut }));
+	const ao = switches.has('ao');
+	const occlusion = { ao: { intensity: 1 } };
+	if (ao) context.quality.set({ aoScale: 0.5 });
 	const pose = (t: number) => {
 		poseSwarm(t);
 		moveCamera(t);
 		animate(t);
+		if (ao) {
+			occlusion.ao.intensity = 0.75 + 0.25 * Math.sin(t);
+			context.post.set(occlusion);
+		}
 		if (!grading) return;
 		settings.lutIntensity = 0.5 + 0.5 * Math.sin(t);
 		vignette.offset = 1 + 0.25 * Math.cos(t);

@@ -96,7 +96,7 @@ impl Transparent {
         parity: usize,
     ) {
         for (view, frame) in self.views.iter_mut().zip(frames) {
-            layout.sort(jobs, frame.as_ref(), scene, batches, parity, view);
+            layout.sort(jobs, frame.as_ref(), None, scene, batches, parity, view);
         }
     }
 

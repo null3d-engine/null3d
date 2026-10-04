@@ -123,6 +123,25 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { defs = ["MAP"], permutations = ["TONE_MAP", "ALPHA_MASK"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2", "MAP"], permutations = ["DRAW_INDEX", "TONE_MAP", "ALPHA_MASK"], targets = ["glsl"] }
 
+# Wide lines, like three.js's Line2 and LineSegments2 with a LineMaterial: a quad with round ends
+# for each segment of a line batch's rows, in the material's color times the segment's colors,
+# with widths in CSS pixels or world units and dashes.
+[shaders.line]
+file = "line.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP"], targets = ["glsl"] }
+
+# Lit wide lines, from the same file: the lines of a standard material, lit as a surface of the
+# line's color that faces the camera.
+[shaders.line_lit]
+file = "line.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["LIT"], permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "LIT"], permutations = ["DRAW_INDEX", "TONE_MAP"], targets = ["glsl"] }
+
 # Colored by the first texture coordinates, for the engine's own tests of vertex formats.
 [shaders.texcoords]
 file = "texcoords.wgsl"
@@ -151,6 +170,27 @@ by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
+
+# Ambient occlusion's steps at a fraction of the render size, three.js's GTAOPass: `depth` copies
+# one texel of the depth prepass's depth per pixel, `horizon` finds how open each surface is, and
+# `denoise` blurs it along each surface. The opaque pass then reads the result (null3d::gtao). The
+# WebGL2 variant counts rows from the bottom. They load by device, in every module of its target.
+[shaders.ao]
+file = "ao.wgsl"
+by_device = true
+pipelines.depth = { vertex = "vs", fragment = "depth" }
+pipelines.horizon = { vertex = "vs", fragment = "horizon" }
+pipelines.denoise = { vertex = "vs", fragment = "denoise" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
+
+# The depth step from a multisampled depth target, from the same file: it reads sample 0. Only
+# WebGPU reads multisampled textures; WebGL2 reads the one-sample copy that its backend keeps.
+[shaders.ao_ms]
+file = "ao.wgsl"
+by_device = true
+pipelines.depth = { vertex = "vs", fragment = "depth" }
+variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
 
 # Debug lines, which development builds of the engine draw after the opaque objects: a position
 # relative to the camera and an sRGB color per vertex, from a vertex buffer of their own. It stays

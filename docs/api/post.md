@@ -3,14 +3,14 @@ id: api/post
 title: Post-processing API
 status: experimental
 since: "0.1"
-summary: "post.set for tone mapping, exposure, bloom, color grading tables and the vignette; the other effects and post.addEffect of 0.2."
+summary: "post.set for tone mapping, exposure, bloom, ambient occlusion, color grading tables and the vignette; the other effects and post.addEffect of 0.2."
 ---
 
 # Post-processing API
 
-> Ships in null3D 0.1, with bloom, color grading and the vignette in 0.2. The API is experimental, so it can still change between versions. Ambient occlusion, outlines and `post.addEffect` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1, with bloom, ambient occlusion, color grading and the vignette in 0.2. The API is experimental, so it can still change between versions. Outlines and `post.addEffect` are not built yet, so coding agents must not use them.
 
-`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, bloom, a color grading table and the vignette. [Color management](../concepts/color-management.md) explains how the first two fit into the frame, and [the post-processing chain](../concepts/post-processing.md) how bloom does.
+`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, bloom, ambient occlusion, a color grading table and the vignette. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom and ambient occlusion do.
 
 ## Tone mapping and exposure
 
@@ -74,6 +74,37 @@ export default defineSketch(({ post }) => {
 - In WebGPU's compatibility mode with MSAA, turning bloom on moves the engine to HDR color with FXAA. On a WebGL2 device with no float target, bloom stays off. [The post-processing chain](../concepts/post-processing.md#effects-on-devices-without-hdr-color) explains both.
 - `post.set` allocates nothing, so a sketch can change bloom's settings every frame.
 
+## Ambient occlusion
+
+Ambient occlusion darkens the ambient light in corners, in creases and under objects, with the meanings of three.js's `GTAOPass`. It is off by default.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ post, quality }) => {
+  quality.set({ aoScale: 0.5 });
+  post.set({ ao: { radius: 0.5 } });
+  return {};
+});
+```
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `ao` | Its settings to turn it on, or `false` to turn it off. | Off |
+| `ao.radius` | How far from a surface the search reaches, in world units: a number from 0 up. | 0.25 |
+| `ao.thickness` | How far in front of a surface, along the view, an object still hides it: a number from 0 up. | 1 |
+| `ao.distanceExponent` | How the search's steps spread over the radius: a number above 0. Higher values gather them near the surface. | 1 |
+| `ao.distanceFalloff` | How much less the farther steps count: a number from 0 to 1. | 1 |
+| `ao.scale` | The power that the occlusion is raised to: a number from 0 up. Above 1 darkens it. | 1 |
+| `ao.samples` | The depth samples of each pixel's search: a whole number from 1 to 64. | 16 |
+| `ao.intensity` | How much of the occlusion reaches the ambient light: a number from 0 to 1. | 1 |
+
+- It darkens only the ambient light and the light that light maps add. `GTAOPass` darkens the whole image, direct light included.
+- It draws where the quality setting `aoScale` is above 0: on the High and Ultra presets, or after `quality.set({ aoScale })`. On Low and Medium, the presets of phones and tablets, the scale is 0.
+- It turns the depth prepass on while it draws. On a WebGL2 device without float render targets it stays off.
+- A setting that a call leaves out keeps its value, also while it is off. `post.set({ ao: {} })` turns it on with the values it had.
+- `post.set` allocates nothing, so a sketch can change its settings every frame. Turning it on or off adds or removes passes, which takes a few frames.
+
 ## Color grading
 
 A color grading table maps each color of the picture to a graded color, as three.js's `LUTPass` does. Load one from a `.cube` or a `.3dl` file with [`assets.loadLut`](assets.md), then give it to `post.set`:
@@ -121,20 +152,37 @@ Grading and the vignette work on display color, so they draw on every GPU path, 
 
 | Code | Cause |
 | --- | --- |
-| [E1213](../errors/E1213.md) | A setting that this version does not have, a tone mapping that the engine does not know, a bloom or vignette value other than settings or `false`, a `lut` that is not a table from `assets.loadLut`, or a value out of its range: an exposure, strength, threshold, offset or darkness below 0, or a radius or `lutIntensity` outside 0 to 1. |
+| [E1213](../errors/E1213.md) | A setting that this version does not have, a tone mapping that the engine does not know, or a bloom, ambient occlusion or vignette value other than settings or `false`. Also a `lut` that is not a table from `assets.loadLut`, or a value out of its range. These are an exposure, strength, threshold, offset or darkness below 0, a bloom radius or `lutIntensity` outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, or `samples` that are not a whole number from 1 to 64. |
 | [E1203](../errors/E1203.md) | A value that is not a finite number, such as NaN. |
 | [E1101](../errors/E1101.md) | A table whose `destroy()` was called. |
 
 ## Related pages
 
 - [Color management](../concepts/color-management.md): HDR color, the final pass, the 8-bit path and the background.
-- [The post-processing chain](../concepts/post-processing.md): how bloom works, what it costs, and the effects still to come.
-- [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `LUTPass` and `VignetteShader`.
+- [The post-processing chain](../concepts/post-processing.md): how bloom and ambient occlusion work, what they cost, and the effects still to come.
+- [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `LUTPass` and `VignetteShader`.
+- [Quality presets](../concepts/quality-presets.md): `aoScale` on each preset.
 - [Assets](assets.md): `assets.loadLut`, which loads color grading tables.
 
 ## API reference
 
 <!-- null3d:api:start -->
+
+### `AoSettings`
+
+Interface `AoSettings`.
+
+Ambient occlusion's settings, with the meanings of three.js's `GTAOPass`. A setting that a call leaves out keeps its value.
+
+| Member | Description |
+| --- | --- |
+| `radius?: number` | How far from a surface the search for what hides it reaches, in world units: 0 or more, and 0.25 by default, as `GTAOPass`'s `radius`. |
+| `thickness?: number` | How far in front of a surface, along the view, an object still hides it, in world units: 0 or more, and 1 by default. Objects farther in front cast no occlusion, so a thin pole does not darken the wall far behind it. |
+| `distanceExponent?: number` | How the search's steps spread over the radius: 1 spreads them evenly, the default, and higher values gather them near the surface. It is above 0. |
+| `distanceFalloff?: number` | From 0 to 1: how much less the farther steps of the search count. It is 1 by default, as `GTAOPass`'s `distanceFallOff`. |
+| `scale?: number` | The power that the occlusion is raised to: 0 or more, and 1 by default. Above 1 it darkens. |
+| `samples?: number` | The depth samples that each pixel's search reads: a whole number from 1 to 64, and 16 by default. Below 30 they spread over 3 directions, and from 30 over 5. |
+| `intensity?: number` | From 0 to 1: how much of the occlusion reaches the ambient light. It is 1 by default, as `GTAOPass`'s `blendIntensity`. |
 
 ### `BloomSettings`
 
@@ -169,6 +217,7 @@ Settings for `post.set`. A setting that the call leaves out keeps its value.
 | `toneMapping?: ToneMapping` | How the engine maps high dynamic range color to the screen. The default is `'aces'`. three.js uses no tone mapping by default, so a port of a three.js scene without it sets `'none'`. |
 | `exposure?: number` | Scales the scene's color before the tone mapping, as three.js's `toneMappingExposure` does: 2 is one stop brighter, and 0.5 one stop darker. It is 0 or more, and 1 by default. |
 | `bloom?: BloomSettings \| false` | Light that spreads from the brightest parts of the scene, as three.js's `UnrealBloomPass` spreads it. Settings turn bloom on, `{}` with the values it had, and `false` turns it off. It is off by default. |
+| `ao?: AoSettings \| false` | Ambient occlusion: darkens the ambient light where nearby surfaces hide a surface from the sky, as three.js's `GTAOPass` finds it. It darkens only the light that comes from all around, where `GTAOPass` darkens the whole image. Settings turn it on, `{}` with the values it had, and `false` turns it off. It is off by default, and draws only where the quality setting `aoScale` is above 0. |
 | `lut?: Lut \| false` | A color grading table from `assets.loadLut`, which maps each pixel's color after the tone mapping, as three.js's `LUTPass` does. `false` turns it off. It is off by default. |
 | `lutIntensity?: number` | The share of the table's color in each pixel, from 0 for none to 1 for all of it, as `LUTPass`'s `intensity`. It is 1 by default. |
 | `vignette?: VignetteSettings \| false` | Darkens the picture toward its edges, as three.js's `VignetteShader` does. Settings turn the vignette on, `{}` with the values it had, and `false` turns it off. It is off by default. |

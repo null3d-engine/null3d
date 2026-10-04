@@ -103,6 +103,11 @@ export interface CoreGlue extends CoreErrors {
 	 * `CORE_NOT_COUNTED` where the GPU culls.
 	 */
 	visibleEntries(frame: number): number;
+	/**
+	 * The sources inside the camera's frustum that software occlusion culling hid in a recorded
+	 * frame, where the path culls on the CPU, or `CORE_NOT_COUNTED` where the GPU culls.
+	 */
+	occludedEntries(frame: number): number;
 	/** True when the last recorded frame rebuilt its draw tables after a structure change. */
 	drawTablesRebuilt(): boolean;
 	resetGpu(): number;
@@ -151,6 +156,22 @@ export interface CoreGlue extends CoreErrors {
 		rows: number,
 		screenSize: boolean,
 	): number;
+	/**
+	 * Creates a line batch of `points` points of the segment mesh and a line material, joined as
+	 * `mode` says (a `LINE_MODE_*` code), `width` CSS pixels wide, or world units with `worldUnits`.
+	 */
+	createLineBatch(
+		points: number,
+		dynamic: boolean,
+		mesh: number,
+		material: number,
+		mode: number,
+		width: number,
+		worldUnits: boolean,
+		dashed: boolean,
+	): number;
+	/** Sets the width of a line batch's segments, which updates every segment again. */
+	setLineWidth(batch: number, width: number): number;
 	destroyBatch(batch: number, frame: number): number;
 	/** Places a batch's origin, which its rows are relative to, and marks every row for update. */
 	setBatchOrigin(batch: number, x: number, y: number, z: number): number;
@@ -205,6 +226,17 @@ export interface CoreGlue extends CoreErrors {
 	 * Returns the mesh id.
 	 */
 	createMeshFromArrays(vertices: number, indices: number, layout: number, types: number): number;
+	/**
+	 * Gives a mesh the tree over its triangles that a model file stores, from the first `bytes`
+	 * bytes at `meshArrays`'s address. 1 when the mesh takes it, 0 when the tree does not fit the
+	 * mesh, which then gets a tree of its own on the first query.
+	 */
+	setMeshBvh(mesh: number, bytes: number): number;
+	/**
+	 * Gives a mesh a blocker of its own for software occlusion culling: `vertices` corners of three
+	 * floats, then `indices` indices, at `meshArrays`'s address. 1 when the mesh takes it.
+	 */
+	setMeshBlocker(mesh: number, vertices: number, indices: number): number;
 	meshRadius(mesh: number): number;
 	/**
 	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
@@ -345,7 +377,7 @@ export interface CoreGlue extends CoreErrors {
 	setBackground(r: number, g: number, b: number): number;
 	/**
 	 * The address of the block of post-processing values (`POST_VALUE_*`), 32-bit floats that
-	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`.
+	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setAo`, `setLut` or `setVignette`.
 	 */
 	postValues(): number;
 	/** The tone mapping, by code, and the exposure from the post-processing values, from the next frame on. */
@@ -354,6 +386,15 @@ export interface CoreGlue extends CoreErrors {
 	setBloom(on: boolean): number;
 	/** How many times fewer taps than three.js's bloom's blurs read, from the next frame on. */
 	setBloomSamples(divisor: number): number;
+	/** Turns ambient occlusion on with the post-processing values' settings, or off. */
+	setAo(on: boolean): number;
+	/**
+	 * The size of ambient occlusion's targets, in thousandths of the render size each way, from
+	 * the next frame on: 0 draws none.
+	 */
+	setAoScale(thousandths: number): number;
+	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
+	setSoftwareOcclusion(on: boolean): number;
 	/**
 	 * Grades the canvas color with the color grading table in a 3D texture, or with none for 0,
 	 * from the next frame on, with the post-processing values' intensity and domain.
@@ -494,6 +535,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'cullFrame',
 	'recordFrame',
 	'visibleEntries',
+	'occludedEntries',
 	'drawTablesRebuilt',
 	'resetGpu',
 	'drawListAddress',
@@ -504,6 +546,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createBatch',
 	'createBatchPart',
 	'createSpriteBatch',
+	'createLineBatch',
+	'setLineWidth',
 	'destroyBatch',
 	'batchArrays',
 	'setBatchActiveCount',
@@ -518,6 +562,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createShapeMesh',
 	'meshArrays',
 	'createMeshFromArrays',
+	'setMeshBvh',
+	'setMeshBlocker',
 	'meshRadius',
 	'createMaterial',
 	'setMaterialValue',
@@ -547,6 +593,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOutput',
 	'setBloom',
 	'setBloomSamples',
+	'setAo',
+	'setAoScale',
+	'setSoftwareOcclusion',
 	'setLut',
 	'setVignette',
 	'setCanvasOutput',

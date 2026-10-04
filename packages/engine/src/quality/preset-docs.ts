@@ -79,8 +79,14 @@ export const SETTING_DOCS: {
 		label: 'Bloom samples',
 		print: (value) => `${Number(value) * 100}% of three.js's`,
 	},
+	aoScale: {
+		label: 'Ambient occlusion',
+		print: (value) =>
+			({ 0: 'off', 0.25: 'quarter resolution', 0.5: 'half resolution' })[Number(value)] ?? '',
+	},
 	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
+	softwareOcclusion: { label: 'Software occlusion culling (WebGL2)', print: yesNo },
 	maxAnisotropy: { label: 'Anisotropic filtering cap', print: (value) => `${value}x` },
 	uploadBytesPerFrame: {
 		label: 'Texture uploads per frame',

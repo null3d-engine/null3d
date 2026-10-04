@@ -173,8 +173,10 @@ impl DrawKey {
     /// template ([`Prepass::DepthTemplate`]), or `None` when the pair stays out of the prepass. The
     /// depth template places the vertices of the engine's templates as they do, with the same faces
     /// and depth bias. The prepass cannot follow a pair that blends, discards fragments by their
-    /// alpha, skips the depth test or depth writes, or has a custom material, whose vertices may
-    /// move, or a sprite material, whose quads turn to face the camera.
+    /// alpha, skips the depth test or depth writes, or has a line material, whose fragment shader
+    /// cuts out round ends and dashes. A pair whose template places its own vertices
+    /// ([`DrawKey::places_own_vertices`]) takes only the key's faces and state, and draws with its
+    /// own vertex shader.
     pub const fn prepass(self) -> Option<DrawKey> {
         let unfit = state_flags::BLEND
             | state_flags::LINE_LIST
@@ -182,9 +184,8 @@ impl DrawKey {
             | state_flags::NO_DEPTH_TEST;
         if self.state & unfit != 0
             || self.permutation & permutation::ALPHA_MASK != 0
-            || self.template >= template::CUSTOM_FIRST
-            || self.template == template::SPRITE
-            || self.template == template::SPRITE_MAP
+            || self.template == template::LINE
+            || self.template == template::LINE_LIT
         {
             return None;
         }
@@ -196,6 +197,16 @@ impl DrawKey {
             state: (self.state & faces) | state_flags::NO_COLOR_WRITE,
             bias: self.bias,
         })
+    }
+
+    /// True for a pair whose template places its vertices in a way that the depth template does not
+    /// follow: a custom material, whose vertex offset may move them, or a sprite material, whose
+    /// quads turn to face the camera. The prepass draws such a pair with its own vertex shader on
+    /// every path, as WebGL2 draws every pair ([`Prepass::OwnVertexShader`]).
+    pub const fn places_own_vertices(self) -> bool {
+        self.template >= template::CUSTOM_FIRST
+            || self.template == template::SPRITE
+            || self.template == template::SPRITE_MAP
     }
 
     /// The key of the pipeline that shades the pair after the depth prepass drew its depth: it
@@ -295,13 +306,14 @@ impl PipelineCache {
             _ => return (self.id(key.in_pass(targets)), 0),
         };
         let shading = key.after_prepass().in_pass(targets);
-        let depth = match prepass {
-            Prepass::OwnVertexShader => PipelineKey {
+        let depth = if prepass == Prepass::OwnVertexShader || key.places_own_vertices() {
+            PipelineKey {
                 permutation: shading.permutation | permutation::PREPASS,
                 state: depth.state,
                 ..shading
-            },
-            _ => depth.in_pass(targets.depth_only()),
+            }
+        } else {
+            depth.in_pass(targets.depth_only())
         };
         (self.id(shading), self.id(depth))
     }
@@ -591,14 +603,30 @@ mod tests {
                 state: state_flags::NO_DEPTH_TEST,
                 ..lit(0)
             },
-            DrawKey {
-                template: template::CUSTOM_FIRST + 3,
-                ..lit(0)
-            },
         ];
         for key in out {
             assert_eq!(key.prepass(), None, "{key:?}");
         }
+        // A custom material and a sprite place their own vertices, so they draw their depth with
+        // their own vertex shader on every path, with the depth key's faces and state.
+        for template in [
+            template::CUSTOM_FIRST + 3,
+            template::SPRITE,
+            template::SPRITE_MAP,
+        ] {
+            let key = DrawKey { template, ..base };
+            assert!(key.places_own_vertices());
+            let mut cache = PipelineCache::default();
+            let (shading, depth) = cache.opaque(key, TARGETS, Prepass::DepthTemplate);
+            let [shading, depth] = [shading, depth].map(|id| cache.keys()[id as usize - 1]);
+            assert_eq!(depth.template, template);
+            assert_eq!(
+                depth.permutation,
+                shading.permutation | permutation::PREPASS
+            );
+            assert_eq!(depth.state, key.prepass().unwrap().state);
+        }
+        assert!(!base.places_own_vertices());
         // After the prepass, the pair draws only at the depth the prepass found, and writes none.
         assert_eq!(
             base.after_prepass().state,

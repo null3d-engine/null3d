@@ -597,8 +597,10 @@ impl Compiler {
     }
 
     /// Lists each resource's running writers and the pairs of passes that must run in order:
-    /// each writer after the one declared before it, and each reader after the last writer.
-    /// Fails when a pass reads a frame resource that no running pass writes.
+    /// each writer after the one declared before it, and each reader after the last writer. A
+    /// pass that reads a resource so far runs after the last writer declared before it, and before
+    /// the first writer declared after it. Fails when a pass reads a frame resource that no
+    /// running pass writes, or none declared before it for a read so far.
     fn link(&mut self, graph: Decls<'_>) -> Result<(), GraphError> {
         let writes = |&(_, access): &(usize, &Access)| access.mode.writes();
         for (_, access) in graph.running_uses().filter(writes) {
@@ -634,8 +636,24 @@ impl Compiler {
                 }
                 continue;
             }
-            let last = self.writers[(start + count - 1) as usize];
-            self.edges.push((last, index as u16));
+            let writers = &self.writers[start as usize..(start + count) as usize];
+            if access.mode != Mode::ReadSoFar {
+                self.edges.push((writers[count as usize - 1], index as u16));
+                continue;
+            }
+            let before = writers.partition_point(|&writer| (writer as usize) < index);
+            if before == 0 && state.life == Life::Frame {
+                return Err(GraphError::MissingInput {
+                    pass: PassId(index as u16),
+                    resource: ResourceId(access.resource),
+                });
+            }
+            if before > 0 {
+                self.edges.push((writers[before - 1], index as u16));
+            }
+            if let Some(&after) = writers.get(before) {
+                self.edges.push((index as u16, after));
+            }
         }
         sort_short(&mut self.edges, |&edge| edge);
         self.first_edge.resize(graph.passes.len() + 1, 0);

@@ -19,6 +19,7 @@ import { encodeOnce, encoderPool } from './encoder-pool.js';
 import { lodOf, MSFTLod } from './lod-extension.js';
 import { findModels, parseOptimizeArgs } from './optimize.js';
 import { DEFAULT_OPTIONS, optimizeModel } from './pipeline.js';
+import { reportLines } from './report.js';
 
 // Texture encodes take seconds each on a busy machine or a CI runner of four cores.
 setDefaultTimeout(60_000);
@@ -46,6 +47,7 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 const optimized = optimizeModel(at(ASSET_SCENE.source), DEFAULT_OPTIONS, encode);
 const lodMeshopt = optimizeModel(at(ASSET_SCENE.source), { ...DEFAULT_OPTIONS, lod: true }, encode);
+const withTrees = optimizeModel(at(ASSET_SCENE.source), { ...DEFAULT_OPTIONS, bvh: 1 }, encode);
 
 /**
  * An output as glTF-Transform reads it, with meshopt's decoder: written to a folder with its
@@ -214,16 +216,22 @@ describe('assets optimize on the test scene', () => {
 	it('writes the bytes that the repository holds, which CI checks on another CPU and system', async () => {
 		const model = await optimized;
 		const lod = await lodMeshopt;
+		const trees = await withTrees;
 		if (WRITE) {
 			rmSync(at(ASSET_SCENE.textures), { recursive: true, force: true });
 			mkdirSync(at(ASSET_SCENE.textures), { recursive: true });
 			writeFileSync(at(ASSET_SCENE.optimized), model.glb);
 			writeFileSync(at(ASSET_SCENE.lodMeshopt), lod.glb);
-			for (const [name, bytes] of [...model.files, ...lod.files])
+			writeFileSync(at(ASSET_SCENE.trees), trees.glb);
+			for (const [name, bytes] of [...model.files, ...lod.files, ...trees.files])
 				writeFileSync(join(at(ASSET_SCENE.textures), name), bytes);
 		}
 		expect(Buffer.from(model.glb).equals(readFileSync(at(ASSET_SCENE.optimized)))).toBe(true);
 		expect(Buffer.from(lod.glb).equals(readFileSync(at(ASSET_SCENE.lodMeshopt)))).toBe(true);
+		expect(Buffer.from(trees.glb).equals(readFileSync(at(ASSET_SCENE.trees)))).toBe(true);
+		// Every part of the scene stores its tree.
+		expect(trees.report.spatial).toMatchObject({ trees: 4, blockers: 3 });
+		expect([...trees.files.keys()].sort()).toEqual([...model.files.keys()].sort());
 		expect(readdirSync(at(ASSET_SCENE.textures)).sort()).toEqual([...model.files.keys()].sort());
 		for (const [name, bytes] of model.files)
 			expect(Buffer.from(bytes).equals(readFileSync(join(at(ASSET_SCENE.textures), name)))).toBe(
@@ -418,6 +426,15 @@ describe('assets optimize on the test scene', () => {
 			triangles: 6 * 2 * 6 + 2 + 48 * 24 * 2,
 			lodMeshes: 0,
 		});
+		// The ball, the stand and the post enclose space; the floor is one flat square. No part
+		// has the triangles of a stored tree by default.
+		expect(report.spatial).toMatchObject({ blockers: 3, ownBlockers: 0, trees: 0, treeBytes: 0 });
+		expect(report.spatial.noBlocker.map((n) => n.mesh)).toEqual(['floor']);
+		const lines = reportLines(report).join('\n');
+		expect(lines).toContain(
+			`  blockers for 3 meshes: ${report.spatial.blockerTriangles} triangles`,
+		);
+		expect(lines).toContain('  no blocker for 1 mesh:\n    floor: ');
 		expect(report.bounds.min.map((v) => Math.round(v * 100) / 100)).toEqual([-3, -0.2, -3]);
 		expect(report.textureGroups).toEqual([
 			{ key: '128x64 etc1s srgb', count: 1 },
@@ -474,6 +491,14 @@ describe('the command', () => {
 		expect(() => parseOptimizeArgs(['a', 'b', '--compression', 'draco'])).toThrow(
 			'takes none or meshopt',
 		);
+		expect(parseOptimizeArgs(['a', 'b']).options).toMatchObject({ blockers: true, bvh: 20_000 });
+		expect(parseOptimizeArgs(['a', 'b', '--no-blockers', '--bvh', '5000']).options).toMatchObject({
+			blockers: false,
+			bvh: 5000,
+		});
+		expect(parseOptimizeArgs(['a', 'b', '--bvh', '0']).options.bvh).toBe(0);
+		for (const bad of ['-1', '1.5', 'all'])
+			expect(() => parseOptimizeArgs(['a', 'b', `--bvh=${bad}`])).toThrow(`not "${bad}"`);
 	});
 
 	it('optimizes each model of a folder into the output folder, with the textures in one folder', async () => {

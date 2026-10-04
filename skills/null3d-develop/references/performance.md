@@ -89,7 +89,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 
 - Test on a real phone. Desktop browsers with device emulation do not show phone GPU or heat behavior.
 - Many phones run the WebGL2 path (for example Samsung Exynos phones in Chrome 154). Budget for it.
-- On the WebGL2 path (0.2), job workers hide objects that sit behind blocker meshes, which the asset tool makes from large static meshes. See-through meshes such as glass and fences must not be blockers: call `setOccluder(false)` on them if the tool picked them.
+- On the WebGL2 path (0.2), job workers hide objects that sit behind blocker meshes. The asset tool's `assets optimize` gives one to each mesh that encloses space, and checks that it lies inside the mesh. It skips blended, alpha-masked, skinned and flat meshes. To keep a mesh from blocking, put `"occluder": false` in its glTF extras. In the scene, use `instantiate(model, { occluder: false })` or `setOccluder(false)`. Blockers on small props cost job worker time and hide little (`guides/assets-pipeline`).
 - Pixel ratio is the largest GPU lever: a ratio of 3 draws 2.25 times the pixels of a ratio of 2. Presets cap it; do not raise the cap on phones.
 - Dynamic resolution is on by default. When frames run over budget, the engine draws the scene at a lower render scale, down to 0.5 on Low. It scales the image up to the canvas, in place of FXAA where the preset uses it. Read it in `quality.renderScale`. `quality.set({ minRenderScale: 1 })` turns it off. One value for both `minRenderScale` and `maxRenderScale` fixes the scale (`concepts/quality-presets`). Draw text and interface in HTML over the canvas, which stays sharp.
 - The engine starts phones and tablets on lighter presets than desktops. WebGL2 and WebGPU's compatibility mode run at most Medium. The page reads the preset in `engine.mode.preset`, and `?preset=low` fixes one for a test (`concepts/quality-presets`).
@@ -160,7 +160,7 @@ Read the current render scale in `quality.renderScale`, and the shadow settings 
 
 With `createEngine({ depthPrepass: true })`, each camera view first draws the depth of its opaque objects. The opaque pass then shades each pixel once, for its nearest surface. The prepass costs a second pass over the objects' vertices. It saves GPU time only where objects hide many others and their shading costs much, such as a street of lit buildings.
 
-Every preset leaves it off. S2 is a benchmark scene with little overdraw. In Chrome on a MacBook Pro, the prepass raised its GPU time per frame on WebGPU from 0.28 ms to 0.40 ms. On WebGL2 it doubled the draw calls. Both GPU paths draw the prepass, with the same image as without it. Blended objects, alpha-cutoff materials and custom materials stay out of the prepass. Turn it on only after you compare the scene's GPU time with `?prepass=on` and `?prepass=off`.
+Every preset leaves it off. S2 is a benchmark scene with little overdraw. In Chrome on a MacBook Pro, the prepass raised its GPU time per frame on WebGPU from 0.28 ms to 0.40 ms. On WebGL2 it doubled the draw calls. Both GPU paths draw the prepass, with the same image as without it. Blended objects and alpha-cutoff materials stay out of the prepass. Custom materials and sprites join it with their own vertex shader, so their vertex offsets keep their depth. Turn it on only after you compare the scene's GPU time with `?prepass=on` and `?prepass=off`.
 
 ### Half precision
 

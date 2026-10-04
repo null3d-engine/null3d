@@ -19,6 +19,7 @@ use null3d_core::animation::{
     AnimationError, Animations, Channel, Clip, Interpolation, MATRIX_FLOATS, MAX_JOINTS, Play,
     REST_FLOATS, Skeleton, SourceTrack, TrackProblem, resample,
 };
+use null3d_core::bvh::mesh::{IndexedTriangles, MeshBvh};
 use null3d_core::bvh::query::{QueryHit, QueryScene, SceneQueries};
 use null3d_core::bvh::scene::Source;
 use null3d_core::bvh::top::WorldRay;
@@ -27,12 +28,15 @@ use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, WorkerId};
 use null3d_core::lights::LightTable;
+use null3d_core::lines::{LineLook, LineMode};
+use null3d_core::occlusion::BlockerMesh;
 use null3d_core::scene::{CommandRing, SceneStorage};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_core::sprites::SpriteLook;
 use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::sizes;
 use null3d_gpu::drawlist::vertex::{self, Type};
+use null3d_render::ao::Ao;
 use null3d_render::arrays::{ArrayName, ArraysError, Data, MeshArrays, Values, from_arrays};
 use null3d_render::bloom::Bloom;
 use null3d_render::camera::{Lens, Orthographic, Perspective};
@@ -159,10 +163,12 @@ struct Engine {
 }
 
 /// The post-processing values before TypeScript writes any: an exposure of 1, `UnrealBloomPass`'s
-/// strength, radius and threshold, a table at its full intensity over colors from 0 to 1, and
-/// `VignetteShader`'s offset and darkness.
+/// strength, radius and threshold, a table at its full intensity over colors from 0 to 1,
+/// `VignetteShader`'s offset and darkness, and `GTAOPass`'s radius, thickness, distance exponent,
+/// distance falloff, scale, samples and blend intensity.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = [
-    1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
+    16.0, 1.0,
 ];
 
 impl Engine {
@@ -704,6 +710,17 @@ pub fn visible_entries(frame: u32) -> u32 {
     })
 }
 
+/// The sources inside the camera's frustum that software occlusion culling hid in a recorded
+/// frame, where the frame builder culls on the CPU, or `NOT_COUNTED` where the GPU culls.
+#[wasm_bindgen(js_name = occludedEntries)]
+pub fn occluded_entries(frame: u32) -> u32 {
+    value_with_engine(|e| {
+        Ok(e.renderer
+            .occluded_entries(frame)
+            .unwrap_or(constants::NOT_COUNTED))
+    })
+}
+
 /// True when the last recorded frame rebuilt its draw tables after a structure change.
 #[wasm_bindgen(js_name = drawTablesRebuilt)]
 pub fn draw_tables_rebuilt() -> bool {
@@ -851,6 +868,49 @@ pub fn create_sprite_batch(
     })
 }
 
+/// Creates a line batch: `points` points joined as `mode` says (a `LineMode` code), each segment
+/// drawn with `mesh`, the segment mesh, and `material`, a line material. The segments are `width`
+/// CSS pixels wide, or `width` world units with `world_units`, and dashed with `dashed`. Returns
+/// its id.
+#[wasm_bindgen(js_name = createLineBatch)]
+#[allow(clippy::too_many_arguments)]
+pub fn create_line_batch(
+    points: u32,
+    dynamic: bool,
+    mesh: u32,
+    material: u32,
+    mode: u32,
+    width: f32,
+    world_units: bool,
+    dashed: bool,
+) -> u32 {
+    value_with_engine(|e| {
+        let mode = LineMode::from_code(mode).ok_or_else(|| {
+            core_failure(CoreError::OutOfRange {
+                value: mode,
+                limit: LineMode::Loop as u32,
+            })
+        })?;
+        let look = LineLook::new(mode, width, world_units, dashed);
+        add_batch(e, mode.rows(points), mesh, |batches, radius| {
+            batches.create_lines(points, dynamic, mesh, material, radius, look)
+        })
+    })
+}
+
+/// Sets the width of a line batch's segments: CSS pixels, or world units for a batch made with
+/// world units. Every segment updates and uploads again.
+#[wasm_bindgen(js_name = setLineWidth)]
+pub fn set_line_width(batch: u32, width: f32) -> u32 {
+    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
+        Ok(batch) => {
+            batch.set_line_width(width);
+            0
+        }
+        Err(error) => core_failure(error),
+    })
+}
+
 /// Adds a batch of `capacity` rows of `mesh`, made by `make` with the mesh's radius, once the
 /// renderer has room for its rows, and returns its id.
 fn add_batch(
@@ -910,7 +970,8 @@ pub fn destroy_batch(batch: u32, frame: u32) -> u32 {
 /// The address of one of a batch's row arrays (see `constants::batch_field`): positions (3 floats
 /// a row), rotations (4), scales (3), or colors (4, or 0 for a batch without colors). A sprite
 /// batch has positions, sizes (2 floats a row), rotations in radians (1), colors (4) and frames
-/// (one 32-bit integer a row), and 0 for scales.
+/// (one 32-bit integer a row), and 0 for scales. A line batch has positions (3 floats a point) and
+/// colors (3 floats a point), and 0 for the others.
 #[wasm_bindgen(js_name = batchArrays)]
 pub fn batch_arrays(batch: u32, field: u32) -> u32 {
     value_with_engine(|e| {
@@ -929,6 +990,14 @@ pub fn batch_arrays(batch: u32, field: u32) -> u32 {
                 _ => 0,
             });
         }
+        if batch.line_look().is_some() {
+            let (points, colors) = batch.line_points();
+            return Ok(match field {
+                batch_field::POSITIONS => address(points),
+                batch_field::COLORS => address(colors),
+                _ => 0,
+            });
+        }
         Ok(match field {
             batch_field::POSITIONS => address(batch.positions()),
             batch_field::ROTATIONS => address(batch.rotations()),
@@ -939,13 +1008,14 @@ pub fn batch_arrays(batch: u32, field: u32) -> u32 {
     })
 }
 
-/// Draws only the first `count` rows.
+/// Draws only the first `count` rows, or for a line batch, the segments of its first `count`
+/// points.
 #[wasm_bindgen(js_name = setBatchActiveCount)]
 pub fn set_batch_active_count(batch: u32, count: u32) -> u32 {
     with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
         // A new active count changes which rows draw, not the scene's structure: the renderer
         // updates those rows' draw membership without rebuilding its tables.
-        Ok(batch) => match batch.set_active_count(count) {
+        Ok(batch) => match batch.set_active_points(count) {
             Ok(()) => 0,
             Err(error) => core_failure(error),
         },
@@ -979,14 +1049,15 @@ pub fn set_batch_origin(batch: u32, x: f64, y: f64, z: f64) -> u32 {
     })
 }
 
-/// Marks rows of a static batch for update and upload.
+/// Marks rows of a static batch for update and upload, or for a line batch, points whose segments
+/// update.
 #[wasm_bindgen(js_name = markBatchDirty)]
 pub fn mark_batch_dirty(batch: u32, start: u32, count: u32) -> u32 {
     with_engine(|e| {
         match e
             .batches
             .get_mut(Handle::from_raw(batch))
-            .and_then(|b| b.mark_dirty(start, count))
+            .and_then(|b| b.mark_points_dirty(start, count))
         {
             Ok(()) => 0,
             Err(error) => core_failure(error),
@@ -1081,6 +1152,71 @@ pub fn create_mesh_from_arrays(vertices: u32, indices: u32, layout: u32, types: 
         drop(staging);
         add_mesh(e, &geometry)
     })
+}
+
+/// Gives mesh `mesh` the tree over its triangles that a model file stores, in the format of
+/// `MeshBvh::to_bytes`, from the first `bytes` bytes of the staging words. Raycasts then use it
+/// instead of building one. Returns 1 when the mesh takes the tree, and 0 when the tree does not
+/// fit the mesh's triangles, which then get a tree of their own on the first query.
+#[wasm_bindgen(js_name = setMeshBvh)]
+pub fn set_mesh_bvh(mesh: u32, bytes: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let data: &[u8] = bytemuck_bytes(&staging);
+        let tree = data.get(..bytes as usize).and_then(|data| {
+            let triangles = e
+                .renderer
+                .settings()
+                .meshes()
+                .triangles(mesh.checked_sub(1)?)?;
+            MeshBvh::from_bytes(data, &triangles).ok()
+        });
+        drop(staging);
+        match tree {
+            Some(tree) => e
+                .queries
+                .store_mesh_bvh(mesh, tree)
+                .map(|()| 1)
+                .map_err(core_failure),
+            None => Ok(0),
+        }
+    })
+}
+
+/// Gives mesh `mesh` a blocker of its own for software occlusion culling: `vertices` corners of
+/// three floats, then `indices` indices, three per triangle, in the staging words. Objects with
+/// the mesh draw it in place of the mesh. Returns 1 when the mesh takes it, and 0 when it holds
+/// no triangle, too many, or a corner that is not a number.
+#[wasm_bindgen(js_name = setMeshBlocker)]
+pub fn set_mesh_blocker(mesh: u32, vertices: u32, indices: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let (v, i) = (vertices as usize * 3, indices as usize);
+        let blocker = (staging.len() >= v + i && i % 3 == 0)
+            .then(|| {
+                let positions: Vec<f32> = staging[..v].iter().map(|&w| f32::from_bits(w)).collect();
+                BlockerMesh::build(&IndexedTriangles {
+                    positions: &positions,
+                    indices: &staging[v..v + i],
+                })
+            })
+            .flatten();
+        drop(staging);
+        match blocker {
+            Some(blocker) => e
+                .renderer
+                .set_mesh_blocker(mesh, blocker)
+                .map(|()| 1)
+                .map_err(|_| core_failure(CoreError::OutOfMemory { bytes: indices * 4 })),
+            None => Ok(0),
+        }
+    })
+}
+
+/// The bytes of 32-bit words, little-endian as WebAssembly keeps them.
+fn bytemuck_bytes(words: &[u32]) -> &[u8] {
+    // SAFETY: a u32 slice is a valid u8 slice four times as long, with the same lifetime.
+    unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<u8>(), words.len() * 4) }
 }
 
 /// The arrays in the staging words, or `None` when the words do not hold what `layout` and
@@ -1217,6 +1353,8 @@ pub fn create_material(
         shading::TEXCOORDS => Shading::TexCoords,
         shading::UNLIT_MAP => Shading::UnlitMap,
         shading::SPRITE => Shading::Sprite,
+        shading::LINE => Shading::Line,
+        shading::LINE_LIT => Shading::LineLit,
         custom if custom >= shading::CUSTOM_FIRST => Shading::Custom(CustomShading {
             template: custom & 0xffff,
             attributes: (custom >> shading::CUSTOM_ATTRIBUTE_SHIFT) & 0xff,
@@ -1750,6 +1888,39 @@ pub fn set_bloom(on: bool) -> u32 {
     })
 }
 
+/// Turns ambient occlusion on with its settings from the post-processing values, or off, from the
+/// next frame on. The TypeScript API checks the values.
+#[wasm_bindgen(js_name = setAo)]
+pub fn set_ao(on: bool) -> u32 {
+    with_engine(|e| {
+        let value = |place| e.post_value(place);
+        use constants::post_value as v;
+        let ao = on.then(|| Ao {
+            radius: value(v::AO_RADIUS),
+            thickness: value(v::AO_THICKNESS),
+            distance_exponent: value(v::AO_DISTANCE_EXPONENT),
+            distance_falloff: value(v::AO_DISTANCE_FALLOFF),
+            scale: value(v::AO_SCALE),
+            samples: value(v::AO_SAMPLES) as u32,
+            intensity: value(v::AO_INTENSITY),
+        });
+        e.renderer.settings_mut().set_ao(ao);
+        0
+    })
+}
+
+/// Sets the size of ambient occlusion's targets, in thousandths of the render size each way, from
+/// the next frame on: 0 draws none.
+#[wasm_bindgen(js_name = setAoScale)]
+pub fn set_ao_scale(thousandths: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .set_ao_scale(thousandths as f32 / 1000.0);
+        0
+    })
+}
+
 /// Grades the canvas color with the color grading table in 3D texture `texture`, or with none
 /// when `texture` is 0, from the next frame on. The post-processing values give its intensity, the
 /// share of the graded color, and its domain, the colors that the table's first and last texels
@@ -1811,6 +1982,16 @@ pub fn set_canvas_output(scene_color: u32, antialias: u32) -> u32 {
 pub fn set_bloom_samples(divisor: u32) -> u32 {
     with_engine(|e| {
         e.renderer.settings_mut().set_bloom_divisor(divisor);
+        0
+    })
+}
+
+/// Turns software occlusion culling on or off from the next frame on, where the frame builder
+/// culls on the CPU: objects with the occluder flag then hide what lies wholly behind them.
+#[wasm_bindgen(js_name = setSoftwareOcclusion)]
+pub fn set_software_occlusion(on: bool) -> u32 {
+    with_engine(|e| {
+        e.renderer.set_software_occlusion(on);
         0
     })
 }

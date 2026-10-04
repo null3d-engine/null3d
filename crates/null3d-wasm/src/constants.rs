@@ -9,6 +9,7 @@ use null3d_core::cells::CELL_SIZE;
 use null3d_core::handle::{GENERATION_BITS, SLOT_BITS};
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{color as light_color, kind as light_kind, value as light_value};
+use null3d_core::lines::LineMode;
 use null3d_core::scene::{NO_PARENT, flags, op};
 use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::caps::Capabilities;
@@ -75,6 +76,11 @@ pub mod shading {
     pub const UNLIT_MAP: u32 = 3;
     /// Sprites, as three.js's `SpriteMaterial` draws them, for the rows of a sprite batch only.
     pub const SPRITE: u32 = 4;
+    /// Wide lines, as three.js's `LineMaterial` draws them, for the rows of a line batch only.
+    pub const LINE: u32 = 5;
+    /// Wide lines lit as a standard material that faces the camera, for the rows of a line batch
+    /// only.
+    pub const LINE_LIT: u32 = 7;
     /// The first custom material: a shading from here up is a custom material's. Its low 16 bits
     /// are the render pipeline template of the material's compiled WGSL.
     pub const CUSTOM_FIRST: u32 = null3d_gpu::drawlist::template::CUSTOM_FIRST;
@@ -121,8 +127,17 @@ pub mod post_value {
     /// The vignette's offset and darkness.
     pub const VIGNETTE_OFFSET: u32 = 11;
     pub const VIGNETTE_DARKNESS: u32 = 12;
+    /// Ambient occlusion's radius, thickness, distance exponent, distance falloff, scale, samples
+    /// and intensity.
+    pub const AO_RADIUS: u32 = 13;
+    pub const AO_THICKNESS: u32 = 14;
+    pub const AO_DISTANCE_EXPONENT: u32 = 15;
+    pub const AO_DISTANCE_FALLOFF: u32 = 16;
+    pub const AO_SCALE: u32 = 17;
+    pub const AO_SAMPLES: u32 = 18;
+    pub const AO_INTENSITY: u32 = 19;
     /// The values in the block.
-    pub const COUNT: u32 = 13;
+    pub const COUNT: u32 = 20;
 }
 
 pub mod texture_stat {
@@ -369,6 +384,7 @@ pub fn typescript() -> String {
                 ("RECEIVE_SHADOWS", flags::RECEIVE_SHADOWS),
                 ("UNCULLED", flags::UNCULLED),
                 ("CUSTOM_BOUNDS", flags::CUSTOM_BOUNDS),
+                ("OCCLUDER", flags::OCCLUDER),
             ],
         ),
         ("LAYERS", &[("DEFAULT", DEFAULT_LAYERS)]),
@@ -428,6 +444,14 @@ pub fn typescript() -> String {
         (
             "SPRITE",
             &[("MAX_ATLAS_SIDE", null3d_core::sprites::MAX_ATLAS_SIDE)],
+        ),
+        (
+            "LINE_MODE",
+            &[
+                ("SEGMENTS", LineMode::Segments as u32),
+                ("STRIP", LineMode::Strip as u32),
+                ("LOOP", LineMode::Loop as u32),
+            ],
         ),
         (
             "QUERY",
@@ -545,6 +569,8 @@ pub fn typescript() -> String {
                 ("TEXCOORDS", shading::TEXCOORDS),
                 ("UNLIT_MAP", shading::UNLIT_MAP),
                 ("SPRITE", shading::SPRITE),
+                ("LINE", shading::LINE),
+                ("LINE_LIT", shading::LINE_LIT),
                 ("CUSTOM_FIRST", shading::CUSTOM_FIRST),
                 ("CUSTOM_ATTRIBUTE_SHIFT", shading::CUSTOM_ATTRIBUTE_SHIFT),
                 ("CUSTOM_BASE_COLOR", shading::CUSTOM_BASE_COLOR),
@@ -629,6 +655,13 @@ pub fn typescript() -> String {
                 ("LUT_DOMAIN_MAX", post_value::LUT_DOMAIN_MAX),
                 ("VIGNETTE_OFFSET", post_value::VIGNETTE_OFFSET),
                 ("VIGNETTE_DARKNESS", post_value::VIGNETTE_DARKNESS),
+                ("AO_RADIUS", post_value::AO_RADIUS),
+                ("AO_THICKNESS", post_value::AO_THICKNESS),
+                ("AO_DISTANCE_EXPONENT", post_value::AO_DISTANCE_EXPONENT),
+                ("AO_DISTANCE_FALLOFF", post_value::AO_DISTANCE_FALLOFF),
+                ("AO_SCALE", post_value::AO_SCALE),
+                ("AO_SAMPLES", post_value::AO_SAMPLES),
+                ("AO_INTENSITY", post_value::AO_INTENSITY),
                 ("COUNT", post_value::COUNT),
             ],
         ),

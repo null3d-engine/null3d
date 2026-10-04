@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `bloom`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak` and `warm-up-time`. `bun run devices` runs the checks on the phone and on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `bloom`, `ao`, `occlusion`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak` and `warm-up-time`. `bun run devices` runs the checks on the phone and on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-grey when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -63,7 +63,7 @@ The runner watches each browser's results while a run goes on. Two guards keep a
 ### A display whose refresh rate changes
 
 - Frame rates mean little without the display's refresh rate. On 3 October 2026, the iPad reported refresh rates from 35 to 65 Hz between runs. A drop from 49 to 35 frames per second looked like a regression in the code. It followed the display's rate instead.
-- So in the plans that time pages, the runner page measures the refresh rate before each page. These plans are `bench`, `startup`, `governor`, `skinning`, `skinning-webgpu`, `bloom`, `overload` and `soak`, and the scale search. The list is `TIMED_PLANS` in `tests/real-browsers.ts`.
+- So in the plans that time pages, the runner page measures the refresh rate before each page. These plans are `bench`, `startup`, `governor`, `skinning`, `skinning-webgpu`, `bloom`, `ao`, `occlusion`, `overload` and `soak`, and the scale search. The list is `TIMED_PLANS` in `tests/real-browsers.ts`.
 - The runner page measures with no test page loaded, from the middle interval of 60 animation frames. It adds the rate to the page's result as `runnerRefreshHz`. Each runner page also measures it once at its start, in `device.json`.
 - After the run, the runner marks a browser's timing figures as unreliable when a reading is below 55 Hz. It marks them too when the readings differ by more than a tenth of the highest one. The device checklist asks for 60 Hz.
 - The limits are `EXPECTED_REFRESH_HZ`, `LOWEST_REFRESH_HZ` and `REFRESH_SPREAD` in `tests/real-browsers.ts`. A display that holds 120 Hz all through the run passes, as on a Mac with a 120 Hz screen.
@@ -179,12 +179,23 @@ To collect the numbers, rest each device first and close its other tabs:
 - The WebGPU page uploads the joint matrices to a float texture for its vertex shaders, or to a storage buffer for its compute pass. It submits each frame on its own, and waits for the GPU at the end of each batch. Where the adapter has timestamp queries, it also reports the GPU time from each batch's first pass to its last, per frame. It takes the same switches, and `?gpu=compat` asks for a compatibility mode adapter.
 - Run it on the iPad and on the Mac: `bun tests/real-browsers.ts --plan skinning-webgpu --lan ipad-safari "Google Chrome"`. The phone has no WebGPU. The browser tests run both pages with a small crowd (`tests/image/skinning.spec.ts`).
 
-## The bloom plan
+## The effect cost plans
 
-- The `bloom` plan measures what bloom costs, for [D-21](decisions/D-21-effect-chain.md). Its page (`tests/pages/bloom-cost.html`) draws bloom's scene over the whole window, at a fixed render scale with the governor off.
-- After 2 seconds of play, the page measures 2 seconds with bloom off and 2 with it on, three times each. Heat then slows both sides alike. The page reports the medians of each side's frame interval and CPU time. Where the browser has a GPU timer, it reports the GPU time per frame too.
-- The plan runs the page on each GPU path at render scales of 1 and 0.5: 4 pages. The difference between the sides is bloom's cost at that scale.
-- Run it on the iPad and the phone: `bun tests/real-browsers.ts --plan bloom --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool. On a device that draws faster than its display, the GPU time tells the cost. The frame interval only shows whether the frames kept the display's rate.
+- The `bloom` plan and the `ao` plan measure what bloom and ambient occlusion cost, for [D-21](decisions/D-21-effect-chain.md). Their page (`tests/pages/effect-cost.html`) draws the effect's scene over the whole window, at a fixed render scale with the governor off. Its `effect` switch names the effect: `bloom`, the default, or `ao`.
+- After 2 seconds of play, the page measures 2 seconds with the effect off and 2 with it on, three times each. Heat then slows both sides alike. The page reports the medians of each side's frame interval and CPU time. Where the browser has a GPU timer, it reports the GPU time per frame too.
+- Each plan runs the page on each GPU path at render scales of 1 and 0.5. The difference between the sides is the effect's cost at that scale.
+- Ambient occlusion turns the depth prepass on with it. So the `ao` plan also runs each page with the prepass on in both halves, in the items that end in `-prepass`. Their difference is the cost of ambient occlusion's own passes, and the rest is the prepass's.
+- The `ao` plan also draws three.js's `GTAOPass` on the same scene and canvas (`bench/pages/threejs/ao-cost.html`, item `ao-threejs-100`). Its page times each frame with WebGL2's timer queries where the browser has them, and else waits for each frame with `readPixels`.
+- Run them on the iPad and the phone: `bun tests/real-browsers.ts --plan bloom --android chrome --lan ipad-safari`, and the same with `--plan ao`. Turn on Limit Frame Rate on the iPad first, and start the phone cool. On a device that draws faster than its display, the GPU time tells the cost. The frame interval only shows whether the frames kept the display's rate.
+
+## The occlusion plan
+
+- The `occlusion` plan measures what software occlusion culling costs and saves on WebGL2, for [D-41](decisions/D-41-software-occlusion.md). Its page is `tests/pages/occlusion-cost.html`.
+- The page draws a city over the whole window. It has 64 buildings that block the view, and 3,000 spheres and 20,000 boxes along the streets. A camera flies down one street. The render scale is fixed at 1 and the governor is off.
+- After 2 seconds of play, the page measures 2 seconds with the culling off and 2 with it on, three times each. Heat then slows both sides alike.
+- It reports the medians of each side's figures. They are the busiest thread's CPU time per frame and all threads' together, and the sketch worker's time with its culling step. Then come the render worker's time, the job workers' time together and the GPU time where the browser has a timer. Last come the frame interval, and the entries that the frame drew and that the culling hid.
+- The culling saves when the render worker's time and the GPU's time fall by more than the job workers' and the sketch worker's time grows.
+- Run it on the phone and the iPad: `bun tests/real-browsers.ts --plan occlusion --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool. The page takes `?rounds=` and `?seconds=` to time one load by hand.
 
 ## The animation plan
 
@@ -250,7 +261,7 @@ To collect the numbers, rest each device first and close its other tabs:
 
 ## Android phone
 
-The team's phone is a Galaxy S24+ (SM-S926B, Exynos 2400, Android 16).
+The team's phone is a Galaxy S24+ (SM-S926B, Exynos 2400, Android 16). It runs only the checks that need its USB cable; cloud phones run the rest, as [Which device runs a check](#which-device-runs-a-check) says.
 
 - Connect it by USB with USB debugging on, and trust the Mac. `bun run android` forwards the dev server's port to the phone. The runner opens each browser's runner page itself.
 - For benchmarks, fix the display at 60 Hz: `adb shell settings put secure refresh_rate_mode 0` (Motion smoothness: Standard). A value of 1 gives adaptive rates up to 120 Hz, for the 120 Hz pass. Set brightness to manual, and keep the performance profile at Standard.
@@ -290,6 +301,39 @@ The team has no iPhone, so the iPad stands in for Apple's phones. It proves some
 
 So the iPad shows that the engine works on an iPhone. It does not show that the engine is fast enough there, or that it stays within the iPhone's memory. That needs an iPhone in the device runs, with a runner page of its own, such as `--lan iphone-safari`.
 
+## Which device runs a check
+
+The owner set these rules on 4 October 2026. [D-53](decisions/D-53-technique-defaults.md) records them as ruling 10.
+
+Real-phone tests run on BrowserStack Automate's phones wherever they can do the job: `bun run devices:cloud`, one session at a time. The owner's Galaxy S24+ serves only the checks that need its USB cable, or a run that the owner asks for. Examples are the runs that log the phone's heat, `bench:startup --android` and `bench:profile --android`. So testing no longer waits for someone to connect the phone.
+
+Brave is no longer tested on any device. It draws with Chrome's engine, so its results repeat Chrome's. The runner still knows Brave and its Shields, for a run that the owner asks for. No plan or gate needs it.
+
+The S24+ has no WebGPU adapter, so every check of WebGPU on Android runs on a cloud phone. These go to BrowserStack's Galaxy S25 (Adreno 830) and Pixel 9 (Mali-G715). The Pixel 10 and 11 (PowerVR) join where a check names them. Each runs on WebGPU and with WebGL2 forced:
+
+| Check | Why | Plan or page |
+| --- | --- | --- |
+| Shadow image tests on WebGPU | three.js turns off hardware shadow comparison on every Android browser, after wrong shadow results on Adreno phones with no error ([three.js PR #32548](https://github.com/mrdoob/three.js/pull/32548)). From Chrome 149, Dawn works around it on Qualcomm GPUs for the 2D and 2D-array depth textures that null3D uses. Run the S25 with Chrome 149 or later, and with an older Chrome if BrowserStack offers one ([D-53](decisions/D-53-technique-defaults.md) ruling 28) | The checks plan's `shadows*` tests |
+| GPU occlusion culling, quiet and loaded, with its image check | Bevy blocks it for driver crashes on Adreno 730 and older, Mali drivers before r48, and the Pixel 10 and 11. Unity turns it off on Qualcomm GPUs for missing objects. Add those GPUs where BrowserStack offers them: a Snapdragon Galaxy S22, a Mali phone with a driver before r48 | The `gpu-occlusion` plan |
+| Skinning, compute against the vertex shader | [D-20](decisions/D-20-webgpu-skinning.md) needs an Android WebGPU phone and S5 | The `skinning-webgpu` plan, S5 |
+| MSAA 4x against FXAA on Low | Whether WebGPU phones can afford MSAA at Low. Record whether Chrome draws WebGL2 through ANGLE on Vulkan, the only backend known to resolve MSAA in tile memory | S4 at Low |
+| Half precision, low priority | The Pixel 9's Mali-G715 runs 16-bit floats at twice the rate, in vector math only ([D-09](decisions/D-09-half-precision.md)) | `bench` with `--switches half=on` |
+| Culling shader counters | Qualcomm, Arm and Apple advise adding per workgroup first; no phone timing is published | `bench:run --compare` pages |
+| Driver faults | Mali may crash with MSAA unless all uniforms are in bind group 0. Some Adreno drivers treat `int` as medium precision. Adreno on WebGL may crash with more than one directional shadow light. On PowerVR, zeroed workgroup memory is unreliable, and mip sizes of depth textures whose size is not a power of two come out wrong | The checks plan with MSAA on; S25 WebGL2 shadows with several cascades |
+
+Compatibility mode on a real OpenGL ES driver runs on the Galaxy Tab A9 Plus (Adreno 619). A Mali device in compatibility mode joins if BrowserStack offers one. For the scene format on WebGL2, add a Valhall Mali phone older than the Mali-G710, such as the Pixel 6, if offered.
+
+Four kinds of sitting serve the technique prototypes ([Technique review, October 2026](technique-review-2026-10.md#prototypes)). Each runs both sides of every comparison in turns, as the iPad needs.
+
+1. The Mac with a quiet GPU, with no other Chrome running: occlusion culling, culling counters, prefilter cost, AO, bloom and skinning variants.
+2. The iPad: AO at High and Medium, bloom, prefilter, upscaling, 16-bit cascades, the cascade blend, occlusion culling and skinning.
+3. BrowserStack Automate's Android phones: the checks above, and the WebGL2 phone figures that the S24+ gave before.
+4. The S24+ over USB: the checks that need the cable.
+
+A cloud session gives no control of heat or refresh rate. Treat its timings as guides, from comparisons run in turns in one session. Where a gate item needs heat control, such as the 10-minute showcase runs, the owner decides between the S24+ over USB and a cloud phone.
+
+Every run on a device and browser goes into [the record of tested devices](tested-devices.md), with its date, plan, commit and result.
+
 ## BrowserStack Live
 
 [BrowserStack Live](https://www.browserstack.com/live) lends real phones, tablets and desktop browsers for live sessions. Each device opens the runner page over BrowserStack's tunnel to the Mac. The person picks the browser for each session.
@@ -297,7 +341,7 @@ So the iPad shows that the engine works on an iPhone. It does not show that the 
 - TestingBot was tried first, on 3 October 2026. Its device screens often did not load and its sessions dropped during runs, so the team moved to BrowserStack. TestingBot's rows stay in [the record of tested devices](tested-devices.md).
 - BrowserStack is not a lasting subscription. There are no nightly runs and no runs on each merge. Each tier below is a manual sitting, or one command while the team has [BrowserStack Automate](#browserstack-automate).
 - The tiers name device models, systems and GPUs. If BrowserStack lapses, another cloud, a borrowed device or a new team device of the same kind stands in.
-- The owner's S24+, iPad and Mac stay the timing devices. Cloud devices check that the engine works. Their timings are only a rough guide, because nobody controls their heat or display settings.
+- The iPad and the Mac stay the timing devices. Phone timings come from BrowserStack Automate's phones where they can, as [Which device runs a check](#which-device-runs-a-check) says. Cloud timings are only a rough guide, because nobody controls the devices' heat or display settings.
 
 ### Set up a session
 

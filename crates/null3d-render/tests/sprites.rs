@@ -104,7 +104,7 @@ fn sprites_sized_on_screen_are_never_culled_and_world_sized_ones_are() {
 }
 
 #[test]
-fn sprites_stay_out_of_the_depth_prepass() {
+fn sprites_draw_their_depth_in_the_prepass_with_their_own_vertex_shader() {
     let mut world = World::new();
     let sprites = add_sprites(&mut world, 0, false, [0.0; 3]);
     let batch = world.batches.get(sprites).unwrap();
@@ -114,5 +114,7 @@ fn sprites_stay_out_of_the_depth_prepass() {
         .pipeline_of(batch.mesh(), batch.material())
         .unwrap();
     assert_eq!(key.template, template::SPRITE);
-    assert_eq!(key.prepass(), None);
+    // Sprites turn their quads to face the camera, which the depth template does not follow.
+    assert!(key.places_own_vertices());
+    assert!(key.prepass().is_some());
 }

@@ -29,6 +29,15 @@ export const MAX_DIFFERENT_PERCENT = 0.1;
  */
 export const SHADOW_MAX_DIFFERENT_PERCENT = 0.5;
 
+/**
+ * The limit for ambient occlusion. null3D finds the occlusion at half the render size from the depth
+ * alone, and three.js at the whole size with a normal pass of its own, so the soft edges of the
+ * darkened areas differ a little. With GTAOPass's defaults under 0.1% of the pixels differ, which
+ * three.js's own rule passes, and with the wider search up to 0.66%. `.dev/image-tests.md` records
+ * the measured shares.
+ */
+export const AO_MAX_DIFFERENT_PERCENT = 1;
+
 /** The squared RGB distance from black to white, which scales a squared distance to [0, 1]. */
 const MAX_SQUARED_DISTANCE = 255 * 255 * 3;
 /** A diff image shows each matching pixel at this share of the reference pixel's value. */
@@ -245,6 +254,8 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
 	{ test: 'transparency', twin: `${TWINS}/transparency.html` },
 	{ test: 'sprites', twin: `${TWINS}/sprites.html` },
+	{ test: 'lines', twin: `${TWINS}/lines.html` },
+	{ test: 'lines-basic', twin: `${TWINS}/lines.html?basic` },
 	{ test: 'texture-background', twin: `${TWINS}/texture-background.html` },
 	{ test: 'lights-16', twin: `${TWINS}/lights.html?lights=16`, sketchSwitches: NO_TONE },
 	{ test: 'lights-spot', twin: `${TWINS}/lights.html?scene=spot`, sketchSwitches: NO_TONE },
@@ -289,6 +300,19 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 			twin: `${TWINS}/bloom.html?bloom=${bloom}`,
 			switches: 'antialias=none',
 			webglOnly: true,
+		}),
+	),
+	// Ambient occlusion with GTAOPass's defaults and with a wider search, against three.js's
+	// GTAOPass. The scene has ambient light alone, so darkening only the ambient light, as null3D
+	// does, matches GTAOPass darkening the whole image. The composer's targets have no MSAA, so
+	// null3D's page draws without anti-aliasing too.
+	...(['default', 'wide'] as const).map(
+		(ao): FeatureScene => ({
+			test: `ao-${ao}`,
+			twin: `${TWINS}/ao.html?ao=${ao}`,
+			switches: 'antialias=none',
+			webglOnly: true,
+			limit: AO_MAX_DIFFERENT_PERCENT,
 		}),
 	),
 	// A color grading table from a .cube file, alone and at part of its intensity with the

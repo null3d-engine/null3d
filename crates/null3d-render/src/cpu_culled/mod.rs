@@ -88,6 +88,7 @@ use null3d_gpu::drawlist::{
     DrawList, MAX_WORDS, Op, format, permutation, sizes, texture_usage, view,
 };
 
+use crate::ao::{self, AoIds};
 use crate::background::BackgroundPass;
 use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
@@ -103,6 +104,7 @@ use crate::graph::RenderGraph;
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
+use crate::occlusion::Occluders;
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
@@ -115,7 +117,7 @@ use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices};
 use layout::{Clusters, Drawn, Layout, RESIDENT, STREAMED};
 use lights::LightTextures;
-use opaque::{OFFSETS_BYTES, Opaque, Shading, ViewUpload};
+use opaque::{LitTextures, OFFSETS_BYTES, Opaque, Shading, ViewUpload};
 use skin::Skins;
 use transparent::Transparent;
 
@@ -123,6 +125,7 @@ use transparent::Transparent;
 /// shadow cascades' views after the camera views.
 mod ids {
     use super::data::RING;
+    use crate::ao::STEPS as AO_STEPS;
     use crate::bloom::STEPS;
     use crate::view::{MAX_VIEW_IDS, ViewId};
 
@@ -146,8 +149,10 @@ mod ids {
     pub const SHADOW_TILES: u32 = FINAL_SETTINGS + 1;
     /// The uniform buffer of bloom's steps and of the final pass's bloom build.
     pub const BLOOM: u32 = SHADOW_TILES + 1;
+    /// The uniform buffer of ambient occlusion's steps.
+    pub const AO: u32 = BLOOM + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = BLOOM + 1;
+    pub const PAGES: u32 = AO + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -176,8 +181,10 @@ mod ids {
     pub const JOINTS: u32 = BLANK_LUT + 1;
     /// The first joint of the instance that skins each source row.
     pub const FIRST_JOINTS: u32 = JOINTS + 1;
+    /// The texture that frame groups bind in place of ambient occlusion's while it draws none.
+    pub const BLANK_AO: u32 = FIRST_JOINTS + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = FIRST_JOINTS + 1;
+    pub const TARGETS: u32 = BLANK_AO + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow map.
@@ -210,8 +217,10 @@ mod ids {
     }
     /// The bind group of each step of bloom, after the final pass's group.
     pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1;
-    /// The bind groups of materials' maps, after bloom's.
-    pub const TEXTURE_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
+    /// The bind group of each step of ambient occlusion, after bloom's.
+    pub const AO_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
+    /// The bind groups of materials' maps, after ambient occlusion's.
+    pub const TEXTURE_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -282,10 +291,14 @@ pub struct CpuCulledRenderer {
     casters: Layout,
     /// True when the layouts were built for a frame with shadows.
     layouts_shadowed: bool,
+    /// True when the scene's layout was built with the depth prepass's pipelines.
+    layout_prepass: bool,
     clusters: Clusters,
     /// Grid-cell culling: the still scene objects in cell order, and each cell's box.
     cells: CellCulling,
     culling: Culling,
+    /// The camera's blockers for software occlusion culling.
+    occluders: Occluders,
     opaque: Opaque,
     /// The shadow cascades' culling output and draws.
     cascade_culling: Culling,
@@ -366,6 +379,10 @@ impl CpuCulledRenderer {
                             sampler: ids::BLOOM_SAMPLER,
                             first_group: ids::BLOOM_GROUPS,
                         },
+                        ao: AoIds {
+                            buffer: ids::AO,
+                            first_group: ids::AO_GROUPS,
+                        },
                     },
                 );
                 graph.bind_shadow_map();
@@ -375,9 +392,11 @@ impl CpuCulledRenderer {
             layout: Layout::new(Drawn::Scene),
             casters: Layout::new(Drawn::Casters),
             layouts_shadowed: false,
+            layout_prepass: false,
             clusters: Clusters::default(),
             cells: CellCulling::new(config.cell_culling, true),
             culling: Culling::new(ViewId::CAMERA),
+            occluders: Occluders::default(),
             opaque: Opaque::new(ViewId::CAMERA, config.multi_draw),
             cascade_culling: Culling::new(ViewId::cascade(0)),
             cascade_draws: Opaque::new(ViewId::cascade(0), config.multi_draw),
@@ -493,7 +512,8 @@ impl CpuCulledRenderer {
         let limit = FrameBuilder::max_sources(self);
         let multi_draw = self.config.multi_draw;
         let targets = self.with_draw_index(self.graph.scene_targets());
-        let prepass = Prepass::OwnVertexShader.if_on(self.graph.depth_prepass());
+        self.layout_prepass = self.graph.depth_prepass();
+        let prepass = Prepass::OwnVertexShader.if_on(self.layout_prepass);
         let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
         self.layout.rebuild(
             settings, pipelines, skins, targets, input, limit, multi_draw, shadows, prepass,
@@ -674,6 +694,7 @@ impl CpuCulledRenderer {
             ],
         )?;
         dfg::create(list, ids::DFG)?;
+        ao::create_blank(list, ids::BLANK_AO)?;
         self.dfg_pending = true;
         self.created = true;
         Ok(())
@@ -895,11 +916,16 @@ impl CpuCulledRenderer {
         self.graph.set_transparent(!self.sorted.is_empty());
         self.graph.set_scaling(self.settings.render_scaling());
         self.graph.prepare(list, input.canvas, input.render_scale)?;
-        let shadow_maps = self
+        let (shadow_map, atlas) = self
             .graph
             .shadow_map()
             .zip(self.graph.shadow_atlas())
             .expect("the builder's graph binds a shadow map and a shadow atlas");
+        let lit = LitTextures {
+            shadow_map,
+            atlas,
+            occlusion: self.graph.ao_texture().unwrap_or(ids::BLANK_AO),
+        };
         let first_new = self.opaque.views();
         let lights_remade =
             self.light_textures
@@ -910,7 +936,7 @@ impl CpuCulledRenderer {
         let rebind = lights_remade || self.graph.textures_made();
         for index in 0..self.opaque.views() {
             if index >= first_new || rebind {
-                Opaque::bind_frame(list, ViewId::from_index(index), Some(shadow_maps))?;
+                Opaque::bind_frame(list, ViewId::from_index(index), Some(lit))?;
             }
         }
         let cascades = self.cascades();
@@ -1156,7 +1182,19 @@ impl FrameBuilder for CpuCulledRenderer {
             .plan(input, tile_settings, filter, camera.as_ref());
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows.
         let shadows = self.shadow.is_some() || self.tiles.shape().is_some();
-        if input.structure_changed || !self.layout.built || shadows != self.layouts_shadowed {
+        // Ambient occlusion reads the depth prepass's depth, so turning it on or off can switch
+        // the prepass, whose pipelines the layout holds.
+        let ao = self
+            .settings
+            .ao()
+            .zip(self.settings.camera_projection(canvas));
+        self.graph.set_ao(ao, self.settings.ao_scale());
+        let prepass_changed = self.graph.depth_prepass() != self.layout_prepass;
+        if input.structure_changed
+            || !self.layout.built
+            || shadows != self.layouts_shadowed
+            || prepass_changed
+        {
             self.rebuild_layout(input, shadows)?;
         }
         self.add_culled_views()?;
@@ -1176,6 +1214,11 @@ impl FrameBuilder for CpuCulledRenderer {
                 cells,
                 &|view| settings.view_frame(view, scene, parity, canvas, scale),
                 Some(sorted),
+                Some(cull::Occlusion {
+                    occluders: &mut self.occluders,
+                    meshes: settings.meshes(),
+                    materials: settings.materials(),
+                }),
             )
             .map_err(|_| out_of_memory(&self.layout))?;
         if let Some(frame) = self.culling.frame_mut(ViewId::CAMERA) {
@@ -1197,6 +1240,7 @@ impl FrameBuilder for CpuCulledRenderer {
                     Some(shadow.view_frame(cascade))
                 },
                 None,
+                None,
             )
             .map_err(|_| out_of_memory(&self.casters))?;
         let tiles = &self.tiles;
@@ -1207,6 +1251,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 &mut self.clusters,
                 cells,
                 &|view| tiles.frame(view.tile_index()?).copied(),
+                None,
                 None,
             )
             .map_err(|_| out_of_memory(&self.casters))
@@ -1220,6 +1265,22 @@ impl FrameBuilder for CpuCulledRenderer {
 
     fn visible_entries(&self, frame: u32) -> Option<u32> {
         Some(self.culling.visible_entries(frame))
+    }
+
+    fn occluded_entries(&self, frame: u32) -> Option<u32> {
+        Some(self.culling.occluded_entries(frame))
+    }
+
+    fn set_software_occlusion(&mut self, on: bool) {
+        self.occluders.set_on(on);
+    }
+
+    fn set_mesh_blocker(
+        &mut self,
+        mesh: u32,
+        blocker: null3d_core::occlusion::BlockerMesh,
+    ) -> Result<(), TryReserveError> {
+        self.occluders.set_blocker(mesh, blocker)
     }
 
     fn casts_tile_shadows(&self) -> bool {

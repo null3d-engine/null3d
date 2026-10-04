@@ -62,7 +62,16 @@ import {
 	orthographicView,
 	setViewHeight,
 } from './lens';
+import type { LineBatch, LineChecks, LineMode, LineOptions, LineValues } from './lines';
 import type { CoreMemory } from './memory';
+import {
+	type ObjectEventHandler,
+	type ObjectEventType,
+	PointerEvents,
+	type PointerInput,
+	type PointerListeners,
+	type PointerTarget,
+} from './pointer-events';
 import type { InstancingTemplate, PartTemplate, Prefab, TemplateNode } from './prefab';
 import {
 	type OverlapHit,
@@ -141,6 +150,11 @@ export interface MeshOptions extends NodeOptions {
 	 * Unlit materials show no shadows.
 	 */
 	receiveShadows?: boolean;
+	/**
+	 * True makes the mesh block the view for software occlusion culling on WebGL2, like
+	 * `setOccluder(true)`. The default is false.
+	 */
+	occluder?: boolean;
 }
 
 /**
@@ -248,6 +262,12 @@ export interface InstantiateOptions extends NodeOptions {
 	castShadows?: boolean;
 	/** True makes shadows fall on every mesh of the copy. The default is false. */
 	receiveShadows?: boolean;
+	/**
+	 * True makes every mesh of the copy block the view for software occlusion culling on WebGL2,
+	 * like `setOccluder(true)`, and false makes none block. Left out, the meshes that the asset
+	 * tool gave blockers block, and the others do not.
+	 */
+	occluder?: boolean;
 }
 
 /**
@@ -547,6 +567,8 @@ export class Object3D implements Described {
 	layerMask: number = C.LAYERS_DEFAULT;
 	/** @internal The object's animator, when a model with animations created the object. */
 	animation: Animator | undefined;
+	/** @internal The object's pointer event handlers, from its first `on`. */
+	pointerListeners: PointerListeners | undefined = undefined;
 
 	constructor(
 		/** @internal */ readonly scene: Scene,
@@ -841,11 +863,34 @@ export class Object3D implements Described {
 			this.scene.unmarkedWrites?.watch(this, false);
 		}
 		this.animation?.release();
+		this.scene.forgetListeners(this);
 		// The core checks the handle's generation, so a second destroy frees no other object.
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
 		this.row = 0;
 		this.scene.forget(this);
+	}
+
+	/**
+	 * Calls `handler` for each pointer event of `type` on the object: 'click', 'pointerdown',
+	 * 'pointerup', 'pointermove', 'pointerenter' or 'pointerleave'. An event on a child goes on to
+	 * its parents, so a handler on a model's group hears clicks on all its parts. The engine casts
+	 * a ray from the frame that was on screen at each event, against objects where they are now.
+	 * Handlers run on the sketch's thread at the start of the next frame, before `onUpdate`.
+	 */
+	on(type: ObjectEventType, handler: ObjectEventHandler): void {
+		if (DEV) checkLive('on', this);
+		this.scene.pointerEvents.add(this, type, handler);
+	}
+
+	/** Removes a handler that `on` added for events of `type`. */
+	off(type: ObjectEventType, handler: ObjectEventHandler): void {
+		this.scene.pointerEvents.remove(this, type, handler);
+	}
+
+	/** @internal The parent that the object's pointer events go on to. */
+	pointerParent(): PointerTarget | null {
+		return this.liveParent;
 	}
 
 	/** @internal Sets or clears one of the object's flags from the next frame. */
@@ -951,6 +996,22 @@ export class Mesh extends Object3D {
 	 */
 	setReceiveShadows(receive: boolean): void {
 		this.setFlag('setReceiveShadows', C.FLAG_RECEIVE_SHADOWS, receive);
+	}
+
+	/**
+	 * Makes the mesh block the view, or stop. The default is false, except for the meshes of a
+	 * model file that the asset tool gave blockers. On WebGL2, while the `softwareOcclusion`
+	 * quality setting is on, the job workers draw each blocker into a small depth buffer every
+	 * frame, and the engine skips every object that lies wholly behind the blockers. Mark large,
+	 * solid meshes that hide much of the scene, such as buildings and walls, whose mesh has at most
+	 * 4,096 triangles. A mesh that the asset tool gave a blocker draws that blocker instead, a few
+	 * boxes inside the mesh, whatever the mesh's own size. A blocker's mesh must lie inside what
+	 * the object draws, as the object's own mesh does. Objects that blend, cut holes with an alpha
+	 * mask, use a custom material or are skinned never block, whatever this says. WebGPU culls
+	 * hidden objects on the GPU, and ignores it. A change needs no rebuild of the engine's tables.
+	 */
+	setOccluder(occluder: boolean): void {
+		this.setFlag('setOccluder', C.FLAG_OCCLUDER, occluder);
 	}
 
 	/**
@@ -1081,8 +1142,9 @@ export abstract class Camera extends Object3D {
 	 * starts at the camera, and an orthographic ray on the near plane. The direction has length 1.
 	 *
 	 * When the point is the position of the pointer or a finger from `input`, the ray uses the
-	 * camera of the frame that was on screen at that event, if it is one of the last four frames.
-	 * So a click during a fast pan picks what the user saw. Any other point uses the camera of the
+	 * camera of the frame that was on screen at that event, if the engine still keeps it. It keeps
+	 * the last four views, and frames in a row with the same view count as one. So a click during
+	 * a fast pan picks what the user saw. Any other point uses the camera of the
 	 * frame that last ran, with its lens as it is now. Objects stay where they are now, so a moving
 	 * object can be up to a frame of its motion away from where the user saw it.
 	 */
@@ -1552,6 +1614,8 @@ export class InstanceBatch {
 	};
 	/** @internal */
 	destroyedFrame = -1;
+	/** @internal The batch's pointer event handlers, from its first `on`. */
+	pointerListeners: PointerListeners | undefined = undefined;
 
 	constructor(
 		private readonly scene: Scene,
@@ -1626,6 +1690,25 @@ export class InstanceBatch {
 		for (const part of this.parts) core.glue.setBatchLayers(part, mask >>> 0);
 	}
 
+	/**
+	 * Calls `handler` for each pointer event of `type` on a row of the batch, as `Object3D.on` does.
+	 * The event's `instance` names the row.
+	 */
+	on(type: ObjectEventType, handler: ObjectEventHandler): void {
+		if (DEV) checkLive('on', { destroyedFrame: this.destroyedFrame, describe: () => 'a batch' });
+		this.scene.pointerEvents.add(this, type, handler);
+	}
+
+	/** Removes a handler that `on` added for events of `type`. */
+	off(type: ObjectEventType, handler: ObjectEventHandler): void {
+		this.scene.pointerEvents.remove(this, type, handler);
+	}
+
+	/** @internal A batch has no parent for its pointer events to go on to. */
+	pointerParent(): PointerTarget | null {
+		return null;
+	}
+
 	/** @internal Places the origin that the rows of the batch and of its parts are relative to. */
 	setOrigin([x, y, z]: Vec3, call: string): void {
 		const { core } = this.scene;
@@ -1648,6 +1731,7 @@ export class InstanceBatch {
 		core.checkGrowth(core.glue.destroyBatch(this.id, this.scene.frame), 'destroy', undefined, true);
 		for (const part of this.parts) core.glue.destroyBatch(part, this.scene.frame);
 		if (DEV) this.scene.countBatchRows(-this.count * (1 + this.parts.length));
+		this.scene.forgetListeners(this);
 		this.destroyedFrame = this.scene.frame;
 		// The next read of the arrays asks the core for them again, and the core refuses a
 		// destroyed batch.
@@ -1673,6 +1757,87 @@ async function loadSprites(call: string): Promise<typeof import('./sprites')> {
 		);
 	}
 }
+
+/** Imports the line code, which a page downloads with its first line batch, or throws E1406. */
+async function loadLines(call: string): Promise<typeof import('./lines')> {
+	try {
+		return await import('./lines');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the line code did not download for ${call}(): ${reasonOf(error)}.`,
+		);
+	}
+}
+
+/** The segments that each line mode makes of a number of points. */
+const LINE_SEGMENTS: Readonly<Record<LineMode, (points: number) => number>> = {
+	segments: (points) => Math.floor(points / 2),
+	strip: (points) => Math.max(points - 1, 0),
+	loop: (points) => (points >= 2 ? points : 0),
+};
+
+/**
+ * The number of points of `scene.createLines`, after checking that they make a line: whole points,
+ * at least one segment, and one color for each point. Throws E1217 for an unknown mode and E1206
+ * for points or colors that make no line, and in development builds, for numbers that are not
+ * finite.
+ */
+function linePoints(
+	call: string,
+	mode: LineMode,
+	positions: ArrayLike<number>,
+	colors: ArrayLike<number> | undefined,
+): number {
+	if (!Object.hasOwn(LINE_SEGMENTS, mode))
+		throw new EngineError(
+			'E1217',
+			`${call}() got the mode ${JSON.stringify(mode)}; it takes 'segments', 'strip' or 'loop'.`,
+		);
+	const points = positions.length / 3;
+	const bad = (problem: string) => new EngineError('E1206', `${call}() got ${problem}.`);
+	if (!Number.isInteger(points) || LINE_SEGMENTS[mode](points) < 1)
+		throw bad(
+			`${positions.length} numbers in positions; a ${mode} line takes 3 numbers per point, and at least 2 points`,
+		);
+	if (mode === 'segments' && points % 2 !== 0)
+		throw bad(`${points} points for segments, which join points in pairs`);
+	if (colors && colors.length !== positions.length)
+		throw bad(`${colors.length} numbers in colors for ${points} points, not ${positions.length}`);
+	if (DEV)
+		for (const [name, values] of [
+			['positions', positions],
+			['colors', colors ?? []],
+		] as const)
+			for (let k = 0; k < values.length; k++)
+				if (!Number.isFinite(values[k])) throw bad(`${values[k]} at index ${k} of ${name}`);
+	return points;
+}
+
+/** The checks of line batches' calls, which the line code takes from the scene. */
+const LINE_CHECKS: LineChecks = {
+	width(width: number, call: string): void {
+		if (!DEV) return;
+		if (!Number.isFinite(width))
+			throw new EngineError('E1203', `${call}() got ${width} for width.`);
+		if (!(width > 0))
+			throw new EngineError(
+				'E1108',
+				`${call}() got the width ${width}; it takes a number above 0.`,
+			);
+	},
+	values(values: LineValues, call: string): void {
+		if (!DEV) return;
+		for (const key of ['dashSize', 'gapSize', 'dashScale', 'dashOffset'] as const) {
+			const value = values[key];
+			if (value === undefined) continue;
+			if (!Number.isFinite(value))
+				throw new EngineError('E1203', `${call}() got ${value} for ${key}.`);
+			if (key !== 'dashOffset' && value < 0)
+				throw new EngineError('E1108', `${call}() got the ${key} ${value}; it takes 0 or more.`);
+		}
+	},
+};
 
 /**
  * The transform of a model's copy: the position, rotation and scale of `options`, with the position
@@ -1738,8 +1903,12 @@ export class Scene {
 	private readonly batchSlots: (InstanceBatch | undefined)[] = [];
 	/** The quad meshes of sprite batches, by their center, which batches with one center share. */
 	private readonly spriteQuads = new Map<string, MeshGeometry>();
+	/** The segment mesh of line batches, which every line batch shares, made with the first. */
+	private lineMesh: MeshGeometry | undefined;
 	/** Raycasts and overlap queries, made on the first query. */
 	private sceneQueries: SceneQueries | undefined;
+	/** Pointer events on objects, made on the first `on`. */
+	private objectEvents: PointerEvents | undefined;
 	/** Rows of the live instance batches, which development builds count. */
 	private batchRows = 0;
 	/** Every live object, which `clone` searches for the objects below the one it copies. */
@@ -1763,8 +1932,13 @@ export class Scene {
 		private readonly warmUpScene: () => Promise<void> = () => Promise.resolve(),
 		/** The cameras of the last frames, which the sketch runner gives; tests get a stand-in. */
 		private cameras?: FrameCameras,
-		/** What sprite batches make their quads and materials with, which the sketch runner gives. */
-		private readonly spriteMakers?: SpriteMakers,
+		/**
+		 * What sprite and line batches make their meshes and materials with, which the sketch runner
+		 * gives.
+		 */
+		private readonly makers?: SpriteMakers,
+		/** The input reader, whose pointer events reach objects' handlers. */
+		private readonly pointerInput?: PointerInput,
 	) {
 		if (DEV) this.unmarkedWrites = new UnmarkedWrites(this);
 	}
@@ -1777,10 +1951,40 @@ export class Scene {
 		return this.cameras;
 	}
 
+	/** @internal Pointer events on objects, made on the first call. */
+	get pointerEvents(): PointerEvents {
+		this.objectEvents ??= new PointerEvents(
+			{ pick: (frame, numbers, ray) => this.pick(frame, numbers, ray) },
+			this.pointerInput,
+		);
+		return this.objectEvents;
+	}
+
 	/**
-	 * @internal Keeps the active camera of sketch frame `frame`, which drew on a canvas of `width`
-	 * by `height` device pixels, so rays from that frame's input use it. The setup's frames are
-	 * frame 0.
+	 * Casts the ray of a pointer event from the camera of engine frame `frame`, or from the active
+	 * camera as it stands when the ring no longer holds the frame, on the camera's layers.
+	 */
+	private pick(frame: number, numbers: Float64Array, ray: Ray): PointerTarget | null {
+		const camera = this.activeCamera;
+		const live = camera !== undefined && camera.destroyedFrame < 0 ? camera : undefined;
+		const layers = this.frameCameras.frameRay(frame, numbers, ray, live);
+		return layers < 0 ? null : this.queries.pick(ray, layers, numbers);
+	}
+
+	/** @internal Calls the handlers of the pointer events that the input of this frame brought. */
+	dispatchPointerEvents(report: (error: unknown) => void): void {
+		this.objectEvents?.dispatch(report);
+	}
+
+	/** @internal Removes the pointer event handlers of an object or a batch that is destroyed. */
+	forgetListeners(target: PointerTarget): void {
+		if (target.pointerListeners !== undefined) this.objectEvents?.forget(target);
+	}
+
+	/**
+	 * @internal Keeps the active camera of engine frame `frame`, which drew on a canvas of `width`
+	 * by `height` device pixels, so rays from that frame's input use it. The engine's count includes
+	 * the frames that ran no sketch code, such as the setup's.
 	 */
 	keepFrameCamera(frame: number, width: number, height: number): void {
 		this.frameCameras.record(frame, this.activeCamera, width, height);
@@ -2065,7 +2269,8 @@ export class Scene {
 		}
 		const flags =
 			(options.castShadows ? C.FLAG_CAST_SHADOWS : 0) |
-			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0);
+			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0) |
+			(options.occluder ? C.FLAG_OCCLUDER : 0);
 		const object = this.create(Mesh, options, mesh.id, mesh.radius, flags, 'createMesh');
 		this.command(C.COMMAND_SET_MATERIAL, object.handle, material.id, 0, 'createMesh');
 		object.mesh = mesh;
@@ -2091,7 +2296,8 @@ export class Scene {
 		}
 		const extra =
 			(options.castShadows ? C.FLAG_CAST_SHADOWS : 0) |
-			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0);
+			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0) |
+			(options.occluder ? C.FLAG_OCCLUDER : 0);
 		const root: TemplateNode = {
 			...(template[0] as TemplateNode),
 			name: options.name ?? template[0]?.name ?? '',
@@ -2100,7 +2306,8 @@ export class Scene {
 			layers: (options.layers ?? C.LAYERS_DEFAULT) >>> 0,
 			root: true,
 		};
-		const objects = this.createNodes(template, call, options.parent ?? null, root, extra);
+		const cleared = options.occluder === false ? C.FLAG_OCCLUDER : 0;
+		const objects = this.createNodes(template, call, options.parent ?? null, root, extra, cleared);
 		const instance = objects[0] as PrefabInstance;
 		instance.objects = objects;
 		prefab.animate(objects);
@@ -2181,8 +2388,8 @@ export class Scene {
 	/**
 	 * Creates an object for each template node, with one core call that reserves their slots and
 	 * one batch of command records, and returns them in the nodes' order. A node whose parent is -1
-	 * goes under `parent`. `root`, when given, takes the place of the first node, and `extra` adds
-	 * flags to every node with a mesh. Throws E1102 before it creates anything when the scene or
+	 * goes under `parent`. `root`, when given, takes the place of the first node, `extra` adds
+	 * flags to every node with a mesh, and `cleared` takes flags away from them. Throws E1102 before it creates anything when the scene or
 	 * the command ring has no room.
 	 */
 	private createNodes(
@@ -2191,6 +2398,7 @@ export class Scene {
 		parent: Object3D | null,
 		root?: TemplateNode,
 		extra = 0,
+		cleared = 0,
 	): Object3D[] {
 		const count = nodes.length;
 		const node = (k: number) => (k === 0 && root ? root : (nodes[k] as TemplateNode));
@@ -2214,7 +2422,7 @@ export class Scene {
 			this.writePosition(slot, t[0] as number, t[1] as number, t[2] as number);
 			for (let i = 0; i < 3; i++) v.scales[slot * 3 + i] = t[7 + i] as number;
 			for (let i = 0; i < 4; i++) v.rotations[slot * 4 + i] = t[3 + i] as number;
-			const flags = n.mesh ? n.flags | extra : n.flags;
+			const flags = n.mesh ? (n.flags | extra) & ~cleared : n.flags;
 			const bounds = n.bounds;
 			if (bounds && flags & C.FLAG_CUSTOM_BOUNDS) {
 				for (let i = 0; i < 3; i++) v.centers[slot * 3 + i] = bounds[i] as number;
@@ -2413,7 +2621,7 @@ export class Scene {
 	 */
 	async createSprites(options: SpriteOptions): Promise<SpriteBatch> {
 		const call = 'createSprites';
-		const { core, spriteMakers } = this;
+		const { core, makers } = this;
 		const { count, layers } = options;
 		if (DEV && layers !== undefined) checkLayers(call, layers);
 		const { columns = 1, rows = 1 } = options.atlas ?? {};
@@ -2429,15 +2637,9 @@ export class Scene {
 		const { center } = options;
 		if (DEV && center && !(Number.isFinite(center[0]) && Number.isFinite(center[1])))
 			throw new EngineError('E1203', `${call}() got [${center}] for center.`);
-		if (!spriteMakers) throw new Error(`${call}() needs a scene that the engine made`);
+		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
 		const sprites = await loadSprites(call);
-		const parts = sprites.spriteParts(
-			spriteMakers,
-			this.spriteQuads,
-			options,
-			[columns, rows],
-			call,
-		);
+		const parts = sprites.spriteParts(makers, this.spriteQuads, options, [columns, rows], call);
 		const id = core.checkGrowth(
 			core.glue.createSpriteBatch(
 				count,
@@ -2455,6 +2657,53 @@ export class Scene {
 		this.rememberBatch(instances);
 		if (options.origin) instances.setOrigin(options.origin, call);
 		const batch = new sprites.SpriteBatch(core, id, count, parts.material, instances);
+		if (layers !== undefined) batch.setLayers(layers);
+		return batch;
+	}
+
+	/**
+	 * Lines of any width in one batch, like three.js's `Line2` and `LineSegments2` with a
+	 * `LineMaterial`, and its `Line`, `LineSegments` and `LineLoop`. Each segment between two points
+	 * draws as a quad with round ends that faces the camera, `width` CSS pixels wide, or world units
+	 * wide with `worldUnits`. A typed array gives each point its position and color, as an instance
+	 * batch's arrays give its rows. The first call downloads the line code. Throws E1206 for points
+	 * or colors that make no line, E1217 for an unknown mode, E1108 for a width that is not positive
+	 * or a dash or gap below 0, E1203 for a value that is not finite, and E1406 when the line code
+	 * does not download.
+	 */
+	async createLines(options: LineOptions): Promise<LineBatch> {
+		const call = 'createLines';
+		const { core, makers } = this;
+		const { positions, colors, layers, mode = 'strip', width = 1 } = options;
+		if (DEV && layers !== undefined) checkLayers(call, layers);
+		const points = linePoints(call, mode, positions, colors);
+		LINE_CHECKS.width(width, call);
+		LINE_CHECKS.values(options, call);
+		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		const lines = await loadLines(call);
+		const parts = lines.lineParts(makers, core, this.lineMesh, options, LINE_CHECKS, call);
+		this.lineMesh = parts.mesh;
+		const id = core.checkGrowth(
+			core.glue.createLineBatch(
+				points,
+				options.dynamic ?? false,
+				parts.mesh.id,
+				parts.material.id,
+				lines.modeCode(mode),
+				width,
+				options.worldUnits ?? false,
+				options.dashed ?? false,
+			),
+			call,
+		);
+		const rows = LINE_SEGMENTS[mode](points);
+		if (DEV) this.countBatchRows(rows);
+		const instances = new InstanceBatch(this, id, rows, false);
+		this.rememberBatch(instances);
+		if (options.origin) instances.setOrigin(options.origin, call);
+		const batch = new lines.LineBatch(core, id, points, parts.material, instances, LINE_CHECKS);
+		batch.positions.set(positions);
+		if (colors) batch.colors.set(colors);
 		if (layers !== undefined) batch.setLayers(layers);
 		return batch;
 	}
