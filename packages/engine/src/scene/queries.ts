@@ -8,7 +8,15 @@ import { checkLayers, type Described } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import type { Vec3Like } from '../math/types';
+import type { Ray } from './frame-cameras';
 import type { CoreMemory } from './memory';
+import {
+	EVENT_DISTANCE,
+	EVENT_NORMAL,
+	EVENT_POINT,
+	EVENT_ROW,
+	EVENT_TRIANGLE,
+} from './pointer-events';
 import type { InstanceBatch, Object3D } from './scene';
 
 /**
@@ -316,6 +324,26 @@ export class SceneQueries {
 		}
 		this.readHit(0, hit);
 		return true;
+	}
+
+	/**
+	 * Casts `ray` on `layers` for pointer events. Writes the closest hit's distance, triangle, row,
+	 * point and normal into `out` at the `EVENT_*` offsets, and returns its object or batch, or null
+	 * after a miss. The numbers go into an array, as an object's fields would each hold a new number
+	 * in some browsers.
+	 */
+	pick(ray: Ray, layers: number, out: Float64Array): Object3D | InstanceBatch | null {
+		this.writeRay(ray.origin, ray.direction, undefined);
+		if (this.finish(this.core.glue.raycast(C.QUERY_CLOSEST, layers), 'raycast') === 0) return null;
+		const r = this.hits;
+		out[EVENT_DISTANCE] = r[C.QUERY_HIT_DISTANCE] as number;
+		out[EVENT_TRIANGLE] = r[C.QUERY_HIT_TRIANGLE] as number;
+		out[EVENT_ROW] = r[C.QUERY_HIT_ROW] as number;
+		for (let k = 0; k < 3; k++) {
+			out[EVENT_POINT + k] = r[C.QUERY_HIT_POINT + k] as number;
+			out[EVENT_NORMAL + k] = r[C.QUERY_HIT_NORMAL + k] as number;
+		}
+		return this.targetAt(0);
 	}
 
 	raycastAny(origin: Vec3Like, direction: Vec3Like, options?: RaycastOptions): boolean {
