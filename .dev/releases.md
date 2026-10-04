@@ -119,7 +119,7 @@ If item 1 or item 3 fails, feature work stops. Fix the cause, then run the gate 
 
 | Item | Rule | Measured by |
 | --- | --- | --- |
-| 1. Image tests | Every test in the image test manifest matches its references. This holds in CI on SwiftShader and in Chrome on the Mac's GPU, on all three tiers. It holds through the device runner in Safari and Firefox on the Mac, Safari and Brave on the iPad, and Chrome and Brave on the S24+. | Steps `images-gpu`, `images-swiftshader` and `workflows`. The device runner, through `bun run test:real-browsers Safari Firefox` and `bun run devices` |
+| 1. Image tests | Every test in the image test manifest matches its references. This holds in CI on SwiftShader and in Chrome on the Mac's GPU, on all three tiers. It holds through the device runner in Safari and Firefox on the Mac, Safari on the iPad, and Chrome on the S24+. | Steps `images-gpu`, `images-swiftshader` and `workflows`. The device runner, through `bun run test:real-browsers Safari Firefox` and `bun run devices` |
 | 2. Parity | The parity scenes match their three.js twins on core WebGPU and on WebGL2, within three.js's threshold. The shadow scenes match within 0.5%. | Step `parity` |
 | 3. Speed | The CI benchmark job passes on the gate commit. S1's own work on the busiest thread is at most 50% of three.js's, in Chrome on the Mac on WebGPU. S1 at phone scale is at most 100% of three.js on the S24+ and the iPad. S4 holds its preset's target frame rate in at least 95% of the seconds of a 10-minute run on both devices. S3 and S1-cells are measured against three.js on the three devices. | Steps `workflows`, `desktop-target` and `scenes`. Benchmark runs and the governor plan on the devices |
 | 4. Budgets | Each WebAssembly build stays within 600 KB after Brotli, and the engine's JavaScript within 100 KB in each thread mode. `bun run bench:allocation` passes on S4 on both GPU paths. `bun run bench:soak` passes on S4 in Chrome on the Mac and in Safari on the iPad. | Steps `budgets`, `allocation-s4-webgpu`, `allocation-s4-webgl2` and `soak-s4`. The soak plan on the iPad |
@@ -192,11 +192,16 @@ The gate commit is 5309dba5 (#271), and main's CI passed on it. Each device run 
 
 On the gate commit, the Mac runs `bun run gate` with every step, and with no other heavy work during the timing steps. The rehearsal's figures do not count for the gate.
 
+The owner decided two changes on 4 October 2026:
+
+- Brave is no longer tested. It draws as Chrome does, so the gate drops its Brave items.
+- The phone items run on BrowserStack Automate's phones where they can, and on the S24+ where they cannot.
+
 The coordinator runs these device runs on the gate commit:
 
-1. Image tests through the device runner: Safari and Firefox on the Mac, on WebGPU and with WebGL2 forced. Safari and Brave on the iPad, on both paths, with Brave's full checks plan. Chrome and Brave on the S24+, on WebGL2, with Brave's Shields state.
-2. S1 at phone scale against three.js: the iPad in Safari on WebGPU and with WebGL2 forced, and the S24+ in Chrome and in Brave.
-3. S4's 10-minute run with dynamic resolution: the S24+ in Brave, the iPad with WebGL2 forced, and the iPad on WebGPU again at 60 Hz. The governor's stress test runs on each.
+1. Image tests through the device runner: Safari and Firefox on the Mac, on WebGPU and with WebGL2 forced. Safari on the iPad, on both paths. Chrome on the S24+, on WebGL2.
+2. S1 at phone scale against three.js: the iPad in Safari on WebGPU and with WebGL2 forced, and the S24+ in Chrome.
+3. S4's 10-minute run with dynamic resolution: the S24+ in Chrome, the iPad with WebGL2 forced, and the iPad on WebGPU again at 60 Hz. The governor's stress test runs on each.
 4. S3 and S1-cells against three.js on the S24+ and the iPad.
 5. The soak plan on S4 in Safari on the iPad.
 6. T-28: `bun run bench:startup -- --android` on the S24+ in Chrome, cold and warm on Slow 4G, and the iPad's first frame.
