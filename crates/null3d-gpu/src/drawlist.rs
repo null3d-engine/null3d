@@ -654,9 +654,11 @@ pub mod permutation {
     pub const DEBUG_VIEW_LOW: u32 = 1024;
     /// The high bit of the debug view's number.
     pub const DEBUG_VIEW_HIGH: u32 = 2048;
-    /// The depth template draws the camera's depth prepass: it clips what lies in front of the
-    /// near plane, as the templates that shade do. Without it, the shadow passes flatten casters
-    /// there onto the near face.
+    /// The pipeline draws the camera's depth prepass. On WebGPU it is a build of the depth
+    /// template, which clips what lies in front of the near plane, as the templates that shade
+    /// do; without the bit, the shadow passes flatten casters there onto the near face. On WebGL2
+    /// it marks a mesh template's pipeline, which the backend draws with the vertex shader of the
+    /// template's build without the bit and a fragment shader that writes nothing.
     pub const PREPASS: u32 = 4096;
     /// The fragment shader does its color math at half precision: lighting, tone mapping and
     /// sRGB encoding. WebGPU builds use 16-bit floats, which need the device feature

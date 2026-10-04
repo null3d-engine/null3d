@@ -20,9 +20,11 @@ enable draw_index;
 // the texels on each side of the cascade's layer or the tile.
 //
 // The PREPASS builds draw the depth of a camera's opaque objects before the opaque pass shades
-// them. They clip what lies in front of the camera's near plane, as the templates that shade do.
-// The position is invariant, as in those templates, so both compute the same depth for the same
-// vertex, and the opaque pass's test for equal depth passes on exactly the nearest surfaces.
+// them, on WebGPU. They clip what lies in front of the camera's near plane, as the templates that
+// shade do. The position is invariant, as in those templates, so both compute the same depth for
+// the same vertex, and the opaque pass's test for equal depth passes on exactly the nearest
+// surfaces. WebGL2 draws the prepass with each mesh template's own vertex shader, because there two
+// programs can give different depths although both mark the position invariant.
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, frame, relative_position, world_normal}
 #import null3d::vertex::{mesh_position}
 #ifdef SKIN

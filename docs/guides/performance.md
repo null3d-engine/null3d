@@ -209,9 +209,9 @@ The governor lowers the far cascades' rate and the shadow filter when frames run
 
 ## The depth prepass
 
-With the `depthPrepass` option of `createEngine`, WebGPU draws the depth of the opaque objects first. The opaque pass then shades each pixel once, for its nearest surface. It saves GPU time where objects hide many others and their shading costs much. It always costs a second pass over the vertices, so every preset leaves it off.
+With the `depthPrepass` option of `createEngine`, the engine draws the depth of the opaque objects first. The opaque pass then shades each pixel once, for its nearest surface. It saves GPU time where objects hide many others and their shading costs much. It always costs a second pass over the vertices, so every preset leaves it off.
 
-In the S2 benchmark in Chrome on a MacBook Pro, the prepass raised the GPU time per frame from 0.28 ms to 0.41 ms. S2's trees hide few others, and their shading is cheap. Measure your own scene with `?prepass=on` and `?prepass=off`, and compare `gpuMs`. `debug.view('overdraw')` shows where many surfaces cover one pixel, in development builds ([Debug drawing and stats](../api/debug.md)). WebGL2 draws without the prepass ([Quality presets](../concepts/quality-presets.md#the-depth-prepass)).
+In the S2 benchmark in Chrome on a MacBook Pro, the prepass raised WebGPU's GPU time per frame from 0.28 ms to 0.40 ms. On WebGL2 it doubled the draw calls, from 101 to 201. S2's trees hide few others, and their shading is cheap. Measure your own scene with `?prepass=on` and `?prepass=off`, and compare `gpuMs`. `debug.view('overdraw')` shows where many surfaces cover one pixel, in development builds ([Debug drawing and stats](../api/debug.md)).
 
 ## Measure
 

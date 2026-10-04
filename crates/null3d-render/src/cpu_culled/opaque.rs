@@ -12,6 +12,11 @@
 //!
 //! The shadow passes draw the same way, from the casters' layout: one [`Opaque`] records the
 //! views of cameras, and another the shadow cascades, whose frame groups bind no shadow map.
+//!
+//! With the depth prepass, a camera view's depth prepass replays the same calls first, with each
+//! draw's prepass pipeline, and leaves out the draws that have none. It binds the same frame group,
+//! index list, draw records and instance textures as the opaque pass after it, so both passes place
+//! every vertex from the same data.
 
 use null3d_core::cells::MAX_CELLS;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
@@ -62,6 +67,19 @@ struct ViewDraws {
     draws_bytes: u32,
     /// The slots of the frame being recorded.
     slots: FrameSlots,
+}
+
+/// What a view's pass draws with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Shading {
+    /// Each draw's own pipeline, with the view's frame group of the light textures' ring slot.
+    Lit { light_slot: u32 },
+    /// Each draw's pipeline of the depth prepass, with the same frame group as `Lit`. Draws
+    /// without one are left out.
+    Prepass { light_slot: u32 },
+    /// Each draw's own pipeline, which reads no lights, with the single frame group of a shadow
+    /// cascade's, a shadow tile's or the outline mask's view.
+    Depth,
 }
 
 /// Each view's rings, and how the device draws many buckets. The views are of one kind, in order
@@ -494,10 +512,10 @@ impl Opaque {
             + layout.sorted_records_at
     }
 
-    /// Records a view's opaque pass inside the render pass that the render graph began: every
-    /// draw whose bucket has visible instances, where the index list of bucket `b` starts at
-    /// `starts[b]`, from its mesh page's buffers in `meshes`, the ring slots that
-    /// [`Opaque::upload`] took, and the light textures of the ring slot `light_slot`.
+    /// Records a view's pass inside the render pass that the render graph began, with `shading`:
+    /// every draw whose bucket has visible instances, where the index list of bucket `b` starts at
+    /// `starts[b]`, from its mesh page's buffers in `meshes`, and the ring slots that
+    /// [`Opaque::upload`] took.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn record(
         &self,
@@ -507,7 +525,7 @@ impl Opaque {
         starts: &[u32],
         layout: &Layout,
         meshes: &MeshBuffers,
-        light_slot: u32,
+        shading: Shading,
     ) -> Result<(), RecordError> {
         let slots = self.views[self.slot(view)].slots;
         let (buckets, draws, multi_draw) = (&layout.buckets, &layout.draws, self.multi_draw);
@@ -515,19 +533,33 @@ impl Opaque {
         let shift = |d: usize| buckets[draws[d].bucket as usize].shift;
         let stride = record_stride(multi_draw);
         let slot = slots.listed * layout.draws_slot_bytes;
+        let (light_slot, prepass) = match shading {
+            Shading::Lit { light_slot } => (light_slot, false),
+            Shading::Prepass { light_slot } => (light_slot, true),
+            Shading::Depth => (0, false),
+        };
         self.bind_view(list, view, light_slot)?;
         let mut pipeline = None;
         let mut textures = 0;
         let mut run = usize::MAX;
         for_each_call(draws, &visible, multi_draw, |index, call| {
+            let first = draws[call.run];
+            let id = if prepass {
+                first.prepass
+            } else {
+                first.pipeline
+            };
+            if id == 0 {
+                return Ok(());
+            }
             if call.run != run {
                 run = call.run;
-                let first = draws[run];
-                if pipeline != Some(first.pipeline) {
-                    list.push(Op::SetPipeline, &[first.pipeline])?;
-                    pipeline = Some(first.pipeline);
+                if pipeline != Some(id) {
+                    list.push(Op::SetPipeline, &[id])?;
+                    pipeline = Some(id);
                 }
-                if first.textures != 0 && first.textures != textures {
+                // The prepass's programs sample no maps.
+                if !prepass && first.textures != 0 && first.textures != textures {
                     list.push(Op::SetBindGroup, &[TEXTURES_GROUP, first.textures, 0])?;
                     textures = first.textures;
                 }
@@ -587,6 +619,7 @@ mod tests {
     fn draw(pipeline: u32, page: u32) -> Draw {
         Draw {
             pipeline,
+            prepass: 0,
             textures: 0,
             page,
             bucket: 0,

@@ -29,7 +29,7 @@ use crate::frame::{
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
 };
 use crate::outline::mask_keys;
-use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
+use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 
 /// Words of one bucket record in the culling shader: base, material, radius, first draw, draw
 /// count, the centre of the local sphere that culls the bucket's sources, and the first joint of
@@ -427,7 +427,7 @@ impl Layout {
     /// Assigns every source to a bucket and lays the buckets out, from the frame's world state,
     /// with each bucket's pipeline id from `pipelines`, for a pass that draws into `targets`. With
     /// `shadows`, the scene's receivers draw with pipelines that read the shadow maps. With
-    /// `prepass`, the buckets that the depth prepass draws get its pipelines too. The outlined
+    /// a `prepass`, the buckets that the depth prepass draws get its pipelines too. The outlined
     /// layout's buckets get both pipelines of the outline mask. Skinned objects draw the skinned
     /// vertices that `skinning` lays out. It reuses
     /// the layout's tables and scratch space, which grow only with the scene. A scene of more than
@@ -443,7 +443,7 @@ impl Layout {
         parity: usize,
         limit: u32,
         shadows: bool,
-        prepass: bool,
+        prepass: Prepass,
         skinning: &Skinning,
     ) -> Result<(), RecordError> {
         let scene_rows = scene.capacity() + 1;
@@ -935,7 +935,7 @@ mod tests {
                 parity,
                 u32::MAX,
                 false,
-                false,
+                Prepass::Off,
                 &Skinning::default(),
             )
             .unwrap();
