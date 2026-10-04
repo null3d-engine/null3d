@@ -7,6 +7,7 @@ import {
 	MANIFEST_PATH,
 	manifestProblems,
 	namedSamples,
+	optimizedSampleFile,
 	readLock,
 	readSampleManifest,
 	repositoryRoot,
@@ -120,6 +121,8 @@ describe('namedSamples', () => {
 					"const a = samplePath('sources/a.glb');",
 					'const b = sampleUrl("sources/b.hdr");',
 					`const c = sampleUrl(\`sources/\${name}.glb\`);`,
+					"import d from '/samples/sources/d.glb?optimized';",
+					'const e = sampleUrl("sources/e.glb");',
 				].join('\n'),
 			);
 			mkdirSync(join(root, 'tests', 'node_modules'));
@@ -128,6 +131,8 @@ describe('namedSamples', () => {
 				{ file: 'tests/page.ts', line: 1, path: 'sources/a.glb' },
 				{ file: 'tests/page.ts', line: 2, path: 'sources/b.hdr' },
 				{ file: 'tests/page.ts', line: 3, path: null },
+				{ file: 'tests/page.ts', line: 4, path: 'sources/d.glb' },
+				{ file: 'tests/page.ts', line: 5, path: 'sources/e.glb' },
 			]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -192,5 +197,33 @@ describe('sampleFileFor', () => {
 		expect(sampleFileFor(repoRoot, '/samples/../package.json')).toBeNull();
 		expect(sampleFileFor(repoRoot, '/samples/%E0%A4%A')).toBeNull();
 		expect(sampleFileFor(repoRoot, `/other/${first.path}`)).toBeNull();
+	});
+});
+
+describe('optimizedSampleFile', () => {
+	it('resolves an optimized import of a pinned file to the cache, and says what is wrong otherwise', () => {
+		const first = readSampleManifest(repoRoot).assets[0]?.files[0];
+		expect(first).toBeDefined();
+		if (!first) return;
+		const cache = scratch();
+		const before = process.env.NULL3D_SAMPLES_DIR;
+		process.env.NULL3D_SAMPLES_DIR = cache;
+		try {
+			const id = `/samples/${first.path}?optimized`;
+			expect(optimizedSampleFile(repoRoot, `/samples/${first.path}`)).toBeNull();
+			expect(optimizedSampleFile(repoRoot, `/models/${first.path}?optimized`)).toBeNull();
+			expect(() => optimizedSampleFile(repoRoot, id)).toThrow('run bun run samples:fetch');
+			expect(() => optimizedSampleFile(repoRoot, '/samples/sources/none.glb?optimized')).toThrow(
+				`is not in ${MANIFEST_PATH}`,
+			);
+			const full = join(cache, readLock(repoRoot).commit, first.path);
+			mkdirSync(join(full, '..'), { recursive: true });
+			writeFileSync(full, new Uint8Array([1]));
+			expect(optimizedSampleFile(repoRoot, id)).toBe(`${full}?optimized`);
+		} finally {
+			if (before === undefined) delete process.env.NULL3D_SAMPLES_DIR;
+			else process.env.NULL3D_SAMPLES_DIR = before;
+			rmSync(cache, { recursive: true, force: true });
+		}
 	});
 });

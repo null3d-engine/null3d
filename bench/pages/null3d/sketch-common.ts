@@ -2,7 +2,13 @@
 // view (background, sun, ambient light and camera) from the shared scene module, a camera that
 // follows a path, and the quality reports that a page's trace records. A sketch poses its scene at
 // the sketch time, which hold mode steps to the held time.
-import { type Camera, type Quality, quat, type SketchContext } from '@null3d/engine';
+import {
+	type Camera,
+	type PerspectiveCamera,
+	type Quality,
+	quat,
+	type SketchContext,
+} from '@null3d/engine';
 import {
 	BACKGROUND,
 	CAMERA,
@@ -65,7 +71,7 @@ export function setUpView(
 	{ sun, ambient }: SceneLights = VIEW_LIGHTS,
 	background: string = BACKGROUND,
 	{ cascades = 0, dynamicResolution = false }: ViewOptions = {},
-): Camera {
+): PerspectiveCamera {
 	post.set({ toneMapping: 'none' });
 	if (!dynamicResolution) quality.set({ minRenderScale: 1, governor: false });
 	scene.setBackground(background);

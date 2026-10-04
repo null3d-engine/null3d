@@ -95,7 +95,7 @@ use crate::dfg;
 use crate::final_pass::FinalIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
-    SceneSettings, UploadArena, drawn_rows,
+    SceneSettings, UploadArena, drawn_rows, joined_rows,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::graph::RenderGraph;
@@ -793,14 +793,26 @@ impl CpuCulledRenderer {
             }
             return Ok(());
         }
+        // Scene rows that changed close together upload in one write, as a span that grows until
+        // the next run lies too far from it.
+        let scene = input.scene.world(parity).matrices();
+        let mut span: Option<(u32, u32)> = None;
         for range in input.snapshot.uploads() {
             if range.target == SCENE_TARGET {
-                let scene = input.scene.world(parity).matrices();
-                if let Some((start, count)) =
+                let Some((start, count)) =
                     drawn_rows(&layout.drawn_slots, range.start, range.count)
-                {
-                    upload(list, 0, scene, start, count)?;
-                }
+                else {
+                    continue;
+                };
+                span = match span.and_then(|span| joined_rows(span, start, count)) {
+                    Some(joined) => Some(joined),
+                    None => {
+                        if let Some((first, rows)) = span {
+                            upload(list, 0, scene, first, rows)?;
+                        }
+                        Some((start, count))
+                    }
+                };
                 continue;
             }
             let Some(slot) = layout.batch(range.target).filter(|slot| !slot.dynamic) else {
@@ -816,6 +828,9 @@ impl CpuCulledRenderer {
                 range.start,
                 range.count,
             )?;
+        }
+        if let Some((first, rows)) = span {
+            upload(list, 0, scene, first, rows)?;
         }
         Ok(())
     }

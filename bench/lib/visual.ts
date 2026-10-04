@@ -5,6 +5,7 @@
 // `bun run test:bench` checks them in CI. tests/pages/lib/shadow-check.ts says what each figure
 // measures.
 
+import { S5_DEFAULT_COUNT } from '../scenes/s5';
 import {
 	createS4,
 	PARITY_CANVAS,
@@ -22,6 +23,7 @@ export const SCENE_COUNTS: Readonly<Record<BenchScene, number>> = {
 	s2: S2_NODE_COUNT,
 	s3: S3_DEFAULT_COUNT,
 	s4: createS4().count,
+	s5: S5_DEFAULT_COUNT,
 };
 
 /** The path of a benchmark scene's null3D sketch module from the server's root, at `count` objects. */
