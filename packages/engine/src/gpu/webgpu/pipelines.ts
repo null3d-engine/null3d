@@ -328,19 +328,21 @@ export class Pipelines {
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
 			{ binding: 1, visibility: fragment, sampler: {} },
 		]);
-		// A texture array for each map slot, then each slot's sampler.
+		// A texture array for each map slot, then each slot's sampler. Custom materials' vertex
+		// stages sample their textures too.
+		const maps = GPUShaderStage.VERTEX | fragment;
 		this.defineLayout(LAYOUT_MATERIAL_MAPS, 'material maps', [
 			...MAP_SLOTS.map(
 				(binding): GPUBindGroupLayoutEntry => ({
 					binding,
-					visibility: fragment,
+					visibility: maps,
 					texture: { viewDimension: '2d-array' },
 				}),
 			),
 			...MAP_SLOTS.map(
 				(slot): GPUBindGroupLayoutEntry => ({
 					binding: MAP_SLOTS.length + slot,
-					visibility: fragment,
+					visibility: maps,
 					sampler: {},
 				}),
 			),
@@ -512,13 +514,14 @@ export class Pipelines {
 	/**
 	 * Adds a custom material's template: the standard material's template with the material's WGSL,
 	 * in the shader variants that the plugin built, which also read the first texture coordinates.
+	 * A material with textures binds them in the slots of the maps' layout.
 	 */
 	defineCustom(id: number, shader: CustomShader): void {
 		this.defineTemplate(id, {
 			label: `custom material ${id}`,
 			shader: shader.variants,
 			pipeline: 'main',
-			layouts: [LAYOUT_FRAME],
+			layouts: shader.textures > 0 ? [LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS] : [LAYOUT_FRAME],
 			meshLocations: shader.locations,
 			vertexBuffers: INSTANCE_BUFFERS,
 		});

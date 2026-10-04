@@ -4,6 +4,9 @@
 //! functions then share the template's lighting, and every GPU path, with the standard material.
 //! A `struct Uniforms` in the WGSL declares the material's uniforms: the build then adds the
 //! function that loads them after the WGSL, and builds with the shader def CUSTOM_UNIFORMS.
+//! Module-scope `var name: texture_2d<f32>;` lines declare its textures (see [`crate::textures`]):
+//! the build binds them after the WGSL, gives each texture function the texture's layer, and
+//! builds with the shader def CUSTOM_TEXTURES, which loads the layers.
 //!
 //! WGSL with a `@vertex` and a `@fragment` entry point is a full shader instead: the build makes
 //! the variants that the engine's mesh templates need of it on its own, for WebGPU and for WebGL2
@@ -19,6 +22,7 @@ use null3d_gpu::drawlist::vertex;
 use crate::manifest::{Manifest, Pipeline, Target, Variant};
 use crate::position::locate;
 use crate::scan::{Token, find_function, tokenize};
+use crate::textures::{self, Texture};
 use crate::uniforms::{self, Uniform};
 use crate::{
     BuildError, Compiler, Inputs, MANIFEST_PATH, Position, Problem, VariantOutput, features,
@@ -26,6 +30,8 @@ use crate::{
 
 /// The shader def that makes the template load a custom material's uniforms.
 const UNIFORMS_DEF: &str = "CUSTOM_UNIFORMS";
+/// The shader def that makes the template load the layers of a custom material's textures.
+const TEXTURES_DEF: &str = "CUSTOM_TEXTURES";
 
 /// A function that a custom material's WGSL may declare for the template to call.
 struct Hook {
@@ -159,6 +165,8 @@ pub struct MaterialOutput {
     /// The fields of the WGSL's `struct Uniforms`, where the engine writes each: none without
     /// the struct.
     pub uniforms: Vec<Uniform>,
+    /// The textures that the WGSL declares, in the order of their slots: none without any.
+    pub textures: Vec<Texture>,
     /// The template's variants with the WGSL, or the full shader's, by name.
     pub variants: BTreeMap<String, VariantOutput>,
     /// The vertex shader locations that the vertex stage reads from a mesh's vertices, in order.
@@ -274,10 +282,20 @@ impl Compiler {
             })
             .collect();
         problems.extend(directive_problems(material));
-        let uniforms = uniforms::read(&tokens, &material.source, path).unwrap_or_else(|found| {
-            problems.extend(found);
-            None
-        });
+        let found = textures::read(&tokens, &material.source, path, false);
+        let (texture_fields, own_source, bindings) = match found {
+            Ok(found) => (found.fields, found.source, found.declarations),
+            Err(found) => {
+                problems.extend(found);
+                (Vec::new(), material.source.clone(), String::new())
+            }
+        };
+        let room = texture_fields.len() as u32;
+        let uniforms =
+            uniforms::read(&tokens, &material.source, path, room).unwrap_or_else(|found| {
+                problems.extend(found);
+                None
+            });
         if declared.is_empty() {
             problems.push(Problem::at(
                 path,
@@ -297,6 +315,9 @@ impl Compiler {
                 defs.extend(CUSTOM_DEFS.map(str::to_owned));
                 defs.extend(declared.iter().map(|hook| hook.def.to_owned()));
                 defs.extend(uniforms.as_ref().map(|_| UNIFORMS_DEF.to_owned()));
+                if !texture_fields.is_empty() {
+                    defs.push(TEXTURES_DEF.to_owned());
+                }
                 defs.sort();
                 // Custom materials draw at full precision, so their builds stay half as many. On
                 // WebGPU they draw skinned meshes from the skinning pass's vertices, so they need no
@@ -317,7 +338,7 @@ impl Compiler {
             })
             .collect();
         let loader = uniforms.as_ref().map_or("", |found| found.loader.as_str());
-        let source = format!("{}{}{loader}", template.source, material.source);
+        let source = format!("{}{own_source}{loader}{bindings}", template.source);
         let mut errors = BuildError::default();
         let built = self.variants(
             path,
@@ -354,6 +375,7 @@ impl Compiler {
         errors.or(MaterialOutput {
             functions: declared.iter().map(|hook| hook.name.to_owned()).collect(),
             uniforms: uniforms.map_or_else(Vec::new, |found| found.fields),
+            textures: texture_fields,
             variants: built,
             locations,
             attributes,
@@ -374,6 +396,11 @@ impl Compiler {
     ) -> Result<MaterialOutput, BuildError> {
         let path = material.path.as_str();
         let mut problems = directive_problems(material);
+        if let Err(found) =
+            textures::read(&tokenize(&material.source), &material.source, path, true)
+        {
+            problems.extend(found);
+        }
         let (&[vertex_entry], &[fragment_entry]) = (vertex_entries, fragment_entries) else {
             problems.push(Problem::at(
                 path,
@@ -429,6 +456,7 @@ impl Compiler {
         errors.or(MaterialOutput {
             functions: Vec::new(),
             uniforms: Vec::new(),
+            textures: Vec::new(),
             variants: built,
             locations,
             attributes,
