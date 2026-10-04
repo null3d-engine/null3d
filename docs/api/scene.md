@@ -235,6 +235,8 @@ Many copies of one mesh and material. Write rows straight into the typed arrays;
 | `readonly colors: Float32Array \| undefined` | Linear RGBA colors, 4 floats per row, when the batch was created with colors. This version stores them but does not draw them yet. |
 | `setActiveCount(count: number): void` | Draws only the first `count` rows. |
 | `setLayers(mask: number): void` | Puts every row on the layers of a 32-bit mask, as `Object3D.setLayers` does for one object. A new mask needs no rebuild. |
+| `on(type: ObjectEventType, handler: ObjectEventHandler): void` | Calls `handler` for each pointer event of `type` on a row of the batch, as `Object3D.on` does. The event's `instance` names the row. |
+| `off(type: ObjectEventType, handler: ObjectEventHandler): void` | Removes a handler that `on` added for events of `type`. |
 | `markDirty(start = 0, count = this.count - start): void` | Marks rows of a static batch to update and upload. |
 | `destroy(): void` | Removes the batch and frees its rows. Its typed arrays are not valid after this: another batch can take their memory. |
 

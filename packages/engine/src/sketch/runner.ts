@@ -337,6 +337,7 @@ export class SketchRunner {
 			() => this.warmUp(),
 			new FrameCameras(this.core, sketch.control, this.input),
 			{ geometry, materials },
+			this.input,
 		);
 		this.post = new Post(
 			this.core,
@@ -765,11 +766,14 @@ export class SketchRunner {
 		// Handlers that hear of a restart may create objects with new pipelines, so their frame
 		// waits for them.
 		let restart = false;
-		// The sketch's part of the frame: the input the page wrote, preference changes, the fixed
-		// steps and the update. It stays in this function: a call that passed the step on would
-		// allocate a number for it in every frame.
+		// The sketch's part of the frame: the input the page wrote and its pointer events on
+		// objects, preference changes, the fixed steps and the update. It stays in this function: a
+		// call that passed the step on would allocate a number for it in every frame.
 		if (play) {
-			if (this.holdSeconds === undefined) this.input.beginFrame(frame, frame - time.frame);
+			if (this.holdSeconds === undefined) {
+				this.input.beginFrame(frame, frame - time.frame);
+				this.context.scene.dispatchPointerEvents(this.reportError);
+			}
 			const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 			if (reducedMotion !== this.reducedMotion) {
 				this.reducedMotion = reducedMotion;
@@ -854,9 +858,9 @@ export class SketchRunner {
 		if (glue.recordFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		Atomics.store(slots, Slot.RenderScale, scale);
-		// Input names frames in the sketch's count. Each frame of the setup is frame 0 in that count,
-		// and a click can come while one is on screen, so the setup's frames keep their camera too.
-		this.context.scene.keepFrameCamera(time.frame, width, height);
+		// Input names frames in the engine's count, so each frame of the setup and of the preset
+		// check keeps its own camera: a click can come while any of them is on screen.
+		this.context.scene.keepFrameCamera(frame, width, height);
 		// Every frame places the labels, as the thread that draws presents each one.
 		try {
 			this.ui.project(frame, width, height);
