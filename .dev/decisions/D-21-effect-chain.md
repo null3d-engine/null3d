@@ -82,3 +82,7 @@ Pending: the `bloom` plan on the iPad and the S24+ ([device sessions](../devices
 - Code: `crates/null3d-render/src/bloom.rs`, the frame graph's bloom passes and `setCanvasOutput`, `wgsl/bloom.wgsl` and the final pass's `BLOOM` build, the `bloomSamples` quality setting and the governor's bloom steps, `effectsOutput` in `page/limits.ts`, and `gpu/device-shaders.ts`.
 - Tests: the bloom image tests, `bloom-switch.spec.ts`, the render scale test with bloom, the parity scenes `bloom-soft` and `bloom-strong`, and the `bloom` device plan.
 - Docs: `concepts/post-processing`, `api/post`, `concepts/color-management`, `concepts/backends`, the mapping's composer and bloom entries, and both skills.
+
+## Addendum, 2026-10-04: bloom's method is open again
+
+The owner's decision of 4 October 2026 ([D-52](D-52-intent-parity.md)) withdraws this record's second rule. A port no longer keeps three.js's look by default. Each effect uses the best technique as its default, and the porting skill maps a port's settings onto it. So decision 1 is open again. The chain down and back up is cheaper per pixel, as the table above shows, and it flickers less on small bright points. The halo of `UnrealBloomPass` is a candidate for the opt-in `three-compat` add-on module. The combined technique analysis settles the default. Decision 2, the 8-bit path, stands.
