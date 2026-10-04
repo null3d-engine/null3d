@@ -1,13 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { Assets } from './assets';
+import { Environment } from './environment';
+import { BUILTIN_ENVIRONMENTS } from './environment-file';
 import type { Texture, TextureOptions, Textures } from './textures';
 
 const PAGE = 'https://game.example/levels/one.html';
 
 /** What the fake server answers for each address: a body, an HTTP status, or a network failure. */
-type Answer = string | number | 'network';
+type Answer = string | Uint8Array | number | 'network';
 
 const realFetch = globalThis.fetch;
 const realDecode = globalThis.createImageBitmap;
@@ -24,7 +28,7 @@ function serve(answers: Record<string, Answer>): void {
 		const answer = answers[url];
 		if (answer === undefined || answer === 'network') throw new TypeError('Failed to fetch');
 		if (typeof answer === 'number') return new Response('', { status: answer });
-		return new Response(answer);
+		return new Response(answer as BodyInit);
 	}) as typeof fetch;
 	globalThis.createImageBitmap = (async (blob: Blob, options: ImageBitmapOptions) => {
 		decoded.push(options);
@@ -179,5 +183,60 @@ describe('assets', () => {
 			'E1411: assets.loadBinary()',
 		);
 		expect(fetched.filter((url) => url.endsWith('missing.png')).length).toBe(3);
+	});
+});
+
+describe('environments', () => {
+	const room = new Uint8Array(readFileSync(join(import.meta.dir, '../../environments/room.ktx2')));
+
+	/** Textures that record the cube maps that `fromCube` got. */
+	function cubeTextures() {
+		const cubes: [number, number, string, number][] = [];
+		const textures = {
+			fromCube(size: number, levels: number, format: string, texels: Uint8Array[]) {
+				cubes.push([size, levels, format, texels.length]);
+				return { bytes: 0 } as unknown as Texture;
+			},
+		} as unknown as Textures;
+		return { textures, cubes };
+	}
+
+	test("load the asset tool's files and the built-in room into cube maps", async () => {
+		serve({
+			'https://game.example/env/room-copy.ktx2': room,
+			[String(BUILTIN_ENVIRONMENTS.room)]: room,
+		});
+		const { textures, cubes } = cubeTextures();
+		const assets = new Assets(textures, PAGE);
+		const loaded = await assets.loadEnvironment('/env/room-copy.ktx2');
+		const builtin = await assets.builtinEnvironment('room');
+		for (const env of [loaded, builtin]) {
+			expect(env).toBeInstanceOf(Environment);
+			expect([env.size, env.levels, env.format, env.sh.length]).toEqual([
+				256,
+				6,
+				'rgb9e5ufloat',
+				27,
+			]);
+		}
+		expect(cubes).toEqual([
+			[256, 6, 'rgb9e5ufloat', 6],
+			[256, 6, 'rgb9e5ufloat', 6],
+		]);
+	});
+
+	test('a file that is no environment map gives E1412, and an unknown name E1213', async () => {
+		serve({ 'https://game.example/env/flat.ktx2': 'not a ktx2 file' });
+		const assets = new Assets(cubeTextures().textures, PAGE);
+		expect(await codeOf(assets.loadEnvironment('/env/flat.ktx2'))).toBe(
+			'E1412: assets.loadEnvironment() could not read https://game.example/env/flat.ktx2 as an environment map: it is not a KTX2 file.',
+		);
+		expect(
+			await codeOf(
+				assets.builtinEnvironment('studio' as Parameters<Assets['builtinEnvironment']>[0]),
+			),
+		).toBe(
+			`E1213: assets.builtinEnvironment() got "studio", which names no built-in environment. Use 'room'.`,
+		);
 	});
 });

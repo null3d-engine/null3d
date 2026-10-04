@@ -28,6 +28,7 @@ use crate::bloom::{self, Bloom};
 use crate::camera::Lens;
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
+use crate::environment::{Environment, EnvironmentUniform};
 use crate::fog::Fog;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
@@ -513,6 +514,8 @@ pub struct SceneSettings {
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
     vignette: Option<Vignette>,
+    /// The scene's environment while the sketch sets one.
+    environment: Option<Environment>,
     /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
     /// the bits of a `u32`, as the frame uniform holds them.
     clock: [f32; 4],
@@ -561,6 +564,7 @@ impl SceneSettings {
             bloom_divisor: 1,
             lut: None,
             vignette: None,
+            environment: None,
             clock: [0.0; 4],
             render_scaling: false,
             pixel_ratio: 1.0,
@@ -671,6 +675,25 @@ impl SceneSettings {
     /// on.
     pub fn set_vignette(&mut self, vignette: Option<Vignette>) {
         self.vignette = vignette;
+    }
+
+    /// Lights the scene with an environment, or with none, from the next recorded frame on.
+    pub fn set_environment(&mut self, environment: Option<Environment>) {
+        self.environment = environment;
+    }
+
+    /// The GPU id of the environment's cube texture, once its texels are on the GPU, or `blank`
+    /// while the scene has no environment to draw, with the environment's part of the frame
+    /// uniform. A frame builder asks after the frame's uploads, so a held frame, which uploads
+    /// everything, draws with the environment.
+    pub(crate) fn environment_map(&self, blank: u32) -> (u32, EnvironmentUniform) {
+        let ready = self.environment.and_then(|environment| {
+            Some((environment, self.textures.ready_cube(environment.texture)?))
+        });
+        match ready {
+            Some((environment, (map, levels))) => (map, environment.uniform(levels)),
+            None => (blank, EnvironmentUniform::default()),
+        }
     }
 
     /// True while the sketch sets a color grading table or the vignette, outside a debug view,

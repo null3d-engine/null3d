@@ -2,7 +2,9 @@
 // the asset tool's environment maps. The page offers `pmremLight(request)`: three.js loads the file
 // with HDRLoader, as its examples do, prefilters it with PMREMGenerator.fromEquirectangular, and
 // samples the result with textureCubeUV, the lookup that its standard material uses, in each
-// direction at each roughness. Floats come back exactly, through a float render target.
+// direction at each roughness. Floats come back exactly, through a float render target. With
+// `room` in place of a file's address, it prefilters its RoomEnvironment instead, with
+// `fromScene(room, sigma)` at the request's blur.
 import {
 	DataTexture,
 	FloatType,
@@ -17,12 +19,15 @@ import {
 	WebGLRenderer,
 	WebGLRenderTarget,
 } from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { run } from './lib/result';
 
 interface PmremRequest {
-	/** The HDR file's address. */
+	/** The HDR file's address, or `room` for three.js's RoomEnvironment. */
 	url: string;
+	/** The blur of RoomEnvironment's prefilter, as PMREMGenerator's sigma. */
+	sigma?: number;
 	/** Three numbers per direction. */
 	directions: number[];
 	roughness: number[];
@@ -59,9 +64,13 @@ void main() {
 run('environment-parity', async () => {
 	const canvas = document.createElement('canvas');
 	const renderer = new WebGLRenderer({ canvas });
-	window.pmremLight = async ({ url, directions, roughness }) => {
-		const hdr = await new HDRLoader().setDataType(FloatType).loadAsync(url);
-		const pmrem = new PMREMGenerator(renderer).fromEquirectangular(hdr);
+	window.pmremLight = async ({ url, sigma = 0, directions, roughness }) => {
+		const generator = new PMREMGenerator(renderer);
+		const hdr =
+			url === 'room' ? undefined : await new HDRLoader().setDataType(FloatType).loadAsync(url);
+		const pmrem = hdr
+			? generator.fromEquirectangular(hdr)
+			: generator.fromScene(new RoomEnvironment(), sigma);
 		const count = directions.length / 3;
 		const width = Math.min(count, 256);
 		const height = Math.ceil(count / width);
@@ -105,7 +114,8 @@ run('environment-parity', async () => {
 		}
 		renderer.setRenderTarget(null);
 		for (const disposable of [hdr, pmrem, directionTexture, target, material, quad.geometry])
-			disposable.dispose();
+			disposable?.dispose();
+		generator.dispose();
 		return { cubeSize: pmrem.height / 4, light };
 	};
 	return {};

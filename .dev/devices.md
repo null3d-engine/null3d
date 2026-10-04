@@ -186,6 +186,13 @@ To collect the numbers, rest each device first and close its other tabs:
 - The plan runs the page on each GPU path at render scales of 1 and 0.5: 4 pages. The difference between the sides is bloom's cost at that scale.
 - Run it on the iPad and the phone: `bun tests/real-browsers.ts --plan bloom --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool. On a device that draws faster than its display, the GPU time tells the cost. The frame interval only shows whether the frames kept the display's rate.
 
+## The environment plan
+
+- The `environment` plan measures what the environment's light costs, for [D-19](decisions/D-19-environment-maps.md). Its page (`tests/pages/environment-cost.html`) draws 8 planes of the standard material over the whole window. Each draws over the last with no depth test. The render scale stays at 1, with the governor off.
+- After 2 seconds of play, the page measures 2 seconds without an environment and 2 with the built-in room. It does so three times each, as the bloom plan does. It reports the medians of each side's frame interval and CPU time, and the GPU time per frame where the browser has a GPU timer. The difference between the sides, over the 8 layers, is the lookup's cost for one layer of pixels.
+- The plan runs the page on each GPU path: 3 pages. `?layers=` and `?scale=` change the layers and the render scale.
+- Run it on the iPad and the phone: `bun tests/real-browsers.ts --plan environment --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool. The iPad gives GPU time. The phone gives none, so its figure is the frame interval. Raise `?layers=` until the frames miss the display's rate without the room: the GPU then sets the pace.
+
 ## The animation plan
 
 - The `animation` plan times the core's animation step on the job workers, for [D-26](decisions/D-26-animation-clips.md). The page (`tests/pages/animation.html`) draws nothing. It runs the core on its own thread, as the sketch worker does, and starts its own job workers.

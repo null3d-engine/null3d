@@ -6,8 +6,10 @@
 // post.set and the final pass's grading. The `sprites` switch draws the swarm as blended sprites
 // instead of boxes, for the allocation sample of sprite batches. The `labels` switch adds that many
 // objects, each with an HTML label that moves on the canvas as the camera orbits, for the
-// allocation sample of the labels.
-import { defineSketch, type SketchContext } from '@null3d/engine';
+// allocation sample of the labels. The `environment` switch lights the swarm with the built-in
+// room, and turns it and changes its intensity every frame, for the allocation sample of
+// scene.setEnvironment and the environment's light.
+import { defineSketch, type Environment, type SketchContext } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { s1Camera } from '../../scenes/spec';
 import { createAnimatedCrowd, readAnimated } from './crowd';
@@ -30,10 +32,23 @@ export default defineSketch(async (context) => {
 	const settings = { lutIntensity: 1, vignette };
 	if (grading)
 		void context.assets.loadLut(GRADING_LUTS.warm).then((lut) => context.post.set({ lut }));
+	// The environment's options, changed in place, as the grading's settings are.
+	const turn: [number, number, number] = [0, 0, 0];
+	const lighting = { intensity: 1, rotation: turn };
+	let room: Environment | undefined;
+	if (switches.has('environment'))
+		void context.assets.builtinEnvironment('room').then((loaded) => {
+			room = loaded;
+		});
 	const pose = (t: number) => {
 		poseSwarm(t);
 		moveCamera(t);
 		animate(t);
+		if (room) {
+			turn[1] = 0.5 * t;
+			lighting.intensity = 0.75 + 0.25 * Math.sin(t);
+			context.scene.setEnvironment(room, lighting);
+		}
 		if (!grading) return;
 		settings.lutIntensity = 0.5 + 0.5 * Math.sin(t);
 		vignette.offset = 1 + 0.25 * Math.cos(t);

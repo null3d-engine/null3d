@@ -4,7 +4,8 @@ enable draw_index;
 // with the formulas of three.js's MeshStandardMaterial. null3d::mesh finds each instance on both
 // GPU paths, and null3d::lighting holds the formulas. `light_surface` gathers the scene's lights,
 // so the rest of the shader does not change with where the lights come from. null3d::lights finds
-// the point and spot lights of each surface's cluster.
+// the point and spot lights of each surface's cluster, and null3d::ibl reads the scene's
+// environment, which every build reads when the frame's values say the scene has one.
 //
 // The fragment shader works in two steps. First a surface function fills a `Surface` from a
 // `SurfaceInput`: `defaultSurface` reads the material's own values and maps, and a custom
@@ -45,6 +46,8 @@ enable draw_index;
 #endif
 #import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::globals::{Material}
+#import null3d::ibl::{environment_irradiance, environment_radiance, has_environment}
+#import null3d::lighting::{indirect_specular, specular_occlusion}
 #import null3d::lights::{clustered_light}
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
@@ -415,10 +418,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 
 /// The light that a surface reflects toward the camera from the scene's lights: the sun, less
 /// where its shadows fall, the point and spot lights of the surface's cluster, the ambient light,
-/// and `extra` irradiance such as a light map's, which `occlusion` darkens with the ambient light.
-/// `relative` is the surface's position relative to the camera, `to_view` points from the surface
-/// toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and view
-/// angle.
+/// `extra` irradiance such as a light map's, and the environment's light times the material's
+/// factor of it. `occlusion` darkens the ambient light and the environment's diffuse light, and
+/// its specular light as three.js's `computeSpecularOcclusion` does. `relative` is the surface's
+/// position relative to the camera, `to_view` points from the surface toward the camera, and
+/// `dfg` holds the split-sum terms at the surface's roughness and view angle.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
@@ -444,7 +448,18 @@ fn light_surface(
     let clustered = clustered_light(m, relative, normal, to_view, compensation);
     let ambient = indirect_diffuse(m, engine_frame.ambient.rgb + extra, dfg);
     let direct = sun.diffuse + sun.specular + clustered.diffuse + clustered.specular;
-    return direct + ambient * occlusion;
+    var indirect = ambient * occlusion;
+    let env = engine_frame.environment;
+    if has_environment(env) {
+        let strength = material_row.uv_u.w;
+        let irradiance = environment_irradiance(env, normal) * strength;
+        let radiance = environment_radiance(env, to_view, normal, m.roughness) * strength;
+        let image = indirect_specular(m, radiance, irradiance, dfg);
+        let n_dot_v = saturate(dot(normal, to_view));
+        let specular = image.specular * specular_occlusion(n_dot_v, occlusion, m.roughness);
+        indirect += image.diffuse * occlusion + specular;
+    }
+    return direct + indirect;
 }
 
 /// The color of a pixel that shows the surface: the light it reflects and the light it gives off,

@@ -119,7 +119,7 @@ export default defineSketch(async (ctx) => {
 | `scene.createDirectionalLight(opts)`, `createPointLight`, `createSpotLight`, `createHemisphereLight`, `createAmbientLight` | Light | Section 7 |
 | `scene.setBackground('#rrggbb')` or `scene.setBackground(texture)` | | Any color input (section 20), or a texture that fills the view behind every object, as three.js's `scene.background` |
 | `scene.setBackground({ sky: { turbidity, rayleigh, sunDirection } })` (0.2) | | Sky backgrounds |
-| `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment` |
+| `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment` or `assets.builtinEnvironment('room')`, or `null`. `rotation` is Euler radians, as three.js's `environmentRotation`. Allocates nothing, so it can turn every frame |
 | `scene.setBackground(env, { blur, intensity, rotation })` (0.2) | | Blurred environment backgrounds |
 | `scene.setFog({ type: 'linear', color, near, far })`, `{ type: 'exp2', color, density }` or `null` | | three.js's formulas and defaults. The background takes no fog, so give it the fog's color. Materials opt out with `fog: false` |
 | `scene.createSprites({ count, map, atlas, sizeAttenuation, center, dynamic, layers, origin, color, opacity, alphaMode, blending })` (0.2) | Promise<SpriteBatch> | Camera-facing quads in one batch; the first call downloads the sprite code: typed arrays `positions` (3), `sizes` (2), `rotations` (1, radians), `colors` (4, linear), `frames` (1, atlas frame from the top left); `markDirty`, `setActiveCount`, `material.set`, as instance batches. Blends by default; `sizeAttenuation: false` gives sizes in CSS pixels. Docs `api/sprites` |
@@ -288,6 +288,7 @@ const brick = materials.standard({   // maps are fixed at creation; the mesh nee
   normalMap: normals, normalScale: [1, 1],   // linear, tangent space
   emissiveMap: glow, emissive: '#ffffff',    // sRGB; multiplies emissive times emissiveIntensity
   lightMap: baked, lightMapIntensity: 1,     // baked light; load it with uvSet: 1
+  envIntensity: 1,                   // (0.2) the scene environment's light on this material
   uvTransform: { repeat: [4, 2], offset: [0, 0], rotation: 0 },  // every map shares it; set() changes it
 });
 const decal = materials.unlit({ map: color, alphaMode: 'mask', alphaCutoff: 0.5 });  // map alpha cuts the shape
@@ -306,7 +307,7 @@ worn.destroy();   // (0.2) objects that still use it draw nothing; its place fre
 - Full shaders work in `materials.shader`: a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one (`guides/custom-shaders`). They take no textures.
 - (0.2) A custom material's `textures` option gives the textures that its WGSL declares, up to 6, fixed at creation. `references/shaders.md` section 4 has the rules. Standard texture maps do not reach `materials.shader`.
 - (0.2) `material.destroy()` frees a material that no object needs, as three.js's `material.dispose()`. Objects that still use it draw nothing, and later calls with it throw E1101. Its textures stay: destroy them apart.
-- `envIntensity` (0.2) comes with environment lighting, and `materials.shadowCatcher` in 0.2.
+- `envIntensity` (0.2) scales the scene environment's light on one standard material, times `setEnvironment`'s `intensity`. `materials.shadowCatcher` comes in 0.2.
 - `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `blending`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
@@ -356,8 +357,8 @@ ship.find('Turret');       // (0.2) a node: { name, position, rotation, scale, m
 ship.bounds;               // (0.2) { center, radius, min, max } of the whole model
 ship.materials;            // (0.2) the file's materials; set() changes every copy
 ship.clips;                // (0.2) clip names, which a copy's animator plays
-const env = await assets.loadEnvironment('/env/studio.ktx2');  // (0.2) from `bunx @null3d/cli assets env`
-const studio = assets.builtinEnvironment('studio');            // (0.2) neutral lighting, no download
+const env = await assets.loadEnvironment('/env/sunset.ktx2');  // (0.2) from `bunx @null3d/cli assets env`
+const room = await assets.builtinEnvironment('room');          // (0.2) three.js's RoomEnvironment; downloads on first use
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2)
 const lut = await assets.loadLut('/grade.cube');                // (0.2) .cube or .3dl; lut.size, lut.title, lut.destroy()
 ship.destroy();   // (0.2) frees GPU data once no instance uses it

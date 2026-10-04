@@ -850,6 +850,18 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// The same spheres lit by an environment alone: the built-in room, which three.js's
+	// RoomEnvironment builds, and Poly Haven's Venice Sunset through the asset tool, whose low sun
+	// shows in the smooth spheres. The last turns the sunset a quarter turn about +Y, which moves the
+	// sun's reflection.
+	...(['room', 'venice', 'venice&rotate'] as const).map(
+		(env): ImageTest => ({
+			name: `environment-${env.replace('&rotate', '-rotated')}`,
+			sketch: `tests/pages/sketches/standard-sketch.ts?scene=grid&env=${env}`,
+			hold: 0,
+			size: [GRID_IMAGE.width, GRID_IMAGE.height],
+		}),
+	),
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot

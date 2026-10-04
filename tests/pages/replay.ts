@@ -221,6 +221,34 @@ run('replay', async () => {
 		1,
 		G.VIEW_2D,
 	);
+	// The environment's cube map, which the frame group binds, and its sampler: a blank cube,
+	// which the frame's values, all zero, say not to read.
+	memory.push(
+		G.OP_CREATE_TEXTURE,
+		6,
+		1,
+		1,
+		6,
+		G.FORMAT_RGBA8_UNORM,
+		GPUTextureUsage.TEXTURE_BINDING,
+		1,
+		1,
+		G.VIEW_CUBE,
+	);
+	memory.push(
+		G.OP_CREATE_SAMPLER,
+		2,
+		clamp,
+		clamp,
+		clamp,
+		linear,
+		linear,
+		linear,
+		0,
+		0,
+		G.COMPARE_NONE,
+		1,
+	);
 	memory.push(
 		G.OP_CREATE_RENDER_PIPELINE,
 		1,
@@ -239,7 +267,7 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		1,
 		G.LAYOUT_FRAME,
-		11,
+		13,
 		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
 		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
 		...[2, G.RESOURCE_TEXTURE, 5, 0, 0],
@@ -251,6 +279,8 @@ run('replay', async () => {
 		...[8, G.RESOURCE_BUFFER, 15, 0, 0],
 		...[9, G.RESOURCE_TEXTURE, 4, 0, 0],
 		...[10, G.RESOURCE_BUFFER, 16, 0, 0],
+		...[12, G.RESOURCE_TEXTURE, 6, 0, 0],
+		...[13, G.RESOURCE_SAMPLER, 2, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,

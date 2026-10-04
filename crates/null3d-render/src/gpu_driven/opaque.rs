@@ -17,6 +17,7 @@ use super::cull::INDIRECT_BYTES;
 use super::ids;
 use super::layout::Layout;
 use super::skin::DrawGroups;
+use crate::environment;
 use crate::frame::{MeshBuffers, RecordError, UploadArena};
 use crate::pipelines::PassTargets;
 use crate::view::{ViewFrame, ViewId};
@@ -37,13 +38,15 @@ pub(super) fn create_frame_buffer(list: &mut DrawList, view: ViewId) -> Result<(
 /// Records the creation of a camera view's frame group: its frame uniform, the material table,
 /// the materials' custom values, three.js's table of the split-sum terms of specular light, the
 /// main directional light's shadow map, which is `shadow_map`, with its comparison sampler and its
-/// cascades, the camera's light grid and light records, and the shadow atlas of point and spot
-/// lights, which is `atlas`, with its tiles. A new shadow map or atlas needs the group again.
+/// cascades, the camera's light grid and light records, the shadow atlas of point and spot
+/// lights, which is `atlas`, with its tiles, and the environment's cube texture, which is
+/// `environment`, with its sampler. A new shadow map, atlas or environment needs the group again.
 pub(super) fn bind_frame(
     list: &mut DrawList,
     view: ViewId,
     shadow_map: u32,
     atlas: u32,
+    environment: u32,
 ) -> Result<(), RecordError> {
     let entry = |binding: u32, kind: u32, id: u32| [binding, kind, id, 0, 0];
     let entries = [
@@ -59,9 +62,11 @@ pub(super) fn bind_frame(
         entry(9, resource_kind::TEXTURE, atlas),
         entry(10, resource_kind::BUFFER, ids::SHADOW_TILES),
     ];
-    let mut words = [0u32; 3 + 5 * 11];
-    words[..3].copy_from_slice(&[ids::frame_group(view), bind_layout::FRAME, 11]);
-    words[3..].copy_from_slice(entries.as_flattened());
+    let mut words = [0u32; 3 + 5 * 11 + environment::ENTRY_WORDS];
+    words[..3].copy_from_slice(&[ids::frame_group(view), bind_layout::FRAME, 13]);
+    words[3..3 + 5 * 11].copy_from_slice(entries.as_flattened());
+    words[3 + 5 * 11..]
+        .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
     list.push(Op::CreateBindGroup, &words)?;
     Ok(())
 }

@@ -5,6 +5,11 @@
 //! reflects the point light as three.js's `MeshStandardMaterial` does with its defaults (white,
 //! roughness 1, metalness 0), and a panel glows with its emissive strength. Like three.js's
 //! scene, nothing casts shadows.
+//!
+//! three.js's examples prefilter the room with `pmremGenerator.fromScene(room, 0.04)`, which blurs
+//! the whole room by a Gaussian of [`SIGMA`] radians before it filters the levels. The tool blurs
+//! the traced room by the same amount (see [`crate::environment::cube::Cube::blurred`]), so a port
+//! keeps the soft edges of the panels' reflections.
 
 use std::f32::consts::PI;
 
@@ -48,6 +53,30 @@ const PANELS: [(Box3, f32); 6] = [
     (at(3.235, 11.486, -12.541, 2.5, 2.0, 0.1, 0.0), 20.0),
     (at(0.0, 20.0, 0.0, 1.0, 0.1, 1.0, 0.0), 100.0),
 ];
+
+/// The blur of three.js's examples' `fromScene(room, 0.04)`, in radians.
+pub const SIGMA: f32 = 0.04;
+
+/// The sum of the split-sum terms of three.js's table at roughness 1, at each cosine of the view
+/// angle from 0 to 1 at the table's texel centers (`DFGLUT`, the last column). The energy of
+/// three.js's multiple scattering compensation comes from it.
+const DFG_ROUGH: [f32; 16] = [
+    0.8989, 0.78186, 0.70303, 0.64262, 0.5944, 0.55402, 0.51973, 0.4901, 0.46429, 0.44146, 0.42104,
+    0.403, 0.38655, 0.37142, 0.35784, 0.34529,
+];
+
+/// The specular reflectance of a dielectric at normal incidence.
+const F0: f32 = 0.04;
+
+/// The sum of the split-sum terms at roughness 1 and the view's cosine `n_dot_v`, between the
+/// table's entries, as three.js's table lookup filters it.
+fn dfg_sum(n_dot_v: f32) -> f32 {
+    let at = (n_dot_v * DFG_ROUGH.len() as f32 - 0.5).clamp(0.0, (DFG_ROUGH.len() - 1) as f32);
+    let low = at as usize;
+    let high = (low + 1).min(DFG_ROUGH.len() - 1);
+    let t = at - low as f32;
+    DFG_ROUGH[low] * (1.0 - t) + DFG_ROUGH[high] * t
+}
 
 /// The point light: position, intensity in candela, range and decay.
 const LIGHT: Vec3 = [0.418, 16.199 + LIFT, 0.300];
@@ -107,7 +136,9 @@ impl Box3 {
 }
 
 /// The light a white standard material reflects toward the room's center from a point with the
-/// normal `n`, lit by the point light.
+/// normal `n`, lit by the point light, as three.js's `RE_Direct_Physical` gives it: the diffuse
+/// part loses the light that the specular layer reflects, and the specular part gains three.js's
+/// compensation for multiple scattering.
 fn shade(p: Vec3, n: Vec3) -> f32 {
     let to_light = sub(LIGHT, p);
     let distance = dot(to_light, to_light).sqrt();
@@ -125,12 +156,15 @@ fn shade(p: Vec3, n: Vec3) -> f32 {
     let v = normalize(scale(p, -1.0));
     let n_dot_v = dot(n, v).max(1e-4);
     let h = normalize([l[0] + v[0], l[1] + v[1], l[2] + v[2]]);
-    let v_dot_h = dot(v, h).max(0.0);
+    let v_dot_h = dot(v, h).clamp(0.0, 1.0);
+    // three.js's `F_Schlick`, with its exponential fit of the fifth power.
+    let weight = ((-5.55473 * v_dot_h - 6.98316) * v_dot_h).exp2();
+    let fresnel = F0 * (1.0 - weight) + weight;
     // Roughness 1 makes alpha 1: the distribution is 1 / pi, and the correlated Smith term is
     // 0.5 / (n.l + n.v).
-    let fresnel = 0.04 + 0.96 * (1.0 - v_dot_h).powi(5);
     let specular = fresnel * 0.5 / (n_dot_l + n_dot_v) / PI;
-    irradiance * (1.0 / PI + specular)
+    let compensation = 1.0 + F0 * (1.0 / dfg_sum(n_dot_v.min(1.0)) - 1.0);
+    irradiance * ((1.0 - fresnel) / PI + specular * compensation)
 }
 
 /// The light that reaches the room's center from a unit direction.

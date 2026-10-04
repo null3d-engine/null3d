@@ -77,6 +77,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-lut.js', module: 'scene/lut-files.ts', loadedBy: 'page-sketch-runner.js' },
+	{
+		name: 'page-environment.js',
+		module: 'scene/environment-file.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
 	{ name: 'page-sprites.js', module: 'scene/sprites.ts', loadedBy: 'page-sketch-runner.js' },
 	{
 		name: 'page-preset-check.js',
@@ -99,6 +104,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'gltf-worker.js', module: 'workers/gltf-worker.ts', loadedBy: 'sketch-worker-gltf.js' },
 	{ name: 'gltf-meshopt.js', module: 'scene/gltf-meshopt.ts', loadedBy: 'gltf-worker.js' },
 	{ name: 'sketch-worker-lut.js', module: 'scene/lut-files.ts', loadedBy: 'sketch-worker.js' },
+	{
+		name: 'sketch-worker-environment.js',
+		module: 'scene/environment-file.ts',
+		loadedBy: 'sketch-worker.js',
+	},
 	{ name: 'sketch-worker-sprites.js', module: 'scene/sprites.ts', loadedBy: 'sketch-worker.js' },
 	{
 		name: 'sketch-worker-preset-check.js',

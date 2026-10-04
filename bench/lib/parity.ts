@@ -238,6 +238,15 @@ const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set(['m
  */
 export const FEATURE_SCENES: readonly FeatureScene[] = [
 	{ test: 'standard-grid', twin: `${TWINS}/standard-grid.html`, sketchSwitches: NO_TONE },
+	// The grid lit by an environment alone, against three.js's scene.environment from
+	// PMREMGenerator: its RoomEnvironment, and an HDR file with a low sun, as it is and turned.
+	...(['room', 'venice', 'venice-rotated'] as const).map(
+		(env): FeatureScene => ({
+			test: `environment-${env}`,
+			twin: `${TWINS}/environment.html?env=${env.replace('-rotated', '&rotate')}`,
+			sketchSwitches: NO_TONE,
+		}),
+	),
 	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html` },
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
 	{ test: 'transparency', twin: `${TWINS}/transparency.html` },

@@ -40,6 +40,24 @@ struct Frame {
     /// The distances of the camera's near and far planes, then the change in normalized device
     /// coordinates across one CSS pixel of the canvas, along x and along y.
     camera_range: vec4f,
+    /// The values of ambient occlusion, which no shader reads yet.
+    occlusion: vec4f,
+    /// The scene's environment, which null3d::ibl reads.
+    environment: EnvironmentLight,
+}
+
+/// The scene's environment, as the engine writes it into each frame's values: light from every
+/// direction around the scene, in a prefiltered cube map and nine spherical harmonics
+/// coefficients.
+struct EnvironmentLight {
+    /// The coefficients of the diffuse light in three.js's order, each in `xyz`.
+    sh: array<vec4f, 9>,
+    /// The rows of the matrix that turns a direction in the world into the map's direction, each
+    /// in `xyz`.
+    rotation: array<vec4f, 3>,
+    /// The map's last mip level, the environment's intensity, 1 while the map draws and 0 while
+    /// the scene has none, and a spare.
+    params: vec4f,
 }
 
 /// One material's row of the material table, as the core writes it (`materials.rs` in the
@@ -54,7 +72,8 @@ struct Material {
     /// The occlusion map's strength, the light map's intensity, the shading flags, and the
     /// emissive color's intensity.
     strengths: vec4f,
-    /// The row of the texture coordinate transform that gives u, and a spare.
+    /// The row of the texture coordinate transform that gives u, and the factor of the scene
+    /// environment's light.
     uv_u: vec4f,
     /// The row of the texture coordinate transform that gives v, and a spare.
     uv_v: vec4f,

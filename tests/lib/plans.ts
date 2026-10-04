@@ -189,6 +189,8 @@ export type Check =
 	| { kind: 'skinning'; tier: SkinningGpu; characters: number; cascades: number }
 	/** The bloom cost page: bloom off and on in turns, at one render scale. */
 	| { kind: 'bloom'; tier: Tier; scale: number }
+	/** The environment cost page: the built-in room off and on in turns, over layers of planes. */
+	| { kind: 'environment'; tier: Tier }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
 	| { kind: 'animation'; characters: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
@@ -800,6 +802,22 @@ export function bloomPlan(): PlanItem<Check>[] {
 	);
 }
 
+/**
+ * What the environment's light costs on each GPU path: layers of planes of the standard material
+ * fill the window at a render scale of 1, and the page times its frames without and with the built-in
+ * room in turns. D-19 records the results.
+ */
+export function environmentPlan(): PlanItem<Check>[] {
+	return TIERS.map((tier) =>
+		pageItem(
+			`environment-${tier}`,
+			'environment-cost',
+			{ kind: 'environment', tier },
+			{ switches: [`gpu=${tier}`], timeoutSeconds: BLOOM_TIMEOUT_SECONDS },
+		),
+	);
+}
+
 /** The crowds that the animation plan times: a first draft of S5's crowd, then the full crowd. */
 export const ANIMATION_CHARACTERS = [100, 500] as const;
 
@@ -1116,6 +1134,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	skinning: () => skinningPlan('webgl2'),
 	'skinning-webgpu': () => skinningPlan('webgpu'),
 	bloom: bloomPlan,
+	environment: environmentPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
 	soak: soakPlan,
@@ -1587,11 +1606,12 @@ export function judge(
 		}
 		case 'skinning':
 			return skinningProblems(result as ItemResult & SkinningResult);
-		case 'bloom': {
-			const bloom = result as ItemResult & { failures?: string[]; on?: { intervalMs?: number } };
+		case 'bloom':
+		case 'environment': {
+			const cost = result as ItemResult & { failures?: string[]; on?: { intervalMs?: number } };
 			return [
-				...(bloom.failures ?? []).map((code) => `the engine failed with ${code}`),
-				...(bloom.on?.intervalMs ? [] : ['the page measured no frame with bloom on']),
+				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
+				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${check.kind} on`]),
 			];
 		}
 		case 'animation':

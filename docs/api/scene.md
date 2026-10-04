@@ -8,7 +8,7 @@ summary: "Creating objects; models and copies; find; background, environment, fo
 
 # Scene
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Sky and environments are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1, with the environment from 0.2. The API is experimental, so it can still change between versions. The sky and environment backgrounds are not built yet, so coding agents must not use them.
 
 The scene holds everything the engine draws: the objects, the camera that the canvas shows, the lights and the background. A sketch gets it as `scene` in its setup function, and creates everything through it.
 
@@ -114,6 +114,22 @@ export default defineSketch(async ({ scene, assets }) => {
 
 The color set before a texture shows until the texture's texels are on the GPU, and again if you destroy the texture. A later color takes the place of the texture.
 
+## The environment
+
+`setEnvironment` lights the scene with an environment map from [`assets.loadEnvironment` or `assets.builtinEnvironment`](assets.md#environments), as three.js's `scene.environment` does with a texture from `PMREMGenerator`. Standard materials reflect it, sharply when smooth and blurred when rough, and take its diffuse light. `setEnvironment(null)` removes it. The background stays as `setBackground` set it.
+
+```ts
+const sunset = await assets.loadEnvironment('/env/sunset.ktx2');
+scene.setEnvironment(sunset, { intensity: 0.8, rotation: [0, Math.PI / 2, 0] });
+```
+
+| Option | Default | What it sets |
+| --- | --- | --- |
+| `intensity` | 1 | The factor of the environment's light, 0 or more, as three.js's `scene.environmentIntensity` |
+| `rotation` | `[0, 0, 0]` | The environment's turn, as Euler angles in radians in the order X, Y, Z, as `scene.environmentRotation` |
+
+Each call sets both options, and an option left out takes its default. The call allocates nothing, so a sketch can turn the environment in every frame. A material's `envIntensity` scales the light on that material. The scene draws without the environment until its map is on the GPU, and again after `environment.destroy()`. Development builds throw E1203 for a number that is not finite and E1108 for a negative intensity. They throw E1213 for a value that is not an environment. Every build throws E1101 for an environment that was destroyed. [Lighting and environment](../concepts/lighting.md#environment-maps) says how the environment lights a surface, and what it costs.
+
 ## Fog
 
 `setFog` covers every object in fog, with three.js's formulas. Linear fog is clear up to `near` and hides objects from `far`, with a smooth change between them. Exponential squared fog thickens with the square of the distance, at a rate that `density` sets. Distances run from the camera along its view direction, for both kinds of camera. `setFog(null)` removes the fog.
@@ -167,10 +183,22 @@ An instance batch is one object that draws many copies of one mesh with one mate
 - [Materials](materials.md) and [Geometry](geometry.md): what a mesh draws.
 - [Loading screens and warm-up](../guides/loading-screens.md): waiting for the scene's pipelines.
 - [Assets and prefabs](../concepts/assets.md): models from glTF files, and what a prefab shares.
+- [Lighting and environment](../concepts/lighting.md#environment-maps): how an environment lights the scene.
 
 ## API reference
 
 <!-- null3d:api:start -->
+
+### `EnvironmentOptions`
+
+Interface `EnvironmentOptions`.
+
+The options of `scene.setEnvironment`. A call that leaves an option out takes its default.
+
+| Member | Description |
+| --- | --- |
+| `intensity?: number` | The factor of the environment's light on every surface, 0 or more, as three.js's `scene.environmentIntensity`. A material's `envIntensity` multiplies it. The default is 1. |
+| `rotation?: readonly [number, number, number]` | The turn of the environment about the scene, as Euler angles in radians in the order X, Y, Z, as three.js's `scene.environmentRotation`. The default is `[0, 0, 0]`. |
 
 ### `Exp2FogOptions`
 
@@ -313,6 +341,7 @@ The scene: every object, the active camera, the lights and the background.
 | `createHemisphereLight(options: HemisphereLightOptions = {}): HemisphereLight` | Light from the sky above and the ground below. |
 | `createAmbientLight(options: LightOptions = {}): AmbientLight` | Light on every surface, from no direction. |
 | `setBackground(background: ColorInput \| Texture): void` | What the camera shows behind every object: a color, or a texture. A texture fills the view and stretches to its shape, as a texture in three.js's `scene.background` does. The color set before it shows until the texture's texels are on the GPU, and again if the texture is destroyed. A color takes the place of a texture. Exposure and tone mapping change the background with the rest of the scene. Without a background, the canvas shows black, or the page behind it on a transparent canvas. |
+| `setEnvironment(environment: Environment \| null, options?: EnvironmentOptions): void` | Lights the scene with an environment from `assets.loadEnvironment` or `assets.builtinEnvironment`, as three.js's `scene.environment` does with a texture from `PMREMGenerator`, or with none for null. Standard materials reflect it, sharply when smooth and blurred when rough, and take its diffuse light, each times its `envIntensity`. The scene draws without the environment until its map is on the GPU. It allocates nothing, so a sketch can turn the environment every frame. Throws E1203 for a number that is not finite, E1108 for a negative intensity, E1213 for a value that is not an environment, and E1101 for an environment that was destroyed. |
 | `setFog(fog: FogOptions \| null): void` | Fog over every object, with three.js's formulas: linear fog as its `Fog`, or exponential squared fog as its `FogExp2`. Null removes the fog. The background takes no fog, and a material created with `fog: false` keeps its color. Converting the color allocates. |
 | `raycast(origin: Vec3Like, direction: Vec3Like, options: RaycastOptions \| undefined, hit: RaycastHit): boolean` | Casts a ray from `origin` along `direction`, and writes its closest hit into `hit`. Returns true on a hit. On a miss it sets `hit.object` to null and leaves the other fields as they were. The direction needs no unit length. The ray tests the triangles of objects and instance rows on the layers of `options.layers`, as their materials draw them: front faces, or both faces for a double-sided material. Queries see the scene as the last frame's update left it, so a move, a new object or a destroy in this frame counts from the next frame, or from `onLateUpdate`. Create `hit` and `options` once and pass them each time. |
 | `raycastAny(origin: Vec3Like, direction: Vec3Like, options?: RaycastOptions): boolean` | True when a ray from `origin` along `direction` hits anything on the layers of `options.layers`. It stops at the first hit it finds, so it is faster than `raycast`: use it for line-of-sight checks. |

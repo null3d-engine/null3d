@@ -40,6 +40,14 @@
 //! mip levels and no bind group of the store's: the pass that reads it binds it by its GPU id,
 //! which [`TextureStore::ready_volume`] gives once its texels are on the GPU.
 //!
+//! # Cube textures
+//!
+//! A cube texture, such as an environment map (see [`crate::environment`]), has a texture of its
+//! own whose six layers are its faces, in the order +X, -X, +Y, -Y, +Z, -Z. Its texels come from
+//! data alone, with every mip level, each level's faces in turn, as a KTX2 file holds them. Like a
+//! 3D texture, it has no bind group of the store's: the frame's group binds it by its GPU id, which
+//! [`TextureStore::ready_cube`] gives once its texels are on the GPU.
+//!
 //! Formats come by code, and every byte count goes through [`format::level_bytes`], so formats
 //! stored in blocks of texels can join the array keys and the uploads.
 //!
@@ -51,7 +59,7 @@
 
 use null3d_core::error::CoreError;
 use null3d_core::handle::{Handle, SlotAllocator};
-use null3d_gpu::caps::TEXTURE_3D_SIZE;
+use null3d_gpu::caps::{CUBE_TEXTURE_SIZE, TEXTURE_3D_SIZE};
 use null3d_gpu::drawlist::{
     DrawList, Op, address, compare, filter, format, layout, resource_kind, texture_usage,
     upload_flags, view,
@@ -65,7 +73,7 @@ pub const MAX_LAYERS: u32 = 256;
 pub const FIRST_LAYERS: u32 = 4;
 /// The most textures that live at once.
 pub const MAX_TEXTURES: u32 = 4095;
-/// The group of a texture that has no bind group of the store's: a 3D texture.
+/// The group of a texture that has no bind group of the store's: a 3D or a cube texture.
 const NO_GROUP: u32 = u32::MAX;
 /// The bytes that one frame uploads, until the quality preset sets another budget.
 pub const DEFAULT_UPLOAD_BUDGET: u32 = 4 * 1024 * 1024;
@@ -230,6 +238,17 @@ impl TextureSlot {
     }
 }
 
+/// How shaders see an array's GPU texture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    /// Layers of 2D images, which textures of one key share.
+    Layers,
+    /// A 3D texture, whose layers are its depth slices.
+    Volume,
+    /// A cube texture, whose six layers are its faces.
+    Cube,
+}
+
 /// What makes textures share an array.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ArrayKey {
@@ -239,8 +258,8 @@ struct ArrayKey {
     mips: u32,
     /// The layers of each texture: an array of textures of more than one has one texture.
     depth: u32,
-    /// True for a 3D texture, whose layers are its depth slices. It has a texture of its own.
-    volume: bool,
+    /// How shaders see the texture. A 3D or a cube texture has a texture of its own.
+    kind: Kind,
 }
 
 /// Where a band of texels starts: a row of blocks of one layer of one mip level.
@@ -262,10 +281,19 @@ impl ArrayKey {
         format::layer_bytes(self.format, self.width, self.height, self.mips)
     }
 
-    /// True when textures share the array. A texture of several layers, of a compressed format or
-    /// of three dimensions has an array of its own.
+    /// True when textures share the array. A texture of several layers, of a compressed format,
+    /// of three dimensions or of a cube's faces has an array of its own.
     fn shared(&self) -> bool {
-        self.depth == 1 && !format::is_compressed(self.format) && !self.volume
+        self.depth == 1 && !format::is_compressed(self.format) && self.kind == Kind::Layers
+    }
+
+    /// The view dimension that bind groups see the GPU texture as.
+    fn view(&self) -> u32 {
+        match self.kind {
+            Kind::Layers => view::D2_ARRAY,
+            Kind::Volume => view::D3,
+            Kind::Cube => view::CUBE,
+        }
     }
 
     /// The rows of blocks of the first `levels` mip levels, through every layer.
@@ -515,7 +543,7 @@ impl TextureStore {
 
     /// Creates a texture with no texels yet, in a free layer of an array of its key.
     pub fn create(&mut self, desc: TextureDesc) -> Result<Handle, TextureError> {
-        self.create_in(desc, false)
+        self.create_in(desc, Kind::Layers)
     }
 
     /// Creates a 3D texture of `width` x `height` x `depth` texels in `format::RGBA8_UNORM` or
@@ -544,11 +572,40 @@ impl TextureStore {
             levels: 1,
             sampling: Sampling::default(),
         };
-        self.create_in(desc, true)
+        self.create_in(desc, Kind::Volume)
     }
 
-    /// Creates a texture of `desc`, in three dimensions when `volume`.
-    fn create_in(&mut self, desc: TextureDesc, volume: bool) -> Result<Handle, TextureError> {
+    /// Creates a cube texture with faces of `size` x `size` texels in `format::RGB9E5_UFLOAT` or
+    /// `format::RGBA16_FLOAT`, with `levels` mip levels and no texels yet. It is read with linear
+    /// filters within and between levels, and its texels bring every level. A face takes at most
+    /// [`CUBE_TEXTURE_SIZE`] texels a side, the least that WebGL2 allows.
+    pub fn create_cube(
+        &mut self,
+        size: u32,
+        levels: u32,
+        format: u32,
+    ) -> Result<Handle, TextureError> {
+        let limit = CUBE_TEXTURE_SIZE.min(self.max_size);
+        if size > limit {
+            return Err(TextureError::TooLarge { limit });
+        }
+        if !matches!(format, format::RGB9E5_UFLOAT | format::RGBA16_FLOAT) {
+            return Err(TextureError::Unsupported);
+        }
+        let desc = TextureDesc {
+            width: size,
+            height: size,
+            depth: view::CUBE_FACES,
+            format,
+            mipmaps: false,
+            levels,
+            sampling: Sampling::default(),
+        };
+        self.create_in(desc, Kind::Cube)
+    }
+
+    /// Creates a texture of `desc` that shaders see as `kind`.
+    fn create_in(&mut self, desc: TextureDesc, kind: Kind) -> Result<Handle, TextureError> {
         self.check_size(desc.format, desc.width, desc.height)?;
         let sampling = desc.sampling;
         let known = |code: u32, last: u32| code <= last;
@@ -559,6 +616,7 @@ impl TextureStore {
             && match desc.format {
                 format::RGBA8_UNORM | format::RGBA8_UNORM_SRGB => true,
                 format::RGBA16_FLOAT => !desc.mipmaps,
+                format::RGB9E5_UFLOAT => kind == Kind::Cube,
                 code => format::is_compressed(code) && !desc.mipmaps,
             }
             && sampling
@@ -593,7 +651,7 @@ impl TextureStore {
             format: desc.format,
             mips: slot.mips(desc.width, desc.height),
             depth: desc.depth,
-            volume,
+            kind,
         };
         self.settle(&mut slot, key);
         let index = handle.slot() as usize;
@@ -605,13 +663,13 @@ impl TextureStore {
     }
 
     /// Gives a texture a layer of an array of `key`, and the bind group of that array and its
-    /// sampler, or none for a 3D texture.
+    /// sampler, or none for a 3D or a cube texture.
     fn settle(&mut self, slot: &mut TextureSlot, key: ArrayKey) {
         let (array, layer) = self.place(key);
         self.arrays[array as usize].mark(layer, true);
         slot.array = array;
         slot.layer = layer;
-        slot.group = if key.volume {
+        slot.group = if key.kind != Kind::Layers {
             NO_GROUP
         } else {
             self.group_for(array, slot.sampler)
@@ -708,7 +766,8 @@ impl TextureStore {
     ) -> Result<(u32, bool), TextureError> {
         let slot = *self.slot(texture)?;
         let key = self.arrays[slot.array as usize].key;
-        if key.depth > 1 || key.volume || !format::makes_mipmaps(key.format) || slot.levels > 1 {
+        let layers = key.kind == Kind::Layers;
+        if key.depth > 1 || !layers || !format::makes_mipmaps(key.format) || slot.levels > 1 {
             return Err(TextureError::Unsupported);
         }
         let moved = self.resize(texture, width, height)?;
@@ -871,12 +930,20 @@ impl TextureStore {
     pub fn ready_volume(&self, texture: Handle) -> Option<(u32, [u32; 3])> {
         let slot = self.slot(texture).ok()?;
         let key = self.arrays[slot.array as usize].key;
-        (key.volume && matches!(slot.state, State::Uploaded { .. })).then(|| {
+        (key.kind == Kind::Volume && matches!(slot.state, State::Uploaded { .. })).then(|| {
             (
                 self.array_id(slot.array),
                 [key.width, key.height, key.depth],
             )
         })
+    }
+
+    /// The GPU id of a cube texture and its mip levels, once its texels are on the GPU.
+    pub fn ready_cube(&self, texture: Handle) -> Option<(u32, u32)> {
+        let slot = self.slot(texture).ok()?;
+        let key = self.arrays[slot.array as usize].key;
+        (key.kind == Kind::Cube && matches!(slot.state, State::Uploaded { .. }))
+            .then(|| (self.array_id(slot.array), key.mips))
     }
 
     /// The GPU bytes of a texture: its layers, with every mip level.
@@ -1006,8 +1073,9 @@ impl TextureStore {
                 old_id
             };
             // Images upload into and mip levels draw into a texture that textures share, and a
-            // larger one copies its layers. A compressed texture and a 3D texture take writes only.
-            let usage = if format::is_compressed(key.format) || key.volume {
+            // larger one copies its layers. A compressed texture, a 3D texture and a cube texture
+            // take writes only.
+            let usage = if format::is_compressed(key.format) || key.kind != Kind::Layers {
                 texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST
             } else {
                 texture_usage::TEXTURE_BINDING
@@ -1026,7 +1094,7 @@ impl TextureStore {
                     usage,
                     1,
                     key.mips,
-                    if key.volume { view::D3 } else { view::D2_ARRAY },
+                    key.view(),
                 ],
             )?;
             if old_capacity > 0 {
