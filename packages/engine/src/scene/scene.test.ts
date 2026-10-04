@@ -43,6 +43,7 @@ const AT = {
 	write: 1536,
 	read: 1540,
 	matrix: 1544,
+	cells: 2048,
 };
 const SLOT_MASK = (1 << C.HANDLE_SLOT_BITS) - 1;
 /** The frame that the fake scene says it runs. */
@@ -52,9 +53,9 @@ const DESTROYED_TEXTURE = 13;
 
 /**
  * A core with the scene's arrays and command ring in a memory of its own. Its world matrices are
- * the ones that a test sets for each handle.
+ * the ones that a test sets for each handle. With `largeWorld`, positions hold whole cells too.
  */
-function fakeCore() {
+function fakeCore(largeWorld = false) {
 	const memory = new WebAssembly.Memory({ initial: 1 });
 	const matrices = new Map<number, readonly number[]>();
 	let next = 1;
@@ -66,6 +67,7 @@ function fakeCore() {
 		[C.SCENE_FIELD_LOCAL_RADII]: AT.radii,
 		[C.SCENE_FIELD_LOCAL_CENTERS]: AT.centers,
 		[C.SCENE_FIELD_DIRTY_WORDS]: AT.dirty,
+		[C.SCENE_FIELD_POSITION_CELLS]: largeWorld ? AT.cells : 0,
 	};
 	const ring: Record<number, number> = {
 		[C.RING_FIELD_RECORDS]: AT.records,
@@ -113,6 +115,10 @@ function fakeCore() {
 	const f32 = (at: number, length: number) => new Float32Array(memory.buffer, at, length);
 	const u32 = (at: number, length: number) => new Uint32Array(memory.buffer, at, length);
 	return {
+		/** An object's whole cells, in large-world mode. */
+		cells(object: Object3D) {
+			return [...new Int32Array(memory.buffer, AT.cells + object.slot * 12, 3)];
+		},
 		core,
 		scene,
 		eventFrames,
@@ -239,6 +245,56 @@ describe('object transforms', () => {
 		three.matrixAutoUpdate = false;
 		three.matrixWorldAutoUpdate = false;
 		expectClose(turned, xyzw(three.getWorldQuaternion(new Quaternion())), 12);
+	});
+});
+
+describe('large-world mode', () => {
+	/** A point at the Earth's radius, 0.3 m past a whole meter on the far axis. */
+	const FAR: [number, number, number] = [1_234.5678, 6_378_137.3, -98_765.4321];
+
+	/** The largest difference along any axis. */
+	const error = (a: ArrayLike<number>, b: ArrayLike<number>) =>
+		Math.max(...[0, 1, 2].map((k) => Math.abs((a[k] as number) - (b[k] as number))));
+
+	test('setters split positions into whole cells and a 32-bit rest, at full precision', () => {
+		const { scene, row, cells } = fakeCore(true);
+		const object = scene.createGroup({ position: FAR });
+		expect(cells(object)).toEqual([1, 6229, -96]);
+		for (const v of row(object, 'positions')) expect(Math.abs(v)).toBeLessThanOrEqual(512);
+		const where = [0, 0, 0];
+		object.getPosition(where);
+		expect(error(where, FAR)).toBeLessThan(3e-5);
+		// Steps of a millimeter, which 32-bit positions there would lose.
+		for (let step = 1; step <= 3; step++) {
+			object.translate(0, 0.001, 0);
+			object.getPosition(where);
+			expect(error(where, [FAR[0], FAR[1] + step * 0.001, FAR[2]])).toBeLessThan(1e-4);
+		}
+		object.setPosition(-3, 0.25, 700);
+		expect(cells(object)).toEqual([0, 0, 1]);
+		object.getPosition(where);
+		expect(where).toEqual([-3, 0.25, 700]);
+	});
+
+	test('without the mode, a far position rounds to 32 bits', () => {
+		const { scene } = fakeCore();
+		const object = scene.createGroup({ position: FAR });
+		const where = [0, 0, 0];
+		object.getPosition(where);
+		expect(error(where, FAR)).toBeGreaterThan(0.1);
+	});
+
+	test('lookAt turns a far object toward a near point as three.js does in 64-bit numbers', () => {
+		const { scene, row } = fakeCore(true);
+		const camera = scene.createPerspectiveCamera({ position: FAR });
+		const target = new Vector3(FAR[0] + 3, FAR[1] - 0.25, FAR[2] - 4);
+		camera.lookAt(target.x, target.y, target.z);
+		const theirs = new ThreePerspectiveCamera();
+		theirs.position.set(...FAR);
+		theirs.lookAt(target);
+		// The stored position is within 0.03 mm, which turns the view by about 1e-6 radians. A
+		// 32-bit position would be 0.3 m off, a turn of about 0.06 radians.
+		expectClose(row(camera, 'rotations'), xyzw(theirs.quaternion), 5);
 	});
 });
 

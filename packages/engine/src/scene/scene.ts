@@ -228,6 +228,13 @@ export interface InstanceOptions {
 	colors?: boolean;
 	/** The layers every row is on, as a 32-bit mask. The default, 1, is layer 0. */
 	layers?: number;
+	/**
+	 * The point that every row's position is relative to. The default is (0, 0, 0). The engine keeps
+	 * the origin at full precision, so rows near it keep the precision of 32-bit floats at any
+	 * distance from the world's origin. Give a batch far from the origin, such as a forest on a
+	 * planet, an origin among its rows.
+	 */
+	origin?: Vec3;
 }
 
 /**
@@ -459,9 +466,29 @@ const DOWN: Vec3 = [0, -1, 0];
 /** The axis that a light's light travels along before the light turns: -Z, as a camera looks. */
 const LIGHT_AXIS: Vec3 = [0, 0, -1];
 
+/** The point (0, 0, 0), for objects created without a position. */
+const ORIGIN: Vec3 = [0, 0, 0];
+
+/**
+ * Writes `value` at `i` as a whole number of cells in `cells` and the rest in `rest`, as the engine
+ * core splits a 64-bit position: the nearest whole number of cells, so the rest is about half a
+ * cell long at most, and a 32-bit float holds it to 0.03 mm or better.
+ */
+function splitPosition(rest: Float32Array, cells: Int32Array, i: number, value: number): void {
+	const cell = Math.floor(value / C.CELL_SIZE + 0.5);
+	cells[i] = cell;
+	rest[i] = value - cell * C.CELL_SIZE;
+}
+
 /** Views of the per-slot arrays and the command ring. */
 class SceneViews {
+	/** Positions, 3 per slot: in large-world mode, the part that `positionCells` leaves. */
 	readonly positions: Float32Array;
+	/**
+	 * In large-world mode, the whole cells of each position, 3 per slot: a position is these cells
+	 * times the cell's size plus its 32-bit part. Undefined without the mode.
+	 */
+	readonly positionCells: Int32Array | undefined;
 	readonly rotations: Float32Array;
 	readonly scales: Float32Array;
 	readonly radii: Float32Array;
@@ -477,6 +504,8 @@ class SceneViews {
 		const { glue } = core;
 		const rows = glue.sceneCapacity() + 1;
 		this.positions = core.f32(glue.sceneArrays(C.SCENE_FIELD_POSITIONS), rows * 3);
+		const cells = glue.sceneArrays(C.SCENE_FIELD_POSITION_CELLS);
+		this.positionCells = cells ? core.i32(cells, rows * 3) : undefined;
 		this.rotations = core.f32(glue.sceneArrays(C.SCENE_FIELD_ROTATIONS), rows * 4);
 		this.scales = core.f32(glue.sceneArrays(C.SCENE_FIELD_SCALES), rows * 3);
 		this.radii = core.f32(glue.sceneArrays(C.SCENE_FIELD_LOCAL_RADII), rows);
@@ -553,11 +582,7 @@ export class Object3D implements Described {
 			checkLive('setPosition', this);
 			checkVector('setPosition', this, x, y, z);
 		}
-		const p = this.scene.views.positions;
-		const i = this.row * 3;
-		p[i] = x;
-		p[i + 1] = y;
-		p[i + 2] = z;
+		this.scene.writePosition(this.row, x, y, z);
 		this.scene.markDirty(this.row);
 	}
 
@@ -609,18 +634,14 @@ export class Object3D implements Described {
 			checkLive('lookAt', this);
 			checkVector('lookAt', this, x, y, z);
 		}
-		const { positions, rotations } = this.scene.views;
-		const i = this.row * 3;
 		const eye = this.scene.eye;
-		eye[0] = positions[i] as number;
-		eye[1] = positions[i + 1] as number;
-		eye[2] = positions[i + 2] as number;
+		this.scene.readPosition(this.row, eye);
 		const target = this.scene.target;
 		target[0] = x;
 		target[1] = y;
 		target[2] = z;
 		quaternionLookAt(this.scene.scratch, eye, target, this.looksDownMinusZ);
-		rotations.set(this.scene.scratch, this.row * 4);
+		this.scene.views.rotations.set(this.scene.scratch, this.row * 4);
 		this.scene.markDirty(this.row);
 	}
 
@@ -670,22 +691,21 @@ export class Object3D implements Described {
 		v[1] = y;
 		v[2] = z;
 		transformQuat(v, v, q);
-		const p = scene.views.positions;
-		const i = this.row * 3;
-		p[i] = (p[i] as number) + (v[0] as number);
-		p[i + 1] = (p[i + 1] as number) + (v[1] as number);
-		p[i + 2] = (p[i + 2] as number) + (v[2] as number);
+		const p = scene.target;
+		scene.readPosition(this.row, p);
+		scene.writePosition(
+			this.row,
+			(p[0] as number) + (v[0] as number),
+			(p[1] as number) + (v[1] as number),
+			(p[2] as number) + (v[2] as number),
+		);
 		scene.markDirty(this.row);
 	}
 
 	/** Copies the position relative to the parent into `out`. */
 	getPosition(out: Vec3Like): void {
 		if (DEV) checkLive('getPosition', this);
-		const p = this.scene.views.positions;
-		const i = this.row * 3;
-		out[0] = p[i] as number;
-		out[1] = p[i + 1] as number;
-		out[2] = p[i + 2] as number;
+		this.scene.readPosition(this.row, out);
 	}
 
 	/** Copies the rotation relative to the parent into `out`, as a quaternion (x, y, z, w). */
@@ -1605,6 +1625,13 @@ export class InstanceBatch {
 		for (const part of this.parts) core.glue.setBatchLayers(part, mask >>> 0);
 	}
 
+	/** @internal Places the origin that the rows of the batch and of its parts are relative to. */
+	setOrigin([x, y, z]: Vec3, call: string): void {
+		const { core } = this.scene;
+		core.check(core.glue.setBatchOrigin(this.id, x, y, z), call, undefined, true);
+		for (const part of this.parts) core.glue.setBatchOrigin(part, x, y, z);
+	}
+
 	/** Marks rows of a static batch to update and upload. */
 	markDirty(start = 0, count = this.count - start): void {
 		const { core } = this.scene;
@@ -1646,9 +1673,12 @@ async function loadSprites(call: string): Promise<typeof import('./sprites')> {
 	}
 }
 
-/** The transform of a model's copy: the position, rotation and scale of `options`. */
-function rootTransform(options: NodeOptions): Float32Array {
-	const transform = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
+/**
+ * The transform of a model's copy: the position, rotation and scale of `options`, with the position
+ * at full precision.
+ */
+function rootTransform(options: NodeOptions): Float64Array {
+	const transform = new Float64Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
 	if (options.position) transform.set(options.position, 0);
 	if (options.rotation) transform.set(options.rotation, 3);
 	if (options.scale) transform.set(options.scale, 7);
@@ -1755,6 +1785,38 @@ export class Scene {
 			this.viewsGeneration = this.core.generation;
 		}
 		return this.currentViews;
+	}
+
+	/**
+	 * @internal Writes the position of the object in `slot`, relative to its parent. In large-world
+	 * mode it splits each number into whole cells and a rest of about half a cell at most, so the
+	 * 32-bit rest keeps the number's full precision.
+	 */
+	writePosition(slot: number, x: number, y: number, z: number): void {
+		const { positions, positionCells } = this.views;
+		const i = slot * 3;
+		if (positionCells === undefined) {
+			positions[i] = x;
+			positions[i + 1] = y;
+			positions[i + 2] = z;
+			return;
+		}
+		splitPosition(positions, positionCells, i, x);
+		splitPosition(positions, positionCells, i + 1, y);
+		splitPosition(positions, positionCells, i + 2, z);
+	}
+
+	/** @internal Copies the position of the object in `slot`, relative to its parent, into `out`. */
+	readPosition(slot: number, out: Vec3Like): void {
+		const { positions, positionCells } = this.views;
+		const i = slot * 3;
+		out[0] = positions[i] as number;
+		out[1] = positions[i + 1] as number;
+		out[2] = positions[i + 2] as number;
+		if (positionCells === undefined) return;
+		out[0] = (out[0] as number) + (positionCells[i] as number) * C.CELL_SIZE;
+		out[1] = (out[1] as number) + (positionCells[i + 1] as number) * C.CELL_SIZE;
+		out[2] = (out[2] as number) + (positionCells[i + 2] as number) * C.CELL_SIZE;
 	}
 
 	/** @internal Flags a static object for recomputation. */
@@ -1953,7 +2015,8 @@ export class Scene {
 		const handle = this.core.check(this.core.glue.reserveObject(), call, options.name);
 		const slot = handle & SLOT_MASK;
 		const v = this.views;
-		v.positions.set(options.position ?? [0, 0, 0], slot * 3);
+		const [x, y, z] = options.position ?? ORIGIN;
+		this.writePosition(slot, x, y, z);
 		v.rotations.set(options.rotation ?? [0, 0, 0, 1], slot * 4);
 		v.scales.set(options.scale ?? [1, 1, 1], slot * 3);
 		v.radii[slot] = radius;
@@ -2064,8 +2127,8 @@ export class Scene {
 		const v = this.views;
 		return order.map((each, k): TemplateNode => {
 			const row = each.row;
-			const transform = new Float32Array(10);
-			transform.set(v.positions.subarray(row * 3, row * 3 + 3), 0);
+			const transform = new Float64Array(10);
+			this.readPosition(row, transform);
 			transform.set(v.rotations.subarray(row * 4, row * 4 + 4), 3);
 			transform.set(v.scales.subarray(row * 3, row * 3 + 3), 7);
 			const mesh = each instanceof Mesh ? each : undefined;
@@ -2120,10 +2183,8 @@ export class Scene {
 			const handle = handles[k] as number;
 			const slot = handle & SLOT_MASK;
 			const t = n.transform;
-			for (let i = 0; i < 3; i++) {
-				v.positions[slot * 3 + i] = t[i] as number;
-				v.scales[slot * 3 + i] = t[7 + i] as number;
-			}
+			this.writePosition(slot, t[0] as number, t[1] as number, t[2] as number);
+			for (let i = 0; i < 3; i++) v.scales[slot * 3 + i] = t[7 + i] as number;
 			for (let i = 0; i < 4; i++) v.rotations[slot * 4 + i] = t[3 + i] as number;
 			const flags = n.mesh ? n.flags | extra : n.flags;
 			const bounds = n.bounds;
@@ -2182,7 +2243,9 @@ export class Scene {
 
 	/**
 	 * The instance batch of a node of a model with instancing of its own. Each row takes its
-	 * transform from the file, after the node's place in the world when the copy is created.
+	 * transform from the file, after the node's place in the world when the copy is created. The
+	 * node's place is the batch's origin, so the rows keep their precision far from the world's
+	 * origin.
 	 */
 	private placeInstancing(
 		instance: PrefabInstance,
@@ -2192,26 +2255,24 @@ export class Scene {
 		const v = this.views;
 		const world = identityMatrix(new Float64Array(16));
 		const local = new Float64Array(16);
-		const trs = (p: Float32Array, q: Float32Array, s: Float32Array, row: number) =>
-			composeMatrix(
-				local,
-				p.subarray(row * 3, row * 3 + 3),
-				q.subarray(row * 4, row * 4 + 4),
-				s.subarray(row * 3, row * 3 + 3),
-			);
-		let object: Object3D | null = instance.objects[spec.node] as Object3D;
-		while (object) {
-			multiplyMatrices(world, trs(v.positions, v.rotations, v.scales, object.row), world);
-			object = object.liveParent;
-		}
-		const batch = this.createParts(spec.parts, spec.count, {}, call);
-		const { positions, rotations, scales } = batch;
 		const position = [0, 0, 0];
 		const rotation = [0, 0, 0, 1];
 		const scale = [1, 1, 1];
+		const trs = (p: Vec3Like, q: Float32Array, s: Float32Array, row: number) =>
+			composeMatrix(local, p, q.subarray(row * 4, row * 4 + 4), s.subarray(row * 3, row * 3 + 3));
+		let object: Object3D | null = instance.objects[spec.node] as Object3D;
+		while (object) {
+			this.readPosition(object.row, position);
+			multiplyMatrices(world, trs(position, v.rotations, v.scales, object.row), world);
+			object = object.liveParent;
+		}
+		const origin: Vec3 = [world[12] as number, world[13] as number, world[14] as number];
+		const batch = this.createParts(spec.parts, spec.count, { origin }, call);
+		const { positions, rotations, scales } = batch;
 		for (let r = 0; r < spec.count; r++) {
-			trs(spec.positions, spec.rotations, spec.scales, r);
+			trs(spec.positions.subarray(r * 3, r * 3 + 3), spec.rotations, spec.scales, r);
 			decompose(position, rotation, scale, multiplyMatrices(local, world, local));
+			for (let k = 0; k < 3; k++) position[k] = (position[k] as number) - (origin[k] as number);
 			positions.set(position, r * 3);
 			rotations.set(rotation, r * 4);
 			scales.set(scale, r * 3);
@@ -2257,6 +2318,7 @@ export class Scene {
 		const batch = new InstanceBatch(this, ids[0] as number, count, colors, ids.slice(1));
 		this.rememberBatch(batch);
 		if (options.layers !== undefined) batch.setLayers(options.layers);
+		if (options.origin) batch.setOrigin(options.origin, call);
 		return batch;
 	}
 
@@ -2309,6 +2371,7 @@ export class Scene {
 		this.rememberBatch(batch);
 		batch.setActiveCount(count);
 		if (layers !== undefined) batch.setLayers(layers);
+		if (options.origin) batch.setOrigin(options.origin, call);
 		return batch;
 	}
 
@@ -2362,6 +2425,7 @@ export class Scene {
 		if (DEV) this.countBatchRows(count);
 		const instances = new InstanceBatch(this, id, count, false);
 		this.rememberBatch(instances);
+		if (options.origin) instances.setOrigin(options.origin, call);
 		const batch = new sprites.SpriteBatch(core, id, count, parts.material, instances);
 		if (layers !== undefined) batch.setLayers(layers);
 		return batch;
