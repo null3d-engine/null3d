@@ -13,6 +13,7 @@ import {
 	deviceText,
 	STATUS_SCRIPT,
 	UNANSWERED_POLLS,
+	VISIBILITY_SCRIPT,
 } from './cloud-sessions.ts';
 import { type WebDriver, WebDriverError, webDriver } from './webdriver.ts';
 
@@ -28,9 +29,12 @@ interface Received {
 
 /**
  * A fake WebDriver server: it opens sessions, records each command, answers scripts with the
- * status line it holds, and answers `invalid session id` for a session it was told to drop.
+ * status line it holds, and answers `invalid session id` for a session it was told to drop. It
+ * reports the page `visible`, or each state of `visibility` in turn while they last.
  */
-function fakeHub(options: { refuseSessions?: boolean; failNavigate?: boolean } = {}) {
+function fakeHub(
+	options: { refuseSessions?: boolean; failNavigate?: boolean; visibility?: string[] } = {},
+) {
 	const received: Received[] = [];
 	const live = new Set<string>();
 	let count = 0;
@@ -73,7 +77,13 @@ function fakeHub(options: { refuseSessions?: boolean; failNavigate?: boolean } =
 					return answer({ error: 'unknown error', message: 'no page' }, 500);
 				return answer(null);
 			}
-			if (command === 'execute') return answer(status);
+			if (command === 'execute') {
+				const body = JSON.parse(text) as { script?: string };
+				if (body.script === VISIBILITY_SCRIPT)
+					return answer(options.visibility?.shift() ?? 'visible');
+				return answer(status);
+			}
+			if (command === 'window') return answer(request.method === 'GET' ? `window-of-${id}` : null);
 			return answer({ error: 'unknown command', message: path }, 404);
 		},
 	});
@@ -159,7 +169,42 @@ describe('CloudSessions', () => {
 		hub = fakeHub();
 		const sessions = sessionsOn(hub, []);
 		expect(await sessions.open('bspixel10-chrome', PAGE)).toBe(true);
-		expect(hub.received.map((r) => r.path)).toEqual(['/session', '/session/session-1/url']);
+		expect(hub.received.map((r) => r.path)).toEqual([
+			'/session',
+			'/session/session-1/url',
+			'/session/session-1/execute/sync',
+		]);
+		expect(hub.received.at(-1)?.body?.script).toBe(VISIBILITY_SCRIPT);
+		await sessions.closeAll();
+	});
+
+	it('brings a page that the browser reports hidden to the front by a switch to its window', async () => {
+		hub = fakeHub({ visibility: ['hidden', 'visible'] });
+		const lines: string[] = [];
+		const sessions = sessionsOn(hub, lines);
+		expect(await sessions.open('bspixel10-chrome', PAGE)).toBe(true);
+		expect(
+			hub.received.find((r) => r.method === 'POST' && r.path.endsWith('/window'))?.body,
+		).toEqual({ handle: 'window-of-session-1' });
+		expect(hub.received.filter((r) => r.path.endsWith('/url'))).toHaveLength(1);
+		expect(lines.slice(-2)).toEqual([
+			'bspixel10-chrome: the browser reports the page hidden',
+			'bspixel10-chrome: a switch to its window brought the page to the front',
+		]);
+		await sessions.closeAll();
+	});
+
+	it('loads a page again that stays hidden, and leaves it to the runner page when that fails too', async () => {
+		hub = fakeHub({ visibility: ['hidden', 'hidden', 'hidden'] });
+		const lines: string[] = [];
+		const sessions = sessionsOn(hub, lines);
+		expect(await sessions.open('bspixel10-chrome', PAGE)).toBe(true);
+		expect(hub.received.filter((r) => r.path.endsWith('/url'))).toHaveLength(2);
+		expect(lines.slice(-3)).toEqual([
+			'bspixel10-chrome: the browser reports the page hidden',
+			'bspixel10-chrome: the page is still hidden after a switch to its window',
+			'bspixel10-chrome: the page is still hidden after a second load',
+		]);
 		await sessions.closeAll();
 	});
 
@@ -266,7 +311,10 @@ describe('CloudSessions', () => {
 		hub = fakeHub({ failNavigate: true });
 		const sessions = sessionsOn(hub, []);
 		expect(await sessions.open('bsiphone17-safari', PAGE)).toBe(true);
-		expect(hub.received.at(-1)?.body?.script).toBe(ACCEPT_SSL_SCRIPT);
+		expect(hub.received.map((r) => r.body?.script).filter(Boolean)).toEqual([
+			ACCEPT_SSL_SCRIPT,
+			VISIBILITY_SCRIPT,
+		]);
 		await sessions.closeAll();
 	});
 

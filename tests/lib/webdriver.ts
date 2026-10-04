@@ -22,6 +22,10 @@ export interface WebDriver {
 	navigate(session: string, url: string): Promise<void>;
 	/** Runs a script in the page, and returns what it returned. */
 	execute(session: string, script: string, args?: readonly unknown[]): Promise<unknown>;
+	/** The handle of the session's current window or tab. */
+	windowHandle(session: string): Promise<string>;
+	/** Switches to a window or tab, which a browser also brings to the front. */
+	switchToWindow(session: string, handle: string): Promise<void>;
 	/** Ends the session. */
 	deleteSession(session: string): Promise<void>;
 }
@@ -91,6 +95,12 @@ export function webDriver(
 		},
 		execute(session, script, args = []) {
 			return call('POST', `${sessionPath(session)}/execute/sync`, { script, args });
+		},
+		async windowHandle(session) {
+			return String(await call('GET', `${sessionPath(session)}/window`));
+		},
+		async switchToWindow(session, handle) {
+			await call('POST', `${sessionPath(session)}/window`, { handle });
 		},
 		async deleteSession(session) {
 			await call('DELETE', sessionPath(session));

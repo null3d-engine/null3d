@@ -25,6 +25,9 @@ export interface CloudAccount {
 export const STATUS_SCRIPT =
 	"var line = document.getElementById('status'); return line ? line.textContent : document.title;";
 
+/** The script that reads whether the browser shows the page or reports it hidden. */
+export const VISIBILITY_SCRIPT = 'return document.visibilityState;';
+
 /** How often a live session gets a command, which keeps it from ending as idle. */
 export const POLL_MS = 30_000;
 
@@ -87,6 +90,7 @@ export class CloudSessions {
 			await this.close(runner);
 			return false;
 		}
+		await this.bringToFront(runner, device, id, url);
 		session.timer = setInterval(() => void this.poll(runner), this.pollMs);
 		return true;
 	}
@@ -101,6 +105,43 @@ export class CloudSessions {
 			if (!needsAccept || (e instanceof WebDriverError && e.code === 'invalid session id')) throw e;
 		}
 		if (needsAccept) await this.driver.execute(id, this.account.acceptSslScript);
+	}
+
+	/**
+	 * Brings the runner page to the front when the browser reports it hidden, as Samsung Internet
+	 * on Automate can right after a load: a hidden page gets no animation frames. Each way is tried
+	 * only while the page is still hidden: a switch to its own window, which brings that tab to the
+	 * front, then a second load. The page waits for frames for a while, so a way that works in time
+	 * lets the run go on; one that does not leaves the page to stop and say why.
+	 */
+	private async bringToFront(
+		runner: string,
+		device: CloudDevice,
+		id: string,
+		url: string,
+	): Promise<void> {
+		const hidden = async () => (await this.driver.execute(id, VISIBILITY_SCRIPT)) === 'hidden';
+		const ways: [string, () => Promise<void>][] = [
+			[
+				'a switch to its window',
+				async () => this.driver.switchToWindow(id, await this.driver.windowHandle(id)),
+			],
+			['a second load', () => this.load(device, id, url)],
+		];
+		try {
+			if (!(await hidden())) return;
+			this.log(`${runner}: the browser reports the page hidden`);
+			for (const [way, attempt] of ways) {
+				await attempt();
+				if (!(await hidden())) {
+					this.log(`${runner}: ${way} brought the page to the front`);
+					return;
+				}
+				this.log(`${runner}: the page is still hidden after ${way}`);
+			}
+		} catch (e) {
+			this.log(`${runner}: bringing the page to the front failed: ${(e as Error).message}`);
+		}
 	}
 
 	/**

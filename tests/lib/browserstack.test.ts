@@ -121,7 +121,7 @@ describe('capabilities', () => {
 		expect(needsAcceptSsl(device('bsiphone17-chromium'))).toBe(true);
 		expect(needsAcceptSsl(device('bsmacsequoia-safari'))).toBe(true);
 		expect(needsAcceptSsl(device('bsgalaxys25-chrome'))).toBe(false);
-		expect(needsAcceptSsl(device('bswin11-firefox'))).toBe(false);
+		expect(needsAcceptSsl(device('bswin11-edge'))).toBe(false);
 	});
 });
 
@@ -143,9 +143,9 @@ describe('the device cloud list', () => {
 		}
 	});
 
-	it('holds tiers A and B', () => {
+	it("holds tiers A and B, without the guide's Firefox on Windows", () => {
 		expect(CLOUD_DEVICES.filter((d) => d.tier === 'A')).toHaveLength(10);
-		expect(CLOUD_DEVICES.filter((d) => d.tier === 'B')).toHaveLength(12);
+		expect(CLOUD_DEVICES.filter((d) => d.tier === 'B')).toHaveLength(11);
 	});
 });
 
@@ -358,10 +358,17 @@ describe('devices:cloud', () => {
 					'bsgalaxys25-samsung',
 					'bspixel10-chrome',
 					'bspixel9-chrome',
-					'bswin11-chrome',
 				],
 			],
-			[true, ['bsiphone16-safari', 'bsgalaxytaba9plus-chrome']],
+			[true, ['bsiphone16-safari', 'bsgalaxytaba9plus-chrome', 'bswin11-chrome']],
+		]);
+	});
+
+	it("expects no WebGPU on Automate's Windows machines, which have no GPU, and runs no Firefox there", () => {
+		const windows = CLOUD_DEVICES.filter((d) => d.os === 'Windows');
+		expect(windows.map((d) => [d.runner, d.allowNoWebgpu])).toEqual([
+			['bswin11-chrome', true],
+			['bswin11-edge', true],
 		]);
 	});
 
