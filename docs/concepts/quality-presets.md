@@ -203,6 +203,8 @@ Some objects stay out of the prepass and shade as they would without it. These a
 
 Both GPU paths draw the prepass, and it gives the same image as a frame without it. The opaque pass shades a pixel only where its depth equals the prepass's depth exactly. So both passes must compute each vertex's depth to the last bit. On WebGPU, the prepass uses a shader that computes positions only. On WebGL2, it uses the vertex shader of each object's own material, with a fragment shader that writes nothing. On WebGL2, two separate shader programs can compute slightly different depths for one triangle, and a surface would then vanish from the frame.
 
+One case differs: two opaque surfaces at exactly the same depth. Without the prepass, the surface drawn first shows. With it, both pass the test for equal depth, so the surface drawn last shows. Give such surfaces a depth bias, or move one a little, so one is nearer.
+
 ```ts
 const engine = await createEngine({ canvas, sketch, depthPrepass: true });
 ```

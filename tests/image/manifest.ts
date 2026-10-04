@@ -36,14 +36,7 @@ import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
-import {
-	ALL_MODES,
-	type ImageRun,
-	type ImageTest,
-	imageRuns,
-	type Tier,
-	tiersOf,
-} from '../lib/images.ts';
+import { ALL_MODES, type ImageRun, type ImageTest, imageRuns, type Tier } from '../lib/images.ts';
 import { STOPS, TONE_MAPPINGS, toneMappingTest } from '../pages/lib/bright-scene.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 
@@ -1020,8 +1013,10 @@ function copyWithSwitch(name: string, suffix: string, extra: string): ImageTest 
  * The scenes that the depth prepass draws again on every tier, which must match their images
  * without it: shadows, masked cards that stay out of the prepass, decals whose depth bias the
  * prepass keeps, see-through objects that draw after it, an orthographic camera whose near plane
- * cuts a slab, S2, and skinned characters with shadows. The shadows test's ground, which the near
- * plane cuts, caught WebGL2's prepass when it drew with a program of its own (D-43).
+ * cuts a slab, S2, and skinned characters with shadows. The depth debug view replaces every
+ * material, and a background texture draws after the prepass in its render pass. The shadows
+ * test's ground, which the near plane cuts, caught WebGL2's prepass when it drew with a program of
+ * its own (D-43).
  */
 const PREPASS_SCENES = [
 	'shadows',
@@ -1031,6 +1026,8 @@ const PREPASS_SCENES = [
 	'ortho-camera',
 	's2',
 	'skinning-shadows',
+	'debug-view-depth',
+	'texture-background',
 ];
 
 /** A prepass scene's test again with ?prepass=on, in its first thread mode. */

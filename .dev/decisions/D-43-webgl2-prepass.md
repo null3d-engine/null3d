@@ -51,6 +51,13 @@ The prepass image tests draw seven scenes: shadows, masked cards, decals with a 
 
 The skinned scene was compared pixel for pixel on the Mac's WebGL2 and WebGPU tiers only. Elsewhere it passes its tolerance.
 
+Two more prepass copies joined later: the depth debug view, and a background texture. Both pass their tolerances on every tier and both GPU sets. The whole image manifest with `NULL3D_SWITCHES=prepass=on` on the Mac's GPU found two faults, both fixed here:
+
+- The debug views replace every material with their own template. On WebGL2 the prepass asked for that template's `PREPASS` build, which does not exist, so the frame failed. The backend now reads the bit on the debug view template as on the mesh templates. On WebGPU the debug view's position was not invariant, and the depth view differed in 2.1% of its pixels with the prepass. Its position is now invariant, as in every other mesh template.
+- The background texture draws after the prepass's meshes in the same render pass, so a vertex buffer was still bound. The WebGL2 backend refused a draw that makes its own vertices while a buffer was bound. It now ignores the buffer, as WebGPU does.
+
+The same run showed one difference that every depth prepass has. The depth precision test puts two surfaces at exactly the same depth, and expects the one drawn first to win. With the prepass, both pass the test for equal depth, so the one drawn last shows, on all three tiers. WebGPU's prepass did the same before this change. The docs page `concepts/quality-presets` names this case.
+
 The orthographic test's edge pixels lie along one edge of the slab, and WebGPU's prepass on main shows them too. All seven tests pass their tolerances on every tier and both GPU sets.
 
 ### Cost

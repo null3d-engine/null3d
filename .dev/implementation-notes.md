@@ -269,7 +269,8 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - On WebGPU, the prepass draws with a build of the shadow depth template that clips at the near plane, as the shading templates do. The two passes then give each pixel the same depth.
 - On WebGL2, that depth-only program gave other depths than the shading programs in Chrome on the Mac (ANGLE on Metal). The shadows image lost the ground in blocks of pixels, and 57.8% of it differed. Every GLSL vertex shader declares `invariant gl_Position`, and ANGLE's Metal code marks the position `[[invariant]]`, but Apple's compiler still optimized the two programs' position math differently. The same build passed on SwiftShader.
 - So WebGL2 draws the prepass with each shading pipeline's own vertex shader, linked with a fragment shader that writes nothing. Two programs with the same vertex shader gave the same depth. All seven prepass image tests, skinned characters among them, then match the images without the prepass bit for bit on the Mac. On SwiftShader they match too, apart from 16 edge pixels of the orthographic test, which WebGPU's prepass shows there as well. [D-43](decisions/D-43-webgl2-prepass.md) gives the options and the figures.
-- The WebGL2 backend reads the `PREPASS` bit on a mesh template's pipeline that way (`buildPermutation` in `gpu/webgl2/programs.ts`). The shadow depth template has no `PREPASS` build in GLSL.
+- The WebGL2 backend reads the `PREPASS` bit on a mesh template's pipeline that way (`buildPermutation` in `gpu/webgl2/programs.ts`). The debug view template counts as one, since it replaces every material. The shadow depth template has no `PREPASS` build in GLSL.
+- Two opaque surfaces at exactly the same depth both pass the opaque pass's test for equal depth, so the one drawn last shows. Without the prepass the one drawn first shows. The depth precision test's tie tile shows it on every tier with `?prepass=on`.
 
 ## Shadows
 

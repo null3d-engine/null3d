@@ -84,9 +84,9 @@ export interface GlslTemplate {
 	 */
 	readonly vertices?: GPUVertexBufferLayout;
 	/**
-	 * True for a mesh template, whose pipelines with the `PREPASS` bit draw the depth prepass: with
-	 * the vertex shader of the template's build without that bit, and a fragment shader that writes
-	 * nothing.
+	 * True for a template that draws meshes, whose pipelines with the `PREPASS` bit draw the depth
+	 * prepass: with the vertex shader of the template's build without that bit, and a fragment
+	 * shader that writes nothing.
 	 */
 	readonly meshPrepass?: boolean;
 }
@@ -183,7 +183,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 			pipeline: 'main',
 			vertices: LINE_VERTICES,
 		};
-		templates[TEMPLATE_DEBUG_VIEW] = { shader: DEBUG_VIEW_SHADER, pipeline: 'main' };
+		// The debug views draw meshes in place of every material, so they draw the prepass too.
+		templates[TEMPLATE_DEBUG_VIEW] = mesh(DEBUG_VIEW_SHADER);
 	}
 	return templates;
 }
