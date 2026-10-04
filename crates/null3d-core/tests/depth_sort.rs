@@ -78,6 +78,7 @@ impl Scene {
             frustum: &frustum,
             offsets: &offsets,
             layers: ALL_LAYERS,
+            occlusion: None,
         };
         let sets = |_| self.set();
         cull_and_sort(jobs, view, [0.0, 0.0, -1.0, 0.0], &sets, &self.runs, out)

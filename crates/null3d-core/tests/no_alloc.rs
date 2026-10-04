@@ -10,7 +10,7 @@ mod common;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use common::{Rng, Workers, character, mul4, perspective, translation};
+use common::{Rng, Workers, character, mul4, perspective, reversed_perspective, translation};
 use null3d_core::animation::{Animations, MAX_LAYERS, Play};
 use null3d_core::arena::{ArenaPool, FrameArena};
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
@@ -342,6 +342,7 @@ fn frame(world: &mut World, jobs: &JobSystem, frame: u32, rng: &mut Rng) {
         frustum: &frustum,
         offsets: &world.offsets[..cells],
         layers: 0x5555_5555,
+        occlusion: None,
     };
     cull_into_buckets(
         jobs,
@@ -554,4 +555,96 @@ fn threads_that_an_earlier_test_tracked_never_count_in_a_later_one() {
         }
         assert_eq!(CountingAllocator::disarm(), 0, "round {round}");
     }
+}
+
+#[test]
+fn drawing_blockers_and_testing_spheres_allocates_nothing() {
+    use null3d_core::bvh::mesh::IndexedTriangles;
+    use null3d_core::occlusion::{Blocker, BlockerMesh, OcclusionBuffer, clip_matrix};
+
+    let _exclusive = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    let pool = Workers::with_setup(
+        JobConfig {
+            workers: 4,
+            ..JobConfig::default()
+        },
+        CountingAllocator::track_this_thread,
+    );
+    // A box of 12 triangles from -1 to 1, wound counterclockwise seen from outside.
+    let positions = [
+        -1.0, -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 1.0, -1.0, //
+        -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0,
+    ];
+    let indices: [u32; 36] = [
+        0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 2, 3, 7, 2, 7, 6, 1, 2, 6, 1, 6, 5,
+        0, 4, 7, 0, 7, 3,
+    ];
+    let mesh = BlockerMesh::build(&IndexedTriangles {
+        positions: &positions,
+        indices: &indices,
+    })
+    .unwrap();
+    let meshes = [mesh];
+    let mut rng = Rng::new(41);
+    // Blockers around the camera, some reaching through its near plane, and spheres among them.
+    let places: Vec<[f32; 12]> = (0..64)
+        .map(|_| {
+            let (sx, sy, sz) = (
+                rng.range(0.5, 8.0),
+                rng.range(0.5, 8.0),
+                rng.range(0.5, 8.0),
+            );
+            let at = [
+                rng.range(-40.0, 40.0),
+                rng.range(-5.0, 5.0),
+                rng.range(-40.0, 40.0),
+            ];
+            [
+                sx, 0.0, 0.0, at[0], 0.0, sy, 0.0, at[1], 0.0, 0.0, sz, at[2],
+            ]
+        })
+        .collect();
+    let spheres: Vec<([f32; 3], f32)> = (0..2000)
+        .map(|_| {
+            let at = [
+                rng.range(-60.0, 60.0),
+                rng.range(-5.0, 5.0),
+                rng.range(-60.0, 60.0),
+            ];
+            (at, rng.range(0.1, 2.0))
+        })
+        .collect();
+    let mut buffer = OcclusionBuffer::new();
+    buffer.resize(1280, 720).unwrap();
+    let mut blockers = Vec::with_capacity(places.len());
+    let mut frame = |turn: f32, buffer: &mut OcclusionBuffer| -> u32 {
+        let (s, c) = turn.sin_cos();
+        let mut view = [0.0; 16];
+        (view[0], view[2], view[8], view[10]) = (c, -s, s, c);
+        (view[5], view[15]) = (1.0, 1.0);
+        let view_proj = mul4(&reversed_perspective(1.0, 16.0 / 9.0, 0.1, None), &view);
+        blockers.clear();
+        for world in &places {
+            blockers.push(Blocker {
+                mesh: 0,
+                clip: clip_matrix(&view_proj, world, [0.0; 3]),
+                double_sided: false,
+            });
+        }
+        buffer
+            .draw(pool.jobs(), &view_proj, &meshes, &blockers)
+            .unwrap();
+        spheres
+            .iter()
+            .filter(|(at, r)| buffer.hides(*at, *r))
+            .count() as u32
+    };
+    for k in 0..4 {
+        frame(k as f32, &mut buffer);
+    }
+    CountingAllocator::arm();
+    let hidden: u32 = (0..100).map(|k| frame(k as f32 * 0.063, &mut buffer)).sum();
+    assert_eq!(CountingAllocator::disarm(), 0);
+    assert!(hidden > 0, "the blockers hid nothing");
 }
