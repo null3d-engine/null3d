@@ -3,10 +3,11 @@
 //! base pose.
 //!
 //! Resampling evaluates each track as three.js's `AnimationMixer` would: linear tracks with
-//! `slerp` for rotations and `lerp` for the rest, step tracks with the key at or before the time.
-//! Before the first key a track holds its first value, and after the last its last value.
+//! `slerp` for rotations and `lerp` for the rest, step tracks with the key at or before the time,
+//! and cubic spline tracks with the Hermite curve of glTF, as three.js's `GLTFLoader` evaluates
+//! them. Before the first key a track holds its first value, and after the last its last value.
 
-use super::clip::{ClipParts, Groups, ROTATION_KEY, VECTOR_KEY};
+use super::clip::{ClipParts, Groups, ROTATION_KEY, SMALL_TURN_DOT, VECTOR_KEY};
 use super::{AnimationError, Clip, Skeleton, TrackProblem, field, filled, out_of_memory};
 
 /// The rate at which clips keep their keys, in keys per second, unless the caller asks for
@@ -16,6 +17,10 @@ pub const DEFAULT_RATE: f32 = 30.0;
 /// The most frames one clip holds: about 9.7 hours at 30 keys per second. Longer clips come from
 /// broken files.
 pub const MAX_FRAMES: u32 = 1 << 20;
+
+/// How far past a whole number of frames a clip's end may lie and still end on that frame, in
+/// frames, as far as a key may lie from the source grid.
+const FRAME_TOLERANCE: f64 = 1e-3;
 
 /// How far after a frame's time, as a share of the time, a key still counts as at the frame: a
 /// few times the rounding of a 32-bit float.
@@ -64,6 +69,9 @@ pub enum Interpolation {
     Linear = 0,
     /// The key at or before the time, with no change until the next key.
     Step = 1,
+    /// glTF's cubic spline: each key holds an in-tangent, a value and an out-tangent, in that
+    /// order, and the value between two keys follows the Hermite curve through them.
+    CubicSpline = 2,
 }
 
 impl Interpolation {
@@ -72,6 +80,7 @@ impl Interpolation {
         match value {
             0 => Some(Interpolation::Linear),
             1 => Some(Interpolation::Step),
+            2 => Some(Interpolation::CubicSpline),
             _ => None,
         }
     }
@@ -88,8 +97,19 @@ pub struct SourceTrack<'a> {
     pub interpolation: Interpolation,
     /// The key times in seconds, from 0 up, never decreasing. Two equal times make a jump.
     pub times: &'a [f32],
-    /// [`Channel::components`] values per key.
+    /// [`Channel::components`] values per key, or three times as many for a cubic spline track:
+    /// its in-tangent, value and out-tangent.
     pub values: &'a [f32],
+}
+
+impl SourceTrack<'_> {
+    /// Values per key: [`Channel::components`], or three times as many for a cubic spline track.
+    pub const fn key_values(&self) -> usize {
+        match self.interpolation {
+            Interpolation::CubicSpline => 3 * self.channel.components(),
+            Interpolation::Linear | Interpolation::Step => self.channel.components(),
+        }
+    }
 }
 
 fn check_track(
@@ -111,9 +131,7 @@ fn check_track(
         return Err(problem(TrackProblem::Duplicate));
     }
     *seen |= bit;
-    if track.times.is_empty()
-        || track.values.len() != track.times.len() * track.channel.components()
-    {
+    if track.times.is_empty() || track.values.len() != track.times.len() * track.key_values() {
         return Err(problem(TrackProblem::Keys));
     }
     let ordered = track.times.windows(2).all(|w| w[0] <= w[1]);
@@ -145,7 +163,7 @@ fn source_grid(tracks: &[SourceTrack<'_>], max_rate: f64) -> Option<f64> {
     if rate > max_rate * (1.0 + 1e-6) {
         return None;
     }
-    let tolerance = 1e-3 / rate;
+    let tolerance = FRAME_TOLERANCE / rate;
     let on_grid = tracks.iter().flat_map(|t| t.times).all(|&time| {
         let time = f64::from(time);
         (time - (time * rate).round() / rate).abs() <= tolerance
@@ -153,14 +171,36 @@ fn source_grid(tracks: &[SourceTrack<'_>], max_rate: f64) -> Option<f64> {
     on_grid.then_some(rate)
 }
 
+/// The rate a clip keeps its keys at: its source grid when every key lies on one of at most
+/// `rate` keys per second, or `rate`. A curve between cubic spline keys needs keys between them,
+/// so a clip with such a track takes the finest multiple of its source grid up to `rate`; keys on
+/// the source grid then stay exact.
+fn keys_per_second(tracks: &[SourceTrack<'_>], rate: f64) -> f64 {
+    let Some(grid) = source_grid(tracks, rate) else {
+        return rate;
+    };
+    if tracks
+        .iter()
+        .any(|t| t.interpolation == Interpolation::CubicSpline)
+    {
+        grid * (rate / grid * (1.0 + 1e-6)).floor().max(1.0)
+    } else {
+        grid
+    }
+}
+
 /// A track's value at `time`, as three.js evaluates it, into `out`. `cursor` is the key at or
 /// before the last time asked, which only moves forward.
 fn evaluate(track: &SourceTrack<'_>, time: f64, cursor: &mut usize, out: &mut [f64]) {
     let n = track.channel.components();
+    let stride = track.key_values();
+    let cubic = track.interpolation == Interpolation::CubicSpline;
+    // A cubic key's value sits after its in-tangent.
+    let value_at = if cubic { n } else { 0 };
     let times = track.times;
-    let key = |k: usize| &track.values[k * n..k * n + n];
+    let part = |k: usize, at: usize| &track.values[k * stride + at..k * stride + at + n];
     let copy = |out: &mut [f64], k: usize| {
-        for (o, v) in out.iter_mut().zip(key(k)) {
+        for (o, v) in out.iter_mut().zip(part(k, value_at)) {
             *o = f64::from(*v);
         }
     };
@@ -182,7 +222,28 @@ fn evaluate(track: &SourceTrack<'_>, time: f64, cursor: &mut usize, out: &mut [f
     }
     let (t0, t1) = (f64::from(times[k]), f64::from(times[k + 1]));
     let alpha = ((time - t0) / (t1 - t0)).clamp(0.0, 1.0);
-    let (a, b) = (key(k), key(k + 1));
+    if cubic {
+        // The Hermite basis of glTF's cubic spline, as three.js's `GLTFCubicSplineInterpolant`
+        // weights it: tangents scale by the time between the keys. Rotations are normalized
+        // afterwards, as its quaternion form does.
+        let span = t1 - t0;
+        let (p, pp) = (alpha, alpha * alpha);
+        let ppp = pp * p;
+        let s2 = -2.0 * ppp + 3.0 * pp;
+        let s3 = ppp - pp;
+        let s0 = 1.0 - s2;
+        let s1 = s3 - pp + p;
+        let (v0, m0) = (part(k, n), part(k, 2 * n));
+        let (m1, v1) = (part(k + 1, 0), part(k + 1, n));
+        for c in 0..n {
+            out[c] = s0 * f64::from(v0[c])
+                + s1 * f64::from(m0[c]) * span
+                + s2 * f64::from(v1[c])
+                + s3 * f64::from(m1[c]) * span;
+        }
+        return;
+    }
+    let (a, b) = (part(k, 0), part(k + 1, 0));
     if track.channel == Channel::Rotation {
         slerp(a, b, alpha, out);
     } else {
@@ -230,6 +291,8 @@ struct Resampled {
     /// The value at the first frame, rotations normalized: what a constant track stores.
     first: [f32; 4],
     constant: bool,
+    /// A rotation track that turns further than [`SMALL_TURN_DOT`] allows between two frames.
+    turns_far: bool,
 }
 
 fn resample_track(
@@ -280,6 +343,15 @@ fn resample_track(
     }
     let first_key = &values[..n];
     let constant = values.chunks_exact(n).all(|key| key == first_key);
+    let turns_far = track.channel == Channel::Rotation
+        && (1..frames as usize).any(|frame| {
+            let (a, b) = (
+                &values[(frame - 1) * n..frame * n],
+                &values[frame * n..][..n],
+            );
+            let dot: f64 = a.iter().zip(b).map(|(a, b)| f64::from(a * b)).sum();
+            dot / (QUANTIZED_ONE * QUANTIZED_ONE) < f64::from(SMALL_TURN_DOT)
+        });
     Ok(Resampled {
         joint: track.joint,
         channel: track.channel,
@@ -287,11 +359,13 @@ fn resample_track(
         values,
         first,
         constant,
+        turns_far,
     })
 }
 
-/// Lays out the animated tracks of one channel in groups of four: linear tracks first, then step
-/// tracks, each in joint order. `convert` turns a resampled value into a key.
+/// Lays out the animated tracks of one channel in groups of four: linear tracks that turn far
+/// between frames first, then the other linear tracks, then step tracks, each in joint order.
+/// `convert` turns a resampled value into a key.
 fn groups<T: Copy + Default>(
     tracks: &[Resampled],
     channel: Channel,
@@ -304,8 +378,9 @@ fn groups<T: Copy + Default>(
         .filter(|t| t.channel == channel && !t.constant)
         .collect();
     // A channel has one track per joint, so the keys are unique and an unstable sort is exact.
-    animated.sort_unstable_by_key(|t| (t.step, t.joint));
+    animated.sort_unstable_by_key(|t| (t.step, !t.turns_far, t.joint));
     let linear = animated.iter().filter(|t| !t.step).count();
+    let far = animated.iter().filter(|t| !t.step && t.turns_far).count();
     // Linear and step tracks never share a group.
     let linear_groups = linear.div_ceil(4);
     let count = linear_groups + (animated.len() - linear).div_ceil(4);
@@ -333,6 +408,7 @@ fn groups<T: Copy + Default>(
     }
     Ok(Groups {
         joints: joints.into_boxed_slice(),
+        first_small_turn: far.div_ceil(4),
         first_step: linear_groups,
         keys: keys.into_boxed_slice(),
     })
@@ -341,9 +417,10 @@ fn groups<T: Copy + Default>(
 /// Builds a clip for `skeleton` from its tracks. A joint that no track moves keeps its rest pose.
 ///
 /// The clip lasts until the last key of its longest track. When every key time lies on one grid
-/// of at most `rate` keys per second, the clip keeps that grid and loses nothing. Otherwise it
-/// takes keys at `rate` per second, adjusted so that the last key falls on the clip's end. A rate
-/// that is not a positive number takes [`DEFAULT_RATE`].
+/// of at most `rate` keys per second, the clip keeps that grid and loses nothing; with a cubic
+/// spline track, it takes the finest multiple of that grid up to `rate`. Otherwise it takes keys
+/// at `rate` per second, adjusted so that the last key falls on the clip's end. A rate that is not
+/// a positive number takes [`DEFAULT_RATE`].
 ///
 /// Load code runs this once per clip, on a job worker; it allocates.
 pub fn resample(
@@ -365,8 +442,13 @@ pub fn resample(
         .map(|t| f64::from(t.times[t.times.len() - 1]))
         .fold(0.0, f64::max);
     let frames = if duration > 0.0 {
-        let keys_per_second = source_grid(tracks, rate).unwrap_or(rate);
-        let intervals = (duration * keys_per_second - 1e-6).ceil().max(1.0);
+        let keys_per_second = keys_per_second(tracks, rate);
+        // The clip's end is a 32-bit float, which can round past its last frame by a few
+        // millionths of a frame: a key within a thousandth of a frame counts as on it, as the
+        // grid's keys do (`source_grid`).
+        let intervals = (duration * keys_per_second - FRAME_TOLERANCE)
+            .ceil()
+            .max(1.0);
         if intervals >= f64::from(MAX_FRAMES) {
             return Err(AnimationError::Frames {
                 frames: intervals.min(f64::from(u32::MAX)) as u32,

@@ -139,7 +139,7 @@ const RIG: RigData = {
 			name: 'walk',
 			tracks: [
 				{ joint: 0, channel: 'translation', times: [0, 1], values: [0, 1, 0, 0, 1, 1] },
-				{ joint: 3, channel: 'rotation', step: true, times: [0], values: [0, 0, 0, 1] },
+				{ joint: 3, channel: 'rotation', interpolation: 'step', times: [0], values: [0, 0, 0, 1] },
 			],
 			events: [
 				{ time: 0.5, name: 'footstep' },
@@ -178,7 +178,7 @@ describe('rigs', () => {
 		const fake = fakeCore();
 		createAnimationRig(fake.scene, { ...RIG, rate: 24 });
 		const floats = (words: number[]) => [...new Float32Array(new Uint32Array(words).buffer)];
-		const [skeleton, walk, walkEvents, run] = fake.staged as number[][];
+		const [skeleton, walk, run, walkEvents] = fake.staged as number[][];
 		const joints = RIG.joints.length;
 		expect(skeleton?.slice(0, joints)).toEqual([0xffff_ffff, 0, 1, 1, 0]);
 		const rest = floats(skeleton as number[]).slice(joints, joints + C.ANIMATION_REST_FLOATS);
@@ -204,8 +204,8 @@ describe('rigs', () => {
 			['initAnimations', 1024, 65_536],
 			['createSkeleton', joints],
 			['createClip', 1, 2, 24],
-			['setClipEvents', 2, 2],
 			['createClip', 1, 1, 24],
+			['setClipEvents', 2, 2],
 		]);
 	});
 
