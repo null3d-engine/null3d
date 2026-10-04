@@ -209,9 +209,12 @@ export async function loadGltf(
 	call: string,
 ): Promise<Prefab> {
 	const { data, bitmaps } = await parse(context, await file.arrayBuffer(), address, call);
-	// The thread that draws downloads the skinning shader file while the textures decode, so a
-	// skinned model waits less for its pipelines.
+	// The thread that draws downloads the skinning and morph shader files while the textures
+	// decode, so a skinned or morphed model waits less for its pipelines. A skinned mesh's morph
+	// targets draw with skinning's builds.
 	if (data.nodes.some((n) => n.skinned)) context.materials.shaders.need('skinning');
+	if (data.nodes.some((n) => !n.skinned && n.mesh >= 0 && hasMorphTargets(data.meshes[n.mesh])))
+		context.materials.shaders.need('morph');
 	const textures = await makeTextures(context, data, bitmaps, address, call);
 	const materials = new FileMaterials(context, data, textures);
 	// Only the meshes that nodes draw: joints move copies of some of the file's meshes.
@@ -311,6 +314,10 @@ export async function loadGltf(
 
 const IDENTITY = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
 const IDENTITY_PART = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
+
+/** True when a primitive of `mesh` has morph targets. */
+const hasMorphTargets = (mesh: MeshData | undefined) =>
+	mesh?.primitives.some((p) => Boolean(p.morph)) ?? false;
 
 /**
  * The morph weights of a node's primitive as a template node keeps them: the node's default

@@ -2,7 +2,9 @@
 // files download before the first frame, so turning skinned characters, bloom and lines on during
 // play downloads no shader file. A glTF file with skins starts the skinning
 // file's download while the file is read, before the sketch adds the model, and the first frame
-// shows the model in its pose. An unknown name fails the start with E1421.
+// shows the model in its pose. Morph targets fetch their builds in the same ways: WebGL2 keeps
+// them in the morph file, and WebGPU morphs in the skinning pass, so it fetches the skinning file.
+// An unknown name fails the start with E1421.
 import { expect, type Page, test } from '@playwright/test';
 import { differentShare } from '../lib/images.ts';
 import { pageResult } from '../lib/page-result.ts';
@@ -17,7 +19,11 @@ interface PreloadResult {
 }
 
 /** The address of a shader file of a feature that loads on first use, with its feature. */
-const FEATURE_FILE = /\/shaders-(ao|background|bloom|lines|skinning|sprites|texcoords)-[^/]*$/;
+const FEATURE_FILE =
+	/\/shaders-(ao|background|bloom|lines|morph|skinning|sprites|texcoords)-[^/]*$/;
+
+/** The feature whose file holds each path's builds for morph targets. */
+const MORPH_FILE = { webgpu: 'skinning', webgl2: 'morph' } as const;
 
 /** The most a channel may differ for two pixels to count as the same. */
 const CHANNEL = 8;
@@ -75,6 +81,33 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		for (let i = 0; i < background.length; i += 4) background.set(first.subarray(0, 4), i);
 		expect(differentShare(first, background, CHANNEL)).toBeGreaterThan(0.02);
 		expect(differentShare(first, later, CHANNEL)).toBeLessThanOrEqual(0.002);
+	});
+
+	test(`a glTF file with morph targets fetches their shader file before its model is added on ${gpu}`, async ({
+		page,
+	}) => {
+		const { result, events } = await load(page, 'gltf-morph', gpu);
+		expect(result.error).toBeUndefined();
+		expect(result.failures).toEqual([]);
+		const first = events.indexOf('mark:first-frame');
+		const files = events.slice(0, first).filter((event) => !event.startsWith('mark:'));
+		expect(files).toEqual([MORPH_FILE[gpu]]);
+		expect(events.indexOf(MORPH_FILE[gpu])).toBeLessThan(events.indexOf('mark:instantiate'));
+		expect(events.slice(first + 1).filter((event) => !event.startsWith('mark:'))).toEqual([]);
+	});
+
+	test(`a preload list with morph targets fetches their shader file before the first frame on ${gpu}`, async ({
+		page,
+	}) => {
+		const { result, events } = await load(page, 'morph', gpu);
+		expect(result.error).toBeUndefined();
+		expect(result.failures).toEqual([]);
+		const first = events.indexOf('mark:first-frame');
+		expect(events.slice(0, first)).toEqual([MORPH_FILE[gpu]]);
+		const after = events.slice(first + 1);
+		expect(after).toContain('mark:added');
+		expect(after.filter((event) => !event.startsWith('mark:'))).toEqual([]);
+		expect(result.acrossSkippedDraws).toBe(0);
 	});
 }
 

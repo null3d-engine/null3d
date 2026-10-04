@@ -134,14 +134,14 @@ Most shaders come with the engine's start. The shaders of a feature that many ga
 | Feature | Its shaders download |
 | --- | --- |
 | `'skinning'` | with the first skinned mesh, or as soon as the sketch reads a glTF file with skins |
-| `'morph'` | on WebGL2, with the first morphed mesh. WebGPU morphs in the skinning pass, so a morphed mesh there downloads `'skinning'` |
+| `'morph'` | with the first morphed mesh, or as soon as the sketch reads a glTF file with morph targets. WebGPU morphs in the skinning pass, so there `'morph'` downloads the skinning shaders |
 | `'bloom'` | when `post.set` turns bloom on |
 | `'ao'` | when `post.set` turns ambient occlusion on |
 | `'sprites'` | with the first sprite batch |
 | `'lines'` | with the first line batch |
 | `'background'` | with the first texture background |
 
-Each feature's file is 1 to 16 KB after Brotli. The engine starts the download as soon as it knows the sketch needs it. A glTF file with skins starts it while the engine reads the file, so the download runs beside the texture decode. A new object draws once its pipelines are built, as on any first use. The skinned meshes of a model, and an effect, appear whole in one frame.
+Each feature's file is 1 to 19 KB after Brotli. The engine starts the download as soon as it knows the sketch needs it. A glTF file with skins or morph targets starts it while the engine reads the file, so the download runs beside the texture decode. A new object draws once its pipelines are built, as on any first use. The skinned meshes of a model, and an effect, appear whole in one frame.
 
 A game that must fetch nothing while it plays lists its features in `createEngine`:
 
