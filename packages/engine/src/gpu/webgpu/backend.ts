@@ -139,6 +139,8 @@ export class WebGPUBackend {
 	private readonly samplerSetup: GPUSamplerDescriptor = {};
 	/** The buffer that copies from 2D textures into 3D textures pass through, made on first use. */
 	private copyBuffer: GPUBuffer | undefined;
+	/** Copy buffers that a larger one replaced, which commands not yet submitted may still read. */
+	private readonly retiredCopyBuffers: GPUBuffer[] = [];
 
 	/**
 	 * `shaders` are the WGSL builds that the device loaded (`loadWgslShaders`). `routes` chooses
@@ -156,6 +158,7 @@ export class WebGPUBackend {
 	) {
 		this.canvasFormat = canvasFormat;
 		this.pipelines = new Pipelines(device, shaders);
+		this.pipelines.prebuildMipmaps();
 		this.staging = new StagingRing(device);
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
@@ -295,8 +298,9 @@ export class WebGPUBackend {
 		const bytesPerRow = Math.ceil(rowBytes / ROW_ALIGNMENT) * ROW_ALIGNMENT;
 		const bytes = bytesPerRow * rows * layers;
 		if (!this.copyBuffer || this.copyBuffer.size < bytes) {
-			// A buffer that a recorded copy still reads stays alive until its commands run, so the
-			// smaller one is dropped, not destroyed.
+			// A recorded copy may still read the smaller buffer, so it is destroyed only after the
+			// next submit, which WebGPU allows. Safari frees a buffer's memory only when destroyed.
+			if (this.copyBuffer) this.retiredCopyBuffers.push(this.copyBuffer);
 			this.copyBuffer = this.device.createBuffer({
 				size: bytes,
 				usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
@@ -397,12 +401,19 @@ export class WebGPUBackend {
 		const encoder = this.commandEncoder();
 		this.timer?.resolve(encoder);
 		submitOne(this.device.queue, encoder.finish());
+		if (this.retiredCopyBuffers.length > 0) this.destroyRetired();
 		const start = this.routes.timing ? performance.now() : 0;
 		this.staging.afterSubmit();
 		if (this.routes.timing) this.routes.ringWork(performance.now() - start);
 		this.routes.submitted(this.staging.takeMadeBuffer());
 		this.encoder = undefined;
 		this.timer?.afterSubmit();
+	}
+
+	/** Destroys the copy buffers that a larger one replaced, once their commands are submitted. */
+	private destroyRetired(): void {
+		for (const buffer of this.retiredCopyBuffers) buffer.destroy();
+		this.retiredCopyBuffers.length = 0;
 	}
 
 	resetCounts(): void {
@@ -947,5 +958,6 @@ export class WebGPUBackend {
 		if (this.ownsImages) this.images.clear();
 		this.staging.destroy();
 		this.copyBuffer?.destroy();
+		this.destroyRetired();
 	}
 }
