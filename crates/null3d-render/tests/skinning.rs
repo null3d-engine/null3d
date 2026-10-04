@@ -20,7 +20,7 @@ use null3d_gpu::drawlist::{
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
-use null3d_render::gpu_driven::RendererConfig;
+use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::skinning::{JOINTS_PER_ROW, TEXELS_PER_JOINT, skinned_format};
 use null3d_render::view::ViewId;
 
@@ -406,4 +406,38 @@ fn webgl2_draws_unskinned_objects_without_the_skin_textures() {
         .all(|p| p[2] & permutation::SKIN == 0);
     assert!(plain);
     assert_eq!(count(&second, Op::CreateRenderPipeline), 1);
+}
+
+/// Skinned copies of one mesh, as many as the meshes of a crowd of 500 characters of 10 meshes.
+const CROWD: usize = 5_000;
+
+/// A crowd of `CROWD` skinned copies of one mesh in rows, with the sun's shadows in two cascades,
+/// on the frame builder of `world`. Returns the commands of its first frame.
+fn crowd<B: FrameBuilder>(mut world: World<B>) -> Vec<(Op, Vec<u32>)> {
+    world.make_room_for_crowd(CROWD as u32);
+    let first = world.add_skinned([0.0, 0.0, 0.0]);
+    for k in 1..CROWD {
+        let position = [(k % 100) as f32 - 50.0, 0.0, -((k / 100) as f32)];
+        add_twin(&mut world, first, position);
+    }
+    cast_sun_shadows(&mut world);
+    world.step(&mut MockBackend::default(), true)
+}
+
+#[test]
+fn a_crowd_of_skinned_objects_fits_the_draw_list_on_webgpu() {
+    // Each skinned object draws from a bucket of its own in the camera's bundle, so the list needs
+    // room in proportion to the buckets. The copies cast no shadow, and the cascades draw the first.
+    let renderer = GpuDrivenRenderer::new(RendererConfig::default());
+    let first = crowd(World::build_sized(renderer, CROWD as u32 + 64));
+    assert_eq!(count(&first, Op::BeginBundle), 3);
+    assert!(count(&first, Op::DrawIndexedIndirect) >= CROWD);
+}
+
+#[test]
+fn a_crowd_of_skinned_objects_fits_the_draw_list_on_webgl2() {
+    // Skinned copies of one mesh share an instanced draw on WebGL2.
+    let renderer = CpuCulledRenderer::new(CpuCulledConfig::default());
+    let first = crowd(World::build_sized(renderer, CROWD as u32 + 64));
+    assert!(count(&first, Op::MultiDrawIndexed) + count(&first, Op::DrawIndexed) > 0);
 }
