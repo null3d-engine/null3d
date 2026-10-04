@@ -43,7 +43,9 @@ export interface Null3dPageOptions {
  * many morphed spheres whose weights change every frame, `grading` gives S1 a
  * color grading table and the vignette, `sprites` draws S1's swarm as sprites, `lines` draws it
  * as dashed line segments, `ao` turns ambient occlusion on in S1, `outline` adds outlined boxes
- * to S1, and `labels` adds that many labeled objects to S1, whose elements the page binds.
+ * to S1, `labels` adds that many labeled objects to S1, whose elements the page binds, and
+ * `decode` makes S1 load KTX2 textures and a meshopt model without end, for the frame times of the
+ * decoders' work in the engine's workers.
  */
 const SKETCH_SWITCHES = [
 	'blend',
@@ -55,6 +57,7 @@ const SKETCH_SWITCHES = [
 	'ao',
 	'outline',
 	'labels',
+	'decode',
 ] as const;
 
 /**

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import MagicString from 'magic-string';
@@ -142,6 +142,39 @@ export function thirdPartyNotices(root: string): string | null {
 	return texts.length > 0 ? `${texts.join('\n\n')}\n` : null;
 }
 
+/** Vite's setting that decides which assets become data: addresses. */
+type InlineLimit = number | ((file: string, content: Buffer) => boolean | undefined);
+
+/** A file of an installed null3D package. */
+const PACKAGE_FILE = /[\\/]node_modules[\\/]@null3d[\\/]/;
+
+/**
+ * The real folder of the engine package that the project resolves, which is the repository's own
+ * package in a copy of the engine's source. Undefined when the project does not install it.
+ */
+function engineFolder(root: string): string | undefined {
+	try {
+		const require = createRequire(resolve(root, 'package.json'));
+		return realpathSync(dirname(require.resolve('@null3d/engine/package.json'))) + sep;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Vite's inline limit with one change: no file of a null3D package becomes a data: address. The
+ * engine loads its workers' scripts, its WebAssembly and its shader files by address, and a strict
+ * Content-Security-Policy blocks a data: address, as does a worker's origin. `own` is the
+ * project's setting, which every other file keeps.
+ */
+export function inlineLimit(own: InlineLimit | undefined, engine?: string): InlineLimit {
+	return (file, content) => {
+		if (PACKAGE_FILE.test(file) || (engine && file.startsWith(engine))) return false;
+		if (typeof own === 'function') return own(file, content);
+		return own === undefined ? undefined : content.length < own;
+	};
+}
+
 /** True for a sketch module: a script that calls `defineSketch`. */
 function isSketchModule(path: string): boolean {
 	return existsSync(path) && readFileSync(path, 'utf8').includes('defineSketch(');
@@ -223,10 +256,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				server: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				preview: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				worker: { format: 'es' },
+				build: {
+					assetsInlineLimit: inlineLimit(config.build?.assetsInlineLimit, engineFolder(root)),
+				},
 				// A prebundled copy of the engine would lose the addresses of its workers and core files.
-				// The meshopt decoder is a plain module that the glTF worker imports on first use; a
-				// prebundle found that late would reload the page.
-				optimizeDeps: { exclude: ['@null3d/engine', 'meshoptimizer'] },
+				optimizeDeps: { exclude: ['@null3d/engine'] },
 			};
 		},
 		configResolved(config) {

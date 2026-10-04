@@ -4,7 +4,13 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import type { ResolvedConfig, UserConfig } from 'vite';
 import { fixture } from '../../../tools/lib/fixture';
-import null3d, { CORE_FILES, missingCoreFiles, NOTICES_FILE, thirdPartyNotices } from './index';
+import null3d, {
+	CORE_FILES,
+	inlineLimit,
+	missingCoreFiles,
+	NOTICES_FILE,
+	thirdPartyNotices,
+} from './index';
 
 /** A project with the engine package installed, holding the given core files. */
 function project(files: readonly string[]): string {
@@ -155,5 +161,25 @@ describe('the test switches in the address', () => {
 			__NULL3D_DEV__: 'false',
 			__NULL3D_URL_SWITCHES__: 'true',
 		});
+	});
+});
+
+describe('inlineLimit', () => {
+	type Limit = (file: string, content: Buffer) => boolean | undefined;
+	const small = Buffer.alloc(100);
+
+	it('never inlines a file of a null3D package, and keeps the project setting for the rest', () => {
+		const limit = inlineLimit(4096, '/repo/packages/engine/') as Limit;
+		expect(limit('/app/node_modules/@null3d/engine/lib/workers/job-worker.js', small)).toBe(false);
+		expect(limit('/repo/packages/engine/vendor/meshopt/meshopt_decoder.wasm', small)).toBe(false);
+		expect(limit('/app/src/icon.png', small)).toBe(true);
+		expect(limit('/app/src/photo.png', Buffer.alloc(5000))).toBe(false);
+	});
+
+	it("passes other files to the project's own function, or to Vite's default", () => {
+		const own = inlineLimit((file) => file.endsWith('.svg')) as Limit;
+		expect(own('/app/src/logo.svg', small)).toBe(true);
+		expect(own('/app/node_modules/@null3d/engine/lib/x.svg', small)).toBe(false);
+		expect((inlineLimit(undefined) as Limit)('/app/src/icon.png', small)).toBeUndefined();
 	});
 });

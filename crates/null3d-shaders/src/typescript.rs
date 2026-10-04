@@ -146,8 +146,8 @@ interface FirstUseFiles {
 /**
  * Imports a device module by its address. A bundler copies the file that an address names once,
  * however many bundles name it, so the page's bundle and each worker's share one copy of each
- * module. `no-inline` keeps Vite from turning a small module into a data: address, which a strict
- * Content Security Policy blocks.
+ * module. The null3D Vite plugin keeps Vite from turning a small module into a data: address,
+ * which a strict Content Security Policy blocks.
  */
 function importShaders<Shaders>(url: URL): Promise<{ SHADERS: Shaders }> {
 	return import(/* @vite-ignore */ url.href);
@@ -528,7 +528,7 @@ fn main_module(output: &Output, devices: &BTreeMap<DeviceModule<'_>, Builds<'_>>
 /// A loader table's entry for a device module: its bits, and the import of its file by address.
 fn loader_entry(module: DeviceModule) -> String {
     format!(
-        "{}: () => importShaders(new URL('./{}.{DEVICE_MODULE_EXTENSION}?no-inline', import.meta.url)),",
+        "{}: () => importShaders(new URL('./{}.{DEVICE_MODULE_EXTENSION}', import.meta.url)),",
         module.bits,
         module.stem()
     )
@@ -961,8 +961,8 @@ mod tests {
         assert_eq!(modules.len(), 8);
         let main = &modules["shaders.ts"];
         assert!(main.contains("\treadonly cull: ShaderVariants<never>;\n"));
-        assert!(main.contains("\t3: () => importShaders(new URL('./shaders-glsl-draw-index-tone-map.js?no-inline', import.meta.url)),\n"));
-        let wgsl = "const WGSL_MODULES: DeviceModules = {\n\t0: () => importShaders(new URL('./shaders-wgsl.js?no-inline', import.meta.url)),\n\t2: () => importShaders(new URL('./shaders-wgsl-tone-map.js?no-inline', import.meta.url)),\n};";
+        assert!(main.contains("\t3: () => importShaders(new URL('./shaders-glsl-draw-index-tone-map.js', import.meta.url)),\n"));
+        let wgsl = "const WGSL_MODULES: DeviceModules = {\n\t0: () => importShaders(new URL('./shaders-wgsl.js', import.meta.url)),\n\t2: () => importShaders(new URL('./shaders-wgsl-tone-map.js', import.meta.url)),\n};";
         assert!(main.contains(wgsl), "{main}");
         assert!(main.contains("export const SHADERS = {} as const;"));
         assert!(!main.contains("webgpu_tone_map"));
@@ -1053,14 +1053,14 @@ mod tests {
         let sprites = "	sprites: {
 		bits: 2,
 		modules: {
-			0: () => importShaders(new URL('./shaders-sprites-wgsl.js?no-inline', import.meta.url)),
-			2: () => importShaders(new URL('./shaders-sprites-wgsl-tone-map.js?no-inline', import.meta.url)),
+			0: () => importShaders(new URL('./shaders-sprites-wgsl.js', import.meta.url)),
+			2: () => importShaders(new URL('./shaders-sprites-wgsl-tone-map.js', import.meta.url)),
 		},
 	},
 ";
         assert!(main.contains(sprites), "{main}");
         assert!(main.contains(
-            "			1: () => importShaders(new URL('./shaders-bloom-glsl-draw-index.js?no-inline', import.meta.url)),
+            "			1: () => importShaders(new URL('./shaders-bloom-glsl-draw-index.js', import.meta.url)),
 "
         ));
         assert!(main.contains(
@@ -1072,8 +1072,8 @@ mod tests {
             permutation::BLOOM
         )));
         let start = "const WGSL_MODULES: DeviceModules = {
-	0: () => importShaders(new URL('./shaders-wgsl.js?no-inline', import.meta.url)),
-	2: () => importShaders(new URL('./shaders-wgsl-tone-map.js?no-inline', import.meta.url)),
+	0: () => importShaders(new URL('./shaders-wgsl.js', import.meta.url)),
+	2: () => importShaders(new URL('./shaders-wgsl-tone-map.js', import.meta.url)),
 };";
         assert!(main.contains(start), "{main}");
         let sprites = &modules["shaders-sprites-wgsl-tone-map.js"];

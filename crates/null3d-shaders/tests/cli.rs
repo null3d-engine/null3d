@@ -135,7 +135,7 @@ fn the_build_writes_a_module_for_each_target_and_value_of_the_bits_a_device_fixe
     assert!(glsl.contains("\tmipmap: {\n\t\twebgl2: {"));
     let main = fs::read_to_string(scratch.0.join(OUTPUT_PATH)).unwrap();
     assert!(main.contains(
-        "\t1: () => importShaders(new URL('./shaders-glsl-draw-index.js?no-inline', import.meta.url)),"
+        "\t1: () => importShaders(new URL('./shaders-glsl-draw-index.js', import.meta.url)),"
     ));
     assert!(!main.contains("LIT_SHADER") && main.contains("TEST_MESH_SHADER"));
 }

@@ -7,7 +7,7 @@ import {
 	ENGINE_SOURCE,
 	FIRST_USE_SHADER_BUDGET,
 	findEngineParts,
-	findTranscoderFiles,
+	findFirstUseWasm,
 	isFirstUseShaderPart,
 	LATER_BUDGET,
 	LATER_PARTS,
@@ -54,38 +54,33 @@ describe('REPORTED_FILES', () => {
 		expect(REPORTED_FILES).toContain('js/page.js');
 		expect(REPORTED_FILES).toContain('js/render-worker.js');
 		expect(REPORTED_FILES).toContain('js/shaders-glsl-draw-index.js');
-		expect(REPORTED_FILES.slice(-3)).toEqual([
-			'ktx2/transcoder-worker.js',
-			'ktx2/basis_transcoder.js',
-			'ktx2/basis_transcoder.wasm',
+		expect(REPORTED_FILES.slice(-2)).toEqual([
+			'first-use/basis_transcoder.wasm',
+			'first-use/meshopt_decoder.wasm',
 		]);
 	});
 });
 
-describe('findTranscoderFiles', () => {
+describe('findFirstUseWasm', () => {
 	const names = [
-		'basis_transcoder-JKal9Vjx.js',
+		'meshopt_decoder-JKal9Vjx.wasm',
 		'null3d_bg-58dKJVnh.wasm',
-		'transcoder-worker-D9ygJP1J.js',
 		'basis_transcoder-DBaCnI5p.wasm',
 		'ktx2-Cl41QH8w.js',
 	];
 
-	it("finds the build's copy of each of the transcoder's files by its name and hash", () => {
-		expect([...findTranscoderFiles(names)]).toEqual([
-			['transcoder-worker.js', 'transcoder-worker-D9ygJP1J.js'],
-			['basis_transcoder.js', 'basis_transcoder-JKal9Vjx.js'],
+	it("finds the build's copy of each module by its name and hash", () => {
+		expect([...findFirstUseWasm(names)]).toEqual([
 			['basis_transcoder.wasm', 'basis_transcoder-DBaCnI5p.wasm'],
+			['meshopt_decoder.wasm', 'meshopt_decoder-JKal9Vjx.wasm'],
 		]);
 	});
 
 	it('fails when a file is missing or there twice', () => {
-		expect(() => findTranscoderFiles(names.slice(1))).toThrow(
-			"basis_transcoder.js: expected one built copy of the KTX2 transcoder's file, found 0",
+		expect(() => findFirstUseWasm(names.slice(1))).toThrow(
+			'meshopt_decoder.wasm: expected one built copy of the module, found 0',
 		);
-		expect(() => findTranscoderFiles([...names, 'basis_transcoder-Ab_-cdEf.wasm'])).toThrow(
-			'found 2',
-		);
+		expect(() => findFirstUseWasm([...names, 'basis_transcoder-Ab_-cdEf.wasm'])).toThrow('found 2');
 	});
 });
 

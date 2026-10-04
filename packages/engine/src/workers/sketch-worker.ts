@@ -9,6 +9,7 @@ import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews } from '../shared/control';
 import { drawingSenders, ImageTable } from '../shared/images';
+import { setJobTasks } from '../shared/task-host';
 import { setWakeByMessage, wakeWaiters } from '../shared/wake';
 import { loadSketch } from '../sketch/define-sketch';
 import { runPipelined, SketchRunner } from '../sketch/runner';
@@ -49,6 +50,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			setWakeByMessage(message.wakeByMessage);
 			const started = await startWorkerCore(message, step);
 			const core = started.glue;
+			setJobTasks({ ports: message.taskPorts, call: (index) => core.callJobWorker(index) });
 			const memory = started.memory as WebAssembly.Memory;
 			// Texture images and custom materials' shaders go to the thread that draws: another
 			// through a port, or this one.

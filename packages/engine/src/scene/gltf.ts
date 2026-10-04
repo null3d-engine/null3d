@@ -30,7 +30,10 @@ import {
 	LIGHT_VALUE_RANGE,
 } from '../generated/core';
 import { DEV } from '../shared/dev';
-import type { GltfAnswer, GltfRequest } from '../workers/gltf-worker';
+import { compileOnce, type WasmFile } from '../shared/tasks';
+import type { WasmError } from '../shared/wasm';
+import { bootstrapFailure, spawnWorker } from '../shared/worker-start';
+import type { GltfAnswer, GltfDecoder, GltfRequest } from '../workers/gltf-worker';
 import { type AnimationRig, loadAnimationRig } from './animation';
 import { affineOf, multiplyAffine } from './gltf-math';
 import type {
@@ -91,10 +94,22 @@ export interface GltfContext {
 	): Promise<ImageBitmap>;
 	/** Makes one of the engine's coded errors: the caller's `EngineError`. */
 	error(
-		code: 'E1406' | 'E1411' | 'E1412' | 'E1416' | 'E1417' | 'E1418',
+		code: Parameters<WasmError>[0] | 'E1411' | 'E1412' | 'E1416' | 'E1417',
 		message: string,
 	): EngineError;
 }
+
+/**
+ * The decoders that the glTF worker asks for, by name: WebAssembly files that the on-demand loader
+ * compiles once per page and sends to the worker.
+ */
+const DECODERS: Readonly<Record<GltfDecoder, WasmFile>> = {
+	meshopt: {
+		name: 'meshopt',
+		url: new URL('../../vendor/meshopt/meshopt_decoder.wasm', import.meta.url),
+		what: 'the meshopt decoder',
+	},
+};
 
 /** A request that waits for the worker. */
 interface Waiting {
@@ -111,11 +126,18 @@ class Parser {
 	private readonly waiting = new Map<number, Waiting>();
 	private next = 0;
 
-	constructor(private readonly stopped: () => void) {
-		this.worker = new Worker(new URL('../workers/gltf-worker.ts', import.meta.url), {
-			type: 'module',
-			name: 'null3d-gltf',
-		});
+	constructor(
+		private readonly stopped: () => void,
+		error: WasmError,
+	) {
+		this.worker = spawnWorker(
+			() =>
+				new Worker(new URL('../workers/gltf-worker.ts', import.meta.url), {
+					type: 'module',
+					name: 'null3d-gltf',
+				}),
+			error,
+		);
 		this.worker.onmessage = (event: MessageEvent<GltfAnswer>) => {
 			const waiting = this.waiting.get(event.data.id);
 			if (!waiting) return;
@@ -159,7 +181,7 @@ function parse(
 ): Promise<{ data: GltfData; bitmaps: (ImageBitmap | undefined)[] }> {
 	parser ??= new Parser(() => {
 		parser = undefined;
-	});
+	}, context.error);
 	const worker = parser;
 	return new Promise((resolve, reject) => {
 		const id = worker.start(
@@ -172,15 +194,26 @@ function parse(
 							: context.error('E1416', `${call}() could not read ${address}: ${message}.`),
 					);
 				} else if ('needs' in answer)
-					Promise.all(
-						answer.needs.map(async ([k, url]) => {
-							const blob = await context.download(new URL(url), call);
-							return [k, await blob.arrayBuffer()] as [number, ArrayBuffer];
-						}),
-					).then(
-						(buffers) =>
+					Promise.all([
+						Promise.all(
+							answer.needs.map(async ([k, url]) => {
+								const blob = await context.download(new URL(url), call);
+								return [k, await blob.arrayBuffer()] as [number, ArrayBuffer];
+							}),
+						),
+						Promise.all(
+							answer.decoders.map(
+								async (name) =>
+									[name, await compileOnce(DECODERS[name], context.error)] as [
+										GltfDecoder,
+										WebAssembly.Module,
+									],
+							),
+						),
+					]).then(
+						([buffers, decoders]) =>
 							worker.send(
-								{ id, buffers },
+								{ id, buffers, decoders },
 								buffers.map(([, bytes]) => bytes),
 							),
 						(error) => {
@@ -194,7 +227,11 @@ function parse(
 			},
 			(reason) =>
 				reject(
-					context.error('E1406', `the glTF loader's worker did not load for ${call}(): ${reason}.`),
+					bootstrapFailure(reason, context.error) ??
+						context.error(
+							'E1406',
+							`the glTF loader's worker did not load for ${call}(): ${reason}.`,
+						),
 				),
 		);
 		worker.send({ id, file, url: address.href }, [file]);

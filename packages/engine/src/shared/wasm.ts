@@ -1,8 +1,11 @@
-// Downloads WebAssembly files and compiles them as they arrive: the engine core and the KTX2
-// transcoder. A failure names the file by its role and gives its cause: a download that failed,
-// a file that is not WebAssembly, or a Content-Security-Policy that blocks WebAssembly.
+// Downloads WebAssembly files and compiles them as they arrive: the engine core, and the modules
+// that the on-demand loader (shared/tasks.ts) loads on first use. A failure names the file by its
+// role and gives its cause: a download that failed, a file that is not WebAssembly, or a
+// Content-Security-Policy that blocks WebAssembly. A file from another origin, such as a CDN, can
+// also fail because the policy does not allow its origin, or because it came without CORS.
 
 import type { EngineError } from '../errors/engine-error';
+import { isCrossOrigin, violationFor, watchPolicy } from './policy';
 
 /** The limits of the memory that a module imports. */
 export interface MemoryLimits {
@@ -14,7 +17,10 @@ export interface MemoryLimits {
 }
 
 /** Makes one of the engine's coded errors, as the calling thread makes them. */
-export type WasmError = (code: 'E1406' | 'E1418', message: string) => EngineError;
+export type WasmError = (
+	code: 'E1405' | 'E1406' | 'E1418' | 'E1422' | 'E1423',
+	message: string,
+) => EngineError;
 
 /** The smallest valid WebAssembly module: the magic number and the version. */
 const EMPTY_MODULE = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]);
@@ -58,11 +64,24 @@ export async function compileWasm<T>(
 	readHead?: (stream: ReadableStream<Uint8Array>) => Promise<T>,
 ): Promise<{ module: WebAssembly.Module; head: T | undefined }> {
 	const where = shownAddress(url);
+	const crossOrigin = isCrossOrigin(url);
+	if (crossOrigin) watchPolicy();
 	let response: Response;
 	try {
 		response = await fetch(url);
 	} catch (thrown) {
-		throw error('E1406', `${name} did not download from ${where}: ${reason(thrown)}.`);
+		if (!crossOrigin)
+			throw error('E1406', `${name} did not download from ${where}: ${reason(thrown)}.`);
+		const violation = await violationFor(url);
+		throw violation
+			? error(
+					'E1422',
+					`the page's Content-Security-Policy blocks ${name} from ${url.origin}: its ${violation.directive} does not allow it.`,
+				)
+			: error(
+					'E1423',
+					`${name} from ${url.origin} came without a CORS header, or did not download: ${reason(thrown)}.`,
+				);
 	}
 	if (!response.ok || !response.body)
 		throw error('E1406', `${name} did not download from ${where}: HTTP ${response.status}.`);

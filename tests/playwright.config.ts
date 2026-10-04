@@ -51,7 +51,7 @@ export default defineConfig({
 	projects: [
 		{
 			name: environment,
-			testIgnore: ['resize.spec.ts', 'content-security-policy.spec.ts'],
+			testIgnore: ['resize.spec.ts', 'content-security-policy.spec.ts', 'cdn.spec.ts'],
 		},
 		// The engine and errors tests again, on the production build. The sketch module and the engine
 		// core must survive bundling on both GPU paths and in every thread mode. So must the engine's
@@ -59,11 +59,13 @@ export default defineConfig({
 		// that the plugin compiles into a sketch's bundle, and the KTX2 loader and transcoder, the glTF
 		// loader and its worker, the stats overlay and the frame figures, which the build ships as
 		// files of their own. The start under a strict Content-Security-Policy runs only here, since
-		// only a bundler turns small files into the inline addresses that such a policy blocks.
+		// only a bundler turns small files into the inline addresses that such a policy blocks. So does
+		// the start with the engine's files on another origin, as from a CDN, which needs built files.
 		{
 			name: 'production build',
 			testMatch: [
 				'content-security-policy.spec.ts',
+				'cdn.spec.ts',
 				'engine.spec.ts',
 				'errors.spec.ts',
 				'sketch-shaders.spec.ts',

@@ -338,7 +338,7 @@ const DOCS = {
 	E1418: {
 		title: 'WebAssembly blocked by the page',
 		cause:
-			"The page's Content-Security-Policy does not allow WebAssembly, so the engine core or the KTX2 transcoder could not compile. A policy allows it only when its script-src, or its default-src without a script-src, holds 'wasm-unsafe-eval'.",
+			"The page's Content-Security-Policy does not allow WebAssembly, so the engine core, the KTX2 transcoder or the meshopt decoder could not compile. A policy allows it only when its script-src, or its default-src without a script-src, holds 'wasm-unsafe-eval'.",
 		example:
 			"E1418: the page's Content-Security-Policy does not let the threaded engine core compile: WebAssembly.compileStreaming(): Refused to compile or instantiate WebAssembly module.",
 		since: '0.2',
@@ -349,6 +349,22 @@ const DOCS = {
 			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, lines, morph, skinning and sprites, and texcoords for the engine's own tests.",
 		example:
 			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, lines, morph, skinning, sprites, texcoords.",
+		since: '0.2',
+	},
+	E1422: {
+		title: 'Engine file blocked by the page',
+		cause:
+			"The engine's files come from another origin than the page, such as a CDN, and the page's Content-Security-Policy blocks one of them. The engine starts each worker from a blob: address that imports the worker's script from that origin, and downloads its .wasm files from there. So the policy's worker-src must allow blob:, and its script-src and connect-src must allow the other origin.",
+		example:
+			"E1422: the page's Content-Security-Policy blocks the job-0 worker: its worker-src does not allow blob:, which the engine starts its workers from when its files come from another origin.",
+		since: '0.2',
+	},
+	E1423: {
+		title: 'Engine file without CORS',
+		cause:
+			"The engine's files come from another origin than the page, such as a CDN. One of them came without a CORS header, or did not download. A page loads a module or a .wasm file from another origin only when the response carries Access-Control-Allow-Origin.",
+		example:
+			'E1423: the KTX2 transcoder from https://cdn.example.com came without a CORS header, or did not download: Failed to fetch.',
 		since: '0.2',
 	},
 	E1501: {

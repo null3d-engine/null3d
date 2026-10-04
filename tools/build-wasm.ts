@@ -67,7 +67,7 @@ import {
 	ENGINE_SOURCE,
 	FIRST_USE_SHADER_BUDGET,
 	findEngineParts,
-	findTranscoderFiles,
+	findFirstUseWasm,
 	isFirstUseShaderPart,
 	LATER_BUDGET,
 	LATER_PARTS,
@@ -567,9 +567,9 @@ async function main(): Promise<void> {
 	for (const [part, size] of parts) sizes[`js/${part}`] = size;
 	const downloads = downloadSizes(parts);
 	const assets = join(root, JS_BUILD_DIR, 'assets');
-	const transcoder = new Map(
-		[...findTranscoderFiles(readdirSync(assets))].map(([file, built]) => [
-			`ktx2/${file}`,
+	const firstUseWasm = new Map(
+		[...findFirstUseWasm(readdirSync(assets))].map(([file, built]) => [
+			`first-use/${file}`,
 			measure(readFileSync(join(assets, built))),
 		]),
 	);
@@ -599,11 +599,10 @@ async function main(): Promise<void> {
 	for (const [part, size] of parts)
 		if (isFirstUseShaderPart(part)) printSize(`js/${part}`, size, FIRST_USE_SHADER_BUDGET);
 	console.log(
-		'\nthe KTX2 transcoder, which a page downloads when it loads its first KTX2 file (no budget)',
+		'\nthe WebAssembly modules that load on first use: the KTX2 transcoder with the first KTX2 file, and the meshopt decoder with the first glTF file that holds meshopt data (no budget)',
 	);
-	for (const [file, size] of transcoder) printSize(file, size);
-	printSize('ktx2 total', totalSize(transcoder.values()));
-	for (const [file, size] of transcoder) sizes[file] = size;
+	for (const [file, size] of firstUseWasm) printSize(file, size);
+	for (const [file, size] of firstUseWasm) sizes[file] = size;
 	if (options.sizesOnly) {
 		writeFileSync(join(root, SIZE_RECORD), `${JSON.stringify(sizes, null, '\t')}\n`);
 		console.log(`\nwrote ${SIZE_RECORD}`);
@@ -615,7 +614,7 @@ async function main(): Promise<void> {
 	const problems = Object.entries(sizes)
 		.filter(
 			([file, size]) =>
-				file.endsWith('.wasm') && !transcoder.has(file) && size.brotli > WASM_BUDGET_BYTES,
+				file.endsWith('.wasm') && !firstUseWasm.has(file) && size.brotli > WASM_BUDGET_BYTES,
 		)
 		.map(([file]) => `${file} is over its 600 KB Brotli budget`);
 	problems.push(...budgetProblems(parts));

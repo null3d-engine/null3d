@@ -97,7 +97,7 @@ Three other ways were weighed:
 
 Review finding R8-09 found that a production build wrote each shader file twice: for the page's renderer and for the render worker. A fresh project held 24 such files of 1.7 to 3.4 MB, about 60 MB in all. Vite bundles each worker on its own. So a module that two bundles load with `import()` becomes a file in each. The two copies differed in 2 bytes.
 
-The shader build now writes each device module as plain JavaScript. The main module imports it by its address: `new URL('./shaders-wgsl.js?no-inline', import.meta.url)`. A bundler copies a file that an address names once, however many bundles name it. It does the same for the core's glue.
+The shader build now writes each device module as plain JavaScript. The main module imports it by its address: `new URL('./shaders-wgsl.js', import.meta.url)`. The null3D plugin keeps such a module from becoming a `data:` address (M2-R18 dropped the `?no-inline` query that did so before). A bundler copies a file that an address names once, however many bundles name it. It does the same for the core's glue.
 
 | Engine test page's production build | Shader files | Their size | Every file, without source maps |
 | --- | --- | --- | --- |
