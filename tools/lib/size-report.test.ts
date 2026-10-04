@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'bun:test';
 import {
 	type BuiltFile,
+	budgetProblems,
+	DOWNLOADS,
 	downloadSizes,
 	ENGINE_SOURCE,
 	findEngineParts,
 	findTranscoderFiles,
+	LATER_BUDGET_BYTES,
+	LATER_PARTS,
 	measure,
 	REPORTED_FILES,
+	START_BUDGET_BYTES,
 } from './size-report';
 
 describe('measure', () => {
@@ -162,6 +167,55 @@ describe('downloadSizes', () => {
 		expect(downloadSizes(sizes, downloads)).toEqual([
 			{ mode: 'WebGPU', size: { raw: 130, brotli: 45 } },
 			{ mode: 'WebGL2', size: { raw: 161, brotli: 50 } },
+		]);
+	});
+});
+
+describe('LATER_PARTS', () => {
+	it('holds the parts that load on first use or after the first frame, and no part of a start', () => {
+		const names = LATER_PARTS.map(({ name }) => name);
+		expect(names).toContain('page-gltf.js');
+		expect(names).toContain('gltf-worker.js');
+		expect(names).toContain('sketch-worker-ktx2.js');
+		expect(names).toContain('page-stats-overlay.js');
+		expect(names).toContain('sketch-worker-preset-check.js');
+		for (const { parts } of DOWNLOADS) for (const part of parts) expect(names).not.toContain(part);
+	});
+
+	it('marks the preset check as the only part that loads after the first frame', () => {
+		const after = LATER_PARTS.filter(({ afterFirstFrame }) => afterFirstFrame);
+		expect(after.map(({ module }) => module)).toEqual([
+			'sketch/preset-check.ts',
+			'sketch/preset-check.ts',
+		]);
+	});
+});
+
+describe('budgetProblems', () => {
+	const downloads = [{ mode: 'pipelined', parts: ['page.js', 'worker.js'], shaders: 'shaders-' }];
+	const later = [{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page.js' }];
+	const sizes = (start: number, chunk: number) =>
+		new Map([
+			['page.js', { raw: 0, brotli: start - 1000 }],
+			['worker.js', { raw: 0, brotli: 600 }],
+			['shaders-wgsl.js', { raw: 0, brotli: 400 }],
+			['page-gltf.js', { raw: 0, brotli: chunk }],
+		]);
+
+	it('passes a start and a later part at their budgets', () => {
+		expect(START_BUDGET_BYTES).toBe(140 * 1024);
+		expect(LATER_BUDGET_BYTES).toBe(16 * 1024);
+		expect(budgetProblems(sizes(START_BUDGET_BYTES, LATER_BUDGET_BYTES), downloads, later)).toEqual(
+			[],
+		);
+	});
+
+	it('names a start over its budget, and a later part over its own, which no start counts', () => {
+		expect(
+			budgetProblems(sizes(START_BUDGET_BYTES + 1, LATER_BUDGET_BYTES + 1), downloads, later),
+		).toEqual([
+			'the engine JavaScript that a page downloads at its start in pipelined mode is 143,361 bytes after Brotli, over its 140 KB budget',
+			'js/page-gltf.js, which loads after the start, is 16,385 bytes after Brotli, over its 16 KB budget',
 		]);
 	});
 });

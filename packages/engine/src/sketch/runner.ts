@@ -42,7 +42,7 @@ import { Post } from '../scene/post';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
 import { Textures } from '../scene/textures';
-import { type ControlViews, controlViews, Slot } from '../shared/control';
+import { type ControlViews, controlLabels, controlViews, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { type ImageSender, imagesArrived, type ShaderSender } from '../shared/images';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
@@ -52,6 +52,7 @@ import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-
 import { InputReader } from './input';
 import { type QualityStart, type QualityUpdate, RESTART_CHANGE, SketchQuality } from './quality';
 import { HOLD_SEED, seedMathRandom } from './random';
+import { type LabelSlotSender, Ui } from './ui';
 
 export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]) => void;
 
@@ -88,6 +89,8 @@ export interface SketchCore {
 	threads: readonly (readonly [string, readonly number[]])[];
 	/** Asks the page to show or hide its stats overlay. */
 	showStats(show: boolean): void;
+	/** Tells the page the slot in the label table of each label's id. */
+	sendLabelSlot: LabelSlotSender;
 }
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
@@ -201,6 +204,8 @@ export class SketchRunner {
 	private heldScale = FULL_SCALE;
 	/** The sketch's debug drawing, in development builds only, which is also its `ctx.debug`. */
 	private readonly debugDraw: DebugDraw | undefined;
+	/** The sketch's labels, which each frame projects. */
+	private readonly ui: Ui;
 	readonly context: SketchContext;
 
 	/**
@@ -236,6 +241,7 @@ export class SketchRunner {
 			device.cellCulling,
 			device.depthPrepass,
 			device.vertexSkinning,
+			device.largeWorld,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
 		const { shadowTiles, shadowTileSize, pointLightShadows, shadowCascades, shadowMapSize } =
@@ -313,19 +319,27 @@ export class SketchRunner {
 				renderScaleThousandths: () => this.renderScale(),
 			},
 		};
+		const materials = new Materials(this.core, sketch.sendShader);
+		const geometry = new Geometry(this.core);
 		const scene = new Scene(
 			this.core,
 			this.recorded,
 			device.webgl2,
 			() => this.warmUp(),
 			new FrameCameras(this.core, sketch.control, this.input),
+			{ geometry, materials },
 			this.input,
 		);
 		this.post = new Post(this.core, device.effectsSceneColor !== FORMAT_CANVAS);
+		this.ui = new Ui(
+			controlLabels(slots.buffer),
+			scene,
+			this.core,
+			scene.frameCameras,
+			sketch.sendLabelSlot,
+		);
 		this.debugDraw = DEV ? new DebugDraw(this.core, host, scene) : undefined;
 		const debug = this.debugDraw ?? new SketchDebug(host);
-		const materials = new Materials(this.core, sketch.sendShader);
-		const geometry = new Geometry(this.core);
 		this.context = {
 			time: this.time,
 			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
@@ -333,9 +347,10 @@ export class SketchRunner {
 			materials,
 			geometry,
 			textures,
-			assets: new Assets(textures, sketch.pageUrl, { core: this.core, geometry, materials }),
+			assets: new Assets(textures, sketch.pageUrl, { core: this.core, geometry, materials, scene }),
 			input: this.input,
 			post: this.post,
+			ui: this.ui,
 			quality: this.quality,
 			preferences: {
 				get reducedMotion() {
@@ -492,6 +507,7 @@ export class SketchRunner {
 		viewport.width = slotFloats[Slot.CanvasCssWidth] as number;
 		viewport.height = slotFloats[Slot.CanvasCssHeight] as number;
 		viewport.pixelRatio = slotFloats[Slot.PixelRatio] as number;
+		this.sketch.glue.setPixelRatio(viewport.pixelRatio);
 	}
 
 	/** Records the time since the previous phase ended as a phase of the frame. */
@@ -800,6 +816,12 @@ export class SketchRunner {
 		// Input names frames in the engine's count, so each frame of the setup and of the preset
 		// check keeps its own camera: a click can come while any of them is on screen.
 		this.context.scene.keepFrameCamera(frame, width, height);
+		// Every frame places the labels, as the thread that draws presents each one.
+		try {
+			this.ui.project(frame, width, height);
+		} catch (error) {
+			this.report(error);
+		}
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		// A frame whose list needs more room than any before moves the list, so each frame gives

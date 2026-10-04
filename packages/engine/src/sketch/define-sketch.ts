@@ -7,7 +7,7 @@
 
 import type { Debug } from '../debug/debug';
 import { EngineError } from '../errors/engine-error';
-import { messageOf } from '../errors/message';
+import { reasonOf } from '../errors/message';
 import type { EngineCapabilities } from '../page/engine';
 import type { Assets } from '../scene/assets';
 import type { Post } from '../scene/post';
@@ -16,6 +16,7 @@ import type { Scene } from '../scene/scene';
 import type { Textures } from '../scene/textures';
 import type { Input } from './input';
 import type { Quality } from './quality';
+import type { Ui } from './ui';
 
 /**
  * Callbacks a sketch returns from its setup function. In each frame the engine calls
@@ -138,6 +139,8 @@ export interface SketchContext {
 	input: Input;
 	/** Post-processing: the tone mapping and the exposure of the scene's color. */
 	post: Post;
+	/** HTML labels that follow scene objects, which the page binds with `engine.labels.bind`. */
+	ui: Ui;
 	/** The quality preset that the engine runs, its settings, and a notice when they change. */
 	quality: Quality;
 	/** Sketch time, the frame's step and the frame number. */
@@ -228,7 +231,7 @@ export async function loadSketch(url: string): Promise<SketchDefinition> {
 		module = await import(/* @vite-ignore */ url);
 	} catch (e) {
 		if (e instanceof EngineError) throw e;
-		const reason = messageOf(e).replace(/\.$/, '');
+		const reason = reasonOf(e);
 		throw new EngineError('E1410', `the sketch module ${url} did not load: ${reason}.`);
 	}
 	if (!isSketchDefinition(module.default))

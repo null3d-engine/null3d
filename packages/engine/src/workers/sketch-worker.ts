@@ -69,6 +69,8 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					fps: message.fps,
 					threads: message.threads,
 					showStats: (show) => replyToPage({ type: 'stats', show }),
+					sendLabelSlot: (id, slot, generation) =>
+						replyToPage({ type: 'label', id, slot, generation }),
 				},
 				message.hold,
 			);

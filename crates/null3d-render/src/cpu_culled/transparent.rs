@@ -14,7 +14,7 @@ use std::collections::TryReserveError;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
 use null3d_gpu::drawlist::{DrawList, Op, index_format, sizes};
 
-use super::layout::MULTI_DRAW_BLOCK_BYTES;
+use super::layout::{MULTI_DRAW_BLOCK_BYTES, RESIDENT};
 use crate::frame::{MeshBuffers, RecordError, SceneSettings, UploadArena, put_u32};
 use crate::sorted::{SortedLayout, SortedView};
 
@@ -180,7 +180,8 @@ impl Transparent {
                     index_count: part.index_count,
                     first_index: part.first_index,
                     material: bucket.material - 1,
-                    group: bucket.group,
+                    // Only scene objects are skinned, and their rows are resident.
+                    group: bucket.skinned_slot().map_or(bucket.group, |_| RESIDENT),
                 });
             }
         }

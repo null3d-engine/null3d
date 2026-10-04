@@ -67,6 +67,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'lib/workers/transcoder-worker.js',
 			'vendor/basis/basis_transcoder.js',
 			'vendor/basis/basis_transcoder.wasm',
+			'environments/room.ktx2',
 			'docs/index.md',
 		],
 	},
@@ -78,7 +79,21 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		required: ['dist/shader-compiler.wasm', 'lib/client.d.ts'],
 	},
 	controls: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
-	cli: { compile: false, shaders: false, docs: false, needs: [], required: [] },
+	cli: {
+		compile: false,
+		shaders: false,
+		docs: false,
+		needs: [],
+		required: [
+			'dist/assets.wasm',
+			'src/assets/encode-worker.js',
+			'vendor/basis/basis_encoder.js',
+			'vendor/basis/basis_encoder.wasm',
+			'vendor/basis/package.json',
+			'vendor/basis/LICENSE',
+			'vendor/basis/NOTICE',
+		],
+	},
 };
 
 /** A package's build, or an error that lists the packages. */

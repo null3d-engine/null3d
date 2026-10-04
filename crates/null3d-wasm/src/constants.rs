@@ -5,6 +5,7 @@ use null3d_core::animation::{
     Channel, DEFAULT_RATE, EVENT_CAPACITY, EVENT_WORDS, Interpolation, MAX_BLEND,
     MAX_LAYERS as MAX_ANIMATION_LAYERS, REST_FLOATS, event_kind,
 };
+use null3d_core::cells::CELL_SIZE;
 use null3d_core::handle::{GENERATION_BITS, SLOT_BITS};
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{color as light_color, kind as light_kind, value as light_value};
@@ -30,6 +31,7 @@ pub mod scene_field {
     pub const LOCAL_RADII: u32 = 3;
     pub const DIRTY_WORDS: u32 = 4;
     pub const LOCAL_CENTERS: u32 = 5;
+    pub const POSITION_CELLS: u32 = 6;
 }
 
 /// Fields of `batchArrays`.
@@ -38,6 +40,10 @@ pub mod batch_field {
     pub const ROTATIONS: u32 = 1;
     pub const SCALES: u32 = 2;
     pub const COLORS: u32 = 3;
+    /// A sprite batch's sizes, 2 floats a row.
+    pub const SIZES: u32 = 4;
+    /// A sprite batch's atlas frames, one 32-bit integer a row.
+    pub const FRAMES: u32 = 5;
 }
 
 /// Fields of `debugLineArrays`.
@@ -67,6 +73,8 @@ pub mod shading {
     pub const TEXCOORDS: u32 = 2;
     /// The base color times the material's map, as three.js's `MeshBasicMaterial` with a `map`.
     pub const UNLIT_MAP: u32 = 3;
+    /// Sprites, as three.js's `SpriteMaterial` draws them, for the rows of a sprite batch only.
+    pub const SPRITE: u32 = 4;
     /// The first custom material: a shading from here up is a custom material's. Its low 16 bits
     /// are the render pipeline template of the material's compiled WGSL.
     pub const CUSTOM_FIRST: u32 = null3d_gpu::drawlist::template::CUSTOM_FIRST;
@@ -221,6 +229,9 @@ pub mod animation_field {
 /// interpolation and key count.
 pub const TRACK_WORDS: u32 = 4;
 
+/// What `clipReady` returns while a job worker still resamples the clip: no clip id reaches it.
+pub const CLIP_PENDING: u32 = u32::MAX;
+
 /// The bits of `animatorPlay`'s `flags`.
 pub mod play_flag {
     /// The clip repeats.
@@ -358,6 +369,7 @@ pub fn typescript() -> String {
             ],
         ),
         ("LAYERS", &[("DEFAULT", DEFAULT_LAYERS)]),
+        ("CELL", &[("SIZE", CELL_SIZE as u32)]),
         (
             "LIGHT_KIND",
             &[
@@ -396,6 +408,7 @@ pub fn typescript() -> String {
                 ("LOCAL_RADII", scene_field::LOCAL_RADII),
                 ("DIRTY_WORDS", scene_field::DIRTY_WORDS),
                 ("LOCAL_CENTERS", scene_field::LOCAL_CENTERS),
+                ("POSITION_CELLS", scene_field::POSITION_CELLS),
             ],
         ),
         (
@@ -405,7 +418,13 @@ pub fn typescript() -> String {
                 ("ROTATIONS", batch_field::ROTATIONS),
                 ("SCALES", batch_field::SCALES),
                 ("COLORS", batch_field::COLORS),
+                ("SIZES", batch_field::SIZES),
+                ("FRAMES", batch_field::FRAMES),
             ],
+        ),
+        (
+            "SPRITE",
+            &[("MAX_ATLAS_SIDE", null3d_core::sprites::MAX_ATLAS_SIDE)],
         ),
         (
             "QUERY",
@@ -522,6 +541,7 @@ pub fn typescript() -> String {
                 ("UNLIT", shading::UNLIT),
                 ("TEXCOORDS", shading::TEXCOORDS),
                 ("UNLIT_MAP", shading::UNLIT_MAP),
+                ("SPRITE", shading::SPRITE),
                 ("CUSTOM_FIRST", shading::CUSTOM_FIRST),
                 ("CUSTOM_ATTRIBUTE_SHIFT", shading::CUSTOM_ATTRIBUTE_SHIFT),
                 ("CUSTOM_BASE_COLOR", shading::CUSTOM_BASE_COLOR),
@@ -743,12 +763,14 @@ pub fn typescript() -> String {
                 ("EVENT_FINISHED", event_kind::FINISHED),
                 ("REST_FLOATS", REST_FLOATS as u32),
                 ("TRACK_WORDS", TRACK_WORDS),
+                ("CLIP_PENDING", CLIP_PENDING),
                 ("DEFAULT_RATE", DEFAULT_RATE as u32),
                 ("TRANSLATION", Channel::Translation as u32),
                 ("ROTATION", Channel::Rotation as u32),
                 ("SCALE", Channel::Scale as u32),
                 ("LINEAR", Interpolation::Linear as u32),
                 ("STEP", Interpolation::Step as u32),
+                ("CUBIC_SPLINE", Interpolation::CubicSpline as u32),
             ],
         ),
         (

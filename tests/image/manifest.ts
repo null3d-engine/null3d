@@ -29,6 +29,7 @@ import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { SKINNING_HOLD, SKINNING_IMAGE } from '../../bench/scenes/skinning.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
+import { SPRITE_IMAGE } from '../../bench/scenes/sprites.ts';
 import { GRID_IMAGE } from '../../bench/scenes/standard-grid.ts';
 import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
 import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
@@ -103,6 +104,14 @@ function toneMappingTests(): ImageTest[] {
 		},
 	]);
 }
+
+/**
+ * How far the asset tool's output may stray from its source's image. On the Mac's GPU and on
+ * SwiftShader, 1.07% to 1.08% of the pixels differ on each tier, all at the edges of the floor's
+ * stripes, where the color map is resized and encoded in ETC1S, and in the ball's highlight. Moved
+ * or missing geometry changes far more.
+ */
+const OPTIMIZED_TOLERANCE = { threshold: 0.1, maxDiffRatio: 0.02 };
 
 /** The sketch of the bloom tests: glowing shapes on a dark ground (bench/scenes/bloom.ts). */
 const BLOOM_SKETCH = 'tests/pages/sketches/bloom-sketch.ts';
@@ -378,6 +387,26 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(uncompressed ? { reference: `gltf-${uncompressed}` } : {}),
 		};
 	}),
+	// The asset tool's test scene, then the tool's output, which must draw the source's image: its
+	// positions and coordinates in 16-bit integers, normals in bytes, a mesh moved to a child node,
+	// instances that carry the dequantizing transform, meshopt compression and KTX2 textures.
+	// Compressed textures and 8-bit normals change some pixels a little, so the output takes a
+	// tolerance of its own.
+	{
+		name: 'asset-scene',
+		sketch: 'tests/pages/sketches/asset-scene-sketch.ts',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+	},
+	{
+		name: 'asset-scene-optimized',
+		sketch: 'tests/pages/sketches/asset-scene-sketch.ts?file=optimized',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+		reference: 'asset-scene',
+		tolerance: OPTIMIZED_TOLERANCE,
+		deviceTolerance: OPTIMIZED_TOLERANCE,
+	},
 	// Copies of a glTF model made in code: scene.instantiate, scene.clone, a model with 16-bit
 	// positions, and an instance batch from scene.createInstances whose rows move every part of the
 	// model. Each tier must place every part the same way.
@@ -386,6 +415,25 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/gltf-copies-sketch.ts',
 		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
 		hold: 0,
+	},
+	// The skeletons of two animated glTF models, drawn with debug.skeleton at a held time: the Fox
+	// sample model running, and an arm made in code waving, with a cubic spline clip. Their meshes are
+	// hidden, so the image shows the joints alone, where the animation step posed them. The
+	// single-threaded mode has no job workers, so the loader resamples the clips itself.
+	{
+		name: 'gltf-skeleton',
+		sketch: 'tests/pages/sketches/gltf-skeleton-sketch.ts',
+		hold: 0.6,
+		size: [400, 225],
+		modes: ['pipelined', 'single-threaded'],
+	},
+	// Animated glTF sample characters at a held time: the KayKit Knight walking, its sword and
+	// shield following its joints, and the Fox running, on every tier.
+	{
+		name: 'gltf-animated',
+		sketch: 'tests/pages/sketches/gltf-animated-sketch.ts',
+		hold: 0.6,
+		size: [400, 225],
 	},
 	// A picture behind a lit box and an unlit box, as three.js draws a texture background: it fills
 	// the view, upright, and every object draws over it. The parity test compares it with its
@@ -510,6 +558,18 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		switches: [FULL_PRECISION],
 		tolerance: FAR_OUT_TOLERANCE,
 	},
+	// The same scene at the Earth's radius, 0.3 m past a whole meter, in large-world mode: root
+	// positions keep 64-bit precision through the setters, and each batch's rows sit around its
+	// origin. 32-bit positions there move in steps of 0.5 m. The scene's own sums stay off any
+	// cell's center, as 100 km out, and keep the same tolerance.
+	{
+		name: 'cells-6378km',
+		sketch: 'tests/pages/sketches/cells-sketch.ts?x=6378137.3&origin',
+		hold: 1,
+		reference: 'cells',
+		switches: [FULL_PRECISION, 'largeWorld'],
+		tolerance: { threshold: 0, maxDiffRatio: 0.0003 },
+	},
 	// Debug drawing: every shape of ctx.debug over a small scene, the axes of a spinning box and the
 	// frustum of a second camera. The single-threaded mode runs the sketch on the page, which draws
 	// the same lines. The S24+'s GPU puts some lines one pixel off, in 1.6% of the pixels, so it
@@ -624,39 +684,42 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Skinning: three characters skinned to chains of joints, each in another pose of one clip. The
 	// parity test compares the image with three.js's SkinnedMesh. WebGPU skins them in a compute
-	// pass; the WebGL2 path does not skin yet. ?shadows stands them on a ground under a sun whose
-	// shadows must follow each pose. Both WebGPU tiers draw the same image.
+	// pass, and WebGL2 in the vertex shader of each pass. ?shadows stands them on a ground under a
+	// sun whose shadows must follow each pose. Every tier draws the same image.
 	...(['', 'shadows'] as const).map(
 		(variant): ImageTest => ({
 			name: variant ? `skinning-${variant}` : 'skinning',
 			sketch: `tests/pages/sketches/skinning-sketch.ts${variant ? `?${variant}` : ''}`,
 			hold: SKINNING_HOLD,
 			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
-			tiers: ['webgpu', 'compat'],
 			sameOnEveryTier: true,
 		}),
 	),
-	// The same characters from a quantized mesh, which the skinning pass reads type by type: it
-	// draws the image of floats, within the steps of 8-bit normals.
+	// The same characters from a quantized mesh, whose joints, weights and normals both paths
+	// read in their own types: it draws the image of floats, within the steps of 8-bit normals.
 	{
 		name: 'skinning-quantized',
 		sketch: 'tests/pages/sketches/skinning-sketch.ts?quantized',
 		hold: SKINNING_HOLD,
 		size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
-		tiers: ['webgpu', 'compat'],
 		reference: 'skinning',
 	},
 	// The middle character sees through, so the transparent pass draws it skinned, in front of its
-	// shadow, with each way to skin. Compatibility mode blends on the 8-bit path, which differs in
-	// the see-through pixels, so each tier has its own image.
+	// shadow, with each way to skin, and on WebGL2 in the vertex shader. Compatibility mode blends
+	// on the 8-bit path, which differs in the see-through pixels, so each tier has its own image.
 	...(['', '-vertex'] as const).map(
 		(way): ImageTest => ({
 			name: `skinning-blend${way}`,
 			sketch: 'tests/pages/sketches/skinning-sketch.ts?shadows&blend',
 			hold: SKINNING_HOLD,
 			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
-			tiers: ['webgpu', 'compat'],
-			...(way ? { switches: ['skinning=vertex'], reference: 'skinning-blend' } : {}),
+			...(way
+				? {
+						tiers: ['webgpu', 'compat'],
+						switches: ['skinning=vertex'],
+						reference: 'skinning-blend',
+					}
+				: {}),
 		}),
 	),
 	// The same scenes skinned in the vertex shader of each pass, which D-20 measures against the
@@ -866,6 +929,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/alpha-mask-sketch.ts',
 		hold: 0,
 		size: [MASK_IMAGE.width, MASK_IMAGE.height],
+	},
+	// Sprites: blended ones that show frames of an atlas at several sizes, rotations, colors and
+	// depths, sorted back to front, and opaque ones that keep their size in pixels and stand on their
+	// positions. The parity test compares it with three.js's Sprite and SpriteMaterial.
+	{
+		name: 'sprites',
+		sketch: 'tests/pages/sketches/sprites-sketch.ts',
+		hold: 0,
+		size: [SPRITE_IMAGE.width, SPRITE_IMAGE.height],
+	},
+	// 100,000 sprites of a dynamic batch in one draw: a field of them seen from above, and a row of
+	// sprites sized in pixels whose centers lie outside the view. It holds its first frame, and takes
+	// S1's limit: SwiftShader draws 100,000 rows on WebGPU in tens of seconds.
+	{
+		name: 'sprites-100k',
+		sketch: 'tests/pages/sketches/sprites-many-sketch.ts',
+		hold: 0,
+		timeoutSeconds: 90,
 	},
 	// Decals on a wall and on the floor, whose depth bias makes them win the depth test everywhere.
 	// WebGL2's other depth modes store depth another way round, and must draw the same image.

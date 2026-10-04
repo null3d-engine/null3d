@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
 	Matrix4,
 	Quaternion,
@@ -13,8 +13,12 @@ import type { EngineError } from '../errors/engine-error';
 import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
-import { controlViews, createControlBuffer, Slot } from '../shared/control';
+import { LabelLoop } from '../page/label-loop';
+import { LabelSlots, labelCapacity, PageLabels } from '../page/labels';
+import { controlLabels, controlViews, createControlBuffer, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
+import { type LabelRegion, labelSequence, presentLabels } from '../shared/labels';
+import { Ui } from '../sketch/ui';
 import { FrameCameras } from './frame-cameras';
 import { CoreMemory } from './memory';
 import { Material, MeshGeometry } from './resources';
@@ -39,6 +43,7 @@ const AT = {
 	write: 1536,
 	read: 1540,
 	matrix: 1544,
+	cells: 2048,
 };
 const SLOT_MASK = (1 << C.HANDLE_SLOT_BITS) - 1;
 /** The frame that the fake scene says it runs. */
@@ -48,9 +53,9 @@ const DESTROYED_TEXTURE = 13;
 
 /**
  * A core with the scene's arrays and command ring in a memory of its own. Its world matrices are
- * the ones that a test sets for each handle.
+ * the ones that a test sets for each handle. With `largeWorld`, positions hold whole cells too.
  */
-function fakeCore() {
+function fakeCore(largeWorld = false) {
 	const memory = new WebAssembly.Memory({ initial: 1 });
 	const matrices = new Map<number, readonly number[]>();
 	let next = 1;
@@ -62,6 +67,7 @@ function fakeCore() {
 		[C.SCENE_FIELD_LOCAL_RADII]: AT.radii,
 		[C.SCENE_FIELD_LOCAL_CENTERS]: AT.centers,
 		[C.SCENE_FIELD_DIRTY_WORDS]: AT.dirty,
+		[C.SCENE_FIELD_POSITION_CELLS]: largeWorld ? AT.cells : 0,
 	};
 	const ring: Record<number, number> = {
 		[C.RING_FIELD_RECORDS]: AT.records,
@@ -109,6 +115,10 @@ function fakeCore() {
 	const f32 = (at: number, length: number) => new Float32Array(memory.buffer, at, length);
 	const u32 = (at: number, length: number) => new Uint32Array(memory.buffer, at, length);
 	return {
+		/** An object's whole cells, in large-world mode. */
+		cells(object: Object3D) {
+			return [...new Int32Array(memory.buffer, AT.cells + object.slot * 12, 3)];
+		},
 		core,
 		scene,
 		eventFrames,
@@ -235,6 +245,56 @@ describe('object transforms', () => {
 		three.matrixAutoUpdate = false;
 		three.matrixWorldAutoUpdate = false;
 		expectClose(turned, xyzw(three.getWorldQuaternion(new Quaternion())), 12);
+	});
+});
+
+describe('large-world mode', () => {
+	/** A point at the Earth's radius, 0.3 m past a whole meter on the far axis. */
+	const FAR: [number, number, number] = [1_234.5678, 6_378_137.3, -98_765.4321];
+
+	/** The largest difference along any axis. */
+	const error = (a: ArrayLike<number>, b: ArrayLike<number>) =>
+		Math.max(...[0, 1, 2].map((k) => Math.abs((a[k] as number) - (b[k] as number))));
+
+	test('setters split positions into whole cells and a 32-bit rest, at full precision', () => {
+		const { scene, row, cells } = fakeCore(true);
+		const object = scene.createGroup({ position: FAR });
+		expect(cells(object)).toEqual([1, 6229, -96]);
+		for (const v of row(object, 'positions')) expect(Math.abs(v)).toBeLessThanOrEqual(512);
+		const where = [0, 0, 0];
+		object.getPosition(where);
+		expect(error(where, FAR)).toBeLessThan(3e-5);
+		// Steps of a millimeter, which 32-bit positions there would lose.
+		for (let step = 1; step <= 3; step++) {
+			object.translate(0, 0.001, 0);
+			object.getPosition(where);
+			expect(error(where, [FAR[0], FAR[1] + step * 0.001, FAR[2]])).toBeLessThan(1e-4);
+		}
+		object.setPosition(-3, 0.25, 700);
+		expect(cells(object)).toEqual([0, 0, 1]);
+		object.getPosition(where);
+		expect(where).toEqual([-3, 0.25, 700]);
+	});
+
+	test('without the mode, a far position rounds to 32 bits', () => {
+		const { scene } = fakeCore();
+		const object = scene.createGroup({ position: FAR });
+		const where = [0, 0, 0];
+		object.getPosition(where);
+		expect(error(where, FAR)).toBeGreaterThan(0.1);
+	});
+
+	test('lookAt turns a far object toward a near point as three.js does in 64-bit numbers', () => {
+		const { scene, row } = fakeCore(true);
+		const camera = scene.createPerspectiveCamera({ position: FAR });
+		const target = new Vector3(FAR[0] + 3, FAR[1] - 0.25, FAR[2] - 4);
+		camera.lookAt(target.x, target.y, target.z);
+		const theirs = new ThreePerspectiveCamera();
+		theirs.position.set(...FAR);
+		theirs.lookAt(target);
+		// The stored position is within 0.03 mm, which turns the view by about 1e-6 radians. A
+		// 32-bit position would be 0.3 m off, a turn of about 0.06 radians.
+		expectClose(row(camera, 'rotations'), xyzw(theirs.quaternion), 5);
 	});
 });
 
@@ -719,5 +779,325 @@ describe('screenToRay and worldToScreen', () => {
 		expect(thrown(() => camera.worldToScreen([0, Infinity, 0], [0, 0, 0])).message).toContain(
 			'worldToScreen() got Infinity for y',
 		);
+	});
+});
+
+describe('labels', () => {
+	/** A canvas of 640 x 360 CSS pixels at a pixel ratio of 2. */
+	const CSS = [640, 360] as const;
+	const DEVICE = [1280, 720] as const;
+	/** A stand-in for an element: the engine writes only its style. */
+	const element = () => ({ style: {} as Record<string, string> }) as unknown as HTMLElement;
+	/** Where an element's center sits, from its transform, or null while it is hidden. */
+	const placeOf = (el: HTMLElement) => {
+		if (el.style.visibility === 'hidden') return null;
+		const match = /^translate3d\(([^p]+)px,([^p]+)px,0\) translate\(-50%,-50%\)$/.exec(
+			el.style.transform,
+		);
+		if (!match) throw new Error(`unexpected transform ${el.style.transform}`);
+		return [Number(match[1]), Number(match[2])];
+	};
+	/** Frame callbacks that the page labels asked for, which a test runs by hand. */
+	let callbacks: FrameRequestCallback[] = [];
+	const realFrame = globalThis.requestAnimationFrame;
+	beforeEach(() => {
+		callbacks = [];
+		globalThis.requestAnimationFrame = (callback) => callbacks.push(callback);
+	});
+	afterEach(() => {
+		globalThis.requestAnimationFrame = realFrame;
+	});
+
+	/**
+	 * A sketch's labels and a page's, joined as the engine joins them: the sketch's slots reach the
+	 * page at once, and `show` presents a frame as the thread that draws does.
+	 */
+	const setup = (capacity = 8, drawsHere = true) => {
+		const fake = fakeCore();
+		fake.setCanvas(DEVICE[0], DEVICE[1], CSS[0], CSS[1]);
+		const buffer = createControlBuffer(false, capacity);
+		const views = controlViews(buffer);
+		views.slots[Slot.Running] = 1;
+		views.slotFloats[Slot.CanvasCssWidth] = CSS[0];
+		views.slotFloats[Slot.CanvasCssHeight] = CSS[1];
+		const region = controlLabels(buffer) as LabelRegion;
+		const page = new LabelLoop(views, drawsHere, new LabelSlots());
+		const sent: [string, number, number][] = [];
+		const ui = new Ui(region, fake.scene, fake.core, fake.scene.frameCameras, (id, slot, gen) => {
+			sent.push([id, slot, gen]);
+			page.setSlot(id, slot, gen);
+		});
+		return {
+			...fake,
+			ui,
+			page,
+			region,
+			sent,
+			/** Records frame `frame`'s labels, as the sketch thread does after the frame records. */
+			record: (frame: number) => ui.project(frame, DEVICE[0], DEVICE[1]),
+			/** Presents frame `frame`, and lets the page move its elements. */
+			show: (frame: number) => {
+				presentLabels(region, frame);
+				page.update();
+			},
+		};
+	};
+	const world = (position: [number, number, number], euler: [number, number, number], scale = 1) =>
+		new Matrix4().compose(
+			new Vector3(...position),
+			new Quaternion().setFromEuler(new ThreeObject().rotation.set(...euler)),
+			new Vector3(scale, scale, scale),
+		);
+	/**
+	 * Where three.js's CSS2DRenderer puts the center of a CSS2DObject at `offset` under an object
+	 * with world matrix `parent`, or null where it hides it.
+	 */
+	const css2d = (
+		camera: ThreePerspectiveCamera | ThreeOrthographicCamera,
+		parent: Matrix4,
+		offset: [number, number, number],
+	) => {
+		const viewProjection = new Matrix4().multiplyMatrices(
+			camera.projectionMatrix,
+			camera.matrixWorldInverse,
+		);
+		const v = new Vector3(...offset).applyMatrix4(parent).applyMatrix4(viewProjection);
+		if (v.z < -1 || v.z > 1) return null;
+		return [v.x * (CSS[0] / 2) + CSS[0] / 2, -v.y * (CSS[1] / 2) + CSS[1] / 2];
+	};
+
+	test("labels sit where three.js's CSS2DRenderer puts them, with both lenses", () => {
+		const { scene, setWorld, ui, page, record, show } = setup();
+		const cameraMatrix = world([2, 1, 10], [-0.2, 0.3, 0.05]);
+		const perspective = scene.createPerspectiveCamera({ fov: 50, near: 0.5, far: 30 });
+		const half = (8 * CSS[0]) / CSS[1] / 2;
+		const orthographic = scene.createOrthographicCamera({ height: 8, near: 0.5, far: 30 });
+		setWorld(perspective, cameraMatrix);
+		setWorld(orthographic, cameraMatrix);
+		const pairs = [
+			[perspective, new ThreePerspectiveCamera(50, CSS[0] / CSS[1], 0.5, 30)],
+			[orthographic, new ThreeOrthographicCamera(-half, half, 4, -4, 0.5, 30)],
+		] as const;
+		// A turned and scaled object, whose offset turns and scales with it, and one past the far plane.
+		const near = scene.createGroup();
+		const nearMatrix = world([1, 2, 3], [0.4, -0.7, 0.2], 1.5);
+		setWorld(near, nearMatrix);
+		const far = scene.createGroup();
+		const farMatrix = world([0, 0, -40], [0, 0, 0]);
+		setWorld(far, farMatrix);
+		const offset: [number, number, number] = [0, 2, 0.5];
+		ui.trackLabel(near, 'near', { offset });
+		ui.trackLabel(far, 'far');
+		const nearElement = element();
+		const farElement = element();
+		page.bind('near', nearElement);
+		page.bind('far', farElement);
+		let frame = 0;
+		for (const [mine, theirs] of pairs) {
+			theirs.matrixWorld.copy(cameraMatrix);
+			theirs.matrixWorldInverse.copy(cameraMatrix).invert();
+			theirs.updateProjectionMatrix();
+			scene.setActiveCamera(mine);
+			record(++frame);
+			show(frame);
+			expectClose(
+				placeOf(nearElement) as number[],
+				css2d(theirs, nearMatrix, offset) as number[],
+				3,
+			);
+			expect(css2d(theirs, farMatrix, [0, 0, 0])).toBeNull();
+			expect(placeOf(farElement)).toBeNull();
+		}
+	});
+
+	test('a label hides with its object, its ancestors, outside the layers the camera draws, and behind it', () => {
+		const { scene, setWorld, ui, page, record, show, take } = setup();
+		const camera = scene.createPerspectiveCamera({ fov: 60 });
+		setWorld(camera, world([0, 0, 10], [0, 0, 0]));
+		scene.setActiveCamera(camera);
+		const parent = scene.createGroup();
+		const object = scene.createGroup({ parent });
+		setWorld(object, world([0, 0, 0], [0, 0, 0]));
+		ui.trackLabel(object, 'a');
+		const el = element();
+		page.bind('a', el);
+		let frame = 0;
+		const placed = () => {
+			take();
+			record(++frame);
+			show(frame);
+			return placeOf(el);
+		};
+		expectClose(placed() as number[], [320, 180], 4);
+		object.setVisible(false);
+		expect(placed()).toBeNull();
+		object.setVisible(true);
+		parent.setVisible(false);
+		expect(placed()).toBeNull();
+		parent.setVisible(true);
+		object.setLayers(1 << 3);
+		expect(placed()).toBeNull();
+		object.setLayers(1);
+		setWorld(object, world([0, 0, 20], [0, 0, 0]));
+		expect(placed()).toBeNull();
+		setWorld(object, world([1, 0, 0], [0, 0, 0]));
+		expect(placed()).not.toBeNull();
+	});
+
+	test('the page shows the labels of the frame on screen, not of the frame being recorded', () => {
+		const { scene, setWorld, ui, page, record, show } = setup();
+		const camera = scene.createPerspectiveCamera({ fov: 60 });
+		setWorld(camera, world([0, 0, 10], [0, 0, 0]));
+		scene.setActiveCamera(camera);
+		const box = scene.createGroup();
+		setWorld(box, world([0, 0, 0], [0, 0, 0]));
+		ui.trackLabel(box, 'box');
+		const el = element();
+		page.bind('box', el);
+		// A fast pan: each frame turns the camera further, so each frame has its own place.
+		const places: number[][] = [];
+		for (let frame = 1; frame <= 3; frame++) {
+			setWorld(camera, world([0, 0, 10], [0, frame * 0.1, 0]));
+			record(frame);
+			const out = [0, 0, 0];
+			camera.worldToScreen([0, 0, 0], out);
+			places[frame] = out.slice(0, 2);
+		}
+		// Frame 3 is recorded, but the thread that draws presents frame 2 from its own table.
+		show(2);
+		expectClose(placeOf(el) as number[], places[2] as number[], 4);
+		expect(Math.abs((places[3]?.[0] as number) - (places[2]?.[0] as number))).toBeGreaterThan(20);
+	});
+
+	test("a slot that passes to another label never shows the first label's element there", () => {
+		const { scene, setWorld, ui, page, record, show, sent } = setup();
+		const camera = scene.createPerspectiveCamera({ fov: 60 });
+		setWorld(camera, world([0, 0, 10], [0, 0, 0]));
+		scene.setActiveCamera(camera);
+		const first = scene.createGroup();
+		setWorld(first, world([0, 0, 0], [0, 0, 0]));
+		const second = scene.createGroup();
+		setWorld(second, world([2, 0, 0], [0, 0, 0]));
+		ui.trackLabel(first, 'a');
+		const a = element();
+		page.bind('a', a);
+		record(1);
+		show(1);
+		expect(placeOf(a)).not.toBeNull();
+		ui.untrackLabel('a');
+		ui.trackLabel(second, 'b');
+		expect(sent).toEqual([
+			['a', 0, 0],
+			['a', -1, 0],
+			['b', 0, 1],
+		]);
+		// The page still binds 'a', which now has no slot, while 'b' takes slot 0.
+		const b = element();
+		page.bind('b', b);
+		record(2);
+		show(2);
+		expect(placeOf(a)).toBeNull();
+		expect(placeOf(b)).not.toBeNull();
+		// A label whose object the sketch destroys stops, and gives its slot back.
+		second.destroy();
+		record(3);
+		show(3);
+		expect(sent.at(-1)).toEqual(['b', -1, 0]);
+		expect(placeOf(b)).toBeNull();
+	});
+
+	test('a full table and an id that is not a string fail with E1219', () => {
+		const { scene, ui } = setup(2);
+		const object = scene.createGroup();
+		ui.trackLabel(object, 'one');
+		ui.trackLabel(object, 'two');
+		ui.trackLabel(object, 'two', { offset: [0, 1, 0] });
+		expect(thrown(() => ui.trackLabel(object, 'three')).message).toStartWith(
+			'E1219: trackLabel() could not track "three": the engine already tracks 2 labels.',
+		);
+		ui.untrackLabel('one');
+		ui.trackLabel(object, 'three');
+		expect(thrown(() => ui.trackLabel(object, '')).message).toStartWith(
+			"E1219: trackLabel() got an empty string as a label's id.",
+		);
+		expect(thrown(() => ui.untrackLabel(7 as unknown as string)).message).toStartWith(
+			"E1219: untrackLabel() got 7 as a label's id.",
+		);
+	});
+
+	test('the page runs a frame loop only while an element is bound, where a worker draws', () => {
+		const { scene, ui, page } = setup(8, false);
+		ui.trackLabel(scene.createGroup(), 'a');
+		expect(callbacks).toHaveLength(0);
+		const a = element();
+		page.bind('a', a);
+		expect(callbacks).toHaveLength(1);
+		const b = element();
+		page.bind('b', b);
+		page.unbind('b', b);
+		expect(callbacks).toHaveLength(1);
+		(callbacks.shift() as FrameRequestCallback)(0);
+		expect(callbacks).toHaveLength(1);
+		page.unbind('a', a);
+		(callbacks.shift() as FrameRequestCallback)(0);
+		expect(callbacks).toHaveLength(0);
+	});
+
+	test('an element moves only by half a pixel or more, and never from a table being copied', () => {
+		const { scene, setWorld, ui, page, record, show, region } = setup();
+		const camera = scene.createPerspectiveCamera({ fov: 60 });
+		setWorld(camera, world([0, 0, 10], [0, 0, 0]));
+		scene.setActiveCamera(camera);
+		const object = scene.createGroup();
+		setWorld(object, world([0, 0, 0], [0, 0, 0]));
+		ui.trackLabel(object, 'a');
+		const el = element();
+		page.bind('a', el);
+		record(1);
+		show(1);
+		const first = el.style.transform;
+		// About 0.2 CSS pixels to the right: too little to move the element.
+		setWorld(object, world([0.004, 0, 0], [0, 0, 0]));
+		record(2);
+		show(2);
+		expect(el.style.transform).toBe(first);
+		setWorld(object, world([0.5, 0, 0], [0, 0, 0]));
+		record(3);
+		presentLabels(region, 3);
+		// The thread that draws is in the middle of another copy: the counter is odd.
+		Atomics.add(region.ints, 0, 1);
+		expect(labelSequence(region) & 1).toBe(1);
+		page.update();
+		expect(el.style.transform).toBe(first);
+		Atomics.add(region.ints, 0, 1);
+		page.update();
+		expect(el.style.transform).not.toBe(first);
+	});
+
+	test('the first bind loads the element loop, and binds made meanwhile wait for it', async () => {
+		const buffer = createControlBuffer(false, 4);
+		const views = controlViews(buffer);
+		const page = new PageLabels(views, true);
+		page.setSlot('a', 2, 5);
+		const a = element();
+		const b = element();
+		page.bind('a', a);
+		page.bind('b', b)();
+		expect(a.style.visibility).toBe('hidden');
+		expect(page.frame).toBe(0);
+		// The loop loads in a later task; once it has, its bind of 'a' has set the element up.
+		for (let k = 0; k < 20 && a.style.position !== 'absolute'; k++)
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		expect(a.style.position).toBe('absolute');
+		expect(b.style.position).toBeUndefined();
+	});
+
+	test('createEngine takes from 1 to 65,536 labels, 4,096 by default', () => {
+		expect(labelCapacity(undefined)).toBe(4096);
+		expect(labelCapacity(65_536)).toBe(65_536);
+		for (const bad of [0, 1.5, 65_537, Number.NaN])
+			expect(thrown(() => labelCapacity(bad)).message).toStartWith(
+				`E1213: createEngine() got ${bad} for maxLabels`,
+			);
 	});
 });

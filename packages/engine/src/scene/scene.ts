@@ -12,6 +12,8 @@ import {
 	type Described,
 } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
+import type { ErrorCode } from '../errors/fixes';
+import { reasonOf } from '../errors/message';
 import * as C from '../generated/core';
 import {
 	compose as composeMatrix,
@@ -39,6 +41,7 @@ import {
 	FrameCameras,
 	LENS_CENTER_X,
 	LENS_CENTER_Y,
+	LENS_FAR,
 	LENS_FLOATS,
 	LENS_HALF_HEIGHT,
 	LENS_HALF_WIDTH,
@@ -79,6 +82,7 @@ import {
 } from './queries';
 import type { Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
+import type { SpriteBatch, SpriteMakers, SpriteOptions } from './sprites';
 import { Texture } from './textures';
 import { UnmarkedWrites } from './unmarked-writes';
 
@@ -233,6 +237,13 @@ export interface InstanceOptions {
 	colors?: boolean;
 	/** The layers every row is on, as a 32-bit mask. The default, 1, is layer 0. */
 	layers?: number;
+	/**
+	 * The point that every row's position is relative to. The default is (0, 0, 0). The engine keeps
+	 * the origin at full precision, so rows near it keep the precision of 32-bit floats at any
+	 * distance from the world's origin. Give a batch far from the origin, such as a forest on a
+	 * planet, an origin among its rows.
+	 */
+	origin?: Vec3;
 }
 
 /**
@@ -464,9 +475,29 @@ const DOWN: Vec3 = [0, -1, 0];
 /** The axis that a light's light travels along before the light turns: -Z, as a camera looks. */
 const LIGHT_AXIS: Vec3 = [0, 0, -1];
 
+/** The point (0, 0, 0), for objects created without a position. */
+const ORIGIN: Vec3 = [0, 0, 0];
+
+/**
+ * Writes `value` at `i` as a whole number of cells in `cells` and the rest in `rest`, as the engine
+ * core splits a 64-bit position: the nearest whole number of cells, so the rest is about half a
+ * cell long at most, and a 32-bit float holds it to 0.03 mm or better.
+ */
+function splitPosition(rest: Float32Array, cells: Int32Array, i: number, value: number): void {
+	const cell = Math.floor(value / C.CELL_SIZE + 0.5);
+	cells[i] = cell;
+	rest[i] = value - cell * C.CELL_SIZE;
+}
+
 /** Views of the per-slot arrays and the command ring. */
 class SceneViews {
+	/** Positions, 3 per slot: in large-world mode, the part that `positionCells` leaves. */
 	readonly positions: Float32Array;
+	/**
+	 * In large-world mode, the whole cells of each position, 3 per slot: a position is these cells
+	 * times the cell's size plus its 32-bit part. Undefined without the mode.
+	 */
+	readonly positionCells: Int32Array | undefined;
 	readonly rotations: Float32Array;
 	readonly scales: Float32Array;
 	readonly radii: Float32Array;
@@ -482,6 +513,8 @@ class SceneViews {
 		const { glue } = core;
 		const rows = glue.sceneCapacity() + 1;
 		this.positions = core.f32(glue.sceneArrays(C.SCENE_FIELD_POSITIONS), rows * 3);
+		const cells = glue.sceneArrays(C.SCENE_FIELD_POSITION_CELLS);
+		this.positionCells = cells ? core.i32(cells, rows * 3) : undefined;
 		this.rotations = core.f32(glue.sceneArrays(C.SCENE_FIELD_ROTATIONS), rows * 4);
 		this.scales = core.f32(glue.sceneArrays(C.SCENE_FIELD_SCALES), rows * 3);
 		this.radii = core.f32(glue.sceneArrays(C.SCENE_FIELD_LOCAL_RADII), rows);
@@ -560,11 +593,7 @@ export class Object3D implements Described {
 			checkLive('setPosition', this);
 			checkVector('setPosition', this, x, y, z);
 		}
-		const p = this.scene.views.positions;
-		const i = this.row * 3;
-		p[i] = x;
-		p[i + 1] = y;
-		p[i + 2] = z;
+		this.scene.writePosition(this.row, x, y, z);
 		this.scene.markDirty(this.row);
 	}
 
@@ -616,18 +645,14 @@ export class Object3D implements Described {
 			checkLive('lookAt', this);
 			checkVector('lookAt', this, x, y, z);
 		}
-		const { positions, rotations } = this.scene.views;
-		const i = this.row * 3;
 		const eye = this.scene.eye;
-		eye[0] = positions[i] as number;
-		eye[1] = positions[i + 1] as number;
-		eye[2] = positions[i + 2] as number;
+		this.scene.readPosition(this.row, eye);
 		const target = this.scene.target;
 		target[0] = x;
 		target[1] = y;
 		target[2] = z;
 		quaternionLookAt(this.scene.scratch, eye, target, this.looksDownMinusZ);
-		rotations.set(this.scene.scratch, this.row * 4);
+		this.scene.views.rotations.set(this.scene.scratch, this.row * 4);
 		this.scene.markDirty(this.row);
 	}
 
@@ -677,22 +702,21 @@ export class Object3D implements Described {
 		v[1] = y;
 		v[2] = z;
 		transformQuat(v, v, q);
-		const p = scene.views.positions;
-		const i = this.row * 3;
-		p[i] = (p[i] as number) + (v[0] as number);
-		p[i + 1] = (p[i + 1] as number) + (v[1] as number);
-		p[i + 2] = (p[i + 2] as number) + (v[2] as number);
+		const p = scene.target;
+		scene.readPosition(this.row, p);
+		scene.writePosition(
+			this.row,
+			(p[0] as number) + (v[0] as number),
+			(p[1] as number) + (v[1] as number),
+			(p[2] as number) + (v[2] as number),
+		);
 		scene.markDirty(this.row);
 	}
 
 	/** Copies the position relative to the parent into `out`. */
 	getPosition(out: Vec3Like): void {
 		if (DEV) checkLive('getPosition', this);
-		const p = this.scene.views.positions;
-		const i = this.row * 3;
-		out[0] = p[i] as number;
-		out[1] = p[i + 1] as number;
-		out[2] = p[i + 2] as number;
+		this.scene.readPosition(this.row, out);
 	}
 
 	/** Copies the rotation relative to the parent into `out`, as a quaternion (x, y, z, w). */
@@ -1127,7 +1151,15 @@ export abstract class Camera extends Object3D {
 	}
 
 	/** @internal Writes the lens into `lens`, after each change of its values. */
-	abstract updateLens(): void;
+	updateLens(): void {
+		const lens = this.lens;
+		this.writeLensShape(lens);
+		lens[LENS_NEAR] = this.nearPlane;
+		lens[LENS_FAR] = this.farPlane;
+	}
+
+	/** @internal Writes the lens's kind, its view's size and its center into `lens`. */
+	protected abstract writeLensShape(lens: Float64Array): void;
 
 	/**
 	 * @internal Gives the engine core this camera's lens and layers, which the active camera draws
@@ -1175,14 +1207,12 @@ export class PerspectiveCamera extends Camera {
 	}
 
 	/** @internal */
-	updateLens(): void {
-		const lens = this.lens;
+	protected writeLensShape(lens: Float64Array): void {
 		lens[LENS_ORTHO] = 0;
 		lens[LENS_HALF_HEIGHT] = Math.tan((this.verticalFov * Math.PI) / 360);
 		lens[LENS_HALF_WIDTH] = 0;
 		lens[LENS_CENTER_X] = 0;
 		lens[LENS_CENTER_Y] = 0;
-		lens[LENS_NEAR] = this.near;
 	}
 
 	/** @internal */
@@ -1263,14 +1293,13 @@ export class OrthographicCamera extends Camera {
 	}
 
 	/** @internal */
-	updateLens(): void {
-		const { lens, view } = this;
+	protected writeLensShape(lens: Float64Array): void {
+		const view = this.view;
 		lens[LENS_ORTHO] = 1;
 		lens[LENS_HALF_HEIGHT] = view.height / 2;
 		lens[LENS_HALF_WIDTH] = view.width / 2;
 		lens[LENS_CENTER_X] = view.centerX;
 		lens[LENS_CENTER_Y] = view.centerY;
-		lens[LENS_NEAR] = this.near;
 	}
 
 	/** @internal */
@@ -1652,6 +1681,13 @@ export class InstanceBatch {
 		return null;
 	}
 
+	/** @internal Places the origin that the rows of the batch and of its parts are relative to. */
+	setOrigin([x, y, z]: Vec3, call: string): void {
+		const { core } = this.scene;
+		core.check(core.glue.setBatchOrigin(this.id, x, y, z), call, undefined, true);
+		for (const part of this.parts) core.glue.setBatchOrigin(part, x, y, z);
+	}
+
 	/** Marks rows of a static batch to update and upload. */
 	markDirty(start = 0, count = this.count - start): void {
 		const { core } = this.scene;
@@ -1682,9 +1718,24 @@ const LIGHT_CLASSES: Readonly<Record<number, ObjectClass<Light>>> = {
 	[C.LIGHT_KIND_SPOT]: SpotLight,
 };
 
-/** The transform of a model's copy: the position, rotation and scale of `options`. */
-function rootTransform(options: NodeOptions): Float32Array {
-	const transform = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
+/** Imports the sprite code, which a page downloads with its first sprite batch, or throws E1406. */
+async function loadSprites(call: string): Promise<typeof import('./sprites')> {
+	try {
+		return await import('./sprites');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the sprite code did not download for ${call}(): ${reasonOf(error)}.`,
+		);
+	}
+}
+
+/**
+ * The transform of a model's copy: the position, rotation and scale of `options`, with the position
+ * at full precision.
+ */
+function rootTransform(options: NodeOptions): Float64Array {
+	const transform = new Float64Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
 	if (options.position) transform.set(options.position, 0);
 	if (options.rotation) transform.set(options.rotation, 3);
 	if (options.scale) transform.set(options.scale, 7);
@@ -1692,11 +1743,28 @@ function rootTransform(options: NodeOptions): Float32Array {
 }
 
 /**
+ * @internal The scene API's checks and errors, which code that loads on first use, such as the
+ * animator, takes from the scene. That code imports no engine module but constants, so a bundle
+ * never moves these modules into a file of their own, which every page would download at its start.
+ */
+export const SCENE_CHECKS = {
+	// Code that takes these calls them in development builds only, so release builds hold none.
+	checkLive: DEV ? checkLive : () => {},
+	checkNumber: DEV ? checkNumber : () => {},
+	error: (code: ErrorCode, message: string): EngineError => new EngineError(code, message),
+};
+
+/** @internal The type of `SCENE_CHECKS`. */
+export type SceneChecks = typeof SCENE_CHECKS;
+
+/**
  * The scene: every object, the active camera, the lights and the background.
  *
  * @category api/scene
  */
 export class Scene {
+	/** @internal The scene API's checks and errors, for code that loads on first use. */
+	readonly checks: SceneChecks = SCENE_CHECKS;
 	private viewsGeneration = -1;
 	private currentViews!: SceneViews;
 	private activeCamera: Camera | undefined;
@@ -1724,6 +1792,8 @@ export class Scene {
 	private readonly objectSlots: (Object3D | undefined)[] = [];
 	/** The batch that each batch slot holds, or last held, which queries name by id. */
 	private readonly batchSlots: (InstanceBatch | undefined)[] = [];
+	/** The quad meshes of sprite batches, by their center, which batches with one center share. */
+	private readonly spriteQuads = new Map<string, MeshGeometry>();
 	/** Raycasts and overlap queries, made on the first query. */
 	private sceneQueries: SceneQueries | undefined;
 	/** Pointer events on objects, made on the first `on`. */
@@ -1751,6 +1821,8 @@ export class Scene {
 		private readonly warmUpScene: () => Promise<void> = () => Promise.resolve(),
 		/** The cameras of the last frames, which the sketch runner gives; tests get a stand-in. */
 		private cameras?: FrameCameras,
+		/** What sprite batches make their quads and materials with, which the sketch runner gives. */
+		private readonly spriteMakers?: SpriteMakers,
 		/** The input reader, whose pointer events reach objects' handlers. */
 		private readonly pointerInput?: PointerInput,
 	) {
@@ -1809,6 +1881,11 @@ export class Scene {
 		return this.time.frame;
 	}
 
+	/** @internal The camera that the canvas shows, which each frame draws from. */
+	get shownCamera(): Camera | undefined {
+		return this.activeCamera;
+	}
+
 	/** @internal */
 	get views(): SceneViews {
 		if (this.viewsGeneration !== this.core.generation) {
@@ -1816,6 +1893,38 @@ export class Scene {
 			this.viewsGeneration = this.core.generation;
 		}
 		return this.currentViews;
+	}
+
+	/**
+	 * @internal Writes the position of the object in `slot`, relative to its parent. In large-world
+	 * mode it splits each number into whole cells and a rest of about half a cell at most, so the
+	 * 32-bit rest keeps the number's full precision.
+	 */
+	writePosition(slot: number, x: number, y: number, z: number): void {
+		const { positions, positionCells } = this.views;
+		const i = slot * 3;
+		if (positionCells === undefined) {
+			positions[i] = x;
+			positions[i + 1] = y;
+			positions[i + 2] = z;
+			return;
+		}
+		splitPosition(positions, positionCells, i, x);
+		splitPosition(positions, positionCells, i + 1, y);
+		splitPosition(positions, positionCells, i + 2, z);
+	}
+
+	/** @internal Copies the position of the object in `slot`, relative to its parent, into `out`. */
+	readPosition(slot: number, out: Vec3Like): void {
+		const { positions, positionCells } = this.views;
+		const i = slot * 3;
+		out[0] = positions[i] as number;
+		out[1] = positions[i + 1] as number;
+		out[2] = positions[i + 2] as number;
+		if (positionCells === undefined) return;
+		out[0] = (out[0] as number) + (positionCells[i] as number) * C.CELL_SIZE;
+		out[1] = (out[1] as number) + (positionCells[i + 1] as number) * C.CELL_SIZE;
+		out[2] = (out[2] as number) + (positionCells[i + 2] as number) * C.CELL_SIZE;
 	}
 
 	/** @internal Flags a static object for recomputation. */
@@ -2014,7 +2123,8 @@ export class Scene {
 		const handle = this.core.check(this.core.glue.reserveObject(), call, options.name);
 		const slot = handle & SLOT_MASK;
 		const v = this.views;
-		v.positions.set(options.position ?? [0, 0, 0], slot * 3);
+		const [x, y, z] = options.position ?? ORIGIN;
+		this.writePosition(slot, x, y, z);
 		v.rotations.set(options.rotation ?? [0, 0, 0, 1], slot * 4);
 		v.scales.set(options.scale ?? [1, 1, 1], slot * 3);
 		v.radii[slot] = radius;
@@ -2057,7 +2167,8 @@ export class Scene {
 	 * Creates the objects of a model that `assets.loadGltf` loaded, under one new group that
 	 * `options` places, and returns that group. All the objects are created with one batch of
 	 * commands, and every copy shares the model's meshes, materials and textures. The group's
-	 * `find` gives the copy's object of a node, by the node's name. Throws E1102 when the scene has
+	 * `find` gives the copy's object of a node, by the node's name. A model with clips or skins
+	 * gives the group an animator, which plays the clips: `copy.animator().play('Walk')`. Throws E1102 when the scene has
 	 * no room for the objects, before it creates any.
 	 */
 	instantiate(prefab: Prefab, options: InstantiateOptions = {}): PrefabInstance {
@@ -2082,6 +2193,7 @@ export class Scene {
 		const objects = this.createNodes(template, call, options.parent ?? null, root, extra);
 		const instance = objects[0] as PrefabInstance;
 		instance.objects = objects;
+		prefab.animate(objects);
 		instance.batches = prefab.instancing.map((spec) => this.placeInstancing(instance, spec, call));
 		return instance;
 	}
@@ -2090,15 +2202,23 @@ export class Scene {
 	 * Copies an object and every object below it, as three.js's `clone` does, with their meshes,
 	 * materials, lights, cameras and settings, and returns the copy of the object. The copy has the
 	 * same parent, so it starts in the same place. The copies are created with one batch of
-	 * commands. Instance batches are not objects, so they are not copied. Throws E1102 when the
-	 * scene has no room for the copies, before it creates any.
+	 * commands. An animated object's copy gets an animator of its own, with no clip playing, which
+	 * moves the copies of its meshes, as three.js's `SkeletonUtils.clone` does. Instance batches are
+	 * not objects, so they are not copied. Throws E1102 when the scene has no room for the copies,
+	 * before it creates any.
 	 */
 	clone<T extends Object3D>(object: T): T {
 		const call = 'clone';
 		if (DEV) checkLive(call, object);
-		const objects = this.createNodes(this.subtree(object), call, object.liveParent);
+		const nodes = this.subtree(object);
+		const objects = this.createNodes(nodes, call, object.liveParent);
 		const copy = objects[0] as T;
 		if (copy instanceof PrefabInstance) copy.objects = objects;
+		// Animated objects in the tree give their copies animators, which skin the copied meshes.
+		const copies = new Map(
+			nodes.map((node, k) => [node.source as Object3D, objects[k] as Object3D]),
+		);
+		for (const [source, made] of copies) source.animation?.copyTo(made, copies);
 		return copy;
 	}
 
@@ -2125,8 +2245,8 @@ export class Scene {
 		const v = this.views;
 		return order.map((each, k): TemplateNode => {
 			const row = each.row;
-			const transform = new Float32Array(10);
-			transform.set(v.positions.subarray(row * 3, row * 3 + 3), 0);
+			const transform = new Float64Array(10);
+			this.readPosition(row, transform);
 			transform.set(v.rotations.subarray(row * 4, row * 4 + 4), 3);
 			transform.set(v.scales.subarray(row * 3, row * 3 + 3), 7);
 			const mesh = each instanceof Mesh ? each : undefined;
@@ -2181,10 +2301,8 @@ export class Scene {
 			const handle = handles[k] as number;
 			const slot = handle & SLOT_MASK;
 			const t = n.transform;
-			for (let i = 0; i < 3; i++) {
-				v.positions[slot * 3 + i] = t[i] as number;
-				v.scales[slot * 3 + i] = t[7 + i] as number;
-			}
+			this.writePosition(slot, t[0] as number, t[1] as number, t[2] as number);
+			for (let i = 0; i < 3; i++) v.scales[slot * 3 + i] = t[7 + i] as number;
 			for (let i = 0; i < 4; i++) v.rotations[slot * 4 + i] = t[3 + i] as number;
 			const flags = n.mesh ? n.flags | extra : n.flags;
 			const bounds = n.bounds;
@@ -2243,7 +2361,9 @@ export class Scene {
 
 	/**
 	 * The instance batch of a node of a model with instancing of its own. Each row takes its
-	 * transform from the file, after the node's place in the world when the copy is created.
+	 * transform from the file, after the node's place in the world when the copy is created. The
+	 * node's place is the batch's origin, so the rows keep their precision far from the world's
+	 * origin.
 	 */
 	private placeInstancing(
 		instance: PrefabInstance,
@@ -2253,26 +2373,24 @@ export class Scene {
 		const v = this.views;
 		const world = identityMatrix(new Float64Array(16));
 		const local = new Float64Array(16);
-		const trs = (p: Float32Array, q: Float32Array, s: Float32Array, row: number) =>
-			composeMatrix(
-				local,
-				p.subarray(row * 3, row * 3 + 3),
-				q.subarray(row * 4, row * 4 + 4),
-				s.subarray(row * 3, row * 3 + 3),
-			);
-		let object: Object3D | null = instance.objects[spec.node] as Object3D;
-		while (object) {
-			multiplyMatrices(world, trs(v.positions, v.rotations, v.scales, object.row), world);
-			object = object.liveParent;
-		}
-		const batch = this.createParts(spec.parts, spec.count, {}, call);
-		const { positions, rotations, scales } = batch;
 		const position = [0, 0, 0];
 		const rotation = [0, 0, 0, 1];
 		const scale = [1, 1, 1];
+		const trs = (p: Vec3Like, q: Float32Array, s: Float32Array, row: number) =>
+			composeMatrix(local, p, q.subarray(row * 4, row * 4 + 4), s.subarray(row * 3, row * 3 + 3));
+		let object: Object3D | null = instance.objects[spec.node] as Object3D;
+		while (object) {
+			this.readPosition(object.row, position);
+			multiplyMatrices(world, trs(position, v.rotations, v.scales, object.row), world);
+			object = object.liveParent;
+		}
+		const origin: Vec3 = [world[12] as number, world[13] as number, world[14] as number];
+		const batch = this.createParts(spec.parts, spec.count, { origin }, call);
+		const { positions, rotations, scales } = batch;
 		for (let r = 0; r < spec.count; r++) {
-			trs(spec.positions, spec.rotations, spec.scales, r);
+			trs(spec.positions.subarray(r * 3, r * 3 + 3), spec.rotations, spec.scales, r);
 			decompose(position, rotation, scale, multiplyMatrices(local, world, local));
+			for (let k = 0; k < 3; k++) position[k] = (position[k] as number) - (origin[k] as number);
 			positions.set(position, r * 3);
 			rotations.set(rotation, r * 4);
 			scales.set(scale, r * 3);
@@ -2318,6 +2436,7 @@ export class Scene {
 		const batch = new InstanceBatch(this, ids[0] as number, count, colors, ids.slice(1));
 		this.rememberBatch(batch);
 		if (options.layers !== undefined) batch.setLayers(options.layers);
+		if (options.origin) batch.setOrigin(options.origin, call);
 		return batch;
 	}
 
@@ -2369,6 +2488,63 @@ export class Scene {
 		const batch = new InstanceBatch(this, id, count, options.colors ?? false);
 		this.rememberBatch(batch);
 		batch.setActiveCount(count);
+		if (layers !== undefined) batch.setLayers(layers);
+		if (options.origin) batch.setOrigin(options.origin, call);
+		return batch;
+	}
+
+	/**
+	 * Many sprites in one batch: quads that face the camera, like three.js's `Sprite` with a
+	 * `SpriteMaterial`. Typed arrays give each sprite its position, size, rotation, color and atlas
+	 * frame, as an instance batch's arrays give its rows. Sprites blend by default, and blended
+	 * sprites draw back to front with the other blended objects. The first call downloads the
+	 * sprite code. Throws E1108 for an atlas side that is not a whole number from 1 to 2048, E1203
+	 * for a center that is not two finite numbers, and E1406 when the sprite code does not download.
+	 */
+	async createSprites(options: SpriteOptions): Promise<SpriteBatch> {
+		const call = 'createSprites';
+		const { core, spriteMakers } = this;
+		const { count, layers } = options;
+		if (DEV && layers !== undefined) checkLayers(call, layers);
+		const { columns = 1, rows = 1 } = options.atlas ?? {};
+		for (const [name, side] of [
+			['columns', columns],
+			['rows', rows],
+		] as const)
+			if (!Number.isInteger(side) || side < 1 || side > C.SPRITE_MAX_ATLAS_SIDE)
+				throw new EngineError(
+					'E1108',
+					`${call}() got ${side} atlas ${name}. An atlas has from 1 to ${C.SPRITE_MAX_ATLAS_SIDE} whole ${name}.`,
+				);
+		const { center } = options;
+		if (DEV && center && !(Number.isFinite(center[0]) && Number.isFinite(center[1])))
+			throw new EngineError('E1203', `${call}() got [${center}] for center.`);
+		if (!spriteMakers) throw new Error(`${call}() needs a scene that the engine made`);
+		const sprites = await loadSprites(call);
+		const parts = sprites.spriteParts(
+			spriteMakers,
+			this.spriteQuads,
+			options,
+			[columns, rows],
+			call,
+		);
+		const id = core.checkGrowth(
+			core.glue.createSpriteBatch(
+				count,
+				options.dynamic ?? false,
+				parts.mesh.id,
+				parts.material.id,
+				columns,
+				rows,
+				options.sizeAttenuation === false,
+			),
+			call,
+		);
+		if (DEV) this.countBatchRows(count);
+		const instances = new InstanceBatch(this, id, count, false);
+		this.rememberBatch(instances);
+		if (options.origin) instances.setOrigin(options.origin, call);
+		const batch = new sprites.SpriteBatch(core, id, count, parts.material, instances);
 		if (layers !== undefined) batch.setLayers(layers);
 		return batch;
 	}

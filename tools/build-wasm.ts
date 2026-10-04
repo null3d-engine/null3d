@@ -1,4 +1,5 @@
-// Builds the engine's two WebAssembly files and the shader compiler, then reports their sizes and
+// Builds the engine's two WebAssembly files and the build tools' modules (the shader compiler and
+// the asset tool's formats), then reports their sizes and
 // the sizes of the engine's JavaScript in a production build of the engine test page. Run from
 // the repository root:
 //   bun tools/build-wasm.ts                 build everything, then print the size report
@@ -8,15 +9,16 @@
 //                                           sizes for a size check that builds this commit as its base
 //   bun tools/build-wasm.ts --names         keep the core's function names, for a CPU profile;
 //                                           the names add size, so this skips the size checks
-//   bun tools/build-wasm.ts --pages-only    build only what the test pages need, with no size
-//                                           report: the two WebAssembly files, and the shader
-//                                           compiler that the dev server runs on their WGSL
+//   bun tools/build-wasm.ts --pages-only    build only what the test pages and the tools need,
+//                                           with no size report: the two WebAssembly files, the
+//                                           shader compiler that the dev server runs on their
+//                                           WGSL, and the asset tool's formats
 //
 // The threaded build uses atomics and shared memory, so it rebuilds the standard library with
 // them. The single-threaded build runs on pages that are not cross-origin isolated. The
 // wasm-bindgen command-line tool must match the crate version exactly, so the script downloads
-// that release into the build folder and verifies its checksum. The shader compiler runs in build
-// tools, never in a page, so it has no size budget. Every mode first builds the shader modules
+// that release into the build folder and verifies its checksum. The build tools' modules run in
+// Node and Bun, never in a page, so they have no size budget. Every mode first builds the shader modules
 // when they are missing or out of date, because git does not keep them.
 //
 // The size check's base is a build of main, or in the merge queue of the commit that the group
@@ -38,8 +40,9 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ASSET_FORMATS_URL } from '../packages/cli/src/assets/formats.js';
 import { SHADER_COMPILER_URL } from '../packages/vite-plugin/src/shader-compiler';
 import { explainedFiles, SIZE_GROWTH_GUIDANCE } from './hooks/check-size-growth';
 import { ensureShaderModules } from './lib/shader-modules';
@@ -54,13 +57,17 @@ import {
 } from './lib/size-check';
 import {
 	type BuiltFile,
+	budgetProblems,
 	type CORE_BUILDS,
 	CORE_FILES,
 	downloadSizes,
 	findEngineParts,
 	findTranscoderFiles,
+	LATER_BUDGET_BYTES,
+	LATER_PARTS,
 	measure,
 	type SizeEntry,
+	START_BUDGET_BYTES,
 	totalSize,
 } from './lib/size-report';
 
@@ -85,17 +92,17 @@ const BASE_TREE = `${BASE_DIR}/tree`;
 const COMMITTED_RECORD = 'tools/size-baseline.json';
 /** Brotli budget for each core WebAssembly file. */
 const WASM_BUDGET_BYTES = 600 * 1024;
-/**
- * Brotli budget for the engine's JavaScript that a page downloads, in whichever thread mode
- * downloads the most. The core's generated glue counts with the WebAssembly files instead.
- */
-const JS_BUDGET_BYTES = 100 * 1024;
 /** Where the size report builds the engine test page, apart from the build the browser tests serve. */
 const JS_BUILD_DIR = 'target/js-size';
-/** The crate that builds the shader compiler, the shader crate as a WebAssembly module. */
-const SHADER_COMPILER_CRATE = 'null3d-shaders-wasm';
-/** Where the Vite plugin loads the shader compiler from. */
-const SHADER_COMPILER_PATH = fileURLToPath(SHADER_COMPILER_URL);
+/**
+ * The modules that build tools load, each from a crate of its own: the shader compiler, which the
+ * Vite plugin runs, and the asset tool's formats, which the command-line tool runs. Each goes
+ * where its tool loads it from.
+ */
+const TOOL_MODULES = [
+	{ crate: 'null3d-shaders-wasm', path: fileURLToPath(SHADER_COMPILER_URL) },
+	{ crate: 'null3d-assets-wasm', path: fileURLToPath(ASSET_FORMATS_URL) },
+] as const;
 
 interface Variant {
 	name: (typeof CORE_BUILDS)[number];
@@ -328,19 +335,19 @@ function buildVariant(variant: Variant, bindgen: string, keepNames: boolean): vo
 }
 
 /**
- * Builds the shader compiler. It takes and gives JSON through its memory, so it needs no
- * JavaScript glue. The build drops the function names and skips wasm-opt, which on this module
- * takes longer than the whole build, saves almost nothing after Brotli and makes compiles no faster.
+ * Builds the build tools' modules. Each takes and gives its data through its memory, so it needs
+ * no JavaScript glue. The build drops the function names and skips wasm-opt, which on the shader
+ * compiler takes longer than the whole build, saves almost nothing after Brotli and makes compiles
+ * no faster.
  */
-function buildShaderCompiler(): void {
+function buildToolModules(): void {
 	const targetDir = 'target/wasm-shaders';
-	console.log('\nbuilding the shader compiler');
+	console.log("\nbuilding the shader compiler and the asset tool's formats");
 	run(
 		'cargo',
 		[
 			'build',
-			'-p',
-			SHADER_COMPILER_CRATE,
+			...TOOL_MODULES.flatMap(({ crate }) => ['-p', crate]),
 			'--release',
 			'--target',
 			'wasm32-unknown-unknown',
@@ -349,9 +356,11 @@ function buildShaderCompiler(): void {
 		],
 		{ RUSTFLAGS: '-Cstrip=symbols' },
 	);
-	const built = `${targetDir}/wasm32-unknown-unknown/release/${SHADER_COMPILER_CRATE.replace(/-/g, '_')}.wasm`;
-	mkdirSync(dirname(SHADER_COMPILER_PATH), { recursive: true });
-	copyFileSync(join(root, built), SHADER_COMPILER_PATH);
+	for (const { crate, path } of TOOL_MODULES) {
+		const built = `${targetDir}/wasm32-unknown-unknown/release/${crate.replace(/-/g, '_')}.wasm`;
+		mkdirSync(dirname(path), { recursive: true });
+		copyFileSync(join(root, built), path);
+	}
 }
 
 export interface MemoryLimits {
@@ -588,7 +597,7 @@ async function main(): Promise<void> {
 	const version = lockedVersion(readFileSync(join(root, 'Cargo.lock'), 'utf8'), 'wasm-bindgen');
 	const bindgen = await wasmBindgen(version);
 	for (const variant of VARIANTS) buildVariant(variant, bindgen, options.keepNames);
-	if (!options.sizesOnly) buildShaderCompiler();
+	if (!options.sizesOnly) buildToolModules();
 	if (options.pagesOnly) return;
 
 	const sizes: Record<string, SizeEntry> = {};
@@ -613,14 +622,25 @@ async function main(): Promise<void> {
 		]),
 	);
 
+	const later = new Map(
+		LATER_PARTS.flatMap(({ name }) => {
+			const size = parts.get(name);
+			return size ? [[name, size] as const] : [];
+		}),
+	);
 	console.log('\nsize report (budget for each .wasm file of the core: 600 KB after Brotli)');
 	for (const [file, size] of Object.entries(sizes))
 		printSize(file, size, file.endsWith('.wasm') ? WASM_BUDGET_BYTES : undefined);
 	printSize('js total', totalSize(parts.values()));
 	console.log(
-		"\nthe engine's JavaScript that a page downloads in each thread mode, besides the core's glue (budget: 100 KB after Brotli)",
+		`\nthe engine's JavaScript that a page downloads at its start in each thread mode, besides the core's glue (budget: ${kb(START_BUDGET_BYTES)} after Brotli)`,
 	);
-	for (const { mode, size } of downloads) printSize(mode, size, JS_BUDGET_BYTES);
+	for (const { mode, size } of downloads) printSize(mode, size, START_BUDGET_BYTES);
+	console.log(
+		`\nthe engine's JavaScript that loads after the start, on a feature's first use or after the first frame (budget: ${kb(LATER_BUDGET_BYTES)} after Brotli for each file; no start counts them)`,
+	);
+	for (const [part, size] of later) printSize(`js/${part}`, size, LATER_BUDGET_BYTES);
+	printSize('after the start, total', totalSize(later.values()));
 	console.log(
 		'\nthe KTX2 transcoder, which a page downloads when it loads its first KTX2 file (no budget)',
 	);
@@ -632,8 +652,8 @@ async function main(): Promise<void> {
 		console.log(`\nwrote ${SIZE_RECORD}`);
 		return;
 	}
-	console.log('\nthe shader compiler, which only build tools load (no budget)');
-	printSize('shader-compiler.wasm', measure(readFileSync(SHADER_COMPILER_PATH)));
+	console.log('\nthe modules that only build tools load (no budget)');
+	for (const { path } of TOOL_MODULES) printSize(basename(path), measure(readFileSync(path)));
 
 	const problems = Object.entries(sizes)
 		.filter(
@@ -641,11 +661,7 @@ async function main(): Promise<void> {
 				file.endsWith('.wasm') && !transcoder.has(file) && size.brotli > WASM_BUDGET_BYTES,
 		)
 		.map(([file]) => `${file} is over its 600 KB Brotli budget`);
-	for (const { mode, size } of downloads)
-		if (size.brotli > JS_BUDGET_BYTES)
-			problems.push(
-				`the engine JavaScript that a page downloads in ${mode} mode is over its 100 KB Brotli budget`,
-			);
+	problems.push(...budgetProblems(parts));
 	const growth = options.checkSize ? checkGrowth(sizes, options.base) : [];
 	for (const p of [...problems, ...growth]) console.error(`error: ${p}`);
 	if (growth.length > 0) {

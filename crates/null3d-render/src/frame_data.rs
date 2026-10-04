@@ -40,7 +40,8 @@ pub struct FrameUniform {
     pub camera_world: [f32; 4],
     /// The size of the render target in pixels, and one over each.
     pub target_size: [f32; 4],
-    /// The distances of the camera's near and far planes, and two spares.
+    /// The distances of the camera's near and far planes, then the change in normalized device
+    /// coordinates across one CSS pixel of the canvas, along x and along y.
     pub camera_range: [f32; 4],
 }
 

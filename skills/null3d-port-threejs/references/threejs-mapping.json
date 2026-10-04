@@ -186,9 +186,9 @@
       "three": "logarithmicDepthBuffer / reverseDepthBuffer",
       "status": "direct",
       "since": "0.1",
-      "target": "Nothing to do; createEngine({ largeWorld: true }) for planet-scale scenes (0.2)",
-      "notes": "The engine draws reversed depth in a 32-bit float buffer. On WebGL2 without EXT_clip_control, reversed depth keeps GL's range, which is less precise. engine.capabilities.depth says which depth the device draws. The engine also renders relative to the camera through per-cell offsets.",
-      "docs": "concepts/backends",
+      "target": "Nothing to do; createEngine({ largeWorld: true }) and batch origins for planet-scale scenes (0.2)",
+      "notes": "The engine draws reversed depth in a 32-bit float buffer. On WebGL2 without EXT_clip_control, reversed depth keeps GL's range, which is less precise. engine.capabilities.depth says which depth the device draws. The engine also renders relative to the camera through per-cell offsets. With largeWorld: true, positions that you set keep their full precision at any distance, and createInstances takes an origin that its rows are relative to.",
+      "docs": "concepts/large-worlds",
       "detect": "logarithmicDepthBuffer|reverseDepthBuffer"
     },
     {
@@ -418,7 +418,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "scene.instantiate(prefab) for loaded models; scene.clone(obj) for built objects",
-      "notes": "Each instantiate shares the model's meshes, materials and textures. scene.clone copies an object and every object below it, lights and cameras included, under the same parent. Skins from files are not built yet.",
+      "notes": "Each instantiate shares the model's meshes, materials and textures. scene.clone copies an object and every object below it, lights and cameras included, under the same parent. A copy of an animated model gets an animator of its own, as SkeletonUtils.clone gives a copy its own skeleton.",
       "docs": "api/scene",
       "detect": "SkeletonUtils\\.clone\\s*\\(|\\.scene\\.clone\\s*\\("
     },
@@ -1066,7 +1066,7 @@
       "three": "RGBELoader / EXRLoader / HDRLoader / UltraHDRLoader + PMREMGenerator",
       "status": "changed",
       "since": "0.2",
-      "target": "`bunx @null3d/cli assets env studio.hdr` offline, then assets.loadEnvironment",
+      "target": "`bunx @null3d/cli assets env studio.hdr studio.ktx2` offline, then assets.loadEnvironment",
       "notes": "Prefiltering happens once at build time instead of on every visit.",
       "docs": "guides/assets-pipeline",
       "detect": "\\b(RGBE|EXR|HDR|UltraHDR)Loader\\b|\\bPMREMGenerator\\b"
@@ -1122,7 +1122,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const prefab = await assets.loadGltf(url); scene.instantiate(prefab)",
-      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures and meshopt compression need no decoder setup. Skins, animations and morph targets are not read yet.",
+      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures and meshopt compression need no decoder setup. Clips play through the copy's animator: scene.instantiate(prefab).animator().play(name), with the names in prefab.clips. Joints are not objects. Morph targets load but do not draw yet.",
       "docs": "api/assets",
       "detect": "\\bGLTFLoader\\b"
     },
@@ -1262,10 +1262,10 @@
       "id": "skinned",
       "category": "Animation",
       "three": "SkinnedMesh / Skeleton / Bone built by hand",
-      "status": "changed",
+      "status": "manual",
       "since": "0.2",
-      "target": "Skins load from glTF; anim.setJointOverride(jointName, rotation) for procedural aiming",
-      "notes": "Building skeletons in code is not supported; author them in a modeling tool.",
+      "target": "Author the skeleton in a modeling tool and export glTF: const hero = scene.instantiate(await assets.loadGltf(url)); hero.animator().play('walk')",
+      "notes": "Building skeletons in code is not supported, and joints are not objects. Meshes that hang on bones, such as a sword in a hand, follow their joints when the file puts them under the bone. Procedural aiming with anim.setJointOverride comes later in 0.2.",
       "docs": "api/animation",
       "detect": "\\bSkinnedMesh\\b|new\\s+(THREE\\.)?(Skeleton|Bone)\\s*\\("
     },
@@ -1342,7 +1342,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "debug.axes, debug.grid, debug.box, debug.sphere, debug.arrow, debug.frustum, debug.light, debug.skeleton",
-      "notes": "Call them in onUpdate: each call draws for one frame. Debug drawing exists in development builds only. debug.grid takes GridHelper's size and divisions. debug.box takes a box's lowest and highest corners. debug.light draws directional lights only. PlaneHelper and PolarGridHelper have no equivalent. debug.skeleton comes with animation in 0.2.",
+      "notes": "Call them in onUpdate: each call draws for one frame. Debug drawing exists in development builds only. debug.grid takes GridHelper's size and divisions. debug.box takes a box's lowest and highest corners. debug.light draws directional lights only. debug.skeleton draws an animated object's skin joints, blue at the joint and green at its parent, as SkeletonHelper does. PlaneHelper and PolarGridHelper have no equivalent.",
       "docs": "api/debug",
       "detect": "\\b(Axes|Grid|PolarGrid|Box|Box3|Arrow|Camera|DirectionalLight|PointLight|SpotLight|HemisphereLight|Skeleton|Plane)Helper\\b"
     },
@@ -1561,8 +1561,8 @@
       "three": "Sprite / SpriteMaterial",
       "status": "changed",
       "since": "0.2",
-      "target": "scene.createSprites(count, { texture | atlas, sizeMode: 'world' | 'screen' })",
-      "notes": "Camera-facing quads drawn in one batch.",
+      "target": "await scene.createSprites({ count, map, atlas, sizeAttenuation, center })",
+      "notes": "Camera-facing quads drawn in one batch, with typed arrays of positions, sizes, rotations, colors and atlas frames per sprite. The call is async, because the first one downloads the sprite code. Sprites blend by default, as three.js's do. Without size attenuation, sizes are in CSS pixels, not a fraction of the view's height. Raycasts do not find sprites yet.",
       "docs": "api/sprites",
       "detect": "\\bSprite(Material)?\\b"
     },
@@ -1595,8 +1595,8 @@
       "status": "changed",
       "since": "0.2",
       "target": "Sketch: ui.trackLabel(obj, 'hp-12', { offset: [0, 2, 0] }). Page: engine.labels.bind('hp-12', element)",
-      "notes": "The engine writes screen positions into shared memory each frame, and the page moves the elements; no messages per frame. CSS3D transforms come after 1.0.",
-      "docs": "guides/ui-overlays",
+      "notes": "The sketch places each label with the camera of each frame, and the page moves the element over it in the frame on screen; no messages per frame. The element's center sits where CSS2DRenderer puts a CSS2DObject's, and the offset turns and scales with the object, as a CSS2DObject's position does under its parent. Put the elements in a container that covers the canvas. Hidden labels get visibility: hidden, not display: none. No z-index by distance, and no center or rotation2D. CSS3D transforms come after 1.0.",
+      "docs": "api/ui",
       "detect": "\\bCSS[23]D(Renderer|Object|Sprite)\\b"
     },
     {

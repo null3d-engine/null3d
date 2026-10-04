@@ -8,7 +8,7 @@ mod common;
 #[path = "fixtures/three_animation.rs"]
 mod three;
 
-use common::{Workers, character};
+use common::{Workers, axis_angle, character};
 use null3d_core::animation::{
     AnimationError, Animations, Channel, Clip, DEFAULT_RATE, EVENT_WORDS, Interpolation,
     MATRIX_FLOATS, MAX_BLEND, MAX_FRAMES, MAX_LAYERS, NO_PARENT, POSE_FIELDS, Play, Skeleton,
@@ -35,11 +35,7 @@ fn tracks(clip: &three::Clip) -> Vec<SourceTrack<'static>> {
         .map(|t| SourceTrack {
             joint: t.joint,
             channel: Channel::from_u32(t.channel).unwrap(),
-            interpolation: if t.step {
-                Interpolation::Step
-            } else {
-                Interpolation::Linear
-            },
+            interpolation: Interpolation::from_u32(t.interpolation).unwrap(),
             times: t.times,
             values: t.values,
         })
@@ -131,6 +127,11 @@ fn clips_keep_a_source_grid_up_to_the_rate_and_resample_others() {
             (43, (42.0f64 / 1.37) as f32, 1.37, 4, 4),
             // Keys every 24th of a second: kept.
             (19, 24.0, 0.75, 2, 2),
+            // Uneven cubic spline keys: 30 keys a second, so the curve between keys survives.
+            (76, 30.0, 2.5, 3, 3),
+            // Cubic spline keys every half second: 15 keys between each two, so the file's own
+            // keys stay exact.
+            (61, 30.0, 2.0, 3, 3),
         ]
     );
     // A rate of 60 keys a second is above the default rate, so it becomes 30.
@@ -145,6 +146,18 @@ fn clips_keep_a_source_grid_up_to_the_rate_and_resample_others() {
     };
     let clip = resample(&skeleton, &[track], DEFAULT_RATE).unwrap();
     assert_eq!((clip.frames(), clip.rate()), (31, 30.0));
+    // 32 thirtieths of a second as a 32-bit float lies a little past 32 frames, and still ends on
+    // the 32nd, so the clip keeps the file's keys (the KayKit Knight's clips end so).
+    let times: Vec<f32> = (0..=32).map(|k| k as f32 / 30.0).collect();
+    let values: Vec<f32> = times.iter().flat_map(|t| [*t, 0.0, 0.0]).collect();
+    let ends_late = SourceTrack {
+        times: &times,
+        values: &values,
+        ..track
+    };
+    let clip = resample(&skeleton, &[ends_late], DEFAULT_RATE).unwrap();
+    assert_eq!(clip.frames(), 33);
+    assert!((clip.rate() - 30.0).abs() < 1e-5, "{}", clip.rate());
     // A clip whose keys all sit at time 0 has one frame and no animated track.
     let still = SourceTrack {
         times: &[0.0],
@@ -180,6 +193,49 @@ fn single_clips_sample_as_three_js_does() {
         largest = largest.max(difference);
     }
     println!("largest difference in a local pose from three.js: {largest:e}");
+}
+
+#[test]
+fn joints_that_turn_far_between_keys_follow_the_arc_in_any_group() {
+    // Four joints turn a little between keys and the last a radian, so in joint order the fast
+    // track would share no group with the first four. A quarter of the way between keys, plain
+    // interpolation strays from the arc by far more than the tolerance.
+    let skeleton = skeleton();
+    let lanes = skeleton.lanes() as usize;
+    let times = [0.0, 1.0 / 30.0];
+    let turns = [0.05, 0.05, 0.05, 0.05, 1.0];
+    let values: Vec<Vec<f32>> = turns
+        .iter()
+        .map(|&turn| {
+            [0.0, turn]
+                .iter()
+                .flat_map(|&a| axis_angle([0.0, 0.0, 1.0], a))
+                .collect()
+        })
+        .collect();
+    let tracks: Vec<SourceTrack<'_>> = values
+        .iter()
+        .enumerate()
+        .map(|(joint, values)| SourceTrack {
+            joint: joint as u32,
+            channel: Channel::Rotation,
+            interpolation: Interpolation::Linear,
+            times: &times,
+            values,
+        })
+        .collect();
+    let clip = resample(&skeleton, &tracks, DEFAULT_RATE).unwrap();
+    let mut pose = vec![0.0; clip.pose_len()];
+    clip.sample(0.25 / 30.0, &mut pose);
+    for (joint, &turn) in turns.iter().enumerate() {
+        let want = axis_angle([0.0, 0.0, 1.0], turn / 4.0);
+        let got: [f32; 4] = std::array::from_fn(|c| pose[(3 + c) * lanes + joint]);
+        let difference = largest_difference(got.map(f64::from), &want.map(f64::from));
+        assert!(
+            difference <= POSE_TOLERANCE,
+            "joint {joint}: {got:?} is {difference} from slerp's {want:?}"
+        );
+    }
 }
 
 #[test]
@@ -381,6 +437,21 @@ fn resampling_refuses_bad_tracks() {
             ..good
         }]),
         Some((0, TrackProblem::Keys))
+    );
+    // A cubic spline key holds an in-tangent, a value and an out-tangent: three times the values.
+    let cubic = SourceTrack {
+        interpolation: Interpolation::CubicSpline,
+        ..good
+    };
+    assert_eq!(problem(&[cubic]), Some((0, TrackProblem::Keys)));
+    let tangents = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
+    let keys = [tangents, tangents].concat();
+    assert_eq!(
+        problem(&[SourceTrack {
+            values: &keys,
+            ..cubic
+        }]),
+        None
     );
     for times in [
         [1.0, 0.5],

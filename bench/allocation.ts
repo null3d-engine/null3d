@@ -4,7 +4,9 @@
 // null3d S1 page in Chrome, lets the browser optimize the frame code, attaches the heap profiler to
 // both workers through Chrome's debugging protocol, and samples allocations twice, a few seconds
 // each. It prints the bytes per frame of every place that allocated, and judges each place by the
-// sample where it allocated least, so an event that happens once fails no place. From the page's
+// sample where it allocated least, so an event that happens once fails no place. In each sample it
+// sets aside one burst of objects per place: the browser makes one when it installs code that it
+// has just optimized, in whichever callback runs first, even an empty one. From the page's
 // start to the end of the samples, it moves the mouse over the canvas and presses a key and the
 // mouse button, so the samples cover the sketch's reading of input. It draws with WebGPU, or with
 // WebGL2 when `--gpu webgl2` asks for it. `--scene s1-cells` runs S1-cells, whose views skip whole
@@ -13,10 +15,15 @@
 // S1's boxes see through, so each frame sorts every visible row for the transparent pass.
 // `--animated 64` adds 64 animated characters to S1, which play, cross-fade, blend a masked layer
 // and an additive one, and fire events to the sketch's handlers through the animator. `--grading`
-// gives S1 a color grading table and the vignette, and changes both every frame. It
+// gives S1 a color grading table and the vignette, and changes both every frame. `--sprites` draws
+// S1's swarm as one dynamic batch of blended sprites instead of boxes. `--labels 256` adds 256
+// objects to S1, each with an HTML label that the page binds. The camera orbits, so each frame
+// places every label at a new point, and the thread that draws copies them for the page. It
 // samples the production build of the benchmark pages, as a developer ships the engine, and names
 // the build's functions through its source maps; `--dev` samples the dev server's pages, with the
-// engine's development checks. From the repository root:
+// engine's development checks. `--no-inline` turns the browser's inlining off, so each function's
+// objects count in its own place, not in its caller's; budgets then do not hold, so read the places,
+// not the verdict. From the repository root:
 //   bun run bench:allocation
 //   bun run bench:allocation --n 30000 --seconds 5 --warmup 30
 //   bun run bench:allocation --gpu webgl2
@@ -26,10 +33,20 @@
 //   bun run bench:allocation --blend --n 30000 --gpu webgl2
 //   bun run bench:allocation --animated 64 --gpu webgl2
 //   bun run bench:allocation --grading --gpu webgl2
+//   bun run bench:allocation --sprites --gpu webgl2
+//   bun run bench:allocation --labels 256 --gpu webgl2
+//   bun run bench:allocation --labels 256 --no-inline
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
-import { byPlace, type ProfileNode, type Sample, steadyPlaces, totalSize } from './lib/allocation';
+import {
+	type HeapProfile,
+	type ProfileNode,
+	profilePlaces,
+	type Sample,
+	steadyPlaces,
+	totalSize,
+} from './lib/allocation';
 import { attachWorkers, DevTools, pagesAt, sleep } from './lib/devtools';
 import { pagePath } from './lib/parity';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
@@ -67,8 +84,9 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  *   shadow passes and nine more uploads per frame put its replay 46 to 48 bytes above S1's;
  * - the completion tracker's object for each frame: the queue's promise and its reaction on WebGPU,
  *   which the browser counts in the renderer's `drawFrame` where it inlines the tracker, or the fence
- *   on WebGL2; and the clock readings at each frame's submit and completion, and at each check of
- *   the frames still in flight;
+ *   on WebGL2. After a few minutes the browser compiles the render loop's `draw` with `drawFrame`
+ *   inlined and the tracker's `afterSubmit` not, and counts the object there. Also the clock
+ *   readings at each frame's submit and completion, and at each check of the frames still in flight;
  * - the staging ring's mapping, for uploads that go through it: the mapped range and the views that
  *   copy into it, and the promise of the request to map the buffer again;
  * - the upload route timing, which reads the clock around the uploads of one submit in a few;
@@ -101,6 +119,7 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 		'then (built-in)': 128,
 		'Uint8Array (built-in)': 64,
 		'submit webgpu/backend.ts': 32,
+		'afterSubmit gpu/completion.ts': 160,
 		'push gpu/completion.ts': 24,
 		'finish gpu/completion.ts': 40,
 		'unfinished gpu/completion.ts': 16,
@@ -157,11 +176,15 @@ async function main(): Promise<void> {
 	// numbers that such code computes are allocated.
 	const warmup = option('--warmup', WARMUP_SECONDS);
 	const dev = args.includes(DEV_OPTION);
+	const noInline = args.includes('--no-inline');
 	const server = await serveBenchPages({ dev });
 	const browser = await chromium.launch({
 		channel: 'chrome',
 		headless: false,
-		args: [`--remote-debugging-port=${DEBUG_PORT}`],
+		args: [
+			`--remote-debugging-port=${DEBUG_PORT}`,
+			...(noInline ? ['--js-flags=--no-turbo-inlining --no-maglev-inlining'] : []),
+		],
 	});
 	try {
 		const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
@@ -175,7 +198,12 @@ async function main(): Promise<void> {
 		const animated = animatedCount > 0 ? `&animated=${animatedCount}` : '';
 		const grading = args.includes('--grading') ? '&grading' : '';
 		if (grading && scene !== 's1') throw new Error('--grading grades S1 only');
-		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${grading}`;
+		const sprites = args.includes('--sprites') ? '&sprites' : '';
+		if (sprites && scene !== 's1') throw new Error('--sprites draws S1 as sprites only');
+		const labelCount = option('--labels', 0);
+		if (labelCount > 0 && scene !== 's1') throw new Error('--labels adds labels to S1 only');
+		const labels = labelCount > 0 ? `&labels=${labelCount}` : '';
+		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${grading}${sprites}${labels}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
@@ -230,31 +258,31 @@ async function main(): Promise<void> {
 			}
 			const startFrames = await framesSoFar();
 			await sleep(seconds * 1000);
-			const heads = new Map<string, ProfileNode>();
+			const profiles = new Map<string, HeapProfile>();
 			for (const [name, sessionId] of sessions) {
-				const { profile } = await devtools.send<{ profile: { head: ProfileNode } }>(
+				const { profile } = await devtools.send<{ profile: HeapProfile }>(
 					'HeapProfiler.stopSampling',
 					{},
 					sessionId,
 				);
 				if (server.names) nameNodes(profile.head, server.names);
-				heads.set(name, profile.head);
+				profiles.set(name, profile);
 			}
 			const sampleFrames = (await framesSoFar()) - startFrames;
 			frames += sampleFrames;
-			for (const [name, head] of heads) {
+			for (const [name, profile] of profiles) {
 				samples.set(name, [
 					...(samples.get(name) ?? []),
-					{ places: byPlace(head), frames: sampleFrames },
+					{ places: profilePlaces(profile), frames: sampleFrames },
 				]);
-				bytes.set(name, (bytes.get(name) ?? 0) + totalSize(head));
+				bytes.set(name, (bytes.get(name) ?? 0) + totalSize(profile.head));
 			}
 		}
 		driving = false;
 		await input;
 		devtools.close();
 		console.log(
-			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}, ${pagesText(dev)}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
 		);
 		console.log(
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',

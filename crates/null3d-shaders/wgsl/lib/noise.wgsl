@@ -216,21 +216,28 @@ fn worley2(p: vec2f) -> f32 {
     return sqrt(nearest);
 }
 
+/// The most octaves that fractal noise sums. The octaves past it would together add less than
+/// 1/32768 of the first octave's amplitude, far below the step between two colors on screen.
+const MAX_OCTAVES: u32 = 16u;
+
 /// Fractal noise in 3D: `octaves` layers of simplex noise, each at twice the frequency and half
 /// the amplitude of the one before. The sum is divided by the total amplitude, so it stays from
-/// about -1 to 1. With no octaves it is 0.
+/// about -1 to 1. With no octaves it is 0. It sums at most `MAX_OCTAVES` octaves.
 fn fbm3(p: vec3f, octaves: u32) -> f32 {
     var sum = 0.0;
     var total = 0.0;
-    for (var octave = 0u; octave < octaves; octave++) {
-        // Each octave's frequency and amplitude come from its number, as the exponent bits of a
-        // float, so they are exact powers of 2 on every GPU. The loop carries only the sums. On
-        // the Adreno 830's WebGPU driver, a loop that doubles a 2D point at each pass returns the
-        // first pass's noise every time.
-        let frequency = bitcast<f32>((127u + octave) << 23u);
-        let amplitude = bitcast<f32>((127u - octave) << 23u);
-        sum += amplitude * simplex3(p * frequency);
-        total += amplitude;
+    // The loop makes the same number of passes in every pixel, and the octave count only chooses
+    // which passes add their octave. The Adreno 830's WebGPU driver gets the number of passes
+    // wrong in a loop that stops at a count that differs between pixels. Each octave's frequency
+    // and amplitude come from its number, as the exponent bits of a float, so they are exact
+    // powers of 2 on every GPU.
+    for (var octave = 0u; octave < MAX_OCTAVES; octave++) {
+        if (octave < octaves) {
+            let frequency = bitcast<f32>((127u + octave) << 23u);
+            let amplitude = bitcast<f32>((127u - octave) << 23u);
+            sum += amplitude * simplex3(p * frequency);
+            total += amplitude;
+        }
     }
     return select(0.0, sum / total, total > 0.0);
 }
@@ -239,11 +246,13 @@ fn fbm3(p: vec3f, octaves: u32) -> f32 {
 fn fbm2(p: vec2f, octaves: u32) -> f32 {
     var sum = 0.0;
     var total = 0.0;
-    for (var octave = 0u; octave < octaves; octave++) {
-        let frequency = bitcast<f32>((127u + octave) << 23u);
-        let amplitude = bitcast<f32>((127u - octave) << 23u);
-        sum += amplitude * simplex2(p * frequency);
-        total += amplitude;
+    for (var octave = 0u; octave < MAX_OCTAVES; octave++) {
+        if (octave < octaves) {
+            let frequency = bitcast<f32>((127u + octave) << 23u);
+            let amplitude = bitcast<f32>((127u - octave) << 23u);
+            sum += amplitude * simplex2(p * frequency);
+            total += amplitude;
+        }
     }
     return select(0.0, sum / total, total > 0.0);
 }

@@ -1,6 +1,9 @@
 // The control block: a small shared array through which the page, the sketch worker and the render
-// worker exchange frame signals, canvas size and input events. It lives in its own shared buffer,
-// separate from WebAssembly memory, so it exists before any worker has loaded the engine core.
+// worker exchange frame signals, canvas size and input events, and the label tables after them. It
+// lives in its own shared buffer, separate from WebAssembly memory, so it exists before any worker
+// has loaded the engine core.
+
+import { type LabelRegion, labelBytes, labelRegion } from './labels';
 
 /** Int32 slots of the control block, read as `Slot.Running`. */
 export * as Slot from './slot';
@@ -70,8 +73,8 @@ export const FLAG_TOUCH = 32;
 /** The pointer is the mouse, a pen, or the first finger of a touch. */
 export const FLAG_PRIMARY = 64;
 
-/** Byte size of the whole control buffer: the slots, then the input ring. */
-export const CONTROL_BYTES =
+/** Byte size of the control buffer's slots and input ring, after which the label tables start. */
+const CONTROL_BYTES =
 	(SLOT_COUNT + INPUT_RING_EVENTS * INPUT_EVENT_INTS) * Int32Array.BYTES_PER_ELEMENT;
 
 export interface ControlViews {
@@ -84,9 +87,18 @@ export interface ControlViews {
 	inputFloats: Float32Array;
 }
 
-/** A shared control buffer in threaded mode, or a plain one when the page is not isolated. */
-export function createControlBuffer(shared: boolean): ArrayBufferLike {
-	return shared ? new SharedArrayBuffer(CONTROL_BYTES) : new ArrayBuffer(CONTROL_BYTES);
+/**
+ * A shared control buffer in threaded mode, or a plain one when the page is not isolated, with
+ * label tables for `maxLabels` labels.
+ */
+export function createControlBuffer(shared: boolean, maxLabels = 0): ArrayBufferLike {
+	const bytes = CONTROL_BYTES + labelBytes(maxLabels);
+	return shared ? new SharedArrayBuffer(bytes) : new ArrayBuffer(bytes);
+}
+
+/** The label tables of a control buffer, or undefined when it holds none. */
+export function controlLabels(buffer: ArrayBufferLike): LabelRegion | undefined {
+	return labelRegion(buffer, CONTROL_BYTES);
 }
 
 export function controlViews(buffer: ArrayBufferLike): ControlViews {

@@ -37,6 +37,7 @@ import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { loadSketch } from '../sketch/define-sketch';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
 import type { SketchRunner } from '../sketch/runner';
+import type { LabelSlotSender } from '../sketch/ui';
 import type {
 	CapturedFrame,
 	CoreHandoff,
@@ -65,6 +66,7 @@ import {
 } from './frame-stats';
 import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
+import { type EngineLabels, labelCapacity, PageLabels } from './labels';
 import { coreDevice, maxCanvasSize, maxInstances } from './limits';
 import { loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
@@ -170,6 +172,15 @@ export interface EngineOptions {
 	 */
 	transparent?: boolean;
 	/**
+	 * True for scenes that reach far beyond a city, such as a planet. Object positions then keep the
+	 * precision of JavaScript's numbers at any distance from the origin: 0.03 mm or better. Without
+	 * it, positions are 32-bit floats, which move in steps of 6 cm at 1,000 km from the origin and
+	 * 0.5 m at the Earth's radius. It costs 12 bytes of memory per object and a little work in each
+	 * position setter. The default is false. Instance batches need no mode: give each one an
+	 * `origin` near its rows.
+	 */
+	largeWorld?: boolean;
+	/**
 	 * The thread that runs the sketch's code and the engine core: `worker`, the default, or `main`
 	 * for the page's main thread, where the sketch can reach the DOM. Use `main` for apps that work
 	 * mostly with the DOM, and for debugging. The render worker still draws in pipelined mode, and
@@ -187,6 +198,12 @@ export interface EngineOptions {
 	 * does not change it. The `?memory=<MiB>` switch wins over it.
 	 */
 	memory?: { maximumMiB: number };
+	/**
+	 * The most HTML labels that the sketch can track at once with `ui.trackLabel`: a whole number
+	 * from 1 to 65,536, 4,096 by default. Another value fails with E1213. The engine keeps three
+	 * tables of 16 bytes per label in memory that its threads share, so 4,096 labels take 192 KB.
+	 */
+	maxLabels?: number;
 	/**
 	 * Called as the start reaches each stage, in this order: `core` once the engine core is compiled
 	 * and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the
@@ -340,6 +357,8 @@ export interface Engine {
 	 * a loading screen. It never resolves when the engine is destroyed first.
 	 */
 	readonly firstFrame: Promise<void>;
+	/** The HTML elements that follow the labels the sketch tracks with `ui.trackLabel`. */
+	readonly labels: EngineLabels;
 	/** Sends a message to the sketch, which receives it through `ctx.page.onMessage`. */
 	postToSketch(name: string, data?: unknown, transfer?: Transferable[]): void;
 	/**
@@ -496,6 +515,8 @@ interface WorkerEvents {
 	quality(update: QualityUpdate): void;
 	/** The sketch asked to show or hide the stats overlay. */
 	stats(show: boolean): void;
+	/** The slot in the label table of a label's id, or -1 once it has none. */
+	labelSlot: LabelSlotSender;
 }
 
 /** A worker whose replies are routed: events to the page's handlers, answers to the oldest request. */
@@ -535,6 +556,10 @@ class EngineWorker {
 			}
 			if (reply.type === 'stats') {
 				events.stats(reply.show);
+				return;
+			}
+			if (reply.type === 'label') {
+				events.labelSlot(reply.id, reply.slot, reply.generation);
 				return;
 			}
 			if (reply.type === 'lost') {
@@ -864,12 +889,15 @@ async function startEngine(
 			checkStore?.save(update.check, switches.fps);
 		},
 		stats: (show) => statsSwitch.show(show),
+		labelSlot: (id, slot, generation) => pageLabels?.setSlot(id, slot, generation),
 	};
+	/** The page's labels, once the page knows which thread draws. */
+	let pageLabels: PageLabels | undefined;
 
 	const jobWorkers = threaded
 		? (switches.jobs ?? Math.max(1, (navigator.hardwareConcurrency ?? 1) - RESERVED_CORES))
 		: 0;
-	const control = createControlBuffer(threaded);
+	const control = createControlBuffer(threaded, labelCapacity(options.maxLabels));
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
 	const views = controlViews(control);
 	const { slots } = views;
@@ -950,6 +978,9 @@ async function startEngine(
 			new EngineError('E1301', `no usable GPU path for ?gpu=${requested} in this browser.`),
 		);
 	const { tier, forceCompat } = choice;
+	// Where the page draws, it moves the label elements right after each frame it draws.
+	const labels = new PageLabels(views, renderThread === 'main');
+	pageLabels = labels;
 	const chosen = choosePreset(presetRequest, tier);
 	// The engine checks a preset that it chose itself, when a lighter one exists. A preset that the
 	// page, a switch or hold mode fixes stays as it is. A start after a crash measures again, and
@@ -1012,6 +1043,7 @@ async function startEngine(
 		antialias: quality.settings.antialias,
 		transparent: options.transparent === true,
 		depthPrepass: quality.settings.depthPrepass,
+		largeWorld: options.largeWorld === true,
 	});
 	const capabilities: EngineCapabilities = {
 		tier,
@@ -1089,6 +1121,7 @@ async function startEngine(
 			control,
 			sketch,
 			...images,
+			presented: () => labels.update(),
 			fail: pageLoss,
 			fault: (error) =>
 				onFailure(new EngineError('E1404', `the drawing on the page failed: ${messageOf(error)}.`)),
@@ -1230,6 +1263,7 @@ async function startEngine(
 					fps: switches.fps,
 					threads: engineThreads,
 					showStats: events.stats,
+					sendLabelSlot: events.labelSlot,
 				},
 				hold,
 			);
@@ -1339,6 +1373,7 @@ async function startEngine(
 		report,
 		mode,
 		firstFrame,
+		labels,
 		postToSketch(name, data, transfer = []) {
 			if (localRunner) localRunner.receive(name, data);
 			else threads?.sketch?.worker.postMessage({ type: 'post', name, data }, transfer);
