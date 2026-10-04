@@ -250,7 +250,7 @@ jobs:
             select: --grep-invert
     env:
       HUSKY: "0"
-      BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s3|s1|s1-static|s1-cells)\b'
+      BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s3|s2|s1|s1-static|s1-cells)\b'
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
