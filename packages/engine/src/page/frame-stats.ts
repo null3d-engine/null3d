@@ -113,6 +113,12 @@ export interface FrameSummary {
 	 */
 	visibleEntries: Percentiles | null;
 	/**
+	 * Entries per frame that software occlusion culling took out of the list of visible objects on
+	 * WebGL2: objects, instance rows and groups of rows inside the camera's view that lie wholly
+	 * behind blockers. Null on WebGPU, where the GPU culls.
+	 */
+	occludedEntries: Percentiles | null;
+	/**
 	 * Frames whose structure change rebuilt the draw tables: objects created or destroyed, meshes or
 	 * materials changed, or batches created or destroyed. Steady play has none; showing or hiding
 	 * objects and changing a batch's active count do not rebuild.
@@ -322,9 +328,10 @@ export function summarizeFrames(
 	}
 
 	const render = ring(Role.Render);
-	const visible = (sketch.counters[Counter.VisibleEntries] ?? []).filter(
-		(entries) => entries !== CORE_NOT_COUNTED,
-	);
+	const counted = (counter: number) =>
+		(sketch.counters[counter] ?? []).filter((entries) => entries !== CORE_NOT_COUNTED);
+	const visible = counted(Counter.VisibleEntries);
+	const occluded = counted(Counter.OccludedEntries);
 	const gpu = ring(Role.Gpu).busy;
 	const completion = ring(Role.Completion);
 	const intervals = render.intervals.filter((ms) => ms > 0);
@@ -343,6 +350,7 @@ export function summarizeFrames(
 		uploadBytes: percentiles(render.counters[Counter.UploadBytes] ?? []),
 		drawCalls: percentiles(render.counters[Counter.DrawCalls] ?? []),
 		visibleEntries: visible.length > 0 ? percentiles(visible) : null,
+		occludedEntries: occluded.length > 0 ? percentiles(occluded) : null,
 		rebuilds: (sketch.counters[Counter.Rebuilds] ?? []).filter((n) => n > 0).length,
 		pipelines: sumOf(render.counters[Counter.Pipelines]),
 		skippedDraws: sumOf(render.counters[Counter.SkippedDraws]),

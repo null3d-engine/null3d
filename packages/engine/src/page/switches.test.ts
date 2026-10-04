@@ -20,6 +20,7 @@ describe('parseSwitches', () => {
 			half: undefined,
 			cells: true,
 			prepass: undefined,
+			occlusion: undefined,
 			vertexSkinning: false,
 			fps: undefined,
 			queue: undefined,
@@ -35,6 +36,12 @@ describe('parseSwitches', () => {
 	it('skins in the vertex shader on WebGPU with ?skinning=vertex, and in a compute pass otherwise', () => {
 		expect(parseSwitches('?skinning=vertex').vertexSkinning).toBe(true);
 		expect(parseSwitches('?skinning=compute').vertexSkinning).toBe(false);
+	});
+
+	it('turns occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {
+		expect(parseSwitches('?occlusion=on').occlusion).toBe(true);
+		expect(parseSwitches('?occlusion=off').occlusion).toBe(false);
+		expect(parseSwitches('?occlusion=yes').occlusion).toBeUndefined();
 	});
 
 	it('turns the depth prepass on or off with ?prepass=, and leaves it to the page otherwise', () => {
