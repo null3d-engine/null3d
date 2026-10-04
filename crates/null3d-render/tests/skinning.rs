@@ -500,14 +500,14 @@ fn an_outlined_skinned_object_draws_its_mask_with_the_skinning_builds_on_webgl2(
         assert_ne!(mask[2] & permutation::SKIN, 0);
         assert_eq!(mask[7], column().format);
     }
-    // The outline view's instance groups, as many as the camera's, bind the joint texture and the
-    // first joints too.
+    // The outline view's instance groups, as many as the camera's, bind the joint texture, the
+    // first joints and the morph textures too.
     let mut plain = webgl2(true);
     plain.add_skinned([0.0; 3]);
     let camera_groups = instance_groups(&plain.step(&mut MockBackend::default(), true)).len();
     let groups = instance_groups(&first);
     assert_eq!(groups.len(), 2 * camera_groups);
-    assert!(groups.iter().all(|g| g[2] == 6));
+    assert!(groups.iter().all(|g| g[2] == 8));
 }
 
 /// Skinned copies of one mesh, as many as the meshes of a crowd of 500 characters of 10 meshes.
