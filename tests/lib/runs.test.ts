@@ -617,17 +617,20 @@ describe('the checks plan', () => {
 		]);
 	});
 
-	it('splits into shards that run each item once, each with the items its check compares with', () => {
+	it('splits into shards that run each item once, each with the items its check compares with, and the capabilities page first', () => {
 		const ids = (plan: { id: string }[]) => plan.map(({ id }) => id).sort();
 		for (const count of [2, 3, 4]) {
 			const shards = Array.from(
 				{ length: count },
 				(_, i) => planItems(parseArgs(['--shard', `${i + 1}/${count}`, 'Safari'])) ?? [],
 			);
-			expect(ids(shards.flat())).toEqual(ids(items));
-			// The largest group is an image test in every thread mode.
+			for (const shard of shards) expect(shard[0]?.id).toBe('capabilities');
+			const once = [shards[0] ?? [], ...shards.slice(1).map((shard) => shard.slice(1))];
+			expect(ids(once.flat())).toEqual(ids(items));
+			// The largest group is an image test in every thread mode; each later shard adds the
+			// capabilities page.
 			const sizes = shards.map((shard) => shard.length);
-			expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(ENGINE_MODES.length);
+			expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(ENGINE_MODES.length + 1);
 			for (const shard of shards) {
 				const inShard = new Set(shard.map(({ id }) => id));
 				for (const { check } of shard)
