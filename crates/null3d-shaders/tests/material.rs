@@ -432,3 +432,156 @@ fn a_custom_material_that_breaks_a_portable_rule_fails_at_its_line_with_a_fix() 
     assert_eq!(problem.line, Some(6));
     assert!(problem.feature.is_some(), "{problem}");
 }
+
+/// A surface function that samples two textures, and a vertex offset that reads one of them.
+const TEXTURED: &str = "struct Uniforms { tiles: f32, height: f32 }
+
+var detail: texture_2d<f32>;
+var heights: texture_2d<f32>;
+
+fn vertexOffset(input: VertexInput) -> vec3f {
+    let h = textureSampleLevel(heights, heightsSampler, input.uv, 0.0).r;
+    return input.normal * h * material.height;
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor *= textureSample(detail, detailSampler, input.uv * material.tiles).rgb;
+    s.roughness *= textureSample(heights, heightsSampler, input.uv).g;
+    return s;
+}
+";
+
+#[test]
+fn textures_build_into_every_variant_and_read_their_layers_in_both_stages() {
+    let built = compile(TEXTURED).expect("the textured material builds");
+    let textures: Vec<(&str, u32)> = built
+        .textures
+        .iter()
+        .map(|t| (t.name.as_str(), t.offset))
+        .collect();
+    assert_eq!(textures, [("detail", 31), ("heights", 30)]);
+    assert_eq!(built.uniforms.len(), 2);
+    let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
+    for line in [
+        "@group(1) @binding(0)\nvar detail: texture_2d_array<f32>;",
+        "@group(1) @binding(7)\nvar heightsSampler: sampler;",
+        "load_custom_texture_layers(",
+    ] {
+        assert!(wgsl.contains(line), "{line}\n{wgsl}");
+    }
+    // WebGL2 binds them in the group after the data textures, in skinned builds too.
+    for name in ["webgl2_draw_index", "webgl2_draw_index_skin"] {
+        let program = &built.variants[name].glsl.as_ref().expect("GLSL")["main"];
+        let maps = |stage: &null3d_shaders::GlslStage| {
+            stage
+                .textures
+                .iter()
+                .filter(|t| t.binding.group == 3)
+                .count()
+        };
+        assert_eq!(
+            maps(&program.vertex),
+            1,
+            "{name}: the heights in the vertex stage"
+        );
+        assert_eq!(maps(&program.fragment), 2, "{name}");
+        assert!(program.fragment.source.contains("sampler2DArray"));
+    }
+}
+
+#[test]
+fn texture_layers_take_room_from_the_uniforms() {
+    // Eight vec4f fill the row without textures; one texture takes its last float.
+    let fields: String = (0..8).map(|k| format!("    v{k}: vec4f,\n")).collect();
+    let uniforms = format!("struct Uniforms {{\n{fields}}}\n");
+    compile(&format!("{uniforms}{STRIPES}")).expect("eight vec4f fit");
+    let sampled = STRIPES.replace(
+        "var s = defaultSurface(input);",
+        "var s = defaultSurface(input);\n    s.alpha = textureSample(t, tSampler, input.uv).a;",
+    );
+    let problem = only_problem(&format!("{uniforms}var t: texture_2d<f32>;\n{sampled}"));
+    assert!(
+        problem
+            .message
+            .contains("hold 32 numbers at most, less one for the texture"),
+        "{problem}"
+    );
+}
+
+#[test]
+fn a_texture_problem_names_its_own_line() {
+    let source = TEXTURED.replace("heights: texture_2d<f32>;", "heights: texture_3d<f32>;");
+    let problem = only_problem(&source);
+    assert_eq!((problem.line, problem.column), (Some(4), Some(5)));
+    assert!(
+        problem.message.contains("has the type `texture_3d<f32>`"),
+        "{problem}"
+    );
+}
+
+/// The uniforms and textures of custom effects that sketches port from three.js, or that the
+/// showcase scenes would draw, to measure how much of a material's row of custom values each
+/// needs. The built-in values, such as the time and the camera, are left out.
+const EFFECTS: [(&str, &str); 10] = [
+    (
+        "toon bands",
+        "struct Uniforms { bands: f32, shadowColor: vec3f, lightDirection: vec3f }",
+    ),
+    ("clipping plane", "struct Uniforms { plane: vec4f }"),
+    ("matcap", "var matcap: texture_2d<f32>;"),
+    (
+        "dissolve",
+        "struct Uniforms { amount: f32, edgeWidth: f32, scale: f32, edgeColor: vec3f }\nvar noise: texture_2d<f32>;",
+    ),
+    (
+        "hologram",
+        "struct Uniforms { color: vec3f, fresnelPower: f32, lineDensity: f32, lineSpeed: f32, opacity: f32 }",
+    ),
+    (
+        "foliage wind",
+        "struct Uniforms { direction: vec3f, strength: f32, frequency: f32, gust: f32 }\nvar gusts: texture_2d<f32>;",
+    ),
+    (
+        "lit windows",
+        "struct Uniforms { litColor: vec3f, intensity: f32, density: f32, seed: f32, rows: vec2f }",
+    ),
+    (
+        "terrain splat",
+        "struct Uniforms { tiling: vec4f, heights: vec4f }\nvar control: texture_2d<f32>;\nvar grass: texture_2d<f32>;\nvar rock: texture_2d<f32>;\nvar sand: texture_2d<f32>;\nvar snow: texture_2d<f32>;",
+    ),
+    (
+        "three.js Sky",
+        "struct Uniforms { turbidity: f32, rayleigh: f32, mieCoefficient: f32, mieDirectionalG: f32, sunPosition: vec3f, up: vec3f }",
+    ),
+    (
+        "three.js Water without its mirror",
+        "struct Uniforms { alpha: f32, size: f32, distortionScale: f32, sunColor: vec3f, sunDirection: vec3f, waterColor: vec3f }\nvar normals: texture_2d<f32>;",
+    ),
+];
+
+#[test]
+fn the_row_of_custom_values_holds_the_measured_effects() {
+    let mut most = 0;
+    for (effect, declarations) in EFFECTS {
+        let source = format!("{declarations}\n{STRIPES}");
+        let built = compile(&source).unwrap_or_else(|error| panic!("{effect}: {error}"));
+        let floats = |ty: &str| match ty {
+            "vec2f" => 2,
+            "vec3f" => 3,
+            "vec4f" => 4,
+            _ => 1,
+        };
+        let uniforms = built
+            .uniforms
+            .iter()
+            .map(|u| u.offset + floats(&u.ty))
+            .max()
+            .unwrap_or(0);
+        // Uniforms take whole vec4f groups, and the textures' layers fill the row from its end.
+        let used = uniforms.div_ceil(4) * 4 + built.textures.len() as u32;
+        println!("{effect}: {used} of 32 floats");
+        most = most.max(used);
+    }
+    assert!(most <= 20, "the largest effect takes {most} of 32 floats");
+}

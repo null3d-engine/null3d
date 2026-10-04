@@ -111,7 +111,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | --- | --- | --- | --- |
 | [Performance guide](guides/performance.md) | Measuring; the frame budget on computers, phones and tablets; common causes of slow frames and their fixes. | experimental | 0.1 |
 | [Phones and tablets](guides/phones.md) | Pixel-ratio caps; memory budgets; heat; testing on real devices. | experimental | 0.1 |
-| [Custom shaders](guides/custom-shaders.md) | WGSL in sketch code; shader errors; surface functions; full shaders; uniforms and typed materials; hot reload. | experimental | 0.1 |
+| [Custom shaders](guides/custom-shaders.md) | WGSL in sketch code; shader errors; surface functions; full shaders; uniforms, textures and typed materials; hot reload. | experimental | 0.1 |
 | [Custom passes and render targets](guides/custom-passes.md) | Declaring passes; reading and writing named textures; layer masks. | planned | 0.2 |
 | [Loading screens and warm-up](guides/loading-screens.md) | preload; onProgress; scene.warmUp; the preset check; upload budgets; switching presets behind a loading screen. | experimental | 0.1 |
 | [Accessibility](guides/accessibility.md) | What the canvas tells assistive technology; keyboard use; reduced motion; pausing; loading and errors. | experimental | 0.1 |
@@ -132,7 +132,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
 | [WGSL rules for portable shaders](shaders/wgsl-rules.md) | The three shared language features; optional features; flat interpolation; limits budget; rules the build cannot check. | experimental | 0.1 |
-| [Surface functions](shaders/surface-functions.md) | The surface record; vertex-offset functions; per-instance attributes. | experimental | 0.1 |
+| [Surface functions](shaders/surface-functions.md) | The surface record; uniforms and textures; vertex-offset functions; per-instance attributes. | experimental | 0.1 |
 | [Built-in shader inputs](shaders/builtins.md) | Camera, time, object, instance and light values available to custom shaders. | experimental | 0.1 |
 | [Shader library and imports](shaders/library.md) | The WGSL modules that ship with the engine: math, noise, color, lighting, fog, vertex, depth and signed distance helpers, and how to import them. | experimental | 0.1 |
 
@@ -179,7 +179,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1213: Invalid setting](errors/E1213.md) | A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, and a negative exposure. | generated | 0.1 |
 | [E1214: Invalid sketch option](errors/E1214.md) | defineSketch() received an option out of its range. fixedRate must be a number above 0, and maxFixedSteps a whole number of 1 or more. The engine checks the options before it runs the setup function. | generated | 0.1 |
 | [E1215: Invalid custom material WGSL](errors/E1215.md) | materials.shader() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function or a vertex offset. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh. | generated | 0.1 |
-| [E1216: Invalid uniform](errors/E1216.md) | A custom material's uniforms did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too. | generated | 0.1 |
+| [E1216: Invalid uniform or texture](errors/E1216.md) | A custom material's uniforms or textures did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too. The textures option takes the names of the WGSL's `var name: texture_2d<f32>;` declarations, each with a texture of one layer. | generated | 0.1 |
 | [E1217: Invalid material option](errors/E1217.md) | A material factory received an option value that it does not take, such as an unknown alpha mode or blending. | generated | 0.1 |
 | [E1218: Invalid animation call](errors/E1218.md) | An animator call named a clip, layer or joint that the object's animation does not have. Or it got an option out of range, such as a negative fade. animator() was called on an object that has no animation clips. Or the engine refused animation data, such as a skeleton that lists a joint before its parent. | generated | 0.2 |
 | [E1301: No usable GPU path](errors/E1301.md) | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. | generated | 0.1 |

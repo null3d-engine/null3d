@@ -30,6 +30,7 @@ import {
 	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
 	SHADING_CUSTOM_BASE_COLOR,
 	SHADING_CUSTOM_FIRST,
+	SHADING_CUSTOM_TEXTURE_SHIFT,
 	SHADING_LIT,
 	SHADING_UNLIT,
 	SHADING_UNLIT_MAP,
@@ -40,7 +41,7 @@ import type { CoreGlue } from '../shared/core';
 import type { CustomShader } from '../shared/images';
 import { CoreMemory } from './memory';
 import { Materials } from './resources';
-import type { Texture } from './textures';
+import { Texture, type Textures } from './textures';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
 
@@ -80,6 +81,8 @@ function fakeCore() {
 	/** Each map a material got: its material, slot, texture handle and coordinate set. */
 	const maps: number[][] = [];
 	const biases: [number, number][] = [];
+	/** The ids of the destroyed materials, in order. */
+	const destroyed: number[] = [];
 	let failure = { code: 0, details: [0, 0] };
 	/** Runs a change on a known material, or reports the core's error for an unknown one. */
 	const change = (material: number, apply: (values: number[]) => void) => {
@@ -126,6 +129,11 @@ function fakeCore() {
 			custom[material - 1]?.splice(at, count, ...xyzw.slice(0, count));
 			return 0;
 		},
+		destroyMaterial: (material: number) =>
+			change(material, () => {
+				destroyed.push(material);
+				table[material - 1] = undefined as unknown as number[];
+			}),
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
@@ -138,18 +146,23 @@ function fakeCore() {
 		sent,
 		custom,
 		maps,
+		destroyed,
 		biases,
 		materials: new Materials(core, (template, shader) => sent.push([template, shader])),
 	};
 }
 
 /** A custom material's WGSL as the Vite plugin compiles it, with a stand-in for its variants. */
-function compiledMaterial(uniforms: { name: string; type: string; offset: number }[] = []) {
+function compiledMaterial(
+	uniforms: { name: string; type: string; offset: number }[] = [],
+	textures: { name: string; offset: number }[] = [],
+) {
 	return {
 		kind: 'material',
 		functions: ['surface'],
 		variants: {},
 		uniforms,
+		textures,
 		locations: [0, 1, 2],
 		attributes: VERTEX_UV0,
 		baseColor: true,
@@ -420,8 +433,8 @@ describe('materials.shader', () => {
 			standardCustom(SHADING_CUSTOM_FIRST),
 		]);
 		expect(sent).toEqual([
-			[SHADING_CUSTOM_FIRST, { variants: stripes.variants, locations: [0, 1, 2] }],
-			[SHADING_CUSTOM_FIRST + 1, { variants: rings.variants, locations: [0, 1, 2] }],
+			[SHADING_CUSTOM_FIRST, { variants: stripes.variants, locations: [0, 1, 2], textures: 0 }],
+			[SHADING_CUSTOM_FIRST + 1, { variants: rings.variants, locations: [0, 1, 2], textures: 0 }],
 		]);
 	});
 
@@ -438,7 +451,9 @@ describe('materials.shader', () => {
 		expect(shadings).toEqual([
 			SHADING_CUSTOM_FIRST | (VERTEX_COLOR << SHADING_CUSTOM_ATTRIBUTE_SHIFT),
 		]);
-		expect(sent).toEqual([[SHADING_CUSTOM_FIRST, { variants: {}, locations: [0, 1, 5] }]]);
+		expect(sent).toEqual([
+			[SHADING_CUSTOM_FIRST, { variants: {}, locations: [0, 1, 5], textures: 0 }],
+		]);
 	});
 
 	test('takes every standard option, and set changes the standard values', () => {
@@ -537,5 +552,84 @@ describe('uniforms of materials.shader', () => {
 		);
 		expect(table).toHaveLength(0);
 		expect(sent).toHaveLength(0);
+	});
+});
+
+/** A texture of the engine core's handle `handle`, with `depth` layers. */
+const layered = (handle: number, depth = 1) =>
+	new Texture(handle, 4, 4, depth, 'rgba8unorm', 'srgb', 0, undefined as unknown as Textures);
+
+describe('custom material textures', () => {
+	const TEXTURES = [
+		{ name: 'detail', offset: 31 },
+		{ name: 'noise', offset: 30 },
+	];
+
+	test('take the map slots in the order the WGSL declares them', () => {
+		const { shadings, sent, maps, materials } = fakeCore();
+		const wgsl = compiledMaterial([], TEXTURES);
+		materials.shader({ wgsl, textures: { noise: layered(7) } });
+		materials.shader({ wgsl, textures: { detail: layered(5), noise: layered(6) } });
+		expect(shadings).toEqual([
+			standardCustom(SHADING_CUSTOM_FIRST) | (2 << SHADING_CUSTOM_TEXTURE_SHIFT),
+			standardCustom(SHADING_CUSTOM_FIRST) | (2 << SHADING_CUSTOM_TEXTURE_SHIFT),
+		]);
+		expect(sent).toEqual([
+			[SHADING_CUSTOM_FIRST, { variants: {}, locations: [0, 1, 2], textures: 2 }],
+		]);
+		expect(maps).toEqual([
+			[1, 1, 7, 0],
+			[2, 0, 5, 0],
+			[2, 1, 6, 0],
+		]);
+	});
+
+	test('refuse names that the WGSL does not declare, and values that are not one texture', () => {
+		const { table, materials } = fakeCore();
+		const wgsl = compiledMaterial([], TEXTURES);
+		for (const [textures, message] of [
+			[
+				{ detial: layered(5) },
+				"got the texture detial, which the material's WGSL does not declare. Its textures: detail, noise.",
+			],
+			[
+				{ detail: 5 as unknown as Texture },
+				'got 5 for the texture detail; it takes a texture of one layer',
+			],
+			[{ noise: layered(5, 4) }, 'got a texture of 4 layers for the texture noise'],
+		] as const) {
+			const error = thrown(() => materials.shader({ wgsl, textures }));
+			expect(error.code).toBe('E1216');
+			expect(error.message).toStartWith(`E1216: materials.shader() ${message}`);
+		}
+		const none = thrown(() =>
+			materials.shader({ wgsl: compiledMaterial(), textures: { detail: layered(5) } }),
+		);
+		expect(none.message).toContain('Its textures: none.');
+		expect(table).toHaveLength(0);
+	});
+});
+
+describe('material.destroy', () => {
+	test('destroys the material in the engine core once, and later calls throw E1101', () => {
+		const { destroyed, materials } = fakeCore();
+		const paint = materials.standard();
+		const custom = materials.shader({ wgsl: compiledMaterial(UNIFORMS) });
+		paint.destroy();
+		custom.destroy();
+		expect(destroyed).toEqual([1, 2]);
+		for (const [call, name] of [
+			[() => paint.set({ roughness: 0.5 }), 'materials.standard'],
+			[() => paint.destroy(), 'materials.standard'],
+			[() => custom.set({ speed: 1 }), 'materials.shader'],
+			[() => paint.id, 'materials.standard'],
+		] as const) {
+			const error = thrown(call);
+			expect(error.code).toBe('E1101');
+			expect(error.message).toStartWith(
+				`E1101: a call used a material of ${name}() after its destroy().`,
+			);
+		}
+		expect(destroyed).toEqual([1, 2]);
 	});
 });

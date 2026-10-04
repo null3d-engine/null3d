@@ -21,6 +21,16 @@
 //! row: it has twice [`MaterialTable::capacity`] rows, and the custom values of material `id` sit
 //! in row `capacity + id`. They start at zero, as a new GPU texture does, and change and upload as
 //! the rows do.
+//!
+//! A custom material's textures take its map slots in the order its WGSL declares them, and the
+//! layer of texture `k` sits in its custom values at [`texture_layer_offset`], from the row's end,
+//! where both shader stages read it. It holds [`NO_MAP`] until the texture's image is on the GPU.
+//!
+//! # Destroyed materials
+//!
+//! A destroyed material draws nothing from then on. Objects may still name it, so its id stays
+//! taken until a rebuild of the draw tables finds no object or batch that uses it. The id then
+//! goes back to the table, and the next material created takes it.
 
 use std::ops::Range;
 
@@ -69,6 +79,8 @@ pub struct CustomShading {
     /// True when its shader reads the material's base color and opacity, as the standard
     /// material's template does in its `VERTEX_COLOR` and `ALPHA_MASK` builds.
     pub base_color: bool,
+    /// The textures that its WGSL declares, which take its first map slots.
+    pub textures: u32,
 }
 
 impl CustomShading {
@@ -79,6 +91,7 @@ impl CustomShading {
             template,
             attributes: vertex::UV0,
             base_color: true,
+            textures: 0,
         })
     }
 }
@@ -291,6 +304,23 @@ pub enum MapSlot {
 /// The number of map slots in a row.
 pub const MAP_SLOTS: usize = 6;
 
+/// The float of a material's custom values that holds the layer of its custom texture `k`: the
+/// row's last float for the first texture, and one float lower for each next one, as the shader
+/// compiler places them.
+pub const fn texture_layer_offset(k: usize) -> usize {
+    MATERIAL_FLOATS - 1 - k
+}
+
+/// Where a material id stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum State {
+    Live,
+    /// Destroyed, while objects or batches may still name it.
+    Destroyed,
+    /// Free for the next material.
+    Free,
+}
+
 impl MapSlot {
     /// Every slot, in the order of a row's maps, so a slot's number indexes it.
     pub const ALL: [MapSlot; MAP_SLOTS] = [
@@ -344,6 +374,12 @@ pub struct MaterialTable {
     values: Vec<f32>,
     /// Each material's depth bias.
     biases: Vec<DepthBias>,
+    /// Where each id stands.
+    states: Vec<State>,
+    /// The ids that new materials take before the table grows, the lowest last.
+    free: Vec<u32>,
+    /// True while destroyed materials wait for their ids to go back to the table.
+    destroyed: bool,
     capacity: u32,
     /// The ids whose rows changed since the last upload; empty when none did.
     changed: Range<u32>,
@@ -373,6 +409,9 @@ impl MaterialTable {
             maps: Vec::with_capacity(capacity as usize),
             values: Vec::with_capacity(capacity as usize * MATERIAL_FLOATS),
             biases: Vec::with_capacity(capacity as usize),
+            states: Vec::with_capacity(capacity as usize),
+            free: Vec::new(),
+            destroyed: false,
             capacity,
             changed: 0..0,
             values_changed: 0..0,
@@ -381,29 +420,106 @@ impl MaterialTable {
     }
 
     /// Adds a material with its features (`feature::*` bits, fixed from now on), a linear color
-    /// and opacity, and the default values of the rest of its row. Returns its id, counting from 0.
+    /// and opacity, and the default values of the rest of its row. Returns its id, counting from 0:
+    /// the lowest id that a destroyed material gave back, or else the next new one.
     pub fn create(
         &mut self,
         shading: Shading,
         features: u32,
         color: [f32; 4],
     ) -> Result<u32, MaterialError> {
-        let id = self.len();
-        if id >= self.capacity {
-            return Err(MaterialError::Full);
-        }
+        let reused = !self.free.is_empty();
+        let id = match self.free.pop() {
+            Some(id) => id,
+            None if self.len() < self.capacity => {
+                self.rows.extend_from_slice(&DEFAULT_ROW);
+                self.shading.push(shading);
+                self.features.push(0);
+                self.maps.push([Handle::NONE; MAP_SLOTS]);
+                self.values.extend_from_slice(&[0.0; MATERIAL_FLOATS]);
+                self.biases.push(DepthBias::NONE);
+                self.states.push(State::Live);
+                self.len() - 1
+            }
+            None => return Err(MaterialError::Full),
+        };
+        let at = id as usize;
         let features = features & feature::ALL;
-        self.rows.extend_from_slice(&DEFAULT_ROW);
-        let row = &mut self.rows[id as usize * MATERIAL_FLOATS..];
+        let row = &mut self.rows[at * MATERIAL_FLOATS..][..MATERIAL_FLOATS];
+        row.copy_from_slice(&DEFAULT_ROW);
         row[..4].copy_from_slice(&color);
         row[param::FLAGS] = row_flags(features) as f32;
-        self.shading.push(shading);
-        self.features.push(features);
-        self.maps.push([Handle::NONE; MAP_SLOTS]);
-        self.values.extend_from_slice(&[0.0; MATERIAL_FLOATS]);
-        self.biases.push(DepthBias::NONE);
+        self.shading[at] = shading;
+        self.features[at] = features;
+        self.maps[at] = [Handle::NONE; MAP_SLOTS];
+        self.biases[at] = DepthBias::NONE;
+        self.states[at] = State::Live;
+        let values = &mut self.values[at * MATERIAL_FLOATS..][..MATERIAL_FLOATS];
+        values.fill(0.0);
+        let textures = match shading {
+            Shading::Custom(custom) => (custom.textures as usize).min(MAP_SLOTS),
+            _ => 0,
+        };
+        for k in 0..textures {
+            values[texture_layer_offset(k)] = NO_MAP;
+        }
+        // A new row's values start at zero on the GPU too; a reused row's hold the last material's.
+        if reused || textures > 0 {
+            self.values_changed = marked(&self.values_changed, id);
+        }
         self.mark_row(id);
         Ok(id)
+    }
+
+    /// Destroys a material: it draws nothing from now on, and its maps let go of their textures.
+    /// Its id stays taken until [`MaterialTable::release_unused`] finds no object that names it.
+    pub fn destroy(&mut self, id: u32) -> Result<(), MaterialError> {
+        let at = id as usize;
+        if self.states.get(at) != Some(&State::Live) {
+            return Err(MaterialError::Unknown(id));
+        }
+        self.states[at] = State::Destroyed;
+        self.maps[at] = [Handle::NONE; MAP_SLOTS];
+        self.maps_changed = true;
+        self.destroyed = true;
+        Ok(())
+    }
+
+    /// True while a destroyed material waits for its id to go back to the table.
+    pub fn has_destroyed(&self) -> bool {
+        self.destroyed
+    }
+
+    /// Gives the ids of destroyed materials back to the table, unless `used` says that an object
+    /// or a batch still names them.
+    pub fn release_unused(&mut self, used: impl Fn(u32) -> bool) {
+        self.destroyed = false;
+        for id in 0..self.len() {
+            if self.states[id as usize] != State::Destroyed {
+                continue;
+            }
+            if used(id) {
+                self.destroyed = true;
+            } else {
+                self.states[id as usize] = State::Free;
+                self.free.push(id);
+            }
+        }
+        // The lowest free id goes first, so ids stay low.
+        self.free.sort_unstable_by(|a, b| b.cmp(a));
+    }
+
+    /// True when a material with this id lives: created, and not destroyed.
+    pub fn is_live(&self, id: u32) -> bool {
+        self.states.get(id as usize) == Some(&State::Live)
+    }
+
+    /// True when a template is a custom one that no live material draws with.
+    pub fn custom_template_unused(&self, template: u32) -> bool {
+        template >= template::CUSTOM_FIRST && !(0..self.len()).any(|id| {
+            self.is_live(id)
+                && matches!(self.shading[id as usize], Shading::Custom(c) if c.template == template)
+        })
     }
 
     /// Changes 1 to 4 custom values of a material, from float `at` of its row of custom values,
@@ -411,6 +527,9 @@ impl MaterialTable {
     pub fn set_values(&mut self, id: u32, at: usize, values: &[f32]) -> Result<(), MaterialError> {
         if values.is_empty() || values.len() > 4 || at + values.len() > MATERIAL_FLOATS {
             return Err(MaterialError::Value(at as u32));
+        }
+        if !self.is_live(id) {
+            return Err(MaterialError::Unknown(id));
         }
         let start = id as usize * MATERIAL_FLOATS + at;
         let row = self.values.get_mut(start..start + values.len());
@@ -456,6 +575,9 @@ impl MaterialTable {
         if param::width(at) != Some(values.len()) {
             return Err(MaterialError::Value(at as u32));
         }
+        if !self.is_live(id) {
+            return Err(MaterialError::Unknown(id));
+        }
         let start = id as usize * MATERIAL_FLOATS + at;
         let row = self.rows.get_mut(start..start + values.len());
         row.ok_or(MaterialError::Unknown(id))?
@@ -478,11 +600,10 @@ impl MaterialTable {
         texture: Handle,
         second_uv: bool,
     ) -> Result<(), MaterialError> {
-        let maps = self
-            .maps
-            .get_mut(id as usize)
-            .ok_or(MaterialError::Unknown(id))?;
-        maps[slot as usize] = texture;
+        if !self.is_live(id) {
+            return Err(MaterialError::Unknown(id));
+        }
+        self.maps[id as usize][slot as usize] = texture;
         let flags = &mut self.rows[id as usize * MATERIAL_FLOATS + param::FLAGS];
         let bit = flag::SECOND_UV << slot as u32;
         let bits = *flags as u32 & !bit | if second_uv { bit } else { 0 };
@@ -512,13 +633,15 @@ impl MaterialTable {
         self.features.get(id as usize).copied().unwrap_or(0)
     }
 
+    /// A live material's shading.
     pub fn shading(&self, id: u32) -> Result<Shading, MaterialError> {
-        self.shading
-            .get(id as usize)
-            .copied()
-            .ok_or(MaterialError::Unknown(id))
+        if !self.is_live(id) {
+            return Err(MaterialError::Unknown(id));
+        }
+        Ok(self.shading[id as usize])
     }
 
+    /// The ids that materials have taken, destroyed ones included.
     pub fn len(&self) -> u32 {
         self.shading.len() as u32
     }
@@ -588,6 +711,21 @@ impl MaterialTable {
             row[param::FLAGS] = flags;
             if changed {
                 self.mark_row(id);
+            }
+            // A custom material reads its textures' layers from its custom values, in both stages.
+            if let Shading::Custom(custom) = self.shading[id as usize] {
+                let textures = (custom.textures as usize).min(MAP_SLOTS);
+                let row = &self.rows[id as usize * MATERIAL_FLOATS..][..MATERIAL_FLOATS];
+                let values = &mut self.values[id as usize * MATERIAL_FLOATS..][..MATERIAL_FLOATS];
+                let mut moved = false;
+                for k in 0..textures {
+                    let layer = row[param::MAP_LAYERS + k];
+                    moved |= values[texture_layer_offset(k)] != layer;
+                    values[texture_layer_offset(k)] = layer;
+                }
+                if moved {
+                    self.values_changed = marked(&self.values_changed, id);
+                }
             }
         }
     }
