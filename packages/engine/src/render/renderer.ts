@@ -291,20 +291,31 @@ const freshIf = <Shaders extends FirstUseShaders>(device: CoreDevice, shaders: P
 	device.freshShaders ? shaders.then((loaded) => saltShaders(loaded, freshSalt())) : shaders;
 
 /**
+ * The feature whose file holds another feature's work on WebGPU. WebGPU morphs in the skinning
+ * pass and has no MORPH builds (decision record D-51), so a morphed mesh there needs the skinning
+ * file.
+ */
+const WGSL_FEATURE_FILES: Readonly<Record<string, string>> = { morph: 'skinning' };
+
+/**
  * The device's shaders, from the start's module of its fixed bits, as a set that loads the module
  * of other fixed bits through `load`, and the module of a feature that loads on first use through
  * `loadFeature`, when a pipeline needs it. The modules of the features that `options` preloads
  * download with the start's, and the set holds them before the renderer starts. The features that
  * the sketch asks for later, through the image table, load as soon as they are asked for.
+ * `featureFiles` names, for a feature whose work this path does with another feature's builds,
+ * the feature whose file to load in its place.
  */
 async function deviceShaders(
 	device: CoreDevice,
 	options: RendererOptions,
 	load: (bits: number) => Promise<DeviceShaders>,
 	loadFeature: (feature: string, bits: number) => Promise<FirstUseShaders>,
+	featureFiles: Readonly<Record<string, string>> = {},
 ): Promise<DeviceShaderSet> {
+	const fileOf = (feature: string) => featureFiles[feature] ?? feature;
 	const bits = device.shaderBits;
-	const preload = options.preload ?? [];
+	const preload = (options.preload ?? []).map(fileOf);
 	// Every download starts at once: a module that the set imports again comes from the cache.
 	for (const feature of preload) loadFeature(feature, bits).catch(() => undefined);
 	const shaders = new DeviceShaderSet(await freshIf(device, load(bits)), bits, (more, feature) =>
@@ -313,8 +324,8 @@ async function deviceShaders(
 	await shaders.preload(preload);
 	const table = options.imageTable;
 	if (table) {
-		void shaders.preload(table.preloads);
-		table.onPreload = (feature) => void shaders.preload([feature]);
+		void shaders.preload([...table.preloads].map(fileOf));
+		table.onPreload = (feature) => void shaders.preload([fileOf(feature)]);
 	}
 	return shaders;
 }
@@ -352,7 +363,7 @@ export async function createRenderer(
 	}
 	const [gpu, shaders] = await Promise.all([
 		requestDevice(options),
-		scene && deviceShaders(device, options, loadWgslShaders, loadWgslFeature),
+		scene && deviceShaders(device, options, loadWgslShaders, loadWgslFeature, WGSL_FEATURE_FILES),
 	]);
 	if (scene && shaders)
 		return new WebGPUSceneRenderer(

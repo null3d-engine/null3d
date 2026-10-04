@@ -250,13 +250,13 @@ export interface EngineOptions {
 	/**
 	 * Features whose shaders load before the first frame, for a game that must fetch nothing while
 	 * it plays. Each feature's shaders otherwise download the first time the sketch uses it:
-	 * `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh on WebGL2,
+	 * `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh,
 	 * `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first
-	 * batch, and `'background'` with a texture background. WebGPU morphs in the skinning pass, so a
-	 * morphed mesh there downloads `'skinning'`.
-	 * Listed features download beside the engine's own shaders, so the start waits only for the
-	 * largest. Loading a glTF file with skins, or making a batch, also starts its feature's download
-	 * at once, before the objects draw. Throws E1421 for a name it does not know.
+	 * batch, and `'background'` with a texture background. WebGPU morphs in the skinning pass, so
+	 * there `'morph'` loads the skinning shaders. Listed features download beside the engine's own
+	 * shaders, so the start waits only for the largest. Loading a glTF file with skins or morph
+	 * targets, or making a batch, also starts its feature's download at once, before the objects
+	 * draw. Throws E1421 for a name it does not know.
 	 */
 	preload?: readonly ShaderFeature[];
 }
