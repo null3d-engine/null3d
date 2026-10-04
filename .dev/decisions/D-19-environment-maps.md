@@ -1,6 +1,6 @@
 # D-19: Environment maps: format, size, levels and where they are prefiltered
 
-Status: decided, 2026-10-04: the file and the tool with M2-B2, then the lookup, the built-in environment's name and the lit scenes' parity with M2-E2. The same day, the owner moved the built-in room out of the engine's package: the GPU makes it at first use. That is now the rule for every built-in asset. The lookup's cost on the iPad and the S24+ is pending. Date: 2026-10-04. Tasks: M2-B2, M2-E2.
+Status: decided, 2026-10-04: the file and the tool with M2-B2, then the lookup, the built-in environment's name and the lit scenes' parity with M2-E2. The same day, the owner moved the built-in room out of the engine's package: the GPU makes it at first use. That is now the rule for every built-in asset. D-53 then decided the lookup: each material reads its own roughness. A later task makes that change, so the table of three.js's roughness below stays until then. The lookup's cost on the iPad and the S24+ is pending. Date: 2026-10-04. Tasks: M2-B2, M2-E2.
 
 ## Question
 
@@ -158,11 +158,27 @@ Time on the Mac (Apple M5 Max) in Chrome, each slice from its call until the GPU
 
 | Path | The whole room, slices back to back | A slice, median / most | Pipelines, in the background |
 | --- | --- | --- | --- |
-| WebGPU | 21 ms, the first one 23 to 31 ms | 0.9 / 2.5 ms | 5 ms |
-| Compatibility mode | 21 ms | 0.9 / 2.3 ms | 7 ms |
-| WebGL2 | 19 ms (24 ms by timer queries) | 1.4 / 2.2 ms (0.5 / 1.8 ms by timer queries) | 10 ms |
+| WebGPU | 17.4 ms, the first one 29 to 38 ms | 0.8 / 2.5 ms | 9 ms, or 285 to 305 ms when the GPU's shader cache does not hold them |
+| Compatibility mode | 17.4 ms | 0.8 / 2.5 ms | 8 to 10 ms |
+| WebGL2 | 16.6 ms (19.0 ms by timer queries) | 1.2 / 3.0 ms (0.25 / 1.8 ms by timer queries) | 15 to 19 ms, or 127 to 135 ms when the GPU's shader cache does not hold them |
 
-SwiftShader took 0.7 to 1.0 s for the room, and 24 / 47 ms for a slice.
+The Mac was busy with other work at the time, with a load average of 37 to 80. A copy of the shader with one constant changed showed the cost of an empty shader cache. SwiftShader on the same Mac took 1.0 to 1.5 s for the room at that load.
+
+The trace once worked out the sine and cosine of each box's turn four times for each box and ray. It also shaded every nearer surface that a ray met. On SwiftShader it was then the costliest step: 570 ms of 1.5 s by WebGL2's timer queries. Each ray now finds its nearest surface first and shades only that one, and the turns are constants. The trace fell to 75 ms on SwiftShader, and from 9 to 5 ms on the Mac's GPU. The whole room fell from 21.2 to 17.4 ms on WebGPU and in compatibility mode. On WebGL2 it fell from 19.8 to 16.6 ms, or from 24.4 to 19.0 ms by timer queries. The map did not change: level 0 lies 0.002 / 0.09 steps from the tool's, as before.
+
+The image tests hold their frame, so each of their runs makes the whole room in one frame. CI's runners share a few cores among the tests that run side by side. Before the change, a run of the room there took more than 30 s on WebGPU and in compatibility mode. On WebGL2 it took about 27 s. The Mac's SwiftShader ran the room's image test on three tiers side by side. Each tier took 45 to 52 s for its five thread modes before the change, and 23 to 25 s after it. Each run of the room's image test may take 60 s, not the usual 30. The rest of the time is the software GPU's alone: the Mac's GPU makes the room in 17 ms.
+
+Cheaper work was measured against a map made with 8 x 8 rays per texel, a finer blur and 4,096 directions at level 1. The engine's map lay 0.32 / 2.5 steps from it at its worst roughness, and the options below lay further:
+
+| Option | Worst mean / p99 | Where |
+| --- | --- | --- |
+| 2 x 2 rays per texel, a quarter of the trace | 0.34 / 2.7 | Everywhere, slightly |
+| 256 directions at level 1, half its reads | 0.49 / 4.6 | Roughness 0.1 |
+| 128 directions at level 1 | 0.74 / 6.9 | Roughness 0.1 |
+| Blur taps a sigma apart, a third of the reads | 0.55 / 11.6 | Roughness 0 |
+| Faces of 128, 5 levels | 1.65 / 11.2 against the engine's map | Roughness 0.1 to 0.6 |
+
+None was taken. Fewer rays was nearly free, but the trace no longer costs much. The blur and the filter spend most of their time on texture reads on SwiftShader. With their sums and sines moved out of the loops, they took as long as before.
 
 The work is about 66 million texel reads for the blur and 100 million for the filter, and the trace's rays. Before the faces drew side by side, each face of each level drew alone. The room then took 31.5 ms on WebGPU, and its slices up to 9.3 ms. The filter's smallest levels read up to 8,192 directions per texel over 64 texels a face. A draw of one face kept few of the GPU's lanes busy and waited on each texel's long loop. The first room also compiled its pipelines in its first slice. With an empty shader cache that took 382 ms on WebGPU and 195 to 394 ms on WebGL2.
 
@@ -210,7 +226,7 @@ The lookup's code adds 0.7 to 2.2 KB after Brotli to each device module, 2.9% to
 - The engine makes the built-in room on the GPU when a sketch first asks for it, with the tool's steps, on every tier. Its package ships no file for it. Its map lies within 0.25 / 1 step of the tool's at every level, and its total light within 0.5% (`tests/image/environment-generator.spec.ts`). The tool's `--builtin room` stays: it is the reference of that test and of the parity test.
 - Built-in assets are made at run time, never shipped as files in the engine's package: the owner's rule of 4 October 2026, which [D-52](D-52-intent-parity.md#built-in-assets) records. A built-in asset's code and shaders load on first use, within the budgets for such files.
 - The built-in environment is named `room`, after three.js's `RoomEnvironment`, which porters know. A sketch calls `assets.builtinEnvironment('room')` for it. The tool, the docs, the skills and the mapping all use that name. The studio preset of drei is an HDR file of its own, which ports through the tool.
-- The lit template reads each material's roughness from the level of the table's GGX roughness, `THREE_PMREM_ROUGHNESS`, blended between its steps of 0.05: `lod = (n - 1) * g * (2 - g)`. The table brings the lit spheres within three.js's image rule on both environments and every tier, which the material's own roughness misses on the room. Under [D-52](D-52-intent-parity.md) that match is no reason on its own. A material's roughness means one GGX distribution, and its own roughness reads exactly that. The table stays until the owner decides the lookup. It lives in `crates/null3d-shaders/wgsl/lib/ibl.wgsl`, so a switch changes one function.
+- The lit template reads each material's roughness from the level of the table's GGX roughness, `THREE_PMREM_ROUGHNESS`, blended between its steps of 0.05: `lod = (n - 1) * g * (2 - g)`. The table brings the lit spheres within three.js's image rule on both environments and every tier, which the material's own roughness misses on the room. Under [D-52](D-52-intent-parity.md) that match is no reason on its own. A material's roughness means one GGX distribution, and its own roughness reads exactly that. The table stays until a later task makes the lookup that D-53 decided: each material's own roughness. It lives in `crates/null3d-shaders/wgsl/lib/ibl.wgsl`, so a switch changes one function.
 - Diffuse light comes from the nine coefficients. Specular light comes from the cube map along the reflection, bent toward the normal by roughness to the fourth power, as three.js's `getIBLRadiance` bends it. Both go through three.js's `RE_IndirectSpecular_Physical`, and the occlusion map darkens the specular light by `computeSpecularOcclusion`.
 - `scene.setEnvironment(env, { intensity, rotation })` sets the scene's environment from the next frame, with three.js's `environmentIntensity` and `environmentRotation` (Euler angles in the order X, Y, Z). A material's `envIntensity` multiplies the intensity. three.js uses `environmentIntensity` in place of a material's `envMapIntensity` under a scene environment. The engine multiplies them, so the material's value keeps its meaning.
 - The environment is a value of each frame, not a permutation bit. The frame's group binds the environment's cube, or a blank one, at bindings 12 and 13. A frame builder reads the environment after the frame's texture uploads, so a held frame, which uploads everything, draws with it.
