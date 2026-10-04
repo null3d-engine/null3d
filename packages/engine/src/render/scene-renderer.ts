@@ -16,7 +16,7 @@ import type { CoreDevice } from '../page/limits';
 import { controlViews, Slot } from '../shared/control';
 import type { ImageTable } from '../shared/images';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
-import { contextLoss, deviceLoss } from './loss';
+import { contextLoss, deviceLoss, type GpuErrorReport, GpuErrorWatch } from './loss';
 import type { FrameInput, RenderCanvas, Renderer, Tier } from './renderer';
 
 /** How often a capture checks whether the pipelines it waits for are built. */
@@ -173,8 +173,12 @@ export class WebGPUSceneRenderer implements Renderer {
 	readonly completions: QueueCompletion | undefined;
 	private simulated = false;
 	readonly lost: Promise<string>;
+	readonly errors: GpuErrorWatch;
 
-	/** A transparent canvas composites with premultiplied alpha; any other ignores alpha. */
+	/**
+	 * A transparent canvas composites with premultiplied alpha; any other ignores alpha.
+	 * `gpuError` hears the first WebGPU error of each kind that no error scope caught.
+	 */
 	constructor(
 		readonly tier: Tier,
 		private readonly device: GPUDevice,
@@ -185,8 +189,10 @@ export class WebGPUSceneRenderer implements Renderer {
 		images: ImageTable | undefined,
 		shaders: DeviceShaderSet,
 		readonly transparent: boolean,
+		gpuError?: GpuErrorReport,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
+		this.errors = new GpuErrorWatch(device, gpuError);
 		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
 		if (!context) throw new Error('the canvas has no WebGPU context');
 		this.context = context;

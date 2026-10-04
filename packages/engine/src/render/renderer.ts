@@ -21,7 +21,13 @@ import type { GlTimingMode } from '../page/switches';
 import type { ImageTable } from '../shared/images';
 import { type FrameRecorder, Phase } from '../shared/metrics';
 import type { Tier } from '../shared/tier';
-import { contextLoss, contextRestored, deviceLoss } from './loss';
+import {
+	contextLoss,
+	contextRestored,
+	deviceLoss,
+	type GpuErrorReport,
+	GpuErrorWatch,
+} from './loss';
 import { WebGL2SceneRenderer, WebGPUSceneRenderer } from './scene-renderer';
 import { freshSalt, saltShaders } from './shader-salt';
 
@@ -103,7 +109,7 @@ export interface RendererOptions {
 	 * an object, else it rejected a command. `message` is the GPU path's own text. The thread that
 	 * draws reports each kind once per device, as E1304 or E1305.
 	 */
-	gpuError?: (outOfMemory: boolean, message: string) => void;
+	gpuError?: GpuErrorReport;
 }
 
 /** WebGPU's default `maxBufferSize`, which every device offers. */
@@ -125,14 +131,17 @@ class WebGPURenderer implements Renderer {
 	readonly completions: QueueCompletion | undefined;
 	private simulated = false;
 	readonly lost: Promise<string>;
+	readonly errors: GpuErrorWatch;
 
 	constructor(
 		readonly tier: Tier,
 		private readonly device: GPUDevice,
 		readonly canvas: RenderCanvas,
 		metrics: ArrayBufferLike | undefined,
+		gpuError?: GpuErrorReport,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
+		this.errors = new GpuErrorWatch(device, gpuError);
 		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
 		if (!context) throw new Error('the canvas has no WebGPU context');
 		this.context = context;
@@ -352,8 +361,9 @@ export async function createRenderer(
 			options.imageTable,
 			shaders,
 			device.transparent,
+			options.gpuError,
 		);
-	return new WebGPURenderer(gpu.tier, gpu.device, canvas, metrics);
+	return new WebGPURenderer(gpu.tier, gpu.device, canvas, metrics, options.gpuError);
 }
 
 /** Requests a WebGPU device with the features and limits that the engine uses, and its tier. */
