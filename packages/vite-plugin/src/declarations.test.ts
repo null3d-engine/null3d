@@ -15,12 +15,16 @@ const ENABLED = process.env.NULL3D_SHADER_COMPILER !== undefined;
 /** The repository's root. */
 const ROOT = join(import.meta.dirname, '../../..');
 
-/** A custom material with the given uniforms, and nothing else that a declaration reads. */
-function material(uniforms: CompiledMaterial['uniforms']): CompiledMaterial {
+/** A custom material with the given uniforms and textures, and nothing else that a declaration reads. */
+function material(
+	uniforms: CompiledMaterial['uniforms'],
+	textures: CompiledMaterial['textures'] = [],
+): CompiledMaterial {
 	return {
 		kind: 'material',
 		functions: ['surface'],
 		uniforms,
+		textures,
 		variants: {},
 		locations: [],
 		attributes: 0,
@@ -46,18 +50,31 @@ describe('wgslDeclaration', () => {
 		expect(wgslDeclaration('/project/src/glow.wgsl', material(uniforms))).toBe(`${HEADER}\
 import type { CompiledMaterial } from '@null3d/vite-plugin';
 
-declare const shader: CompiledMaterial<{
-	readonly tint: 'vec3f';
-	readonly width: 'f32';
-	readonly "größe": 'u32';
-}>;
+declare const shader: CompiledMaterial<
+	{
+		readonly tint: 'vec3f';
+		readonly width: 'f32';
+		readonly "größe": 'u32';
+	},
+	never
+>;
 export default shader;
 `);
 	});
 
+	it('gives a custom material the names of its textures', () => {
+		const textures = [
+			{ name: 'detail', offset: 31 },
+			{ name: 'noise', offset: 30 },
+		];
+		expect(wgslDeclaration('glow.wgsl', material([], textures))).toContain(
+			"declare const shader: CompiledMaterial<Record<never, never>, 'detail' | 'noise'>;",
+		);
+	});
+
 	it('gives a custom material without uniforms an empty record, which takes no name', () => {
 		expect(wgslDeclaration('glow.wgsl', material([]))).toContain(
-			'declare const shader: CompiledMaterial<Record<never, never>>;',
+			'declare const shader: CompiledMaterial<Record<never, never>, never>;',
 		);
 	});
 

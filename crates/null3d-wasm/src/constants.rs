@@ -84,6 +84,9 @@ pub mod shading {
     /// The bit of a custom shading whose shader reads the material's base color and opacity, as the
     /// standard template does.
     pub const CUSTOM_BASE_COLOR: u32 = 1 << 24;
+    /// Where a custom shading holds the number of textures that its WGSL declares, from 0 to the
+    /// map slots of a row, in 3 bits.
+    pub const CUSTOM_TEXTURE_SHIFT: u32 = 25;
 }
 
 /// The map slots that `setMaterialMap` takes, in the order of a material's row.
@@ -546,6 +549,7 @@ pub fn typescript() -> String {
                 ("CUSTOM_FIRST", shading::CUSTOM_FIRST),
                 ("CUSTOM_ATTRIBUTE_SHIFT", shading::CUSTOM_ATTRIBUTE_SHIFT),
                 ("CUSTOM_BASE_COLOR", shading::CUSTOM_BASE_COLOR),
+                ("CUSTOM_TEXTURE_SHIFT", shading::CUSTOM_TEXTURE_SHIFT),
             ],
         ),
         // The features that `createMaterial` takes, fixed from then on.

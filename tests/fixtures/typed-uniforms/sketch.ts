@@ -1,9 +1,9 @@
-// Type tests of custom materials' uniforms: `bun run typecheck` checks this project. Each line under
+// Type tests of custom materials' uniforms and textures: `bun run typecheck` checks this project. Each line under
 // `@ts-expect-error` must fail the type check, and every other line must pass it. The WGSL comes in
 // each form that TypeScript sees: a `.wgsl` file with the declaration that the null3D Vite plugin
 // writes beside it, a tagged template literal in a constant, one inline in the call, and WGSL whose
 // uniforms TypeScript cannot see, which takes any name.
-import { defineSketch } from '@null3d/engine';
+import { defineSketch, type Texture } from '@null3d/engine';
 import waves from './waves.wgsl';
 
 const rings = /* wgsl */ `
@@ -24,6 +24,18 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 `;
 
+const sampled = /* wgsl */ `
+var detail: texture_2d<f32>;
+var noise : texture_2d<f32> ;
+var<private> scratch: f32;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor *= textureSample(detail, detailSampler, input.uv).rgb;
+    return s;
+}
+`;
+
 const plain = /* wgsl */ `
 fn surface(input: SurfaceInput) -> Surface {
     return defaultSurface(input);
@@ -32,6 +44,9 @@ fn surface(input: SurfaceInput) -> Surface {
 
 /** WGSL in a variable of type string: TypeScript cannot see its uniforms. */
 const unseen: string = rings;
+
+/** A texture, which the type checks need only as a type. */
+declare const image: Texture;
 
 export default defineSketch(({ materials }) => {
 	// A `.wgsl` file, typed by the declaration beside it.
@@ -83,8 +98,23 @@ fn surface(input: SurfaceInput) -> Surface { return defaultSurface(input); }
 	// @ts-expect-error: the WGSL declares no struct Uniforms.
 	materials.shader({ wgsl: plain, uniforms: { speed: 1 } });
 
+	// Textures by the names that the WGSL declares.
+	materials.shader({ wgsl: sampled, textures: { detail: image, noise: image } });
+	materials.shader({ wgsl: sampled, textures: { noise: image } });
+	// @ts-expect-error: detial is not a texture of the WGSL; detail is.
+	materials.shader({ wgsl: sampled, textures: { detial: image } });
+	// @ts-expect-error: scratch is a private variable, not a texture.
+	materials.shader({ wgsl: sampled, textures: { scratch: image } });
+	// @ts-expect-error: a texture takes a Texture.
+	materials.shader({ wgsl: sampled, textures: { detail: 'detail.png' } });
+	// @ts-expect-error: the WGSL declares no texture.
+	materials.shader({ wgsl: plain, textures: { detail: image } });
+	// @ts-expect-error: waves.wgsl declares no texture.
+	materials.shader({ wgsl: waves, textures: { detail: image } });
+
 	// WGSL whose uniforms TypeScript cannot see takes any name, as JavaScript does. The engine
 	// checks each name when the call runs.
+	materials.shader({ wgsl: unseen, textures: { anything: image } });
 	const loose = materials.shader({ wgsl: unseen, uniforms: { anything: [1, 2, 3, 4, 5] } });
 	loose.set({ whatever: 1, roughness: 0.5 });
 });

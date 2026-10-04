@@ -1,11 +1,15 @@
 // The declarations that the plugin writes beside the `.wgsl` files that a project's modules import.
 // TypeScript cannot read WGSL, so the client types give a `.wgsl` import a general type, which takes
 // any uniform name. A declaration beside the file, `glow.wgsl.d.ts` beside `glow.wgsl`, takes its
-// place: it names the kind of shader and the type of each uniform of `struct Uniforms`, so that
-// `materials.shader` checks the names and values that its `uniforms` option and `set()` get.
+// place: it names the kind of shader, the type of each uniform of `struct Uniforms` and the name
+// of each texture, so that `materials.shader` checks the names and values that its `uniforms` and
+// `textures` options and `set()` get.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import type { CompiledWgsl } from './shader-types.ts';
+
+/** The longest line that a formatter keeps whole. */
+const LINE_WIDTH = 100;
 
 /** A name that TypeScript takes as a property name without quotes. */
 const PLAIN_NAME = /^[A-Za-z_$][\w$]*$/;
@@ -15,15 +19,23 @@ export function declarationPath(file: string): string {
 	return `${file}.d.ts`;
 }
 
-/** The type of a compiled shader, as TypeScript code: its kind, and its uniforms by name. */
+/**
+ * The type of a compiled shader, as TypeScript code: its kind, its uniforms by name, and the names
+ * of its textures.
+ */
 function shaderType(shader: CompiledWgsl): string {
 	if (shader.kind === 'shader') return 'CompiledShader';
 	const fields = shader.uniforms.map(({ name, type }) => {
 		const key = PLAIN_NAME.test(name) ? name : JSON.stringify(name);
-		return `\treadonly ${key}: '${type}';\n`;
+		return `\t\treadonly ${key}: '${type}';\n`;
 	});
-	const record = fields.length > 0 ? `{\n${fields.join('')}}` : 'Record<never, never>';
-	return `CompiledMaterial<${record}>`;
+	// WGSL names hold no quotes, and the layout is the one that Biome and Prettier give, so a
+	// project's formatter leaves the file alone.
+	const names = shader.textures.map(({ name }) => `'${name}'`).join(' | ') || 'never';
+	const short = `CompiledMaterial<Record<never, never>, ${names}>`;
+	if (fields.length === 0 && `declare const shader: ${short};`.length <= LINE_WIDTH) return short;
+	const record = fields.length > 0 ? `{\n${fields.join('')}\t}` : 'Record<never, never>';
+	return `CompiledMaterial<\n\t${record},\n\t${names}\n>`;
 }
 
 /** The declaration of a compiled `.wgsl` file, which TypeScript reads for imports of the file. */

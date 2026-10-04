@@ -111,7 +111,7 @@ The engine renders relative to the camera. `input.relativePosition` is therefore
 
 ## 4. Uniforms, textures and per-instance data
 
-Uniforms are built. Textures and per-instance data come in 0.2, and custom materials take no texture maps until then. The WGSL declares the uniforms once, as `struct Uniforms`, and reads them from `material`. The `uniforms` option gives their first values by field name, and a uniform without one starts at 0:
+Uniforms are built, and so are textures (0.2). Per-instance data comes in 0.2. The WGSL declares the uniforms once, as `struct Uniforms`, and reads them from `material`. The `uniforms` option gives their first values by field name, and a uniform without one starts at 0:
 
 ```ts
 materials.shader({
@@ -157,10 +157,37 @@ const dissolve = materials.shader({
 - `set()` changes only the uniforms you pass, cheaply at any time, and the others keep their values. It takes standard values in the same call.
 - (0.2) TypeScript types the `uniforms` option and `set()` from the struct. A misspelled name or a value of the wrong kind fails the type check, so run it after you edit the WGSL. For tagged WGSL, keep the literal in a `const` or write it in the call: a variable typed `string` hides the struct, and then any name passes. A `.wgsl` file gets its types from the `.wgsl.d.ts` declaration that the Vite plugin writes beside it, so commit that file. Type a list of values with `UniformValues<typeof wgsl>`, or `ShaderValues<typeof wgsl>` for `set()`, because a plain array literal widens `[0, 1]` to `number[]`. (`guides/custom-shaders`, Typed uniforms)
 - Field types: `f32`, `i32`, `u32` (numbers; whole numbers for the integers), `vec2f`, `vec3f`, `vec4f` (arrays). A `vec3f` also takes a color string or hex number, converted from sRGB to linear. Arrays are used as given.
-- The fields fit in 32 numbers; each `vec3f` and `vec4f` starts a group of four. The build rejects other types and fields past the limit.
+- The fields fit in 32 numbers, less one for each texture; each `vec3f` and `vec4f` starts a group of four. The build rejects other types and fields past the limit.
 - No field may be named as a standard value (`color`, `opacity`, `metalness`, `roughness`, `emissive`, `emissiveIntensity`). A wrong name or value in `uniforms` or `set()` throws E1216.
-- Textures in custom materials come in 0.2, with a `textures` option.
 - Per-instance data: `createInstances(mesh, count, { material, attributes: { tint: 4 } })` (0.2).
+
+Textures (0.2): declare each one as `var name: texture_2d<f32>;`, with no `@group` or `@binding`, and pass it by name in the `textures` option. The engine declares its sampler as `nameSampler`, with the texture's `wrap` and `filter` options:
+
+```ts
+const worn = materials.shader({
+  color: '#b0b4b8',
+  textures: {
+    detail: await assets.loadTexture('/tex/detail.ktx2', { colorSpace: 'srgb', wrap: 'repeat' }),
+    wear: await assets.loadTexture('/tex/wear.png', { colorSpace: 'linear' }),
+  },
+  wgsl: /* wgsl */ `
+    var detail: texture_2d<f32>;
+    var wear: texture_2d<f32>;
+
+    fn surface(input: SurfaceInput) -> Surface {
+      var s = defaultSurface(input);
+      s.baseColor *= textureSample(detail, detailSampler, input.uv * 4.0).rgb;
+      s.roughness = mix(s.roughness, 0.25, textureSample(wear, wearSampler, input.uv).r);
+      return s;
+    }`,
+});
+```
+
+- Pass a texture straight to a texture function. These take one: `textureSample`, `textureSampleLevel`, `textureSampleBias`, `textureSampleGrad`, `textureGather`, `textureLoad`, `textureDimensions`, `textureNumLevels`. The engine stores textures as layers of texture arrays and adds the layer to each call. So the build rejects a texture passed to a function of your own. `textureSampleBaseClampToEdge` does not work; use `textureSampleLevel` at level 0.
+- A vertex offset reads textures with `textureSampleLevel` or `textureLoad`, for height maps.
+- Until its image is on the GPU, a texture samples as white, and so does a declared texture that the option leaves out. Multiply by textures, so the material looks right while they load.
+- Up to 6 textures; each takes one of the uniforms' 32 numbers. Textures are fixed at creation. A texture has one layer.
+- TypeScript checks the option's names against the WGSL's declarations; a wrong name or a value that is not a texture throws E1216 when it runs. Full shaders take no textures.
 
 ## 5. Vertex offsets and full shaders
 
