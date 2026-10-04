@@ -1,5 +1,7 @@
 //! The render graph, passes, materials and the post-processing chain.
 //!
+//! - `ao`: ambient occlusion, as three.js's GTAOPass finds it, which darkens the ambient light of
+//!   the camera's opaque pass
 //! - `arrays`: meshes from arrays, with normals and tangents computed as three.js computes them
 //! - `background`: a texture that the camera's view draws behind every object
 //! - `bloom`: light that spreads from the scene's brightest parts, as three.js's UnrealBloomPass
@@ -40,6 +42,7 @@
 //! - `textures`: texture arrays, their samplers and bind groups, and uploads under a byte budget
 //! - `view`: views, each a camera, a layer mask and a target, culled on its own
 
+pub mod ao;
 pub mod arrays;
 mod background;
 pub mod bloom;

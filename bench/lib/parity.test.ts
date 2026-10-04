@@ -259,7 +259,7 @@ describe('feature scenes', () => {
 			expect(names).toContain(feature);
 	});
 
-	test('give the shadows, three glTF models and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
+	test('give the shadows, ambient occlusion, three glTF models and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
 		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		expect(SHADOW_MAX_DIFFERENT_PERCENT).toBeGreaterThan(MAX_DIFFERENT_PERCENT);
 		expect(featureScene('outline-hidden')?.limit).toBe(OUTLINE_MAX_DIFFERENT_PERCENT);
@@ -269,6 +269,8 @@ describe('feature scenes', () => {
 			'gltf-ktx2',
 			'gltf-meshopt-ext',
 			'shadows',
+			'ao-default',
+			'ao-wide',
 			'outline-plain',
 			'outline-hidden',
 		]);
@@ -373,7 +375,7 @@ describe('the scenes', () => {
 	});
 
 	test('compares with three.js the scenes that both engines draw in full', () => {
-		expect(PARITY_SCENES).toEqual(['s1', 's1-static', 's1-cells', 's2']);
+		expect(PARITY_SCENES).toEqual(['s1', 's1-static', 's1-cells', 's2', 's5']);
 		for (const scene of BENCH_SCENES)
 			expect(PARITY_SCENES.includes(scene)).toBe(LEFT_OUT_OF_PARITY[scene].length === 0);
 	});
@@ -535,7 +537,7 @@ describe('parseParityArgs', () => {
 	test('compares every scene on every GPU tier by default: benchmark scenes, then features', () => {
 		const features = FEATURE_SCENES.map((scene) => scene.test);
 		expect(parseParityArgs([])).toEqual({
-			scenes: ['s1', 's1-static', 's1-cells', 's2', ...features],
+			scenes: ['s1', 's1-static', 's1-cells', 's2', 's5', ...features],
 			comparisons: [
 				{
 					label: 'webgpu',
@@ -611,7 +613,7 @@ describe('parseParityArgs', () => {
 
 	test('refuses unknown names, a pair that is not two pages, and --tier with --pair', () => {
 		expect(() => parseParityArgs(['--scene', 's9'])).toThrow(
-			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3, s4, standard-grid,',
+			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3, s4, s5, standard-grid,',
 		);
 		expect(() => parseParityArgs(['--tier', 'webgl1'])).toThrow('"webgl1" is not a tier.');
 		expect(() => parseParityArgs(['--pair', 'threejs-webgl'])).toThrow(

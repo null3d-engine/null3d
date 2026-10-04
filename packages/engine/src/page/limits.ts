@@ -49,6 +49,7 @@ export interface DeviceReport {
 		} | null;
 		floatRenderTargets: {
 			rgba16f: { complete: boolean; readsBack: boolean; samples: number };
+			rgba32f?: { complete: boolean };
 		} | null;
 	};
 }
@@ -95,6 +96,11 @@ export interface CoreDevice {
 	 */
 	effectsSceneColor: number;
 	effectsAntialias: number;
+	/**
+	 * True when the device draws into the float targets of ambient occlusion's steps: always on
+	 * WebGPU, and on WebGL2 where the 32-bit and the 16-bit float targets pass the device check.
+	 */
+	occlusionTargets: boolean;
 	/** True when the canvas keeps premultiplied alpha, and stays clear where nothing draws. */
 	transparent: boolean;
 	/**
@@ -217,6 +223,15 @@ export function webgl2DrawsHdr(report: DeviceReport['webgl2'], antialias: Antial
 }
 
 /**
+ * True when WebGL2 draws into the float targets of ambient occlusion's steps: one 32-bit float, and
+ * four 16-bit floats. The 32-bit test covers the extension that both need.
+ */
+export function webgl2DrawsOcclusion(report: DeviceReport['webgl2']): boolean {
+	const targets = report.floatRenderTargets;
+	return targets?.rgba32f?.complete === true && targets.rgba16f.complete;
+}
+
+/**
  * The format of the target that scene passes draw into. WebGPU draws HDR color, in rg11b10ufloat,
  * which takes half the bytes, where the device draws into it and the canvas needs no alpha, and in
  * rgba16float elsewhere. Compatibility mode cannot multisample float targets, so with MSAA it takes
@@ -289,6 +304,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		antialias: ANTIALIAS_CODES[options.antialias],
 		effectsSceneColor: effects.sceneColor,
 		effectsAntialias: ANTIALIAS_CODES[effects.antialias],
+		occlusionTargets: tier !== 'webgl2' || webgl2DrawsOcclusion(report.webgl2),
 		transparent: options.transparent,
 		cellCulling: options.cells,
 		depthPrepass: options.depthPrepass,

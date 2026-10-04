@@ -41,8 +41,8 @@ export interface Null3dPageOptions {
  * The page's switches that reach the sketch module's address as they are: `blend` makes S1's
  * boxes see through, `animated` adds that many animated characters to S1, `grading` gives S1 a
  * color grading table and the vignette, `sprites` draws S1's swarm as sprites, `lines` draws it
- * as dashed line segments, `outline` adds outlined boxes to S1, and `labels` adds that many
- * labeled objects to S1, whose elements the page binds.
+ * as dashed line segments, `ao` turns ambient occlusion on in S1, `outline` adds outlined boxes
+ * to S1, and `labels` adds that many labeled objects to S1, whose elements the page binds.
  */
 const SKETCH_SWITCHES = [
 	'blend',
@@ -50,6 +50,7 @@ const SKETCH_SWITCHES = [
 	'grading',
 	'sprites',
 	'lines',
+	'ao',
 	'outline',
 	'labels',
 ] as const;
@@ -89,6 +90,8 @@ export function runNull3dPage(
 		if (options.shadowFilter !== null)
 			sketchUrl.searchParams.set('shadowFilter', String(options.shadowFilter));
 		if (!options.governor) sketchUrl.searchParams.set('governor', 'off');
+		// A scene with a playable demo, such as S5, reads `demo` to take the user's input.
+		if (options.demo) sketchUrl.searchParams.set('demo', '');
 		// The allocation check's switches, which only some sketches read.
 		for (const name of SKETCH_SWITCHES) {
 			const value = params.get(name);

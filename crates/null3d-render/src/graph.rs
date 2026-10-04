@@ -22,6 +22,9 @@
 //!
 //! Passes that write one resource run in the order they were declared. A pass that reads a
 //! resource runs after every pass that writes it, so it sees the resource as the frame leaves it.
+//! A pass that reads a resource so far ([`Pass::reads_so_far`]) sees it as the passes declared
+//! before it leave it instead: it runs after those writers and before the writers declared after
+//! it, as a depth pyramid built between two passes that draw one depth target does.
 //! Where these rules leave a choice, the next pass is the first declared one that can join the
 //! open render or compute pass. Else it is the first declared compute pass, since compute passes
 //! never share a render pass and running them early keeps later render passes whole. Else it is
@@ -342,6 +345,8 @@ impl Target {
 pub(crate) enum Mode {
     /// Samples a texture, or reads a buffer.
     Read,
+    /// Samples a texture, or reads a buffer, as the passes declared before it leave it.
+    ReadSoFar,
     /// Draws into a whole target or one of its layers, or writes a buffer.
     Write,
     /// Draws into part of a target, so the rest keeps what it held.
@@ -354,13 +359,13 @@ pub(crate) enum Mode {
 
 impl Mode {
     pub(crate) const fn writes(self) -> bool {
-        !matches!(self, Self::Read)
+        !matches!(self, Self::Read | Self::ReadSoFar)
     }
 
     /// How much the use does, to keep the larger when a pass names one resource twice.
     const fn rank(self) -> u8 {
         match self {
-            Self::Read => 0,
+            Self::Read | Self::ReadSoFar => 0,
             Self::Write => 1,
             Self::WritePart => 2,
             Self::CreateTexture(_) | Self::CreateBuffer => 3,
@@ -450,6 +455,12 @@ impl Pass {
     /// Samples a texture or reads a buffer, after every pass that writes it.
     pub fn reads(self, name: impl Into<Cow<'static, str>>) -> Self {
         self.with(name, Mode::Read, None)
+    }
+
+    /// Samples a texture or reads a buffer as the passes declared before this one leave it: after
+    /// those that write it, and before those declared after this one that write it.
+    pub fn reads_so_far(self, name: impl Into<Cow<'static, str>>) -> Self {
+        self.with(name, Mode::ReadSoFar, None)
     }
 
     fn with(mut self, name: impl Into<Cow<'static, str>>, mode: Mode, layer: Option<u32>) -> Self {

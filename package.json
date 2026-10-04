@@ -56,6 +56,7 @@
 		"@biomejs/biome": "2.5.14",
 		"@commitlint/cli": "^21.2.3",
 		"@commitlint/config-conventional": "^21.2.3",
+		"@null3d/cli": "workspace:*",
 		"@null3d/vite-plugin": "workspace:*",
 		"@types/bun": "^1.3.0",
 		"binaryen": "132.0.0",

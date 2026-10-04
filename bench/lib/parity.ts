@@ -30,6 +30,15 @@ export const MAX_DIFFERENT_PERCENT = 0.1;
 export const SHADOW_MAX_DIFFERENT_PERCENT = 0.5;
 
 /**
+ * The limit for ambient occlusion. null3D finds the occlusion at half the render size from the depth
+ * alone, and three.js at the whole size with a normal pass of its own, so the soft edges of the
+ * darkened areas differ a little. With GTAOPass's defaults under 0.1% of the pixels differ, which
+ * three.js's own rule passes, and with the wider search up to 0.66%. `.dev/image-tests.md` records
+ * the measured shares.
+ */
+export const AO_MAX_DIFFERENT_PERCENT = 1;
+
+/**
  * The outline scenes' limit, in percent of the pixels. The outline is a look of null3D's own, so
  * these scenes are a sanity check: the twin draws the same line from the mask of three.js's
  * OutlinePass. The limit sits above the scene's own edges on SwiftShader's WebGPU, and below what a
@@ -66,7 +75,7 @@ export interface ImageComparison {
 // The scenes and the pages that draw their hold frames.
 
 /** Every benchmark scene. The benchmark runs, the page tests and the image tests cover each one. */
-export const BENCH_SCENES = ['s1', 's1-static', 's1-cells', 's2', 's3', 's4'] as const;
+export const BENCH_SCENES = ['s1', 's1-static', 's1-cells', 's2', 's3', 's4', 's5'] as const;
 export type BenchScene = (typeof BENCH_SCENES)[number];
 
 /**
@@ -87,6 +96,7 @@ export const LEFT_OUT_OF_PARITY: Readonly<Record<BenchScene, readonly string[]>>
 	s4: [
 		"on WebGL2, more pixels that differ from WebGLRenderer's frame than three.js's two renderers differ by",
 	],
+	s5: [],
 };
 
 /** The benchmark scenes whose hold frames the parity checks compare with three.js's. */
@@ -298,6 +308,19 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 			twin: `${TWINS}/bloom.html?bloom=${bloom}`,
 			switches: 'antialias=none',
 			webglOnly: true,
+		}),
+	),
+	// Ambient occlusion with GTAOPass's defaults and with a wider search, against three.js's
+	// GTAOPass. The scene has ambient light alone, so darkening only the ambient light, as null3D
+	// does, matches GTAOPass darkening the whole image. The composer's targets have no MSAA, so
+	// null3D's page draws without anti-aliasing too.
+	...(['default', 'wide'] as const).map(
+		(ao): FeatureScene => ({
+			test: `ao-${ao}`,
+			twin: `${TWINS}/ao.html?ao=${ao}`,
+			switches: 'antialias=none',
+			webglOnly: true,
+			limit: AO_MAX_DIFFERENT_PERCENT,
 		}),
 	),
 	// A color grading table from a .cube file, alone and at part of its intensity with the

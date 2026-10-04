@@ -107,6 +107,9 @@ pub(super) struct Bucket {
     /// that the prepass leaves out. In the outlined layout, the pipeline that marks the parts that
     /// nothing hides, after `pipeline` marked every part.
     pub(super) prepass: u32,
+    /// True when that pipeline is the bucket's own template's, which reads the frame group and the
+    /// maps' group as the shading does, and false for the depth template's.
+    pub(super) prepass_own: bool,
     /// The bind group of its material's map, or 0 for a pipeline that reads none.
     pub(super) group: u32,
     pub(super) material: u32,
@@ -554,18 +557,23 @@ impl Layout {
                 self.skinned.push((self.buckets.len() as u32, object));
             }
             let regions = object.and_then(|object| skinning.parts_of(object));
-            let (pipeline, prepass) = if drawn == Drawn::Outlined {
+            // The mask's second pipeline binds as the depth template does.
+            let (pipeline, prepass, prepass_own) = if drawn == Drawn::Outlined {
                 let (every, visible) = mask_keys(pipeline);
                 (
                     pipelines.id(every.in_pass(targets)),
                     pipelines.id(visible.in_pass(targets)),
+                    false,
                 )
             } else {
-                pipelines.opaque(pipeline, targets, prepass)
+                let own = pipeline.places_own_vertices();
+                let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
+                (pipeline, prepass, own)
             };
             self.buckets.push(Bucket {
                 pipeline,
                 prepass,
+                prepass_own,
                 group,
                 material,
                 base,
