@@ -145,6 +145,22 @@ function bloomTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the HDR limit tests: light past the largest 16-bit float. */
+export const HDR_LIMIT_SKETCH = 'tests/pages/sketches/hdr-limit-sketch.ts';
+
+/**
+ * Light far past the largest 16-bit float, without bloom and with it, on every tier: an emissive
+ * sphere and the sun's highlight on a smooth metal floor. Both must draw white, and the sphere must
+ * glow with bloom. The HDR limit spec checks those pixels too, so CI's software GPU, which stores
+ * such light as infinity without the limit, fails even where a reference would match.
+ */
+function hdrLimitTests(): ImageTest[] {
+	return [
+		{ name: 'hdr-limit', sketch: HDR_LIMIT_SKETCH, hold: 0 },
+		{ name: 'hdr-limit-bloom', sketch: `${HDR_LIMIT_SKETCH}?bloom`, hold: 0 },
+	];
+}
+
 /** The sketch of the color grading tests: hues and grays on a light ground (bench/scenes/grading.ts). */
 const GRADING_SKETCH = 'tests/pages/sketches/grading-sketch.ts';
 
@@ -513,6 +529,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...toneMappingTests(),
 	...antialiasTests(),
 	...bloomTests(),
+	...hdrLimitTests(),
 	...gradingTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
 	// alpha: the output spec checks the alpha of the captured pixels.

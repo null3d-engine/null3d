@@ -24,6 +24,7 @@
 // after its OutputPass: a color grading table, then the vignette, each while its flag is set. The
 // table is a 3D texture that maps a display color to its graded color, read with a linear filter.
 // Grading works on the color that a pixel's coverage divides out, and multiplies it back after.
+#import null3d::color::{limit_hdr}
 #import null3d::tonemap
 
 /// The settings flag that says the scene color holds display color.
@@ -98,6 +99,14 @@ fn glow(uv: vec2f, render: vec2f) -> vec4f {
 }
 #endif
 
+/// The scene color's texel at `pixel`, no brighter than a 16-bit float holds. The scene shaders
+/// write no brighter color, but additive blending can add past it, and some GPUs store the sum as
+/// infinity, which the tone mapping curves would turn into black.
+fn scene_texel(pixel: vec2i) -> vec4f {
+    let texel = textureLoad(scene_color, pixel, 0);
+    return vec4f(limit_hdr(texel.rgb), texel.a);
+}
+
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
     // A triangle past the corners of clip space: (-1, -1), (3, -1) and (-1, 3). Its depth sits
@@ -152,7 +161,7 @@ fn unsqueeze(c: vec4f) -> vec4f {
 
 /// The squeezed texel at `pixel`, clamped inside the scene color, whose last texel is `last`.
 fn texel_at(pixel: vec2i, last: vec2i) -> vec4f {
-    return squeeze(textureLoad(scene_color, clamp(pixel, vec2i(0), last), 0));
+    return squeeze(scene_texel(clamp(pixel, vec2i(0), last)));
 }
 
 /// The squeezed color at a point in pixels, filtered between its four nearest texels.
@@ -176,7 +185,7 @@ fn luma(c: vec4f) -> f32 {
 fn pixel_color(position: vec2f) -> vec4f {
     let last = vec2i(textureDimensions(scene_color)) - 1;
     let pixel = vec2i(position);
-    let texel = textureLoad(scene_color, pixel, 0);
+    let texel = scene_texel(pixel);
     let m = luma(squeeze(texel));
     let nw = luma(texel_at(pixel + vec2i(-1, -1), last));
     let ne = luma(texel_at(pixel + vec2i(1, -1), last));
@@ -202,7 +211,7 @@ fn pixel_color(position: vec2f) -> vec4f {
 #else
 /// The scene color of the pixel at `position`.
 fn pixel_color(position: vec2f) -> vec4f {
-    return textureLoad(scene_color, vec2i(position), 0);
+    return scene_texel(vec2i(position));
 }
 #endif
 
@@ -285,7 +294,7 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
         let corner = vec2f(f32(tap & 1u), f32(tap >> 1u));
         let weights = mix(1.0 - share, share, corner);
         let texel = corner_texel(min(first + corner, render - 1.0), size);
-        let texel_color = textureLoad(scene_color, texel, 0) + light;
+        let texel_color = scene_texel(texel) + light;
         color += weights.x * weights.y * display(texel_color, position.xy);
     }
     return grade(color, position.xy, size);

@@ -1,6 +1,8 @@
 //! Custom materials built into the repository's template, as the Vite plugin builds them through
 //! the shader compiler.
 
+mod precision;
+
 use std::path::Path;
 
 use null3d_shaders::{
@@ -584,4 +586,44 @@ fn the_row_of_custom_values_holds_the_measured_effects() {
         most = most.max(used);
     }
     assert!(most <= 20, "the largest effect takes {most} of 32 floats");
+}
+
+/// A surface function that builds arrays from values that are not constants in each form that
+/// WGSL allows: assigned, inside a struct, indexed in place, nested, and returned by a function.
+const ARRAYS: &str = "struct Pair { colors: array<vec3f, 2>, weight: f32 }
+
+fn pick(u: vec2f) -> array<vec3f, 2> {
+    if u.x > 0.5 {
+        return array<vec3f, 2>(u.xxx, u.yyy);
+    }
+    return array<vec3f, 2>(u.yyy, u.xxx);
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    var a: array<vec3f, 3>;
+    a = array<vec3f, 3>(input.uv.xxx, input.uv.yyy, vec3f(input.uv, 1.0));
+    let pair = Pair(array<vec3f, 2>(input.uv.xxx, input.uv.yyy), 1.0);
+    let picked = pick(input.uv);
+    let i = u32(input.uv.x * 2.0);
+    s.baseColor = a[i] + pair.colors[i] * pair.weight + picked[i];
+    s.roughness = array<f32, 2>(input.uv.x, array<f32, 2>(input.uv.y, 0.5)[i])[i];
+    return s;
+}
+";
+
+#[test]
+fn custom_materials_build_arrays_without_sized_array_types_in_glsl() {
+    let built = compile(ARRAYS).expect("the surface function builds");
+    let mut checked = 0;
+    for (name, variant) in &built.variants {
+        for program in variant.glsl.iter().flat_map(|programs| programs.values()) {
+            checked += 1;
+            for (stage, fragment) in [(&program.vertex, false), (&program.fragment, true)] {
+                let breaks = precision::precision_breaks(&stage.source, fragment);
+                assert!(breaks.is_empty(), "{name}: {breaks:#?}\n{}", stage.source);
+            }
+        }
+    }
+    assert!(checked > 30, "only {checked} GLSL programs were built");
 }

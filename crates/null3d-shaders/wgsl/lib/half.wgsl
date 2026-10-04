@@ -23,6 +23,11 @@ const INV_PI: f16 = 0.3183098861837907h;
 /// The smallest sum of the Smith visibility term's two parts that it divides by: 16-bit floats
 /// hold no smaller normal number with room to spare.
 const SMITH_FLOOR: f16 = 1e-4h;
+/// The lowest perceptual roughness that the direct light's GGX terms take. They use roughness to
+/// the fourth power, which must stay above the smallest normal 16-bit float, about 6.1e-5:
+/// 0.089 to the fourth is about 6.3e-5. A smoother surface draws the highlight of this roughness,
+/// as Filament does on phones, where it runs at half precision.
+const ROUGHNESS_FLOOR: f32 = 0.089;
 /// The brightest linear color that the tone mapping curves take. Each curve is white well before
 /// it, and the curves square their input, which must stay below the largest 16-bit float.
 const TONE_LIMIT: f32 = 64.0;
@@ -77,7 +82,8 @@ fn direct_light(
     let grazing = f16(m.specular_grazing) * fresnel;
     let specular = vec3h(m.specular_blended) * (1.0h - fresnel) + grazing;
     let dielectric = vec3h(m.specular) * (1.0h - fresnel) + grazing;
-    let alpha = f16(m.roughness * m.roughness);
+    let roughness = max(m.roughness, ROUGHNESS_FLOOR);
+    let alpha = f16(roughness * roughness);
     let brdf = min(
         smith_visibility(alpha, n_dot_l, n_dot_v) * ggx(alpha, n_dot_h, cross(n, half_dir)),
         MAX,

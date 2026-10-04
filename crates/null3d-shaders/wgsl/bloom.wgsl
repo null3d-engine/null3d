@@ -39,6 +39,8 @@ struct Step {
 @group(0) @binding(1) var source: texture_2d<f32>;
 @group(0) @binding(2) var source_sampler: sampler;
 
+#import null3d::color::{limit_hdr}
+
 const LUMINANCE = vec3f(0.2126729, 0.7151522, 0.0721750);
 
 @vertex
@@ -49,9 +51,12 @@ fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
     return vec4f(x, y, 0.5, 1.0);
 }
 
-/// The source's filtered color at `uv`, clamped inside its drawn corner.
+/// The source's filtered color at `uv`, clamped inside its drawn corner. It is no brighter than a
+/// 16-bit float holds, as Unity's URP limits bloom's input: additive blending can add the scene
+/// color past it, and some GPUs store the sum as infinity, which would spread through the blur.
 fn tap(uv: vec2f) -> vec3f {
-    return textureSampleLevel(source, source_sampler, clamp(uv, settings.bounds.xy, settings.bounds.zw), 0.0).rgb;
+    let at = clamp(uv, settings.bounds.xy, settings.bounds.zw);
+    return limit_hdr(textureSampleLevel(source, source_sampler, at, 0.0).rgb);
 }
 
 @fragment

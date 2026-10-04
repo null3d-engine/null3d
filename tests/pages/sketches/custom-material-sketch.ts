@@ -28,12 +28,21 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 `;
 
-/** Rings of the base color and white by the height of the surface, which darkens toward the bottom. */
+/**
+ * Rings of the base color and white by the height of the surface, which darkens toward the bottom.
+ * Each ring takes its color from arrays built from values that are not constants: one that a
+ * function returns, and one indexed where it is built. WebGL2 must compile both forms.
+ */
 const rings = /* wgsl */ `
+fn ring_colors(base: vec3f) -> array<vec3f, 2> {
+    return array<vec3f, 2>(base, vec3f(1.0));
+}
+
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
-    let ring = step(0.5, fract(input.uv.y * 6.0));
-    s.baseColor = mix(s.baseColor, vec3f(1.0), ring) * mix(0.3, 1.0, input.uv.y);
+    let ring = u32(step(0.5, fract(input.uv.y * 6.0)));
+    let shade = array<f32, 2>(mix(0.3, 1.0, input.uv.y), 1.0)[0];
+    s.baseColor = ring_colors(s.baseColor)[ring] * shade;
     return s;
 }
 `;
