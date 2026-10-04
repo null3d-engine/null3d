@@ -55,6 +55,12 @@ fn skin_dispatches(commands: &[(Op, Vec<u32>)], pipeline: u32) -> Vec<u32> {
     groups
 }
 
+/// The rows of the joint texture for the joints that the world's animation table can hold.
+fn joint_rows<B: FrameBuilder>(world: &World<B>) -> u32 {
+    let animations = world.animations.as_ref().expect("an animation table");
+    animations.joint_capacity().div_ceil(JOINTS_PER_ROW)
+}
+
 #[test]
 fn a_skinned_object_skins_once_in_a_compute_pass_and_draws_its_skinned_vertices() {
     let (mut world, _) = skinned([0.0, 0.0, 0.0]);
@@ -66,7 +72,7 @@ fn a_skinned_object_skins_once_in_a_compute_pass_and_draws_its_skinned_vertices(
         .iter()
         .find(|p| p[1] == template::SKIN)
         .expect("the skinning pipeline")[0];
-    // The joint texture holds a row of joints for each 1,024 the table can hold.
+    // The joint texture holds a row of joints for each `JOINTS_PER_ROW` the table can hold.
     let joints = operands(&first, Op::CreateTexture)
         .into_iter()
         .find(|t| t[1] == JOINTS_PER_ROW * TEXELS_PER_JOINT)
@@ -74,7 +80,7 @@ fn a_skinned_object_skins_once_in_a_compute_pass_and_draws_its_skinned_vertices(
     assert_eq!(
         joints[2..6],
         [
-            1,
+            joint_rows(&world),
             1,
             format::RGBA32_FLOAT,
             texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST
@@ -328,7 +334,7 @@ fn webgl2_skins_in_the_vertex_shader_of_every_pass_that_draws_a_skinned_object()
             created(joints)[1..5],
             [
                 JOINTS_PER_ROW * TEXELS_PER_JOINT,
-                1,
+                joint_rows(&world),
                 1,
                 format::RGBA32_FLOAT
             ]
