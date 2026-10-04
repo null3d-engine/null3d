@@ -21,9 +21,10 @@ export function runDirectLoop(
 	fps: number | undefined,
 	queue?: number,
 	fault?: LoopFault,
+	presented?: () => void,
 ): RenderLoop {
 	const { slots } = controlViews(control);
-	const presenter = new Presenter(slots, renderer, metrics, fps, queue);
+	const presenter = new Presenter(slots, renderer, metrics, fps, queue, undefined, presented);
 	let stopped = false;
 	/** A frame that is recorded and waits to draw, or 0. */
 	let pending = 0;

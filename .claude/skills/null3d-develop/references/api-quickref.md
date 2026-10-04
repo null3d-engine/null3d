@@ -42,6 +42,7 @@ const engine = await createEngine({
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
   memory: { maximumMiB: 1024 },          // the default; up to 4096 for scenes that need more (E1409 outside 256 to 4096)
+  maxLabels: 4096,                       // (0.2) the default; labels that ui.trackLabel holds at once, 1 to 65,536
   onProgress: (stage) => {},             // 'core', then 'sketch' after the setup and any preset check, then 'first-frame'
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
@@ -68,7 +69,7 @@ engine.simulateGpuLoss();                         // acts out a driver reset; th
 await engine.destroy();                 // workers stop; wait before this page starts another engine
 
 const image = await engine.capture();             // PNG Blob of the next frame; E1414 after destroy()
-engine.labels.bind('hp-12', element);             // (0.2) HTML label that follows an object
+const unbind = engine.labels.bind('hp-12', element);   // (0.2) element follows the sketch's label 'hp-12'
 await engine.requestPointerLock();                // (0.2) for first-person controls
 // engine.registerVideo and textures.fromVideo come after 1.0; recipe 14 shows the workaround
 ```

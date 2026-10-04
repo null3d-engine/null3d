@@ -1595,8 +1595,8 @@
       "status": "changed",
       "since": "0.2",
       "target": "Sketch: ui.trackLabel(obj, 'hp-12', { offset: [0, 2, 0] }). Page: engine.labels.bind('hp-12', element)",
-      "notes": "The engine writes screen positions into shared memory each frame, and the page moves the elements; no messages per frame. CSS3D transforms come after 1.0.",
-      "docs": "guides/ui-overlays",
+      "notes": "The sketch places each label with the camera of each frame, and the page moves the element over it in the frame on screen; no messages per frame. The element's center sits where CSS2DRenderer puts a CSS2DObject's, and the offset turns and scales with the object, as a CSS2DObject's position does under its parent. Put the elements in a container that covers the canvas. Hidden labels get visibility: hidden, not display: none. No z-index by distance, and no center or rotation2D. CSS3D transforms come after 1.0.",
+      "docs": "api/ui",
       "detect": "\\bCSS[23]D(Renderer|Object|Sprite)\\b"
     },
     {

@@ -179,6 +179,14 @@ const DOCS = {
 		example: `E1218: play() got "rnu", which names no clip of "Hero" (slot 3). Its clips are idle, run and walk.`,
 		since: '0.2',
 	},
+	E1219: {
+		title: 'Invalid label',
+		cause:
+			"ui.trackLabel() or ui.untrackLabel() got an id that is not a string with at least one character. Or the sketch tracked more labels at once than createEngine's maxLabels option allows: 4,096 by default.",
+		example:
+			'E1219: trackLabel() could not track "hp-4097": the engine already tracks 4096 labels.',
+		since: '0.2',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',
