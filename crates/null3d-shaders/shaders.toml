@@ -314,3 +314,46 @@ variants.webgpu = { targets = ["wgsl"] }
 file = "light_clusters.wgsl"
 by_device = true
 variants.webgpu = { targets = ["wgsl"] }
+
+# Prototype S3 (not for merging): the AO prototype page's scene, drawn by instance, as a depth
+# prepass, a structure pass of distances at the AO size, and a lit pass whose variants read the
+# ambient occlusion in no way, with one filtered read or with four depth-weighted reads, each with
+# and without contact shadows. The engine does not import it.
+[shaders.proto_s3_scene]
+file = "proto_s3_scene.wgsl"
+pipelines.prepass = { vertex = "vs", fragment = "fs_empty" }
+pipelines.structure = { vertex = "vs", fragment = "fs_structure" }
+pipelines.lit = { vertex = "vs", fragment = "fs_lit" }
+variants.webgpu_none = { targets = ["wgsl"] }
+variants.webgpu_bilinear = { defs = ["UPSAMPLE_BILINEAR"], targets = ["wgsl"] }
+variants.webgpu_depth = { defs = ["UPSAMPLE_DEPTH"], targets = ["wgsl"] }
+variants.webgpu_none_contact = { defs = ["CONTACT"], targets = ["wgsl"] }
+variants.webgpu_bilinear_contact = { defs = ["UPSAMPLE_BILINEAR", "CONTACT"], targets = ["wgsl"] }
+variants.webgpu_depth_contact = { defs = ["UPSAMPLE_DEPTH", "CONTACT"], targets = ["wgsl"] }
+variants.webgl2_none = { targets = ["glsl"] }
+variants.webgl2_bilinear = { defs = ["UPSAMPLE_BILINEAR"], targets = ["glsl"] }
+variants.webgl2_depth = { defs = ["UPSAMPLE_DEPTH"], targets = ["glsl"] }
+variants.webgl2_none_contact = { defs = ["CONTACT"], targets = ["glsl"] }
+variants.webgl2_bilinear_contact = { defs = ["UPSAMPLE_BILINEAR", "CONTACT"], targets = ["glsl"] }
+variants.webgl2_depth_contact = { defs = ["UPSAMPLE_DEPTH", "CONTACT"], targets = ["glsl"] }
+
+# Prototype S3 (not for merging): the ambient occlusion variants, each a pass at the AO size.
+[shaders.proto_s3_ao]
+file = "proto_s3_ao.wgsl"
+pipelines.copy = { vertex = "vs", fragment = "copy" }
+pipelines.sao = { vertex = "vs", fragment = "sao" }
+pipelines.gtao = { vertex = "vs", fragment = "gtao" }
+pipelines.gtao_wide = { vertex = "vs", fragment = "gtao_wide" }
+pipelines.bitmask = { vertex = "vs", fragment = "bitmask" }
+pipelines.blur_x = { vertex = "vs", fragment = "blur_x" }
+pipelines.blur_y = { vertex = "vs", fragment = "blur_y" }
+pipelines.three_horizon = { vertex = "vs", fragment = "three_horizon" }
+pipelines.three_denoise = { vertex = "vs", fragment = "three_denoise" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# Prototype S3: the copy step from a multisampled depth, which only WebGPU reads.
+[shaders.proto_s3_ao_ms]
+file = "proto_s3_ao.wgsl"
+pipelines.copy = { vertex = "vs", fragment = "copy" }
+variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }

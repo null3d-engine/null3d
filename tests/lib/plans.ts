@@ -191,6 +191,8 @@ export type Check =
 	| { kind: 'effect'; effect: 'bloom' | 'ao'; tier: Tier; scale: number }
 	/** The occlusion cost page: the city with software occlusion culling off and on in turns. */
 	| { kind: 'occlusion' }
+	/** Prototype S3 (not for merging): AO and contact shadow setups timed in turns. */
+	| { kind: 'proto-s3'; tier: Tier; scale: number; aoScale: number }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
 	| { kind: 'animation'; characters: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
@@ -829,6 +831,44 @@ export function effectPlan(effect: 'bloom' | 'ao'): PlanItem<Check>[] {
 	return [...pages, ...twin];
 }
 
+/** How long a page of prototype S3 may take: about 30 setups and 20 passes, five rounds each. */
+const PROTO_S3_TIMEOUT_SECONDS = 420;
+
+/**
+ * Prototype S3 (not for merging): what ambient occlusion and contact shadows cost, for M2-F2 and
+ * M2-F12. Each GPU path at render scales 1 and 0.5 with AO at half the render size, then at scale
+ * 0.5 with AO at a quarter, the phones' fallback, then a heavier scene. The first scale-0.5 page
+ * also saves the pictures for the side-by-side comparison. The device's preset comes from
+ * --switches preset=...
+ */
+export function protoS3Plan(): PlanItem<Check>[] {
+	const runs: { suffix: string; scale: number; aoScale: number; switches: string[] }[] = [
+		{ suffix: '', scale: 1, aoScale: 0.5, switches: [] },
+		{ suffix: '', scale: 0.5, aoScale: 0.5, switches: ['images=1'] },
+		{ suffix: '-quarter', scale: 0.5, aoScale: 0.25, switches: ['ups=bilinear', 'steps=0'] },
+		// A heavier scene, 256 spheres of 1,024 triangles, for the depth input's vertex cost.
+		{
+			suffix: '-heavy',
+			scale: 0.5,
+			aoScale: 0.5,
+			switches: ['grid=16', 'aos=gtao', 'ups=bilinear', 'contact=0', 'steps=0'],
+		},
+	];
+	return TIERS.flatMap((tier) =>
+		runs.map(({ suffix, scale, aoScale, switches }) =>
+			pageItem(
+				`proto-s3-${tier}-${scale * 100}${suffix}`,
+				'proto-s3',
+				{ kind: 'proto-s3', tier, scale, aoScale },
+				{
+					switches: [`gpu=${tier}`, `scale=${scale}`, `aoscale=${aoScale}`, ...switches],
+					timeoutSeconds: PROTO_S3_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	);
+}
+
 /** How long the occlusion cost page may take: the city's start, the warm-up and six measurements. */
 const OCCLUSION_TIMEOUT_SECONDS = 90;
 
@@ -1165,6 +1205,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	bloom: () => effectPlan('bloom'),
 	ao: () => effectPlan('ao'),
 	occlusion: occlusionPlan,
+	'proto-s3': protoS3Plan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
 	soak: soakPlan,
@@ -1653,6 +1694,20 @@ export function judge(
 				...(occlusion.on?.intervalMs ? [] : ['the page measured no frame with occlusion on']),
 				...(occlusion.on?.occludedEntries ? [] : ['occlusion culling hid nothing in the city']),
 			];
+		}
+		case 'proto-s3': {
+			const proto = result as ItemResult & {
+				batches?: { costMs?: Record<string, number> };
+				images?: Record<string, string> | null;
+			};
+			if (context && proto.images) {
+				const folder = join(context.imageDir, 'proto-s3', `${check.tier}-${check.scale * 100}`);
+				mkdirSync(folder, { recursive: true });
+				for (const [name, png] of Object.entries(proto.images))
+					writeFileSync(join(folder, name), Buffer.from(png, 'base64'));
+				context.note?.(`saved ${Object.keys(proto.images).length} pictures in ${folder}`);
+			}
+			return proto.batches?.costMs ? [] : ['the page measured no setup'];
 		}
 		case 'animation':
 			return animationProblems(result as ItemResult & AnimationResult);
