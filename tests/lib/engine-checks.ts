@@ -178,9 +178,9 @@ export interface EngineChecks {
 	 * False leaves out the frame-rate checks: the median frame interval, the floors on the frames
 	 * and the sketch's updates, and the need for a measured refresh rate, which takes the thread that
 	 * draws a few dozen frames. The engine must still draw frames and update the sketch, at any rate,
-	 * and a refresh rate it measured must still be a display's. Only a test whose job is not the
-	 * loop's pace sets it, as a test of the order of the start's downloads does: a busy runner can
-	 * slow every frame of its short measurement, which says nothing about the downloads.
+	 * and a refresh rate it measured must still be a display's. A test whose job is not the loop's
+	 * pace sets it, such as a test of the start's downloads or of a start option: a busy runner can
+	 * slow every frame of its short measurement, which says nothing about what that test checks.
 	 */
 	pacing?: boolean;
 }
