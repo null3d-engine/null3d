@@ -9,8 +9,12 @@
 //! shaders. The shaders that load by device go into one device module for each target and each
 //! value of the permutation bits that a device fixes. Each is a file of its own that the loader
 //! imports on demand, so a page downloads only the builds its device draws with.
+//!
+//! Many builds share a stage's source: a vertex shader stays the same across bits that change only
+//! the fragment shader. Each module writes a source that several of its builds use once, as a
+//! constant at its top, and those builds name the constant. The browser then parses each text once.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use null3d_gpu::drawlist::permutation;
 
@@ -313,6 +317,7 @@ fn main_module(output: &Output, devices: &BTreeMap<DeviceModule, Builds<'_>>) ->
         .iter()
         .filter(|(shader, _)| !output.by_device.contains(*shader))
         .collect();
+    ts.shared_sources(own.iter().flat_map(|(_, variants)| variants.values()));
     for &(shader, variants) in &own {
         let pipelines = output.pipelines.get(shader).map_or(&[][..], Vec::as_slice);
         ts.line("");
@@ -382,6 +387,11 @@ fn device_module(module: DeviceModule, builds: &Builds<'_>) -> String {
     ts.line(&format!(
         "import type {{ DeviceShaders }} from './{MAIN_MODULE}';"
     ));
+    ts.shared_sources(
+        builds
+            .values()
+            .flat_map(|variants| variants.values().copied()),
+    );
     ts.line("");
     let bits: Vec<&str> = module.bit_names().collect();
     let with = if bits.is_empty() {
@@ -429,6 +439,22 @@ fn export_name(shader: &str) -> String {
 struct Writer {
     out: String,
     depth: usize,
+    /// The constant that holds each source that several builds of the module share.
+    shared: HashMap<String, String>,
+}
+
+/// Every stage source of a build: its WGSL module, and each GLSL program's two shaders.
+fn sources(variant: &VariantOutput) -> impl Iterator<Item = &str> {
+    let wgsl = variant.wgsl.iter().map(|wgsl| wgsl.source.as_str());
+    let glsl = variant.glsl.iter().flat_map(|programs| {
+        programs.values().flat_map(|program| {
+            [
+                program.vertex.source.as_str(),
+                program.fragment.source.as_str(),
+            ]
+        })
+    });
+    wgsl.chain(glsl)
 }
 
 impl Writer {
@@ -455,14 +481,50 @@ impl Writer {
         self.depth * TAB_WIDTH + text.chars().count()
     }
 
-    /// A shader source as a template literal. It starts on the key's line and ends with the
-    /// closing backtick at the start of a line.
+    /// Writes each source that more than one of `builds` uses as a constant, in the order the
+    /// builds first use them, so that `template` names the constant in its place.
+    fn shared_sources<'a>(&mut self, builds: impl Iterator<Item = &'a VariantOutput>) {
+        let mut uses: Vec<(&str, usize)> = Vec::new();
+        let mut index: HashMap<&str, usize> = HashMap::new();
+        for source in builds.flat_map(sources) {
+            let at = *index.entry(source).or_insert_with(|| {
+                uses.push((source, 0));
+                uses.len() - 1
+            });
+            uses[at].1 += 1;
+        }
+        let mut shared = uses.into_iter().filter(|&(_, count)| count > 1).peekable();
+        if shared.peek().is_none() {
+            return;
+        }
+        self.line("");
+        self.line("// Sources that several builds below share, each written once.");
+        for (n, (source, _)) in shared.enumerate() {
+            let name = format!("SOURCE_{n}");
+            self.literal(&format!("const {name} = "), source, ";");
+            self.shared.insert(source.to_owned(), name);
+        }
+    }
+
+    /// A shader source under `key`: the name of its shared constant, or a template literal.
     fn template(&mut self, key: &str, source: &str) {
+        match self.shared.get(source) {
+            Some(name) => {
+                let line = format!("{key}: {name},");
+                self.line(&line);
+            }
+            None => self.literal(&format!("{key}: "), source, ","),
+        }
+    }
+
+    /// A shader source as a template literal between `before` and `after`. It starts on the line
+    /// of `before` and ends with the closing backtick at the start of a line.
+    fn literal(&mut self, before: &str, source: &str, after: &str) {
         for _ in 0..self.depth {
             self.out.push('\t');
         }
-        self.out.push_str(key);
-        self.out.push_str(": `");
+        self.out.push_str(before);
+        self.out.push('`');
         let mut chars = source.chars().peekable();
         while let Some(c) = chars.next() {
             match c {
@@ -472,7 +534,9 @@ impl Writer {
                 _ => self.out.push(c),
             }
         }
-        self.out.push_str("`,\n");
+        self.out.push('`');
+        self.out.push_str(after);
+        self.out.push('\n');
     }
 
     /// The type of one variant, broken over lines the way the formatter breaks a long one.
@@ -674,5 +738,44 @@ mod tests {
         let glsl = &modules["shaders-glsl-draw-index-tone-map"];
         assert!(glsl.contains("with DRAW_INDEX and TONE_MAP. */"));
         assert!(glsl.contains("\tcull: {},\n\tlit: {\n\t\twebgl2_draw_index_tone_map: {\n"));
+    }
+
+    fn glsl_program(vertex: &str, fragment: &str) -> crate::GlslProgram {
+        let stage = |source: &str| GlslStage {
+            source: source.to_owned(),
+            uniform_blocks: Vec::new(),
+            textures: Vec::new(),
+        };
+        crate::GlslProgram {
+            vertex: stage(vertex),
+            fragment: stage(fragment),
+        }
+    }
+
+    #[test]
+    fn a_source_that_several_builds_of_a_module_share_is_written_once() {
+        let mut output = Output::default();
+        let mut lit = BTreeMap::new();
+        for (name, fragment) in [("a", "frag `a` ${x}"), ("b", "frag b")] {
+            let mut build = build(Target::Glsl, 0);
+            build.glsl = Some(BTreeMap::from([(
+                "main".to_owned(),
+                glsl_program("vert shared", fragment),
+            )]));
+            lit.insert(name.to_owned(), build);
+        }
+        output.shaders.insert("lit".to_owned(), lit);
+        output.by_device = ["lit".to_owned()].into();
+        let modules = modules(&output);
+        let glsl = &modules["shaders-glsl"];
+        assert_eq!(glsl.matches("vert shared").count(), 1, "{glsl}");
+        assert!(
+            glsl.contains("\nconst SOURCE_0 = `vert shared`;\n"),
+            "{glsl}"
+        );
+        assert_eq!(glsl.matches("source: SOURCE_0,").count(), 2, "{glsl}");
+        assert!(glsl.contains("source: `frag \\`a\\` \\${x}`,"), "{glsl}");
+        assert!(glsl.contains("source: `frag b`,"), "{glsl}");
+        assert!(!glsl.contains("SOURCE_1"), "{glsl}");
     }
 }
