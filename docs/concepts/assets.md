@@ -84,6 +84,23 @@ Integer positions keep their own units. The object's transform turns them into m
 
 Meshes whose attributes have the same types share GPU buffers, and they draw with few changes of GPU state. Keep the meshes of a scene in few such formats.
 
+## Limits on each file
+
+A model or texture file can come from a user, or be broken. So the loaders check every count in a file before they allocate memory for it. A file that passes a limit fails at once with its error code. It never holds a worker for minutes, and it never fills the tab's memory.
+
+| What | Limit | Error |
+| --- | --- | --- |
+| One array of a model: an accessor, decoded meshopt data, or the triangles of a strip or a fan | 256 MiB, the largest buffer that every WebGPU device takes | E1416 |
+| All the arrays and images that one model file decodes to | 64 MiB, plus 32 bytes for each byte of the file and its buffers, up to 1 GiB | E1416 |
+| One animation clip | 4,194,304 keys, its frames times its tracks, at the clip's key rate | E1416 from `loadGltf`, E1218 elsewhere |
+| A mesh that the engine builds from a file or from arrays | What engine memory holds. The call fails, and the engine runs on | E1109 |
+| The sides of a KTX2 texture | `textures.maxSize`, checked before the transcoder runs | E1412 |
+| The layers of a KTX2 texture, and its texels | 256 layers, and 256 MiB of texels in the format that the device gets | E1412 |
+
+The model limit grows with the file, because compressed data decodes to several times its size. The sample models decode to at most 3 times their bytes, so a real model stays far below the limit. A model that does pass it is broken, or holds more than a scene can draw. Split it into several files.
+
+A primitive that names an accessor another primitive also names shares that accessor's arrays. So a file pays once for data that it uses many times.
+
 ## Uploads and memory
 
 Each frame sends at most the preset's texture upload budget to the GPU: 2 MiB on Low, up to 16 MiB on Ultra. A larger texture goes up over several frames, and the engine then makes its mip levels on the GPU. A mesh goes up whole in the frame after the call that makes it. [Quality presets](quality-presets.md) lists the budget of each preset, and `quality.set({ uploadBytesPerFrame })` changes it.

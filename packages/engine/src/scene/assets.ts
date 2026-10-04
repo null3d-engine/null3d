@@ -104,8 +104,9 @@ export class Assets {
 	 * supports them. A KTX2 file of ETC1S or UASTC data becomes the compressed format that the
 	 * device supports, with the file's mip levels, and the first KTX2 file loads the transcoder.
 	 * Throws E1411 when the file does not download, E1413 when a server of another origin does not
-	 * allow the page to read it, E1412 when the file does not decode, E1406 when the transcoder does
-	 * not load, and E1208 for options the engine does not know.
+	 * allow the page to read it, E1412 when the file does not decode or passes a limit of the
+	 * engine's (a KTX2 file larger than the device's textures, before it transcodes), E1406 when the
+	 * transcoder does not load, and E1208 for options the engine does not know.
 	 */
 	async loadTexture(url: string | URL, options: LoadTextureOptions = {}): Promise<Texture> {
 		const call = 'assets.loadTexture';
@@ -124,9 +125,10 @@ export class Assets {
 	 * downloads the meshopt decoder. The loads count for `onProgress`, the files the model names too,
 	 * and they take files that `preload` downloaded. Throws E1411 when a file does not download,
 	 * E1413 when a server of another origin does not allow the page to read it, E1416 for a file
-	 * that is not a glTF model the engine reads, E1417 for a file that requires an extension the
-	 * engine does not read, E1412 when an image does not decode, and E1406 when the loader or the
-	 * meshopt decoder does not download.
+	 * that is not a glTF model the engine reads or that passes a limit on what one file may decode
+	 * to, E1417 for a file that requires an extension the engine does not read, E1412 when an image
+	 * does not decode, E1109 when a mesh does not fit engine memory, and E1406 when the loader or
+	 * the meshopt decoder does not download.
 	 */
 	async loadGltf(url: string | URL): Promise<Prefab> {
 		const call = 'assets.loadGltf';

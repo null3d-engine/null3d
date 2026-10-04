@@ -14,6 +14,7 @@
 // The module imports only its sibling modules of the glTF worker, so the worker's bundle holds no
 // engine code.
 
+import { FILE_LIMITS, FileBudget } from './file-limits';
 import {
 	type AnimationData,
 	type MorphTargetsData,
@@ -73,19 +74,22 @@ export type MeshoptDecode = (
 	filter: string,
 ) => void;
 
-/** The strides that each meshopt mode and filter allow, as the extension's rules give them. */
-const MESHOPT_MODES: Readonly<Record<string, (stride: number) => boolean>> = {
-	ATTRIBUTES: (stride) => stride % 4 === 0 && stride >= 4 && stride <= 256,
-	TRIANGLES: (stride) => stride === 2 || stride === 4,
-	INDICES: (stride) => stride === 2 || stride === 4,
-};
-const MESHOPT_FILTERS: Readonly<Record<string, (stride: number) => boolean>> = {
-	NONE: () => true,
-	OCTAHEDRAL: (stride) => stride === 4 || stride === 8,
-	QUATERNION: (stride) => stride === 8,
-	EXPONENTIAL: (stride) => stride % 4 === 0,
-	COLOR: (stride) => stride === 4 || stride === 8,
-};
+/**
+ * The strides that each meshopt mode and filter allow, as the extension's rules give them. Tables
+ * that the file's text names a key of are maps, so a name such as "constructor" finds nothing.
+ */
+const MESHOPT_MODES: ReadonlyMap<string, (stride: number) => boolean> = new Map([
+	['ATTRIBUTES', (stride: number) => stride % 4 === 0 && stride >= 4 && stride <= 256],
+	['TRIANGLES', (stride: number) => stride === 2 || stride === 4],
+	['INDICES', (stride: number) => stride === 2 || stride === 4],
+]);
+const MESHOPT_FILTERS: ReadonlyMap<string, (stride: number) => boolean> = new Map([
+	['NONE', () => true],
+	['OCTAHEDRAL', (stride: number) => stride === 4 || stride === 8],
+	['QUATERNION', (stride: number) => stride === 8],
+	['EXPONENTIAL', (stride: number) => stride % 4 === 0],
+	['COLOR', (stride: number) => stride === 4 || stride === 8],
+]);
 
 /** The meshopt extension of a buffer or a buffer view, under either name, or undefined. */
 function meshoptOf(value: unknown): Entry | undefined {
@@ -108,7 +112,7 @@ export function usesMeshopt(container: GltfContainer): boolean {
  * The most bytes that one accessor may read: WebGPU's portable limit on a buffer's size. It also
  * bounds an accessor without a buffer view, which the parser fills with zeros.
  */
-export const MAX_ACCESSOR_BYTES = 256 * 1024 * 1024;
+export const MAX_ACCESSOR_BYTES = FILE_LIMITS.itemBytes;
 
 // Numbers of the glTF 2.0 specification.
 const GLB_MAGIC = 0x46546c67;
@@ -129,7 +133,10 @@ const NEAREST_MIPMAP_NEAREST = 9984;
 const CLAMP_TO_EDGE = 33071;
 const MIRRORED_REPEAT = 33648;
 
-/** Each component type's bytes and the typed array that holds it. */
+/**
+ * Each component type's bytes and the typed array that holds it. Callers look it up by a number,
+ * which never names a property that every object has.
+ */
 const COMPONENTS: Readonly<Record<number, readonly [bytes: number, type: TypedArrayClass]>> = {
 	[BYTE]: [1, Int8Array],
 	[UNSIGNED_BYTE]: [1, Uint8Array],
@@ -140,15 +147,15 @@ const COMPONENTS: Readonly<Record<number, readonly [bytes: number, type: TypedAr
 };
 
 /** Each accessor type's components. */
-const TYPES: Readonly<Record<string, number>> = {
-	SCALAR: 1,
-	VEC2: 2,
-	VEC3: 3,
-	VEC4: 4,
-	MAT2: 4,
-	MAT3: 9,
-	MAT4: 16,
-};
+const TYPES: ReadonlyMap<unknown, number> = new Map<unknown, number>([
+	['SCALAR', 1],
+	['VEC2', 2],
+	['VEC3', 3],
+	['VEC4', 4],
+	['MAT2', 4],
+	['MAT3', 9],
+	['MAT4', 16],
+]);
 
 type TypedArrayClass =
 	| Int8ArrayConstructor
@@ -360,6 +367,8 @@ export interface GltfContainer {
 	bin?: Uint8Array;
 	/** The absolute address of each buffer that the file names, by the buffer's index. */
 	external: Map<number, string>;
+	/** The file's own bytes, which with its buffers' bytes set what it may decode to. */
+	bytes: number;
 }
 
 /** Reads a .glb or .gltf file's container and JSON, and lists the buffers it names by address. */
@@ -419,7 +428,7 @@ export function readContainer(file: Uint8Array, url: string): GltfContainer {
 		if (typeof uri !== 'string') broken(`buffer ${k} has a uri that is not text`);
 		if (!uri.startsWith('data:') && !fallback) external.set(k, resolve(uri, url));
 	});
-	return { json, bin, external };
+	return { json, bin, external, bytes: file.length };
 }
 
 /**
@@ -435,6 +444,9 @@ export function parseGltf(
 ): GltfData {
 	const { json } = container;
 	const notes: string[] = [];
+	let sourceBytes = container.bytes;
+	for (const bytes of externalBuffers.values()) sourceBytes += bytes.length;
+	const budget = new FileBudget(sourceBytes, broken);
 	const buffers = list(json.buffers, 'buffers').map((value, k) => {
 		const buffer = entry(value, `buffer ${k}`);
 		const byteLength = count(buffer.byteLength, `buffer ${k}'s byteLength`);
@@ -482,6 +494,7 @@ export function parseGltf(
 		const { buffer, offset, length, stride, count, mode, filter } = view.meshopt as CompressedView;
 		if (!decode) broken(`bufferView ${v} holds meshopt data, and the parser has no decoder`);
 		const source = (buffers[buffer] as Uint8Array).subarray(offset, offset + length);
+		budget.take(count * stride, `bufferView ${v}'s meshopt data`);
 		const target = new Uint8Array(count * stride);
 		try {
 			decode(target, count, stride, source, mode, filter);
@@ -497,12 +510,19 @@ export function parseGltf(
 		entry(value, `accessor ${k}`),
 	);
 
-	/** Reads accessor `k` into a tight typed array of its component type, with its sparse values. */
-	const read = (k: number, what: string, shared = false) => {
+	/** Each accessor's copy, once read: callers never change it, so primitives share it. */
+	const copies = new Map<number, ReturnType<Reader>>();
+	/**
+	 * Reads accessor `k` into a tight typed array of its component type, with its sparse values.
+	 * Each accessor is copied once, and the copy takes its bytes from the file's budget.
+	 */
+	const read: Reader = (k, what, shared = false) => {
 		const accessor = accessors[index(k, accessors.length, what)] as Entry;
+		const copied = copies.get(k);
+		if (copied) return copied;
 		const name = `accessor ${k}`;
-		const components = TYPES[String(accessor.type)];
-		if (!components) broken(`${name} has the type ${String(accessor.type)}`);
+		const components = TYPES.get(accessor.type);
+		if (components === undefined) broken(`${name} has the type ${String(accessor.type)}`);
 		const componentType = Number(accessor.componentType);
 		const component = COMPONENTS[componentType];
 		if (!component) broken(`${name} has the component type ${String(accessor.componentType)}`);
@@ -532,15 +552,16 @@ export function parseGltf(
 					count: n,
 					accessor,
 				};
+			budget.take(n * element, name);
 			out = new Uint8Array(n * element);
 			if (step === element) out.set(source.subarray(offset, offset + n * element));
 			else
-				for (let i = 0; i < n; i++)
-					out.set(source.subarray(offset + i * step, offset + i * step + element), i * element);
-		}
+				for (let i = 0, from = offset, to = 0; i < n; i++, from += step)
+					for (let b = 0; b < element; b++, to++) out[to] = source[from + b] as number;
+		} else budget.take(n * element, name);
 		const array = new Type((out ?? new Uint8Array(n * element)).buffer) as AccessorArray;
 		if (accessor.sparse !== undefined) applySparse(array, accessor.sparse, components, n, name);
-		return {
+		const data = {
 			array,
 			components,
 			componentType,
@@ -548,6 +569,8 @@ export function parseGltf(
 			count: n,
 			accessor,
 		};
+		copies.set(k, data);
+		return data;
 	};
 
 	const applySparse = (
@@ -598,7 +621,7 @@ export function parseGltf(
 		const primitives: PrimitiveData[] = [];
 		list(mesh.primitives, `mesh ${k}'s primitives`).forEach((p, j) => {
 			const what = `mesh ${k}'s primitive ${j}`;
-			const primitive = parsePrimitive(entry(p, what), what, read, notes);
+			const primitive = parsePrimitive(entry(p, what), what, read, budget, notes);
 			if (primitive) primitives.push(primitive);
 		});
 		const data: MeshData = { name: text(mesh.name), primitives };
@@ -737,7 +760,9 @@ export function parseGltf(
 			return { url: resolve(image.uri, url), mimeType };
 		}
 		const v = index(image.bufferView, views.length, `image ${k}'s bufferView`);
-		return { bytes: viewOf(v).bytes.slice(), mimeType };
+		const bytes = viewOf(v).bytes;
+		budget.take(bytes.length, `image ${k}`);
+		return { bytes: bytes.slice(), mimeType };
 	});
 
 	const lightDefs = list(json.extensions?.KHR_lights_punctual?.lights, 'lights');
@@ -765,8 +790,8 @@ export function parseGltf(
 		};
 	});
 
-	const { nodes, place } = parseNodes(json, meshes.length, lights.length, read);
-	const animation = parseAnimation(json, nodes, meshes, place, read, notes);
+	const { nodes, place } = parseNodes(json, meshes.length, lights.length, read, budget);
+	const animation = parseAnimation(json, nodes, meshes, place, read, budget, notes);
 	const data: GltfData = { nodes, meshes, materials, textures: textureUses, images, lights, notes };
 	if (animation) data.animation = animation;
 	return data;
@@ -815,9 +840,9 @@ function compressedView(
 		broken(
 			`${name} reads bytes ${offset} to ${offset + length} of buffer ${buffer}, which holds ${bytes.length}`,
 		);
-	const modeAllows = MESHOPT_MODES[mode];
+	const modeAllows = MESHOPT_MODES.get(mode);
 	if (!modeAllows) broken(`${name} has the mode ${mode}`);
-	const filterAllows = MESHOPT_FILTERS[filter];
+	const filterAllows = MESHOPT_FILTERS.get(filter);
 	if (!filterAllows) broken(`${name} has the filter ${filter}`);
 	if (filter !== 'NONE' && mode !== 'ATTRIBUTES')
 		broken(`${name} has the filter ${filter}, which only the ATTRIBUTES mode takes`);
@@ -893,6 +918,7 @@ function parsePrimitive(
 	primitive: Entry,
 	what: string,
 	read: Reader,
+	budget: FileBudget,
 	notes: string[],
 ): PrimitiveData | undefined {
 	const mode = Number(primitive.mode ?? TRIANGLES);
@@ -939,15 +965,18 @@ function parsePrimitive(
 			)
 		)
 			broken(`${what}'s indices are not unsigned integers`);
-		indices = data.array instanceof Uint32Array ? data.array : Uint16Array.from(data.array);
+		if (data.array instanceof Uint8Array) {
+			budget.take(data.array.length * 2, `${what}'s indices`);
+			indices = Uint16Array.from(data.array);
+		} else indices = data.array;
 		for (const i of indices)
 			if (i >= vertices) broken(`${what} has the index ${i}, past its ${vertices} vertices`);
 	}
-	if (mode !== TRIANGLES) indices = toTriangles(indices, vertices, mode);
+	if (mode !== TRIANGLES) indices = toTriangles(indices, vertices, mode, budget, what);
 	const corners = indices ? indices.length : vertices;
 	if (corners % 3 !== 0) broken(`${what} has ${corners} corners, which make no whole triangles`);
 	if (vertices === 0) return undefined;
-	const morph = parseMorphTargets(primitive, vertices, what, read);
+	const morph = parseMorphTargets(primitive, vertices, what, read, budget);
 	if (morph) out.morph = morph;
 	const material =
 		primitive.material === undefined ? -1 : count(primitive.material, `${what}'s material`);
@@ -956,7 +985,12 @@ function parsePrimitive(
 	if (extensions?.[MESH_BVH] !== undefined)
 		data.bvh = storedTree(entry(extensions[MESH_BVH], `${what}'s ${MESH_BVH}`), what, read);
 	if (extensions?.[OCCLUDER] !== undefined)
-		data.occluder = blockerOf(entry(extensions[OCCLUDER], `${what}'s ${OCCLUDER}`), what, read);
+		data.occluder = blockerOf(
+			entry(extensions[OCCLUDER], `${what}'s ${OCCLUDER}`),
+			what,
+			read,
+			budget,
+		);
 	return data;
 }
 
@@ -970,7 +1004,12 @@ function storedTree(extension: Entry, what: string, read: Reader): Uint8Array {
 }
 
 /** A primitive's blocker, or true when the primitive blocks with its own mesh. */
-function blockerOf(extension: Entry, what: string, read: Reader): true | BlockerData {
+function blockerOf(
+	extension: Entry,
+	what: string,
+	read: Reader,
+	budget: FileBudget,
+): true | BlockerData {
 	if (extension.positions === undefined && extension.indices === undefined) return true;
 	const positions = read(Number(extension.positions), `${what}'s blocker positions`);
 	const indices = read(Number(extension.indices), `${what}'s blocker indices`);
@@ -986,6 +1025,7 @@ function blockerOf(extension: Entry, what: string, read: Reader): true | Blocker
 		indices.count % 3 !== 0
 	)
 		broken(`${what}'s blocker indices are not unsigned integers in whole triangles`);
+	budget.take(indices.count * 4, `${what}'s blocker indices`);
 	const corners = Uint32Array.from(indices.array);
 	for (const i of corners)
 		if (i >= positions.count)
@@ -993,20 +1033,28 @@ function blockerOf(extension: Entry, what: string, read: Reader): true | Blocker
 	return { positions: positions.array as Float32Array, indices: corners };
 }
 
-/** Triangle lists from a strip or a fan, as three.js's `toTrianglesDrawMode` makes them. */
+/**
+ * Triangle lists from a strip or a fan, as three.js's `toTrianglesDrawMode` makes them. The list
+ * holds about three times the strip's indices, so it takes its bytes from the file's budget.
+ */
 function toTriangles(
 	indices: Uint16Array | Uint32Array | undefined,
 	vertices: number,
 	mode: number,
+	budget: FileBudget,
+	what: string,
 ): Uint32Array {
 	const n = indices?.length ?? vertices;
 	const at = (i: number) => (indices ? (indices[i] as number) : i);
 	const triangles = Math.max(0, n - 2);
+	budget.take(triangles * 12, `${what}'s triangles`);
 	const out = new Uint32Array(triangles * 3);
-	for (let i = 0; i < triangles; i++) {
-		if (mode === TRIANGLE_FAN) out.set([at(0), at(i + 1), at(i + 2)], i * 3);
-		else if (i % 2 === 0) out.set([at(i), at(i + 1), at(i + 2)], i * 3);
-		else out.set([at(i + 2), at(i + 1), at(i)], i * 3);
+	for (let i = 0, o = 0; i < triangles; i++, o += 3) {
+		const fan = mode === TRIANGLE_FAN;
+		const even = i % 2 === 0;
+		out[o] = fan ? at(0) : even ? at(i) : at(i + 2);
+		out[o + 1] = at(i + 1);
+		out[o + 2] = fan || even ? at(i + 2) : at(i);
 	}
 	return out;
 }
@@ -1020,6 +1068,7 @@ function parseNodes(
 	meshes: number,
 	lights: number,
 	read: Reader,
+	budget: FileBudget,
 ): { nodes: NodeData[]; place: Int32Array } {
 	const skins = list(json.skins, 'skins').length;
 	const defs = list(json.nodes, 'nodes').map((value, k) => entry(value, `node ${k}`));
@@ -1031,14 +1080,30 @@ function parseNodes(
 			parents[c] = k;
 		}
 	});
-	// A node that can reach itself through its parents is in a loop, which a parent-first order
-	// can never place.
-	for (let k = 0; k < defs.length; k++) {
-		let up = parents[k] as number;
-		for (let steps = 0; up >= 0; steps++) {
-			if (up === k || steps > defs.length) broken(`node ${k} is in a loop of parents`);
-			up = parents[up] as number;
+	// Each node has at most one parent, so a node that no walk down from a node without a parent
+	// reaches can reach itself through its parents: it is in a loop, or below one, and a
+	// parent-first order can never place it. One walk visits each node once.
+	const reached = new Uint8Array(defs.length);
+	const walk: number[] = [];
+	for (let k = 0; k < defs.length; k++)
+		if (parents[k] === -1) {
+			reached[k] = 1;
+			walk.push(k);
 		}
+	while (walk.length > 0) {
+		const k = walk.pop() as number;
+		for (const child of list((defs[k] as Entry).children, '')) {
+			reached[child as number] = 1;
+			walk.push(child as number);
+		}
+	}
+	const looped = reached.indexOf(0);
+	if (looped >= 0) {
+		// Name a node of the loop itself: one walk up meets the loop within as many steps as there
+		// are nodes.
+		let up = looped;
+		for (let steps = 0; steps < defs.length; steps++) up = parents[up] as number;
+		broken(`node ${up} is in a loop of parents`);
 	}
 	const scenes = list(json.scenes, 'scenes');
 	let roots: number[];
@@ -1076,7 +1141,8 @@ function parseNodes(
 			skin: node.skin === undefined ? -1 : index(node.skin, skins, `${what}'s skin`),
 		};
 		const instancing = extensions.EXT_mesh_gpu_instancing as Entry | undefined;
-		if (instancing && data.mesh >= 0) data.instancing = parseInstancing(instancing, what, read);
+		if (instancing && data.mesh >= 0)
+			data.instancing = parseInstancing(instancing, what, read, budget);
 		return data;
 	});
 	return { nodes, place };
@@ -1096,7 +1162,12 @@ function transformOf(node: Entry, what: string): Float32Array {
 }
 
 /** A node's EXT_mesh_gpu_instancing transforms, as floats. */
-function parseInstancing(instancing: Entry, what: string, read: Reader): InstancingData {
+function parseInstancing(
+	instancing: Entry,
+	what: string,
+	read: Reader,
+	budget: FileBudget,
+): InstancingData {
 	const attributes = entry(instancing.attributes, `${what}'s instancing attributes`);
 	let n = -1;
 	const take = (name: string, components: number) => {
@@ -1106,7 +1177,7 @@ function parseInstancing(instancing: Entry, what: string, read: Reader): Instanc
 			broken(`${what}'s instancing ${name} has ${data.components} components`);
 		if (n >= 0 && data.count !== n) broken(`${what}'s instancing attributes differ in count`);
 		n = data.count;
-		return toFloats(data.array, data.normalized);
+		return toFloats(data.array, data.normalized, budget, `${what}'s instancing ${name}`);
 	};
 	const positions = take('TRANSLATION', 3);
 	const rotations = take('ROTATION', 4);
@@ -1114,6 +1185,7 @@ function parseInstancing(instancing: Entry, what: string, read: Reader): Instanc
 	if (n < 0) broken(`${what}'s instancing has no attributes`);
 	const filled = (array: Float32Array | undefined, value: readonly number[]) => {
 		if (array) return array;
+		budget.take(n * value.length * 4, `${what}'s instancing`);
 		const out = new Float32Array(n * value.length);
 		for (let i = 0; i < n; i++) out.set(value, i * value.length);
 		return out;

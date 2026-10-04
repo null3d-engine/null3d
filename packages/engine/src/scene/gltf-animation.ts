@@ -20,6 +20,7 @@
 // imports only its sibling modules of the glTF worker, so code that type checks the parser alone
 // needs no browser types.
 
+import type { FileBudget } from './file-limits';
 import { broken, type Entry, entry, index, list, type Reader, text, toFloats } from './gltf-json';
 import { affineOf, decomposeAffine, multiplyAffine } from './gltf-math';
 import type { MeshData, NodeData, PrimitiveData, VertexData } from './gltf-parse';
@@ -116,14 +117,18 @@ export interface AnimationData {
 /** The identity as a row-major 3 × 4 matrix. */
 const IDENTITY_BIND = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
 
-/** The paths of glTF's animation channels that move a node, by the channel of a rig track. */
-const PATHS = { translation: 'translation', rotation: 'rotation', scale: 'scale' } as const;
+/**
+ * The paths of glTF's animation channels that move a node, which are the channels of rig tracks.
+ * Tables that the file's text names a key of are sets and maps, so a name such as "constructor"
+ * finds nothing.
+ */
+const PATHS: ReadonlySet<string> = new Set(['translation', 'rotation', 'scale']);
 
-const INTERPOLATIONS: Readonly<Record<string, KeyInterpolation>> = {
-	LINEAR: 'linear',
-	STEP: 'step',
-	CUBICSPLINE: 'cubic',
-};
+const INTERPOLATIONS: ReadonlyMap<string, KeyInterpolation> = new Map([
+	['LINEAR', 'linear'],
+	['STEP', 'step'],
+	['CUBICSPLINE', 'cubic'],
+]);
 
 /**
  * Reads a primitive's morph targets: the deltas of its positions, normals and tangents, as floats.
@@ -134,6 +139,7 @@ export function parseMorphTargets(
 	vertices: number,
 	what: string,
 	read: Reader,
+	budget: FileBudget,
 ): MorphTargetsData | undefined {
 	const targets = list(primitive.targets, `${what}'s targets`);
 	if (targets.length === 0) return undefined;
@@ -151,7 +157,9 @@ export function parseMorphTargets(
 		for (const [name, field] of fields) {
 			const deltas = out[field];
 			if (target[name] === undefined) {
-				deltas?.push(new Float32Array(vertices * 3));
+				if (!deltas) continue;
+				budget.take(vertices * 12, `${what}'s target ${t} ${name}`);
+				deltas.push(new Float32Array(vertices * 3));
 				continue;
 			}
 			if (!deltas) broken(`${what}'s target ${t} moves ${name}, and its first target does not`);
@@ -160,7 +168,7 @@ export function parseMorphTargets(
 				broken(
 					`${what}'s target ${t} has ${data.count} ${name} deltas of ${data.components} values, and the primitive has ${vertices} vertices`,
 				);
-			deltas.push(toFloats(data.array, data.normalized));
+			deltas.push(toFloats(data.array, data.normalized, budget, `${what}'s target ${t} ${name}`));
 		}
 	});
 	return out;
@@ -214,6 +222,7 @@ export function parseAnimation(
 	meshes: MeshData[],
 	place: Int32Array,
 	read: Reader,
+	budget: FileBudget,
 	notes: string[],
 ): AnimationData | undefined {
 	const skinDefs = list(json.skins, 'skins');
@@ -222,7 +231,7 @@ export function parseAnimation(
 	const n = nodes.length;
 	const skins = skinDefs.map((value, s) => parseSkin(entry(value, `skin ${s}`), s, place, read));
 	const clips = animationDefs.map((value, k) =>
-		parseClip(entry(value, `animation ${k}`), k, nodes, meshes, place, read, notes),
+		parseClip(entry(value, `animation ${k}`), k, nodes, meshes, place, read, budget, notes),
 	);
 	uniqueNames(clips);
 
@@ -305,12 +314,14 @@ export function parseAnimation(
 			const map = skinJoints[node.skin] as number[];
 			const name = (meshes[node.mesh] as MeshData).name;
 			node.mesh = copy(node.mesh, `skin ${node.skin} ${node.mesh}`, (p) =>
-				skinned(p, map, wide, `mesh "${name}" with skin ${node.skin}`, notes),
+				skinned(p, map, wide, `mesh "${name}" with skin ${node.skin}`, budget, notes),
 			);
 			node.skinned = true;
 		} else if ((rigid[k] as number) >= 0) {
 			const joint = rigid[k] as number;
-			node.mesh = copy(node.mesh, `joint ${joint} ${node.mesh}`, (p) => onJoint(p, joint, wide));
+			node.mesh = copy(node.mesh, `joint ${joint} ${node.mesh}`, (p) =>
+				onJoint(p, joint, wide, budget, `mesh "${(meshes[node.mesh] as MeshData).name}"`),
+			);
 			node.skinned = true;
 		}
 	});
@@ -419,6 +430,7 @@ function parseClip(
 	meshes: readonly MeshData[],
 	place: Int32Array,
 	read: Reader,
+	budget: FileBudget,
 	notes: string[],
 ): ClipData {
 	const what = `animation ${k}`;
@@ -439,7 +451,7 @@ function parseClip(
 			return;
 		}
 		const node = place[index(target.node, place.length, `${what}'s channel ${c}'s node`)] as number;
-		if (path !== 'weights' && !(path in PATHS))
+		if (path !== 'weights' && !PATHS.has(path))
 			broken(`${what}'s channel ${c} has the path ${path}`);
 		const key = `${String(target.node)} ${path}`;
 		if (seen.has(key)) broken(`${what} moves node ${String(target.node)}'s ${path} twice`);
@@ -449,7 +461,7 @@ function parseClip(
 		const sampler =
 			samplers[index(channel.sampler, samplers.length, `${what}'s channel ${c}'s sampler`)];
 		const where = `${what}'s sampler ${String(channel.sampler)}`;
-		const interpolation = INTERPOLATIONS[text(sampler?.interpolation ?? 'LINEAR')];
+		const interpolation = INTERPOLATIONS.get(text(sampler?.interpolation ?? 'LINEAR'));
 		if (!interpolation) broken(`${where} has the interpolation ${String(sampler?.interpolation)}`);
 		const input = read(Number(sampler?.input), `${where}'s input`, true);
 		if (input.components !== SCALAR || input.componentType !== FLOAT)
@@ -462,7 +474,7 @@ function parseClip(
 			last = t;
 		}
 		const output = read(Number(sampler?.output), `${where}'s output`, true);
-		const values = toFloats(output.array, output.normalized);
+		const values = toFloats(output.array, output.normalized, budget, `${where}'s output`);
 		let perKey = path === 'rotation' ? 4 : 3;
 		if (path === 'weights') {
 			const mesh = (nodes[node] as NodeData).mesh;
@@ -505,8 +517,17 @@ function uniqueNames(clips: ClipData[]): void {
 	}
 }
 
-/** The joint indices of a skeleton's size: bytes up to 256 joints, else 16-bit numbers. */
-function jointArray(wide: boolean, length: number): Uint8Array | Uint16Array {
+/**
+ * The joint indices of a skeleton's size: bytes up to 256 joints, else 16-bit numbers. Each copy
+ * takes its bytes from the file's budget.
+ */
+function jointArray(
+	wide: boolean,
+	length: number,
+	budget: FileBudget,
+	what: string,
+): Uint8Array | Uint16Array {
+	budget.take(length * (wide ? 2 : 1), `the joints of ${what}`);
 	return wide ? new Uint16Array(length) : new Uint8Array(length);
 }
 
@@ -516,6 +537,7 @@ function skinned(
 	map: readonly number[],
 	wide: boolean,
 	what: string,
+	budget: FileBudget,
 	notes: string[],
 ): PrimitiveData {
 	if (!p.joints || !p.weights) {
@@ -524,7 +546,7 @@ function skinned(
 	}
 	const source = p.joints.array;
 	const weights = p.weights.array;
-	const joints = jointArray(wide, source.length);
+	const joints = jointArray(wide, source.length, budget, what);
 	for (let i = 0; i < source.length; i++) {
 		const j = source[i] as number;
 		const joint = map[j];
@@ -539,9 +561,16 @@ function skinned(
 }
 
 /** A primitive whose every vertex moves with `joint` alone. */
-function onJoint(p: PrimitiveData, joint: number, wide: boolean): PrimitiveData {
+function onJoint(
+	p: PrimitiveData,
+	joint: number,
+	wide: boolean,
+	budget: FileBudget,
+	what: string,
+): PrimitiveData {
 	const vertices = p.positions.array.length / 3;
-	const joints = jointArray(wide, vertices * 4);
+	const joints = jointArray(wide, vertices * 4, budget, what);
+	budget.take(vertices * 4, `the weights of ${what}`);
 	const weights = new Uint8Array(vertices * 4);
 	for (let v = 0; v < vertices; v++) {
 		joints[v * 4] = joint;

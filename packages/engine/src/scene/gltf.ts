@@ -462,6 +462,8 @@ function makeMeshes(
 		try {
 			made = context.geometry.fromArrays(arrays);
 		} catch (error) {
+			// A mesh too large for engine memory keeps its own code, which says how to make room.
+			if ((error as { code?: unknown }).code === 'E1109') throw error;
 			throw context.error(
 				'E1416',
 				`${call}() could not read ${address}: primitive ${k} of mesh "${mesh.name}" makes no mesh: ${error instanceof Error ? error.message : String(error)}`,

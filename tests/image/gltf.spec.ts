@@ -77,6 +77,9 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				html: 'E1416',
 				absent: 'E1411',
 				empty: 'none',
+				named: 'E1416',
+				zeros: 'E1416',
+				long: 'E1416',
 			});
 			// One thread loads every file, so the loader and its worker download once. No file holds
 			// meshopt data, so the decoder does not download.

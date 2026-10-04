@@ -31,6 +31,14 @@ describe('failures of calls', () => {
 		]);
 	});
 
+	test('name the keys of a clip that passes the limit, against the limit', () => {
+		expect(
+			detail(coreFailure(failedCore(1218, 5, 32_640_032), 'assets.loadGltf', 'the clip "Wave"')),
+		).toBe(
+			'E1218: assets.loadGltf() on the clip "Wave" failed: the clip would hold 32,640,032 keys (its frames times its tracks), more than the 4,194,304 that one clip may hold.',
+		);
+	});
+
 	test("give a call's name parentheses, and a name in words none", () => {
 		expect(detail(coreFailure(failedCore(1501, 4), 'materials.standard'))).toBe(
 			'E1501: materials.standard() failed: the material table is full.',

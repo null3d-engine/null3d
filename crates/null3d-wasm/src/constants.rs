@@ -2,7 +2,7 @@
 //! neither side copies them by hand.
 
 use null3d_core::animation::{
-    Channel, DEFAULT_RATE, EVENT_CAPACITY, EVENT_WORDS, Interpolation, MAX_BLEND,
+    Channel, DEFAULT_RATE, EVENT_CAPACITY, EVENT_WORDS, Interpolation, MAX_BLEND, MAX_CLIP_KEYS,
     MAX_LAYERS as MAX_ANIMATION_LAYERS, REST_FLOATS, event_kind,
 };
 use null3d_core::cells::CELL_SIZE;
@@ -269,8 +269,9 @@ pub mod animation_problem {
     pub const LENGTH: u32 = 3;
     /// The second detail is the joint whose value is NaN or infinite.
     pub const NOT_FINITE: u32 = 4;
-    /// The second detail is the frame count the clip would need.
-    pub const FRAMES: u32 = 5;
+    /// The second detail is the keys the clip would hold, its frames times its tracks, which pass
+    /// the core's limit per clip.
+    pub const KEYS: u32 = 5;
     /// The second detail is the skeleton id.
     pub const UNKNOWN_SKELETON: u32 = 6;
     /// The second detail is the clip's joint count.
@@ -791,6 +792,7 @@ pub fn typescript() -> String {
             &[
                 ("MAX_BLEND", MAX_BLEND as u32),
                 ("MAX_LAYERS", MAX_ANIMATION_LAYERS as u32),
+                ("MAX_CLIP_KEYS", MAX_CLIP_KEYS as u32),
                 ("EVENT_CAPACITY", EVENT_CAPACITY as u32),
                 ("EVENT_WORDS", EVENT_WORDS as u32),
                 ("PLAY_LOOP", play_flag::LOOP),
@@ -817,7 +819,7 @@ pub fn typescript() -> String {
                 ("PARENT", animation_problem::PARENT),
                 ("LENGTH", animation_problem::LENGTH),
                 ("NOT_FINITE", animation_problem::NOT_FINITE),
-                ("FRAMES", animation_problem::FRAMES),
+                ("KEYS", animation_problem::KEYS),
                 ("UNKNOWN_SKELETON", animation_problem::UNKNOWN_SKELETON),
                 ("WRONG_SKELETON", animation_problem::WRONG_SKELETON),
                 ("EVENTS", animation_problem::EVENTS),

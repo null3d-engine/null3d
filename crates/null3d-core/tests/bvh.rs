@@ -363,6 +363,65 @@ fn damaged_files_are_refused() {
     }
 }
 
+/// A tree whose empty slot holds a box that some test enters, or whose box is not finite, would
+/// make the first query follow an empty word. The reader refuses each such tree.
+#[test]
+fn empty_slots_and_boxes_that_are_not_finite_are_refused() {
+    let p = [0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+    let mesh = TriangleSoup { positions: &p };
+    let bvh = MeshBvh::build(&mesh).unwrap();
+    let good = bvh.to_bytes();
+    assert!(MeshBvh::from_bytes(&good, &mesh).is_ok());
+    let root = &bvh.nodes()[0];
+    let empty = (0..4).find(|&c| root.children[c] == child::EMPTY).unwrap();
+    let used = (0..4).find(|&c| root.children[c] != child::EMPTY).unwrap();
+    // Lane `slot` of field `field` of the root: min x, y, z, then max x, y, z.
+    let lane = |field: usize, slot: usize| HEADER_BYTES + field * 16 + slot * 4;
+    let with = |changes: &[(usize, f32)]| {
+        let mut b = good.clone();
+        for &(at, v) in changes {
+            b[at..at + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        MeshBvh::from_bytes(&b, &mesh)
+    };
+    let everywhere: Vec<(usize, f32)> = (0..6)
+        .map(|field| {
+            let v = if field < 3 {
+                f32::NEG_INFINITY
+            } else {
+                f32::INFINITY
+            };
+            (lane(field, empty), v)
+        })
+        .collect();
+    assert_eq!(
+        with(&everywhere),
+        Err(FormatError::EmptySlot(0, empty as u32))
+    );
+    assert_eq!(
+        with(&[(lane(0, empty), f32::NAN)]),
+        Err(FormatError::EmptySlot(0, empty as u32))
+    );
+    assert_eq!(
+        with(&[(lane(0, empty), 0.0)]),
+        Err(FormatError::EmptySlot(0, empty as u32))
+    );
+    // A used slot or the whole tree's box that reaches infinity, or holds NaN.
+    assert_eq!(
+        with(&[(lane(0, used), f32::NEG_INFINITY)]),
+        Err(FormatError::Bounds(0, used as u32))
+    );
+    assert_eq!(
+        with(&[(lane(4, used), f32::NAN)]),
+        Err(FormatError::Bounds(0, used as u32))
+    );
+    let header_max_x = 36;
+    assert_eq!(
+        with(&[(header_max_x, f32::INFINITY)]),
+        Err(FormatError::Bounds(0, 4))
+    );
+}
+
 /// Stored bytes of a chain of `depth` nodes, each with one triangle and one child node.
 fn deep_tree(depth: u32) -> Vec<u8> {
     let mut b = Vec::new();

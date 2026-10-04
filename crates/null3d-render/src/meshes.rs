@@ -106,6 +106,15 @@ pub enum MeshError {
     NotTriangles,
     /// A page cannot hold one triangle of the mesh's format: the page limit is too small.
     PageTooSmall,
+    /// The engine's memory could not grow by `bytes` for the mesh. The storage holds no part of it.
+    OutOfMemory { bytes: u64 },
+}
+
+/// Room for `more` values in `v`, or the bytes they need when memory cannot grow.
+fn reserve<T>(v: &mut Vec<T>, more: usize) -> Result<(), MeshError> {
+    v.try_reserve(more).map_err(|_| MeshError::OutOfMemory {
+        bytes: (more as u64).saturating_mul(size_of::<T>() as u64),
+    })
 }
 
 #[derive(Debug)]
@@ -286,11 +295,17 @@ impl MeshStorage {
         }
         let (max_vertices, max_indices) = self.part_limits(geometry.format)?;
         let first_part = self.parts.len() as u32;
-        if vertex_count <= max_vertices && indices.len() <= max_indices {
-            let part = self.place(geometry.format, &geometry.vertices, indices);
-            self.parts.push(part);
+        reserve(&mut self.meshes, 1)?;
+        let placed = if vertex_count <= max_vertices && indices.len() <= max_indices {
+            self.place(geometry.format, &geometry.vertices, indices)
+                .map(|part| self.parts.push(part))
         } else {
-            self.split(geometry, max_vertices, max_indices);
+            self.split(geometry, max_vertices, max_indices)
+        };
+        if let Err(error) = placed {
+            // No mesh names the parts placed so far, so nothing draws them.
+            self.parts.truncate(first_part as usize);
+            return Err(error);
         }
         if self.edges {
             self.add_edge_parts();
@@ -329,8 +344,14 @@ impl MeshStorage {
     }
 
     /// Puts one part's vertices and part-local indices into the last page of their format, or
-    /// into a new page when they do not fit it, and returns where the part landed.
-    fn place(&mut self, format: u32, vertices: &[u8], indices: &[u32]) -> MeshPart {
+    /// into a new page when they do not fit it, and returns where the part landed. It reserves
+    /// every byte first, with room for the part's edge list, so it fails before it changes a page.
+    fn place(
+        &mut self,
+        format: u32,
+        vertices: &[u8],
+        indices: &[u32],
+    ) -> Result<MeshPart, MeshError> {
         let count = (vertices.len() / vertex::stride(format) as usize) as u32;
         let (limit, packing) = (self.max_page_bytes, self.packing);
         // With edge lists, the part's edges follow its triangles: twice as many indices.
@@ -342,13 +363,23 @@ impl MeshStorage {
                 && (packing == Packing::SharedBuffers
                     || page.vertex_count() + count <= MAX_PAGE_VERTICES)
         };
+        reserve(&mut self.parts, 1)?;
         let page_index = match self.pages.iter().rposition(|page| page.format == format) {
-            Some(last) if fits(&self.pages[last]) => last,
+            Some(last) if fits(&self.pages[last]) => {
+                let page = &mut self.pages[last];
+                reserve(&mut page.vertices, vertices.len())?;
+                reserve(&mut page.indices, indices_placed)?;
+                last
+            }
             _ => {
-                self.pages.push(Page {
+                let mut page = Page {
                     format,
                     ..Page::default()
-                });
+                };
+                reserve(&mut page.vertices, vertices.len())?;
+                reserve(&mut page.indices, indices_placed)?;
+                reserve(&mut self.pages, 1)?;
+                self.pages.push(page);
                 self.pages.len() - 1
             }
         };
@@ -362,21 +393,29 @@ impl MeshStorage {
         page.vertices.extend_from_slice(vertices);
         page.indices
             .extend(indices.iter().map(|&i| (i + rebase) as u16));
-        MeshPart {
+        Ok(MeshPart {
             page: page_index as u32,
             first_index,
             index_count: indices.len() as u32,
             base_vertex,
             vertex_count: count,
-        }
+        })
     }
 
     /// Adds a mesh too large for one part as several: runs of whole triangles, in order, each
     /// with at most `max_vertices` vertices and `max_indices` indices. Each part copies the
     /// vertices it uses in the order its triangles first use them.
-    fn split(&mut self, geometry: &Geometry, max_vertices: u32, max_indices: usize) {
+    fn split(
+        &mut self,
+        geometry: &Geometry,
+        max_vertices: u32,
+        max_indices: usize,
+    ) -> Result<(), MeshError> {
+        let mut local = Vec::new();
+        reserve(&mut local, geometry.vertex_count())?;
+        local.resize(geometry.vertex_count(), UNUSED);
         let mut part = PartBuilder {
-            local: vec![UNUSED; geometry.vertex_count()],
+            local,
             ..PartBuilder::default()
         };
         for triangle in geometry.indices.as_chunks::<3>().0 {
@@ -387,15 +426,16 @@ impl MeshStorage {
                 .count();
             if part.used.len() + new > max_vertices as usize || part.indices.len() + 3 > max_indices
             {
-                part.finish(self, geometry);
+                part.finish(self, geometry)?;
             }
             for &v in triangle {
                 part.add(v);
             }
         }
         if !part.indices.is_empty() {
-            part.finish(self, geometry);
+            part.finish(self, geometry)?;
         }
+        Ok(())
     }
 }
 
@@ -490,7 +530,7 @@ impl PartBuilder {
     }
 
     /// Places the part in the storage, and starts the next one.
-    fn finish(&mut self, storage: &mut MeshStorage, geometry: &Geometry) {
+    fn finish(&mut self, storage: &mut MeshStorage, geometry: &Geometry) -> Result<(), MeshError> {
         let stride = geometry.stride();
         self.vertices.clear();
         for &v in &self.used {
@@ -499,10 +539,11 @@ impl PartBuilder {
                 .extend_from_slice(&geometry.vertices[at..at + stride]);
             self.local[v as usize] = UNUSED;
         }
-        let part = storage.place(geometry.format, &self.vertices, &self.indices);
+        let part = storage.place(geometry.format, &self.vertices, &self.indices)?;
         storage.parts.push(part);
         self.used.clear();
         self.indices.clear();
+        Ok(())
     }
 }
 

@@ -16,6 +16,9 @@ interface LimitsResult {
 	full: BatchResult;
 	after: BatchResult;
 	afterDrawn: number;
+	hugeMesh: BatchResult;
+	afterMesh: BatchResult;
+	afterMeshDrawn: number;
 	failures: string[];
 }
 
@@ -66,4 +69,12 @@ test('a scene holds as many rows as the device draws, and running out of memory 
 	// Neither refusal harms the engine: a small batch still draws.
 	expect(result.after).toEqual({ ok: true });
 	expect(result.afterDrawn).toBeGreaterThan(0);
+
+	// A mesh too large for engine memory fails that one call with E1109, and the engine draws on.
+	if (result.mode.build === 'threaded') {
+		expect(result.hugeMesh.code).toBe('E1109');
+		expect(result.hugeMesh.message).toContain('could not get');
+	} else expect(result.hugeMesh.ok || result.hugeMesh.code === 'E1109').toBe(true);
+	expect(result.afterMesh).toEqual({ ok: true });
+	expect(result.afterMeshDrawn).toBeGreaterThan(0);
 });

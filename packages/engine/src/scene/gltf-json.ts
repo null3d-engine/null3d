@@ -3,6 +3,8 @@
 // check throws E1416 with words that name what it checked. The module imports nothing at run time,
 // so the glTF worker's bundle holds it alone.
 
+import type { FileBudget } from './file-limits';
+
 /**
  * The engine's codes for a file the parser refuses: broken data, or an extension it does not read.
  * The worker adds E1406 for a decoder that did not download.
@@ -53,9 +55,18 @@ export type Reader = (
 	accessor: Entry;
 };
 
-/** Floats of an accessor's values, with normalized integers as fractions, as glTF reads them. */
-export function toFloats(array: AccessorArray, normalized: boolean): Float32Array {
+/**
+ * Floats of an accessor's values, with normalized integers as fractions, as glTF reads them. A
+ * copy takes its bytes from the file's budget, in the name of `what`.
+ */
+export function toFloats(
+	array: AccessorArray,
+	normalized: boolean,
+	budget: FileBudget,
+	what: string,
+): Float32Array {
 	if (array instanceof Float32Array) return array;
+	budget.take(array.length * 4, what);
 	const out = Float32Array.from(array);
 	if (!normalized) return out;
 	const scale =
