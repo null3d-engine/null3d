@@ -107,9 +107,9 @@ pub(super) fn record_bundle(
             targets.samples,
         ],
     )?;
-    list.push(Op::SetBindGroup, &[0, frame_group, 0])?;
     let (mut pipeline, mut vertices, mut indices) = (None, None, None);
     let mut groups = DrawGroups::default();
+    let mut bound = None;
     for bucket in &layout.buckets {
         let id = if prepass {
             bucket.prepass
@@ -119,11 +119,23 @@ pub(super) fn record_bundle(
         if id == 0 {
             continue;
         }
+        // In the prepass, a pair that draws with its own vertex shader reads the frame group and
+        // its maps' group as its shading does, and the depth template reads the depth group.
+        let own = !prepass || bucket.prepass_own;
+        let group = if own {
+            ids::frame_group(view)
+        } else {
+            frame_group
+        };
+        if bound != Some(group) {
+            list.push(Op::SetBindGroup, &[0, group, 0])?;
+            bound = Some(group);
+        }
         if pipeline != Some(id) {
             list.push(Op::SetPipeline, &[id])?;
             pipeline = Some(id);
         }
-        let maps = if prepass { 0 } else { bucket.group };
+        let maps = if own { bucket.group } else { 0 };
         groups.set(list, maps, bucket.skins)?;
         list.push(
             Op::SetVertexBuffer,

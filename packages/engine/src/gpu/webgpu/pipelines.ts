@@ -19,6 +19,7 @@ import {
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
+	PERMUTATION_PREPASS,
 	PERMUTATION_SKIN,
 	SIZE_INSTANCE_STRIDE,
 	STATE_BLEND,
@@ -113,7 +114,17 @@ export interface RenderTemplate {
 	readonly meshLocations?: readonly number[];
 	/** The other vertex buffers that the vertex stage reads, by slot, after the mesh's vertices. */
 	readonly vertexBuffers: GPUVertexBufferLayout[];
+	/**
+	 * True for a template whose pipelines draw the depth prepass with their own vertex shader: a
+	 * custom material's or a sprite's, whose vertices the depth template does not place. A pipeline
+	 * with the prepass bit then takes the build without the bit, and a fragment shader that writes
+	 * nothing.
+	 */
+	readonly ownPrepass?: boolean;
 }
+
+/** The fragment shader of a prepass that draws with a template's own vertex shader. */
+const EMPTY_FRAGMENT = '@fragment\nfn fs() -> @location(0) vec4f {\n    return vec4f(0.0);\n}\n';
 
 /** The map slots of a standard material, one texture array and sampler each. */
 const MAP_SLOTS = [0, 1, 2, 3, 4, 5];
@@ -281,6 +292,8 @@ export class Pipelines {
 	private readonly skin: WgslShader | undefined;
 	private readonly mipmap: WgslShader | undefined;
 	private readonly modules = new Map<WgslShader, GPUShaderModule>();
+	/** The module of the fragment shader that writes nothing, made at its first use. */
+	private emptyFragment: GPUShaderModule | undefined;
 	/** The pipelines that make mip levels, by the format they draw. */
 	private readonly mipPipelines = new Map<GPUTextureFormat, GPURenderPipeline>();
 
@@ -469,6 +482,7 @@ export class Pipelines {
 				layouts,
 				meshLocations,
 				vertexBuffers: INSTANCE_BUFFERS,
+				ownPrepass: id === TEMPLATE_SPRITE || id === TEMPLATE_SPRITE_MAP,
 			});
 		}
 		this.defineTemplate(TEMPLATE_FINAL, {
@@ -554,6 +568,7 @@ export class Pipelines {
 			layouts: shader.textures > 0 ? [LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS] : [LAYOUT_FRAME],
 			meshLocations: shader.locations,
 			vertexBuffers: INSTANCE_BUFFERS,
+			ownPrepass: true,
 		});
 	}
 
@@ -612,7 +627,9 @@ export class Pipelines {
 	): GPURenderPipelineDescriptor {
 		const t = this.templates[template];
 		if (!t) throw new Error(`unknown render template ${template}`);
-		const shader = variantFor(t.shader, permutation, 'wgsl')?.wgsl;
+		const ownPrepass = t.ownPrepass === true && (permutation & PERMUTATION_PREPASS) !== 0;
+		const build = ownPrepass ? permutation & ~PERMUTATION_PREPASS : permutation;
+		const shader = variantFor(t.shader, build, 'wgsl')?.wgsl;
 		if (!shader)
 			throw new Error(`render template ${template} has no variant for permutation ${permutation}`);
 		const module = this.module(t.label, shader);
@@ -639,8 +656,8 @@ export class Pipelines {
 			},
 			fragment: colorFormat
 				? {
-						module,
-						entryPoint: entryPoints?.fragment,
+						module: ownPrepass ? this.emptyFragmentModule() : module,
+						entryPoint: ownPrepass ? 'fs' : entryPoints?.fragment,
 						targets: [
 							{
 								format: colorFormat,
@@ -672,6 +689,15 @@ export class Pipelines {
 				: undefined,
 			multisample: { count: sampleCount },
 		};
+	}
+
+	/** The module of the fragment shader that writes nothing, which a template's own prepass draws with. */
+	private emptyFragmentModule(): GPUShaderModule {
+		this.emptyFragment ??= this.device.createShaderModule({
+			label: 'empty fragment',
+			code: EMPTY_FRAGMENT,
+		});
+		return this.emptyFragment;
 	}
 
 	/** The pipeline that makes mip levels of textures of `format`, made at its first use. */

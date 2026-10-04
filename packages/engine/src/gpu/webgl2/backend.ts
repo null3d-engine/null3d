@@ -566,7 +566,8 @@ export class WebGL2Backend {
 		if (!defined) {
 			const shader = this.images.shaders.get(template);
 			if (!shader) return false;
-			defined = { shader: shader.variants, pipeline: 'main' };
+			// A custom material's prepass draws with its own vertex shader, as every mesh's does.
+			defined = { shader: shader.variants, pipeline: 'main', meshPrepass: true };
 			this.templates[template] = defined;
 		}
 		const build = buildPermutation(defined, permutation);

@@ -170,6 +170,7 @@ function aoTests(): ImageTest[] {
 		test('ao-sun', '?ao=wide&sun'),
 		test('ao-scale-50', '?scale=0.5&ao=wide'),
 		test('ao-quarter', '?ao=wide&aoscale=0.25'),
+		test('ao-custom', '?ao=wide&custom'),
 	];
 }
 

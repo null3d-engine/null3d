@@ -128,6 +128,7 @@ Its preset rows. The quality setting `aoScale` sets its targets' share of the re
 - The steps' settings live in one uniform block of 208 bytes. A frame uploads it only when a setting, the camera's lens, the canvas, the render scale or the occlusion's scale changed. A new scale draws a corner of the same targets and makes no GPU object.
 - While ambient occlusion is on, the camera's depth prepass draws in a render pass of its own. The pass has a stand-in color target of the scene color's format, which no pass reads. Its render pass drops that target, which shares a texture with the scene color, whose life starts later. So the prepass's pipelines need no second build for a pass without color. The render graph's reads "so far" (M2-I1) let the depth step read the depth between the prepass and the opaque pass.
 - Turning ambient occlusion on or off adds or removes the prepass and the steps. The frame holds the screen while the pipelines build, as bloom's move does.
+- Every opaque object must be in the prepass, or it has no depth for ambient occlusion. Custom materials and sprites were left out, so they now draw their prepass depth with their own vertex shader on both paths ([D-43](D-43-webgl2-prepass.md#custom-materials-and-sprites)). The `ao-custom` image test checks a custom material whose vertex offset swells a sphere.
 
 ## Consequences
 

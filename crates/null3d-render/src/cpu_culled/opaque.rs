@@ -573,8 +573,9 @@ impl Opaque {
                     list.push(Op::SetPipeline, &[id])?;
                     pipeline = Some(id);
                 }
-                // The prepass's programs sample no maps.
-                if !prepass && first.textures != 0 && first.textures != textures {
+                // The prepass draws with each pipeline's own vertex shader, which can read the
+                // material's textures, as a custom material's vertex offset may.
+                if first.textures != 0 && first.textures != textures {
                     list.push(Op::SetBindGroup, &[TEXTURES_GROUP, first.textures, 0])?;
                     textures = first.textures;
                 }

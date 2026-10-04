@@ -3,7 +3,9 @@
 // ambient light alone. ?ao=default or ?ao=wide names its settings, and without it ambient occlusion
 // stays off. The sketch sets the ambient occlusion scale to half, or to ?aoscale=, as the presets of
 // WebGL2 and compatibility mode leave it at 0. ?sun adds a sun and its shadows, so the test shows
-// that the occlusion darkens only the ambient light. ?scale= draws at that render scale, with a
+// that the occlusion darkens only the ambient light. ?custom gives the large sphere a custom
+// material whose vertex offset swells it in bands, so its depth comes from its own vertex shader.
+// ?scale= draws at that render scale, with a
 // range that reaches down to 0.5; with ?fixed the range holds that scale alone, and the governor is
 // off, for timing. On the page's 'ao' message it turns the default occlusion on, waits until its
 // pipelines are built, and posts the frames and milliseconds that took as 'settled'. The 'ao-off'
@@ -26,6 +28,24 @@ const AO =
 	name === 'default' ? AO_SETTINGS.default : name === 'wide' ? AO_SETTINGS.wide : undefined;
 const AO_SCALE = Number(params.get('aoscale') ?? 0.5);
 const SUN = params.has('sun');
+const CUSTOM = params.has('custom');
+
+/** Swells the surface along its normals in bands, and darkens the swollen bands a little. */
+const swell = /* wgsl */ `
+fn band(uv: vec2f) -> f32 {
+    return step(0.5, fract(uv.y * 6.0));
+}
+
+fn vertexOffset(input: VertexInput) -> vec3f {
+    return input.normal * band(input.uv) * 0.06;
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor *= 1.0 - 0.2 * band(input.uv);
+    return s;
+}
+`;
 const SCALE = params.get('scale');
 const FIXED = params.has('fixed');
 
@@ -63,7 +83,10 @@ export default defineSketch(({ scene, materials, geometry, post, quality, time, 
 			shape.kind === 'box'
 				? geometry.box({ width: x, height: y, depth: z })
 				: geometry.sphere({ radius: x });
-		const material = materials.standard({ color: shape.color, roughness: 1, metalness: 0 });
+		const custom = CUSTOM && shape.kind === 'sphere' && x > 0.5;
+		const material = custom
+			? materials.shader({ wgsl: swell, color: shape.color, roughness: 1, metalness: 0 })
+			: materials.standard({ color: shape.color, roughness: 1, metalness: 0 });
 		scene.createMesh({ mesh, material, position: [...shape.position] });
 	}
 	page.onMessage((message) => {

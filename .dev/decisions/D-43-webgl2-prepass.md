@@ -83,6 +83,12 @@ Option (c) gives identical images on every GPU that ran it, and it relies on no 
 
 The same rule covers skinned meshes on WebGL2. Their skinning lives in the vertex shader, so the prepass skins them exactly as the opaque pass does.
 
+## Custom materials and sprites
+
+Added with ambient occlusion (M2-F2), 4 October 2026. The depth template places vertices as the engine's mesh templates do. A custom material's vertex offset can move them, and a sprite turns its quad to face the camera, so both stayed out of the prepass. With ambient occlusion on, which reads the prepass's depth, such an object then had no depth for it. It cast no occlusion, and took the occlusion of the surface behind it. The `ao-custom` image test showed it: a sphere whose custom material swells it in bands left no dark ring on the floor beneath it.
+
+Both now draw their prepass depth with their own vertex shader on both paths, as option (c) does on WebGL2. WebGPU builds the pipeline from the template's build without the `PREPASS` bit, with a fragment shader that writes nothing (`ownPrepass` in `gpu/webgpu/pipelines.ts`). Its prepass bundle binds the frame group and the material's maps' group for these pairs, as the shading does. WebGL2's prepass now binds the material's textures too, since a vertex offset can read them: the `custom-textures` test lifts a plane by a texture's heights. With `NULL3D_SWITCHES=prepass=on`, every custom material and sprite image test matched its references on every tier, on the Mac's GPU: 36 tests. Before the WebGL2 binding, `custom-textures` differed in 1.85% of its pixels there.
+
 ## Consequences
 
 - `Prepass` in `crates/null3d-render/src/pipelines.rs` names the two ways, and each frame builder picks its own. The WebGL2 builder's prepass replays the opaque pass's calls first, from the same index list, draw records and frame group. It leaves out the draws without a prepass pipeline.
