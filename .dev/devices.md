@@ -261,6 +261,7 @@ The team's phone is a Galaxy S24+ (SM-S926B, Exynos 2400, Android 16).
 - Close stale pages through Chrome's debugging protocol: `adb forward tcp:5176 localabstract:chrome_devtools_remote` (the main checkout's debugging port: the dev server's port plus 3), then `Target.closeTarget` for each page on `localhost`.
 - When Chrome's debugging socket does not answer, the request for its page list (`/json/list` on the forwarded port) hangs. Then stop both browsers, which ends the runner's stale pages: `adb shell am force-stop com.android.chrome` and `adb shell am force-stop com.brave.browser`.
 - The `scale` plan finds phone scale: the largest S1 count at which three.js holds 30 frames per second. Run `bun tests/real-browsers.ts --plan scale --allow-no-webgpu --android chrome`. In Chrome 154 on 29 September 2026, it was 300,000 from a cool start and 250,000 on a warm phone.
+- `--scenes s5` searches S5's characters instead, and `--scenes s1,s5` searches both, one after the other. S5's search starts at 25 characters and doubles up to 3,200, where S1's starts at 1,000 objects. Each character skins about 5,000 vertices in every pass, so a phone carries far fewer of them than of S1's boxes. The runner then prints the bench plan's command for each scene, such as `--plan bench --scenes s5 --n 400`.
 
 ## iPad
 
