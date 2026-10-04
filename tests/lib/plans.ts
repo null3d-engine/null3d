@@ -837,9 +837,9 @@ const PROTO_S3_TIMEOUT_SECONDS = 420;
 /**
  * Prototype S3 (not for merging): what ambient occlusion and contact shadows cost, for M2-F2 and
  * M2-F12. Each GPU path at render scales 1 and 0.5 with AO at half the render size, then at scale
- * 0.5 with AO at a quarter, the phones' fallback, then a heavier scene. The first scale-0.5 page
- * also saves the pictures for the side-by-side comparison. The device's preset comes from
- * --switches preset=...
+ * 0.5 with AO at a quarter, the phones' fallback, then a heavier scene, then the structure pass in
+ * r32float. The first scale-0.5 page also saves the pictures for the side-by-side comparison. The
+ * device's preset comes from --switches preset=...
  */
 export function protoS3Plan(): PlanItem<Check>[] {
 	const runs: { suffix: string; scale: number; aoScale: number; switches: string[] }[] = [
@@ -852,6 +852,19 @@ export function protoS3Plan(): PlanItem<Check>[] {
 			scale: 0.5,
 			aoScale: 0.5,
 			switches: ['grid=16', 'aos=gtao', 'ups=bilinear', 'contact=0', 'steps=0'],
+		},
+		// The structure pass in r32float: r16float distances band the normals rebuilt from them.
+		{
+			suffix: '-r32',
+			scale: 0.5,
+			aoScale: 0.5,
+			switches: [
+				'structureformat=r32float',
+				'aos=gtao,bitmask',
+				'ups=bilinear',
+				'contact=0',
+				'steps=0',
+			],
 		},
 	];
 	return TIERS.flatMap((tier) =>

@@ -61,6 +61,7 @@ interface Targets {
 export async function createWebGL2Renderer(
 	samples: number,
 	copyFormat: 'r32float' | 'r16float',
+	structureFormat: 'r32float' | 'r16float',
 	grid: number,
 ): Promise<Renderer> {
 	const canvas = new OffscreenCanvas(1, 1);
@@ -75,7 +76,7 @@ export async function createWebGL2Renderer(
 	const floatTargets = gl.getExtension('EXT_color_buffer_float') !== null;
 	const halfTargets = floatTargets || gl.getExtension('EXT_color_buffer_half_float') !== null;
 	if (!halfTargets) throw new Error('this device cannot draw into half float targets');
-	if (copyFormat === 'r32float' && !floatTargets)
+	if ((copyFormat === 'r32float' || structureFormat === 'r32float') && !floatTargets)
 		throw new Error('this device cannot draw into 32-bit float targets');
 	const debug = gl.getExtension('WEBGL_debug_renderer_info');
 	const info = {
@@ -283,7 +284,7 @@ export async function createWebGL2Renderer(
 			depthFramebuffer = framebufferOf(null, depth);
 		} else scene = framebufferOf(frame.texture, depth);
 		const structureDepth = renderbuffer(gl.DEPTH_COMPONENT32F, aoWidth, aoHeight, 1);
-		const structure = target(aoWidth, aoHeight, gl.R16F);
+		const structure = target(aoWidth, aoHeight, structureFormat === 'r32float' ? gl.R32F : gl.R16F);
 		gl.bindFramebuffer(gl.FRAMEBUFFER, structure.framebuffer);
 		gl.framebufferRenderbuffer(
 			gl.FRAMEBUFFER,

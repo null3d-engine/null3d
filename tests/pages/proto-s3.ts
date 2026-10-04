@@ -17,7 +17,7 @@
 // Switches: ?gpu=webgpu|webgl2, ?preset=low|medium|high|ultra (the pixel ratio cap and MSAA of
 // that preset), ?scale= (render scale), ?aoscale= (AO size as a share of the render size),
 // ?inputs=, ?aos=, ?ups= (comma lists), ?contact=0, ?steps=0, ?rounds=, ?target= (milliseconds
-// per batch), ?images=1 with ?imagesize=WxH, ?size=WxH (a fixed render size), ?copyformat=r16float,
+// per batch), ?images=1 with ?imagesize=WxH, ?size=WxH (a fixed render size), ?copyformat=r16float, ?structureformat=r32float,
 // ?grid= (spheres per side), ?timedframes=.
 
 import {
@@ -66,6 +66,7 @@ const rounds = Number(params.get('rounds') ?? 5);
 const targetMs = Number(params.get('target') ?? 120);
 const images = params.get('images') === '1';
 const copyFormat = params.get('copyformat') === 'r16float' ? 'r16float' : 'r32float';
+const structureFormat = params.get('structureformat') === 'r32float' ? 'r32float' : 'r16float';
 const grid = Number(params.get('grid') ?? 5);
 
 const status = document.querySelector('#status') as HTMLElement;
@@ -315,8 +316,8 @@ run('proto-s3', async () => {
 	show(`starting ${tier}`);
 	const renderer =
 		tier === 'webgl2'
-			? await createWebGL2Renderer(samples, copyFormat, grid)
-			: await createWebGPURenderer(samples, copyFormat, grid);
+			? await createWebGL2Renderer(samples, copyFormat, structureFormat, grid)
+			: await createWebGPURenderer(samples, copyFormat, structureFormat, grid);
 	try {
 		const measured = await measure(renderer);
 		const shots = images ? await pictures(renderer) : null;
@@ -328,6 +329,7 @@ run('proto-s3', async () => {
 			aoScale,
 			samples,
 			copyFormat,
+			structureFormat,
 			grid,
 			rounds,
 			devicePixelRatio,

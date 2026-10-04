@@ -50,6 +50,7 @@ interface Targets {
 export async function createWebGPURenderer(
 	samples: number,
 	copyFormat: GPUTextureFormat,
+	structureFormat: GPUTextureFormat,
 	grid: number,
 ): Promise<Renderer> {
 	const adapter = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' });
@@ -205,7 +206,7 @@ export async function createWebGPURenderer(
 					'structure',
 					'none',
 					'fs_structure',
-					[{ format: 'r16float' }],
+					[{ format: structureFormat }],
 					'greater',
 					true,
 					1,
@@ -300,7 +301,7 @@ export async function createWebGPURenderer(
 			depth: full(DEPTH, RENDER_ATTACHMENT | TEXTURE_BINDING, samples),
 			frame: full(COLOR, RENDER_ATTACHMENT | COPY_SRC),
 			copied: small(copyFormat),
-			structure: small('r16float'),
+			structure: small(structureFormat),
 			structureDepth: texture(sizes.aoWidth, sizes.aoHeight, DEPTH, RENDER_ATTACHMENT),
 			raw: small('rg16float', 'raw'),
 			across: small('rg16float', 'across'),
