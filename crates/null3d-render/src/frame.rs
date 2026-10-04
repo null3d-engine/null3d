@@ -71,6 +71,22 @@ pub(crate) fn drawn_rows(buckets: &[u32], start: u32, count: u32) -> Option<(u32
     Some((first, last + 1 - first))
 }
 
+/// The most unchanged scene rows that one upload carries between two runs of changed rows. Each
+/// write of a data texture on WebGL2 goes through a pixel unpack buffer, and many small writes in
+/// a frame hold up the GPU far longer than the few kilobytes of rows that a merged write repeats.
+pub const MERGE_GAP_ROWS: u32 = 64;
+
+/// Rows `start..start + count` joined to the upload `span` (a start and a count) when they begin
+/// inside it or at most [`MERGE_GAP_ROWS`] rows past its end, or `None` when they lie apart. Both
+/// world buffers hold every row's latest matrix, so rows between two runs upload unchanged.
+pub(crate) fn joined_rows(span: (u32, u32), start: u32, count: u32) -> Option<(u32, u32)> {
+    let end = span.0 + span.1;
+    if start < span.0 || start > end.saturating_add(MERGE_GAP_ROWS) {
+        return None;
+    }
+    Some((span.0, end.max(start + count) - span.0))
+}
+
 /// Where the rows of a run's positions lie: all in one cell, each in the cell of its entry in a
 /// list of cells by position, or each in the cell of the row that a list of rows names.
 #[derive(Clone, Copy, Debug)]
@@ -1441,5 +1457,17 @@ mod tests {
         assert_eq!(drawn_rows(&buckets, 4, 2), None);
         assert_eq!(drawn_rows(&buckets, 5, 9), None);
         assert_eq!(drawn_rows(&buckets, 1, 0), None);
+    }
+
+    #[test]
+    fn joined_rows_merge_runs_that_lie_close_together() {
+        assert_eq!(joined_rows((10, 5), 15, 3), Some((10, 8)));
+        assert_eq!(joined_rows((10, 5), 12, 1), Some((10, 5)));
+        assert_eq!(
+            joined_rows((10, 5), 15 + MERGE_GAP_ROWS, 2),
+            Some((10, 7 + MERGE_GAP_ROWS))
+        );
+        assert_eq!(joined_rows((10, 5), 16 + MERGE_GAP_ROWS, 2), None);
+        assert_eq!(joined_rows((10, 5), 9, 3), None);
     }
 }

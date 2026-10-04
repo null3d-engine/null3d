@@ -188,6 +188,8 @@ A change can make a scene faster and make it look worse, such as a smaller shado
 - The Knight's material is double-sided, so both engines draw its lit faces into the shadow map. null3D's default `normalBias` of 0.02 m keeps those faces from shading themselves. The twins' cascades had no normal offset, so three.js speckled the sunlit helmets with acne. Then null3D's frame differed from three.js's in 0.93% of its pixels on WebGPU, 0.95% in compatibility mode and 1.76% on WebGL2. three.js's two renderers differed by 0.69%. With knights that receive no shadows, both tiers differed by only 0.12%. The cascades of S4's and S5's twins now take null3D's default `normalBias`, which three.js gives in meters too.
 - After that change, the Mac's GPU gave these figures on 4 October 2026. 0.27% of S5's pixels differed on WebGPU, 0.33% in compatibility mode and 0.20% on WebGL2. three.js's two renderers differed by 0.46%. SwiftShader gave 0.29%, 0.32% and 0.20%, against 0.52%. S4's figures hardly moved: 0.159% to 0.156% on WebGPU, 0.174% to 0.173% in compatibility mode and 0.248% to 0.242% on WebGL2.
 
+- At 500 knights, null3D's WebGL2 path first drew 8.4 frames per second on the Mac, with the GPU 233 ms behind. Each frame wrote about 1,500 small runs of moved rows into the resident texture, one write each. The upload now joins runs that lie close together ([Implementation notes](implementation-notes.md#safaris-webgl2-path)), and the same page draws 89 frames per second.
+
 ### S5 on SwiftShader
 
 - S5's ten page tests pass on SwiftShader, with the twins: each takes 2 to 22 seconds. The image tests draw both thread modes of each tier in about 20 seconds.
