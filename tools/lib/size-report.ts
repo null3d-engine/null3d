@@ -1,24 +1,36 @@
-// The size report's measuring: raw and Brotli sizes, and the parts of the engine's JavaScript in a
-// production build. Vite names each built file after a module and adds a content hash, so the report
-// names each part by the engine module that its file holds, a file loaded on demand by the part
-// that loads it, and a shader file by the device module of the shader build that it holds: a module
-// of the start, or the module of a feature that loads on first use.
+// The size report's measuring: raw, gzip and Brotli sizes, and the parts of the engine's JavaScript
+// in a production build. Vite names each built file after a module and adds a content hash, so the
+// report names each part by the engine module that its file holds, a file loaded on demand by the
+// part that loads it, and a shader file by the device module of the shader build that it holds: a
+// module of the start, or the module of a feature that loads on first use.
 // tools/lib/size-check.ts judges how the sizes changed against a base build. The
 // functions here do no file or process work: tools/build-wasm.ts builds, reads and prints.
-import { brotliCompressSync, constants } from 'node:zlib';
+import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
 
-/** A size in bytes, as the file is and after Brotli compression. */
-export interface SizeEntry {
-	raw: number;
-	brotli: number;
-}
+/**
+ * The ways a host can send a file, as the report's columns: as it is, with gzip, or with Brotli.
+ * Most hosts send Brotli to browsers that accept it. Some send only gzip, such as GitHub Pages and
+ * nginx with its gzip module alone, and a plain static server sends files as they are.
+ */
+export const COLUMNS = ['raw', 'gzip', 'brotli'] as const;
+export type Column = (typeof COLUMNS)[number];
 
-/** The raw size and the size after Brotli at its highest quality, as a server would send it. */
+/** A size in bytes in each column. */
+export type SizeEntry = Record<Column, number>;
+
+/** A budget in bytes for each column. */
+export type Budget = Readonly<Record<Column, number>>;
+
+/**
+ * A file's size as it is, after gzip at level 9 and after Brotli at quality 11: the highest levels,
+ * as a host that compresses its files once, when it deploys them, sends them.
+ */
 export function measure(bytes: Buffer): SizeEntry {
+	const gzip = gzipSync(bytes, { level: 9 }).length;
 	const brotli = brotliCompressSync(bytes, {
 		params: { [constants.BROTLI_PARAM_QUALITY]: 11 },
 	}).length;
-	return { raw: bytes.length, brotli };
+	return { raw: bytes.length, gzip, brotli };
 }
 
 /** The core's two builds: with threads and shared memory, and without. */
@@ -339,85 +351,100 @@ export function findEngineParts(
 
 /** The sum of the sizes of files that a server sends one by one, each compressed on its own. */
 export function totalSize(sizes: Iterable<SizeEntry>): SizeEntry {
-	const total = { raw: 0, brotli: 0 };
-	for (const size of sizes) {
-		total.raw += size.raw;
-		total.brotli += size.brotli;
-	}
+	const total = { raw: 0, gzip: 0, brotli: 0 };
+	for (const size of sizes) for (const column of COLUMNS) total[column] += size[column];
 	return total;
 }
 
 /**
  * What a page downloads in each thread mode: the total size of the parts it loads, and of the
- * largest shader part of the start that it may load. A part that the build lacks adds nothing.
+ * largest shader part of the start that it may load, the largest in each column. A part that the
+ * build lacks adds nothing.
  */
 export function downloadSizes(
 	sizes: ReadonlyMap<string, SizeEntry>,
 	downloads: readonly Download[] = DOWNLOADS,
 ): { mode: string; size: SizeEntry }[] {
 	return downloads.map(({ mode, parts, shaders }) => {
-		const largest = [...sizes]
-			.filter(([part]) => part.startsWith(shaders) && !isFirstUseShaderPart(part))
-			.map(([, size]) => size)
-			.sort((a, b) => b.brotli - a.brotli)
-			.slice(0, 1);
-		return {
-			mode,
-			size: totalSize([...parts.flatMap((part) => sizes.get(part) ?? []), ...largest]),
-		};
+		const size = totalSize(parts.flatMap((part) => sizes.get(part) ?? []));
+		const shaderSizes = [...sizes].filter(
+			([part]) => part.startsWith(shaders) && !isFirstUseShaderPart(part),
+		);
+		for (const column of COLUMNS)
+			size[column] += Math.max(0, ...shaderSizes.map(([, shader]) => shader[column]));
+		return { mode, size };
 	});
 }
 
 /**
- * Brotli budget for the engine's JavaScript that a page downloads at its start, in whichever thread
+ * The budget for the engine's JavaScript that a page downloads at its start, in whichever thread
  * mode downloads the most. The core's generated glue counts with the WebAssembly files instead.
+ * Brotli's budget is the owner's. The gzip and raw budgets hold today's start with about a tenth to
+ * spare. The shader file fills most of it, so per-feature shader files bring both down. Until then
+ * they stop a start that grows on a gzip host, or on a host that sends files as they are.
  */
-export const START_BUDGET_BYTES = 140 * 1024;
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 140 * 1024 };
 
-/** Brotli budget for each part that loads after the start. */
-export const LATER_BUDGET_BYTES = 16 * 1024;
+/** The budget for each part that loads after the start. */
+export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
+
+/** A column's name as a problem names it. */
+const COLUMN_NAMES: Readonly<Record<Column, string>> = {
+	raw: 'uncompressed',
+	gzip: 'after gzip',
+	brotli: 'after Brotli',
+};
+
+/** A problem for each column of `size` over its budget, each starting with `what`. */
+function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
+	return COLUMNS.filter((column) => size[column] > budget[column]).map(
+		(column) =>
+			`${what} is ${size[column].toLocaleString('en-US')} bytes ${COLUMN_NAMES[column]}, over its ${budget[column] / 1024} KB budget`,
+	);
+}
 
 /**
- * Brotli budget for each device module of a feature that loads on first use. Such a module is
- * shader data, as the modules of the start are, so its limit is the size of a start shader file.
- * The owner set it on 4 October 2026 (decision records D-14 and D-56).
+ * The budget for each device module of a feature that loads on first use. Such a module is shader
+ * data, as the modules of the start are, so its limit is the size of a start shader file. Brotli's
+ * budget is the owner's, set on 4 October 2026 (decision records D-14 and D-56). The gzip and raw
+ * budgets keep the start budget's proportions to Brotli, rounded up.
  */
-export const FIRST_USE_SHADER_BUDGET_BYTES = 24 * 1024;
+export const FIRST_USE_SHADER_BUDGET: Budget = {
+	raw: 576 * 1024,
+	gzip: 80 * 1024,
+	brotli: 24 * 1024,
+};
 
 /**
- * A problem for each thread mode whose start passes the start budget, for each part that loads
- * after the start and passes its own budget, and for each device module of a feature that loads
- * on first use and passes its budget.
+ * A problem for each thread mode whose start passes the start budget in a column, for each part
+ * that loads after the start and passes its own budget in a column, and for each device module of a
+ * feature that loads on first use and passes its budget in a column.
  */
 export function budgetProblems(
 	sizes: ReadonlyMap<string, SizeEntry>,
 	downloads: readonly Download[] = DOWNLOADS,
 	later: readonly EnginePart[] = LATER_PARTS,
 ): string[] {
-	const kb = (bytes: number) => `${bytes / 1024} KB`;
 	return [
-		...downloadSizes(sizes, downloads)
-			.filter(({ size }) => size.brotli > START_BUDGET_BYTES)
-			.map(
-				({ mode, size }) =>
-					`the engine JavaScript that a page downloads at its start in ${mode} mode is ${size.brotli.toLocaleString('en-US')} bytes after Brotli, over its ${kb(START_BUDGET_BYTES)} budget`,
+		...downloadSizes(sizes, downloads).flatMap(({ mode, size }) =>
+			overBudget(
+				`the engine JavaScript that a page downloads at its start in ${mode} mode`,
+				size,
+				START_BUDGET,
 			),
+		),
 		...later.flatMap(({ name }) => {
-			const brotli = sizes.get(name)?.brotli ?? 0;
-			return brotli > LATER_BUDGET_BYTES
-				? [
-						`js/${name}, which loads after the start, is ${brotli.toLocaleString('en-US')} bytes after Brotli, over its ${kb(LATER_BUDGET_BYTES)} budget`,
-					]
-				: [];
+			const size = sizes.get(name);
+			return size ? overBudget(`js/${name}, which loads after the start,`, size, LATER_BUDGET) : [];
 		}),
-		...[...sizes]
-			.filter(
-				([name, { brotli }]) =>
-					isFirstUseShaderPart(name) && brotli > FIRST_USE_SHADER_BUDGET_BYTES,
-			)
-			.map(
-				([name, { brotli }]) =>
-					`js/${name}, the shader builds of a feature that loads on first use, is ${brotli.toLocaleString('en-US')} bytes after Brotli, over its ${kb(FIRST_USE_SHADER_BUDGET_BYTES)} budget`,
-			),
+		...[...sizes].flatMap(([name, size]) =>
+			isFirstUseShaderPart(name)
+				? overBudget(
+						`js/${name}, the shader builds of a feature that loads on first use,`,
+						size,
+						FIRST_USE_SHADER_BUDGET,
+					)
+				: [],
+		),
 	];
 }
