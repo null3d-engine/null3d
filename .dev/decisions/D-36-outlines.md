@@ -20,7 +20,7 @@ Status: decided, 2026-10-04. Date: 2026-10-04. Task: M2-F4.
 
 ### The owner's ruling
 
-On 4 October 2026 the owner made a crisp line the default outline. The line has one width in CSS pixels and two colors, with no blur. `OutlinePass`'s glow, its pulse and its blurred edge leave the core. They go to the `three-compat` add-on in M3, for ports that need that look. The reasons:
+On 4 October 2026 the owner made a crisp line the default outline ([D-53](D-53-technique-defaults.md), ruling 2). The line has one width in CSS pixels and two colors, with no blur. `OutlinePass`'s glow, its pulse and its blurred edge leave the core. They go to the `three-compat` add-on in M3, for ports that need that look. The reasons:
 
 - A crisp line costs less. It needs no pass after the mask, and no target at half or a quarter of the size.
 - A crisp line stays sharp at every pixel ratio and render scale. Its width counts pixels of the canvas. `OutlinePass`'s edge counts texels of a half-size target, so it grows blurrier on a phone's dense screen.

@@ -1369,6 +1369,14 @@ impl FrameBuilder for CpuCulledRenderer {
         self.occluders.set_on(on);
     }
 
+    fn set_mesh_blocker(
+        &mut self,
+        mesh: u32,
+        blocker: null3d_core::occlusion::BlockerMesh,
+    ) -> Result<(), TryReserveError> {
+        self.occluders.set_blocker(mesh, blocker)
+    }
+
     fn casts_tile_shadows(&self) -> bool {
         self.tiles.shape().is_some()
     }
