@@ -3,6 +3,7 @@ import { ISOLATION_HEADERS } from '../../packages/vite-plugin/src/index.ts';
 import { FIRST_USE_WASM, isFirstUseShaderPart, LATER_PARTS } from '../../tools/lib/size-report.ts';
 import {
 	ENGINE_MODES,
+	type EngineChecks,
 	type EngineMode,
 	type EngineResult,
 	engineProblems,
@@ -37,6 +38,15 @@ async function workersCannotDraw(page: Page): Promise<void> {
 	);
 }
 
+/**
+ * The engine checks without their frame-rate checks, for the tests whose job is not the pace of the
+ * frame loop. The engine must still run after its start, at whatever rate the machine draws. A busy
+ * runner can slow every frame of a short measurement, which says nothing about what these tests
+ * check. The tests that run each thread mode, and those that wake the threads with messages, check
+ * the pace.
+ */
+const notPacing: EngineChecks = { pacing: false };
+
 const singleThreaded = ENGINE_MODES.find((mode) => mode.build === 'single');
 if (!singleThreaded) throw new Error('no single-threaded engine mode');
 const drawingOnPage = ENGINE_MODES.find(({ name }) => name === 'drawing on the main thread');
@@ -53,7 +63,7 @@ for (const mode of ENGINE_MODES) {
 			await page.goto(`engine.html?gpu=webgl2&seconds=1&${query}&${mode.query}`);
 			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 			expect(result.error).toBeUndefined();
-			expect(engineProblems(result, mode, 'webgl2')).toEqual([]);
+			expect(engineProblems(result, mode, 'webgl2', notPacing)).toEqual([]);
 			maxima.push(result.sharedMemoryMiB);
 		}
 		expect(maxima).toEqual(mode.build === 'threaded' ? [[2048], [512]] : [[], []]);
@@ -71,9 +81,7 @@ for (const mode of ENGINE_MODES) {
 		await page.goto(`engine.html?gpu=webgl2&seconds=1&downloads&${mode.query}`);
 		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 		expect(result.error).toBeUndefined();
-		// The engine must run after its start, at whatever rate the machine draws: the tests of each
-		// mode check its pace.
-		expect(engineProblems(result, mode, 'webgl2', { pacing: false })).toEqual([]);
+		expect(engineProblems(result, mode, 'webgl2', notPacing)).toEqual([]);
 		const trail = result.trail ?? [];
 		const step = (name: string) => trail.findIndex((line) => line.endsWith(` ms ${name}`));
 		const core = step('core');
@@ -149,7 +157,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 			await page.context().unrouteAll({ behavior: 'ignoreErrors' });
 			expect(result.error).toBeUndefined();
-			expect(engineProblems(result, mode, gpu)).toEqual([]);
+			expect(engineProblems(result, mode, gpu, notPacing)).toEqual([]);
 			expect(order).toEqual(['shaders', 'core']);
 		});
 	test(`the page asks for its shaders while the core downloads where a worker cannot draw, on ${gpu}`, async ({
@@ -161,7 +169,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 		await page.context().unrouteAll({ behavior: 'ignoreErrors' });
 		expect(result.error).toBeUndefined();
-		expect(engineProblems(result, drawingOnPage, gpu)).toEqual([]);
+		expect(engineProblems(result, drawingOnPage, gpu, notPacing)).toEqual([]);
 		expect(order).toEqual(['shaders', 'core']);
 	});
 }
@@ -213,7 +221,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			await page.goto(`engine.html?gpu=${gpu}&seconds=1&${mode.query}`);
 			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 			expect(result.error).toBeUndefined();
-			expect(engineProblems(result, mode, gpu)).toEqual([]);
+			expect(engineProblems(result, mode, gpu, notPacing)).toEqual([]);
 			expect(requests.some((path) => /\/null3d_bg(-[\w-]+)?\.wasm$/.test(path))).toBe(true);
 			expect(
 				requests.filter(
@@ -285,7 +293,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			await page.goto(`engine.html?gpu=${gpu}&seconds=1&power=${power}`);
 			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 			expect(result.error).toBeUndefined();
-			expect(engineProblems(result, pipelined, gpu)).toEqual([]);
+			expect(engineProblems(result, pipelined, gpu, notPacing)).toEqual([]);
 		});
 	}
 	test(`the engine starts the job workers that ?jobs= asks for on ${gpu}`, async ({ page }) => {
@@ -293,7 +301,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		await page.goto(`engine.html?gpu=${gpu}&seconds=1&${mode.query}`);
 		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 		expect(result.error).toBeUndefined();
-		expect(engineProblems(result, mode, gpu)).toEqual([]);
+		expect(engineProblems(result, mode, gpu, notPacing)).toEqual([]);
 		// Each job worker records every frame, so the figures name exactly three.
 		const jobThreads = Object.keys(result.stats.threads).filter((name) => name.startsWith('job-'));
 		expect(jobThreads).toEqual(['job-0', 'job-1', 'job-2']);
@@ -308,7 +316,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		await page.unrouteAll({ behavior: 'ignoreErrors' });
 		expect(result.error).toBeUndefined();
 		expect(result.report.crossOriginIsolated).toBe(false);
-		expect(engineProblems(result, singleThreaded, gpu)).toEqual([]);
+		expect(engineProblems(result, singleThreaded, gpu, notPacing)).toEqual([]);
 	});
 }
 
@@ -329,7 +337,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 			await page.context().unrouteAll({ behavior: 'ignoreErrors' });
 			expect(result.error).toBeUndefined();
-			expect(engineProblems(result, drawingOnPage, gpu)).toEqual([]);
+			expect(engineProblems(result, drawingOnPage, gpu, notPacing)).toEqual([]);
 			const fallback = warnings.filter((text) => text.includes('pipelined mode'));
 			const development = testInfo.project.name !== 'production build';
 			expect(fallback.length).toBe(latency === 'low' && development ? 1 : 0);
