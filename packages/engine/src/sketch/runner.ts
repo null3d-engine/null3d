@@ -236,6 +236,7 @@ export class SketchRunner {
 			device.cellCulling,
 			device.depthPrepass,
 			device.vertexSkinning,
+			device.largeWorld,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
 		const { shadowTiles, shadowTileSize, pointLightShadows, shadowCascades, shadowMapSize } =
@@ -333,7 +334,7 @@ export class SketchRunner {
 			materials,
 			geometry,
 			textures,
-			assets: new Assets(textures, sketch.pageUrl, { core: this.core, geometry, materials }),
+			assets: new Assets(textures, sketch.pageUrl, { core: this.core, geometry, materials, scene }),
 			input: this.input,
 			post: this.post,
 			quality: this.quality,
