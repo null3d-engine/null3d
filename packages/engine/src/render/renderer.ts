@@ -290,6 +290,17 @@ async function deviceShaders(
 	return new DeviceShaderSet(await loadFresh(device.shaderBits), device.shaderBits, loadFresh);
 }
 
+/**
+ * Starts the download of the device module that a renderer on `tier` with the fixed bits `bits`
+ * loads first, so that it overlaps the core's download. The renderer's own load later gets the
+ * same module, because the browser keeps one module for each address. That load reports a
+ * failure, so this one ignores it.
+ */
+export function preloadDeviceShaders(tier: Tier, bits: number): void {
+	const load = tier === 'webgl2' ? loadGlslShaders : loadWgslShaders;
+	load(bits).catch(() => undefined);
+}
+
 /** Creates the renderer for a tier on the canvas this thread owns. */
 export async function createRenderer(
 	canvas: RenderCanvas,
