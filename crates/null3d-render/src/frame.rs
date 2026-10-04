@@ -38,6 +38,7 @@ use crate::materials::{
     MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, blend_state, feature,
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
+use crate::outline::Outline;
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
@@ -564,6 +565,8 @@ pub struct SceneSettings {
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
     vignette: Option<Vignette>,
+    /// The outline's settings while the sketch turns it on.
+    outline: Option<Outline>,
     /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
     /// the bits of a `u32`, as the frame uniform holds them.
     clock: [f32; 4],
@@ -615,6 +618,7 @@ impl SceneSettings {
             ao_scale: ao::MAX_SCALE,
             lut: None,
             vignette: None,
+            outline: None,
             clock: [0.0; 4],
             render_scaling: false,
             pixel_ratio: 1.0,
@@ -770,6 +774,21 @@ impl SceneSettings {
     /// on.
     pub fn set_vignette(&mut self, vignette: Option<Vignette>) {
         self.vignette = vignette;
+    }
+
+    /// The outline's settings while it is on, with its width in pixels of the canvas, and `None`
+    /// while it is off or a debug view draws, whose colors reach the canvas as its shader writes
+    /// them.
+    pub fn outline(&self) -> Option<Outline> {
+        self.outline
+            .filter(|_| !self.debug_view.is_debug())
+            .map(|outline| outline.on_canvas(self.pixel_ratio))
+    }
+
+    /// Turns outlines on with their settings, or off with `None`, from the next recorded frame on.
+    /// They draw around the objects whose outlined flag is set.
+    pub fn set_outline(&mut self, outline: Option<Outline>) {
+        self.outline = outline;
     }
 
     /// True while the sketch sets a color grading table or the vignette, outside a debug view,

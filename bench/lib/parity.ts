@@ -38,6 +38,14 @@ export const SHADOW_MAX_DIFFERENT_PERCENT = 0.5;
  */
 export const AO_MAX_DIFFERENT_PERCENT = 1;
 
+/**
+ * The outline scenes' limit, in percent of the pixels. The outline is a look of null3D's own, so
+ * these scenes are a sanity check: the twin draws the same line from the mask of three.js's
+ * OutlinePass. The limit sits above the scene's own edges on SwiftShader's WebGPU, and below what a
+ * line around the wrong parts gives.
+ */
+export const OUTLINE_MAX_DIFFERENT_PERCENT = 0.15;
+
 /** The squared RGB distance from black to white, which scales a squared distance to [0, 1]. */
 const MAX_SQUARED_DISTANCE = 255 * 255 * 3;
 /** A diff image shows each matching pixel at this share of the reference pixel's value. */
@@ -351,6 +359,19 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		switches: 'antialias=none',
 		webglOnly: true,
 	},
+	// Outlines with the engine's defaults and with a line around hidden parts, against the same line
+	// drawn from the mask of three.js's OutlinePass. The composer's targets have no MSAA, so null3D's
+	// page draws without anti-aliasing too. SwiftShader's WebGPU draws the ground's far edge and the
+	// plain box's top edge a row apart from WebGL, so the scenes have a limit of their own.
+	...(['plain', 'hidden'] as const).map(
+		(outline): FeatureScene => ({
+			test: `outline-${outline}`,
+			twin: `${TWINS}/outline.html?outline=${outline}`,
+			switches: 'antialias=none',
+			webglOnly: true,
+			limit: OUTLINE_MAX_DIFFERENT_PERCENT,
+		}),
+	),
 ];
 
 /** The feature scene of an image test, or undefined when no twin draws that test's scene. */

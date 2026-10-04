@@ -3,14 +3,14 @@ id: api/post
 title: Post-processing API
 status: experimental
 since: "0.1"
-summary: "post.set for tone mapping, exposure, bloom, ambient occlusion, color grading tables and the vignette; the other effects and post.addEffect of 0.2."
+summary: "post.set for tone mapping, exposure, bloom, ambient occlusion, outlines, color grading tables and the vignette; the other effects and post.addEffect of 0.2."
 ---
 
 # Post-processing API
 
-> Ships in null3D 0.1, with bloom, ambient occlusion, color grading and the vignette in 0.2. The API is experimental, so it can still change between versions. Outlines and `post.addEffect` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1, with bloom, ambient occlusion, outlines, color grading and the vignette in 0.2. The API is experimental, so it can still change between versions. `post.addEffect` is not built yet, so coding agents must not use it.
 
-`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, bloom, ambient occlusion, a color grading table and the vignette. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom and ambient occlusion do.
+`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, bloom, ambient occlusion, outlines, a color grading table and the vignette. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom and ambient occlusion do.
 
 ## Tone mapping and exposure
 
@@ -105,6 +105,45 @@ export default defineSketch(({ post, quality }) => {
 - A setting that a call leaves out keeps its value, also while it is off. `post.set({ ao: {} })` turns it on with the values it had.
 - `post.set` allocates nothing, so a sketch can change its settings every frame. Turning it on or off adds or removes passes, which takes a few frames.
 
+## Outlines
+
+Outlines draw a crisp line around the meshes that `setOutlined(true)` marks, as three.js's `OutlinePass` draws edges around its selected objects. They are off by default.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, post }) => {
+  post.set({ outline: { color: '#ffcc00', width: 3 } });
+  const camera = scene.createPerspectiveCamera({ position: [0, 2, 6], target: [0, 0, 0] });
+  scene.setActiveCamera(camera);
+  scene.createDirectionalLight({ direction: [-1, -2, -1] });
+  const crate = scene.createMesh({
+    mesh: geometry.box(),
+    material: materials.standard({ color: '#8a6a4a' }),
+  });
+  crate.setOutlined(true);
+  return {};
+});
+```
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `outline` | The outline's settings to turn it on, or `false` to turn it off. | Off |
+| `outline.color` | The color of the line around the parts that nothing hides. | White |
+| `outline.hiddenColor` | The color of the line around the parts that other objects hide, or `false` for no line there. | `false` |
+| `outline.width` | The line's width in CSS pixels, from 0 up. | 2 |
+
+- `mesh.setOutlined(true)` marks a mesh, and `setOutlined(false)` clears it. A model's copy from `scene.instantiate` has `setOutlined` too, which marks each of its meshes. Instance batches take no outline.
+- One outline style covers every outlined mesh. three.js needs one `OutlinePass` for each style, and null3D draws one.
+- The canvas shows the line's colors exactly: the exposure and the tone mapping do not change them. The color grading table and the vignette still apply.
+- The line is as wide as `width` says on every screen and at every render scale. The engine multiplies it by the device's pixel ratio.
+- Above about 4 pixels of the canvas, a part of a mesh thinner than the line can leave a gap between itself and its line.
+- The outline covers the mesh's whole shape. It ignores the holes that an alpha cutoff cuts, and the vertices that a custom material moves.
+- A setting that a call leaves out keeps its value, also while outlines are off. `post.set` allocates nothing. So a sketch can change the outline's color or width every frame.
+- Turning outlines on or off, and `setOutlined`, rebuild the engine's draw tables, as a new material does. Do it in response to a click, not in every frame.
+
+[The post-processing chain](../concepts/post-processing.md#outlines) explains how outlines draw and what they cost.
+
 ## Color grading
 
 A color grading table maps each color of the picture to a graded color, as three.js's `LUTPass` does. Load one from a `.cube` or a `.3dl` file with [`assets.loadLut`](assets.md), then give it to `post.set`:
@@ -152,16 +191,18 @@ Grading and the vignette work on display color, so they draw on every GPU path, 
 
 | Code | Cause |
 | --- | --- |
-| [E1213](../errors/E1213.md) | A setting that this version does not have, a tone mapping that the engine does not know, or a bloom, ambient occlusion or vignette value other than settings or `false`. Also a `lut` that is not a table from `assets.loadLut`, or a value out of its range. These are an exposure, strength, threshold, offset or darkness below 0, a bloom radius or `lutIntensity` outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, or `samples` that are not a whole number from 1 to 64. |
+| [E1213](../errors/E1213.md) | A setting that this version does not have, a tone mapping that the engine does not know, or a bloom, ambient occlusion, outline or vignette value other than settings or `false`. Also a `lut` that is not a table from `assets.loadLut`, or a value out of its range. These are an exposure, strength, threshold, offset, darkness or outline width below 0, a bloom radius or `lutIntensity` outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, or `samples` that are not a whole number from 1 to 64. |
 | [E1203](../errors/E1203.md) | A value that is not a finite number, such as NaN. |
+| [E1204](../errors/E1204.md) | An outline color that is not a hex string, a hex number or three linear components from 0 to 1. |
 | [E1101](../errors/E1101.md) | A table whose `destroy()` was called. |
 
 ## Related pages
 
 - [Color management](../concepts/color-management.md): HDR color, the final pass, the 8-bit path and the background.
-- [The post-processing chain](../concepts/post-processing.md): how bloom and ambient occlusion work, what they cost, and the effects still to come.
-- [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `LUTPass` and `VignetteShader`.
+- [The post-processing chain](../concepts/post-processing.md): how bloom, ambient occlusion and outlines work, what they cost, and the effects still to come.
+- [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `OutlinePass`, `LUTPass` and `VignetteShader`.
 - [Quality presets](../concepts/quality-presets.md): `aoScale` on each preset.
+- [Objects and transforms](objects.md#mesh-calls): `setOutlined`.
 - [Assets](assets.md): `assets.loadLut`, which loads color grading tables.
 
 ## API reference
@@ -196,6 +237,18 @@ Bloom's settings, with the meanings of three.js's `UnrealBloomPass`. A setting t
 | `radius?: number` | How far the glow spreads, from 0 to 1: higher values move its light from the narrow levels of its blur to the wide ones. It is 0.5 by default. |
 | `threshold?: number` | The luminance from which a pixel glows, in linear color before the exposure: 0 or more, and 1 by default. At 1, only colors brighter than white glow, such as strong emissive light. |
 
+### `OutlineSettings`
+
+Interface `OutlineSettings`.
+
+The outline's settings: a sharp line of one width around the objects that `setOutlined(true)` marks. A setting that a call leaves out keeps its value.
+
+| Member | Description |
+| --- | --- |
+| `color?: ColorInput` | The color of the line around the parts that nothing hides. The canvas shows this color exactly: the exposure and the tone mapping do not change it. It is white by default. |
+| `hiddenColor?: ColorInput \| false` | The color of the line around the parts that other objects hide, or `false` for no line there. It is `false` by default. |
+| `width?: number` | The line's width in CSS pixels: 0 or more, and 2 by default. Above about 4 pixels of the canvas, parts thinner than the line can leave a gap between themselves and their line. |
+
 ### `Post`
 
 Class `Post`.
@@ -204,7 +257,7 @@ The post-processing settings, as `ctx.post`. The engine applies them to every pi
 
 | Member | Description |
 | --- | --- |
-| `set(settings: PostSettings): void` | Changes the settings that `settings` gives, from the next frame on. It allocates nothing, so a sketch can change the exposure, bloom, the table's intensity or the vignette every frame. It throws E1213 for a setting or a tone mapping it does not know, or a value out of its range, E1203 for a value that is not a number, and E1101 for a table that was destroyed. |
+| `set(settings: PostSettings): void` | Changes the settings that `settings` gives, from the next frame on. It allocates nothing, so a sketch can change the exposure, bloom, the outline, the table's intensity or the vignette every frame. It throws E1213 for a setting or a tone mapping it does not know, or a value out of its range, E1203 for a value that is not a number, E1204 for a color it cannot read, and E1101 for a table that was destroyed. |
 
 ### `PostSettings`
 
@@ -221,6 +274,7 @@ Settings for `post.set`. A setting that the call leaves out keeps its value.
 | `lut?: Lut \| false` | A color grading table from `assets.loadLut`, which maps each pixel's color after the tone mapping, as three.js's `LUTPass` does. `false` turns it off. It is off by default. |
 | `lutIntensity?: number` | The share of the table's color in each pixel, from 0 for none to 1 for all of it, as `LUTPass`'s `intensity`. It is 1 by default. |
 | `vignette?: VignetteSettings \| false` | Darkens the picture toward its edges, as three.js's `VignetteShader` does. Settings turn the vignette on, `{}` with the values it had, and `false` turns it off. It is off by default. |
+| `outline?: OutlineSettings \| false` | A sharp line around the objects that `setOutlined(true)` marks. Settings turn outlines on, `{}` with the values they had, and `false` turns them off. They are off by default. |
 
 ### `ToneMapping`
 
