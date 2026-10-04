@@ -79,6 +79,10 @@
 # output other passes read, must not draw until its pipelines are built, as bloom's and skinning's
 # do, since a pipeline that waits for its file draws nothing (decision record D-56).
 
+# The SKIN builds skin each vertex by its joints in the vertex shader, and the MORPH builds, which
+# only WebGL2 has, add its morph targets' deltas before that. WebGPU skins and morphs in the
+# skinning pass instead, apart from the SKIN builds that its vertex skinning switch draws with.
+#
 # The templates of meshes drawn by instance, one file each. Each builds for WebGPU, and for WebGL2
 # with and without the draw index of WEBGL_multi_draw: WebGL2 reads instances from data textures,
 # one draw per bucket, or many buckets in one multi-draw call. The TONE_MAP builds tone map and
@@ -97,7 +101,7 @@ by_device = true
 custom_materials = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "SKIN"], targets = ["glsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "SKIN", "MORPH"], targets = ["glsl"] }
 
 # The standard material with its texture maps, from the same file: base color, metal-rough, normal,
 # occlusion, emissive and light maps. VERTEX_TANGENT takes the normal map's frame from the mesh's
@@ -107,7 +111,7 @@ file = "lit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN"], targets = ["glsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH"], targets = ["glsl"] }
 
 # The material's color alone, like three.js's MeshBasicMaterial, times the mesh's vertex colors
 # with VERTEX_COLOR. ALPHA_MASK as for the standard material.
@@ -116,7 +120,7 @@ file = "unlit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN"], targets = ["glsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "MORPH"], targets = ["glsl"] }
 
 # The material's color times its map, like three.js's MeshBasicMaterial with a map, times the
 # mesh's vertex colors with VERTEX_COLOR. ALPHA_MASK as for the standard material.
@@ -125,7 +129,7 @@ file = "unlit_map.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { defs = ["JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN"], targets = ["glsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "MORPH"], targets = ["glsl"] }
 
 # Sprites, like three.js's Sprite with a SpriteMaterial: quads of a sprite batch's rows that face
 # the camera, in the material's color times each sprite's color. ALPHA_MASK as for the standard
@@ -211,6 +215,17 @@ variants.webgl2 = { targets = ["glsl"] }
 shaders = ["bloom"]
 bits = ["BLOOM"]
 
+# The outline effect's mask: outlined objects drawn as instanced meshes, which mark every part of
+# them, and with OUTLINE_VISIBLE the parts that nothing hides. It reads each instance as the mesh
+# templates do, and loads by device with them. SKIN skins in the vertex shader, as the mesh
+# templates' SKIN builds do.
+[shaders.outline_mask]
+file = "outline_mask.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["SKIN", "OUTLINE_VISIBLE"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "OUTLINE_VISIBLE", "SKIN"], targets = ["glsl"] }
+
 # Ambient occlusion's steps at a fraction of the render size, three.js's GTAOPass: `depth` copies
 # one texel of the depth prepass's depth per pixel, `horizon` finds how open each surface is, and
 # `denoise` blurs it along each surface. The opaque pass then reads the result (null3d::gtao). The
@@ -255,7 +270,7 @@ variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 file = "debug_view.wgsl"
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP", "RECEIVE_SHADOWS", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HIGH"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "RECEIVE_SHADOWS", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HIGH", "SKIN"], targets = ["glsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "RECEIVE_SHADOWS", "DEBUG_VIEW_LOW", "DEBUG_VIEW_HIGH", "SKIN", "MORPH"], targets = ["glsl"] }
 
 # The depth of shadow casters, drawn from a light into one cascade's layer of the shadow map or one
 # tile of the shadow atlas. The CASTER_OFFSET builds move casters that draw only their back faces
@@ -267,7 +282,7 @@ file = "shadow_depth.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["SKIN", "PREPASS", "CASTER_OFFSET"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "CASTER_OFFSET", "SKIN"], targets = ["glsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "CASTER_OFFSET", "SKIN", "MORPH"], targets = ["glsl"] }
 
 # GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
 [shaders.cull]
@@ -360,6 +375,11 @@ variants.webgpu = { targets = ["wgsl"] }
 [first_use.skinning]
 shaders = ["skin"]
 bits = ["SKIN"]
+
+# A WebGL2 page downloads the MORPH builds with its first morphed mesh. WebGPU morphs in the
+# skinning pass, so it has no MORPH builds.
+[first_use.morph]
+bits = ["MORPH"]
 
 # Light clustering on the GPU: three compute entry points, `count_lights`, `place_lights` and
 # `write_lights`, that list each cluster's point and spot lights in the light grid. WebGPU only;

@@ -245,6 +245,7 @@ describe('SketchQuality.lower', () => {
 			shadowTileSize: MEDIUM.shadowTileSize,
 			pointLightShadows: MEDIUM.pointLightShadows,
 			depthPrepass: MEDIUM.depthPrepass,
+			morphTargets: MEDIUM.morphTargets,
 		});
 		// The preset changed, and of the settings only the lowest render scale, the shadow filter, the
 		// far cascades' interval and software occlusion culling did.

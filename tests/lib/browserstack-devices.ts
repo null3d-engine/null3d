@@ -28,6 +28,11 @@ export interface CloudDevice {
 	allowNoWebgpu?: true;
 	/** Why this entry stands in for another device or browser of the guide's tier. */
 	standIn?: string;
+	/**
+	 * The device's model number, as a phone's runners on the local network are named, such as
+	 * `sm-s921b`. Image tests then compare with the references that the manifest keeps for it.
+	 */
+	model?: string;
 }
 
 /** The phones and tablets, whose sessions run on real devices. */
@@ -153,6 +158,7 @@ export const CLOUD_DEVICES: readonly CloudDevice[] = [
 		osVersion: '16.0',
 		browser: 'chrome',
 		allowNoWebgpu: true,
+		model: 'sm-s921b',
 	},
 	{
 		runner: 'bsgalaxys25-edge',

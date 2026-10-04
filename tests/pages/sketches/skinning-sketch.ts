@@ -5,18 +5,20 @@
 // glTF files do: positions in whole millimeters, which the inverse bind matrices scale back to
 // meters as glTF asks of skinned meshes, normals and weights in normalized 8-bit integers, and
 // joints in 8 bits. The skinning pass must read each type. ?blend makes the middle character see
-// through, so the transparent pass draws it skinned. ?tone=none turns off the engine's default
-// of ACES, as the parity test asks: the three.js twin draws with no tone mapping, three.js's
-// default. ?textured draws the characters with a custom material that samples a texture of
-// stripes along their height, at texture coordinates from their positions, so custom materials'
+// through, so the transparent pass draws it skinned. ?outline outlines the middle character with
+// the default outline, whose mask must follow the pose. ?tone=none turns off the engine's
+// default of ACES, as the parity test asks: the three.js twin draws with no tone mapping,
+// three.js's default. ?textured draws the characters with a custom material that samples a texture
+// of stripes along their height, at texture coordinates from their positions, so custom materials'
 // textures must follow each way to skin. ?still holds every character in the clip's first pose.
 // ?late adds the characters during play, on the page's 'characters' message, and posts 'added'
 // once their pipelines are built: the first skinned mesh downloads the skinning shader file. With
 // ?extras the same message also turns bloom on and makes a line batch, two more features whose
-// shaders load on first use. The
-// engine cannot load animated models yet, so the rig comes from the engine's internal loader calls.
+// shaders load on first use. The engine cannot load animated models yet, so the rig comes from the
+// engine's internal loader calls.
 import { defineSketch } from '@null3d/engine';
 import { animateObject, createAnimationRig, skinObject } from '@null3d/engine/internal';
+import { OUTLINE_SETTINGS } from '../../../bench/scenes/outline';
 import {
 	AMBIENT,
 	BACKGROUND,
@@ -35,6 +37,7 @@ const params = new URL(import.meta.url).searchParams;
 const SHADOWS = params.has('shadows');
 const QUANTIZED = params.has('quantized');
 const BLEND = params.has('blend');
+const OUTLINE = params.has('outline');
 const TEXTURED = params.has('textured');
 const STILL = params.has('still');
 const LATE = params.has('late');
@@ -83,6 +86,7 @@ fn surface(input: SurfaceInput) -> Surface {
 
 export default defineSketch(({ scene, materials, geometry, post, textures, page }) => {
 	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
+	if (OUTLINE) post.set({ outline: OUTLINE_SETTINGS.plain });
 	scene.setBackground(BACKGROUND);
 	const { fov, position, target, near, far } = SKINNING_CAMERA;
 	scene.setActiveCamera(scene.createPerspectiveCamera({ fov, position, target, near, far }));
@@ -147,6 +151,7 @@ export default defineSketch(({ scene, materials, geometry, post, textures, page 
 				castShadows: SHADOWS,
 				receiveShadows: SHADOWS,
 			});
+			if (OUTLINE && k === 1) object.setOutlined(true);
 			const animator = animateObject(object, rig);
 			skinObject(object, animator);
 			animator.play(CLIP, { speed: STILL ? 0 : character.speed });

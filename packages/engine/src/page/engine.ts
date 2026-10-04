@@ -169,6 +169,12 @@ export interface EngineOptions {
 	 */
 	depthPrepass?: boolean;
 	/**
+	 * The most morph target weights of each object that a WebGL2 device draws, a whole number from
+	 * 1 to 256. Each object keeps the weights farthest from 0. Without it, the quality preset sets
+	 * it. WebGPU draws every weight. Another value fails with E1213.
+	 */
+	morphTargets?: number;
+	/**
 	 * True to run software occlusion culling on WebGL2: objects that `setOccluder(true)` marks hide
 	 * the objects that lie wholly behind them, so the GPU skips those. False turns it off. Without
 	 * it, the quality preset decides, and a sketch can change it during play with `quality.set`.
@@ -244,8 +250,10 @@ export interface EngineOptions {
 	/**
 	 * Features whose shaders load before the first frame, for a game that must fetch nothing while
 	 * it plays. Each feature's shaders otherwise download the first time the sketch uses it:
-	 * `'skinning'` with the first skinned mesh, `'bloom'` and `'ao'` when `post.set` turns them on,
-	 * `'sprites'` and `'lines'` with the first batch, and `'background'` with a texture background.
+	 * `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh on WebGL2,
+	 * `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first
+	 * batch, and `'background'` with a texture background. WebGPU morphs in the skinning pass, so a
+	 * morphed mesh there downloads `'skinning'`.
 	 * Listed features download beside the engine's own shaders, so the start waits only for the
 	 * largest. Loading a glTF file with skins, or making a batch, also starts its feature's download
 	 * at once, before the objects draw. Throws E1421 for a name it does not know.
@@ -855,6 +863,7 @@ async function startEngine(
 		shadowTileSize: options.shadowTileSize,
 		pointLightShadows: options.pointLightShadows,
 		depthPrepass: switches.prepass ?? options.depthPrepass,
+		morphTargets: options.morphTargets,
 		softwareOcclusion: switches.occlusion ?? options.softwareOcclusion,
 	};
 	checkSettings('createEngine()', pageSettings);

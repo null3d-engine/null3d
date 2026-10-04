@@ -1,9 +1,10 @@
 //! Skinning on both frame builders, checked through the mock backend, which rejects what a real
 //! GPU would, and by decoding the lists they record. On WebGPU: the skinning pass, which skins each
 //! skinned object that some view draws once per frame, the joint texture it reads, and the views'
-//! draws of the skinned vertices. On WebGL2: the skinning builds of the pipelines that draw
-//! skinned objects, shadows included, the joint texture and the texture of first joints that their
-//! vertex shaders read, and the instanced draws that skinned objects of one mesh share.
+//! draws of the skinned vertices, the outline mask's among them. On WebGL2: the skinning builds of
+//! the pipelines that draw skinned objects, shadows and the outline mask included, the joint
+//! texture and the texture of first joints that their vertex shaders read, and the instanced draws
+//! that skinned objects of one mesh share.
 
 mod common;
 
@@ -21,6 +22,7 @@ use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
+use null3d_render::outline::Outline;
 use null3d_render::skinning::{JOINTS_PER_ROW, TEXELS_PER_JOINT, skinned_format};
 use null3d_render::view::ViewId;
 
@@ -234,6 +236,61 @@ fn with_vertex_skinning_the_skinned_builds_read_the_joints_and_no_pass_skins() {
     assert_eq!(count(&second, Op::Dispatch), 1);
 }
 
+#[test]
+fn an_outlined_skinned_object_draws_its_mask_in_its_pose_both_ways_of_skinning() {
+    for vertex_skinning in [false, true] {
+        let mut world = World::with_config(RendererConfig {
+            vertex_skinning,
+            ..RendererConfig::default()
+        });
+        let object = world.add_skinned([0.0, 0.0, 0.0]);
+        world
+            .renderer
+            .settings_mut()
+            .set_outline(Some(Outline::default()));
+        world
+            .scene
+            .apply_commands(
+                &[Command::set_flags(object, flags::OUTLINED, flags::OUTLINED)],
+                world.frame,
+            )
+            .unwrap();
+        let mut mock = MockBackend::default();
+        let first = world.step(&mut mock, true);
+
+        let masks: Vec<_> = operands(&first, Op::CreateRenderPipeline)
+            .into_iter()
+            .filter(|p| p[1] == template::OUTLINE_MASK)
+            .collect();
+        assert_eq!(masks.len(), 2, "both mask pipelines");
+        for mask in &masks {
+            if vertex_skinning {
+                // The SKIN builds of the mesh's own format.
+                assert_ne!(mask[2] & permutation::SKIN, 0);
+                assert_eq!(mask[7], column().format);
+            } else {
+                // The skinned vertices' plain format, which the skinning pass writes.
+                assert_eq!(mask[2] & permutation::SKIN, 0);
+                assert_eq!(mask[7], skinned_format(column().format));
+            }
+        }
+        if vertex_skinning {
+            continue;
+        }
+        // The outline's bundle draws the column's region of skinned vertices too: once for the
+        // camera's bundle, once for the outline's.
+        let pool = operands(&first, Op::CreateBuffer)
+            .into_iter()
+            .find(|b| b[2] == buffer_usage::STORAGE | buffer_usage::VERTEX)
+            .expect("the skinned vertex buffer");
+        let draws_pool = operands(&first, Op::SetVertexBuffer)
+            .iter()
+            .filter(|v| v[0] == 0 && v[1] == pool[0])
+            .count();
+        assert!(draws_pool >= 2, "the camera's and the outline's bundles");
+    }
+}
+
 /// The WebGL2 frame builder, with `WEBGL_multi_draw` or without.
 fn webgl2(multi_draw: bool) -> World<CpuCulledRenderer> {
     let mut world = World::build(CpuCulledRenderer::new(CpuCulledConfig {
@@ -330,11 +387,11 @@ fn webgl2_skins_in_the_vertex_shader_of_every_pass_that_draws_a_skinned_object()
         );
         assert_eq!(count(&first, Op::CreateComputePipeline), 0);
 
-        // Every instance group binds the joint texture and the texture of first joints after
-        // the instance textures.
+        // Every instance group binds the joint texture, the texture of first joints and the morph
+        // textures of deltas and weights after the instance textures.
         let groups = instance_groups(&first);
         assert!(!groups.is_empty());
-        assert!(groups.iter().all(|g| g[2] == 6));
+        assert!(groups.iter().all(|g| g[2] == 8));
         let (joints, firsts) = (bound(&groups[0], 4), bound(&groups[0], 5));
         let textures = operands(&first, Op::CreateTexture);
         let created = |id: u32| textures.iter().find(|t| t[0] == id).unwrap().clone();
@@ -349,7 +406,8 @@ fn webgl2_skins_in_the_vertex_shader_of_every_pass_that_draws_a_skinned_object()
         );
         assert_eq!(created(firsts)[4], format::R32_UINT);
         assert_eq!(writes(&first, joints).len(), 1);
-        assert_eq!(writes(&first, firsts).len(), 1);
+        // One write for the first joints, one for the first weights, which nothing morphs here.
+        assert_eq!(writes(&first, firsts).len(), 2);
 
         // Later frames write the new pose's matrices, and make nothing.
         let second = world.step(&mut mock, false);
@@ -385,10 +443,10 @@ fn skinned_objects_of_one_mesh_share_an_instanced_draw_on_webgl2() {
     assert_eq!(bucket_of(slots[0]), bucket_of(slots[1]));
 
     // Each column finds its own instance's joints: the first joints of the slots from the first
-    // column's to the second's go up in one write.
+    // column's to the second's go up in one write, and their first weights in a second.
     let firsts = bound(&instance_groups(&first)[0], 5);
     let written = writes(&first, firsts);
-    assert_eq!(written.len(), 1);
+    assert_eq!(written.len(), 2);
     let width = slots[1] - slots[0] + 1;
     assert_eq!(written[0][2..6], [slots[0], 0, 0, width]);
     assert_eq!(written[0][9], width * 4);
@@ -420,6 +478,44 @@ fn webgl2_draws_unskinned_objects_without_the_skin_textures() {
         .all(|p| p[2] & permutation::SKIN == 0);
     assert!(plain);
     assert_eq!(count(&second, Op::CreateRenderPipeline), 1);
+}
+
+#[test]
+fn an_outlined_skinned_object_draws_its_mask_with_the_skinning_builds_on_webgl2() {
+    let mut world = webgl2(true);
+    let object = world.add_skinned([0.0; 3]);
+    world
+        .renderer
+        .settings_mut()
+        .set_outline(Some(Outline::default()));
+    world
+        .scene
+        .apply_commands(
+            &[Command::set_flags(object, flags::OUTLINED, flags::OUTLINED)],
+            world.frame,
+        )
+        .unwrap();
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+
+    // Both mask pipelines skin the column's own vertices in the vertex shader.
+    let masks: Vec<_> = operands(&first, Op::CreateRenderPipeline)
+        .into_iter()
+        .filter(|p| p[1] == template::OUTLINE_MASK)
+        .collect();
+    assert_eq!(masks.len(), 2, "both mask pipelines");
+    for mask in &masks {
+        assert_ne!(mask[2] & permutation::SKIN, 0);
+        assert_eq!(mask[7], column().format);
+    }
+    // The outline view's instance groups, as many as the camera's, bind the joint texture, the
+    // first joints and the morph textures too.
+    let mut plain = webgl2(true);
+    plain.add_skinned([0.0; 3]);
+    let camera_groups = instance_groups(&plain.step(&mut MockBackend::default(), true)).len();
+    let groups = instance_groups(&first);
+    assert_eq!(groups.len(), 2 * camera_groups);
+    assert!(groups.iter().all(|g| g[2] == 8));
 }
 
 /// Skinned copies of one mesh, as many as the meshes of a crowd of 500 characters of 10 meshes.

@@ -134,6 +134,7 @@ Most shaders come with the engine's start. The shaders of a feature that many ga
 | Feature | Its shaders download |
 | --- | --- |
 | `'skinning'` | with the first skinned mesh, or as soon as the sketch reads a glTF file with skins |
+| `'morph'` | on WebGL2, with the first morphed mesh. WebGPU morphs in the skinning pass, so a morphed mesh there downloads `'skinning'` |
 | `'bloom'` | when `post.set` turns bloom on |
 | `'ao'` | when `post.set` turns ambient occlusion on |
 | `'sprites'` | with the first sprite batch |

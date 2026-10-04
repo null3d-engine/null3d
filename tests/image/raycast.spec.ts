@@ -16,13 +16,19 @@ interface RaycastPage {
 	results: RaycastResults;
 	failures: string[];
 	frames: number;
+	/** How long the page measured until every job worker had taken work. */
+	seconds: number;
+	/** Each job worker's busy time over all the measured frames. */
 	jobBusyMs: number[];
 }
 
-/** Opens the raycast page with `switches` and returns its result, which must have no error. */
-async function open(page: Page, switches: string): Promise<RaycastPage> {
+/**
+ * Opens the raycast page with `switches` and returns its result, which must have no error. The
+ * page has `waitMs` to post it.
+ */
+async function open(page: Page, switches: string, waitMs = 90_000): Promise<RaycastPage> {
 	await page.goto(`raycast.html?${switches}`);
-	const result = await pageResult<RaycastPage>(page, 90_000);
+	const result = await pageResult<RaycastPage>(page, waitMs);
 	expect(result.error).toBeUndefined();
 	expect(result.failures).toEqual([]);
 	return result;
@@ -50,13 +56,17 @@ for (const tier of ['webgpu', 'webgl2'] as const)
 	test(`raycasts give three.js's hits, and batches run on the job workers, on ${tier}`, async ({
 		page,
 	}) => {
+		// Where the GPU draws slowly, the page measures for up to 31 s to see every job worker work.
+		test.setTimeout(180_000);
 		const mode = ENGINE_MODES[0];
-		const result = await open(page, switchesOf(mode, tier));
+		const result = await open(page, `${switchesOf(mode, tier)}&everyWorker`, 150_000);
 		expectParity(result, tier);
 		expect(result.mode.jobWorkers).toBeGreaterThan(0);
 		expect(result.jobBusyMs).toHaveLength(result.mode.jobWorkers);
-		// Each frame of the measurement cast 10,000 rays, which kept the job workers busy.
-		expect(result.jobBusyMs.every((ms) => ms > 0)).toBe(true);
+		// Each measured frame cast 10,000 rays, and every job worker took part of the batches. Which
+		// worker takes which part changes from frame to frame, so the check counts all the frames.
+		const idle = result.jobBusyMs.flatMap((ms, k) => (ms > 0 ? [] : [`job-${k}`]));
+		expect(idle, `${result.frames} frames in ${result.seconds} s`).toEqual([]);
 	});
 
 // The scene at the Earth's radius, off any cell's center. In large-world mode the engine finds

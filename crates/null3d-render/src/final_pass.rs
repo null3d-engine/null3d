@@ -5,10 +5,11 @@
 //! render scale can drop: it copies the scene color, or runs FXAA on it. Below the whole canvas's
 //! render scale, it scales the scene's corner of the scene color up to the canvas instead. With
 //! bloom (see [`crate::bloom`]), the pass draws with its bloom build, which adds bloom's levels to
-//! the scene color before the output transform. Last, it grades the canvas color with a color
-//! grading table and the vignette while the sketch sets them (see [`crate::grading`]). Each frame
-//! builder owns one, with GPU object ids from its own ranges, and its pipelines come from the
-//! builder's pipeline cache like every other.
+//! the scene color before the output transform. While objects are outlined, the pass paints the
+//! outline's line around them after the output transform (see [`crate::outline`]). Last, it grades
+//! the canvas color with a color grading table and the vignette while the sketch sets them (see
+//! [`crate::grading`]). Each frame builder owns one, with GPU object ids from its own ranges, and
+//! its pipelines come from the builder's pipeline cache like every other.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, address, buffer_usage as usage, compare, filter, format, layout as bind_layout,
@@ -18,15 +19,18 @@ use null3d_gpu::drawlist::{
 use crate::bloom::{BloomIds, FINAL_OFFSET, LEVELS};
 use crate::frame::{RecordError, UploadArena};
 use crate::grading::Grading;
+use crate::outline::Outline;
 use crate::output::{Antialias, Output, OutputUniform, SceneColor};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
-/// Bytes of the final pass's settings: the output settings, then the vignette's vector and the
-/// color grading table's two.
-const SETTINGS_BYTES: u32 = 64;
+/// Bytes of the final pass's settings: the output settings, then the vignette's vector, the color
+/// grading table's two and the outline's two.
+const SETTINGS_BYTES: u32 = 96;
 /// The bindings of the color grading table and of its sampler in the final pass's group.
 const LUT_BINDING: u32 = 9;
 const LUT_SAMPLER_BINDING: u32 = 10;
+/// The binding of the outline mask in the final pass's group. The table's sampler reads it.
+const OUTLINE_BINDING: u32 = 11;
 
 /// The final pass's settings, as `final.wgsl`'s `Settings` block lays them out.
 #[repr(C)]
@@ -39,6 +43,9 @@ struct FinalUniform {
     lut_scale: [f32; 4],
     /// The offset that places a color in the table, then a spare value.
     lut_offset: [f32; 4],
+    /// The outline's visible color and width, then its hidden color and whether it draws (see
+    /// [`Outline::uniform`]).
+    outline: [[f32; 4]; 2],
 }
 
 const _: () = assert!(std::mem::size_of::<FinalUniform>() == SETTINGS_BYTES as usize);
@@ -89,8 +96,19 @@ pub(crate) struct FinalIds {
     /// The blank color grading table of one texel, which the group binds while the sketch sets
     /// none.
     pub(crate) blank_lut: u32,
-    /// The linear sampler of the color grading table.
+    /// The linear sampler of the color grading table, which reads the outline mask too.
     pub(crate) lut_sampler: u32,
+    /// The blank 2D texture of one texel, which the group binds in place of the outline mask while
+    /// no outline draws.
+    pub(crate) blank_outline: u32,
+}
+
+/// What the final pass reads of the outline effect: the mask's texture, and the outline's
+/// settings with its width in pixels of the canvas.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct OutlineInputs {
+    pub(crate) mask: u32,
+    pub(crate) outline: Outline,
 }
 
 /// What the final pass's bloom build reads: bloom's uniform buffer and sampler, and the texture of
@@ -129,8 +147,8 @@ pub(crate) struct FinalPass {
     /// The settings the buffer holds, or `None` before the first upload.
     uploaded: Option<FinalUniform>,
     /// The scene color texture that the bind group reads, with bloom's inputs for the bloom
-    /// build and the color grading table, or `None` before the group exists.
-    bound: Option<(u32, Option<BloomInputs>, u32)>,
+    /// build, the color grading table and the outline mask, or `None` before the group exists.
+    bound: Option<(u32, Option<BloomInputs>, u32, u32)>,
 }
 
 impl FinalPass {
@@ -183,10 +201,11 @@ impl FinalPass {
     }
 
     /// Makes the pass's own GPU objects when the GPU lacks them, uploads the settings for `output`,
-    /// the scene's size in pixels, `render_size`, and `grading` when they changed, and binds the
-    /// scene color texture `scene_color`, with `bloom`'s inputs for the bloom build and the color
-    /// grading table, when they are new. The frame's list made the plan's textures again when
-    /// `textures_made`, which leaves an older bind group reading a texture that is gone.
+    /// the scene's size in pixels, `render_size`, `grading` and `outline` when they changed, and
+    /// binds the scene color texture `scene_color`, with `bloom`'s inputs for the bloom build, the
+    /// color grading table and the outline mask, when they are new. The frame's list made
+    /// the plan's textures again when `textures_made`, which leaves an older bind group reading a
+    /// texture that is gone.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn prepare(
         &mut self,
@@ -197,6 +216,7 @@ impl FinalPass {
         scene_color: u32,
         bloom: Option<BloomInputs>,
         grading: Grading,
+        outline: Option<OutlineInputs>,
         textures_made: bool,
     ) -> Result<(), RecordError> {
         let ids = self.ids;
@@ -225,14 +245,22 @@ impl FinalPass {
             }
             None => ids.blank_lut,
         };
+        let mask = match outline {
+            Some(OutlineInputs { mask, outline }) => {
+                settings.output.flags |= OutputUniform::OUTLINE;
+                settings.outline = outline.uniform();
+                mask
+            }
+            None => ids.blank_outline,
+        };
         if self.uploaded != Some(settings) {
             let (at, bytes) = arena.push(settings.as_bytes())?;
             list.push(Op::WriteBuffer, &[ids.settings, 0, at, bytes])?;
             self.uploaded = Some(settings);
         }
-        let inputs = (scene_color, bloom, lut);
+        let inputs = (scene_color, bloom, lut, mask);
         if textures_made || self.bound != Some(inputs) {
-            let mut words = [0u32; 3 + 5 * 11];
+            let mut words = [0u32; 3 + 5 * 12];
             let mut len = 3;
             let mut entry = |binding: u32, kind: u32, id: u32, offset: u32, size: u32| {
                 words[len..len + 5].copy_from_slice(&[binding, kind, id, offset, size]);
@@ -248,6 +276,7 @@ impl FinalPass {
                 0,
                 0,
             );
+            entry(OUTLINE_BINDING, resource_kind::TEXTURE, mask, 0, 0);
             let layout = match bloom {
                 None => bind_layout::FINAL,
                 Some(bloom) => {
@@ -268,8 +297,9 @@ impl FinalPass {
         Ok(())
     }
 
-    /// Records the creation of the settings buffer, the blank color grading table of one texel and
-    /// the table's linear sampler, which clamps at the table's edges.
+    /// Records the creation of the settings buffer, the blank color grading table and the blank
+    /// outline texture, each of one texel, and the table's linear sampler, which clamps at the
+    /// table's edges.
     fn create_objects(list: &mut DrawList, ids: FinalIds) -> Result<(), RecordError> {
         list.push(
             Op::CreateBuffer,
@@ -291,6 +321,20 @@ impl FinalPass {
                 1,
                 1,
                 view::D3,
+            ],
+        )?;
+        list.push(
+            Op::CreateTexture,
+            &[
+                ids.blank_outline,
+                1,
+                1,
+                1,
+                format::RGBA8_UNORM,
+                texture_usage::TEXTURE_BINDING,
+                1,
+                1,
+                view::D2,
             ],
         )?;
         list.push(
@@ -346,6 +390,7 @@ mod tests {
         group: 2,
         blank_lut: 3,
         lut_sampler: 4,
+        blank_outline: 6,
     };
 
     /// Prepares a final pass for a scene color in `format` in the `antialias` mode, with
@@ -369,6 +414,7 @@ mod tests {
             5,
             None,
             grading,
+            None,
             true,
         )
         .unwrap();

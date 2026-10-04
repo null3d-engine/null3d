@@ -44,7 +44,7 @@ A tone curve is a choice of look. When the engine offers a curve that three.js a
 
 ### The three-compat add-on
 
-- It holds only the three.js looks that a port truly needs, where no setting of the core comes close. Each candidate needs a decision of its own. The candidates so far: `UnrealBloomPass`'s halo, the ACES and Reinhard tone curves, and three.js's vignette.
+- It holds only the three.js looks that a port truly needs, where no setting of the core comes close. Each candidate needs a decision of its own. The candidates so far: `UnrealBloomPass`'s halo, the ACES and Reinhard tone curves, and three.js's vignette. [D-36](D-36-outlines.md) adds `OutlinePass`'s glow, pulse and blurred edge.
 - It is built only on the engine's public extension points: custom effects, custom passes and material hooks. So it also tests those points, as a user's own code would use them.
 - It loads on first use, and it follows the rules for add-on modules below.
 - The porting skill adds it only when a port needs one of its looks, and says why.

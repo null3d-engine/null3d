@@ -21,6 +21,8 @@ pub enum Resource {
     AnimatedInstances = 6,
     /// Joints of animated instances, whose skinning matrices the animation table holds.
     AnimatedJoints = 7,
+    /// Morph weights of morphed objects.
+    MorphWeights = 8,
 }
 
 /// An error from the core. [`CoreError::code`] gives the number the TypeScript error table uses,
