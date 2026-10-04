@@ -77,10 +77,13 @@ impl Outline {
 }
 
 /// The depth bias of the mask's draw of the parts that nothing hides, toward the camera: it lets a
-/// surface pass the depth test against the depth that the scene passes drew for it.
+/// surface pass the depth test against the depth that the scene passes drew for it. The mask places
+/// each vertex exactly as the scene passes do, so a few steps suffice. It has no slope term: a
+/// slope term grows without limit where a surface turns edge-on, as at a sphere's outline, and
+/// there lifted hidden parts in front of the objects that hide them.
 const VISIBLE_BIAS: DepthBias = DepthBias {
     constant: 4,
-    slope_bits: 0x3f80_0000,
+    slope_bits: 0,
 };
 
 /// The keys of the two pipelines that draw an outlined pair, which draws with `pipeline`, into the
@@ -153,6 +156,10 @@ mod tests {
         assert_eq!(visible.state & state_flags::NO_DEPTH_TEST, 0);
         assert_ne!(visible.state & state_flags::NO_DEPTH_WRITE, 0);
         assert!(visible.bias.constant > 0, "toward the camera");
-        assert_eq!(f32::from_bits(visible.bias.slope_bits), 1.0);
+        assert_eq!(
+            f32::from_bits(visible.bias.slope_bits),
+            0.0,
+            "no slope term, which lifts edge-on parts past the objects in front"
+        );
     }
 }
