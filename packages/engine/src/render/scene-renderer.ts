@@ -280,6 +280,7 @@ export class WebGPUSceneRenderer implements Renderer {
 
 	destroy(): void {
 		this.frames.abandon();
+		this.errors.stop();
 		this.backend.timer?.destroy();
 		this.backend.destroy();
 		this.context.unconfigure();

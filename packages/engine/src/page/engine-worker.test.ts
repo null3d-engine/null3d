@@ -85,3 +85,18 @@ test('a worker that ends with an error event is reported once it had started', a
 	expect(engineWorker.cleanStop).toBe(false);
 	expect(failures.map(([error]) => error.code)).toEqual(['E1404']);
 });
+
+test('a loop that fails before the worker is ready fails the start', async () => {
+	const fake = fakeWorker();
+	const failures: EngineError[] = [];
+	const engineWorker = new EngineWorker(fake.worker, 'sketch', {
+		sketchMessage: () => {},
+		failure: (error) => failures.push(error),
+		quality: () => {},
+		stats: () => {},
+		labelSlot: () => {},
+	});
+	fake.reply({ type: 'fault', role: 'sketch', message: 'Unable to create texture' });
+	await expect(engineWorker.ready()).rejects.toThrow('Unable to create texture');
+	expect(failures).toEqual([]);
+});

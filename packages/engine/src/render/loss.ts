@@ -87,7 +87,10 @@ export class GpuErrorWatch {
 	private reported = { outOfMemory: false, rejected: false };
 	private warned = false;
 
-	constructor(device: GPUDevice, report: GpuErrorReport = logGpuError) {
+	constructor(
+		private readonly device: GPUDevice,
+		report: GpuErrorReport = logGpuError,
+	) {
 		device.onuncapturederror = (event) => {
 			const { error } = event;
 			// Older browsers, and some workers, lack the class.
@@ -105,5 +108,13 @@ export class GpuErrorWatch {
 				console.warn(`null3D: the GPU reported more errors after the first: ${error.message}`);
 			}
 		};
+	}
+
+	/**
+	 * Stops listening, for a renderer that is destroyed. A page can keep a device reachable after
+	 * the engine stops, and the listener would keep the engine's memory with it.
+	 */
+	stop(): void {
+		this.device.onuncapturederror = null;
 	}
 }

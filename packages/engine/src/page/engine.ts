@@ -584,8 +584,13 @@ export class EngineWorker {
 		this.stoppedPromise = new Promise((resolve) => {
 			markStopped = resolve;
 		});
+		/**
+		 * A failure that ends the worker's loop: it fails the request that waits, such as the start's,
+		 * and once the worker has started, it reaches the page's failure handler.
+		 */
 		const failed = (message: string) => {
 			this.stoppedCleanly = false;
+			this.waiting.shift()?.reject(startError(role, message));
 			if (this.started)
 				events.failure(new EngineError('E1404', `the ${role} worker failed: ${message}.`));
 		};
@@ -646,7 +651,6 @@ export class EngineWorker {
 			// A browser sends an error event without a message when the worker's script, or a file
 			// that the script imports, did not load.
 			const message = event.message || 'its script or a file it imports did not load';
-			this.waiting.shift()?.reject(startError(role, message));
 			failed(message);
 			this.answerStop?.();
 		};
