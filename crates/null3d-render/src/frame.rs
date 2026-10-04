@@ -231,6 +231,16 @@ pub trait FrameBuilder {
     /// Turns software occlusion culling on or off from the next frame on, where the builder culls
     /// on the CPU. Elsewhere it does nothing.
     fn set_software_occlusion(&mut self, _on: bool) {}
+    /// Gives mesh `mesh`, by its id that counts from 1, a blocker of its own for software
+    /// occlusion culling, where the builder culls on the CPU. Elsewhere it does nothing. Fails
+    /// only when memory cannot grow.
+    fn set_mesh_blocker(
+        &mut self,
+        _mesh: u32,
+        _blocker: null3d_core::occlusion::BlockerMesh,
+    ) -> Result<(), TryReserveError> {
+        Ok(())
+    }
     /// True when point or spot lights cast shadows into the shadow atlas in the frame recorded
     /// last.
     fn casts_tile_shadows(&self) -> bool {

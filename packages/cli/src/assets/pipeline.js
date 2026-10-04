@@ -13,6 +13,8 @@ import { planLevels, quantizeMeshes, reorderMeshes, storeLevels } from './geomet
 import { MAX_TEXTURE_SIDE } from './images.js';
 import { MSFTLod } from './lod-extension.js';
 import { modelReport } from './report.js';
+import { addSpatialData, BVH_MIN_TRIANGLES } from './spatial.js';
+import { Null3dMeshBvh, Null3dOccluder } from './spatial-extensions.js';
 import { encodeTextures, TEXTURE_FOLDER } from './textures.js';
 
 /** @import { Document } from '@gltf-transform/core' */
@@ -27,6 +29,10 @@ import { encodeTextures, TEXTURE_FOLDER } from './textures.js';
  * @property {TextureQuality} textureQuality
  * @property {boolean} meshopt Compress the model's buffers with meshopt, which the engine decodes
  *   losslessly on load. The default is true.
+ * @property {boolean} blockers Give each mesh that encloses space a blocker mesh for software
+ *   occlusion culling. The default is true.
+ * @property {number} bvh The fewest triangles of a mesh part whose tree for raycasts the file
+ *   stores, or 0 for none.
  * @property {string} textureFolder The address of the texture files' folder from the model.
  */
 
@@ -36,6 +42,8 @@ export const DEFAULT_OPTIONS = /** @type {const} */ ({
 	maxTextureSize: MAX_TEXTURE_SIDE,
 	textureQuality: 'size',
 	meshopt: true,
+	blockers: true,
+	bvh: BVH_MIN_TRIANGLES,
 	textureFolder: TEXTURE_FOLDER,
 });
 
@@ -50,11 +58,14 @@ export const DEFAULT_OPTIONS = /** @type {const} */ ({
 /** The `generator` that optimized files name. */
 export const GENERATOR = `null3D asset tool ${VERSION}`;
 
-/** A reader and writer of glTF files with every extension that glTF-Transform knows, and MSFT_lod. */
+/**
+ * A reader and writer of glTF files with every extension that glTF-Transform knows, MSFT_lod and
+ * the engine's own.
+ */
 async function glTFIO() {
 	await Promise.all([MeshoptDecoder.ready, MeshoptEncoder.ready]);
 	return new NodeIO()
-		.registerExtensions([...ALL_EXTENSIONS, MSFTLod])
+		.registerExtensions([...ALL_EXTENSIONS, MSFTLod, Null3dOccluder, Null3dMeshBvh])
 		.registerDependencies({ 'meshopt.decoder': MeshoptDecoder, 'meshopt.encoder': MeshoptEncoder });
 }
 
@@ -208,6 +219,10 @@ export async function optimizeModel(path, options, encode) {
 	const levels = options.lod ? await planLevels(doc) : new Map();
 	quantizeMeshes(doc);
 	storeLevels(doc, levels);
+	const spatial = addSpatialData(doc, {
+		blockers: options.blockers,
+		bvhMinTriangles: options.bvh > 0 ? options.bvh : Number.POSITIVE_INFINITY,
+	});
 	const { files, records, uris } = await encodeTextures(doc, {
 		encode,
 		maxSide: options.maxTextureSize,
@@ -228,6 +243,7 @@ export async function optimizeModel(path, options, encode) {
 		textures: records,
 		files,
 		lodMeshes: levels.size,
+		spatial,
 		ms: performance.now() - start,
 	});
 	return { glb, files, report };

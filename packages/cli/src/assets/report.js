@@ -4,6 +4,7 @@ import { counted } from '../text.js';
 
 /** @import { Document, Mesh, Node } from '@gltf-transform/core' */
 /** @import { TextureRecord } from './textures.js' */
+/** @import { SpatialReport } from './spatial.js' */
 
 /**
  * @typedef {object} TextureGroup Textures of one size, format and color space. The engine keeps
@@ -24,6 +25,7 @@ import { counted } from '../text.js';
  * @property {number} triangles The triangles that the scene draws at full detail.
  * @property {number} vertices The vertices that the file stores.
  * @property {number} lodMeshes Meshes with levels of detail.
+ * @property {SpatialReport} spatial Blockers and stored trees.
  * @property {{ min: number[], max: number[] }} bounds The scene's box in its own space.
  * @property {TextureRecord[]} textures
  * @property {TextureGroup[]} textureGroups
@@ -291,10 +293,13 @@ function drawn(doc) {
  * The report's figures for a model, from its document after every step.
  *
  * @param {Document} doc
- * @param {{ name: string, inputBytes: number, modelBytes: number, textures: TextureRecord[], files: Map<string, Uint8Array>, lodMeshes: number, ms: number }} facts
+ * @param {{ name: string, inputBytes: number, modelBytes: number, textures: TextureRecord[], files: Map<string, Uint8Array>, lodMeshes: number, spatial: SpatialReport, ms: number }} facts
  * @returns {ModelReport}
  */
-export function modelReport(doc, { name, inputBytes, modelBytes, textures, files, lodMeshes, ms }) {
+export function modelReport(
+	doc,
+	{ name, inputBytes, modelBytes, textures, files, lodMeshes, spatial, ms },
+) {
 	const root = doc.getRoot();
 	const positions = new Set(
 		root
@@ -312,6 +317,7 @@ export function modelReport(doc, { name, inputBytes, modelBytes, textures, files
 		...drawn(doc),
 		vertices: [...positions].reduce((sum, a) => sum + /** @type {any} */ (a).getCount(), 0),
 		lodMeshes,
+		spatial,
 		textures,
 		textureGroups: textureGroups(textures),
 		textureMemory: textureMemory(textures),

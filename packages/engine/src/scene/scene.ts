@@ -255,7 +255,8 @@ export interface InstantiateOptions extends NodeOptions {
 	receiveShadows?: boolean;
 	/**
 	 * True makes every mesh of the copy block the view for software occlusion culling on WebGL2,
-	 * like `setOccluder(true)`. The default is false.
+	 * like `setOccluder(true)`, and false makes none block. Left out, the meshes that the asset
+	 * tool gave blockers block, and the others do not.
 	 */
 	occluder?: boolean;
 }
@@ -2126,7 +2127,8 @@ export class Scene {
 			layers: (options.layers ?? C.LAYERS_DEFAULT) >>> 0,
 			root: true,
 		};
-		const objects = this.createNodes(template, call, options.parent ?? null, root, extra);
+		const cleared = options.occluder === false ? C.FLAG_OCCLUDER : 0;
+		const objects = this.createNodes(template, call, options.parent ?? null, root, extra, cleared);
 		const instance = objects[0] as PrefabInstance;
 		instance.objects = objects;
 		prefab.animate(objects);
@@ -2207,8 +2209,8 @@ export class Scene {
 	/**
 	 * Creates an object for each template node, with one core call that reserves their slots and
 	 * one batch of command records, and returns them in the nodes' order. A node whose parent is -1
-	 * goes under `parent`. `root`, when given, takes the place of the first node, and `extra` adds
-	 * flags to every node with a mesh. Throws E1102 before it creates anything when the scene or
+	 * goes under `parent`. `root`, when given, takes the place of the first node, `extra` adds
+	 * flags to every node with a mesh, and `cleared` takes flags away from them. Throws E1102 before it creates anything when the scene or
 	 * the command ring has no room.
 	 */
 	private createNodes(
@@ -2217,6 +2219,7 @@ export class Scene {
 		parent: Object3D | null,
 		root?: TemplateNode,
 		extra = 0,
+		cleared = 0,
 	): Object3D[] {
 		const count = nodes.length;
 		const node = (k: number) => (k === 0 && root ? root : (nodes[k] as TemplateNode));
@@ -2240,7 +2243,7 @@ export class Scene {
 			this.writePosition(slot, t[0] as number, t[1] as number, t[2] as number);
 			for (let i = 0; i < 3; i++) v.scales[slot * 3 + i] = t[7 + i] as number;
 			for (let i = 0; i < 4; i++) v.rotations[slot * 4 + i] = t[3 + i] as number;
-			const flags = n.mesh ? n.flags | extra : n.flags;
+			const flags = n.mesh ? (n.flags | extra) & ~cleared : n.flags;
 			const bounds = n.bounds;
 			if (bounds && flags & C.FLAG_CUSTOM_BOUNDS) {
 				for (let i = 0; i < 3; i++) v.centers[slot * 3 + i] = bounds[i] as number;
