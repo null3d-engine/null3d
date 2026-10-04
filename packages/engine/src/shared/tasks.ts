@@ -9,7 +9,7 @@
 // worker takes compiled modules from the loader too (scene/gltf.ts).
 
 import type { TaskAnswer, TaskRequest, TaskStage } from '../workers/tasks';
-import { jobTasks } from './task-host';
+import { type JobTaskHost, jobTasks } from './task-host';
 import { compileWasm, type WasmError } from './wasm';
 import { bootstrapFailure, spawnWorker } from './worker-start';
 
@@ -85,6 +85,8 @@ class Runners {
 	private next = 0;
 	/** The job workers that take tasks, or the task worker once it has started. */
 	private runners: Runner[] | undefined;
+	/** The job workers' ports that `runners` were made from. */
+	private host: JobTaskHost | undefined;
 
 	constructor(private readonly stopped: () => void) {}
 
@@ -115,6 +117,12 @@ class Runners {
 	}
 
 	private leastBusy(error: WasmError): Runner {
+		// A later engine on this thread brings job workers of its own.
+		const host = jobTasks();
+		if (host !== this.host) {
+			this.host = host;
+			this.runners = undefined;
+		}
 		this.runners ??= this.start(error);
 		let best = this.runners[0] as Runner;
 		for (const runner of this.runners) if (runner.running < best.running) best = runner;
@@ -123,7 +131,7 @@ class Runners {
 
 	/** The job workers that take tasks; or, without job workers, a task worker that starts now. */
 	private start(error: WasmError): Runner[] {
-		const host = jobTasks();
+		const host = this.host;
 		if (host) {
 			// With two or more job workers, the first stays in the job loop for the frames.
 			const ports = host.ports.length > 1 ? host.ports.slice(1) : host.ports;
