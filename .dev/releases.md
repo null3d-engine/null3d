@@ -178,6 +178,14 @@ Per frame, S4 draws 4 render passes and S1 draws 2. S4's 2 extra passes are dept
 | S4, WebGPU | 237 | 604, with the replay at 263 of 320 | Pass |
 | S4, WebGL2 | 237 | 164 | Pass |
 
+### Results on the gate commit
+
+The gate commit is 5309dba5 (#271), and main's CI passed on it. Each device run below served the pages from a checkout at that commit. The run names are in UTC.
+
+| Item | Device and browser | Check | Figure | Result |
+| --- | --- | --- | --- | --- |
+| 1 | iPad Pro 11-inch, Safari 26.6.2 | The full checks plan on WebGPU, compatibility mode and WebGL2 (run 20261004-035655-checks) | 656 passed, 0 skipped, 0 failed | Pass |
+
 ### What the gate still needs
 
 On the gate commit, the Mac runs `bun run gate` with every step, and with no other heavy work during the timing steps. The rehearsal's figures do not count for the gate.
