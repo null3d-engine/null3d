@@ -20,7 +20,7 @@ const SIZE: u32 = 16;
 /// Its mip levels, down to faces of 2 texels.
 const LEVELS: u32 = 4;
 /// The binding of the environment's cube texture in the frame's group.
-const MAP_BINDING: u32 = 11;
+const MAP_BINDING: u32 = 12;
 
 /// The operands of each command of a kind in a frame.
 fn operands(commands: &[(Op, Vec<u32>)], op: Op) -> Vec<Vec<u32>> {

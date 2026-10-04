@@ -39,13 +39,13 @@ import type { DepthSetup } from './depth';
 /**
  * The first slot of each bind group. A slot is a texture unit, a uniform block binding point and a
  * sampler's place, and each binding of a group takes its group's first slot plus its binding
- * number. The per-frame group, which holds the most bindings, comes first, with thirteen. Group 1
+ * number. The per-frame group, which holds the most bindings, comes first, with fourteen. Group 1
  * has three slots, group 2 six (the instance textures, then the two textures that skinned meshes
  * read) and group 3 the last twelve, whose samplers take places past the last texture unit, which
  * only the backend's own table holds. The groups' uniform blocks stay below the fewest binding
  * points that WebGL2 allows, and their textures below the texture upload unit.
  */
-const GROUP_BASES = Uint8Array.of(0, 13, 16, 22);
+const GROUP_BASES = Uint8Array.of(0, 14, 17, 23);
 
 /** The fewest uniform block binding points that a WebGL2 context has. */
 export const MIN_UNIFORM_BLOCK_SLOTS = 24;

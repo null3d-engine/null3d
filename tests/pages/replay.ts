@@ -279,8 +279,8 @@ run('replay', async () => {
 		...[8, G.RESOURCE_BUFFER, 15, 0, 0],
 		...[9, G.RESOURCE_TEXTURE, 4, 0, 0],
 		...[10, G.RESOURCE_BUFFER, 16, 0, 0],
-		...[11, G.RESOURCE_TEXTURE, 6, 0, 0],
-		...[12, G.RESOURCE_SAMPLER, 2, 0, 0],
+		...[12, G.RESOURCE_TEXTURE, 6, 0, 0],
+		...[13, G.RESOURCE_SAMPLER, 2, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,

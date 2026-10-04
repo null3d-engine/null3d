@@ -5,12 +5,12 @@
 // Image-based light: the light of the scene's environment, as three.js's MeshStandardMaterial
 // takes it from `scene.environment` (envmap_physical_pars_fragment). The environment is a cube
 // map that the asset tool prefilters, one roughness per mip level, and nine spherical harmonics
-// coefficients of its diffuse light (D-19). The frame's group binds the map at bindings 11 and 12
+// coefficients of its diffuse light (D-19). The frame's group binds the map at bindings 12 and 13
 // of the mesh pipelines: a blank cube while the scene has no environment, which the frame's
 // values then say not to read.
 
-@group(0) @binding(11) var environment_map: texture_cube<f32>;
-@group(0) @binding(12) var environment_sampler: sampler;
+@group(0) @binding(12) var environment_map: texture_cube<f32>;
+@group(0) @binding(13) var environment_sampler: sampler;
 
 /// True while the scene has an environment whose map is on the GPU.
 fn has_environment(env: EnvironmentLight) -> bool {
@@ -40,12 +40,27 @@ fn environment_irradiance(env: EnvironmentLight, normal: vec3f) -> vec3f {
 }
 
 /// The roughness of the GGX filter whose light matches three.js's PMREM best, at each material
-/// roughness from 0 to 1 in steps of 0.05 (D-19). three.js's PMREM blurs less than the GGX
-/// distribution of its own materials, so a port keeps its look only through this table.
-const THREE_ROUGHNESS = array<f32, 21>(
-    0.0, 0.0, 0.07, 0.12, 0.19, 0.23, 0.255, 0.3, 0.345, 0.375, 0.41,
-    0.45, 0.5, 0.54, 0.61, 0.695, 0.775, 0.825, 0.875, 0.93, 0.98,
-);
+/// roughness from 0 to 1 in steps of 0.05 (D-19), four steps to a vector, then a spare. three.js's
+/// PMREM blurs less than the GGX distribution of its own materials, so a port keeps its look only
+/// through this table. It is vectors rather than an array, because Mali drivers refuse the GLSL
+/// of a constant array.
+const THREE_ROUGHNESS_0: vec4f = vec4f(0.0, 0.0, 0.07, 0.12);
+const THREE_ROUGHNESS_1: vec4f = vec4f(0.19, 0.23, 0.255, 0.3);
+const THREE_ROUGHNESS_2: vec4f = vec4f(0.345, 0.375, 0.41, 0.45);
+const THREE_ROUGHNESS_3: vec4f = vec4f(0.5, 0.54, 0.61, 0.695);
+const THREE_ROUGHNESS_4: vec4f = vec4f(0.775, 0.825, 0.875, 0.93);
+const THREE_ROUGHNESS_5: vec4f = vec4f(0.98, 1.0, 1.0, 1.0);
+
+/// Step `k` of the table, from 0 to 20.
+fn three_roughness_step(k: u32) -> f32 {
+    let block = k / 4u;
+    var steps = select(THREE_ROUGHNESS_0, THREE_ROUGHNESS_1, block == 1u);
+    steps = select(steps, THREE_ROUGHNESS_2, block == 2u);
+    steps = select(steps, THREE_ROUGHNESS_3, block == 3u);
+    steps = select(steps, THREE_ROUGHNESS_4, block == 4u);
+    steps = select(steps, THREE_ROUGHNESS_5, block == 5u);
+    return steps[k % 4u];
+}
 
 /// The mip level that holds the light that three.js's standard material reflects at perceptual
 /// `roughness`: the table's filter roughness g, between its steps. Level i of n + 1 holds filter
@@ -54,8 +69,7 @@ const THREE_ROUGHNESS = array<f32, 21>(
 fn roughness_level(roughness: f32, last_level: f32) -> f32 {
     let at = saturate(roughness) * 20.0;
     let low = min(u32(at), 19u);
-    var table = THREE_ROUGHNESS;
-    let g = mix(table[low], table[low + 1u], at - f32(low));
+    let g = mix(three_roughness_step(low), three_roughness_step(low + 1u), at - f32(low));
     return last_level * g * (2.0 - g);
 }
 

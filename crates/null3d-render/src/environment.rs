@@ -20,7 +20,7 @@ use null3d_gpu::drawlist::{
 use crate::frame::RecordError;
 
 /// The frame group's binding of the environment's cube texture; its sampler takes the next one.
-pub(crate) const MAP_BINDING: u32 = 11;
+pub(crate) const MAP_BINDING: u32 = 12;
 /// Words of the frame group's entries for the map and its sampler.
 pub(crate) const ENTRY_WORDS: usize = 10;
 

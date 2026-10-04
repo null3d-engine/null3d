@@ -321,8 +321,8 @@ export class Pipelines {
 				texture: { sampleType: 'depth', viewDimension: '2d-array' },
 			},
 			{ binding: 10, visibility: fragment, buffer: { type: 'uniform' } },
-			{ binding: 11, visibility: fragment, texture: { viewDimension: 'cube' } },
-			{ binding: 12, visibility: fragment, sampler: {} },
+			{ binding: 12, visibility: fragment, texture: { viewDimension: 'cube' } },
+			{ binding: 13, visibility: fragment, sampler: {} },
 		]);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
