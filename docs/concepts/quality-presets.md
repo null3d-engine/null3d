@@ -179,6 +179,7 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Ambient occlusion (`aoScale`) | off | off | half resolution | half resolution | during play | built |
 | Frame-budget governor (`governor`) | on | on | on | on | during play | built |
 | Depth prepass (`depthPrepass`) | no | no | no | no | at the start | built |
+| Morph targets per object on WebGL2 (`morphTargets`) | 8 | 16 | 32 | 64 | at the start | built |
 | Software occlusion culling (WebGL2) (`softwareOcclusion`) | no | yes | yes | yes | during play | built |
 | Anisotropic filtering cap (`maxAnisotropy`) | 2x | 4x | 8x | 16x | during play | built |
 | Texture uploads per frame (`uploadBytesPerFrame`) | 2 MiB | 4 MiB | 8 MiB | 16 MiB | during play | built |

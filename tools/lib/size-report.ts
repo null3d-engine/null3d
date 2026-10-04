@@ -1,7 +1,7 @@
 // The size report's measuring: raw and Brotli sizes, and the parts of the engine's JavaScript in a
 // production build. Vite names each built file after a module and adds a content hash, so the report
 // names each part by the engine module that its file holds, a file loaded on demand by the part
-// that loads it, and a shader file by the device module of the shader build that it holds.
+// that loads it, and a shader file by the module of the shader build that it holds.
 // tools/lib/size-check.ts judges how the sizes changed against a base build. The
 // functions here do no file or process work: tools/build-wasm.ts builds, reads and prints.
 import { brotliCompressSync, constants } from 'node:zlib';
@@ -158,6 +158,26 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 ];
 
 /**
+ * The shader build's modules of features that load on demand, beside the device modules: the
+ * MORPH builds of WebGL2, which a page loads the first time it draws a morphed mesh, and the
+ * texture generators' shaders, one file for each target, which the thread that draws loads with
+ * the first generator. No start counts them, and each has a budget of its own
+ * ([`ON_DEMAND_SHADER_BUDGET_BYTES`]).
+ */
+export const ON_DEMAND_SHADER_PARTS: readonly string[] = [
+	'shaders-glsl-morph.js',
+	'shaders-glsl-tone-map-morph.js',
+	'shaders-glsl-draw-index-morph.js',
+	'shaders-glsl-draw-index-tone-map-morph.js',
+	'shaders-glsl-morph-half.js',
+	'shaders-glsl-tone-map-morph-half.js',
+	'shaders-glsl-draw-index-morph-half.js',
+	'shaders-glsl-draw-index-tone-map-morph-half.js',
+	'shaders-environment-wgsl.js',
+	'shaders-environment-glsl.js',
+];
+
+/**
  * The shader build's device modules, by part name: one file for each target and each value of the
  * permutation bits that a device fixes, named after its module. The part that draws loads its
  * device's one on demand. Each build that draws holds a copy of each file, and the report measures
@@ -176,16 +196,7 @@ export const SHADER_PARTS: readonly string[] = [
 	'shaders-glsl-tone-map-half.js',
 	'shaders-glsl-draw-index-half.js',
 	'shaders-glsl-draw-index-tone-map-half.js',
-];
-
-/**
- * The shader build's modules of shaders that load on a feature's first use, one file for each
- * target, named after its module: the texture generators' shaders, which the thread that draws
- * loads with the first generator. No start counts them, and each has a budget of its own.
- */
-export const FIRST_USE_SHADER_PARTS: readonly string[] = [
-	'shaders-environment-wgsl.js',
-	'shaders-environment-glsl.js',
+	...ON_DEMAND_SHADER_PARTS,
 ];
 
 /**
@@ -204,7 +215,6 @@ export const REPORTED_FILES: readonly string[] = [
 	...CORE_BUILDS.flatMap((build) => CORE_FILES.map((file) => `${build}/${file}`)),
 	...ENGINE_PARTS.map(({ name }) => `js/${name}`),
 	...SHADER_PARTS.map((name) => `js/${name}`),
-	...FIRST_USE_SHADER_PARTS.map((name) => `js/${name}`),
 	...TRANSCODER_FILES.map((file) => `ktx2/${file}`),
 ];
 
@@ -313,7 +323,7 @@ function shaderPartOf(file: BuiltFile): string | undefined {
 export function findEngineParts(
 	files: readonly BuiltFile[],
 	parts: readonly EnginePart[] = ENGINE_PARTS,
-	shaderParts: readonly string[] = [...SHADER_PARTS, ...FIRST_USE_SHADER_PARTS],
+	shaderParts: readonly string[] = SHADER_PARTS,
 ): Map<string, BuiltFile> {
 	const found = new Map<string, BuiltFile>();
 	const holds = (file: BuiltFile, module: string) => file.sources.includes(ENGINE_SOURCE + module);
@@ -342,7 +352,7 @@ export function findEngineParts(
 		if (!part) continue;
 		if (!shaderParts.includes(part))
 			throw new Error(
-				`${file.file} holds the shader build's module of ${part}, which the size report does not name: add it to SHADER_PARTS or FIRST_USE_SHADER_PARTS in tools/lib/size-report.ts`,
+				`${file.file} holds the shader build's module of ${part}, which the size report does not name: add it to SHADER_PARTS in tools/lib/size-report.ts`,
 			);
 		claimed.add(file);
 		const copy = shaders.get(part);
@@ -389,7 +399,7 @@ export function downloadSizes(
 ): { mode: string; size: SizeEntry }[] {
 	return downloads.map(({ mode, parts, shaders }) => {
 		const largest = [...sizes]
-			.filter(([part]) => part.startsWith(shaders) && !FIRST_USE_SHADER_PARTS.includes(part))
+			.filter(([part]) => part.startsWith(shaders) && !ON_DEMAND_SHADER_PARTS.includes(part))
 			.map(([, size]) => size)
 			.sort((a, b) => b.brotli - a.brotli)
 			.slice(0, 1);
@@ -409,19 +419,24 @@ export const START_BUDGET_BYTES = 140 * 1024;
 /** Brotli budget for each part that loads after the start. */
 export const LATER_BUDGET_BYTES = 16 * 1024;
 
-/** Brotli budget for each file of shaders that loads on a feature's first use. */
-export const FIRST_USE_SHADER_BUDGET_BYTES = 24 * 1024;
+/**
+ * Brotli budget for each shader module of a feature that loads on demand. Such a module is shader
+ * data, as the device modules are, so it has a limit of its own: the size of a device module that
+ * a page loads at its start. The owner decided so on 4 October 2026 (decision records D-14 and
+ * D-51).
+ */
+export const ON_DEMAND_SHADER_BUDGET_BYTES = 24 * 1024;
 
 /**
  * A problem for each thread mode whose start passes the start budget, for each part that loads
- * after the start and passes its own budget, and for each file of shaders that loads on first use
- * and passes its own.
+ * after the start and passes its own budget, and for each shader module of a feature that loads on
+ * demand and passes its budget.
  */
 export function budgetProblems(
 	sizes: ReadonlyMap<string, SizeEntry>,
 	downloads: readonly Download[] = DOWNLOADS,
 	later: readonly EnginePart[] = LATER_PARTS,
-	firstUseShaders: readonly string[] = FIRST_USE_SHADER_PARTS,
+	onDemand: readonly string[] = ON_DEMAND_SHADER_PARTS,
 ): string[] {
 	const kb = (bytes: number) => `${bytes / 1024} KB`;
 	return [
@@ -439,11 +454,11 @@ export function budgetProblems(
 					]
 				: [];
 		}),
-		...firstUseShaders.flatMap((name) => {
+		...onDemand.flatMap((name) => {
 			const brotli = sizes.get(name)?.brotli ?? 0;
-			return brotli > FIRST_USE_SHADER_BUDGET_BYTES
+			return brotli > ON_DEMAND_SHADER_BUDGET_BYTES
 				? [
-						`js/${name}, shaders that load on first use, is ${brotli.toLocaleString('en-US')} bytes after Brotli, over its ${kb(FIRST_USE_SHADER_BUDGET_BYTES)} budget`,
+						`js/${name}, the shader builds of a feature that loads on demand, is ${brotli.toLocaleString('en-US')} bytes after Brotli, over its ${kb(ON_DEMAND_SHADER_BUDGET_BYTES)} budget`,
 					]
 				: [];
 		}),

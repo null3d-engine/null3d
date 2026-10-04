@@ -27,7 +27,9 @@ import { GRADING_IMAGE } from '../../bench/scenes/grading.ts';
 import { LIGHTS_IMAGE } from '../../bench/scenes/lights.ts';
 import { LINE_IMAGE } from '../../bench/scenes/lines.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
+import { MORPH_IMAGE } from '../../bench/scenes/morph.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
+import { OUTLINE_IMAGE } from '../../bench/scenes/outline.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { SKINNING_HOLD, SKINNING_IMAGE } from '../../bench/scenes/skinning.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
@@ -238,6 +240,37 @@ function gradingTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the outline tests: a sphere half behind a wall and a box (bench/scenes/outline.ts). */
+const OUTLINE_SKETCH = 'tests/pages/sketches/outline-sketch.ts';
+
+/**
+ * Outlines on every tier: the default white line around the parts that nothing hides, and a wider
+ * orange line with a blue line around hidden parts, around a sphere half behind a wall and a box
+ * in the open. At half the render scale, the mask draws into the corner of its target, and the
+ * line keeps its width on the canvas. Compatibility mode keeps the 8-bit path with MSAA. The
+ * page's switch that turns HDR off puts the other tiers on that path too. The parity test compares
+ * both outlines with the same line drawn from the mask of three.js's OutlinePass.
+ */
+function outlineTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${OUTLINE_SKETCH}${query}`,
+		hold: 0,
+		size: [OUTLINE_IMAGE.width, OUTLINE_IMAGE.height],
+	});
+	return [
+		test('outline-plain', '?outline=plain'),
+		test('outline-hidden', '?outline=hidden'),
+		test('outline-scale-50', '?outline=hidden&scale=0.5'),
+		{
+			...test('outline-8-bit', '?outline=hidden'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			expect: { hdr: false },
+		},
+	];
+}
+
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
 const EDGES_SKETCH = 'tests/pages/sketches/edges-sketch.ts';
 
@@ -424,16 +457,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	})),
 	// glTF sample models that assets.loadGltf loads and scene.instantiate copies, one for each feature
 	// of the loader: materials with their maps, texture transforms, unlit and emissive strength,
-	// lights, instancing, KTX2 textures, alpha modes, vertex colors, the second texture coordinates
-	// and meshopt compression. The parity test compares each with three.js's GLTFLoader. A model
-	// compressed with meshopt must draw as its uncompressed scene does.
+	// lights, instancing, KTX2 textures, alpha modes, vertex colors, the second texture coordinates,
+	// meshopt compression and morph targets. The parity test compares each with three.js's
+	// GLTFLoader. A model compressed with meshopt must draw as its uncompressed scene does. A model
+	// with a clip holds the clip's time.
 	...MODEL_NAMES.map((model): ImageTest => {
-		const { uncompressed } = MODEL_SCENES[model] as ModelScene;
+		const { uncompressed, clip } = MODEL_SCENES[model] as ModelScene;
 		return {
 			name: `gltf-${model}`,
 			sketch: `tests/pages/sketches/gltf-sketch.ts?model=${model}`,
 			size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
-			hold: 0,
+			hold: clip?.time ?? 0,
 			...(uncompressed ? { reference: `gltf-${uncompressed}` } : {}),
 		};
 	}),
@@ -571,6 +605,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...antialiasTests(),
 	...bloomTests(),
 	...aoTests(),
+	...outlineTests(),
 	...occlusionTests(),
 	...gradingTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
@@ -625,7 +660,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Debug drawing: every shape of ctx.debug over a small scene, the axes of a spinning box and the
 	// frustum of a second camera. The single-threaded mode runs the sketch on the page, which draws
 	// the same lines. The S24+'s GPU puts some lines one pixel off, in 1.6% of the pixels, so it
-	// keeps its own references, which the test 1,000 km out compares with too.
+	// keeps its own references, which the S24 shares and the test 1,000 km out compares with too.
 	{
 		name: 'debug',
 		sketch: 'tests/pages/sketches/debug-sketch.ts',
@@ -634,7 +669,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		modes: ['pipelined', 'single-threaded'],
 		switches: [FULL_PRECISION],
 		tolerance: { threshold: 0, maxDiffRatio: 0 },
-		devices: ['sm-s926b'],
+		devices: ['sm-s926b', 'sm-s921b'],
 	},
 	// The same scene about 1,000 km out, at the center of a cell: the lines keep 64-bit positions,
 	// which the engine draws relative to the camera, so the frame must match. In 32-bit floats from
@@ -796,6 +831,74 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			reference: variant ? `skinning-${variant}` : 'skinning',
 		}),
 	),
+	// The middle character outlined: the outline's mask skins it in its pose, from the skinning
+	// pass's vertices or in the vertex shader, and on WebGL2 always in the vertex shader. Each tier
+	// draws the scene in its own way, so each has its own image.
+	...(['', '-vertex'] as const).map(
+		(way): ImageTest => ({
+			name: `skinning-outline${way}`,
+			sketch: 'tests/pages/sketches/skinning-sketch.ts?outline',
+			hold: SKINNING_HOLD,
+			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+			...(way
+				? {
+						tiers: ['webgpu', 'compat'],
+						switches: ['skinning=vertex'],
+						reference: 'skinning-outline',
+					}
+				: {}),
+		}),
+	),
+	// Morph targets: three spheres of one mesh, each at its own weights of three targets, one of
+	// them below 0. The parity test compares the image with three.js's morphTargetInfluences. WebGPU
+	// morphs them in the skinning pass, and WebGL2 in the vertex shader of each pass. ?shadows
+	// stands them on a ground under a sun whose shadows must follow each shape. Every tier draws the
+	// same image, and weights set by the targets' names draw it too. With the ground, WebGL2 draws
+	// the outlines' edge pixels a little differently: 0.113% of the pixels on the Mac's GPU.
+	...(['', 'shadows'] as const).map(
+		(variant): ImageTest => ({
+			name: variant ? `morph-${variant}` : 'morph',
+			sketch: `tests/pages/sketches/morph-sketch.ts${variant ? `?${variant}` : ''}`,
+			hold: 0,
+			size: [MORPH_IMAGE.width, MORPH_IMAGE.height],
+			sameOnEveryTier: true,
+			...(variant && { tolerance: { maxDiffRatio: 0.002 } }),
+		}),
+	),
+	// The third sphere from close by, where a step of the half floats that hold the deltas would
+	// show. The parity test compares it with three.js's deltas in 32-bit floats.
+	{
+		name: 'morph-closeup',
+		sketch: 'tests/pages/sketches/morph-sketch.ts?closeup',
+		hold: 0,
+		size: [MORPH_IMAGE.width, MORPH_IMAGE.height],
+		sameOnEveryTier: true,
+	},
+	{
+		name: 'morph-names',
+		sketch: 'tests/pages/sketches/morph-sketch.ts?names',
+		hold: 0,
+		size: [MORPH_IMAGE.width, MORPH_IMAGE.height],
+		reference: 'morph',
+	},
+	// WebGL2 keeps a preset's count of each object's weights, the largest. With two kept, the third
+	// sphere draws without its smallest weight, as the scene with that weight set to 0 draws it.
+	{
+		name: 'morph-capped',
+		sketch: 'tests/pages/sketches/morph-sketch.ts?capped',
+		hold: 0,
+		size: [MORPH_IMAGE.width, MORPH_IMAGE.height],
+		tiers: ['webgl2'],
+	},
+	{
+		name: 'morph-cap',
+		sketch: 'tests/pages/sketches/morph-sketch.ts',
+		hold: 0,
+		size: [MORPH_IMAGE.width, MORPH_IMAGE.height],
+		tiers: ['webgl2'],
+		switches: ['morphTargets=2'],
+		reference: 'morph-capped',
+	},
 	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the
 	// slab's front corner and the far plane cutting the bar at the back. The parity test compares
 	// the image with three.js's OrthographicCamera.

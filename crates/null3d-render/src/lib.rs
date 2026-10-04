@@ -31,6 +31,8 @@
 //! - `materials`: the material table
 //! - `meshes`: mesh storage for both GPU paths
 //! - `occlusion`: the camera's blockers for software occlusion culling on the WebGL2 path
+//! - `outline`: a crisp line around the objects that the sketch outlines: a mask of the outlined
+//!   objects, from which the final pass draws the line
 //! - `output`: the output transform: the scene color's target, exposure and tone mapping
 //! - `parallel_record`: draw lists recorded in chunks on the job workers, joined in chunk order
 //! - `pipelines`: the render pipeline cache, by the key of everything that sets a pipeline apart
@@ -65,7 +67,9 @@ pub mod graph;
 pub mod light_grid;
 pub mod materials;
 pub mod meshes;
+pub mod morph;
 pub mod occlusion;
+pub mod outline;
 pub mod output;
 pub mod parallel_record;
 pub mod pipelines;

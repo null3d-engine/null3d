@@ -725,8 +725,8 @@
       "three": "morphAttributes / morphTargetInfluences / morphTargetDictionary",
       "status": "changed",
       "since": "0.2",
-      "target": "glTF morph targets load automatically; obj.setMorphWeight(indexOrName, weight)",
-      "notes": "",
+      "target": "mesh.setMorphWeight(indexOrName, weight) and mesh.getMorphWeight(indexOrName); geometry.fromArrays({ ..., morphTargets: { positions, normals, names } })",
+      "notes": "glTF morph targets and their default weights load with the model, and its clips animate the weights. Targets are deltas, as with morphTargetsRelative = true. mesh.mesh.morphTargetNames lists the names in target order, in place of morphTargetDictionary. A clip blends its weights with the object's own, as AnimationMixer does. On WebGL2 each object draws only its largest weights, by the morphTargets quality setting: 8 on Low up to 64 on Ultra.",
       "docs": "api/animation",
       "detect": "morphAttributes|morphTargetInfluences|morphTargetDictionary"
     },
@@ -1122,7 +1122,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const prefab = await assets.loadGltf(url); scene.instantiate(prefab)",
-      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures and meshopt compression need no decoder setup. Clips play through the copy's animator: scene.instantiate(prefab).animator().play(name), with the names in prefab.clips. Joints are not objects. Morph targets load but do not draw yet.",
+      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures and meshopt compression need no decoder setup. Clips play through the copy's animator: scene.instantiate(prefab).animator().play(name), with the names in prefab.clips. Joints are not objects. Morph targets draw, and clips animate their weights.",
       "docs": "api/assets",
       "detect": "\\bGLTFLoader\\b"
     },
@@ -1438,10 +1438,10 @@
       "id": "outline",
       "category": "Post-processing",
       "three": "OutlinePass / OutlineEffect",
-      "status": "direct",
+      "status": "changed",
       "since": "0.2",
-      "target": "post.set({ outline: { color, thickness } }) and obj.setOutlined(true)",
-      "notes": "",
+      "target": "post.set({ outline: { color, hiddenColor, width } }) and mesh.setOutlined(true)",
+      "notes": "selectedObjects becomes setOutlined(true) on each mesh, or on a model's copy from scene.instantiate. null3D draws a crisp line of one width in CSS pixels, with no blur. visibleEdgeColor and hiddenEdgeColor become color and hiddenColor. OutlinePass draws its edge at half size, so edgeThickness t becomes width of about 2t. OutlinePass draws a dark brown line around hidden parts by default; null3D draws none until hiddenColor is set, so set hiddenColor: [0.1, 0.04, 0.02], its linear default, to keep it. pmndrs OutlineEffect: xRay: false becomes hiddenColor: false, and its edge is one texel of its mask at resolutionScale, so width is about 1 / resolutionScale. edgeStrength has no setting, as the line is opaque. edgeGlow, pulsePeriod, the pattern texture and pmndrs blur and pulseSpeed have no setting: the line stays crisp. To pulse it, change its color or width every frame. One outline style covers every outlined object.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bOutline(Pass|Effect)\\b"
     },

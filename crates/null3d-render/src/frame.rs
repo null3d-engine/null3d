@@ -18,6 +18,7 @@ use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
 use null3d_core::lights::{LightShadow, LightTable, LightView, SunShadow, VisibleLight};
+use null3d_core::morph::MorphWeights;
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{
@@ -38,6 +39,7 @@ use crate::materials::{
     MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, blend_state, feature,
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
+use crate::outline::Outline;
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
@@ -206,6 +208,8 @@ pub struct FrameInput<'a> {
     /// Skeletons, clips and animated instances, with the skinning matrices of the frame's
     /// animation step, once the scene has any.
     pub animations: Option<&'a Animations>,
+    /// The morph weights of morphed objects, which the sketch writes.
+    pub morphs: &'a MorphWeights,
 }
 
 impl FrameInput<'_> {
@@ -404,6 +408,12 @@ impl UploadArena {
         Ok((address(&self.bytes[start..]), padded as u32))
     }
 
+    /// The bytes that the frame copied so far.
+    #[cfg(test)]
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
     /// Adds `len` zero bytes, padded to four bytes, for the caller to fill in place, and returns
     /// their address and the bytes. Like [`UploadArena::push`], it never grows the arena.
     pub(crate) fn push_zeroed(&mut self, len: usize) -> Result<(u32, &mut [u8]), RecordError> {
@@ -545,6 +555,8 @@ pub struct SceneSettings {
     /// How many times fewer taps than three.js's each of bloom's blurs reads, which the quality
     /// settings raise.
     bloom_divisor: u32,
+    /// The most morph weights of each object that a builder whose vertex shaders morph keeps.
+    morph_cap: u32,
     /// Ambient occlusion's settings while the sketch turns it on.
     ao: Option<Ao>,
     /// The size of ambient occlusion's targets, as a share of the render size each way, which the
@@ -556,6 +568,8 @@ pub struct SceneSettings {
     vignette: Option<Vignette>,
     /// The scene's environment while the sketch sets one.
     environment: Option<Environment>,
+    /// The outline's settings while the sketch turns it on.
+    outline: Option<Outline>,
     /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
     /// the bits of a `u32`, as the frame uniform holds them.
     clock: [f32; 4],
@@ -602,11 +616,13 @@ impl SceneSettings {
             output: Output::default(),
             bloom: None,
             bloom_divisor: 1,
+            morph_cap: u32::MAX,
             ao: None,
             ao_scale: ao::MAX_SCALE,
             lut: None,
             vignette: None,
             environment: None,
+            outline: None,
             clock: [0.0; 4],
             render_scaling: false,
             pixel_ratio: 1.0,
@@ -706,6 +722,17 @@ impl SceneSettings {
         self.bloom_divisor = divisor.clamp(1, bloom::MAX_SAMPLE_DIVISOR);
     }
 
+    /// The most morph weights of each object that a builder whose vertex shaders morph keeps.
+    pub fn morph_cap(&self) -> u32 {
+        self.morph_cap
+    }
+
+    /// Keeps the `cap` largest morph weights of each object where vertex shaders morph, from the
+    /// next recorded frame on, and drops the others' targets (see [`crate::morph::cap_weights`]).
+    pub fn set_morph_cap(&mut self, cap: u32) {
+        self.morph_cap = cap;
+    }
+
     /// Ambient occlusion's settings while it draws: while the sketch turns it on, its scale is
     /// above 0, and no debug view draws.
     pub fn ao(&self) -> Option<Ao> {
@@ -770,6 +797,21 @@ impl SceneSettings {
             Some((environment, (map, levels))) => (map, environment.uniform(levels)),
             None => (blank, EnvironmentUniform::default()),
         }
+    }
+
+    /// The outline's settings while it is on, with its width in pixels of the canvas, and `None`
+    /// while it is off or a debug view draws, whose colors reach the canvas as its shader writes
+    /// them.
+    pub fn outline(&self) -> Option<Outline> {
+        self.outline
+            .filter(|_| !self.debug_view.is_debug())
+            .map(|outline| outline.on_canvas(self.pixel_ratio))
+    }
+
+    /// Turns outlines on with their settings, or off with `None`, from the next recorded frame on.
+    /// They draw around the objects whose outlined flag is set.
+    pub fn set_outline(&mut self, outline: Option<Outline>) {
+        self.outline = outline;
     }
 
     /// True while the sketch sets a color grading table or the vignette, outside a debug view,
@@ -1471,12 +1513,10 @@ impl MeshBuffers {
                     ..PageBuffers::default()
                 };
                 let copied = buffer_usage::COPY_DST;
-                // The skinning pass reads skinned meshes' vertices as storage.
-                let read = if crate::skinning::has_joints(page.format) {
-                    buffer_usage::STORAGE
-                } else {
-                    0
-                };
+                // The skinning pass reads skinned and morphed meshes' vertices as storage.
+                let posed = crate::skinning::has_joints(page.format)
+                    || crate::morph::has_targets(page.format);
+                let read = if posed { buffer_usage::STORAGE } else { 0 };
                 list.push(
                     Op::CreateBuffer,
                     &[

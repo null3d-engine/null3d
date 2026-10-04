@@ -5,12 +5,12 @@ import {
 	DOWNLOADS,
 	downloadSizes,
 	ENGINE_SOURCE,
-	FIRST_USE_SHADER_BUDGET_BYTES,
 	findEngineParts,
 	findTranscoderFiles,
 	LATER_BUDGET_BYTES,
 	LATER_PARTS,
 	measure,
+	ON_DEMAND_SHADER_BUDGET_BYTES,
 	REPORTED_FILES,
 	START_BUDGET_BYTES,
 } from './size-report';
@@ -211,14 +211,20 @@ describe('budgetProblems', () => {
 		);
 	});
 
-	it('names a file of shaders that loads on first use over its own budget', () => {
-		const shaders = new Map([
-			['shaders-environment-wgsl.js', { raw: 0, brotli: FIRST_USE_SHADER_BUDGET_BYTES }],
-			['shaders-environment-glsl.js', { raw: 0, brotli: FIRST_USE_SHADER_BUDGET_BYTES + 1 }],
+	it('holds shader modules of on-demand features to their own budget, which no start counts', () => {
+		const morph = 'shaders-glsl-morph.js';
+		const within = new Map([
+			...sizes(START_BUDGET_BYTES, 0),
+			[morph, { raw: 0, brotli: ON_DEMAND_SHADER_BUDGET_BYTES }],
 		]);
-		expect(FIRST_USE_SHADER_BUDGET_BYTES).toBe(24 * 1024);
-		expect(budgetProblems(shaders, [], [])).toEqual([
-			'js/shaders-environment-glsl.js, shaders that load on first use, is 24,577 bytes after Brotli, over its 24 KB budget',
+		expect(budgetProblems(within, downloads, later, [morph])).toEqual([]);
+		expect(downloadSizes(within, downloads)[0]?.size.brotli).toBe(START_BUDGET_BYTES);
+		const over = new Map([
+			...within,
+			[morph, { raw: 0, brotli: ON_DEMAND_SHADER_BUDGET_BYTES + 1 }],
+		]);
+		expect(budgetProblems(over, downloads, later, [morph])).toEqual([
+			'js/shaders-glsl-morph.js, the shader builds of a feature that loads on demand, is 24,577 bytes after Brotli, over its 24 KB budget',
 		]);
 	});
 
