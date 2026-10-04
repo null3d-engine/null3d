@@ -12,8 +12,8 @@
 // - after-destroy: a sketch on the page's thread calls the engine after destroy(), and again once
 //   a second engine runs: both calls fail with E1420.
 import { createEngine, type Engine, type EngineError } from '@null3d/engine';
-import type { FailuresSketch } from './sketches/failures-sketch';
 import { liveWorkers, progress, run } from './lib/result';
+import type { FailuresSketch } from './sketches/failures-sketch';
 
 const params = new URLSearchParams(location.search);
 const sketch = new URL('./sketches/failures-sketch.ts', import.meta.url);
