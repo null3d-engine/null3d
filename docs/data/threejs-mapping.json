@@ -186,9 +186,9 @@
       "three": "logarithmicDepthBuffer / reverseDepthBuffer",
       "status": "direct",
       "since": "0.1",
-      "target": "Nothing to do; createEngine({ largeWorld: true }) for planet-scale scenes (0.2)",
-      "notes": "The engine draws reversed depth in a 32-bit float buffer. On WebGL2 without EXT_clip_control, reversed depth keeps GL's range, which is less precise. engine.capabilities.depth says which depth the device draws. The engine also renders relative to the camera through per-cell offsets.",
-      "docs": "concepts/backends",
+      "target": "Nothing to do; createEngine({ largeWorld: true }) and batch origins for planet-scale scenes (0.2)",
+      "notes": "The engine draws reversed depth in a 32-bit float buffer. On WebGL2 without EXT_clip_control, reversed depth keeps GL's range, which is less precise. engine.capabilities.depth says which depth the device draws. The engine also renders relative to the camera through per-cell offsets. With largeWorld: true, positions that you set keep their full precision at any distance, and createInstances takes an origin that its rows are relative to.",
+      "docs": "concepts/large-worlds",
       "detect": "logarithmicDepthBuffer|reverseDepthBuffer"
     },
     {

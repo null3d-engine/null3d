@@ -19,6 +19,7 @@ import type {
 	Materials,
 	MeshGeometry,
 } from './resources';
+import type { Vec3 } from './scene';
 import type { Texture } from './textures';
 
 /**
@@ -75,6 +76,12 @@ export interface SpriteOptions
 	dynamic?: boolean;
 	/** The layers every sprite is on, as a 32-bit mask. The default, 1, is layer 0. */
 	layers?: number;
+	/**
+	 * The point that every sprite's position is relative to, as an instance batch's `origin`. The
+	 * default is (0, 0, 0). Sprites near it keep the precision of 32-bit floats at any distance from
+	 * the world's origin.
+	 */
+	origin?: Vec3;
 	/** How the sprites use their alpha. The default is `blend`, as three.js's sprites blend. */
 	alphaMode?: MaterialFeatures['alphaMode'];
 }

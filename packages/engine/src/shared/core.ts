@@ -41,6 +41,7 @@ export interface CoreGlue extends CoreErrors {
 		cellCulling: boolean,
 		depthPrepass: boolean,
 		vertexSkinning: boolean,
+		largeWorld: boolean,
 	): number;
 	jobWorkerLoop(index: number): void;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
@@ -156,6 +157,8 @@ export interface CoreGlue extends CoreErrors {
 		screenSize: boolean,
 	): number;
 	destroyBatch(batch: number, frame: number): number;
+	/** Places a batch's origin, which its rows are relative to, and marks every row for update. */
+	setBatchOrigin(batch: number, x: number, y: number, z: number): number;
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
 	/** Sets the layer mask of every row of a batch, as an unsigned 32-bit number. */
