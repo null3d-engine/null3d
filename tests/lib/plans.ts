@@ -189,6 +189,8 @@ export type Check =
 	| { kind: 'skinning'; tier: SkinningGpu; characters: number; cascades: number }
 	/** The bloom cost page: bloom off and on in turns, at one render scale. */
 	| { kind: 'bloom'; tier: Tier; scale: number }
+	/** The occlusion page: frames culled against unculled, then GPU occlusion off and on in turns. */
+	| { kind: 'occlusion' }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
 	| { kind: 'animation'; characters: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
@@ -800,6 +802,28 @@ export function bloomPlan(): PlanItem<Check>[] {
 	);
 }
 
+/** How long the occlusion page may take: twelve frames read back, then six engines of 4 s each. */
+const OCCLUSION_TIMEOUT_SECONDS = 120;
+
+/**
+ * What GPU occlusion culling saves and costs on WebGPU: the occlusion scene's frames with it and
+ * without it must match, then the scene fills the window and the page times its frames with
+ * occlusion culling off and on in turns. D-22 records the results.
+ */
+export function occlusionPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(
+			'occlusion-webgpu',
+			'occlusion',
+			{ kind: 'occlusion' },
+			{
+				switches: ['gpu=webgpu', 'seconds=4', 'rounds=3'],
+				timeoutSeconds: OCCLUSION_TIMEOUT_SECONDS,
+			},
+		),
+	];
+}
+
 /** The crowds that the animation plan times: a first draft of S5's crowd, then the full crowd. */
 export const ANIMATION_CHARACTERS = [100, 500] as const;
 
@@ -1116,6 +1140,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	skinning: () => skinningPlan('webgl2'),
 	'skinning-webgpu': () => skinningPlan('webgpu'),
 	bloom: bloomPlan,
+	occlusion: occlusionPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
 	soak: soakPlan,
@@ -1592,6 +1617,20 @@ export function judge(
 			return [
 				...(bloom.failures ?? []).map((code) => `the engine failed with ${code}`),
 				...(bloom.on?.intervalMs ? [] : ['the page measured no frame with bloom on']),
+			];
+		}
+		case 'occlusion': {
+			const occlusion = result as ItemResult & {
+				failures?: string[];
+				differingPixels?: number[];
+				cost?: { on?: { intervalMs?: number } };
+			};
+			return [
+				...(occlusion.failures ?? []).map((code) => `the engine failed with ${code}`),
+				...(occlusion.differingPixels ?? []).flatMap((pixels, view) =>
+					pixels > 0 ? [`view ${view} differs from culling off in ${pixels} pixels`] : [],
+				),
+				...(occlusion.cost?.on?.intervalMs ? [] : ['the page measured no frame with culling on']),
 			];
 		}
 		case 'animation':

@@ -20,6 +20,7 @@ describe('parseSwitches', () => {
 			half: undefined,
 			cells: true,
 			prepass: undefined,
+			occlusion: undefined,
 			vertexSkinning: false,
 			fps: undefined,
 			queue: undefined,
@@ -41,6 +42,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?prepass=on').prepass).toBe(true);
 		expect(parseSwitches('?prepass=off').prepass).toBe(false);
 		expect(parseSwitches('?prepass=yes').prepass).toBeUndefined();
+	});
+
+	it('turns GPU occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {
+		expect(parseSwitches('?occlusion=on').occlusion).toBe(true);
+		expect(parseSwitches('?occlusion=off').occlusion).toBe(false);
+		expect(parseSwitches('').occlusion).toBeUndefined();
 	});
 
 	it('reads the compressed texture families that ?compression= keeps, and none for ?compression=none', () => {

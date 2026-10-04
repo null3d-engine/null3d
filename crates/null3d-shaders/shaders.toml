@@ -165,7 +165,8 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["SKIN", "PREPASS", "CASTER_OFFSET"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "PREPASS", "CASTER_OFFSET", "SKIN"], targets = ["glsl"] }
 
-# GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
+# GPU culling into buckets for indirect draws; its compute entry point is `main`, and two-phase
+# occlusion culling's phases are `early` and `late`. WebGPU only.
 [shaders.cull]
 file = "cull.wgsl"
 by_device = true
@@ -247,6 +248,14 @@ variants.multi_draw = { defs = ["INSTANCED", "DRAW_INDEX"], targets = ["glsl"] }
 file = "skin.wgsl"
 by_device = true
 variants.webgpu = { targets = ["wgsl"] }
+
+# The depth pyramid of two-phase occlusion culling, one level per dispatch; its compute entry
+# point is `main`. The DEPTH_MULTISAMPLED build reads a multisampled depth target. WebGPU only; it
+# loads by device, with the culling shader.
+[shaders.pyramid]
+file = "pyramid.wgsl"
+by_device = true
+variants.webgpu = { permutations = ["DEPTH_MULTISAMPLED"], targets = ["wgsl"] }
 
 # Light clustering on the GPU: three compute entry points, `count_lights`, `place_lights` and
 # `write_lights`, that list each cluster's point and spot lights in the light grid. WebGPU only;

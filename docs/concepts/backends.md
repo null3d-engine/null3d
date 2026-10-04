@@ -45,6 +45,7 @@ Every feature works on both paths, or its page describes its WebGL2 fallback. Th
 | Sorting see-through objects back to front | The job workers | The job workers |
 | [Skinning](../api/animation.md#skinned-meshes) | A compute pass, once per frame for every pass that draws the mesh | The vertex shader of each pass that draws the mesh |
 | The [depth prepass](quality-presets.md#the-depth-prepass) | Drawn when `depthPrepass` is on | Never drawn |
+| [Occlusion culling](culling.md#gpu-occlusion-culling-on-webgpu) | On the GPU, in two phases, when `gpuOcclusion` is on | Not on the GPU |
 | GPU time in `engine.measure` | Where the device has timestamp queries | Not measured |
 
 Shadows, skinned meshes, debug views and custom materials draw the same on both paths. A debug view's wireframe draws an edge list of each mesh, because neither API fills triangles as lines.
@@ -157,7 +158,7 @@ On WebGL2, uploads read straight from the engine's shared memory. A browser that
 
 On WebGL2, the engine compiles shader programs in the background where the browser has the `KHR_parallel_shader_compile` extension. The switch `?compile=wait` makes it wait for each compile at the program's first draw instead, as a browser without the extension does.
 
-The switch `?half=on` makes the scene shaders do their color math at half precision, where the device can. It is off by default, and serves measurements. The switch `?hdr=off` makes the engine draw the 8-bit color path on a device that draws HDR color, so one device can test both. The switch `?prepass=on` or `?prepass=off` turns the depth prepass on or off.
+The switch `?half=on` makes the scene shaders do their color math at half precision, where the device can. It is off by default, and serves measurements. The switch `?hdr=off` makes the engine draw the 8-bit color path on a device that draws HDR color, so one device can test both. The switch `?prepass=on` or `?prepass=off` turns the depth prepass on or off, and `?occlusion=on` or `?occlusion=off` turns GPU occlusion culling on or off.
 
 The switch `?depth=` forces a WebGL2 depth mode: `reversed`, `reversed-gl` or `standard`, which draws depth as three.js's WebGL renderer does by default. A browser without `EXT_clip_control` cannot draw `reversed`, so it draws its own mode instead. Shadow maps hold the same depth values as on WebGPU in `reversed` and `reversed-gl`. In `standard` they would hold them the other way around, so WebGL2 draws no shadows in that mode.
 

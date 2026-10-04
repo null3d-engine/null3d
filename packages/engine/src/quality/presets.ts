@@ -169,6 +169,14 @@ export const QUALITY_SETTINGS = {
 		changes: 'start',
 		values: 'flag',
 	},
+	// Two-phase occlusion culling on WebGPU: objects that others hide do not draw. It costs a
+	// depth-only draw of last frame's visible objects, a depth pyramid and a second culling dispatch
+	// each frame (D-40, D-22). WebGL2 never runs it.
+	gpuOcclusion: {
+		presets: [false, false, true, true],
+		changes: 'start',
+		values: 'flag',
+	},
 	// The shared memory's maximum, from 256 MiB to the 4 GiB that the threaded core declares. Every
 	// preset keeps the loader's default (D-04). A phone filled the whole 4 GiB in one tab; the
 	// tablet's limit is not measured yet, and may lower the lighter presets' values (D-12).
@@ -301,6 +309,15 @@ export interface QualitySettings {
 	 * always false on WebGL2, which draws without the prepass.
 	 */
 	depthPrepass: boolean;
+	/**
+	 * True when the GPU skips the opaque objects that others hide. Each camera view first draws the
+	 * objects that it showed in the last frame, then tests every other object in view against the
+	 * depth they left, and draws those that show. It saves GPU time where walls and large objects
+	 * hide many others, and costs a little where little hides. The page's `gpuOcclusion` option of
+	 * `createEngine` sets it, and `set` does not take it. It is always false on WebGL2, and when
+	 * the depth prepass is on.
+	 */
+	gpuOcclusion: boolean;
 }
 
 /** The names of the settings in the preset table that change as `changes` says. */

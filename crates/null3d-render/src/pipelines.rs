@@ -20,7 +20,7 @@
 //! depth. A pair whose depth the depth template cannot draw the same way stays out of the prepass
 //! and shades as it would without it (see [`DrawKey::prepass`]).
 
-use null3d_gpu::drawlist::{DrawList, Op, permutation, state_flags, template};
+use null3d_gpu::drawlist::{DrawList, Op, format, permutation, state_flags, template};
 
 use crate::frame::RecordError;
 
@@ -122,6 +122,27 @@ impl PassTargets {
             ..self
         }
     }
+
+    /// The depth target alone, with its samples, for a pass that draws depth and has no color
+    /// target, such as the occluders' pass of occlusion culling.
+    pub(crate) const fn without_color(self) -> PassTargets {
+        PassTargets {
+            color_format: format::NONE,
+            ..self.depth_only()
+        }
+    }
+}
+
+/// The pass that draws opaque pairs' depth before the pass that shades them, if any.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DepthPass {
+    /// No such pass.
+    None,
+    /// The depth prepass, in the render pass that then shades only the nearest surface.
+    Prepass,
+    /// The occluders' pass of occlusion culling: a render pass of its own with no color target,
+    /// whose depth the depth pyramid reads. The pairs then shade as they would without it.
+    Occluders,
 }
 
 /// What a mesh and material pair decides about the pipeline that draws it: the template of the
@@ -230,13 +251,18 @@ impl PipelineCache {
     }
 
     /// The ids of the pipelines that draw an opaque pair with `key` into a scene pass's `targets`:
-    /// the one that shades it, and with the depth prepass (`prepass`), the one that draws its depth
-    /// first, or 0 for a pair that stays out of the prepass.
-    pub fn opaque(&mut self, key: DrawKey, targets: PassTargets, prepass: bool) -> (u32, u32) {
-        match key.prepass() {
-            Some(depth) if prepass => (
+    /// the one that shades it, and with a `depth` pass, the one that draws its depth first, or 0
+    /// for a pair that stays out of it. After the prepass the pair shades only at the depth that the
+    /// prepass found; the occluders' pass leaves its shading as it is.
+    pub fn opaque(&mut self, key: DrawKey, targets: PassTargets, depth: DepthPass) -> (u32, u32) {
+        match (key.prepass(), depth) {
+            (Some(depth), DepthPass::Prepass) => (
                 self.id(key.after_prepass().in_pass(targets)),
                 self.id(depth.in_pass(targets.depth_only())),
+            ),
+            (Some(depth), DepthPass::Occluders) => (
+                self.id(key.in_pass(targets)),
+                self.id(depth.in_pass(targets.without_color())),
             ),
             _ => (self.id(key.in_pass(targets)), 0),
         }
@@ -513,8 +539,8 @@ mod tests {
             ..TARGETS
         };
         let mut cache = PipelineCache::default();
-        assert_eq!(cache.opaque(lit(0), targets, false), (1, 0));
-        let (shading, depth) = cache.opaque(lit(0), targets, true);
+        assert_eq!(cache.opaque(lit(0), targets, DepthPass::None), (1, 0));
+        let (shading, depth) = cache.opaque(lit(0), targets, DepthPass::Prepass);
         assert_eq!((shading, depth), (2, 3));
         let keys = cache.keys();
         assert_eq!(keys[1], lit(0).after_prepass().in_pass(targets));
@@ -534,8 +560,22 @@ mod tests {
             permutation: permutation::ALPHA_MASK,
             ..lit(0)
         };
-        let (shading, depth) = cache.opaque(masked, targets, true);
+        let (shading, depth) = cache.opaque(masked, targets, DepthPass::Prepass);
         assert_eq!(depth, 0);
         assert_eq!(cache.keys()[shading as usize - 1], masked.in_pass(targets));
+    }
+
+    #[test]
+    fn occluders_draw_depth_alone_and_shade_as_without_them() {
+        let mut cache = PipelineCache::default();
+        let (shading, depth) = cache.opaque(lit(0), TARGETS, DepthPass::Occluders);
+        let keys = cache.keys();
+        assert_eq!(keys[shading as usize - 1], lit(0).in_pass(TARGETS));
+        let depth = keys[depth as usize - 1];
+        assert_eq!(depth.template, template::SHADOW_DEPTH);
+        assert_eq!(
+            (depth.color_format, depth.depth_format, depth.samples),
+            (format::NONE, TARGETS.depth_format, TARGETS.samples)
+        );
     }
 }

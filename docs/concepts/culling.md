@@ -3,7 +3,7 @@ id: concepts/culling
 title: Culling
 status: experimental
 since: "0.1"
-summary: "Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells, whole cells out of view skipped first, and positions relative to the camera."
+summary: "Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells, whole cells out of view skipped first, positions relative to the camera, and occlusion culling."
 ---
 
 # Culling
@@ -28,7 +28,7 @@ flowchart LR
     cull --> draw["Draw the visible<br/>objects and rows"]
 ```
 
-Culling finds the objects and instance rows in the camera's view, so the GPU draws only those. The engine tests each bounding sphere against the six planes of the view. Every position in the test is relative to the camera, so a scene far from the origin culls and draws as it does near it. When a scene spreads over several grid cells, the engine first skips every still object of the cells out of view. The engine culls each [view](render-graph.md) separately, against that view's camera.
+Culling finds the objects and instance rows in the camera's view, so the GPU draws only those. Occlusion culling also skips objects that others hide. The engine tests each bounding sphere against the six planes of the view. Every position in the test is relative to the camera, so a scene far from the origin culls and draws as it does near it. When a scene spreads over several grid cells, the engine first skips every still object of the cells out of view. The engine culls each [view](render-graph.md) separately, against that view's camera.
 
 ## How each path culls
 
@@ -37,6 +37,37 @@ On WebGPU the GPU culls the scene itself. A compute pass runs one GPU thread per
 On WebGL2 there are no compute shaders, so the job workers cull on the CPU. They test four spheres per SIMD instruction and list the visible objects, 4 bytes each. They test a static instance batch that has stopped changing in groups of 64 nearby rows, one test per group. Each group lies inside one grid cell. The job workers skip the objects and groups of the cells out of view.
 
 [GPU tiers and backends](backends.md) describes each path's draw calls and uploads.
+
+## GPU occlusion culling on WebGPU
+
+The frustum test keeps every object in view, even one that a wall hides. With occlusion culling, the GPU also skips the opaque objects that others hide. It works in two phases in each frame, for each camera:
+
+```mermaid
+flowchart LR
+    early["Phase 1: cull, keep the objects<br/>that showed last frame"] --> first["Draw their depth"]
+    first --> pyramid["Build a depth pyramid<br/>from that depth"]
+    pyramid --> late["Phase 2: test every object<br/>in view against the pyramid"]
+    late --> second["Draw the ones that show"]
+```
+
+1. The first phase keeps the objects in view that showed in the camera's last frame. The GPU draws their depth alone, into a depth target of its own.
+2. A compute pass builds a depth pyramid from that depth. Each level holds the farthest depth of each 2 x 2 square of the level below it.
+3. The second phase tests each object in view against the pyramid. An object whose bounding sphere lies wholly behind the depth that the pyramid holds under it is hidden. The GPU notes which objects show, for the next frame.
+4. The opaque pass draws the objects that show, as it does without occlusion culling.
+
+The pyramid holds the depth of objects drawn in this frame, so no object that shows can hide behind it. The image matches the image without occlusion culling. When the camera turns fast, the first phase keeps the wrong objects, so fewer objects hide, but none shows a frame late.
+
+What it costs and where it runs:
+
+- It costs a depth-only draw of the objects that showed last frame, a depth pyramid and a second culling pass in every frame.
+- It saves the GPU time of every hidden object: its vertices, and the pixels that the depth test would discard. Scenes where walls and buildings hide most detailed objects gain the most. In an open scene, where little hides, it costs a little.
+- The High and Ultra presets turn it on. The `gpuOcclusion` option of `createEngine` turns it on or off, and the `?occlusion=on` and `?occlusion=off` switches win over the option. It is fixed while the engine runs.
+- It runs on WebGPU, in compatibility mode too, without the depth prepass. Shadow cascades and tiles cull with the frustum test alone. See-through objects draw after both phases, from the sorted list of the transparent pass, and hide nothing.
+- An object hides only behind the objects that the first phase kept. An object that comes into view hides others from the next frame on. A hidden object costs two culling tests, and no draw.
+
+```ts
+const engine = await createEngine({ canvas, sketch, gpuOcclusion: true });
+```
 
 ## Bounds that you set
 

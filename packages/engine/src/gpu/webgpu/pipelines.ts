@@ -8,6 +8,8 @@ import {
 	LAYOUT_BLOOM,
 	LAYOUT_CULL,
 	LAYOUT_DEPTH,
+	LAYOUT_DEPTH_PYRAMID,
+	LAYOUT_DEPTH_PYRAMID_MULTISAMPLED,
 	LAYOUT_FINAL,
 	LAYOUT_FINAL_BLOOM,
 	LAYOUT_FRAME,
@@ -16,6 +18,7 @@ import {
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
+	PERMUTATION_DEPTH_MULTISAMPLED,
 	PERMUTATION_SKIN,
 	SIZE_INSTANCE_STRIDE,
 	STATE_BLEND,
@@ -34,6 +37,7 @@ import {
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_DEBUG_VIEW,
+	TEMPLATE_DEPTH_PYRAMID,
 	TEMPLATE_FINAL,
 	TEMPLATE_FINAL_BLOOM,
 	TEMPLATE_INSTANCED_LIT,
@@ -44,6 +48,8 @@ import {
 	TEMPLATE_LIGHT_COUNT,
 	TEMPLATE_LIGHT_PLACE,
 	TEMPLATE_LIGHT_WRITE,
+	TEMPLATE_OCCLUSION_EARLY,
+	TEMPLATE_OCCLUSION_LATE,
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SKIN,
 	VERTEX_INSTANCE_LOCATION,
@@ -109,8 +115,12 @@ export interface RenderTemplate {
 /** The map slots of a standard material, one texture array and sampler each. */
 const MAP_SLOTS = [0, 1, 2, 3, 4, 5];
 
-/** The culling shader's compute entry point. */
-const CULL_ENTRY_POINT = 'main';
+/** The culling shader's compute entry points: plain culling, and the two phases of occlusion. */
+const CULL_ENTRY_POINTS: Readonly<Record<number, string>> = {
+	[TEMPLATE_CULL]: 'main',
+	[TEMPLATE_OCCLUSION_EARLY]: 'early',
+	[TEMPLATE_OCCLUSION_LATE]: 'late',
+};
 
 /** The compute templates of light clustering: each one's entry point in the light clustering shader. */
 const LIGHT_ENTRY_POINTS: Readonly<Record<number, string>> = {
@@ -266,6 +276,10 @@ export class Pipelines {
 	private readonly skinLayouts: (GPUPipelineLayout | undefined)[] = [];
 	private readonly cullLayout: GPUPipelineLayout;
 	private readonly cull: WgslShader | undefined;
+	/** The depth pyramid's builds, by the permutation bits that pick them. */
+	private readonly pyramid: ShaderVariants;
+	/** The depth pyramid's pipeline layouts, for a depth target of one sample and a multisampled one. */
+	private readonly pyramidLayouts: readonly [GPUPipelineLayout, GPUPipelineLayout];
 	private readonly lightLayout: GPUPipelineLayout;
 	private readonly lightClusters: WgslShader | undefined;
 	private readonly skinLayout: GPUPipelineLayout;
@@ -340,16 +354,40 @@ export class Pipelines {
 				}),
 			),
 		]);
+		const compute = GPUShaderStage.COMPUTE;
+		// The culling pipelines' parameters, the scene's tables, the compacted instances and indirect
+		// draws, then the depth pyramid of occlusion culling, whose first word counts the frame's
+		// occluders. Their history shares the buffer of the indirect draws, as eight storage buffers
+		// is all that every device allows a shader stage.
 		this.defineLayout(LAYOUT_CULL, 'cull', [
-			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-			{ binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-			{ binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-			{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-			{ binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-			{ binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 2, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 3, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 4, visibility: compute, buffer: { type: 'storage' } },
+			{ binding: 5, visibility: compute, buffer: { type: 'storage' } },
+			{ binding: 6, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 7, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 8, visibility: compute, buffer: { type: 'storage' } },
 		]);
+		// A level's parameters at a dynamic offset, the pyramid, and the view's depth target, read
+		// with textureLoad as a float texture of one sample or four: compatibility mode forbids
+		// depth textures in textureLoad.
+		const pyramidEntries = (texture: GPUTextureBindingLayout): GPUBindGroupLayoutEntry[] => [
+			{ binding: 0, visibility: compute, buffer: { type: 'uniform', hasDynamicOffset: true } },
+			{ binding: 1, visibility: compute, buffer: { type: 'storage' } },
+			{ binding: 2, visibility: compute, texture },
+		];
+		this.defineLayout(
+			LAYOUT_DEPTH_PYRAMID,
+			'depth pyramid',
+			pyramidEntries({ sampleType: 'unfilterable-float' }),
+		);
+		this.defineLayout(
+			LAYOUT_DEPTH_PYRAMID_MULTISAMPLED,
+			'depth pyramid multisampled',
+			pyramidEntries({ sampleType: 'unfilterable-float', multisampled: true }),
+		);
 		// Light clustering's parameters, the light list, and the light grid that it fills.
 		this.defineLayout(LAYOUT_LIGHT_CLUSTERS, 'light clusters', [
 			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
@@ -481,6 +519,13 @@ export class Pipelines {
 		}
 		this.cullLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_CULL)] });
 		this.cull = variantFor(shaders.cull, 0, 'wgsl')?.wgsl ?? undefined;
+		this.pyramid = shaders.pyramid;
+		this.pyramidLayouts = [
+			device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_DEPTH_PYRAMID)] }),
+			device.createPipelineLayout({
+				bindGroupLayouts: [this.layout(LAYOUT_DEPTH_PYRAMID_MULTISAMPLED)],
+			}),
+		];
 		this.lightLayout = device.createPipelineLayout({
 			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_CLUSTERS)],
 		});
@@ -647,8 +692,12 @@ export class Pipelines {
 		return pipeline;
 	}
 
-	/** How to build a compute pipeline of a template: culling, skinning, or a step of light clustering. */
-	compute(template: number): GPUComputePipelineDescriptor {
+	/**
+	 * How to build a compute pipeline of a template, in the shader variant that its permutation bits
+	 * pick: culling or a phase of occlusion culling, the depth pyramid, skinning, or a step of light
+	 * clustering.
+	 */
+	compute(template: number, permutation: number): GPUComputePipelineDescriptor {
 		if (template === TEMPLATE_SKIN) {
 			if (!this.skin) throw new Error("the device's shader module has no skinning shader");
 			return {
@@ -657,12 +706,23 @@ export class Pipelines {
 				compute: { module: this.module('skin', this.skin), entryPoint: 'main' },
 			};
 		}
-		if (template === TEMPLATE_CULL) {
+		const cullEntry = CULL_ENTRY_POINTS[template];
+		if (cullEntry) {
 			if (!this.cull) throw new Error("the device's shader module has no culling shader");
 			return {
-				label: 'cull',
+				label: cullEntry === 'main' ? 'cull' : `occlusion ${cullEntry}`,
 				layout: this.cullLayout,
-				compute: { module: this.module('cull', this.cull), entryPoint: CULL_ENTRY_POINT },
+				compute: { module: this.module('cull', this.cull), entryPoint: cullEntry },
+			};
+		}
+		if (template === TEMPLATE_DEPTH_PYRAMID) {
+			const shader = variantFor(this.pyramid, permutation, 'wgsl')?.wgsl;
+			if (!shader) throw new Error("the device's shader module has no depth pyramid shader");
+			const multisampled = (permutation & PERMUTATION_DEPTH_MULTISAMPLED) !== 0;
+			return {
+				label: 'depth pyramid',
+				layout: this.pyramidLayouts[multisampled ? 1 : 0],
+				compute: { module: this.module('depth pyramid', shader), entryPoint: 'main' },
 			};
 		}
 		const entryPoint = LIGHT_ENTRY_POINTS[template];

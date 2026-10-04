@@ -114,6 +114,8 @@ export const LAYOUT_BLOOM = 9;
 export const LAYOUT_FINAL_BLOOM = 10;
 export const LAYOUT_JOINTS = 11;
 export const LAYOUT_SKIN = 12;
+export const LAYOUT_DEPTH_PYRAMID = 14;
+export const LAYOUT_DEPTH_PYRAMID_MULTISAMPLED = 15;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -131,6 +133,7 @@ export const PERMUTATION_PREPASS = 4096;
 export const PERMUTATION_HALF = 8192;
 export const PERMUTATION_CASTER_OFFSET = 16384;
 export const PERMUTATION_BLOOM = 32768;
+export const PERMUTATION_DEPTH_MULTISAMPLED = 131072;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;
@@ -180,6 +183,9 @@ export const TEMPLATE_LIGHT_COUNT = 17;
 export const TEMPLATE_LIGHT_PLACE = 18;
 export const TEMPLATE_LIGHT_WRITE = 19;
 export const TEMPLATE_SKIN = 20;
+export const TEMPLATE_OCCLUSION_EARLY = 24;
+export const TEMPLATE_OCCLUSION_LATE = 25;
+export const TEMPLATE_DEPTH_PYRAMID = 28;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;
@@ -216,6 +222,7 @@ export const SIZE_MATERIAL_BYTES = 128;
 export const SIZE_MAX_CELLS = 512;
 export const SIZE_CELL_SHIFT = 23;
 export const SIZE_MAX_CULL_RANGES = 257;
+export const SIZE_CULL_OCCLUSION_BYTES = 352;
 export const SIZE_LINE_VERTEX_BYTES = 16;
 export const SIZE_SHADOW_UNIFORM_BYTES = 352;
 export const SIZE_SHADOW_TILES_UNIFORM_BYTES = 1936;

@@ -582,7 +582,9 @@ pub mod resource_kind {
 pub mod layout {
     /// Group 0 of render pipelines: per-frame constants and the material table.
     pub const FRAME: u32 = 0;
-    /// Group 0 of the culling compute pipeline.
+    /// Group 0 of the culling compute pipelines, plain and of the two occlusion phases: the
+    /// view's parameters, the scene's tables, its compacted instances and indirect draws, then its
+    /// depth pyramid or a placeholder.
     pub const CULL: u32 = 1;
     /// Group 1 of render pipelines that read instances from data textures: the draw records.
     pub const DRAWS: u32 = 2;
@@ -618,6 +620,12 @@ pub mod layout {
     /// Group 0 of the skinning compute pipeline: its table of formats and parts, a mesh page's
     /// vertices, the skinned vertices that it writes, and the texture of skinning matrices.
     pub const SKIN: u32 = 12;
+    /// Group 0 of the depth pyramid's compute pipeline: the level's parameters at a dynamic
+    /// offset, the pyramid, which it writes, and the view's depth target of one sample, which it
+    /// reads as a float texture.
+    pub const DEPTH_PYRAMID: u32 = 14;
+    /// [`DEPTH_PYRAMID`] for a multisampled depth target.
+    pub const DEPTH_PYRAMID_MULTISAMPLED: u32 = 15;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -670,9 +678,12 @@ pub mod permutation {
     pub const CASTER_OFFSET: u32 = 16384;
     /// The final pass adds bloom's levels to the scene color before the output transform.
     pub const BLOOM: u32 = 32768;
+    /// The depth pyramid reads a multisampled depth target, and keeps the farthest of each
+    /// texel's samples.
+    pub const DEPTH_MULTISAMPLED: u32 = 131072;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 16] = [
+    pub const NAMES: [(&str, u32); 17] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -689,6 +700,7 @@ pub mod permutation {
         ("HALF", HALF),
         ("CASTER_OFFSET", CASTER_OFFSET),
         ("BLOOM", BLOOM),
+        ("DEPTH_MULTISAMPLED", DEPTH_MULTISAMPLED),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -1142,6 +1154,11 @@ pub mod sizes {
     /// parameters list them for the cells a view can see. Runs that follow each other join, so
     /// there is at most one per pair of cells, and one more for the sources that move.
     pub const MAX_CULL_RANGES: u32 = MAX_CELLS / 2 + 1;
+    /// Bytes of the occlusion phases' values at the end of the culling parameters: the
+    /// view-projection matrix, the render size, the depth pyramid's levels and where the second
+    /// phase's draws and the history start, then 16 levels' shapes. Views that cull in one phase
+    /// leave them unset, but the parameters have room for them.
+    pub const CULL_OCCLUSION_BYTES: u32 = 352;
     /// Bytes of one vertex of the debug lines: its position relative to the camera, three 32-bit
     /// floats, then its sRGB color, four bytes from red to alpha.
     pub const LINE_VERTEX_BYTES: u32 = 16;
@@ -1203,6 +1220,14 @@ pub mod template {
     /// The skinning compute shader, which skins the parts of skinned meshes into a buffer of
     /// skinned vertices.
     pub const SKIN: u32 = 20;
+    /// The first phase of occlusion culling: the culling shader's `early` entry point, which
+    /// keeps the instances in view that drew in the view's last frame.
+    pub const OCCLUSION_EARLY: u32 = 24;
+    /// The second phase of occlusion culling: the culling shader's `late` entry point, which
+    /// tests the instances in view against the depth pyramid.
+    pub const OCCLUSION_LATE: u32 = 25;
+    /// One level of the depth pyramid that the second phase of occlusion culling tests against.
+    pub const DEPTH_PYRAMID: u32 = 28;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1452,6 +1477,11 @@ pub fn typescript_constants() -> String {
                 ("FINAL_BLOOM", layout::FINAL_BLOOM),
                 ("JOINTS", layout::JOINTS),
                 ("SKIN", layout::SKIN),
+                ("DEPTH_PYRAMID", layout::DEPTH_PYRAMID),
+                (
+                    "DEPTH_PYRAMID_MULTISAMPLED",
+                    layout::DEPTH_PYRAMID_MULTISAMPLED,
+                ),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1518,6 +1548,9 @@ pub fn typescript_constants() -> String {
                 ("LIGHT_PLACE", template::LIGHT_PLACE),
                 ("LIGHT_WRITE", template::LIGHT_WRITE),
                 ("SKIN", template::SKIN),
+                ("OCCLUSION_EARLY", template::OCCLUSION_EARLY),
+                ("OCCLUSION_LATE", template::OCCLUSION_LATE),
+                ("DEPTH_PYRAMID", template::DEPTH_PYRAMID),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),
@@ -1566,6 +1599,7 @@ pub fn typescript_constants() -> String {
                 ("MAX_CELLS", sizes::MAX_CELLS),
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
                 ("MAX_CULL_RANGES", sizes::MAX_CULL_RANGES),
+                ("CULL_OCCLUSION_BYTES", sizes::CULL_OCCLUSION_BYTES),
                 ("LINE_VERTEX_BYTES", sizes::LINE_VERTEX_BYTES),
                 ("SHADOW_UNIFORM_BYTES", sizes::SHADOW_UNIFORM_BYTES),
                 (

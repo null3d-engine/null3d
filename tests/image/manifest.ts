@@ -25,6 +25,7 @@ import {
 import { GRADING_IMAGE } from '../../bench/scenes/grading.ts';
 import { LIGHTS_IMAGE } from '../../bench/scenes/lights.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
+import { OCCLUSION_IMAGE } from '../../bench/scenes/occlusion.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { SKINNING_HOLD, SKINNING_IMAGE } from '../../bench/scenes/skinning.ts';
@@ -267,6 +268,9 @@ const S1_CELLS_DEVICE_TOLERANCE = { maxDiffRatio: 0.003 };
 /** The WebGL2 depth modes that ?depth= forces. */
 const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'];
 
+/** The sketch of the occlusion scene's tests. */
+const OCCLUSION_SKETCH = 'tests/pages/sketches/occlusion-sketch.ts';
+
 /** The tests of every feature, before the depth prepass and half precision draw some again. */
 const FEATURE_TESTS: readonly ImageTest[] = [
 	// A clear color, read back through the engine's readback on each GPU interface.
@@ -485,6 +489,23 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// and scaled arm with keepWorld, which then swings with the arm, and bounds that culling tests:
 	// one box that its bounds hide, and one that is never culled.
 	{ name: 'objects', sketch: 'tests/pages/sketches/objects-sketch.ts', hold: 1 },
+	// The occlusion scene: a room whose walls hide most of a field of detailed spheres, but for a few
+	// seen through a doorway. Drawn without occlusion culling, as the references of its culled
+	// copies, with MSAA and with FXAA, whose depth has one sample.
+	{
+		name: 'occlusion',
+		sketch: OCCLUSION_SKETCH,
+		hold: 0,
+		size: [OCCLUSION_IMAGE.width, OCCLUSION_IMAGE.height],
+		switches: ['occlusion=off'],
+	},
+	{
+		name: 'occlusion-fxaa',
+		sketch: OCCLUSION_SKETCH,
+		hold: 0,
+		size: [OCCLUSION_IMAGE.width, OCCLUSION_IMAGE.height],
+		switches: ['occlusion=off', 'antialias=fxaa'],
+	},
 	// A scene that spans grid cells, with a turned tree and a camera on a turned rig.
 	{ name: 'cells', sketch: 'tests/pages/sketches/cells-sketch.ts', hold: 1 },
 	// The same scene 100 km out, away from a cell's center, and about 1,000 km out at the center of a
@@ -1013,6 +1034,35 @@ const PREPASS_SCENES = [
 	's2',
 ];
 
+/**
+ * The scenes that GPU occlusion culling draws again on the WebGPU tiers, with ?occlusion=on, which
+ * must match their images without it: the occlusion scene, with MSAA and with FXAA, shadows,
+ * see-through objects that draw after both opaque passes, an orthographic camera, and S2. The
+ * High preset of the image tests turns occlusion culling on in core WebGPU already, so the copies
+ * add compatibility mode, whose highest preset is Medium, and the occlusion scene. Hold mode
+ * draws one frame, in which no object drew before, so every object draws in the second phase. The
+ * occlusion test page checks frames after the camera turns, when the first phase draws.
+ */
+const OCCLUSION_SCENES = [
+	'occlusion',
+	'occlusion-fxaa',
+	'shadows',
+	'transparency',
+	'ortho-camera',
+	's2',
+];
+
+/** An occlusion scene's test again with ?occlusion=on, in its first thread mode. */
+function withOcclusion(name: string): ImageTest {
+	const test = copyWithSwitch(name, 'culled', 'occlusion=on');
+	return {
+		...test,
+		switches: test.switches?.filter((entry) => entry !== 'occlusion=off'),
+		tiers: tiersOf(test).filter((tier) => tier !== 'webgl2'),
+		...(test.modes && { modes: test.modes.slice(0, 1) }),
+	};
+}
+
 /** A prepass scene's test again with ?prepass=on, in its first thread mode. */
 function withPrepass(name: string): ImageTest {
 	const test = copyWithSwitch(name, 'prepass', 'prepass=on');
@@ -1043,6 +1093,7 @@ const HALF_PRECISION_TESTS = [
 export const IMAGE_TESTS: readonly ImageTest[] = [
 	...FEATURE_TESTS,
 	...PREPASS_SCENES.map(withPrepass),
+	...OCCLUSION_SCENES.map(withOcclusion),
 	...HALF_PRECISION_TESTS.map((name) => copyWithSwitch(name, 'half', 'half=on')),
 ];
 

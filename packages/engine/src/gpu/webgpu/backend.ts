@@ -475,7 +475,7 @@ export class WebGPUBackend {
 		const id = words[a] as number;
 		const device = this.device;
 		if (op === G.OP_CREATE_COMPUTE_PIPELINE) {
-			const descriptor = this.pipelines.compute(words[a + 1] as number);
+			const descriptor = this.pipelines.compute(words[a + 1] as number, words[a + 2] as number);
 			if (!background) {
 				this.computePipelines[id] = device.createComputePipeline(descriptor);
 				return;

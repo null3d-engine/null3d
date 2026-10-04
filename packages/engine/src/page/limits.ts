@@ -116,6 +116,11 @@ export interface CoreDevice {
 	 * each once per frame in a compute pass.
 	 */
 	vertexSkinning: boolean;
+	/**
+	 * True when each camera view culls in two phases against a depth pyramid of what it drew.
+	 * Only the WebGPU path culls this way.
+	 */
+	gpuOcclusion: boolean;
 }
 
 /**
@@ -171,6 +176,8 @@ export type DeviceOptions = Pick<
 	transparent: boolean;
 	/** True to draw the opaque objects' depth in a depth prepass. */
 	depthPrepass: boolean;
+	/** True to cull each camera view in two phases against a depth pyramid. */
+	gpuOcclusion: boolean;
 };
 
 /** The depth mode of a WebGL2 device without `EXT_clip_control`. */
@@ -287,6 +294,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		cellCulling: options.cells,
 		depthPrepass: options.depthPrepass,
 		vertexSkinning: options.vertexSkinning,
+		gpuOcclusion: options.gpuOcclusion,
 	};
 	if (tier !== 'webgl2') {
 		return {

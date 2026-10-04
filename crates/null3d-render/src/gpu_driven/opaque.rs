@@ -8,6 +8,10 @@
 //! the view's bundle in the same render pass. It draws the same buckets from the same compacted
 //! instances and indirect draws, with each bucket's depth pipeline, and leaves out the buckets that
 //! have none. It binds the view's frame uniform through a group of the depth template's layout.
+//!
+//! A camera view that culls in two phases replays the depth bundle in its occluders' pass, a render
+//! pass of its own with no color target, from the first set of indirect draws. Its bundle then
+//! draws from the second set, which follows the first in the view's indirect buffer.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, index_format, layout as bind_layout, resource_kind, sizes,
@@ -78,27 +82,48 @@ pub(super) fn upload(
     Ok(())
 }
 
+/// Which of a view's bundles to record or replay.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Bundle {
+    /// The bundle of the view's opaque pass, or of a shadow pass.
+    Main,
+    /// The bundle of the view's depth prepass or occluders' pass, which draws depth alone.
+    Depth,
+}
+
+impl Bundle {
+    fn id(self, view: ViewId) -> u32 {
+        match self {
+            Self::Main => ids::bundle(view),
+            Self::Depth => ids::prepass_bundle(view),
+        }
+    }
+}
+
 /// Records a view's bundle: each draw of every bucket of the layout, with the bucket's slice of
 /// the view's compacted instances and the bind group of its material's map, from its mesh page's
-/// buffers in `meshes`, into `targets`. With `prepass`, it records the view's bundle of the depth
-/// prepass instead.
+/// buffers in `meshes`, into `targets`. With `Bundle::Depth`, it records the view's bundle of the
+/// depth prepass or the occluders' pass instead. Its draws start `first_draw` draws into the
+/// view's indirect buffer.
 pub(super) fn record_bundle(
     list: &mut DrawList,
     view: ViewId,
     layout: &Layout,
     meshes: &MeshBuffers,
     targets: PassTargets,
-    prepass: bool,
+    bundle: Bundle,
+    first_draw: u32,
 ) -> Result<(), RecordError> {
-    let (bundle, frame_group) = if prepass {
-        (ids::prepass_bundle(view), ids::prepass_group(view))
+    let prepass = bundle == Bundle::Depth;
+    let frame_group = if prepass {
+        ids::prepass_group(view)
     } else {
-        (ids::bundle(view), ids::frame_group(view))
+        ids::frame_group(view)
     };
     list.push(
         Op::BeginBundle,
         &[
-            bundle,
+            bundle.id(view),
             targets.color_format,
             targets.depth_format,
             targets.samples,
@@ -149,7 +174,7 @@ pub(super) fn record_bundle(
             }
             list.push(
                 Op::DrawIndexedIndirect,
-                &[ids::indirect(view), index * INDIRECT_BYTES],
+                &[ids::indirect(view), (first_draw + index) * INDIRECT_BYTES],
             )?;
         }
     }
@@ -157,14 +182,9 @@ pub(super) fn record_bundle(
     Ok(())
 }
 
-/// Records a view's pass: its bundle, or with `prepass` its bundle of the depth prepass, inside
-/// the render pass that the render graph began.
-pub(super) fn record(list: &mut DrawList, view: ViewId, prepass: bool) -> Result<(), RecordError> {
-    let bundle = if prepass {
-        ids::prepass_bundle(view)
-    } else {
-        ids::bundle(view)
-    };
-    list.push(Op::ExecuteBundles, &[1, bundle])?;
+/// Records a view's pass, which replays one of its bundles inside the render pass that the
+/// render graph began.
+pub(super) fn record(list: &mut DrawList, view: ViewId, bundle: Bundle) -> Result<(), RecordError> {
+    list.push(Op::ExecuteBundles, &[1, bundle.id(view)])?;
     Ok(())
 }

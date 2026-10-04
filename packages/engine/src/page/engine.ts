@@ -164,6 +164,15 @@ export interface EngineOptions {
 	 */
 	depthPrepass?: boolean;
 	/**
+	 * True to skip the opaque objects that others hide, on the GPU: each camera view draws what it
+	 * showed in the last frame, tests every other object against that depth, and draws those that
+	 * show. It saves GPU time where walls and large objects hide many others. Without it, the
+	 * quality preset decides: High and Ultra turn it on. It stays fixed while the engine runs, and
+	 * the `?occlusion=on` or `?occlusion=off` switch wins over this option. WebGL2 and the depth
+	 * prepass draw without it. Another value fails with E1213.
+	 */
+	gpuOcclusion?: boolean;
+	/**
 	 * True for a see-through canvas: the page shows through wherever no object draws, until the
 	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
 	 * it. The default is false, an opaque canvas.
@@ -777,6 +786,7 @@ async function startEngine(
 		shadowTileSize: options.shadowTileSize,
 		pointLightShadows: options.pointLightShadows,
 		depthPrepass: switches.prepass ?? options.depthPrepass,
+		gpuOcclusion: switches.occlusion ?? options.gpuOcclusion,
 	};
 	checkSettings('createEngine()', pageSettings);
 	const presetRequest: PresetRequest = {
@@ -968,8 +978,15 @@ async function startEngine(
 	const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
 	const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
 	// WebGL2 draws without the depth prepass, whatever the page asks: two of its shader programs
-	// can compute different depths for one triangle that the near plane cuts.
-	const tierSettings = tier === 'webgl2' ? { ...pageSettings, depthPrepass: false } : pageSettings;
+	// can compute different depths for one triangle that the near plane cuts. Occlusion culling on
+	// the GPU needs WebGPU's compute passes, and does not run with the depth prepass, which only
+	// the page turns on.
+	const tierSettings =
+		tier === 'webgl2'
+			? { ...pageSettings, depthPrepass: false, gpuOcclusion: false }
+			: pageSettings.depthPrepass
+				? { ...pageSettings, gpuOcclusion: false }
+				: pageSettings;
 	const quality: QualityStart = {
 		preset,
 		settings: checkedSettings(chosen, preset, tierSettings),
@@ -1012,6 +1029,7 @@ async function startEngine(
 		antialias: quality.settings.antialias,
 		transparent: options.transparent === true,
 		depthPrepass: quality.settings.depthPrepass,
+		gpuOcclusion: quality.settings.gpuOcclusion,
 	});
 	const capabilities: EngineCapabilities = {
 		tier,

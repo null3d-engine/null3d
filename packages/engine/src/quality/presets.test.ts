@@ -106,6 +106,7 @@ describe('the preset table', () => {
 			'bloomSamples',
 			'governor',
 			'depthPrepass',
+			'gpuOcclusion',
 			'maxAnisotropy',
 			'uploadBytesPerFrame',
 			'memoryMaximumMiB',
@@ -141,6 +142,7 @@ describe('the preset table', () => {
 			'shadowTileSize',
 			'pointLightShadows',
 			'depthPrepass',
+			'gpuOcclusion',
 		]);
 		expect(LIVE_SETTINGS).toEqual([
 			'maxPixelRatio',
@@ -194,6 +196,7 @@ describe('presetSettings', () => {
 			shadowTiles: 4,
 			shadowTileSize: 512,
 			pointLightShadows: false,
+			gpuOcclusion: false,
 		});
 		expect(presetSettings('medium')).toEqual({
 			maxPixelRatio: 2,
@@ -209,6 +212,7 @@ describe('presetSettings', () => {
 			shadowTiles: 8,
 			shadowTileSize: 512,
 			pointLightShadows: false,
+			gpuOcclusion: false,
 		});
 		expect(presetSettings('high')).toEqual({
 			maxPixelRatio: 2,
@@ -224,6 +228,7 @@ describe('presetSettings', () => {
 			shadowTiles: 16,
 			shadowTileSize: 1024,
 			pointLightShadows: true,
+			gpuOcclusion: true,
 		});
 		expect(presetSettings('ultra')).toEqual({
 			maxPixelRatio: Number.POSITIVE_INFINITY,
@@ -239,6 +244,7 @@ describe('presetSettings', () => {
 			shadowTiles: 24,
 			shadowTileSize: 1024,
 			pointLightShadows: true,
+			gpuOcclusion: true,
 		});
 	});
 
