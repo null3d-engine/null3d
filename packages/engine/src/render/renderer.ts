@@ -366,6 +366,18 @@ export async function createRenderer(
 	return new WebGPURenderer(gpu.tier, gpu.device, canvas, metrics, options.gpuError);
 }
 
+/**
+ * A feature that the engine chose to draw with, which the adapter must offer. `use` says what the
+ * engine draws with it.
+ */
+function adapterFeature(adapter: GPUAdapter, feature: GPUFeatureName, use: string): GPUFeatureName {
+	if (!adapter.features.has(feature))
+		throw new Error(
+			`the GPU adapter lacks the WebGPU feature ${feature}, which the engine chose for ${use} on the GPU it started with`,
+		);
+	return feature;
+}
+
 /** Requests a WebGPU device with the features and limits that the engine uses, and its tier. */
 async function requestDevice(options: RendererOptions): Promise<{ tier: Tier; device: GPUDevice }> {
 	const adapter = await navigator.gpu?.requestAdapter({
@@ -382,12 +394,15 @@ async function requestDevice(options: RendererOptions): Promise<{ tier: Tier; de
 	for (const [flag, feature] of TEXTURE_COMPRESSION)
 		if (options.device.capabilities & flag && adapter.features.has(feature))
 			requiredFeatures.push(feature);
-	// The scene color at the start, or after an effect that needs HDR color switches to it.
+	// The scene color at the start, or after an effect that needs HDR color switches to it. The
+	// engine chose these from the page's adapter, and a new adapter, as after a GPU loss on a
+	// machine with two GPUs, can lack them.
 	const { sceneColor, effectsSceneColor } = options.device;
 	if (sceneColor === FORMAT_RG11B10_UFLOAT || effectsSceneColor === FORMAT_RG11B10_UFLOAT)
-		requiredFeatures.push('rg11b10ufloat-renderable');
+		requiredFeatures.push(adapterFeature(adapter, 'rg11b10ufloat-renderable', 'its HDR color'));
 	// The device chose half precision only where the adapter offers 16-bit floats.
-	if (options.device.shaderBits & PERMUTATION_HALF) requiredFeatures.push('shader-f16');
+	if (options.device.shaderBits & PERMUTATION_HALF)
+		requiredFeatures.push(adapterFeature(adapter, 'shader-f16', 'its half precision shaders'));
 	const binding = options.device.storageBindingBytes;
 	const device = await adapter.requestDevice({
 		requiredFeatures,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { FORMAT_RG11B10_UFLOAT, PERMUTATION_HALF } from '../generated/gpu';
 import type { CoreDevice } from '../page/limits';
 import { createRenderer, type RenderCanvas } from './renderer';
 
@@ -97,4 +98,48 @@ describe('the WebGL2 renderer', () => {
 		await settle();
 		expect(heard).toBe(true);
 	});
+});
+
+describe('the WebGPU renderer', () => {
+	/** Gives the thread a WebGPU adapter with `features`, and lists the features each device asks for. */
+	function fakeGpu(features: string[]) {
+		const requests: string[][] = [];
+		const adapter = {
+			features: new Set(features),
+			async requestDevice(descriptor: GPUDeviceDescriptor) {
+				requests.push([...(descriptor.requiredFeatures ?? [])]);
+				throw new Error('the fake adapter makes no device');
+			},
+		};
+		const scope = navigator as { gpu?: unknown };
+		const before = scope.gpu;
+		Object.defineProperty(navigator, 'gpu', {
+			configurable: true,
+			value: { requestAdapter: async () => adapter },
+		});
+		const restore = () =>
+			Object.defineProperty(navigator, 'gpu', { configurable: true, value: before });
+		return { requests, restore };
+	}
+
+	for (const [feature, device] of [
+		['shader-f16', { shaderBits: PERMUTATION_HALF }],
+		['rg11b10ufloat-renderable', { shaderBits: 0, effectsSceneColor: FORMAT_RG11B10_UFLOAT }],
+	] as const) {
+		it(`fails with a clear message when the adapter lacks ${feature}, which the engine chose`, async () => {
+			const { requests, restore } = fakeGpu(['core-features-and-limits']);
+			try {
+				const options = {
+					tier: 'webgpu' as const,
+					device: { capabilities: 0, storageBindingBytes: 1 << 27, ...device } as CoreDevice,
+				};
+				await expect(createRenderer(fakeCanvas().canvas, options)).rejects.toThrow(
+					`the GPU adapter lacks the WebGPU feature ${feature}`,
+				);
+				expect(requests).toEqual([]);
+			} finally {
+				restore();
+			}
+		});
+	}
 });
