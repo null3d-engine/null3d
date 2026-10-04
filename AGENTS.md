@@ -115,6 +115,18 @@ The benchmarks compare null3D with three.js in the same browser. [Benchmarks](.d
 - Run one device runner at a time. Runs share one file that tells waiting runner pages which run to start.
 - Keep hot paths free of allocation with the habits in the implementation notes, and check them with `bun run bench:allocation`.
 
+## Parity with three.js and add-on modules
+
+The owner set these rules on 4 October 2026. [D-52](.dev/decisions/D-52-intent-parity.md) gives the detail and the reasons.
+
+1. Intent parity is strict. null3D shows what files and authors mean: glTF, materials, color spaces, units, and animation curves and sampling. Check them against the glTF specification, with three.js as the reference.
+2. Look parity is "equivalent or better". Each feature uses the best technique as its default. The porting skill and the port tools map three.js's settings onto it and list the visible differences.
+3. The core engine has no three.js-look modes. The few that a port truly needs go in the opt-in `three-compat` add-on module. That module uses only the engine's public extension points and loads on first use.
+4. A benchmark compares equal work: the same scene content and comparable quality settings. Its report gives quality notes beside the timings. The images need not be identical.
+5. Pixel tests against three.js cover only shared building blocks: lighting terms, tone curves that both engines offer, skinning poses, animation sampling and glTF interpretation. A feature with a better technique gets null3D's own references, and a looser sanity comparison with three.js.
+6. Built-in assets are made at run time. The engine's package never ships them as files.
+7. Heavy or niche features ship as add-on modules. Each takes one install and one import, with no manual file copying. It works with the Vite plugin, plain bundlers and CDNs, under a strict Content Security Policy. Its version stays in step with the engine's, and its code loads on first use.
+
 ## Docs and skills stay in sync
 
 1. One source per fact. The API reference comes from TypeScript doc comments, the three.js mapping from `docs/data/threejs-mapping.json`, and the page inventory from `tools/lib/docs.ts`. Skills link to docs pages by ID and do not copy facts.

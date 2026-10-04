@@ -75,6 +75,7 @@ Two faults, put back on purpose in builds of their own, show what the figures ca
 
 ## Parity with three.js
 
+- Parity tests check intent: that null3D shows what files and authors mean ([D-52](decisions/D-52-intent-parity.md)). A scene compares with three.js's rule only where both engines draw the same building block. These blocks are lighting terms, tone curves that both engines offer, skinning poses, animation sampling and glTF interpretation. A feature that null3D draws with a better technique gets its own references. Its parity scene then takes a looser limit, which checks only that the effect sits in the same place and has a similar size. The scene's entry gives the reason.
 - A test of a feature scene can have a three.js twin: a page in `bench/pages/threejs/` that draws the same scene. Both engines build the scene from one data module in `bench/scenes/`, such as `ortho-camera.ts`.
 - `FEATURE_SCENES` in `bench/lib/parity.ts` lists each such test with its twin. `bun run parity` compares them on each tier by three.js's rule, after the benchmark scenes. Exit gate item 2 therefore runs in one command. On the Mac it draws in Chrome on the real GPU: `bun run parity -- --tier webgpu,webgl2` gives the gate's two tiers. `--scene` names one scene, by its image test.
 - `bench/tests/parity.spec.ts` compares the same list in `bun run test:bench`, on SwiftShader in CI. The twin loads from the production build of the benchmark pages. The test's image loads from the dev server, because the image test page loads its sketch by address.
