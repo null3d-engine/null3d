@@ -106,6 +106,8 @@ The occlusion cost page (`tests/pages/occlusion-cost.html`) draws a city of 64 b
 
 The culling hides about two thirds of what the frustum test keeps, for about 0.35 ms more CPU time per frame on the Mac. WebGL2 has no GPU timer in this browser, so the GPU time that the hidden objects save is not measured here. The Mac's GPU draws the city in far less than a frame either way. The saving matters on phones, where T-36 measures it.
 
+A measurement that holds no finished frame measures again for twice as long. The occlusion spec runs the page with half-second measurements and a tenth of the spheres and boxes (`?light`). On a busy Mac, SwiftShader drew a frame of it only every 2.4 to 2.8 s, so a half-second measurement could hold no frame, and its figures were empty.
+
 Where nothing blocks, the culling costs one pass over the scene's flags per frame. The command below ran main (a8bf5ed) and this branch in turns, at the Medium preset, where the culling is on. It was `bun run bench:run --compare <main>,. --scenes s1,s1-cells,s3 --pages null3d-webgl2 --runs 3 --seconds 10`:
 
 | Scene | Busiest thread, main | This branch | Change |
@@ -125,7 +127,9 @@ How the data was produced: `cargo test -p null3d-core --release --test occlusion
 
 ### Images
 
-The image tests `occlusion-off` and `occlusion-on` draw a lighter city in hold mode. With the culling on, WebGL2 draws the same image to the bit as with it off, on the Mac's GPU and on SwiftShader.
+The image tests `occlusion-off` and `occlusion-on` draw a lighter city in hold mode, and both match the references of `occlusion-off` at the usual tolerance. The occlusion spec then draws the city with the culling off and on at six times along the street, in one run on one machine, and requires the same pixels. With the culling on, WebGL2 draws the same image to the bit as with it off, on the Mac's GPU and on SwiftShader.
+
+The first version of `occlusion-on` required the same pixels as the `occlusion-off` reference, which SwiftShader on the Mac drew. CI's SwiftShader, on x86, rounds one pixel of that city one step of red apart, with the culling off too. Drawn in Docker on x86 Linux with Playwright's CI image, the culling-off and culling-on images were the same at 20 times along the street. So the culling hid nothing that shows. The test compared images from two kinds of processor at zero tolerance.
 
 ## Decision
 
