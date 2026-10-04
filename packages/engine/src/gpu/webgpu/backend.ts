@@ -831,6 +831,7 @@ export class WebGPUBackend {
 			i += length;
 		}
 		this.submit();
+		this.staging.endFrame();
 	}
 
 	/** Sets a bind group on a pass. The dynamic offsets are read straight from the draw list. */
