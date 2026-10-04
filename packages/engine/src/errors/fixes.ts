@@ -63,7 +63,7 @@ export const ERROR_FIXES = {
 	E1304:
 		'Lower the quality preset, use smaller or compressed textures, and share meshes and textures between objects. Destroy objects and textures that the scene no longer shows.',
 	E1305:
-		'Read the message: it quotes the GPU path. A buffer or texture past the device\'s limits names the limit: make the scene smaller there. Otherwise this is an engine bug: report it with the message and the browser.',
+		"Read the message: it quotes the GPU path. A buffer or texture past the device's limits names the limit: make the scene smaller there. Otherwise this is an engine bug: report it with the message and the browser.",
 	E1401:
 		'End the sketch module with export default defineSketch(...), and pass that module to createEngine.',
 	E1402:

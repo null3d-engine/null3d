@@ -10,7 +10,7 @@ import type { CoreGlue } from '../shared/core';
 import { createMetricsBuffer, FrameRecorder, Role } from '../shared/metrics';
 import { defineSketch, type SketchContext, type SketchOptions } from './define-sketch';
 import type { QualityStart, QualityUpdate } from './quality';
-import { SketchRunner } from './runner';
+import { runPipelined, SketchRunner } from './runner';
 
 /** The core's frame steps, which the tests follow among the sketch's callbacks. */
 const FRAME_STEPS = new Set([
@@ -133,6 +133,7 @@ function drawFrames(
 		if (published <= Atomics.load(slots, Slot.FramesTaken)) return;
 		Atomics.store(slots, Slot.PipelinesBuilt, published);
 		Atomics.store(slots, Slot.FramesTaken, published);
+		if (slots.buffer instanceof SharedArrayBuffer) Atomics.notify(slots, Slot.FramesTaken);
 		if (drawing.replayMs) {
 			replaying = published;
 			replayEnd = performance.now() + drawing.replayMs;
@@ -171,17 +172,19 @@ async function start(
 		drawing,
 		grows = false,
 		holdSeconds,
+		shared = false,
 	}: {
 		quality?: QualityStart;
 		drawing?: FakeDrawing;
 		grows?: boolean;
 		holdSeconds?: number;
+		shared?: boolean;
 	} = {},
 ) {
 	const log: string[] = [];
 	const calls: unknown[][] = [];
 	const updates: QualityUpdate[] = [];
-	const control = controlViews(createControlBuffer(false));
+	const control = controlViews(createControlBuffer(shared));
 	control.slotFloats[Slot.CanvasCssWidth] = 320;
 	control.slotFloats[Slot.CanvasCssHeight] = 180;
 	control.slotFloats[Slot.PixelRatio] = 2;
@@ -532,6 +535,55 @@ describe('SketchRunner', () => {
 		);
 		stopDrawing();
 		expect(drawing.overwritten).toEqual([]);
+	});
+
+	it('records no frame of the loop while warm-ups that the setup did not wait for record', async () => {
+		const drawing = { presentedMs: 16, completedMs: 16, replayMs: 10, overwritten: [] as number[] };
+		const { runner, control, stopDrawing } = await start(
+			({ scene }) => {
+				void scene.warmUp();
+				void scene.warmUp();
+				return {};
+			},
+			undefined,
+			{ drawing, shared: true },
+		);
+		const faults: unknown[] = [];
+		const loop = runPipelined(runner, control.slots.buffer, (error) => faults.push(error));
+		await new Promise((resolve) => setTimeout(resolve, 150));
+		Atomics.store(control.slots, Slot.Running, 0);
+		await loop;
+		stopDrawing();
+		expect(faults).toEqual([]);
+		expect(drawing.overwritten).toEqual([]);
+	});
+
+	it('ends the pipelined loop with a fault when a frame step throws', async () => {
+		const drawing = { presentedMs: 16, completedMs: 16 };
+		let frames = 0;
+		const { runner, control, stopDrawing } = await start(
+			() => ({
+				onUpdate() {
+					frames++;
+					if (frames === 3) throw new Error('a sketch error is reported, and play goes on');
+				},
+			}),
+			undefined,
+			{ drawing, shared: true },
+		);
+		const step = runner.step.bind(runner);
+		let steps = 0;
+		runner.step = (timestamp) => {
+			if (++steps === 5) throw new Error('the core trapped');
+			return step(timestamp);
+		};
+		const faults: unknown[] = [];
+		const errors = spyOn(console, 'error').mockImplementation(() => {});
+		await runPipelined(runner, control.slots.buffer, (error) => faults.push(error));
+		errors.mockRestore();
+		stopDrawing();
+		expect(faults.map(messageOf)).toEqual(['the core trapped']);
+		expect(frames).toBe(4);
 	});
 
 	it('refuses options out of range with E1214, before the setup function runs', async () => {

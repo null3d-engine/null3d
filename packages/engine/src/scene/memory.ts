@@ -3,10 +3,27 @@
 // detaches every view when it grows, and a write through a detached view is lost. Each view
 // therefore is re-made when the buffer changes. Every core call that can grow the memory goes
 // through `checkGrowth`, and the sketch runner refreshes after the frame's steps, so sketch code
-// never writes through a view from before a growth.
+// never writes through a view from before a growth. When the engine stops, every later call
+// through the core and every view made after it fails with E1420: the page keeps its copy of the
+// core for the next engine, which sketch code that outlives the engine must never reach.
 
 import { coreFailure } from '../errors/core-failure';
+import { EngineError } from '../errors/engine-error';
 import type { CoreGlue } from '../shared/core';
+
+/** The error of a call that reached an engine after it stopped. */
+function stoppedError(): EngineError {
+	return new EngineError('E1420', 'a call reached the engine after it stopped.');
+}
+
+/** A stand-in for the core whose every function fails with E1420. */
+function stoppedGlue(): CoreGlue {
+	return new Proxy({} as CoreGlue, {
+		get: () => () => {
+			throw stoppedError();
+		},
+	});
+}
 
 export type ViewConstructor<T> = new (
 	buffer: ArrayBufferLike,
@@ -22,15 +39,34 @@ export class CoreMemory {
 	/** The core's copy of the world matrix it read last, made again when the memory grows. */
 	private worldMatrixView: Float64Array | undefined;
 
+	private stoppedNow = false;
+
 	constructor(
-		readonly glue: CoreGlue,
+		public glue: CoreGlue,
 		readonly memory: WebAssembly.Memory,
 	) {
 		this.viewsOf = memory.buffer;
 	}
 
+	/** True once the engine has stopped. */
+	get stopped(): boolean {
+		return this.stoppedNow;
+	}
+
+	/**
+	 * Cuts this engine's calls off from the core when the engine stops. Views that callers made
+	 * are made again at their next use, which fails.
+	 */
+	stop(): void {
+		this.stoppedNow = true;
+		this.glue = stoppedGlue();
+		this.generation++;
+		this.worldMatrixView = undefined;
+	}
+
 	/** True once after the memory's buffer changed; callers then re-make their views. */
 	refresh(): boolean {
+		if (this.stoppedNow) return false;
 		const buffer = this.memory.buffer;
 		if (buffer === this.viewsOf) return false;
 		this.viewsOf = buffer;
@@ -40,6 +76,7 @@ export class CoreMemory {
 
 	/** A view of `length` values of `type` on engine memory from `address`. */
 	view<T>(type: ViewConstructor<T>, address: number, length: number): T {
+		if (this.stoppedNow) throw stoppedError();
 		return new type(this.memory.buffer, address, length);
 	}
 

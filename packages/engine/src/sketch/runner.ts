@@ -119,28 +119,37 @@ async function reached(slots: Int32Array, slot: number, target: number): Promise
  * The pipelined frame loop of a thread that runs the sketch while another thread draws: the sketch
  * worker, or the page with sketchThread: 'main'. It steps the sketch once the thread that draws has
  * taken the frame before, and waits for that without blocking, so the thread's event loop stays free
- * for promises, messages and the page's events. It ends when the engine stops.
+ * for promises, messages and the page's events. It ends when the engine stops, or when a frame
+ * step throws, such as a trap in the core: `fault` then hears the error, and the engine draws the
+ * last frame until the page destroys it. Each pass reads the newest published frame, because the
+ * setup's frames publish from the same thread.
  */
-export async function runPipelined(sketch: SketchRunner, control: ArrayBufferLike): Promise<void> {
+export async function runPipelined(
+	sketch: SketchRunner,
+	control: ArrayBufferLike,
+	fault: (error: unknown) => void,
+): Promise<void> {
 	const { slots } = controlViews(control);
-	// A warm-up during the setup may have published a frame that the render worker has not taken.
-	let published = Atomics.load(slots, Slot.FramesPublished);
-	while (Atomics.load(slots, Slot.Running) !== 0) {
-		const paused = Atomics.load(slots, Slot.Paused);
-		if (paused !== 0) {
-			const change = slotChange(slots, Slot.Paused, paused);
-			if (change) await change;
-			continue;
+	try {
+		while (Atomics.load(slots, Slot.Running) !== 0) {
+			const paused = Atomics.load(slots, Slot.Paused);
+			if (paused !== 0) {
+				const change = slotChange(slots, Slot.Paused, paused);
+				if (change) await change;
+				continue;
+			}
+			const taken = Atomics.load(slots, Slot.FramesTaken);
+			if (taken < Atomics.load(slots, Slot.FramesPublished)) {
+				const change = slotChange(slots, Slot.FramesTaken, taken);
+				if (change) await change;
+				continue;
+			}
+			const published = sketch.step(performance.now());
+			Atomics.store(slots, Slot.FramesPublished, published);
+			Atomics.notify(slots, Slot.FramesPublished);
 		}
-		const taken = Atomics.load(slots, Slot.FramesTaken);
-		if (taken < published) {
-			const change = slotChange(slots, Slot.FramesTaken, taken);
-			if (change) await change;
-			continue;
-		}
-		published = sketch.step(performance.now());
-		Atomics.store(slots, Slot.FramesPublished, published);
-		Atomics.notify(slots, Slot.FramesPublished);
+	} catch (error) {
+		if (Atomics.load(slots, Slot.Running) !== 0) fault(error);
 	}
 }
 
@@ -383,6 +392,9 @@ export class SketchRunner {
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
 		const { check } = this.sketch.quality;
 		if (check && this.holdSeconds === undefined) await this.checkPreset(check.fps);
+		// Warm-ups that the setup started without waiting for them publish their frames first, so
+		// the frame loop never records while a setup frame does.
+		await this.setupFrames;
 		this.setUp = true;
 		if (this.holdSeconds !== undefined) await this.hold(this.holdSeconds);
 	}
@@ -416,6 +428,7 @@ export class SketchRunner {
 					drawFrame: () => this.drawSetupFrame(),
 					uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
 					maxFps: fps,
+					resumes: () => Atomics.load(this.sketch.control.slots, Slot.Resumes),
 				},
 				graceStart,
 			);
@@ -478,15 +491,30 @@ export class SketchRunner {
 	 */
 	private async publishSetupFrame(): Promise<number> {
 		const { slots } = this.sketch.control;
-		await reached(slots, Slot.FramesTaken, this.recorded.frame);
+		while (
+			Atomics.load(slots, Slot.FramesTaken) < this.recorded.frame &&
+			Atomics.load(slots, Slot.Running) !== 0
+		)
+			await reached(slots, Slot.FramesTaken, this.recorded.frame);
 		const frame = this.frame(false);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);
 		return frame;
 	}
 
-	/** Gives the thread its own Math.random back, where hold mode seeded it. */
+	/**
+	 * Ends the sketch when the engine stops: runs its onDestroy, then makes every later call to the
+	 * engine fail with E1420, so code that outlives the engine never reaches the next engine's core.
+	 * It also gives the thread its own Math.random back, where hold mode seeded it.
+	 */
 	dispose(): void {
+		if (this.core.stopped) return;
+		try {
+			this.callbacks.onDestroy?.();
+		} catch (error) {
+			console.error(error);
+		}
+		this.core.stop();
 		this.restoreRandom?.();
 		this.restoreRandom = undefined;
 	}
