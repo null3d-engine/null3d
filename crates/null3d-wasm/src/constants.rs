@@ -136,8 +136,14 @@ pub mod post_value {
     pub const AO_SCALE: u32 = 17;
     pub const AO_SAMPLES: u32 = 18;
     pub const AO_INTENSITY: u32 = 19;
+    /// The outline's linear line color, red first, then its linear color around hidden parts.
+    pub const OUTLINE_COLOR: u32 = 20;
+    pub const OUTLINE_HIDDEN_COLOR: u32 = 23;
+    /// 1 where the outline draws around hidden parts, else 0, then the line's width in CSS pixels.
+    pub const OUTLINE_HIDDEN: u32 = 26;
+    pub const OUTLINE_WIDTH: u32 = 27;
     /// The values in the block.
-    pub const COUNT: u32 = 20;
+    pub const COUNT: u32 = 28;
 }
 
 pub mod texture_stat {
@@ -404,6 +410,7 @@ pub fn typescript() -> String {
                 ("RECEIVE_SHADOWS", flags::RECEIVE_SHADOWS),
                 ("UNCULLED", flags::UNCULLED),
                 ("CUSTOM_BOUNDS", flags::CUSTOM_BOUNDS),
+                ("OUTLINED", flags::OUTLINED),
                 ("OCCLUDER", flags::OCCLUDER),
             ],
         ),
@@ -682,6 +689,10 @@ pub fn typescript() -> String {
                 ("AO_SCALE", post_value::AO_SCALE),
                 ("AO_SAMPLES", post_value::AO_SAMPLES),
                 ("AO_INTENSITY", post_value::AO_INTENSITY),
+                ("OUTLINE_COLOR", post_value::OUTLINE_COLOR),
+                ("OUTLINE_HIDDEN_COLOR", post_value::OUTLINE_HIDDEN_COLOR),
+                ("OUTLINE_HIDDEN", post_value::OUTLINE_HIDDEN),
+                ("OUTLINE_WIDTH", post_value::OUTLINE_WIDTH),
                 ("COUNT", post_value::COUNT),
             ],
         ),

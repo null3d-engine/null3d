@@ -69,7 +69,9 @@ for (const mode of ENGINE_MODES) {
 		await page.goto(`engine.html?gpu=webgl2&seconds=1&downloads&${mode.query}`);
 		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 		expect(result.error).toBeUndefined();
-		expect(engineProblems(result, mode, 'webgl2')).toEqual([]);
+		// The engine must run after its start, at whatever rate the machine draws: the tests of each
+		// mode check its pace.
+		expect(engineProblems(result, mode, 'webgl2', { pacing: false })).toEqual([]);
 		const trail = result.trail ?? [];
 		const step = (name: string) => trail.findIndex((line) => line.endsWith(` ms ${name}`));
 		const core = step('core');

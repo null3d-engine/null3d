@@ -88,7 +88,8 @@ The runner watches each browser's results while a run goes on. Two guards keep a
 - Each browser's line in the run's summary names the paths whose pages it skipped. So does the result in its row for [the record of tested devices](tested-devices.md).
 - On 3 October 2026, TestingBot's Redmi Note 13 in Chrome 138 offered compatibility mode only: its adapter had no core features and limits. The engine refused each page that forced core WebGPU with E1301, as it must, and the run counted 85 such pages as failures.
 - Four pages that force core WebGPU passed on the Redmi: the clear page, two replay pages and the shader library page. They ask for an adapter themselves and do not start the engine. They now count as skips there too, because the engine never draws with core WebGPU on that device.
-- A plan without the capabilities page, and a shard without it, runs every page. Judging then counts a page as skipped when its error says that the browser lacks the page's path, as E1301 does.
+- Each shard of a plan with the capabilities page loads that page first, so each shard skips the missing paths. Before this, on 4 October 2026, the second shard of the checks plan opened every WebGPU page on the cloud Galaxy S24. It took about 40 minutes in place of 17.
+- A plan without the capabilities page runs every page. Judging then counts a page as skipped when its error says that the browser lacks the page's path, as E1301 does.
 - Judging by the error alone was the only test before. It still opens each page, which costs minutes in a cloud session. E1301 can also come from a fault in the engine's choice of path, which a skip would then hide.
 - The runner page's own GPU facts in `device.json` do not decide. They come from an adapter asked for without a feature level. Chrome 138 on the Redmi gave the clear page such an adapter, while the engine refused core WebGPU there.
 - Without the flags, the runner skips nothing. A browser that should offer every path, such as Chrome on the Mac, must fail its run when it loses one.
@@ -389,6 +390,7 @@ The tables say which GPU paths each device should offer. These rules come from [
 - Where only WebGL2 runs, the runner skips about 30 of the 50 pages. Plan 6 to 8 minutes.
 - A desktop takes about 8 to 10 minutes. A clear-failure check takes about 5 minutes.
 - Add about 3 minutes per session to start it, turn on the certificate setting and open the runner page. Another browser on the same device needs a new session too.
+- In Automate on 4 October 2026, with the tunnel's compression, the smoke plan took 9 to 11 minutes on most phones. These were the iPhones, the Galaxy S25 and the Pixels. It took 5 minutes on the iPhone 16 with WebGL2 only, 8.5 minutes on Windows 11, and 15.5 minutes on the Galaxy Tab A9 Plus. Opening each session took about 1 minute more.
 
 ### Tier A: each milestone's gate and each release
 
@@ -482,6 +484,7 @@ Swap these in when a device of a tier is busy, or to widen the cover from one mi
 5. Paste the rows that the runner prints into [the record of tested devices](tested-devices.md). Their place cell says BrowserStack Automate.
 
 - `--tier B` or `--tier A,B` picks other tiers. `--only bsiphone17-safari,bspixel10-chrome` picks runners from any tier.
+- `--part 2/3` runs only the second of three parts of the picked devices, in the list's order. Each part is a run of its own, with its own build on the dashboard. With one session at a time, tier A's 10 devices take about 2 hours, so run them as `--part 1/3`, `--part 2/3` and `--part 3/3`. On 4 October 2026, the three parts took 25, 18 and 47 minutes.
 - `--plan` picks the plan, which is `smoke` by default. `--parallel 2` opens at most two sessions at once.
 - Options after `--` go to the device runner as they are. For example, `bun run devices:cloud --only bspixel10-chrome -- --only capabilities` runs one page on one device.
 - Ctrl-C ends every open session before the command exits.
@@ -494,10 +497,12 @@ Swap these in when a device of a tier is busy, or to widen the cover from one mi
 4. Each run gives the device runner `--cloud` with the runner names, `--parallel` and the build name. Each runner's turn opens a session, which loads the runner page that waits at `https://bs-local.com:3001`. The page starts the run when its turn comes.
 5. Every 30 seconds, the runner reads the page's status line through the session, and prints it when it changes. A session ends after 300 seconds without a command, the longest idle time that Automate allows. So these reads also keep the session open.
 6. The session ends with the runner's turn. That happens when the page finishes, or the out-of-memory guard ends its turn. It also happens when the page goes quiet, does not start within 3 minutes, or loses its session.
-7. After the run, it marks each session passed or failed with the runner's summary line, and prints each session's link on BrowserStack's dashboard. Each session records video and the browser's console.
+7. After the run, it marks each session passed or failed with the runner's summary line, and prints each session's link on BrowserStack's dashboard. Each session records video and the browser's console. Each session also turns on interactive debugging, so a person can take over the device from the dashboard while it runs. The owner asked for this on 4 October 2026.
 
 - A command that is killed with no chance to clean up leaves its sessions open. BrowserStack ends them after 5 minutes without a command.
 - Automate ends any session after 2 hours. The smoke plan fits easily. Split a longer plan with the device runner's `--shard`.
+- Each 30-second read of the page's status may wait up to 2 minutes for an answer. Safari on an iPhone can leave one read unanswered while a page compiles its shaders, and the page still finishes its run. So only 3 unanswered reads in a row count the session as lost.
+- The device runner's `--network-logs`, given after `--`, makes Automate keep each session's network log, with each request's timing. The log comes from BrowserStack's own proxy, which changes how the browser treats the certificate and its cache. Use it to look at timings, not to count what the browser fetched.
 - The device runner can open cloud sessions without the command too: `NULL3D_PORT=3000 bun tests/real-browsers.ts --plan smoke --cloud bspixel10-chrome`. It then opens one session at a time.
 
 The code is in these files:
@@ -507,6 +512,26 @@ The code is in these files:
 - `tests/lib/browserstack.ts`: the credentials, each session's capabilities, and the REST calls.
 - `tests/lib/cloud-sessions.ts`: the sessions' lifecycle. `tests/lib/webdriver.ts`: a small client for the W3C WebDriver protocol, so no WebDriver package is needed.
 
+### Pages through the tunnel
+
+The dev server compresses its answers to requests for `bs-local.com`, the name by which every cloud device reaches the Mac. Before it did, the smoke plan's texture, material and preset pages ran out of their 30 seconds on the Galaxy S25 and the Pixel 10. Their GPU work takes about a second.
+
+- The dev server sends the engine as separate modules. One image page asks for about 115 files in Safari on an iPhone, and 250 to 300 in Chrome on an Android phone. Each engine thread loads its own copies.
+- A cloud device's browser accepts the dev server's certificate as an exception. Chrome and Safari 26 keep no file from such a site in their cache, so they fetch every file again on each page. On 4 October 2026, Safari 26 on the iPhone 17 and Chrome on the Galaxy S25 fetched every file in full. They reused no file from an earlier page. Chromium on this Mac did the same when it accepted the certificate as an exception. Safari 18 on the iPhone 16 kept its copies: 2,655 of its 4,834 requests were checks that the file had not changed.
+- Through BrowserStack Local, each request waited about 0.3 seconds for its first byte. The dev server speaks HTTP/1.1, so the browser sends at most 6 requests at once, and the rest wait in turn. One 4.4 MB module took 8 to 14 seconds to arrive.
+- The largest modules are shader sources as strings, with their source maps. A WebGL2 page loads a 7.3 MB module, and a custom-surface page a 15 MB one. Text this repetitive shrinks well. Brotli at quality 5 makes them 0.12 MB and 0.05 MB, in less than 20 ms each.
+- So for that host alone, the dev server compresses scripts, WebAssembly, styles, pages and other text. It uses Brotli, or gzip where the browser lacks Brotli. Requests by any other name get the answers as before. That covers USB, the local network and the Mac's own browsers. The server's own routes under `/__null3d/` choose their own compression.
+- On 4 October 2026, the 7 pages that had failed passed on both phones. Each took 10 to 18 seconds on the Galaxy S25 and 11 to 13 seconds on the Pixel 10. The 7 pages moved 15 MB in all, where one page alone had moved 6 to 18 MB.
+
+These ways were weighed and set aside:
+
+- A longer cache time for tunnel answers. Chrome and Safari 26 keep nothing from the site in their cache, so a cache time changes nothing for them. It would help only Safari 18, which runs the fewest pages, and it would show stale files in a Live session after an edit.
+- A production build. The image page loads its sketch by an address in the query, which a production build cannot follow. The smoke plan also checks the development build.
+- A longer page limit for cloud devices. It hides the cost, and every page of a run pays it.
+- HTTP/2 for the tunnel. It would let the browser send every request at once. It is not tried yet. Safari on an iPad stalled on HTTP/2 while a worker loaded its modules, and iOS devices use the tunnel too.
+
+The code is in `tests/lib/tunnel-server.ts`.
+
 ### Where Automate differs from Live
 
 These facts come from BrowserStack's Automate docs, read on 3 October 2026: [mobile browsers](https://www.browserstack.com/docs/automate/selenium/deliver-better-mobile-user-exp), [Chromium on iOS](https://www.browserstack.com/docs/automate/selenium/chromium-on-ios), [insecure certificates](https://www.browserstack.com/docs/automate/selenium/accept-insecure-certificates), [capabilities](https://www.browserstack.com/automate/capabilities), [timeouts](https://www.browserstack.com/docs/automate/selenium/timeouts) and the [REST API](https://www.browserstack.com/docs/automate/api-reference/selenium/plan).
@@ -515,4 +540,6 @@ These facts come from BrowserStack's Automate docs, read on 3 October 2026: [mob
 - iPhones and iPads offer Safari, and Chromium in place of Chrome. Both draw with WebKit. So tier B's Chrome on the iPhone 17 runs as `bsiphone17-chromium`.
 - Automate's list lacks two devices of the tiers. In tier A, the Galaxy Tab A9 Plus stands in for the Redmi Note 12 4G. Its Adreno 619 is of the same line, with compatibility mode only. In tier B, the Galaxy M32 stands in for the Galaxy A16 5G. It has a low-end Mali GPU and little memory, on Android 11, so it runs WebGL2 only.
 - No toolbar setting is needed for the dev server's certificate. The capability `acceptInsecureCerts` accepts it in most browsers. In Safari and on iOS, BrowserStack's `acceptSsl` command passes the warning page after each load.
+- Samsung Internet on the Galaxy S25 can open the page hidden. On 4 October 2026, 2 of 3 Automate sessions reported the page as hidden right after it loaded. A hidden page gets no animation frames. So the runner page stopped at "reading the device", where it measures the display's refresh rate. The runner ended the turn after 60 seconds. WebGPU, WebGL2 and the browser's own facts answered at once. The third session showed the page as visible. Samsung Internet passed in Live on 3 October, where a person holds the device.
+- An Android phone's screen can run at 24 to 30 Hz. On 4 October 2026, the runner page on the cloud Galaxy S24 measured 24 to 30 Hz in every run. So the pages that limit the time between frames failed there, at 41.7 ms against a limit of 34 ms. The runner marked every timing figure unreliable. The cloud iPad 10th measured 60 Hz on 5 October. Before you call a frame-rate failure on a cloud device a fault of the engine, read the runner's warning about the refresh rate.
 - iOS does not send `localhost` through the tunnel, so every device opens `bs-local.com`. BrowserStack allows every port for current browsers.

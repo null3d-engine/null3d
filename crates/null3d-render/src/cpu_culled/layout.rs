@@ -4,9 +4,11 @@
 //!
 //! A layout holds one kind of bucket. The scene's layout holds every object and instance row with
 //! a mesh and a material, as the views of cameras draw them. The casters' layout holds the scene
-//! objects that cast shadows, grouped by mesh alone, as the shadow cascades draw their depth. Both
-//! place each source at the same row of the same data texture, so the cascades read the matrices
-//! that the scene's layout uploads.
+//! objects that cast shadows, grouped by mesh alone, as the shadow cascades draw their depth. The
+//! outlined layout holds the scene objects that the sketch outlines, grouped by mesh alone, as the
+//! outline view draws them into the outline mask, each bucket twice. Every layout places each
+//! source at the same row of the same data texture, so the others read the matrices that the
+//! scene's layout uploads.
 
 use std::collections::TryReserveError;
 
@@ -28,6 +30,7 @@ use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, bucket_of, collect_bucket_keys,
     put_u32,
 };
+use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 
 /// The data texture of a bucket's instances, as its draw record names it.
@@ -47,10 +50,14 @@ pub(super) enum Drawn {
     Scene,
     /// The scene objects that cast shadows, as the shadow cascades draw their depth.
     Casters,
+    /// The scene objects that the sketch outlines, as the outline view draws them into the outline
+    /// mask.
+    Outlined,
 }
 
-/// The material of every caster bucket: a caster's depth does not depend on its material, so
-/// casters of one mesh share a bucket.
+/// The material of every caster bucket and every outlined bucket: neither a caster's depth nor an
+/// object's place in the outline mask depends on its material, so the objects of one mesh share a
+/// bucket.
 const CASTER_MATERIAL: u32 = 1;
 
 /// What makes a bucket, in draw order: what the mesh and material ask of their pipeline, the bind
@@ -131,8 +138,12 @@ pub(super) struct Layout {
     pub(super) buckets: Vec<Bucket>,
     /// Every bucket's draws, in bucket order. Buckets are sorted by pipeline and by the vertex page
     /// of their mesh's first part, so the draws of one pipeline and page sit together, apart from
-    /// the later parts of meshes split over several pages.
+    /// the later parts of meshes split over several pages. The outlined layout lists every
+    /// bucket's draws twice: with the pipeline that marks every part, then with the one that marks
+    /// the parts that nothing hides.
     pub(super) draws: Vec<Draw>,
+    /// Scratch for rebuilds of the outlined layout: the second draw of each bucket.
+    second_draws: Vec<Draw>,
     /// Each scene slot's bucket, shown or hidden, or `NO_BUCKET` for a slot that draws nowhere
     /// or draws in the transparent pass.
     pub(super) scene_buckets: Vec<u32>,
@@ -240,9 +251,16 @@ impl Layout {
         let key_of = |mesh: u32, material: u32, group: u32, object: u32, skinned: Option<usize>| {
             let pipeline = settings.pipeline_of(mesh, material)?;
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
-            if drawn == Drawn::Casters {
-                let caster = skin(settings.caster_of(pipeline), skinned);
-                return Some((caster, 0, page, mesh, CASTER_MATERIAL, group));
+            match drawn {
+                Drawn::Casters => {
+                    let caster = skin(settings.caster_of(pipeline), skinned);
+                    return Some((caster, 0, page, mesh, CASTER_MATERIAL, group));
+                }
+                Drawn::Outlined => {
+                    let (every, _) = mask_keys(skin(pipeline, skinned));
+                    return Some((every, 0, page, mesh, CASTER_MATERIAL, group));
+                }
+                Drawn::Scene => {}
             }
             // Blended pairs draw in the transparent pass, which sorts them on the job workers.
             if pipeline.blends() {
@@ -272,7 +290,12 @@ impl Layout {
         };
         let scene_key = |slot: usize| {
             let object = scene.flags()[slot];
-            if drawn == Drawn::Casters && (!shadows || object & flags::CAST_SHADOWS == 0) {
+            let left_out = match drawn {
+                Drawn::Scene => false,
+                Drawn::Casters => !shadows || object & flags::CAST_SHADOWS == 0,
+                Drawn::Outlined => object & flags::OUTLINED == 0,
+            };
+            if left_out {
                 return None;
             }
             key_of(
@@ -283,10 +306,11 @@ impl Layout {
                 Some(slot),
             )
         };
-        // Instance batches cast no shadows yet, and no animated instance skins them.
+        // Instance batches cast no shadows yet, take no outlines, and no animated instance skins
+        // them.
         let batch_key = |batch: &InstanceBatch| match drawn {
             Drawn::Scene => key_of(batch.mesh(), batch.material(), group_of(batch), 0, None),
-            Drawn::Casters => None,
+            Drawn::Casters | Drawn::Outlined => None,
         };
         collect_bucket_keys(
             &mut self.key_counts,
@@ -298,9 +322,13 @@ impl Layout {
 
         self.buckets.clear();
         self.draws.clear();
+        self.second_draws.clear();
         for &((pipeline, textures, _, mesh, material, group), _) in &self.key_counts {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
-            let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
+            let (first, prepass) = pipelines.opaque(pipeline, targets, prepass);
+            let second = (drawn == Drawn::Outlined)
+                .then(|| pipelines.id(mask_keys(pipeline).1.in_pass(targets)));
+            let pipeline = first;
             for shift in [0, CLUSTER_SHIFT] {
                 let bucket = self.buckets.len() as u32;
                 self.buckets.push(Bucket {
@@ -308,8 +336,8 @@ impl Layout {
                     group,
                     shift,
                 });
-                self.draws
-                    .extend(meshes.parts(slot).iter().map(|part| Draw {
+                for part in meshes.parts(slot) {
+                    let draw = Draw {
                         pipeline,
                         prepass,
                         textures,
@@ -317,9 +345,18 @@ impl Layout {
                         bucket,
                         index_count: part.index_count,
                         first_index: part.first_index,
-                    }));
+                    };
+                    self.draws.push(draw);
+                    if let Some(second) = second {
+                        self.second_draws.push(Draw {
+                            pipeline: second,
+                            ..draw
+                        });
+                    }
+                }
             }
         }
+        self.draws.extend_from_slice(&self.second_draws);
         // A key's bucket of rows; its bucket of clusters is the next one.
         let counts = &self.key_counts;
         let bucket_of =
@@ -351,10 +388,11 @@ impl Layout {
             (self.draws.len() as u32).max(1) * OFFSET_ALIGNMENT
         };
         self.sorted_records_at = self.draws_slot_bytes;
-        // Only the scene's objects cast shadows, so a cascade lists at most the scene's rows.
+        // Only the scene's objects cast shadows or take outlines, so a cascade or the outline view
+        // lists at most the scene's rows.
         let listed = match drawn {
             Drawn::Scene => resident.saturating_add(streamed),
-            Drawn::Casters => self.scene_rows,
+            Drawn::Casters | Drawn::Outlined => self.scene_rows,
         };
         self.room = CullRoom {
             rows: listed,
