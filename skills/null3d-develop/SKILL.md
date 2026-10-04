@@ -141,7 +141,7 @@ Interaction:
 | --- | --- | --- |
 | Orbit or map camera | `createOrbitControls` or `createMapControls` from `@null3d/controls` | `api/controls` |
 | Fly or first-person camera | `createFlyControls` or `createFirstPersonControls` (0.2) | `api/controls` |
-| Click or hover on objects | `obj.on('click', fn)` and `'pointerenter'` or `'pointerleave'`, or `camera.screenToRay` with `scene.raycast` (all 0.2) | `api/raycast` |
+| Click or hover on objects | `obj.on('click', fn)` and `'pointerenter'` or `'pointerleave'`, or `camera.screenToRay` with `scene.raycast` (all 0.2) | `api/input`, `api/raycast` |
 | Keys, pointer, touch, gamepad | `input.isDown`, `input.wasPressed`, `input.value`, `input.pointer`, `input.touches`, `input.actions.define` | `api/input` |
 | HTML UI and settings panels | On the page, sending messages to the sketch | `guides/ui-overlays` |
 | Labels above objects | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2) | `api/ui` |
