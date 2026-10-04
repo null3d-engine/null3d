@@ -82,7 +82,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Page API: createEngine](api/engine.md) | createEngine options and start errors; memory; capabilities and mode; pausing, detaching, failures, measuring, captureFrame, messages and destroy. | experimental | 0.1 |
 | [Sketch API: defineSketch and the context](api/sketch.md) | The context object: scene, assets, materials, geometry, textures, input, time, engine, quality, post, render, page, ui, debug; the callbacks. | experimental | 0.1 |
 | [Scene](api/scene.md) | Creating objects; models and copies; find; background, environment, fog, sky; warmUp. | experimental | 0.1 |
-| [Objects and transforms](api/objects.md) | Setters and getters; parents; flags; destroy. | experimental | 0.1 |
+| [Objects and transforms](api/objects.md) | Setters and getters; parents; flags; destroy; pointer events. | experimental | 0.1 |
 | [Cameras](api/cameras.md) | Perspective and orthographic cameras; screenToRay; worldToScreen; layers. | experimental | 0.1 |
 | [Lights](api/lights.md) | Directional, point, spot, hemisphere and ambient lights; shadow options. | experimental | 0.1 |
 | [Geometry](api/geometry.md) | Generators with three.js parameters; meshes from arrays; vertex formats; large meshes. | experimental | 0.1 |
@@ -91,7 +91,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Assets](api/assets.md) | loadGltf, loadTexture, loadImageBitmap, loadLut, loadJson, loadBinary, preload, onProgress; environments. | experimental | 0.1 |
 | [Animation](api/animation.md) | The animator; play, crossFade, layers, joint masks, additive clips, events; morph weights. | experimental | 0.2 |
 | [Raycasting and spatial queries](api/raycast.md) | raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects. | experimental | 0.2 |
-| [Input](api/input.md) | Pointer, keyboard, touch and gamepad; action maps. | experimental | 0.1 |
+| [Input](api/input.md) | Pointer, keyboard, touch and gamepad; action maps; pointer events on objects. | experimental | 0.1 |
 | [Camera controls (@null3d/controls)](api/controls.md) | Orbit and map controls (0.1); fly and first-person controls (0.2). | experimental | 0.1 |
 | [Post-processing API](api/post.md) | post.set for tone mapping, exposure, bloom, ambient occlusion, color grading tables and the vignette; the other effects and post.addEffect of 0.2. | experimental | 0.1 |
 | [Render graph API](api/render.md) | render.addPass declarations; enabling and disabling passes; dumpGraph. | planned | 0.2 |
@@ -172,7 +172,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1110: Unmarked write to a static object](errors/E1110.md) | A static object's position, rotation, scale or bounding sphere changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. So such a change can show late, or never. Development builds check these values of every static object before each transform update. Each frame has one transform update, and a sketch with onLateUpdate gets a second one after that callback. Release builds leave the check out. | generated | 0.1 |
 | [E1203: Invalid number](errors/E1203.md) | A call received a number that is not finite, such as NaN or Infinity. | generated | 0.1 |
 | [E1204: Invalid color](errors/E1204.md) | A call received a color that is not a hex string, a number from 0 to 0xffffff, or three numbers from 0 to 1. | generated | 0.1 |
-| [E1205: Unknown input name](errors/E1205.md) | An input call received a name that no key, button or action has, or `input.actions.define()` received an action name that a key or button already has. Names are case-sensitive: `KeyW` is the W key, and `keyW` names nothing. | generated | 0.1 |
+| [E1205: Unknown input name](errors/E1205.md) | An input call received a name that no key, button or action has, or `input.actions.define()` received an action name that a key or button already has. `on()` and `off()` received an event type that objects do not have. Names are case-sensitive: `KeyW` is the W key, and `keyW` names nothing. | generated | 0.1 |
 | [E1206: Invalid mesh arrays](errors/E1206.md) | geometry.fromArrays() received arrays that make no mesh, or scene.createLines() received points that make no line. An array can have the wrong length for the vertex count, an index can name no vertex, or a value can be NaN or Infinity. Normals can also be missing, or both given and computed. A line needs at least 2 points, and pairs of points need an even number. | generated | 0.1 |
 | [E1207: Invalid layer mask](errors/E1207.md) | A call that sets layers received a number that is not a 32-bit layer mask: a fraction, NaN, or a number past 32 bits. | generated | 0.1 |
 | [E1208: Invalid texture](errors/E1208.md) | A call that makes or updates a texture received something it cannot use. It can be an option the engine does not know, or an image without pixels or larger than the device takes. It can also be data that does not fit the texture's size and format. With a KTX2 file, it can be an option that the file cannot take, or an update of its texture. | generated | 0.1 |
