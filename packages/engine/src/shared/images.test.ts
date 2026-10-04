@@ -102,7 +102,7 @@ describe('images on their way to the thread that draws', () => {
 });
 
 describe("custom materials' shaders on their way to the thread that draws", () => {
-	const shader: CustomShader = { variants: {}, locations: [0, 1, 2] };
+	const shader: CustomShader = { variants: {}, locations: [0, 1, 2], textures: 0 };
 
 	test('cross the port of the images by template, and no image counts them', () => {
 		const { slots } = controlViews(createControlBuffer(true));

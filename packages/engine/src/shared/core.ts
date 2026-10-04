@@ -260,6 +260,8 @@ export interface CoreGlue extends CoreErrors {
 	 * The shader reads it at the second texture coordinates when `secondUv` is 1.
 	 */
 	setMaterialMap(material: number, slot: number, texture: number, secondUv: number): number;
+	/** Destroys a material: objects that still use it draw nothing. */
+	destroyMaterial(material: number): number;
 	/**
 	 * A texture with no texels yet, in `depth` layers of a texture array. `format` is a `FORMAT_*` code.
 	 * `mipmaps` has the GPU make the mip levels; without it, `levels` is the mip levels that its data
@@ -539,6 +541,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMaterialValue',
 	'setMaterialValues',
 	'setMaterialMap',
+	'destroyMaterial',
 	'createTexture',
 	'createVolumeTexture',
 	'setTextureImage',

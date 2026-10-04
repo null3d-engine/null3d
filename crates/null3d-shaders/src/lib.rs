@@ -26,6 +26,7 @@ mod output;
 mod position;
 mod problem;
 mod scan;
+mod textures;
 mod typescript;
 mod uniforms;
 
@@ -49,6 +50,7 @@ pub use output::{
 };
 pub use position::Position;
 pub use problem::{BuildError, Problem};
+pub use textures::Texture;
 pub use uniforms::Uniform;
 
 use library::{Composers, Library, View};

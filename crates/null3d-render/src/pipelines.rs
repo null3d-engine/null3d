@@ -203,7 +203,12 @@ impl DrawKey {
 pub struct PipelineCache {
     keys: Vec<PipelineKey>,
     created: usize,
+    /// The ids of created pipelines that the cache released, which the next list destroys.
+    released: Vec<u32>,
 }
+
+/// The template of a released key, which no pipeline has, so no key asks for it again.
+const RELEASED: u32 = u32::MAX;
 
 impl PipelineCache {
     /// The id of a key's pipeline. The next [`PipelineCache::create_new`] creates a new key's
@@ -222,15 +227,38 @@ impl PipelineCache {
     /// Records the creation of every pipeline that the GPU does not have yet, in id order, and
     /// returns how many it recorded.
     pub fn create_new(&mut self, list: &mut DrawList) -> Result<usize, RecordError> {
-        let first = self.created;
+        let mut count = 0;
         while let Some(key) = self.keys.get(self.created) {
-            list.push(
-                Op::CreateRenderPipeline,
-                &key.operands(self.created as u32 + 1),
-            )?;
+            if key.template != RELEASED {
+                list.push(
+                    Op::CreateRenderPipeline,
+                    &key.operands(self.created as u32 + 1),
+                )?;
+                count += 1;
+            }
             self.created += 1;
         }
-        Ok(self.created - first)
+        // After the creations, which the thread that draws starts before the rest of the list.
+        for id in self.released.drain(..) {
+            list.push(Op::DestroyPipeline, &[id])?;
+        }
+        Ok(count)
+    }
+
+    /// Releases every pipeline of each template that `unused` names, such as a custom material's
+    /// whose last material was destroyed. The next list destroys the ones the GPU has. Their ids
+    /// are not given out again, so a list that a capture replays never names another pipeline
+    /// under them; a template that comes back gets new ids.
+    pub fn release(&mut self, unused: impl Fn(u32) -> bool) {
+        for (index, key) in self.keys.iter_mut().enumerate() {
+            if key.template == RELEASED || !unused(key.template) {
+                continue;
+            }
+            if index < self.created {
+                self.released.push(index as u32 + 1);
+            }
+            key.template = RELEASED;
+        }
     }
 
     /// The ids of the pipelines that draw an opaque pair with `key` into a scene pass's `targets`:
@@ -255,6 +283,7 @@ impl PipelineCache {
     /// frame creates each again under the same id.
     pub fn forget(&mut self) {
         self.created = 0;
+        self.released.clear();
     }
 }
 
@@ -414,6 +443,41 @@ mod tests {
         assert_eq!(cache.create_new(&mut list), Ok(3));
         let ids: Vec<u32> = commands(&list).iter().map(|(_, o)| o[0]).collect();
         assert_eq!(ids, [first, second, third]);
+    }
+
+    #[test]
+    fn released_templates_destroy_their_pipelines_once_and_never_reuse_their_ids() {
+        let custom = |vertex_format| DrawKey {
+            template: template::CUSTOM_FIRST,
+            ..lit(vertex_format)
+        };
+        let mut cache = PipelineCache::default();
+        let mut list = DrawList::with_capacity(256);
+        let kept = cache.id(lit(0).in_pass(TARGETS));
+        let gone = cache.id(custom(0).in_pass(TARGETS));
+        cache.create_new(&mut list).unwrap();
+        // A key asked for after the last list, which the GPU never had.
+        cache.id(custom(vertex::UV0).in_pass(TARGETS));
+        cache.release(|t| t == template::CUSTOM_FIRST);
+        list.clear();
+        assert_eq!(cache.create_new(&mut list), Ok(0), "nothing new is created");
+        assert_eq!(commands(&list), [(Op::DestroyPipeline, vec![gone])]);
+        list.clear();
+        cache.create_new(&mut list).unwrap();
+        assert!(
+            commands(&list).is_empty(),
+            "each pipeline is destroyed once"
+        );
+        assert_eq!(cache.id(lit(0).in_pass(TARGETS)), kept);
+        let back = cache.id(custom(0).in_pass(TARGETS));
+        assert_eq!(back, 4, "the template comes back under a new id");
+        cache.forget();
+        list.clear();
+        assert_eq!(
+            cache.create_new(&mut list),
+            Ok(2),
+            "a new device skips released keys"
+        );
     }
 
     #[test]

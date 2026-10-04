@@ -3,12 +3,12 @@ id: shaders/surface-functions
 title: Surface functions
 status: experimental
 since: "0.1"
-summary: "The surface record; vertex-offset functions; per-instance attributes."
+summary: "The surface record; uniforms and textures; vertex-offset functions; per-instance attributes."
 ---
 
 # Surface functions
 
-> Ships in null3D 0.1, with typed uniforms in 0.2. The API is experimental, so it can still change between versions. Textures and per-instance attributes are not built yet. Coding agents must not use them in a custom material.
+> Ships in null3D 0.1, with typed uniforms and textures in 0.2. The API is experimental, so it can still change between versions. Per-instance attributes are not built yet. Coding agents must not use them in a custom material.
 
 A surface function changes how a material's surface looks, and keeps the engine's lighting. You write it in WGSL. For each pixel, the engine gives it a `SurfaceInput`, and it returns a `Surface`: the base color, roughness, metalness, normal and light of that point. The engine then lights the surface with the scene's lights and shadows, as it lights a standard material. The function works on every GPU path, because the null3D Vite plugin builds it into the standard material's shader for WebGPU and WebGL2.
 
@@ -35,7 +35,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 ## Make a custom material
 
-`materials.shader(options)` makes a custom material. Its `wgsl` option holds the WGSL, and its other options are those of `materials.standard`, but the texture maps, which custom materials do not take yet. [Materials](../api/materials.md) lists them.
+`materials.shader(options)` makes a custom material. Its `wgsl` option holds the WGSL. Its `uniforms` and `textures` options give the values of the WGSL's [uniforms](#uniforms) and [textures](#textures). Its other options are those of `materials.standard`, but the texture maps, which a custom material samples as textures of its own. [Materials](../api/materials.md) lists them.
 
 - Write the WGSL in a template literal right after a `/* wgsl */` comment, or in a `.wgsl` file that your sketch imports. The plugin compiles it while Vite serves or builds the project. [Custom shaders](../guides/custom-shaders.md) says how.
 - The WGSL declares `fn surface(input: SurfaceInput) -> Surface`, `fn vertexOffset(input: VertexInput) -> vec3f` ([vertex offsets](#vertex-offsets)), or both, and no `@vertex` or `@fragment` entry point. For a look that the engine's lighting cannot give, write a [full shader](../guides/custom-shaders.md#full-shaders) instead.
@@ -120,12 +120,55 @@ banded.set({ count: 6, roughness: 0.3 });
 - The `uniforms` option gives each uniform its first value. A uniform without one starts at 0.
 - `set()` takes uniforms and standard values in one call. It changes only what you pass, and it checks every value before it changes any.
 - A field can be an `f32`, an `i32` or a `u32`, which take a number, or a `vec2f`, `vec3f` or `vec4f`, which take an array of numbers. A `vec3f` also takes a color, as `color` takes it, and converts it from sRGB to linear. An `i32` or a `u32` holds whole numbers up to 16,777,216 in size.
-- The uniforms fit in 32 numbers. Each `vec3f` and `vec4f` starts a group of four, and each `vec2f` starts at an even place, so order small fields after large ones to fit more.
+- The uniforms fit in 32 numbers, less one for each texture. Each `vec3f` and `vec4f` starts a group of four, and each `vec2f` starts at an even place, so order small fields after large ones to fit more.
 - A field cannot have the name of a standard value, such as `color` or `roughness`, because `set()` takes those too.
 - Each material made from the WGSL has its own values, so one WGSL serves many looks.
 - In TypeScript, the `uniforms` option and `set()` take only the struct's names, each with a value of its kind. A wrong name fails the type check, as [Typed uniforms](../guides/custom-shaders.md#typed-uniforms) explains.
 
 `set()` throws E1216 for a name that is not a uniform, and for a value of the wrong kind. The build stops at a field of another type, or at the first field past the 32 numbers.
+
+## Textures
+
+A custom material samples textures of your own, such as a matcap, a mask or a height map. Declare each one in the WGSL as a variable of type `texture_2d<f32>`, without `@group` or `@binding`. The engine binds it, and declares its sampler as the texture's name followed by `Sampler`. Then give the textures by name in the `textures` option:
+
+```ts
+// sketch.ts
+const worn = /* wgsl */ `
+var detail: texture_2d<f32>;
+var wear: texture_2d<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor *= textureSample(detail, detailSampler, input.uv * 4.0).rgb;
+    let worn = textureSample(wear, wearSampler, input.uv).r;
+    s.roughness = mix(s.roughness, 0.25, worn);
+    return s;
+}
+`;
+
+// In the setup:
+const detail = await assets.loadTexture('/textures/detail.ktx2', { colorSpace: 'srgb', wrap: 'repeat' });
+const wear = await assets.loadTexture('/textures/wear.png', { colorSpace: 'linear' });
+const metal = materials.shader({ wgsl: worn, color: '#b0b4b8', textures: { detail, wear } });
+```
+
+- Sample a texture with the WGSL texture functions: `textureSample`, `textureSampleLevel`, `textureSampleBias`, `textureSampleGrad`, `textureGather` and `textureLoad`. `textureDimensions` and `textureNumLevels` work too. Pass the texture straight to the function. The engine keeps each texture as a layer of a texture array, so it adds the layer to each such call. A texture cannot go to a function of your own, so sample it where you need it.
+- A vertex offset samples textures too, with `textureSampleLevel` or `textureLoad`, as WGSL allows in a vertex shader. A height map then moves each vertex.
+- Each texture's sampler takes the `wrap` and `filter` options of the texture. The `colorSpace` option says whether sampling turns sRGB colors into linear ones, as for the maps of a standard material.
+- Until a texture's image is on the GPU, sampling it gives white: `vec4f(1.0)`. So does a texture that the WGSL declares and the `textures` option does not give. Multiply by a texture, and the material draws with its own values until the image arrives.
+- A material samples up to 6 textures. Each texture takes one of the 32 numbers of the uniforms, so a material with 2 textures has 30 numbers for its uniforms.
+- The textures are fixed when the material is created. Make a second material for another set of textures.
+- A texture is 2D, with one layer: an image, a KTX2 file or data with a depth of 1. Data textures of `rgba16float` sample with filtering too.
+- In TypeScript, the `textures` option takes only the names that the WGSL declares. A wrong name fails the type check.
+
+`materials.shader` throws E1216 for a texture name that the WGSL does not declare, and for a value that is not a texture of one layer. The build stops at these problems:
+
+- A texture of another type, or a texture with `@group` or `@binding`.
+- A sampler that the WGSL declares itself.
+- A seventh texture.
+- A texture that does not go straight to a texture function.
+
+Full shaders take no textures in this version.
 
 ## Vertex offsets
 
@@ -176,9 +219,10 @@ fn surface(input: SurfaceInput) -> Surface {
 
 Your WGSL shares one file with the engine's standard material, so a few rules apply besides the [WGSL rules for portable shaders](wgsl-rules.md):
 
-- Do not declare a name that the engine declares. The build stops at your line when a name clashes. The engine's names are `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs`, `fs` and `FLAT_SHADING`. They also include the library items that the standard material imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`.
+- Do not declare a name that the engine declares. The build stops at your line when a name clashes. The engine's names are `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `custom_texture_layers`, `load_custom_texture_layers`, `VertexIn`, `VertexOut`, `vs`, `fs` and `FLAT_SHADING`. They also include the library items that the standard material imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`.
 - Import library items by name, as in `#import null3d::noise::{fbm3}`. An import of a whole module reserves the module's name. After `#import null3d::color`, no name in the file can be `color`.
 - The WGSL cannot hold directives such as `enable`.
+- Do not declare a name that ends in `Sampler` after a texture's name, such as `detailSampler` beside `detail`. The engine declares it.
 - Call `dpdx`, `dpdy`, `fwidth` and `textureSample` in uniform control flow, outside branches that differ between pixels. Chrome rejects the shader otherwise.
 
 When the WGSL breaks a rule, the build stops with the file, line and column of the problem, as for any WGSL in your code.
