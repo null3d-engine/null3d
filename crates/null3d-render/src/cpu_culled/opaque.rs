@@ -77,8 +77,8 @@ pub(super) enum Shading {
     /// Each draw's pipeline of the depth prepass, with the same frame group as `Lit`. Draws
     /// without one are left out.
     Prepass { light_slot: u32 },
-    /// Each draw's own pipeline, which draws depth alone, with the single frame group of a shadow
-    /// cascade's or a shadow tile's view.
+    /// Each draw's own pipeline, which reads no lights, with the single frame group of a shadow
+    /// cascade's, a shadow tile's or the outline mask's view.
     Depth,
 }
 

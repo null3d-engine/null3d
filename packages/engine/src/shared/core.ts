@@ -385,7 +385,8 @@ export interface CoreGlue extends CoreErrors {
 	setBackground(r: number, g: number, b: number): number;
 	/**
 	 * The address of the block of post-processing values (`POST_VALUE_*`), 32-bit floats that
-	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setAo`, `setLut` or `setVignette`.
+	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setAo`, `setLut`, `setVignette` or
+	 * `setOutline`.
 	 */
 	postValues(): number;
 	/** The tone mapping, by code, and the exposure from the post-processing values, from the next frame on. */
@@ -410,6 +411,8 @@ export interface CoreGlue extends CoreErrors {
 	setLut(texture: number): number;
 	/** Turns the vignette on with the post-processing values' offset and darkness, or off. */
 	setVignette(on: boolean): number;
+	/** Turns outlines on with the post-processing values' line colors and width, or off. */
+	setOutline(on: boolean): number;
 	/**
 	 * Draws the scene into a target of another format, by code, with another anti-aliasing mode, by
 	 * code, from the next frame on.
@@ -621,6 +624,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setSoftwareOcclusion',
 	'setLut',
 	'setVignette',
+	'setOutline',
 	'setCanvasOutput',
 	'setRenderScaling',
 	'setPixelRatio',

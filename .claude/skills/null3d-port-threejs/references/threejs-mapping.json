@@ -1438,10 +1438,10 @@
       "id": "outline",
       "category": "Post-processing",
       "three": "OutlinePass / OutlineEffect",
-      "status": "direct",
+      "status": "changed",
       "since": "0.2",
-      "target": "post.set({ outline: { color, thickness } }) and obj.setOutlined(true)",
-      "notes": "",
+      "target": "post.set({ outline: { color, hiddenColor, width } }) and mesh.setOutlined(true)",
+      "notes": "selectedObjects becomes setOutlined(true) on each mesh, or on a model's copy from scene.instantiate. null3D draws a crisp line of one width in CSS pixels, with no blur. visibleEdgeColor and hiddenEdgeColor become color and hiddenColor. OutlinePass draws its edge at half size, so edgeThickness t becomes width of about 2t. OutlinePass draws a dark brown line around hidden parts by default; null3D draws none until hiddenColor is set, so set hiddenColor: [0.1, 0.04, 0.02], its linear default, to keep it. pmndrs OutlineEffect: xRay: false becomes hiddenColor: false, and its edge is one texel of its mask at resolutionScale, so width is about 1 / resolutionScale. edgeStrength has no setting, as the line is opaque. edgeGlow, pulsePeriod, the pattern texture and pmndrs blur and pulseSpeed have no setting: the line stays crisp. To pulse it, change its color or width every frame. One outline style covers every outlined object.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bOutline(Pass|Effect)\\b"
     },

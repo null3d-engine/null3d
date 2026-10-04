@@ -52,6 +52,15 @@
 //! of their targets. The 8-bit path has no bloom: its scene color holds display color, which no
 //! longer knows how bright a pixel was.
 //!
+//! While the sketch turns outlines on and some object is outlined, the outline passes come after
+//! the transparent passes (see [`crate::outline`]). On WebGPU a culling pass culls the outlined
+//! objects for the outline view. The mask pass draws them into the outline mask, with the scene's
+//! depth as its depth target, so the scene's render pass stores the depth for it. The final pass
+//! then runs in a declaration that reads the mask too, and draws the line from it. There is one
+//! such declaration for each build of the final pass, and the frame switches on the one that it
+//! needs. The outline passes and the mask are off while nothing is outlined, and on every path the
+//! final pass then runs as it did.
+//!
 //! While the sketch turns ambient occlusion on, the camera's view has three ambient occlusion
 //! passes between its depth prepass and its opaque pass (see [`crate::ao`]), and the prepass runs
 //! for every view even where the builder started without it. The first reads the scene depth as
@@ -94,13 +103,14 @@ use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_
 use crate::ao::{self, Ao, AoIds, AoPass, StepSources};
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, LEVELS, STEPS};
 use crate::camera::Mat4;
-use crate::final_pass::{BloomInputs, FinalIds, FinalPass};
+use crate::final_pass::{BloomInputs, FinalIds, FinalPass, OutlineInputs};
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
 use crate::grading::Grading;
 use crate::graph::{
     CANVAS, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph, RenderScale, Size,
     Step, StepKind, StoreOp, Surface, Target,
 };
+use crate::outline::{self, Outline};
 use crate::output::{Antialias, Output, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache};
 use crate::shadows::{MAX_CASCADES, ShadowFrame};
@@ -197,6 +207,12 @@ const fn bloom_source(step: usize) -> &'static str {
         BLOOM_TARGETS[step - 1]
     }
 }
+/// The outline view's culling pass on WebGPU, and the buffer of its compacted instances and
+/// indirect draws.
+const OUTLINE_CULLING: &str = "OutlineCulling";
+const OUTLINE_VISIBLE: &str = "outlineVisible";
+/// The outline mask, which the mask pass creates and the final pass reads.
+const OUTLINE_MASK: &str = "outlineMask";
 /// Each step of ambient occlusion and the target it creates: the depth copy, the horizon search and
 /// the denoise, whose target the camera's opaque pass reads.
 const AO_PASSES: [&str; ao::STEPS] = ["AoDepth", "AoHorizon", "AoDenoise"];
@@ -267,6 +283,8 @@ pub(crate) enum Role {
     Resolve,
     /// A step of bloom's chain, by its place in the chain. The graph records it itself.
     Bloom(u8),
+    /// Draws the outlined objects into the outline mask, from the outline view.
+    OutlineMask,
     /// A step of ambient occlusion, by its place. The graph records it itself.
     Ao(u8),
     /// Tone maps the HDR scene color into the canvas. The graph records it itself.
@@ -274,6 +292,15 @@ pub(crate) enum Role {
     /// Tone maps the HDR scene color into the canvas, with bloom's levels added. The graph records
     /// it itself.
     FinalBloom,
+}
+
+/// The passes that can take the scene color to the canvas: the resolve pass, and the final pass's
+/// declarations by whether they read bloom's levels and then the outline mask. Only the HDR path
+/// declares the ones with bloom.
+#[derive(Clone, Copy, Debug)]
+struct Outputs {
+    resolve: PassId,
+    finals: [[Option<PassId>; 2]; 2],
 }
 
 /// A name for a view's pass or resource: `camera` for the camera's view, and `other` followed by
@@ -336,11 +363,16 @@ pub(crate) struct FrameGraph {
     /// True while the sketch sets a color grading table or the vignette, so the final pass runs to
     /// grade the image even where the scene could resolve into the canvas.
     grades: bool,
+    /// The outline's settings while the sketch turns it on.
+    outline: Option<Outline>,
+    /// True while some object is outlined.
+    outlined: bool,
+    /// The outline's culling pass on WebGPU and its mask pass, once declared.
+    outline_passes: Vec<PassId>,
     /// The render scale of the frame being recorded.
     scale: RenderScale,
-    /// The resolve pass, the final pass and, on the HDR path, the final pass with bloom, once
-    /// declared.
-    outputs: Option<(PassId, PassId, Option<PassId>)>,
+    /// The passes that can take the scene color to the canvas, once declared.
+    outputs: Option<Outputs>,
     /// Bloom's steps and their GPU objects, on the HDR path.
     bloom_pass: Option<BloomPass>,
     /// The GPU objects that bloom's steps take, once the scene color holds HDR color.
@@ -426,6 +458,9 @@ impl FrameGraph {
             resolves: !scene_color.is_hdr() && antialias == Antialias::Msaa,
             scales: false,
             grades: false,
+            outline: None,
+            outlined: false,
+            outline_passes: Vec::new(),
             scale: RenderScale::FULL,
             outputs: None,
             bloom_pass: scene_color
@@ -569,6 +604,17 @@ impl FrameGraph {
         &self.graph
     }
 
+    /// What the outline mask's pipelines and bundles draw into: the mask's format, the depth format
+    /// and the scene's sample count.
+    pub(crate) fn outline_targets(&self) -> PassTargets {
+        PassTargets {
+            color_format: outline::MASK_FORMAT,
+            depth_format: DEPTH_FORMAT,
+            samples: self.samples,
+            permutation: 0,
+        }
+    }
+
     /// What the scene's render pipelines and bundles draw into: the scene color's format, the depth
     /// format and the sample count, with the permutation bits that the scene color sets.
     pub(crate) fn scene_targets(&self) -> PassTargets {
@@ -599,7 +645,7 @@ impl FrameGraph {
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
     /// pass does.
     fn final_runs(&self) -> bool {
-        !self.resolves || self.scales || self.grades
+        !self.resolves || self.scales || self.grades || self.outline_draws()
     }
 
     /// Says whether the render scale may drop below the whole canvas. Where the scene could
@@ -620,21 +666,46 @@ impl FrameGraph {
         }
     }
 
-    /// Switches on the pass that takes the scene color to the canvas, and off the others, and
-    /// bloom's passes while bloom draws.
+    /// Switches on the pass that takes the scene color to the canvas, and off the others, with
+    /// bloom's passes while bloom draws and the outline's while it draws.
     fn enable_outputs(&mut self) {
         let blooms = self.bloom_draws();
-        if let Some((resolve, final_pass, final_bloom)) = self.outputs {
+        let outlines = self.outline_draws();
+        if let Some(Outputs { resolve, finals }) = self.outputs {
             let final_runs = self.final_runs();
             self.graph.set_enabled(resolve, !final_runs);
-            self.graph.set_enabled(final_pass, final_runs && !blooms);
-            if let Some(final_bloom) = final_bloom {
-                self.graph.set_enabled(final_bloom, final_runs && blooms);
+            for (bloom, passes) in finals.into_iter().enumerate() {
+                for (outline, pass) in passes.into_iter().enumerate() {
+                    if let Some(pass) = pass {
+                        let on = final_runs && blooms == (bloom == 1) && outlines == (outline == 1);
+                        self.graph.set_enabled(pass, on);
+                    }
+                }
             }
         }
         for &pass in &self.bloom_passes {
             self.graph.set_enabled(pass, blooms);
         }
+        for &pass in &self.outline_passes {
+            self.graph.set_enabled(pass, outlines);
+        }
+    }
+
+    /// Turns outlines on with their settings, or off with `None`, for the next frames, while
+    /// `outlined` says that some object is outlined. The graph compiles again only when outlines
+    /// start or stop drawing.
+    pub(crate) fn set_outline(&mut self, outline: Option<Outline>, outlined: bool) {
+        let was = self.outline_draws();
+        self.outline = outline;
+        self.outlined = outlined;
+        if self.outline_draws() != was {
+            self.enable_outputs();
+        }
+    }
+
+    /// True while outlines draw: the sketch turned them on, and some object is outlined.
+    pub(crate) fn outline_draws(&self) -> bool {
+        self.outline.is_some() && self.outlined
     }
 
     /// Turns bloom on with its settings, or off with `None`, for the next frames, with each blur
@@ -707,6 +778,7 @@ impl FrameGraph {
         self.transparent.clear();
         self.shadow_passes.clear();
         self.bloom_passes.clear();
+        self.outline_passes.clear();
         let prepass = self.depth_prepass();
         let color = Target::color(self.scene_color.format()).samples(self.samples);
         let depth = Target::depth(DEPTH_FORMAT).samples(self.samples);
@@ -814,6 +886,7 @@ impl FrameGraph {
             self.graph.set_enabled(pass, self.transparent_on);
             self.transparent.push(pass);
         }
+        self.declare_outline(color.samples);
         let resolve = Pass::new("Resolve", PassKind::Resolve)
             .reads(SCENE_COLOR)
             .writes(CANVAS);
@@ -822,12 +895,44 @@ impl FrameGraph {
             .size(Size::Canvas)
             .reads(SCENE_COLOR)
             .writes(CANVAS);
+        let final_outline = with_outline(final_pass.clone()).named("FinalOutline");
         let final_pass = self.add(final_pass, Role::Final);
-        let final_bloom = self.bloom_pass.is_some().then(|| self.declare_bloom());
-        self.outputs = Some((resolve, final_pass, final_bloom));
+        let final_outline = self.add(final_outline, Role::Final);
+        let mut finals = [[Some(final_pass), Some(final_outline)], [None, None]];
+        if self.bloom_pass.is_some() {
+            let final_bloom = self.declare_bloom();
+            let final_bloom_outline = with_outline(final_bloom.clone()).named("FinalBloomOutline");
+            finals[1] = [
+                Some(self.add(final_bloom, Role::FinalBloom)),
+                Some(self.add(final_bloom_outline, Role::FinalBloom)),
+            ];
+        }
+        self.outputs = Some(Outputs { resolve, finals });
         self.enable_outputs();
         self.views = views.len();
         self.declared = true;
+    }
+
+    /// Declares the outline's passes: on WebGPU the outline view's culling pass, then the mask
+    /// pass, which draws into a mask of the scene's `samples` with the scene's depth.
+    fn declare_outline(&mut self, samples: u32) {
+        let mask = Target::color(outline::MASK_FORMAT).samples(samples);
+        let mut pass = Pass::new("OutlineMask", PassKind::Scene)
+            .creates(OUTLINE_MASK, mask)
+            .writes(SCENE_DEPTH);
+        if self.gpu_culling {
+            let culling = Pass::new(OUTLINE_CULLING, PassKind::Compute)
+                .reads(OBJECTS)
+                .creates_buffer(OUTLINE_VISIBLE);
+            let culling = self.add(culling, Role::Cull(ViewId::OUTLINE));
+            self.outline_passes.push(culling);
+            pass = pass.reads(OUTLINE_VISIBLE);
+        }
+        if self.skins() {
+            pass = pass.reads(SKINNED);
+        }
+        let pass = self.add(pass, Role::OutlineMask);
+        self.outline_passes.push(pass);
     }
 
     /// Declares ambient occlusion's steps: the depth copy reads the scene depth as the prepass
@@ -856,9 +961,9 @@ impl FrameGraph {
             .get_or_insert_with(|| AoPass::new(self.ao_ids, samples))
     }
 
-    /// Declares bloom's steps, each reading the target of the step before it, and the final pass
-    /// with bloom, which reads every level, and returns that final pass.
-    fn declare_bloom(&mut self) -> PassId {
+    /// Declares bloom's steps, each reading the target of the step before it, and returns the
+    /// declaration of the final pass with bloom, which reads every level.
+    fn declare_bloom(&mut self) -> Pass {
         let target = Target::color(self.scene_color.format());
         for step in 0..STEPS {
             let pass = Pass::new(BLOOM_PASSES[step], PassKind::Fullscreen)
@@ -875,7 +980,7 @@ impl FrameGraph {
         for level in 0..LEVELS {
             final_bloom = final_bloom.reads(BLOOM_TARGETS[bloom_level(level)]);
         }
-        self.add(final_bloom, Role::FinalBloom)
+        final_bloom
     }
 
     /// Declares each cascade's culling pass on WebGPU, and its shadow pass, which draws into the
@@ -1019,6 +1124,15 @@ impl FrameGraph {
         } else {
             None
         };
+        let outline = match (self.outline, self.outline_draws()) {
+            (Some(outline), true) => Some(OutlineInputs {
+                mask: self
+                    .sampled_id(OUTLINE_MASK)
+                    .expect("the final pass reads the outline mask while outlines draw"),
+                outline,
+            }),
+            _ => None,
+        };
         self.final_pass.prepare(
             list,
             arena,
@@ -1027,6 +1141,7 @@ impl FrameGraph {
             scene_color,
             bloom,
             grading,
+            outline,
             self.textures_made,
         )
     }
@@ -1123,7 +1238,8 @@ impl FrameGraph {
 
     /// Records the plan's render and compute passes, then submits them. The graph records the
     /// final pass, and `record` the commands of each other declared pass. Each render pass clears
-    /// its color targets to `clear`. A render pass whose passes all have roles that `skips` names
+    /// its color targets to `clear`, except the outline mask's pass, which clears to zero: no
+    /// object covers the mask there. A render pass whose passes all have roles that `skips` names
     /// is left out, so its targets keep what earlier frames drew.
     pub(crate) fn record(
         &self,
@@ -1156,6 +1272,10 @@ impl FrameGraph {
                     if passes.iter().all(|&pass| skips(self.roles[pass.index()])) {
                         continue;
                     }
+                    let masks = passes
+                        .iter()
+                        .any(|&pass| self.roles[pass.index()] == Role::OutlineMask);
+                    let clear = if masks { [0.0; 4] } else { clear };
                     self.begin_render_pass(list, plan, step, clear)?;
                     self.set_render_area(list, size)?;
                     for &pass in plan.passes(step) {
@@ -1331,6 +1451,11 @@ impl FrameGraph {
     }
 }
 
+/// The same declaration of a final pass, which reads the outline mask too.
+fn with_outline(pass: Pass) -> Pass {
+    pass.reads(OUTLINE_MASK)
+}
+
 /// Records the creation of a plan's texture under `id`, with its shape and the size it takes,
 /// `made`. Bind groups see an array target as an array, whatever its layer count.
 fn create_texture(
@@ -1380,6 +1505,7 @@ mod tests {
             group: 9,
             blank_lut: 900,
             lut_sampler: 9,
+            blank_outline: 901,
         },
         bloom: BloomIds {
             buffer: 10,
@@ -1422,8 +1548,11 @@ mod tests {
             "DebugLines",
             "Transparent",
             "Transparent1",
+            "OutlineCulling",
+            "OutlineMask",
             "Resolve",
             "Final",
+            "FinalOutline",
         ];
         assert_eq!(graph.pass_count(), names.len());
         for (place, name) in names.into_iter().enumerate() {
@@ -1440,12 +1569,22 @@ mod tests {
                 Role::DebugLines,
                 Role::Transparent(ViewId::CAMERA),
                 Role::Transparent(ViewId::from_index(1)),
+                Role::Cull(ViewId::OUTLINE),
+                Role::OutlineMask,
                 Role::Resolve,
+                Role::Final,
                 Role::Final,
             ]
         );
-        for off in ["DebugLines", "Transparent", "Transparent1", "Final"] {
-            assert!(!graph.is_enabled(graph.find_pass(off).unwrap()), "{off}");
+        for (place, name) in names.into_iter().enumerate() {
+            let on = matches!(name, "LightClusters" | "Culling" | "Culling1" | "Resolve")
+                || name.starts_with("Opaque");
+            let pass = graph.find_pass(name).unwrap();
+            assert_eq!(
+                (pass.index(), graph.is_enabled(pass)),
+                (place, on),
+                "{name}"
+            );
         }
         assert!(graph.is_enabled(graph.find_pass("Resolve").unwrap()));
 
@@ -1458,7 +1597,7 @@ mod tests {
         // The WebGL2 path culls on the job workers, so its graph has no culling passes.
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
         frames.sync_views(&[View::default()]);
-        assert_eq!(frames.graph().pass_count(), 5);
+        assert_eq!(frames.graph().pass_count(), 7);
         assert_eq!(frames.roles[0], Role::Opaque(ViewId::CAMERA));
     }
 
@@ -1896,6 +2035,106 @@ mod tests {
             .prepare(&mut list, (320, 180), RenderScale::FULL)
             .unwrap();
         assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
+    }
+
+    #[test]
+    fn outlines_run_their_mask_with_the_scene_depth_only_while_something_is_outlined() {
+        for (scene_color, gpu_culling) in [(format::RGBA16_FLOAT, true), (format::CANVAS, false)] {
+            let mut frames = frame_graph(scene_color, Antialias::Msaa, gpu_culling, true);
+            frames.sync_views(&[View::default()]);
+            let mut list = DrawList::with_capacity(4096);
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            let without = steps(&frames);
+            let textures = frames.graph().plan().unwrap().textures().len();
+
+            // Outlines on with nothing outlined change nothing.
+            frames.set_outline(Some(Outline::default()), false);
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            assert_eq!(steps(&frames), without);
+
+            frames.set_outline(Some(Outline::default()), true);
+            frames.request_pipelines(&mut PipelineCache::default());
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            let names = steps(&frames);
+            let tail: Vec<&str> = names[names.len() - 2..]
+                .iter()
+                .map(|step| step[0].as_str())
+                .collect();
+            assert_eq!(
+                tail,
+                ["OutlineMask", "FinalOutline"],
+                "the final pass runs in place of the resolve pass, after the mask pass"
+            );
+            let graph = frames.graph();
+            let plan = graph.plan().unwrap();
+            let opaque = plan.step_of(graph.find_pass("Opaque").unwrap()).unwrap();
+            let depth = plan.attachments(&plan.steps()[opaque])[1];
+            assert_eq!(depth.store, StoreOp::Store, "the mask pass needs the depth");
+            let mask = plan
+                .step_of(graph.find_pass("OutlineMask").unwrap())
+                .unwrap();
+            let mask = plan.attachments(&plan.steps()[mask]);
+            assert_eq!(
+                (mask[0].format, mask[0].load, mask[1].load, mask[1].depth),
+                (outline::MASK_FORMAT, LoadOp::Clear, LoadOp::Load, true)
+            );
+            assert!(mask[0].resolve.is_some(), "the multisampled mask resolves");
+            list.clear();
+            let background = [0.25f32, 0.5, 0.75, 1.0].map(f32::to_bits);
+            frames
+                .record(&mut list, [0.25, 0.5, 0.75, 1.0], |_| false, |_, _| Ok(()))
+                .unwrap();
+            let passes = operands(&list, Op::BeginRenderPass);
+            let cleared_to_zero: Vec<_> =
+                passes.iter().filter(|pass| pass[3..7] == [0; 4]).collect();
+            assert_eq!(cleared_to_zero.len(), 1, "only the mask clears to zero");
+            let flags = cleared_to_zero[0][8];
+            assert_eq!(
+                flags & (pass_flags::CLEAR_COLOR | pass_flags::CLEAR_DEPTH),
+                pass_flags::CLEAR_COLOR,
+                "the mask clears its color and keeps the scene's depth"
+            );
+            assert_eq!(
+                passes[0][3..7],
+                background,
+                "the scene clears to the background"
+            );
+
+            let mut arena = UploadArena::default();
+            arena.reset(frames.upload_bound());
+            list.clear();
+            let output = Output::default();
+            frames
+                .upload(&mut list, &mut arena, output, Grading::default())
+                .unwrap();
+            let groups = operands(&list, Op::CreateBindGroup);
+            assert_eq!(
+                groups.len(),
+                1,
+                "the final pass binds the mask in its own group"
+            );
+            let outline_entries: Vec<_> = groups[0][3..]
+                .chunks(5)
+                .filter(|entry| entry[0] >= 11)
+                .map(|entry| entry[2])
+                .collect();
+            assert_eq!(outline_entries.len(), 1);
+            assert_ne!(outline_entries[0], 901, "the mask, not the blank texture");
+
+            // Nothing outlined: the mask pass and the mask are gone.
+            frames.set_outline(Some(Outline::default()), false);
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            assert_eq!(steps(&frames), without);
+            assert_eq!(frames.graph().plan().unwrap().textures().len(), textures);
+        }
     }
 
     #[test]
