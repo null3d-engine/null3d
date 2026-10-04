@@ -577,7 +577,8 @@ impl GpuDrivenRenderer {
             input.structure_changed || !self.layout.built || shadows != self.layouts_shadowed;
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
-            self.settings.update_map_groups();
+            self.settings
+                .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
             self.skinning
                 .rebuild(input.scene, input.animations, self.settings.meshes());
             let targets = self.graph.scene_targets();
