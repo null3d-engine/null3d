@@ -14,11 +14,13 @@
 //! # The depth prepass
 //!
 //! With the depth prepass, the scene's opaque objects draw twice in each view's render pass. The
-//! prepass draws their depth alone, with the depth template, into the view's depth. The opaque pass
-//! then shades each object only where its depth equals what the prepass left, which is the nearest
-//! surface, and writes no depth. Every template's position is invariant, so both compute the same
-//! depth. A pair whose depth the depth template cannot draw the same way stays out of the prepass
-//! and shades as it would without it (see [`DrawKey::prepass`]).
+//! prepass draws their depth alone into the view's depth. The opaque pass then shades each object
+//! only where its depth equals what the prepass left, which is the nearest surface, and writes no
+//! depth. A pair whose depth the prepass cannot draw the same way stays out of the prepass and
+//! shades as it would without it (see [`DrawKey::prepass`]).
+//!
+//! The test for equal depth needs both passes to give each pixel the same depth, to the last bit.
+//! Each GPU path draws the prepass in the way that does so on it ([`Prepass`]).
 
 use null3d_gpu::drawlist::{DrawList, Op, permutation, state_flags, template};
 
@@ -124,6 +126,30 @@ impl PassTargets {
     }
 }
 
+/// How a frame builder's depth prepass draws the depth of the pairs that it takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Prepass {
+    /// No depth prepass.
+    Off,
+    /// With the depth template's prepass build, which computes each position with the same steps
+    /// as the shading templates. Every template marks its position invariant, and on WebGPU that
+    /// gives both programs the same depth.
+    DepthTemplate,
+    /// With the shading pipeline's own build and the `PREPASS` bit, which the WebGL2 backend draws
+    /// with that build's vertex shader and a fragment shader that writes nothing. On WebGL2, two
+    /// programs whose positions take the same steps can still give different depths, although
+    /// both mark the position invariant: ANGLE on Metal did so in Chrome on a Mac. Two programs
+    /// with the same vertex shader gave the same depths.
+    OwnVertexShader,
+}
+
+impl Prepass {
+    /// This way of drawing the prepass when `on`, else none.
+    pub const fn if_on(self, on: bool) -> Prepass {
+        if on { self } else { Prepass::Off }
+    }
+}
+
 /// What a mesh and material pair decides about the pipeline that draws it: the template of the
 /// material's shading, the permutation bits of the pair's features, the mesh's vertex format, and
 /// the material's state flags and depth bias. Its order is the order in which builders sort their
@@ -143,11 +169,12 @@ impl DrawKey {
         self.state & state_flags::BLEND != 0
     }
 
-    /// The key of the pipeline that draws the pair's depth in the depth prepass, or `None` when the
-    /// pair stays out of it. The depth template places the vertices of the engine's templates as
-    /// they do, with the same faces and depth bias. It cannot follow a pair that blends, discards
-    /// fragments by their alpha, skips the depth test or depth writes, or has a custom material,
-    /// whose vertices may move, or a sprite material, whose quads turn to face the camera.
+    /// The key of the pipeline that draws the pair's depth in the depth prepass with the depth
+    /// template ([`Prepass::DepthTemplate`]), or `None` when the pair stays out of the prepass. The
+    /// depth template places the vertices of the engine's templates as they do, with the same faces
+    /// and depth bias. The prepass cannot follow a pair that blends, discards fragments by their
+    /// alpha, skips the depth test or depth writes, or has a custom material, whose vertices may
+    /// move, or a sprite material, whose quads turn to face the camera.
     pub const fn prepass(self) -> Option<DrawKey> {
         let unfit = state_flags::BLEND
             | state_flags::LINE_LIST
@@ -260,16 +287,23 @@ impl PipelineCache {
     }
 
     /// The ids of the pipelines that draw an opaque pair with `key` into a scene pass's `targets`:
-    /// the one that shades it, and with the depth prepass (`prepass`), the one that draws its depth
-    /// first, or 0 for a pair that stays out of the prepass.
-    pub fn opaque(&mut self, key: DrawKey, targets: PassTargets, prepass: bool) -> (u32, u32) {
-        match key.prepass() {
-            Some(depth) if prepass => (
-                self.id(key.after_prepass().in_pass(targets)),
-                self.id(depth.in_pass(targets.depth_only())),
-            ),
-            _ => (self.id(key.in_pass(targets)), 0),
-        }
+    /// the one that shades it, and with a depth prepass, the one that draws its depth first, or 0
+    /// for a pair that stays out of the prepass.
+    pub fn opaque(&mut self, key: DrawKey, targets: PassTargets, prepass: Prepass) -> (u32, u32) {
+        let depth = match key.prepass() {
+            Some(depth) if prepass != Prepass::Off => depth,
+            _ => return (self.id(key.in_pass(targets)), 0),
+        };
+        let shading = key.after_prepass().in_pass(targets);
+        let depth = match prepass {
+            Prepass::OwnVertexShader => PipelineKey {
+                permutation: shading.permutation | permutation::PREPASS,
+                state: depth.state,
+                ..shading
+            },
+            _ => depth.in_pass(targets.depth_only()),
+        };
+        (self.id(shading), self.id(depth))
     }
 
     /// Every key, in id order: the key at index `k` has id `k + 1`.
@@ -579,8 +613,8 @@ mod tests {
             ..TARGETS
         };
         let mut cache = PipelineCache::default();
-        assert_eq!(cache.opaque(lit(0), targets, false), (1, 0));
-        let (shading, depth) = cache.opaque(lit(0), targets, true);
+        assert_eq!(cache.opaque(lit(0), targets, Prepass::Off), (1, 0));
+        let (shading, depth) = cache.opaque(lit(0), targets, Prepass::DepthTemplate);
         assert_eq!((shading, depth), (2, 3));
         let keys = cache.keys();
         assert_eq!(keys[1], lit(0).after_prepass().in_pass(targets));
@@ -600,8 +634,43 @@ mod tests {
             permutation: permutation::ALPHA_MASK,
             ..lit(0)
         };
-        let (shading, depth) = cache.opaque(masked, targets, true);
+        let (shading, depth) = cache.opaque(masked, targets, Prepass::DepthTemplate);
         assert_eq!(depth, 0);
         assert_eq!(cache.keys()[shading as usize - 1], masked.in_pass(targets));
+    }
+
+    #[test]
+    fn the_webgl2_prepass_draws_with_the_shading_pipelines_own_build() {
+        let targets = PassTargets {
+            permutation: permutation::DRAW_INDEX | permutation::TONE_MAP,
+            ..TARGETS
+        };
+        let key = DrawKey {
+            permutation: permutation::RECEIVE_SHADOWS,
+            state: state_flags::CULL_NONE,
+            bias: DepthBias::from_polygon_offset(2.0, 1.0),
+            ..lit(0)
+        };
+        let mut cache = PipelineCache::default();
+        let (shading, depth) = cache.opaque(key, targets, Prepass::OwnVertexShader);
+        assert_eq!((shading, depth), (1, 2));
+        let (shading, depth) = (cache.keys()[0], cache.keys()[1]);
+        assert_eq!(shading, key.after_prepass().in_pass(targets));
+        // The same template and bits, so the same vertex shader, with the faces and the bias of
+        // the pair, and no color.
+        assert_eq!(
+            depth,
+            PipelineKey {
+                permutation: shading.permutation | permutation::PREPASS,
+                state: state_flags::CULL_NONE | state_flags::NO_COLOR_WRITE,
+                ..shading
+            }
+        );
+        assert_eq!(Prepass::OwnVertexShader.if_on(false), Prepass::Off);
+        let masked = DrawKey {
+            permutation: permutation::ALPHA_MASK,
+            ..lit(0)
+        };
+        assert_eq!(cache.opaque(masked, targets, Prepass::OwnVertexShader).1, 0);
     }
 }
