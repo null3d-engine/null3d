@@ -21,6 +21,8 @@ import type { FrameInput, RenderCanvas, Renderer, Tier } from './renderer';
 
 /** How often a capture checks whether the pipelines it waits for are built. */
 const BUILD_POLL_MS = 4;
+/** The longest that a capture waits for pipelines to build. */
+export const BUILD_WAIT_LIMIT_MS = 30_000;
 
 /** What the scene renderers ask of a GPU backend. */
 interface SceneBackend {
@@ -71,9 +73,15 @@ export class FrameReplay {
 	private viewsOf: ArrayBufferLike = new ArrayBuffer(0);
 	private end = 0;
 	private readonly slots: Int32Array;
-	/** The frame whose pipelines started to build last, and where the rest of its list starts. */
+	/** The newest frame whose pipelines started to build. */
 	private prepared = 0;
-	private rest = 0;
+	/**
+	 * Where the rest of each list starts, after the pipelines it creates, by the parity of the
+	 * frame that the list holds.
+	 */
+	private readonly rests = new Int32Array(2);
+	/** True once the renderer is destroyed: a capture that waits then stops waiting. */
+	private abandoned = false;
 	/** True once a frame has drawn with every pipeline built, since the last hold began. */
 	private complete = false;
 	/** The first frame of the last hold that a prepared frame reached. */
@@ -109,20 +117,35 @@ export class FrameReplay {
 	 * Resolves with the frame that this thread took last, once every pipeline is built, including
 	 * those of that frame's list. Frames go on while it waits, and the sketch thread records into a
 	 * taken frame's list again once the next frame is taken, so the caller replays the frame at
-	 * once, before this thread can take another.
+	 * once, before this thread can take another. It fails when the renderer is destroyed during the
+	 * wait, as after a GPU loss, or when the builds take longer than the wait's limit.
 	 */
 	async builtTaken(): Promise<number> {
+		const deadline = performance.now() + BUILD_WAIT_LIMIT_MS;
 		for (;;) {
+			if (this.abandoned)
+				throw new Error('the GPU was lost or the engine stopped during the capture');
 			const frame = Atomics.load(this.slots, Slot.FramesTaken);
 			this.restOf(frame);
 			if (!this.backend.building) return frame;
+			if (performance.now() >= deadline)
+				throw new Error(
+					`the frame's pipelines were still building after ${BUILD_WAIT_LIMIT_MS / 1000} s`,
+				);
 			await new Promise((resolve) => setTimeout(resolve, BUILD_POLL_MS));
 		}
 	}
 
+	/** Ends every wait for builds, for a renderer that is destroyed. */
+	abandon(): void {
+		this.abandoned = true;
+	}
+
 	/**
-	 * Finds the list of `frame`, starts to build the pipelines it creates the first time, and
-	 * returns where the rest of the list starts.
+	 * Finds the list of `frame`, and returns where the rest of the list starts. Frames only grow,
+	 * so the pipelines of a list start to build only for a frame newer than any prepared before.
+	 * An older frame, such as one that a capture replays while the loop has prepared the next,
+	 * reuses the place that its list's preparation found.
 	 */
 	private restOf(frame: number): number {
 		const buffer = this.memory.buffer;
@@ -134,11 +157,11 @@ export class FrameReplay {
 		const parity = frame & 1;
 		const start = Atomics.load(this.slots, Slot.DrawListAddress0 + parity) / 4;
 		this.end = start + Atomics.load(this.slots, Slot.DrawListWords0 + parity);
-		if (frame !== this.prepared) {
-			this.rest = this.backend.prepare(this.words, start, this.end);
+		if (frame > this.prepared) {
+			this.rests[parity] = this.backend.prepare(this.words, start, this.end);
 			this.prepared = frame;
 		}
-		return this.rest;
+		return this.rests[parity] as number;
 	}
 }
 
@@ -250,6 +273,7 @@ export class WebGPUSceneRenderer implements Renderer {
 	}
 
 	destroy(): void {
+		this.frames.abandon();
 		this.backend.timer?.destroy();
 		this.backend.destroy();
 		this.context.unconfigure();
@@ -370,6 +394,7 @@ export class WebGL2SceneRenderer implements Renderer {
 	}
 
 	destroy(): void {
+		this.frames.abandon();
 		this.release.abort();
 		this.backend.destroy();
 		releaseContext(this.gl);
