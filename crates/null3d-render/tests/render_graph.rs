@@ -295,6 +295,71 @@ fn passes_run_after_what_they_read_in_any_order_of_declaration() {
 }
 
 #[test]
+fn a_pass_that_reads_a_target_so_far_runs_between_the_writers_declared_around_it() {
+    let mut graph = RenderGraph::new();
+    let depth = DEPTH.samples(SAMPLES);
+    graph.add_pass(
+        Pass::new("Opaque", PassKind::Scene)
+            .creates("color", HDR.samples(SAMPLES))
+            .creates("depth", depth),
+    );
+    graph.add_pass(
+        Pass::new("Pyramid", PassKind::Compute)
+            .reads_so_far("depth")
+            .creates_buffer("pyramid"),
+    );
+    graph.add_pass(
+        Pass::new("LateOpaque", PassKind::Scene)
+            .writes("color")
+            .writes("depth")
+            .reads("pyramid"),
+    );
+    graph.add_pass(
+        Pass::new("Final", PassKind::Fullscreen)
+            .size(Size::Canvas)
+            .reads("color")
+            .writes(CANVAS),
+    );
+    let graph = compiled(graph);
+    assert_eq!(
+        steps(&graph),
+        [
+            vec!["Opaque"],
+            vec!["Pyramid"],
+            vec!["LateOpaque"],
+            vec!["Final"]
+        ]
+    );
+    // The first pass stores the depth for the pyramid and the late pass, which loads it and the
+    // color. The multisampled depth is sampled, so it is no transient attachment.
+    let first = attachments_of(&graph, "Opaque");
+    assert!(
+        first
+            .iter()
+            .all(|a| a.load == LoadOp::Clear && a.store == StoreOp::Store)
+    );
+    let late = attachments_of(&graph, "LateOpaque");
+    assert!(late.iter().all(|a| a.load == LoadOp::Load));
+    assert_eq!(
+        texture_of(&graph, "depth").usage,
+        usage::RENDER_ATTACHMENT | usage::TEXTURE_BINDING
+    );
+
+    // A read so far needs a writer declared before it.
+    let mut graph = RenderGraph::new();
+    graph.add_pass(
+        Pass::new("Pyramid", PassKind::Compute)
+            .reads_so_far("depth")
+            .creates_buffer("pyramid"),
+    );
+    graph.add_pass(Pass::new("Opaque", PassKind::Scene).creates("depth", DEPTH));
+    assert!(matches!(
+        graph.compile(),
+        Err(GraphError::MissingInput { .. })
+    ));
+}
+
+#[test]
 fn writers_of_one_target_run_in_the_order_of_declaration() {
     let mut graph = RenderGraph::new();
     graph.add_pass(

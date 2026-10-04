@@ -328,9 +328,13 @@ pub mod format {
     /// filters. No path draws into it, and WebGL2 cannot copy it, because it reads copies through
     /// a framebuffer.
     pub const RGB9E5_UFLOAT: u32 = 19;
+    /// One 32-bit float per texel, which draws and is read with `textureLoad`, unfiltered:
+    /// ambient occlusion's copy of the depth. WebGL2 calls it `R32F`, and draws into it with
+    /// `EXT_color_buffer_float`.
+    pub const R32_FLOAT: u32 = 20;
 
     /// Every format.
-    pub const ALL: [u32; 20] = [
+    pub const ALL: [u32; 21] = [
         NONE,
         CANVAS,
         RGBA8_UNORM,
@@ -351,6 +355,7 @@ pub mod format {
         ETC2_RGBA8_UNORM,
         ETC2_RGBA8_UNORM_SRGB,
         RGB9E5_UFLOAT,
+        R32_FLOAT,
     ];
 
     /// One past the highest format code, the length of the tables that the replay loop indexes by
@@ -414,7 +419,7 @@ pub mod format {
     pub const fn block_bytes(format: u32) -> u32 {
         match format {
             CANVAS | RGBA8_UNORM | BGRA8_UNORM | DEPTH32_FLOAT | R32_UINT | RGBA8_UNORM_SRGB
-            | RG11B10_UFLOAT | RGB9E5_UFLOAT => 4,
+            | RG11B10_UFLOAT | RGB9E5_UFLOAT | R32_FLOAT => 4,
             RGBA16_FLOAT | ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB => 8,
             RGBA32_FLOAT
             | ASTC_4X4_UNORM
@@ -616,6 +621,17 @@ pub mod layout {
     /// Group 0 of the skinning compute pipeline: its table of formats and parts, a mesh page's
     /// vertices, the skinned vertices that it writes, and the texture of skinning matrices.
     pub const SKIN: u32 = 12;
+    /// Group 0 of ambient occlusion's depth step on a depth target of one sample: the steps'
+    /// uniform block, then the depth target, which the step reads as unfilterable floats with
+    /// `textureLoad`. Compatibility mode reads no depth texture type with `textureLoad`, so the
+    /// binding is a plain float texture on every path.
+    pub const AO_DEPTH: u32 = 16;
+    /// [`AO_DEPTH`] for a multisampled depth target, of which the step reads sample 0. Only
+    /// WebGPU has it: WebGL2 reads a copy of one sample that the backend keeps.
+    pub const AO_DEPTH_MS: u32 = 17;
+    /// Group 0 of ambient occlusion's other steps: the steps' uniform block, then the two
+    /// textures that the step reads with `textureLoad`.
+    pub const AO: u32 = 18;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1094,8 +1110,8 @@ pub mod sizes {
     pub const INSTANCE_STRIDE: u32 = 64;
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
-    /// materials read, and the camera's near and far distances.
-    pub const FRAME_UNIFORM_BYTES: u32 = 288;
+    /// materials read, the camera's near and far distances, and ambient occlusion's values.
+    pub const FRAME_UNIFORM_BYTES: u32 = 304;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1217,6 +1233,18 @@ pub mod template {
     /// [`LINE`] lit as a standard material that faces the camera: the sun, the point and spot
     /// lights and the ambient light shade each line.
     pub const LINE_LIT: u32 = 30;
+    /// Ambient occlusion's first step: one triangle over a target at a fraction of the render
+    /// size, which copies one texel of the depth target of one sample per pixel, as unfilterable
+    /// floats.
+    pub const AO_DEPTH: u32 = 31;
+    /// [`AO_DEPTH`] from a multisampled depth target, whose sample 0 it reads. WebGPU only.
+    pub const AO_DEPTH_MS: u32 = 32;
+    /// Ambient occlusion's horizon search, three.js's GTAO: it writes how open each pixel is to
+    /// the sky, and the normal that it rebuilt from the depth.
+    pub const AO: u32 = 33;
+    /// Ambient occlusion's edge-aware blur, three.js's Poisson denoise: it writes the occlusion
+    /// that the opaque pass reads, beside the depth it blurred at.
+    pub const AO_DENOISE: u32 = 34;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1381,6 +1409,7 @@ pub fn typescript_constants() -> String {
                 ("ETC2_RGBA8_UNORM", format::ETC2_RGBA8_UNORM),
                 ("ETC2_RGBA8_UNORM_SRGB", format::ETC2_RGBA8_UNORM_SRGB),
                 ("RGB9E5_UFLOAT", format::RGB9E5_UFLOAT),
+                ("R32_FLOAT", format::R32_FLOAT),
             ],
         ),
         (
@@ -1466,6 +1495,9 @@ pub fn typescript_constants() -> String {
                 ("FINAL_BLOOM", layout::FINAL_BLOOM),
                 ("JOINTS", layout::JOINTS),
                 ("SKIN", layout::SKIN),
+                ("AO_DEPTH", layout::AO_DEPTH),
+                ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
+                ("AO", layout::AO),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1536,6 +1568,10 @@ pub fn typescript_constants() -> String {
                 ("SPRITE_MAP", template::SPRITE_MAP),
                 ("LINE", template::LINE),
                 ("LINE_LIT", template::LINE_LIT),
+                ("AO_DEPTH", template::AO_DEPTH),
+                ("AO_DEPTH_MS", template::AO_DEPTH_MS),
+                ("AO", template::AO),
+                ("AO_DENOISE", template::AO_DENOISE),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),

@@ -518,13 +518,16 @@ impl MockBackend {
         match texture.samples {
             1 => {}
             4 => {
+                // A depth pyramid reads a multisampled depth target with textureLoad; no bind group
+                // reads multisampled color, which passes sample through its resolve.
                 check(
                     texture.layers == 1
                         && texture.mips == 1
                         && texture.usage & texture_usage::RENDER_ATTACHMENT != 0
-                        && texture.usage & texture_usage::TEXTURE_BINDING == 0,
+                        && (texture.usage & texture_usage::TEXTURE_BINDING == 0
+                            || format::is_depth(texture.format)),
                     op,
-                    "a multisampled texture is a render target of one layer and one mip level, which no bind group reads",
+                    "a multisampled texture is a render target of one layer and one mip level, which only a depth target's bind group reads",
                 )?;
                 let float16 = texture.format == format::RGBA16_FLOAT
                     && self.caps.contains(Capabilities::MSAA_FLOAT16);

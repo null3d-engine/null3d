@@ -8,6 +8,7 @@ import { readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import null3d from '../packages/vite-plugin/src/index.ts';
+import { samplesServer } from '../tools/lib/samples.ts';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
 import { sourceResolve } from '../tools/lib/source-condition.ts';
 
@@ -25,7 +26,8 @@ export default defineConfig({
 	root,
 	// Relative addresses, so the build works under any address prefix, such as a load route's.
 	base: './',
-	plugins: [null3d({ urlSwitches: true })],
+	// The crowd scene imports its model from the sample content, which the null3D plugin optimizes.
+	plugins: [null3d({ urlSwitches: true }), samplesServer(root)],
 	// The pages take the packages' source, not the files that their pack step builds.
 	resolve: sourceResolve,
 	logLevel: 'warn',

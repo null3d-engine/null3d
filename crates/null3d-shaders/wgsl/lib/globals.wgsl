@@ -40,6 +40,10 @@ struct Frame {
     /// The distances of the camera's near and far planes, then the change in normalized device
     /// coordinates across one CSS pixel of the canvas, along x and along y.
     camera_range: vec4f,
+    /// Ambient occlusion's strength, 0 when the view draws none, the scene target's height in
+    /// pixels, and the texels of its texture per pixel of the scene, across and down (see
+    /// null3d::gtao).
+    occlusion: vec4f,
 }
 
 /// One material's row of the material table, as the core writes it (`materials.rs` in the
