@@ -198,11 +198,13 @@ The engine makes its memory while it tests the GPU paths. So the memory maximum 
 
 ### The depth prepass
 
-With the depth prepass, the engine first draws the depth of the opaque objects, with a shader that computes positions only. The opaque pass then shades each pixel once, for its nearest surface. Without the prepass, a pixel can be shaded for several surfaces before the nearest one covers them. The prepass costs a second pass over the objects' vertices. So it saves GPU time where objects hide many others and their shading costs much, such as in a lit street of buildings. It costs time where a scene has many vertices and little overdraw.
+With the depth prepass, the engine first draws the depth of the opaque objects, with no color. The opaque pass then shades each pixel once, for its nearest surface. Without the prepass, a pixel can be shaded for several surfaces before the nearest one covers them. The prepass costs a second pass over the objects' vertices. So it saves GPU time where objects hide many others and their shading costs much, such as in a lit street of buildings. It costs time where a scene has many vertices and little overdraw.
 
 Some objects stay out of the prepass and shade as they would without it. These are blended objects, and objects whose material has an alpha cutoff, skips depth writes or the depth test, or is a custom material. Every preset leaves the prepass off. Turn it on with the `depthPrepass` option of `createEngine`, and compare the scene's GPU time with `?prepass=on` and `?prepass=off`. The prepass is fixed while the engine runs, because the scene's pipelines depend on it.
 
-Only WebGPU draws the prepass. On WebGL2, two shader programs can compute different depths for a triangle that the camera's near plane cuts. So WebGL2 draws without the prepass, and `quality.settings.depthPrepass` is false there.
+Both GPU paths draw the prepass, and it gives the same image as a frame without it. The opaque pass shades a pixel only where its depth equals the prepass's depth exactly. So both passes must compute each vertex's depth to the last bit. On WebGPU, the prepass uses a shader that computes positions only. On WebGL2, it uses the vertex shader of each object's own material, with a fragment shader that writes nothing. On WebGL2, two separate shader programs can compute slightly different depths for one triangle, and a surface would then vanish from the frame.
+
+One case differs: two opaque surfaces at exactly the same depth. Without the prepass, the surface drawn first shows. With it, both pass the test for equal depth, so the surface drawn last shows. Give such surfaces a depth bias, or move one a little, so one is nearer.
 
 ```ts
 const engine = await createEngine({ canvas, sketch, depthPrepass: true });

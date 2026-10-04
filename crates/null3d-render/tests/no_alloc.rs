@@ -243,6 +243,25 @@ fn recording_frames_with_the_depth_prepass_allocates_nothing() {
     };
     assert_eq!(shadow_allocations(world()), 0, "shadows");
     assert_eq!(two_view_allocations(world()), 0, "two views");
+    for multi_draw in [true, false] {
+        let world = || {
+            World::build(CpuCulledRenderer::new(CpuCulledConfig {
+                multi_draw,
+                depth_prepass: true,
+                ..CpuCulledConfig::default()
+            }))
+        };
+        assert_eq!(
+            shadow_allocations(world()),
+            0,
+            "WebGL2 shadows, multi-draw {multi_draw}"
+        );
+        assert_eq!(
+            two_view_allocations(world()),
+            0,
+            "WebGL2 two views, multi-draw {multi_draw}"
+        );
+    }
 }
 
 /// Records warm-up frames, then steady frames whose exposure changes every frame, so the final pass
