@@ -281,6 +281,8 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 - On Slow 4G the start is a chain of round trips of at least 562 ms each. After the page and its script come the core, the probe worker and every other download that the start needs. With worker threads these are the workers and the sketch module. In single-threaded mode they are the core's loader, the sketch module and the renderer. The workers then load the core's loader while the core still downloads.
 - So the core is the last download in most modes, and the engine is ready soon after it. [Implementation notes](implementation-notes.md#start-order) give the order and the times.
 - The MacBook Pro was measured in Chrome 154 on 30 September 2026. A cold load in the pipelined mode finished its first frame after 4.0 s on Slow 4G. A warm load took 0.7 s, and both took about 0.1 s at full speed.
+- The shader file of the device's GPU path and fixed bits downloads with the core. The page starts it right after the GPU probe, as [D-13](decisions/D-13-shader-variants.md#the-download-after-the-core-t-28-5-october-2026) says. Before, it asked for the file only after the core, one round trip later.
+- On 5 October 2026 the MacBook Pro was measured again on Slow 4G and WebGL2, in Chrome 154, while other work loaded the Mac. Each figure is a median of 10 loads. A cold load took 4.20 to 4.26 s in each thread mode, and a warm one 0.68 to 0.71 s. With the file asked for after the core, a cold load took 4.76 to 4.83 s, and a warm one 0.68 to 0.77 s. The core was then 249.4 KB after Brotli, and a cold load downloaded 363 to 371 KB.
 
 ## Soak
 

@@ -11,6 +11,8 @@ import { emptySceneInput, HoldLoop, type LoopFault, runRenderLoop } from './loop
 import { Drawing } from './recovery';
 import { createRenderer, type RenderCanvas, type Renderer, type RendererOptions } from './renderer';
 
+export { preloadDeviceShaders } from './renderer';
+
 export interface DrawingSetup extends RendererOptions {
 	/** The canvas that this thread owns. */
 	canvas: RenderCanvas;
