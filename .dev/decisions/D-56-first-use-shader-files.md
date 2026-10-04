@@ -16,11 +16,22 @@ Every M2 feature adds templates or permutation bits to the shader files that a p
 
 ## Data
 
-All sizes are after Brotli at quality 11, after gzip at level 9, and uncompressed. `bun run build` prints them for the engine test page's production build. Main is at dc178379.
+All sizes are after Brotli at quality 11, after gzip at level 9, and uncompressed. `bun run build` prints them for the engine test page's production build. The feature files' sizes are from main at dc178379.
 
 ### The start
 
-{{START_TABLE}}
+Main is at 7f272ddd here, as `bun run build:check-size` built it. Main's size report has no gzip column yet.
+
+| What a page downloads at its start | Main | This record |
+| --- | --- | --- |
+| Each start shader file, after Brotli | 27.6 to 30.0 KB | 17.7 to 19.4 KB |
+| Each start shader file, after gzip | not measured | 109.2 to 214.6 KB |
+| Each start shader file, uncompressed | 1,840 to 3,597 KB | 846 to 1,368 KB |
+| A pipelined page's start, after Brotli | 113.1 KB | 104.6 KB |
+| A pipelined page's start, after gzip | 529 KB, with M2-R14's columns on main | 311.6 KB |
+| A pipelined page's start, uncompressed | 3,871 KB | 1,652 KB |
+
+A page parses less than half the shader text of main before its first frame. With main's ambient occlusion, M2-R14's new gzip budget for the start, 448 KB, held only with this record's grouping.
 
 ### The files that load on first use
 
