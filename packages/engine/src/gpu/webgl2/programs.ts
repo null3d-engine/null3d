@@ -18,6 +18,8 @@ import {
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
+	TEMPLATE_LINE,
+	TEMPLATE_LINE_LIT,
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
@@ -143,6 +145,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_SHADOW_DEPTH] = { shader: shaders.shadow_depth, pipeline: 'main' };
 	templates[TEMPLATE_SPRITE] = { shader: shaders.sprite, pipeline: 'main' };
 	templates[TEMPLATE_SPRITE_MAP] = { shader: shaders.sprite_map, pipeline: 'main' };
+	templates[TEMPLATE_LINE] = { shader: shaders.line, pipeline: 'main' };
+	templates[TEMPLATE_LINE_LIT] = { shader: shaders.line_lit, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND] = { shader: shaders.background, pipeline: 'main' };
 	if (DEV) {
 		templates[TEMPLATE_DEBUG_LINES] = {
