@@ -113,6 +113,15 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0.25, 0.5, 1],
 	},
+	// The size of ambient occlusion's targets, as a share of the render size each way: half on High
+	// and Ultra, and 0 on Low and Medium, where ambient occlusion draws nothing even when the sketch
+	// turns it on. A share above 0 draws a corner of the same targets, so it changes during play
+	// with no new GPU object; a change to or from 0 adds or removes its passes, as `post.set` does.
+	aoScale: {
+		presets: [0, 0, 0.5, 0.5],
+		changes: 'live',
+		values: [0, 0.25, 0.5],
+	},
 	// Software occlusion culling on WebGL2: the job workers draw the objects marked as blockers
 	// into a small depth buffer, and hide what lies wholly behind them. Its cost on phones is not
 	// measured yet, so these values follow the plan until device runs settle them (D-41).
@@ -262,9 +271,16 @@ export interface QualitySettings {
 	 */
 	bloomSamples: 0.25 | 0.5 | 1;
 	/**
+	 * The size of ambient occlusion's targets, as a share of the render size each way: 0.5, 0.25,
+	 * or 0, which draws no ambient occlusion even when `post.set` turns it on. A smaller share costs
+	 * less, with softer occlusion. It changes during play: 0.5 and 0.25 make no GPU object, and a
+	 * change to or from 0 adds or removes ambient occlusion's passes.
+	 */
+	aoScale: 0 | 0.25 | 0.5;
+	/**
 	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
 	 * toward `minRenderScale`, then how often far shadow cascades draw, then the shadow filter, then
-	 * bloom's samples while bloom is on. It raises them again, in the reverse order, once frames
+	 * bloom's samples while bloom is on, then ambient occlusion's scale while it draws. It raises them again, in the reverse order, once frames
 	 * have time to spare. `quality.governor` reports its steps. False keeps the render scale at
 	 * `maxRenderScale` and the other settings as set, as benchmarks and captures need. It changes
 	 * during play.

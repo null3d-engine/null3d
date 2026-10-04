@@ -51,6 +51,7 @@
 			"!**/node_modules",
 			"!**/dist",
 			"!**/target",
+			"!bench/results",
 			"!skills/*/evals",
 			"!docs/data",
 			"!tools/samples/manifest.json",

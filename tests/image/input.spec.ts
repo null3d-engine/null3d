@@ -20,6 +20,8 @@ interface InputState {
 		isTouch: boolean;
 		frame: number;
 	};
+	/** The frame of the pointer's last event in the sketch's count, which `frames` also counts. */
+	shownFrame: number;
 	moved: {
 		dx: number;
 		dy: number;
@@ -143,9 +145,10 @@ for (const mode of ENGINE_MODES)
 		const placed = await state();
 		expect(placed.pointer.ndcX).toBeCloseTo((100 / CANVAS.width) * 2 - 1, 5);
 		expect(placed.pointer.ndcY).toBeCloseTo(1 - (50 / CANVAS.height) * 2, 5);
-		// Each pointer event names the frame that was on screen when it came.
+		// Each pointer event names the frame that was on screen when it came, in the engine's count,
+		// which also counts the setup's frames. In the sketch's count it is a frame already drawn.
 		expect(placed.pointer.frame).toBeGreaterThan(0);
-		expect(placed.pointer.frame).toBeLessThanOrEqual(placed.frames);
+		expect(placed.shownFrame).toBeLessThanOrEqual(placed.frames);
 
 		await page.mouse.down({ button: 'left' });
 		await expect.poll(state).toMatchObject({ down: { Mouse0: true }, pointer: { buttons: 1 } });

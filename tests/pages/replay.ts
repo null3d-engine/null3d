@@ -245,7 +245,7 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		1,
 		G.LAYOUT_FRAME,
-		11,
+		12,
 		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
 		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
 		...[2, G.RESOURCE_TEXTURE, 5, 0, 0],
@@ -257,6 +257,8 @@ run('replay', async () => {
 		...[8, G.RESOURCE_BUFFER, 15, 0, 0],
 		...[9, G.RESOURCE_TEXTURE, 4, 0, 0],
 		...[10, G.RESOURCE_BUFFER, 16, 0, 0],
+		// Ambient occlusion's texture, which the shader reads only while its strength is above 0.
+		...[11, G.RESOURCE_TEXTURE, 3, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,

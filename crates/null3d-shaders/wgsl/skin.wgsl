@@ -29,7 +29,7 @@
 /// Threads per workgroup.
 const WORKGROUP_SIZE: u32 = 64u;
 /// Joints per row of the joint texture.
-const JOINTS_PER_ROW: u32 = 1024u;
+const JOINTS_PER_ROW: u32 = 512u;
 /// Table entries before the first part: the count, then the format.
 const HEADER: u32 = 4u;
 /// A field of the format that names no attribute.

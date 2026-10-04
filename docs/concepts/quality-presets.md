@@ -176,6 +176,7 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Shadow tile size in texels (`shadowTileSize`) | 512 | 512 | 1024 | 1024 | at the start | built |
 | Point light shadows (`pointLightShadows`) | no | no | yes | yes | at the start | built |
 | Bloom samples (`bloomSamples`) | 100% of three.js's | 100% of three.js's | 100% of three.js's | 100% of three.js's | during play | built |
+| Ambient occlusion (`aoScale`) | off | off | half resolution | half resolution | during play | built |
 | Frame-budget governor (`governor`) | on | on | on | on | during play | built |
 | Depth prepass (`depthPrepass`) | no | no | no | no | at the start | built |
 | GPU occlusion culling (WebGPU) (`gpuOcclusion`) | no | no | no | no | at the start | built |
@@ -201,9 +202,9 @@ The engine makes its memory while it tests the GPU paths. So the memory maximum 
 
 With the depth prepass, the engine first draws the depth of the opaque objects, with no color. The opaque pass then shades each pixel once, for its nearest surface. Without the prepass, a pixel can be shaded for several surfaces before the nearest one covers them. The prepass costs a second pass over the objects' vertices. So it saves GPU time where objects hide many others and their shading costs much, such as in a lit street of buildings. It costs time where a scene has many vertices and little overdraw.
 
-Some objects stay out of the prepass and shade as they would without it. These are blended objects, and objects whose material has an alpha cutoff, skips depth writes or the depth test, or is a custom material. Every preset leaves the prepass off. Turn it on with the `depthPrepass` option of `createEngine`, and compare the scene's GPU time with `?prepass=on` and `?prepass=off`. The prepass is fixed while the engine runs, because the scene's pipelines depend on it.
+Some objects stay out of the prepass and shade as they would without it. These are blended objects, line batches, and objects whose material has an alpha cutoff or skips depth writes or the depth test. Every preset leaves the prepass off. Ambient occlusion turns it on while it draws, because it reads the prepass's depth ([post-processing](post-processing.md#ambient-occlusion)). Turn it on with the `depthPrepass` option of `createEngine`, and compare the scene's GPU time with `?prepass=on` and `?prepass=off`. The prepass is fixed while the engine runs, because the scene's pipelines depend on it.
 
-Both GPU paths draw the prepass, and it gives the same image as a frame without it. The opaque pass shades a pixel only where its depth equals the prepass's depth exactly. So both passes must compute each vertex's depth to the last bit. On WebGPU, the prepass uses a shader that computes positions only. On WebGL2, it uses the vertex shader of each object's own material, with a fragment shader that writes nothing. On WebGL2, two separate shader programs can compute slightly different depths for one triangle, and a surface would then vanish from the frame.
+Both GPU paths draw the prepass, and it gives the same image as a frame without it. The opaque pass shades a pixel only where its depth equals the prepass's depth exactly. So both passes must compute each vertex's depth to the last bit. On WebGPU, the prepass uses a shader that computes positions only. Custom materials and sprites place their vertices in their own way, so there they draw with their own vertex shader. On WebGL2, every object draws with the vertex shader of its own material. A fragment shader that writes nothing completes each such program. On WebGL2, two separate shader programs can compute slightly different depths for one triangle, and a surface would then vanish from the frame.
 
 One case differs: two opaque surfaces at exactly the same depth. Without the prepass, the surface drawn first shows. With it, both pass the test for equal depth, so the surface drawn last shows. Give such surfaces a depth bias, or move one a little, so one is nearer.
 
@@ -274,10 +275,12 @@ flowchart LR
     room["5 s with time to spare"] --> back["One step back up,<br/>in the reverse order"]
 ```
 
-Dynamic resolution is the first part of the frame-budget governor. The scale can stop at `minRenderScale` while frames still take too long. The governor then lowers the live shadow settings, one step at a time:
+Dynamic resolution is the first part of the frame-budget governor. The scale can stop at `minRenderScale` while frames still take too long. The governor then lowers the live shadow settings and the effects' settings, one step at a time:
 
 1. The far shadow cascades draw half as often, for example every 4th frame instead of every 2nd, and at most every 8th frame. This step needs a directional light with two cascades or more.
 2. The shadow filter blends 3 x 3 texels instead of 5 x 5.
+3. Bloom's blurs read half as many texels, down to a quarter of three.js's. These steps happen only while bloom is on.
+4. Ambient occlusion draws at a quarter of the render size instead of half. This step happens only while ambient occlusion draws at half the size.
 
 Each step follows the rules of dynamic resolution. Frames must stay over budget for a second before a step down, and keep time to spare for 5 seconds before a step up. A wait follows each step, and no step happens early in play, after a pause, or during uploads. The governor raises the settings in the reverse order, so the render scale comes back last. It takes shadow steps only where a directional light casts shadows. It never changes the preset, nor a setting that is fixed while the preset runs, such as the shadow map's size.
 

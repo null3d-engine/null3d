@@ -187,8 +187,8 @@ export type Check =
 	| { kind: 'governor'; tier: Tier; stage: GovernorStage }
 	/** A skinning page, on WebGL2 or on WebGPU's core path, with its crowd and its cascades. */
 	| { kind: 'skinning'; tier: SkinningGpu; characters: number; cascades: number }
-	/** The bloom cost page: bloom off and on in turns, at one render scale. */
-	| { kind: 'bloom'; tier: Tier; scale: number }
+	/** The effect cost page: an effect off and on in turns, at one render scale. */
+	| { kind: 'effect'; effect: 'bloom' | 'ao'; tier: Tier; scale: number }
 	/** The occlusion cost page: the city with software occlusion culling off and on in turns. */
 	| { kind: 'occlusion' }
 	/** The GPU occlusion page: frames culled against unculled, then the culling off and on in turns. */
@@ -782,26 +782,53 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 	);
 }
 
-/** How long the bloom cost page may take: the warm-up and six measurements, plus the start. */
-const BLOOM_TIMEOUT_SECONDS = 60;
-/** The render scales at which the bloom plan measures bloom. */
-export const BLOOM_SCALES = [1, 0.5] as const;
+/** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
+const EFFECT_TIMEOUT_SECONDS = 60;
+/** The render scales at which the effect plans measure an effect. */
+export const EFFECT_SCALES = [1, 0.5] as const;
 
 /**
- * What bloom costs on each GPU path at each render scale: the bloom scene fills the window, and the
- * page times its frames with bloom off and on in turns. D-21 records the results.
+ * What an effect costs on each GPU path at each render scale: the effect's scene fills the window,
+ * and the page times its frames with the effect off and on in turns. Ambient occlusion turns the
+ * depth prepass on with it, so the ao plan also times each page with the prepass on in both
+ * halves: the difference there is the cost of ambient occlusion's own passes, and the rest is the
+ * prepass's. D-21 records the results of the bloom plan and the ao plan.
  */
-export function bloomPlan(): PlanItem<Check>[] {
-	return TIERS.flatMap((tier) =>
-		BLOOM_SCALES.map((scale) =>
-			pageItem(
-				`bloom-${tier}-${scale * 100}`,
-				'bloom-cost',
-				{ kind: 'bloom', tier, scale },
-				{ switches: [`gpu=${tier}`, `scale=${scale}`], timeoutSeconds: BLOOM_TIMEOUT_SECONDS },
+export function effectPlan(effect: 'bloom' | 'ao'): PlanItem<Check>[] {
+	const prepass = effect === 'ao' ? [false, true] : [false];
+	// three.js's GTAOPass on the same scene and canvas, for comparison.
+	const twin: PlanItem<Check>[] =
+		effect === 'ao'
+			? [
+					{
+						id: 'ao-threejs-100',
+						path: '/bench/pages/threejs/ao-cost.html',
+						timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+						check: { kind: 'effect', effect, tier: 'webgl2', scale: 1 },
+					},
+				]
+			: [];
+	const pages = TIERS.flatMap((tier) =>
+		EFFECT_SCALES.flatMap((scale) =>
+			prepass.map((on) =>
+				pageItem(
+					`${effect}-${tier}-${scale * 100}${on ? '-prepass' : ''}`,
+					'effect-cost',
+					{ kind: 'effect', effect, tier, scale },
+					{
+						switches: [
+							`gpu=${tier}`,
+							`scale=${scale}`,
+							`effect=${effect}`,
+							...(on ? ['prepass=on'] : []),
+						],
+						timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+					},
+				),
 			),
 		),
 	);
+	return [...pages, ...twin];
 }
 
 /** How long the occlusion cost page may take: the city's start, the warm-up and six measurements. */
@@ -1159,7 +1186,8 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	overload: overloadPlan,
 	skinning: () => skinningPlan('webgl2'),
 	'skinning-webgpu': () => skinningPlan('webgpu'),
-	bloom: bloomPlan,
+	bloom: () => effectPlan('bloom'),
+	ao: () => effectPlan('ao'),
 	occlusion: occlusionPlan,
 	'gpu-occlusion': gpuOcclusionPlan,
 	animation: animationPlan,
@@ -1633,11 +1661,11 @@ export function judge(
 		}
 		case 'skinning':
 			return skinningProblems(result as ItemResult & SkinningResult);
-		case 'bloom': {
-			const bloom = result as ItemResult & { failures?: string[]; on?: { intervalMs?: number } };
+		case 'effect': {
+			const cost = result as ItemResult & { failures?: string[]; on?: { intervalMs?: number } };
 			return [
-				...(bloom.failures ?? []).map((code) => `the engine failed with ${code}`),
-				...(bloom.on?.intervalMs ? [] : ['the page measured no frame with bloom on']),
+				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
+				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${check.effect} on`]),
 			];
 		}
 		case 'gpu-occlusion': {
@@ -1735,6 +1763,19 @@ export function benchSummary(
 	items: readonly PlanItem<Check>[],
 	resultOf: (id: string) => ItemResult | undefined,
 ): string | undefined {
+	const rows = benchRows(items, resultOf);
+	return rows && benchReport(rows).join('\n');
+}
+
+/**
+ * One runner's benchmark pages, each with its successful runs summarized and its visual figures,
+ * apart for each job worker count. A page whose runs all failed has no row. Undefined when the
+ * plan has no benchmarks.
+ */
+export function benchRows(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): SummaryRow[] | undefined {
 	type Group = Omit<SummaryRow, 'summary'> & { results: BenchResult[]; visualKey?: string };
 	const groups = new Map<string, Group>();
 	const visual = new Map<string, VisualResult>();
@@ -1760,7 +1801,7 @@ export function benchSummary(
 		groups.set(key, group);
 	}
 	if (groups.size === 0) return undefined;
-	const rows: SummaryRow[] = [...groups.values()]
+	return [...groups.values()]
 		.filter((group) => group.results.length > 0)
 		.map(({ results, visualKey, ...row }) => {
 			const figures = visualKey === undefined ? undefined : visual.get(visualKey);
@@ -1769,7 +1810,6 @@ export function benchSummary(
 				...(figures && { visual: visualFigures(row.scene, figures) }),
 			};
 		});
-	return benchReport(rows).join('\n');
 }
 
 /**

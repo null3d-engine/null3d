@@ -264,7 +264,7 @@ describe('the warm-up time plan', () => {
 	const items = warmUpTimePlan();
 
 	it('loads each scene and demo on each path twice with fresh shaders, then twice as they ship', () => {
-		expect(items).toHaveLength(2 * (6 + DEMOS.length) * 4);
+		expect(items).toHaveLength(2 * (7 + DEMOS.length) * 4);
 		expect(items.slice(0, 4).map((item) => item.id)).toEqual([
 			'warm-up-s1-webgpu-fresh-1',
 			'warm-up-s1-webgpu-fresh-2',

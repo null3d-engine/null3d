@@ -6,23 +6,31 @@ import { Post, type PostSettings } from './post';
 import type { Texture } from './textures';
 
 /**
- * A post object whose core records each setOutput, setBloom, setLut and setVignette call, with
- * its arguments and the values that it reads from the block of post-processing values. The block
- * starts with the core's defaults.
+ * A post object whose core records each setOutput, setBloom, setAo, setLut and setVignette call,
+ * with its arguments and the values that it reads from the block of post-processing values. The
+ * block starts with the core's defaults.
  */
-function post(hdrEffects = true): {
+function post(
+	hdrEffects = true,
+	occlusionTargets = true,
+): {
 	post: Post;
 	calls: [number, number][];
 	blooms: [boolean, number, number, number][];
+	aos: [boolean, ...number[]][];
 	luts: number[][];
 	vignettes: [boolean, number, number][];
 	reads: () => number;
 } {
 	const calls: [number, number][] = [];
 	const blooms: [boolean, number, number, number][] = [];
+	const aos: [boolean, ...number[]][] = [];
 	const luts: number[][] = [];
 	const vignettes: [boolean, number, number][] = [];
-	const block = Float32Array.of(1, 1, 0.5, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1);
+	const block = Float32Array.of(
+		...[1, 1, 0.5, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
+		...[0.25, 1, 1, 1, 1, 16, 1],
+	);
 	expect(block.length).toBe(C.POST_VALUE_COUNT);
 	let views = 0;
 	const at = (place: number) => block[place] as number;
@@ -47,6 +55,11 @@ function post(hdrEffects = true): {
 				]);
 				return 0;
 			},
+			setAo(on: boolean) {
+				const values = [0, 1, 2, 3, 4, 5, 6].map((k) => at(C.POST_VALUE_AO_RADIUS + k));
+				aos.push([on, ...values]);
+				return 0;
+			},
 			setLut(texture: number) {
 				const domain = [0, 1, 2].map((k) => at(C.POST_VALUE_LUT_DOMAIN_MIN + k));
 				const top = [0, 1, 2].map((k) => at(C.POST_VALUE_LUT_DOMAIN_MAX + k));
@@ -60,7 +73,15 @@ function post(hdrEffects = true): {
 		},
 		check: (result: number) => result,
 	} as unknown as CoreMemory;
-	return { post: new Post(core, hdrEffects), calls, blooms, luts, vignettes, reads: () => views };
+	return {
+		post: new Post(core, hdrEffects, occlusionTargets),
+		calls,
+		blooms,
+		aos,
+		luts,
+		vignettes,
+		reads: () => views,
+	};
 }
 
 /** A table of 33 texels a side over a domain from -0.5 to 2, whose texture has handle 7. */
@@ -122,6 +143,41 @@ describe('post.set', () => {
 		expect(blooms).toHaveLength(2);
 	});
 
+	it("turns ambient occlusion on with GTAOPass's defaults and the values given, and keeps them while off", () => {
+		const { post: output, aos, blooms } = post();
+		output.set({ exposure: 2 });
+		expect(aos).toEqual([]);
+		output.set({ ao: {} });
+		output.set({ ao: { radius: 0.5, samples: 32, intensity: 0.5 } });
+		output.set({ ao: false });
+		output.set({ ao: { thickness: 2, distanceExponent: 2, distanceFalloff: 0.5, scale: 1.5 } });
+		expect(aos).toEqual([
+			[true, 0.25, 1, 1, 1, 1, 16, 1],
+			[true, 0.5, 1, 1, 1, 1, 32, 0.5],
+			[false, 0.5, 1, 1, 1, 1, 32, 0.5],
+			[true, 0.5, 2, 2, 0.5, 1.5, 32, 0.5],
+		]);
+		expect(blooms).toEqual([]);
+		expect(output.aoOn).toBe(true);
+	});
+
+	it('warns once where the device has no float targets, and keeps ambient occlusion off', () => {
+		const { post: output, aos } = post(true, false);
+		const warnings: unknown[] = [];
+		const warn = console.warn;
+		console.warn = (message: unknown) => warnings.push(message);
+		try {
+			output.set({ ao: {} });
+			output.set({ ao: { radius: 1 } });
+		} finally {
+			console.warn = warn;
+		}
+		expect(warnings).toHaveLength(1);
+		expect(String(warnings[0])).toContain('float render targets');
+		expect(aos.map(([on]) => on)).toEqual([false, false]);
+		expect(output.aoOn).toBe(false);
+	});
+
 	it('sends the table with its intensity and domain, keeps the intensity, and turns it off with false', () => {
 		const { post: output, luts } = post();
 		output.set({ exposure: 1.5 });
@@ -175,6 +231,17 @@ describe('post.set', () => {
 			{ vignette: { amount: 0.3 } },
 			{ vignette: { offset: -1 } },
 			{ vignette: { darkness: -0.5 } },
+			{ ao: true },
+			{ ao: { strength: 1 } },
+			{ ao: { radius: -1 } },
+			{ ao: { thickness: -1 } },
+			{ ao: { distanceExponent: 0 } },
+			{ ao: { distanceFalloff: 1.5 } },
+			{ ao: { scale: -1 } },
+			{ ao: { intensity: 2 } },
+			{ ao: { samples: 0 } },
+			{ ao: { samples: 8.5 } },
+			{ ao: { samples: 65 } },
 		])
 			expect(() => output.set(bad as PostSettings)).toThrow('E1213');
 		expect(calls).toEqual([]);
@@ -188,5 +255,6 @@ describe('post.set', () => {
 		expect(() => output.set({ bloom: { strength: Number.NaN } })).toThrow('E1203');
 		expect(() => output.set({ lutIntensity: Number.NaN })).toThrow('E1203');
 		expect(() => output.set({ vignette: { offset: Number.POSITIVE_INFINITY } })).toThrow('E1203');
+		expect(() => output.set({ ao: { radius: Number.NaN } })).toThrow('E1203');
 	});
 });
