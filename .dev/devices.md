@@ -500,6 +500,7 @@ Swap these in when a device of a tier is busy, or to widen the cover from one mi
 7. After the run, it marks each session passed or failed with the runner's summary line, and prints each session's link on BrowserStack's dashboard. Each session records video and the browser's console. Each session also turns on interactive debugging, so a person can take over the device from the dashboard while it runs. The owner asked for this on 4 October 2026.
 
 - A command that is killed with no chance to clean up leaves its sessions open. BrowserStack ends them after 5 minutes without a command.
+- A session that stopped answering still gets the command that ends it. On 4 October 2026, BrowserStack timed out the reads of a Galaxy M32 session, but kept the session open. It held the plan's only parallel session until someone ended it by hand.
 - Automate ends any session after 2 hours. The smoke plan fits easily. Split a longer plan with the device runner's `--shard`.
 - Each 30-second read of the page's status may wait up to 2 minutes for an answer. Safari on an iPhone can leave one read unanswered while a page compiles its shaders, and the page still finishes its run. So only 3 unanswered reads in a row count the session as lost.
 - The device runner's `--network-logs`, given after `--`, makes Automate keep each session's network log, with each request's timing. The log comes from BrowserStack's own proxy, which changes how the browser treats the certificate and its cache. Use it to look at timings, not to count what the browser fetched.

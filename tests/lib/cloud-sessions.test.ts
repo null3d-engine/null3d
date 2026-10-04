@@ -191,7 +191,7 @@ describe('CloudSessions', () => {
 		expect(count()).toBe(polls);
 	});
 
-	it('counts a session that the cloud ended as lost, and sends it nothing more', async () => {
+	it('counts a session that the cloud ended as lost, and sends it nothing more than the end command', async () => {
 		hub = fakeHub();
 		const lines: string[] = [];
 		const sessions = sessionsOn(hub, lines);
@@ -204,7 +204,8 @@ describe('CloudSessions', () => {
 		const before = hub.received.length;
 		await sessions.poll('bspixel10-chrome');
 		await sessions.close('bspixel10-chrome');
-		expect(hub.received).toHaveLength(before);
+		expect(hub.received.slice(before).map(({ method }) => method)).toEqual(['DELETE']);
+		expect(lines.at(-1)).toContain('the cloud ended the session');
 		expect(sessions.summary()).toEqual([
 			expect.stringContaining(
 				'bspixel10-chrome: https://automate.example/sessions/session-1 (the cloud ended it early',
@@ -238,6 +239,10 @@ describe('CloudSessions', () => {
 		await sessions.poll('bspixel10-chrome');
 		expect(sessions.lost('bspixel10-chrome')).toBe(true);
 		expect(lines.at(-1)).toContain('the cloud ended the session: POST execute');
+		// The cloud still holds a session that stopped answering, so it gets the end command.
+		await sessions.close('bspixel10-chrome');
+		expect(hub.received.at(-1)?.method).toBe('DELETE');
+		expect(lines.at(-1)).toBe('bspixel10-chrome: session ended');
 	});
 
 	it('reports a session the cloud refused, without the credentials that the error quoted', async () => {
