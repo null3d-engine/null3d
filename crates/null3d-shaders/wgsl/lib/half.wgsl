@@ -1,6 +1,7 @@
 enable f16;
 #define_import_path null3d::half
 #import null3d::color::{ACES_INPUT, ACES_OUTPUT, AGX_INSET, AGX_MAX_EV, AGX_MIN_EV, AGX_OUTSET}
+#import null3d::color::{agx_contrast}
 #import null3d::color::{LINEAR_REC2020_TO_LINEAR_SRGB, LINEAR_SRGB_TO_LINEAR_REC2020}
 #import null3d::lighting::{PbrMaterial, Reflected}
 
@@ -28,9 +29,14 @@ const SMITH_FLOOR: f16 = 1e-4h;
 /// 0.089 to the fourth is about 6.3e-5. A smoother surface draws the highlight of this roughness,
 /// as Filament does on phones, where it runs at half precision.
 const ROUGHNESS_FLOOR: f32 = 0.089;
-/// The brightest linear color that the tone mapping curves take. Each curve is white well before
-/// it, and the curves square their input, which must stay below the largest 16-bit float.
-const TONE_LIMIT: f32 = 64.0;
+/// The brightest channel of a linear color that the tone mapping curves take. A brighter color
+/// scales down until its brightest channel fits, which keeps its hue. Each curve draws white long
+/// before it, and the ACES curve's first step, which divides by 0.6, still fits a 16-bit float.
+const TONE_LIMIT: f32 = 16384.0;
+/// The largest value that the ACES curve's fit takes after the input matrix. The fit squares it,
+/// which must stay below the largest 16-bit float, and at this value the fit is within 0.3% of
+/// its limit, so a channel past it draws as at full precision.
+const ACES_LIMIT: f16 = 200.0h;
 
 /// A 32-bit color as a 16-bit one, clamped to the largest 16-bit float.
 fn half_color(c: vec3f) -> vec3h {
@@ -107,14 +113,18 @@ fn indirect_diffuse(m: PbrMaterial, irradiance: vec3f, dfg: vec2f) -> vec3f {
     return vec3f(half_color(irradiance) * diffuse * (1.0h - single - multi));
 }
 
-/// A linear color as the tone mapping curves take it: no brighter than TONE_LIMIT.
+/// A linear color as the tone mapping curves take it, scaled down where a channel passes
+/// TONE_LIMIT. Clipping each channel on its own would shift the hue of bright colored light. The
+/// first limit keeps an infinite channel from scaling the color to NaN.
 fn tone_input(c: vec3f) -> vec3h {
-    return vec3h(min(c, vec3f(TONE_LIMIT)));
+    let limited = min(c, vec3f(f32(MAX)));
+    let peak = max(limited.r, max(limited.g, limited.b));
+    return vec3h(limited * (TONE_LIMIT / max(peak, TONE_LIMIT)));
 }
 
 /// ACES filmic tone mapping, as `null3d::color::tone_map_aces` gives it.
 fn tone_map_aces(c: vec3f) -> vec3f {
-    let v = mat3x3h(ACES_INPUT) * (tone_input(c) / 0.6h);
+    let v = min(mat3x3h(ACES_INPUT) * (tone_input(c) / 0.6h), vec3h(ACES_LIMIT));
     let fitted = (v * (v + 0.0245786h) - 0.000090537h) / (v * (0.983729h * v + 0.432951h) + 0.238081h);
     return vec3f(saturate(mat3x3h(ACES_OUTPUT) * fitted));
 }
@@ -126,10 +136,9 @@ fn tone_map_agx(c: vec3f) -> vec3f {
     let range = f16(AGX_MAX_EV) - min_ev;
     // Every value below 2 to the power AGX_MIN_EV maps to 0, so the floor needs no smaller number.
     let x = saturate((log2(max(inset, vec3h(1e-4h))) - min_ev) / range);
-    let x2 = x * x;
-    let x4 = x2 * x2;
-    let curved = 15.5h * x4 * x2 - 40.14h * x4 * x + 31.96h * x4 - 6.868h * x2 * x + 0.4298h * x2
-        + 0.1191h * x - 0.00232h;
+    // The contrast curve runs at full precision: its large terms cancel, and 16-bit floats lose
+    // enough of their digits to move a color by several steps of an 8-bit target.
+    let curved = vec3h(agx_contrast(vec3f(x)));
     let rec2020 = pow(max(mat3x3h(AGX_OUTSET) * curved, vec3h(0.0h)), vec3h(2.2h));
     return vec3f(saturate(mat3x3h(LINEAR_REC2020_TO_LINEAR_SRGB) * rec2020));
 }

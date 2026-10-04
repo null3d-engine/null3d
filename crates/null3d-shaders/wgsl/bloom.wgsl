@@ -1,7 +1,8 @@
 // One step of bloom's chain: one triangle over the step's target, which samples the step before it
 // with a linear filter. The bright pass keeps the scene color's pixels whose luminance passes the
 // threshold, at half size. Each level then blurs the level before it with a Gaussian, first across
-// and then down, at half the size of that level. The weights and the steps follow three.js's
+// and then down. The first level blurs the bright pass at the bright pass's own size, and each
+// later level at half the size of the level before it. The weights and the steps follow three.js's
 // UnrealBloomPass: pairs of taps merge into one filtered read each.
 //
 // Each target holds its drawn corner, as the render scale leaves it, so a read clamps inside the

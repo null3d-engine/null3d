@@ -627,3 +627,26 @@ fn custom_materials_build_arrays_without_sized_array_types_in_glsl() {
     }
     assert!(checked > 30, "only {checked} GLSL programs were built");
 }
+
+/// A surface function with an array of arrays, which WGSL allows and GLSL ES 3.00 does not.
+const NESTED_ARRAYS: &str = "fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let row = array<f32, 2>(input.uv.x, 0.5);
+    let grid = array<array<f32, 2>, 2>(row, row);
+    s.roughness = grid[u32(input.uv.x * 2.0)][u32(input.uv.y * 2.0)];
+    return s;
+}
+";
+
+#[test]
+fn a_glsl_refusal_of_the_materials_own_form_is_not_blamed_on_the_template() {
+    let error = compile(NESTED_ARRAYS).expect_err("GLSL ES 3.00 has no arrays of arrays");
+    assert!(!error.problems.is_empty());
+    for problem in &error.problems {
+        assert!(
+            !problem.message.contains("engine's standard material"),
+            "{}",
+            problem.message
+        );
+    }
+}

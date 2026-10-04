@@ -163,6 +163,7 @@ describe('post.set', () => {
 			{ toneMapping: 'filmic' },
 			{ toneMapping: 'toString' },
 			{ exposure: -1 },
+			{ exposure: 1e39 },
 			{ bloom: true },
 			{ bloom: { intensity: 1 } },
 			{ bloom: { strength: -1 } },
