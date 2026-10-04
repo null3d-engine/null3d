@@ -130,6 +130,8 @@ Item 6's release step makes no release. It prints the version that a `minor` rel
 
 The iPad's S4 run is judged at its Low preset, by the owner's decision of 3 October 2026 (#215).
 
+Item 2's parity step compares with three.js's threshold only where both engines draw the same building block. By the owner's decision of 4 October 2026 ([D-52](decisions/D-52-intent-parity.md)), a feature that moves to a better technique leaves that strict check. It then gets null3D's own references and a looser sanity limit against its twin. Item 3 compares equal work: the same scene content and comparable quality settings.
+
 ### Rehearsal on the Mac, 3 October 2026
 
 A rehearsal ran every Mac step before the gate commit, on a MacBook Pro M5 Max in Chrome 154, with the display at 144 Hz. The untimed steps ran on main at bfbb206d (#221). The timing steps ran on main at 850e2d55 (#230), with the gate runner of #232 on top. They used the full protocol of 5 runs of 30 seconds. The real gate runs every step again on the gate commit.
