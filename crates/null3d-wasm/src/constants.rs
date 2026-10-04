@@ -229,6 +229,9 @@ pub mod animation_field {
 /// interpolation and key count.
 pub const TRACK_WORDS: u32 = 4;
 
+/// What `clipReady` returns while a job worker still resamples the clip: no clip id reaches it.
+pub const CLIP_PENDING: u32 = u32::MAX;
+
 /// The bits of `animatorPlay`'s `flags`.
 pub mod play_flag {
     /// The clip repeats.
@@ -760,12 +763,14 @@ pub fn typescript() -> String {
                 ("EVENT_FINISHED", event_kind::FINISHED),
                 ("REST_FLOATS", REST_FLOATS as u32),
                 ("TRACK_WORDS", TRACK_WORDS),
+                ("CLIP_PENDING", CLIP_PENDING),
                 ("DEFAULT_RATE", DEFAULT_RATE as u32),
                 ("TRANSLATION", Channel::Translation as u32),
                 ("ROTATION", Channel::Rotation as u32),
                 ("SCALE", Channel::Scale as u32),
                 ("LINEAR", Interpolation::Linear as u32),
                 ("STEP", Interpolation::Step as u32),
+                ("CUBIC_SPLINE", Interpolation::CubicSpline as u32),
             ],
         ),
         (

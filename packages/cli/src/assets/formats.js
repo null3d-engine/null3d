@@ -14,6 +14,7 @@ export const ASSET_FORMATS_URL = new URL('../../dist/assets.wasm', import.meta.u
  * @property {WebAssembly.Memory} memory
  * @property {(length: number) => number} request
  * @property {() => number} mesh_bvh
+ * @property {() => number} environment
  * @property {() => number} response
  * @property {() => number} response_length
  */
@@ -74,4 +75,38 @@ export function meshBvh(positions, indices) {
 	for (let i = 0; i < indices.length; i++)
 		view.setUint32(base + i * 4, /** @type {number} */ (indices[i]), true);
 	return respond((m) => m.mesh_bvh(), request);
+}
+
+/** The texel formats of environment maps, in the module's numbering. */
+export const ENVIRONMENT_FORMATS = /** @type {const} */ (['rgb9e5ufloat', 'rgba16float']);
+
+/** @typedef {(typeof ENVIRONMENT_FORMATS)[number]} EnvironmentFormat */
+
+/**
+ * @typedef {object} EnvironmentSettings
+ * @property {number} size The width of the largest faces: a power of 2 from 32 to 2048.
+ * @property {EnvironmentFormat} format
+ * @property {number} [samples] The filter's directions per texel; the module's default when
+ *   left out.
+ */
+
+/**
+ * An environment map's KTX2 file: a cube map of the light, prefiltered for each roughness, and the
+ * spherical harmonics coefficients of its diffuse light. Its bytes are the same on every machine.
+ *
+ * @param {{ file: Uint8Array } | { builtin: string }} source A Radiance or OpenEXR file, or the
+ *   name of a built-in environment.
+ * @param {EnvironmentSettings} settings
+ * @returns {Uint8Array}
+ */
+export function environmentMap(source, { size, format, samples = 0 }) {
+	const body = 'file' in source ? source.file : new TextEncoder().encode(source.builtin);
+	const request = new Uint8Array(16 + body.byteLength);
+	const view = new DataView(request.buffer);
+	view.setUint32(0, 'file' in source ? 0 : 1, true);
+	view.setUint32(4, size, true);
+	view.setUint32(8, ENVIRONMENT_FORMATS.indexOf(format), true);
+	view.setUint32(12, samples, true);
+	request.set(body, 16);
+	return respond((m) => m.environment(), request);
 }

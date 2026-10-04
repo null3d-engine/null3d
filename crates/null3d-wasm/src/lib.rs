@@ -13,10 +13,10 @@
 //! engine's error table.
 
 use std::cell::{Cell, UnsafeCell};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use null3d_core::animation::{
-    AnimationError, Animations, Channel, Interpolation, MATRIX_FLOATS, MAX_JOINTS, Play,
+    AnimationError, Animations, Channel, Clip, Interpolation, MATRIX_FLOATS, MAX_JOINTS, Play,
     REST_FLOATS, Skeleton, SourceTrack, TrackProblem, resample,
 };
 use null3d_core::bvh::query::{QueryHit, QueryScene, SceneQueries};
@@ -25,7 +25,7 @@ use null3d_core::bvh::top::WorldRay;
 use null3d_core::error::CoreError;
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
-use null3d_core::jobs::{JobConfig, JobSystem};
+use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, WorkerId};
 use null3d_core::lights::LightTable;
 use null3d_core::scene::{CommandRing, SceneStorage};
 use null3d_core::snapshot::FrameSnapshot;
@@ -60,9 +60,9 @@ use wasm_bindgen::prelude::*;
 pub mod constants;
 
 use constants::{
-    TRACK_WORDS, animation_field, animation_problem, arrays_problem, batch_field, camera_target,
-    debug_line_field, mesh_arrays, play_flag, query, ring_field, scene_field, shading,
-    texture_option, texture_stat,
+    CLIP_PENDING, TRACK_WORDS, animation_field, animation_problem, arrays_problem, batch_field,
+    camera_target, debug_line_field, mesh_arrays, play_flag, query, ring_field, scene_field,
+    shading, texture_option, texture_stat,
 };
 
 /// The engine version, as the loader reports it.
@@ -133,6 +133,9 @@ struct Engine {
     lines: LineStore,
     /// Skeletons, clips and animated instances, from the first `initAnimations` on.
     animations: Option<Animations>,
+    /// The clips that job workers resample in the background, by `createClipLater` ticket, each
+    /// with its skeleton's id.
+    clip_jobs: Vec<Option<(u32, Arc<ClipJob>)>>,
     /// The trees and lists of raycasts and overlap queries, which allocate on the first query.
     queries: SceneQueries,
     /// A query's input (`constants::query`).
@@ -430,6 +433,7 @@ pub fn init_engine(
         staging: Vec::new(),
         lines: LineStore::default(),
         animations: None,
+        clip_jobs: Vec::new(),
         queries: SceneQueries::new(),
         query_input: [0.0; query::INPUT_FLOATS as usize],
         query_hits: vec![0.0; query::HIT_FLOATS as usize],
@@ -1943,8 +1947,12 @@ fn staged_tracks(words: &[u32], tracks: usize) -> Result<Vec<SourceTrack<'_>>, A
         let channel = Channel::from_u32(head[1]).ok_or(problem(TrackProblem::Kind))?;
         let interpolation = Interpolation::from_u32(head[2]).ok_or(problem(TrackProblem::Kind))?;
         let keys = head[3] as usize;
+        let per_key = match interpolation {
+            Interpolation::CubicSpline => 3 * channel.components(),
+            Interpolation::Linear | Interpolation::Step => channel.components(),
+        };
         let end = keys
-            .checked_mul(1 + channel.components())
+            .checked_mul(1 + per_key)
             .and_then(|n| n.checked_add(at))
             .filter(|&end| end <= floats.len());
         let Some(end) = end else {
@@ -1990,6 +1998,118 @@ pub fn create_clip(skeleton: u32, tracks: u32, rate: f32) -> u32 {
     })
 }
 
+/// A clip that a job worker resamples in the background: the staging words of `createClip`,
+/// a copy of its skeleton, and the clip once it is built.
+struct ClipJob {
+    skeleton: Skeleton,
+    words: Vec<u32>,
+    tracks: u32,
+    rate: f32,
+    clip: OnceLock<Result<Clip, AnimationError>>,
+}
+
+impl ClipJob {
+    fn run(&self) {
+        let clip = staged_tracks(&self.words, self.tracks as usize)
+            .and_then(|sources| resample(&self.skeleton, &sources, self.rate));
+        // Only this job's one task sets the clip.
+        let _ = self.clip.set(clip);
+    }
+}
+
+/// The background task of a [`ClipJob`]: its argument is the address of the job's `Arc`, which
+/// the task takes over.
+fn run_clip_job(arg: u64, _: WorkerId) {
+    // SAFETY: `create_clip_later` made the address with `Arc::into_raw` for this one task.
+    let job = unsafe { Arc::from_raw(arg as usize as *const ClipJob) };
+    job.run();
+}
+
+// The staging words are those of `createClip`. A job worker resamples the clip between frames, so
+// no frame waits for it; `clipReady` then adds it to the skeleton. Without job workers, `clipReady`
+// resamples it.
+/// Starts resampling a clip for `skeleton` from the staging words; returns a ticket for
+/// `clipReady`, plus one.
+#[wasm_bindgen(js_name = createClipLater)]
+pub fn create_clip_later(skeleton: u32, tracks: u32, rate: f32) -> u32 {
+    let Some(jobs) = JOBS.get() else {
+        return fail(codes::NOT_READY, [0, 0]);
+    };
+    value_with_engine(|e| {
+        let Some(animations) = e.animations.as_ref() else {
+            return Err(fail(codes::NOT_READY, [2, 0]));
+        };
+        let id = skeleton.wrapping_sub(1);
+        let target = animations
+            .skeleton(id)
+            .ok_or(AnimationError::UnknownSkeleton { skeleton: id })
+            .map_err(animation_failure)?;
+        let job = Arc::new(ClipJob {
+            skeleton: target.clone(),
+            words: std::mem::take(&mut e.staging),
+            tracks,
+            rate,
+            clip: OnceLock::new(),
+        });
+        let ticket = match e.clip_jobs.iter().position(Option::is_none) {
+            Some(free) => free,
+            None => {
+                e.clip_jobs.push(None);
+                e.clip_jobs.len() - 1
+            }
+        };
+        let task = BackgroundTask {
+            run: run_clip_job,
+            arg: Arc::into_raw(Arc::clone(&job)) as usize as u64,
+        };
+        if jobs.worker_count() == 0 || jobs.spawn_background(task).is_err() {
+            // No job worker would run it: `clipReady` resamples the clip on this thread.
+            // SAFETY: the task was never queued, so its reference is still this one.
+            drop(unsafe { Arc::from_raw(task.arg as usize as *const ClipJob) });
+        }
+        e.clip_jobs[ticket] = Some((id, job));
+        Ok(ticket as u32 + 1)
+    })
+}
+
+/// The clip of a `createClipLater` ticket: its id plus one once a job worker has resampled it,
+/// [`CLIP_PENDING`] before that, or 0 for a failure. A ticket that gave an id or failed is spent.
+#[wasm_bindgen(js_name = clipReady)]
+pub fn clip_ready(ticket: u32) -> u32 {
+    value_with_engine(|e| {
+        let slot = ticket.wrapping_sub(1) as usize;
+        let Some(Some((skeleton, job))) = e.clip_jobs.get(slot) else {
+            return Err(fail(codes::NOT_READY, [2, 2]));
+        };
+        // A queued job's task holds a reference until it has run and let go.
+        if Arc::strong_count(job) > 1 {
+            return Ok(CLIP_PENDING);
+        }
+        // A job that no task held runs here: without job workers, or with a full queue.
+        if job.clip.get().is_none() {
+            job.run();
+        }
+        let skeleton = *skeleton;
+        let Some((_, job)) = e.clip_jobs[slot].take() else {
+            unreachable!("the slot holds a job")
+        };
+        let Some(animations) = e.animations.as_mut() else {
+            return Err(fail(codes::NOT_READY, [2, 0]));
+        };
+        let Ok(job) = Arc::try_unwrap(job) else {
+            unreachable!("no task holds the job")
+        };
+        let Some(clip) = job.clip.into_inner() else {
+            unreachable!("the job ran")
+        };
+        let clip = clip.map_err(animation_failure)?;
+        let clip = animations
+            .add_clip(skeleton, clip)
+            .map_err(animation_failure)?;
+        Ok(clip + 1)
+    })
+}
+
 /// Adds an animated instance of `skeleton`; returns its id plus one.
 #[wasm_bindgen(js_name = createAnimatedInstance)]
 pub fn create_animated_instance(skeleton: u32) -> u32 {
@@ -2009,6 +2129,21 @@ pub fn remove_animated_instance(instance: u32) -> u32 {
             .remove_instance(instance.wrapping_sub(1))
             .map_err(animation_failure)?;
         Ok(0)
+    })
+}
+
+/// The first joint of animated instance `instance` in the skinning matrices, plus one, or 0 when
+/// no live instance has that id.
+#[wasm_bindgen(js_name = animatedInstanceJoints)]
+pub fn animated_instance_joints(instance: u32) -> u32 {
+    with_animations(|animations, _| {
+        let id = instance.wrapping_sub(1);
+        match animations.instance_joints(id) {
+            Some((first, _)) => Ok(first + 1),
+            None => Err(animation_failure(AnimationError::UnknownInstance {
+                instance: id,
+            })),
+        }
     })
 }
 

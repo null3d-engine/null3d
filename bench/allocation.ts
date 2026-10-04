@@ -16,10 +16,15 @@
 // `--animated 64` adds 64 animated characters to S1, which play, cross-fade, blend a masked layer
 // and an additive one, and fire events to the sketch's handlers through the animator. `--grading`
 // gives S1 a color grading table and the vignette, and changes both every frame. `--sprites` draws
-// S1's swarm as one dynamic batch of blended sprites instead of boxes. `--prepass` turns the
-// depth prepass on, in any scene. It samples the production build of the benchmark pages, as a developer ships the engine, and names
+// S1's swarm as one dynamic batch of blended sprites instead of boxes. `--labels 256` adds 256
+// objects to S1, each with an HTML label that the page binds. The camera orbits, so each frame
+// places every label at a new point, and the thread that draws copies them for the page.
+// `--prepass` turns the depth prepass on, in any scene. It samples the production build of the
+// benchmark pages, as a developer ships the engine, and names
 // the build's functions through its source maps; `--dev` samples the dev server's pages, with the
-// engine's development checks. From the repository root:
+// engine's development checks. `--no-inline` turns the browser's inlining off, so each function's
+// objects count in its own place, not in its caller's; budgets then do not hold, so read the places,
+// not the verdict. From the repository root:
 //   bun run bench:allocation
 //   bun run bench:allocation --n 30000 --seconds 5 --warmup 30
 //   bun run bench:allocation --gpu webgl2
@@ -31,6 +36,8 @@
 //   bun run bench:allocation --grading --gpu webgl2
 //   bun run bench:allocation --sprites --gpu webgl2
 //   bun run bench:allocation --scene s4 --prepass --gpu webgl2
+//   bun run bench:allocation --labels 256 --gpu webgl2
+//   bun run bench:allocation --labels 256 --no-inline
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
@@ -171,11 +178,15 @@ async function main(): Promise<void> {
 	// numbers that such code computes are allocated.
 	const warmup = option('--warmup', WARMUP_SECONDS);
 	const dev = args.includes(DEV_OPTION);
+	const noInline = args.includes('--no-inline');
 	const server = await serveBenchPages({ dev });
 	const browser = await chromium.launch({
 		channel: 'chrome',
 		headless: false,
-		args: [`--remote-debugging-port=${DEBUG_PORT}`],
+		args: [
+			`--remote-debugging-port=${DEBUG_PORT}`,
+			...(noInline ? ['--js-flags=--no-turbo-inlining --no-maglev-inlining'] : []),
+		],
 	});
 	try {
 		const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
@@ -192,7 +203,10 @@ async function main(): Promise<void> {
 		const sprites = args.includes('--sprites') ? '&sprites' : '';
 		if (sprites && scene !== 's1') throw new Error('--sprites draws S1 as sprites only');
 		const prepass = args.includes('--prepass') ? '&prepass=on' : '';
-		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${grading}${sprites}${prepass}`;
+		const labelCount = option('--labels', 0);
+		if (labelCount > 0 && scene !== 's1') throw new Error('--labels adds labels to S1 only');
+		const labels = labelCount > 0 ? `&labels=${labelCount}` : '';
+		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${grading}${sprites}${prepass}${labels}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
@@ -271,7 +285,7 @@ async function main(): Promise<void> {
 		await input;
 		devtools.close();
 		console.log(
-			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}, ${pagesText(dev)}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
 		);
 		console.log(
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',
