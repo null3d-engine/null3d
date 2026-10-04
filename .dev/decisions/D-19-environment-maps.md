@@ -81,6 +81,7 @@ Where three.js and the tool differ on purpose:
 
 - three.js samples the HDR file at one point per CubeUV texel. The tool averages 2 to 8 directions per side of each texel, so a sun keeps its light at every size.
 - three.js's PMREM keeps 16-bit floats, so light above 65,504 becomes infinite or clamps. The tool filters in 32-bit floats and clamps only the stored texels, at 65,408. Poly Haven's Kloofendal sky peaks at 73,216. There the two differed by 2 to 5% in total light, against at most 1.2% on the other files.
+- No environment texel reaches the scene color above its HDR limit, 65,472 (`limit_hdr` in the shader library). The tool stores at most 65,408 in `rgb9e5ufloat` and 65,504 in `rgba16float`, never infinity. The room's generator stores at most 65,408. A file from another tool can hold infinite texels. Every shader that reads the cube still writes the scene color through `finish`, which applies the limit, so the color stays finite.
 
 How the data was produced: `NULL3D_ENV_PARITY_FIT=1 NULL3D_PORT=<port> bun run --cwd tests test environment-parity.spec.ts --project chrome-real-gpu` prints the best match at each roughness and the size and format figures. The sample-count figures came from a script that built Venice at each count with `environmentMap` and compared the levels texel by texel.
 
